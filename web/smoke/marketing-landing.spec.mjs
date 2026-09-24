@@ -2,19 +2,32 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { waitForClientHydration, withPage } from './browser-smoke.mjs'
 
-async function withLanding(run, hasTouch = false) {
+const publicLayer = '[data-view="public"]'
+const privateLayer = '[data-view="private"]'
+
+async function withLanding(run, pageOptions = {}) {
   await withPage('/', async (page) => {
-    await page.getByRole('heading', { name: 'One repository. You choose what’s public.' }).waitFor()
+    await page.getByRole('heading', { name: 'One repository. Part of it is public.' }).waitFor()
     const themeToggle = page.getByRole('button', { name: 'Switch to light mode' })
     await waitForClientHydration(themeToggle)
     await themeToggle.click()
     await page.getByRole('button', { name: 'Switch to dark mode' }).waitFor()
     await run(page)
   }, {
-    hasTouch,
     permissions: ['clipboard-read', 'clipboard-write'],
     viewport: { width: 1440, height: 1000 },
+    ...pageOptions,
   })
+}
+
+/** Waits until the lens radius, in page pixels, is inside the given bounds. */
+async function waitForRadius(page, { above = -Infinity, below = Infinity }) {
+  await page.waitForFunction(({ selector, above, below }) => {
+    const layer = document.querySelector(selector)
+    const zoom = Number(/scale\(([\d.]+)\)/.exec(layer.style.transform)?.[1] ?? 1)
+    const radius = Number(/circle\(([\d.]+)px/.exec(layer.style.clipPath)?.[1] ?? 0) * zoom
+    return radius > above && radius < below
+  }, { selector: privateLayer, above, below })
 }
 
 test('landing install controls copy the selected command and keep the theme after reload', async () => {
@@ -31,110 +44,91 @@ test('landing install controls copy the selected command and keep the theme afte
       const option = page.getByRole('button', { name: platform, exact: true })
       await option.click()
       assert.equal(await option.getAttribute('aria-pressed'), 'true')
-      const command = await page.locator('.terminal code').innerText()
+      const command = await page.locator(`${publicLayer} [data-note="command"] code`).innerText()
       assert(command.includes(script))
+      assert.equal(await page.locator(`${privateLayer} [data-note="command"] code`).innerText(), `${command}  # yes, we know`)
       await page.getByRole('button', { name: `Copy ${copyName} install command` }).click()
       assert.equal(await page.evaluate(() => navigator.clipboard.readText()), command)
-      assert.equal(await page.locator('details').getAttribute('open'), '')
-      assert.equal(await page.locator('summary').evaluate((element) => document.activeElement === element), true)
-      await page.getByText('Already installed?', { exact: true }).click()
-      assert.equal(await page.locator('details').getAttribute('open'), null)
     }
     assert.match(await page.getByRole('link', { name: 'Sign in', exact: true }).getAttribute('href'), /^\/sign-in/)
     assert.equal(await page.getByRole('link', { name: 'Licenses', exact: true }).getAttribute('href'), '/licenses')
   })
 })
 
-test('landing visuals stay aligned and loop through public sharing, review and merge', async () => {
+test('landing layout keeps every note clear of the content at each width', async () => {
   await withLanding(async (page) => {
-    await page.waitForFunction(() => [...document.querySelectorAll('.enter')].every((element) => element.getAnimations().every((animation) => animation.playState === 'finished')))
     for (const colorScheme of ['light', 'dark']) {
       if (colorScheme === 'dark') await page.getByRole('button', { name: 'Switch to dark mode' }).click()
       for (const width of [1920, 1440, 1024, 900, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 })
-        await page.waitForFunction(() => document.getAnimations().every((animation) => !(animation instanceof CSSTransition)))
-        const layout = await page.evaluate(() => {
-          const boxes = ['.repository', '.request-progress', '.request-sheet', '.terminal']
-            .map((selector) => document.querySelector(selector).getBoundingClientRect())
-          const size = (selector) => getComputedStyle(document.querySelector(selector)).fontSize
+        const layout = await page.evaluate((selector) => {
+          const layer = document.querySelector(selector)
+          const notes = [...layer.querySelectorAll('[data-note]:not([data-note="command"])')].filter((note) => note.getClientRects().length)
+          const content = [...layer.querySelectorAll('h1, h2, p:not(.landing-note), a, button, .repo-panel, .merge-graph, [data-note="command"]')]
+          const overlaps = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1
           return {
-            edges: boxes.map(({ left, right }) => [left, right]),
-            tops: innerWidth > 900 ? [
-              ['#hero-title', '.repository'],
-              ['#contribution-title', '.request-progress'],
-              ['#install-title', '.platforms'],
-            ].map((pair) => pair.map((selector) => document.querySelector(selector).getBoundingClientRect().top)) : [],
+            notes: notes.length,
+            collisions: notes.flatMap((note) => [...content, ...notes]
+              .filter((other) => other !== note && !note.contains(other) && !other.contains(note) && overlaps(note.getBoundingClientRect(), other.getBoundingClientRect()))
+              .map((other) => `${note.dataset.note} overlaps ${other.dataset.note ?? other.tagName}`)),
             overflow: document.documentElement.scrollWidth > innerWidth,
-            fonts: [size('.repository-file'), size('.scene-file'), size('.review-code')],
-            dividers: ['.topbar', '.contributions', '.install', '.footer'].map((selector) => {
-              const style = getComputedStyle(document.querySelector(selector))
-              return [style.borderTopWidth, style.borderBottomWidth]
-            }),
+            tops: innerWidth > 900 ? ['merge', 'install'].map((id) => [...document.getElementById(id).children].slice(0, 2).map((child) => child.getBoundingClientRect().top)) : [],
           }
-        })
-        for (const edges of layout.edges) assert.deepEqual(edges, layout.edges[0], `${colorScheme} at ${width}px`)
-        for (const [copy, figure] of layout.tops) assert.equal(copy, figure)
-        assert.equal(layout.overflow, false)
-        assert.equal(new Set(layout.fonts).size, 1)
-        assert(layout.dividers.every(([top, bottom]) => top === '0px' && bottom === '0px'))
-      }
-    }
-    for (const reducedMotion of ['no-preference', 'reduce']) {
-      await page.emulateMedia({ reducedMotion })
-      const clocks = await page.evaluate(() => ['.repository', '.contribution-flow'].map((selector) => {
-        const animations = document.querySelector(selector).getAnimations({ subtree: true })
-          .filter((animation) => animation instanceof CSSAnimation)
-        for (const animation of animations) animation.play()
-        return { selector, time: animations[0]?.currentTime ?? null }
-      }))
-      assert(clocks.every(({ time }) => time !== null))
-      await page.waitForFunction((clocks) => clocks.every(({ selector, time }) => {
-        const animation = document.querySelector(selector).getAnimations({ subtree: true })
-          .find((animation) => animation instanceof CSSAnimation)
-        return animation?.playState === 'running' && animation.currentTime > time + 200
-      }), clocks)
-      const frames = await page.evaluate(() => {
-        function seek(selector, time) {
-          const animations = document.querySelector(selector).getAnimations({ subtree: true })
-          for (const animation of animations) {
-            animation.pause()
-            animation.currentTime = time
-          }
-          return animations.length
-        }
-        const opacity = (selector) => Number(getComputedStyle(document.querySelector(selector)).opacity)
-        const sharing = [0, 4000, 8000].map((time) => {
-          const count = seek('.repository', time)
-          return { count, public: opacity('.shared-example'), private: opacity('.source-example .is-private') }
-        })
-        const requests = [0, 6500, 11500, 14000].map((time) => {
-          const count = seek('.contribution-flow', time)
-          return { count, scenes: ['.submission-scene', '.review-scene', '.merged-scene'].map(opacity) }
-        })
-        seek('.contribution-flow', 9300)
-        const comment = document.querySelector('.maintainer-review').getBoundingClientRect()
-        const decision = document.querySelector('.review-decision').getBoundingClientRect()
-        return { sharing, requests, commentFits: comment.bottom <= decision.top }
-      })
-      assert(frames.sharing.every(({ count }) => count > 0))
-      assert.deepEqual(frames.sharing.map(({ public: shared }) => shared), [0, 1, 0])
-      assert.deepEqual(frames.sharing.map(({ private: hidden }) => hidden), [1, 0, 1])
-      assert(frames.requests.every(({ count }) => count > 0))
-      assert.deepEqual(frames.requests.map(({ scenes }) => scenes), [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0]])
-      assert.equal(frames.commentFits, true)
-      for (const width of [320, 768, 1440]) {
-        await page.setViewportSize({ width, height: 1000 })
-        await page.waitForFunction(() => document.getAnimations().every((animation) => !(animation instanceof CSSTransition)))
-        assert.equal(await page.evaluate(() => {
-          const comment = document.querySelector('.maintainer-review').getBoundingClientRect()
-          const decision = document.querySelector('.review-decision').getBoundingClientRect()
-          return comment.bottom <= decision.top
-        }), true, `${reducedMotion} at ${width}px`)
+        }, publicLayer)
+        assert.equal(layout.notes, 8, `${colorScheme} at ${width}px`)
+        assert.deepEqual(layout.collisions, [], `${colorScheme} at ${width}px`)
+        assert.equal(layout.overflow, false, `${colorScheme} at ${width}px`)
+        for (const [title, figure] of layout.tops) assert.equal(title, figure, `${colorScheme} at ${width}px`)
       }
     }
   })
 })
 
+test('the lens follows the pointer, closes over links, floods on hold and goes away with L', async () => {
+  await withLanding(async (page) => {
+    const layer = page.locator(privateLayer)
+    assert.equal(await layer.getAttribute('aria-hidden'), 'true')
+    assert.equal(await layer.evaluate((element) => element.inert), true)
+    assert.equal(await page.getByRole('heading', { level: 1 }).count(), 1)
+
+    await page.mouse.move(700, 300)
+    await waitForRadius(page, { above: 150 })
+    const install = await page.getByRole('link', { name: 'Install Scope', exact: true }).boundingBox()
+    await page.mouse.move(install.x + install.width / 2, install.y + install.height / 2)
+    await waitForRadius(page, { below: 1 })
+
+    await page.mouse.move(700, 300)
+    await page.mouse.down()
+    await waitForRadius(page, { above: Math.hypot(1440, 1000) })
+    await page.mouse.up()
+    await waitForRadius(page, { below: 200 })
+
+    await page.keyboard.press('l')
+    await waitForRadius(page, { below: 1 })
+    assert.equal(await page.locator('.landing').evaluate((element) => getComputedStyle(element).cursor), 'auto')
+    await page.getByRole('status').filter({ hasText: 'press L to bring it back' }).waitFor()
+    await page.keyboard.press('l')
+    await waitForRadius(page, { above: 150 })
+  })
+})
+
+for (const reducedMotion of ['no-preference', 'reduce']) {
+  test(`finding every note fires confetti (${reducedMotion} motion)`, async () => {
+    await withLanding(async (page) => {
+      const notes = page.locator(`${publicLayer} [data-note]`)
+      const count = await notes.count()
+      assert.equal(count, 9)
+      for (let index = 0; index < count; index++) {
+        const note = notes.nth(index)
+        await note.scrollIntoViewIfNeeded()
+        const box = await note.boundingBox()
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+        await page.waitForTimeout(reducedMotion === 'reduce' ? 250 : 900)
+      }
+      await page.locator('canvas').waitFor({ state: 'attached' })
+    }, { reducedMotion })
+  })
+}
 
 test('install platform controls retain touch-sized targets on tablets', async () => {
   await withLanding(async (page) => {
@@ -145,5 +139,5 @@ test('install platform controls retain touch-sized targets on tablets', async ()
     for (const control of await controls.all()) {
       assert((await control.boundingBox()).height >= 44)
     }
-  }, true)
+  }, { hasTouch: true })
 })
