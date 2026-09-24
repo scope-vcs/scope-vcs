@@ -66,7 +66,7 @@ export function LandingContent({
               </Heading>
               <p className="landing-rise mt-6 max-w-[36ch] text-[17px] leading-[1.6] text-muted-foreground" style={rise(180)}><Swap text={heroCopy.lede} /></p>
               <div className="landing-rise mt-8 flex flex-wrap items-center gap-x-6 gap-y-2" style={rise(260)}>
-                <a className="inline-flex min-h-11 items-center rounded-md bg-foreground px-[18px] text-sm font-medium text-background transition-transform duration-200 hover:-translate-y-0.5" href="#install" onClick={(event) => callInstall(event, onInstallCall)}>Install Scope</a>
+                <a className="inline-flex min-h-11 items-center rounded-md bg-foreground px-[18px] text-sm font-medium text-background transition-transform duration-[calc(200ms*var(--landing-pace))] hover:-translate-y-0.5" href="#install" onClick={(event) => callInstall(event, onInstallCall)}>Install Scope</a>
                 <a className="inline-flex items-center gap-1.5 text-sm hover:text-success-strong" href={sourceUrl}>Source<ArrowUpRight aria-hidden className="size-4 stroke-[1.6]" /></a>
               </div>
               <Note className="absolute left-0 top-[calc(100%+44px)] max-[901px]:static max-[901px]:mt-5 max-[901px]:block" id="cta" />

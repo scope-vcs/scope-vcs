@@ -5,12 +5,12 @@ import { lensCovers, lensZoom, restingPoint, ringOpacity, stepLens, tickPaths } 
 const start = { x: 0, y: 0, r: 0, rotation: 0 }
 const viewport = { width: 1000, height: 800 }
 
-test('eases toward the target and turns the ring with horizontal movement', () => {
+test('eases toward the target, 25% faster than a plain .2 ease, and turns the ring with horizontal movement', () => {
   const next = stepLens(start, { x: 100, y: 50, r: 150 }, { instant: false, resting: false })
-  assert.equal(next.x, 20)
-  assert.equal(next.y, 10)
+  assert.equal(next.x.toFixed(2), (100 * (1 - .8 ** 1.25)).toFixed(2))
+  assert.equal(next.y, next.x / 2)
   assert.ok(next.r > 0 && next.r < 150)
-  assert.equal(next.rotation, 7)
+  assert.equal(next.rotation, next.x * .35)
 })
 
 test('reduced motion and dragging land on the target without turning the ring, and still ease the radius', () => {

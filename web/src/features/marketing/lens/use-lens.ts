@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { floodRadius, lensZoom, restingPoint, restRadius, ringOpacity, stepLens, tickPaths, type LensFrame } from './lens-motion'
+import { floodRadius, lensZoom, PACE, restingPoint, restRadius, ringOpacity, stepLens, tickPaths, type LensFrame } from './lens-motion'
 
 export interface LensElements {
   page: RefObject<HTMLDivElement | null>
@@ -17,8 +17,9 @@ export interface LensElements {
 
 type Mode = 'rest' | 'follow' | 'drag' | 'pinned'
 
-const OPEN_DELAY_MS = 950
-const HINT_DELAY_MS = 3200
+// Timed against the entrance, so both follow the page's pace.
+const OPEN_DELAY_MS = 950 / PACE
+const HINT_DELAY_MS = 3200 / PACE
 const SETTLED = .05
 /** The lens only closes over a link after the pointer rests on it this long, so
  * sweeping across the page doesn't blink it shut. */

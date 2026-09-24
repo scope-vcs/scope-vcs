@@ -14,11 +14,19 @@ export interface Box {
   bottom: number
 }
 
-const FOLLOW_EASE = .2
-const RADIUS_EASE = .13
+/** How much faster than the original timing the lens moves: 1.25 is 25%
+ * faster. The page's CSS durations use the matching --landing-pace. */
+export const PACE = 1.25
+
+/** A per-frame ease sped up by PACE: the same curve, reached sooner. */
+const paced = (ease: number) => 1 - (1 - ease) ** PACE
+
+const FOLLOW_EASE = paced(.2)
+const RADIUS_EASE = paced(.13)
 /** Opening and closing still ease under reduced motion, just faster: an
  * instant cut reads as a flicker. */
-const QUICK_RADIUS_EASE = .35
+const QUICK_RADIUS_EASE = paced(.35)
+const IDLE_SPIN = .03 * PACE
 const MAX_ZOOM = .08
 
 export function restRadius(viewportWidth: number): number {
@@ -45,7 +53,7 @@ export function stepLens(
     x: frame.x + dx,
     y: frame.y + (target.y - frame.y) * follow,
     r: frame.r + (target.r - frame.r) * (instant ? QUICK_RADIUS_EASE : RADIUS_EASE),
-    rotation: instant ? frame.rotation : frame.rotation + dx * .35 + (resting ? .03 : 0),
+    rotation: instant ? frame.rotation : frame.rotation + dx * .35 + (resting ? IDLE_SPIN : 0),
   }
 }
 
@@ -62,7 +70,7 @@ export function restingPoint(
   const x = onScreen ? anchor.left - page.left + 96 : viewport.width * .62 - page.left
   const y = onScreen ? anchor.top - page.top + 44 : viewport.height * .55 - page.top
   if (!drift) return { x, y }
-  return { x: x + Math.sin(time / 1900) * 26, y: y + Math.cos(time / 2600) * 18 }
+  return { x: x + Math.sin(time * PACE / 1900) * 26, y: y + Math.cos(time * PACE / 2600) * 18 }
 }
 
 /** Slight magnification inside the lens that eases out as it floods the page. */
