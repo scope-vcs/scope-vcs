@@ -48,6 +48,7 @@ test('landing install controls copy the selected command and keep the theme afte
       const command = await page.locator(`${publicLayer} [data-note="command"] code`).innerText()
       assert(command.includes(script))
       assert.equal(await page.locator(`${privateLayer} [data-note="command"] code`).innerText(), `${command}  # go on, we'll wait`)
+      assert.equal(await page.locator(`${privateLayer} [data-note="command"] button[aria-label^="Copy"]`).evaluate((button) => getComputedStyle(button).visibility), 'hidden')
       await page.getByRole('button', { name: `Copy ${copyName} install command` }).click()
       assert.equal(await page.evaluate(() => navigator.clipboard.readText()), command)
     }

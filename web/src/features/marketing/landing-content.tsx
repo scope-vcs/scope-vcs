@@ -18,7 +18,9 @@ const columnTitle = 'max-w-[12ch] text-[clamp(32px,3.6vw,48px)] leading-[1.04] f
 const columnNote = 'absolute left-0 top-[calc(100%+24px)] max-w-[34ch]'
 // The private copy can't scroll, so its longer command widens the box toward
 // the window edge (the column starts 40px past the centre) and wraps beyond it.
-const privateCommand = 'w-max min-w-full max-w-[calc(50vw-56px)] [&_pre]:overflow-visible [&_pre]:whitespace-pre-wrap max-[901px]:w-auto max-[901px]:max-w-none'
+// Its copy button would move with the wider box and can't be clicked, so it's
+// hidden; the lens closes over the real one.
+const privateCommand = 'w-max min-w-full max-w-[calc(50vw-56px)] [&_pre]:overflow-visible [&_pre]:whitespace-pre-wrap [&_button]:invisible max-[901px]:w-auto max-[901px]:max-w-none'
 const rise = (delay: number) => ({ '--rise-delay': `${delay}ms` }) as CSSProperties
 
 /** The whole page, once per view. Only the public view carries ids, headings
