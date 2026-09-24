@@ -6,6 +6,7 @@ import type {
 } from '@/api/types.generated'
 import { NavigationSearch } from '@/components/navigation-search'
 import { Button } from '@/components/ui/button'
+import { TextSkeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { createPortal } from 'react-dom'
@@ -201,7 +202,8 @@ export function RequestWorkspaceSidebar({
   const nextSection = REQUEST_QUEUE_SECTION_ORDER.find((section) => pages?.[section].next_cursor)
   const activeHasMore = Boolean(pages?.active.next_cursor)
   // Active rows page, so loaded lengths are floors until the last page is in.
-  const activeCount = (value: number) => `${value}${activeHasMore ? '+' : ''}`
+  // Until the first page arrives there is no count to show.
+  const activeCount = (value: number) => pages ? `${value}${activeHasMore ? '+' : ''}` : null
   const needsYou = grouped.needs_you
   // The open request keeps a slot on the rail when it is not one of the
   // viewer's, and leaves its group so it is never listed twice.
@@ -231,7 +233,7 @@ export function RequestWorkspaceSidebar({
         group,
         section: group,
         label: REQUEST_ATTENTION_GROUP_LABELS[group],
-        count: count(pages?.[group], moved(grouped[group])),
+        count: pages ? count(pages[group], moved(grouped[group])) : null,
         emptyLabel: EMPTY_LABELS[group],
       }),
     ),
@@ -319,7 +321,7 @@ export function RequestWorkspaceSidebar({
                 <section className="request-workspace-needs-you">
                   <h2 className="request-workspace-group-label text-foreground">
                     <span>{REQUEST_ATTENTION_GROUP_LABELS.needs_you}</span>
-                    <span className="tabular-nums">{activeCount(needsYou.length)}</span>
+                    <GroupCount count={activeCount(needsYou.length)} />
                   </h2>
                   <RequestWorkspaceList
                     {...common}
@@ -361,7 +363,7 @@ export function RequestWorkspaceSidebar({
                 <section className="request-workspace-open">
                   <h2 className="request-workspace-group-label text-muted-foreground">
                     <span>Open</span>
-                    <span className="tabular-nums">{waitingCount}</span>
+                    <GroupCount count={waitingCount} />
                   </h2>
                   <RequestWorkspaceList
                     {...common}
@@ -409,7 +411,7 @@ function RequestWorkspaceDisclosure({
   label,
 }: {
   children: ReactNode
-  count: string
+  count: string | null
   label: string
 }) {
   const [open, setOpen] = useState(false)
@@ -431,7 +433,9 @@ function RequestWorkspaceDisclosure({
           )}
         />
         <span>{label}</span>
-        <span className="ml-auto tabular-nums">{count}</span>
+        <span className="ml-auto flex items-center">
+          <GroupCount count={count} />
+        </span>
       </button>
       <div hidden={!open} id={id}>
         {children}
@@ -440,6 +444,12 @@ function RequestWorkspaceDisclosure({
   )
 }
 
-function count(page: RequestQueuePageResponse | undefined, moved: number) {
-  return `${(page?.requests.length ?? 0) - moved}${page?.next_cursor ? '+' : ''}`
+function count(page: RequestQueuePageResponse, moved: number) {
+  return `${page.requests.length - moved}${page.next_cursor ? '+' : ''}`
+}
+
+function GroupCount({ count }: { count: string | null }) {
+  return count === null
+    ? <TextSkeleton length="tiny" size="meta" />
+    : <span className="tabular-nums">{count}</span>
 }

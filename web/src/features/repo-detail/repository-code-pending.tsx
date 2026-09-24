@@ -1,40 +1,37 @@
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
-import { PendingSurface } from '@/components/pending-surface'
 import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
-import {
-  FileNavigatorSkeleton,
-  SourceCodeSkeleton,
-} from './repository-code-skeletons'
+import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
+import type { CachedResource } from '@/lib/use-cached-resource'
+import { useParams } from '@tanstack/react-router'
+import { RepositoryCodeView } from './repository-code-view'
+import { RepositoryLatestActivityPending } from './repository-latest-activity'
 
-const PENDING_ACTIONS = <BlockSkeleton className="h-8 w-24" />
-const PENDING_SUMMARY = <TextSkeleton length="short" />
-
+// The code view draws its own loading layout for resources it has not started,
+// so the route's pending state is that same view with nothing requested yet.
 export function RepositoryCodePending() {
+  const params = useParams({ from: '/$owner/$repo' })
+  const workspaceTabs = useWorkspaceTabs({ activeId: null })
   return (
-    <PendingSurface label="Loading repository files">
-      <WorkbenchPane>
-        <WorkbenchBar
-          actions={PENDING_ACTIONS}
-          summary={PENDING_SUMMARY}
-          title="Code"
-        />
-        <div className="grid min-w-0 lg:min-h-[calc(100dvh-var(--app-chrome))] lg:grid-cols-[250px_minmax(0,1fr)]">
-          <div className="border-b border-border px-3 py-3 lg:border-b-0 lg:border-r lg:px-5">
-            <TextSkeleton
-              className="mb-3 hidden sm:block"
-              length="short"
-              size="meta"
-            />
-            <FileNavigatorSkeleton />
-          </div>
-          <div className="min-w-0">
-            <div className="flex h-11 items-center border-b border-border px-3">
-              <BlockSkeleton className="h-6 w-32" />
-            </div>
-            <SourceCodeSkeleton />
-          </div>
-        </div>
-      </WorkbenchPane>
-    </PendingSurface>
+    <WorkbenchPane>
+      <WorkbenchBar
+        actions={<BlockSkeleton className="h-8 w-24" />}
+        className="items-start border-b border-border"
+        summary={<TextSkeleton length="short" size="meta" />}
+        title="Code"
+      />
+      <RepositoryLatestActivityPending />
+      <RepositoryCodeView
+        content={idleResource()}
+        file={idleResource()}
+        onSelectFilePath={() => {}}
+        params={params}
+        selectedPath={null}
+        workspaceTabs={workspaceTabs}
+      />
+    </WorkbenchPane>
   )
+}
+
+function idleResource<T extends object>(): CachedResource<T> {
+  return { error: null, identity: null, refreshing: false, retry: () => {}, status: 'idle', value: null }
 }

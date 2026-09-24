@@ -1,7 +1,7 @@
 import type { RepoParams } from '@/api/types'
 import type { RequestQueueItemResponse, RequestQueueSection } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
-import { BlockSkeleton } from '@/components/ui/skeleton'
+import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
 import { useHydrated } from '@/lib/use-hydrated'
 import { useUnixClock } from '@/lib/use-unix-clock'
 import { cn } from '@/lib/utils'
@@ -49,7 +49,7 @@ export function RequestWorkspaceList({
   onLoadMore,
   ...rowProps
 }: RequestWorkspaceListProps) {
-  if (!items.length && skeleton) return <RequestWorkspaceListSkeleton />
+  if (!items.length && skeleton) return <RequestWorkspaceListSkeleton rail={rowProps.rail} />
   const rows = items.map(({ item, section }) => (
     <RequestWorkspaceRow item={item} key={item.request.id} section={section} {...rowProps} />
   ))
@@ -93,15 +93,18 @@ export function RequestWorkspaceList({
   )
 }
 
-export function RequestWorkspaceListSkeleton() {
+// Built on the row's own classes so dividers, padding and line heights match.
+export function RequestWorkspaceListSkeleton({ rail = false }: { rail?: boolean }) {
   return (
-    <div aria-label="Loading requests" className="request-workspace-rows">
+    <div className="request-workspace-rows">
       {[0, 1, 2].map((index) => (
-        <div className="grid grid-cols-[20px_1fr] gap-x-2.5 px-4 py-3" key={index}>
-          <BlockSkeleton className="size-5 rounded-full" />
-          <div className="space-y-2">
-            <BlockSkeleton className="h-3.5 w-4/5" />
-            <BlockSkeleton className="h-3 w-2/5" />
+        <div className="request-workspace-row" data-rail={rail ? '' : undefined} key={index}>
+          <div className="request-workspace-row-link">
+            <BlockSkeleton className={cn('rounded-full', rail ? 'size-8' : 'size-5')} />
+            <div className="min-w-0">
+              <TextSkeleton className="h-[18px]" length="long" size="meta" />
+              <TextSkeleton className="mt-[3px] h-[15px]" length="short" size="meta" />
+            </div>
           </div>
         </div>
       ))}

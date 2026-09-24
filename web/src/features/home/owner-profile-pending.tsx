@@ -17,11 +17,11 @@ export function OwnerProfilePending({ owner }: { owner: string }) {
     <ApplicationPendingShell label={`Loading @${owner}`}>
       <div className="py-8 lg:py-10">
         <PageHeader title={`@${owner}`} />
-        <div className="mt-6 divide-y divide-border border-y border-border">
+        {/* Rows match RepoList as a visitor sees it: one line per repository. */}
+        <div className="mt-6 divide-y divide-border">
           {PENDING_REPOSITORIES.map((repository) => (
-            <div className="py-4" key={repository.id}>
+            <div className="py-3" key={repository.id}>
               <TextSkeleton length={repository.length} size="title" />
-              <TextSkeleton className="mt-2" length="short" size="meta" />
             </div>
           ))}
         </div>

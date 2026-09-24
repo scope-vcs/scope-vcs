@@ -29,13 +29,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
 
   if (!ready) return null
   if (current.status === 'loading' || current.status === 'idle') {
-    return (
-      <div className="border-b border-border px-5 py-3 sm:px-6 lg:px-8">
-        <PendingSurface delay label="Loading latest repository change">
-          <TextSkeleton length="long" size="meta" />
-        </PendingSurface>
-      </div>
-    )
+    return <RepositoryLatestActivityPending />
   }
   if (current.status === 'failed') {
     return (
@@ -75,5 +69,22 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       </Link>
       {current.error && <button className="basis-full text-left underline" onClick={current.retry} type="button">Could not refresh latest change. Retry</button>}
     </div>
+  )
+}
+
+// Wraps like the loaded row: the message takes its own line on narrow screens.
+export function RepositoryLatestActivityPending() {
+  return (
+    <PendingSurface delay label="Loading latest repository change">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-5 py-3 text-xs sm:px-6 lg:px-8">
+        <span className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
+          <TextSkeleton length="long" size="meta" />
+        </span>
+        <span className="flex-1 sm:flex-none">
+          <TextSkeleton length="short" size="meta" />
+        </span>
+        <TextSkeleton length="tiny" size="meta" />
+      </div>
+    </PendingSurface>
   )
 }

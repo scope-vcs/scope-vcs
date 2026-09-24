@@ -38,7 +38,9 @@ export function RunsPagePending() {
                 <div className={RUN_ROW_CLASS} key={run.id}>
                   <BlockSkeleton className="size-3.5 shrink-0 rounded-full" />
                   <div className={RUN_ROW_PRIMARY_CLASS}>
-                    <TextSkeleton length={run.length} />
+                    {/* Below sm the loaded name and hash share one inline line
+                        box, which is taller than a text-sm line. */}
+                    <TextSkeleton className="h-6 py-1 sm:h-5 sm:py-0.5" length={run.length} />
                     <TextSkeleton
                       className="hidden sm:block"
                       length="short"
