@@ -52,7 +52,7 @@ node --test .github/scripts/staging-baseline.integration.test.mjs
 node --test deploy/postgres/runtime-roles.test.mjs
 node --test .github/scripts/railway-private-maintenance.test.mjs
 node --test .github/scripts/railway-ssh.test.mjs
-bash -n .github/scripts/railway-private-command.sh .github/scripts/railway-private-maintenance.sh
+bash -n .github/scripts/railway-private-command.sh .github/scripts/railway-private-maintenance.sh .github/scripts/production-readiness-preflight.sh
 node --test .github/scripts/maintenance-runtime.test.mjs .github/scripts/deploy-maintenance-runtime.test.mjs
 bash -n .github/scripts/publish-maintenance-runtime.sh .github/scripts/verify-maintenance-runtime.sh
 
@@ -64,3 +64,4 @@ bash -n deploy/aws/recovery/remote-snapshot.sh
 node --test deploy/postgres/prepare-cutover.test.mjs
 
 node --test .github/scripts/railway-predecessor-teardown.test.mjs
+node --test .github/scripts/production-readiness-preflight.test.mjs
