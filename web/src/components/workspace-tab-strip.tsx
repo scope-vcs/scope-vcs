@@ -47,6 +47,7 @@ export function WorkspaceTabStrip({
     ? activeId
     : tabs[0]?.id
   const visibleLabels = useMemo(() => workspaceTabVisibleLabels(tabs), [tabs])
+  const activeTab = tabs.find((tab) => tab.id === activeId)
   const hiddenTabs = useStripOverflow({ activeId, tabListRef, tabRefs, tabs })
 
   function tabRef(id: string) {
@@ -141,8 +142,8 @@ export function WorkspaceTabStrip({
                 </span>
               </button>
               {/* A tablist may only own tabs, so the pointer close control is
-                  hidden from assistive tech; keyboard and screen reader users
-                  close the focused tab with Delete. */}
+                  hidden from assistive tech. Keyboard users press Delete on the
+                  focused tab; the accessible control below closes the active tab. */}
               <button
                 aria-hidden
                 className={cn(
@@ -166,6 +167,17 @@ export function WorkspaceTabStrip({
           )
         })}
       </div>
+      {/* Assistive tech that cannot press Delete, such as touch screen readers,
+          closes the active tab through this control outside the tablist. */}
+      {activeTab && (
+        <button
+          className="sr-only shrink-0 self-center rounded px-2 py-1 font-mono text-xs text-muted-foreground focus-visible:not-sr-only focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+          onClick={() => closeTab(activeTab.id)}
+          type="button"
+        >
+          Close {activeTab.title ?? activeTab.label}
+        </button>
+      )}
       {hiddenTabs.length > 0 && (
         <OverflowMenu
           onActivate={onActivate}

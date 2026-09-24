@@ -79,7 +79,7 @@ test('workspace tabs retain mouse hover disclosure', async () => {
   }, { viewport: tabletViewport })
 })
 
-test('workspace tabs close from the keyboard and keep close controls out of the tablist', async () => {
+test('workspace tabs close from the keyboard and an accessible control outside the tablist', async () => {
   await withPage(repoPath, async (page) => {
     const firstTab = page.getByRole('tab').first()
     await firstTab.waitFor()
@@ -102,5 +102,10 @@ test('workspace tabs close from the keyboard and keep close controls out of the 
     await page.keyboard.press('Delete')
     await page.getByRole('tab', { name: firstLabel, exact: true }).waitFor({ state: 'detached' })
     assert.equal(await secondTab.evaluate((element) => element === document.activeElement), true)
+
+    // Visually hidden until focused; assistive tech activates it without a pointer.
+    await page.getByRole('button', { name: 'Close src/app.ts', exact: true }).focus()
+    await page.keyboard.press('Enter')
+    await secondTab.waitFor({ state: 'detached' })
   }, { viewport: tabletViewport })
 })
