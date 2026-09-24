@@ -19,9 +19,8 @@ export function checksHoldRequestMerge(request: RequestSummaryResponse) {
 // Decides whether the lifecycle action bar renders at all, so the page reserves
 // space for it only when a button will actually appear.
 export function hasRequestLifecycleActions(request: RequestSummaryResponse) {
-  const { permissions } = request
-  return permissions.can_submit || canMergeRequest(request) ||
-    checksHoldRequestMerge(request) || permissions.can_close
+  return request.permissions.can_submit || canMergeRequest(request) ||
+    checksHoldRequestMerge(request)
 }
 
 export function hasRequestAutoMergeActions(

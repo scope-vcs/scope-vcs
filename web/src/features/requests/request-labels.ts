@@ -7,19 +7,8 @@ import type {
   RequestListItemResponse,
   RequestSummaryResponse,
   RequestEventKind,
-  RequestState,
 } from '@/api/types.generated'
 import { autoMergeStopReasonText } from './request-auto-merge-model'
-
-const REQUEST_STATES = {
-  Draft: { label: 'Draft', tone: 'neutral' },
-  Open: { label: 'Open', tone: 'success' },
-  Closed: { label: 'Closed', tone: 'neutral' },
-  Merged: { label: 'Merged', tone: 'success' },
-} as const satisfies Record<
-  RequestState,
-  { label: string; tone: BadgeVariant }
->
 
 const EVENT_LABELS = {
   Started: 'Started',
@@ -62,14 +51,6 @@ const CHECK_EVALUATION_NOTES = {
 } as const satisfies Record<RequestCheckEvaluationState, string | null>
 
 type RequestLabelSource = RequestSummaryResponse | RequestListItemResponse
-
-export function requestStatusLabel(request: RequestLabelSource) {
-  return REQUEST_STATES[request.state].label
-}
-
-export function requestStatusTone(request: RequestLabelSource): BadgeVariant {
-  return REQUEST_STATES[request.state].tone
-}
 
 export function requestAuthorRoleLabel(request: RequestLabelSource) {
   switch (request.author_role) {

@@ -17,7 +17,6 @@ import {
   ArrowLeft,
   CirclePlay,
   GitCommit,
-  History,
   MessageSquare,
   ShieldQuestion,
   SlidersHorizontal,
@@ -43,6 +42,7 @@ import type { RequestActivityPage } from './request-discussion-types'
 import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from './request-discussion-api'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
+import { RequestMoreMenu } from './request-more-menu'
 import { useDetailPaneRail } from './use-detail-pane-rail'
 import { useElementHeight } from './use-element-height'
 import { useRequestActions } from './use-request-actions'
@@ -226,18 +226,12 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                   request={request}
                   viewerId={viewerId}
                 />
-                {request.permissions.can_view_activity ? (
-                  <Button
-                    aria-label="View request activity"
-                    onClick={history.openHistory}
-                    size="icon-sm"
-                    title="View request activity"
-                    type="button"
-                    variant="secondary"
-                  >
-                    <History />
-                  </Button>
-                ) : null}
+                <RequestMoreMenu
+                  actions={requestActions}
+                  disabled={requestActions.pending !== null || autoMerge.pending !== null}
+                  onViewActivity={history.openHistory}
+                  request={request}
+                />
               </>
             }
             request={request}

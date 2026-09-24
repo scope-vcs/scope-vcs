@@ -201,13 +201,18 @@ pub struct RequestAutoMergeMutation {
     pub event: RequestEvent,
 }
 
+/// Offers auto-merge only while the checks are still undecided. Clear checks merge
+/// directly, and failed checks would stop the authorization at once.
 pub fn request_auto_merge_can_enable(
     request: &Request,
     revision: Option<&RequestRevision>,
     current_intent: Option<&RequestAutoMergeIntent>,
+    readiness: RequestAutoMergeReadiness,
     actor_is_maintainer: bool,
 ) -> bool {
-    request_auto_merge_eligibility(request, revision, current_intent, actor_is_maintainer).is_ok()
+    readiness.waiting_reason().is_some()
+        && request_auto_merge_eligibility(request, revision, current_intent, actor_is_maintainer)
+            .is_ok()
 }
 
 pub fn request_auto_merge_can_cancel(
