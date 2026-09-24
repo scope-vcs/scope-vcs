@@ -67,7 +67,7 @@ function fixture() {
     },
   ];
   jobs.push({
-    id: 3, run_id: Number(sourceRunId), head_sha: sourceSha,
+    id: 3, run_id: Number(sourceRunId), run_attempt: 1, head_sha: sourceSha,
     name: "Deploy staging / Deploy and smoke staging", status: "completed", conclusion: "success",
   });
   const request = async (path) => {
@@ -130,6 +130,39 @@ test('a requested resume reuses staging that already passed', async () => {
   const backendOnly = await selectRelease({ sourceSha: mainSha, sourceRunId, resumeStaging: true, repository,
     loadPrepared: async () => state.prepared }, path => path.startsWith('/deployments?') ? [] : state.request(path));
   assert.equal(backendOnly.resume_staging, false);
+});
+
+test('a failed staging rerun overrides an earlier successful attempt', async () => {
+  const state = fixture();
+  state.jobs.push({
+    id: 4, run_id: Number(sourceRunId), run_attempt: 2, head_sha: sourceSha,
+    name: 'Deploy staging / Deploy and smoke staging', status: 'completed', conclusion: 'failure',
+    steps: [{ name: 'Deploy candidate once', conclusion: 'success' }],
+  });
+  await assert.rejects(validatePreparedDeployment(state.prepared, sourceRunId, state.request, repository), /staging/);
+  const result = await selectRelease({ sourceSha: mainSha, sourceRunId, resumeStaging: true, repository,
+    loadPrepared: async () => state.prepared }, path => path.startsWith('/deployments?') ? [] : state.request(path));
+  assert.equal(result.resume_staging, true);
+});
+
+test('a smoke resume permits corrected smoke inputs but not other staging inputs', async () => {
+  const select = (state) => selectRelease({ sourceSha: mainSha, sourceRunId, resumeStaging: true, repository,
+    loadPrepared: async () => state.prepared }, path => path.startsWith('/deployments?') ? [] : state.request(path));
+  for (const filename of ['web/smoke/resource-navigation.spec.mjs', 'dev/media-smoke.mjs', '.github/scripts/staging-git-smoke.sh']) {
+    const state = fixture();
+    state.jobs[2].conclusion = 'failure';
+    state.jobs[2].steps = [{ name: 'Deploy candidate once', conclusion: 'success' }];
+    state.comparison.files = [{ filename }];
+    assert.equal((await select(state)).resume_staging, true, filename);
+    const passed = fixture();
+    passed.comparison.files = [{ filename }];
+    await assert.rejects(select(passed), /Staging evidence is stale/, `${filename} after passed staging`);
+  }
+  const state = fixture();
+  state.jobs[2].conclusion = 'failure';
+  state.jobs[2].steps = [{ name: 'Deploy candidate once', conclusion: 'success' }];
+  state.comparison.files = [{ filename: 'crates/scope-postgres/src/migrations/m0062_new_table.rs' }];
+  await assert.rejects(select(state), /Staging evidence is stale/);
 });
 
 test('source reuse rejects changed staging inputs but permits receipt-only repair', async () => {
