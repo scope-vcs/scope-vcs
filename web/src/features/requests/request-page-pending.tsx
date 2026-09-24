@@ -1,4 +1,3 @@
-import { WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
 import {
   BlockSkeleton,
@@ -32,38 +31,36 @@ const PENDING_DIFF_LINES: { id: string; length: LineSkeletonLength }[] = [
 export function RequestDetailPagePending() {
   return (
     <PendingSurface label="Loading request">
-      <WorkbenchPane>
-        <header className="border-b border-border px-5 pb-4 pt-6 sm:px-6 lg:px-8">
-          <TextSkeleton length="xlong" size="heading" />
-          <div className="mt-3 flex items-center gap-3">
-            <BlockSkeleton className="h-5 w-16 rounded-full" />
-            <BlockSkeleton className="h-5 w-28 rounded-full" />
+      <header className="border-b border-border px-5 pb-4 pt-6 sm:px-6 lg:px-8">
+        <TextSkeleton length="xlong" size="heading" />
+        <div className="mt-3 flex items-center gap-3">
+          <BlockSkeleton className="h-5 w-16 rounded-full" />
+          <BlockSkeleton className="h-5 w-28 rounded-full" />
+          <TextSkeleton length="short" />
+        </div>
+      </header>
+      <div className="border-b border-border px-5 py-2.5 min-[701px]:hidden">
+        <BlockSkeleton className="h-8 w-8" />
+      </div>
+      <div className="min-h-0">
+        <div className="min-w-0">
+          <div className="px-5 py-5 lg:px-7">
             <TextSkeleton length="short" />
+            <div className="mt-4 space-y-2">
+              <LineSkeleton length="full" />
+              <LineSkeleton length="long" />
+              <LineSkeleton length="medium" />
+            </div>
           </div>
-        </header>
-        <div className="border-b border-border px-5 py-2.5 min-[701px]:hidden">
-          <BlockSkeleton className="h-8 w-8" />
+          <div className="flex h-11 gap-6 border-b border-border px-5 lg:px-7">
+            <BlockSkeleton className="h-7 w-24" />
+            <BlockSkeleton className="h-7 w-20" />
+            <BlockSkeleton className="h-7 w-20" />
+          </div>
+          <DiscussionSkeleton />
         </div>
-        <div className="min-h-0">
-          <div className="min-w-0">
-            <div className="px-5 py-5 lg:px-7">
-              <TextSkeleton length="short" />
-              <div className="mt-4 space-y-2">
-                <LineSkeleton length="full" />
-                <LineSkeleton length="long" />
-                <LineSkeleton length="medium" />
-              </div>
-            </div>
-            <div className="flex h-11 gap-6 border-b border-border px-5 lg:px-7">
-              <BlockSkeleton className="h-7 w-24" />
-              <BlockSkeleton className="h-7 w-20" />
-              <BlockSkeleton className="h-7 w-20" />
-            </div>
-            <DiscussionSkeleton />
-          </div>
 
-        </div>
-      </WorkbenchPane>
+      </div>
     </PendingSurface>
   )
 }

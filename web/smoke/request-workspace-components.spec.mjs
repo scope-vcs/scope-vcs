@@ -50,6 +50,13 @@ test('request rows exchange age and actions and restore the selected view across
   }
   await page.goto(new URL(requestsPath, base).href)
   await row.waitFor()
+  // The workspace shares the topbar's rail, so on wide screens the sidebar
+  // starts under the logo instead of at the window edge.
+  await page.setViewportSize({ width: 1965, height: 900 })
+  const railLeft = (selector) => page.locator(selector).evaluate((node) => node.getBoundingClientRect().left)
+  assert.equal(await railLeft('.request-workspace-shell'), await railLeft('.application-topbar > *'))
+  assert(await railLeft('.request-workspace-shell') > 0)
+  await page.setViewportSize({ width: 1280, height: 900 })
   const title = row.locator('[title]').first()
   assert.deepEqual(await title.evaluate((node) => ({
     nowrap: getComputedStyle(node).whiteSpace,

@@ -72,7 +72,7 @@ export function PageContent({
 
 /**
  * Same rail as `PageContent` but unpadded, for split-pane workbenches whose
- * panels manage their own edges (code, history, runs, diffs).
+ * panels manage their own edges (code, history, runs, requests, diffs).
  */
 export function WorkbenchPane({
   children,
