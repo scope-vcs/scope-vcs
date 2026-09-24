@@ -82,7 +82,7 @@ test('request rows exchange age and actions and restore the selected view across
   await page.mouse.move(700, 400)
   await waitOpacity(age, '1')
   await waitOpacity(actions, '0')
-  await page.getByRole('button', { name: 'Collapse requests sidebar' }).focus()
+  await page.getByRole('button', { name: 'Unpin requests sidebar' }).focus()
   await page.keyboard.press('Tab')
   assert.equal(await row.getByRole('link').evaluate((node) => node === document.activeElement), true)
   await waitOpacity(age, '0')
@@ -147,6 +147,65 @@ test('request rows exchange age and actions and restore the selected view across
   await page.evaluate(() => window.navigate('/adam/demo/requests'))
   await page.getByText('Select a request', { exact: true }).waitFor()
   await primary.getByRole('link', { name: 'Runs', exact: true }).click()
+  await requestsLink.click()
+  await page.getByText('Select a request', { exact: true }).waitFor()
+
+  // Unpinned, the sidebar is a rail of avatars centred 27px in. Opening widens
+  // the same list over the page, so the avatars stay exactly where they were.
+  const sidebar = page.locator('.request-workspace-sidebar')
+  const sidebarWidth = (width) => page.waitForFunction((value) =>
+    document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === value, width)
+  const avatars = () => page.locator('.request-workspace-needs-you .request-workspace-row-avatar').evaluateAll((nodes) =>
+    nodes.map((node) => node.getBoundingClientRect()).map(({ x, y, width }) => ({ x, y, width })))
+  const openRail = async () => {
+    const bounds = await sidebar.boundingBox()
+    await page.mouse.click(bounds.x + 27, bounds.y + bounds.height - 40)
+    await sidebarWidth(360)
+    assert.equal(await sidebar.getAttribute('data-state'), 'open')
+  }
+  await page.getByRole('button', { name: 'Unpin requests sidebar' }).click()
+  await sidebarWidth(54)
+  assert.equal(await sidebar.getAttribute('data-state'), 'closed')
+  const railX = (await sidebar.boundingBox()).x
+  const closedAvatars = await avatars()
+  assert.deepEqual(closedAvatars.map(({ x, width }) => x + width / 2 - railX), [27, 27, 27])
+  // An avatar names its request beside the rail, level with the avatar.
+  await page.locator('[data-request-id="request-2"] .request-workspace-row-avatar').hover()
+  const hint = page.locator('.request-workspace-rail-hint')
+  assert.match(await hint.textContent(), /^Request without available actions/)
+  const hintBox = await hint.boundingBox()
+  assert(hintBox.x > railX + 54)
+  assert(Math.abs(hintBox.y + hintBox.height / 2 - (closedAvatars[2].y + closedAvatars[2].width / 2)) < 1)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-closed.png` })
+  }
+  await page.mouse.move(700, 400)
+  await hint.waitFor({ state: 'detached' })
+  await page.locator('[data-request-id="request-1"] .request-workspace-row-avatar').click()
+  await page.waitForURL(/\/request-1$/)
+  assert.equal(await sidebar.getAttribute('data-state'), 'closed')
+  await openRail()
+  assert.deepEqual(await avatars(), closedAvatars)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-open.png` })
+  }
+  await page.keyboard.press('Escape')
+  await sidebarWidth(54)
+  await openRail()
+  await page.mouse.click(900, 500)
+  await sidebarWidth(54)
+  await openRail()
+  await row.getByRole('link').click()
+  await page.waitForURL(/\/request-0$/)
+  await sidebarWidth(54)
+  await page.keyboard.press('/')
+  await sidebarWidth(360)
+  assert.equal(await page.getByRole('searchbox').evaluate((node) => node === document.activeElement), true)
+  await page.keyboard.press('Escape')
+  await sidebarWidth(54)
+  await page.keyboard.press('[')
+  await page.getByRole('button', { name: 'Unpin requests sidebar' }).waitFor()
+  assert.equal(await sidebar.getAttribute('data-state'), 'pinned')
   await requestsLink.click()
   await page.getByText('Select a request', { exact: true }).waitFor()
 

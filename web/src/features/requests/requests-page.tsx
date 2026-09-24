@@ -59,10 +59,6 @@ function RequestWorkspaceContent({
     return () => document.documentElement.removeAttribute('data-focus')
   }, [focus])
   const toggleFocus = useCallback(() => setFocus((value) => !value), [])
-  const changeCollapsed = useCallback((value: boolean) => {
-    setCollapsed(value)
-    if (!value) setFocus(false)
-  }, [])
   const load = useCallback<LoadRequestQueuePage>(
     (section, cursor, search, signal) =>
       loadRequestQueuePage({
@@ -93,6 +89,13 @@ function RequestWorkspaceContent({
     setDraft(value)
     if (identity && value.trim() !== queue.value?.requestedQuery)
       void searchRequestQueue(identity, value, load)
+  }
+
+  function changeCollapsed(value: boolean) {
+    setCollapsed(value)
+    if (!value) setFocus(false)
+    // The rail draws the queue, so collapsing drops any search.
+    else if (query) search('')
   }
 
   return (
