@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from archive import decrypt, encrypt
+from capture import failure_reason
 from common import Incomplete, canonical, digest, keys, object_path, write_json
 from objects import copy_objects, inventory
 from publish import publish, upload_archive
@@ -93,6 +94,10 @@ class RecoveryTests(unittest.TestCase):
     def testExactEncryptedInventoryAndPlaintextCanBeRecovered(self):
         _, stored, refs = self.fixture()
         self.assertEqual(verify(self.root, stored, refs, ESCROW)["verified_references"], 1)
+
+    def testFailureReasonNamesOnlyFixedMessages(self):
+        self.assertEqual(failure_reason(Incomplete("source object was truncated")), "source object was truncated")
+        self.assertEqual(failure_reason(RuntimeError("https://key:secret@bucket/private-object")), "RuntimeError")
 
     def testMissingReferencedObjectFailsEvenWhenInventoriesMatch(self):
         _, stored, refs = self.fixture()
