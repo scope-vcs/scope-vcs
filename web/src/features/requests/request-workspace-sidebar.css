@@ -84,7 +84,7 @@
     color: transparent;
   }
 
-  .request-workspace-sidebar[data-state="closed"] .request-workspace-pin,
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-toggle,
   .request-workspace-sidebar[data-state="closed"] .request-workspace-needs-you > h2 {
     visibility: hidden;
   }

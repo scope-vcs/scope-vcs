@@ -82,7 +82,7 @@ test('request rows exchange age and actions and restore the selected view across
   await page.mouse.move(700, 400)
   await waitOpacity(age, '1')
   await waitOpacity(actions, '0')
-  await page.getByRole('button', { name: 'Unpin requests sidebar' }).focus()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).focus()
   await page.keyboard.press('Tab')
   assert.equal(await row.getByRole('link').evaluate((node) => node === document.activeElement), true)
   await waitOpacity(age, '0')
@@ -150,7 +150,7 @@ test('request rows exchange age and actions and restore the selected view across
   await requestsLink.click()
   await page.getByText('Select a request', { exact: true }).waitFor()
 
-  // Unpinned, the sidebar is a rail of avatars centred 27px in. Opening widens
+  // Collapsed, the sidebar is a rail of avatars centred 27px in. Opening widens
   // the same list over the page, so the avatars stay exactly where they were.
   const sidebar = page.locator('.request-workspace-sidebar')
   const sidebarWidth = (width) => page.waitForFunction((value) =>
@@ -163,7 +163,7 @@ test('request rows exchange age and actions and restore the selected view across
     await sidebarWidth(360)
     assert.equal(await sidebar.getAttribute('data-state'), 'open')
   }
-  await page.getByRole('button', { name: 'Unpin requests sidebar' }).click()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
   await sidebarWidth(54)
   assert.equal(await sidebar.getAttribute('data-state'), 'closed')
   const railX = (await sidebar.boundingBox()).x
@@ -204,7 +204,7 @@ test('request rows exchange age and actions and restore the selected view across
   await page.keyboard.press('Escape')
   await sidebarWidth(54)
   await page.keyboard.press('[')
-  await page.getByRole('button', { name: 'Unpin requests sidebar' }).waitFor()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).waitFor()
   assert.equal(await sidebar.getAttribute('data-state'), 'pinned')
   await requestsLink.click()
   await page.getByText('Select a request', { exact: true }).waitFor()

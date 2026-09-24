@@ -7,7 +7,7 @@ import type {
 import { NavigationSearch } from '@/components/navigation-search'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { ChevronRight, Pin } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Pin } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import {
   useCallback,
@@ -246,17 +246,17 @@ export function RequestWorkspaceSidebar({
             status={loading && searching ? 'Searching requests' : undefined}
             value={query}
           />
+          {/* Pinned, this collapses to the rail; opened from the rail, it pins. */}
           <Button
-            aria-label={state === 'pinned' ? 'Unpin requests sidebar' : 'Pin requests sidebar'}
-            aria-pressed={state === 'pinned'}
-            className="request-workspace-pin text-muted-foreground aria-pressed:text-foreground"
+            aria-label={state === 'pinned' ? 'Collapse requests sidebar' : 'Pin requests sidebar'}
+            className="request-workspace-sidebar-toggle text-muted-foreground"
             onClick={togglePinned}
             size="icon-sm"
-            title={state === 'pinned' ? 'Unpin requests sidebar' : 'Keep the requests sidebar open'}
+            title={state === 'pinned' ? 'Collapse requests sidebar' : 'Keep the requests sidebar open'}
             type="button"
             variant="ghost"
           >
-            <Pin aria-hidden="true" className={cn(state === 'pinned' && 'fill-current')} />
+            {state === 'pinned' ? <ChevronLeft aria-hidden="true" /> : <Pin aria-hidden="true" />}
           </Button>
         </div>
         {actionError && (

@@ -73,7 +73,7 @@ test('request queue search is keyboard accessible and mobile rows do not overflo
   )
 })
 
-test('requests sidebar resizes, unpins, and pins again by dragging or keyboard', async () => {
+test('requests sidebar resizes, collapses, and pins again by dragging or keyboard', async () => {
   await withPage(`${requestRepoPath}/requests/req_demo_ready`, async (page) => {
     const sidebar = page.getByRole('complementary', { name: 'Requests workspace' })
     const separator = page.getByRole('separator', { name: 'Requests sidebar width' })
@@ -93,7 +93,7 @@ test('requests sidebar resizes, unpins, and pins again by dragging or keyboard',
     const originalWidth = await width()
     await dragBy(-90)
     assert.equal(await width(), originalWidth - 90)
-    await sidebar.getByRole('button', { name: 'Unpin requests sidebar' }).click()
+    await sidebar.getByRole('button', { name: 'Collapse requests sidebar' }).click()
     assert.equal(await separator.getAttribute('aria-valuetext'), 'Collapsed')
     // The rail opens over the page at the pinned width, and pinning keeps it.
     await page.keyboard.press('/')
