@@ -72,21 +72,30 @@
     background: color-mix(in srgb, var(--foreground) 3%, var(--background));
   }
 
-  /* Closed: the search box shrinks to its icon and rows to their avatars. */
-  .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-tools input {
-    border-color: transparent;
-    background: transparent;
-    color: transparent;
-    cursor: pointer;
-  }
-
-  .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-tools input::placeholder {
-    color: transparent;
-  }
-
-  .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-toggle,
-  .request-workspace-sidebar[data-state="closed"] .request-workspace-needs-you > h2 {
+  /* Closed: the caret takes the search box's place, the needs-you header
+   * shrinks to its count, and rows shrink to their avatars. */
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-tools > search {
     visibility: hidden;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-toggle {
+    position: absolute;
+    left: 11px;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-needs-you > h2 {
+    width: 54px;
+    padding-inline: 0;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-needs-you > h2 > span:first-child {
+    display: none;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-needs-you > h2 > span:last-child {
+    width: 100%;
+    margin: 0;
+    text-align: center;
   }
 
   .request-workspace-sidebar[data-state="closed"] .request-workspace-open,
@@ -170,6 +179,7 @@
 }
 
 .request-workspace-sidebar-tools {
+  position: relative;
   display: flex;
   flex: none;
   align-items: center;

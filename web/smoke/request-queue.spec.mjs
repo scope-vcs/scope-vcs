@@ -95,9 +95,7 @@ test('requests sidebar resizes, collapses, and pins again by dragging or keyboar
     assert.equal(await width(), originalWidth - 90)
     await sidebar.getByRole('button', { name: 'Collapse requests sidebar' }).click()
     assert.equal(await separator.getAttribute('aria-valuetext'), 'Collapsed')
-    // The rail opens over the page at the pinned width, and pinning keeps it.
-    await page.keyboard.press('/')
-    await sidebar.getByRole('button', { name: 'Pin requests sidebar' }).click()
+    await sidebar.getByRole('button', { name: 'Expand requests sidebar' }).click()
     assert.notEqual(await separator.getAttribute('aria-valuetext'), 'Collapsed')
     assert.equal(await width(), originalWidth - 90)
     await dragBy(-180)

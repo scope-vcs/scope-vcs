@@ -7,7 +7,7 @@ import type {
 import { NavigationSearch } from '@/components/navigation-search'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { ChevronLeft, ChevronRight, Pin } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import {
   useCallback,
@@ -25,6 +25,7 @@ import { RequestWorkspaceList, type RequestWorkspaceListProps } from './request-
 import {
   REQUEST_ATTENTION_GROUP_LABELS,
   REQUEST_ATTENTION_GROUP_ORDER,
+  requestAgeLabel,
   requestAttentionGroup,
   requestAttentionLabel,
   type RequestAttentionGroup,
@@ -89,7 +90,7 @@ export function RequestWorkspaceSidebar({
 }) {
   const aside = useRef<HTMLElement>(null)
   const [open, setOpen] = useState(false)
-  const [hint, setHint] = useState<{ id: string; left: number; top: number } | null>(null)
+  const [hint, setHint] = useState<{ id: string; left: number; top: number; now: number } | null>(null)
   const state = collapsed ? (open ? 'open' : 'closed') : 'pinned'
   const openRail = useCallback(() => setOpen(true), [])
   const togglePinned = useCallback(() => {
@@ -130,13 +131,13 @@ export function RequestWorkspaceSidebar({
       document.removeEventListener('keydown', escape, true)
     }
   }, [close, state])
-  // Avatars on the closed rail navigate; anywhere else on it opens the rail.
-  // Picking a request from the open rail closes it.
+  // Avatars and buttons on the closed rail do their own thing; anywhere else
+  // on it opens the rail. Picking a request from the open rail closes it.
   function click(event: MouseEvent) {
-    const link = (event.target as Element).closest('a')
+    const target = event.target as Element
     setHint(null)
-    if (state === 'closed' && !link) setOpen(true)
-    else if (state === 'open' && link) close()
+    if (state === 'closed' && !target.closest('a, button')) setOpen(true)
+    else if (state === 'open' && target.closest('a')) close()
   }
   // The closed rail shows only avatars, so hovering or focusing one names its
   // request beside the rail.
@@ -145,7 +146,12 @@ export function RequestWorkspaceSidebar({
     const avatar = row?.querySelector('.request-workspace-row-avatar')
     if (state !== 'closed' || !row?.dataset.requestId || !avatar) return setHint(null)
     const { right, top, height } = avatar.getBoundingClientRect()
-    setHint({ id: row.dataset.requestId, left: right + 14, top: top + height / 2 })
+    setHint({
+      id: row.dataset.requestId,
+      left: right + 14,
+      top: top + height / 2,
+      now: Math.floor(Date.now() / 1000),
+    })
   }
 
   const searching = query.trim().length > 0
@@ -213,10 +219,7 @@ export function RequestWorkspaceSidebar({
       data-state={state}
       onBlur={() => setHint(null)}
       onClick={click}
-      onFocus={(event) => {
-        if (state === 'closed' && event.target instanceof HTMLInputElement) setOpen(true)
-        else showHint(event)
-      }}
+      onFocus={showHint}
       onPointerLeave={() => setHint(null)}
       onPointerOver={showHint}
       ref={aside}
@@ -231,7 +234,10 @@ export function RequestWorkspaceSidebar({
             style={{ left: hint.left, top: hint.top }}
           >
             <span className="block font-medium">{hinted.item.request.title}</span>
-            <span className="block text-muted-foreground">{requestAttentionLabel(hinted.item, true)}</span>
+            <span className="block text-muted-foreground">
+              {requestAttentionLabel(hinted.item, true)} ·{' '}
+              {requestAgeLabel(hinted.item.attention_at_unix, hint.now, true)}
+            </span>
           </div>,
           document.body,
         )}
@@ -246,17 +252,18 @@ export function RequestWorkspaceSidebar({
             status={loading && searching ? 'Searching requests' : undefined}
             value={query}
           />
-          {/* Pinned, this collapses to the rail; opened from the rail, it pins. */}
+          {/* Pinned, the caret collapses to the rail. Otherwise it expands the
+              sidebar, and the closed rail shows it in place of the search box. */}
           <Button
-            aria-label={state === 'pinned' ? 'Collapse requests sidebar' : 'Pin requests sidebar'}
+            aria-label={state === 'pinned' ? 'Collapse requests sidebar' : 'Expand requests sidebar'}
             className="request-workspace-sidebar-toggle text-muted-foreground"
             onClick={togglePinned}
             size="icon-sm"
-            title={state === 'pinned' ? 'Collapse requests sidebar' : 'Keep the requests sidebar open'}
+            title={state === 'pinned' ? 'Collapse requests sidebar' : 'Expand requests sidebar'}
             type="button"
             variant="ghost"
           >
-            {state === 'pinned' ? <ChevronLeft aria-hidden="true" /> : <Pin aria-hidden="true" />}
+            {state === 'pinned' ? <ChevronLeft aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
           </Button>
         </div>
         {actionError && (

@@ -169,6 +169,9 @@ test('request rows exchange age and actions and restore the selected view across
   const railX = (await sidebar.boundingBox()).x
   const closedAvatars = await avatars()
   assert.deepEqual(closedAvatars.map(({ x, width }) => x + width / 2 - railX), [27, 27, 27])
+  // The caret that expands the sidebar sits on the rail where search was.
+  const expand = await page.getByRole('button', { name: 'Expand requests sidebar' }).boundingBox()
+  assert.equal(expand.x + expand.width / 2 - railX, 27)
   // An avatar names its request beside the rail, level with the avatar.
   await page.locator('[data-request-id="request-2"] .request-workspace-row-avatar').hover()
   const hint = page.locator('.request-workspace-rail-hint')
@@ -202,6 +205,11 @@ test('request rows exchange age and actions and restore the selected view across
   await sidebarWidth(360)
   assert.equal(await page.getByRole('searchbox').evaluate((node) => node === document.activeElement), true)
   await page.keyboard.press('Escape')
+  await sidebarWidth(54)
+  await page.getByRole('button', { name: 'Expand requests sidebar' }).click()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).waitFor()
+  assert.equal(await sidebar.getAttribute('data-state'), 'pinned')
+  await page.keyboard.press('[')
   await sidebarWidth(54)
   await page.keyboard.press('[')
   await page.getByRole('button', { name: 'Collapse requests sidebar' }).waitFor()
