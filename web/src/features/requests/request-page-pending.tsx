@@ -9,10 +9,11 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
-import { useRef, type ReactNode } from 'react'
+import { useRef } from 'react'
 import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'
 import { RequestChecksPending } from './request-checks-pending'
-import { RequestDetailsSkeleton } from './request-details-layout'
+import { PendingDetailsRail, RequestDetailsSkeleton } from './request-details-layout'
+import { ChildRoutesPending } from '@/components/child-routes-pending'
 import { RequestViewTabs } from './request-view-tabs'
 import { useDetailPaneRail } from './use-detail-pane-rail'
 import { DiffSkeleton } from '@/features/review/diff-skeleton'
@@ -30,9 +31,9 @@ const PENDING_CHANGES: { id: string; length: TextSkeletonLength }[] = [
 ]
 
 // Mirrors RequestDetailPage: the same header, checks row, tabs, and details
-// rail when the pane is wide enough for one. The tab's own pending state, when
-// its route has one, fills the document.
-export function RequestDetailPagePending({ children }: { children?: ReactNode }) {
+// rail when the pane is wide enough for one. The selected tab's route supplies
+// the document's pending state, so Changes and Details keep their own shape.
+export function RequestDetailPagePending() {
   const params = useParams({ from: '/$owner/$repo/requests/$requestId' })
   const { isSignedIn } = useAuth()
   const paneRef = useRef<HTMLDivElement>(null)
@@ -71,7 +72,14 @@ export function RequestDetailPagePending({ children }: { children?: ReactNode })
               <TextSkeleton length="xlong" />
             </section>
             <RequestViewTabs actionsRef={() => {}} params={params} rail={rail} />
-            <div className="min-w-0">{children ?? <DiscussionSkeleton />}</div>
+            <div className="min-w-0">
+              <PendingDetailsRail value={rail}>
+                <ChildRoutesPending
+                  below="/$owner/$repo/requests/$requestId"
+                  fallback={<DiscussionSkeleton />}
+                />
+              </PendingDetailsRail>
+            </div>
           </div>
           {rail ? (
             <aside className="min-w-0 border-l border-border">

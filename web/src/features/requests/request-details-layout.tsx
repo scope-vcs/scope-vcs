@@ -1,5 +1,5 @@
 import { TextSkeleton } from '@/components/ui/skeleton'
-import type { ReactNode } from 'react'
+import { createContext, use, type ReactNode } from 'react'
 
 export function DetailsSection({
   children,
@@ -25,10 +25,18 @@ export function DetailsValue({ label, value }: { label: string; value: ReactNode
   )
 }
 
+/** Whether the pending request page shows details in its rail. */
+export const PendingDetailsRail = createContext(false)
+
+/** The Details tab while its request loads. Like the loaded tab, it stands down while the rail shows details. */
+export function RequestDetailsTabPending() {
+  return use(PendingDetailsRail) ? null : <RequestDetailsSkeleton tab />
+}
+
 /** RequestDetails before the request loads: its fixed sections and labels. */
-export function RequestDetailsSkeleton() {
+export function RequestDetailsSkeleton({ tab = false }: { tab?: boolean }) {
   return (
-    <div className="@container min-w-0">
+    <div className={tab ? '@container min-w-0 border-t border-border' : '@container min-w-0'}>
       <section className="min-w-0 px-5 py-6 @md:px-6 @3xl:px-8">
         <div className="grid min-w-0 gap-x-12 gap-y-8 @3xl:grid-cols-2">
           <DetailsSection title="lifecycle">
