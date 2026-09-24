@@ -270,7 +270,9 @@ async fn private_request_full_projection_snapshot_survives_later_git_main() {
                 .mutate_repository_for_tests("owner/repo", move |repo| {
                     repo.record.change_version = 1;
                     repo.git_head = Some(head);
-                    repo.git_pack_spans = vec![accepted.stored.pack_span];
+                    // The complete request snapshot must not read unrelated
+                    // accepted Git history, even when that history cannot load.
+                    repo.git_pack_spans = Vec::new();
                 })
                 .await
                 .unwrap();

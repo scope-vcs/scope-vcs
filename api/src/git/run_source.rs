@@ -314,12 +314,39 @@ async fn build_request_source_bundle(
     max_bytes: usize,
 ) -> Result<(), ApiError> {
     operation::supervise(async move {
-        let (main_head, spans) = state
-            .metadata
-            .repositories()
-            .repository_content_source(&incarnation)
-            .await?;
-        let revision = if let Some(main_head) = main_head {
+        let bytes = source_blob_bytes(state.object_store.as_ref(), &snapshot, max_bytes).await?;
+        let owner = operation::RunSourceOperation::new(&state)?;
+        let cache_root = state.repository_engine.cache_root().to_path_buf();
+        let (needs_base, bytes) = operation::spawn_blocking(&owner, move || {
+            let temporary = TemporarySourceDirectory::new(&cache_root)?;
+            let repo = temporary.path().join("inspect.git");
+            run_git(
+                None,
+                &["init", "--bare", repo.to_string_lossy().as_ref()],
+                "initializing request snapshot inspection",
+            )?;
+            let bundle = temporary.path().join("request.bundle");
+            write_private_file(&bundle, &bytes)?;
+            let result = run_git_output(
+                Some(&repo),
+                &["bundle", "verify", bundle.to_string_lossy().as_ref()],
+                "checking request snapshot prerequisites",
+            )?;
+            Ok::<_, ApiError>((!result.status.success(), bytes))
+        })
+        .await
+        .map_err(|error| {
+            ApiError::internal_message(format!("request snapshot inspection task failed: {error}"))
+        })??;
+        let revision = if needs_base {
+            let (main_head, spans) = state
+                .metadata
+                .repositories()
+                .repository_content_source(&incarnation)
+                .await?;
+            let main_head = main_head.ok_or_else(|| {
+                ApiError::infrastructure_unavailable("request snapshot needs an unavailable base")
+            })?;
             Some(
                 state
                     .repository_engine
@@ -327,12 +354,8 @@ async fn build_request_source_bundle(
                     .await?,
             )
         } else {
-            // Before the first Git push, a private request starts from the
-            // private projection. Its snapshot already has complete history.
             None
         };
-        let bytes = source_blob_bytes(state.object_store.as_ref(), &snapshot, max_bytes).await?;
-        let owner = operation::RunSourceOperation::new(&state)?;
         let bundle = materialize_owned_git_head_bundle(
             &state,
             BundleView::Request {
