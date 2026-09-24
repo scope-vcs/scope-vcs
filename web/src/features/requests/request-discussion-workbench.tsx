@@ -97,6 +97,7 @@ export function RequestDiscussionWorkbench({
       {store.collection.nextCursor ? (
         <div className="border-b border-border px-5 py-4 text-center lg:px-7">
           <Button
+            aria-busy={store.loadingMore}
             disabled={store.loadingMore}
             onClick={() => void store.loadMore()}
             size="sm"

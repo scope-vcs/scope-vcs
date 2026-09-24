@@ -73,6 +73,7 @@ export function RequestWorkspaceList({
       {hasMore && (
         <Button
           className="mx-auto mt-2 mb-3"
+          aria-busy={loading}
           disabled={loading}
           onClick={onLoadMore}
           size="sm"

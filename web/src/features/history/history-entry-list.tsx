@@ -93,6 +93,7 @@ export function HistoryEntryList({
       {showLoadOlder ? (
         <div className="flex flex-col items-center gap-2 px-5 py-4">
           <Button
+            aria-busy={loadingOlder}
             disabled={loadingOlder}
             onClick={onLoadOlder}
             size="sm"

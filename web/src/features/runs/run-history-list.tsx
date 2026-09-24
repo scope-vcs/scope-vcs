@@ -50,7 +50,7 @@ export function RunHistoryList({
       {showLoadMore || runs.length > 0 ? (
         <div className="flex items-center justify-center gap-3 pt-5">
           {showLoadMore ? (
-            <Button disabled={loadingMore} onClick={loadMore} variant="secondary">
+            <Button aria-busy={loadingMore} disabled={loadingMore} onClick={loadMore} variant="secondary">
               {loadingMore ? <LoaderCircle className="animate-spin" /> : null}
               Load older runs
             </Button>
