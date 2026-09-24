@@ -135,6 +135,9 @@ test('a requested resume reuses staging that already passed', async () => {
 test('source reuse rejects changed staging inputs but permits receipt-only repair', async () => {
   for (const filename of [
     '.github/deployment-services.json',
+    'dev/tool-versions.json',
+    'dev/check-git-version.mjs',
+    'dev/media-smoke.mjs',
     '.github/scripts/staging-resume.mjs',
     '.github/scripts/stop-staging-writers.sh',
     '.github/scripts/verify-staging-target.mjs',

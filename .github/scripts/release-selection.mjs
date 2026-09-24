@@ -23,6 +23,9 @@ export function assertReusableStagingSource(comparison) {
   }
   const stagingInput = (filename) => typeof filename === "string" && (
     filename === ".github/deployment-services.json"
+    || filename === "dev/tool-versions.json"
+    || filename === "dev/check-git-version.mjs"
+    || filename === "dev/media-smoke.mjs"
     || /^\.github\/workflows\/(release|validate|prepare-release|deploy-staging|deploy-backend|deploy-web)\.yml$/.test(filename)
     || /^\.github\/scripts\/(staging|railway|prepare-railway|extract-railway|extract-staging-web-manifest|deploy-|stop-staging|verify-staging|rehearse-release|[^/]*smoke|recovery-preparation-trust|release-selection)/.test(filename)
     || filename.startsWith("crates/scope-postgres/src/migrations/")
