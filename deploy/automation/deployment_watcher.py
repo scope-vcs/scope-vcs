@@ -89,6 +89,13 @@ def update_runs(state: dict, listed: list[dict]) -> dict[str, dict]:
             record.update(attempt=run["run_attempt"], status="waiting",
                           attempt_started_at=run.get("run_started_at") or run["created_at"])
             record.pop("thread_id", None)
+            # A retried correction no longer proves the releases it recovered, even
+            # after their investigation closed; reopen them alongside the retry.
+            for recovered in state["runs"].values():
+                if recovered["status"] == "recovered" and recovered.get("corrected_by") == run["id"]:
+                    recovered["status"] = "waiting"
+                    for field in ("corrected_by", "verified_at", "thread_id"):
+                        recovered.pop(field, None)
         if record["status"] in {"verified", "no_change", "recovered"}:
             continue
         if run["status"] == "completed":
@@ -202,6 +209,11 @@ def read_corrections(state: dict, info: dict) -> str:
 
 def new_incident(state: dict, record: dict) -> dict:
     incident_id = f"scope-release-{record['run_id']}-{record['attempt']}"
+    # A release reopened after its investigation closed must not reuse that thread.
+    suffix = 2
+    while incident_id in state["threads"]:
+        incident_id = f"scope-release-{record['run_id']}-{record['attempt']}-{suffix}"
+        suffix += 1
     info = {"incident_id": incident_id, "thread_id": str(uuid.uuid5(uuid.NAMESPACE_URL, incident_id)),
             "provider": "codex", "created_at": stamp(), "dispatch_at": stamp(),
             "recoveries": 0, "generation": 0, "status": "monitoring", "owns_agent": False,

@@ -253,6 +253,31 @@ class WatcherTests(unittest.TestCase):
         watcher.poll()
         self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
 
+    def test_failed_retry_of_closed_correction_reopens_recovered_original(self):
+        self.runs = [release(status="completed", conclusion="failure")]
+        watcher.poll()
+        info = next(iter(self.saved()["threads"].values()))
+        path = watcher.receipt_path(info)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"corrections": {"123": 456}, "blocker": False}))
+        self.by_id[456] = release(456, "completed", "success", "2026-09-23T00:02:00Z")
+        self.mocks["jobs"].return_value = [{"name": "Verify and record release", "conclusion": "success"}]
+        self.client.thread.return_value = {"latestTurn": {"state": "completed", "startedAt": NOW},
+                                           "session": {"status": "idle"}, "messages": [], "activities": []}
+        watcher.poll()
+        self.assertEqual(self.saved()["threads"][info["incident_id"]]["status"], "verified")
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "recovered")
+        retry = release(456, "completed", "failure", "2026-09-23T00:02:00Z", attempt=2)
+        self.runs = [release(status="completed", conclusion="failure"), retry]
+        self.by_id[456] = retry
+        self.mocks["jobs"].return_value = []
+        watcher.poll()
+        state = self.saved()
+        self.assertEqual(state["runs"]["123"]["status"], "monitoring")
+        self.assertNotIn("corrected_by", state["runs"]["123"])
+        self.assertEqual(state["runs"]["123"]["incident_id"], state["runs"]["456"]["incident_id"])
+        self.assertNotEqual(state["runs"]["123"]["incident_id"], info["incident_id"])
+
     def test_failed_correction_cannot_close_original(self):
         self.runs = [release(status="completed", conclusion="failure")]
         watcher.poll()
