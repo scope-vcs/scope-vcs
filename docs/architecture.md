@@ -254,6 +254,15 @@ from tests and support code.
 
 The guardrail is enforced in CI and by `./dev/check guardrails`.
 
+## Workflow timeouts
+
+`.github/scripts/check-workflow-timeouts.py` requires `timeout-minutes` on every
+GitHub Actions job that runs steps. GitHub's default is 360 minutes, so a hung
+process otherwise holds a runner for six hours. Values are about twice the
+observed job duration, rounded up to five minutes, so a cache miss passes and a
+hang fails. Jobs that call a reusable workflow are exempt; the called jobs carry
+their own timeouts. The policy gate runs the check.
+
 ## Documentation index
 
 - `README.md` is the product and repository entrypoint.
