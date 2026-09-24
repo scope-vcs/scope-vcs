@@ -42,6 +42,7 @@ import type { RequestActivityPage } from './request-discussion-types'
 import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from './request-discussion-api'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
+import { withCurrentMergeability } from './request-lifecycle-model'
 import { RequestMoreMenu } from './request-more-menu'
 import { useDetailPaneRail } from './use-detail-pane-rail'
 import { useElementHeight } from './use-element-height'
@@ -145,6 +146,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     identity: requestAutoMergeIdentity(scope, request.id),
     load: loadAutoMerge,
   })
+  const liveRequest = withCurrentMergeability(request, checks.checks)
   const requestActions = useRequestActions(performAction)
   const workspace = useRequestWorkspace()
   const [descriptionOverride, setDescriptionOverride] = useState<{
@@ -223,7 +225,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                   autoMerge={autoMerge}
                   className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
                   ref={setLifecycleBar}
-                  request={request}
+                  request={liveRequest}
                   viewerId={viewerId}
                 />
                 <RequestMoreMenu
@@ -234,7 +236,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 />
               </>
             }
-            request={request}
+            request={liveRequest}
           />
           <div className="request-detail-actions px-5 py-2.5 min-[701px]:hidden">
             <Button asChild size="icon-sm" variant="secondary">

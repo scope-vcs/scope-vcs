@@ -1,7 +1,22 @@
 import type {
   RequestAutoMergeResponse,
+  RequestChecksResponse,
   RequestSummaryResponse,
 } from '@/api/types.generated'
+
+/**
+ * Run changes refresh a request's checks but not its summary. While the request
+ * stays open on the same head, the checks carry its current mergeability.
+ */
+export function withCurrentMergeability(
+  request: RequestSummaryResponse,
+  checks: RequestChecksResponse | null,
+): RequestSummaryResponse {
+  const current = checks?.mergeability
+  return request.state === 'Open' && current?.request_head_oid === request.head_oid
+    ? { ...request, mergeability: current }
+    : request
+}
 
 export function canMergeRequest(request: RequestSummaryResponse) {
   return request.permissions.can_merge && request.mergeability.status === 'Ready'
