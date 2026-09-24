@@ -8,7 +8,7 @@ caller's working directory.
 | --- | --- |
 | `backend` | Workspace formatting, dependency advisories, tests, API test support, local development helpers, Clippy |
 | `cli` | Standalone formatting, dependency advisories, tests, distribution selector, Clippy |
-| `cli-bundle` | Host release binaries, packaged analyzer runtime, native installer check |
+| `cli-bundle` | Host release binaries, packaged analyzer runtime, archive size cap, native installer check |
 | `web` | Tests, types, observer boundary, React health, structure, build |
 | `contract` | Generated API TypeScript and validator comparison, owned by the backend gate |
 | `policy` | License inventory freshness, complete-tree source size, Rust boundaries, toolchain pins, workflow job timeouts, gate inventory |

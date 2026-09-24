@@ -100,11 +100,13 @@ jobs:
         with:
           version: 11.1.0
 
+      # The pnpm store only exists after the web install, so a CLI-only run
+      # must not ask setup-node to cache it or its post step fails the job.
       - name: Install Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ inputs.run_web && 'pnpm' || '' }}
           cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install web dependencies
