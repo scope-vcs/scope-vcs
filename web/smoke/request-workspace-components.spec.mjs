@@ -150,6 +150,97 @@ test('request rows exchange age and actions and restore the selected view across
   await requestsLink.click()
   await page.getByText('Select a request', { exact: true }).waitFor()
 
+  // Collapsed, the sidebar is a rail of avatars centred 27px in. Opening widens
+  // the same list over the page, so the avatars stay exactly where they were.
+  const sidebar = page.locator('.request-workspace-sidebar')
+  const sidebarWidth = (width) => page.waitForFunction((value) =>
+    document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === value, width)
+  // The rail keeps its open layout while it slides shut and closes after.
+  const railClosed = () => page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
+  const avatars = () => page.locator('.request-workspace-needs-you .request-workspace-row-avatar').evaluateAll((nodes) =>
+    nodes.map((node) => node.getBoundingClientRect()).map(({ x, y, width }) => ({ x, y, width })))
+  const openRail = async () => {
+    const bounds = await sidebar.boundingBox()
+    await page.mouse.click(bounds.x + 27, bounds.y + bounds.height - 40)
+    await sidebarWidth(360)
+    assert.equal(await sidebar.getAttribute('data-state'), 'open')
+  }
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
+  await sidebarWidth(54)
+  await railClosed()
+  const railX = (await sidebar.boundingBox()).x
+  const closedAvatars = await avatars()
+  assert.deepEqual(closedAvatars.map(({ x, width }) => x + width / 2 - railX), [27, 27, 27])
+  // The caret that expands the sidebar sits on the rail where search was.
+  const expand = await page.getByRole('button', { name: 'Expand requests sidebar' }).boundingBox()
+  assert.equal(expand.x + expand.width / 2 - railX, 27)
+  // An avatar names its request beside the rail, level with the avatar.
+  await page.locator('[data-request-id="request-2"] .request-workspace-row-avatar').hover()
+  const hint = page.locator('.request-workspace-rail-hint')
+  assert.match(await hint.textContent(), /^Request without available actions/)
+  const hintBox = await hint.boundingBox()
+  assert(hintBox.x > railX + 54)
+  assert(Math.abs(hintBox.y + hintBox.height / 2 - (closedAvatars[2].y + closedAvatars[2].width / 2)) < 1)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-closed.png` })
+  }
+  await page.mouse.move(700, 400)
+  await hint.waitFor({ state: 'detached' })
+  await page.locator('[data-request-id="request-1"] .request-workspace-row-avatar').click()
+  await page.waitForURL(/\/request-1$/)
+  assert.equal(await sidebar.getAttribute('data-state'), 'closed')
+  await openRail()
+  assert.deepEqual(await avatars(), closedAvatars)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-open.png` })
+  }
+  // Slowed down, the closing rail still shows its list over the page.
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Animation.enable')
+  await cdp.send('Animation.setPlaybackRate', { playbackRate: 0.05 })
+  await page.keyboard.press('Escape')
+  assert.equal(await sidebar.getAttribute('data-state'), 'open')
+  assert.equal(await sidebar.getAttribute('data-closing'), 'true')
+  assert.equal(await page.getByRole('searchbox').isVisible(), true)
+  await cdp.send('Animation.setPlaybackRate', { playbackRate: 1 })
+  await sidebarWidth(54)
+  await railClosed()
+  // The open rail's caret folds it back to the rail instead of pinning it.
+  await openRail()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
+  await sidebarWidth(54)
+  await railClosed()
+  await openRail()
+  await page.keyboard.press('[')
+  await sidebarWidth(54)
+  await railClosed()
+  await openRail()
+  await page.mouse.click(900, 500)
+  await sidebarWidth(54)
+  await railClosed()
+  await openRail()
+  await row.getByRole('link').click()
+  await page.waitForURL(/\/request-0$/)
+  await sidebarWidth(54)
+  await railClosed()
+  await page.keyboard.press('/')
+  await sidebarWidth(360)
+  assert.equal(await page.getByRole('searchbox').evaluate((node) => node === document.activeElement), true)
+  await page.keyboard.press('Escape')
+  await sidebarWidth(54)
+  await railClosed()
+  await page.getByRole('button', { name: 'Expand requests sidebar' }).click()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).waitFor()
+  assert.equal(await sidebar.getAttribute('data-state'), 'pinned')
+  await page.keyboard.press('[')
+  await sidebarWidth(54)
+  await railClosed()
+  await page.keyboard.press('[')
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).waitFor()
+  assert.equal(await sidebar.getAttribute('data-state'), 'pinned')
+  await requestsLink.click()
+  await page.getByText('Select a request', { exact: true }).waitFor()
+
   await page.emulateMedia({ reducedMotion: 'reduce' })
   assert(await age.evaluate((node) => parseFloat(getComputedStyle(node).transitionDuration) <= 0.00001))
   await page.setViewportSize({ width: 390, height: 844 })

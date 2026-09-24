@@ -34,6 +34,8 @@ export type RequestWorkspaceListProps = {
   params: RepoParams
   pendingId: string | null
   selectedId?: string
+  /** Rows the collapsed rail keeps, drawn with a larger avatar centred on it. */
+  rail?: boolean
 }
 
 export function RequestWorkspaceList({
@@ -115,7 +117,8 @@ function RequestWorkspaceRow({
   params,
   pendingId,
   selectedId,
-}: Pick<RequestWorkspaceListProps, 'maintainer' | 'onAction' | 'params' | 'pendingId' | 'selectedId'> & {
+  rail,
+}: Pick<RequestWorkspaceListProps, 'maintainer' | 'onAction' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
   item: RequestQueueItemResponse
   section: RequestQueueSection
 }) {
@@ -150,6 +153,7 @@ function RequestWorkspaceRow({
       className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
       data-group={group}
       data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
+      data-rail={rail ? '' : undefined}
       data-request-id={request.id}
       style={{ '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px` } as CSSProperties}
     >
@@ -161,7 +165,10 @@ function RequestWorkspaceRow({
         search={{}}
         to="/$owner/$repo/requests/$requestId"
       >
-        <RequestDiscussionActorAvatar handle={author.handle} small />
+        <span className="request-workspace-row-avatar">
+          <RequestDiscussionActorAvatar handle={author.handle} small={!rail} />
+          {rail && unread && <span aria-hidden="true" className="request-workspace-row-unread" />}
+        </span>
         <span className="min-w-0">
           <span
             className={cn(

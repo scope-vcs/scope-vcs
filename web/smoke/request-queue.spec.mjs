@@ -73,13 +73,18 @@ test('request queue search is keyboard accessible and mobile rows do not overflo
   )
 })
 
-test('requests sidebar resizes, closes, and reopens by dragging or keyboard', async () => {
+test('requests sidebar resizes, collapses, and pins again by dragging or keyboard', async () => {
   await withPage(`${requestRepoPath}/requests/req_demo_ready`, async (page) => {
     const sidebar = page.getByRole('complementary', { name: 'Requests workspace' })
     const separator = page.getByRole('separator', { name: 'Requests sidebar width' })
     await sidebar.getByRole('link', { name: /Add bounded retry timing/ }).waitFor()
     await waitForClientHydration(separator)
     const width = () => sidebar.evaluate((element) => element.getBoundingClientRect().width)
+    // Collapsing and pinning slide the column, so widths settle after a moment.
+    const settles = (min, max = min) => page.waitForFunction(([low, high]) => {
+      const { width } = document.querySelector('.request-workspace-sidebar').getBoundingClientRect()
+      return width >= low && width <= high
+    }, [min, max])
     async function dragBy(distance) {
       const bounds = await separator.boundingBox()
       assert(bounds)
@@ -92,25 +97,26 @@ test('requests sidebar resizes, closes, and reopens by dragging or keyboard', as
     }
     const originalWidth = await width()
     await dragBy(-90)
-    assert.equal(await width(), originalWidth - 90)
+    await settles(originalWidth - 90)
     await sidebar.getByRole('button', { name: 'Collapse requests sidebar' }).click()
     assert.equal(await separator.getAttribute('aria-valuetext'), 'Collapsed')
     await sidebar.getByRole('button', { name: 'Expand requests sidebar' }).click()
-    assert.equal(await width(), originalWidth - 90)
+    assert.notEqual(await separator.getAttribute('aria-valuetext'), 'Collapsed')
+    await settles(originalWidth - 90)
     await dragBy(-180)
     assert.equal(await separator.getAttribute('aria-valuetext'), 'Collapsed')
     await dragBy(180)
-    assert((await width()) >= 180)
+    await settles(180, 10_000)
     assert.notEqual(await separator.getAttribute('aria-valuetext'), 'Collapsed')
     await separator.focus()
     await page.keyboard.press('Home')
-    assert.equal(await width(), 180)
+    await settles(180)
     await page.keyboard.press('ArrowLeft')
     assert.equal(await separator.getAttribute('aria-valuetext'), 'Collapsed')
     await page.keyboard.press('ArrowRight')
-    assert.equal(await width(), 180)
+    await settles(180)
     await page.keyboard.press('End')
-    assert.equal(await width(), 360)
+    await settles(360)
     await page.setViewportSize({ width: 390, height: 844 })
     assert.equal(await separator.isVisible(), false)
   })

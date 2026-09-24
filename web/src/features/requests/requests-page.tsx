@@ -14,6 +14,10 @@ import {
 import { RequestWorkspaceSidebar } from './request-workspace-sidebar'
 import { RequestWorkspaceShell } from './request-workspace-shell'
 import { RequestWorkspaceProvider } from './request-workspace-context'
+import {
+  readRequestWorkspaceCollapsed,
+  saveRequestWorkspaceCollapsed,
+} from './request-workspace-collapse'
 import { applyAttentionMoves } from './request-attention-moves'
 import { useRequestAttentionActions } from './use-request-attention-actions'
 import { useRequestQueue } from './use-request-queue'
@@ -49,7 +53,7 @@ function RequestWorkspaceContent({
   version: string
 }) {
   const selectedId = useParams({ strict: false, select: (value) => value.requestId })
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(readRequestWorkspaceCollapsed)
   const [focus, setFocus] = useState(false)
   const [draft, setDraft] = useState<string | null>(null)
   // Focus mode hides the app chrome, which lives above this page, so the
@@ -59,10 +63,6 @@ function RequestWorkspaceContent({
     return () => document.documentElement.removeAttribute('data-focus')
   }, [focus])
   const toggleFocus = useCallback(() => setFocus((value) => !value), [])
-  const changeCollapsed = useCallback((value: boolean) => {
-    setCollapsed(value)
-    if (!value) setFocus(false)
-  }, [])
   const load = useCallback<LoadRequestQueuePage>(
     (section, cursor, search, signal) =>
       loadRequestQueuePage({
@@ -93,6 +93,14 @@ function RequestWorkspaceContent({
     setDraft(value)
     if (identity && value.trim() !== queue.value?.requestedQuery)
       void searchRequestQueue(identity, value, load)
+  }
+
+  function changeCollapsed(value: boolean) {
+    setCollapsed(value)
+    saveRequestWorkspaceCollapsed(value)
+    if (!value) setFocus(false)
+    // The rail draws the queue, so collapsing drops any search.
+    else if (query) search('')
   }
 
   return (

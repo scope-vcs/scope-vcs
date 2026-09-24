@@ -7,21 +7,36 @@ import type {
 import { NavigationSearch } from '@/components/navigation-search'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { Link } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { useCallback, useId, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FocusEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react'
 import { REQUEST_QUEUE_SECTION_ORDER, type RequestQueuePages } from './request-list-model'
 import { RequestWorkspaceList, type RequestWorkspaceListProps } from './request-workspace-list'
 import {
   REQUEST_ATTENTION_GROUP_LABELS,
   REQUEST_ATTENTION_GROUP_ORDER,
+  requestAgeLabel,
   requestAttentionGroup,
+  requestAttentionLabel,
   type RequestAttentionGroup,
 } from './request-workspace-model'
 import { useRequestKeyboard } from './use-request-keyboard'
 import './request-workspace-sidebar.css'
 
 type QueueRow = { item: RequestQueueItemResponse; section: RequestQueueSection }
+
+/** Needs-you avatars the closed rail shows before the rest fold into its count. */
+const RAIL_AVATARS = 6
 
 const EMPTY_LABELS: Record<RequestAttentionGroup, string> = {
   needs_you: 'You’re caught up.',
@@ -31,6 +46,13 @@ const EMPTY_LABELS: Record<RequestAttentionGroup, string> = {
   done: 'No closed or merged requests.',
 }
 
+/**
+ * The requests sidebar in one of three states. Pinned is the resizable
+ * sidebar. Closed is a 54px rail showing the avatars of what needs the viewer.
+ * Open is that rail widened over the page until the viewer picks a request,
+ * clicks away or presses Escape. All three draw the same list, so the rail's
+ * avatars stay put as it opens and nothing appears twice.
+ */
 export function RequestWorkspaceSidebar({
   pages,
   collapsed,
@@ -66,11 +88,102 @@ export function RequestWorkspaceSidebar({
   onLoadMore: (section: RequestQueueSection) => void
   params: RepoParams
 }) {
-  const openSearch = useCallback(() => onCollapsedChange(false), [onCollapsedChange])
-  const toggleCollapsed = useCallback(
-    () => onCollapsedChange(!collapsed),
-    [collapsed, onCollapsedChange],
-  )
+  const aside = useRef<HTMLElement>(null)
+  const [open, setOpen] = useState(false)
+  // Closing keeps the open layout while the rail slides shut, since the
+  // closed rail hides the list and clips everything past 54px at once.
+  const [closing, setClosing] = useState(false)
+  const [hint, setHint] = useState<{ id: string; left: number; top: number; now: number } | null>(null)
+  const state = collapsed ? (open ? 'open' : 'closed') : 'pinned'
+  const openRail = useCallback(() => {
+    setOpen(true)
+    setClosing(false)
+  }, [])
+  const togglePinned = useCallback(() => {
+    setOpen(false)
+    setClosing(false)
+    onCollapsedChange(!collapsed)
+  }, [collapsed, onCollapsedChange])
+  // Focus mode keeps the narrow rail, not the rail opened over the page.
+  const toggleFocus = useCallback(() => {
+    setOpen(false)
+    setClosing(false)
+    onFocusToggle()
+  }, [onFocusToggle])
+  const close = useCallback(() => {
+    setClosing(true)
+    if (query) onSearch('')
+    // Focus left inside would sit in a search box or row the rail now hides.
+    if (document.activeElement instanceof HTMLElement && aside.current?.contains(document.activeElement))
+      document.activeElement.blur()
+  }, [onSearch, query])
+  // The open rail collapses back to the closed rail, not to the pinned sidebar.
+  const toggle = state === 'open' ? close : togglePinned
+  useEffect(() => {
+    if (!closing) return
+    let current = true
+    const slides = aside.current?.getAnimations().filter(
+      (animation) => animation instanceof CSSTransition && animation.transitionProperty === 'width',
+    )
+    // No slide under reduced motion or on narrow screens, so it closes at once.
+    Promise.all(slides?.map((slide) => slide.finished) ?? []).then(
+      () => {
+        if (!current) return
+        setOpen(false)
+        setClosing(false)
+      },
+      () => {},
+    )
+    return () => {
+      current = false
+    }
+  }, [closing])
+  useEffect(() => {
+    if (state !== 'open' || closing) return
+    function outside(event: PointerEvent) {
+      if (!aside.current?.contains(event.target as Node)) close()
+    }
+    // Escape belongs to the open rail unless a menu or dialog is up: closing
+    // clears the search too, and the key must not reach focus mode or the
+    // search box, which refocuses itself.
+    function escape(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      if (document.querySelector(':popover-open, [role="dialog"], [role="alertdialog"]')) return
+      event.preventDefault()
+      event.stopPropagation()
+      close()
+    }
+    document.addEventListener('pointerdown', outside)
+    document.addEventListener('keydown', escape, true)
+    return () => {
+      document.removeEventListener('pointerdown', outside)
+      document.removeEventListener('keydown', escape, true)
+    }
+  }, [close, closing, state])
+  // Avatars and buttons on the closed rail do their own thing; anywhere else
+  // on it, even while it slides shut, opens the rail. Picking a request from
+  // the open rail closes it.
+  function click(event: MouseEvent) {
+    const target = event.target as Element
+    setHint(null)
+    if ((state === 'closed' || closing) && !target.closest('a, button')) openRail()
+    else if (state === 'open' && target.closest('a')) close()
+  }
+  // The closed rail shows only avatars, so hovering or focusing one names its
+  // request beside the rail.
+  function showHint(event: ReactPointerEvent | FocusEvent) {
+    const row = (event.target as Element).closest<HTMLElement>('.request-workspace-row[data-rail]')
+    const avatar = row?.querySelector('.request-workspace-row-avatar')
+    if (state !== 'closed' || !row?.dataset.requestId || !avatar) return setHint(null)
+    const { right, top, height } = avatar.getBoundingClientRect()
+    setHint({
+      id: row.dataset.requestId,
+      left: right + 14,
+      top: top + height / 2,
+      now: Math.floor(Date.now() / 1000),
+    })
+  }
+
   const searching = query.trim().length > 0
   const common = { loading, skeleton, error, maintainer, onRetry, onAction, params, pendingId, selectedId }
   const rows = (section: RequestQueueSection): QueueRow[] =>
@@ -80,8 +193,8 @@ export function RequestWorkspaceSidebar({
   useRequestKeyboard({
     focus,
     onAction,
-    onCollapseToggle: toggleCollapsed,
-    onFocusToggle,
+    onCollapseToggle: toggle,
+    onFocusToggle: toggleFocus,
     rows: new Map(allRows.map((row) => [row.item.request.id, row])),
     selectedId,
   })
@@ -89,58 +202,99 @@ export function RequestWorkspaceSidebar({
   const activeHasMore = Boolean(pages?.active.next_cursor)
   // Active rows page, so loaded lengths are floors until the last page is in.
   const activeCount = (value: number) => `${value}${activeHasMore ? '+' : ''}`
+  const needsYou = grouped.needs_you
+  // The open request keeps a slot on the rail when it is not one of the
+  // viewer's, and leaves its group so it is never listed twice.
+  const current = searching
+    ? undefined
+    : allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
+  const moved = (items: QueueRow[]) => Number(current !== undefined && items.includes(current))
+  const waiting = grouped.waiting.filter((row) => row !== current)
+  const waitingCount = activeCount(grouped.waiting.length - moved(grouped.waiting))
+  // A reader's open requests are their whole queue, so they stay listed.
   // Unclaimed and Set aside only ever hold maintainer placements, so readers
   // see just their work and the finished history.
-  const disclosures = (
-    maintainer ? (['unclaimed', 'set_aside', 'done'] as const) : (['done'] as const)
-  ).map((group) => ({ group, section: group }))
-  const needsYou = grouped.needs_you
-  const waiting = grouped.waiting
+  const disclosures = [
+    ...(maintainer
+      ? [
+          {
+            group: 'waiting',
+            section: 'active',
+            label: REQUEST_ATTENTION_GROUP_LABELS.waiting,
+            count: waitingCount,
+            emptyLabel: EMPTY_LABELS.waiting,
+          } as const,
+        ]
+      : []),
+    ...(maintainer ? (['unclaimed', 'set_aside', 'done'] as const) : (['done'] as const)).map(
+      (group) => ({
+        group,
+        section: group,
+        label: REQUEST_ATTENTION_GROUP_LABELS[group],
+        count: count(pages?.[group], moved(grouped[group])),
+        emptyLabel: EMPTY_LABELS[group],
+      }),
+    ),
+  ]
+  // The cap never hides the open request's avatar.
+  const railed = needsYou.filter(
+    (row, index) => index < RAIL_AVATARS || row.item.request.id === selectedId,
+  ).length
+  const folded = allRows.length - railed - Number(Boolean(current))
+  const hinted = hint && state === 'closed' ? allRows.find((row) => row.item.request.id === hint.id) : undefined
   return (
     <aside
       aria-label="Requests workspace"
-      className={cn(
-        'request-workspace-sidebar',
-        collapsed && 'request-workspace-sidebar--collapsed',
-      )}
+      className="request-workspace-sidebar"
+      data-closing={closing || undefined}
+      data-state={state}
+      onBlur={() => setHint(null)}
+      onClick={click}
+      onFocus={showHint}
+      onPointerLeave={() => setHint(null)}
+      onPointerOver={showHint}
+      ref={aside}
     >
-      <div className="request-workspace-collapsed-view">
-        <Button
-          aria-label="Expand requests sidebar"
-          className="text-muted-foreground"
-          onClick={openSearch}
-          size="icon-sm"
-          title="Expand requests sidebar"
-          type="button"
-          variant="ghost"
-        >
-          <ChevronRight aria-hidden="true" />
-        </Button>
-        {collapsed ? (
-          <RequestWorkspaceSpine grouped={grouped} params={params} selectedId={selectedId} />
-        ) : null}
-      </div>
-      <div className="request-workspace-expanded-view">
+      {/* On the body: the page's size container would otherwise place and clip it. */}
+      {hint &&
+        hinted &&
+        createPortal(
+          <div
+            aria-hidden="true"
+            className="request-workspace-rail-hint"
+            style={{ left: hint.left, top: hint.top }}
+          >
+            <span className="block font-medium">{hinted.item.request.title}</span>
+            <span className="block text-muted-foreground">
+              {requestAttentionLabel(hinted.item, true)} ·{' '}
+              {requestAgeLabel(hinted.item.attention_at_unix, hint.now, true)}
+            </span>
+          </div>,
+          document.body,
+        )}
+      <div className="request-workspace-sidebar-inner">
         <div className="request-workspace-sidebar-tools">
           <NavigationSearch
             clearLabel="Clear request search"
             label="Search requests"
             onChange={onSearch}
-            onOpen={openSearch}
+            onOpen={openRail}
             placeholder="Search requests"
             status={loading && searching ? 'Searching requests' : undefined}
             value={query}
           />
+          {/* The closed rail shows the caret in place of the search box, and it
+              pins the sidebar. Pinned or open, it collapses to the rail. */}
           <Button
-            aria-label="Collapse requests sidebar"
-            className="text-muted-foreground"
-            onClick={() => onCollapsedChange(true)}
+            aria-label={state === 'closed' ? 'Expand requests sidebar' : 'Collapse requests sidebar'}
+            className="request-workspace-sidebar-toggle text-muted-foreground"
+            onClick={toggle}
             size="icon-sm"
-            title="Collapse requests sidebar"
+            title={state === 'closed' ? 'Expand requests sidebar' : 'Collapse requests sidebar'}
             type="button"
             variant="ghost"
           >
-            <ChevronLeft aria-hidden="true" />
+            {state === 'closed' ? <ChevronRight aria-hidden="true" /> : <ChevronLeft aria-hidden="true" />}
           </Button>
         </div>
         {actionError && (
@@ -162,27 +316,56 @@ export function RequestWorkspaceSidebar({
           ) : (
             <>
               {(maintainer || needsYou.length > 0) && (
-                <section>
-                  <RequestWorkspaceGroupLabel count={activeCount(needsYou.length)} group="needs_you" strong />
+                <section className="request-workspace-needs-you">
+                  <h2 className="request-workspace-group-label text-foreground">
+                    <span>{REQUEST_ATTENTION_GROUP_LABELS.needs_you}</span>
+                    <span className="tabular-nums">{activeCount(needsYou.length)}</span>
+                  </h2>
                   <RequestWorkspaceList
                     {...common}
                     emptyLabel={EMPTY_LABELS.needs_you}
-                    hasMore={activeHasMore && waiting.length === 0}
+                    hasMore={activeHasMore && grouped.waiting.length === 0}
                     items={needsYou}
                     onLoadMore={() => onLoadMore('active')}
+                    rail
                   />
                 </section>
               )}
-              {(waiting.length > 0 || (!maintainer && needsYou.length === 0)) && (
-                <section>
-                  <RequestWorkspaceGroupLabel
-                    count={activeCount(waiting.length)}
-                    group="waiting"
-                    label={maintainer ? undefined : 'Open'}
-                  />
+              {current && (
+                <section aria-label="Open request" className="request-workspace-current">
+                  <hr className="request-workspace-rail-rule" />
                   <RequestWorkspaceList
                     {...common}
-                    emptyLabel={maintainer ? EMPTY_LABELS.waiting : EMPTY_LABELS.needs_you}
+                    emptyLabel=""
+                    hasMore={false}
+                    items={[current]}
+                    onLoadMore={() => {}}
+                    rail
+                  />
+                </section>
+              )}
+              {state === 'closed' && folded > 0 && (
+                <>
+                  <hr className="request-workspace-rail-rule" />
+                  <button
+                    aria-label={`Show ${folded} more requests`}
+                    className="request-workspace-rail-more"
+                    onClick={openRail}
+                    type="button"
+                  >
+                    +{Math.min(folded, 99)}
+                  </button>
+                </>
+              )}
+              {!maintainer && (waiting.length > 0 || needsYou.length === 0) && (
+                <section className="request-workspace-open">
+                  <h2 className="request-workspace-group-label text-muted-foreground">
+                    <span>Open</span>
+                    <span className="tabular-nums">{waitingCount}</span>
+                  </h2>
+                  <RequestWorkspaceList
+                    {...common}
+                    emptyLabel={EMPTY_LABELS.needs_you}
                     hasMore={activeHasMore}
                     items={waiting}
                     onLoadMore={() => onLoadMore('active')}
@@ -190,18 +373,13 @@ export function RequestWorkspaceSidebar({
                 </section>
               )}
               <div className="request-workspace-disclosures">
-                {disclosures.map(({ group, section }) => (
-                  <RequestWorkspaceDisclosure
-                    count={count(pages?.[section])}
-                    key={group}
-                    label={REQUEST_ATTENTION_GROUP_LABELS[group]}
-                    selectedInside={grouped[group].some(({ item }) => item.request.id === selectedId)}
-                  >
+                {disclosures.map(({ group, section, label, count, emptyLabel }) => (
+                  <RequestWorkspaceDisclosure count={count} key={group} label={label}>
                     <RequestWorkspaceList
                       {...common}
-                      emptyLabel={EMPTY_LABELS[group]}
+                      emptyLabel={emptyLabel}
                       hasMore={Boolean(pages?.[section].next_cursor)}
-                      items={grouped[group]}
+                      items={grouped[group].filter((row) => row !== current)}
                       onLoadMore={() => onLoadMore(section)}
                     />
                   </RequestWorkspaceDisclosure>
@@ -225,40 +403,14 @@ function groupRows(rows: QueueRow[], maintainer: boolean) {
   return grouped
 }
 
-function RequestWorkspaceGroupLabel({
-  count,
-  group,
-  label = REQUEST_ATTENTION_GROUP_LABELS[group],
-  strong = false,
-}: {
-  count: string
-  group: RequestAttentionGroup
-  label?: string
-  strong?: boolean
-}) {
-  return (
-    <h2
-      className={cn(
-        'request-workspace-group-label',
-        strong ? 'text-foreground' : 'text-muted-foreground',
-      )}
-    >
-      <span>{label}</span>
-      <span className="tabular-nums">{count}</span>
-    </h2>
-  )
-}
-
 function RequestWorkspaceDisclosure({
   children,
   count,
   label,
-  selectedInside,
 }: {
   children: ReactNode
   count: string
   label: string
-  selectedInside: boolean
 }) {
   const [open, setOpen] = useState(false)
   const id = useId()
@@ -279,15 +431,7 @@ function RequestWorkspaceDisclosure({
           )}
         />
         <span>{label}</span>
-        <span className="ml-auto flex items-center gap-2">
-          {selectedInside && !open && (
-            <span
-              aria-label="Selected request is in this section"
-              className="size-[5px] rounded-full bg-foreground"
-            />
-          )}
-          <span className="tabular-nums">{count}</span>
-        </span>
+        <span className="ml-auto tabular-nums">{count}</span>
       </button>
       <div hidden={!open} id={id}>
         {children}
@@ -296,47 +440,6 @@ function RequestWorkspaceDisclosure({
   )
 }
 
-/**
- * The collapsed rail. One pip per loaded request so the sidebar stays
- * readable at 54px: ink for rows that need the viewer, grey for the rest,
- * green for finished work.
- */
-function RequestWorkspaceSpine({
-  grouped,
-  params,
-  selectedId,
-}: {
-  grouped: Record<RequestAttentionGroup, QueueRow[]>
-  params: RepoParams
-  selectedId?: string
-}) {
-  return (
-    <nav aria-label="Loaded requests" className="request-workspace-spine">
-      {REQUEST_ATTENTION_GROUP_ORDER.map((group) =>
-        grouped[group].length ? (
-          <ul aria-label={REQUEST_ATTENTION_GROUP_LABELS[group]} key={group}>
-            {grouped[group].map(({ item }) => (
-              <li key={item.request.id}>
-                <Link
-                  aria-current={selectedId === item.request.id ? 'page' : undefined}
-                  aria-label={item.request.title}
-                  className="request-workspace-pip"
-                  data-group={group}
-                  params={{ ...params, requestId: item.request.id }}
-                  preload="intent"
-                  search={{}}
-                  title={item.request.title}
-                  to="/$owner/$repo/requests/$requestId"
-                />
-              </li>
-            ))}
-          </ul>
-        ) : null,
-      )}
-    </nav>
-  )
-}
-
-function count(page?: RequestQueuePageResponse) {
-  return `${page?.requests.length ?? 0}${page?.next_cursor ? '+' : ''}`
+function count(page: RequestQueuePageResponse | undefined, moved: number) {
+  return `${(page?.requests.length ?? 0) - moved}${page?.next_cursor ? '+' : ''}`
 }
