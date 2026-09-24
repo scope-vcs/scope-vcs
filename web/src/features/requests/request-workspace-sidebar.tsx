@@ -96,6 +96,11 @@ export function RequestWorkspaceSidebar({
     setOpen(false)
     onCollapsedChange(!collapsed)
   }, [collapsed, onCollapsedChange])
+  // Focus mode keeps the narrow rail, not the rail opened over the page.
+  const toggleFocus = useCallback(() => {
+    setOpen(false)
+    onFocusToggle()
+  }, [onFocusToggle])
   const close = useCallback(() => {
     setOpen(false)
     if (query) onSearch('')
@@ -108,10 +113,12 @@ export function RequestWorkspaceSidebar({
     function outside(event: PointerEvent) {
       if (!aside.current?.contains(event.target as Node)) close()
     }
-    // Escape belongs to the open rail: closing clears the search too, and the
-    // key must not reach focus mode or the search box, which refocuses itself.
+    // Escape belongs to the open rail unless a menu or dialog is up: closing
+    // clears the search too, and the key must not reach focus mode or the
+    // search box, which refocuses itself.
     function escape(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || document.querySelector(':popover-open')) return
+      if (event.key !== 'Escape') return
+      if (document.querySelector(':popover-open, [role="dialog"], [role="alertdialog"]')) return
       event.preventDefault()
       event.stopPropagation()
       close()
@@ -151,7 +158,7 @@ export function RequestWorkspaceSidebar({
     focus,
     onAction,
     onCollapseToggle: togglePinned,
-    onFocusToggle,
+    onFocusToggle: toggleFocus,
     rows: new Map(allRows.map((row) => [row.item.request.id, row])),
     selectedId,
   })
@@ -165,6 +172,7 @@ export function RequestWorkspaceSidebar({
   const current = searching
     ? undefined
     : allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
+  const moved = (items: QueueRow[]) => Number(current !== undefined && items.includes(current))
   // Unclaimed and Set aside only ever hold maintainer placements, so readers
   // see their open requests and the finished history.
   const disclosures = [
@@ -172,7 +180,7 @@ export function RequestWorkspaceSidebar({
       group: 'waiting',
       section: 'active',
       label: maintainer ? REQUEST_ATTENTION_GROUP_LABELS.waiting : 'Open',
-      count: activeCount(grouped.waiting.length),
+      count: activeCount(grouped.waiting.length - moved(grouped.waiting)),
       emptyLabel: maintainer ? EMPTY_LABELS.waiting : EMPTY_LABELS.needs_you,
     } as const,
     ...(maintainer ? (['unclaimed', 'set_aside', 'done'] as const) : (['done'] as const)).map(
@@ -180,7 +188,7 @@ export function RequestWorkspaceSidebar({
         group,
         section: group,
         label: REQUEST_ATTENTION_GROUP_LABELS[group],
-        count: count(pages?.[group]),
+        count: count(pages?.[group], moved(grouped[group])),
         emptyLabel: EMPTY_LABELS[group],
       }),
     ),
@@ -372,6 +380,6 @@ function RequestWorkspaceDisclosure({
   )
 }
 
-function count(page?: RequestQueuePageResponse) {
-  return `${page?.requests.length ?? 0}${page?.next_cursor ? '+' : ''}`
+function count(page: RequestQueuePageResponse | undefined, moved: number) {
+  return `${(page?.requests.length ?? 0) - moved}${page?.next_cursor ? '+' : ''}`
 }
