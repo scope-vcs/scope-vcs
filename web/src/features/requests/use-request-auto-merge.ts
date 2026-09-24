@@ -2,6 +2,7 @@ import type { RequestAutoMergeResponse } from '@/api/types.generated'
 import {
   resourceErrorMessage,
   useCachedResource,
+  useRetryOnReconnect,
 } from '@/lib/use-cached-resource'
 import { useCallback, useState } from 'react'
 import type {
@@ -41,6 +42,7 @@ export function useRequestAutoMerge({
     load,
     resource: requestAutoMergeResource,
   })
+  useRetryOnReconnect(resource)
   const [pending, setPending] = useState<'authorize' | 'cancel' | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
 
