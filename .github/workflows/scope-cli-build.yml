@@ -22,6 +22,7 @@ jobs:
     name: Prepare distribution matrix
     if: inputs.validate_targets
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
     outputs:
       matrix: ${{ steps.targets.outputs.matrix }}
     steps:
@@ -42,6 +43,7 @@ jobs:
   checks:
     name: Check scope-cli
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
     steps:
       # The distribution matrix builds, packages, and uploads the service
       # artifact, so a service release cannot skip the matrix.
@@ -78,6 +80,9 @@ jobs:
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           workspaces: cli -> target
 
+      - name: Install cargo-deny
+        run: ./dev/install-cargo-deny.sh
+
       - name: Check CLI
         run: ./dev/checks/cli
 
@@ -96,6 +101,7 @@ jobs:
     needs: [checks, prepare]
     if: inputs.validate_targets
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}

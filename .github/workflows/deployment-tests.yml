@@ -22,6 +22,7 @@ jobs:
   validate:
     if: github.ref == 'refs/heads/main'
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 5
     steps:
       - name: Require artifacts from a validated release on main
         env:

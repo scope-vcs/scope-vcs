@@ -17,6 +17,7 @@ jobs:
   dependency-analyzer:
     name: Check dependency analyzer
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,6 +39,7 @@ jobs:
     name: Build backend deployment binaries
     if: inputs.build_release_artifact
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,8 +66,11 @@ jobs:
           BUILD_ROUTER: ${{ inputs.build_router_release && '1' || '0' }}
         run: |
           mkdir -p artifacts/bin
+          binary_sizes=()
+          record_size() { binary_sizes+=("$1 $(wc -c < "artifacts/bin/$1")"); }
           cargo build --release --locked -p api --bin scope-maintenance
           install -m 0755 target/release/scope-maintenance artifacts/bin/scope-maintenance
+          record_size scope-maintenance
 
           component_names="$(node .github/scripts/deployment-components.mjs backend-prebuilt)"
           mapfile -t components <<< "$component_names"
@@ -77,7 +82,19 @@ jobs:
             release_binary="$(jq -er '.artifact.binary' <<< "$definition")"
             cargo build --release --locked --manifest-path "$(dirname "$runtime_config")/Cargo.toml" --bin "$source_binary"
             install -m 0755 "target/release/$source_binary" "artifacts/bin/$release_binary"
+            record_size "$release_binary"
           done
+
+          {
+            echo "### Backend release binary sizes"
+            echo
+            echo "| Binary | Bytes | MiB |"
+            echo "| --- | ---: | ---: |"
+            for entry in "${binary_sizes[@]}"; do
+              read -r name bytes <<< "$entry"
+              awk -v name="$name" -v bytes="$bytes" 'BEGIN { printf "| `%s` | %s | %.1f |\n", name, bytes, bytes / 1048576 }'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Pack deployment binaries
         run: |

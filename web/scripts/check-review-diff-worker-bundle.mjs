@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { filesBelow, sumBytes } from './bundle-budget.mjs'
 
 const MAX_BUNDLE_BYTES = 11 * 1024 * 1024
 const MAX_BUNDLE_FILES = 350
@@ -20,9 +21,9 @@ const serverSsrDirectory = fileURLToPath(new URL(
 ))
 
 const workerFiles = await filesBelow(workerDirectory)
-const bundleBytes = (await Promise.all(
+const bundleBytes = sumBytes(await Promise.all(
   workerFiles.map(async (path) => (await stat(path)).size),
-)).reduce((total, size) => total + size, 0)
+))
 
 assert.ok(workerFiles.includes(workerEntry), 'review diff worker entry was not emitted')
 assert.ok(
@@ -81,14 +82,6 @@ assert.ok(Buffer.byteLength(rendered.html) <= workerBudget.maxOutputBytes)
 console.log(
   `review diff worker: ${workerFiles.length} files, ${bundleBytes} bytes, executable`,
 )
-
-async function filesBelow(directory) {
-  const entries = await readdir(directory, { withFileTypes: true })
-  return (await Promise.all(entries.map(async (entry) => {
-    const path = join(directory, entry.name)
-    return entry.isDirectory() ? filesBelow(path) : [path]
-  }))).flat()
-}
 
 function runWorker(workerData) {
   const worker = new Worker(pathToFileURL(workerEntry))

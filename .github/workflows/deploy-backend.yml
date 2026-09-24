@@ -49,6 +49,9 @@ jobs:
       web_activated: ${{ steps.receipt.outputs.web_activated }}
       maintenance_warning: ${{ steps.warning.outputs.maintenance_warning }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    # Migrations may run for migrationStatementTimeoutSeconds (60 minutes) after
+    # writers are closed; cancelling earlier would leave production fenced.
+    timeout-minutes: 120
     environment: production
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

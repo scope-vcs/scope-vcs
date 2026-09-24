@@ -28,6 +28,9 @@ function commands(gate, ...args) {
 
 test('the backend gate covers the whole workspace and the API feature suites explicitly', () => {
   const backend = commands('backend');
+  // Advisories run before the tests so a vulnerable dependency fails fast.
+  assert.ok(backend.includes('cargo deny --locked check advisories'));
+  assert.ok(backend.indexOf('cargo deny --locked check advisories') < backend.indexOf('cargo test --workspace --locked'));
   assert.ok(backend.includes('cargo test --workspace --locked'));
   assert.ok(backend.includes('cargo test -p api --features local-dev --locked dev::'));
   assert.ok(backend.includes('cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests'));
@@ -42,6 +45,7 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
   assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
   const cliCommands = commands('cli');
   assert.ok(cliCommands.includes('cargo fmt --manifest-path cli/Cargo.toml -- --check'));
+  assert.ok(cliCommands.includes('cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml check advisories'));
   assert.ok(cliCommands.includes('cargo test --manifest-path cli/Cargo.toml --locked'));
   assert.ok(cliCommands.includes('cargo clippy --manifest-path cli/Cargo.toml --all-targets --locked -- -D warnings'));
   // The distribution matrix owns every release build; the CLI gate must not add one.
@@ -374,9 +378,13 @@ test('Node workflows cache pnpm and browser downloads by the web lockfile', () =
   const integrationCi = read('.github/workflows/scope-integration-ci.yml');
   for (const workflow of [integrationCi, read('.github/workflows/rust-workspace-checks.yml'), read('.github/workflows/scope-web-ci.yml')]) {
     assert.match(workflow, /uses: pnpm\/action-setup@[0-9a-f]{40} # v5/);
-    assert.match(workflow, /cache: pnpm/);
     assert.match(workflow, /cache-dependency-path: web\/pnpm-lock\.yaml/);
   }
+  for (const workflow of [read('.github/workflows/rust-workspace-checks.yml'), read('.github/workflows/scope-web-ci.yml')]) {
+    assert.match(workflow, /cache: pnpm/);
+  }
+  // The integration job installs web dependencies only for the web lane, so the pnpm store cache follows that lane.
+  assert.match(integrationCi, /cache: \$\{\{ inputs\.run_web && 'pnpm' \|\| '' \}\}/);
   assert.match(integrationCi, /path: ~\/\.cache\/ms-playwright/);
   assert.match(integrationCi, /key: playwright-\$\{\{ runner\.os \}\}-\$\{\{ hashFiles\('web\/pnpm-lock\.yaml'\) \}\}/);
 });

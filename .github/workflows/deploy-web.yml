@@ -21,6 +21,7 @@ jobs:
   deploy:
     name: Deploy scope-web
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
     environment: production
     steps:
       - name: Checkout

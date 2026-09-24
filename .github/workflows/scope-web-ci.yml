@@ -17,6 +17,7 @@ jobs:
   checks:
     name: Check scope-web
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: web

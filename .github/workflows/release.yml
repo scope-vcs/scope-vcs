@@ -44,6 +44,7 @@ jobs:
   plan:
     name: Plan selected components
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
     outputs:
       release_sha: ${{ steps.release.outputs.sha }}
       recover_cutover_id: ${{ steps.release.outputs.recover_cutover_id }}
@@ -179,6 +180,7 @@ jobs:
       needs.release-preparation.result == 'success' &&
       (needs.plan.outputs.backend_selected == 'true')
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
     environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -327,6 +329,7 @@ jobs:
       ((needs.plan.outputs.cli == 'true' && (needs.cli-deploy.result == 'success' || needs.plan.outputs.prepared_run_id != '')) ||
       (needs.plan.outputs.cli != 'true' && needs.cli-deploy.result == 'skipped'))
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
     permissions:
       contents: read
       deployments: write

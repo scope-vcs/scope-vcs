@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 cargo fmt --all --check
+cargo deny --locked check advisories
 cargo test --workspace --locked
 cargo test -p api --features local-dev --locked dev::
 env -u SCOPE_OBJECT_ENCRYPTION_KEY -u SCOPE_BUCKET_ENDPOINT \

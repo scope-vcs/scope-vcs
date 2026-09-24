@@ -1,0 +1,17 @@
+# Dependency advisory policy for `cargo deny check advisories`. Known
+# vulnerabilities always fail the check; cargo-deny does not allow that to be
+# configured. Every ignore entry must be an object with `id` and `reason`.
+# cli/deny.toml holds the same policy for the standalone CLI workspace.
+
+[advisories]
+yanked = "deny"
+unmaintained = "workspace"
+unsound = "all"
+unused-ignored-advisory = "deny"
+ignore = [
+  # jsonwebtoken's rust_crypto backend always links rsa, which has no fixed
+  # release. Marvin attacks recover a private RSA key from decryption or signing
+  # timing. Scope signs only with Ed25519 and uses RSA only to verify Clerk RS256
+  # tokens with public keys, so no private RSA key is present to leak.
+  { id = "RUSTSEC-2023-0071", reason = "rsa is only used for public-key RS256 verification; Scope holds no private RSA key" },
+]
