@@ -21,6 +21,7 @@ jobs:
     name: Validate checks image
     if: github.event_name == 'pull_request'
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -74,6 +75,7 @@ jobs:
     name: Build checks image
     if: github.event_name != 'pull_request'
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
     permissions:
       contents: read
       deployments: write
