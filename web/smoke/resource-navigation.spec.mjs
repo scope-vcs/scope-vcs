@@ -58,9 +58,12 @@ test('request queue and summary are reused across actual child-route navigation'
 test('repository events received off-page refresh retained activity without blanking it', async () => {
   let requests = 0
   let originalMessage = ''
+  let holdActivityRefresh = false
+  let settled
   let release
   const held = new Promise((resolve) => { release = resolve })
   const prepare = async (page) => {
+    settled = trackRepositoryRefresh(page)
     await page.addInitScript(() => {
       const originalFetch = window.fetch.bind(window)
       const streams = new Set()
@@ -89,8 +92,9 @@ test('repository events received off-page refresh retained activity without blan
         return
       }
       requests += 1
+      const hold = holdActivityRefresh
       const response = await route.fetch()
-      if (requests === 1) {
+      if (!hold) {
         await route.fulfill({ response })
         return
       }
@@ -103,19 +107,27 @@ test('repository events received off-page refresh retained activity without blan
   }
   try {
     await withPage(repoPath, async (page) => {
+      const emitEvent = (kind) => page.evaluate((kind) => {
+        const repo = globalThis.__TSR_ROUTER__.state.matches.find((match) => match.loaderData?.repo)?.loaderData.repo
+        if (!repo) throw new Error('Repository layout is unavailable')
+        window.__scopeEmitRepositoryEvent({ repo_id: repo.id, incarnation_id: 'browser-test', version: 1, kind })
+      }, kind)
+      await page.waitForFunction(() => globalThis.__TSR_ROUTER__?.state.status === 'idle' && window.__scopeRepositoryStreamCount() > 0)
+      // A real stream starts with Connected. Let its catch-up finish before
+      // holding the later repository change, including any cancelled reads.
+      await emitEvent('Connected')
+      await settled()
       const activity = page.getByLabel('Latest repository change', { exact: true })
       await activity.waitFor()
       const original = await activity.innerText()
       originalMessage = await activity.getByRole('link').first().innerText()
+      const initialRequests = requests
+      holdActivityRefresh = true
       await page.getByRole('link', { name: 'Requests', exact: true }).first().click()
       await page.waitForURL(`**/${repo}/requests`)
       await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle' && window.__scopeRepositoryStreamCount() > 0)
       const revalidated = page.waitForResponse((response) => serverFunctionName(response.request()) === 'loadRepoLiveState_createServerFn_handler')
-      await page.evaluate(() => {
-        const repo = globalThis.__TSR_ROUTER__.state.matches.find((match) => match.loaderData?.repo)?.loaderData.repo
-        if (!repo) throw new Error('Repository layout is unavailable')
-        window.__scopeEmitRepositoryEvent({ repo_id: repo.id, incarnation_id: 'browser-test', version: 1, kind: { RepositoryChanged: { reason: 'push' } } })
-      })
+      await emitEvent({ RepositoryChanged: { reason: 'push' } })
       await (await revalidated).finished()
       await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
       await page.getByRole('link', { name: 'Code', exact: true }).first().click()
@@ -125,7 +137,7 @@ test('repository events received off-page refresh retained activity without blan
       assert.equal(await page.getByLabel('Loading latest repository change', { exact: true }).count(), 0)
       release()
       await activity.getByRole('link', { name: 'New repository activity', exact: true }).waitFor()
-      assert.equal(requests, 2)
+      assert.equal(requests, initialRequests + 1)
     }, { prepare })
   } finally {
     release()
