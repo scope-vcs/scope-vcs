@@ -26,6 +26,11 @@ rustc_version() {
   rustc --version | awk '{print $2}'
 }
 
+chromium_version() {
+  "${PLAYWRIGHT_BROWSERS_PATH:?}/chromium-${chromium_revision}/chrome-linux64/chrome" --version \
+    | sed 's/[[:space:]]*$//'
+}
+
 rust="$(sed -n 's/^channel = "\([^"]*\)"$/\1/p' rust-toolchain.toml)"
 git_version="$(jq -er '.git.version' dev/tool-versions.json)"
 node_version="$(jq -er '.node_version' cli/distribution/targets.json)"
@@ -58,7 +63,6 @@ expect_version Node "v$node_version" node --version
 expect_version npm "$npm_version" npm --version
 expect_version pnpm "$pnpm_version" pnpm --version
 expect_version Playwright "Version $playwright_version" playwright --version
-expect_version Chromium "Google Chrome for Testing $chromium_version" \
-  "${PLAYWRIGHT_BROWSERS_PATH:?}/chromium-${chromium_revision}/chrome-linux64/chrome" --version
+expect_version Chromium "Google Chrome for Testing $chromium_version" chromium_version
 
 echo "Pinned checks image has Rust $rust, Git $git_version, Node $node_version, and Playwright $playwright_version."
