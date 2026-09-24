@@ -146,10 +146,12 @@ async function captureNavigation(page, target) {
     if (held.length === 0) break
     const batch = held
     held = []
-    await Promise.all(batch.map((route) => route.continue().catch(() => {})))
+    // Some calls start only after an earlier one answers, so each step waits
+    // for the released responses before looking for the next calls.
+    await Promise.all(batch.map(release))
   }
   holding = false
-  await Promise.all(held.map((route) => route.continue().catch(() => {})))
+  await Promise.all(held.map(release))
   await waitForIdle(page)
   await page.waitForFunction(
     () => document.querySelectorAll('main [data-slot="skeleton"]').length === 0,
@@ -164,6 +166,14 @@ async function captureNavigation(page, target) {
     if (Number.isFinite(loaded.left)) break
   }
   return { pending, loaded }
+}
+
+// Answers a held call with its real response. A call the page abandoned while
+// it was held (the previous page's loads, for example) has nothing to answer.
+async function release(route) {
+  try {
+    await route.fulfill({ response: await route.fetch({ timeout: 15_000 }) })
+  } catch {}
 }
 
 async function waitForIdle(page) {
@@ -187,7 +197,7 @@ function compareSteps({ pending, loaded }) {
     if (Math.abs(step.left - loaded.left) > EDGE_TOLERANCE_PX) {
       failures['content edge'] ??= `${at} content starts at x=${step.left}, loaded at x=${loaded.left}`
     }
-    const expected = loaded.dividers.filter((y) => y <= step.skeletonBottom + DIVIDER_TOLERANCE_PX)
+    const expected = loaded.dividers
     const matched = expected.filter((y) => near(step.dividers, y)).length
     // Placeholder rows past the end of a short loaded list are not phantoms.
     const drawn = step.dividers.filter((y) => y <= Math.max(0, ...loaded.dividers) + DIVIDER_TOLERANCE_PX)
@@ -221,7 +231,6 @@ function measureLayout() {
         .map((link) => link.firstChild?.textContent?.trim() ?? '')
     : []
   let left = Infinity
-  let skeletonBottom = 0
   const dividers = new Set()
   const mainRect = main?.getBoundingClientRect()
   for (const element of main?.querySelectorAll('*') ?? []) {
@@ -240,7 +249,6 @@ function measureLayout() {
       range.selectNodeContents(node)
       left = Math.min(left, range.getBoundingClientRect().left)
     }
-    if (element.matches('[data-slot="skeleton"]')) skeletonBottom = Math.max(skeletonBottom, Math.min(rect.bottom, innerHeight))
     if (rect.width < mainRect.width * 0.25) continue
     // A divider is a lone top or bottom edge. Boxed inputs and panels have
     // side borders too and are not dividers.
@@ -253,7 +261,6 @@ function measureLayout() {
   return {
     dividers: [...dividers].filter((y) => y > (mainRect?.top ?? 0) && y < innerHeight).sort((a, b) => a - b),
     left: Math.round(left),
-    skeletonBottom: Math.round(skeletonBottom),
     skeletons: main ? [...main.querySelectorAll('[data-slot="skeleton"]')].filter(visible).length : 0,
     topbar: {
       height: Math.round(header?.getBoundingClientRect().height ?? 0),
