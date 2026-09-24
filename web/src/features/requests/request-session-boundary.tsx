@@ -40,6 +40,8 @@ export function RequestSessionBoundary() {
       pending = true
       void router.invalidate({ sync: true }).then(() => {
         if (!active) return
+        // Router invalidation resolves after committing loader errors too.
+        if (router.state.matches.some((match) => match.status === 'error' || match.status === 'notFound')) return
         window.removeEventListener('focus', retry)
         window.removeEventListener('online', retry)
       }).catch(() => {
