@@ -29,6 +29,7 @@ verified_successful_sha="${SCOPE_VERIFIED_SUCCESSFUL_SHA:-}"
 defer_service_health="${SCOPE_DEFER_SERVICE_HEALTH:-0}"
 deployment_was_skipped=0
 prepared_release="${SCOPE_PREPARED_RELEASE_PATH:-}"
+predecessor_teardown_dir="${SCOPE_PREDECESSOR_TEARDOWN_DIR:-}"
 previous_deployment_ids="[]"
 expected_config=""
 
@@ -244,6 +245,10 @@ if [[ -n "$prepared_release" ]]; then
         elif all(.[]; (.id | type == "string" and test("^[A-Za-z0-9-]+$"))) then map(.id) | unique
         else error("Railway active deployment has an invalid ID") end
     ')"
+  if [[ -n "$predecessor_teardown_dir" ]]; then
+    node .github/scripts/railway-predecessor-teardown.mjs record \
+      "$predecessor_teardown_dir" "$deployment_component" "$service_name" "$previous_deployment_ids"
+  fi
   deploy_output="$(node .github/scripts/railway-artifact.mjs activate \
     "$prepared_release" "$deployment_component" "$railway_environment")"
 else
@@ -300,6 +305,10 @@ if [[ -n "$prepared_release" ]]; then
     exit 1
   fi
   rm -f "$deployed_metadata"
+  if [[ -n "$predecessor_teardown_dir" ]]; then
+    node .github/scripts/railway-predecessor-teardown.mjs activated \
+      "$predecessor_teardown_dir" "$deployment_component" "$deployment_id"
+  fi
 fi
 if [[ "$defer_service_health" == "0" ]]; then
   if [[ "$deployment_was_skipped" == "1" ]]; then
@@ -309,15 +318,19 @@ if [[ "$defer_service_health" == "0" ]]; then
   fi
 fi
 if [[ -n "${SCOPE_RELEASE_DEPLOYMENTS_FILE:-}" ]]; then
-  jq --arg component "$deployment_component" --arg id "$deployment_id" \
-    '.[$component] = $id' "$SCOPE_RELEASE_DEPLOYMENTS_FILE" > "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp"
-  mv "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp" "$SCOPE_RELEASE_DEPLOYMENTS_FILE"
+  # Concurrent activations share this file; serialize the read-modify-write.
+  (
+    flock -x 9
+    jq --arg component "$deployment_component" --arg id "$deployment_id" \
+      '.[$component] = $id' "$SCOPE_RELEASE_DEPLOYMENTS_FILE" > "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp.$$"
+    mv "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp.$$" "$SCOPE_RELEASE_DEPLOYMENTS_FILE"
+  ) 9>>"$SCOPE_RELEASE_DEPLOYMENTS_FILE.lock"
 fi
 if [[ "$deployment_was_skipped" == "0" ]]; then
   record_deployment_evidence "$deployment_id"
 fi
 
-if [[ -n "$prepared_release" ]]; then
+if [[ -n "$prepared_release" && -z "$predecessor_teardown_dir" ]]; then
   deadline=$((SECONDS + 600))
   while IFS= read -r previous_deployment_id; do
     [[ "$previous_deployment_id" != "$deployment_id" ]] || continue

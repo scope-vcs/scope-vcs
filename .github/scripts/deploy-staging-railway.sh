@@ -144,17 +144,21 @@ if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
     run_maintenance apply
     run_maintenance backfill-workflow-catalogs
   fi
+  run_maintenance verify
 fi
 
-evidence_lines="$(mktemp)"
-trap 'rm -f "$evidence_lines"' EXIT
-export SCOPE_DEPLOYMENT_EVIDENCE_PATH="$evidence_lines"
+evidence_dir="$(mktemp -d)"
+predecessor_teardown_dir="$(mktemp -d)"
+trap 'rm -rf "$evidence_dir" "$predecessor_teardown_dir"' EXIT
+export SCOPE_PREDECESSOR_TEARDOWN_DIR="$predecessor_teardown_dir"
 # The router's readiness requires API replica discovery. Staging starts with
 # writers stopped, so restore the API before activating its router.
-for component in cache run-worker media-api media-worker api git-router web; do
-  jq -e --arg component "$component" '.components[$component]' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null || continue
+activate_staging() {
+  local component="$1" service image
+  jq -e --arg component "$component" '.components[$component]' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null || return 0
   service="$(jq -er --arg component "$component" '.services[$component].id' "$manifest_path")"
   export SCOPE_DEPLOYMENT_COMPONENT="$component"
+  export SCOPE_DEPLOYMENT_EVIDENCE_PATH="$evidence_dir/$component.jsonl"
   case "$component" in
     media-worker)
       image="$(jq -er '.components["media-worker"].image' "$SCOPE_PREPARED_RELEASE_PATH")"
@@ -164,9 +168,41 @@ for component in cache run-worker media-api media-worker api git-router web; do
       bash .github/scripts/deploy-railway.sh "$service"
       ;;
   esac
-done
+  EVIDENCE_PATH="$SCOPE_DEPLOYMENT_EVIDENCE_PATH" \
+    COMPONENT="$component" \
+    SOURCE_SHA="$SCOPE_DEPLOYMENT_SOURCE_SHA" \
+    node -e '
+const { readFileSync } = require("node:fs");
+const records = readFileSync(process.env.EVIDENCE_PATH, "utf8").trim().split(/\r?\n/).map(JSON.parse);
+if (records.length !== 1 || records[0].component !== process.env.COMPONENT ||
+    records[0].sourceSha !== process.env.SOURCE_SHA ||
+    typeof records[0].evidenceId !== "string" || !records[0].evidenceId) process.exit(1);
+'
+}
+
+activate_staging_pair() {
+  local first_pid second_pid failed=0
+  (activate_staging "$1") &
+  first_pid=$!
+  (activate_staging "$2") &
+  second_pid=$!
+  wait "$first_pid" || failed=1
+  wait "$second_pid" || failed=1
+  return "$failed"
+}
+
+activate_staging_pair cache media-api
+activate_staging_pair run-worker media-worker
+activate_staging api
+activate_staging git-router
+activate_staging web
 assert_staging_topology
+node .github/scripts/railway-predecessor-teardown.mjs wait "$predecessor_teardown_dir"
+evidence_files=()
+for component in cache run-worker media-api media-worker api git-router web; do
+  [[ ! -f "$evidence_dir/$component.jsonl" ]] || evidence_files+=("$evidence_dir/$component.jsonl")
+done
 jq -s --slurpfile manifest "$manifest_path" --arg commit "$SCOPE_DEPLOYMENT_SOURCE_SHA" --arg environmentId "$staging_environment_id" \
   '{commit: $commit, environmentId: $environmentId, candidateDeployments: 1,
     deployments: map({service: $manifest[0].services[.component].id, deploymentId: .evidenceId, status: "SUCCESS"})}' \
-  "$evidence_lines" > "$evidence_path"
+  "${evidence_files[@]}" > "$evidence_path"

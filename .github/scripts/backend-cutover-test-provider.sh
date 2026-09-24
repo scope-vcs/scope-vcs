@@ -207,9 +207,15 @@ if [[ "$1 $2" == "deployment list" ]]; then
   if [[ "$id" == new-* ]]; then
     image=""
     [[ ! -f "$FAKE_RAILWAY_STATE/image-$service" ]] || image="$(cat "$FAKE_RAILWAY_STATE/image-$service")"
+    old_status=REMOVED
+    if [[ "${FAKE_DELAY_REMOVE_UNTIL_ROUTER:-0}" == "1" && "$service" == scope-cache-service \
+      && ! -f "$FAKE_RAILWAY_STATE/up-scope-repo-router" ]]; then
+      old_status=SUCCESS
+    fi
     jq -cn --arg id "$id" --arg service "$service" --arg image "$image" \
+      --arg old_status "$old_status" \
       --argjson had_gate "$([[ -f "$FAKE_RAILWAY_STATE/gate-history-${service}" ]] && echo true || echo false)" \
-      '[{id:$id,serviceId:$service,status:"SUCCESS",createdAt:"2026-01-01T00:00:00Z",meta:{image:$image,imageDigest:($image | split("@") | .[1] // "")}},{id:("old-"+$service),serviceId:$service,status:"REMOVED"}] + if $had_gate then [{id:("gate-"+$service),serviceId:$service,status:"REMOVED",deploymentStopped:true}] else [] end'
+      '[{id:$id,serviceId:$service,status:"SUCCESS",createdAt:"2026-01-01T00:00:00Z",meta:{image:$image,imageDigest:($image | split("@") | .[1] // "")}},{id:("old-"+$service),serviceId:$service,status:$old_status}] + if $had_gate then [{id:("gate-"+$service),serviceId:$service,status:"REMOVED",deploymentStopped:true}] else [] end'
   else
     printf '[{"id":"%s","status":"SUCCESS","createdAt":"2026-01-01T00:00:00Z"}]\n' "$id"
   fi
@@ -288,6 +294,23 @@ if [[ "$1" == "up" ]]; then
   while [[ "$#" -gt 0 ]]; do
     if [[ "$1" == "--service" ]]; then service="$2"; shift 2; else shift; fi
   done
+  if [[ "${FAKE_REQUIRE_PARALLEL_PAIR:-0}" == "1" ]]; then
+    counterpart=""
+    case "$service" in
+      scope-cache-service) counterpart=scope-media ;;
+      scope-media) counterpart=scope-cache-service ;;
+      scope-worker) counterpart=scope-media-worker ;;
+      scope-media-worker) counterpart=scope-worker ;;
+    esac
+    if [[ -n "$counterpart" ]]; then
+      touch "$FAKE_RAILWAY_STATE/started-${service}"
+      for attempt in {1..200}; do
+        [[ ! -f "$FAKE_RAILWAY_STATE/started-${counterpart}" ]] || break
+        /bin/sleep 0.05
+      done
+      [[ -f "$FAKE_RAILWAY_STATE/started-${counterpart}" ]] || exit 74
+    fi
+  fi
   # Router readiness resolves the API private address; stopped API replicas
   # provide no DNS target for a newly starting router.
   if [[ "$service" == "scope-repo-router" ]] \
@@ -314,6 +337,8 @@ if [[ "$1" == "up" ]]; then
   fi
   touch "$FAKE_RAILWAY_STATE/up-${service}"
   rm -f "$FAKE_RAILWAY_STATE/stopped-${service}" "$FAKE_RAILWAY_STATE/gate-${service}"
+  # Model a provider mutation that succeeds even though its response is lost.
+  [[ "${FAKE_LOST_UP_RESPONSE_SERVICE:-}" != "$service" ]] || exit 75
   printf '{"deploymentId":"new-%s"}\n' "$service"
   exit 0
 fi
