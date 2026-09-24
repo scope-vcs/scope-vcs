@@ -322,13 +322,18 @@ export function RequestWorkspaceSidebar({
               }}
             />
           ) : maintainer === null ? (
-            <section>
-              <div className="request-workspace-group-label">
-                <TextSkeleton length="short" size="meta" />
-                <GroupCount count={null} />
-              </div>
-              {/* The closed rail keeps only avatars, so draw rail rows there. */}
-              <RequestWorkspaceListSkeleton rail={state === 'closed'} />
+            // Drawn as the first group, which leads with rail rows for anyone
+            // with requests that need them, so the closed rail keeps its shape.
+            <section className="request-workspace-needs-you">
+              <h2 aria-hidden="true" className="request-workspace-group-label">
+                <span>
+                  <TextSkeleton length="short" size="meta" />
+                </span>
+                <span>
+                  <GroupCount count={null} />
+                </span>
+              </h2>
+              <RequestWorkspaceListSkeleton rail />
             </section>
           ) : (
             <>
@@ -465,6 +470,7 @@ function count(page: RequestQueuePageResponse, moved: number) {
 
 function GroupCount({ count }: { count: string | null }) {
   return count === null
-    ? <TextSkeleton length="tiny" size="meta" />
+    // Centred when the closed rail stretches the count across it.
+    ? <TextSkeleton className="mx-auto" length="tiny" size="meta" />
     : <span className="tabular-nums">{count}</span>
 }
