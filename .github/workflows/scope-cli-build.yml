@@ -78,6 +78,9 @@ jobs:
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           workspaces: cli -> target
 
+      - name: Install cargo-deny
+        run: ./dev/install-cargo-deny.sh
+
       - name: Check CLI
         run: ./dev/checks/cli
 

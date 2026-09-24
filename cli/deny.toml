@@ -1,0 +1,11 @@
+# Dependency advisory policy for `cargo deny check advisories`. Known
+# vulnerabilities always fail the check; cargo-deny does not allow that to be
+# configured. Every ignore entry must be an object with `id` and `reason`.
+# deny.toml at the repository root holds the same policy for the main workspace.
+
+[advisories]
+yanked = "deny"
+unmaintained = "workspace"
+unsound = "all"
+unused-ignored-advisory = "deny"
+ignore = []
