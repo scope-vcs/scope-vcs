@@ -1,40 +1,22 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { test } from 'node:test'
-import { parse } from '@babel/parser'
-import { productionFunctions, serverFunctionName } from './server-functions-smoke.mjs'
+import { builtServerFunctions, serverFunctionName } from './server-functions-smoke.mjs'
 
 const request = (path) => ({ url: () => `https://scope.example${path}` })
-const serverBundle = new URL('../.output/server/_ssr/ssr.mjs', import.meta.url)
+const hasManifest = process.env.SCOPE_SMOKE_SERVER_MANIFEST ||
+  existsSync(new URL('../.output/server/_ssr/ssr.mjs', import.meta.url))
 
 test('server function interception recognizes production IDs from the built manifest', {
-  skip: !existsSync(serverBundle) && process.env.SCOPE_REQUIRE_BUILT_MANIFEST !== '1'
+  skip: !hasManifest && process.env.SCOPE_REQUIRE_BUILT_MANIFEST !== '1'
     ? 'No local build; pnpm build runs this check against its emitted manifest'
     : false,
 }, () => {
-  const source = parse(readFileSync(serverBundle, 'utf8'), { sourceType: 'module' })
-  const manifest = new Map()
-  const visit = (node) => {
-    if (!node || typeof node !== 'object') return
-    if (Array.isArray(node)) {
-      for (const child of node) visit(child)
-      return
-    }
-    if (typeof node.type !== 'string') return
-    if (node.type === 'ObjectProperty' && node.key.type === 'StringLiteral' && node.value.type === 'ObjectExpression') {
-      const name = node.value.properties.find((property) =>
-        property.type === 'ObjectProperty' && property.key.name === 'functionName')
-      if (name?.value.type === 'StringLiteral') manifest.set(node.key.value, name.value.value)
-    }
-    for (const [key, value] of Object.entries(node)) {
-      if (key !== 'loc' && key !== 'extra' && key !== 'comments') visit(value)
-    }
-  }
-  visit(source.program)
-
-  assert.ok(manifest.size > 0, 'No server function manifest entries found in the built server')
-  for (const [id, handler] of productionFunctions) {
-    assert.equal(manifest.get(id), handler, `Smoke interception for ${handler} disagrees with the built manifest`)
+  const compiledFunctions = builtServerFunctions()
+  assert.ok(compiledFunctions.size > 0, 'No server function manifest entries found in the built server')
+  for (const [id, handler] of compiledFunctions) {
+    assert.match(id, /^[0-9a-f]{64}$/)
+    assert.match(handler, /_createServerFn_handler$/)
     assert.equal(serverFunctionName(request(`/_serverFn/${id}?payload=test`)), handler)
   }
 })
