@@ -18,6 +18,7 @@ mod repository_invite_emails;
 mod repository_invite_links;
 mod repository_landing_files;
 mod repository_workflow_catalogs;
+mod request_run_source_base;
 mod run_attempt_active_indexes;
 mod run_execution_invariants;
 mod run_state_constraints;
@@ -43,6 +44,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0059_worker_history_permissions",
     "m0060_capacity_retries",
     "m0061_public_request_check_source",
+    "m0062_request_run_source_base",
 ];
 
 pub(super) async fn isolated_database() -> (

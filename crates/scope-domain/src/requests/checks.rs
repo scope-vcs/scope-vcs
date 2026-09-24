@@ -93,7 +93,12 @@ impl RequestCheck {
             revision.digest(),
             RunTrigger::Request,
             Some(requested_by_user_id.to_string()),
-            RunSource::ephemeral_git_bundle(snapshot)?,
+            match request.audience {
+                super::RequestAudience::Private => {
+                    RunSource::request_git_snapshot(snapshot, request.base_main_oid.clone())?
+                }
+                super::RequestAudience::Public => RunSource::ephemeral_git_bundle(snapshot)?,
+            },
             now_unix,
         )
     }
