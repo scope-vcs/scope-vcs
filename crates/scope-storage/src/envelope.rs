@@ -17,6 +17,7 @@ const MAX_KEY_ID_BYTES: usize = 1024;
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
 /// Whether `prefix`, the first bytes of a stored object, starts a framed envelope.
+#[cfg(test)]
 pub(crate) fn is_framed(prefix: &[u8]) -> bool {
     prefix.starts_with(&MAGIC)
 }

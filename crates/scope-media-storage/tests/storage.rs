@@ -187,12 +187,4 @@ impl ObjectBackend for TrackingBackend {
     async fn delete(&self, key: &str) -> Result<(), BackendError> {
         self.inner.delete(key).await
     }
-
-    async fn list_page(
-        &self,
-        prefix: &str,
-        start_after: Option<&str>,
-    ) -> Result<Vec<String>, BackendError> {
-        self.inner.list_page(prefix, start_after).await
-    }
 }
