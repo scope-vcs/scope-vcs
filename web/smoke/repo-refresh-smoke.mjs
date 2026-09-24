@@ -29,3 +29,20 @@ export function trackRepositoryRefresh(page) {
     await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
   }
 }
+
+// Hold the first client reconciliation response after the server has produced
+// it. This exercises the gap between an open event stream and settled data.
+export async function delayInitialRepositoryReconciliation(page, milliseconds) {
+  let delayed = false
+  await page.route('**/_serverFn/**', async (route) => {
+    if (delayed || serverFunctionName(route.request()) !== 'loadRepoLiveState_createServerFn_handler') {
+      await route.fallback()
+      return
+    }
+    delayed = true
+    const response = await route.fetch()
+    await delay(milliseconds)
+    await route.fulfill({ response })
+  })
+  return () => delayed
+}

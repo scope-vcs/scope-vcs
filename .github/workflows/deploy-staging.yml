@@ -349,11 +349,21 @@ jobs:
 
       # These read existing fixtures after migration/restore. No candidate catalog reset
       # is allowed to replace the data whose survival this release must demonstrate.
+      - name: Read exact staging web server manifest
+        env:
+          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
+        run: >-
+          node .github/scripts/extract-staging-web-manifest.mjs
+          artifacts/prepared-release.json artifacts/staging-web-ssr.mjs
+
       - name: Run browser smoke against staging
         working-directory: candidate/web
         env:
           SCOPE_SMOKE_REPO: dev/public-demo
           SCOPE_SMOKE_AUTH_ENABLED: '1'
+          SCOPE_SMOKE_SERVER_MANIFEST: ${{ github.workspace }}/artifacts/staging-web-ssr.mjs
         run: |
           web_domain="$(jq -er '.environments.staging.webDomain' ../../.github/deployment-services.json)"
           SCOPE_WEB_BASE_URL="https://$web_domain" pnpm test:smoke
