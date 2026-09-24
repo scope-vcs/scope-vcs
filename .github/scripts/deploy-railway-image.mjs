@@ -6,7 +6,7 @@ import { RAILWAY_MUTATION_TIMEOUT_MS, retryRailway } from "./railway-retry.mjs";
 import { readRailway } from "./railway-read.mjs";
 import { activePredecessors, excludeActivated, recordPredecessors } from "./railway-predecessor-teardown.mjs";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync } from "node:fs";
 
 const projectId = process.env.RAILWAY_PROJECT_ID;
 const environmentId = process.env.SCOPE_RAILWAY_ENVIRONMENT_ID;
@@ -141,8 +141,13 @@ appendFileSync(evidencePath, `${JSON.stringify({
 
 if (process.env.SCOPE_RELEASE_DEPLOYMENTS_FILE) {
   const deploymentsPath = process.env.SCOPE_RELEASE_DEPLOYMENTS_FILE;
-  const active = JSON.parse(readFileSync(deploymentsPath, "utf8"));
-  active[component] = deploymentId;
-  writeFileSync(`${deploymentsPath}.tmp`, `${JSON.stringify(active)}\n`);
-  renameSync(`${deploymentsPath}.tmp`, deploymentsPath);
+  // Concurrent activations share this file; serialize the read-modify-write.
+  execFileSync("flock", ["-x", `${deploymentsPath}.lock`, process.execPath, "-e", `
+    const { readFileSync, renameSync, writeFileSync } = require("node:fs");
+    const [path, component, id] = process.argv.slice(1);
+    const active = JSON.parse(readFileSync(path, "utf8"));
+    active[component] = id;
+    writeFileSync(\`\${path}.tmp.\${process.pid}\`, \`\${JSON.stringify(active)}\\n\`);
+    renameSync(\`\${path}.tmp.\${process.pid}\`, path);
+  `, deploymentsPath, component, deploymentId], { stdio: "inherit" });
 }

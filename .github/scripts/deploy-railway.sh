@@ -318,9 +318,13 @@ if [[ "$defer_service_health" == "0" ]]; then
   fi
 fi
 if [[ -n "${SCOPE_RELEASE_DEPLOYMENTS_FILE:-}" ]]; then
-  jq --arg component "$deployment_component" --arg id "$deployment_id" \
-    '.[$component] = $id' "$SCOPE_RELEASE_DEPLOYMENTS_FILE" > "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp"
-  mv "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp" "$SCOPE_RELEASE_DEPLOYMENTS_FILE"
+  # Concurrent activations share this file; serialize the read-modify-write.
+  (
+    flock -x 9
+    jq --arg component "$deployment_component" --arg id "$deployment_id" \
+      '.[$component] = $id' "$SCOPE_RELEASE_DEPLOYMENTS_FILE" > "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp.$$"
+    mv "$SCOPE_RELEASE_DEPLOYMENTS_FILE.tmp.$$" "$SCOPE_RELEASE_DEPLOYMENTS_FILE"
+  ) 9>>"$SCOPE_RELEASE_DEPLOYMENTS_FILE.lock"
 fi
 if [[ "$deployment_was_skipped" == "0" ]]; then
   record_deployment_evidence "$deployment_id"
