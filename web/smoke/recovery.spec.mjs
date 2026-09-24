@@ -104,7 +104,7 @@ test('a delayed file offers scoped retry and keeps its selection', async () => {
       assert.equal(await surface.getAttribute('aria-busy'), 'true')
       assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')
       assert.equal(await page.getByLabel('Repository file navigator').isVisible(), true)
-      await surface.getByRole('button', { name: 'Retry', exact: true }).click()
+      await surface.getByRole('button', { name: 'Retry loading src/app.ts', exact: true }).click()
       await page.locator('pre code').filter({ hasText: 'export function greet' }).waitFor()
       assert.equal(attempts, 2)
       assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')

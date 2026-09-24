@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useRouter } from '@tanstack/react-router'
-import { createContext, use, useEffect, useState, type ReactNode } from 'react'
+import { createContext, use, useCallback, useEffect, useState, type ReactNode } from 'react'
 
 const DEFAULT_ROWS: { id: string; length: TextSkeletonLength }[] = [
   { id: 'primary', length: 'long' },
@@ -21,6 +21,17 @@ const DEFAULT_ROWS: { id: string; length: TextSkeletonLength }[] = [
 const NestedSurface = createContext(false)
 
 const SLOW_AFTER_MS = 8_000
+
+// Router fallbacks for one navigation share its start, so when a parent's
+// fallback hands off to a child's, the child does not restart the eight seconds.
+let navigationPending: { key: string; since: number } | null = null
+
+function navigationSince(router: NonNullable<ReturnType<typeof useRouter>>) {
+  const { href, state } = router.state.location
+  const key = state.__TSR_key ?? href
+  if (navigationPending?.key !== key) navigationPending = { key, since: Date.now() }
+  return navigationPending.since
+}
 
 /**
  * One policy for every loading state. A surface the router shows in place of a
@@ -44,8 +55,14 @@ export function PendingSurface({
   const nested = use(NestedSurface)
   const router = useRouter({ warn: false })
   const [routeFallback] = useState(() => router?.state.status === 'pending')
-  const slow = useSlow(!nested)
-  const retry = onRetry ?? (routeFallback && router ? () => void router.invalidate() : undefined)
+  const [since] = useState(() => routeFallback && router ? navigationSince(router) : Date.now())
+  const [slow, restartSlow] = useSlow(!nested, since)
+  const retryLoad = onRetry ?? (routeFallback && router ? () => void router.invalidate() : undefined)
+  // A retry starts a fresh attempt, which gets its own eight seconds.
+  const retry = retryLoad && (() => {
+    restartSlow()
+    retryLoad()
+  })
   return (
     <NestedSurface value>
       {nested ? null : (
@@ -60,24 +77,32 @@ export function PendingSurface({
         )}
         data-slot="pending-surface"
       >
-        {slow ? <SlowNote onRetry={retry} /> : null}
+        {slow ? <SlowNote label={label} onRetry={retry} /> : null}
         {children ?? <DefaultPageSkeleton />}
       </div>
     </NestedSurface>
   )
 }
 
-function useSlow(enabled: boolean) {
+function useSlow(enabled: boolean, since: number) {
+  const [startedAt, setStartedAt] = useState(since)
   const [slow, setSlow] = useState(false)
   useEffect(() => {
     if (!enabled || slow) return
-    const timer = window.setTimeout(() => setSlow(true), SLOW_AFTER_MS)
+    const timer = window.setTimeout(
+      () => setSlow(true),
+      Math.max(0, SLOW_AFTER_MS - (Date.now() - startedAt)),
+    )
     return () => window.clearTimeout(timer)
-  }, [enabled, slow])
-  return slow
+  }, [enabled, slow, startedAt])
+  const restart = useCallback(() => {
+    setSlow(false)
+    setStartedAt(Date.now())
+  }, [])
+  return [slow, restart] as const
 }
 
-function SlowNote({ onRetry }: { onRetry?: () => void }) {
+function SlowNote({ label, onRetry }: { label: string; onRetry?: () => void }) {
   return (
     <div className="absolute right-3 top-3 z-10 flex items-center gap-2 rounded-md border border-border bg-background/95 px-2.5 py-1 text-xs text-muted-foreground shadow-sm">
       <span>Still loading</span>
@@ -85,6 +110,7 @@ function SlowNote({ onRetry }: { onRetry?: () => void }) {
         <>
           <span aria-hidden="true">·</span>
           <button
+            aria-label={`Retry ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
             className="rounded font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
             onClick={onRetry}
             type="button"

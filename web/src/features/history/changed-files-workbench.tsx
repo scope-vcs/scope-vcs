@@ -55,7 +55,7 @@ export function ChangedFilesWorkbench({
           error={fileDiffState.error}
           loading={fileDiffState.status === 'loading'}
           onClose={navigation.closeDiff}
-          onRetry={fileDiffState.status === 'failed' ? onRetryDiff : undefined}
+          onRetry={onRetryDiff}
           onScrollTopChange={onDiffScroll}
           scrollTop={diffScrollTop}
           selectedPath={selectedFilePath}
