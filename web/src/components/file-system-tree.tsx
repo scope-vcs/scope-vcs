@@ -59,6 +59,7 @@ export function FileSystemTreeSkeleton({ metaColumnLabel }: { metaColumnLabel: R
 
 export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
   compactVisibility = false,
+  expandFolders = false,
   files,
   getFileMeta,
   metaColumnLabel = 'Status',
@@ -67,6 +68,8 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
   selectedFilePath = null,
 }: {
   compactVisibility?: boolean
+  /** Start with every folder open, for short lists such as a change set. */
+  expandFolders?: boolean
   files: TFile[]
   getFileMeta?: (file: TFile) => ReactNode
   metaColumnLabel?: ReactNode
@@ -87,6 +90,7 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
     <FileSystemTreeRows
       columnsClassName={columnsClassName}
       compactVisibility={compactVisibility}
+      expandFolders={expandFolders}
       getFileMeta={getFileMeta}
       key={treeKey}
       onActivateFile={onActivateFile}
@@ -101,6 +105,7 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
 function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
   columnsClassName,
   compactVisibility,
+  expandFolders,
   getFileMeta,
   metaColumnLabel,
   onActivateFile,
@@ -110,6 +115,7 @@ function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
 }: {
   columnsClassName: string
   compactVisibility: boolean
+  expandFolders: boolean
   getFileMeta?: (file: TFile) => ReactNode
   metaColumnLabel: ReactNode
   onActivateFile?: (file: TFile) => void
@@ -119,7 +125,7 @@ function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
 }) {
   const [folderState, setFolderState] = useState<FolderState>(() => ({
     collapsedForSelection: new Map(),
-    expanded: new Set(),
+    expanded: new Set(expandFolders ? folderKeys(root) : []),
   }))
   const selectedPath = normalizeFilePath(selectedFilePath ?? '')
   const selectedAncestorKeys = useMemo(
@@ -341,6 +347,12 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
         ))}
     </>
   )
+}
+
+function folderKeys<TFile extends FileSystemTreeFileBase>(node: FileSystemTreeNode<TFile>): string[] {
+  return node.type === 'folder'
+    ? [node.key, ...node.children.flatMap((child) => folderKeys(child))]
+    : []
 }
 
 type FolderState = {

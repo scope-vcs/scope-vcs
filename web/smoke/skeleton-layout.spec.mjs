@@ -31,9 +31,9 @@ const storageState = process.env.SCOPE_SMOKE_STORAGE_STATE
 const SCENARIOS = [
   { name: 'profile', from: repoPath, to: `/${owner}` },
   { name: 'code from profile', from: `/${owner}`, to: repoPath },
-  { name: 'code from history', from: `${repoPath}/history`, to: repoPath },
-  { name: 'history from profile', from: `/${owner}`, to: `${repoPath}/history` },
-  { name: 'history from code', from: repoPath, to: `${repoPath}/history` },
+  { name: 'code from update', from: `${repoPath}/updates/dev-public-1`, to: repoPath },
+  { name: 'update from profile', from: `/${owner}`, to: `${repoPath}/updates/dev-public-1` },
+  { name: 'update from code', from: repoPath, to: `${repoPath}/updates/dev-public-1` },
   { name: 'requests from profile', from: `/${owner}`, to: `${requestRepoPath}/requests` },
   { name: 'requests from code', from: requestRepoPath, to: `${requestRepoPath}/requests` },
   ...storageState ? [
@@ -48,13 +48,11 @@ const SCENARIOS = [
 
 // Checks that fail today. Each fix removes its entry, and the test fails if an
 // entry starts passing, so this list only shrinks. What remains depends on the
-// seeded data, not on the skeletons' shape: the history skeleton fills its list
-// box as an active repository would, and the seed has one entry.
+// seeded data, not on the skeletons' shape: on phones the update skeleton's file
+// tree is as long as a typical change set's, and the seeded update has two files.
 const KNOWN_FAILURES = new Set([
-  'desktop history from code: dividers',
-  'desktop history from profile: dividers',
-  'mobile history from code: dividers',
-  'mobile history from profile: dividers',
+  'mobile update from code: dividers',
+  'mobile update from profile: dividers',
 ])
 
 for (const [viewportName, viewport] of Object.entries(VIEWPORTS)) {

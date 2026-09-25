@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  compactHistorySourceId,
   historyEntryLabels,
   historyRowLabels,
 } from './history-row-labels'
@@ -60,15 +61,18 @@ test('labels repository history entries by their actual update kind', () => {
     visibility_summary: { made_private_count: 1, made_public_count: 1 },
   }
 
-  assert.equal(historyEntryLabels({ ...base, kind: 'push' }).kind, 'Push')
+  assert.equal(historyEntryLabels({ ...base, kind: 'push' }).kind, null)
   assert.equal(historyEntryLabels({ ...base, kind: 'merged_request' }).kind, 'Merged')
   assert.deepEqual(historyEntryLabels({ ...base, kind: 'visibility_change' }), {
-    ariaLabel: 'Visibility: Ship the history page, update push-1, 1 made public, 1 made private',
-    compactId: 'push-1',
     count: '1 made public, 1 made private',
     kind: 'Visibility',
     title: 'Ship the history page',
   })
+})
+
+test('compacts reviewed push ids and keeps other source ids whole', () => {
+  assert.equal(compactHistorySourceId(`rv_push_${'2f91a73cf8bd'.padEnd(40, '1')}`), '2f91a73cf8bd')
+  assert.equal(compactHistorySourceId('visibility_59'), 'visibility_59')
 })
 
 function commit(logicalCommitId: string, message: string, changeCount = 3) {

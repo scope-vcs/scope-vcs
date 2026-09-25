@@ -21,7 +21,7 @@ import { storeHomeFlash } from '@/lib/home-flash'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { ShieldCheck } from 'lucide-react'
 import { useNavigate, useRouter } from '@tanstack/react-router'
-import { useReducer, useState } from 'react'
+import { useReducer, useState, type ReactNode } from 'react'
 import { DeleteRepositoryDialog } from './delete-repository-dialog'
 import {
   RepositoryMembersSection,
@@ -48,6 +48,7 @@ export function RepoSettingsPage({
   params,
   updateMember,
   updateMetadata,
+  visibilityLog,
 }: {
   createInvite: (
     input: CreateRepoInviteInput,
@@ -63,6 +64,8 @@ export function RepoSettingsPage({
   params: RepoParams
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
   updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummaryResponse>
+  /** Rendered only for readers who can see private files. */
+  visibilityLog?: ReactNode
 }) {
   const navigate = useNavigate()
   const router = useRouter()
@@ -147,6 +150,8 @@ export function RepoSettingsPage({
             save={(metadata) => mutateAndRefresh(updateMetadata({ ...params, ...metadata }))}
           />
         )}
+
+        {repo.access.can_read_private_files && visibilityLog}
 
         {repo.access.actor === 'Owner' && (
           <DangerZoneSection onDelete={() => dispatch({ repo, type: 'deleteTargetChanged' })} />

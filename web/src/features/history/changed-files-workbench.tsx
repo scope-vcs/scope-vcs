@@ -20,8 +20,8 @@ export type ChangedFilesProps = {
 
 // Keep navigation state in the detail panel so loading and error surfaces do
 // not discard it while the changed-file content is temporarily hidden.
-export function useChangedFileNavigation(onCloseDiff: () => void) {
-  const [open, setOpen] = useState(false)
+export function useChangedFileNavigation(onCloseDiff: () => void, initiallyOpen = false) {
+  const [open, setOpen] = useState(initiallyOpen)
   const ref = useRef<HTMLDivElement>(null)
   function closeDiff() {
     onCloseDiff()
@@ -34,7 +34,7 @@ export function useChangedFileNavigation(onCloseDiff: () => void) {
 export function ChangedFilesWorkbench({
   diffIdentity, diffScrollTop, fileDiffState, onDiffScroll, onRetryDiff,
   onSelectFile, selectedFilePath, files, navigation, navigationLabel,
-  selectedVisibilityId, emptyFilesMessage, emptyPreviewMessage,
+  selectedVisibilityId, emptyFilesMessage, emptyPreviewMessage, expandFolders = false,
 }: Omit<ChangedFilesProps, 'onCloseDiff'> & {
   files: CommitFileResponse[]
   navigation: ReturnType<typeof useChangedFileNavigation>
@@ -44,6 +44,7 @@ export function ChangedFilesWorkbench({
   // Entries with only visibility changes instead render just the selected diff.
   emptyFilesMessage?: string
   emptyPreviewMessage?: string
+  expandFolders?: boolean
 }) {
   const placeholder = <PanelState><span>{emptyPreviewMessage ?? 'Select a changed file'}</span></PanelState>
   const preview = selectedFilePath || emptyFilesMessage !== undefined ? (
@@ -79,6 +80,7 @@ export function ChangedFilesWorkbench({
         {files.length ? (
           <FileSystemTree
             compactVisibility
+            expandFolders={expandFolders}
             files={files}
             getFileMeta={(file) => <Badge variant="neutral">{file.kind}</Badge>}
             metaColumnLabel="change"

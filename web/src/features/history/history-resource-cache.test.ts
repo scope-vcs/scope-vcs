@@ -41,7 +41,7 @@ test('keys resources by immutable audience-aware identities', () => {
   )
   assert.notEqual(
     historyEntryCacheKey(commitBase),
-    historyEntryCacheKey({ ...commitBase, generation: 'generation-2' }),
+    historyEntryCacheKey({ ...commitBase, entry: 'c2' }),
   )
 
   const diffBase = {
@@ -98,7 +98,7 @@ test('evicts large text diffs at the byte budget', () => {
 })
 
 test('isolates content and exact visibility preview caches for the same file and blobs', () => {
-  const base = { scope: 'viewer-a:public', audience: 'public' as const, entry: 'push-1', generation: 'g1', repoId: 'scope/demo', viewKey: 'public', path: '/same.ts', oldOid: null, newOid: 'blob' }
+  const base = { scope: 'viewer-a:public', audience: 'public' as const, entry: 'push-1', path: '/same.ts', oldOid: null, newOid: 'blob', visibilityChange: null }
   assert.notEqual(historyEntryDiffCacheKey(base), historyEntryDiffCacheKey({ ...base, visibilityChange: 'first' }))
   assert.notEqual(historyEntryDiffCacheKey({ ...base, visibilityChange: 'first' }), historyEntryDiffCacheKey({ ...base, visibilityChange: 'second' }))
 })
