@@ -42,8 +42,9 @@ before events are sent to PostHog.
 
 Scope does not sell or share personal data for advertising, and does not use
 advertising cookies. The website stores only what it needs to work: Clerk's
-sign-in cookies, your theme preference, and unsent attachment drafts in the
-current tab.
+sign-in cookies, your theme preference, a cookie remembering whether you
+collapsed the requests sidebar, and, for the current tab only, unsent
+attachment drafts and one-time notices.
 
 ## Why Scope uses it
 

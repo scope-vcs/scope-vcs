@@ -29,7 +29,9 @@ The analytics collection contract, including excluded fields, is in
 | --- | --- | --- |
 | Clerk cookies | Sign-in | No, strictly necessary |
 | `scope-theme` in `localStorage` | Theme the user chose | No, user-requested |
+| `scope-requests-sidebar` cookie, one year | Whether the user collapsed the requests sidebar, read during server rendering | No, user-requested |
 | Attachment drafts in `sessionStorage` | Unsent attachments in the current tab | No, user-requested |
+| `web/src/lib/home-flash.ts` values in `sessionStorage` | One-time notices shown after a redirect, cleared on read | No, strictly necessary |
 
 Analytics IDs live in page memory only. Adding any analytics or tracking storage
 requires a consent mechanism first.
