@@ -1,7 +1,7 @@
 import { WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
 import { useParams } from '@tanstack/react-router'
-import { UpdateNavigation } from './update-page'
+import { UpdateNavigation } from './update-navigation'
 import { UpdateDetailSkeleton } from './update-detail-skeleton'
 
 export function UpdatePagePending() {
