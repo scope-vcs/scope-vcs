@@ -114,10 +114,8 @@ export function RepositoryCodeView({
           ) : (
             <PendingSurface
               className="min-h-[220px]"
-              delay
               label="Loading repository files"
               onRetry={content.retry}
-              retryLabel="retry files"
             >
               <FileNavigatorSkeleton />
             </PendingSurface>
@@ -341,12 +339,9 @@ function SourceContent({
     return (
       <PendingSurface
         className="min-h-[220px]"
-        delay
         label={selectedPath ? `Loading ${displayRouteFilePath(selectedPath)}` : 'Loading repository introduction'}
-        delayedLabel="this file is taking longer than usual"
         key={selectedPath ?? 'introduction'}
         onRetry={retry}
-        retryLabel="retry file"
       >
         <SourceCodeSkeleton />
       </PendingSurface>

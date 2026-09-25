@@ -29,7 +29,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
 
   if (!ready) return null
   if (current.status === 'loading' || current.status === 'idle') {
-    return <RepositoryLatestActivityPending />
+    return <RepositoryLatestActivityPending onRetry={current.retry} />
   }
   if (current.status === 'failed') {
     return (
@@ -73,9 +73,9 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
 }
 
 // Wraps like the loaded row: the message takes its own line on narrow screens.
-export function RepositoryLatestActivityPending() {
+export function RepositoryLatestActivityPending({ onRetry }: { onRetry?: () => void }) {
   return (
-    <PendingSurface delay label="Loading latest repository change">
+    <PendingSurface label="Loading latest repository change" onRetry={onRetry}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-5 py-3 text-xs sm:px-6 lg:px-8">
         <span className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
           <TextSkeleton length="long" size="meta" />

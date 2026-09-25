@@ -19,7 +19,7 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
   const navigation = useChangedFileNavigation(onCloseDiff)
   if (resource.status === 'loading') {
     return (
-      <PendingSurface delay label="Loading update details">
+      <PendingSurface label="Loading update details" onRetry={onRetryDetail}>
         <CommitDetailSkeleton />
       </PendingSurface>
     )

@@ -99,8 +99,8 @@ export function RequestActivityDrawer({
             {loading && !activity ? (
               <PendingSurface
                 className="min-h-full"
-                delay
                 label="Loading request history"
+                onRetry={load}
               >
                 <RequestActivitySkeleton />
               </PendingSurface>

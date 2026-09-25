@@ -95,8 +95,8 @@ export function ReviewFileDiffDrawer({
           {loading ? (
             <PendingSurface
               className="min-h-full"
-              delay
               label={`Loading ${displayName || 'file'} diff`}
+              onRetry={onRetry}
             >
               <DiffSkeleton />
             </PendingSurface>
