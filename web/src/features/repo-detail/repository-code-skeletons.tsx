@@ -27,20 +27,31 @@ const PENDING_SOURCE_LINES: { id: string; length: LineSkeletonLength }[] = [
   { id: 'ninth', length: 'short' },
 ]
 
+// Mirrors RepositoryFileNavigator: find-file search, then the file tree with
+// its column label and rows.
 export function FileNavigatorSkeleton() {
   return (
     <div>
-      <BlockSkeleton className="mb-2 h-8 w-full" />
-      {PENDING_FILES.map((file) => (
-        <div
-          className="grid min-h-9 grid-cols-[18px_minmax(0,1fr)_18px] items-center gap-2"
-          key={file.id}
-        >
-          <BlockSkeleton className="size-3.5" />
-          <TextSkeleton length={file.length} size="meta" />
-          <BlockSkeleton className="size-3" />
-        </div>
-      ))}
+      <div className="mb-2 px-1">
+        <BlockSkeleton className="h-8 w-full" />
+      </div>
+      <div className="hidden px-3 pb-1.5 pt-1 text-[11px] font-medium text-muted-foreground sm:block">
+        path
+      </div>
+      <ul className="space-y-0.5">
+        {PENDING_FILES.map((file) => (
+          <li
+            className="grid min-h-9 grid-cols-[minmax(0,1fr)_18px] items-center gap-2 border border-transparent px-3 py-1.5"
+            key={file.id}
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <BlockSkeleton className="size-4 shrink-0" />
+              <TextSkeleton length={file.length} size="meta" />
+            </div>
+            <BlockSkeleton className="size-3.5 rounded-full" />
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
