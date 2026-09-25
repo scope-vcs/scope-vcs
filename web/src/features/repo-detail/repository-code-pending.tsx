@@ -3,7 +3,11 @@ import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
 import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
 import { useState } from 'react'
-import { FileNavigatorSkeleton, SourceCodeSkeleton } from './repository-code-skeletons'
+import {
+  FileNavigatorSkeleton,
+  SourceCodeSkeleton,
+  SourceTabStripSkeleton,
+} from './repository-code-skeletons'
 import { RepositoryLatestActivityPending } from './repository-latest-activity'
 
 // Mirrors RepositoryCodeView before its files arrive, without importing it:
@@ -32,7 +36,7 @@ export function RepositoryCodePending() {
           </PendingSurface>
         </div>
         <div>
-          <div className="min-h-10 border-b border-border" />
+          <SourceTabStripSkeleton />
           <PendingSurface className="min-h-[220px]" delay label="Loading repository introduction">
             <SourceCodeSkeleton />
           </PendingSurface>

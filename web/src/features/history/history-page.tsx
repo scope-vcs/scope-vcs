@@ -3,7 +3,7 @@ import type { HistoryPageResponse } from '@/api/types.generated'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { AudienceToggle } from '@/features/history/history-audience-toggle'
 import { HistoryEntryDetailPanel } from './history-entry-detail'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { HistoryFeedToggle } from './history-feed-toggle'
 import { Button } from '@/components/ui/button'
 import type { HistoryVisibilityChange } from './history-visibility-changes'
 import { HistoryEntryList } from '@/features/history/history-entry-list'
@@ -110,14 +110,7 @@ function HistoryPageContent(props: HistoryPageProps & { cacheKey: string | null;
         title="history"
       />
       <section className="border-t border-border">
-        <div className="border-b border-border px-5 py-3 sm:px-6">
-          <ToggleGroup type="single" value={feed} onValueChange={(value) => {
-            if (value === 'updates' || value === 'all') selectFeed(value)
-          }} aria-label="History activity">
-            <ToggleGroupItem value="updates">Pushes &amp; merges</ToggleGroupItem>
-            <ToggleGroupItem value="all">All activity</ToggleGroupItem>
-          </ToggleGroup>
-        </div>
+        <HistoryFeedToggle feed={feed} onSelect={selectFeed} />
         {entries.length === 0 && !selectedEntryId ? (
           <div className="px-5 py-12 text-center sm:px-6">
             <h2 className="text-sm font-semibold">{feed === 'updates' ? 'No pushes or merges yet' : 'No activity yet'}</h2>

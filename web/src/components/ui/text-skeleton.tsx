@@ -5,7 +5,8 @@ import type { ComponentProps } from 'react'
 // bar inside it, so a skeleton row is as tall as the loaded row.
 const TEXT_SIZE = {
   body: 'h-5 py-0.5',
-  heading: 'h-9 py-1',
+  // Page headings are 26 to 28px on phones and 30 to 32px from sm up.
+  heading: 'h-[30px] py-1 sm:h-9',
   meta: 'h-4 py-0.5',
   title: 'h-6 py-0.5',
 } as const

@@ -7,6 +7,7 @@ import { Link } from '@tanstack/react-router'
 import { runStatus } from '../runs/run-status'
 import { RunStatusIcon } from '../runs/run-status-icon'
 import { requestCheckEvaluationNote } from './request-labels'
+import { CHECKS_SECTION_CLASS, RequestChecksPending } from './request-checks-pending'
 
 /** What the request head owes before it can merge: one row per workflow. */
 export function RequestChecksSection({
@@ -18,13 +19,14 @@ export function RequestChecksSection({
   error: string | null
   params: RepoParams
 }) {
-  if (!checks && !error) return null
+  // Checks always arrive or fail, so their row is reserved while they load.
+  if (!checks && !error) return <RequestChecksPending />
   const note = checks ? requestCheckEvaluationNote(checks) : null
 
   return (
     <section
       aria-label="Checks"
-      className="border-b border-border px-5 py-4 sm:px-6 lg:px-8"
+      className={CHECKS_SECTION_CLASS}
     >
       <h2 className="label-mono text-muted-foreground">checks</h2>
       {error ? (

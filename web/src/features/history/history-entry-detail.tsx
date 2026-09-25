@@ -15,12 +15,12 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
   onSelectVisibility: (change: HistoryVisibilityChange) => void
   selectedVisibilityId: string | null
 }) {
-  const { resource, onCloseDiff, onRetryDetail, onSelectVisibility, selectedFilePath, selectedVisibilityId } = props
+  const { resource, onCloseDiff, onRetryDetail, onSelectVisibility, selectedVisibilityId } = props
   const navigation = useChangedFileNavigation(onCloseDiff)
   if (resource.status === 'loading') {
     return (
       <PendingSurface delay label="Loading update details">
-        <CommitDetailSkeleton showDiff={selectedFilePath !== null} />
+        <CommitDetailSkeleton />
       </PendingSurface>
     )
   }

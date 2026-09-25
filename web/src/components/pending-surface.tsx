@@ -82,23 +82,21 @@ export function PendingSurface({
 }
 
 export function ApplicationPendingShell({
+  actions,
   children,
   contextLabel,
   label,
-  repository,
 }: {
+  /** The loaded page's topbar controls, when they are known before its data. */
+  actions?: ReactNode
   children?: ReactNode
   contextLabel?: string
   label: string
-  repository?: { owner: string; repo: string }
 }) {
   return (
     <AppShell
       header={() => (
-        <ApplicationTopbar
-          contextLabel={contextLabel}
-          repository={repository}
-        />
+        <ApplicationTopbar contextLabel={contextLabel}>{actions}</ApplicationTopbar>
       )}
     >
       <PageRail className="min-h-full">

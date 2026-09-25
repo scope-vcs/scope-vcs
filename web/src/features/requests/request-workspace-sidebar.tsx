@@ -22,7 +22,11 @@ import {
   type ReactNode,
 } from 'react'
 import { REQUEST_QUEUE_SECTION_ORDER, type RequestQueuePages } from './request-list-model'
-import { RequestWorkspaceList, type RequestWorkspaceListProps } from './request-workspace-list'
+import {
+  RequestWorkspaceList,
+  RequestWorkspaceListSkeleton,
+  type RequestWorkspaceListProps,
+} from './request-workspace-list'
 import {
   REQUEST_ATTENTION_GROUP_LABELS,
   REQUEST_ATTENTION_GROUP_ORDER,
@@ -85,7 +89,8 @@ export function RequestWorkspaceSidebar({
   query: string
   onSearch: (query: string) => void
   actionError: string | null
-  maintainer: boolean
+  /** Null while the repository loads: which groups apply is not known yet. */
+  maintainer: boolean | null
   onLoadMore: (section: RequestQueueSection) => void
   params: RepoParams
 }) {
@@ -186,11 +191,12 @@ export function RequestWorkspaceSidebar({
   }
 
   const searching = query.trim().length > 0
-  const common = { loading, skeleton, error, maintainer, onRetry, onAction, params, pendingId, selectedId }
+  const knownMaintainer = maintainer ?? false
+  const common = { loading, skeleton, error, maintainer: knownMaintainer, onRetry, onAction, params, pendingId, selectedId }
   const rows = (section: RequestQueueSection): QueueRow[] =>
     pages?.[section].requests.map((item) => ({ item, section })) ?? []
   const allRows = REQUEST_QUEUE_SECTION_ORDER.flatMap(rows)
-  const grouped = groupRows(allRows, maintainer)
+  const grouped = groupRows(allRows, knownMaintainer)
   useRequestKeyboard({
     focus,
     onAction,
@@ -315,6 +321,21 @@ export function RequestWorkspaceSidebar({
                 if (nextSection) onLoadMore(nextSection)
               }}
             />
+          ) : maintainer === null ? (
+            // Drawn as the first group, which leads with rail rows for anyone
+            // with requests that need them, so the closed rail keeps its shape.
+            <section className="request-workspace-needs-you">
+              <h2 aria-hidden="true" className="request-workspace-group-label">
+                <span>
+                  <TextSkeleton length="short" size="meta" />
+                </span>
+                {/* Centred when the closed rail stretches the count across it. */}
+                <span>
+                  <TextSkeleton className="mx-auto" length="tiny" size="meta" />
+                </span>
+              </h2>
+              <RequestWorkspaceListSkeleton rail />
+            </section>
           ) : (
             <>
               {(maintainer || needsYou.length > 0) && (

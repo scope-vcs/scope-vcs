@@ -39,32 +39,22 @@ const SCENARIOS = [
   ...storageState ? [
     { name: 'runs', from: repoPath, to: `${repoPath}/runs`, signedIn: true },
     { name: 'run detail', from: `${repoPath}/runs`, to: firstRunLink, signedIn: true },
-    { name: 'settings', from: repoPath, to: `${repoPath}/settings`, signedIn: true },
+    // Switching to settings shows the real page at once; entering it pends.
+    { name: 'settings', from: `/${owner}`, to: `${repoPath}/settings`, signedIn: true },
     { name: 'account', from: `/${owner}`, to: '/account', signedIn: true },
     { name: 'request detail', from: `${requestRepoPath}/requests`, to: firstRequestLink, signedIn: true },
   ] : [],
 ]
 
 // Checks that fail today. Each fix removes its entry, and the test fails if an
-// entry starts passing, so this list only shrinks.
+// entry starts passing, so this list only shrinks. What remains depends on the
+// seeded data, not on the skeletons' shape: the history skeleton fills its list
+// box as an active repository would, and the seed has one entry.
 const KNOWN_FAILURES = new Set([
-  'desktop account: dividers',
-  'desktop history from code: content edge',
   'desktop history from code: dividers',
-  'desktop history from profile: content edge',
   'desktop history from profile: dividers',
-  'desktop request detail: dividers',
-  'desktop run detail: dividers',
-  'desktop settings: dividers',
-  'mobile code from history: content edge',
-  'mobile code from profile: content edge',
-  'mobile history from code: content edge',
   'mobile history from code: dividers',
-  'mobile history from profile: content edge',
   'mobile history from profile: dividers',
-  'mobile request detail: dividers',
-  'mobile run detail: dividers',
-  'mobile settings: dividers',
 ])
 
 for (const [viewportName, viewport] of Object.entries(VIEWPORTS)) {

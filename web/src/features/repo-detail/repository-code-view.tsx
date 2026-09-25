@@ -40,6 +40,7 @@ import {
 import {
   FileNavigatorSkeleton,
   SourceCodeSkeleton,
+  SourceTabStripSkeleton,
 } from './repository-code-skeletons'
 import { RepositoryFileNavigator } from './repository-file-navigator'
 
@@ -230,15 +231,18 @@ function SourcePane({
 
   return (
     <div className="min-w-0">
-      <RepositoryTabStrip
-        availablePaths={availablePaths}
-        meta={meta}
-        onActivateTab={onActivateTab}
-        onEmptyTabFocus={onEmptyTabFocus}
-        onPinTab={onPinTab}
-        selectedPath={selectedPath}
-        workspaceTabs={workspaceTabs}
-      />
+      {/* Until the files arrive no tab is chosen, but the landing file's opens next. */}
+      {loading && !selectedPath ? <SourceTabStripSkeleton /> : (
+        <RepositoryTabStrip
+          availablePaths={availablePaths}
+          meta={meta}
+          onActivateTab={onActivateTab}
+          onEmptyTabFocus={onEmptyTabFocus}
+          onPinTab={onPinTab}
+          selectedPath={selectedPath}
+          workspaceTabs={workspaceTabs}
+        />
+      )}
       <div
         aria-label={activeTabDomIds ? undefined : 'Repository file viewer'}
         aria-labelledby={activeTabDomIds?.tabId}

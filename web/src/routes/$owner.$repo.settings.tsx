@@ -120,7 +120,7 @@ function RepoSettingsRoute() {
           <Button className="mt-3" onClick={resource.retry} size="sm">Try again</Button>
         </PageContent>
       )}
-      {resource.value ? (
+      {!resource.error || resource.value ? (
         <RepoSettingsPage
           key={scope}
           createInvite={(data) => retainResult(
@@ -141,7 +141,8 @@ function RepoSettingsRoute() {
             deleteRepoMember({ data }),
             (member) => ({ type: 'memberRemoved', member }),
           )}
-          collaboration={resource.value.collaboration}
+          collaboration={collaboration}
+          collaborationLoading={!resource.value}
           params={params}
           updateMember={(data) => retainResult(
             updateRepoMember({ data }),
@@ -149,7 +150,7 @@ function RepoSettingsRoute() {
           )}
           updateMetadata={(data) => updateRepoMetadata({ data })}
         />
-      ) : !resource.error ? <RepoSettingsPending /> : null}
+      ) : null}
     </>
   )
 }

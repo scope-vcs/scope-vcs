@@ -6,6 +6,7 @@ import {
   type TextSkeletonLength,
 } from '@/components/ui/skeleton'
 import { RUN_JOB_ITEM_CLASS, RUN_JOB_STRIP_CLASS } from './run-job-layout'
+import { RunEnvironmentSummary } from './run-attempt-environment'
 import { RUN_STEP_ROW_CLASS } from './run-step-layout'
 
 const PENDING_JOBS: { id: string; length: TextSkeletonLength }[] = [
@@ -17,6 +18,8 @@ const PENDING_STEPS: { id: string; length: TextSkeletonLength }[] = [
   { id: 'first', length: 'medium' },
   { id: 'second', length: 'long' },
   { id: 'third', length: 'short' },
+  { id: 'fourth', length: 'long' },
+  { id: 'fifth', length: 'medium' },
 ]
 
 export function RunDetailPagePending() {
@@ -54,17 +57,25 @@ export function RunDetailPagePending() {
                 </div>
               ))}
             </div>
-            <div className="mt-6 divide-y divide-border border-t border-border">
-              {PENDING_STEPS.map((step) => (
-                <div
-                  className={RUN_STEP_ROW_CLASS}
-                  key={step.id}
-                >
-                  <BlockSkeleton className="size-3.5 rounded-full" />
-                  <TextSkeleton length={step.length} />
-                  <TextSkeleton length="tiny" size="meta" />
-                </div>
-              ))}
+            <div className="mt-6 border-t border-border">
+              <section className="border-b border-border">
+                <RunEnvironmentSummary
+                  cacheSummary={<TextSkeleton className="inline-block align-middle" length="medium" size="meta" />}
+                  image={<TextSkeleton className="inline-block align-middle" length="short" size="meta" />}
+                />
+              </section>
+              <div className="divide-y divide-border">
+                {PENDING_STEPS.map((step) => (
+                  <div className={RUN_STEP_ROW_CLASS} key={step.id}>
+                    <BlockSkeleton className="size-3.5 rounded-full" />
+                    <span className="min-w-0">
+                      <TextSkeleton length={step.length} />
+                      <TextSkeleton className="mt-0.5" length="medium" size="meta" />
+                    </span>
+                    <TextSkeleton length="tiny" size="meta" />
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
         </main>

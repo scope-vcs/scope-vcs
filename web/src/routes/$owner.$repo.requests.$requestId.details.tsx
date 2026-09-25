@@ -1,7 +1,9 @@
 import { RequestDetails } from '@/features/requests/request-details'
+import { RequestDetailsTabPending } from '@/features/requests/request-details-layout'
 import { createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/$owner/$repo/requests/$requestId/details')({
+  pendingComponent: RequestDetailsTabPending,
   component: RequestDetailsRoute,
 })
 

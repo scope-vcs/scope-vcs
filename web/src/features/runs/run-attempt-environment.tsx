@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import {
   cacheExplanation,
   cacheNamespace,
@@ -13,6 +14,27 @@ import type {
   RepositoryRunCacheResponse,
 } from '@/api/types.generated'
 
+/** The environment row, shared with the run detail's pending state. */
+export function RunEnvironmentSummary({
+  cacheSummary,
+  image,
+  imageTitle,
+}: {
+  cacheSummary: ReactNode
+  image: ReactNode
+  imageTitle?: string
+}) {
+  return (
+    <div className="grid gap-1 px-3 py-3 text-xs sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-baseline sm:gap-3">
+      <strong className="text-sm font-medium">Environment</strong>
+      <span className="text-muted-foreground">{cacheSummary}</span>
+      <code className="text-[11px] text-muted-foreground" title={imageTitle}>
+        {image}
+      </code>
+    </div>
+  )
+}
+
 export function RunAttemptEnvironment({
   caches,
   cacheSetup,
@@ -24,18 +46,11 @@ export function RunAttemptEnvironment({
 }) {
   return (
     <section aria-label="Execution environment" className="border-b border-border">
-      <div className="grid gap-1 px-3 py-3 text-xs sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-baseline sm:gap-3">
-        <strong className="text-sm font-medium">Environment</strong>
-        <span className="text-muted-foreground">
-          {cacheSummaryLabel(caches, cacheSetup)}
-        </span>
-        <code
-          className="text-[11px] text-muted-foreground"
-          title={pinnedContainerImage ?? undefined}
-        >
-          {pinnedImageLabel(pinnedContainerImage)}
-        </code>
-      </div>
+      <RunEnvironmentSummary
+        cacheSummary={cacheSummaryLabel(caches, cacheSetup)}
+        image={pinnedImageLabel(pinnedContainerImage)}
+        imageTitle={pinnedContainerImage ?? undefined}
+      />
       {caches.length > 0 ? (
         <div className="divide-y divide-border/70 border-t border-border/70">
           {caches.map((cache) => {
