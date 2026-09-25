@@ -27,9 +27,9 @@ pub(crate) mod repo_access;
 pub(crate) mod repo_events;
 mod repository_backfill;
 mod request_auto_merge_runtime;
+pub(crate) mod retention;
 pub(crate) mod run_attempt_effects;
 pub(crate) mod run_recovery;
-pub(crate) mod run_retention;
 pub(crate) mod runtime_budgets;
 #[cfg(feature = "smoke-seed")]
 pub mod smoke_seed;
