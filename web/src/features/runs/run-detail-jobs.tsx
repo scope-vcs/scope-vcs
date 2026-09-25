@@ -4,7 +4,7 @@ import type {
   StepLogs,
   StepSelection,
 } from './repository-run-detail-controller'
-import { attemptForJob } from './repository-run-detail-model'
+import { attemptForJob, jobsHaveDependencies } from './repository-run-detail-model'
 import { RunDetailSteps } from './run-detail-steps'
 import { RunDuration } from './run-duration'
 import { RUN_JOB_LIST_CLASS, RUN_JOB_ROW_CLASS } from './run-job-layout'
@@ -42,6 +42,12 @@ export function RunDetailJobs({
 }) {
   const selectedJob = jobs.find(({ job }) => job.key === selectedJobKey) ?? null
   const orderedJobs = useMemo(() => orderJobsByDependency(jobs), [jobs])
+  const graphAvailable = jobsHaveDependencies(jobs)
+  // The graph stands in for the job pane, so picking a job anywhere closes it.
+  function pickJob(job: RepositoryRunJobDetailResponse) {
+    onSelectJob(job)
+    if (showGraph) onToggleGraph()
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-border lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
@@ -51,30 +57,28 @@ export function RunDetailJobs({
       >
         <RunJobList
           jobs={orderedJobs}
-          onSelectJob={onSelectJob}
+          onSelectJob={pickJob}
           selectedJobKey={selectedJobKey}
         />
-        <button
-          aria-pressed={showGraph}
-          className="shrink-0 px-4 py-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          onClick={onToggleGraph}
-          type="button"
-        >
-          {showGraph ? 'Hide graph' : 'Show graph'}
-        </button>
+        {graphAvailable ? (
+          <button
+            aria-pressed={showGraph}
+            className="shrink-0 px-4 py-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            onClick={onToggleGraph}
+            type="button"
+          >
+            {showGraph ? 'Hide graph' : 'Show graph'}
+          </button>
+        ) : null}
       </nav>
       <div className="flex min-w-0 flex-col lg:min-h-0">
-        {showGraph ? (
-          // Bounded so a tall graph can't squeeze the selected job out of the pane.
-          <div className="overflow-y-auto lg:max-h-[45%] lg:shrink-0">
-            <RunJobGraph
-              jobs={jobs}
-              onSelectJob={onSelectJob}
-              selectedJobKey={selectedJobKey}
-            />
-          </div>
-        ) : null}
-        {selectedJob ? (
+        {graphAvailable && showGraph ? (
+          <RunJobGraph
+            jobs={jobs}
+            onSelectJob={pickJob}
+            selectedJobKey={selectedJobKey}
+          />
+        ) : selectedJob ? (
           <div
             className="flex flex-col lg:min-h-0 lg:flex-1"
             id={runJobPanelId(selectedJob.job.key)}
