@@ -3,7 +3,7 @@ on:
   manual: true
   request: true
 container:
-  image: 957143340948.dkr.ecr.us-east-1.amazonaws.com/scope-vcs/production/checks@sha256:8f91ef83001c2d5a2b9521d75da620cb7dc15fd4ce0bc80a114bd0e0763c377e
+  image: 957143340948.dkr.ecr.us-east-1.amazonaws.com/scope-vcs/production/checks@sha256:ab98847ee8402e81902dec196b721574d4d5dbde470f48a132eeae20336499cd
 timeout: 60m
 caches: []
 env:

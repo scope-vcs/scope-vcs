@@ -20,7 +20,7 @@ COPY worker worker
 COPY runner-runtime runner-runtime
 RUN cargo build --locked --release -p scope-runner-runtime
 
-FROM --platform=linux/amd64 rust:1.98.1-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e
+FROM --platform=linux/amd64 rust:1.98.1-slim-bookworm@sha256:dacc9e51f252243eb59d2fb4cb4ad8b0d3f607b6a82c398cf8a321e59ff778a7
 
 ARG NODE_VERSION=24.21.0
 ARG NODE_SHA256=fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6
@@ -42,6 +42,8 @@ RUN sed -i \
         -e "s|http://deb.debian.org/debian|https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}|" \
         /etc/apt/sources.list.d/debian.sources \
     && printf '%s\n' 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot \
+    && apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates curl \
     && mkdir -p /usr/local/share/keyrings \
     && curl --fail --silent --show-error --location \
         https://www.postgresql.org/media/keys/ACCC4CF8.asc \
@@ -53,14 +55,19 @@ RUN sed -i \
     && apt-get update \
     && apt-get upgrade --yes \
     && apt-get install --yes --no-install-recommends \
+        build-essential \
+        cmake \
         ffmpeg \
         iproute2 \
         jq \
         libheif-examples \
+        openssh-client \
+        pkg-config \
         python3-yaml \
         "postgresql-18=${POSTGRES_VERSION}" \
         "postgresql-client-18=${POSTGRES_VERSION}" \
         time \
+        xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=git-builder /opt/git /opt/git
@@ -89,6 +96,38 @@ RUN rustup component add \
     && playwright install --with-deps chromium \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/* /tmp/*
+
+# Keep the files used by the checks startup path in small eager SOCI layers.
+# The original Rust, Debian, and browser layers remain available for other checks.
+RUN set -eu; \
+    toolchain_dir="/usr/local/rustup/toolchains/${RUSTUP_TOOLCHAIN}"; \
+    for file in "$toolchain_dir"/lib/libLLVM.so.* "$toolchain_dir"/bin/rustc /usr/local/cargo/bin/rustup; do \
+        test -f "$file"; \
+        cp -p "$file" "$file.hot"; \
+        mv "$file.hot" "$file"; \
+        touch "$file"; \
+    done
+
+RUN set -eu; \
+    for file in "/usr/local/rustup/toolchains/${RUSTUP_TOOLCHAIN}"/lib/librustc_driver-*.so; do \
+        test -f "$file"; \
+        cp -p "$file" "$file.hot"; \
+        mv "$file.hot" "$file"; \
+        touch "$file"; \
+    done
+
+RUN set -eu; \
+    { printf '%s\n' /usr/bin/ffmpeg; \
+      ldd /usr/bin/ffmpeg | awk '$3 ~ /^\// {print $3} $1 ~ /^\// {print $1}' | xargs -r realpath; \
+    } | sort -u | while IFS= read -r file; do \
+        test -f "$file"; \
+        cp -p "$file" "$file.hot"; \
+        mv "$file.hot" "$file"; \
+        touch "$file"; \
+    done
+
+RUN find /usr/local/lib/node_modules/playwright -type f \
+    -exec sh -c 'for file do cp -p "$file" "$file.hot" && mv "$file.hot" "$file" && touch "$file" || exit; done' sh {} +
 
 ARG PLAYWRIGHT_CHROMIUM_VERSION=153.0.8010.12
 ARG PLAYWRIGHT_CHROMIUM_REVISION=1243
