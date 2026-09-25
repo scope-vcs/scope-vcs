@@ -25,3 +25,17 @@ test("a mismatched checks image fails with the replica name and versions", () =>
     `.scope/images/checks/Dockerfile: Rust base image must match Rust ${expectedVersion}; found 1.97.0`,
   ]);
 });
+
+test("checks image Rust stages must share one base digest", () => {
+  const files = readToolchainFiles();
+  const dockerfile = files[".scope/images/checks/Dockerfile"];
+  const [digest] = dockerfile.match(/sha256:[0-9a-f]{64}(?= AS scope-runtime-builder)/);
+  files[".scope/images/checks/Dockerfile"] = dockerfile.replace(
+    `${digest} AS scope-runtime-builder`,
+    `sha256:${"b".repeat(64)} AS scope-runtime-builder`,
+  );
+
+  assert.deepEqual(validateRustToolchainSync(files), [
+    ".scope/images/checks/Dockerfile: Rust stages must use the same base digest",
+  ]);
+});
