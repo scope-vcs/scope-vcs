@@ -87,6 +87,13 @@ and US$100.
 Some jurisdictions do not allow these limits, so they may not fully apply to
 you. Nothing in these terms limits liability that cannot be limited by law.
 
+## Governing law
+
+These terms are governed by the laws of the State of Missouri, United States,
+without regard to its conflict-of-law rules. Disputes relating to these terms or
+Scope go to the state or federal courts in Missouri, unless the law where you
+live gives you the right to bring them in your local courts.
+
 ## Changes
 
 When these terms change, the effective date above changes. For significant
