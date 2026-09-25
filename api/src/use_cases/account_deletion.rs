@@ -36,6 +36,11 @@ pub(crate) async fn delete_account(state: &AppState, user: &UserAccount) -> Resu
             )
             .await;
     }
+    for incarnation in &deleted.contributed_repositories {
+        state
+            .publish_request_summary_refresh(incarnation, RepoChangeReason::ContributorDeleted)
+            .await;
+    }
     best_effort_drain_pending_repo_storage_deletions(state).await;
     Ok(())
 }

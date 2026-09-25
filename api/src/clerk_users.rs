@@ -3,6 +3,9 @@
 use crate::config::{CLERK_SECRET_KEY_ENV, non_empty_env};
 use std::{sync::Arc, time::Duration};
 
+/// The longest one Clerk Backend API call may take.
+pub(crate) const CLERK_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+
 const CLERK_USERS_URL: &str = "https://api.clerk.com/v1/users";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,7 +42,7 @@ impl ClerkUsers {
         };
         Self::Api(Arc::new(ClerkBackendApi {
             client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(15))
+                .timeout(CLERK_REQUEST_TIMEOUT)
                 .build()
                 .expect("Clerk HTTP client config must be valid"),
             secret_key,

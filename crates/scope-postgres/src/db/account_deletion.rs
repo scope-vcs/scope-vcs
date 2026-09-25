@@ -5,18 +5,28 @@
 //! Authored work elsewhere survives through `ON DELETE SET NULL`.
 
 use super::{
-    AuthStore, GeneratedIdSource, acquire_aggregate_lock, auth::load_user_by_id, entities,
-    repo_effects::save_repo_mutation, repo_lifecycle::delete_locked_repository,
+    AuthStore, GeneratedIdSource, acquire_aggregate_lock,
+    auth::load_user_by_id,
+    entities,
+    repo_effects::save_repo_mutation,
+    repo_lifecycle::delete_locked_repository,
     repository_from_model,
+    request_revision_rows::revisions_for_request_ids,
+    request_rows::{request_by_id, request_events_by_request_id},
+    requests::persist_deleted_draft,
 };
 use crate::error::PostgresError;
 use scope_domain::{
     account::deletion::{SharedRepositories, delete_account, forget_deleted_account},
     repo_actions::RepoEffects,
-    repository::{RepositoryIncarnation, collaboration::normalize_repository_invite_email},
+    repository::{
+        Repository, RepositoryIncarnation, collaboration::normalize_repository_invite_email,
+    },
+    requests::{CloseRequestInput, CloseRequestMutation, close_request},
 };
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, Condition, EntityTrait, QueryFilter, QuerySelect,
+    ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
+    DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Statement,
     TransactionTrait, sea_query::OnConflict,
 };
 use std::collections::BTreeSet;
@@ -47,7 +57,33 @@ pub struct DeletedAccount {
     pub deleted_repositories: Vec<AccountDeletionChange>,
     /// Repositories that lost the account's membership or invites.
     pub changed_repositories: Vec<AccountDeletionChange>,
+    /// Other repositories whose requests, discussions or runs now show a
+    /// deleted user, or lost the account's drafts.
+    pub contributed_repositories: Vec<RepositoryIncarnation>,
 }
+
+/// Every repository holding work the account did, besides membership.
+const CONTRIBUTED_REPOSITORIES_SQL: &str = r#"
+    SELECT repo_id FROM scope_requests
+        WHERE $1 IN (author_user_id, closed_by_user_id, merged_by_user_id)
+    UNION SELECT r.repo_id FROM scope_request_events e
+        JOIN scope_requests r ON r.id = e.request_id WHERE e.actor_user_id = $1
+    UNION SELECT r.repo_id FROM scope_request_revisions v
+        JOIN scope_requests r ON r.id = v.request_id WHERE v.actor_user_id = $1
+    UNION SELECT r.repo_id FROM scope_request_discussions d
+        JOIN scope_requests r ON r.id = d.request_id
+        WHERE $1 IN (d.author_user_id, d.resolved_by_user_id)
+    UNION SELECT r.repo_id FROM scope_request_discussion_replies x
+        JOIN scope_request_discussions d ON d.id = x.discussion_id
+        JOIN scope_requests r ON r.id = d.request_id WHERE x.author_user_id = $1
+    UNION SELECT r.repo_id FROM scope_request_ratings g
+        JOIN scope_requests r ON r.id = g.request_id
+        WHERE $1 IN (g.rater_user_id, g.subject_user_id)
+    UNION SELECT r.repo_id FROM scope_request_invitees i
+        JOIN scope_requests r ON r.id = i.request_id
+        WHERE $1 IN (i.user_id, i.invited_by_user_id)
+    UNION SELECT repo_id FROM scope_runs WHERE requested_by_user_id = $1
+"#;
 
 impl AuthStore {
     pub async fn delete_account(
@@ -58,8 +94,20 @@ impl AuthStore {
     ) -> Result<DeletedAccount, AccountDeletionError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let user = load_user_by_id(&tx, user_id).await?;
-        // A concurrent sign-in with this email waits, then finds the pending
-        // Clerk deletion and is refused.
+        let identities = entities::auth_identity::Entity::find()
+            .filter(entities::auth_identity::Column::UserId.eq(user_id))
+            .order_by_asc(entities::auth_identity::Column::Provider)
+            .order_by_asc(entities::auth_identity::Column::Subject)
+            .all(&tx)
+            .await
+            .map_err(PostgresError::internal)?;
+        // Sign-in takes the identity lock, then the email lock; taking them in
+        // the same order cannot deadlock. A concurrent sign-in waits, then
+        // finds the recorded Clerk deletion and is refused.
+        for identity in &identities {
+            let key = format!("{}:{}", identity.provider, identity.subject);
+            acquire_aggregate_lock(&tx, "auth-identity", &key).await?;
+        }
         acquire_aggregate_lock(&tx, "auth-email", &user.email).await?;
 
         let mut repository_ids = BTreeSet::new();
@@ -101,6 +149,20 @@ impl AuthStore {
                 .map_err(PostgresError::internal)?,
         );
 
+        // The account's drafts elsewhere could never be deleted once their
+        // author is gone, so they go with the account.
+        let drafts = entities::request::Entity::find()
+            .select_only()
+            .column(entities::request::Column::Id)
+            .column(entities::request::Column::RepoId)
+            .filter(entities::request::Column::AuthorUserId.eq(user_id))
+            .filter(entities::request::Column::SubmittedAtUnix.is_null())
+            .into_tuple::<(String, String)>()
+            .all(&tx)
+            .await
+            .map_err(PostgresError::internal)?;
+        repository_ids.extend(drafts.iter().map(|(_, repo_id)| repo_id.clone()));
+
         // Sorted, so two deletions sharing repositories cannot deadlock.
         let mut owned = Vec::new();
         let mut others = Vec::new();
@@ -120,11 +182,6 @@ impl AuthStore {
                 others.push(repo);
             }
         }
-        let identities = entities::auth_identity::Entity::find()
-            .filter(entities::auth_identity::Column::UserId.eq(user_id))
-            .all(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
         let deletion = delete_account(
             &user,
             &owned,
@@ -152,10 +209,32 @@ impl AuthStore {
                 change_version: record.change_version.saturating_add(1),
             });
         }
+        let contributed_repository_ids: BTreeSet<String> = tx
+            .query_all_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                CONTRIBUTED_REPOSITORIES_SQL,
+                [user_id.into()],
+            ))
+            .await
+            .map_err(PostgresError::internal)?
+            .into_iter()
+            .map(|row| row.try_get::<String>("", "repo_id"))
+            .collect::<Result<_, _>>()
+            .map_err(PostgresError::internal)?;
+        for (request_id, repo_id) in drafts {
+            let Some(repo) = others.iter().find(|repo| repo.record.id == repo_id) else {
+                // Drafts in owned repositories leave with the repository.
+                continue;
+            };
+            delete_draft(&tx, repo, &request_id, user_id, now_unix, generated_ids).await?;
+        }
         for mut repo in others {
             let before = repo.clone();
             let was_member = repo.member_for_user(user_id).is_some();
             if !forget_deleted_account(&mut repo, &user) {
+                if contributed_repository_ids.contains(&repo.record.id) {
+                    deleted.contributed_repositories.push(repo.incarnation());
+                }
                 continue;
             }
             save_repo_mutation(
@@ -183,6 +262,36 @@ impl AuthStore {
                 change_version: repo.record.change_version,
             });
         }
+
+        let notified: BTreeSet<&str> = deleted
+            .deleted_repositories
+            .iter()
+            .chain(&deleted.changed_repositories)
+            .map(|change| change.incarnation.repository_id())
+            .chain(
+                deleted
+                    .contributed_repositories
+                    .iter()
+                    .map(RepositoryIncarnation::repository_id),
+            )
+            .collect();
+        let unlocked: Vec<String> = contributed_repository_ids
+            .iter()
+            .filter(|repo_id| !notified.contains(repo_id.as_str()))
+            .cloned()
+            .collect();
+        drop(notified);
+        deleted.contributed_repositories.extend(
+            entities::repository::Entity::find()
+                .filter(entities::repository::Column::Id.is_in(unlocked))
+                .all(&tx)
+                .await
+                .map_err(PostgresError::internal)?
+                .into_iter()
+                .map(|row| RepositoryIncarnation::new(row.id, row.incarnation_id))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(PostgresError::internal)?,
+        );
 
         let created_at_unix = i64::try_from(now_unix).map_err(PostgresError::internal)?;
         for clerk_user_id in deletion.clerk_user_ids {
@@ -226,6 +335,58 @@ impl AuthStore {
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(deleted)
     }
+}
+
+/// Deletes one of the account's drafts in a repository it does not own, the
+/// way its author closing it would.
+async fn delete_draft(
+    tx: &DatabaseTransaction,
+    repo: &Repository,
+    request_id: &str,
+    user_id: &str,
+    now_unix: u64,
+    generated_ids: &dyn GeneratedIdSource,
+) -> Result<(), PostgresError> {
+    acquire_aggregate_lock(tx, "request", request_id).await?;
+    let Some(request) = request_by_id(tx, request_id).await? else {
+        return Ok(());
+    };
+    let events = request_events_by_request_id(tx, request_id).await?;
+    let revisions = revisions_for_request_ids(tx, std::slice::from_ref(&request.id)).await?;
+    let mutation = close_request(
+        request,
+        events,
+        revisions,
+        CloseRequestInput {
+            request_id: request_id.to_string(),
+            actor_user_id: user_id.to_string(),
+            actor_is_maintainer: false,
+            // Deleting a draft records no event.
+            event_id: format!("event_request_closed_{request_id}"),
+            now_unix,
+        },
+    )?;
+    let CloseRequestMutation::DeletedDraft {
+        request,
+        revisions,
+        orphan_objects,
+        ..
+    } = mutation
+    else {
+        return Err(PostgresError::internal_message(
+            "an unsubmitted request was closed instead of deleted",
+        ));
+    };
+    persist_deleted_draft(
+        tx,
+        &repo.incarnation(),
+        &request,
+        &revisions,
+        orphan_objects,
+        now_unix,
+        generated_ids,
+    )
+    .await
 }
 
 #[cfg(test)]

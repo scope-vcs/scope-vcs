@@ -123,6 +123,8 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
         deleted.changed_repositories[0].change_version,
         shared_version + 1
     );
+    // The shared repository is already announced as changed.
+    assert!(deleted.contributed_repositories.is_empty());
     let survivors = query_json(
         &store,
         r#"jsonb_build_object(
@@ -217,6 +219,56 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
         .await
         .unwrap_err();
     assert_eq!(refused.kind, PostgresErrorKind::Unauthenticated);
+}
+
+#[tokio::test]
+async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions() {
+    let owner = user("owner", "owner");
+    let leaver = user("leaver", "leaver");
+    let store = store_with_repositories([
+        repository(&owner, "public", Visibility::Public),
+        repository(&leaver, "solo", Visibility::Private),
+    ]);
+    // Without membership, the leaver submitted one public request and left
+    // another as a draft, which nobody else could delete once they are gone.
+    store
+        .db
+        .execute_unprepared(
+            "INSERT INTO scope_requests (id, repo_id, name, author_user_id, author_role, audience,
+                base_main_oid, head_oid, title, description_markdown, activity_version,
+                submitted_at_unix, created_at_unix, updated_at_unix)
+            VALUES
+                ('submitted', 'owner/public', 'submitted', 'leaver', 'Public', 'Public',
+                    repeat('a', 40), repeat('b', 40), 'Submitted', '', 1, 2, 1, 2),
+                ('draft', 'owner/public', 'draft', 'leaver', 'Public', 'Public',
+                    repeat('a', 40), repeat('b', 40), 'Draft', '', 1, NULL, 1, 1)",
+        )
+        .await
+        .unwrap();
+
+    let deleted = store
+        .auth()
+        .delete_account("leaver", 10, &test_generated_id)
+        .await
+        .unwrap();
+
+    assert!(deleted.changed_repositories.is_empty());
+    assert_eq!(
+        deleted
+            .contributed_repositories
+            .iter()
+            .map(|incarnation| incarnation.repository_id())
+            .collect::<Vec<_>>(),
+        ["owner/public"]
+    );
+    assert_eq!(
+        query_json(
+            &store,
+            "SELECT jsonb_agg(jsonb_build_array(id, author_user_id)) FROM scope_requests"
+        )
+        .await,
+        json!([["submitted", null]])
+    );
 }
 
 #[tokio::test]

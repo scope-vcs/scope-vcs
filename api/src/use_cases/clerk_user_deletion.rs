@@ -2,16 +2,20 @@
 //! committed; a Clerk failure only delays this step.
 
 use crate::{
-    auth::tokens::random_token, clerk_users::ClerkUserDeletion, error::ApiError,
-    persistence::unix_now, state::AppState,
+    auth::tokens::random_token,
+    clerk_users::{CLERK_REQUEST_TIMEOUT, ClerkUserDeletion},
+    error::ApiError,
+    persistence::unix_now,
+    state::AppState,
 };
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
-const BATCH_SIZE: u64 = 20;
+const BATCH_SIZE: u64 = 5;
 
-/// Longer than one Clerk call can take, so a live worker is never raced.
-const CLAIM_LEASE_SECS: u64 = 120;
+/// Outlasts a whole batch of sequential Clerk calls, so a live worker's later
+/// claims never lapse to another worker.
+const CLAIM_LEASE_SECS: u64 = BATCH_SIZE * CLERK_REQUEST_TIMEOUT.as_secs() + 60;
 
 type Clock<'a> = &'a (dyn Fn() -> Result<u64, ApiError> + Sync);
 
