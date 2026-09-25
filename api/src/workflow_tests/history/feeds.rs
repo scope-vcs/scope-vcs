@@ -95,6 +95,19 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
                 .iter()
                 .all(|entry| entry["kind"] == "visibility_change")
         );
+        let visibility = api_request(
+            router(state.clone()),
+            "GET",
+            &format!("/v1/repos/owner/repo/history?audience={audience}&feed=visibility"),
+            Some(&bearer_header()),
+            None,
+        )
+        .await;
+        assert_eq!(visibility.status(), StatusCode::OK);
+        let visibility = response_json(visibility).await;
+        assert_eq!(visibility["feed"], "visibility");
+        assert_eq!(visibility["entries"], all["entries"]);
+        assert_ne!(visibility["next_cursor"], all["next_cursor"]);
         let detail = api_request(
             router(state.clone()),
             "GET",
@@ -105,6 +118,8 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
         .await;
         assert_eq!(detail.status(), StatusCode::OK);
         let detail = response_json(detail).await;
+        assert_eq!(detail["older_source_id"], "visibility_58");
+        assert!(detail["newer_source_id"].is_null());
         assert_eq!(detail["file_change_count"], 0);
         assert!(detail["files"].as_array().unwrap().is_empty());
         let change = &detail["visibility_changes"][0];

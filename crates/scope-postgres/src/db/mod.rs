@@ -118,7 +118,10 @@ pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::GitPushContext;
 pub use git_segments::RepositoryGitWriteLease;
-pub use history_reads::{RepositoryHistoryBoundary, RepositoryHistoryPage, RepositoryHistoryQuery};
+pub use history_reads::{
+    RepositoryHistoryBoundary, RepositoryHistoryNeighbors, RepositoryHistoryPage,
+    RepositoryHistoryQuery,
+};
 use json::{decode_json, encode_json};
 use locks::acquire_aggregate_lock;
 pub use maintenance::{
