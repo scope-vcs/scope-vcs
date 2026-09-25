@@ -18,7 +18,6 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { createPortal } from 'react-dom'
 import {
   addRequestAttachmentDraftFiles,
   beginRequestAttachmentSubmission,
@@ -50,7 +49,6 @@ import {
 const staleDescriptionMessage = 'The description changed while you were editing. Your draft is kept.'
 
 export function RequestAttachmentEditor({
-  actionsSlot,
   autoFocus = false,
   enterSubmits = true,
   error = null,
@@ -67,8 +65,6 @@ export function RequestAttachmentEditor({
   submitLabel,
   target,
 }: {
-  /** Renders the actions here instead of under the field. */
-  actionsSlot?: HTMLElement | null
   autoFocus?: boolean
   enterSubmits?: boolean
   /** A failure the caller reports, such as a rejected save. */
@@ -256,10 +252,8 @@ export function RequestAttachmentEditor({
 
   const actions = (
     <EditorActions
-      alert={alert}
       canSubmit={canSubmit}
       formId={formId}
-      slotted={Boolean(actionsSlot)}
       limitsReady={limits !== null}
       onAttach={() => fileInputRef.current?.click()}
       onCancel={onCancel}
@@ -342,15 +336,14 @@ export function RequestAttachmentEditor({
         ref={fileInputRef}
         type="file"
       />
-      {!actionsSlot && alert ? <p className="mt-2 text-sm text-destructive" role="alert">{alert}</p> : null}
+      {alert ? <p className="mt-2 text-sm text-destructive" role="alert">{alert}</p> : null}
       {staleDescription ? <StaleDescriptionNotice currentDescription={initialText} /> : null}
-      {actionsSlot ? createPortal(actions, actionsSlot) : actions}
+      {actions}
     </form>
   )
 }
 
 function EditorActions({
-  alert,
   canSubmit,
   formId,
   limitsReady,
@@ -360,15 +353,11 @@ function EditorActions({
   pending,
   pendingAction,
   secondarySubmit,
-  slotted,
   status,
   submitIcon,
   submitLabel,
 }: {
-  /** Shown beside slotted actions, which may sit far from the field. */
-  alert: string | null
   canSubmit: boolean
-  /** Actions may render outside the form, so submit buttons name it. */
   formId: string
   limitsReady: boolean
   onAttach: () => void
@@ -378,22 +367,12 @@ function EditorActions({
   pending: boolean
   pendingAction: 'primary' | 'secondary' | null
   secondarySubmit?: { icon: ReactNode; label: string }
-  /** Rendered into a row outside the form instead of under the field. */
-  slotted: boolean
   status: string
   submitIcon: ReactNode
   submitLabel: string
 }) {
   return (
-    <div
-      className={cn('flex items-center gap-1', !slotted && 'mt-2 flex-wrap gap-2')}
-      data-editor-actions={slotted ? '' : undefined}
-    >
-      {slotted ? (
-        <p aria-live="polite" className={cn('max-w-80 text-xs', alert ? 'text-destructive' : 'text-muted-foreground')}>
-          {alert ?? status}
-        </p>
-      ) : null}
+    <div className="mt-2 flex flex-wrap items-center gap-2">
       <Button
         aria-label="Attach files"
         disabled={!limitsReady || pending}
@@ -405,10 +384,8 @@ function EditorActions({
       >
         <Paperclip />
       </Button>
-      {slotted ? null : (
-        <p aria-live="polite" className="min-w-0 flex-1 text-xs text-muted-foreground">{status}</p>
-      )}
-      <div className={cn('ml-auto flex items-center justify-end gap-2', !slotted && 'flex-wrap')}>
+      <p aria-live="polite" className="min-w-0 flex-1 text-xs text-muted-foreground">{status}</p>
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
         {onDiscardDraft ? (
           <Button
             disabled={pending}

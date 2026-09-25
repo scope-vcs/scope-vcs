@@ -6,11 +6,11 @@ const bootstrap = await loadAnalyticsBootstrap(new AbortController().signal)
 if (bootstrap.client) {
   const client = bootstrap.client
   const capturePageView = () => client.capture('$pageview', pageViewProperties(
-    { name: 'request_details', path: '/repository/request/details' },
+    { name: 'request_changes', path: '/repository/request/changes' },
     { origin: location.origin, referrer: 'https://search.example/private?q=secret', search: '?path=private.rs' },
   ))
   const captureError = (errorOrigin: 'route' | 'window') => client.capture('frontend_error', {
-    error_kind: 'type_error', error_origin: errorOrigin, route_name: 'request_details',
+    error_kind: 'type_error', error_origin: errorOrigin, route_name: 'request_changes',
     message: 'SECRET source text', repository: 'owner/private-repository',
   })
 

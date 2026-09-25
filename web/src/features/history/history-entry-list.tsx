@@ -1,5 +1,6 @@
 import type { RepoParams } from '@/api/types'
 import { PanelState } from '@/components/empty-state'
+import { MENU_LIST_ROW_CLASS } from '@/components/menu-list-panel'
 import { PendingSurface } from '@/components/pending-surface'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
@@ -89,7 +90,7 @@ function HistoryEntryList({
           return (
             <li key={entry.id}>
               <Link
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 px-3 py-2.5 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                className={MENU_LIST_ROW_CLASS}
                 onClick={onNavigate}
                 params={{ ...params, entryId: entry.source_id }}
                 search={search}

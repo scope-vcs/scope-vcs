@@ -106,7 +106,7 @@ test('request rows exchange age and actions and restore the selected view across
   await page.mouse.move(700, 400)
   await waitOpacity(age, '1')
   await waitOpacity(actions, '0')
-  for (const view of ['Changes', 'Details', 'Discussion']) {
+  for (const view of ['Changes', 'Discussion']) {
     await page.getByRole('navigation', { name: 'Request views' }).getByRole('link', { name: view }).click()
     const selectedUrl = page.url()
     await primary.getByRole('link', { name: 'Runs', exact: true }).click()

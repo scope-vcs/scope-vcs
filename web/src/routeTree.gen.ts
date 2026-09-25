@@ -29,10 +29,10 @@ import { Route as OwnerRepoRequestsRequestIdRouteImport } from './routes/$owner.
 import { Route as OwnerRepoRunsIndexRouteImport } from './routes/$owner.$repo.runs.index'
 import { Route as OwnerRepoRunsRunIdRouteImport } from './routes/$owner.$repo.runs.$runId'
 import { Route as OwnerRepoUpdatesEntryIdRouteImport } from './routes/$owner.$repo.updates.$entryId'
-import { Route as OwnerRepoRequestsRequestIdIndexRouteImport } from './routes/$owner.$repo.requests.$requestId.index'
+import { Route as OwnerRepoRequestsRequestIdDiscussionRouteImport } from './routes/$owner.$repo.requests.$requestId._discussion'
 import { Route as OwnerRepoRequestsRequestIdChangesRouteImport } from './routes/$owner.$repo.requests.$requestId.changes'
-import { Route as OwnerRepoRequestsRequestIdDetailsRouteImport } from './routes/$owner.$repo.requests.$requestId.details'
 import { Route as OwnerRepoRunsWorkflowsWorkflowRouteImport } from './routes/$owner.$repo.runs.workflows.$workflow'
+import { Route as OwnerRepoRequestsRequestIdDiscussionIndexRouteImport } from './routes/$owner.$repo.requests.$requestId._discussion.index'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -134,10 +134,9 @@ const OwnerRepoUpdatesEntryIdRoute = OwnerRepoUpdatesEntryIdRouteImport.update({
   path: '/updates/$entryId',
   getParentRoute: () => OwnerRepoRoute,
 } as any)
-const OwnerRepoRequestsRequestIdIndexRoute =
-  OwnerRepoRequestsRequestIdIndexRouteImport.update({
-    id: '/',
-    path: '/',
+const OwnerRepoRequestsRequestIdDiscussionRoute =
+  OwnerRepoRequestsRequestIdDiscussionRouteImport.update({
+    id: '/_discussion',
     getParentRoute: () => OwnerRepoRequestsRequestIdRoute,
   } as any)
 const OwnerRepoRequestsRequestIdChangesRoute =
@@ -146,17 +145,17 @@ const OwnerRepoRequestsRequestIdChangesRoute =
     path: '/changes',
     getParentRoute: () => OwnerRepoRequestsRequestIdRoute,
   } as any)
-const OwnerRepoRequestsRequestIdDetailsRoute =
-  OwnerRepoRequestsRequestIdDetailsRouteImport.update({
-    id: '/details',
-    path: '/details',
-    getParentRoute: () => OwnerRepoRequestsRequestIdRoute,
-  } as any)
 const OwnerRepoRunsWorkflowsWorkflowRoute =
   OwnerRepoRunsWorkflowsWorkflowRouteImport.update({
     id: '/workflows/$workflow',
     path: '/workflows/$workflow',
     getParentRoute: () => OwnerRepoRunsRoute,
+  } as any)
+const OwnerRepoRequestsRequestIdDiscussionIndexRoute =
+  OwnerRepoRequestsRequestIdDiscussionIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => OwnerRepoRequestsRequestIdDiscussionRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -180,9 +179,8 @@ export interface FileRoutesByFullPath {
   '/$owner/$repo/requests/': typeof OwnerRepoRequestsIndexRoute
   '/$owner/$repo/runs/': typeof OwnerRepoRunsIndexRoute
   '/$owner/$repo/requests/$requestId/changes': typeof OwnerRepoRequestsRequestIdChangesRoute
-  '/$owner/$repo/requests/$requestId/details': typeof OwnerRepoRequestsRequestIdDetailsRoute
   '/$owner/$repo/runs/workflows/$workflow': typeof OwnerRepoRunsWorkflowsWorkflowRoute
-  '/$owner/$repo/requests/$requestId/': typeof OwnerRepoRequestsRequestIdIndexRoute
+  '/$owner/$repo/requests/$requestId/': typeof OwnerRepoRequestsRequestIdDiscussionIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -195,14 +193,13 @@ export interface FileRoutesByTo {
   '/sign-up/$': typeof SignUpSplatRoute
   '/$owner': typeof OwnerIndexRoute
   '/$owner/$repo/settings': typeof OwnerRepoSettingsRoute
+  '/$owner/$repo/requests/$requestId': typeof OwnerRepoRequestsRequestIdDiscussionIndexRoute
   '/$owner/$repo/runs/$runId': typeof OwnerRepoRunsRunIdRoute
   '/$owner/$repo/updates/$entryId': typeof OwnerRepoUpdatesEntryIdRoute
   '/$owner/$repo/requests': typeof OwnerRepoRequestsIndexRoute
   '/$owner/$repo/runs': typeof OwnerRepoRunsIndexRoute
   '/$owner/$repo/requests/$requestId/changes': typeof OwnerRepoRequestsRequestIdChangesRoute
-  '/$owner/$repo/requests/$requestId/details': typeof OwnerRepoRequestsRequestIdDetailsRoute
   '/$owner/$repo/runs/workflows/$workflow': typeof OwnerRepoRunsWorkflowsWorkflowRoute
-  '/$owner/$repo/requests/$requestId': typeof OwnerRepoRequestsRequestIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -226,10 +223,10 @@ export interface FileRoutesById {
   '/$owner/$repo/_code/': typeof OwnerRepoCodeIndexRoute
   '/$owner/$repo/requests/': typeof OwnerRepoRequestsIndexRoute
   '/$owner/$repo/runs/': typeof OwnerRepoRunsIndexRoute
+  '/$owner/$repo/requests/$requestId/_discussion': typeof OwnerRepoRequestsRequestIdDiscussionRouteWithChildren
   '/$owner/$repo/requests/$requestId/changes': typeof OwnerRepoRequestsRequestIdChangesRoute
-  '/$owner/$repo/requests/$requestId/details': typeof OwnerRepoRequestsRequestIdDetailsRoute
   '/$owner/$repo/runs/workflows/$workflow': typeof OwnerRepoRunsWorkflowsWorkflowRoute
-  '/$owner/$repo/requests/$requestId/': typeof OwnerRepoRequestsRequestIdIndexRoute
+  '/$owner/$repo/requests/$requestId/_discussion/': typeof OwnerRepoRequestsRequestIdDiscussionIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -254,7 +251,6 @@ export interface FileRouteTypes {
     | '/$owner/$repo/requests/'
     | '/$owner/$repo/runs/'
     | '/$owner/$repo/requests/$requestId/changes'
-    | '/$owner/$repo/requests/$requestId/details'
     | '/$owner/$repo/runs/workflows/$workflow'
     | '/$owner/$repo/requests/$requestId/'
   fileRoutesByTo: FileRoutesByTo
@@ -269,14 +265,13 @@ export interface FileRouteTypes {
     | '/sign-up/$'
     | '/$owner'
     | '/$owner/$repo/settings'
+    | '/$owner/$repo/requests/$requestId'
     | '/$owner/$repo/runs/$runId'
     | '/$owner/$repo/updates/$entryId'
     | '/$owner/$repo/requests'
     | '/$owner/$repo/runs'
     | '/$owner/$repo/requests/$requestId/changes'
-    | '/$owner/$repo/requests/$requestId/details'
     | '/$owner/$repo/runs/workflows/$workflow'
-    | '/$owner/$repo/requests/$requestId'
   id:
     | '__root__'
     | '/'
@@ -299,10 +294,10 @@ export interface FileRouteTypes {
     | '/$owner/$repo/_code/'
     | '/$owner/$repo/requests/'
     | '/$owner/$repo/runs/'
+    | '/$owner/$repo/requests/$requestId/_discussion'
     | '/$owner/$repo/requests/$requestId/changes'
-    | '/$owner/$repo/requests/$requestId/details'
     | '/$owner/$repo/runs/workflows/$workflow'
-    | '/$owner/$repo/requests/$requestId/'
+    | '/$owner/$repo/requests/$requestId/_discussion/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -458,11 +453,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerRepoUpdatesEntryIdRouteImport
       parentRoute: typeof OwnerRepoRoute
     }
-    '/$owner/$repo/requests/$requestId/': {
-      id: '/$owner/$repo/requests/$requestId/'
-      path: '/'
-      fullPath: '/$owner/$repo/requests/$requestId/'
-      preLoaderRoute: typeof OwnerRepoRequestsRequestIdIndexRouteImport
+    '/$owner/$repo/requests/$requestId/_discussion': {
+      id: '/$owner/$repo/requests/$requestId/_discussion'
+      path: ''
+      fullPath: '/$owner/$repo/requests/$requestId'
+      preLoaderRoute: typeof OwnerRepoRequestsRequestIdDiscussionRouteImport
       parentRoute: typeof OwnerRepoRequestsRequestIdRoute
     }
     '/$owner/$repo/requests/$requestId/changes': {
@@ -472,19 +467,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerRepoRequestsRequestIdChangesRouteImport
       parentRoute: typeof OwnerRepoRequestsRequestIdRoute
     }
-    '/$owner/$repo/requests/$requestId/details': {
-      id: '/$owner/$repo/requests/$requestId/details'
-      path: '/details'
-      fullPath: '/$owner/$repo/requests/$requestId/details'
-      preLoaderRoute: typeof OwnerRepoRequestsRequestIdDetailsRouteImport
-      parentRoute: typeof OwnerRepoRequestsRequestIdRoute
-    }
     '/$owner/$repo/runs/workflows/$workflow': {
       id: '/$owner/$repo/runs/workflows/$workflow'
       path: '/workflows/$workflow'
       fullPath: '/$owner/$repo/runs/workflows/$workflow'
       preLoaderRoute: typeof OwnerRepoRunsWorkflowsWorkflowRouteImport
       parentRoute: typeof OwnerRepoRunsRoute
+    }
+    '/$owner/$repo/requests/$requestId/_discussion/': {
+      id: '/$owner/$repo/requests/$requestId/_discussion/'
+      path: '/'
+      fullPath: '/$owner/$repo/requests/$requestId/'
+      preLoaderRoute: typeof OwnerRepoRequestsRequestIdDiscussionIndexRouteImport
+      parentRoute: typeof OwnerRepoRequestsRequestIdDiscussionRoute
     }
   }
 }
@@ -501,19 +496,32 @@ const OwnerRepoCodeRouteWithChildren = OwnerRepoCodeRoute._addFileChildren(
   OwnerRepoCodeRouteChildren,
 )
 
+interface OwnerRepoRequestsRequestIdDiscussionRouteChildren {
+  OwnerRepoRequestsRequestIdDiscussionIndexRoute: typeof OwnerRepoRequestsRequestIdDiscussionIndexRoute
+}
+
+const OwnerRepoRequestsRequestIdDiscussionRouteChildren: OwnerRepoRequestsRequestIdDiscussionRouteChildren =
+  {
+    OwnerRepoRequestsRequestIdDiscussionIndexRoute:
+      OwnerRepoRequestsRequestIdDiscussionIndexRoute,
+  }
+
+const OwnerRepoRequestsRequestIdDiscussionRouteWithChildren =
+  OwnerRepoRequestsRequestIdDiscussionRoute._addFileChildren(
+    OwnerRepoRequestsRequestIdDiscussionRouteChildren,
+  )
+
 interface OwnerRepoRequestsRequestIdRouteChildren {
+  OwnerRepoRequestsRequestIdDiscussionRoute: typeof OwnerRepoRequestsRequestIdDiscussionRouteWithChildren
   OwnerRepoRequestsRequestIdChangesRoute: typeof OwnerRepoRequestsRequestIdChangesRoute
-  OwnerRepoRequestsRequestIdDetailsRoute: typeof OwnerRepoRequestsRequestIdDetailsRoute
-  OwnerRepoRequestsRequestIdIndexRoute: typeof OwnerRepoRequestsRequestIdIndexRoute
 }
 
 const OwnerRepoRequestsRequestIdRouteChildren: OwnerRepoRequestsRequestIdRouteChildren =
   {
+    OwnerRepoRequestsRequestIdDiscussionRoute:
+      OwnerRepoRequestsRequestIdDiscussionRouteWithChildren,
     OwnerRepoRequestsRequestIdChangesRoute:
       OwnerRepoRequestsRequestIdChangesRoute,
-    OwnerRepoRequestsRequestIdDetailsRoute:
-      OwnerRepoRequestsRequestIdDetailsRoute,
-    OwnerRepoRequestsRequestIdIndexRoute: OwnerRepoRequestsRequestIdIndexRoute,
   }
 
 const OwnerRepoRequestsRequestIdRouteWithChildren =

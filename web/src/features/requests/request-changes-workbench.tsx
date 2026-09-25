@@ -19,8 +19,10 @@ import {
 } from '@/features/history/history-state'
 import { shortOid } from '@/lib/short-oid'
 import { useCachedResource } from '@/lib/use-cached-resource'
+import { AbsoluteTimestamp } from '@/components/timestamp'
+import { commitCount } from './request-revision-stepper'
 import { Link } from '@tanstack/react-router'
-import { GitCommit, MessageSquare } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 import { displayRouteFilePath } from '@/lib/route-file'
 import { useCallback, useMemo } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
@@ -146,6 +148,7 @@ export function RequestChangesWorkbench({
       emptyDescription={emptyDescription}
       emptyTitle={emptyTitle}
       fileDiffState={model.fileDiffState}
+      header={model.selectedRevision ? <RequestRevisionHeader revision={model.selectedRevision} /> : undefined}
       onCloseDiff={model.closeDiff}
       onRetryDiff={model.retryDiff}
       onSelectCommit={model.selectCommit}
@@ -237,10 +240,6 @@ function useRequestChangesModel({
   search: RequestChangesSearch
 }) {
   const orderedRevisions = revisions.revisions
-  const commits = useMemo(
-    () => orderedRequestCommits(orderedRevisions),
-    [orderedRevisions],
-  )
   const selection = useMemo(
     () => requestChangeSelection(
       orderedRevisions,
@@ -250,6 +249,10 @@ function useRequestChangesModel({
     [orderedRevisions, revisions.review_revision_id, search],
   )
   const selectedRevision = selection.revision
+  const commits = useMemo(
+    () => orderedRequestCommits(selectedRevision ? [selectedRevision] : []),
+    [selectedRevision],
+  )
   const selectedRevisionId = selectedRevision?.id ?? null
   const selectedCommitOid = selection.commit
   const selectedCommitId = selectedRevision && selectedCommitOid
@@ -357,6 +360,27 @@ function useRequestChangesModel({
   }
 }
 
+function RequestRevisionHeader({ revision }: { revision: RequestRevisionListResponse['revisions'][number] }) {
+  return (
+    <header className="border-b border-border px-5 py-4 sm:px-6 lg:px-8">
+      <h1 className="text-lg font-semibold leading-6 tracking-[-0.01em]">Revision {revision.position}</h1>
+      <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+        <span>{revision.actor.handle} pushed {commitCount(revision)}</span>
+        <span aria-hidden="true">·</span>
+        <AbsoluteTimestamp value={revision.created_at_unix} />
+        {revision.old_head_oid && revision.new_head_oid ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className="font-mono text-[11px]">
+              {shortOid(revision.old_head_oid)} → {shortOid(revision.new_head_oid)}
+            </span>
+          </>
+        ) : null}
+      </p>
+    </header>
+  )
+}
+
 function RequestCommitContext({
   commit,
   discussionReferences,
@@ -373,18 +397,9 @@ function RequestCommitContext({
   revision: RequestRevisionListResponse['revisions'][number]
 }) {
   return (
-    <div className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
-      <div className="flex flex-wrap items-center gap-2">
-        <GitCommit className="size-3.5" />
-        <span>Revision {revision.position} by {revision.actor.handle}</span>
-        {revision.old_head_oid && revision.new_head_oid ? (
-          <span className="font-mono">
-            {shortOid(revision.old_head_oid)} → {shortOid(revision.new_head_oid)}
-          </span>
-        ) : null}
-      </div>
+    <div className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground empty:hidden">
       {revision.inspection !== 'Complete' || hasEarlierRevisions ? (
-        <p className="mt-2">
+        <p>
           {[
             revision.inspection === 'Incomplete'
               ? 'Commit inspection for this revision is incomplete.'

@@ -12,9 +12,9 @@ import { useParams } from '@tanstack/react-router'
 import { useRef } from 'react'
 import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'
 import { RequestChecksPending } from './request-checks-pending'
-import { PendingDetailsRail, RequestDetailsSkeleton } from './request-details-layout'
+import { RequestDetailsSkeleton } from './request-details-layout'
 import { ChildRoutesPending } from '@/components/child-routes-pending'
-import { RequestViewTabs } from './request-view-tabs'
+import { RequestChangesScreen } from './request-changes-screen'
 import { useDetailPaneRail } from './use-detail-pane-rail'
 import { DiffSkeleton } from '@/features/review/diff-skeleton'
 
@@ -30,11 +30,9 @@ const PENDING_CHANGES: { id: string; length: TextSkeletonLength }[] = [
   { id: 'fourth', length: 'medium' },
 ]
 
-// Mirrors RequestDetailPage: the same header, checks row, tabs, and details
-// rail when the pane is wide enough for one. The selected tab's route supplies
-// the document's pending state, so Changes and Details keep their own shape.
+// Mirrors RequestDetailPage: the same header, checks row, description, and
+// details rail when the pane is wide enough for one.
 export function RequestDetailPagePending() {
-  const params = useParams({ from: '/$owner/$repo/requests/$requestId' })
   const { isSignedIn } = useAuth()
   const paneRef = useRef<HTMLDivElement>(null)
   const rail = useDetailPaneRail(paneRef)
@@ -52,15 +50,19 @@ export function RequestDetailPagePending() {
               <TextSkeleton className="h-6 py-1.5" length="long" size="meta" />
               <TextSkeleton className="h-5 py-1" length="medium" size="meta" />
             </div>
-            {/* Signed-out viewers get no request actions. Signed-in ones get
-                the one lifecycle action, which moves to a bottom bar on
-                narrow panes, and the More menu. */}
-            {isSignedIn ? (
-              <div className="request-detail-header-actions flex min-w-0 items-center justify-end gap-2">
-                <BlockSkeleton className="hidden h-8 w-20 min-[701px]:block" />
-                <BlockSkeleton className="size-8" />
-              </div>
-            ) : null}
+            {/* Everyone gets Changes, and Details when there is no rail.
+                Signed-in viewers also get the one lifecycle action, which
+                moves to a bottom bar on narrow panes, and the More menu. */}
+            <div className="request-detail-header-actions flex min-w-0 items-center justify-end gap-2">
+              <BlockSkeleton className="h-8 w-[6.5rem]" />
+              {rail ? null : <BlockSkeleton className="h-8 w-24" />}
+              {isSignedIn ? (
+                <>
+                  <BlockSkeleton className="hidden h-8 w-20 min-[701px]:block" />
+                  <BlockSkeleton className="size-8" />
+                </>
+              ) : null}
+            </div>
           </div>
         </header>
         <div className="request-detail-actions px-5 py-2.5 min-[701px]:hidden">
@@ -69,18 +71,15 @@ export function RequestDetailPagePending() {
         <RequestChecksPending />
         <div className={cn(rail && 'grid grid-cols-[minmax(0,1fr)_300px]')}>
           <div className="request-detail-document pt-4">
-            <section className="min-w-0 px-5 pb-5 lg:px-7">
+            <section className="min-w-0 border-b border-border px-5 pb-5 lg:px-7">
               {/* Descriptions are set at leading-6. */}
               <TextSkeleton className="h-6 py-1" length="xlong" />
             </section>
-            <RequestViewTabs actionsRef={() => {}} params={params} rail={rail} />
             <div className="min-w-0">
-              <PendingDetailsRail value={rail}>
-                <ChildRoutesPending
-                  below="/$owner/$repo/requests/$requestId"
-                  fallback={<DiscussionSkeleton />}
-                />
-              </PendingDetailsRail>
+              <ChildRoutesPending
+                below="/$owner/$repo/requests/$requestId/_discussion"
+                fallback={<DiscussionSkeleton />}
+              />
             </div>
           </div>
           {rail ? (
@@ -108,6 +107,20 @@ export function RequestDiscussionPending() {
 }
 
 export function RequestChangesPending() {
+  const params = useParams({ from: '/$owner/$repo/requests/$requestId' })
+  return (
+    <RequestChangesScreen
+      params={params}
+      revisions={null}
+      selectedRevisionId={null}
+      title={<TextSkeleton length="long" size="meta" />}
+    >
+      <RequestChangesBodyPending />
+    </RequestChangesScreen>
+  )
+}
+
+export function RequestChangesBodyPending() {
   return (
     <PendingSurface label="Loading request changes">
       <section className="grid border-t border-border lg:grid-cols-[minmax(220px,0.42fr)_minmax(0,1.58fr)]">

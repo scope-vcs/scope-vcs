@@ -37,17 +37,14 @@ const routeDecisions = {
     '/repository/requests',
   ),
   '/$owner/$repo/requests/$requestId': excluded,
-  '/$owner/$repo/requests/$requestId/': tracked(
+  '/$owner/$repo/requests/$requestId/_discussion': excluded,
+  '/$owner/$repo/requests/$requestId/_discussion/': tracked(
     'request',
     '/repository/request',
   ),
   '/$owner/$repo/requests/$requestId/changes': tracked(
     'request_changes',
     '/repository/request/changes',
-  ),
-  '/$owner/$repo/requests/$requestId/details': tracked(
-    'request_details',
-    '/repository/request/details',
   ),
   '/$owner/$repo/runs': excluded,
   '/$owner/$repo/runs/': tracked('repository_runs', '/repository/runs'),

@@ -1,5 +1,6 @@
 import type { RepoParams } from '@/api/types'
 import type { HistoryFeed, ProjectionPreviewAudience } from '@/api/types.generated'
+import { MenuListPanel } from '@/components/menu-list-panel'
 import { Popover } from '@/components/ui/popover'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { ChevronDown, History } from 'lucide-react'
@@ -79,43 +80,44 @@ function HistoryMenuPanel({
   const empty = FEEDS.find((option) => option.value === feed)?.empty ?? ''
 
   return (
-    <div className="text-xs">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border p-2">
-        <ToggleGroup
-          aria-label="History filter"
-          onValueChange={(value) => {
-            if (value) onSelectFeed(value as HistoryFeed)
-          }}
-          type="single"
-          value={feed}
-        >
-          {FEEDS.map((option) => (
-            <ToggleGroupItem key={option.value} value={option.value}>{option.label}</ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-        {canReadPrivateFiles ? (
+    <MenuListPanel
+      controls={(
+        <>
           <ToggleGroup
-            aria-label="Viewing as"
+            aria-label="History filter"
             onValueChange={(value) => {
-              if (value) onSelectAudience(value as ProjectionPreviewAudience)
+              if (value) onSelectFeed(value as HistoryFeed)
             }}
             type="single"
-            value={audience}
+            value={feed}
           >
-            <ToggleGroupItem value="private">Private</ToggleGroupItem>
-            <ToggleGroupItem value="public">Public</ToggleGroupItem>
+            {FEEDS.map((option) => (
+              <ToggleGroupItem key={option.value} value={option.value}>{option.label}</ToggleGroupItem>
+            ))}
           </ToggleGroup>
-        ) : null}
-      </div>
-      <div className="max-h-[min(26rem,60vh)] overflow-y-auto">
-        <HistoryFeedList
-          empty={empty}
-          history={history}
-          onNavigate={onNavigate}
-          params={params}
-          search={updateAudienceSearch(audience, defaultAudience)}
-        />
-      </div>
-    </div>
+          {canReadPrivateFiles ? (
+            <ToggleGroup
+              aria-label="Viewing as"
+              onValueChange={(value) => {
+                if (value) onSelectAudience(value as ProjectionPreviewAudience)
+              }}
+              type="single"
+              value={audience}
+            >
+              <ToggleGroupItem value="private">Private</ToggleGroupItem>
+              <ToggleGroupItem value="public">Public</ToggleGroupItem>
+            </ToggleGroup>
+          ) : null}
+        </>
+      )}
+    >
+      <HistoryFeedList
+        empty={empty}
+        history={history}
+        onNavigate={onNavigate}
+        params={params}
+        search={updateAudienceSearch(audience, defaultAudience)}
+      />
+    </MenuListPanel>
   )
 }
