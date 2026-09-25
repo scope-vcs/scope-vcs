@@ -139,11 +139,15 @@ body {
  * one family. There is no accent color: emphasis is ink against grey, and
  * green, red and amber are reserved for lifecycle and diff meaning.
  * `--destructive` is an alias of `--danger`; danger is the source.
+ * `.light` lets a subtree force the light palette inside dark mode.
  */
 :root {
   --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "Commit Mono", "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+}
 
+:root,
+.light {
   --background: #f4f2ec;
   --foreground: #1c1a16;
   --card: #fbfaf6;

@@ -10,22 +10,29 @@ const platformOptions = [
 
 /**
  * Platform picker plus the matching install command. Owns the selected
- * platform; callers style the code block for their surface.
+ * platform unless the caller passes `platform` to share it between copies;
+ * callers style the code block for their surface.
  */
 export function CliInstallCommand({
   codeBlockClassName,
   commands,
   initialPlatform,
   onCopy,
+  onPlatformChange,
   pickerClassName,
+  platform: sharedPlatform,
 }: {
   codeBlockClassName?: string
   commands: CliInstallCommands
   initialPlatform: CliPlatform
   onCopy?: () => void
+  onPlatformChange?: (platform: CliPlatform) => void
   pickerClassName?: string
+  platform?: CliPlatform
 }): ReactElement {
-  const [platform, setPlatform] = useState<CliPlatform>(initialPlatform)
+  const [ownPlatform, setOwnPlatform] = useState<CliPlatform>(initialPlatform)
+  const platform = sharedPlatform ?? ownPlatform
+  const setPlatform = onPlatformChange ?? setOwnPlatform
   const option = platformOptions.find((item) => item.value === platform) ?? platformOptions[0]
 
   return (

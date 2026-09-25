@@ -1,55 +1,229 @@
-@layer base {
-  /* Figure type steps down on narrow screens so the drawn UI keeps its proportions. */
-  .marketing-page {
-    --marketing-figure-title: 13px;
-    --marketing-figure-body: 13px;
-    --marketing-figure-meta: 12px;
-  }
+/* The landing page is two copies of the same content: the public layer, and a
+ * private layer in the opposite theme that shows through the lens. */
 
-  @media (width <= 520px) {
-    .marketing-page {
-      --marketing-figure-title: 12px;
-      --marketing-figure-body: 12px;
-      --marketing-figure-meta: 11px;
-    }
-  }
+.landing {
+  --landing-ease: cubic-bezier(.16, 1, .3, 1);
+  /* Scales every duration and stagger on the page; the lens's own motion is
+   * paced by PACE in lens/lens-motion.ts. Confetti keeps its own timing. */
+  --landing-pace: .8;
+}
 
-  :where(.marketing-page .icon) {
-    width: 18px;
-    height: 18px;
-    flex-shrink: 0;
-    stroke-width: 1.6;
-  }
+/* The logo image is black; each layer tints it for its own theme. The private
+ * layer can be light inside dark mode, so this can't use the `dark:` variant. */
+:root,
+.light {
+  --landing-logo-filter: brightness(0);
+}
 
-  .marketing-page :is(button, a, summary):focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: 5px;
+.dark {
+  --landing-logo-filter: brightness(0) invert(1);
+}
+
+.landing .landing-logo {
+  filter: var(--landing-logo-filter);
+}
+
+.landing-layer {
+  background: var(--background);
+  color: var(--foreground);
+  /* Private content glows faintly under the lens. */
+  --landing-aura: color-mix(in srgb, var(--warning) 55%, transparent);
+}
+
+.landing-private {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  clip-path: circle(0 at 50% 50%);
+  will-change: clip-path, transform;
+}
+
+.landing-layer[data-view="public"] :is(.landing-private-only, .landing-note),
+.landing-layer[data-view="private"] .landing-public-only {
+  visibility: hidden;
+}
+
+/* Notes: private asides laid out in empty space. */
+.landing-note {
+  font: 400 12px/1.55 var(--font-mono);
+  color: var(--muted-foreground);
+}
+
+.landing-private :is(.landing-swap, .landing-note, .is-kept) {
+  text-shadow: 0 0 6px var(--landing-aura), 0 0 16px var(--landing-aura);
+}
+
+.landing-private .is-kept svg {
+  filter: drop-shadow(0 0 3px var(--landing-aura)) drop-shadow(0 0 8px var(--landing-aura));
+}
+
+/* Entrance: one sequence on load. */
+.landing-rise {
+  animation: landing-rise calc(.9s * var(--landing-pace)) var(--landing-ease) calc(var(--rise-delay, 0ms) * var(--landing-pace)) both;
+}
+
+@keyframes landing-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Lane graph draws itself once scrolled to. */
+.merge-graph path {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset calc(1.4s * var(--landing-pace)) var(--landing-ease);
+}
+
+.merge-graph .lane-main { stroke: var(--foreground); }
+.merge-graph .lane-public { stroke: var(--success); }
+.merge-graph circle { transform-box: fill-box; transform-origin: center; transform: scale(0); transition: transform calc(.5s * var(--landing-pace)) var(--landing-ease); }
+.merge-graph .dot-main { fill: var(--foreground); }
+.merge-graph .dot-public { fill: var(--success); }
+.merge-graph .ring-main { fill: var(--background); stroke: var(--foreground); stroke-width: 5; }
+.merge-graph .ring-public { fill: var(--background); stroke: var(--success); stroke-width: 5; }
+.merge-graph text { font: 400 13px var(--font-mono); fill: var(--muted-foreground); opacity: 0; transition: opacity calc(.6s * var(--landing-pace)) calc(1s * var(--landing-pace)); }
+.merge-graph.is-drawn path { stroke-dashoffset: 0; }
+.merge-graph.is-drawn circle { transform: scale(1); transition-delay: calc(var(--pop-delay, 0ms) * var(--landing-pace)); }
+.merge-graph.is-drawn text { opacity: 1; }
+.landing-private .merge-graph .is-kept { filter: drop-shadow(0 0 4px var(--landing-aura)) drop-shadow(0 0 12px var(--landing-aura)); }
+
+/* Scroll chevron: rolls on hover, dissolves once the next section shows. */
+.landing-cue > span {
+  transition: opacity calc(.7s * var(--landing-pace)) var(--landing-ease), filter calc(.7s * var(--landing-pace)) var(--landing-ease), transform calc(.7s * var(--landing-pace)) var(--landing-ease);
+}
+
+.landing-cue svg {
+  transition: transform calc(.45s * var(--landing-pace)) cubic-bezier(.65, 0, .35, 1);
+}
+
+.landing-cue:hover svg {
+  transform: translateY(18px);
+}
+
+.landing-cue.is-gone {
+  pointer-events: none;
+}
+
+.landing-cue.is-gone > span {
+  opacity: 0;
+  filter: blur(6px);
+  transform: scale(1.7) translateY(4px);
+}
+
+/* Install Scope lights up the command it points at, then lets it settle. */
+.landing-terminal {
+  transition: box-shadow calc(.6s * var(--landing-pace)) var(--landing-ease);
+}
+
+.landing-terminal.is-called {
+  box-shadow:
+    0 0 0 1px var(--success),
+    0 0 0 6px color-mix(in srgb, var(--success) 16%, transparent),
+    0 0 36px color-mix(in srgb, var(--success) 22%, transparent);
+}
+
+.landing-terminal.is-called button {
+  border-color: var(--success);
+  color: #fff;
+}
+
+/* Lens ring, label and cursor. */
+.lens-ring path { stroke-width: 1; }
+.lens-ring circle { stroke-width: 1; }
+
+.lens-label {
+  font: 400 11px var(--font-mono);
+  fill: var(--muted-foreground);
+  opacity: 0;
+  transition: opacity calc(.6s * var(--landing-pace));
+}
+
+.lens-label.is-shown { opacity: 1; }
+.lens-label.is-highlight { fill: var(--success-strong); }
+.lens-grip {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 44px;
+  pointer-events: none;
+  touch-action: none;
+}
+
+@media (pointer: coarse) {
+  .lens-grip { pointer-events: stroke; }
+}
+
+.lens-cursor {
+  mix-blend-mode: difference;
+  opacity: 0;
+  transition: opacity calc(.2s * var(--landing-pace));
+}
+
+.lens-cursor.is-visible { opacity: 1; }
+
+.lens-cursor i {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #fff;
+  transition: all calc(.28s * var(--landing-pace)) var(--landing-ease);
+}
+
+.lens-cursor.is-over i {
+  left: -20px;
+  top: -20px;
+  width: 40px;
+  height: 40px;
+  background: transparent;
+}
+
+.lens-cursor.is-down i { transform: scale(.7); }
+
+/* The native cursor stays until the lens has mounted and can replace it. */
+@media (pointer: fine) {
+  .landing.lens-ready.lens-on,
+  .landing.lens-ready.lens-on * {
+    cursor: none;
   }
 }
 
-@layer components {
-  .marketing-page .enter {
-    animation: landing-enter .9s cubic-bezier(.16, 1, .3, 1) both;
-  }
+.landing.lens-off :is(.lens-cursor, .found-tally) { display: none; }
+.landing.lens-holding { user-select: none; }
 
-  .marketing-page .accent::after {
-    animation: landing-underline-in .6s .55s both;
-  }
+.found-tally {
+  translate: -50% 26px;
+  opacity: 0;
+  transition: opacity calc(.3s * var(--landing-pace)), translate calc(.4s * var(--landing-pace)) var(--landing-ease);
 }
 
-@keyframes landing-enter {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+.found-tally.is-visible {
+  opacity: 1;
+  translate: -50% 20px;
 }
 
-@keyframes landing-underline-in {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
+.landing-toast {
+  opacity: 0;
+  translate: 0 6px;
+  transition: opacity calc(.3s * var(--landing-pace)), translate calc(.4s * var(--landing-pace)) var(--landing-ease);
 }
 
+.landing-toast.is-visible {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* The app's reduced-motion rule shortens durations; drop the stagger delays too
+ * so nothing waits to appear. */
 @media (prefers-reduced-motion: reduce) {
-  .marketing-page .enter,
-  .marketing-page .accent::after {
-    animation: none !important;
+  .landing-rise,
+  .merge-graph :is(circle, text) {
+    animation-delay: 0ms;
+    transition-delay: 0ms !important;
   }
 }
