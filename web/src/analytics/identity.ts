@@ -47,12 +47,12 @@ export function resolveAnalyticsIdentity(
 export function identityTransition(input: {
   currentDistinctId: string
   isSignedIn: boolean
-  persistedUserId: unknown
+  identifiedUserId: unknown
   scopeUserId?: string | null
 }): IdentityTransition {
   if (!input.isSignedIn) {
     const hasScopeIdentity = input.currentDistinctId.startsWith('scope_usr_')
-      || Boolean(input.persistedUserId)
+      || Boolean(input.identifiedUserId)
     return hasScopeIdentity ? { kind: 'reset' } : { kind: 'none' }
   }
 
@@ -61,7 +61,7 @@ export function identityTransition(input: {
     && input.currentDistinctId !== input.scopeUserId
   ) {
     const replacingScopeIdentity = input.currentDistinctId.startsWith('scope_usr_')
-      || Boolean(input.persistedUserId)
+      || Boolean(input.identifiedUserId)
     return {
       kind: replacingScopeIdentity ? 'reset_and_identify' : 'identify',
       scopeUserId: input.scopeUserId,

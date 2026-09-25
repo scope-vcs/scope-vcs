@@ -11,7 +11,8 @@ import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 import {
   assertFileSelectionSkipsRevisionReload,
   assertRequestCrossLinksStayInDocument,
-  assertUpdateSelectionReloadsSelectedPayload,
+  assertRevisionStepReloadsSelectedPayload,
+  changesBackLink,
   captureRequestShell,
 } from './request-changes-smoke.mjs'
 
@@ -149,9 +150,17 @@ test('changes navigation preserves the request shell and collapsed replies', asy
     await waitForClientHydration(disclosure)
     await disclosure.click()
     await assertReplyRegion(page, retryThread.locator('#discussion-discussion_demo_retry_cap-replies'), false)
-    const requestViews = page.getByRole('navigation', { name: 'Request views' })
-    const changesLink = requestViews.getByRole('link', { name: 'Changes' })
-    await waitForClientHydration(changesLink)
+    const changesMenu = page.getByRole('button', { name: 'Changes', exact: true })
+    await waitForClientHydration(changesMenu)
+    await changesMenu.click()
+    const menu = page.getByRole('dialog', { name: 'Request changes' })
+    const revisions = menu.getByRole('link')
+    await revisions.first().waitFor()
+    const pushCount = await revisions.count()
+    assert(pushCount > 1, 'expected more than one push')
+    await menu.getByRole('searchbox', { name: 'Search revisions' }).fill('jitter')
+    await page.waitForFunction((count) => document.querySelectorAll('dialog[aria-label="Request changes"] a').length < count, pushCount)
+    const changesLink = revisions.first()
     const transitionServerFunctions = []
     const recordServerFunction = (request) => {
       if (request.url().includes('/_serverFn/')) {
@@ -162,15 +171,14 @@ test('changes navigation preserves the request shell and collapsed replies', asy
     await changesLink.click()
     await page.waitForURL((url) => url.pathname.endsWith('/requests/req_demo_ready/changes'))
     await page.getByLabel('Commit file navigator').waitFor()
+    assert.equal(await page.locator('.request-discussion-thread').count(), 0)
     page.off('request', recordServerFunction)
     const repeatedServerFunctions = transitionServerFunctions.filter(
       (url, index, requests) => requests.indexOf(url) !== index,
     )
     assert.deepEqual(repeatedServerFunctions, [])
     await assertNodesPreserved(page, shell)
-    await page.getByRole('navigation', { name: 'Request views' })
-      .getByRole('link', { name: 'Discussion' })
-      .click()
+    await changesBackLink(page).click()
     await page.waitForURL((url) => url.pathname.endsWith('/requests/req_demo_ready'))
     await page.locator('.request-discussion-thread').first().waitFor()
     const restoredRetryThread = page.locator('#discussion-discussion_demo_retry_cap')
@@ -187,13 +195,13 @@ test('changes navigation preserves the request shell and collapsed replies', asy
   }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
 })
 
-test('file and update selection reload only the selected changes payload', async () => {
+test('file and revision selection reload only the selected changes payload', async () => {
   let settled
   await withPage(`${requestPath}/changes`, async (page) => {
     await settled()
     await page.getByLabel('Commit file navigator').waitFor()
     await assertFileSelectionSkipsRevisionReload(page, 'retry.ts', '/src/retry.ts')
-    await assertUpdateSelectionReloadsSelectedPayload(page)
+    await assertRevisionStepReloadsSelectedPayload(page)
   }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
 })
 
@@ -219,19 +227,17 @@ async function assertReplyRegion(page, region, expanded) {
   assert.equal(await region.getAttribute('inert'), expanded ? null : '')
 }
 
-test('Details is a separate tab that reuses request data and preserves discussion state', async () => {
+test('Details opens a drawer that reuses request data and preserves discussion state', async () => {
   let settled
   await withPage(requestPath, async (page) => {
     await settled()
-    const tabs = page.getByRole('navigation', { name: 'Request views' })
-    const details = tabs.getByRole('link', { name: 'Details', exact: true })
+    const details = page.getByRole('button', { name: 'Details', exact: true })
     const thread = page.locator('#discussion-discussion_demo_retry_cap')
     const collapse = thread.getByRole('button', { name: 'Hide 3 replies' })
     await waitForClientHydration(collapse)
     await settled()
     await collapse.click()
     await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
-    const shell = await captureRequestShell(page)
     const header = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Add bounded retry timing', exact: true }) })
     assert.equal(await header.getByText('Maintainer merges', { exact: true }).getAttribute('data-variant'), 'outline')
     assert.equal(await header.getByText('Open', { exact: true }).count(), 0)
@@ -242,19 +248,14 @@ test('Details is a separate tab that reuses request data and preserves discussio
       if (serverFunctionName(request) === 'loadRequestPage_createServerFn_handler') requestLoads.push(request.url())
     })
     await details.click()
-    await page.waitForURL((url) => url.pathname.endsWith('/req_demo_ready/details'))
-    const context = page.getByRole('region', { name: 'Request details' })
-    await context.getByText('Public request', { exact: true }).waitFor()
-    assert.equal(await details.getAttribute('aria-current'), 'page')
-    assert.equal(await page.locator('.request-discussion-thread').count(), 0)
-    await assertNodesPreserved(page, shell)
+    const drawer = page.getByRole('dialog', { name: 'Details' })
+    await drawer.getByRole('region', { name: 'Request details' }).getByText('Public request', { exact: true }).waitFor()
     await page.setViewportSize({ width: 390, height: 844 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false)
-    await tabs.getByRole('link', { name: 'Discussion', exact: true }).click()
-    await page.waitForURL((url) => url.pathname.endsWith('/req_demo_ready'))
+    await page.keyboard.press('Escape')
+    await drawer.waitFor({ state: 'detached' })
+    await page.waitForFunction(() => document.activeElement?.textContent === 'Details')
     await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
-    await assertNodesPreserved(page, shell)
-    await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
     assert.deepEqual(requestLoads, [])
     await thread.getByRole('button', { name: 'Show 3 replies' }).click()
     const quote = page.locator('#reply-discussion_reply_demo_retry_cap_quote a[href^="#discussion="]')
@@ -263,11 +264,10 @@ test('Details is a separate tab that reuses request data and preserves discussio
   }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
 })
 
-test('Details tab has a working link before hydration and renders directly on mobile', async () => {
-  await withPage(requestPath, async (page) => {
-    await page.getByRole('navigation', { name: 'Request views' }).getByRole('link', { name: 'Details', exact: true }).click()
-    await page.waitForURL((url) => url.pathname.endsWith('/req_demo_ready/details'))
-    await page.getByRole('region', { name: 'Request details' }).getByText('Public request', { exact: true }).waitFor()
-    assert.equal(await page.getByRole('heading', { name: 'Add bounded retry timing', exact: true }).count(), 1)
+test('the changes screen renders on mobile before hydration', async () => {
+  await withPage(`${requestPath}/changes`, async (page) => {
+    await page.getByRole('heading', { level: 1, name: /^Revision \d+$/ }).waitFor()
+    await changesBackLink(page).waitFor()
+    assert.equal(await page.locator('.request-discussion-thread').count(), 0)
   }, { javaScriptEnabled: false, viewport: { width: 390, height: 844 } })
 })

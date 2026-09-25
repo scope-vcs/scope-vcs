@@ -1,7 +1,6 @@
 import type { RequestParams } from '@/api/types'
 import type { RequestRatingResponse, RequestRatingsResponse, RequestSummaryResponse } from '@/api/types.generated'
 import { shortOid } from '@/lib/short-oid'
-import { cn } from '@/lib/utils'
 import { DetailsSection, DetailsValue } from './request-details-layout'
 import { createContext, type ReactNode, use } from 'react'
 import { RequestInvitees } from './request-invitees'
@@ -14,7 +13,7 @@ import {
 import { AbsoluteTimestamp } from '@/components/timestamp'
 import type { RequestActionController } from './use-request-actions'
 
-export type RequestDetailsPlacement = 'rail' | 'tab'
+export type RequestDetailsPlacement = 'drawer' | 'rail'
 
 type RequestDetailsProps = {
   actions: RequestActionController
@@ -33,7 +32,7 @@ export function RequestDetailsProvider({ children, value }: { children: ReactNod
 }
 
 /**
- * One stateful instance at a time: the rail and the Details tab both ask
+ * One stateful instance at a time: the rail and the Details drawer both ask
  * for it, and the page decides which one is live from its own width.
  */
 export function RequestDetails({ placement }: { placement: RequestDetailsPlacement }) {
@@ -42,7 +41,7 @@ export function RequestDetails({ placement }: { placement: RequestDetailsPlaceme
   if (context.placement !== placement) return null
   const { actions, onRate, params, ratings, request } = context
   return (
-    <div className={cn('@container min-w-0', placement === 'tab' && 'border-t border-border')}>
+    <div className="@container min-w-0">
       <section aria-label="Request details" className="min-w-0 px-5 py-6 @md:px-6 @3xl:px-8">
         <div className="grid min-w-0 gap-x-12 gap-y-8 @3xl:grid-cols-2">
           <DetailsSection title="lifecycle">

@@ -87,7 +87,7 @@ impl AppState {
         };
         state.repository_engine.start_reaper();
         state.start_run_attempt_recovery();
-        state.start_run_retention();
+        state.start_retention();
         state.start_request_ref_cleanup();
         state.start_invite_email_delivery();
         state.start_clerk_user_deletion();

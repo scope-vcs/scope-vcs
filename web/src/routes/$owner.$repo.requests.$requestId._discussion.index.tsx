@@ -78,7 +78,12 @@ const markDiscussionRead = createServerFn({ method: 'POST' })
   .validator(parseMarkDiscussionReadInput)
   .handler(({ data }) => markRequestDiscussionReadForRequest(data))
 
-export const Route = createFileRoute('/$owner/$repo/requests/$requestId/')({
+export const Route = createFileRoute('/$owner/$repo/requests/$requestId/_discussion/')({
+  validateSearch: (search: Record<string, unknown>): { discussion?: string } => ({
+    discussion: typeof search.discussion === 'string' && search.discussion.trim()
+      ? search.discussion.trim()
+      : undefined,
+  }),
   loaderDeps: ({ search }) => ({ discussion: search.discussion }),
   loader: ({ deps, params }) => loadDiscussionPage({
     data: {

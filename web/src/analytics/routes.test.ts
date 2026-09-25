@@ -21,10 +21,10 @@ test('route aliases contain no dynamic route values', () => {
     path: '/repository/code',
   })
   assert.deepEqual(
-    analyticsRouteForId('/$owner/$repo/requests/$requestId/details'),
+    analyticsRouteForId('/$owner/$repo/requests/$requestId/_discussion/'),
     {
-      name: 'request_details',
-      path: '/repository/request/details',
+      name: 'request',
+      path: '/repository/request',
     },
   )
 })
@@ -42,6 +42,7 @@ test('layout routes are explicitly excluded from page capture', () => {
     '/$owner/$repo/_code',
     '/$owner/$repo/requests',
     '/$owner/$repo/requests/$requestId',
+    '/$owner/$repo/requests/$requestId/_discussion',
     '/$owner/$repo/runs',
   ]) {
     assert.deepEqual(analyticsRouteDecisionForId(routeId), { kind: 'excluded' })
