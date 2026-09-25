@@ -116,6 +116,7 @@ pub(crate) async fn get_history_entry(
         .await?;
     let view = page.view;
     let entry = history_entry_for_id(&view.entries, &entry_id)?;
+    let neighbors = page.neighbors.unwrap_or_default();
 
     let users = state
         .metadata
@@ -132,6 +133,7 @@ pub(crate) async fn get_history_entry(
         audience,
         &view,
         entry,
+        neighbors,
         &users,
         &native_details,
     )?))

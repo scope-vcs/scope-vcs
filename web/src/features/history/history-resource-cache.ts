@@ -32,31 +32,47 @@ type HistoryScope = {
   viewKey: string
 }
 
-type HistoryFileIdentity = HistoryScope & {
+type HistoryFileIdentity = {
   path: string
   oldOid: string | null
   newOid: string | null
 }
 
-export function historyEntryCacheKey(identity: HistoryScope & { entry: string }) {
-  const { scope, repoId, generation, viewKey, audience, entry } = identity
-  return [scope, repoId, generation, viewKey, audience, entry].join('\0')
+// Entry URLs stay stable across reprojection, so an entry is keyed by viewer
+// scope and audience and refreshed through the repository change version.
+export function historyEntryCacheKey(identity: {
+  scope: string
+  audience: ProjectionPreviewAudience
+  entry: string
+}) {
+  const { scope, audience, entry } = identity
+  return [scope, audience, entry].join('\0')
 }
 
-export function historyDiffCacheKey(identity: HistoryFileIdentity & { commit: string }) {
+export function historyDiffCacheKey(identity: HistoryScope & HistoryFileIdentity & { commit: string }) {
+  const { scope, repoId, generation, viewKey, audience, commit } = identity
   return [
-    historyEntryCacheKey({ ...identity, entry: identity.commit }),
+    scope, repoId, generation, viewKey, audience, commit,
     identity.path,
     identity.oldOid ?? '',
     identity.newOid ?? '',
   ].join('\0')
 }
 
+// Blob ids pin the diff content, so a changed entry never reuses a stale diff.
 export function historyEntryDiffCacheKey(identity: HistoryFileIdentity & {
+  scope: string
+  audience: ProjectionPreviewAudience
   entry: string
-  visibilityChange?: string | null
+  visibilityChange: string | null
 }) {
-  return [historyDiffCacheKey({ ...identity, commit: identity.entry }), identity.visibilityChange ?? ''].join('\0')
+  return [
+    historyEntryCacheKey(identity),
+    identity.path,
+    identity.oldOid ?? '',
+    identity.newOid ?? '',
+    identity.visibilityChange ?? '',
+  ].join('\0')
 }
 
 export function readHistoryDiffScroll(key: string | null) {

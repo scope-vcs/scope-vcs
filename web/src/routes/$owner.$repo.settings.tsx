@@ -19,6 +19,7 @@ import {
 } from '@/api/repo-settings'
 import { loadOptionalResource } from '@/api/http'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
+import { VisibilityLogSection } from '@/features/repo-detail/visibility-log-section'
 import { RepoSettingsPending } from '@/features/repo-detail/repo-settings-pending'
 import { RepoContentError } from '@/components/repo-content-error'
 import { PageContent } from '@/components/page-header'
@@ -123,6 +124,7 @@ function RepoSettingsRoute() {
       {!resource.error || resource.value ? (
         <RepoSettingsPage
           key={scope}
+          visibilityLog={<VisibilityLogSection params={params} />}
           createInvite={(data) => retainResult(
             createRepoInvite({ data }),
             (invite) => ({ type: 'inviteUpdated', invite }),

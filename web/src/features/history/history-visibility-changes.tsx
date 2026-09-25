@@ -6,12 +6,10 @@ export type HistoryVisibilityChange = HistoryEntryDetailResponse['visibility_cha
 
 export function VisibilityChanges({
   changes,
-  expanded,
   onSelect,
   selectedId,
 }: {
   changes: HistoryEntryDetailResponse['visibility_changes']
-  expanded: boolean
   onSelect: (change: HistoryVisibilityChange) => void
   selectedId: string | null
 }) {
@@ -44,17 +42,10 @@ export function VisibilityChanges({
       ))}
     </div>
   )
-  return expanded ? (
+  return (
     <section aria-label="Visibility changes" className="border-b border-border">
-      <h4 className="px-5 py-3 text-sm font-medium sm:px-6">Visibility changes · {changes.length}</h4>
+      <h2 className="px-5 pt-3 pb-1 text-sm font-medium sm:px-6">Visibility changes</h2>
       {rows}
     </section>
-  ) : (
-    <details className="border-b border-border" open={selectedId ? true : undefined}>
-      <summary className="cursor-pointer px-5 py-3 text-sm font-medium sm:px-6">
-        Visibility changes · {changes.length}
-      </summary>
-      {rows}
-    </details>
   )
 }

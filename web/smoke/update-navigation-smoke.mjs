@@ -2,23 +2,24 @@ import assert from 'node:assert/strict'
 import { assertDocumentPreserved, markDocument, waitForClientHydration } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
-export async function assertHistoryNavigationKeepsDocument(page) {
-  const defaultDiff = page.getByLabel('README.html diff', { exact: true })
-  await defaultDiff.waitFor()
-  await defaultDiff.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
+// An update page opens no diff until a file is chosen, and choosing or closing
+// one stays a client navigation that reuses the loaded entry.
+export async function assertUpdateFileSelectionKeepsDocument(page) {
+  await page.getByText('Select a changed file', { exact: true }).waitFor()
+  assert.equal(new URL(page.url()).searchParams.has('path'), false)
   const fileNavigator = page.getByLabel('Update file navigator')
   await waitForClientHydration(fileNavigator)
   await page.waitForFunction(
     () => globalThis.__TSR_ROUTER__.state.status === 'idle',
   )
-  const documentSentinel = 'scope-history-file-selection'
+  const documentSentinel = 'scope-update-file-selection'
   await markDocument(page, documentSentinel)
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
       const name = serverFunctionName(request)
       // Live repository refresh can run independently of file selection.
-      if (name.startsWith('loadHistoryEntry')) serverFunctions.push(name)
+      if (name.startsWith('loadHistoryEntry_')) serverFunctions.push(name)
     }
   }
   page.on('request', recordServerFunction)
@@ -38,7 +39,6 @@ export async function assertHistoryNavigationKeepsDocument(page) {
   } finally {
     page.off('request', recordServerFunction)
   }
-  await assertDocumentPreserved(page, documentSentinel)
   assert.deepEqual(serverFunctions, [])
   await page.waitForFunction((diffLabel) => {
     const diff = document.querySelector(`[aria-label="${diffLabel}"]`)
@@ -50,15 +50,8 @@ export async function assertHistoryNavigationKeepsDocument(page) {
     )
   }, 'README.html diff')
 
-  const activity = page.getByRole('radiogroup', { name: 'History activity' })
-  await activity.getByRole('radio', { name: 'All activity', exact: true }).click()
-  await page.waitForURL((url) => url.searchParams.get('feed') === 'all')
-  await activity.getByRole('radio', { name: 'All activity', exact: true, checked: true }).waitFor()
-  await page.getByLabel('History updates', { exact: true }).waitFor()
-  assert.equal(await activity.getByRole('radio', { name: 'All activity', exact: true }).getAttribute('aria-checked'), 'true')
-  await activity.getByRole('radio', { name: 'Pushes & merges', exact: true }).click()
-  await page.waitForURL((url) => url.searchParams.get('feed') === 'updates')
-  await activity.getByRole('radio', { name: 'Pushes & merges', exact: true, checked: true }).waitFor()
-  await page.getByLabel('History updates', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Close diff viewer' }).click()
+  await page.waitForURL((url) => !url.searchParams.has('path'))
+  await page.getByText('Select a changed file', { exact: true }).waitFor()
   await assertDocumentPreserved(page, documentSentinel)
 }

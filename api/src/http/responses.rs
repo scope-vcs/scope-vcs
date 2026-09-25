@@ -136,6 +136,7 @@ pub(crate) enum HistoryFeed {
     #[default]
     Updates,
     All,
+    Visibility,
 }
 
 impl From<HistoryFeed> for scope_domain::history::HistoryFeed {
@@ -143,6 +144,7 @@ impl From<HistoryFeed> for scope_domain::history::HistoryFeed {
         match feed {
             HistoryFeed::Updates => Self::Updates,
             HistoryFeed::All => Self::All,
+            HistoryFeed::Visibility => Self::Visibility,
         }
     }
 }
@@ -228,9 +230,12 @@ pub(crate) struct HistoryEntryDetailResponse {
     pub(crate) audience: ProjectionPreviewAudience,
     pub(crate) repo_id: String,
     pub(crate) view_key: String,
+    pub(crate) occurred_at_unix: Option<i64>,
     pub(crate) id: String,
     pub(crate) source_id: String,
-    pub(crate) parent_id: Option<String>,
+    /// Adjacent entries in all activity, addressed by source id.
+    pub(crate) older_source_id: Option<String>,
+    pub(crate) newer_source_id: Option<String>,
     pub(crate) kind: HistoryEntryKind,
     pub(crate) author: Option<String>,
     pub(crate) message: String,
@@ -460,6 +465,7 @@ pub(crate) fn history_entry_detail_response(
     audience: ProjectionPreviewAudience,
     view: &HistoryView,
     entry: &HistoryEntry,
+    neighbors: scope_postgres::db::RepositoryHistoryNeighbors,
     users: &BTreeMap<String, UserAccount>,
     native_details: &BTreeMap<String, scope_domain::projection::NativePublicCommitDetails>,
 ) -> Result<HistoryEntryDetailResponse, ApiError> {
@@ -490,9 +496,11 @@ pub(crate) fn history_entry_detail_response(
         audience,
         repo_id: view.repo_id.clone(),
         view_key: view.view_key.clone(),
+        occurred_at_unix: entry.occurred_at_unix,
         id: entry.id.clone(),
         source_id: entry.source_id.clone(),
-        parent_id: entry.parent_id.clone(),
+        older_source_id: neighbors.older_source_id,
+        newer_source_id: neighbors.newer_source_id,
         kind: entry.kind.into(),
         author: history_author_handle(entry, users)?,
         message: entry.message.clone(),

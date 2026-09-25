@@ -216,9 +216,13 @@ export type HistoryEntrySummaryResponse = { occurred_at_unix: number | null, id:
 
 export type HistoryEntryKind = "push" | "merged_request" | "visibility_change";
 
-export type HistoryFeed = "updates" | "all";
+export type HistoryFeed = "updates" | "all" | "visibility";
 
-export type HistoryEntryDetailResponse = { native_commits: Array<NativeHistoryCommitResponse>, audience: ProjectionPreviewAudience, repo_id: string, view_key: string, id: string, source_id: string, parent_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, files: Array<HistoryEntryFileResponse>, visibility_changes: Array<HistoryVisibilityChangeResponse>, };
+export type HistoryEntryDetailResponse = { native_commits: Array<NativeHistoryCommitResponse>, audience: ProjectionPreviewAudience, repo_id: string, view_key: string, occurred_at_unix: number | null, id: string, source_id: string, 
+/**
+ * Adjacent entries in all activity, addressed by source id.
+ */
+older_source_id: string | null, newer_source_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, files: Array<HistoryEntryFileResponse>, visibility_changes: Array<HistoryVisibilityChangeResponse>, };
 
 export type HistoryEntryFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, visibility: Visibility, };
 

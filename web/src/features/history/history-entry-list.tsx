@@ -1,106 +1,130 @@
-import { Badge } from '@/components/ui/badge'
+import type { RepoParams } from '@/api/types'
+import { PanelState } from '@/components/empty-state'
+import { PendingSurface } from '@/components/pending-surface'
+import { RelativeTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
-import { BlockSkeleton, TextSkeleton, type TextSkeletonLength } from '@/components/ui/skeleton'
+import { TextSkeleton } from '@/components/ui/skeleton'
 import { historyEntryLabels } from '@/features/history/history-row-labels'
-import { cn } from '@/lib/utils'
-import { History, LoaderCircle } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { LoaderCircle } from 'lucide-react'
+import type { ReactNode } from 'react'
 import type { HistoryEntrySummaryResponse } from '@/api/types.generated'
+import type { useHistoryFeed } from './history-feed'
+import type { UpdateSearch } from './update-search'
 
-const HISTORY_ENTRY_ROW_CLASS =
-  'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-5 py-2.5 text-left text-sm sm:px-6 lg:px-8'
-
-const PENDING_TITLE_LENGTHS: TextSkeletonLength[] = ['long', 'medium', 'long', 'short', 'medium']
-
-/** Enough rows to fill the list box the way an active repository's history does. */
-export function HistoryEntryListSkeleton() {
-  return (
-    <div className="py-2">
-      {PENDING_TITLE_LENGTHS.map((length, row) => (
-        <div className={HISTORY_ENTRY_ROW_CLASS} key={`entry-${row}`}>
-          <span className="flex min-w-0 items-center gap-2">
-            <BlockSkeleton className="size-3.5 shrink-0" />
-            <span className="min-w-0">
-              <span className="flex min-w-0 items-center gap-2">
-                <BlockSkeleton className="h-5 w-11 shrink-0 rounded-md" />
-                <TextSkeleton length={length} />
-              </span>
-              <TextSkeleton className="mt-0.5" length="short" size="meta" />
-            </span>
-          </span>
-          <TextSkeleton length="short" size="meta" />
+/** A history feed's loading, error, empty and loaded states. */
+export function HistoryFeedList({
+  empty,
+  history: { loadOlder, loadOlderError, loadingOlder, resource },
+  onNavigate,
+  params,
+  search,
+}: {
+  empty: string
+  history: ReturnType<typeof useHistoryFeed>
+  onNavigate?: () => void
+  params: RepoParams
+  search: UpdateSearch
+}) {
+  if (resource.status === 'failed') {
+    return (
+      <PanelState tone="error">
+        <span>{resource.error}</span>
+        <Button onClick={resource.retry} size="sm" variant="secondary">Retry</Button>
+      </PanelState>
+    )
+  }
+  if (resource.status !== 'loaded') {
+    return (
+      <PendingSurface label="Loading history" onRetry={resource.retry}>
+        <div className="grid gap-4 p-3">
+          <TextSkeleton length="long" />
+          <TextSkeleton length="medium" />
+          <TextSkeleton length="long" />
         </div>
-      ))}
-    </div>
+      </PendingSurface>
+    )
+  }
+  if (!resource.value.entries.length) {
+    return <p className="px-3 py-6 text-center text-xs text-muted-foreground">{empty}</p>
+  }
+  return (
+    <HistoryEntryList
+      entries={resource.value.entries}
+      loadOlderError={loadOlderError}
+      loadingOlder={loadingOlder}
+      onLoadOlder={() => void loadOlder()}
+      onNavigate={onNavigate}
+      params={params}
+      search={search}
+      showLoadOlder={resource.value.next_cursor !== null}
+    />
   )
 }
 
-export function HistoryEntryList({
+function HistoryEntryList({
   entries,
   loadOlderError,
   loadingOlder,
   onLoadOlder,
-  onSelectEntry,
-  selectedEntryId,
+  onNavigate,
+  params,
+  search,
   showLoadOlder,
 }: {
   entries: HistoryEntrySummaryResponse[]
   loadOlderError: string | null
   loadingOlder: boolean
   onLoadOlder: () => void
-  onSelectEntry: (entry: HistoryEntrySummaryResponse) => void
-  selectedEntryId: string | null
+  onNavigate?: () => void
+  params: RepoParams
+  search: UpdateSearch
   showLoadOlder: boolean
 }) {
   return (
-    <div className="py-2">
-      {entries.map((entry) => {
-        const labels = historyEntryLabels(entry)
-        const selected = selectedEntryId === entry.source_id
-        return (
-          <button
-            aria-label={labels.ariaLabel}
-            aria-pressed={selected}
-            className={cn(
-              HISTORY_ENTRY_ROW_CLASS,
-              'transition-colors',
-              selected
-                ? 'bg-accent shadow-[inset_2px_0_0_0_var(--foreground)]'
-                : 'hover:bg-accent/50',
-            )}
-            key={entry.id}
-            onClick={() => onSelectEntry(entry)}
-            title={entry.source_id}
-            type="button"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <History className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="min-w-0">
-                <span className="flex min-w-0 items-center gap-2">
-                  <Badge className="shrink-0" variant="neutral">{labels.kind}</Badge>
-                  <span className="truncate text-[13px] font-medium">{labels.title}</span>
+    <div>
+      <ul className="divide-y divide-border">
+        {entries.map((entry) => {
+          const labels = historyEntryLabels(entry)
+          return (
+            <li key={entry.id}>
+              <Link
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 px-3 py-2.5 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                onClick={onNavigate}
+                params={{ ...params, entryId: entry.source_id }}
+                search={search}
+                title={entry.message}
+                to="/$owner/$repo/updates/$entryId"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-medium">{labels.title}</span>
+                  <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                    {labels.kind ? <span className="shrink-0 font-medium text-foreground/80">{labels.kind}</span> : null}
+                    {entry.author ? <MetaItem first={!labels.kind}>{entry.author}</MetaItem> : null}
+                    {entry.occurred_at_unix !== null
+                      ? <MetaItem first={!labels.kind && !entry.author}><RelativeTimestamp value={entry.occurred_at_unix} /></MetaItem>
+                      : null}
+                  </span>
                 </span>
-                <span className="mt-0.5 block truncate font-mono text-[11px] leading-4 text-muted-foreground">
-                  {labels.compactId}
+                <span className="max-w-40 text-right text-xs tabular-nums text-muted-foreground">
+                  {labels.count}
                 </span>
-              </span>
-            </span>
-            <span className="max-w-28 text-right text-xs tabular-nums text-muted-foreground sm:max-w-56">
-              {labels.count}
-            </span>
-          </button>
-        )
-      })}
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
       {showLoadOlder ? (
-        <div className="flex flex-col items-center gap-2 px-5 py-4">
+        <div className="flex flex-col items-center gap-2 border-t border-border px-3 py-3">
           <Button
             aria-busy={loadingOlder}
             disabled={loadingOlder}
             onClick={onLoadOlder}
             size="sm"
-            variant="secondary"
+            variant="ghost"
           >
             {loadingOlder ? <LoaderCircle className="animate-spin" /> : null}
-            Load older history
+            Load older
           </Button>
           {loadOlderError ? (
             <span className="text-center text-xs text-destructive" role="alert">
@@ -110,5 +134,14 @@ export function HistoryEntryList({
         </div>
       ) : null}
     </div>
+  )
+}
+
+function MetaItem({ children, first }: { children: ReactNode; first: boolean }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 truncate">
+      {first ? null : <span aria-hidden="true">·</span>}
+      {children}
+    </span>
   )
 }

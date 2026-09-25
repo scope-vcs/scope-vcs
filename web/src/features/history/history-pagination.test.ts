@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   appendHistoryPage,
-  historySummary,
   type LoadedHistory,
 } from './history-pagination'
 import type {
@@ -35,11 +34,6 @@ test('ignores an older-generation response after history is reset', () => {
     appendHistoryPage(reset, page([entry(2)], null), 'generation-1-cursor-2'),
     reset,
   )
-})
-
-test('describes a partial page as the most recent updates', () => {
-  assert.equal(historySummary([entry(0)], true), '1 most recent updates')
-  assert.equal(historySummary([entry(0)], false), '1 update')
 })
 
 function page(entries: HistoryEntrySummaryResponse[], nextCursor: string | null): HistoryPageResponse {
