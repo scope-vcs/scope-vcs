@@ -10,7 +10,7 @@ test('signed-in anonymous visitors identify with the internal Scope user ID', ()
   assert.deepEqual(identityTransition({
     currentDistinctId: 'anonymous-id',
     isSignedIn: true,
-    persistedUserId: undefined,
+    identifiedUserId: undefined,
     scopeUserId: 'scope_usr_123',
   }), {
     kind: 'identify',
@@ -22,12 +22,12 @@ test('sign-out resets an identified browser but not a new anonymous visit', () =
   assert.deepEqual(identityTransition({
     currentDistinctId: 'scope_usr_123',
     isSignedIn: false,
-    persistedUserId: 'scope_usr_123',
+    identifiedUserId: 'scope_usr_123',
   }), { kind: 'reset' })
   assert.deepEqual(identityTransition({
     currentDistinctId: 'anonymous-id',
     isSignedIn: false,
-    persistedUserId: undefined,
+    identifiedUserId: undefined,
   }), { kind: 'none' })
 })
 
@@ -35,7 +35,7 @@ test('sign-out resets a Scope distinct ID even without a persisted user property
   assert.deepEqual(identityTransition({
     currentDistinctId: 'scope_usr_123',
     isSignedIn: false,
-    persistedUserId: undefined,
+    identifiedUserId: undefined,
   }), { kind: 'reset' })
 })
 
@@ -43,7 +43,7 @@ test('already identified visitors do not emit a duplicate identify', () => {
   assert.deepEqual(identityTransition({
     currentDistinctId: 'scope_usr_123',
     isSignedIn: true,
-    persistedUserId: 'scope_usr_123',
+    identifiedUserId: 'scope_usr_123',
     scopeUserId: 'scope_usr_123',
   }), { kind: 'none' })
 })
@@ -52,7 +52,7 @@ test('account switching resets before identifying the next Scope user', () => {
   assert.deepEqual(identityTransition({
     currentDistinctId: 'scope_usr_one',
     isSignedIn: true,
-    persistedUserId: 'scope_usr_one',
+    identifiedUserId: 'scope_usr_one',
     scopeUserId: 'scope_usr_two',
   }), {
     kind: 'reset_and_identify',
