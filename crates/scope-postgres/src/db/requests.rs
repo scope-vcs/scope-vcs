@@ -26,11 +26,13 @@ use {
     scope_domain::requests::{
         CloseRequestInput, CloseRequestMutation, EditRequestIdentityInput,
         RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request,
-        RequestAutoMergeStopReason, RequestEvent, RequestRevisionMutation, RequestTimelineMutation,
-        StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
-        close_request, edit_request_identity, record_request_revision,
-        record_working_request_upload, start_request, stop_request_auto_merge,
+        RequestAutoMergeStopReason, RequestEvent, RequestRevision, RequestRevisionMutation,
+        RequestTimelineMutation, StartRequestFacts, StartRequestInput, StartRequestMutation,
+        WorkingRequestUploadMutation, close_request, edit_request_identity,
+        record_request_revision, record_working_request_upload, start_request,
+        stop_request_auto_merge,
     },
+    scope_domain::{content::SourceBlob, repository::RepositoryIncarnation},
 };
 
 impl RequestStore {
@@ -171,6 +173,7 @@ impl RequestStore {
             .branch_mutable;
         let event_id_exists = request_event_by_id(&tx, &input.event_id).await?.is_some();
         let active_auto_merge = lock_active_intent_for_request(&tx, &request.id).await?;
+        let actor_user_id = input.actor_user_id.clone();
         let mutation = record_request_revision(request, event_id_exists, input)?;
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
@@ -194,7 +197,7 @@ impl RequestStore {
         super::request_attention::reactivate_attention_for_activity(
             &tx,
             &mutation.request.id,
-            &mutation.revision.actor_user_id,
+            &actor_user_id,
             mutation.request.activity_version,
             mutation.revision.created_at_unix,
         )
@@ -291,21 +294,11 @@ impl RequestStore {
                 orphan_objects,
                 ..
             } => {
-                super::cleanup_queue::queue_pending_request_ref_cleanup(
+                persist_deleted_draft(
                     &tx,
                     &repo.incarnation(),
                     request,
-                    now_unix,
-                    generated_ids,
-                )
-                .await?;
-                tombstone_request_attachments(&tx, &request.id, now_unix).await?;
-                for revision in revisions {
-                    delete_object_reference(&tx, "request_revision_snapshot", &revision.id).await?;
-                }
-                delete_request_rows(&tx, &request.id).await?;
-                queue_pending_source_blob_deletion_rows(
-                    &tx,
+                    revisions,
                     orphan_objects.clone(),
                     now_unix,
                     generated_ids,
@@ -332,6 +325,33 @@ impl RequestStore {
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(mutation)
     }
+}
+
+/// Deletes a draft the domain decided to delete. Its refs, attachments and
+/// orphaned objects are queued for cleanup in the same transaction.
+pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
+    tx: &C,
+    incarnation: &RepositoryIncarnation,
+    request: &Request,
+    revisions: &[RequestRevision],
+    orphan_objects: Vec<SourceBlob>,
+    now_unix: u64,
+    generated_ids: &dyn GeneratedIdSource,
+) -> Result<(), PostgresError> {
+    super::cleanup_queue::queue_pending_request_ref_cleanup(
+        tx,
+        incarnation,
+        request,
+        now_unix,
+        generated_ids,
+    )
+    .await?;
+    tombstone_request_attachments(tx, &request.id, now_unix).await?;
+    for revision in revisions {
+        delete_object_reference(tx, "request_revision_snapshot", &revision.id).await?;
+    }
+    delete_request_rows(tx, &request.id).await?;
+    queue_pending_source_blob_deletion_rows(tx, orphan_objects, now_unix, generated_ids).await
 }
 
 #[cfg(test)]

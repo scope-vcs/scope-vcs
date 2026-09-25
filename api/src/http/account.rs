@@ -1,5 +1,5 @@
 use crate::{
-    auth::scope::optional_scope_user,
+    auth::scope::{optional_scope_user, require_clerk_scope_user},
     error::ApiError,
     http::responses::{HealthResponse, ReadinessCheckResponse, ReadinessResponse, user_response},
     state::AppState,
@@ -62,4 +62,15 @@ pub(crate) async fn get_account_session(
             .map(|user| SessionIdentity::from(DomainSessionIdentity::from(user))),
         user: user.map(user_response),
     }))
+}
+
+/// Deletes the signed-in account. Only a browser session may do this; CLI
+/// tokens cannot.
+pub(crate) async fn delete_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    let user = require_clerk_scope_user(&state, &headers).await?;
+    crate::use_cases::account_deletion::delete_account(&state, &user).await?;
+    Ok(StatusCode::NO_CONTENT)
 }

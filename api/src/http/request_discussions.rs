@@ -452,7 +452,11 @@ pub(crate) async fn activity(
     let users = state
         .metadata
         .auth()
-        .users_by_ids(events.iter().map(|event| event.actor_user_id.clone()))
+        .users_by_ids(
+            events
+                .iter()
+                .filter_map(|event| event.actor_user_id.clone()),
+        )
         .await?;
     let through_position = if latest {
         request.activity_version
@@ -465,7 +469,7 @@ pub(crate) async fn activity(
     let events = events
         .into_iter()
         .map(|event| {
-            let actor = request_actor_summary_response(&event.actor_user_id, &users)?;
+            let actor = recorded_actor_response(event.actor_user_id.as_deref(), &users)?;
             Ok(request_event_response(event, actor))
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
@@ -545,7 +549,7 @@ fn discussion_summary(
         client_discussion_id: model.discussion.client_discussion_id,
         opened_position: model.discussion.opened_position,
         last_activity_position: model.discussion.last_activity_position,
-        author: request_actor_summary_response(&model.discussion.author_user_id, users)?,
+        author: recorded_actor_response(model.discussion.author_user_id.as_deref(), users)?,
         body_markdown: model.discussion.body_markdown,
         anchor,
         status: model.discussion.status.into(),
@@ -655,7 +659,7 @@ fn reply_response(
             Ok::<_, ApiError>(RequestDiscussionReplyReferenceResponse {
                 id: target.id,
                 position: target.position,
-                author: request_actor_summary_response(&target.author_user_id, users)?,
+                author: recorded_actor_response(target.author_user_id.as_deref(), users)?,
                 body_markdown: target.body_markdown,
             })
         })
@@ -665,7 +669,7 @@ fn reply_response(
         id: reply.id,
         discussion_id: reply.discussion_id,
         position: reply.position,
-        author: request_actor_summary_response(&reply.author_user_id, users)?,
+        author: recorded_actor_response(reply.author_user_id.as_deref(), users)?,
         body_markdown: reply.body_markdown,
         reply_to,
         created_at_unix: reply.created_at_unix,

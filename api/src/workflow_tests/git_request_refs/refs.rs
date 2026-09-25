@@ -695,7 +695,7 @@ async fn request_ref_push_rejects_history_unrelated_to_recorded_base() {
         .metadata
         .requests()
         .mutate_request_for_tests(REQUEST_ID, |request| {
-            request.author_user_id = test_owner_id();
+            request.author_user_id = Some(test_owner_id());
             request.author_role = RequestActorRole::Owner;
             request.audience = RequestAudience::Private;
         })

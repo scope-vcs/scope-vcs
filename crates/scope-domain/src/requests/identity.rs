@@ -79,7 +79,7 @@ pub fn edit_request_identity(
     let event = RequestEvent {
         id: input.event_id,
         request_id: request.id.clone(),
-        actor_user_id: input.actor_user_id,
+        actor_user_id: Some(input.actor_user_id),
         kind: RequestEventKind::IdentityEdited,
         position,
         payload: RequestEventPayload::IdentityEdited { before, after },

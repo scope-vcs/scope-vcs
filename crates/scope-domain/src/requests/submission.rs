@@ -38,7 +38,7 @@ pub fn submit_request(
 ) -> Result<RequestLifecycleMutation, DomainError> {
     validate_command(request, &input.request_id, &input.actor_user_id)?;
     validate_required("request event id", &input.event_id)?;
-    if !input.actor_is_author || request.author_user_id != input.actor_user_id {
+    if !input.actor_is_author || !request.is_author(&input.actor_user_id) {
         return Err(DomainError::forbidden(
             "only the request author can submit it",
         ));
@@ -149,7 +149,7 @@ fn append_event(
     Ok(RequestEvent {
         id,
         request_id: request.id.clone(),
-        actor_user_id: actor,
+        actor_user_id: Some(actor),
         kind,
         position: request.activity_version,
         payload,

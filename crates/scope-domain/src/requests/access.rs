@@ -113,7 +113,7 @@ impl RequestListPredicate<'_> {
                 .any(|predicate| predicate.matches(request, viewer_is_invitee)),
             Self::Audience(audience) => request.audience == *audience,
             Self::Submitted => request.is_submitted(),
-            Self::Author(viewer_user_id) => request.author_user_id == *viewer_user_id,
+            Self::Author(viewer_user_id) => request.is_author(viewer_user_id),
             Self::Invitee(_) => viewer_is_invitee,
         }
     }
@@ -133,7 +133,9 @@ pub fn request_policy(request: &Request, viewer: RequestViewer<'_>) -> RequestPo
         RepositoryActor::Owner | RepositoryActor::Member
     );
     let authenticated = viewer.user_id.is_some();
-    let author = viewer.user_id == Some(request.author_user_id.as_str());
+    let author = viewer
+        .user_id
+        .is_some_and(|user_id| request.is_author(user_id));
     let invitee = viewer.is_invitee;
     let public = request.audience == RequestAudience::Public;
     let private = request.audience == RequestAudience::Private;

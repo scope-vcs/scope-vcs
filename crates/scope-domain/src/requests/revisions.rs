@@ -7,7 +7,8 @@ pub struct RequestRevision {
     pub id: String,
     pub request_id: String,
     pub position: u64,
-    pub actor_user_id: String,
+    /// `None` once the actor deleted their account.
+    pub actor_user_id: Option<String>,
     pub old_head_oid: String,
     pub new_head_oid: String,
     pub git_snapshot: SourceBlob,

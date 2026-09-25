@@ -80,7 +80,8 @@ mod requests;
 mod runs;
 
 pub use auth::{
-    auth_identity, cli_browser_login, cli_device_login, cli_exchange_grant, cli_session, user,
+    auth_identity, clerk_user_deletion, cli_browser_login, cli_device_login, cli_exchange_grant,
+    cli_session, user,
 };
 pub use collaboration::{
     repository_invite, repository_invite_email, repository_invite_link, repository_member,

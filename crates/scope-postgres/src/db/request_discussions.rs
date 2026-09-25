@@ -164,7 +164,7 @@ impl RequestStore {
             .iter()
             .flat_map(|discussion| {
                 [
-                    Some(discussion.author_user_id.clone()),
+                    discussion.author_user_id.clone(),
                     discussion.resolved_by_user_id.clone(),
                 ]
             })
@@ -191,11 +191,11 @@ impl RequestStore {
                 previews.get(&discussion.id).cloned().unwrap_or_default();
             user_ids.extend(latest_replies.iter().flat_map(|model| {
                 [
-                    Some(model.reply.author_user_id.clone()),
+                    model.reply.author_user_id.clone(),
                     model
                         .reply_to
                         .as_ref()
-                        .map(|target| target.author_user_id.clone()),
+                        .and_then(|target| target.author_user_id.clone()),
                 ]
                 .into_iter()
                 .flatten()
@@ -239,11 +239,11 @@ impl RequestStore {
             self.db.as_ref(),
             replies.iter().flat_map(|model| {
                 [
-                    Some(model.reply.author_user_id.clone()),
+                    model.reply.author_user_id.clone(),
                     model
                         .reply_to
                         .as_ref()
-                        .map(|target| target.author_user_id.clone()),
+                        .and_then(|target| target.author_user_id.clone()),
                 ]
                 .into_iter()
                 .flatten()
@@ -313,10 +313,10 @@ impl RequestStore {
         let users = load_users_by_ids(
             self.db.as_ref(),
             [
-                Some(reply.author_user_id.clone()),
+                reply.author_user_id.clone(),
                 reply_to
                     .as_ref()
-                    .map(|target| target.author_user_id.clone()),
+                    .and_then(|target| target.author_user_id.clone()),
             ]
             .into_iter()
             .flatten(),
@@ -390,6 +390,7 @@ impl RequestStore {
         }
 
         let discussion_id_exists = discussion_by_id(&tx, &input.id).await?.is_some();
+        let actor_user_id = input.actor_user_id.clone();
         let mutation = create_request_discussion(request, discussion_id_exists, input)?;
         save_request_row(&tx, &mutation.request).await?;
         insert_discussion(&tx, &mutation.discussion).await?;
@@ -397,7 +398,7 @@ impl RequestStore {
         super::request_attention::reactivate_attention_for_activity(
             &tx,
             &mutation.request.id,
-            &mutation.discussion.author_user_id,
+            &actor_user_id,
             mutation.request.activity_version,
             mutation.discussion.created_at_unix,
         )
@@ -406,7 +407,7 @@ impl RequestStore {
         replace_bindings_for_markdown(
             &tx,
             &discussion.request_id,
-            &discussion.author_user_id,
+            &actor_user_id,
             &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Discussion {
                 discussion_id: discussion.id.clone(),
             },
@@ -449,6 +450,7 @@ impl RequestStore {
             .filter(|discussion| discussion.request_id == request_id)
             .ok_or_else(|| PostgresError::not_found("request discussion not found"))?;
         let actor_is_maintainer = repo.access.is_maintainer();
+        let actor = actor_user_id.clone();
         let mutation = match transition {
             DiscussionTransition::Resolve => resolve_request_discussion(
                 request,
@@ -483,7 +485,7 @@ impl RequestStore {
         monotonic_read_state(
             &tx,
             &mutation.discussion,
-            &mutation.event.actor_user_id,
+            &actor,
             mutation.discussion.last_activity_position,
             now_unix,
         )
@@ -579,6 +581,7 @@ impl RequestStore {
                 activity_event: None,
             });
         }
+        let actor_user_id = command.actor_user_id.clone();
         let quoted_reply = match command.reply_to_reply_id.as_deref() {
             Some(quoted_id) => reply_by_id(&tx, quoted_id).await?,
             None => None,
@@ -634,7 +637,7 @@ impl RequestStore {
         super::request_attention::reactivate_attention_for_activity(
             &tx,
             &mutation.request.id,
-            &mutation.reply.author_user_id,
+            &actor_user_id,
             mutation.request.activity_version,
             mutation.reply.created_at_unix,
         )
@@ -643,7 +646,7 @@ impl RequestStore {
             super::request_attention::wait_after_own_reply(
                 &tx,
                 &mutation.request,
-                &mutation.reply.author_user_id,
+                &actor_user_id,
                 actor_is_maintainer,
                 mutation.reply.position,
                 mutation.reply.created_at_unix,
@@ -654,7 +657,7 @@ impl RequestStore {
         replace_bindings_for_markdown(
             &tx,
             &mutation.discussion.request_id,
-            &reply.author_user_id,
+            &actor_user_id,
             &scope_domain::requests::attachments::RequestAttachmentBindingTarget::Reply {
                 discussion_id: reply.discussion_id.clone(),
                 reply_id: reply.id.clone(),

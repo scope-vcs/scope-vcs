@@ -26,8 +26,8 @@ use scope_domain::{
     requests::Request,
 };
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, Statement,
-    TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
+    Statement, TransactionTrait,
 };
 use std::collections::BTreeSet;
 
@@ -159,94 +159,112 @@ impl RepositoryStore {
                 "repository changed during deletion; retry",
             ));
         }
-        let mutation = delete_repo_command(&repo, &user_id, &owner, &name)?;
-        let requests = lock_requests_for_repo_postgres(&tx, &repo_id).await?;
-        tombstone_repository_attachments(&tx, &repo_id, now_unix).await?;
-        let request_ids = requests
-            .iter()
-            .map(|request| request.id.clone())
-            .collect::<Vec<_>>();
-        let revisions = revisions_for_request_ids(&tx, &request_ids).await?;
-        let mut retained_sources = request_git_snapshots_for_repo(&requests, &revisions);
-        let revision_ids = revisions
-            .iter()
-            .map(|revision| revision.id.clone())
-            .collect::<Vec<_>>();
-        delete_repository_object_references(&tx, &repo_id, &request_ids, &revision_ids).await?;
-        let runs = entities::run::Entity::find()
-            .filter(entities::run::Column::RepoId.eq(repo_id.clone()))
-            .all(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-            .into_iter()
-            .map(entities::run::Model::try_into_domain)
-            .collect::<Result<Vec<_>, _>>()?;
-        let run_ids = runs.iter().map(|run| run.id.clone()).collect::<Vec<_>>();
-        let workflow_digests = runs
-            .iter()
-            .map(|run| run.workflow_revision_digest.clone())
-            .collect::<BTreeSet<_>>();
-        retained_sources.extend(
-            runs.iter()
-                .flat_map(|run| run.source.retained_objects())
-                .cloned(),
-        );
-        delete_run_source_references(&tx, &run_ids).await?;
-
-        entities::repository_invite::Entity::delete_many()
-            .filter(entities::repository_invite::Column::RepoId.eq(repo_id.clone()))
-            .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        entities::repository_member::Entity::delete_many()
-            .filter(entities::repository_member::Column::RepoId.eq(repo_id.clone()))
-            .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        entities::git_pack_span::Entity::delete_many()
-            .filter(entities::git_pack_span::Column::RepoId.eq(repo_id.clone()))
-            .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        tx.execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "DELETE FROM scope_git_segment_references refs
-             USING scope_git_segment_uploads uploads
-             WHERE refs.segment_id = uploads.segment_id AND uploads.repo_id = $1",
-            [repo_id.clone().into()],
-        ))
-        .await
-        .map_err(PostgresError::internal)?;
-        tx.execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "UPDATE scope_git_segment_uploads
-             SET state = 'deleting', updated_at_unix = GREATEST(updated_at_unix, $2)
-             WHERE repo_id = $1 AND state IN ('uploading', 'ready', 'published', 'retained')",
-            [
-                repo_id.clone().into(),
-                i64::try_from(now_unix)
-                    .map_err(|_| {
-                        PostgresError::internal_message(
-                            "repository deletion time exceeds database bigint",
-                        )
-                    })?
-                    .into(),
-            ],
-        ))
-        .await
-        .map_err(PostgresError::internal)?;
-        entities::repository::Entity::delete_by_id(repo_id.clone())
-            .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        delete_orphaned_workflow_revisions(&tx, workflow_digests).await?;
-
-        save_repo_effects(&tx, &mutation.effects, now_unix, generated_ids).await?;
-        queue_pending_source_blob_deletion_rows(&tx, retained_sources, now_unix, generated_ids)
-            .await?;
+        let deleted =
+            delete_locked_repository(&tx, &repo, &user_id, &owner, &name, now_unix, generated_ids)
+                .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(mutation.result)
+        Ok(deleted)
     }
+}
+
+/// Deletes a repository whose aggregate lock `tx` holds. Its storage and
+/// source blobs are queued for cleanup; nothing outside the database is
+/// touched before the transaction commits.
+pub(super) async fn delete_locked_repository(
+    tx: &DatabaseTransaction,
+    repo: &Repository,
+    user_id: &str,
+    owner: &str,
+    name: &str,
+    now_unix: u64,
+    generated_ids: &dyn GeneratedIdSource,
+) -> Result<String, PostgresError> {
+    let repo_id = repo.record.id.clone();
+    let mutation = delete_repo_command(repo, user_id, owner, name)?;
+    let requests = lock_requests_for_repo_postgres(tx, &repo_id).await?;
+    tombstone_repository_attachments(tx, &repo_id, now_unix).await?;
+    let request_ids = requests
+        .iter()
+        .map(|request| request.id.clone())
+        .collect::<Vec<_>>();
+    let revisions = revisions_for_request_ids(tx, &request_ids).await?;
+    let mut retained_sources = request_git_snapshots_for_repo(&requests, &revisions);
+    let revision_ids = revisions
+        .iter()
+        .map(|revision| revision.id.clone())
+        .collect::<Vec<_>>();
+    delete_repository_object_references(tx, &repo_id, &request_ids, &revision_ids).await?;
+    let runs = entities::run::Entity::find()
+        .filter(entities::run::Column::RepoId.eq(repo_id.clone()))
+        .all(tx)
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(entities::run::Model::try_into_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let run_ids = runs.iter().map(|run| run.id.clone()).collect::<Vec<_>>();
+    let workflow_digests = runs
+        .iter()
+        .map(|run| run.workflow_revision_digest.clone())
+        .collect::<BTreeSet<_>>();
+    retained_sources.extend(
+        runs.iter()
+            .flat_map(|run| run.source.retained_objects())
+            .cloned(),
+    );
+    delete_run_source_references(tx, &run_ids).await?;
+
+    entities::repository_invite::Entity::delete_many()
+        .filter(entities::repository_invite::Column::RepoId.eq(repo_id.clone()))
+        .exec(tx)
+        .await
+        .map_err(PostgresError::internal)?;
+    entities::repository_member::Entity::delete_many()
+        .filter(entities::repository_member::Column::RepoId.eq(repo_id.clone()))
+        .exec(tx)
+        .await
+        .map_err(PostgresError::internal)?;
+    entities::git_pack_span::Entity::delete_many()
+        .filter(entities::git_pack_span::Column::RepoId.eq(repo_id.clone()))
+        .exec(tx)
+        .await
+        .map_err(PostgresError::internal)?;
+    tx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "DELETE FROM scope_git_segment_references refs
+         USING scope_git_segment_uploads uploads
+         WHERE refs.segment_id = uploads.segment_id AND uploads.repo_id = $1",
+        [repo_id.clone().into()],
+    ))
+    .await
+    .map_err(PostgresError::internal)?;
+    tx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE scope_git_segment_uploads
+         SET state = 'deleting', updated_at_unix = GREATEST(updated_at_unix, $2)
+         WHERE repo_id = $1 AND state IN ('uploading', 'ready', 'published', 'retained')",
+        [
+            repo_id.clone().into(),
+            i64::try_from(now_unix)
+                .map_err(|_| {
+                    PostgresError::internal_message(
+                        "repository deletion time exceeds database bigint",
+                    )
+                })?
+                .into(),
+        ],
+    ))
+    .await
+    .map_err(PostgresError::internal)?;
+    entities::repository::Entity::delete_by_id(repo_id.clone())
+        .exec(tx)
+        .await
+        .map_err(PostgresError::internal)?;
+    delete_orphaned_workflow_revisions(tx, workflow_digests).await?;
+
+    save_repo_effects(tx, &mutation.effects, now_unix, generated_ids).await?;
+    queue_pending_source_blob_deletion_rows(tx, retained_sources, now_unix, generated_ids).await?;
+    Ok(mutation.result)
 }
 
 async fn ensure_repository_absent<C>(conn: &C, repo_id: &str) -> Result<(), PostgresError>

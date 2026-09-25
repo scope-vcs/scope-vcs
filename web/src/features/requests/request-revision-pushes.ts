@@ -1,4 +1,5 @@
 import type { RequestEventResponse } from '@/api/types.generated'
+import { actorHandle } from './request-actor'
 
 export type RequestRevisionPush = {
   actor: RequestEventResponse['actor']
@@ -38,7 +39,7 @@ export function searchRequestRevisionPushes(pushes: readonly RequestRevisionPush
   return pushes.filter((push) => {
     const text = [
       `revision ${push.position}`,
-      push.actor.handle,
+      actorHandle(push.actor),
       push.note ?? '',
       push.oldHeadOid,
       push.newHeadOid,

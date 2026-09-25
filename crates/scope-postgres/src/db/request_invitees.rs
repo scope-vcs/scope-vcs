@@ -419,7 +419,10 @@ mod tests {
             .unwrap();
         assert_eq!(added.user.id, "user_target_1");
         assert_eq!(added.user.handle, "target-1");
-        assert_eq!(added.invitee.invited_by_user_id, "user_author");
+        assert_eq!(
+            added.invitee.invited_by_user_id.as_deref(),
+            Some("user_author")
+        );
         assert!(
             store
                 .requests()

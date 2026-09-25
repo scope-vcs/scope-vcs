@@ -14,13 +14,8 @@ import { REQUEST_ACTIVITY_PAGE_SIZE } from './request-discussion-api'
 import { eventKindLabel, requestEventBody } from './request-labels'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { RequestSideDrawer } from './request-side-drawer'
-import type {
-  RequestActivityPage,
-  RequestActorSummary,
-} from './request-discussion-types'
-import type { RequestEventResponse } from '@/api/types.generated'
-
-type ActivityEvent = RequestEventResponse & { actor: RequestActorSummary }
+import type { RequestActivityPage } from './request-discussion-types'
+import { actorHandle } from './request-actor'
 
 const PENDING_ACTIVITY: { id: string; length: LineSkeletonLength }[] = [
   { id: 'first', length: 'medium' },
@@ -50,7 +45,7 @@ export function RequestActivityDrawer({
   returnFocus: RefObject<HTMLElement | null>
 }) {
   const events = activity
-    ? ([...activity.events].reverse() as ActivityEvent[])
+    ? [...activity.events].reverse()
     : []
 
   return (
@@ -116,7 +111,7 @@ export function RequestActivityDrawer({
                   value={event.created_at_unix}
                 />
                 <span className="text-xs text-muted-foreground">
-                  {event.actor.handle}
+                  {actorHandle(event.actor)}
                 </span>
                 {event.kind === 'RevisionPushed' ? (
                   <Link

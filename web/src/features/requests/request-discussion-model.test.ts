@@ -326,7 +326,7 @@ test('client id collisions from another author preserve the optimistic row', () 
   const changed = applyDiscussionChanges(pending, [otherAuthor], 6)
 
   assert.equal(changed.byId.get('client-1')?.pending, 'sending')
-  assert.equal(changed.byId.get('server-1')?.author.id, 'user-river')
+  assert.equal(changed.byId.get('server-1')?.author?.id, 'user-river')
   assert.deepEqual(changed.order, ['server-1', 'client-1'])
 })
 

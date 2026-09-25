@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { actorHandle } from './request-actor'
 
 type RequestRouteParams = { owner: string; repo: string; requestId: string }
 type Revision = RequestRevisionListResponse['revisions'][number]
@@ -53,7 +54,7 @@ export function RequestRevisionStepper({
                     {revision.id === list.at(-1)?.id ? <span className="font-normal text-muted-foreground"> · latest</span> : null}
                   </span>
                   <span className="text-muted-foreground">
-                    {revision.actor.handle} · <RelativeTimestamp value={revision.created_at_unix} /> · {commitCount(revision)}
+                    {actorHandle(revision.actor)} · <RelativeTimestamp value={revision.created_at_unix} /> · {commitCount(revision)}
                   </span>
                 </Link>
               </li>

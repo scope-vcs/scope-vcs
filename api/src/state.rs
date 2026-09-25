@@ -20,6 +20,8 @@ use std::{path::PathBuf, sync::Arc};
 #[derive(Clone)]
 pub struct AppState {
     pub(crate) auto_merge_wakeup: Arc<tokio::sync::Notify>,
+    pub(crate) clerk_user_deletion_wakeup: Arc<tokio::sync::Notify>,
+    pub(crate) clerk_users: crate::clerk_users::ClerkUsers,
     pub(crate) invite_email_wakeup: Arc<tokio::sync::Notify>,
     pub(crate) invite_mailer: crate::invite_mailer::InviteMailer,
     pub(crate) metadata: MetadataStore,
@@ -60,6 +62,8 @@ impl AppState {
 
         let state = Self {
             auto_merge_wakeup: Arc::new(tokio::sync::Notify::new()),
+            clerk_user_deletion_wakeup: Arc::new(tokio::sync::Notify::new()),
+            clerk_users: crate::clerk_users::ClerkUsers::from_env(),
             invite_email_wakeup: Arc::new(tokio::sync::Notify::new()),
             invite_mailer: crate::invite_mailer::InviteMailer::from_env(),
             metadata,
@@ -86,6 +90,7 @@ impl AppState {
         state.start_retention();
         state.start_request_ref_cleanup();
         state.start_invite_email_delivery();
+        state.start_clerk_user_deletion();
         state.start_git_segment_recovery();
         best_effort_drain_pending_repo_storage_deletions(&state).await;
         Ok(state)
@@ -104,6 +109,8 @@ impl AppState {
         let metadata = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         Self {
             auto_merge_wakeup: Arc::new(tokio::sync::Notify::new()),
+            clerk_user_deletion_wakeup: Arc::new(tokio::sync::Notify::new()),
+            clerk_users: crate::clerk_users::ClerkUsers::Scripted(Default::default()),
             invite_email_wakeup: Arc::new(tokio::sync::Notify::new()),
             invite_mailer: crate::invite_mailer::InviteMailer::Recording(Default::default()),
             metadata,

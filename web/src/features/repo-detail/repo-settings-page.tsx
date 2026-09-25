@@ -17,12 +17,12 @@ import type {
 import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { SectionRow, SectionRows } from '@/components/section-rows'
+import { TypedConfirmationDialog } from '@/components/typed-confirmation-dialog'
 import { storeHomeFlash } from '@/lib/home-flash'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { ShieldCheck } from 'lucide-react'
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useReducer, useState, type ReactNode } from 'react'
-import { DeleteRepositoryDialog } from './delete-repository-dialog'
 import {
   RepositoryMembersSection,
 } from './repo-members-section'
@@ -191,13 +191,18 @@ export function RepoSettingsPage({
       </PageContent>
 
       {deleteTarget && (
-        <DeleteRepositoryDialog
+        <TypedConfirmationDialog
+          confirmLabel="Delete"
+          confirmation={deleteTarget.name}
           error={deleteError}
           onCancel={() =>
             dispatch({ repo: null, type: 'deleteTargetChanged' })
           }
-          onConfirm={deleteRepository}
-          repo={deleteTarget}
+          onConfirm={() => deleteRepository(deleteTarget)}
+          purpose="permanently delete this repository"
+          subject={deleteTarget.id}
+          title="Delete repository"
+          warning="This permanently removes the repo and stored Git data from Scope."
         />
       )}
     </>

@@ -25,7 +25,8 @@ pub struct RequestDiscussion {
     pub request_id: String,
     pub opened_position: u64,
     pub last_activity_position: u64,
-    pub author_user_id: String,
+    /// `None` once the author deleted their account.
+    pub author_user_id: Option<String>,
     pub body_markdown: String,
     pub anchor: Option<RequestDiscussionAnchor>,
     pub status: RequestDiscussionStatus,
@@ -40,7 +41,8 @@ pub struct RequestDiscussionReply {
     pub id: String,
     pub discussion_id: String,
     pub position: u64,
-    pub author_user_id: String,
+    /// `None` once the author deleted their account.
+    pub author_user_id: Option<String>,
     pub body_markdown: String,
     pub reply_to_reply_id: Option<String>,
     pub client_reply_id: String,
@@ -167,7 +169,7 @@ pub fn create_request_discussion(
         request_id: request.id.clone(),
         opened_position: position,
         last_activity_position: position,
-        author_user_id: input.actor_user_id.clone(),
+        author_user_id: Some(input.actor_user_id.clone()),
         body_markdown: input.body_markdown,
         anchor: input.anchor,
         status: RequestDiscussionStatus::Open,
@@ -228,7 +230,7 @@ pub fn create_request_discussion_reply(
         id: input.id,
         discussion_id: discussion.id.clone(),
         position,
-        author_user_id: input.actor_user_id.clone(),
+        author_user_id: Some(input.actor_user_id.clone()),
         body_markdown: input.body_markdown,
         reply_to_reply_id: input.reply_to_reply_id,
         client_reply_id: input.client_reply_id,
@@ -294,11 +296,10 @@ pub fn reopen_and_reply_to_request_discussion(
         input.reply_to_reply_id.as_deref(),
         position,
     )?;
-    let request_author_user_id = request.author_user_id.clone();
     ensure_discussion_matches(&discussion, &input.request_id, &input.discussion_id)?;
     ensure_can_transition(
         &discussion,
-        &request_author_user_id,
+        &request,
         &input.actor_user_id,
         input.actor_is_maintainer,
     )?;
@@ -315,7 +316,7 @@ pub fn reopen_and_reply_to_request_discussion(
         id: input.reply_id,
         discussion_id: discussion.id.clone(),
         position,
-        author_user_id: input.actor_user_id.clone(),
+        author_user_id: Some(input.actor_user_id.clone()),
         body_markdown: input.body_markdown,
         reply_to_reply_id: input.reply_to_reply_id,
         client_reply_id: input.client_reply_id,
@@ -325,7 +326,7 @@ pub fn reopen_and_reply_to_request_discussion(
     let activity_event = RequestEvent {
         id: input.event_id,
         request_id: request.id.clone(),
-        actor_user_id: input.actor_user_id,
+        actor_user_id: Some(input.actor_user_id),
         kind: RequestEventKind::DiscussionReopened,
         position,
         payload: RequestEventPayload::DiscussionReopened {
@@ -382,11 +383,10 @@ fn transition_discussion(
     validate_required("event id", &input.event_id)?;
     ensure_request_matches(&request, &input.request_id)?;
     ensure_request_discussion_transition_allowed(&request, input.actor_can_transition)?;
-    let request_author_user_id = request.author_user_id.clone();
     ensure_discussion_matches(&discussion, &input.request_id, &input.discussion_id)?;
     ensure_can_transition(
         &discussion,
-        &request_author_user_id,
+        &request,
         &input.actor_user_id,
         input.actor_is_maintainer,
     )?;
@@ -425,7 +425,7 @@ fn transition_discussion(
     let event = RequestEvent {
         id: input.event_id,
         request_id: request.id.clone(),
-        actor_user_id: input.actor_user_id,
+        actor_user_id: Some(input.actor_user_id),
         kind,
         position,
         payload,
@@ -440,13 +440,13 @@ fn transition_discussion(
 
 fn ensure_can_transition(
     discussion: &RequestDiscussion,
-    request_author_user_id: &str,
+    request: &Request,
     actor_user_id: &str,
     actor_is_maintainer: bool,
 ) -> Result<(), DomainError> {
     if actor_is_maintainer
-        || discussion.author_user_id == actor_user_id
-        || request_author_user_id == actor_user_id
+        || discussion.author_user_id.as_deref() == Some(actor_user_id)
+        || request.is_author(actor_user_id)
     {
         Ok(())
     } else {
@@ -607,7 +607,7 @@ mod tests {
             request_id: "request".to_string(),
             opened_position: 1,
             last_activity_position: 1,
-            author_user_id: "author".to_string(),
+            author_user_id: Some("author".to_string()),
             body_markdown: "Thread".to_string(),
             anchor: None,
             status: RequestDiscussionStatus::Open,
@@ -620,7 +620,7 @@ mod tests {
             id: "parent".to_string(),
             discussion_id: discussion.id.clone(),
             position: 2,
-            author_user_id: "author".to_string(),
+            author_user_id: Some("author".to_string()),
             body_markdown: "Parent".to_string(),
             reply_to_reply_id: None,
             client_reply_id: "client-parent".to_string(),
@@ -653,7 +653,7 @@ mod tests {
             request_id: "request".to_string(),
             opened_position: 1,
             last_activity_position: 1,
-            author_user_id: "author".to_string(),
+            author_user_id: Some("author".to_string()),
             body_markdown: "Other".to_string(),
             anchor: None,
             status: RequestDiscussionStatus::Open,

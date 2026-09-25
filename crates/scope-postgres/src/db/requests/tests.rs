@@ -610,7 +610,7 @@ async fn close_open_request_persists_exact_closer() {
         .close_request(
             CloseRequestCommand {
                 request_id: request.id.clone(),
-                actor_user_id: request.author_user_id.clone(),
+                actor_user_id: request.author_user_id.clone().unwrap(),
                 event_id: "event_closed".to_string(),
                 now_unix: 4,
             },

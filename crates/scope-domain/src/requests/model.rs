@@ -27,7 +27,8 @@ pub struct Request {
     pub id: String,
     pub repo_id: String,
     pub name: String,
-    pub author_user_id: String,
+    /// `None` once the author deleted their account.
+    pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
     pub audience: RequestAudience,
     pub base_main_oid: String,
@@ -38,8 +39,10 @@ pub struct Request {
     pub activity_version: u64,
     pub submitted_at_unix: Option<u64>,
     pub closed_at_unix: Option<u64>,
+    /// Set while the request is closed, unless the closer deleted their account.
     pub closed_by_user_id: Option<String>,
     pub merged_at_unix: Option<u64>,
+    /// Set while the request is merged, unless the merger deleted their account.
     pub merged_by_user_id: Option<String>,
     pub merged_head_oid: Option<String>,
     pub merged_main_oid: Option<String>,
@@ -75,6 +78,11 @@ impl Request {
         )
     }
 
+    /// Whether `user_id` authored the request. A deleted author matches nobody.
+    pub fn is_author(&self, user_id: &str) -> bool {
+        self.author_user_id.as_deref() == Some(user_id)
+    }
+
     pub fn is_submitted(&self) -> bool {
         self.submitted_at_unix.is_some()
     }
@@ -92,7 +100,8 @@ impl Request {
 pub struct RequestInvitee {
     pub request_id: String,
     pub user_id: String,
-    pub invited_by_user_id: String,
+    /// `None` once the inviter deleted their account.
+    pub invited_by_user_id: Option<String>,
     pub created_at_unix: u64,
 }
 
@@ -178,7 +187,8 @@ pub enum RequestEventPayload {
 pub struct RequestEvent {
     pub id: String,
     pub request_id: String,
-    pub actor_user_id: String,
+    /// `None` once the actor deleted their account.
+    pub actor_user_id: Option<String>,
     pub kind: RequestEventKind,
     pub position: u64,
     pub payload: RequestEventPayload,
@@ -211,23 +221,27 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
         }
     }
 
-    require_pair(
-        "close time and actor",
-        request.closed_at_unix.is_some(),
-        request.closed_by_user_id.is_some(),
-    )?;
+    if request.closed_by_user_id.is_some() && request.closed_at_unix.is_none() {
+        return Err(DomainError::conflict(
+            "an open request cannot have a closer",
+        ));
+    }
+    if request.merged_by_user_id.is_some() && request.merged_at_unix.is_none() {
+        return Err(DomainError::conflict(
+            "an unmerged request cannot have a merger",
+        ));
+    }
     let merge_count = [
         request.merged_at_unix.is_some(),
-        request.merged_by_user_id.is_some(),
         request.merged_head_oid.is_some(),
         request.merged_main_oid.is_some(),
     ]
     .into_iter()
     .filter(|present| *present)
     .count();
-    if merge_count != 0 && merge_count != 4 {
+    if merge_count != 0 && merge_count != 3 {
         return Err(DomainError::conflict(
-            "merge time, actor, head, and main oid must be set together",
+            "merge time, head, and main oid must be set together",
         ));
     }
     if request.closed_at_unix.is_some() && request.merged_at_unix.is_some() {
@@ -253,14 +267,4 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
         }
     }
     Ok(())
-}
-
-fn require_pair(label: &str, left: bool, right: bool) -> Result<(), DomainError> {
-    if left == right {
-        Ok(())
-    } else {
-        Err(DomainError::conflict(format!(
-            "request {label} must be set together"
-        )))
-    }
 }

@@ -1,6 +1,7 @@
-import { SectionRow } from '@/components/section-rows'
+import { SectionRow, SectionRows } from '@/components/section-rows'
+import { Button } from '@/components/ui/button'
 import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
-import { KeyRound, Monitor } from 'lucide-react'
+import { KeyRound, Monitor, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 // The account page's fixed sections, shared with its pending state.
@@ -26,6 +27,30 @@ export function CliSessionsSection({ children }: { children: ReactNode }) {
     >
       {children}
     </SectionRow>
+  )
+}
+
+/** Disabled until `onDelete` is given, which needs the account's handle. */
+export function AccountDangerZoneSection({ onDelete }: { onDelete?: () => void }) {
+  return (
+    <SectionRows>
+      <SectionRow
+        description="Permanently deletes your account, CLI sessions, and the repositories you own. Your requests and discussions in other repositories stay and show as a deleted user."
+        icon={<Trash2 className="size-4" />}
+        title="Danger zone"
+      >
+        <Button
+          disabled={!onDelete}
+          onClick={onDelete}
+          size="sm"
+          type="button"
+          variant="destructive"
+        >
+          <Trash2 className="size-3.5" />
+          <span>Delete account</span>
+        </Button>
+      </SectionRow>
+    </SectionRows>
   )
 }
 

@@ -14,6 +14,7 @@ import { requestActivityResource } from './request-activity-resource'
 import { REQUEST_ACTIVITY_PAGE_SIZE } from './request-discussion-api'
 import type { RequestActivityPage } from './request-discussion-types'
 import { requestRevisionPushes, searchRequestRevisionPushes } from './request-revision-pushes'
+import { actorHandle } from './request-actor'
 
 type RequestRouteParams = { owner: string; repo: string; requestId: string }
 
@@ -135,7 +136,7 @@ function RequestChangesMenuPanel({
                     <span className="shrink-0 font-medium text-foreground/80">Revision {push.position}</span>
                     {push.id === latestId ? <span className="shrink-0">· latest</span> : null}
                     <span aria-hidden="true">·</span>
-                    <span className="truncate">{push.actor.handle}</span>
+                    <span className="truncate">{actorHandle(push.actor)}</span>
                     <span aria-hidden="true">·</span>
                     <RelativeTimestamp value={push.createdAtUnix} />
                   </span>

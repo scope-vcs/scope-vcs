@@ -18,6 +18,7 @@ import {
   requestAttentionLabel,
   requestHasNewActivity,
 } from './request-workspace-model'
+import { actorHandle } from './request-actor'
 
 export type RequestWorkspaceListProps = {
   items: { item: RequestQueueItemResponse; section: RequestQueueSection }[]
@@ -164,7 +165,7 @@ function RequestWorkspaceRow({
         to="/$owner/$repo/requests/$requestId"
       >
         <span className="request-workspace-row-avatar">
-          <RequestDiscussionActorAvatar handle={author.handle} small={!rail} />
+          <RequestDiscussionActorAvatar handle={actorHandle(author)} small={!rail} />
           {rail && unread && <span aria-hidden="true" className="request-workspace-row-unread" />}
         </span>
         <span className="min-w-0">

@@ -46,6 +46,7 @@ import type {
   RequestDiscussion,
   RequestDiscussionPage,
 } from './request-discussion-types'
+import { actorHandle } from './request-actor'
 
 export type RequestChangesSearch = {
   commit?: string
@@ -365,7 +366,7 @@ function RequestRevisionHeader({ revision }: { revision: RequestRevisionListResp
     <header className="border-b border-border px-5 py-4 sm:px-6 lg:px-8">
       <h1 className="text-lg font-semibold leading-6 tracking-[-0.01em]">Revision {revision.position}</h1>
       <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-        <span>{revision.actor.handle} pushed {commitCount(revision)}</span>
+        <span>{actorHandle(revision.actor)} pushed {commitCount(revision)}</span>
         <span aria-hidden="true">·</span>
         <AbsoluteTimestamp value={revision.created_at_unix} />
         {revision.old_head_oid && revision.new_head_oid ? (

@@ -42,6 +42,17 @@ pub(crate) fn request_actor_summary_response(
     })
 }
 
+/// The author or actor recorded on durable work: `None` once that account
+/// was deleted.
+pub(crate) fn recorded_actor_response(
+    user_id: Option<&str>,
+    users: &BTreeMap<String, UserAccount>,
+) -> Result<Option<RequestActorSummaryResponse>, ApiError> {
+    user_id
+        .map(|user_id| request_actor_summary_response(user_id, users))
+        .transpose()
+}
+
 pub(crate) use scope_api_contract::{
     RepositoryRunHistoryPageResponse, RepositoryRunLogResponse, RepositoryRunStepLogPageResponse,
     RepositoryRunWorkflowListResponse, RepositoryRunWorkflowResponse,
@@ -502,7 +513,7 @@ pub(crate) fn history_entry_detail_response(
         older_source_id: neighbors.older_source_id,
         newer_source_id: neighbors.newer_source_id,
         kind: entry.kind.into(),
-        author: history_author_handle(entry, users)?,
+        author: history_author_handle(entry.author.as_deref(), users),
         message: entry.message.clone(),
         file_change_count: entry.files.len(),
         visibility_summary: history_visibility_summary_response(entry),
@@ -545,27 +556,22 @@ fn history_entry_summary_response(
         source_id: entry.source_id.clone(),
         parent_id: entry.parent_id.clone(),
         kind: entry.kind.into(),
-        author: history_author_handle(entry, users)?,
+        author: history_author_handle(entry.author.as_deref(), users),
         message: entry.message.clone(),
         file_change_count: entry.files.len(),
         visibility_summary: history_visibility_summary_response(entry),
     })
 }
 
+/// The handle of a history entry's author. History keeps the IDs of authors
+/// whose accounts were deleted, and those have no handle left to show.
 fn history_author_handle(
-    entry: &HistoryEntry,
+    author: Option<&str>,
     users: &BTreeMap<String, UserAccount>,
-) -> Result<Option<String>, ApiError> {
-    entry
-        .author
-        .as_ref()
-        .map(|id| {
-            users
-                .get(id)
-                .map(|user| user.handle.clone())
-                .ok_or_else(|| ApiError::internal_message("history author was not persisted"))
-        })
-        .transpose()
+) -> Option<String> {
+    author
+        .and_then(|id| users.get(id))
+        .map(|user| user.handle.clone())
 }
 
 fn history_visibility_summary_response(entry: &HistoryEntry) -> HistoryVisibilitySummaryResponse {
@@ -617,5 +623,32 @@ fn history_entry_file_response(file: &HistoryEntryFile) -> HistoryEntryFileRespo
         old_oid: file.old_content.as_ref().map(|blob| blob.git_oid.clone()),
         new_oid: file.new_content.as_ref().map(|blob| blob.git_oid.clone()),
         visibility: file.visibility.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_deleted_history_author_has_no_handle() {
+        let users = BTreeMap::from([(
+            "scope_usr_kept".to_string(),
+            UserAccount {
+                id: "scope_usr_kept".into(),
+                handle: "kept".into(),
+                email: "kept@example.com".into(),
+                email_verified: true,
+            },
+        )]);
+        assert_eq!(
+            history_author_handle(Some("scope_usr_kept"), &users).as_deref(),
+            Some("kept")
+        );
+        assert_eq!(
+            history_author_handle(Some("scope_usr_deleted"), &users),
+            None
+        );
+        assert_eq!(history_author_handle(None, &users), None);
     }
 }

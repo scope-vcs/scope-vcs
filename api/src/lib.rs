@@ -4,6 +4,7 @@ pub mod state;
 
 pub(crate) mod auth;
 pub(crate) mod cache_grants;
+pub(crate) mod clerk_users;
 pub(crate) mod config;
 #[cfg(any(test, feature = "local-dev", feature = "smoke-seed"))]
 #[path = "dev/seed.rs"]

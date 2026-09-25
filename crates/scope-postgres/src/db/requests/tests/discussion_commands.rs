@@ -46,7 +46,10 @@ async fn discussion_commands_derive_actor_permissions_from_persisted_private_req
         })
         .await
         .unwrap();
-    assert_eq!(created.discussion.author_user_id, "user_owner");
+    assert_eq!(
+        created.discussion.author_user_id.as_deref(),
+        Some("user_owner")
+    );
     let reply = CreateRequestDiscussionReplyCommand {
         request_id: "req_1".into(),
         discussion_id: created.discussion.id.clone(),

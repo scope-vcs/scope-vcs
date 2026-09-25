@@ -57,7 +57,7 @@ async fn queue_placement_sql_matches_domain_for_fact_combinations() {
                                 classify_request_queue_item(RequestQueueFacts {
                                     request_state: state,
                                     request_activity_version: 0,
-                                    request_author_user_id: author,
+                                    request_author_user_id: Some(author),
                                     viewer_user_id: Some(VIEWER),
                                     viewer_is_maintainer,
                                     viewer_is_invitee,

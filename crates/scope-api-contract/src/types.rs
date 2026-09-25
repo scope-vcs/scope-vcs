@@ -229,7 +229,8 @@ pub struct RequestQueuePageResponse {
 pub struct RequestQueueItemResponse {
     pub attention_at_unix: u64,
     pub request: RequestListItemResponse,
-    pub author: RequestActorSummaryResponse,
+    /// Null once that account is deleted; clients show a deleted user.
+    pub author: Option<RequestActorSummaryResponse>,
     pub attention: RequestAttentionResponse,
     pub claimer: Option<RequestActorSummaryResponse>,
 }
@@ -344,7 +345,8 @@ pub struct RequestSummaryResponse {
     pub name: String,
     pub title: String,
     pub description_markdown: String,
-    pub author_user_id: String,
+    /// Null once that account is deleted; clients show a deleted user.
+    pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
     pub audience: RequestAudience,
     pub base_main_oid: GitOid,
@@ -369,7 +371,8 @@ pub struct RequestSummaryResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestInviteeResponse {
     pub user: RequestActorSummaryResponse,
-    pub invited_by_user_id: String,
+    /// Null once that account is deleted; clients show a deleted user.
+    pub invited_by_user_id: Option<String>,
     pub created_at_unix: u64,
 }
 
@@ -444,7 +447,8 @@ pub struct RequestMergeabilityResponse {
 pub struct RequestEventResponse {
     pub id: String,
     pub position: u64,
-    pub actor: RequestActorSummaryResponse,
+    /// Null once that account is deleted; clients show a deleted user.
+    pub actor: Option<RequestActorSummaryResponse>,
     pub kind: RequestEventKind,
     pub payload: RequestEventPayload,
     pub created_at_unix: u64,
@@ -462,7 +466,8 @@ pub struct RequestActorSummaryResponse {
 pub struct RequestDiscussionReplyReferenceResponse {
     pub id: String,
     pub position: u64,
-    pub author: RequestActorSummaryResponse,
+    /// Null once that account is deleted; clients show a deleted user.
+    pub author: Option<RequestActorSummaryResponse>,
     pub body_markdown: String,
 }
 
@@ -472,7 +477,8 @@ pub struct RequestDiscussionReplyResponse {
     pub id: String,
     pub discussion_id: String,
     pub position: u64,
-    pub author: RequestActorSummaryResponse,
+    /// Null once that account is deleted; clients show a deleted user.
+    pub author: Option<RequestActorSummaryResponse>,
     pub body_markdown: String,
     pub reply_to: Option<RequestDiscussionReplyReferenceResponse>,
     pub created_at_unix: u64,
@@ -486,7 +492,8 @@ pub struct RequestDiscussionSummaryResponse {
     pub client_discussion_id: String,
     pub opened_position: u64,
     pub last_activity_position: u64,
-    pub author: RequestActorSummaryResponse,
+    /// Null once that account is deleted; clients show a deleted user.
+    pub author: Option<RequestActorSummaryResponse>,
     pub body_markdown: String,
     pub anchor: Option<RequestDiscussionAnchor>,
     pub status: RequestDiscussionStatus,
@@ -554,7 +561,8 @@ pub enum RequestRevisionInspectionState {
 pub struct RequestRevisionResponse {
     pub id: String,
     pub position: u64,
-    pub actor: RequestActorSummaryResponse,
+    /// Null once that account is deleted; clients show a deleted user.
+    pub actor: Option<RequestActorSummaryResponse>,
     pub old_head_oid: Option<String>,
     pub new_head_oid: Option<String>,
     pub commits: Vec<RequestRevisionCommitResponse>,

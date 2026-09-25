@@ -1,6 +1,8 @@
 use super::{
     requests::{current_main_oid_for_context, repo_metadata_and_access},
-    responses::{request_actor_summary_response, request_list_item_response},
+    responses::{
+        recorded_actor_response, request_actor_summary_response, request_list_item_response,
+    },
 };
 use crate::auth::scope::require_scope_user;
 use crate::repo_events::RepoChangeReason;
@@ -120,7 +122,8 @@ pub(crate) async fn request_queue(
         .rows
         .into_iter()
         .map(|row| {
-            let author = request_actor_summary_response(&row.request.author_user_id, &page.users)?;
+            let author =
+                recorded_actor_response(row.request.author_user_id.as_deref(), &page.users)?;
             let claimer = row
                 .claim
                 .as_ref()

@@ -64,13 +64,14 @@ pub fn eligible_rating_subject_user_id<'a>(
         .merged_by_user_id
         .as_deref()
         .or(request.closed_by_user_id.as_deref())?;
-    if request.author_user_id == terminal_actor {
+    let author = request.author_user_id.as_deref()?;
+    if author == terminal_actor {
         return None;
     }
-    if actor_user_id == request.author_user_id {
+    if actor_user_id == author {
         Some(terminal_actor)
     } else if actor_user_id == terminal_actor {
-        Some(&request.author_user_id)
+        Some(author)
     } else {
         None
     }

@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use scope_api_contract::{ErrorCode, ErrorResponse};
+use scope_api_contract::{ErrorCode, ErrorFields, ErrorResponse};
 
 pub(crate) use scope_service_runtime::http::ErrorKind;
 
@@ -13,7 +13,8 @@ pub(crate) struct ApiError {
     public_message: String,
     operator_diagnostic: Option<String>,
     code: ErrorCode,
-    paths: Vec<String>,
+    /// Boxed so the error stays small on every `Result` path.
+    fields: Box<ErrorFields>,
     instruction: Option<String>,
 }
 
@@ -73,7 +74,7 @@ impl ApiError {
             public_message: message.into(),
             operator_diagnostic: None,
             code: kind.code(),
-            paths: Vec::new(),
+            fields: Box::default(),
             instruction: None,
         }
     }
@@ -95,7 +96,7 @@ impl ApiError {
         );
         let mut error = Self::new(ErrorKind::Conflict, message);
         error.code = ErrorCode::ProtectedPath;
-        error.paths = paths;
+        error.fields.paths = paths;
         error.instruction = Some(
             "Move maintainer-controlled changes to a maintainer-authored change, then retry."
                 .to_string(),
@@ -124,7 +125,7 @@ impl ApiError {
             .and_then(|diagnostic| report_operator_diagnostic(self.kind, self.code, diagnostic));
         let mut body = ErrorResponse::new(self.code, self.public_message);
         body.error_reference = error_reference;
-        body.fields.paths = self.paths;
+        body.fields = *self.fields;
         body.instruction = self.instruction;
         body.retryable = retryable;
         (status, body)
@@ -173,6 +174,23 @@ impl From<scope_postgres::error::PostgresError> for ApiError {
             error.code = ErrorCode::AttachmentUploadExpired;
         }
         error
+    }
+}
+
+impl From<scope_postgres::db::AccountDeletionError> for ApiError {
+    fn from(error: scope_postgres::db::AccountDeletionError) -> Self {
+        match error {
+            scope_postgres::db::AccountDeletionError::SharedRepositories(shared) => {
+                let mut error = Self::new(
+                    ErrorKind::Conflict,
+                    "delete the repositories other members use before deleting your account",
+                );
+                error.code = ErrorCode::SharedRepositories;
+                error.fields.repositories = shared.repository_ids;
+                error
+            }
+            scope_postgres::db::AccountDeletionError::Persistence(error) => error.into(),
+        }
     }
 }
 

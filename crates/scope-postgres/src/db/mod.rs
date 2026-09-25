@@ -4,6 +4,7 @@
 //! in `migrations/*`. Runtime behavior stays in the focused DB modules that own
 //! the workflow being persisted.
 
+mod account_deletion;
 mod auth;
 mod cache_service;
 #[cfg(any(test, feature = "seeding"))]
@@ -11,6 +12,7 @@ mod catalog_fixture;
 pub mod cleanup_queue;
 #[cfg(test)]
 mod cleanup_queue_tests;
+mod clerk_user_deletions;
 mod clerk_users;
 mod cli_auth;
 mod cli_auth_results;
@@ -92,6 +94,7 @@ mod test_support;
 mod workflow_catalogs;
 
 pub use crate::migrations::{MigrationLimits, MigrationPlan, PendingMigration};
+pub use account_deletion::{AccountDeletionChange, AccountDeletionError, DeletedAccount};
 pub use cache_service::{
     CacheCommitResult, CacheObjectRecord, CachePrepareResult, CacheRestoreKind, CacheRestoreRecord,
     CacheUploadCleanupClaim, CacheUploadRecord, PendingCacheDeletion, PendingOrphanCacheUpload,

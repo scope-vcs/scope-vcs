@@ -12,11 +12,13 @@ pub struct RequestCheckPlan {
 }
 
 impl RequestCheckPlan {
+    /// `maintainer_pusher` is the maintainer whose push starts the runs at
+    /// once. Anyone else's push, including one by a since-deleted account,
+    /// waits for a maintainer's approval.
     pub fn evaluate(
         request: &Request,
         revisions: Result<&[WorkflowRevision], &str>,
-        actor_user_id: &str,
-        actor_is_maintainer: bool,
+        maintainer_pusher: Option<&str>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
         let revisions = match revisions {
@@ -47,8 +49,9 @@ impl RequestCheckPlan {
             .iter()
             .map(RequestCheck::for_revision)
             .collect::<Vec<_>>();
-        let (evaluation, runs) = if request_checks_start_immediately(request, actor_is_maintainer) {
-            let runs = plan_runs(request, &checks, revisions, actor_user_id, now_unix)?;
+        let starter = maintainer_pusher.filter(|_| request_checks_start_immediately(request, true));
+        let (evaluation, runs) = if let Some(starter) = starter {
+            let runs = plan_runs(request, &checks, revisions, starter, now_unix)?;
             for (check, run) in checks.iter_mut().zip(&runs) {
                 check.run_id = Some(run.id.clone());
             }
