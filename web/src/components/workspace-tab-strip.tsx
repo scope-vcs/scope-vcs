@@ -47,6 +47,7 @@ export function WorkspaceTabStrip({
     ? activeId
     : tabs[0]?.id
   const visibleLabels = useMemo(() => workspaceTabVisibleLabels(tabs), [tabs])
+  const activeTab = tabs.find((tab) => tab.id === activeId)
   const hiddenTabs = useStripOverflow({ activeId, tabListRef, tabRefs, tabs })
 
   function tabRef(id: string) {
@@ -72,6 +73,10 @@ export function WorkspaceTabStrip({
       nextIndex = 0
     } else if (event.key === 'End') {
       nextIndex = tabs.length - 1
+    } else if (event.key === 'Delete') {
+      event.preventDefault()
+      closeTab(id)
+      return
     }
     if (nextIndex === null) return
     event.preventDefault()
@@ -111,6 +116,7 @@ export function WorkspaceTabStrip({
             >
               <button
                 aria-controls={domIds.panelId}
+                aria-keyshortcuts="Delete"
                 aria-label={accessibleLabel}
                 aria-selected={active}
                 className={cn(
@@ -126,7 +132,7 @@ export function WorkspaceTabStrip({
                 ref={tabRef(tab.id)}
                 role="tab"
                 tabIndex={tab.id === tabStopId ? 0 : -1}
-                title={accessibleLabel}
+                title={`${accessibleLabel} (Delete closes tab)`}
                 type="button"
               >
                 {/* Buttons reset font-style, so the preview marker lives on the
@@ -135,13 +141,18 @@ export function WorkspaceTabStrip({
                   {visibleLabels.get(tab.id) ?? tab.label}
                 </span>
               </button>
+              {/* A tablist may only own tabs, so the pointer close control is
+                  hidden from assistive tech. Keyboard users press Delete on the
+                  focused tab; the accessible control below closes the active tab. */}
               <button
-                aria-label={`Close ${accessibleLabel}`}
+                aria-hidden
                 className={cn(
-                  'mr-1.5 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-[color,background-color,opacity] hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring sm:opacity-0 sm:group-hover/tab:opacity-100 sm:focus-visible:opacity-100 [@media(hover:none)]:min-w-11 [@media(hover:none)]:!opacity-100 [@media(pointer:coarse)]:min-w-11 [@media(pointer:coarse)]:!opacity-100',
+                  'ml-0.5 mr-1.5 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-[color,background-color,opacity] hover:bg-muted hover:text-foreground sm:opacity-0 sm:group-hover/tab:opacity-100 [@media(hover:none)]:min-w-11 [@media(hover:none)]:!opacity-100 [@media(pointer:coarse)]:min-w-11 [@media(pointer:coarse)]:!opacity-100',
                   active && 'sm:opacity-60',
                 )}
                 onClick={() => closeTab(tab.id)}
+                tabIndex={-1}
+                title={`Close ${accessibleLabel}`}
                 type="button"
               >
                 <X className="size-3.5" />
@@ -156,6 +167,17 @@ export function WorkspaceTabStrip({
           )
         })}
       </div>
+      {/* Assistive tech that cannot press Delete, such as touch screen readers,
+          closes the active tab through this control outside the tablist. */}
+      {activeTab && (
+        <button
+          className="sr-only shrink-0 self-center rounded px-2 py-1 font-mono text-xs text-muted-foreground focus-visible:not-sr-only focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+          onClick={() => closeTab(activeTab.id)}
+          type="button"
+        >
+          Close {activeTab.title ?? activeTab.label}
+        </button>
+      )}
       {hiddenTabs.length > 0 && (
         <OverflowMenu
           onActivate={onActivate}
