@@ -6,7 +6,7 @@ ARG GIT_SOURCE_SHA256
 COPY deploy/railway/install-git.sh /tmp/install-git.sh
 RUN bash /tmp/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"
 
-FROM --platform=linux/amd64 rust:1.98.1-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e AS scope-runtime-builder
+FROM --platform=linux/amd64 rust:1.98.1-slim-bookworm@sha256:dacc9e51f252243eb59d2fb4cb4ad8b0d3f607b6a82c398cf8a321e59ff778a7 AS scope-runtime-builder
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
@@ -37,26 +37,22 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright \
     RUSTUP_TOOLCHAIN=1.98.1-x86_64-unknown-linux-gnu
 
+ADD --chmod=644 --checksum=sha256:0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76 \
+    https://www.postgresql.org/media/keys/ACCC4CF8.asc /etc/apt/keyrings/postgresql.asc
+
 RUN sed -i \
         -e "s|http://deb.debian.org/debian-security|https://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}|" \
         -e "s|http://deb.debian.org/debian|https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}|" \
         /etc/apt/sources.list.d/debian.sources \
     && printf '%s\n' 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot \
-    && apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates curl \
-    && mkdir -p /usr/local/share/keyrings \
-    && curl --fail --silent --show-error --location \
-        https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-        --output /usr/local/share/keyrings/postgresql.asc \
-    && echo '0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76  /usr/local/share/keyrings/postgresql.asc' \
-        | sha256sum --check --strict \
-    && printf '%s\n' 'deb [signed-by=/usr/local/share/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main 18' \
+    && printf '%s\n' 'deb [signed-by=/etc/apt/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main 18' \
         > /etc/apt/sources.list.d/postgresql.list \
     && apt-get update \
     && apt-get upgrade --yes \
     && apt-get install --yes --no-install-recommends \
         build-essential \
         cmake \
+        curl \
         ffmpeg \
         iproute2 \
         jq \
@@ -97,37 +93,47 @@ RUN rustup component add \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/* /tmp/*
 
-# Keep the files used by the checks startup path in small eager SOCI layers.
-# The original Rust, Debian, and browser layers remain available for other checks.
-RUN set -eu; \
-    toolchain_dir="/usr/local/rustup/toolchains/${RUSTUP_TOOLCHAIN}"; \
-    for file in "$toolchain_dir"/lib/libLLVM.so.* "$toolchain_dir"/bin/rustc /usr/local/cargo/bin/rustup; do \
-        test -f "$file"; \
-        cp -p "$file" "$file.hot"; \
-        mv "$file.hot" "$file"; \
-        touch "$file"; \
-    done
+# SOCI fetches layers under the publisher's 150 MB cutoff before the task
+# starts and fetches larger layers lazily. Each RUN below rewrites files most
+# jobs read into its own layer under that cutoff. Chromium and PostgreSQL stay
+# lazy because only some jobs use them.
+RUN --mount=type=bind,source=.scope/images/checks/promote-eager-files.sh,target=/tmp/promote-eager-files \
+    toolchain="/usr/local/rustup/toolchains/${RUSTUP_TOOLCHAIN}" \
+    && bash /tmp/promote-eager-files \
+        "$toolchain"/lib/libLLVM.so.* \
+        "$toolchain"/bin/rustc \
+        /usr/local/cargo/bin/rustup
 
-RUN set -eu; \
-    for file in "/usr/local/rustup/toolchains/${RUSTUP_TOOLCHAIN}"/lib/librustc_driver-*.so; do \
-        test -f "$file"; \
-        cp -p "$file" "$file.hot"; \
-        mv "$file.hot" "$file"; \
-        touch "$file"; \
-    done
+RUN --mount=type=bind,source=.scope/images/checks/promote-eager-files.sh,target=/tmp/promote-eager-files \
+    bash /tmp/promote-eager-files "/usr/local/rustup/toolchains/${RUSTUP_TOOLCHAIN}"/lib/librustc_driver-*.so
 
-RUN set -eu; \
-    { printf '%s\n' /usr/bin/ffmpeg; \
-      ldd /usr/bin/ffmpeg | awk '$3 ~ /^\// {print $3} $1 ~ /^\// {print $1}' | xargs -r realpath; \
-    } | sort -u | while IFS= read -r file; do \
-        test -f "$file"; \
-        cp -p "$file" "$file.hot"; \
-        mv "$file.hot" "$file"; \
-        touch "$file"; \
-    done
+RUN --mount=type=bind,source=.scope/images/checks/promote-eager-files.sh,target=/tmp/promote-eager-files \
+    toolchain="/usr/local/rustup/toolchains/${RUSTUP_TOOLCHAIN}" \
+    && bash /tmp/promote-eager-files \
+        "$toolchain"/bin/cargo \
+        "$toolchain"/bin/cargo-clippy \
+        "$toolchain"/bin/cargo-fmt \
+        "$toolchain"/bin/clippy-driver \
+        "$toolchain"/bin/rustdoc \
+        "$toolchain"/bin/rustfmt \
+        "$toolchain"/lib/rustlib/x86_64-unknown-linux-gnu \
+        /usr/bin/x86_64-linux-gnu-gcc-12 \
+        /usr/lib/gcc/x86_64-linux-gnu/12/collect2 \
+        /usr/lib/gcc/x86_64-linux-gnu/12/crt*.o \
+        /usr/lib/gcc/x86_64-linux-gnu/12/libgcc* \
+        /usr/lib/x86_64-linux-gnu/Scrt1.o \
+        /usr/lib/x86_64-linux-gnu/crti.o \
+        /usr/lib/x86_64-linux-gnu/crtn.o \
+        /usr/lib/x86_64-linux-gnu/libc.so \
+        /usr/lib/x86_64-linux-gnu/libc_nonshared.a \
+        /usr/local/rustup/settings.toml \
+        /etc/ssl/certs/ca-certificates.crt
 
-RUN find /usr/local/lib/node_modules/playwright -type f \
-    -exec sh -c 'for file do cp -p "$file" "$file.hot" && mv "$file.hot" "$file" && touch "$file" || exit; done' sh {} +
+RUN --mount=type=bind,source=.scope/images/checks/promote-eager-files.sh,target=/tmp/promote-eager-files \
+    bash /tmp/promote-eager-files --libraries-of /usr/bin/ffmpeg
+
+RUN --mount=type=bind,source=.scope/images/checks/promote-eager-files.sh,target=/tmp/promote-eager-files \
+    bash /tmp/promote-eager-files /usr/local/lib/node_modules/playwright
 
 ARG PLAYWRIGHT_CHROMIUM_VERSION=153.0.8010.12
 ARG PLAYWRIGHT_CHROMIUM_REVISION=1243
