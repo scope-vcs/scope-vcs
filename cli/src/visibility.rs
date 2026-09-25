@@ -20,6 +20,8 @@ use scope_domain::{
 use serde::Serialize;
 use std::{fs, path::PathBuf};
 
+mod log;
+
 #[derive(Debug, Parser)]
 pub struct VisibilityArgs {
     #[command(subcommand)]
@@ -41,6 +43,15 @@ pub enum VisibilityCommand {
         /// Proposed repo config JSON file, compared against the current local config.
         #[arg(long, value_name = "FILE")]
         config: PathBuf,
+    },
+    /// List visibility changes on Scope, newest first; requires scope login.
+    Log {
+        /// Scope remote to use (or select a repository with global --repo).
+        #[arg(long)]
+        remote: Option<String>,
+        /// Continue from the cursor printed by a previous page.
+        #[arg(long)]
+        before: Option<String>,
     },
 }
 
@@ -118,6 +129,7 @@ pub fn run(args: VisibilityArgs) -> Result<()> {
             let repo = discover_git_repo("scope visibility")?;
             preview(&repo, &load_config(&repo)?, candidate)
         }
+        VisibilityCommand::Log { remote, before } => log::run(remote.as_deref(), before.as_deref()),
     }
 }
 
