@@ -28,15 +28,17 @@ export function RunLogView({
   const logState = logs.state
   const text = logState.logs.map((log) => log.text).join('')
   const [following, setFollowing] = useState(true)
-  // Where the output ended when the reader scrolled away from it.
+  // The log position the output had reached when the reader scrolled away.
+  // Positions stay stable while the cached window drops its oldest chunks.
   const [pausedAt, setPausedAt] = useState<number | null>(null)
-  const textLengthRef = useRef(text.length)
+  const lastPosition = logState.logs.at(-1)?.position ?? -1
+  const lastPositionRef = useRef(lastPosition)
   const sectionRef = useRef<HTMLElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    textLengthRef.current = text.length
-  }, [text.length])
+    lastPositionRef.current = lastPosition
+  }, [lastPosition])
 
   useEffect(() => {
     const end = endRef.current
@@ -44,7 +46,7 @@ export function RunLogView({
     const observer = new IntersectionObserver(
       ([entry]) => {
         setFollowing(entry.isIntersecting)
-        setPausedAt(entry.isIntersecting ? null : textLengthRef.current)
+        setPausedAt(entry.isIntersecting ? null : lastPositionRef.current)
       },
       { rootMargin: `0px 0px ${FOLLOW_THRESHOLD_PX}px 0px` },
     )
@@ -65,7 +67,7 @@ export function RunLogView({
   }, [following, logState.logs, logState.viewingEarlier])
 
   const newLines = step.state === 'running' && pausedAt !== null
-    ? countLines(text, pausedAt)
+    ? countLinesAfter(logState.logs, pausedAt)
     : 0
 
   return (
@@ -87,7 +89,7 @@ export function RunLogView({
         </button>
       ) : null}
       {logState.logsTruncated ? (
-        <p className="mt-1 font-sans text-muted-foreground">Some earlier output was omitted.</p>
+        <p className="mt-1 font-sans text-muted-foreground">Some output was omitted.</p>
       ) : null}
       {logState.error ? (
         <p className="mt-1 flex flex-wrap items-center gap-3 font-sans text-danger-strong" role="alert">
@@ -132,10 +134,16 @@ export function RunLogView({
   )
 }
 
-function countLines(text: string, from: number) {
+function countLinesAfter(
+  logs: readonly { position: number; text: string }[],
+  position: number,
+) {
   let count = 0
-  for (let index = text.indexOf('\n', from); index !== -1; index = text.indexOf('\n', index + 1)) {
-    count += 1
+  for (const log of logs) {
+    if (log.position <= position) continue
+    for (let index = log.text.indexOf('\n'); index !== -1; index = log.text.indexOf('\n', index + 1)) {
+      count += 1
+    }
   }
   return count
 }

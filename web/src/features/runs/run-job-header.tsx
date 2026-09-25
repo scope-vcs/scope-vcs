@@ -40,8 +40,13 @@ export function RunJobHeader({
   const ending = attempt ? attemptEnding(attempt) : null
   return (
     <div className="flex min-h-12 flex-none flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-border py-2 pl-4 pr-3">
-      <RunStatusIcon state={job.state} />
-      <h2 className="text-[15px] font-semibold">{job.key}</h2>
+      {/* The job list already shows the job's overall state; this line
+          describes whichever attempt is on screen. */}
+      <RunStatusIcon
+        state={attempt?.state ?? job.state}
+        terminalReason={attempt?.terminal_reason}
+      />
+      <h2 className="min-w-0 max-w-full truncate text-[15px] font-semibold">{job.key}</h2>
       {attempt && attempts.length > 1 ? (
         <AttemptMenu
           attempts={attempts}
@@ -115,7 +120,7 @@ function AttemptMenu({
       className="w-64 p-1"
       label="Attempts"
       panel={(close) => (
-        <ul>
+        <ul className="max-h-[min(20rem,60vh)] overflow-y-auto">
           {attempts.map((attempt) => (
             <li key={attempt.id}>
               <button

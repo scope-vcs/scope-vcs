@@ -65,11 +65,14 @@ export function RunDetailJobs({
       </nav>
       <div className="flex min-w-0 flex-col lg:min-h-0">
         {showGraph ? (
-          <RunJobGraph
-            jobs={jobs}
-            onSelectJob={onSelectJob}
-            selectedJobKey={selectedJobKey}
-          />
+          // Bounded so a tall graph can't squeeze the selected job out of the pane.
+          <div className="overflow-y-auto lg:max-h-[45%] lg:shrink-0">
+            <RunJobGraph
+              jobs={jobs}
+              onSelectJob={onSelectJob}
+              selectedJobKey={selectedJobKey}
+            />
+          </div>
         ) : null}
         {selectedJob ? (
           <div
