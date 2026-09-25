@@ -41,7 +41,7 @@ export function RunJobGraph({
   return (
     <div
       aria-label="Job dependency graph"
-      className="overflow-x-auto border-y border-border bg-muted/15 py-3"
+      className="overflow-x-auto border-b border-border bg-muted/15 py-3"
     >
       <div
         className="relative"

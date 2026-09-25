@@ -46,7 +46,7 @@ export function RunDetailSteps({
       {attempt ? (
         <>
           {terminalNotice ? (
-            <p className="flex items-center gap-2 border-b border-border px-1 py-4 text-sm">
+            <p className="flex items-center gap-2 border-b border-border px-4 py-4 text-sm">
               <RunStatusIcon
                 state={attempt.state}
                 terminalReason={attempt.terminal_reason}
@@ -62,7 +62,7 @@ export function RunDetailSteps({
             cacheSetup={attempt.cache_setup}
             pinnedContainerImage={job.pinned_container_image}
           />
-          <div className="divide-y divide-border">
+          <div>
             {attempt.steps.map((step) => (
               <StepRow
                 attemptId={attempt.id}
@@ -77,13 +77,13 @@ export function RunDetailSteps({
             ))}
           </div>
           {attempt.steps.length === 0 ? (
-            <p className="border-t border-border px-1 py-5 text-sm text-muted-foreground">
+            <p className="px-4 py-5 text-sm text-muted-foreground">
               Steps are created when a runner claims this run.
             </p>
           ) : null}
         </>
       ) : (
-        <p className="border-t border-border px-1 py-5 text-sm text-muted-foreground">
+        <p className="px-4 py-5 text-sm text-muted-foreground">
           {job.state === 'blocked'
             ? 'Waiting for required jobs to finish.'
             : job.state === 'queued'
@@ -121,7 +121,7 @@ function AttemptSwitcher({
   return (
     <div
       aria-label="Attempts"
-      className="flex flex-wrap items-center gap-1.5 border-b border-border py-3"
+      className="flex flex-wrap items-center gap-1.5 border-b border-border px-4 py-3"
     >
       {orderedAttempts.map((attempt) => (
         <button
@@ -159,11 +159,11 @@ function StepRow({
 }) {
   const panelId = `run-step-${attemptId}-${step.index}`
   return (
-    <div>
+    <div className="border-b border-border">
       <button
         aria-controls={panelId}
         aria-expanded={selected}
-        className={`${RUN_STEP_ROW_CLASS} text-left outline-none hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`}
+        className={`${RUN_STEP_ROW_CLASS} sticky top-0 z-10 bg-background text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`}
         onClick={onSelect}
         type="button"
       >

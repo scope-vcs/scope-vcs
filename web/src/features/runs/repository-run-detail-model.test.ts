@@ -324,13 +324,11 @@ describe('run detail navigation', () => {
     assert.equal(next.manualSelection, true)
   })
 
-  it('keeps the selection when reopening its own job', () => {
-    const closed = selectJob(opened, 'build')
-    const reopened = selectJob({ ...closed, selection: opened.selection }, 'build')
+  it('keeps the job and its selection when the open job is picked again', () => {
+    const next = selectJob(opened, 'build')
 
-    assert.equal(closed.selectedJobKey, null)
-    assert.equal(reopened.selectedJobKey, 'build')
-    assert.deepEqual(reopened.selection, opened.selection)
+    assert.equal(next.selectedJobKey, 'build')
+    assert.deepEqual(next.selection, opened.selection)
   })
 
   it('treats an attempt switch as the reader taking over', () => {

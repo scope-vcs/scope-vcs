@@ -25,7 +25,7 @@ export function RunEnvironmentSummary({
   imageTitle?: string
 }) {
   return (
-    <div className="grid gap-1 px-3 py-3 text-xs sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-baseline sm:gap-3">
+    <div className="grid gap-1 px-4 py-3 text-xs sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-baseline sm:gap-3">
       <strong className="text-sm font-medium">Environment</strong>
       <span className="text-muted-foreground">{cacheSummary}</span>
       <code className="text-[11px] text-muted-foreground" title={imageTitle}>
@@ -58,7 +58,7 @@ export function RunAttemptEnvironment({
             const preparationDetail = cachePreparationDetail(cache)
             return (
               <div
-                className="grid gap-x-3 gap-y-1 px-3 py-2.5 text-xs sm:grid-cols-[7rem_6rem_minmax(0,1fr)_auto] sm:items-baseline"
+                className="grid gap-x-3 gap-y-1 px-4 py-2.5 text-xs sm:grid-cols-[7rem_6rem_minmax(0,1fr)_auto] sm:items-baseline"
                 key={cache.name}
               >
                 <strong className="font-mono font-medium">{cache.name}</strong>
