@@ -3,7 +3,7 @@ import type { RequestSummaryResponse } from '@/api/types.generated'
 import { EmptyState } from '@/components/empty-state'
 import { mainScrollContainer } from '@/components/main-content'
 import { Button } from '@/components/ui/button'
-import { CircleAlert, MessageSquare } from 'lucide-react'
+import { CircleAlert, LoaderCircle, MessageSquare } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   readRequestDiscussionScroll,
@@ -97,13 +97,15 @@ export function RequestDiscussionWorkbench({
       {store.collection.nextCursor ? (
         <div className="border-b border-border px-5 py-4 text-center lg:px-7">
           <Button
+            aria-busy={store.loadingMore}
             disabled={store.loadingMore}
             onClick={() => void store.loadMore()}
             size="sm"
             type="button"
             variant="secondary"
           >
-            {store.loadingMore ? 'Loading…' : 'Load earlier discussions'}
+            {store.loadingMore ? <LoaderCircle className="animate-spin" /> : null}
+            Load earlier discussions
           </Button>
         </div>
       ) : null}

@@ -73,20 +73,15 @@ export function RequestWorkspaceList({
       {hasMore && (
         <Button
           className="mx-auto mt-2 mb-3"
+          aria-busy={loading}
           disabled={loading}
           onClick={onLoadMore}
           size="sm"
           type="button"
           variant="ghost"
         >
-          {loading ? (
-            <>
-              <LoaderCircle className="animate-spin" />
-              Loading…
-            </>
-          ) : (
-            'Load more'
-          )}
+          {loading ? <LoaderCircle className="animate-spin" /> : null}
+          Load more
         </Button>
       )}
     </div>

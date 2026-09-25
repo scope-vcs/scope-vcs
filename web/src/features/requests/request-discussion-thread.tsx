@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   CircleAlert,
+  LoaderCircle,
   Reply,
   RotateCcw,
 } from 'lucide-react'
@@ -324,13 +325,14 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                 {hasOlderReplies ? (
                   <button
                     className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-70"
+                    aria-busy={loadingReplies}
                     disabled={loadingReplies}
                     onClick={() => void loadOlderWithoutJump()}
                     type="button"
                   >
-                    {loadingReplies
-                      ? 'Loading…'
-                      : `${olderReplyCount} earlier ${olderReplyCount === 1 ? 'reply' : 'replies'}`}
+                    {/* Left-aligned, so the spinner follows the label and the label stays put. */}
+                    {`${olderReplyCount} earlier ${olderReplyCount === 1 ? 'reply' : 'replies'}`}
+                    {loadingReplies ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
                   </button>
                 ) : null}
                 <RequestDiscussionReplyList
