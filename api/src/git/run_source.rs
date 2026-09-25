@@ -4,7 +4,9 @@ use crate::{
     error::ApiError,
     git::{
         cache::{GitDerivedCacheNamespace, GitRepoHandle},
-        command::{git_process_output, truncated_git_stderr},
+        command::{
+            git_process_output, git_stdout_text, run_git, run_git_output, truncated_git_stderr,
+        },
         repository_engine::GitRevision,
     },
     state::AppState,
@@ -20,6 +22,7 @@ use scope_storage::source_blob_bytes;
 use sha2::{Digest as _, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
+    future::Future,
     os::unix::{fs::DirBuilderExt as _, fs::OpenOptionsExt as _},
     path::{Path, PathBuf},
     process::Command,
@@ -95,6 +98,10 @@ pub(crate) async fn materialize_run_source_bundle(
         .run_repository_incarnation(&run.id, run.workflow.repository_id())
         .await?
         .ok_or_else(|| ApiError::not_found("run repository not found"))?;
+    if let Some((bundle, base_oid)) = source.request_git_source() {
+        return materialize_request_git_bundle(state, &incarnation, bundle, base_oid, max_bytes)
+            .await;
+    }
     materialize_accepted_git_head_bundle(state, &incarnation, source, max_bytes).await
 }
 
@@ -121,6 +128,50 @@ fn run_source_cache_key(
     ))
 }
 
+fn request_source_cache_key(
+    incarnation: &RepositoryIncarnation,
+    bundle: &scope_domain::content::SourceBlob,
+    base_oid: &str,
+) -> Result<String, ApiError> {
+    let identity = serde_json::to_vec(&(
+        "standalone-request-run-source-v1",
+        incarnation,
+        &bundle.sha256,
+        &bundle.git_oid,
+        base_oid,
+    ))
+    .map_err(ApiError::internal)?;
+    Ok(format!(
+        "run-source-{}",
+        hex::encode(Sha256::digest(identity))
+    ))
+}
+
+async fn materialize_request_git_bundle(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    snapshot: &scope_domain::content::SourceBlob,
+    base_oid: &str,
+    max_bytes: usize,
+) -> Result<MaterializedRunSource, ApiError> {
+    let key = request_source_cache_key(incarnation, snapshot, base_oid)?;
+    let build_state = state.clone();
+    let build_incarnation = incarnation.clone();
+    let snapshot = snapshot.clone();
+    let base_oid = base_oid.to_string();
+    cached_run_source_bundle(state, incarnation, key, max_bytes, move |path| {
+        build_request_source_bundle(
+            build_state,
+            build_incarnation,
+            snapshot,
+            base_oid,
+            path,
+            max_bytes,
+        )
+    })
+    .await
+}
+
 async fn materialize_accepted_git_head_bundle(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -128,15 +179,38 @@ async fn materialize_accepted_git_head_bundle(
     max_bytes: usize,
 ) -> Result<MaterializedRunSource, ApiError> {
     let key = run_source_cache_key(incarnation, source)?;
+    let build_state = state.clone();
+    let build_source = source.clone();
+    let build_incarnation = incarnation.clone();
+    cached_run_source_bundle(state, incarnation, key, max_bytes, move |path| {
+        build_accepted_source_bundle(
+            build_state,
+            build_incarnation,
+            build_source,
+            path,
+            max_bytes,
+        )
+    })
+    .await
+}
+
+async fn cached_run_source_bundle<Build, BuildFuture>(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    key: String,
+    max_bytes: usize,
+    build: Build,
+) -> Result<MaterializedRunSource, ApiError>
+where
+    Build: FnOnce(PathBuf) -> BuildFuture + Send + 'static,
+    BuildFuture: Future<Output = Result<(), ApiError>> + Send + 'static,
+{
     let path = state
         .repository_engine
         .cache_root()
         .join(format!("{key}.git"));
     let ready_path = path.clone();
     let build_path = path.clone();
-    let build_state = state.clone();
-    let build_source = source.clone();
-    let build_incarnation = incarnation.clone();
     let handle = state
         .repository_engine
         .materialize_derived(
@@ -147,15 +221,7 @@ async fn materialize_accepted_git_head_bundle(
             move || {
                 ready_path.join("source.bundle").is_file() && ready_path.join("sha256").is_file()
             },
-            move || {
-                build_accepted_source_bundle(
-                    build_state,
-                    build_incarnation,
-                    build_source,
-                    build_path,
-                    max_bytes,
-                )
-            },
+            move || build(build_path),
         )
         .await?;
     // The permit covers opening the cache entry, not the client's download.
@@ -215,8 +281,13 @@ async fn build_accepted_source_bundle(
             .materialize_revision(&state, &incarnation, head, pack_spans)
             .await?;
         let owner = operation::RunSourceOperation::new(&state)?;
-        let bytes =
-            materialize_owned_git_head_bundle(&state, revision, max_bytes, owner.clone()).await?;
+        let bytes = materialize_owned_git_head_bundle(
+            &state,
+            BundleView::Accepted(revision),
+            max_bytes,
+            owner.clone(),
+        )
+        .await?;
         let temporary = TemporarySourceDirectory::new(state.repository_engine.cache_root())?;
         operation::spawn_blocking(&owner, move || {
             write_private_file(&temporary.path.join("source.bundle"), &bytes)?;
@@ -234,23 +305,118 @@ async fn build_accepted_source_bundle(
     .await
 }
 
+async fn build_request_source_bundle(
+    state: AppState,
+    incarnation: RepositoryIncarnation,
+    snapshot: scope_domain::content::SourceBlob,
+    base_oid: String,
+    path: PathBuf,
+    max_bytes: usize,
+) -> Result<(), ApiError> {
+    operation::supervise(async move {
+        let bytes = source_blob_bytes(state.object_store.as_ref(), &snapshot, max_bytes).await?;
+        let owner = operation::RunSourceOperation::new(&state)?;
+        let cache_root = state.repository_engine.cache_root().to_path_buf();
+        let (needs_base, bytes) = operation::spawn_blocking(&owner, move || {
+            let temporary = TemporarySourceDirectory::new(&cache_root)?;
+            let repo = temporary.path().join("inspect.git");
+            run_git(
+                None,
+                &["init", "--bare", repo.to_string_lossy().as_ref()],
+                "initializing request snapshot inspection",
+            )?;
+            let bundle = temporary.path().join("request.bundle");
+            write_private_file(&bundle, &bytes)?;
+            let result = run_git_output(
+                Some(&repo),
+                &["bundle", "verify", bundle.to_string_lossy().as_ref()],
+                "checking request snapshot prerequisites",
+            )?;
+            Ok::<_, ApiError>((!result.status.success(), bytes))
+        })
+        .await
+        .map_err(|error| {
+            ApiError::internal_message(format!("request snapshot inspection task failed: {error}"))
+        })??;
+        let revision = if needs_base {
+            let (main_head, spans) = state
+                .metadata
+                .repositories()
+                .repository_content_source(&incarnation)
+                .await?;
+            let main_head = main_head.ok_or_else(|| {
+                ApiError::infrastructure_unavailable("request snapshot needs an unavailable base")
+            })?;
+            Some(
+                state
+                    .repository_engine
+                    .materialize_revision(&state, &incarnation, &main_head, &spans)
+                    .await?,
+            )
+        } else {
+            None
+        };
+        let bundle = materialize_owned_git_head_bundle(
+            &state,
+            BundleView::Request {
+                base_revision: revision,
+                snapshot: RequestSnapshot {
+                    bytes,
+                    base_oid,
+                    head_oid: snapshot.git_oid,
+                },
+            },
+            max_bytes,
+            owner.clone(),
+        )
+        .await?;
+        let temporary = TemporarySourceDirectory::new(state.repository_engine.cache_root())?;
+        operation::spawn_blocking(&owner, move || {
+            write_private_file(&temporary.path.join("source.bundle"), &bundle)?;
+            write_private_file(
+                &temporary.path.join("sha256"),
+                hex::encode(Sha256::digest(&bundle)).as_bytes(),
+            )?;
+            fs::rename(&temporary.path, path).map_err(ApiError::internal)
+        })
+        .await
+        .map_err(|error| {
+            ApiError::internal_message(format!("run source cache publication task failed: {error}"))
+        })?
+    })
+    .await
+}
+
+struct RequestSnapshot {
+    bytes: Vec<u8>,
+    base_oid: String,
+    head_oid: String,
+}
+
+enum BundleView {
+    Accepted(GitRevision),
+    Request {
+        base_revision: Option<GitRevision>,
+        snapshot: RequestSnapshot,
+    },
+}
+
 async fn materialize_owned_git_head_bundle(
     state: &AppState,
-    revision: GitRevision,
+    view: BundleView,
     max_bytes: usize,
     owner: std::sync::Arc<operation::RunSourceOperation>,
 ) -> Result<Vec<u8>, ApiError> {
     let repo = operation::repository(&owner);
-    let revision = operation::spawn_blocking(&owner, move || {
-        revision.create_view(&repo)?;
-        Ok::<_, ApiError>(revision)
-    })
-    .await
-    .map_err(|error| {
-        ApiError::internal_message(format!("run source revision task failed: {error}"))
-    })??;
+    let verify_standalone = matches!(view, BundleView::Request { .. });
+    let revision = operation::spawn_blocking(&owner, move || prepare_bundle_view(&repo, view))
+        .await
+        .map_err(|error| {
+            ApiError::internal_message(format!("run source revision task failed: {error}"))
+        })??;
     let main_ref = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
     let repo_path = operation::repository(&owner);
+    let verify_repo = repo_path.clone();
     let timeout = state.runtime_budgets.git_command_timeout();
     let output = operation::spawn_blocking(&owner, move || {
         let _revision = revision;
@@ -262,6 +428,13 @@ async fn materialize_owned_git_head_bundle(
             None,
             ProcessLimits::new(timeout).with_max_stdout_bytes(max_bytes),
         )
+        .map_err(|error| {
+            if error.status() == axum::http::StatusCode::PAYLOAD_TOO_LARGE {
+                ApiError::payload_too_large(format!("run source bundle exceeds {max_bytes} bytes"))
+            } else {
+                error
+            }
+        })
     })
     .await
     .map_err(|error| {
@@ -273,7 +446,107 @@ async fn materialize_owned_git_head_bundle(
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
-    Ok(output.stdout)
+    let bytes = output.stdout;
+    if !verify_standalone {
+        return Ok(bytes);
+    }
+    operation::spawn_blocking(&owner, move || {
+        verify_standalone_bundle(&verify_repo, &bytes)?;
+        Ok::<_, ApiError>(bytes)
+    })
+    .await
+    .map_err(|error| {
+        ApiError::internal_message(format!(
+            "run source bundle verification task failed: {error}"
+        ))
+    })?
+}
+
+fn prepare_bundle_view(repo: &Path, view: BundleView) -> Result<Option<GitRevision>, ApiError> {
+    match view {
+        BundleView::Accepted(revision) => {
+            revision.create_view(repo)?;
+            Ok(Some(revision))
+        }
+        BundleView::Request {
+            base_revision,
+            snapshot,
+        } => {
+            run_git(
+                None,
+                &["init", "--bare", repo.to_string_lossy().as_ref()],
+                "initializing request run source",
+            )?;
+            let bundle = repo.join("request.bundle");
+            write_private_file(&bundle, &snapshot.bytes)?;
+            let standalone = run_git_output(
+                Some(repo),
+                &["bundle", "verify", bundle.to_string_lossy().as_ref()],
+                "checking request snapshot prerequisites",
+            )?;
+            if !standalone.status.success() {
+                let revision = base_revision.as_ref().ok_or_else(|| {
+                    ApiError::infrastructure_unavailable(format!(
+                        "request snapshot needs an unavailable base: {}",
+                        truncated_git_stderr(&standalone.stderr).trim()
+                    ))
+                })?;
+                revision.create_view(repo)?;
+                let base = format!("{}^{{commit}}", snapshot.base_oid);
+                run_git(
+                    Some(repo),
+                    &["cat-file", "-e", &base],
+                    "checking request run source base",
+                )?;
+            }
+            let refspec = format!("+{}:refs/heads/{DEFAULT_GIT_BRANCH}", snapshot.head_oid);
+            run_git(
+                Some(repo),
+                &[
+                    "fetch",
+                    "--no-tags",
+                    bundle.to_string_lossy().as_ref(),
+                    &refspec,
+                ],
+                "restoring request run source against its pinned base",
+            )?;
+            fs::remove_file(&bundle).map_err(ApiError::internal)?;
+            Ok(base_revision)
+        }
+    }
+}
+
+fn verify_standalone_bundle(repo: &Path, bytes: &[u8]) -> Result<(), ApiError> {
+    let source = repo.join("published.bundle");
+    let clone = repo.join("standalone.git");
+    write_private_file(&source, bytes)?;
+    run_git(
+        None,
+        &[
+            "clone",
+            "--bare",
+            "--no-local",
+            source.to_string_lossy().as_ref(),
+            clone.to_string_lossy().as_ref(),
+        ],
+        "verifying standalone run source bundle",
+    )?;
+    let expected = git_stdout_text(
+        repo,
+        &["rev-parse", &format!("refs/heads/{DEFAULT_GIT_BRANCH}")],
+        "reading run source head",
+    )?;
+    let actual = git_stdout_text(
+        &clone,
+        &["rev-parse", &format!("refs/heads/{DEFAULT_GIT_BRANCH}")],
+        "reading standalone run source head",
+    )?;
+    if expected != actual {
+        return Err(ApiError::infrastructure_unavailable(
+            "standalone run source does not match its pinned head",
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn inspect_manual_run_bundle(

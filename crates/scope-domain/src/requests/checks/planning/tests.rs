@@ -18,6 +18,7 @@ use crate::{
 
 fn request() -> Request {
     let mut request = open_request();
+    request.base_main_oid = "f".repeat(40);
     request.head_oid = "a".repeat(40);
     request.git_snapshot = Some(SourceBlob {
         content_ref: ContentRef::git_bundle_sha256("b".repeat(64)),
@@ -96,6 +97,11 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
                     assert_eq!(run.trigger, RunTrigger::Request);
                     assert_eq!(run.requested_by_user_id.as_deref(), Some("actor"));
                     assert_eq!(run.source.git_oid(), request.head_oid);
+                    assert_eq!(
+                        run.source.request_git_source().map(|(_, base)| base),
+                        (audience == RequestAudience::Private)
+                            .then_some(request.base_main_oid.as_str())
+                    );
                     assert_eq!(run.created_at_unix, 30);
                 }
             } else {

@@ -22,6 +22,11 @@ pub enum RunSource {
     EphemeralGitBundle {
         object: SourceBlob,
     },
+    RequestGitSnapshot {
+        object: SourceBlob,
+        /// A Git-backed private request snapshot may omit history reachable from this commit.
+        base_oid: String,
+    },
     AcceptedGitHead {
         repository_id: String,
         head: GitHead,
@@ -39,6 +44,17 @@ impl RunSource {
             ));
         }
         Ok(Self::EphemeralGitBundle { object })
+    }
+
+    pub fn request_git_snapshot(object: SourceBlob, base_oid: String) -> Result<Self, DomainError> {
+        validate_source_blob(&object, "request run source snapshot")?;
+        if !matches!(object.content_ref, ContentRef::GitBundleSha256(_)) {
+            return Err(DomainError::invalid_input(
+                "request run source snapshot must be a Git bundle",
+            ));
+        }
+        validate_git_oid("request run source base", &base_oid)?;
+        Ok(Self::RequestGitSnapshot { object, base_oid })
     }
 
     pub fn accepted_git_head(
@@ -84,20 +100,29 @@ impl RunSource {
     pub fn ephemeral_bundle(&self) -> Option<&SourceBlob> {
         match self {
             Self::EphemeralGitBundle { object } => Some(object),
-            Self::AcceptedGitHead { .. } => None,
+            Self::RequestGitSnapshot { .. } | Self::AcceptedGitHead { .. } => None,
+        }
+    }
+
+    pub fn request_git_source(&self) -> Option<(&SourceBlob, &str)> {
+        match self {
+            Self::RequestGitSnapshot { object, base_oid } => Some((object, base_oid)),
+            Self::EphemeralGitBundle { .. } | Self::AcceptedGitHead { .. } => None,
         }
     }
 
     pub fn retained_objects(&self) -> Vec<&SourceBlob> {
         match self {
-            Self::EphemeralGitBundle { object } => vec![object],
+            Self::EphemeralGitBundle { object } | Self::RequestGitSnapshot { object, .. } => {
+                vec![object]
+            }
             Self::AcceptedGitHead { .. } => Vec::new(),
         }
     }
 
     pub fn retained_git_segments(&self) -> Vec<&GitSegmentRef> {
         match self {
-            Self::EphemeralGitBundle { .. } => Vec::new(),
+            Self::EphemeralGitBundle { .. } | Self::RequestGitSnapshot { .. } => Vec::new(),
             Self::AcceptedGitHead { pack_spans, .. } => {
                 pack_spans.iter().map(|span| &span.segment).collect()
             }
@@ -106,14 +131,18 @@ impl RunSource {
 
     pub fn source_identity(&self) -> &str {
         match self {
-            Self::EphemeralGitBundle { object } => &object.sha256,
+            Self::EphemeralGitBundle { object } | Self::RequestGitSnapshot { object, .. } => {
+                &object.sha256
+            }
             Self::AcceptedGitHead { head, .. } => head.frontier.digest(),
         }
     }
 
     pub fn git_oid(&self) -> &str {
         match self {
-            Self::EphemeralGitBundle { object } => &object.git_oid,
+            Self::EphemeralGitBundle { object } | Self::RequestGitSnapshot { object, .. } => {
+                &object.git_oid
+            }
             Self::AcceptedGitHead { head, .. } => &head.head_oid,
         }
     }
@@ -126,7 +155,7 @@ impl RunSource {
                 pack_spans,
                 ..
             } => Some((repository_id, head, pack_spans)),
-            Self::EphemeralGitBundle { .. } => None,
+            Self::EphemeralGitBundle { .. } | Self::RequestGitSnapshot { .. } => None,
         }
     }
 }

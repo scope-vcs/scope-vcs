@@ -224,3 +224,114 @@ fn thin_snapshot_takes_its_base_from_the_base_repo() {
         Some(head)
     );
 }
+
+#[test]
+fn snapshot_only_omits_a_base_reachable_from_accepted_git_main() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    run_git(
+        None,
+        &["init", "-b", "main", source.to_string_lossy().as_ref()],
+        "init source",
+    )
+    .unwrap();
+    let commit = |message: &str| {
+        run_git(
+            Some(&source),
+            &[
+                "-c",
+                "user.name=Scope Test",
+                "-c",
+                "user.email=scope@example.com",
+                "commit",
+                "--allow-empty",
+                "-m",
+                message,
+            ],
+            "commit",
+        )
+        .unwrap();
+        git_stdout(&source, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string()
+    };
+    let git_base = commit("Git base");
+    run_git(Some(&source), &["checkout", "-b", "git-request"], "branch").unwrap();
+    commit("Git request");
+    run_git(Some(&source), &["checkout", "main"], "checkout main").unwrap();
+    let accepted_main = commit("accepted main advanced");
+    run_git(
+        Some(&source),
+        &["checkout", "--orphan", "projection"],
+        "start pre-Git projection history",
+    )
+    .unwrap();
+    let projection_base = commit("projection base");
+    run_git(
+        Some(&source),
+        &["checkout", "-b", "pre-git-request"],
+        "start pre-Git request",
+    )
+    .unwrap();
+    let projected_head = commit("projection request");
+
+    assert_eq!(
+        thin_snapshot_base(
+            RequestAudience::Private,
+            &git_base,
+            Some(&accepted_main),
+            &source,
+        )
+        .unwrap(),
+        Some(git_base.as_str())
+    );
+    assert_eq!(
+        thin_snapshot_base(
+            RequestAudience::Private,
+            &projection_base,
+            Some(&accepted_main),
+            &source,
+        )
+        .unwrap(),
+        None
+    );
+    assert_eq!(
+        thin_snapshot_base(
+            RequestAudience::Public,
+            &git_base,
+            Some(&accepted_main),
+            &source,
+        )
+        .unwrap(),
+        None
+    );
+
+    let base = thin_snapshot_base(
+        RequestAudience::Private,
+        &projection_base,
+        Some(&accepted_main),
+        &source,
+    )
+    .unwrap();
+    let (_, bytes) = git_snapshot_from_ref(&source, "refs/heads/pre-git-request", base).unwrap();
+    let bundle = root.path().join("pre-git-request.bundle");
+    fs::write(&bundle, bytes).unwrap();
+    assert!(bundle_prerequisites(&bundle).unwrap().is_empty());
+    let checkout = root.path().join("runner.git");
+    run_git(
+        None,
+        &[
+            "clone",
+            "--bare",
+            "--no-local",
+            bundle.to_string_lossy().as_ref(),
+            checkout.to_string_lossy().as_ref(),
+        ],
+        "clone pre-Git request bundle into empty runner",
+    )
+    .unwrap();
+    assert_eq!(
+        git_stdout(&checkout, &["rev-parse", "refs/heads/pre-git-request"]).trim(),
+        projected_head
+    );
+}
