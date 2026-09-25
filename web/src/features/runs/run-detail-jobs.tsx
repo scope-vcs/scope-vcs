@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type {
   StepLogs,
@@ -47,32 +46,24 @@ export function RunDetailJobs({
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-border lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
       <nav
-        aria-labelledby="jobs-heading"
-        className="min-w-0 border-b border-border lg:overflow-y-auto lg:border-b-0 lg:border-r"
+        aria-label="Jobs"
+        className="flex min-w-0 items-center border-b border-border lg:block lg:overflow-y-auto lg:border-b-0 lg:border-r lg:py-2"
       >
-        <div className="flex items-center justify-between gap-2 px-4 pt-3">
-          <h2 className="text-sm font-semibold" id="jobs-heading">
-            Jobs
-          </h2>
-          <Button
-            aria-pressed={showGraph}
-            onClick={onToggleGraph}
-            size="sm"
-            variant={showGraph ? 'secondary' : 'ghost'}
-          >
-            Graph
-          </Button>
-        </div>
-        <p className="px-4 text-xs text-muted-foreground">{jobSummary(jobs)}</p>
         <RunJobList
           jobs={orderedJobs}
           onSelectJob={onSelectJob}
           selectedJobKey={selectedJobKey}
         />
+        <button
+          aria-pressed={showGraph}
+          className="shrink-0 px-4 py-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          onClick={onToggleGraph}
+          type="button"
+        >
+          {showGraph ? 'Hide graph' : 'Show graph'}
+        </button>
       </nav>
-      {/* Keyed by job so a newly picked job starts at its top instead of
-          inheriting the previous job's scroll position. */}
-      <div className="min-w-0 lg:overflow-y-auto" key={selectedJobKey ?? 'none'}>
+      <div className="flex min-w-0 flex-col lg:min-h-0">
         {showGraph ? (
           <RunJobGraph
             jobs={jobs}
@@ -81,8 +72,14 @@ export function RunDetailJobs({
           />
         ) : null}
         {selectedJob ? (
-          <div id={runJobPanelId(selectedJob.job.key)}>
+          <div
+            className="flex flex-col lg:min-h-0 lg:flex-1"
+            id={runJobPanelId(selectedJob.job.key)}
+          >
+            {/* Keyed by job so a newly picked job starts fresh: scrolled to
+                its top, with the environment panel closed. */}
             <RunDetailSteps
+              key={selectedJob.job.key}
               attempt={attemptForJob(selectedJob, attemptOverrides, selection)}
               jobDetail={selectedJob}
               onSelectAttempt={(attemptId) =>
@@ -132,23 +129,15 @@ function RunJobList({
             >
               <RunStatusIcon state={job.state} />
               <span className="min-w-0 flex-1 truncate">{job.key}</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                <RunDuration end={job.completed_at_unix} start={job.started_at_unix} />
-              </span>
+              {job.started_at_unix === null ? null : (
+                <span className="text-xs font-normal text-muted-foreground">
+                  <RunDuration end={job.completed_at_unix} start={job.started_at_unix} />
+                </span>
+              )}
             </button>
           </li>
         )
       })}
     </ul>
   )
-}
-
-function jobSummary(jobs: readonly RepositoryRunJobDetailResponse[]) {
-  const counts = new Map<string, number>()
-  for (const { job } of jobs) {
-    counts.set(job.state, (counts.get(job.state) ?? 0) + 1)
-  }
-  return [...counts.entries()]
-    .map(([state, count]) => `${count} ${state}`)
-    .join(' · ') || 'No jobs'
 }
