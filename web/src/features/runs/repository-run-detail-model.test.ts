@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   attemptForJob,
-  defaultShowGraph,
+  jobsHaveDependencies,
   latestAttempt,
   mergeStepLogPage,
   mergeStepLogs,
@@ -199,19 +199,16 @@ describe('repository run detail model', () => {
     )
   })
 
-  it('only defaults to the graph once dependencies make the strip hard to scan', () => {
+  it('offers the graph only when some job waits on another', () => {
     const independent = [0, 1, 2, 3].map((index) =>
       job({ key: `job-${index}`, state: 'succeeded' }))
-    assert.equal(defaultShowGraph(independent), false)
+    assert.equal(jobsHaveDependencies(independent), false)
 
     const dependent = [
       job({ key: 'a', state: 'succeeded' }),
       job({ key: 'b', needs: ['a'], state: 'succeeded' }),
-      job({ key: 'c', state: 'succeeded' }),
-      job({ key: 'd', state: 'succeeded' }),
     ]
-    assert.equal(defaultShowGraph(dependent), true)
-    assert.equal(defaultShowGraph(dependent.slice(0, 3)), false)
+    assert.equal(jobsHaveDependencies(dependent), true)
   })
 
   it('merges incremental logs by stable position', () => {

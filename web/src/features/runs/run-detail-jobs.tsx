@@ -1,10 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import type {
   StepLogs,
   StepSelection,
 } from './repository-run-detail-controller'
-import { attemptForJob } from './repository-run-detail-model'
+import { attemptForJob, jobsHaveDependencies } from './repository-run-detail-model'
 import { RunDetailSteps } from './run-detail-steps'
 import { RunDuration } from './run-duration'
 import { RUN_JOB_LIST_CLASS, RUN_JOB_ROW_CLASS } from './run-job-layout'
@@ -42,6 +42,23 @@ export function RunDetailJobs({
 }) {
   const selectedJob = jobs.find(({ job }) => job.key === selectedJobKey) ?? null
   const orderedJobs = useMemo(() => orderJobsByDependency(jobs), [jobs])
+  const graphShown = jobsHaveDependencies(jobs) && showGraph
+  const jobListRef = useRef<HTMLDivElement>(null)
+  // The graph stands in for the job pane, so picking a job anywhere closes it.
+  function pickJob(job: RepositoryRunJobDetailResponse) {
+    onSelectJob(job)
+    if (showGraph) onToggleGraph()
+  }
+  // The picked node unmounts with the graph; hand focus to the same job in
+  // the list so keyboard navigation keeps its place.
+  function pickJobFromGraph(job: RepositoryRunJobDetailResponse) {
+    pickJob(job)
+    requestAnimationFrame(() => {
+      jobListRef.current
+        ?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')
+        ?.focus()
+    })
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-border lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
@@ -49,34 +66,37 @@ export function RunDetailJobs({
         aria-label="Jobs"
         className="flex min-w-0 items-center border-b border-border lg:block lg:overflow-y-auto lg:border-b-0 lg:border-r lg:py-2"
       >
-        <RunJobList
-          jobs={orderedJobs}
-          onSelectJob={onSelectJob}
-          selectedJobKey={selectedJobKey}
-        />
-        <button
-          aria-pressed={showGraph}
-          className="shrink-0 px-4 py-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          onClick={onToggleGraph}
-          type="button"
-        >
-          {showGraph ? 'Hide graph' : 'Show graph'}
-        </button>
+        <div className="min-w-0 flex-1" ref={jobListRef}>
+          <RunJobList
+            jobs={orderedJobs}
+            onSelectJob={pickJob}
+            selectedJobKey={selectedJobKey}
+          />
+        </div>
+        {jobsHaveDependencies(jobs) ? (
+          <button
+            aria-pressed={showGraph}
+            className="shrink-0 px-4 py-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            onClick={onToggleGraph}
+            type="button"
+          >
+            {showGraph ? 'Hide graph' : 'Show graph'}
+          </button>
+        ) : null}
       </nav>
       <div className="flex min-w-0 flex-col lg:min-h-0">
-        {showGraph ? (
-          // Bounded so a tall graph can't squeeze the selected job out of the pane.
-          <div className="overflow-y-auto lg:max-h-[45%] lg:shrink-0">
-            <RunJobGraph
-              jobs={jobs}
-              onSelectJob={onSelectJob}
-              selectedJobKey={selectedJobKey}
-            />
-          </div>
+        {graphShown ? (
+          <RunJobGraph
+            jobs={jobs}
+            onSelectJob={pickJobFromGraph}
+            selectedJobKey={selectedJobKey}
+          />
         ) : null}
         {selectedJob ? (
+          // Hidden rather than unmounted under the graph, so hiding the graph
+          // returns to the same scroll position, panel and wrap setting.
           <div
-            className="flex flex-col lg:min-h-0 lg:flex-1"
+            className={graphShown ? 'hidden' : 'flex flex-col lg:min-h-0 lg:flex-1'}
             id={runJobPanelId(selectedJob.job.key)}
           >
             {/* Keyed by job so a newly picked job starts fresh: scrolled to
@@ -93,7 +113,7 @@ export function RunDetailJobs({
               stepLogs={stepLogs}
             />
           </div>
-        ) : (
+        ) : graphShown ? null : (
           <p className="px-4 py-6 text-sm text-muted-foreground">
             {jobs.length === 0 ? 'This workflow has no jobs.' : 'Select a job to see its steps.'}
           </p>
