@@ -4,7 +4,12 @@ import { Button } from '@/components/ui/button'
 import { UserButton } from '@clerk/tanstack-react-start'
 import { Plus } from 'lucide-react'
 import { AccountPageHeader } from './account-page-header'
-import { CliLoginSection, CliSessionListSkeleton, CliSessionsSection } from './account-sections'
+import {
+  AccountDangerZoneSection,
+  CliLoginSection,
+  CliSessionListSkeleton,
+  CliSessionsSection,
+} from './account-sections'
 
 // Only the session list is data; the rest of the page is drawn as loaded.
 export function AccountPagePending() {
@@ -25,6 +30,7 @@ export function AccountPagePending() {
             <CliSessionListSkeleton />
           </CliSessionsSection>
         </SectionRows>
+        <AccountDangerZoneSection />
       </div>
     </ApplicationPendingShell>
   )

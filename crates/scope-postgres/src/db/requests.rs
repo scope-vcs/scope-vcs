@@ -171,6 +171,7 @@ impl RequestStore {
             .branch_mutable;
         let event_id_exists = request_event_by_id(&tx, &input.event_id).await?.is_some();
         let active_auto_merge = lock_active_intent_for_request(&tx, &request.id).await?;
+        let actor_user_id = input.actor_user_id.clone();
         let mutation = record_request_revision(request, event_id_exists, input)?;
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
@@ -194,7 +195,7 @@ impl RequestStore {
         super::request_attention::reactivate_attention_for_activity(
             &tx,
             &mutation.request.id,
-            &mutation.revision.actor_user_id,
+            &actor_user_id,
             mutation.request.activity_version,
             mutation.revision.created_at_unix,
         )

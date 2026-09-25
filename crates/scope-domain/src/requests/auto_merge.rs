@@ -510,7 +510,7 @@ fn transition(
     let event = RequestEvent {
         id: event_id,
         request_id: request.id.clone(),
-        actor_user_id: event_actor_user_id,
+        actor_user_id: Some(event_actor_user_id),
         kind,
         position,
         payload,

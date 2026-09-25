@@ -1,3 +1,4 @@
+import { deleteAccountForRequest } from '@/api/account'
 import {
   createCliExchangeGrantForRequest,
   listCliSessionsForRequest,
@@ -15,6 +16,7 @@ import { AccountPageHeader } from '@/features/account/account-page-header'
 import { AccountPagePending } from '@/features/account/account-page-pending'
 import { CliLoginSection, CliSessionsSection } from '@/features/account/account-sections'
 import { CliSessionList } from '@/features/account/cli-session-list'
+import { DeleteAccountSection } from '@/features/account/delete-account-section'
 import { UserButton } from '@clerk/tanstack-react-start'
 import { AbsoluteTimestamp } from '@/components/timestamp'
 import { createFileRoute, redirect } from '@tanstack/react-router'
@@ -40,6 +42,8 @@ const loadCliSessions = createServerFn({ method: 'GET' }).handler(
 const createCliExchangeGrant = createServerFn({ method: 'POST' }).handler(
   createCliExchangeGrantForRequest,
 )
+
+const deleteAccount = createServerFn({ method: 'POST' }).handler(deleteAccountForRequest)
 
 const revokeCliSession = createServerFn({ method: 'POST' })
   .validator(parseRevokeCliSessionInput)
@@ -136,6 +140,8 @@ function AccountRoute() {
             />
           </CliSessionsSection>
         </SectionRows>
+
+        <DeleteAccountSection deleteAccount={() => deleteAccount()} />
       </PageContent>
     </AppShell>
   )

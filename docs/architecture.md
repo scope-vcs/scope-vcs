@@ -120,6 +120,12 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   for due emails; an expiring database claim lets several API processes share
   them without working on the same email at once. `SCOPE_RESEND_API_KEY` enables delivery; without it emails
   fail at once and owners copy links instead;
+- `account_deletion.rs` for deleting the signed-in account. The domain refuses
+  while the account owns repositories other members use; owned repositories
+  leave through repository deletion, and authored work elsewhere stays with a
+  deleted author. `clerk_user_deletion.rs` then deletes the Clerk user through
+  `clerk_users.rs`, retrying from a database queue until Clerk confirms or
+  answers 404. `CLERK_SECRET_KEY` enables it; without it deletions stay queued;
 - `git_receive/` for receive authorization, the separate main-push and
   request-ref completion paths, and completing open requests whose head a
   committed main push carries;

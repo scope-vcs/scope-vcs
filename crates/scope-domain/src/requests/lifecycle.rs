@@ -118,7 +118,7 @@ pub fn start_request(
         id: input.id,
         repo_id: input.repo_id,
         name: input.name,
-        author_user_id: input.author_user_id,
+        author_user_id: Some(input.author_user_id),
         author_role: input.author_role,
         audience: input.audience,
         base_main_oid: input.base_main_oid.clone(),
@@ -212,7 +212,7 @@ pub fn record_request_revision(
     let event = RequestEvent {
         id: input.event_id,
         request_id: request.id.clone(),
-        actor_user_id: input.actor_user_id,
+        actor_user_id: Some(input.actor_user_id),
         kind: RequestEventKind::RevisionPushed,
         position,
         payload: RequestEventPayload::RevisionPushed {
@@ -281,7 +281,7 @@ pub fn close_request(
     let event = RequestEvent {
         id: input.event_id,
         request_id: request.id.clone(),
-        actor_user_id: input.actor_user_id,
+        actor_user_id: Some(input.actor_user_id),
         kind: RequestEventKind::Closed,
         position,
         payload: RequestEventPayload::Closed {
@@ -297,7 +297,7 @@ pub(super) fn ensure_request_close_allowed(
     actor_user_id: &str,
     actor_is_maintainer: bool,
 ) -> Result<(), DomainError> {
-    let actor_is_author = request.author_user_id == actor_user_id;
+    let actor_is_author = request.is_author(actor_user_id);
     match request.state() {
         RequestState::Draft if !actor_is_author => {
             return Err(DomainError::forbidden(

@@ -19,5 +19,6 @@
   "m0059_worker_history_permissions.rs": "75bc861f75681f1c489166b4eb5f6c73ef3fc972ce3ca7dd12c7e81d4c98db69",
   "m0060_capacity_retries.rs": "3186fea14c47198a0c95565dc110ac455161f156b2c5fdb94ff0a0ab51324364",
   "m0061_public_request_check_source.rs": "6d3f2f3a62df46e37cc67f447d2d1533c84e6e5b4497383e670f64d7b2c24a89",
-  "m0062_request_run_source_base.rs": "16bab9b304ba5c873f80475a3417ff12d106a0bed06f7eaa168a84c3272dba99"
+  "m0062_request_run_source_base.rs": "16bab9b304ba5c873f80475a3417ff12d106a0bed06f7eaa168a84c3272dba99",
+  "m0063_account_deletion.rs": "7af6974ebddf86cae977caef7f09274beb8875ee66e830cabce2d9bec03e4e20"
 }

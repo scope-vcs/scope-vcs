@@ -55,7 +55,7 @@ struct QueueModel {
     id: String,
     name: String,
     title: String,
-    author_user_id: String,
+    author_user_id: Option<String>,
     author_role: String,
     audience: String,
     head_oid: String,
@@ -116,10 +116,8 @@ impl RequestStore {
         let mut user_ids = Vec::with_capacity(rows.len() * 2);
         let mut projected = Vec::with_capacity(rows.len());
         for row in rows {
-            user_ids.push(row.author_user_id.clone());
-            if let Some(claimer) = &row.claimer_user_id {
-                user_ids.push(claimer.clone());
-            }
+            user_ids.extend(row.author_user_id.clone());
+            user_ids.extend(row.claimer_user_id.clone());
             projected.push(row.try_into_queue_row(&input)?);
         }
         let users = load_users_by_ids(self.db.as_ref(), user_ids).await?;
@@ -158,7 +156,7 @@ impl QueueModel {
         let classification = classify_request_queue_item(RequestQueueFacts {
             request_state: state,
             request_activity_version: activity_version,
-            request_author_user_id: &self.author_user_id,
+            request_author_user_id: self.author_user_id.as_deref(),
             viewer_user_id: input.viewer_user_id,
             viewer_is_maintainer: input.access.is_maintainer(),
             viewer_is_invitee: self.viewer_is_invitee,

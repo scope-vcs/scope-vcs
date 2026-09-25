@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { requestMergeabilityLabel, requestMergeabilityTone } from './request-labels'
 import { useRequestWorkspace } from './request-workspace-context'
+import { actorHandle } from './request-actor'
 
 /** Title with pane-responsive metadata and request actions. */
 export function RequestDetailHeader({
@@ -35,7 +36,7 @@ export function RequestDetailHeader({
           </span>
           {queueItem ? (
             <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-              <span className="font-medium text-foreground">{queueItem.author.handle}</span>
+              <span className="font-medium text-foreground">{actorHandle(queueItem.author)}</span>
               <span>opened</span>
               <RelativeTimestamp
                 value={request.submitted_at_unix ?? request.created_at_unix}

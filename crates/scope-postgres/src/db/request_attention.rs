@@ -72,7 +72,7 @@ impl RequestStore {
         let classification = classify_request_queue_item(RequestQueueFacts {
             request_state: request.state(),
             request_activity_version: request.activity_version,
-            request_author_user_id: &request.author_user_id,
+            request_author_user_id: request.author_user_id.as_deref(),
             viewer_user_id: Some(&command.actor_user_id),
             viewer_is_maintainer: repo.access.is_maintainer(),
             viewer_is_invitee: is_invitee,

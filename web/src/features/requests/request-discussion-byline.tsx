@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import type { CSSProperties, ReactNode } from 'react'
-import type { RequestActorSummary } from './request-discussion-types'
+import { actorHandle, type RecordedActor } from './request-actor'
 import { RelativeTimestamp } from '@/components/timestamp'
 
 /**
@@ -13,7 +13,7 @@ export function RequestDiscussionByline({
   createdAtUnix,
   small = false,
 }: {
-  author: RequestActorSummary
+  author: RecordedActor
   children?: ReactNode
   createdAtUnix: number
   small?: boolean
@@ -23,7 +23,7 @@ export function RequestDiscussionByline({
       <span
         className={cn('truncate font-semibold', small ? 'text-[13px]' : 'text-sm')}
       >
-        {author.handle}
+        {actorHandle(author)}
       </span>
       <RelativeTimestamp
         className="whitespace-nowrap text-[13px] text-muted-foreground"

@@ -42,6 +42,17 @@ pub(crate) fn request_actor_summary_response(
     })
 }
 
+/// The author or actor recorded on durable work: `None` once that account
+/// was deleted.
+pub(crate) fn recorded_actor_response(
+    user_id: Option<&str>,
+    users: &BTreeMap<String, UserAccount>,
+) -> Result<Option<RequestActorSummaryResponse>, ApiError> {
+    user_id
+        .map(|user_id| request_actor_summary_response(user_id, users))
+        .transpose()
+}
+
 pub(crate) use scope_api_contract::{
     RepositoryRunHistoryPageResponse, RepositoryRunLogResponse, RepositoryRunStepLogPageResponse,
     RepositoryRunWorkflowListResponse, RepositoryRunWorkflowResponse,

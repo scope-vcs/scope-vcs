@@ -24,6 +24,7 @@ macro_rules! routes {
 
 routes! {
     exported {
+        ACCOUNT = "/v1/account" => "account";
         ACCOUNT_SESSION = "/v1/session" => "accountSession";
         CLI_DEVICE_LOGIN_COMPLETE = "/v1/cli/device-login/{user_code}/complete"
             => "cliDeviceLoginComplete";

@@ -22,7 +22,7 @@ pub struct RequestDiscussionReplyReadModel {
 pub struct RequestDiscussionReplyReferenceReadModel {
     pub id: String,
     pub position: u64,
-    pub author_user_id: String,
+    pub author_user_id: Option<String>,
     pub body_markdown: String,
 }
 

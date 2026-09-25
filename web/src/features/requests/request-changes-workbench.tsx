@@ -44,6 +44,7 @@ import type {
   RequestDiscussion,
   RequestDiscussionPage,
 } from './request-discussion-types'
+import { actorHandle } from './request-actor'
 
 export type RequestChangesSearch = {
   commit?: string
@@ -376,7 +377,7 @@ function RequestCommitContext({
     <div className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
       <div className="flex flex-wrap items-center gap-2">
         <GitCommit className="size-3.5" />
-        <span>Revision {revision.position} by {revision.actor.handle}</span>
+        <span>Revision {revision.position} by {actorHandle(revision.actor)}</span>
         {revision.old_head_oid && revision.new_head_oid ? (
           <span className="font-mono">
             {shortOid(revision.old_head_oid)} → {shortOid(revision.new_head_oid)}

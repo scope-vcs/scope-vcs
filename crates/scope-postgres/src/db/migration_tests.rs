@@ -45,6 +45,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0060_capacity_retries",
     "m0061_public_request_check_source",
     "m0062_request_run_source_base",
+    "m0063_account_deletion",
 ];
 
 pub(super) async fn isolated_database() -> (

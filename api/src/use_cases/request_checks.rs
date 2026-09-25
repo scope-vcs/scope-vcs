@@ -120,6 +120,10 @@ async fn evaluate_saved_head(
     else {
         return Ok(None);
     };
+    // Runs are started on the pusher's behalf; a deleted account starts none.
+    let Some(pusher_user_id) = revision.actor_user_id.as_deref() else {
+        return Ok(None);
+    };
     let revisions = match request.audience {
         RequestAudience::Public => public_request_workflow_revisions(state, request).await?,
         RequestAudience::Private => {
@@ -137,17 +141,13 @@ async fn evaluate_saved_head(
     let pusher_is_maintainer = state
         .metadata
         .repositories()
-        .repository_read_access(
-            &repo.owner_handle,
-            &repo.name,
-            Some(&revision.actor_user_id),
-        )
+        .repository_read_access(&repo.owner_handle, &repo.name, Some(pusher_user_id))
         .await?
         .is_some_and(|pusher| pusher.access.is_maintainer());
     evaluate_request_checks(
         state,
         request,
-        &revision.actor_user_id,
+        pusher_user_id,
         pusher_is_maintainer,
         revisions,
     )

@@ -31,7 +31,7 @@ impl RequestStore {
             &request,
             SubmitRequestInput {
                 request_id: command.request_id,
-                actor_is_author: command.actor_user_id == request.author_user_id,
+                actor_is_author: request.is_author(&command.actor_user_id),
                 actor_user_id: command.actor_user_id,
                 actor_can_submit,
                 event_id: command.event_id,

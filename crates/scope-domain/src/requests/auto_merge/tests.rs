@@ -14,7 +14,7 @@ fn open_request() -> Request {
         id: "request_1".into(),
         repo_id: "owner/repo".into(),
         name: "change".into(),
-        author_user_id: "author".into(),
+        author_user_id: Some("author".into()),
         author_role: RequestActorRole::Public,
         audience: super::super::RequestAudience::Public,
         base_main_oid: "base".into(),
@@ -46,7 +46,7 @@ fn revision(head_oid: &str) -> RequestRevision {
         id: "revision_1".into(),
         request_id: "request_1".into(),
         position: 2,
-        actor_user_id: "author".into(),
+        actor_user_id: Some("author".into()),
         old_head_oid: "base".into(),
         new_head_oid: head_oid.into(),
         git_snapshot: open_request().git_snapshot.unwrap(),
@@ -129,7 +129,10 @@ fn cancellation_is_fenced_and_terminal() {
         cancelled.intent.status,
         RequestAutoMergeIntentStatus::Cancelled
     );
-    assert_eq!(cancelled.event.actor_user_id, "other-maintainer");
+    assert_eq!(
+        cancelled.event.actor_user_id.as_deref(),
+        Some("other-maintainer")
+    );
     assert!(cancel_request_auto_merge(&request, &cancelled.intent, input).is_err());
 }
 
