@@ -38,7 +38,9 @@ test('scans the immutable executable child after copying the verified source dig
   const { root, result } = publish(t, manifest());
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(join(root, 'scan-args'), 'utf8'), `remote\nregistry.test/scope/checks@${executable}\nchecks-image-soci-scan.json\n`);
-  assert.match(readFileSync(join(root, 'copy-commands'), 'utf8'), new RegExp(`docker://ghcr.io/scope/checks@${source}`));
+  const commands = readFileSync(join(root, 'copy-commands'), 'utf8');
+  assert.match(commands, new RegExp(`docker://ghcr.io/scope/checks@${source}`));
+  assert.match(commands, /convert --standalone --platform linux\/amd64 --min-layer-size 150000000/);
 });
 
 test('propagates a failed or unavailable scan to prevent promotion', (t) => {

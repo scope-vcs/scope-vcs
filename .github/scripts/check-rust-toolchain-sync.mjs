@@ -27,7 +27,7 @@ const REPLICAS = [
   {
     path: ".scope/images/checks/Dockerfile",
     label: "Rust base image",
-    pattern: /FROM\s+--platform=linux\/amd64\s+rust:([0-9]+\.[0-9]+\.[0-9]+)-bookworm@sha256:[0-9a-f]{64}/g,
+    pattern: /FROM\s+--platform=linux\/amd64\s+rust:([0-9]+\.[0-9]+\.[0-9]+)-(?:slim-)?bookworm@sha256:[0-9a-f]{64}/g,
     count: 2,
   },
   {
@@ -99,12 +99,12 @@ export function validateRustToolchainSync(files) {
   }
 
   const dockerfile = files[".scope/images/checks/Dockerfile"] ?? "";
-  const baseDigests = [
+  const baseImages = [
     ...dockerfile.matchAll(
-      /FROM\s+--platform=linux\/amd64\s+rust:[^\s@]+@(sha256:[0-9a-f]{64})/g,
+      /FROM\s+--platform=linux\/amd64\s+rust:([^\s@]+)@(sha256:[0-9a-f]{64})/g,
     ),
-  ].map((match) => match[1]);
-  if (baseDigests.length === 2 && new Set(baseDigests).size !== 1) {
+  ].map((match) => ({ tag: match[1], digest: match[2] }));
+  if (baseImages.length === 2 && baseImages[0].tag === baseImages[1].tag && baseImages[0].digest !== baseImages[1].digest) {
     errors.push(".scope/images/checks/Dockerfile: Rust stages must use the same base digest");
   }
 

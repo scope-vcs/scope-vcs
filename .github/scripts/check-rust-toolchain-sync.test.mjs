@@ -25,3 +25,14 @@ test("a mismatched checks image fails with the replica name and versions", () =>
     `.scope/images/checks/Dockerfile: Rust base image must match Rust ${expectedVersion}; found 1.97.0`,
   ]);
 });
+
+test("the same Rust image tag cannot use different base digests", () => {
+  const files = readToolchainFiles();
+  const version = files["rust-toolchain.toml"].match(/channel\s*=\s*"([^"]+)"/)[1];
+  files[".scope/images/checks/Dockerfile"] = files[".scope/images/checks/Dockerfile"]
+    .replace(`rust:${version}-slim-bookworm@`, `rust:${version}-bookworm@`);
+
+  assert.deepEqual(validateRustToolchainSync(files), [
+    ".scope/images/checks/Dockerfile: Rust stages must use the same base digest",
+  ]);
+});
