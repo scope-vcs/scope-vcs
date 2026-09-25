@@ -3,7 +3,7 @@ import { Check, Circle, LoaderCircle, Minus, X } from 'lucide-react'
 import { type RunTone, runStatus } from './run-status'
 import type { RepositoryRunTerminalReason } from '@/api/types.generated'
 
-const TONE_TEXT_CLASS: Record<RunTone, string> = {
+export const RUN_TONE_TEXT_CLASS: Record<RunTone, string> = {
   danger: 'text-danger-strong',
   inert: 'text-muted-foreground',
   running: 'text-info-strong',
@@ -33,7 +33,7 @@ export function RunStatusIcon({
       aria-label={status.label}
       className={cn(
         'size-3.5 shrink-0',
-        TONE_TEXT_CLASS[status.tone],
+        RUN_TONE_TEXT_CLASS[status.tone],
         status.animated && 'animate-spin',
       )}
     />
