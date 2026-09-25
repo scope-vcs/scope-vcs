@@ -10,6 +10,10 @@ pub const CLERK_PROVIDER: &str = "clerk";
 
 /// Longest wait between attempts to delete a Clerk user.
 pub const CLERK_USER_DELETION_MAX_RETRY_SECS: u64 = 6 * 60 * 60;
+/// How long a deleted account's Clerk user stays refused after Clerk confirms
+/// its deletion. Clerk tokens issued before then stay valid until they expire,
+/// five minutes for the `scope_api` template, and must not recreate the account.
+pub const CLERK_USER_DELETION_TOMBSTONE_SECS: u64 = 24 * 60 * 60;
 
 /// Owned repositories that other members still use. Deleting the account
 /// would delete them from under those members, so the owner deletes them

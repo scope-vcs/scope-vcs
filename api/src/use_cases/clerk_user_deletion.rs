@@ -27,13 +27,14 @@ pub(crate) async fn delete_due_clerk_users(
     )?;
     let now = current_time()?;
     let auth = state.metadata.auth();
+    auth.purge_completed_clerk_user_deletions(now).await?;
     let claimed = auth
         .claim_due_clerk_user_deletions(&claim_token, now, now + CLAIM_LEASE_SECS, BATCH_SIZE)
         .await?;
     for clerk_user_id in &claimed {
         let recorded = match state.clerk_users.delete_user(clerk_user_id).await {
             ClerkUserDeletion::Deleted => {
-                auth.complete_clerk_user_deletion(clerk_user_id, &claim_token)
+                auth.complete_clerk_user_deletion(clerk_user_id, &claim_token, current_time()?)
                     .await
             }
             ClerkUserDeletion::Retry(error) => {

@@ -6,7 +6,9 @@ use crate::db::{
 };
 use crate::error::PostgresErrorKind;
 use scope_domain::{
-    account::ExternalIdentity, policy::Visibility, repository::collaboration::RepositoryMember,
+    account::{ExternalIdentity, deletion::CLERK_USER_DELETION_TOMBSTONE_SECS},
+    policy::Visibility,
+    repository::collaboration::RepositoryMember,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use serde_json::{Value, json};
@@ -285,10 +287,28 @@ async fn a_failed_clerk_deletion_waits_and_is_claimed_again() {
         ["user_clerk"]
     );
     // The first worker's lapsed claim no longer settles the deletion.
-    auth.complete_clerk_user_deletion("user_clerk", "first")
+    auth.complete_clerk_user_deletion("user_clerk", "first", 43)
         .await
         .unwrap();
-    auth.complete_clerk_user_deletion("user_clerk", "second")
+    auth.complete_clerk_user_deletion("user_clerk", "second", 43)
+        .await
+        .unwrap();
+    let completed = "SELECT jsonb_agg(completed_at_unix) FROM scope_clerk_user_deletions";
+    assert_eq!(query_json(&store, completed).await, json!([43]));
+    // A completed deletion is never claimed again, and stays until tokens
+    // issued before it have expired.
+    assert!(
+        auth.claim_due_clerk_user_deletions("third", 10_000, 10_120, 5)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let tombstone_ends = 43 + CLERK_USER_DELETION_TOMBSTONE_SECS;
+    auth.purge_completed_clerk_user_deletions(tombstone_ends - 1)
+        .await
+        .unwrap();
+    assert_eq!(query_json(&store, completed).await, json!([43]));
+    auth.purge_completed_clerk_user_deletions(tombstone_ends)
         .await
         .unwrap();
     assert_eq!(

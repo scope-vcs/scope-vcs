@@ -1,17 +1,21 @@
 //! Clerk users of deleted accounts, waiting to be deleted from Clerk. Rows are
-//! written by account deletion and removed once Clerk confirms. A failed
-//! attempt waits and tries again, so a Clerk outage only delays the step.
+//! written by account deletion and marked completed once Clerk confirms. A
+//! failed attempt waits and tries again, so a Clerk outage only delays the
+//! step. Completed rows keep refusing the Clerk user until tokens issued before
+//! the deletion have expired, then they are purged.
 
 use super::{AuthStore, entities};
 use crate::error::PostgresError;
 use entities::clerk_user_deletion::{ActiveModel, Column, Entity};
-use scope_domain::account::deletion::clerk_user_deletion_retry_at;
+use scope_domain::account::deletion::{
+    CLERK_USER_DELETION_TOMBSTONE_SECS, clerk_user_deletion_retry_at,
+};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
     ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, IntoActiveModel, QueryFilter, QueryOrder,
     QuerySelect, TransactionTrait,
-    sea_query::{LockBehavior, LockType},
+    sea_query::{Expr, LockBehavior, LockType},
 };
 
 impl AuthStore {
@@ -27,6 +31,7 @@ impl AuthStore {
         let now = to_i64(now_unix)?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let rows = Entity::find()
+            .filter(Column::CompletedAtUnix.is_null())
             .filter(Column::NextAttemptAtUnix.lte(now))
             .filter(
                 Column::ClaimExpiresAtUnix
@@ -58,10 +63,31 @@ impl AuthStore {
         &self,
         clerk_user_id: &str,
         claim_token: &str,
+        now_unix: u64,
     ) -> Result<(), PostgresError> {
-        Entity::delete_many()
+        Entity::update_many()
+            .col_expr(Column::CompletedAtUnix, Expr::value(to_i64(now_unix)?))
+            .col_expr(Column::ClaimToken, Expr::value(Option::<String>::None))
+            .col_expr(Column::ClaimExpiresAtUnix, Expr::value(Option::<i64>::None))
             .filter(Column::ClerkUserId.eq(clerk_user_id))
             .filter(Column::ClaimToken.eq(claim_token))
+            .exec(self.db.as_ref())
+            .await
+            .map_err(PostgresError::internal)?;
+        Ok(())
+    }
+
+    /// Forgets completed deletions once no token issued before them can
+    /// still be valid.
+    pub async fn purge_completed_clerk_user_deletions(
+        &self,
+        now_unix: u64,
+    ) -> Result<(), PostgresError> {
+        let Some(cutoff) = now_unix.checked_sub(CLERK_USER_DELETION_TOMBSTONE_SECS) else {
+            return Ok(());
+        };
+        Entity::delete_many()
+            .filter(Column::CompletedAtUnix.lte(to_i64(cutoff)?))
             .exec(self.db.as_ref())
             .await
             .map_err(PostgresError::internal)?;
@@ -100,10 +126,10 @@ impl AuthStore {
     }
 }
 
-/// Whether the Clerk user belongs to a deleted account whose Clerk deletion
-/// has not finished. Such a user must not sign back in: a new account would
-/// be deleted along with the Clerk user.
-pub(super) async fn clerk_user_deletion_pending<C: ConnectionTrait>(
+/// Whether the Clerk user belongs to a deleted account. Until its Clerk
+/// deletion finishes, a new account would be deleted along with the Clerk user;
+/// afterwards, a token issued before the deletion must not recreate it.
+pub(super) async fn clerk_user_deletion_recorded<C: ConnectionTrait>(
     conn: &C,
     clerk_user_id: &str,
 ) -> Result<bool, PostgresError> {

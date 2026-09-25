@@ -73,6 +73,7 @@ pub mod clerk_user_deletion {
         pub claim_expires_at_unix: Option<i64>,
         pub last_error: Option<String>,
         pub created_at_unix: i64,
+        pub completed_at_unix: Option<i64>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

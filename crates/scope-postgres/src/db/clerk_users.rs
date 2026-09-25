@@ -1,6 +1,6 @@
 use super::{
     AuthStore, acquire_aggregate_lock, auth::load_user_by_id,
-    clerk_user_deletions::clerk_user_deletion_pending, entities,
+    clerk_user_deletions::clerk_user_deletion_recorded, entities,
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -87,7 +87,7 @@ where
     C: sea_orm::ConnectionTrait,
 {
     if identity.provider == CLERK_PROVIDER
-        && clerk_user_deletion_pending(conn, &identity.subject).await?
+        && clerk_user_deletion_recorded(conn, &identity.subject).await?
     {
         return Err(PostgresError::unauthenticated(
             "this Scope account was deleted",

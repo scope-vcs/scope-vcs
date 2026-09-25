@@ -118,7 +118,8 @@ impl MigrationTrait for Migration {
                         REFERENCES scope_users(id) ON DELETE RESTRICT;
 
                 -- Clerk users of deleted accounts, deleted from Clerk after the
-                -- Scope deletion commits. A row is removed once Clerk confirms.
+                -- Scope deletion commits. A completed row stays for a while so
+                -- tokens issued before the deletion cannot recreate the account.
                 CREATE TABLE scope_clerk_user_deletions (
                     clerk_user_id varchar PRIMARY KEY,
                     attempts integer NOT NULL DEFAULT 0,
@@ -127,10 +128,13 @@ impl MigrationTrait for Migration {
                     claim_expires_at_unix bigint,
                     last_error text,
                     created_at_unix bigint NOT NULL,
+                    completed_at_unix bigint,
                     CONSTRAINT scope_clerk_user_deletion_values CHECK (
                         length(btrim(clerk_user_id)) > 0 AND
                         attempts >= 0 AND next_attempt_at_unix >= 0 AND
                         ((claim_token IS NULL) = (claim_expires_at_unix IS NULL)) AND
+                        (completed_at_unix IS NULL OR
+                            (completed_at_unix >= 0 AND claim_token IS NULL)) AND
                         (last_error IS NULL OR octet_length(last_error) BETWEEN 1 AND 8192) AND
                         created_at_unix >= 0
                     )

@@ -195,6 +195,7 @@ impl AuthStore {
                     claim_expires_at_unix: Set(None),
                     last_error: Set(None),
                     created_at_unix: Set(created_at_unix),
+                    completed_at_unix: Set(None),
                 },
             )
             .on_conflict(

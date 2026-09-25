@@ -1,6 +1,5 @@
 import type { DeleteAccountResult } from '@/api/account'
 import { TypedConfirmationDialog } from '@/components/typed-confirmation-dialog'
-import { storeHomeFlash } from '@/lib/home-flash'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { useAuth, useClerk } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
@@ -34,7 +33,6 @@ export function DeleteAccountSection({
       return
     }
     resetAccountSessionResource()
-    storeHomeFlash('Your Scope account was deleted.')
     await clerk.signOut({ redirectUrl: '/' })
   }
 
