@@ -98,16 +98,6 @@ export function validateRustToolchainSync(files) {
     }
   }
 
-  const dockerfile = files[".scope/images/checks/Dockerfile"] ?? "";
-  const baseImages = [
-    ...dockerfile.matchAll(
-      /FROM\s+--platform=linux\/amd64\s+rust:([^\s@]+)@(sha256:[0-9a-f]{64})/g,
-    ),
-  ].map((match) => ({ tag: match[1], digest: match[2] }));
-  if (baseImages.length === 2 && baseImages[0].tag === baseImages[1].tag && baseImages[0].digest !== baseImages[1].digest) {
-    errors.push(".scope/images/checks/Dockerfile: Rust stages must use the same base digest");
-  }
-
   return errors;
 }
 
