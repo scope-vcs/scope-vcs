@@ -70,7 +70,9 @@ export function RunDetailJobs({
           selectedJobKey={selectedJobKey}
         />
       </nav>
-      <div className="min-w-0 lg:overflow-y-auto">
+      {/* Keyed by job so a newly picked job starts at its top instead of
+          inheriting the previous job's scroll position. */}
+      <div className="min-w-0 lg:overflow-y-auto" key={selectedJobKey ?? 'none'}>
         {showGraph ? (
           <RunJobGraph
             jobs={jobs}
