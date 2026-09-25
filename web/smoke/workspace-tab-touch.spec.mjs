@@ -101,7 +101,12 @@ test('workspace tabs close from the keyboard and an accessible control outside t
     await firstTab.focus()
     await page.keyboard.press('Delete')
     await page.getByRole('tab', { name: firstLabel, exact: true }).waitFor({ state: 'detached' })
-    assert.equal(await secondTab.evaluate((element) => element === document.activeElement), true)
+    // Closing removes the tab before the next animation frame restores focus.
+    await page.waitForFunction(
+      (element) => element === document.activeElement,
+      await secondTab.elementHandle(),
+      { timeout: 5_000 },
+    )
 
     // Visually hidden until focused; assistive tech activates it without a pointer.
     await page.getByRole('button', { name: 'Close src/app.ts', exact: true }).focus()
