@@ -9,6 +9,9 @@ use super::{
 use crate::error::DomainError;
 
 pub const REPOSITORY_INVITE_TTL_SECS: u64 = 7 * 24 * 60 * 60;
+/// How long an invite, and the email address it names, is kept after it
+/// stops being pending.
+pub const REPOSITORY_INVITE_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
 
 /// What the person opening an invite link should be shown, and therefore what
 /// they are allowed to do with it.
@@ -222,6 +225,28 @@ pub fn revoke_repository_invite(
     let invite = invite.clone();
     repo.bump_change_version();
     Ok(invite)
+}
+
+/// Removes every invite that stopped being pending at least
+/// `REPOSITORY_INVITE_RETENTION_SECS` ago. Members are untouched: access lives
+/// in the member list, not in the invite that granted it.
+pub fn prune_ended_repository_invites(
+    repo: &mut Repository,
+    now_unix: u64,
+) -> Vec<RepositoryInvite> {
+    let (pruned, kept) = std::mem::take(&mut repo.invitations)
+        .into_iter()
+        .partition::<Vec<_>, _>(|invite| {
+            invite
+                .ended_at_unix()
+                .saturating_add(REPOSITORY_INVITE_RETENTION_SECS)
+                <= now_unix
+        });
+    repo.invitations = kept;
+    if !pruned.is_empty() {
+        repo.bump_change_version();
+    }
+    pruned
 }
 
 fn pending_invite_mut<'a>(

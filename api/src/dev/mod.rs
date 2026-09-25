@@ -104,7 +104,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
     state.backfill_repository_workflow_catalogs().await?;
     state.repository_engine.start_reaper();
     state.start_run_attempt_recovery();
-    state.start_run_retention();
+    state.start_retention();
     state.start_request_ref_cleanup();
     state.start_invite_email_delivery();
     state.start_git_segment_recovery();

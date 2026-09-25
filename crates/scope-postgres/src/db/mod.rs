@@ -46,6 +46,7 @@ mod repo_change_notifications;
 mod repo_collaboration;
 mod repo_effects;
 mod repo_invite_emails;
+mod repo_invite_retention;
 mod repo_lifecycle;
 mod repo_mutation;
 mod repo_reads;
