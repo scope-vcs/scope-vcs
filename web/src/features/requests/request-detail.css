@@ -81,10 +81,11 @@
 }
 
 /*
- * While the description is edited, its actions sit in the tab row. The row
- * sticks to the bottom of the scroller so Save stays in reach on long text.
+ * While the description is edited, its actions sit in the Discussion heading
+ * row. The row sticks to the bottom of the scroller so Save stays in reach on
+ * long text.
  */
-.request-view-tabs:has([data-editor-actions]) {
+.request-discussion-heading:has([data-editor-actions]) {
   position: sticky;
   bottom: 0;
   z-index: 10;
@@ -98,7 +99,7 @@
     padding-bottom: var(--request-action-clearance, 0);
   }
 
-  .request-view-tabs:has([data-editor-actions]) {
+  .request-discussion-heading:has([data-editor-actions]) {
     bottom: var(--request-action-clearance, 0);
   }
 }

@@ -22,13 +22,15 @@ import {
   type RequestChangesDiscussionReferences,
   type RequestChangesSearch,
 } from '@/features/requests/request-changes-workbench'
-import { RequestChangesPending } from '@/features/requests/request-page-pending'
+import { RequestChangesBodyPending, RequestChangesPending } from '@/features/requests/request-page-pending'
+import { RequestChangesScreen } from '@/features/requests/request-changes-screen'
 import {
   requestChangeSelection,
   requestRevisionPin,
 } from '@/features/requests/request-changes-model'
 import { requestParamsForRoute } from '@/features/requests/request-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
+import { parseRouteFilePathSearch } from '@/lib/route-file'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { Link, createFileRoute, getRouteApi } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
@@ -87,7 +89,12 @@ const loadDiscussionsForView = (data: LoadDiscussionsInput) =>
 export const Route = createFileRoute(
   '/$owner/$repo/requests/$requestId/changes',
 )({
-  loaderDeps: ({ search }) => requestChangesSelectionSearch(search),
+  validateSearch: (search: Record<string, unknown>): RequestChangesSearch => ({
+    commit: searchText(search.commit),
+    path: parseRouteFilePathSearch(search.path),
+    revision: searchText(search.revision),
+  }),
+  loaderDeps: ({ search }) => ({ commit: search.commit, revision: search.revision }),
   loader: async ({ deps: selectionSearch, params }) => {
     const input = {
       ...requestParamsForRoute(params),
@@ -166,63 +173,76 @@ function RequestChangesRoute() {
 
   if (!page.detail) return null
 
-  if (!revisions && (!isLoaded || resource.refreshing)) return <RequestChangesPending />
-
-  if (!revisions) {
-    return (
-      <EmptyState
-        description="the discussion is still available. Try loading this revision again."
-        action={
-          <div className="flex flex-wrap justify-center gap-3">
-            <Button
-              disabled={resource.refreshing}
-              onClick={resource.retry}
-            >
-              {resource.refreshing ? 'retrying changes…' : 'retry changes'}
-            </Button>
-            <Button asChild variant="secondary">
-              <Link params={{ owner, repo, requestId }} to="/$owner/$repo/requests/$requestId">
-                back to discussion
-              </Link>
-            </Button>
-            <output className="sr-only">{resource.refreshing ? 'loading request changes' : 'changes could not load'}</output>
-          </div>
-        }
-        icon={<GitCommit />}
-        title="changes couldn't load"
-      />
-    )
-  }
-
   return (
-    <RequestChangesWorkbench
-      accessScope={scope}
-      audience={live.repo.access.can_read_private_files ? 'private' : 'public'}
-      initialDiscussionReferences={initial?.discussionReferences ?? { commitKey: null, page: null }}
-      loadDiff={loadDiffForView}
-      loadDiscussions={loadDiscussionsForView}
-      onSearchChange={(nextSearch) => {
-        void navigate({
-          params,
-          replace: true,
-          resetScroll: false,
-          search: nextSearch,
-          to: '/$owner/$repo/requests/$requestId/changes',
-        })
-      }}
-      params={requestParams}
-      repoId={live.repo.id}
+    <RequestChangesScreen
+      params={params}
       revisions={revisions}
-      search={search}
+      selectedRevisionId={selection?.revision?.id ?? null}
+      title={page.detail.request.title}
+    >
+      {revisions
+        ? (
+            <RequestChangesWorkbench
+              accessScope={scope}
+              audience={live.repo.access.can_read_private_files ? 'private' : 'public'}
+              initialDiscussionReferences={initial?.discussionReferences ?? { commitKey: null, page: null }}
+              loadDiff={loadDiffForView}
+              loadDiscussions={loadDiscussionsForView}
+              onSearchChange={(nextSearch) => {
+                void navigate({
+                  params,
+                  replace: true,
+                  resetScroll: false,
+                  search: nextSearch,
+                  to: '/$owner/$repo/requests/$requestId/changes',
+                })
+              }}
+              params={requestParams}
+              repoId={live.repo.id}
+              revisions={revisions}
+              search={search}
+            />
+          )
+        : !isLoaded || resource.refreshing
+          ? <RequestChangesBodyPending />
+          : <RequestChangesUnavailable params={params} resource={resource} />}
+    </RequestChangesScreen>
+  )
+}
+
+function RequestChangesUnavailable({
+  params,
+  resource,
+}: {
+  params: { owner: string; repo: string; requestId: string }
+  resource: { refreshing: boolean; retry: () => void }
+}) {
+  const { owner, repo, requestId } = params
+  return (
+    <EmptyState
+      description="the discussion is still available. Try loading this revision again."
+      action={
+        <div className="flex flex-wrap justify-center gap-3">
+          <Button
+            disabled={resource.refreshing}
+            onClick={resource.retry}
+          >
+            {resource.refreshing ? 'retrying changes…' : 'retry changes'}
+          </Button>
+          <Button asChild variant="secondary">
+            <Link params={{ owner, repo, requestId }} to="/$owner/$repo/requests/$requestId">
+              back to discussion
+            </Link>
+          </Button>
+          <output className="sr-only">{resource.refreshing ? 'loading request changes' : 'changes could not load'}</output>
+        </div>
+      }
+      icon={<GitCommit />}
+      title="changes couldn't load"
     />
   )
 }
 
-function requestChangesSelectionSearch(search: unknown): RequestChangesSearch {
-  if (!search || typeof search !== 'object') return {}
-  const values = search as Record<string, unknown>
-  return {
-    commit: typeof values.commit === 'string' ? values.commit : undefined,
-    revision: typeof values.revision === 'string' ? values.revision : undefined,
-  }
+function searchText(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }

@@ -16,7 +16,7 @@ export function RequestDiscussionAnchor({
   return (
     <Link
       aria-label={label}
-      className="inline-grid size-6 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="inline-flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       params={{
         owner: params.owner,
         repo: params.repo,
@@ -31,6 +31,7 @@ export function RequestDiscussionAnchor({
       to="/$owner/$repo/requests/$requestId/changes"
     >
       <GitCommit aria-hidden="true" className="size-3.5" />
+      <span aria-hidden="true" className="font-mono text-[11px]">rev {anchor.revision_position}</span>
     </Link>
   )
 }

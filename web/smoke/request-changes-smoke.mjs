@@ -14,8 +14,15 @@ const backgroundServerFunctions = new Set([
   'loadAttachmentLimits_createServerFn_handler',
 ])
 
+// The discussion and the changes screen replace each other inside the
+// requests workspace, which stays mounted.
 export function captureRequestShell(page) {
-  return captureNodes(page, ['h1', 'nav[aria-label="Request views"]'])
+  return captureNodes(page, ['[aria-label="Requests workspace"]'])
+}
+
+export function changesBackLink(page) {
+  return page.getByRole('navigation', { name: 'Request changes navigation' })
+    .getByRole('link', { name: 'Discussion', exact: true })
 }
 
 export async function assertRequestCrossLinksStayInDocument(page) {
@@ -84,19 +91,14 @@ export async function assertFileSelectionSkipsRevisionReload(page, fileName, pat
   assert.deepEqual(serverFunctions, ['loadRevisionDiff_createServerFn_handler'])
 }
 
-export async function assertUpdateSelectionReloadsSelectedPayload(page) {
+export async function assertRevisionStepReloadsSelectedPayload(page) {
   await page.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
-  await page.locator('summary').filter({ hasText: /^commits ·/ }).click()
-  const updates = page.getByRole('button', {
-    name: /, commit .+, \d+ files?$/,
-  })
-  assert(await updates.count() > 1, 'expected more than one request update')
-  const target = updates.nth(1)
-  const commit = await target.getAttribute('title')
-  const targetLabel = await target.getAttribute('aria-label')
-  assert(commit)
-  assert(targetLabel)
-  const title = targetLabel.split(', commit ', 1)[0]
+  const selectedRevision = await page.getByRole('heading', { level: 1, name: /^Revision \d+$/ }).textContent()
+  const older = page.getByRole('link', { name: 'Older' })
+  await waitForClientHydration(older)
+  const olderRevision = await older.getAttribute('title')
+  assert(olderRevision && olderRevision !== selectedRevision, 'expected an older revision')
+  const olderRevisionId = new URL(await older.getAttribute('href'), page.url()).searchParams.get('revision')
   const serverFunctions = []
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
@@ -106,12 +108,12 @@ export async function assertUpdateSelectionReloadsSelectedPayload(page) {
   }
   page.on('request', recordServerFunction)
   try {
-    await target.click()
+    await older.click()
     await page.waitForURL((url) => (
-      url.searchParams.get('commit') === commit &&
+      url.searchParams.get('revision') === olderRevisionId &&
       !url.searchParams.has('path')
     ))
-    await page.getByRole('heading', { level: 3, name: title }).waitFor()
+    await page.getByRole('heading', { level: 1, name: olderRevision }).waitFor()
     await page.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
   } finally {
     page.off('request', recordServerFunction)
@@ -119,8 +121,7 @@ export async function assertUpdateSelectionReloadsSelectedPayload(page) {
   assert.deepEqual(serverFunctions, ['loadRevisions_createServerFn_handler', 'loadDiscussions_createServerFn_handler'])
 
   const selectedUrl = page.url()
-  await page.getByRole('navigation', { name: 'Request views' })
-    .getByRole('link', { name: 'Discussion', exact: true }).click()
+  await changesBackLink(page).click()
   await page.waitForURL((url) => !url.pathname.endsWith('/changes'))
   await page.locator('.request-discussion-thread').first().waitFor()
   const reopenedLoads = []
@@ -135,7 +136,7 @@ export async function assertUpdateSelectionReloadsSelectedPayload(page) {
   try {
     await page.goBack()
     await page.waitForURL(selectedUrl)
-    await page.getByRole('heading', { level: 3, name: title }).waitFor()
+    await page.getByRole('heading', { level: 1, name: olderRevision }).waitFor()
     await page.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
     assert.deepEqual(reopenedLoads, [])
   } finally {

@@ -8,7 +8,7 @@ import { RequestDiscussionMarkdown } from './request-discussion-markdown'
 /**
  * Edits in place: the rendered text becomes the editor at the same height, and
  * the edit control and the editor's actions render into `actionsSlot`, which
- * the page places at the end of the request tab row.
+ * the page places at the end of the Discussion heading row.
  */
 export function RequestDescription({
   actionsSlot,
