@@ -92,7 +92,7 @@ const alwaysOnGateInputs = [
   /^deploy\/railway\/(maintenance\.Dockerfile|test-runtime-containers\.sh)$/,
   // railway-ssh.test.mjs runs the pinned OpenSSH wrapper in the operations gate.
   /^deploy\/railway\/(ssh-bin\/ssh|ssh_known_hosts)$/,
-  /^bench\//, /^deploy\/(aws|postgres|automation)\//, /^dev\/analytics\//, /^dev\/licensing\//,
+  /^bench\//, /^deploy\/(aws|postgres|automation)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/, /^\.scope\/runs\/checks\.yml$/,
   /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-tests|deployment-watcher-heartbeat|maintenance-runtime)\.yml$/,

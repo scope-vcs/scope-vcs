@@ -14,6 +14,8 @@ import { Route as OwnerRouteImport } from './routes/$owner'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as CliLoginRouteImport } from './routes/cli-login'
 import { Route as LicensesRouteImport } from './routes/licenses'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as OwnerIndexRouteImport } from './routes/$owner.index'
 import { Route as OwnerRepoRouteImport } from './routes/$owner.$repo'
 import { Route as InvitesTokenRouteImport } from './routes/invites.$token'
@@ -57,6 +59,16 @@ const CliLoginRoute = CliLoginRouteImport.update({
 const LicensesRoute = LicensesRouteImport.update({
   id: '/licenses',
   path: '/licenses',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OwnerIndexRoute = OwnerIndexRouteImport.update({
@@ -165,6 +177,8 @@ export interface FileRoutesByFullPath {
   '/account': typeof AccountRoute
   '/cli-login': typeof CliLoginRoute
   '/licenses': typeof LicensesRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
   '/invites/$token': typeof InvitesTokenRoute
   '/sign-in/$': typeof SignInSplatRoute
@@ -189,6 +203,8 @@ export interface FileRoutesByTo {
   '/account': typeof AccountRoute
   '/cli-login': typeof CliLoginRoute
   '/licenses': typeof LicensesRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/$owner/$repo': typeof OwnerRepoCodeIndexRoute
   '/invites/$token': typeof InvitesTokenRoute
   '/sign-in/$': typeof SignInSplatRoute
@@ -211,6 +227,8 @@ export interface FileRoutesById {
   '/account': typeof AccountRoute
   '/cli-login': typeof CliLoginRoute
   '/licenses': typeof LicensesRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
   '/invites/$token': typeof InvitesTokenRoute
   '/sign-in/$': typeof SignInSplatRoute
@@ -239,6 +257,8 @@ export interface FileRouteTypes {
     | '/account'
     | '/cli-login'
     | '/licenses'
+    | '/privacy'
+    | '/terms'
     | '/$owner/$repo'
     | '/invites/$token'
     | '/sign-in/$'
@@ -263,6 +283,8 @@ export interface FileRouteTypes {
     | '/account'
     | '/cli-login'
     | '/licenses'
+    | '/privacy'
+    | '/terms'
     | '/$owner/$repo'
     | '/invites/$token'
     | '/sign-in/$'
@@ -284,6 +306,8 @@ export interface FileRouteTypes {
     | '/account'
     | '/cli-login'
     | '/licenses'
+    | '/privacy'
+    | '/terms'
     | '/$owner/$repo'
     | '/invites/$token'
     | '/sign-in/$'
@@ -311,6 +335,8 @@ export interface RootRouteChildren {
   AccountRoute: typeof AccountRoute
   CliLoginRoute: typeof CliLoginRoute
   LicensesRoute: typeof LicensesRoute
+  PrivacyRoute: typeof PrivacyRoute
+  TermsRoute: typeof TermsRoute
   InvitesTokenRoute: typeof InvitesTokenRoute
   SignInSplatRoute: typeof SignInSplatRoute
   SignUpSplatRoute: typeof SignUpSplatRoute
@@ -351,6 +377,20 @@ declare module '@tanstack/react-router' {
       path: '/licenses'
       fullPath: '/licenses'
       preLoaderRoute: typeof LicensesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$owner/': {
@@ -588,6 +628,8 @@ const rootRouteChildren: RootRouteChildren = {
   AccountRoute: AccountRoute,
   CliLoginRoute: CliLoginRoute,
   LicensesRoute: LicensesRoute,
+  PrivacyRoute: PrivacyRoute,
+  TermsRoute: TermsRoute,
   InvitesTokenRoute: InvitesTokenRoute,
   SignInSplatRoute: SignInSplatRoute,
   SignUpSplatRoute: SignUpSplatRoute,

@@ -94,6 +94,8 @@ export function MarketingLandingPage({
         <Link aria-label="Scope home" to="/"><ScopeLogo className={cn(logo, 'w-[84px] opacity-65')} /></Link>
         <nav className="flex gap-[23px] max-[521px]:gap-5" aria-label="Project">
           <a href={sourceUrl}>Source code ↗</a>
+          <Link to="/privacy">Privacy</Link>
+          <Link to="/terms">Terms</Link>
           <Link to="/licenses">Licenses</Link>
         </nav>
       </footer>

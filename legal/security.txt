@@ -1,0 +1,5 @@
+Contact: mailto:hello@scopevcs.com
+Expires: 2027-09-24T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://scopevcs.com/.well-known/security.txt
+Policy: https://github.com/scope-vcs/scope-vcs/security/policy
