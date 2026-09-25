@@ -22,6 +22,8 @@ const routeDecisions = {
   '/account': tracked('account', '/account'),
   '/cli-login': tracked('cli_login', '/cli-login'),
   '/licenses': tracked('licenses', '/licenses'),
+  '/privacy': tracked('privacy', '/privacy'),
+  '/terms': tracked('terms', '/terms'),
   '/invites/$token': tracked('invite', '/invite'),
   '/sign-in/$': tracked('sign_in', '/sign-in'),
   '/sign-up/$': tracked('sign_up', '/sign-up'),

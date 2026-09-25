@@ -4,8 +4,10 @@ import viteReact from '@vitejs/plugin-react'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { nitro } from 'nitro/vite'
-import { defineConfig, loadEnv, type Plugin } from 'vite'
+import { defineConfig, loadEnv, searchForWorkspaceRoot, type Plugin } from 'vite'
 
+// Legal documents are authored once in the repository's legal/ directory.
+const legalDirectory = path.resolve(import.meta.dirname, '../legal')
 // Read by scripts/check-client-bundle.mjs; kept outside .output/public so it is not served.
 const clientChunkGraphPath = path.resolve(import.meta.dirname, '.output/client-chunk-graph.json')
 
@@ -16,11 +18,13 @@ export default defineConfig(({ mode }) => {
   return {
     server: {
       allowedHosts: allowedHost ? [allowedHost] : [],
+      fs: { allow: [searchForWorkspaceRoot(import.meta.dirname), legalDirectory] },
       port: 3000,
     },
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, './src'),
+        '@legal': legalDirectory,
       },
       dedupe: ['react', 'react-dom'],
     },
