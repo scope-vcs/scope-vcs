@@ -1,36 +1,28 @@
-import { ApplicationTopbar } from '@/components/application-topbar'
-import { AppShell } from '@/components/app-shell'
-import { HistoryPagePending } from '@/features/history/history-page-pending'
-import { RepoSettingsPending } from '@/features/repo-detail/repo-settings-pending'
-import { RepositoryCodePending } from '@/features/repo-detail/repository-code-pending'
-import { RequestDetailPagePending } from '@/features/requests/request-page-pending'
-import { RequestsPagePending } from '@/features/requests/requests-page-pending'
-import { RunDetailPagePending } from '@/features/runs/run-detail-pending'
-import { RunsPagePending } from '@/features/runs/runs-page-pending'
-import { useLocation, useParams } from '@tanstack/react-router'
+import { RepoShell } from '@/components/repo-shell'
+import { useMatches, useParams, useRouter } from '@tanstack/react-router'
+import type { ComponentType, ReactNode } from 'react'
+
+type PendingComponent = ComponentType<{ children?: ReactNode }>
 
 export function RepositoryRoutePending() {
-  const repository = useParams({ from: '/$owner/$repo' })
-  const pathname = useLocation({ select: (location) => location.pathname })
-
+  const params = useParams({ from: '/$owner/$repo' })
   return (
-    <AppShell
-      header={() => <ApplicationTopbar repository={repository} />}
-    >
-      <RepositoryBodyPending pathname={pathname} />
-    </AppShell>
+    <RepoShell params={params} repo={null}>
+      <SectionRoutesPending />
+    </RepoShell>
   )
 }
 
-function RepositoryBodyPending({ pathname }: { pathname: string }) {
-  const routePath = pathname.replace(/\/+$/, '')
-  if (routePath.includes('/requests/')) return <RequestsPagePending><RequestDetailPagePending /></RequestsPagePending>
-  if (routePath.endsWith('/requests')) return <RequestsPagePending />
-  if (routePath.endsWith('/history')) return <HistoryPagePending />
-  if (/\/runs\/[^/]+$/.test(routePath) && !routePath.includes('/workflows/')) {
-    return <RunDetailPagePending />
-  }
-  if (routePath.includes('/runs')) return <RunsPagePending />
-  if (routePath.endsWith('/settings')) return <RepoSettingsPending />
-  return <RepositoryCodePending />
+// While the repository loads, its child routes are already matched. Each one
+// that owns a pending state renders it, nested the way the routes nest, so a
+// section looks the same whether you enter the repository or switch to it.
+function SectionRoutesPending() {
+  const router = useRouter()
+  const routeIds = useMatches({ select: (matches) => matches.map((match) => match.routeId) })
+  const sectionRouteIds = routeIds.slice(routeIds.indexOf('/$owner/$repo') + 1)
+  const pending = sectionRouteIds.flatMap((routeId) => {
+    const component = router.routesById[routeId]?.options.pendingComponent
+    return component ? [component as PendingComponent] : []
+  })
+  return pending.reduceRight<ReactNode>((child, Pending) => <Pending>{child}</Pending>, null)
 }
