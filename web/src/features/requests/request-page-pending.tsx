@@ -14,7 +14,6 @@ import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'
 import { RequestChecksPending } from './request-checks-pending'
 import { RequestDetailsSkeleton } from './request-details-layout'
 import { ChildRoutesPending } from '@/components/child-routes-pending'
-import { MessageSquare } from 'lucide-react'
 import { RequestChangesScreen } from './request-changes-screen'
 import { useDetailPaneRail } from './use-detail-pane-rail'
 import { DiffSkeleton } from '@/features/review/diff-skeleton'
@@ -31,8 +30,8 @@ const PENDING_CHANGES: { id: string; length: TextSkeletonLength }[] = [
   { id: 'fourth', length: 'medium' },
 ]
 
-// Mirrors RequestDetailPage: the same header, checks row, Discussion heading,
-// and details rail when the pane is wide enough for one.
+// Mirrors RequestDetailPage: the same header, checks row, description, and
+// details rail when the pane is wide enough for one.
 export function RequestDetailPagePending() {
   const { isSignedIn } = useAuth()
   const paneRef = useRef<HTMLDivElement>(null)
@@ -72,16 +71,10 @@ export function RequestDetailPagePending() {
         <RequestChecksPending />
         <div className={cn(rail && 'grid grid-cols-[minmax(0,1fr)_300px]')}>
           <div className="request-detail-document pt-4">
-            <section className="min-w-0 px-5 pb-5 lg:px-7">
+            <section className="min-w-0 border-b border-border px-5 pb-5 lg:px-7">
               {/* Descriptions are set at leading-6. */}
               <TextSkeleton className="h-6 py-1" length="xlong" />
             </section>
-            <div className="flex min-h-11 items-center gap-2 border-b border-border px-5 lg:px-7">
-              <h2 className="flex items-center gap-2 text-sm font-medium">
-                <MessageSquare className="size-3.5" />
-                Discussion
-              </h2>
-            </div>
             <div className="min-w-0">
               <ChildRoutesPending
                 below="/$owner/$repo/requests/$requestId/_discussion"

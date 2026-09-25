@@ -75,9 +75,6 @@ const rateRequest = createServerFn({ method: 'POST' })
 // The request page: header, checks, description and details around the
 // discussion. The changes screen is a sibling with its own layout.
 export const Route = createFileRoute('/$owner/$repo/requests/$requestId/_discussion')({
-  // Pushes render in the discussion, so their activity arrives with the page
-  // instead of shifting it after hydration. The page's resource keeps it fresh.
-  loader: ({ params }) => loadActivity({ data: requestParamsForRoute(params) }).catch(() => null),
   pendingComponent: RequestDetailPagePending,
   component: RequestDiscussionLayout,
 })
@@ -85,7 +82,6 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId/_discuss
 function RequestDiscussionLayout() {
   const params = Route.useParams()
   const page = requestRoute.useLoaderData()
-  const initialActivity = Route.useLoaderData()
   const live = useRepoLayout()
   const router = useRouter()
   const navigate = Route.useNavigate()
@@ -138,7 +134,6 @@ function RequestDiscussionLayout() {
         data: { ...requestParams, ...input },
       })}
       detail={page.detail}
-      initialActivity={initialActivity}
       live={live}
       loadActivity={(signal) => loadActivity({ data: requestParams, signal })}
       loadChecks={(signal) => loadChecks({ data: requestParams, signal })}

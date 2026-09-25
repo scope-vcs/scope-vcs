@@ -65,9 +65,6 @@ test('reply disclosure preserves scroll and remains reversible', async () => {
       '#discussion-discussion_demo_retry_cap-replies',
     )
     await waitForClientHydration(hideRetryReplies)
-    // Pushes above the thread can put the control at the fold; clicking would
-    // scroll it first, so measure from where the click happens.
-    await hideRetryReplies.scrollIntoViewIfNeeded()
     const disclosureTop = await hideRetryReplies.evaluate(
       (element) => element.getBoundingClientRect().top,
     )
@@ -153,8 +150,17 @@ test('changes navigation preserves the request shell and collapsed replies', asy
     await waitForClientHydration(disclosure)
     await disclosure.click()
     await assertReplyRegion(page, retryThread.locator('#discussion-discussion_demo_retry_cap-replies'), false)
-    const changesLink = page.getByRole('link', { name: 'Changes', exact: true })
-    await waitForClientHydration(changesLink)
+    const changesMenu = page.getByRole('button', { name: 'Changes', exact: true })
+    await waitForClientHydration(changesMenu)
+    await changesMenu.click()
+    const menu = page.getByRole('dialog', { name: 'Request changes' })
+    const revisions = menu.getByRole('link')
+    await revisions.first().waitFor()
+    const pushCount = await revisions.count()
+    assert(pushCount > 1, 'expected more than one push')
+    await menu.getByRole('searchbox', { name: 'Search revisions' }).fill('jitter')
+    await page.waitForFunction((count) => document.querySelectorAll('dialog[aria-label="Request changes"] a').length < count, pushCount)
+    const changesLink = revisions.first()
     const transitionServerFunctions = []
     const recordServerFunction = (request) => {
       if (request.url().includes('/_serverFn/')) {
@@ -258,10 +264,8 @@ test('Details opens a drawer that reuses request data and preserves discussion s
   }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
 })
 
-test('Changes has a working link before hydration and renders directly on mobile', async () => {
-  await withPage(requestPath, async (page) => {
-    await page.getByRole('link', { name: 'Changes', exact: true }).click()
-    await page.waitForURL((url) => url.pathname.endsWith('/req_demo_ready/changes'))
+test('the changes screen renders on mobile before hydration', async () => {
+  await withPage(`${requestPath}/changes`, async (page) => {
     await page.getByRole('heading', { level: 1, name: /^Revision \d+$/ }).waitFor()
     await changesBackLink(page).waitFor()
     assert.equal(await page.locator('.request-discussion-thread').count(), 0)

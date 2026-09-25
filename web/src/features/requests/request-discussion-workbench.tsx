@@ -4,7 +4,7 @@ import { EmptyState } from '@/components/empty-state'
 import { mainScrollContainer } from '@/components/main-content'
 import { Button } from '@/components/ui/button'
 import { CircleAlert, LoaderCircle, MessageSquare } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   readRequestDiscussionScroll,
   writeRequestDiscussionScroll,
@@ -13,8 +13,6 @@ import { RequestDiscussionComposer } from './request-discussion-composer'
 import type { RequestDiscussionActions } from './request-discussion-store'
 import { useRequestDiscussionStore } from './request-discussion-store'
 import { RequestDiscussionThread } from './request-discussion-thread'
-import { RequestRevisionRow, useRequestRevisionPushes } from './request-revision-row'
-import { requestTimelineItems } from './request-timeline-items'
 import type {
   RequestActorSummary,
   RequestDiscussion,
@@ -58,12 +56,6 @@ export function RequestDiscussionWorkbench({
     params,
     repoId,
   })
-  const pushes = useRequestRevisionPushes()
-  const hasEarlierDiscussions = store.collection.nextCursor !== null
-  const timeline = useMemo(
-    () => requestTimelineItems(store.discussions, pushes, hasEarlierDiscussions),
-    [hasEarlierDiscussions, pushes, store.discussions],
-  )
   const [activeComposer, setActiveComposer] = useState<string | null>(null)
   const closeComposer = useCallback(() => setActiveComposer(null), [])
 
@@ -118,24 +110,22 @@ export function RequestDiscussionWorkbench({
         </div>
       ) : null}
 
-      {timeline.length > 0 ? (
+      {store.discussions.length > 0 ? (
         <div>
-          {timeline.map((item) => item.kind === 'revision' ? (
-            <RequestRevisionRow key={item.push.id} params={params} push={item.push} />
-          ) : (
+          {store.discussions.map((discussion) => (
             <RequestDiscussionThread
               actions={threadActions}
               actor={actor}
               canReply={permissions.canReply}
-              canResolve={canResolve(item.discussion)}
+              canResolve={canResolve(discussion)}
               canWaitAfterReply={permissions.canWaitAfterReply}
-              composerOpen={activeComposer === item.discussion.id}
-              discussion={item.discussion}
-              key={`${store.cacheKey}\0${item.discussion.id}`}
+              composerOpen={activeComposer === discussion.id}
+              discussion={discussion}
+              key={`${store.cacheKey}\0${discussion.id}`}
               onExpandedChange={store.setExpanded}
               onMarkRead={store.markRead}
               onCloseComposer={closeComposer}
-              onOpenComposer={() => setActiveComposer(item.discussion.id)}
+              onOpenComposer={() => setActiveComposer(discussion.id)}
               onPatch={store.patch}
               onRetryRoot={store.retry}
               onResolve={store.resolve}

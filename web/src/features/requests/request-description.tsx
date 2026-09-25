@@ -1,22 +1,18 @@
 import { Button } from '@/components/ui/button'
 import { Check, Pencil } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { RequestAttachmentEditor } from './request-attachment-editor'
 import { RequestDiscussionMarkdown } from './request-discussion-markdown'
 
 /**
- * Edits in place: the rendered text becomes the editor at the same height, and
- * the edit control and the editor's actions render into `actionsSlot`, which
- * the page places at the end of the Discussion heading row.
+ * Edits in place: the rendered text becomes the editor at the same height,
+ * with its actions below it. The edit control sits at the text's top right.
  */
 export function RequestDescription({
-  actionsSlot,
   canEdit,
   description,
   onSave,
 }: {
-  actionsSlot: HTMLElement | null
   canEdit: boolean
   description: string
   onSave: (description: string, expectedDescription: string) => Promise<boolean>
@@ -27,11 +23,11 @@ export function RequestDescription({
   const editing = editorMinHeight !== null
 
   return (
-    <section className="min-w-0 px-5 pb-5 lg:px-7">
-      {canEdit && !editing && actionsSlot ? createPortal(
+    <section className="relative min-w-0 border-b border-border px-5 pb-5 lg:px-7">
+      {canEdit && !editing ? (
         <Button
           aria-label="Edit description"
-          className="text-muted-foreground"
+          className="absolute top-0 right-3 text-muted-foreground lg:right-5"
           onClick={() => {
             setError(null)
             setEditorMinHeight(renderedRef.current?.offsetHeight ?? 0)
@@ -42,13 +38,11 @@ export function RequestDescription({
           variant="ghost"
         >
           <Pencil />
-        </Button>,
-        actionsSlot,
+        </Button>
       ) : null}
 
       {editing ? (
         <RequestAttachmentEditor
-          actionsSlot={actionsSlot}
           autoFocus
           enterSubmits={false}
           error={error}
@@ -75,7 +69,7 @@ export function RequestDescription({
           target="description"
         />
       ) : (
-        <div ref={renderedRef}>
+        <div className={canEdit ? 'pr-9' : undefined} ref={renderedRef}>
           {description ? (
             <RequestDiscussionMarkdown source={description} />
           ) : (

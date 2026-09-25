@@ -80,26 +80,9 @@
   );
 }
 
-/*
- * While the description is edited, its actions sit in the Discussion heading
- * row. The row sticks to the bottom of the scroller so Save stays in reach on
- * long text.
- */
-.request-discussion-heading:has([data-editor-actions]) {
-  position: sticky;
-  bottom: 0;
-  z-index: 10;
-  background: var(--card);
-  box-shadow: 0 -1px 0 var(--border);
-}
-
 /* Phones only: clear the fixed lifecycle action bar. */
 @media (max-width: 700px) {
   .request-detail-pane {
     padding-bottom: var(--request-action-clearance, 0);
-  }
-
-  .request-discussion-heading:has([data-editor-actions]) {
-    bottom: var(--request-action-clearance, 0);
   }
 }

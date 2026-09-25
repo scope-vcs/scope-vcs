@@ -16,8 +16,6 @@ import { Link } from '@tanstack/react-router'
 import {
   ArrowLeft,
   CirclePlay,
-  GitCommit,
-  MessageSquare,
   ShieldQuestion,
   SlidersHorizontal,
   UserRound,
@@ -52,9 +50,8 @@ import { useRequestChecks } from './use-request-checks'
 import { useRequestAutoMerge } from './use-request-auto-merge'
 import { requestActivityIdentity } from './request-activity-resource'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
-import { RequestRevisionPushesProvider } from './request-revision-row'
+import { RequestChangesMenu } from './request-changes-menu'
 import { RequestSideDrawer } from './request-side-drawer'
-import { requestRevisionPushes } from './request-timeline-items'
 import {
   RequestAttachmentProvider,
   type RequestAttachmentActions,
@@ -90,7 +87,6 @@ type RequestDetailPageProps = {
   attachmentActions: RequestAttachmentActions
   children: ReactNode
   detail: RequestDetailResponse
-  initialActivity: RequestActivityPage | null
   live: RepoLiveState
   loadActivity: (signal: AbortSignal) => Promise<RequestActivityPage>
   loadChecks: (signal: AbortSignal) => Promise<RequestChecksResponse>
@@ -115,7 +111,6 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     children,
     attachmentActions,
     detail,
-    initialActivity,
     live,
     loadActivity,
     loadChecks,
@@ -133,14 +128,14 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     live.repo,
     viewerId === 'anonymous' ? null : viewerId,
   )
-  const history = useRequestActivityHistory({
+  const activity = {
     identity: request.permissions.can_view_activity
       ? requestActivityIdentity(scope, request.id)
       : null,
-    initialValue: initialActivity,
     load: loadActivity,
     version: String(request.activity_version),
-  })
+  }
+  const history = useRequestActivityHistory(activity)
   const checks = useRequestChecks({
     approve: approveChecks,
     identity: requestChecksIdentity(scope, request.id),
@@ -152,11 +147,6 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     identity: requestAutoMergeIdentity(scope, request.id),
     load: loadAutoMerge,
   })
-  const activity = history.activity ?? initialActivity
-  const pushes = useMemo(
-    () => requestRevisionPushes(activity?.events ?? []),
-    [activity],
-  )
   const liveRequest = withCurrentMergeability(request, checks.checks)
   const requestActions = useRequestActions(performAction)
   const workspace = useRequestWorkspace()
@@ -176,7 +166,6 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   const moreActions = useRef<HTMLButtonElement>(null)
   const detailsButton = useRef<HTMLButtonElement>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
-  const [descriptionActions, setDescriptionActions] = useState<HTMLElement | null>(null)
   const rail = useDetailPaneRail(paneRef)
   // The rail takes over the drawer's content; narrowing again must not reopen it.
   if (rail && detailsOpen) setDetailsOpen(false)
@@ -211,15 +200,10 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
         <RequestDetailHeader
           actions={
             <>
-              <Button asChild size="sm" variant="secondary">
-                <Link
-                  params={{ ...params, requestId: request.id }}
-                  to="/$owner/$repo/requests/$requestId/changes"
-                >
-                  <GitCommit />
-                  Changes
-                </Link>
-              </Button>
+              <RequestChangesMenu
+                activity={activity}
+                params={{ ...params, requestId: request.id }}
+              />
               {rail ? null : (
                 <Button
                   onClick={() => setDetailsOpen(true)}
@@ -313,21 +297,11 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               data-state={request.state}
             >
               <RequestDescription
-                actionsSlot={descriptionActions}
                 canEdit={request.permissions.can_edit_identity}
                 description={description}
                 onSave={saveDescription}
               />
-              <div className="request-discussion-heading flex min-h-11 items-center gap-2 border-b border-border px-5 lg:px-7">
-                <h2 className="flex items-center gap-2 text-sm font-medium">
-                  <MessageSquare className="size-3.5" />
-                  Discussion
-                </h2>
-                <div className="ml-auto flex items-center" ref={setDescriptionActions} />
-              </div>
-              <RequestRevisionPushesProvider value={pushes}>
-                <div className="min-w-0">{children}</div>
-              </RequestRevisionPushesProvider>
+              <div className="min-w-0">{children}</div>
             </div>
             {rail ? (
               <aside className="min-w-0 border-l border-border">
