@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { isScopeManagedPath, readScopeManagedFile } from "./scope-managed-files.mjs";
+
 const ROOT_TOOLCHAIN = "rust-toolchain.toml";
 const EXACT_VERSION = /^channel\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"\s*$/m;
 
@@ -62,9 +64,14 @@ export const TOOLCHAIN_FILES = [
 ];
 
 export function readToolchainFiles(root = ".") {
-  return Object.fromEntries(
-    TOOLCHAIN_FILES.map((path) => [path, readFileSync(resolve(root, path), "utf8")]),
-  );
+  const files = {};
+  for (const path of TOOLCHAIN_FILES) {
+    const content = isScopeManagedPath(path)
+      ? readScopeManagedFile(path, { root })
+      : readFileSync(resolve(root, path), "utf8");
+    if (content !== undefined) files[path] = content;
+  }
+  return files;
 }
 
 export function validateRustToolchainSync(files) {
@@ -78,7 +85,8 @@ export function validateRustToolchainSync(files) {
   for (const replica of REPLICAS) {
     const content = files[replica.path];
     if (content === undefined) {
-      errors.push(`${replica.path}: file is missing`);
+      // Only a public projection omits Scope-managed files; the reader reported the skip.
+      if (!isScopeManagedPath(replica.path)) errors.push(`${replica.path}: file is missing`);
       continue;
     }
 

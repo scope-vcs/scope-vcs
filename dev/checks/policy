@@ -11,6 +11,7 @@ node --test .github/scripts/check-source-size.test.mjs
 node .github/scripts/check-source-size.mjs
 node --test .github/scripts/check-rust-boundaries.test.mjs
 node .github/scripts/check-rust-boundaries.mjs
+node --test .github/scripts/scope-managed-files.test.mjs
 node .github/scripts/check-rust-toolchain-sync.mjs
 node .github/scripts/check-runtime-image-sync.mjs
 node --test media-worker/check-vendor-advisories.test.mjs

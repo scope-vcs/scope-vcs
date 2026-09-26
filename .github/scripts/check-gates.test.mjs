@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { classifyChanges } from './plan-production-deployment.mjs';
+import { readScopeManagedFile } from './scope-managed-files.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
@@ -66,10 +67,10 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
 test('local and both CI callers use the shared inventory', () => {
   const github = ['rust-workspace-checks', 'scope-api-ci', 'scope-cli-build', 'scope-web-ci', 'ci', 'release', 'scope-integration-ci']
     .map((name) => read(`.github/workflows/${name}.yml`)).join('\n');
-  const scope = read('.scope/runs/checks.yml');
+  const scope = readScopeManagedFile('.scope/runs/checks.yml', { root });
   for (const gate of gates) {
     assert.ok(github.includes(`dev/checks/${gate}`), `GitHub: ${gate}`);
-    assert.ok(scope.includes(`dev/checks/${gate}`), `Scope: ${gate}`);
+    if (scope !== undefined) assert.ok(scope.includes(`dev/checks/${gate}`), `Scope: ${gate}`);
   }
   for (const gate of ['policy', 'contract']) assert.ok(read('dev/check').includes(`dev/checks/${gate}`), `local: ${gate}`);
   assert.doesNotMatch(read('web/package.json'), /dev\/checks\/contract/);
