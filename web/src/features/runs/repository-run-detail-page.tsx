@@ -56,9 +56,9 @@ function RunDetailView({
     selectedJobKey,
     selection,
     showGraph,
+    showJob,
     stepLogs,
     toggleGraph,
-    toggleJob,
     toggleStep,
   } = useRepositoryRunDetailController({
     cacheKey,
@@ -69,7 +69,7 @@ function RunDetailView({
   })
 
   return (
-    <WorkbenchPane>
+    <WorkbenchPane className="flex flex-col lg:h-[calc(100dvh-var(--app-topbar))]">
       <RunDetailHeader
         detail={detail}
         metadataError={metadataError}
@@ -79,27 +79,25 @@ function RunDetailView({
         params={params}
         pendingAction={pendingAction}
       />
-      <main className="px-4 pb-14 sm:px-6 lg:px-8">
-        {actionError ? (
-          <div className="pt-5">
-            <PageErrorAlert title="Run action failed">
-              {actionError}
-            </PageErrorAlert>
-          </div>
-        ) : null}
-        <RunDetailJobs
-          attemptOverrides={attemptOverrides}
-          jobs={detail.jobs}
-          onSelectAttempt={selectAttempt}
-          onSelectJob={toggleJob}
-          onSelectStep={toggleStep}
-          onToggleGraph={toggleGraph}
-          selectedJobKey={selectedJobKey}
-          selection={selection}
-          showGraph={showGraph}
-          stepLogs={stepLogs}
-        />
-      </main>
+      {actionError ? (
+        <div className="px-5 pb-5 sm:px-6 lg:px-8">
+          <PageErrorAlert title="Run action failed">
+            {actionError}
+          </PageErrorAlert>
+        </div>
+      ) : null}
+      <RunDetailJobs
+        attemptOverrides={attemptOverrides}
+        jobs={detail.jobs}
+        onSelectAttempt={selectAttempt}
+        onSelectJob={showJob}
+        onSelectStep={toggleStep}
+        onToggleGraph={toggleGraph}
+        selectedJobKey={selectedJobKey}
+        selection={selection}
+        showGraph={showGraph}
+        stepLogs={stepLogs}
+      />
     </WorkbenchPane>
   )
 }

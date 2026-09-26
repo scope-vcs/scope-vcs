@@ -211,17 +211,16 @@ type RunSelectionState = {
   selection: StepSelection | null
 }
 
-/** Opening a job, or closing the one already open. */
+/** Showing a job. The job list always has one open, so this never closes it. */
 export function selectJob<State extends RunSelectionState>(
   current: State,
   jobKey: string,
 ): State {
-  const selectedJobKey = current.selectedJobKey === jobKey ? null : jobKey
   return {
     ...current,
     manualSelection: true,
-    selectedJobKey,
-    selection: current.selection?.jobKey === selectedJobKey
+    selectedJobKey: jobKey,
+    selection: current.selection?.jobKey === jobKey
       ? current.selection
       : null,
   }

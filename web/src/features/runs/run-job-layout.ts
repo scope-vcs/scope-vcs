@@ -1,5 +1,5 @@
-export const RUN_JOB_STRIP_CLASS =
-  'flex gap-2 overflow-x-auto border-y border-border py-3'
+export const RUN_JOB_LIST_CLASS =
+  'flex gap-1 overflow-x-auto p-2 lg:flex-col lg:gap-0 lg:overflow-x-visible lg:px-0'
 
-export const RUN_JOB_ITEM_CLASS =
-  'flex shrink-0 items-center gap-2 border bg-background px-3 py-2 text-left text-sm'
+export const RUN_JOB_ROW_CLASS =
+  'relative flex h-9 shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-sm lg:w-full lg:rounded-none lg:px-4'

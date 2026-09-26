@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Check, Copy, TerminalSquare, WrapText } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { StepLogs, StepLogState } from './repository-run-detail-controller'
 import type { RepositoryRunStepResponse } from '@/api/types.generated'
 
@@ -11,8 +11,10 @@ const COPY_CONFIRMATION_MS = 1_500
 /**
  * A single step's output: follows new lines while the step runs, wraps or
  * scrolls horizontally on request, and copies the buffered text to the
- * clipboard. Callers key this by step so selecting a different step starts
- * following again from a clean state.
+ * clipboard. The output grows at full length inside whatever scrolls the page,
+ * so "following" means keeping the end of this output in view. Callers key
+ * this by step so selecting a different step starts following again from a
+ * clean state.
  */
 export function RunLogView({
   id,
@@ -27,19 +29,31 @@ export function RunLogView({
   const [wrap, setWrap] = useState(true)
   const [following, setFollowing] = useState(true)
   const [copied, setCopied] = useState(false)
-  const scrollRef = useRef<HTMLPreElement>(null)
+  const sectionRef = useRef<HTMLElement>(null)
+  const endRef = useRef<HTMLDivElement>(null)
   const isRunning = step.state === 'running'
 
   useEffect(() => {
-    const node = scrollRef.current
-    if (!node || !logState.viewingEarlier) return
-    node.scrollTop = 0
+    const end = endRef.current
+    if (!end) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setFollowing(entry.isIntersecting),
+      { rootMargin: `0px 0px ${FOLLOW_THRESHOLD_PX}px 0px` },
+    )
+    observer.observe(end)
+    return () => observer.disconnect()
+  }, [])
+
+  // Layout effects so the scroll lands before paint, and before the observer
+  // reports the end of the output as out of view.
+  useLayoutEffect(() => {
+    if (!logState.viewingEarlier) return
+    sectionRef.current?.scrollIntoView({ block: 'start' })
   }, [logState.logs, logState.viewingEarlier])
 
-  useEffect(() => {
-    const node = scrollRef.current
-    if (!node || logState.viewingEarlier || !following) return
-    node.scrollTop = node.scrollHeight
+  useLayoutEffect(() => {
+    if (logState.viewingEarlier || !following) return
+    endRef.current?.scrollIntoView({ block: 'end' })
   }, [following, logState.logs, logState.viewingEarlier])
 
   useEffect(() => {
@@ -47,13 +61,6 @@ export function RunLogView({
     const timer = setTimeout(() => setCopied(false), COPY_CONFIRMATION_MS)
     return () => clearTimeout(timer)
   }, [copied])
-
-  function handleScroll() {
-    const node = scrollRef.current
-    if (!node) return
-    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight
-    setFollowing(distanceFromBottom <= FOLLOW_THRESHOLD_PX)
-  }
 
   async function handleCopy() {
     try {
@@ -69,8 +76,9 @@ export function RunLogView({
   return (
     <section
       aria-label={`${step.name} output`}
-      className="border-t border-border bg-background text-foreground"
+      className="scroll-mt-14 border-t border-border bg-background text-foreground"
       id={id}
+      ref={sectionRef}
     >
       <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-2">
@@ -139,16 +147,15 @@ export function RunLogView({
       ) : null}
       <pre
         className={cn(
-          'max-h-[34rem] overflow-auto break-words px-4 py-4 font-mono text-xs leading-5',
+          'overflow-x-auto break-words px-4 py-4 font-mono text-xs leading-5',
           wrap ? 'whitespace-pre-wrap' : 'whitespace-pre',
         )}
-        onScroll={handleScroll}
-        ref={scrollRef}
       >
         {logState.logs.length === 0
           ? <span className="text-muted-foreground">No output yet.</span>
           : logState.logs.map((log) => log.text).join('')}
       </pre>
+      <div aria-hidden="true" ref={endRef} />
     </section>
   )
 }

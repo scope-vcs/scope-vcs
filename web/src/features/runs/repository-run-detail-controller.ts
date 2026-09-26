@@ -219,7 +219,7 @@ export function useRepositoryRunDetailController({
 
   // Navigation rules live in the model so `selection` and `selectedJobKey`
   // cannot drift apart here.
-  function toggleJob(jobDetail: RepositoryRunJobDetailResponse) {
+  function showJob(jobDetail: RepositoryRunJobDetailResponse) {
     updateView((current) => selectJob(current, jobDetail.job.key))
   }
 
@@ -254,9 +254,9 @@ export function useRepositoryRunDetailController({
     performAction,
     refreshDetail: refreshRun,
     selectAttempt,
+    showJob,
     stepLogs,
     toggleGraph,
-    toggleJob,
     toggleStep,
   }
 }
