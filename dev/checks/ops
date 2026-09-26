@@ -5,8 +5,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 python3 -B -m unittest discover -s deploy/automation -p 'test_*.py'
 
 node --test dev/analytics/*.test.mjs
-node --test .scope/images/checks/*.test.mjs
-bash -n .scope/images/checks/scan-image.sh .github/scripts/publish-soci-image.sh
+# Scope keeps .scope/images private, so public projections omit it. GitHub
+# Actions always checks out the complete tree, so a missing directory fails there.
+if [[ -d .scope/images/checks || "${GITHUB_ACTIONS:-}" == true ]]; then
+  bash -n .scope/images/checks/scan-image.sh
+  node --test .scope/images/checks/*.test.mjs
+else
+  echo "Skipped .scope/images/checks: Scope keeps it private, so this checkout does not include it." >&2
+fi
+bash -n .github/scripts/publish-soci-image.sh
 
 node --test .github/scripts/audit-railway-experiments.test.mjs
 node --test .github/scripts/check-production-backups.test.mjs
