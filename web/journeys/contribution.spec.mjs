@@ -97,6 +97,13 @@ async function syncMain(actor) {
   await actor.scope('pull')
 }
 
+// Holds the page's live updates so it keeps what it loaded. Returns a release.
+async function holdLiveUpdates(page) {
+  const events = '**/v1/repos/*/*/events'
+  await page.route(events, () => new Promise(() => {}))
+  return () => page.unroute(events)
+}
+
 function thread(page, text) {
   return page.getByRole('region', { name: 'Request discussion' }).getByRole('article').filter({ hasText: text })
 }
@@ -157,6 +164,33 @@ test('a CLI contribution is discussed and merged in the browser', async () => {
   }
   assert.equal(await cli.maintainer.git('rev-parse', 'HEAD'), request.merged_main_oid)
   assert.equal(existsSync(join(cli.contributor.repo, 'internal/notes.md')), false)
+})
+
+// Runs before the checks case: once main requires checks, the page offers no merge.
+test('a merge of a head that moved is refused and the page shows the new head', async () => {
+  const name = `journey-stale-${runId}`
+  const { id, head } = await submitRequest(name, `${name}.txt`, 'first revision\n')
+  const { page } = web.maintainer
+  const release = await holdLiveUpdates(page)
+  await openRequest(page, id)
+  const merge = page.getByRole('button', { name: 'Merge', exact: true })
+  await click(merge)
+  const dialog = page.getByRole('alertdialog')
+  await dialog.getByText(`${head.slice(0, 12)} → main`).waitFor()
+
+  await writeFile(join(cli.contributor.repo, `${name}.txt`), 'second revision\n')
+  await cli.contributor.commit('Revise while the maintainer reviews')
+  const { request: { head_oid: newHead } } = await cli.contributor.scope('request', 'push')
+
+  await dialog.getByRole('button', { name: 'Merge request' }).click()
+  await page.getByRole('alert').filter({ hasText: 'request has a new revision; review it before merging' }).waitFor()
+  await merge.click()
+  await dialog.getByText(`${newHead.slice(0, 12)} → main`).waitFor()
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await release()
+  const { request } = await apiFetch(cli.maintainer.token, requestApi(id))
+  assert.equal(request.state, 'Open')
+  assert.equal(request.head_oid, newHead)
 })
 
 test('only the maintainer approves checks, and pending checks hold the merge', async () => {
@@ -242,8 +276,8 @@ test('review controls and completion states fit a narrow screen', async () => {
 test('a revoked maintainer cannot approve checks from an open page', async () => {
   const { id } = await submitRequest(`journey-revoked-${runId}`, `journey-revoked-${runId}.txt`, 'revoked\n')
   const { page } = web.maintainer
-  // Hold live updates so the page keeps its pre-revocation controls.
-  await page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
+  // The page keeps its pre-revocation controls.
+  await holdLiveUpdates(page)
   await openRequest(page, id)
   const approve = page.getByRole('button', { name: 'Approve checks' })
   await waitForClientHydration(approve)

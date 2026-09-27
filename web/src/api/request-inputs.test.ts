@@ -55,9 +55,13 @@ test('reply inputs preserve the explicit wait intent without coercion', () => {
 })
 
 test('request actions validate the action and only require handles for invitee actions', () => {
-  for (const action of ['close', 'leave', 'merge', 'submit']) {
+  for (const action of ['close', 'leave', 'submit']) {
     assert.deepEqual(parsers.parseRequestActionInput({ ...request, action }), { ...request, action })
   }
+  const merge = { ...request, action: 'merge', expected_head_oid: 'a'.repeat(40) }
+  assert.deepEqual(parsers.parseRequestActionInput(merge), merge)
+  assert.throws(() => parsers.parseRequestActionInput({ ...request, action: 'merge' }))
+  assert.throws(() => parsers.parseRequestActionInput({ ...merge, expected_head_oid: 'not-an-oid' }))
   for (const action of ['add_invitee', 'remove_invitee']) {
     assert.throws(() => parsers.parseRequestActionInput({ ...request, action }))
     assert.equal(parsers.parseRequestActionInput({ ...request, action, handle: 'adam' }).action, action)

@@ -136,6 +136,32 @@ async fn merge_route_persists_git_content_once() {
         .graph
         .commits
         .len();
+    // A caller that reviewed another head is refused; the request stays open.
+    let stale = app
+        .clone()
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/v1/repos/{TEST_REPO_ID}/requests/{REQUEST_ID}/merge"
+                ))
+                .header(
+                    AUTHORIZATION,
+                    bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL),
+                )
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "expected_head_oid": "0".repeat(40) }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(stale.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        response_json(stale).await["message"],
+        "request has a new revision; review it before merging"
+    );
     let merged = app.clone().oneshot(merge_request()).await.unwrap();
     let merged_status = merged.status();
     let merged = response_json(merged).await;

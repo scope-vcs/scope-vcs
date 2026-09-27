@@ -639,6 +639,13 @@ pub struct StartRequestRequest {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct SubmitRequestRequest {}
 
+/// Refuses the merge when the request head has moved past what the caller reviewed.
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct MergeRequestRequest {
+    pub expected_head_oid: GitOid,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct EditRequestIdentityRequest {

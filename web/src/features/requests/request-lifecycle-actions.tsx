@@ -93,7 +93,12 @@ export function RequestLifecycleActions({
       </RequestConfirmDialog>
       <RequestConfirmDialog
         confirmLabel="Merge request"
-        onConfirm={() => actions.run({ action: 'merge' })}
+        onConfirm={async () => {
+          const merged = await actions.run({ action: 'merge', expected_head_oid: request.head_oid })
+          // Close on refusal so the error shows, and reopening names the current head.
+          if (!merged) setDialog(null)
+          return merged
+        }}
         onOpenChange={(open) => setDialog(open ? 'merge' : null)}
         open={dialog === 'merge'}
         pending={actions.pending === 'merge'}

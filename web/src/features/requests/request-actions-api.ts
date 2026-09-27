@@ -8,7 +8,7 @@ export type RequestActionCommand =
   | { action: 'add_invitee'; handle: string }
   | { action: 'close' }
   | { action: 'leave' }
-  | { action: 'merge' }
+  | { action: 'merge'; expected_head_oid: string }
   | { action: 'submit' }
   | { action: 'remove_invitee'; handle: string }
 
@@ -37,7 +37,7 @@ export async function performRequestActionForRequest(
       await api.post(
         requestRoute(ApiRouteTemplates.repoRequestMerge, input),
         apiValidators.RequestMutationResponse,
-        mutationOptions,
+        { ...mutationOptions, body: { expected_head_oid: input.expected_head_oid } },
       )
       return { deleted: false }
     case 'close': {

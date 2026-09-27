@@ -98,7 +98,15 @@ function RequestDiscussionLayout() {
     [params.owner, params.repo, params.requestId],
   )
   const performAction = useCallback(async (command: RequestActionCommand) => {
-    const result = await runRequestAction({ data: { ...requestParams, ...command } })
+    let result
+    try {
+      result = await runRequestAction({ data: { ...requestParams, ...command } })
+    } catch (error) {
+      // A refused action usually means this page is stale, such as a merge of
+      // a head that has since moved. Show the current request with the error.
+      await router.invalidate().catch(() => {})
+      throw error
+    }
     try {
       if (result.deleted) {
         await navigate({ params: repoParams, to: '/$owner/$repo/requests' })
