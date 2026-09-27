@@ -224,7 +224,10 @@ test('review controls and completion states fit a narrow screen', async () => {
   ]) {
     await control.waitFor()
     const { x, y, width, height } = await control.boundingBox()
-    assert.ok(x >= 0 && x + width <= viewport.width && y + height <= viewport.height, `${await control.textContent()} is off screen`)
+    assert.ok(
+      x >= 0 && y >= 0 && x + width <= viewport.width && y + height <= viewport.height,
+      `${await control.textContent()} is off screen`,
+    )
   }
   await assertNoHorizontalOverflow(page)
   for (const [label, requestId] of [['Merged', requests.merged], ['Closed', requests.closed]]) {
