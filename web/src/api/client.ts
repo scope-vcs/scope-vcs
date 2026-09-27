@@ -76,12 +76,8 @@ export function createApiClient() {
 }
 
 async function readClerkApiToken() {
-  const { auth } = await import('@clerk/tanstack-react-start/server')
-  const { getToken, isAuthenticated } = await auth()
-  if (!isAuthenticated) {
-    return null
-  }
-  return getToken({ template: clerkApiTokenTemplate() })
+  const { readClerkApiToken } = await import('@/server/clerk-api-token')
+  return readClerkApiToken(clerkApiTokenTemplate())
 }
 
 export function clerkApiTokenTemplate() {
