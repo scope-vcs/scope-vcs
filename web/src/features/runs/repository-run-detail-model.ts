@@ -32,7 +32,6 @@ type InitialRunView = {
 }
 
 const MAX_CACHED_STEP_LOG_BYTES = 512 * 1_024
-const GRAPH_DEFAULT_JOB_COUNT = 3
 
 export function runCanChange(state: RunState): boolean {
   switch (state) {
@@ -141,12 +140,11 @@ export function reconcileAttemptOverrides(
 }
 
 /**
- * The graph view only earns its keep once dependencies make the job strip
- * hard to scan; otherwise the flat strip is faster to read.
+ * The graph only says something the ordered job list doesn't when some job
+ * waits on another.
  */
-export function defaultShowGraph(jobs: readonly JobLike[]) {
-  return jobs.length > GRAPH_DEFAULT_JOB_COUNT &&
-    jobs.some(({ job }) => job.needs.length > 0)
+export function jobsHaveDependencies(jobs: readonly JobLike[]) {
+  return jobs.some(({ job }) => job.needs.length > 0)
 }
 
 type StepLogLike = { position: number; text: string; byte_length: number }
@@ -211,17 +209,16 @@ type RunSelectionState = {
   selection: StepSelection | null
 }
 
-/** Opening a job, or closing the one already open. */
+/** Showing a job. The job list always has one open, so this never closes it. */
 export function selectJob<State extends RunSelectionState>(
   current: State,
   jobKey: string,
 ): State {
-  const selectedJobKey = current.selectedJobKey === jobKey ? null : jobKey
   return {
     ...current,
     manualSelection: true,
-    selectedJobKey,
-    selection: current.selection?.jobKey === selectedJobKey
+    selectedJobKey: jobKey,
+    selection: current.selection?.jobKey === jobKey
       ? current.selection
       : null,
   }

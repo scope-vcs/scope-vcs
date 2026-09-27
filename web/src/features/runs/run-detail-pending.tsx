@@ -5,8 +5,7 @@ import {
   TextSkeleton,
   type TextSkeletonLength,
 } from '@/components/ui/skeleton'
-import { RUN_JOB_ITEM_CLASS, RUN_JOB_STRIP_CLASS } from './run-job-layout'
-import { RunEnvironmentSummary } from './run-attempt-environment'
+import { RUN_JOB_LIST_CLASS, RUN_JOB_ROW_CLASS } from './run-job-layout'
 import { RUN_STEP_ROW_CLASS } from './run-step-layout'
 
 const PENDING_JOBS: { id: string; length: TextSkeletonLength }[] = [
@@ -25,60 +24,43 @@ const PENDING_STEPS: { id: string; length: TextSkeletonLength }[] = [
 export function RunDetailPagePending() {
   return (
     <PendingSurface label="Loading run details">
-      <WorkbenchPane>
-        <header className="px-5 pb-5 pt-7 sm:px-6 lg:px-8">
-          <TextSkeleton length="medium" size="meta" />
-          <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <TextSkeleton length="long" size="heading" />
-              <TextSkeleton className="mt-3" length="medium" size="meta" />
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <BlockSkeleton className="h-9 w-24" />
-              <BlockSkeleton className="h-9 w-28" />
-            </div>
+      <WorkbenchPane className="flex flex-col lg:h-[calc(100dvh-var(--app-topbar))]">
+        <header className="flex items-center gap-4 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <TextSkeleton length="short" />
+            <TextSkeleton className="mt-1.5" length="medium" size="meta" />
           </div>
+          <BlockSkeleton className="h-8 w-24" />
         </header>
-        <main className="px-4 pb-14 sm:px-6 lg:px-8">
-          <section className="pt-7">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm font-semibold">Jobs</span>
-              <div className="flex items-center gap-3">
-                <TextSkeleton length="short" size="meta" />
-                <BlockSkeleton className="h-8 w-16" />
-              </div>
-            </div>
-            <div className={`mt-3 ${RUN_JOB_STRIP_CLASS}`}>
+        <div className="flex min-h-0 flex-1 flex-col border-t border-border lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
+          <div className="min-w-0 border-b border-border lg:border-b-0 lg:border-r lg:py-2">
+            <div className={RUN_JOB_LIST_CLASS}>
               {PENDING_JOBS.map((job) => (
-                <div className={RUN_JOB_ITEM_CLASS} key={job.id}>
+                <div className={RUN_JOB_ROW_CLASS} key={job.id}>
                   <BlockSkeleton className="size-3.5 rounded-full" />
-                  <TextSkeleton length={job.length} />
+                  <span className="min-w-0 flex-1">
+                    <TextSkeleton length={job.length} />
+                  </span>
                   <TextSkeleton length="tiny" size="meta" />
                 </div>
               ))}
             </div>
-            <div className="mt-6 border-t border-border">
-              <section className="border-b border-border">
-                <RunEnvironmentSummary
-                  cacheSummary={<TextSkeleton className="inline-block align-middle" length="medium" size="meta" />}
-                  image={<TextSkeleton className="inline-block align-middle" length="short" size="meta" />}
-                />
-              </section>
-              <div className="divide-y divide-border">
-                {PENDING_STEPS.map((step) => (
-                  <div className={RUN_STEP_ROW_CLASS} key={step.id}>
-                    <BlockSkeleton className="size-3.5 rounded-full" />
-                    <span className="min-w-0">
-                      <TextSkeleton length={step.length} />
-                      <TextSkeleton className="mt-0.5" length="medium" size="meta" />
-                    </span>
-                    <TextSkeleton length="tiny" size="meta" />
-                  </div>
-                ))}
-              </div>
+          </div>
+          <div className="min-w-0">
+            <div className="flex min-h-12 items-center gap-2.5 border-b border-border py-2 pl-4 pr-3">
+              <BlockSkeleton className="size-3.5 rounded-full" />
+              <TextSkeleton length="short" />
             </div>
-          </section>
-        </main>
+            {PENDING_STEPS.map((step) => (
+              <div className={`${RUN_STEP_ROW_CLASS} border-b border-border`} key={step.id}>
+                <span className="size-3.5" />
+                <BlockSkeleton className="size-3.5 rounded-full" />
+                <TextSkeleton length={step.length} />
+                <TextSkeleton length="tiny" size="meta" />
+              </div>
+            ))}
+          </div>
+        </div>
       </WorkbenchPane>
     </PendingSurface>
   )

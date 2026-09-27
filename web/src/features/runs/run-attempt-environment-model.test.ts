@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
-  cacheExplanation,
-  cachePreparationDetail,
+  cacheSetupLabel,
+  cacheSizeLabel,
   cacheStateClass,
-  cacheSummaryLabel,
+  cacheStateDetail,
+  cacheStateLabel,
   cacheTimingLabel,
+  cachesNeedAttention,
   pinnedImageLabel,
-  summarizeAttemptCaches,
 } from './run-attempt-environment-model'
 import type { RepositoryRunCacheResponse } from '@/api/types.generated'
 
@@ -77,65 +78,36 @@ const caches: RepositoryRunCacheResponse[] = [
 ]
 
 describe('run attempt environment model', () => {
-  it('summarizes only reported preparation facts', () => {
-    assert.deepEqual(summarizeAttemptCaches(caches), {
-      cold: 1,
-      unavailable: 1,
-      warm: 2,
-    })
-    assert.equal(
-      cacheSummaryLabel(caches, {
-        authorization_ms: 75,
-        wall_ms: 2_200,
-      }),
-      '2 warm · 1 cold · 1 not reported · setup in 2.2s · authorized in 75ms',
-    )
-    assert.equal(
-      cacheSummaryLabel(caches, null),
-      '2 warm · 1 cold · 1 not reported',
-    )
+  it('flags a cold or unreported cache for the collapsed control', () => {
+    assert.equal(cachesNeedAttention(caches), true)
+    assert.equal(cachesNeedAttention([caches[0]!, caches[2]!]), false)
+    assert.equal(cachesNeedAttention([caches[3]!]), true)
+    assert.equal(cachesNeedAttention([]), false)
   })
 
   it('keeps missing metadata distinct from a missing report', () => {
+    assert.equal(cacheStateLabel(caches[1]!), 'cold')
+    assert.equal(cacheStateDetail(caches[1]!), 'No reusable entry for this identity')
+    assert.equal(cacheStateLabel(caches[3]!), 'not reported')
     assert.equal(
-      cacheExplanation(caches[1]!),
-      'No reusable entry for this identity · pending',
-    )
-    assert.equal(
-      cacheExplanation(caches[3]!),
+      cacheStateDetail(caches[3]!),
       'Cache facts were not reported for this attempt.',
     )
-    assert.equal(cacheExplanation(caches[0]!), 'Exact entry found · ready')
-    assert.equal(
-      cacheExplanation(caches[2]!),
-      'Compatible fallback found · ready',
-    )
-    assert.equal(cacheTimingLabel(caches[3]!), 'unavailable')
+    assert.equal(cacheStateDetail(caches[0]!), null)
     assert.equal(cacheStateClass(caches[0]!), 'text-success')
     assert.equal(cacheStateClass(caches[1]!), 'text-warning')
     assert.equal(cacheStateClass(caches[2]!), 'text-success')
     assert.equal(cacheStateClass(caches[3]!), 'text-muted-foreground')
-    assert.equal(
-      cacheSummaryLabel([caches[3]!], null),
-      '1 not reported',
-    )
   })
 
-  it('shows bytes and every preparation phase without inventing a total', () => {
-    assert.equal(
-      cachePreparationDetail(caches[0]!),
-      '512.0 MB compressed · key 10ms · metadata 20ms · download + verify 80ms · sync 40ms · extract 50ms',
-    )
-    assert.equal(
-      cachePreparationDetail(caches[1]!),
-      '0 B compressed · key 100ms · metadata 1.0s · download + verify 0ms · sync 0ms · extract 0ms',
-    )
-    assert.equal(cacheTimingLabel(caches[0]!), 'total 200ms · finalize 100ms')
-    assert.equal(
-      cachePreparationDetail(caches[2]!),
-      '1.0 GB compressed · key 100ms · metadata 100ms · download + verify 300ms · sync 100ms · extract 300ms',
-    )
-    assert.equal(cachePreparationDetail(caches[3]!), null)
+  it('reports size and total preparation time only when observed', () => {
+    assert.equal(cacheSizeLabel(caches[0]!), '512.0 MB')
+    assert.equal(cacheTimingLabel(caches[0]!), '200ms')
+    assert.equal(cacheTimingLabel(caches[1]!), '1.1s')
+    assert.equal(cacheSizeLabel(caches[3]!), null)
+    assert.equal(cacheTimingLabel(caches[3]!), null)
+    assert.equal(cacheSetupLabel({ authorization_ms: 75, wall_ms: 2_200 }), 'Set up in 2.2s')
+    assert.equal(cacheSetupLabel(null), null)
   })
 
   it('formats immutable image identity without the registry noise', () => {
