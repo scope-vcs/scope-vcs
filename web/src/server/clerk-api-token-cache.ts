@@ -27,7 +27,7 @@ export function createClerkApiTokenCache({
   async function mintAndStore(key: string, mint: () => Promise<string | null>) {
     const token = await mint()
     const expiresAtMs = token ? tokenExpiryMs(token) : undefined
-    if (token && expiresAtMs !== undefined) {
+    if (token && expiresAtMs !== undefined && expiresAtMs - reuseMarginMs > now()) {
       tokens.set(key, { reuseUntilMs: expiresAtMs - reuseMarginMs, token })
     }
     return token

@@ -63,7 +63,8 @@ test('evicts the least recently used session when full', async () => {
 
   await cache.read(alice, async () => jwt('alice'))
   await cache.read(bob, async () => jwt('bob'))
-  assert.equal(await cache.read(bob, unexpectedMint), jwt('bob'))
+  await cache.read(alice, async () => jwt('alice-expiring', 20_000))
+  assert.equal(await cache.read(bob, unexpectedMint), jwt('bob'), 'an unusable token does not evict a reusable one')
   assert.equal(await cache.read(alice, async () => jwt('alice-again')), jwt('alice-again'))
 })
 
