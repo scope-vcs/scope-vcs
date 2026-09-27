@@ -21,5 +21,6 @@ Set autoreview's timeout to 15 minutes with `--engine-timeout-seconds 900`. Do i
 <!-- scope:rules:start -->
 ## Scope contribution rules
 
-Read and follow `.scope/RULES.md` before making or submitting changes.
+Read and follow `.scope/RULES.md` before
+making or submitting changes.
 <!-- scope:rules:end -->
