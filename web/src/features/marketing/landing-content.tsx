@@ -81,7 +81,7 @@ export function LandingContent({
               <Heading className={columnTitle} level={2}><Swap text={mergeTitle} /></Heading>
               <Note className="absolute right-0 top-[calc(100%+24px)] max-w-[20ch] text-right max-[521px]:static max-[521px]:mt-4 max-[521px]:block max-[521px]:max-w-[34ch] max-[521px]:text-left" id="graph" />
               <div className="mt-12"><MergeGraph /></div>
-              <Note className={`${columnNote} max-[1151px]:max-w-[24ch]`} id="merge" />
+              <Note className={`${columnNote} max-[1151px]:max-w-[24ch] max-[901px]:static max-[901px]:mt-6 max-[901px]:block max-[901px]:max-w-[34ch]`} id="merge" />
             </div>
             <div className={column} id={isPublic ? 'install' : undefined}>
               <Heading className={columnTitle} level={2}><Swap text={installTitle} /></Heading>

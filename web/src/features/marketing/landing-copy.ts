@@ -30,16 +30,16 @@ export const repoPanel = {
 
 /** Notes only the lens shows. Keys name where each one sits on the page. */
 export const notes = {
-  nav: 'hold the mouse down. press L to put the lens away',
-  heroTop: "yes, those are scope's real private folders. you can look. you can't clone",
-  cta: 'you found one. eight more are hiding somewhere on this page',
-  repo: 'AGENTS.md stays private. it has some choice language in it',
-  graph: "this graph has never had a merge conflict. it's a drawing",
-  merge: 'you also get the merge button. pressing it never gets old',
-  corner: 'legal/ is 12,250 lines of licenses. someone should probably read it',
+  nav: 'hold the mouse down to reveal everything. press L to put the lens away',
+  heroTop: "yes, those are scope's real private folders",
+  cta: 'you found one. a surprise is waiting if you find them all',
+  repo: 'AGENTS.md stays private. it may or may not contain poor language',
+  graph: "this diagram is not an accurate representation of a normal workflow",
+  merge: 'if you want to merge, great. otherwise, snooze it for when you feel like dealing with it',
+  corner: 'someone should probably read legal, seems important',
   // Non-breaking hyphens keep the folder name on one line.
   install: 'great for the folder named final\u2011final\u2011v2',
-  footer: 'an earlier draft of this page was about a sourdough starter. yikes',
+  footer: 'an earlier draft of this page was about a sourdough starter. great work, opus',
 } as const
 
 export type NoteId = keyof typeof notes
