@@ -28,7 +28,7 @@ type RunJobGraphLayout = {
 }
 
 export const JOB_GRAPH_NODE_WIDTH = 208
-export const JOB_GRAPH_NODE_HEIGHT = 84
+export const JOB_GRAPH_NODE_HEIGHT = 40
 const LAYER_GAP = 88
 const ROW_GAP = 20
 const GRAPH_PADDING = 16

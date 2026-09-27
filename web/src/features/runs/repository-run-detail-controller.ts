@@ -13,7 +13,6 @@ import {
   useSyncExternalStore,
 } from 'react'
 import {
-  defaultShowGraph,
   reconcileAttemptOverrides,
   selectAttempt as selectAttemptInJob,
   selectJob,
@@ -72,7 +71,7 @@ function createDetailViewState(detail: RepositoryRunDetailResponse): DetailViewS
     reconciliationGeneration: null,
     selectedJobKey: initialView.selectedJobKey,
     selection: initialView.selection,
-    showGraph: defaultShowGraph(detail.jobs),
+    showGraph: false,
   }
 }
 

@@ -5,11 +5,12 @@ import {
   JOB_GRAPH_NODE_WIDTH,
   buildRunJobGraph,
 } from './run-job-graph-model'
-import { runJobPanelId } from './run-job-ids'
+import { RunDuration } from './run-duration'
 import { RunStatusIcon } from './run-status-icon'
-import { RelativeTimestamp } from '@/components/timestamp'
 import type { RepositoryRunJobDetailResponse } from '@/api/types.generated'
 
+/** Jobs laid out by what they wait on. Each node carries only what the job
+ * list does: status, name and duration; the arrows say the rest. */
 export function RunJobGraph({
   jobs,
   onSelectJob,
@@ -22,26 +23,10 @@ export function RunJobGraph({
   const layout = useMemo(() => buildRunJobGraph(jobs), [jobs])
   const jobsByKey = new Map(jobs.map((job) => [job.job.key, job]))
 
-  if (jobs.length === 0) {
-    return (
-      <p className="border-y border-border px-2 py-6 text-sm text-muted-foreground">
-        This workflow has no jobs.
-      </p>
-    )
-  }
-
-  function handleSelect(jobDetail: RepositoryRunJobDetailResponse) {
-    onSelectJob(jobDetail)
-    requestAnimationFrame(() => {
-      document.getElementById(runJobPanelId(jobDetail.job.key))
-        ?.scrollIntoView({ block: 'nearest' })
-    })
-  }
-
   return (
     <div
       aria-label="Job dependency graph"
-      className="overflow-x-auto border-b border-border bg-muted/15 py-3"
+      className="overflow-auto bg-muted/15 lg:min-h-0 lg:flex-1"
     >
       <div
         className="relative"
@@ -77,18 +62,16 @@ export function RunJobGraph({
         {layout.nodes.map((node) => {
           const jobDetail = jobsByKey.get(node.key)
           if (!jobDetail) return null
-          const { job, attempts } = jobDetail
-          const selected = selectedJobKey === job.key
+          const { job } = jobDetail
           return (
             <button
-              aria-controls={runJobPanelId(job.key)}
-              aria-pressed={selected}
+              aria-pressed={selectedJobKey === job.key}
               className={cn(
-                'absolute flex flex-col justify-between border bg-background px-3 py-2.5 text-left shadow-sm outline-none transition-colors hover:border-foreground/35 hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring',
-                selected && 'border-foreground/50 ring-1 ring-foreground/10',
+                'absolute flex items-center gap-2 border bg-background px-3 text-left text-sm shadow-sm outline-none transition-colors hover:border-foreground/35 hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-ring',
+                selectedJobKey === job.key && 'border-foreground/50 ring-1 ring-foreground/10',
               )}
               key={job.key}
-              onClick={() => handleSelect(jobDetail)}
+              onClick={() => onSelectJob(jobDetail)}
               style={{
                 height: JOB_GRAPH_NODE_HEIGHT,
                 left: node.x,
@@ -97,19 +80,13 @@ export function RunJobGraph({
               }}
               type="button"
             >
-              <span className="flex min-w-0 items-center gap-2">
-                <RunStatusIcon state={job.state} />
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{job.key}</span>
-              </span>
-              <span className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                <span className="capitalize">{job.state}</span>
-                <span>{attempts.length} {attempts.length === 1 ? 'attempt' : 'attempts'}</span>
-              </span>
-              <span className="truncate text-[10px] text-muted-foreground/80">
-                {job.needs.length > 0
-                  ? `After ${job.needs.join(', ')}`
-                  : <>Updated <RelativeTimestamp value={job.updated_at_unix} /></>}
-              </span>
+              <RunStatusIcon state={job.state} />
+              <span className="min-w-0 flex-1 truncate font-medium">{job.key}</span>
+              {job.started_at_unix === null ? null : (
+                <span className="text-xs text-muted-foreground">
+                  <RunDuration end={job.completed_at_unix} start={job.started_at_unix} />
+                </span>
+              )}
             </button>
           )
         })}

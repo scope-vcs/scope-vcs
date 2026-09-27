@@ -4,38 +4,11 @@ import type {
   RepositoryRunCacheResponse,
 } from '@/api/types.generated'
 
-export function summarizeAttemptCaches(caches: readonly RepositoryRunCacheResponse[]) {
-  let warm = 0
-  let cold = 0
-  let unavailable = 0
-  for (const cache of caches) {
-    const observation = cache.observation
-    if (!observation) {
-      unavailable += 1
-      continue
-    }
-    if (observation.preparation.kind === 'cold') cold += 1
-    else warm += 1
-  }
-  return { cold, unavailable, warm }
-}
-
-export function cacheSummaryLabel(
-  caches: readonly RepositoryRunCacheResponse[],
-  cacheSetup: RepositoryRunAttemptResponse['cache_setup'],
-) {
-  if (caches.length === 0) return 'No caches declared'
-  const summary = summarizeAttemptCaches(caches)
-  const parts = [
-    countLabel(summary.warm, 'warm'),
-    countLabel(summary.cold, 'cold'),
-    countLabel(summary.unavailable, 'not reported'),
-  ].filter(Boolean)
-  if (cacheSetup) {
-    parts.push(`setup in ${formatMilliseconds(cacheSetup.wall_ms)}`)
-    parts.push(`authorized in ${formatMilliseconds(cacheSetup.authorization_ms)}`)
-  }
-  return parts.join(' · ')
+/** Worth a marker on the collapsed Environment control: a cache started
+ * cold or its facts never arrived. */
+export function cachesNeedAttention(caches: readonly RepositoryRunCacheResponse[]) {
+  return caches.some((cache) =>
+    !cache.observation || cache.observation.preparation.kind === 'cold')
 }
 
 export function cacheStateLabel(cache: RepositoryRunCacheResponse) {
@@ -56,45 +29,27 @@ export function cacheStateClass(cache: RepositoryRunCacheResponse) {
   }
 }
 
-export function cacheExplanation(cache: RepositoryRunCacheResponse) {
-  const observation = cache.observation
-  if (!observation) return 'Cache facts were not reported for this attempt.'
-  if (observation.preparation.kind === 'exact') {
-    return `Exact entry found · ${observation.final_state}`
-  }
-  if (observation.preparation.kind === 'compatible') {
-    return `Compatible fallback found · ${observation.final_state}`
-  }
-  return `${coldReasonLabel(observation.preparation.reason)} · ${observation.final_state}`
+/** Why a cold cache was cold, for its hover text. */
+export function cacheStateDetail(cache: RepositoryRunCacheResponse) {
+  const preparation = cache.observation?.preparation
+  if (!preparation) return 'Cache facts were not reported for this attempt.'
+  return preparation.kind === 'cold' ? coldReasonLabel(preparation.reason) : null
 }
 
-export function cacheNamespace(cache: RepositoryRunCacheResponse) {
+export function cacheSizeLabel(cache: RepositoryRunCacheResponse) {
   const observation = cache.observation
-  return observation
-    ? `${observation.workflow_path} · ${observation.job_key}`
-    : cache.path
+  return observation ? formatBytes(observation.size_bytes) : null
 }
 
 export function cacheTimingLabel(cache: RepositoryRunCacheResponse) {
   const observation = cache.observation
-  if (!observation) return 'unavailable'
-  const prepare = `total ${formatMilliseconds(observation.prepare_ms)}`
-  return observation.finalize_ms === null
-    ? prepare
-    : `${prepare} · finalize ${formatMilliseconds(observation.finalize_ms)}`
+  return observation ? formatMilliseconds(observation.prepare_ms) : null
 }
 
-export function cachePreparationDetail(cache: RepositoryRunCacheResponse) {
-  const observation = cache.observation
-  if (!observation) return null
-  return [
-    `${formatBytes(observation.size_bytes)} compressed`,
-    `key ${formatMilliseconds(observation.key_ms)}`,
-    `metadata ${formatMilliseconds(observation.metadata_ms)}`,
-    `download + verify ${formatMilliseconds(observation.download_verify_ms)}`,
-    `sync ${formatMilliseconds(observation.sync_ms)}`,
-    `extract ${formatMilliseconds(observation.extraction_ms)}`,
-  ].join(' · ')
+export function cacheSetupLabel(
+  cacheSetup: RepositoryRunAttemptResponse['cache_setup'],
+) {
+  return cacheSetup ? `Set up in ${formatMilliseconds(cacheSetup.wall_ms)}` : null
 }
 
 export function pinnedImageLabel(image: string | null) {
@@ -116,10 +71,6 @@ function coldReasonLabel(reason: string) {
     default:
       return 'Cache was cold'
   }
-}
-
-function countLabel(count: number, label: string) {
-  return count === 0 ? null : `${count} ${label}`
 }
 
 function formatMilliseconds(milliseconds: number) {

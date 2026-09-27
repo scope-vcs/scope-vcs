@@ -1,11 +1,10 @@
-import { useMemo } from 'react'
-import { Button } from '@/components/ui/button'
+import { useMemo, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import type {
   StepLogs,
   StepSelection,
 } from './repository-run-detail-controller'
-import { attemptForJob } from './repository-run-detail-model'
+import { attemptForJob, jobsHaveDependencies } from './repository-run-detail-model'
 import { RunDetailSteps } from './run-detail-steps'
 import { RunDuration } from './run-duration'
 import { RUN_JOB_LIST_CLASS, RUN_JOB_ROW_CLASS } from './run-job-layout'
@@ -43,46 +42,67 @@ export function RunDetailJobs({
 }) {
   const selectedJob = jobs.find(({ job }) => job.key === selectedJobKey) ?? null
   const orderedJobs = useMemo(() => orderJobsByDependency(jobs), [jobs])
+  const graphShown = jobsHaveDependencies(jobs) && showGraph
+  const jobListRef = useRef<HTMLDivElement>(null)
+  // The graph stands in for the job pane, so picking a job anywhere closes it.
+  function pickJob(job: RepositoryRunJobDetailResponse) {
+    onSelectJob(job)
+    if (showGraph) onToggleGraph()
+  }
+  // The picked node unmounts with the graph; hand focus to the same job in
+  // the list so keyboard navigation keeps its place.
+  function pickJobFromGraph(job: RepositoryRunJobDetailResponse) {
+    pickJob(job)
+    requestAnimationFrame(() => {
+      jobListRef.current
+        ?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')
+        ?.focus()
+    })
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-border lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
       <nav
-        aria-labelledby="jobs-heading"
-        className="min-w-0 border-b border-border lg:overflow-y-auto lg:border-b-0 lg:border-r"
+        aria-label="Jobs"
+        className="flex min-w-0 items-center border-b border-border lg:block lg:overflow-y-auto lg:border-b-0 lg:border-r lg:py-2"
       >
-        <div className="flex items-center justify-between gap-2 px-4 pt-3">
-          <h2 className="text-sm font-semibold" id="jobs-heading">
-            Jobs
-          </h2>
-          <Button
-            aria-pressed={showGraph}
-            onClick={onToggleGraph}
-            size="sm"
-            variant={showGraph ? 'secondary' : 'ghost'}
-          >
-            Graph
-          </Button>
+        <div className="min-w-0 flex-1" ref={jobListRef}>
+          <RunJobList
+            jobs={orderedJobs}
+            onSelectJob={pickJob}
+            selectedJobKey={selectedJobKey}
+          />
         </div>
-        <p className="px-4 text-xs text-muted-foreground">{jobSummary(jobs)}</p>
-        <RunJobList
-          jobs={orderedJobs}
-          onSelectJob={onSelectJob}
-          selectedJobKey={selectedJobKey}
-        />
+        {jobsHaveDependencies(jobs) ? (
+          <button
+            aria-pressed={showGraph}
+            className="shrink-0 px-4 py-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            onClick={onToggleGraph}
+            type="button"
+          >
+            {showGraph ? 'Hide graph' : 'Show graph'}
+          </button>
+        ) : null}
       </nav>
-      {/* Keyed by job so a newly picked job starts at its top instead of
-          inheriting the previous job's scroll position. */}
-      <div className="min-w-0 lg:overflow-y-auto" key={selectedJobKey ?? 'none'}>
-        {showGraph ? (
+      <div className="flex min-w-0 flex-col lg:min-h-0">
+        {graphShown ? (
           <RunJobGraph
             jobs={jobs}
-            onSelectJob={onSelectJob}
+            onSelectJob={pickJobFromGraph}
             selectedJobKey={selectedJobKey}
           />
         ) : null}
         {selectedJob ? (
-          <div id={runJobPanelId(selectedJob.job.key)}>
+          // Hidden rather than unmounted under the graph, so hiding the graph
+          // returns to the same scroll position, panel and wrap setting.
+          <div
+            className={graphShown ? 'hidden' : 'flex flex-col lg:min-h-0 lg:flex-1'}
+            id={runJobPanelId(selectedJob.job.key)}
+          >
+            {/* Keyed by job so a newly picked job starts fresh: scrolled to
+                its top, with the environment panel closed. */}
             <RunDetailSteps
+              key={selectedJob.job.key}
               attempt={attemptForJob(selectedJob, attemptOverrides, selection)}
               jobDetail={selectedJob}
               onSelectAttempt={(attemptId) =>
@@ -93,7 +113,7 @@ export function RunDetailJobs({
               stepLogs={stepLogs}
             />
           </div>
-        ) : (
+        ) : graphShown ? null : (
           <p className="px-4 py-6 text-sm text-muted-foreground">
             {jobs.length === 0 ? 'This workflow has no jobs.' : 'Select a job to see its steps.'}
           </p>
@@ -132,23 +152,15 @@ function RunJobList({
             >
               <RunStatusIcon state={job.state} />
               <span className="min-w-0 flex-1 truncate">{job.key}</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                <RunDuration end={job.completed_at_unix} start={job.started_at_unix} />
-              </span>
+              {job.started_at_unix === null ? null : (
+                <span className="text-xs font-normal text-muted-foreground">
+                  <RunDuration end={job.completed_at_unix} start={job.started_at_unix} />
+                </span>
+              )}
             </button>
           </li>
         )
       })}
     </ul>
   )
-}
-
-function jobSummary(jobs: readonly RepositoryRunJobDetailResponse[]) {
-  const counts = new Map<string, number>()
-  for (const { job } of jobs) {
-    counts.set(job.state, (counts.get(job.state) ?? 0) + 1)
-  }
-  return [...counts.entries()]
-    .map(([state, count]) => `${count} ${state}`)
-    .join(' · ') || 'No jobs'
 }

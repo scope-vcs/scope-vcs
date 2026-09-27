@@ -54,3 +54,18 @@ export function runStatus(
     tone,
   }
 }
+
+const DURATION_JOINERS: Record<RunTone, string> = {
+  danger: 'after',
+  inert: 'after',
+  running: 'for',
+  success: 'in',
+  waiting: 'for',
+}
+
+/** The words that lead a run's duration: "Running for", "Failed after",
+ * "Succeeded in". */
+export function runDurationLead(state: string) {
+  const { label, tone } = runStatus(state)
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)} ${DURATION_JOINERS[tone]}`
+}
