@@ -115,7 +115,8 @@ def up(restored, repo):
     run("s3", S3_IMAGE, {}, mounts=["/data"],
         command=["--access", credentials[0], "--secret", credentials[1], "--port", "127.0.0.1:7070", "posix", "/data"])
     tools("from drill_stage import wait_for_database; wait_for_database()", {"SCOPE_RECOVERY_DRILL_DATABASE_URL": database_url}, restored)
-    users = [{"role": role, "handle": f"recovery-drill-{role}", "token": "scope_cli_" + secrets.token_hex(32)}
+    # Restored handles are user-chosen, so drill handles carry a random suffix.
+    users = [{"role": role, "handle": f"recovery-drill-{role}-{secrets.token_hex(4)}", "token": "scope_cli_" + secrets.token_hex(32)}
              for role in ("member", "outsider")]
     stage = json.loads(tools("import drill_stage; drill_stage.main()", {
         "SCOPE_DRILL_RESTORED": "/restored", "SCOPE_RECOVERY_DRILL_DATABASE_URL": database_url,
@@ -150,7 +151,7 @@ session_dir="$HOME/.config/scope/sessions"
 mkdir -p "$session_dir"
 printf %s "$MEMBER_TOKEN" > "$session_dir/cli-session-$(printf %s "$API" | od -An -tx1 | tr -d ' \n')"
 chmod 600 "$session_dir"/*
-git clone --quiet "$API/git/public/$REPO" public
+git clone --quiet "$API/git/public/$REPO" public || { echo "anonymous clone failed; --repo needs public files too" >&2; exit 1; }
 if test -e "public/$PRIVATE_PATH"; then echo "anonymous clone contains the private path" >&2; exit 1; fi
 /drill/scope --api-url "$API" clone "$REPO" member >/dev/null
 test -f "member/$PRIVATE_PATH" || { echo "member clone lacks the private path" >&2; exit 1; }
@@ -197,20 +198,38 @@ def hours(delta):
     return round(delta.total_seconds() / 3600, 2)
 
 
+def check_start(captured, started, now):
+    if started.tzinfo is None:
+        raise ValueError("--restore-started-at needs a UTC offset, for example 2026-09-27T14:05:00+00:00")
+    if not captured <= started <= now:
+        raise ValueError("--restore-started-at must fall between the snapshot capture and now")
+
+
+def assess(captured, started, finished, canaries, failure):
+    """A drill is complete only when every canary passed and both measured times meet their targets."""
+    recovery, age = finished - started, started - captured
+    return {"recovery_time_hours": hours(recovery), "backup_age_hours": hours(age),
+            "complete": (failure is None and bool(canaries)
+                         and all(result.startswith("passed") for result in canaries.values())
+                         and recovery <= RECOVERY_TIME_TARGET and age <= BACKUP_AGE_TARGET)}
+
+
 def drill(args):
-    restore_started = datetime.datetime.fromisoformat(args.restore_started_at)
-    if restore_started.tzinfo is None:
-        raise SystemExit("--restore-started-at needs a UTC offset, for example 2026-09-27T14:05:00+00:00")
     manifest = json.loads((Path(args.restored) / "manifest.json").read_bytes())
     captured = datetime.datetime.fromisoformat(manifest["database"]["captured_at"])
+    restore_started = datetime.datetime.fromisoformat(args.restore_started_at)
+    try:
+        check_start(captured, restore_started, now())
+    except ValueError as error:
+        raise SystemExit(str(error)) from None
+    if docker("ps", "--all", "--quiet", "--filter", f"label={LABEL}"):
+        raise SystemExit("A drill stack already exists; inspect it, then run `drill.py down`.")
     evidence = {"revision": args.revision, "captured_at": captured.isoformat(),
                 "restore_started_at": restore_started.isoformat(),
                 "binaries_sha256": {name: digest(Path(args.binaries) / name) for name in BINARIES},
                 "cli_sha256": digest(args.cli), "targets_hours": {
                     "recovery_time": hours(RECOVERY_TIME_TARGET), "backup_age": hours(BACKUP_AGE_TARGET)}}
     try:
-        if docker("ps", "--all", "--quiet", "--filter", f"label={LABEL}"):
-            raise Incomplete("a drill stack already exists; inspect it, then run `drill.py down`")
         build_images(args.binaries)
         evidence["stage"], tokens, database_url = up(args.restored, args.repo)
         evidence["services_ready_at"] = now().isoformat()
@@ -219,14 +238,12 @@ def drill(args):
         evidence["failure"] = str(error)
     finished = now()
     evidence["finished_at"] = finished.isoformat()
-    evidence["recovery_time_hours"] = hours(finished - restore_started)
-    evidence["backup_age_hours"] = hours(restore_started - captured)
-    evidence["complete"] = ("failure" not in evidence
-                            and all(result.startswith("passed") for result in evidence["canaries"].values())
-                            and finished - restore_started <= RECOVERY_TIME_TARGET
-                            and restore_started - captured <= BACKUP_AGE_TARGET)
+    evidence.update(assess(captured, restore_started, finished, evidence.get("canaries", {}), evidence.get("failure")))
     if not args.keep:
-        evidence["removed_containers"] = down()
+        try:
+            evidence["removed_containers"] = down()
+        except Incomplete:
+            evidence["cleanup"] = "failed; run `drill.py down`"
     Path(args.evidence).write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
     print(json.dumps(evidence, indent=2, sort_keys=True))
     return 0 if evidence["complete"] else 1
@@ -240,7 +257,7 @@ def main():
     start.add_argument("--binaries", required=True, help="release api, scope-maintenance, worker, scope-media-service")
     start.add_argument("--cli", required=True, help="scope CLI binary for the Git canary")
     start.add_argument("--revision", required=True, help="release revision the binaries were built from")
-    start.add_argument("--repo", required=True, help="restored owner/name with at least one private path")
+    start.add_argument("--repo", required=True, help="restored owner/name with both public and private files")
     start.add_argument("--private-path", required=True, help="a private file in --repo")
     start.add_argument("--restore-started-at", required=True, help="ISO time with offset when the archive download began")
     start.add_argument("--evidence", required=True, help="where to write the evidence JSON")

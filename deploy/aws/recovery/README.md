@@ -204,7 +204,8 @@ cargo build --release --locked --manifest-path cli/Cargo.toml --bin scope
   --evidence /secure/drill-evidence.json
 ```
 
-Choose a restored repository that has at least one private file. The drill adds two
+Choose a restored repository with both public and private files; an anonymous
+clone of an all-private repository is refused. The drill adds two
 drill-only accounts with CLI sessions: a member of that repository with push
 permission and a non-member. Production identities and sessions are never copied or
 used. `scope-maintenance verify` must report the exact schema before services start.
