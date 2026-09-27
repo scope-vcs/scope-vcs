@@ -1,32 +1,25 @@
-This product is still in pre-alpha. No legacy or backwards compatible bullshit, this application has no users or releases, treat it as such. If you add backwards compatibility, I will go apeshit on your dumbass.
+Scope is pre-alpha. Allow migrations, but do not add backward compatibility layers or preserve obsolete interfaces.
 
- Migrations do not equal backwards compatibility, we will be doing migrations but not keeping stuff backwards compatible. 
+Maintainer means an owner or member.
 
-Maintainer = owner or members
+Do not modify the root `README.md` unless the user explicitly asks.
 
-Do not modify the root `README.md` unless the user explicitly asks you to.
+When useful, delegate independent coding tasks to medium-level subagents. Announce how they will be used, separate worktrees for larger independent work, and review the combined result.
 
-When coding, feel free to spin up medium-level subagents to get non-overlapping code work done and then review outputs at the end. If the work is larger, go ahead and split into worktrees accordingly and coordinate their efforts. Before doing this though please inform the user how you're going to use these subagents.
+Keep core concepts, rules, transitions, invariants, and required side effects in durable domain code. Outer layers translate inputs and outputs, call domain behavior, persist or render results, and surface errors. Keep sources of truth singular, side effects explicit, and modules owned by behavior. Refactor unclear ownership; delete speculative abstractions and obsolete paths.
 
-We want the architecture centered around durable domain code: the layer that defines the core concepts, rules, allowed transitions, invariants, and required side effects independent of any delivery mechanism. Outer layers should stay thin and predictable: translate inputs and outputs, call domain behavior, persist or render results, and surface errors without inventing their own rules.
+Frontend server data must reuse existing resource and cache owners, survive navigation and reopening within the same viewer and access scope, and refresh from relevant changes without blanking valid data. Check reuse and invalidation rather than introducing component-owned fetch lifecycles.
 
-Keep sources of truth singular, make side effects explicit, and prefer small behavior-owned modules over broad catch-all files. When ownership gets blurry, refactor toward clearer boundaries; when code exists only for speculation, compatibility, or half-owned future surfaces, delete it.
+Around 1,000 lines, audit a file's responsibilities and modularize unless there is a good reason to keep it together.
 
-Frontend server data must reuse the existing resource and cache owners, survive navigation and reopening within the same viewer and access scope, refresh from relevant changes without blanking valid data, and include checks for reuse and invalidation rather than introducing component-owned fetch lifecycles.
+Proceed with behavior-preserving refactors. Involve the user before choosing behavior beyond the agreed request; do not reopen behavior already authorized.
 
-Please don't use cards for ui, only use them if absolutely necessary.
+Pushes and merges to main do not deploy changes. Releases happen separately.
 
-Once you approach around 1000 LOC in a single file, do an audit of the file and modularize accordingly unless there is a good justification. 
-
-In general, I trust you with refactors as they don't effect the behavior of the application. However, on behavior making changes I want to be very involved and make sure we go slow and methodically. 
-
-Pushes and merges to main are fine because they do not deploy changes; releases happen separately.
-
-Autoreview timeout should be set to 15 minutes, please do other work in parallel while waiting.
+Set autoreview's timeout to 15 minutes with `--engine-timeout-seconds 900`. Do independent work while it runs.
 
 <!-- scope:rules:start -->
 ## Scope contribution rules
 
-Read and follow `.scope/RULES.md` before
-making or submitting changes.
+Read and follow `.scope/RULES.md` before making or submitting changes.
 <!-- scope:rules:end -->
