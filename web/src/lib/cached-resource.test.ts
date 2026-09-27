@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createCachedResource } from './cached-resource'
+import { resetViewerState } from './viewer-state'
 
 type Value = { text: string }
 const value = (text: string): Value => ({ text })
@@ -219,6 +220,20 @@ test('clear notifies subscribers and prevents pending work repopulating cached d
   await pending
   assert.equal(store.peek('repo'), null)
   assert.equal(store.stats().entries, 0)
+})
+
+test('a viewer change clears every resource except app-wide ones', async () => {
+  const viewer = resource()
+  const app = createCachedResource<Value>({ maxEntries: 1, retainAcrossViewers: true })
+  const response = deferred<Value>()
+  const pending = viewer.ensure('repo', '1', () => response.promise)
+  app.write('config', value('app'))
+  await Promise.resolve()
+  resetViewerState()
+  response.resolve(value('previous viewer'))
+  await pending
+  assert.equal(viewer.peek('repo'), null)
+  assert.deepEqual(app.peek('config'), value('app'))
 })
 
 function deferred<T>() {

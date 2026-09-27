@@ -10,20 +10,11 @@ export type AccountSessionLoader = (
 ) => Promise<AccountSessionResponse | null>
 
 const retryDelays = [200, 800] as const
-let activeViewerId: string | null = null
-
 export const accountSessionResource =
   createCachedResource<AccountSessionResourceValue>({ maxEntries: 1 })
 
 export function accountSessionIdentity(viewerId: string) {
   return `account-session\0${viewerId}`
-}
-
-export function activateAccountSessionViewer(viewerId: string) {
-  if (activeViewerId !== null && activeViewerId !== viewerId) {
-    accountSessionResource.clear()
-  }
-  activeViewerId = viewerId
 }
 
 // The resource owns the read; this only adds the bounded retry a transient
@@ -46,11 +37,6 @@ export async function loadAccountSessionValue(
       await wait(delays[attempt], signal)
     }
   }
-}
-
-export function resetAccountSessionResource() {
-  activeViewerId = null
-  accountSessionResource.clear()
 }
 
 function abortableDelay(delay: number, signal: AbortSignal) {

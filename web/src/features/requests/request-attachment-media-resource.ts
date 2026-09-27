@@ -1,5 +1,6 @@
 import type { CreateRequestAttachmentMediaGrantResponse } from '@/api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
+import { onViewerChange } from '../../lib/viewer-state'
 import { createRequestAttachmentScopeTracker } from './request-attachment-scope-tracker'
 
 export const requestAttachmentMediaGrantResource = createCachedResource<CreateRequestAttachmentMediaGrantResponse>({
@@ -14,6 +15,7 @@ const scopeTracker = createRequestAttachmentScopeTracker({
     )
   },
 })
+onViewerChange(scopeTracker.reset)
 
 export function activateRequestAttachmentMediaScope(accessScope: string) {
   scopeTracker.activate(accessScope)

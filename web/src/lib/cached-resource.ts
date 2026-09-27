@@ -1,4 +1,5 @@
 import { createBoundedCache, type BoundedCacheOptions } from './bounded-cache'
+import { onViewerChange } from './viewer-state'
 
 type ResourceSnapshot<T> = {
   value: T | null
@@ -21,8 +22,11 @@ const emptySnapshot: ResourceSnapshot<never> = {
 export type CachedResourceStore<T extends object> = ReturnType<typeof createCachedResource<T>>
 
 // Requests belong to the resource, so leaving a page does not discard work
-// another visit or subscriber can reuse.
-export function createCachedResource<T extends object>(options: BoundedCacheOptions<T>) {
+// another visit or subscriber can reuse. Retained data belongs to the current
+// viewer unless the owner declares it app-wide.
+export function createCachedResource<T extends object>({ retainAcrossViewers = false, ...options }: BoundedCacheOptions<T> & {
+  retainAcrossViewers?: boolean
+}) {
   const entries = createBoundedCache<string, ResourceSnapshot<T>>({
     ...options,
     weightOf: (snapshot) => snapshot.value === null ? 0 : options.weightOf?.(snapshot.value) ?? 0,
@@ -85,6 +89,16 @@ export function createCachedResource<T extends object>(options: BoundedCacheOpti
     return attempt.promise
   }
 
+  function clear() {
+    for (const identity of attempts.keys()) cancel(identity)
+    entries.clear()
+    visible.clear()
+    for (const subscribers of listeners.values()) {
+      for (const listener of subscribers) listener()
+    }
+  }
+  if (!retainAcrossViewers) onViewerChange(clear)
+
   return {
     ensure,
     async load(identity: string, version: string, load: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -131,14 +145,7 @@ export function createCachedResource<T extends object>(options: BoundedCacheOpti
         }
       }
     },
-    clear() {
-      for (const identity of attempts.keys()) cancel(identity)
-      entries.clear()
-      visible.clear()
-      for (const subscribers of listeners.values()) {
-        for (const listener of subscribers) listener()
-      }
-    },
+    clear,
     stats: entries.stats,
   }
 }

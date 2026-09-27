@@ -8,7 +8,8 @@ import type {
 } from '@/api/types.generated'
 import { initializeRunDetail, refreshRunDetail, runDetailResource } from './run-detail-resource'
 import { initializeRunHistory, loadMoreRunHistory, refreshRunHistory, runHistoryResource } from './run-history-cache'
-import { EMPTY_LOG_STATE, refreshRunLogs, refreshRunLogsAfterInFlight, resetRunLogCache, runLogsResource, stepKey, writeRunLogCache } from './run-log-cache'
+import { EMPTY_LOG_STATE, refreshRunLogs, refreshRunLogsAfterInFlight, runLogsResource, stepKey, writeRunLogCache } from './run-log-cache'
+import { resetViewerState } from '../../lib/viewer-state'
 
 const key = 'viewer/repo/access/run'
 const params = { owner: 'owner', repo: 'repo', run_id: 'run' }
@@ -37,7 +38,7 @@ function history(ids: string[], next_cursor: string | null = null): RepositoryRu
   return { runs: ids.map((id) => ({ id, state: 'queued' })) as RepositoryRunHistoryPageResponse['runs'], next_cursor }
 }
 
-beforeEach(() => { resetRunLogCache(); runHistoryResource.clear(); runDetailResource.clear() })
+beforeEach(resetViewerState)
 
 test('detail request survives navigation, deduplicates reopen and preserves newer metadata', async () => {
   initializeRunDetail(key, detail)
@@ -120,10 +121,10 @@ test('failed earlier log page retries its cursor and keeps earlier/latest modes 
   assert.equal(runLogsResource.peek(key)?.[stepKey(target)]?.viewingEarlier, false)
 })
 
-test('log reset prevents late responses from restoring discarded viewer data', async () => {
+test('a viewer change prevents late log responses from restoring discarded data', async () => {
   const pending = deferred<RepositoryRunStepLogPageResponse>()
   const request = refreshRunLogs({ key, target, detail, params, loadLogs: () => pending.promise })
-  resetRunLogCache()
+  resetViewerState()
   pending.resolve(logs([1]))
   assert.equal(await request, false)
   assert.equal(runLogsResource.peek(key), null)

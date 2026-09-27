@@ -3,8 +3,8 @@ import test from 'node:test'
 import {
   openRequestDiscussion,
   requestDiscussionResource,
-  resetRequestDiscussionCache,
 } from './request-discussion-cache'
+import { resetViewerState } from '../../lib/viewer-state'
 import { collectionFromPage } from './request-discussion-model'
 import { deferred, discussion } from './request-discussion-test-fixtures'
 import type { RequestDiscussionChanges, RequestDiscussionPage } from './request-discussion-types'
@@ -17,7 +17,7 @@ const page = (count: number): RequestDiscussionPage => ({
 const noChanges = async (after: number): Promise<RequestDiscussionChanges> => ({ discussions: [], through_position: after, has_more: false })
 
 test('reopening retains more than 500 loaded discussions with their cursor intact', () => {
-  resetRequestDiscussionCache()
+  resetViewerState()
   const session = openRequestDiscussion('request', page(1), noChanges)
   session.updateCollection(() => collectionFromPage(page(501)))
   const reopened = openRequestDiscussion('request', page(1), noChanges)
@@ -28,7 +28,7 @@ test('reopening retains more than 500 loaded discussions with their cursor intac
 })
 
 test('oversized active timelines render all loaded data and release it after leaving', () => {
-  resetRequestDiscussionCache()
+  resetViewerState()
   const session = openRequestDiscussion('request', page(1), noChanges)
   const leave = requestDiscussionResource.subscribe('request', () => {})
   session.updateCollection(() => collectionFromPage(page(4001)))
@@ -39,7 +39,7 @@ test('oversized active timelines render all loaded data and release it after lea
 })
 
 test('navigation reuses in-flight catch-up and pagination without losing completed data', async () => {
-  resetRequestDiscussionCache()
+  resetViewerState()
   const changes = deferred<RequestDiscussionChanges>()
   let loads = 0
   const session = openRequestDiscussion('request', page(1), () => { loads++; return changes.promise })
@@ -59,7 +59,7 @@ test('navigation reuses in-flight catch-up and pagination without losing complet
 })
 
 test('reopening merges focused rows without resetting pagination and refreshes newer snapshots', async () => {
-  resetRequestDiscussionCache()
+  resetViewerState()
   const session = openRequestDiscussion('request', page(1), noChanges)
   await session.sync.paginate('older', async () => ({ discussions: [discussion('old', 0)], next_cursor: null, snapshot_version: 1 }))
   await session.refresh({ ...page(1), discussions: [discussion('focused', 1)] })
@@ -71,12 +71,12 @@ test('reopening merges focused rows without resetting pagination and refreshes n
 })
 
 test('evicted catch-up stops draining and cannot write into a replacement session', async () => {
-  resetRequestDiscussionCache()
+  resetViewerState()
   const pending = deferred<RequestDiscussionChanges>()
   let loads = 0
   const session = openRequestDiscussion('request', page(1), () => { loads++; return pending.promise })
   const catchingUp = session.sync.catchUp()
-  resetRequestDiscussionCache()
+  resetViewerState()
   openRequestDiscussion('request', page(1), noChanges)
   pending.resolve({ discussions: [discussion('late', 2)], through_position: 2, has_more: true })
   await catchingUp

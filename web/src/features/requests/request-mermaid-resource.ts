@@ -1,4 +1,5 @@
 import { createCachedResource } from '../../lib/cached-resource'
+import { onViewerChange } from '../../lib/viewer-state'
 import {
   renderRequestMermaid,
   type MermaidRenderInput,
@@ -136,10 +137,15 @@ export function createRequestMermaidResourceManager({
     pump()
   }
 
-  function reset() {
+  function resetDemands() {
     demands.clear()
-    resource.clear()
     scopeTracker.reset()
+  }
+  onViewerChange(resetDemands)
+
+  function reset() {
+    resetDemands()
+    resource.clear()
   }
 
   return {
@@ -157,7 +163,6 @@ export const requestMermaidResource = manager.resource
 export const acquireRequestMermaid = manager.acquire
 export const retryRequestMermaid = manager.retry
 export const activateRequestMermaidScope = manager.activateScope
-export const resetRequestMermaidResource = manager.reset
 
 function yieldBrowserTask() {
   return new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0))

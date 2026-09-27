@@ -5,9 +5,9 @@ import {
   readRequestDiscussionScroll,
   requestDiscussionCacheKey,
   requestDiscussionResource,
-  resetRequestDiscussionCache,
   writeRequestDiscussionScroll,
 } from './request-discussion-cache'
+import { resetViewerState } from '../../lib/viewer-state'
 import { mergeDiscussion } from './request-discussion-model'
 import { discussion } from './request-discussion-test-fixtures'
 
@@ -24,7 +24,7 @@ test('keys timeline views by viewer, repository access scope, and request', () =
 })
 
 test('reopening reuses the subscribed collection, expansion, scroll and pending pagination', () => {
-  resetRequestDiscussionCache()
+  resetViewerState()
   const session = openRequestDiscussion('request', page, loadChanges)
   let notifications = 0
   const unsubscribe = requestDiscussionResource.subscribe('request', () => notifications++)
@@ -43,7 +43,7 @@ test('reopening reuses the subscribed collection, expansion, scroll and pending 
 })
 
 test('bounds retained views and ignores late writes after eviction or reset', () => {
-  resetRequestDiscussionCache()
+  resetViewerState()
   const original = openRequestDiscussion('request', page, loadChanges)
   for (let index = 0; index < 8; index++) openRequestDiscussion(`other-${index}`, page, loadChanges)
   assert.equal(requestDiscussionResource.peek('request'), null)
@@ -52,7 +52,7 @@ test('bounds retained views and ignores late writes after eviction or reset', ()
   const replacement = openRequestDiscussion('request', page, loadChanges)
   original.setLoadingMore(true)
   assert.equal(requestDiscussionResource.peek('request')?.loadingMore, false)
-  resetRequestDiscussionCache()
+  resetViewerState()
   replacement.setError('late error')
   assert.equal(requestDiscussionResource.peek('request'), null)
 })

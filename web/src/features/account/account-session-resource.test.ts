@@ -4,11 +4,10 @@ import type { AccountSessionResponse } from '@/api/types.generated'
 import {
   accountSessionIdentity,
   accountSessionResource,
-  activateAccountSessionViewer,
   loadAccountSessionValue,
-  resetAccountSessionResource,
   type AccountSessionLoader,
 } from './account-session-resource'
+import { resetViewerState } from '../../lib/viewer-state'
 
 const account = (id: string): AccountSessionResponse => ({
   identity: null,
@@ -29,7 +28,7 @@ const readSession = async (viewerId: string, load: AccountSessionLoader) => {
   return value.account
 }
 
-test.beforeEach(resetAccountSessionResource)
+test.beforeEach(() => accountSessionResource.clear())
 
 test('navigation reuses the retained account session for the same viewer', async () => {
   let loads = 0
@@ -61,8 +60,6 @@ test('a transient failure is retried within a bounded attempt count', async () =
 
 test('viewer changes discard retained data and reject a late previous-viewer write', async () => {
   let resolveFirst: ((value: AccountSessionResponse) => void) | undefined
-  // The session boundary owns viewer activation; subscribers only read.
-  activateAccountSessionViewer('clerk_one')
   const first = readSession('clerk_one', () => (
     new Promise<AccountSessionResponse>((resolve) => {
       resolveFirst = resolve
@@ -70,7 +67,7 @@ test('viewer changes discard retained data and reject a late previous-viewer wri
   ))
   await Promise.resolve()
 
-  activateAccountSessionViewer('anonymous')
+  resetViewerState()
   await readSession('clerk_two', async () => account('two'))
   resolveFirst?.(account('one'))
   await assert.rejects(first, /no longer available/)

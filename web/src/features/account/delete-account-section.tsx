@@ -5,7 +5,7 @@ import { useAuth, useClerk } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
 import { useState, type ReactNode } from 'react'
 import { AccountDangerZoneSection } from './account-sections'
-import { resetAccountSessionResource } from './account-session-resource'
+import { accountSessionResource } from './account-session-resource'
 import { useAccountSession } from './use-account-session'
 
 export function DeleteAccountSection({
@@ -32,7 +32,8 @@ export function DeleteAccountSection({
       setError(<SharedRepositories repositories={result.repositories} />)
       return
     }
-    resetAccountSessionResource()
+    // Hide the deleted account before sign-out completes the viewer change.
+    accountSessionResource.clear()
     await clerk.signOut({ redirectUrl: '/' })
   }
 

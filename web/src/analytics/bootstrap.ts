@@ -11,8 +11,10 @@ type AnalyticsBootstrap =
   | { client: AnalyticsClient; eventContext: AnalyticsEventContext }
   | { client: null; eventContext: null }
 
+// Runtime configuration is app-wide; reloading it would start a second client.
 export const analyticsBootstrapResource = createCachedResource<AnalyticsBootstrap>({
   maxEntries: 1,
+  retainAcrossViewers: true,
 })
 
 export async function loadAnalyticsBootstrap(signal: AbortSignal) {

@@ -5,6 +5,7 @@ import type {
 } from '@/api/types.generated'
 import { createBoundedCache } from '../../lib/bounded-cache'
 import { createCachedResource } from '../../lib/cached-resource'
+import { onViewerChange } from '../../lib/viewer-state'
 
 const MAX_ENTRY_ENTRIES = 48
 const MAX_ENTRY_BYTES = 4 * 1024 * 1024
@@ -23,6 +24,7 @@ export const historyDiffResource = createCachedResource<ReviewFileDiff>({
 })
 
 const diffScroll = createBoundedCache<string, number>({ maxEntries: MAX_DIFF_ENTRIES })
+onViewerChange(() => diffScroll.clear())
 
 type HistoryScope = {
   scope: string
@@ -83,12 +85,6 @@ export function readHistoryDiffScroll(key: string | null) {
 export function writeHistoryDiffScroll(key: string | null, scrollTop: number) {
   if (!key) return
   if (historyDiffResource.peek(key)) diffScroll.set(key, scrollTop)
-}
-
-export function resetHistoryResourceCache() {
-  historyEntryResource.clear()
-  historyDiffResource.clear()
-  diffScroll.clear()
 }
 
 export function historyResourceCacheStats() {
