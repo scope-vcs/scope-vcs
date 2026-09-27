@@ -46,6 +46,8 @@ mod projection_read_models;
 mod push_triggers;
 mod repo_change_notifications;
 mod repo_collaboration;
+#[cfg(test)]
+mod repo_collaboration_tests;
 mod repo_effects;
 mod repo_invite_emails;
 mod repo_invite_retention;
@@ -134,7 +136,7 @@ pub use maintenance::{
 };
 pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
 pub use repo_collaboration::{
-    CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,
+    CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand, RepositoryCollaboration,
     RepositoryCollaborationMutation, UpdateRepositoryMemberPermissionsCommand,
 };
 pub use repo_invite_emails::{RepositoryInviteEmailDelivery, RequestRepositoryInviteEmailCommand};

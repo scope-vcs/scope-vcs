@@ -76,29 +76,6 @@ impl RepositoryStore {
         Ok(RepositoryCollaborationMutation::committed(&repo, email))
     }
 
-    /// The newest email of each invite in the repository.
-    pub async fn latest_repository_invite_emails(
-        &self,
-        repo: &Repository,
-    ) -> Result<BTreeMap<String, RepositoryInviteEmail>, PostgresError> {
-        if repo.invitations.is_empty() {
-            return Ok(BTreeMap::new());
-        }
-        let rows = Entity::find()
-            .filter(Column::InviteId.is_in(repo.invitations.iter().map(|invite| invite.id.clone())))
-            .order_by_asc(Column::CreatedAtUnix)
-            .order_by_asc(Column::Id)
-            .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
-        let mut latest = BTreeMap::new();
-        for row in rows {
-            let email = row.try_into_domain()?;
-            latest.insert(email.invite_id.clone(), email);
-        }
-        Ok(latest)
-    }
-
     /// Claims due emails for one sender. A claim lapses by itself, so an email
     /// whose sender died is picked up again, and two senders never work on the
     /// same email in one retry window.
@@ -390,4 +367,30 @@ async fn claimed_email(
 
 fn to_i64(value: u64) -> Result<i64, PostgresError> {
     i64::try_from(value).map_err(PostgresError::internal)
+}
+
+/// The newest email of each invite.
+pub(super) async fn latest_invite_emails<C>(
+    conn: &C,
+    invites: &[RepositoryInvite],
+) -> Result<BTreeMap<String, RepositoryInviteEmail>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    if invites.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let rows = Entity::find()
+        .filter(Column::InviteId.is_in(invites.iter().map(|invite| invite.id.clone())))
+        .order_by_asc(Column::CreatedAtUnix)
+        .order_by_asc(Column::Id)
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    let mut latest = BTreeMap::new();
+    for row in rows {
+        let email = row.try_into_domain()?;
+        latest.insert(email.invite_id.clone(), email);
+    }
+    Ok(latest)
 }

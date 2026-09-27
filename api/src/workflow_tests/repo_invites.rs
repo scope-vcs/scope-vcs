@@ -363,14 +363,18 @@ async fn a_new_invite_is_emailed_with_a_link_that_was_never_stored() {
         assert_eq!(landing(&state, token, None).await["status"], "open");
     }
     // Only hashes are stored: the plain token appears in no invite row.
-    let (repo, _) = state
+    let collaboration = state
         .metadata
         .repositories()
-        .repository_collaboration("owner", "repo")
+        .repository_collaboration("owner", "repo", &test_owner_id())
         .await
         .unwrap()
         .unwrap();
-    let invite = repo.invitations.iter().find(|i| i.id == invite_id).unwrap();
+    let invite = collaboration
+        .invites
+        .iter()
+        .find(|i| i.id == invite_id)
+        .unwrap();
     assert_eq!(invite.link_hashes.len(), 2);
     assert!(
         invite

@@ -7,7 +7,8 @@ use scope_domain::repository::{
     repo_id,
 };
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, QuerySelect,
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, FromQueryResult, QueryFilter,
+    QuerySelect,
 };
 
 #[derive(FromQueryResult)]
@@ -31,11 +32,27 @@ impl RepositoryStore {
         name: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<RepositoryAccessContext>, PostgresError> {
+        let Some((tx, context)) = self
+            .begin_read_access_snapshot(&repo_id(owner, name), viewer_user_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(Some(context))
+    }
+
+    /// Decides whether the viewer may read the repository and, when they may,
+    /// returns the still-open snapshot that decision was made in, so the caller
+    /// reads its data from the same repository incarnation.
+    pub(super) async fn begin_read_access_snapshot(
+        &self,
+        repo_id: &str,
+        viewer_user_id: Option<&str>,
+    ) -> Result<Option<(DatabaseTransaction, RepositoryAccessContext)>, PostgresError> {
         for _ in 0..3 {
             let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-            let Some(context) =
-                repository_access(&tx, &repo_id(owner, name), viewer_user_id).await?
-            else {
+            let Some(context) = repository_access(&tx, repo_id, viewer_user_id).await? else {
                 tx.commit().await.map_err(PostgresError::internal)?;
                 return Ok(None);
             };
@@ -60,8 +77,11 @@ impl RepositoryStore {
             } else {
                 false
             };
-            tx.commit().await.map_err(PostgresError::internal)?;
-            return Ok(context.can_read(public_files_visible).then_some(context));
+            if !context.can_read(public_files_visible) {
+                tx.commit().await.map_err(PostgresError::internal)?;
+                return Ok(None);
+            }
+            return Ok(Some((tx, context)));
         }
         Err(PostgresError::conflict(
             "repository kept changing while reading access; retry",

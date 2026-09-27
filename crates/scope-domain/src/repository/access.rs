@@ -49,6 +49,14 @@ impl RepositoryAccessContext {
         }
     }
 
+    pub fn ensure_owner(&self) -> Result<(), crate::error::DomainError> {
+        if self.access.actor == RepositoryActor::Owner {
+            Ok(())
+        } else {
+            Err(crate::error::DomainError::forbidden("owner role required"))
+        }
+    }
+
     pub fn can_read(&self, public_files_visible: bool) -> bool {
         can_read_repository(
             self.record.lifecycle_state,

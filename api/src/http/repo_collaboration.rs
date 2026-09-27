@@ -1,12 +1,12 @@
 use crate::{
     auth::{
-        scope::{optional_scope_user, principal_for_user_id, require_scope_user},
+        scope::{optional_scope_user, require_scope_user},
         tokens::{generate_repository_invite_token, random_token, token_hash},
     },
     error::ApiError,
     http::{origins::public_app_origin, responses::*},
     persistence::unix_now,
-    repo_access::{ensure_repo_read, find_repo},
+    repo_access::find_read_access,
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::repository_collaboration::{
@@ -34,24 +34,14 @@ pub(crate) async fn list_repository_collaboration(
     Path((owner, repo_name)): Path<(String, String)>,
 ) -> Result<Json<RepositoryCollaborationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let repo = find_repo(&state, &owner, &repo_name).await?;
-    ensure_collaboration_owner_access(&repo, &user.id)?;
-    let (repo, users) = state
+    let collaboration = state
         .metadata
         .repositories()
-        .repository_collaboration(&owner, &repo_name)
+        .repository_collaboration(&owner, &repo_name, &user.id)
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
-
-    let emails = state
-        .metadata
-        .repositories()
-        .latest_repository_invite_emails(&repo)
-        .await?;
     Ok(Json(repository_collaboration_response(
-        &repo,
-        &users,
-        &emails,
+        &collaboration,
         unix_now()?,
     )))
 }
@@ -124,7 +114,7 @@ pub(crate) async fn create_repository_invite_email(
                     scope_postgres::db::RequestRepositoryInviteEmailCommand {
                         owner: mutation_owner.clone(),
                         name: mutation_repo_name.clone(),
-                        owner_user_id: user.id,
+                        owner_user_id: user.id.clone(),
                         invite_id: invite_id.clone(),
                         email_id: random_token("invite_email_", "failed to generate email id")?,
                         now_unix: now,
@@ -132,16 +122,14 @@ pub(crate) async fn create_repository_invite_email(
                     &crate::persistence_ids::generate_persistence_id,
                 )
                 .await?;
-            let (repo, _) = repositories
-                .repository_collaboration(&mutation_owner, &mutation_repo_name)
+            let invite = repositories
+                .repository_collaboration(&mutation_owner, &mutation_repo_name, &user.id)
                 .await?
-                .ok_or_else(|| ApiError::not_found("repository not found"))?;
-            let invite = repo
-                .invitations
-                .iter()
+                .ok_or_else(|| ApiError::not_found("repository not found"))?
+                .invites
+                .into_iter()
                 .find(|invite| invite.id == invite_id)
-                .ok_or_else(|| ApiError::not_found("repository invite not found"))?
-                .clone();
+                .ok_or_else(|| ApiError::not_found("repository invite not found"))?;
             Ok(map_committed_mutation(mutation, |email| {
                 repository_invite_response(&invite, Some(&email), now)
             }))
@@ -381,20 +369,13 @@ where
     Fut: std::future::Future<Output = Result<RepositoryCollaborationMutation<T>, ApiError>>,
 {
     let user = require_scope_user(state, headers).await?;
-    let repo = find_repo(state, owner, repo_name).await?;
-    ensure_collaboration_owner_access(&repo, &user.id)?;
+    // The mutation checks ownership itself; this read first answers 404 to a
+    // non-owner who cannot see the repository.
+    find_read_access(state, owner, repo_name, Some(&user.id))
+        .await?
+        .ensure_owner()?;
     let mutation = mutate(user).await?;
     Ok(publish_committed_mutation(state, mutation, event).await)
-}
-
-fn ensure_collaboration_owner_access(repo: &Repository, user_id: &str) -> Result<(), ApiError> {
-    let principal = principal_for_user_id(repo, user_id);
-    ensure_repo_read(repo, &principal)?;
-    if repo.is_owner_user(user_id) {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden("owner role required"))
-    }
 }
 
 fn repository_invite_url(secret: &str) -> Result<String, ApiError> {
