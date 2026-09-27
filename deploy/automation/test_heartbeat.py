@@ -23,6 +23,8 @@ class HeartbeatTests(unittest.TestCase):
                 (self.now - timedelta(minutes=21)).isoformat(), now=self.now))
         self.assertIn("--assignee", gh.call_args.args)
         self.assertIn("adamblumoff", gh.call_args.args)
+        body = gh.call_args.args[gh.call_args.args.index("--body") + 1]
+        self.assertIn('"While Surface is offline"', body)
 
     def test_missing_invalid_and_future_heartbeat_are_unhealthy(self):
         values = ["", "no date", self.now.replace(tzinfo=None).isoformat(),
