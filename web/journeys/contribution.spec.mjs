@@ -5,14 +5,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, afterEach, before, test } from 'node:test'
 import { chromium } from 'playwright'
-import { baseUrl, waitForClientHydration } from '../smoke/browser-smoke.mjs'
-import { apiFetch, cliActor, collaborators, provisionClerkUsers, signIn } from './actors.mjs'
+import { assertNoHorizontalOverflow, baseUrl, waitForClientHydration } from '../smoke/browser-smoke.mjs'
+import {
+  apiFetch, apiUrl, cliActor, closeSession, collaborators, devSessionToken, provisionClerkUsers, signIn, signInThroughForm,
+} from './actors.mjs'
 
 // A per-run identifier, so a retry cannot pass on an earlier run's requests.
 const runId = `${Date.now().toString(36)}-${process.pid}`
 const repoPath = '/dev/update-demo'
 const requestApi = (id) => `/v1/repos${repoPath}/requests/${id}`
 let browser, workspace
+// Finished requests the narrow-screen pass revisits.
+const requests = {}
 const cli = {}
 const web = {}
 
@@ -55,7 +59,10 @@ afterEach(async (t) => {
 })
 
 after(async () => {
-  for (const { pageErrors } of Object.values(web)) assert.deepEqual(pageErrors, [])
+  for (const session of Object.values(web)) {
+    assert.deepEqual(session.pageErrors, [])
+    await closeSession(session)
+  }
   await browser?.close()
   if (workspace) await rm(workspace, { recursive: true, force: true })
 })
@@ -98,6 +105,7 @@ test('a CLI contribution is discussed and merged in the browser', async () => {
   const path = `journey-${runId}.txt`
   const name = `journey-${runId}`
   const { id, head } = await submitRequest(name, path, 'contributed from the CLI\n')
+  requests.merged = id
   const { maintainer, contributor } = web
 
   await maintainer.page.goto(`${baseUrl}${repoPath}/requests`)
@@ -173,6 +181,7 @@ jobs:
 
   const name = `journey-checks-${runId}`
   const { id } = await submitRequest(name, `${name}.txt`, 'needs checks\n')
+  requests.closed = id
   const { maintainer, contributor } = web
 
   await openRequest(contributor.page, id)
@@ -194,4 +203,58 @@ jobs:
   await state(maintainer.page, 'Closed')
   const { request } = await apiFetch(maintainerCli.token, requestApi(id))
   assert.equal(request.state, 'Closed')
+})
+
+test('the sign-in form signs a collaborator in with a Clerk test code', async () => {
+  const session = await signInThroughForm(browser, collaborators.contributor)
+  assert.deepEqual(session.pageErrors, [])
+  await closeSession(session)
+})
+
+test('review controls and completion states fit a narrow screen', async () => {
+  const { id } = await submitRequest(`journey-narrow-${runId}`, `journey-narrow-${runId}.txt`, 'narrow\n')
+  const viewport = { width: 390, height: 844 }
+  const context = await browser.newContext({ storageState: await web.maintainer.context.storageState(), viewport })
+  const page = await context.newPage()
+  await openRequest(page, id)
+  // Merge is disabled or offered as auto-merge while checks await approval.
+  for (const control of [
+    page.getByRole('button', { name: 'Approve checks' }),
+    page.getByRole('button', { name: /^Merge/ }).first(),
+  ]) {
+    await control.waitFor()
+    const { x, y, width, height } = await control.boundingBox()
+    assert.ok(x >= 0 && x + width <= viewport.width && y + height <= viewport.height, `${await control.textContent()} is off screen`)
+  }
+  await assertNoHorizontalOverflow(page)
+  for (const [label, requestId] of [['Merged', requests.merged], ['Closed', requests.closed]]) {
+    await openRequest(page, requestId)
+    await state(page, label)
+    await assertNoHorizontalOverflow(page)
+  }
+  await context.close()
+})
+
+// Runs last: it removes the seeded maintainer from dev/update-demo.
+test('a revoked maintainer cannot approve checks from an open page', async () => {
+  const { id } = await submitRequest(`journey-revoked-${runId}`, `journey-revoked-${runId}.txt`, 'revoked\n')
+  const { page } = web.maintainer
+  // Hold live updates so the page keeps its pre-revocation controls.
+  await page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
+  await openRequest(page, id)
+  const approve = page.getByRole('button', { name: 'Approve checks' })
+  await waitForClientHydration(approve)
+
+  const owner = await devSessionToken('dev')
+  const revoked = await fetch(`${apiUrl}/v1/repos${repoPath}/members/scope_usr_dev_maintainer`, {
+    method: 'DELETE',
+    // CLI sessions must declare the CLI protocol for mutations.
+    headers: { authorization: `Bearer ${owner}`, 'x-scope-cli-protocol': '1' },
+  })
+  assert.equal(revoked.ok, true, `member removal returned ${revoked.status}`)
+
+  await approve.click()
+  await page.getByRole('region', { name: 'Checks' }).getByRole('alert').filter({ hasText: 'repo maintainer required' }).waitFor()
+  const checks = await apiFetch(owner, `${requestApi(id)}/checks`)
+  assert.equal(checks.state, 'awaiting-approval')
 })
