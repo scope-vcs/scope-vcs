@@ -56,6 +56,7 @@ unable to read backup contents. Never create permanent access keys for this dril
 
 ```bash
 umask 077
+DOWNLOAD_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
 aws s3api get-object --bucket "$RECOVERY_BUCKET" \
   --key "$COMPLETION_KEY" --version-id "$COMPLETION_VERSION" complete.json
 aws s3api get-object --bucket "$RECOVERY_BUCKET" \
@@ -67,15 +68,13 @@ python deploy/aws/recovery/restore.py recovery.tar.age \
 ```
 
 Use the archive key, version, and checksum from the retrieved completion marker;
-compare the marker version with the independent workflow receipt. The restore
-verifies every required object using the escrowed keys and the same-snapshot
-reference list. Restore its database into an empty, network-none PostgreSQL18
-container with no published ports, run the reviewed maintenance schema verifier,
-and apply `rebuild-cache.sql` there because the daily capture excludes cache.
-Record only aggregate counts and hashes in drill output. Remove the isolated
-plaintext files and container after preserving the encrypted archive and proof.
+compare the marker version with the independent workflow receipt. Keep
+`DOWNLOAD_STARTED_AT`; the drill measures recovery time from it. The restore verifies every required object using the escrowed
+keys and the same-snapshot reference list. Then run the application drill in
+[README.md](README.md#application-drill) on that destination; it restores the
+database, schema check, and objects into a sealed stack and records evidence with
+only aggregate counts, hashes, and timings. Remove the isolated plaintext files after
+preserving the encrypted archive and evidence.
 
-Do not claim an existing standalone database dump proves object or key recovery.
-The first successful downloaded-archive drill establishes that proof; a full
-application canary additionally needs new isolated buckets and app credentials as
-described in README.md. Keep those claims separate in rollout evidence.
+Do not claim an existing standalone database dump proves object or key recovery,
+or that a decrypted archive proves a working service. Only a complete drill does.
