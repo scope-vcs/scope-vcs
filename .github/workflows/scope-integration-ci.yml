@@ -238,7 +238,8 @@ jobs:
       (github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor != 'dependabot[bot]'))
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    # The same cap as the integration job, whose recent runs peaked at 384 seconds.
+    # The same cap as the integration job. The first run took 161 seconds, 18 of
+    # them in the journey itself.
     timeout-minutes: 20
     services:
       postgres:
