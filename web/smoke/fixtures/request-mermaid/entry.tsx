@@ -4,7 +4,8 @@ import { RequestAttachmentProvider } from '@/features/requests/request-attachmen
 import { RequestDiscussionMarkdown } from '@/features/requests/request-discussion-markdown'
 import { RequestDescription } from '@/features/requests/request-description'
 import { toggleTheme } from '@/lib/use-theme-type'
-import { requestMermaidResource, resetRequestMermaidResource } from '@/features/requests/request-mermaid-resource'
+import { requestMermaidResource } from '@/features/requests/request-mermaid-resource'
+import { resetViewerState } from '@/lib/viewer-state'
 import './styles.css'
 import { setFixtureViewer } from './clerk'
 
@@ -24,7 +25,7 @@ function App() {
   const [viewer, setViewer] = useState('viewer')
   Object.assign(window, {
     mermaidCacheStats: () => requestMermaidResource.stats(),
-    changeMermaidViewer: () => { setFixtureViewer('other-viewer'); resetRequestMermaidResource() },
+    changeMermaidViewer: () => { setFixtureViewer('other-viewer'); resetViewerState() },
     refreshMermaidViewer: () => setViewer('other-viewer'),
   })
   const source = mode === 'ordinary' ? 'An ordinary request.\n\n```ts\nconst ready = true\n```' :
