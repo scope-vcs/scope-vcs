@@ -11,7 +11,7 @@ use crate::{
         requests::{repo_and_access, visible_request},
         responses::{
             RequestFileDiffRequest, ReviewFileContentResponse, ReviewFileDiffResponse,
-            request_actor_summary_response,
+            recorded_actor_response,
         },
     },
     state::AppState,
@@ -101,7 +101,7 @@ pub(crate) async fn list_request_revisions(
         .users_by_ids(
             revisions
                 .iter()
-                .map(|revision| revision.actor_user_id.clone()),
+                .filter_map(|revision| revision.actor_user_id.clone()),
         )
         .await?;
     let mut responses = vec![None; revisions.len()];
@@ -166,7 +166,7 @@ pub(crate) async fn list_request_revisions(
         responses[index] = Some(RequestRevisionResponse {
             id: revision.id.clone(),
             position: revision.position,
-            actor: request_actor_summary_response(&revision.actor_user_id, &users)?,
+            actor: recorded_actor_response(revision.actor_user_id.as_deref(), &users)?,
             old_head_oid,
             new_head_oid,
             commits,

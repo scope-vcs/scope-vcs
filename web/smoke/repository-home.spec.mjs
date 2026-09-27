@@ -197,7 +197,7 @@ test('visible project resources open through file tabs and reopen a closed selec
     await page.getByRole('button', { name: 'License', exact: true }).click()
     await page.getByRole('tab', { name: 'LICENSE', exact: true }).waitFor()
     await page.locator('pre code').filter({ hasText: 'Fixture license' }).waitFor()
-    await page.getByRole('button', { name: 'Close LICENSE', exact: true }).click()
+    await page.getByTitle('Close LICENSE', { exact: true }).click()
     await page.getByText('Select a file to inspect its contents.', { exact: true }).waitFor()
     await page.getByText('Resources', { exact: true }).click()
     await page.getByRole('button', { name: 'License', exact: true }).click()

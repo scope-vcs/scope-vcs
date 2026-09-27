@@ -31,15 +31,11 @@ export function historyCommitTitle(commit: Pick<CommitSummary, 'message'>) {
 }
 
 export function historyEntryLabels(entry: HistoryEntrySummaryResponse) {
-  const title = historyCommitTitle(entry)
-  const kind = historyEntryKindLabel(entry.kind)
-  const counts = historyEntryCountLabel(entry)
   return {
-    ariaLabel: `${kind}: ${title}, update ${entry.source_id}, ${counts}`,
-    compactId: compactHistorySourceId(entry.source_id),
-    count: counts,
-    kind,
-    title,
+    count: historyEntryCountLabel(entry),
+    // Pushes are the common case; only other kinds carry a label.
+    kind: entry.kind === 'push' ? null : historyEntryKindLabel(entry.kind),
+    title: historyCommitTitle(entry),
   }
 }
 
@@ -54,7 +50,7 @@ export function historyEntryKindLabel(kind: HistoryEntryKind) {
   }
 }
 
-function compactHistorySourceId(sourceId: string) {
+export function compactHistorySourceId(sourceId: string) {
   const reviewedPush = REVIEWED_PUSH_ID.exec(sourceId)
   return reviewedPush ? reviewedPush[1].slice(0, 12) : sourceId
 }
@@ -63,7 +59,7 @@ export function historyEntryCountLabel(entry: Pick<HistoryEntrySummaryResponse, 
   const files = entry.kind === 'visibility_change' ? 0 : entry.file_change_count
   const { made_public_count: madePublic, made_private_count: madePrivate } = entry.visibility_summary
   return [
-    files > 0 ? `${files} file ${files === 1 ? 'change' : 'changes'}` : null,
+    files > 0 ? `${files} ${files === 1 ? 'file' : 'files'}` : null,
     madePublic > 0 ? `${madePublic} made public` : null,
     madePrivate > 0 ? `${madePrivate} made private` : null,
   ].filter(Boolean).join(', ')

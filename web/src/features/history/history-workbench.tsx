@@ -12,8 +12,9 @@ import type {
   CommitFileDiffState,
 } from '@/features/history/history-state'
 import { History } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
+/** One revision's commits: a header, the commit picker when there is a choice, then files and diff. */
 export function HistoryWorkbench({
   commitContext,
   commitState,
@@ -22,6 +23,7 @@ export function HistoryWorkbench({
   emptyDescription,
   emptyTitle,
   fileDiffState,
+  header,
   onCloseDiff,
   onRetryDiff,
   onSelectCommit,
@@ -36,6 +38,7 @@ export function HistoryWorkbench({
   emptyDescription: string
   emptyTitle: string
   fileDiffState: CommitFileDiffState
+  header?: ReactNode
   onCloseDiff: () => void
   onRetryDiff?: () => void
   onSelectCommit: (commit: CommitSummary) => void
@@ -43,9 +46,9 @@ export function HistoryWorkbench({
   selectedCommitId: string | null
   selectedFilePath: string | null
 }) {
-  const [commitsOpen, setCommitsOpen] = useState(false)
   return (
-    <section className="border-t border-border">
+    <section>
+      {header}
       {commits.length === 0 ? (
         <EmptyState
           description={emptyDescription}
@@ -54,16 +57,20 @@ export function HistoryWorkbench({
         />
       ) : (
         <div>
-          <details className="border-b border-border" open={commitsOpen} onToggle={(event) => setCommitsOpen(event.currentTarget.open)}>
-            <summary className="cursor-pointer px-5 py-3 text-sm font-medium">commits · {commits.length}</summary>
-            <div className="max-h-72 overflow-y-auto">
-          <CommitList
-            commits={commits}
-            onSelectCommit={(commit) => { onSelectCommit(commit); setCommitsOpen(false) }}
-            selectedCommitId={selectedCommitId}
-          />
+          {commits.length > 1 ? (
+            <div className="border-b border-border">
+              <h2 className="px-5 pt-3 pb-1 text-xs font-medium text-muted-foreground sm:px-6 lg:px-8">
+                {commits.length} commits in this revision
+              </h2>
+              <div className="max-h-72 overflow-y-auto">
+                <CommitList
+                  commits={commits}
+                  onSelectCommit={onSelectCommit}
+                  selectedCommitId={selectedCommitId}
+                />
+              </div>
             </div>
-          </details>
+          ) : null}
           <CommitDetailPanel
             commitContext={commitContext}
             commitState={commitState}

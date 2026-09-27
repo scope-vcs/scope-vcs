@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { BlockSkeleton, TextSkeleton, type TextSkeletonLength } from '@/components/ui/skeleton'
 import { VisibilityBadge, VisibilityLegend } from '@/components/visibility-badge'
 import { cn } from '@/lib/utils'
 import {
@@ -24,8 +25,41 @@ const FULL_TREE_COLUMNS =
 const COMPACT_TREE_COLUMNS =
   'grid-cols-[minmax(0,1fr)_auto_20px]'
 
+const TREE_HEADER_CLASS =
+  'hidden gap-3 px-3 pb-1.5 pt-1 text-[11px] font-medium text-muted-foreground sm:grid sm:items-center'
+const TREE_ROW_CLASS =
+  'grid min-h-9 items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm'
+const PENDING_TREE_ROWS: TextSkeletonLength[] = ['medium', 'long', 'short', 'long', 'medium', 'long']
+
+/** The compact tree before its files arrive: same columns, header and legend. */
+export function FileSystemTreeSkeleton({ metaColumnLabel }: { metaColumnLabel: ReactNode }) {
+  return (
+    <div>
+      <div className={cn(TREE_HEADER_CLASS, COMPACT_TREE_COLUMNS)}>
+        <div>path</div>
+        <div>{metaColumnLabel}</div>
+        <div />
+      </div>
+      <ul className="space-y-0.5">
+        {PENDING_TREE_ROWS.map((length, row) => (
+          <li className={cn(TREE_ROW_CLASS, COMPACT_TREE_COLUMNS)} key={`file-${row}`}>
+            <div className="flex min-w-0 items-center gap-2">
+              <BlockSkeleton className="size-4 shrink-0" />
+              <TextSkeleton length={length} size="meta" />
+            </div>
+            <div />
+            <BlockSkeleton className="size-3.5 rounded-full" />
+          </li>
+        ))}
+      </ul>
+      <div className="px-3 pt-4 pb-2"><VisibilityLegend /></div>
+    </div>
+  )
+}
+
 export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
   compactVisibility = false,
+  expandFolders = false,
   files,
   getFileMeta,
   metaColumnLabel = 'Status',
@@ -34,6 +68,8 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
   selectedFilePath = null,
 }: {
   compactVisibility?: boolean
+  /** Start with every folder open, for short lists such as a change set. */
+  expandFolders?: boolean
   files: TFile[]
   getFileMeta?: (file: TFile) => ReactNode
   metaColumnLabel?: ReactNode
@@ -54,6 +90,7 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
     <FileSystemTreeRows
       columnsClassName={columnsClassName}
       compactVisibility={compactVisibility}
+      expandFolders={expandFolders}
       getFileMeta={getFileMeta}
       key={treeKey}
       onActivateFile={onActivateFile}
@@ -68,6 +105,7 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
 function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
   columnsClassName,
   compactVisibility,
+  expandFolders,
   getFileMeta,
   metaColumnLabel,
   onActivateFile,
@@ -77,6 +115,7 @@ function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
 }: {
   columnsClassName: string
   compactVisibility: boolean
+  expandFolders: boolean
   getFileMeta?: (file: TFile) => ReactNode
   metaColumnLabel: ReactNode
   onActivateFile?: (file: TFile) => void
@@ -86,7 +125,7 @@ function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
 }) {
   const [folderState, setFolderState] = useState<FolderState>(() => ({
     collapsedForSelection: new Map(),
-    expanded: new Set(),
+    expanded: new Set(expandFolders ? folderKeys(root) : []),
   }))
   const selectedPath = normalizeFilePath(selectedFilePath ?? '')
   const selectedAncestorKeys = useMemo(
@@ -117,7 +156,7 @@ function FileSystemTreeRows<TFile extends FileSystemTreeFileBase>({
     <div>
       <div
         className={cn(
-          'hidden gap-3 px-3 pb-1.5 pt-1 text-[11px] font-medium text-muted-foreground sm:grid sm:items-center',
+          TREE_HEADER_CLASS,
           columnsClassName,
         )}
       >
@@ -186,7 +225,8 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
     return (
       <li
         className={cn(
-          'relative grid min-h-9 items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm transition-[background-color,border-color] hover:bg-accent/50',
+          'relative transition-[background-color,border-color] hover:bg-accent/50',
+          TREE_ROW_CLASS,
           selected &&
             'border-[var(--border-strong)] bg-muted shadow-[inset_2px_0_0_0_var(--foreground)] hover:bg-muted',
           columnsClassName,
@@ -244,7 +284,8 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
     <>
       <li
         className={cn(
-          'grid min-h-9 items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm transition-colors hover:bg-accent/50',
+          TREE_ROW_CLASS,
+          'transition-colors hover:bg-accent/50',
           columnsClassName,
         )}
       >
@@ -306,6 +347,12 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
         ))}
     </>
   )
+}
+
+function folderKeys<TFile extends FileSystemTreeFileBase>(node: FileSystemTreeNode<TFile>): string[] {
+  return node.type === 'folder'
+    ? [node.key, ...node.children.flatMap((child) => folderKeys(child))]
+    : []
 }
 
 type FolderState = {

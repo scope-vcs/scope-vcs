@@ -18,7 +18,7 @@ pub mod request {
         pub id: String,
         pub repo_id: String,
         pub name: String,
-        pub author_user_id: String,
+        pub author_user_id: Option<String>,
         pub author_role: String,
         pub audience: String,
         pub base_main_oid: String,
@@ -272,7 +272,7 @@ pub mod request_invitee {
         pub request_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
         pub user_id: String,
-        pub invited_by_user_id: String,
+        pub invited_by_user_id: Option<String>,
         pub created_at_unix: i64,
     }
 
@@ -315,7 +315,7 @@ pub mod request_revision {
         pub id: String,
         pub request_id: String,
         pub position: i64,
-        pub actor_user_id: String,
+        pub actor_user_id: Option<String>,
         pub old_head_oid: String,
         pub new_head_oid: String,
         pub git_snapshot: Json,
@@ -371,7 +371,7 @@ pub mod request_event {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         pub request_id: String,
-        pub actor_user_id: String,
+        pub actor_user_id: Option<String>,
         pub kind: String,
         pub position: i64,
         pub payload: Json,
@@ -421,7 +421,7 @@ pub mod request_discussion {
         pub request_id: String,
         pub opened_position: i64,
         pub last_activity_position: i64,
-        pub author_user_id: String,
+        pub author_user_id: Option<String>,
         pub body_markdown: String,
         pub revision_id: Option<String>,
         pub commit_oid: Option<String>,
@@ -523,7 +523,7 @@ pub mod request_discussion_reply {
         pub id: String,
         pub discussion_id: String,
         pub position: i64,
-        pub author_user_id: String,
+        pub author_user_id: Option<String>,
         pub body_markdown: String,
         pub reply_to_reply_id: Option<String>,
         pub client_reply_id: String,

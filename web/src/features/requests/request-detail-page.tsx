@@ -16,8 +16,6 @@ import { Link } from '@tanstack/react-router'
 import {
   ArrowLeft,
   CirclePlay,
-  GitCommit,
-  MessageSquare,
   ShieldQuestion,
   SlidersHorizontal,
   UserRound,
@@ -52,6 +50,8 @@ import { useRequestChecks } from './use-request-checks'
 import { useRequestAutoMerge } from './use-request-auto-merge'
 import { requestActivityIdentity } from './request-activity-resource'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
+import { RequestChangesMenu } from './request-changes-menu'
+import { RequestSideDrawer } from './request-side-drawer'
 import {
   RequestAttachmentProvider,
   type RequestAttachmentActions,
@@ -128,13 +128,14 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     live.repo,
     viewerId === 'anonymous' ? null : viewerId,
   )
-  const history = useRequestActivityHistory({
+  const activity = {
     identity: request.permissions.can_view_activity
       ? requestActivityIdentity(scope, request.id)
       : null,
     load: loadActivity,
     version: String(request.activity_version),
-  })
+  }
+  const history = useRequestActivityHistory(activity)
   const checks = useRequestChecks({
     approve: approveChecks,
     identity: requestChecksIdentity(scope, request.id),
@@ -163,8 +164,11 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   }), [params.owner, params.repo, request.id])
   const paneRef = useRef<HTMLDivElement>(null)
   const moreActions = useRef<HTMLButtonElement>(null)
-  const [descriptionActions, setDescriptionActions] = useState<HTMLElement | null>(null)
+  const detailsButton = useRef<HTMLButtonElement>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const rail = useDetailPaneRail(paneRef)
+  // The rail takes over the drawer's content; narrowing again must not reopen it.
+  if (rail && detailsOpen) setDetailsOpen(false)
   const [lifecycleBar, setLifecycleBar] = useState<HTMLDivElement | null>(null)
   const actionClearance = useElementHeight(lifecycleBar)
   const canClaim = workspace?.selected?.attention.reason === 'unclaimed' &&
@@ -196,6 +200,22 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
         <RequestDetailHeader
           actions={
             <>
+              <RequestChangesMenu
+                activity={activity}
+                params={{ ...params, requestId: request.id }}
+              />
+              {rail ? null : (
+                <Button
+                  onClick={() => setDetailsOpen(true)}
+                  ref={detailsButton}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  <SlidersHorizontal />
+                  Details
+                </Button>
+              )}
               {canClaim ? (
                 <Button onClick={workspace?.claim} size="sm" type="button" variant="secondary">
                   <UserRound />
@@ -267,7 +287,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           actions: requestActions,
           onRate: rateRequest,
           params: requestParams,
-          placement: rail ? 'rail' : 'tab',
+          placement: rail ? 'rail' : 'drawer',
           ratings,
           request,
         }}>
@@ -277,15 +297,9 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               data-state={request.state}
             >
               <RequestDescription
-                actionsSlot={descriptionActions}
                 canEdit={request.permissions.can_edit_identity}
                 description={description}
                 onSave={saveDescription}
-              />
-              <RequestViewTabs
-                actionsRef={setDescriptionActions}
-                params={{ ...params, requestId: request.id }}
-                rail={rail}
               />
               <div className="min-w-0">{children}</div>
             </div>
@@ -295,6 +309,16 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               </aside>
             ) : null}
           </div>
+          <RequestSideDrawer
+            description="Lifecycle, invitees, ratings and git state."
+            icon={<SlidersHorizontal />}
+            onOpenChange={setDetailsOpen}
+            open={detailsOpen}
+            returnFocus={detailsButton}
+            title="Details"
+          >
+            <RequestDetails placement="drawer" />
+          </RequestSideDrawer>
         </RequestDetailsProvider>
 
         <RequestActivityDrawer
@@ -304,67 +328,10 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           loading={history.loading}
           onOpenChange={history.onOpenChange}
           open={history.open}
+          params={{ ...params, requestId: request.id }}
           returnFocus={moreActions}
         />
       </div>
     </RequestAttachmentProvider>
-  )
-}
-
-function RequestViewTabs({
-  actionsRef,
-  params,
-  rail,
-}: {
-  /** The description's edit control and editor actions render here. */
-  actionsRef: (element: HTMLElement | null) => void
-  params: RepoParams & { requestId: string }
-  rail: boolean
-}) {
-  const tabClass = 'inline-flex h-11 items-center gap-2 border-b-2 px-1 text-sm font-medium transition-colors'
-  return (
-    <nav aria-label="Request views" className="request-view-tabs flex flex-wrap gap-x-5 px-5 lg:gap-x-6 lg:px-7">
-      <Link
-        activeOptions={{ exact: true }}
-        activeProps={{ className: 'border-foreground text-foreground' }}
-        className={tabClass}
-        inactiveProps={{ className: 'border-transparent text-muted-foreground hover:text-foreground' }}
-        params={params}
-        preload="intent"
-        resetScroll={false}
-        search={{}}
-        to="/$owner/$repo/requests/$requestId"
-      >
-        <MessageSquare className="size-3.5" />
-        Discussion
-      </Link>
-      <Link
-        activeProps={{ className: 'border-foreground text-foreground' }}
-        className={tabClass}
-        inactiveProps={{ className: 'border-transparent text-muted-foreground hover:text-foreground' }}
-        params={params}
-        preload="intent"
-        resetScroll={false}
-        search={{}}
-        to="/$owner/$repo/requests/$requestId/changes"
-      >
-        <GitCommit className="size-3.5" />
-        Changes
-      </Link>
-      <Link
-        activeProps={{ className: 'border-foreground text-foreground' }}
-        className={cn(tabClass, rail && 'hidden')}
-        inactiveProps={{ className: 'border-transparent text-muted-foreground hover:text-foreground' }}
-        params={params}
-        preload="intent"
-        resetScroll={false}
-        search={{}}
-        to="/$owner/$repo/requests/$requestId/details"
-      >
-        <SlidersHorizontal className="size-3.5" />
-        Details
-      </Link>
-      <div className="ml-auto flex items-center" ref={actionsRef} />
-    </nav>
   )
 }

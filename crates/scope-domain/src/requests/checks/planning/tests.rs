@@ -18,6 +18,7 @@ use crate::{
 
 fn request() -> Request {
     let mut request = open_request();
+    request.base_main_oid = "f".repeat(40);
     request.head_oid = "a".repeat(40);
     request.git_snapshot = Some(SourceBlob {
         content_ref: ContentRef::git_bundle_sha256("b".repeat(64)),
@@ -66,9 +67,13 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
             ..request()
         };
         for maintainer in [false, true] {
-            let plan =
-                RequestCheckPlan::evaluate(&request, Ok(&revisions), "actor", maintainer, 30)
-                    .unwrap();
+            let plan = RequestCheckPlan::evaluate(
+                &request,
+                Ok(&revisions),
+                maintainer.then_some("actor"),
+                30,
+            )
+            .unwrap();
             assert_eq!(plan.evaluation.request_id, request.id);
             assert_eq!(plan.evaluation.head_oid, request.head_oid);
             assert_eq!(plan.evaluation.created_at_unix, 30);
@@ -84,7 +89,7 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
             if maintainer {
                 assert_eq!(plan.evaluation.state, RequestCheckEvaluationState::Started);
                 let repeated =
-                    RequestCheckPlan::evaluate(&request, Ok(&revisions), "other", true, 40)
+                    RequestCheckPlan::evaluate(&request, Ok(&revisions), Some("other"), 40)
                         .unwrap();
                 assert_eq!(
                     plan.evaluation.run_ids().collect::<Vec<_>>(),
@@ -96,6 +101,11 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
                     assert_eq!(run.trigger, RunTrigger::Request);
                     assert_eq!(run.requested_by_user_id.as_deref(), Some("actor"));
                     assert_eq!(run.source.git_oid(), request.head_oid);
+                    assert_eq!(
+                        run.source.request_git_source().map(|(_, base)| base),
+                        (audience == RequestAudience::Private)
+                            .then_some(request.base_main_oid.as_str())
+                    );
                     assert_eq!(run.created_at_unix, 30);
                 }
             } else {
@@ -117,15 +127,21 @@ fn empty_and_rejected_workflows_need_no_snapshot_or_runs() {
         ..request()
     };
     for maintainer in [false, true] {
-        let empty = RequestCheckPlan::evaluate(&request, Ok(&[]), "actor", maintainer, 30).unwrap();
+        let empty =
+            RequestCheckPlan::evaluate(&request, Ok(&[]), maintainer.then_some("actor"), 30)
+                .unwrap();
         assert_eq!(
             empty.evaluation.state,
             RequestCheckEvaluationState::NoChecks
         );
         assert!(empty.runs.is_empty());
-        let rejected =
-            RequestCheckPlan::evaluate(&request, Err("invalid workflow"), "actor", maintainer, 30)
-                .unwrap();
+        let rejected = RequestCheckPlan::evaluate(
+            &request,
+            Err("invalid workflow"),
+            maintainer.then_some("actor"),
+            30,
+        )
+        .unwrap();
         assert_eq!(
             rejected.evaluation.state,
             RequestCheckEvaluationState::ConfigurationError
@@ -142,7 +158,7 @@ fn empty_and_rejected_workflows_need_no_snapshot_or_runs() {
 fn approval_after_closing_starts_the_recorded_workflows_in_order() {
     let revisions = [revision("test"), revision("lint")];
     let request = request();
-    let waiting = RequestCheckPlan::evaluate(&request, Ok(&revisions), "author", false, 30)
+    let waiting = RequestCheckPlan::evaluate(&request, Ok(&revisions), None, 30)
         .unwrap()
         .evaluation;
     let closed = Request {
@@ -152,7 +168,7 @@ fn approval_after_closing_starts_the_recorded_workflows_in_order() {
     let approved =
         RequestCheckPlan::approve(&closed, waiting, &revisions, "maintainer", 40).unwrap();
     let immediate =
-        RequestCheckPlan::evaluate(&request, Ok(&revisions), "maintainer", true, 40).unwrap();
+        RequestCheckPlan::evaluate(&request, Ok(&revisions), Some("maintainer"), 40).unwrap();
     assert_eq!(approved.runs, immediate.runs);
     assert_eq!(approved.evaluation.checks, immediate.evaluation.checks);
     assert_eq!(
@@ -171,7 +187,7 @@ fn approval_after_closing_starts_the_recorded_workflows_in_order() {
 fn approval_rejects_missing_or_mismatched_revisions_and_invalid_time() {
     let request = request();
     let revisions = [revision("test"), revision("lint")];
-    let waiting = RequestCheckPlan::evaluate(&request, Ok(&revisions), "author", false, 30)
+    let waiting = RequestCheckPlan::evaluate(&request, Ok(&revisions), None, 30)
         .unwrap()
         .evaluation;
     for (revisions, time, expected) in [
@@ -204,7 +220,7 @@ fn approval_rejects_missing_or_mismatched_revisions_and_invalid_time() {
 fn both_start_paths_reject_missing_or_mismatched_snapshots() {
     let revisions = [revision("test")];
     let original = request();
-    let waiting = RequestCheckPlan::evaluate(&original, Ok(&revisions), "author", false, 30)
+    let waiting = RequestCheckPlan::evaluate(&original, Ok(&revisions), None, 30)
         .unwrap()
         .evaluation;
     let mut mismatched = original.clone();
@@ -220,7 +236,7 @@ fn both_start_paths_reject_missing_or_mismatched_snapshots() {
         (mismatched, "request snapshot does not match its head"),
     ] {
         assert_eq!(
-            RequestCheckPlan::evaluate(&request, Ok(&revisions), "actor", true, 40)
+            RequestCheckPlan::evaluate(&request, Ok(&revisions), Some("actor"), 40)
                 .unwrap_err()
                 .message,
             expected
@@ -238,7 +254,7 @@ fn both_start_paths_reject_missing_or_mismatched_snapshots() {
 fn approval_rejects_an_evaluation_from_another_request_or_head() {
     let request = request();
     let revisions = [revision("test")];
-    let waiting = RequestCheckPlan::evaluate(&request, Ok(&revisions), "author", false, 30)
+    let waiting = RequestCheckPlan::evaluate(&request, Ok(&revisions), None, 30)
         .unwrap()
         .evaluation;
     for (request_id, head_oid) in [

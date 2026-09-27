@@ -7,12 +7,14 @@ import {
   validateRustToolchainSync,
 } from "./check-rust-toolchain-sync.mjs";
 
+const liveFiles = readToolchainFiles();
+
 test("live Rust pins match the root toolchain", () => {
-  assert.deepEqual(validateRustToolchainSync(readToolchainFiles()), []);
+  assert.deepEqual(validateRustToolchainSync(liveFiles), []);
 });
 
 test("a mismatched checks image fails with the replica name and versions", () => {
-  const files = readToolchainFiles();
+  const files = { ...liveFiles };
   const expectedVersion = files["rust-toolchain.toml"].match(
     /channel\s*=\s*"([^"]+)"/,
   )[1];
@@ -23,5 +25,22 @@ test("a mismatched checks image fails with the replica name and versions", () =>
 
   assert.deepEqual(validateRustToolchainSync(files), [
     `.scope/images/checks/Dockerfile: Rust base image must match Rust ${expectedVersion}; found 1.97.0`,
+  ]);
+});
+
+test("checks image Rust stages must share one base digest", {
+  skip: liveFiles[".scope/images/checks/Dockerfile"] === undefined
+    && "Scope keeps .scope/images private, so this checkout does not include it",
+}, () => {
+  const files = { ...liveFiles };
+  const dockerfile = files[".scope/images/checks/Dockerfile"];
+  const [digest] = dockerfile.match(/sha256:[0-9a-f]{64}(?= AS scope-runtime-builder)/);
+  files[".scope/images/checks/Dockerfile"] = dockerfile.replace(
+    `${digest} AS scope-runtime-builder`,
+    `sha256:${"b".repeat(64)} AS scope-runtime-builder`,
+  );
+
+  assert.deepEqual(validateRustToolchainSync(files), [
+    ".scope/images/checks/Dockerfile: Rust stages must use the same base digest",
   ]);
 });

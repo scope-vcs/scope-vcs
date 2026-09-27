@@ -1,19 +1,10 @@
+import { FileSystemTreeSkeleton } from '@/components/file-system-tree'
 import {
   BlockSkeleton,
   LineSkeleton,
   TextSkeleton,
   type LineSkeletonLength,
-  type TextSkeletonLength,
 } from '@/components/ui/skeleton'
-
-const PENDING_FILES: { id: string; length: TextSkeletonLength }[] = [
-  { id: 'first', length: 'medium' },
-  { id: 'second', length: 'long' },
-  { id: 'third', length: 'short' },
-  { id: 'fourth', length: 'long' },
-  { id: 'fifth', length: 'medium' },
-  { id: 'sixth', length: 'long' },
-]
 
 const PENDING_SOURCE_LINES: { id: string; length: LineSkeletonLength }[] = [
   { id: 'first', length: 'long' },
@@ -27,20 +18,14 @@ const PENDING_SOURCE_LINES: { id: string; length: LineSkeletonLength }[] = [
   { id: 'ninth', length: 'short' },
 ]
 
+// Mirrors RepositoryFileNavigator: find-file search, then the file tree.
 export function FileNavigatorSkeleton() {
   return (
     <div>
-      <BlockSkeleton className="mb-2 h-8 w-full" />
-      {PENDING_FILES.map((file) => (
-        <div
-          className="grid min-h-9 grid-cols-[18px_minmax(0,1fr)_18px] items-center gap-2"
-          key={file.id}
-        >
-          <BlockSkeleton className="size-3.5" />
-          <TextSkeleton length={file.length} size="meta" />
-          <BlockSkeleton className="size-3" />
-        </div>
-      ))}
+      <div className="mb-2 px-1">
+        <BlockSkeleton className="h-8 w-full" />
+      </div>
+      <FileSystemTreeSkeleton metaColumnLabel={null} />
     </div>
   )
 }
@@ -54,6 +39,15 @@ export function SourceCodeSkeleton() {
           <LineSkeleton length={line.length} />
         </div>
       ))}
+    </div>
+  )
+}
+
+/** The tab strip before the landing file's tab opens. */
+export function SourceTabStripSkeleton() {
+  return (
+    <div className="flex min-h-10 items-center border-b border-border px-3">
+      <TextSkeleton length="short" size="meta" />
     </div>
   )
 }

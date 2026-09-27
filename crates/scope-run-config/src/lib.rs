@@ -486,13 +486,27 @@ jobs:
         ));
     }
 
+    // Scope keeps .scope/runs private, so public projections omit it. GitHub
+    // Actions always checks out the complete tree, so a missing file fails there.
     #[test]
     fn scope_workflows_use_the_current_contract() {
-        parse_workflow(
-            "/.scope/runs/checks.yml",
-            include_bytes!("../../../.scope/runs/checks.yml").as_slice(),
-        )
-        .expect("checked-in workflow must follow the cloud execution contract");
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.scope/runs/checks.yml");
+        let definition = match std::fs::read(&path) {
+            Ok(definition) => definition,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound
+                    && std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true") =>
+            {
+                eprintln!(
+                    "Skipped .scope/runs/checks.yml: Scope keeps it private, so this checkout does not include it."
+                );
+                return;
+            }
+            Err(error) => panic!("read {}: {error}", path.display()),
+        };
+        parse_workflow("/.scope/runs/checks.yml", &definition)
+            .expect("checked-in workflow must follow the cloud execution contract");
     }
 
     #[test]

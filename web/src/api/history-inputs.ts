@@ -5,7 +5,7 @@ import type {
   HistoryEntryFileDiffInput,
   HistoryPageInput,
 } from './types'
-import type { ProjectionPreviewAudience } from './types.generated'
+import type { HistoryFeed, ProjectionPreviewAudience } from './types.generated'
 
 export function parseHistoryPageInput(input: unknown): HistoryPageInput {
   return {
@@ -62,9 +62,9 @@ function parseOptionalBefore(input: unknown) {
   return data.before.trim() || null
 }
 
-export function parseHistoryFeed(value: unknown): 'updates' | 'all' {
+export function parseHistoryFeed(value: unknown): HistoryFeed {
   if (value === undefined || value === null || value === '') return 'updates'
-  if (value === 'updates' || value === 'all') return value
+  if (value === 'updates' || value === 'all' || value === 'visibility') return value
   throw new Error(`Unsupported history feed: ${String(value)}`)
 }
 

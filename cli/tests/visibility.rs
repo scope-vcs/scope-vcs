@@ -169,3 +169,76 @@ fn show_and_explain_preserve_filename_identity_and_escape_terminal_control_chara
     assert!(text.contains("\\t\\n"), "{text:?}");
     assert_eq!(text.lines().count(), 1);
 }
+
+#[test]
+fn log_lists_the_visibility_feed_without_a_checkout_and_passes_the_cursor() {
+    use axum::{Json, Router, extract::Query, routing::get};
+    use std::collections::HashMap;
+
+    let server = TestServer::new(
+        Router::new()
+            .route(
+                "/v1/session",
+                get(|| async {
+                    Json(session_response("user-test", "owner", "owner@example.test"))
+                }),
+            )
+            .route(
+                "/v1/repos/owner/repo/history",
+                get(|Query(query): Query<HashMap<String, String>>| async move {
+                    assert_eq!(query.get("feed").unwrap(), "visibility");
+                    assert_eq!(query.get("before").unwrap(), "cursor-1");
+                    assert!(!query.contains_key("audience"));
+                    Json(serde_json::json!({
+                        "feed": "visibility",
+                        "audience": "public",
+                        "repo_id": "repo-1",
+                        "view_key": "public",
+                        "generation": "g1",
+                        "head_oid": null,
+                        "entries": [{
+                            "occurred_at_unix": null,
+                            "id": "entry-1",
+                            "source_id": "vc_000041",
+                            "parent_id": null,
+                            "kind": "visibility_change",
+                            "author": null,
+                            "message": "Made 3 files public",
+                            "file_change_count": 3,
+                            "visibility_summary": {"made_public_count": 3, "made_private_count": 0}
+                        }],
+                        "next_cursor": "cursor-2"
+                    }))
+                }),
+            ),
+    );
+    let dir = TempDir::new("visibility-log");
+    let args = [
+        "--repo",
+        "owner/repo",
+        "visibility",
+        "log",
+        "--before",
+        "cursor-1",
+    ];
+
+    let output = server.command(dir.path()).args(args).output().unwrap();
+    assert_success(&output, "visibility log");
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "vc_000041 · Made 3 files public\nMore changes: repeat with --before cursor-2\n"
+    );
+
+    let output = server
+        .command(dir.path())
+        .arg("--json")
+        .args(args)
+        .output()
+        .unwrap();
+    assert_success(&output, "visibility log --json");
+    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["command"], "visibility.log");
+    assert_eq!(document["result"]["audience"], "public");
+    assert_eq!(document["result"]["entries"][0]["author"], Value::Null);
+    assert_eq!(document["result"]["next_cursor"], "cursor-2");
+}

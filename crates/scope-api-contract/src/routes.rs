@@ -24,6 +24,7 @@ macro_rules! routes {
 
 routes! {
     exported {
+        ACCOUNT = "/v1/account" => "account";
         ACCOUNT_SESSION = "/v1/session" => "accountSession";
         CLI_DEVICE_LOGIN_COMPLETE = "/v1/cli/device-login/{user_code}/complete"
             => "cliDeviceLoginComplete";
@@ -164,7 +165,7 @@ routes! {
         REPO_REQUEST_ACTIVITY = "/v1/repos/{owner}/{repo}/requests/{request_id}/activity"
             => "repoRequestActivity";
         REPO_EVENTS = "/v1/repos/{owner}/{repo}/events" => "repoEvents";
-        REPO_HISTORY = "/v1/repos/{owner}/{repo}/history" => "repoHistory";
+        REPO_HISTORY = "/v1/repos/{owner}/{repo}/history" => "repoHistory", repo_history(owner: &str, repo: &str);
         REPO_HISTORY_ENTRY = "/v1/repos/{owner}/{repo}/history/{entry_id}" => "repoHistoryEntry";
         REPO_HISTORY_ENTRY_FILE_DIFF = "/v1/repos/{owner}/{repo}/history/{entry_id}/file-diff"
             => "repoHistoryEntryFileDiff";

@@ -9,18 +9,12 @@ function detailWith(entries: { path: string }[]) {
   return { files: entries as HistoryEntryDetailResponse['files'], visibility_changes: [] }
 }
 
-test('history selects the first available file only when the URL has no path', () => {
-  assert.equal(historyFileSelection({}, null, false).path, null)
-  assert.equal(historyFileSelection({}, detailWith([]), false).path, null)
-  assert.equal(historyFileSelection({}, detailWith(files), false).path, '/first.ts')
-  assert.equal(historyFileSelection({ path: '/second.ts' }, detailWith(files), false).path, '/second.ts')
-  assert.equal(historyFileSelection({ path: '/missing.ts' }, detailWith(files), false).path, '/missing.ts')
-})
-
-test('closing a diff dismisses only the current location and explicit selection can reopen it', () => {
-  assert.equal(historyFileSelection({ path: '/second.ts' }, detailWith(files), true).path, null)
-  assert.equal(historyFileSelection({}, detailWith(files), true).path, null)
-  assert.equal(historyFileSelection({ path: '/second.ts' }, detailWith(files), false).path, '/second.ts')
+test('history opens a file only from the URL path', () => {
+  assert.equal(historyFileSelection({}, null).path, null)
+  assert.equal(historyFileSelection({}, detailWith([])).path, null)
+  assert.equal(historyFileSelection({}, detailWith(files)).path, null)
+  assert.equal(historyFileSelection({ path: '/second.ts' }, detailWith(files)).path, '/second.ts')
+  assert.equal(historyFileSelection({ path: '/missing.ts' }, detailWith(files)).file, null)
 })
 
 test('selects exact visibility effects independently of content and same-path transitions', () => {
@@ -33,15 +27,14 @@ test('selects exact visibility effects independently of content and same-path tr
       { id: 'second', path: '/same.ts', old_visibility: 'Public', new_visibility: 'Private', file: null },
     ],
   }
-  assert.equal(historyFileSelection({ path: '/same.ts' }, detail, false).file, content)
-  assert.equal(historyFileSelection({ path: '/same.ts', visibility_change: 'first' }, detail, false).file, preview)
-  assert.equal(historyFileSelection({ path: '/same.ts', visibility_change: 'second' }, detail, false).file, null)
-  assert.equal(historyFileSelection({ path: '/other.ts', visibility_change: 'first' }, detail, false).file, null)
-  assert.equal(historyFileSelection({ visibility_change: 'first' }, detail, false).path, '/same.ts')
-  assert.deepEqual(historyFileSelection({ visibility_change: 'first' }, detail, true), { path: null, file: null, visibilityId: null })
+  assert.equal(historyFileSelection({ path: '/same.ts' }, detail).file, content)
+  assert.equal(historyFileSelection({ path: '/same.ts', visibility_change: 'first' }, detail).file, preview)
+  assert.equal(historyFileSelection({ path: '/same.ts', visibility_change: 'second' }, detail).file, null)
+  assert.equal(historyFileSelection({ path: '/other.ts', visibility_change: 'first' }, detail).file, null)
+  assert.equal(historyFileSelection({ visibility_change: 'first' }, detail).path, '/same.ts')
 })
 
 test('visibility-only details do not open a content diff by default', () => {
   const detail = { files: [], visibility_changes: [] }
-  assert.equal(historyFileSelection({}, detail, false).path, null)
+  assert.equal(historyFileSelection({}, detail).path, null)
 })

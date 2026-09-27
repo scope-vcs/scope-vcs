@@ -4,8 +4,9 @@ import { loadComponentConfig } from "./deployment-components.mjs";
 import { runtimeDeploySettings } from "./railway-artifact.mjs";
 import { RAILWAY_MUTATION_TIMEOUT_MS, retryRailway } from "./railway-retry.mjs";
 import { readRailway } from "./railway-read.mjs";
+import { activePredecessors, excludeActivated, recordPredecessors } from "./railway-predecessor-teardown.mjs";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync } from "node:fs";
 
 const projectId = process.env.RAILWAY_PROJECT_ID;
 const environmentId = process.env.SCOPE_RAILWAY_ENVIRONMENT_ID;
@@ -80,6 +81,13 @@ if (!serviceId || third || !projectId || !environmentId || !component || !source
 // Railway keeps these settings on the service instance, so the image alone
 // would activate against whatever an earlier release left behind.
 const settings = runtimeDeploySettings(component, loadComponentConfig(component));
+if (process.env.SCOPE_PREDECESSOR_TEARDOWN_DIR) {
+  const status = readRailway([
+    "status", "--project", projectId, "--environment", environmentId, "--json",
+  ], { execute: (_command, args, options) => railway(args, options) });
+  recordPredecessors(process.env.SCOPE_PREDECESSOR_TEARDOWN_DIR, component, serviceId,
+    activePredecessors(status, environmentId, serviceId));
+}
 
 const updated = graphql(
   "mutation SelectPinnedImage($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}",
@@ -119,6 +127,9 @@ if (deployment.serviceId && deployment.serviceId !== serviceId) {
 if (deployment.meta?.imageDigest !== match[1]) {
   throw new Error("Successful Railway media worker deployment did not match the reviewed digest");
 }
+if (process.env.SCOPE_PREDECESSOR_TEARDOWN_DIR) {
+  excludeActivated(process.env.SCOPE_PREDECESSOR_TEARDOWN_DIR, component, deploymentId);
+}
 
 appendFileSync(evidencePath, `${JSON.stringify({
   component,
@@ -130,8 +141,13 @@ appendFileSync(evidencePath, `${JSON.stringify({
 
 if (process.env.SCOPE_RELEASE_DEPLOYMENTS_FILE) {
   const deploymentsPath = process.env.SCOPE_RELEASE_DEPLOYMENTS_FILE;
-  const active = JSON.parse(readFileSync(deploymentsPath, "utf8"));
-  active[component] = deploymentId;
-  writeFileSync(`${deploymentsPath}.tmp`, `${JSON.stringify(active)}\n`);
-  renameSync(`${deploymentsPath}.tmp`, deploymentsPath);
+  // Concurrent activations share this file; serialize the read-modify-write.
+  execFileSync("flock", ["-x", `${deploymentsPath}.lock`, process.execPath, "-e", `
+    const { readFileSync, renameSync, writeFileSync } = require("node:fs");
+    const [path, component, id] = process.argv.slice(1);
+    const active = JSON.parse(readFileSync(path, "utf8"));
+    active[component] = id;
+    writeFileSync(\`\${path}.tmp.\${process.pid}\`, \`\${JSON.stringify(active)}\\n\`);
+    renameSync(\`\${path}.tmp.\${process.pid}\`, path);
+  `, deploymentsPath, component, deploymentId], { stdio: "inherit" });
 }

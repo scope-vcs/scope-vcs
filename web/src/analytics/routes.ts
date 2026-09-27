@@ -22,6 +22,8 @@ const routeDecisions = {
   '/account': tracked('account', '/account'),
   '/cli-login': tracked('cli_login', '/cli-login'),
   '/licenses': tracked('licenses', '/licenses'),
+  '/privacy': tracked('privacy', '/privacy'),
+  '/terms': tracked('terms', '/terms'),
   '/invites/$token': tracked('invite', '/invite'),
   '/sign-in/$': tracked('sign_in', '/sign-in'),
   '/sign-up/$': tracked('sign_up', '/sign-up'),
@@ -30,24 +32,21 @@ const routeDecisions = {
   '/$owner/$repo': excluded,
   '/$owner/$repo/_code': excluded,
   '/$owner/$repo/_code/': tracked('repository_code', '/repository/code'),
-  '/$owner/$repo/history': tracked('repository_history', '/repository/history'),
+  '/$owner/$repo/updates/$entryId': tracked('repository_update', '/repository/update'),
   '/$owner/$repo/requests': excluded,
   '/$owner/$repo/requests/': tracked(
     'repository_requests',
     '/repository/requests',
   ),
   '/$owner/$repo/requests/$requestId': excluded,
-  '/$owner/$repo/requests/$requestId/': tracked(
+  '/$owner/$repo/requests/$requestId/_discussion': excluded,
+  '/$owner/$repo/requests/$requestId/_discussion/': tracked(
     'request',
     '/repository/request',
   ),
   '/$owner/$repo/requests/$requestId/changes': tracked(
     'request_changes',
     '/repository/request/changes',
-  ),
-  '/$owner/$repo/requests/$requestId/details': tracked(
-    'request_details',
-    '/repository/request/details',
   ),
   '/$owner/$repo/runs': excluded,
   '/$owner/$repo/runs/': tracked('repository_runs', '/repository/runs'),

@@ -1,8 +1,11 @@
-use super::{AuthStore, acquire_aggregate_lock, auth::load_user_by_id, entities};
+use super::{
+    AuthStore, acquire_aggregate_lock, auth::load_user_by_id,
+    clerk_user_deletions::clerk_user_deletion_recorded, entities,
+};
 use crate::error::PostgresError;
 use scope_domain::{
     account::UserAccount,
-    account::{ExternalIdentity, handles::is_reserved_handle},
+    account::{ExternalIdentity, deletion::CLERK_PROVIDER, handles::is_reserved_handle},
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
@@ -83,6 +86,13 @@ async fn resolve_clerk_user_in_tx<C>(
 where
     C: sea_orm::ConnectionTrait,
 {
+    if identity.provider == CLERK_PROVIDER
+        && clerk_user_deletion_recorded(conn, &identity.subject).await?
+    {
+        return Err(PostgresError::unauthenticated(
+            "this Scope account was deleted",
+        ));
+    }
     if let Some(user) = existing_identity_user(conn, identity, verified_email).await? {
         update_user(conn, &user).await?;
         return Ok(ClerkUserResolution {

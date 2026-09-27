@@ -1,4 +1,5 @@
 pub mod cli_auth;
+pub mod deletion;
 pub mod handles;
 
 use serde::{Deserialize, Serialize};

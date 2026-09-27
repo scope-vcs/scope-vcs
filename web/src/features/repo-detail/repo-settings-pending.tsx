@@ -1,57 +1,36 @@
 import { PageContent } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
-import { SectionRow, SectionRows } from '@/components/section-rows'
+import { Button } from '@/components/ui/button'
+import { BlockSkeleton } from '@/components/ui/skeleton'
+import { useParams } from '@tanstack/react-router'
 import {
-  BlockSkeleton,
-  TextSkeleton,
-  type TextSkeletonLength,
-} from '@/components/ui/skeleton'
+  AccessSection,
+  DangerZoneSection,
+  REPOSITORY_DETAIL_FIELDS,
+  RepositoryDetailsSection,
+} from './repo-settings-sections'
 
-const MEMBER_LABEL_LENGTHS: TextSkeletonLength[] = ['medium', 'short']
-
+// Settings as its owner sees it, which is who reaches this page most. Only
+// the saved field values are unknown; the sections themselves are fixed.
 export function RepoSettingsPending() {
+  const { owner } = useParams({ from: '/$owner/$repo' })
   return (
     <PendingSurface label="Loading repository settings">
       <PageContent>
         <h1 className="sr-only">Settings</h1>
-        <SectionRows>
-          {['danger', 'access'].map((row) => (
-            <SectionRow
-              description={(
-                <>
-                  <TextSkeleton length="medium" size="meta" />
-                  <TextSkeleton className="mt-1.5" length="short" size="meta" />
-                </>
-              )}
-              key={row}
-              title={<TextSkeleton length="short" />}
-            >
-              <div className="space-y-3">
-                {row === 'danger' ? <BlockSkeleton className="h-8 w-40" /> : null}
-                {row === 'access' ? (
-                  <div className="divide-y divide-border border-y border-border">
-                    {MEMBER_LABEL_LENGTHS.map((length) => (
-                      <div
-                        className="flex items-center justify-between gap-3 py-3"
-                        key={length}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <TextSkeleton length={length} />
-                          <TextSkeleton
-                            className="mt-2"
-                            length="medium"
-                            size="meta"
-                          />
-                        </div>
-                        <BlockSkeleton className="h-6 w-12 shrink-0" />
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
+        <RepositoryDetailsSection>
+          <div className="max-w-xl space-y-4">
+            {Object.values(REPOSITORY_DETAIL_FIELDS).map((label) => (
+              <div key={label}>
+                <div className="mb-1.5 text-sm font-medium">{label}</div>
+                <BlockSkeleton className="h-10 w-full rounded-lg" />
               </div>
-            </SectionRow>
-          ))}
-        </SectionRows>
+            ))}
+            <Button disabled size="sm" type="button">Save details</Button>
+          </div>
+        </RepositoryDetailsSection>
+        <DangerZoneSection />
+        <AccessSection canInvite ownerHandle={owner} />
       </PageContent>
     </PendingSurface>
   )

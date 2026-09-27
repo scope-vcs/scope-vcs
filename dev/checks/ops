@@ -5,8 +5,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 python3 -B -m unittest discover -s deploy/automation -p 'test_*.py'
 
 node --test dev/analytics/*.test.mjs
-node --test .scope/images/checks/*.test.mjs
-bash -n .scope/images/checks/scan-image.sh .github/scripts/publish-soci-image.sh
+# Scope keeps .scope/images private, so public projections omit it. GitHub
+# Actions always checks out the complete tree, so a missing directory fails there.
+if [[ -d .scope/images/checks || "${GITHUB_ACTIONS:-}" == true ]]; then
+  bash -n .scope/images/checks/scan-image.sh
+  node --test .scope/images/checks/*.test.mjs
+else
+  echo "Skipped .scope/images/checks: Scope keeps it private, so this checkout does not include it." >&2
+fi
+bash -n .github/scripts/publish-soci-image.sh
 
 node --test .github/scripts/audit-railway-experiments.test.mjs
 node --test .github/scripts/check-production-backups.test.mjs
@@ -45,13 +52,14 @@ node --test .github/scripts/rehearse-release.test.mjs
 node --test .github/scripts/staging-smoke-seed.test.mjs
 node --test .github/scripts/extract-railway-release.test.mjs
 node --test .github/scripts/extract-railway-maintenance.test.mjs
+node --test .github/scripts/extract-staging-web-manifest.test.mjs
 node --test .github/scripts/railway-maintenance-gate.test.mjs
 node --test .github/scripts/staging-baseline.test.mjs .github/scripts/staging-baseline-crypto.test.mjs
 node --test .github/scripts/staging-baseline.integration.test.mjs
 node --test deploy/postgres/runtime-roles.test.mjs
 node --test .github/scripts/railway-private-maintenance.test.mjs
 node --test .github/scripts/railway-ssh.test.mjs
-bash -n .github/scripts/railway-private-command.sh .github/scripts/railway-private-maintenance.sh
+bash -n .github/scripts/railway-private-command.sh .github/scripts/railway-private-maintenance.sh .github/scripts/production-readiness-preflight.sh
 node --test .github/scripts/maintenance-runtime.test.mjs .github/scripts/deploy-maintenance-runtime.test.mjs
 bash -n .github/scripts/publish-maintenance-runtime.sh .github/scripts/verify-maintenance-runtime.sh
 
@@ -61,3 +69,9 @@ python3 -m unittest discover -s deploy/aws/recovery/tests -p test_transport.py
 python3 -m unittest discover -s deploy/aws/recovery/tests -p test_references.py
 bash -n deploy/aws/recovery/remote-snapshot.sh
 node --test deploy/postgres/prepare-cutover.test.mjs
+
+node --test .github/scripts/smoke-tools-evidence.test.mjs
+node --test .github/scripts/railway-predecessor-teardown.test.mjs
+node --test .github/scripts/merge-prepared-release.test.mjs
+node --test .github/scripts/run-bounded-image-builds.test.mjs
+node --test .github/scripts/production-readiness-preflight.test.mjs

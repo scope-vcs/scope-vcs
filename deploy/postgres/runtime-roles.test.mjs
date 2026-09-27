@@ -1,12 +1,29 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { grants, renderPolicy, tables } from './runtime-roles.mjs';
+import { candidateMigrationVersion, renderRuntimeRoleAudit } from './audit-runtime-roles.mjs';
 import { localClusterSkip, pgBin } from './test-cluster.mjs';
+
+const migrationsDir = new URL('../../crates/scope-postgres/src/migrations/', import.meta.url);
+// Raw migration SQL applied on top of the schema baseline so the role inventory
+// below sees the current worker model and every relation a runtime role touches.
+const appliedMigrations = ['m0043_retire_git_manifests.rs', 'm0044_request_attention.rs', 'm0045_dependency_analysis.rs',
+  'm0053_request_ref_cleanup.rs', 'm0055_request_checks.rs', 'm0056_request_auto_merge.rs',
+  'm0057_repository_invite_links.rs', 'm0058_repository_invite_emails.rs', 'm0063_account_deletion.rs'];
+
+// A migration that creates a table without a reviewed grant fails the runtime
+// cutover. Applying it here makes the inventory comparison catch that first.
+test('every table-creating migration after the baseline is applied to the role inventory', () => {
+  const creators = readdirSync(migrationsDir)
+    .filter((name) => /^m\d+_.+\.rs$/.test(name) && name > appliedMigrations[0]
+      && /CREATE TABLE/.test(readFileSync(new URL(name, migrationsDir), 'utf8')));
+  assert.deepEqual(creators.filter((name) => !appliedMigrations.includes(name)), []);
+});
 
 // Always creates its own disposable cluster. Never reads a DATABASE_URL or uses a live server.
 test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClusterSkip }, async () => {
@@ -30,10 +47,8 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     const baseline = readFileSync(new URL('../../crates/scope-postgres/src/migrations/current_schema.sql', import.meta.url), 'utf8');
     query(baseline);
     // Apply the raw migration SQL needed by the current worker model and role inventory.
-    for (const filename of ['m0043_retire_git_manifests.rs', 'm0044_request_attention.rs', 'm0045_dependency_analysis.rs',
-      'm0053_request_ref_cleanup.rs', 'm0055_request_checks.rs', 'm0056_request_auto_merge.rs',
-      'm0057_repository_invite_links.rs', 'm0058_repository_invite_emails.rs']) {
-      const source = readFileSync(new URL(`../../crates/scope-postgres/src/migrations/${filename}`, import.meta.url), 'utf8');
+    for (const filename of appliedMigrations) {
+      const source = readFileSync(new URL(filename, migrationsDir), 'utf8');
       query(`BEGIN; ${source.match(/r#"([\s\S]*?)"#/)[1]} COMMIT;`);
     }
     query('CREATE TABLE seaql_migrations (version text PRIMARY KEY);');
@@ -44,6 +59,40 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query(renderPolicy()); // Repeat bootstrap removes stale column grants too.
     query('SELECT id FROM scope_cli_sessions;', 'scope_cache', false);
     query(renderPolicy({ grantsOnly: true }), 'scope_migrator');
+    // Before the candidate migration is applied, only stable role and ownership
+    // invariants are checked; exact candidate grants become required afterward.
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
+    query('GRANT SELECT (id) ON scope_cli_sessions TO scope_cache;');
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
+    query('CREATE TABLE old_pending_relation(id int);', 'scope_migrator');
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
+    query(`INSERT INTO seaql_migrations(version) VALUES ('${candidateMigrationVersion}');`);
+    const auditFails = (pattern, audit = renderRuntimeRoleAudit()) => {
+      const result = spawnSync(join(pgBin, 'psql'), ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1',
+        '-h', dir, '-U', 'scope_migrator', '-d', 'postgres'], { input: audit, encoding: 'utf8' });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, pattern);
+    };
+    auditFails(/Unreviewed production relation/);
+    query('DROP TABLE old_pending_relation;', 'scope_migrator');
+    auditFails(/Production column privilege differs/);
+    query(renderPolicy({ grantsOnly: true }), 'scope_migrator');
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
+    query('ALTER TABLE scope_cli_sessions OWNER TO postgres;');
+    auditFails(/not owned by scope_migrator/);
+    query('ALTER TABLE scope_cli_sessions OWNER TO scope_migrator;');
+    // Another account holding a protected role could assume its privileges.
+    query('GRANT scope_cache TO postgres;');
+    auditFails(/held by another account/);
+    query('REVOKE scope_cache FROM postgres;');
+    // The ledger must stay read-only even while exact grants are deferred.
+    query('GRANT INSERT ON seaql_migrations TO scope_cache;');
+    auditFails(/migration-ledger privileges/, renderRuntimeRoleAudit({ exactPolicy: false }));
+    query('REVOKE INSERT ON seaql_migrations FROM scope_cache;');
+    query('ALTER TABLE scope_cli_sessions RENAME TO scope_cli_sessions_retired;', 'scope_migrator');
+    auditFails(/relation is missing/);
+    query('ALTER TABLE scope_cli_sessions_retired RENAME TO scope_cli_sessions;', 'scope_migrator');
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
     const sleeper = spawn(join(pgBin, 'psql'), ['-X', '-qAt', '-h', dir, '-U', 'scope_cache', '-d', 'postgres'], { stdio: ['pipe', 'pipe', 'pipe'] });
     sleeper.stderr.resume();
     sleeper.stdin.end('SELECT pg_backend_pid(); SELECT pg_sleep(30);');

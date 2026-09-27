@@ -40,6 +40,7 @@ import {
 import {
   FileNavigatorSkeleton,
   SourceCodeSkeleton,
+  SourceTabStripSkeleton,
 } from './repository-code-skeletons'
 import { RepositoryFileNavigator } from './repository-file-navigator'
 
@@ -113,10 +114,8 @@ export function RepositoryCodeView({
           ) : (
             <PendingSurface
               className="min-h-[220px]"
-              delay
               label="Loading repository files"
               onRetry={content.retry}
-              retryLabel="retry files"
             >
               <FileNavigatorSkeleton />
             </PendingSurface>
@@ -230,15 +229,18 @@ function SourcePane({
 
   return (
     <div className="min-w-0">
-      <RepositoryTabStrip
-        availablePaths={availablePaths}
-        meta={meta}
-        onActivateTab={onActivateTab}
-        onEmptyTabFocus={onEmptyTabFocus}
-        onPinTab={onPinTab}
-        selectedPath={selectedPath}
-        workspaceTabs={workspaceTabs}
-      />
+      {/* Until the files arrive no tab is chosen, but the landing file's opens next. */}
+      {loading && !selectedPath ? <SourceTabStripSkeleton /> : (
+        <RepositoryTabStrip
+          availablePaths={availablePaths}
+          meta={meta}
+          onActivateTab={onActivateTab}
+          onEmptyTabFocus={onEmptyTabFocus}
+          onPinTab={onPinTab}
+          selectedPath={selectedPath}
+          workspaceTabs={workspaceTabs}
+        />
+      )}
       <div
         aria-label={activeTabDomIds ? undefined : 'Repository file viewer'}
         aria-labelledby={activeTabDomIds?.tabId}
@@ -337,12 +339,9 @@ function SourceContent({
     return (
       <PendingSurface
         className="min-h-[220px]"
-        delay
         label={selectedPath ? `Loading ${displayRouteFilePath(selectedPath)}` : 'Loading repository introduction'}
-        delayedLabel="this file is taking longer than usual"
         key={selectedPath ?? 'introduction'}
         onRetry={retry}
-        retryLabel="retry file"
       >
         <SourceCodeSkeleton />
       </PendingSurface>

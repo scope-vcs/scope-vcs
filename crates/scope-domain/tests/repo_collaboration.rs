@@ -2,11 +2,13 @@ use scope_domain::{
     account::UserAccount,
     policy::Visibility,
     repo_collaboration::{
-        AcceptRepositoryInviteOutcome, CreateRepositoryInviteCommand, REPOSITORY_INVITE_TTL_SECS,
+        AcceptRepositoryInviteOutcome, CreateRepositoryInviteCommand,
+        REPOSITORY_INVITE_RETENTION_SECS, REPOSITORY_INVITE_TTL_SECS,
         RepositoryInviteLanding::{self, AccessRemoved, Expired, Member, Open, Revoked, Used},
         RepositoryInviteViewer::{EmailUnverified, Ready, SignedOut, WrongAccount},
         accept_repository_invite, create_repository_invite, issue_repository_invite_link,
-        remove_repository_member, repository_invite_landing, revoke_repository_invite,
+        prune_ended_repository_invites, remove_repository_member, repository_invite_landing,
+        revoke_repository_invite,
     },
     repository::{
         RepoLifecycleState::Ready as RepoReady,
@@ -256,4 +258,23 @@ fn expiry_follows_the_clock_and_frees_the_email_for_a_new_invite() {
     invite(&mut repo, "sha256:renewed", EXPIRES_AT).unwrap();
     assert!(accept_error(&mut repo, &invitee(), FIRST_LINK, EXPIRES_AT).contains("expired"));
     accept_repository_invite(&mut repo, &invitee(), "sha256:renewed", EXPIRES_AT).unwrap();
+}
+
+#[test]
+fn an_invite_is_pruned_once_it_has_been_over_for_the_retention_period() {
+    let mut repo = repo_with_invite();
+    let accepted_at = CREATED_AT + 5;
+    accept_repository_invite(&mut repo, &invitee(), FIRST_LINK, accepted_at).unwrap();
+    let kept = collaboration(&repo);
+
+    // Acceptance, not expiry, ended this invite.
+    let pruned_at = accepted_at + REPOSITORY_INVITE_RETENTION_SECS;
+    assert!(prune_ended_repository_invites(&mut repo, pruned_at - 1).is_empty());
+    assert_eq!(collaboration(&repo), kept);
+
+    let pruned = prune_ended_repository_invites(&mut repo, pruned_at);
+    assert_eq!(pruned.len(), 1);
+    assert!(repo.invitations.is_empty());
+    assert_eq!(repo.members, kept.1);
+    assert_eq!(repo.record.change_version, kept.2 + 1);
 }

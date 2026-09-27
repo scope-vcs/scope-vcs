@@ -245,12 +245,4 @@ impl ObjectBackend for TestObjectBackend {
         self.state.lock().unwrap().objects.remove(key);
         Ok(())
     }
-
-    async fn list_page(
-        &self,
-        _prefix: &str,
-        _start_after: Option<&str>,
-    ) -> Result<Vec<String>, BackendError> {
-        unimplemented!("segment tests never list")
-    }
 }

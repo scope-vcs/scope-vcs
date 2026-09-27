@@ -56,6 +56,14 @@ impl RepositoryInvite {
             RepositoryInviteState::Pending
         }
     }
+
+    /// When the invite stopped, or will stop, being pending. Follows the same
+    /// order as `state`.
+    pub fn ended_at_unix(&self) -> u64 {
+        self.revoked_at_unix
+            .or(self.accepted_at_unix)
+            .unwrap_or(self.expires_at_unix)
+    }
 }
 
 pub fn normalize_repository_invite_email(email: &str) -> String {

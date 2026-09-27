@@ -23,7 +23,7 @@ const collaborationTables = names(`request_discussion_read_states request_discus
   request_discussions request_events request_invitees request_ratings request_revisions requests
   request_claims request_attention_states request_check_evaluations request_auto_merge_intents`);
 const authTables = names(`auth_identities cli_browser_logins cli_device_logins cli_exchange_grants
-  cli_sessions users`);
+  cli_sessions clerk_user_deletions users`);
 export const tables = [...cacheTables, ...mediaTables, ...repositoryTables, ...runTables,
   ...collaborationTables, ...authTables, 'seaql_migrations'].sort();
 const crud = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];

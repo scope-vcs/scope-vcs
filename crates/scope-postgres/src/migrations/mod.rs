@@ -18,6 +18,8 @@ mod m0058_repository_invite_emails;
 mod m0059_worker_history_permissions;
 mod m0060_capacity_retries;
 mod m0061_public_request_check_source;
+mod m0062_request_run_source_base;
+mod m0063_account_deletion;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -141,6 +143,14 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0061_public_request_check_source::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0062_request_run_source_base::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0063_account_deletion::Migration),
             metadata_restore_safe: true,
         },
     ]

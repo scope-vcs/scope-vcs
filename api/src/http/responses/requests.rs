@@ -79,7 +79,7 @@ pub(crate) fn request_list_item_response(
 
 pub(crate) fn request_event_response(
     event: RequestEvent,
-    actor: RequestActorSummaryResponse,
+    actor: Option<RequestActorSummaryResponse>,
 ) -> RequestEventResponse {
     RequestEventResponse {
         id: event.id,

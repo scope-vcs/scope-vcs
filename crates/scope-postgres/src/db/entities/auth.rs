@@ -58,6 +58,29 @@ pub mod auth_identity {
 
     impl ActiveModelBehavior for ActiveModel {}
 }
+/// A Clerk user whose Scope account was deleted, waiting to be deleted from Clerk.
+pub mod clerk_user_deletion {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "scope_clerk_user_deletions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub clerk_user_id: String,
+        pub attempts: i32,
+        pub next_attempt_at_unix: i64,
+        pub claim_token: Option<String>,
+        pub claim_expires_at_unix: Option<i64>,
+        pub last_error: Option<String>,
+        pub created_at_unix: i64,
+        pub completed_at_unix: Option<i64>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
 pub mod cli_device_login {
     use super::*;
 

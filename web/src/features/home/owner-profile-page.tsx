@@ -3,12 +3,10 @@ import { ApplicationTopbar } from '@/components/application-topbar'
 import { AppShell } from '@/components/app-shell'
 import { PageContent, PageHeader } from '@/components/page-header'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
 import { useHomeFlash } from '@/lib/home-flash'
-import { UserButton } from '@clerk/tanstack-react-start'
-import { Link } from '@tanstack/react-router'
-import { CheckCircle2, KeyRound } from 'lucide-react'
+import { CheckCircle2 } from 'lucide-react'
 import { FirstRepositoryWalkthrough } from './first-repository-walkthrough'
+import { OwnerProfileTopbarActions } from './owner-profile-topbar-actions'
 import { RepoList } from './repo-list'
 
 export function OwnerProfilePage({ state }: { state: ProfileState }) {
@@ -20,33 +18,7 @@ export function OwnerProfilePage({ state }: { state: ProfileState }) {
     <AppShell
       header={() => (
         <ApplicationTopbar>
-          {account.user ? (
-            <>
-              <Button
-                aria-label="CLI sessions"
-                asChild
-                size="icon-sm"
-                title="CLI sessions"
-                type="button"
-                variant="ghost"
-              >
-                <Link to="/account">
-                  <KeyRound />
-                </Link>
-              </Button>
-              <UserButton />
-            </>
-          ) : (
-            <Button asChild size="sm" variant="secondary">
-              <Link
-                params={{ _splat: '' }}
-                search={{ redirect_url: `/${profile.handle}` }}
-                to="/sign-in/$"
-              >
-                Sign in
-              </Link>
-            </Button>
-          )}
+          <OwnerProfileTopbarActions handle={profile.handle} signedIn={Boolean(account.user)} />
         </ApplicationTopbar>
       )}
     >

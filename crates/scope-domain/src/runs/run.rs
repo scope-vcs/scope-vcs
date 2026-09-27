@@ -80,6 +80,36 @@ impl Run {
         source: RunSource,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
+        if trigger == RunTrigger::Manual && requested_by_user_id.is_none() {
+            return Err(DomainError::invalid_input(
+                "manual run requester user id is required",
+            ));
+        }
+        Self::queued(
+            id,
+            idempotency_key,
+            workflow,
+            workflow_revision_digest,
+            trigger,
+            requested_by_user_id,
+            source,
+            now_unix,
+        )
+    }
+
+    /// A queued run as recorded. The requester is `None` for runs nobody
+    /// requested and once the requester deleted their account.
+    #[allow(clippy::too_many_arguments)]
+    fn queued(
+        id: impl Into<String>,
+        idempotency_key: impl Into<String>,
+        workflow: WorkflowIdentity,
+        workflow_revision_digest: impl Into<String>,
+        trigger: RunTrigger,
+        requested_by_user_id: Option<String>,
+        source: RunSource,
+        now_unix: u64,
+    ) -> Result<Self, DomainError> {
         let id = required("run id", id.into())?;
         let idempotency_key = required("run idempotency key", idempotency_key.into())?;
         let workflow_revision_digest = workflow_revision_digest.into();
@@ -90,15 +120,6 @@ impl Run {
         {
             return Err(DomainError::invalid_input(
                 "run requester user id cannot be empty",
-            ));
-        }
-        if trigger == RunTrigger::Manual
-            && requested_by_user_id
-                .as_deref()
-                .is_none_or(|id| id.trim().is_empty())
-        {
-            return Err(DomainError::invalid_input(
-                "manual run requester user id is required",
             ));
         }
         Ok(Self {
@@ -132,7 +153,7 @@ impl Run {
         updated_at_unix: u64,
         completed_at_unix: Option<u64>,
     ) -> Result<Self, DomainError> {
-        let mut run = Self::new(
+        let mut run = Self::queued(
             id,
             idempotency_key,
             workflow,

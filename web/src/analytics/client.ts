@@ -2,26 +2,24 @@ import { BoundedDelivery } from './delivery'
 import { createPrivacyBoundary } from './privacy'
 import type { Properties } from './types'
 
-const DISTINCT_ID_KEY = 'scope_analytics_distinct_id'
-const USER_ID_KEY = 'scope_analytics_user_id'
-
+// Identities live in memory only, so analytics stores nothing on the device.
 export class AnalyticsClient {
   private readonly delivery = new BoundedDelivery()
   private readonly sanitize: ReturnType<typeof createPrivacyBoundary>
   private readonly disabled: boolean
-  private distinctId: string
+  private distinctId: string = crypto.randomUUID()
   private properties: Properties = {}
+  // Whether an event was queued under the current anonymous ID. Without one
+  // there is no anonymous history to merge, so identify switches silently.
+  private anonymousEventQueued = false
 
   constructor(private readonly token: string, origin: string) {
-    this.disabled = navigator.doNotTrack === '1'
+    this.disabled = (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl === true
+      || navigator.doNotTrack === '1'
       || navigator.doNotTrack === 'yes'
       || (window as Window & { doNotTrack?: string }).doNotTrack === '1'
     this.sanitize = createPrivacyBoundary(origin)
-    this.distinctId = this.disabled ? crypto.randomUUID() : readStored(DISTINCT_ID_KEY) ?? crypto.randomUUID()
     if (!this.disabled) {
-      const userId = readStored(USER_ID_KEY)
-      if (userId) this.properties.$user_id = userId
-      store(DISTINCT_ID_KEY, this.distinctId)
       window.addEventListener('pagehide', () => this.delivery.flushOnPageHide())
       window.addEventListener('pageshow', () => this.delivery.resume())
     }
@@ -44,19 +42,15 @@ export class AnalyticsClient {
     const previousId = this.distinctId
     this.distinctId = scopeUserId
     this.properties.$user_id = scopeUserId
-    store(DISTINCT_ID_KEY, scopeUserId)
-    store(USER_ID_KEY, scopeUserId)
-    this.capture('$identify', { $anon_distinct_id: previousId })
+    if (this.anonymousEventQueued) this.capture('$identify', { $anon_distinct_id: previousId })
+    this.anonymousEventQueued = false
   }
 
   reset() {
     this.delivery.clear()
     this.distinctId = crypto.randomUUID()
     this.properties = {}
-    if (!this.disabled) {
-      removeStored(USER_ID_KEY)
-      store(DISTINCT_ID_KEY, this.distinctId)
-    }
+    this.anonymousEventQueued = false
   }
 
   capture(event: string, properties: Properties = {}) {
@@ -73,18 +67,8 @@ export class AnalyticsClient {
       uuid: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
     })
-    if (capture) this.delivery.enqueue(capture)
+    if (capture && this.delivery.enqueue(capture) && !this.properties.$user_id) {
+      this.anonymousEventQueued = true
+    }
   }
-}
-
-function readStored(key: string) {
-  try { return localStorage.getItem(key) } catch { return null }
-}
-
-function store(key: string, value: string) {
-  try { localStorage.setItem(key, value) } catch { /* storage may be unavailable */ }
-}
-
-function removeStored(key: string) {
-  try { localStorage.removeItem(key) } catch { /* storage may be unavailable */ }
 }

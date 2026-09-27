@@ -1,8 +1,11 @@
 FROM debian:bookworm-slim@sha256:5ae3c39ebd15e229dcedd5cee596b2497182493d41ff162e824ba13fc1b2b867 AS git-builder
+ARG INSTALL_GIT=1
 ARG GIT_VERSION
 ARG GIT_SOURCE_SHA256
+ARG IMAGE_DEPENDENCY_EPOCH=local
 COPY install-git.sh /tmp/install-git.sh
-RUN bash /tmp/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"
+RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
+    && if [ "$INSTALL_GIT" = 1 ]; then bash /tmp/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"; else mkdir -p /opt/git; fi
 
 FROM node:24.21.0-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS analyzer-dependencies
 WORKDIR /app/dependency-analyzer
@@ -13,12 +16,14 @@ RUN npm ci --ignore-scripts --omit=dev \
     && npm cache clean --force
 
 FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+ARG IMAGE_DEPENDENCY_EPOCH=local
+RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libcurl4t64 libexpat1 libssl3t64 zlib1g \
+    && rm -rf /var/lib/apt/lists/*
 ARG GIT_VERSION
 ARG SCOPE_ANALYTICS_RELEASE
 ENV SCOPE_ANALYTICS_RELEASE=$SCOPE_ANALYTICS_RELEASE
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libcurl4t64 libexpat1 libssl3t64 zlib1g \
-    && rm -rf /var/lib/apt/lists/*
 COPY --from=git-builder /opt/git /opt/git
 COPY --from=analyzer-dependencies /usr/local/ /usr/local/
 COPY --from=analyzer-dependencies /app/dependency-analyzer/node_modules /app/dependency-analyzer/node_modules

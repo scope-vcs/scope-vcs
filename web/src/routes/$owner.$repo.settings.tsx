@@ -19,6 +19,7 @@ import {
 } from '@/api/repo-settings'
 import { loadOptionalResource } from '@/api/http'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
+import { VisibilityLogSection } from '@/features/repo-detail/visibility-log-section'
 import { RepoSettingsPending } from '@/features/repo-detail/repo-settings-pending'
 import { RepoContentError } from '@/components/repo-content-error'
 import { PageContent } from '@/components/page-header'
@@ -120,9 +121,10 @@ function RepoSettingsRoute() {
           <Button className="mt-3" onClick={resource.retry} size="sm">Try again</Button>
         </PageContent>
       )}
-      {resource.value ? (
+      {!resource.error || resource.value ? (
         <RepoSettingsPage
           key={scope}
+          visibilityLog={<VisibilityLogSection params={params} />}
           createInvite={(data) => retainResult(
             createRepoInvite({ data }),
             (invite) => ({ type: 'inviteUpdated', invite }),
@@ -141,7 +143,8 @@ function RepoSettingsRoute() {
             deleteRepoMember({ data }),
             (member) => ({ type: 'memberRemoved', member }),
           )}
-          collaboration={resource.value.collaboration}
+          collaboration={collaboration}
+          collaborationLoading={!resource.value}
           params={params}
           updateMember={(data) => retainResult(
             updateRepoMember({ data }),
@@ -149,7 +152,7 @@ function RepoSettingsRoute() {
           )}
           updateMetadata={(data) => updateRepoMetadata({ data })}
         />
-      ) : !resource.error ? <RepoSettingsPending /> : null}
+      ) : null}
     </>
   )
 }

@@ -23,7 +23,7 @@ fn terminal_request(merged: bool) -> Request {
         id: "request".to_string(),
         repo_id: "repo".to_string(),
         name: "change".to_string(),
-        author_user_id: "author".to_string(),
+        author_user_id: Some("author".to_string()),
         author_role: RequestActorRole::Public,
         audience: RequestAudience::Public,
         base_main_oid: "a".repeat(40),

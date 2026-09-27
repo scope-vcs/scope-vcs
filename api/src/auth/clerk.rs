@@ -450,7 +450,7 @@ fn verify_clerk_token_with_header(
     }
 
     Ok(ClerkIdentity {
-        provider: "clerk".to_string(),
+        provider: scope_domain::account::deletion::CLERK_PROVIDER.to_string(),
         subject: claims.sub,
         email: claims.email,
         email_verified: claims.email_verified.unwrap_or(false),

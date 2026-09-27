@@ -5,6 +5,12 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 test_dir="$(mktemp -d)"
 trap 'rm -rf "$test_dir"' EXIT
 mkdir -p "$test_dir/bin" "$test_dir/api"
+cat > "$test_dir/bin/sleep" <<'FAKE'
+#!/usr/bin/env bash
+# Provider polling is state-driven in this fixture; elapsed wall time adds no coverage.
+exit 0
+FAKE
+chmod +x "$test_dir/bin/sleep"
 # Source uploads (run_direct_deploy below) prove their revision through this marker.
 printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$test_dir/api/.scope-deployment-sha"
 
@@ -203,6 +209,7 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
   fi
   set +e
   PATH="$test_dir/bin:$PATH" \
+    SCOPE_RAILWAY_READ_RETRY_DELAY_MS=0 \
     NODE_OPTIONS="--require=$test_dir/github-fetch.cjs" \
     GITHUB_TOKEN="test-token" \
     GITHUB_REPOSITORY="test/repo" \
@@ -216,6 +223,9 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     FAKE_RAILWAY_TRACE="$trace" \
     FAKE_FAIL_APPLY="$fail_apply" \
     FAKE_FAIL_UP_SERVICE="$fail_up_service" \
+    FAKE_LOST_UP_RESPONSE_SERVICE="${FAKE_LOST_UP_RESPONSE_SERVICE:-}" \
+    FAKE_REQUIRE_PARALLEL_PAIR="${FAKE_REQUIRE_PARALLEL_PAIR:-0}" \
+    FAKE_DELAY_REMOVE_UNTIL_ROUTER="${FAKE_DELAY_REMOVE_UNTIL_ROUTER:-0}" \
     FAKE_HISTORY_FAILURE_SERVICE="$history_failure_service" \
     FAKE_CRASH_UP_SERVICE="$crash_up_service" \
     FAKE_NEW_REPLICAS="$new_replicas" \
@@ -280,7 +290,8 @@ const actual = existsSync(process.env.EVIDENCE_PATH)
       .map((line) => JSON.parse(line).component)
   : [];
 const expected = (process.env.EXPECTED_COMPONENTS || "").split(",").filter(Boolean);
-if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+if (actual.length !== expected.length ||
+    JSON.stringify([...actual].sort()) !== JSON.stringify([...expected].sort())) {
   console.error(`expected evidence ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   process.exit(1);
 }
@@ -377,6 +388,29 @@ assert_in_order "$test_dir/success-trace" \
   "up $test_dir/cache" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
+
+FAKE_REQUIRE_PARALLEL_PAIR=1 run_cutover parallel-activation
+[[ "$(cat "$test_dir/parallel-activation-result")" == "0" ]]
+assert_evidence_components parallel-activation cache,run-worker,media-api,media-worker,api,git-router,web
+assert_in_order "$test_dir/parallel-activation-trace" \
+  "$test_dir/maintenance verify" \
+  "up $test_dir/cache" \
+  "up $test_dir/run-worker" \
+  "up $test_dir/api" \
+  "up $test_dir/git-router"
+assert_in_order "$test_dir/parallel-activation-trace" \
+  "up $test_dir/media-api" \
+  "up $test_dir/media-worker" \
+  "up $test_dir/api" \
+  "up $test_dir/web"
+
+FAKE_DELAY_REMOVE_UNTIL_ROUTER=1 run_cutover delayed-teardown
+[[ "$(cat "$test_dir/delayed-teardown-result")" == "0" ]]
+assert_in_order "$test_dir/delayed-teardown-trace" \
+  "up $test_dir/cache" \
+  "up $test_dir/run-worker" \
+  "up $test_dir/api" \
+  "up $test_dir/git-router"
 
 SCOPE_DEPLOY_ROUTER=1 run_cutover migration-router-selected
 [[ "$(cat "$test_dir/migration-router-selected-result")" == "0" ]]
@@ -765,6 +799,21 @@ assert_in_order "$test_dir/partial-reopen-trace" \
   "graphql stop scope-cache-service new-scope-cache-service"
 [[ "$(grep -F -c "graphql stop scope-api old-scope-api" "$test_dir/partial-reopen-trace")" == "1" ]]
 [[ "$(grep -F -c "gate reclose scope-api" "$test_dir/partial-reopen-trace")" == "2" ]]
+
+FAKE_LOST_UP_RESPONSE_SERVICE=scope-cache-service run_cutover lost-activation-response
+[[ "$(cat "$test_dir/lost-activation-response-result")" != "0" ]]
+assert_evidence_components lost-activation-response ""
+[[ -f "$test_dir/lost-activation-response-state/up-scope-cache-service" ]]
+[[ -f "$test_dir/lost-activation-response-state/stopped-scope-cache-service" ]]
+assert_in_order "$test_dir/lost-activation-response-trace" \
+  "up $test_dir/cache" \
+  "graphql stop scope-cache-service new-scope-cache-service"
+assert_in_order "$test_dir/lost-activation-response-trace" \
+  "up $test_dir/media-api" \
+  "graphql stop scope-cache-service new-scope-cache-service"
+FAKE_RECOVER_CLOSED_CUTOVER=1 run_cutover lost-activation-response
+[[ "$(cat "$test_dir/lost-activation-response-result")" == "0" ]]
+assert_evidence_components lost-activation-response cache,run-worker,media-api,media-worker,api,git-router,web
 
 FAKE_DENY_DEPLOYMENT_ACTION_SERVICE=scope-api run_cutover denied-api
 [[ "$(cat "$test_dir/denied-api-result")" != "0" ]]

@@ -50,6 +50,7 @@ use std::{
 };
 use tower::ServiceExt;
 
+mod account_deletion;
 mod admin;
 mod auth;
 mod auth_fixtures;

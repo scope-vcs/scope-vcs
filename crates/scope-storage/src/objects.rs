@@ -4,13 +4,9 @@
 //! disk instead of holding the whole object in memory.
 
 mod error;
-mod legacy;
 mod source_blobs;
 
 pub use error::{ObjectStoreError, ObjectStoreErrorKind, ensure_object_size, object_too_large};
-pub use legacy::{
-    LegacyReencryptReport, reencrypt_legacy_objects, reencrypt_legacy_objects_until_complete,
-};
 pub use source_blobs::{
     ContentObjectKind, content_object_for_bytes, delete_source_blobs, object_key,
     put_content_object, put_source_blob, source_blob_bytes, write_source_blob_to,

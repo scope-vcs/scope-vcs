@@ -1,5 +1,6 @@
 import { unixCalendarDay } from '../../lib/date-format'
 import type { RequestDiscussionReplyView } from './request-discussion-types'
+import { isSameActor } from './request-actor'
 
 export function replyFragment(discussionId: string, replyId: string) {
   const fragment = new URLSearchParams({
@@ -31,7 +32,7 @@ export function shouldGroupReplies(
     !boundary.unread &&
     !previous.pending &&
     !current.pending &&
-    previous.author.id === current.author.id &&
+    isSameActor(previous.author, current.author) &&
     current.created_at_unix >= previous.created_at_unix &&
     current.created_at_unix - previous.created_at_unix <=
       GROUP_WINDOW_SECONDS,

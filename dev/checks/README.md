@@ -30,6 +30,11 @@ release build or installer check. `dev/check cli` and `.scope/runs/checks.yml`
 always run both. Repository policy always checks the full checkout, including
 source outside `web/`.
 
+Scope keeps every `.scope` path except `RULES.md` private, so public projections
+omit the checks image and workflow. Checks that compare against those files skip
+them there and print what they skipped. GitHub Actions always checks out the
+complete tree, so a missing file fails there instead.
+
 The CLI distribution matrix also runs the portable version and license commands
 and the installer check on native Linux, macOS, and Windows runners. It also runs
 credential-key, injected Git credential, and browser callback unit tests without

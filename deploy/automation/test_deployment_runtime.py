@@ -1,6 +1,8 @@
 """Adapters use temporary credentials and preserve interrupted repair work."""
 import contextlib
 import json
+import os
+import stat
 import subprocess
 import tempfile
 import threading
@@ -11,6 +13,26 @@ from pathlib import Path
 from unittest.mock import patch
 
 import deployment_runtime as runtime
+
+
+class StateTests(unittest.TestCase):
+    def test_save_json_syncs_contents_then_renamed_directory(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "state" / "intent.json"
+            kinds = []
+            real_fsync = os.fsync
+
+            def sync(fd):
+                mode = os.fstat(fd).st_mode
+                kinds.append("file" if stat.S_ISREG(mode) else "directory")
+                if stat.S_ISDIR(mode):
+                    self.assertEqual(json.loads(path.read_text()), {"date": "2026-09-25"})
+                real_fsync(fd)
+
+            with patch.object(runtime.os, "fsync", side_effect=sync):
+                runtime.save_json(path, {"date": "2026-09-25"})
+            self.assertEqual(kinds, ["file", "directory"])
+            self.assertFalse(path.with_suffix(".tmp").exists())
 
 
 class T3Tests(unittest.TestCase):

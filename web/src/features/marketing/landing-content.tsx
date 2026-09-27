@@ -106,6 +106,8 @@ export function LandingContent({
           <Note className="absolute left-1/2 top-1/2 max-w-[44ch] -translate-x-1/2 -translate-y-1/2 text-center max-[901px]:static max-[901px]:order-last max-[901px]:block max-[901px]:max-w-none max-[901px]:basis-full max-[901px]:translate-none max-[901px]:text-left" id="footer" />
           <nav aria-label={isPublic ? 'Project' : undefined} className="flex gap-6 [&_a:hover]:text-success-strong">
             <a href={sourceUrl}>Source</a>
+            <Link to="/privacy">Privacy</Link>
+            <Link to="/terms">Terms</Link>
             <Link to="/licenses">Licenses</Link>
           </nav>
         </footer>

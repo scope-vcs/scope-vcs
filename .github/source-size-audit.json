@@ -2,6 +2,11 @@
   "version": 1,
   "production": [
     {
+      "path": "api/src/git/run_source.rs",
+      "owner": "run source Git materialization",
+      "reason": "Accepted-head and private-request bundles share cache publication, bounded Git execution, standalone verification, and download streaming; operation supervision and tests are separate modules."
+    },
+    {
       "path": "api/src/http/request_discussions.rs",
       "owner": "request discussion HTTP delivery",
       "reason": "Discussion queries and mutations share visibility projection, cursor, anchor, and response mapping rules."

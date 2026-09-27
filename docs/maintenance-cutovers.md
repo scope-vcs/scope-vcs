@@ -1,9 +1,9 @@
 # Releases and maintenance recovery
 
-`release.yml` is the production entry point. It runs once daily at 2:08 AM in
-`America/Chicago`, including daylight saving changes. GitHub may delay the
-scheduled start. A failed run does not trigger another scheduled attempt that
-day. Use manual dispatch for a correction or recovery:
+`release.yml` is the production entry point. The deployment watcher dispatches
+it once daily at 2:08 AM in `America/Chicago`; the spring daylight-saving gap
+runs at 3:00 AM. GitHub cron is disabled. A failed run does not trigger another
+automatic daily attempt. Use manual dispatch for a correction or recovery:
 
 ```sh
 gh workflow run release.yml --ref main
@@ -17,8 +17,9 @@ Release call the same reusable validation workflow.
 On Surface, `scope-deployment-watcher.timer` checks GitHub every minute, all day.
 Its local `deployment_watcher.py` starts a Codex thread in T3 when a main Release
 workflow appears, then follows the release and handles corrections. The watcher
-never dispatches the daily release itself.
-Its persisted run and command IDs prevent duplicate threads after retries.
+also owns the durable daily dispatch intent and alerts on a missing release run.
+Its persisted run and command IDs prevent duplicate threads after retries. See
+[watcher operations](../deploy/automation/OPERATIONS.md) for the machine cutover.
 The shared automation client resolves T3's active native executable from
 `runtime/service-state.json` each time it connects, so nightly updates and
 rollbacks do not pin automation to an obsolete executable.

@@ -21,7 +21,7 @@ test('web vitals keep the initial document route and wait for safe identity', ()
     return true
   })
 
-  measurements.activate('request_details')
+  measurements.activate('request_changes')
   measurements.report('LCP', 510)
   measurements.report('CLS', 0.03)
   measurements.report('INP', 60)
@@ -34,15 +34,15 @@ test('web vitals keep the initial document route and wait for safe identity', ()
   assert.deepEqual(captures, [
     {
       event: 'web_vital',
-      properties: { metric: 'LCP', route_name: 'request_details', value: 510 },
+      properties: { metric: 'LCP', route_name: 'request_changes', value: 510 },
     },
     {
       event: 'web_vital',
-      properties: { metric: 'CLS', route_name: 'request_details', value: 0.03 },
+      properties: { metric: 'CLS', route_name: 'request_changes', value: 0.03 },
     },
     {
       event: 'web_vital',
-      properties: { metric: 'INP', route_name: 'request_details', value: 60 },
+      properties: { metric: 'INP', route_name: 'request_changes', value: 60 },
     },
   ])
 })

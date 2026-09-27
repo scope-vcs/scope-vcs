@@ -53,6 +53,11 @@ configuration file against local rules without saving it:
 scope visibility preview --config proposed-config.json
 ```
 
+`scope visibility log` lists the repository's visibility changes on Scope,
+newest first, including pushes and merges that changed visibility. Unlike the
+local commands above, it needs `scope login` and network access. Pages hold up to
+50 changes; pass the printed `--before` cursor to see older ones.
+
 A fresh linked worktree can contribute to requests before it has local visibility
 state. `scope doctor` reports that absence as informational. Run `scope pull` to
 initialize the missing state from the repository (public contributors receive

@@ -17,6 +17,7 @@ import { RelativeTimestamp } from '@/components/timestamp'
 import { formatUnixDayLabel } from '@/lib/date-format'
 import { useHydrated } from '@/lib/use-hydrated'
 import type { RequestDiscussionReplyView } from './request-discussion-types'
+import { actorHandle } from './request-actor'
 
 export function RequestDiscussionReplyList({
   canReply,
@@ -115,13 +116,13 @@ function DiscussionReply({
       {grouped ? (
         <span aria-hidden="true" />
       ) : (
-        <RequestDiscussionActorAvatar handle={reply.author.handle} />
+        <RequestDiscussionActorAvatar handle={actorHandle(reply.author)} />
       )}
 
       <div className="min-w-0">
         {grouped ? (
           <span className="sr-only">
-            {reply.author.handle}, <RelativeTimestamp value={reply.created_at_unix} />
+            {actorHandle(reply.author)}, <RelativeTimestamp value={reply.created_at_unix} />
           </span>
         ) : null}
         {!grouped ? (
@@ -161,7 +162,7 @@ function DiscussionReply({
       {hasActions ? (
         <details className="group/actions absolute top-1 right-1 z-10 lg:hidden">
           <summary
-            aria-label={`Actions for ${reply.author.handle}'s reply`}
+            aria-label={`Actions for ${actorHandle(reply.author)}'s reply`}
             className="grid size-8 cursor-pointer list-none place-items-center rounded-md border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden"
           >
             <Ellipsis className="size-4" />
@@ -202,13 +203,13 @@ function ReplyActionItems({
     <>
       {canReply ? (
         <button
-          aria-label={`Reply to ${reply.author.handle}`}
+          aria-label={`Reply to ${actorHandle(reply.author)}`}
           className={itemClass}
           onClick={(event) => {
             closeMobileActions(event.currentTarget)
             onQuote(reply)
           }}
-          title={`Reply to ${reply.author.handle}`}
+          title={`Reply to ${actorHandle(reply.author)}`}
           type="button"
         >
           <Reply className="size-3.5" />
@@ -247,7 +248,7 @@ function ReplyReference({ reply }: { reply: RequestDiscussionReplyView }) {
       >
         <CornerLeftUp className="size-3 shrink-0" />
         <span className="max-w-[45%] shrink-0 truncate font-medium text-foreground">
-          {reply.reply_to.author.handle}
+          {actorHandle(reply.reply_to.author)}
         </span>
         <span className="truncate">
           {compactDiscussionSummary(reply.reply_to.body_markdown)}

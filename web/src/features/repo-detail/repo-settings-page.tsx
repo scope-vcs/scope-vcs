@@ -17,18 +17,18 @@ import type {
 import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { SectionRow, SectionRows } from '@/components/section-rows'
-import { Button } from '@/components/ui/button'
+import { TypedConfirmationDialog } from '@/components/typed-confirmation-dialog'
 import { storeHomeFlash } from '@/lib/home-flash'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
-import { ShieldCheck, Trash2 } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import { useNavigate, useRouter } from '@tanstack/react-router'
-import { useReducer, useState } from 'react'
-import { DeleteRepositoryDialog } from './delete-repository-dialog'
+import { useReducer, useState, type ReactNode } from 'react'
 import {
   RepositoryMembersSection,
 } from './repo-members-section'
 import { MemberAccessSummary } from './repo-member-permissions'
 import { RepositoryMetadataForm } from './repository-metadata-form'
+import { AccessSection, DangerZoneSection } from './repo-settings-sections'
 import { useRepoLayout } from './repo-layout-context'
 import {
   initialRepoSettingsPageState,
@@ -43,10 +43,12 @@ export function RepoSettingsPage({
   sendInviteEmail,
   deleteMember,
   collaboration,
+  collaborationLoading,
   deleteRepo,
   params,
   updateMember,
   updateMetadata,
+  visibilityLog,
 }: {
   createInvite: (
     input: CreateRepoInviteInput,
@@ -56,10 +58,14 @@ export function RepoSettingsPage({
   sendInviteEmail: (input: RepoInviteInput) => Promise<RepositoryInviteResponse>
   deleteMember: (input: DeleteRepoMemberInput) => Promise<RepositoryMemberResponse>
   collaboration: RepositoryCollaborationResponse | null
+  /** The member list is still loading; the rest of the page does not need it. */
+  collaborationLoading: boolean
   deleteRepo: (params: RepoParams) => Promise<DeleteRepoResponse>
   params: RepoParams
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
   updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummaryResponse>
+  /** Rendered only for readers who can see private files. */
+  visibilityLog?: ReactNode
 }) {
   const navigate = useNavigate()
   const router = useRouter()
@@ -145,24 +151,10 @@ export function RepoSettingsPage({
           />
         )}
 
+        {repo.access.can_read_private_files && visibilityLog}
+
         {repo.access.actor === 'Owner' && (
-          <SectionRows>
-            <SectionRow
-              description="Permanently removes repo metadata and stored Git data from Scope."
-              icon={<Trash2 className="size-4" />}
-              title="Danger zone"
-            >
-              <Button
-                onClick={() => dispatch({ repo, type: 'deleteTargetChanged' })}
-                size="sm"
-                type="button"
-                variant="destructive"
-              >
-                <Trash2 className="size-3.5" />
-                <span>Delete repository</span>
-              </Button>
-            </SectionRow>
-          </SectionRows>
+          <DangerZoneSection onDelete={() => dispatch({ repo, type: 'deleteTargetChanged' })} />
         )}
 
         {repo.access.actor === 'Member' && (
@@ -175,6 +167,10 @@ export function RepoSettingsPage({
               <MemberAccessSummary permissions={repo.access} />
             </SectionRow>
           </SectionRows>
+        )}
+
+        {!collaboration && collaborationLoading && repo.access.actor === 'Owner' && (
+          <AccessSection canInvite={repo.lifecycle_state === 'Ready'} ownerHandle={repo.owner_handle} />
         )}
 
         {collaboration && (
@@ -195,13 +191,18 @@ export function RepoSettingsPage({
       </PageContent>
 
       {deleteTarget && (
-        <DeleteRepositoryDialog
+        <TypedConfirmationDialog
+          confirmLabel="Delete"
+          confirmation={deleteTarget.name}
           error={deleteError}
           onCancel={() =>
             dispatch({ repo: null, type: 'deleteTargetChanged' })
           }
-          onConfirm={deleteRepository}
-          repo={deleteTarget}
+          onConfirm={() => deleteRepository(deleteTarget)}
+          purpose="permanently delete this repository"
+          subject={deleteTarget.id}
+          title="Delete repository"
+          warning="This permanently removes the repo and stored Git data from Scope."
         />
       )}
     </>

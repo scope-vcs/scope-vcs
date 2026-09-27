@@ -38,7 +38,7 @@ export function applyAnalyticsIdentityTransition(
   const transition = identityTransition({
     currentDistinctId: client.get_distinct_id(),
     isSignedIn: Boolean(scopeUserId),
-    persistedUserId: client.get_property('$user_id'),
+    identifiedUserId: client.get_property('$user_id'),
     scopeUserId,
   })
 

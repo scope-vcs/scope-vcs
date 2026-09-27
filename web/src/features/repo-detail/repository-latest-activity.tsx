@@ -7,10 +7,12 @@ import { useCachedResource } from '@/lib/use-cached-resource'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { loadRepositoryLatestActivity } from '@/routes/-repo-activity-actions'
 import { Link } from '@tanstack/react-router'
-import { History } from 'lucide-react'
 import { useCallback } from 'react'
 import { repoResourceScope } from './repo-resource-scope'
 import { repositoryActivityResource } from './repository-activity-resource'
+import { defaultHistoryAudience } from '@/features/history/history-feed'
+import { HistoryMenu } from '@/features/history/history-menu'
+import { updateAudienceSearch } from '@/features/history/update-search'
 
 export function RepositoryLatestActivity({ params, repo }: { params: RepoParams; repo: RepoSummaryResponse }) {
   const { isLoaded, userId } = useAuth()
@@ -29,13 +31,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
 
   if (!ready) return null
   if (current.status === 'loading' || current.status === 'idle') {
-    return (
-      <div className="border-b border-border px-5 py-3 sm:px-6 lg:px-8">
-        <PendingSurface delay label="Loading latest repository change">
-          <TextSkeleton length="long" size="meta" />
-        </PendingSurface>
-      </div>
-    )
+    return <RepositoryLatestActivityPending onRetry={current.retry} />
   }
   if (current.status === 'failed') {
     return (
@@ -54,10 +50,10 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
     <div aria-label="Latest repository change" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-5 py-3 text-xs sm:px-6 lg:px-8">
       <Link
         className="min-w-0 basis-full truncate rounded font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring sm:flex-1 sm:basis-auto"
-        params={params}
-        search={{ audience, entry: entry.source_id, feed: 'all' }}
+        params={{ ...params, entryId: entry.source_id }}
+        search={updateAudienceSearch(audience, defaultHistoryAudience(repo.access.can_read_private_files))}
         title={message}
-        to="/$owner/$repo/history"
+        to="/$owner/$repo/updates/$entryId"
       >
         {message}
       </Link>
@@ -70,10 +66,25 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
           </span>
         )}
       </div>
-      <Link className="flex shrink-0 items-center gap-1.5 rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" params={params} search={{ audience, feed: 'all' }} to="/$owner/$repo/history">
-        <History aria-hidden="true" className="size-3.5" /> History
-      </Link>
+      <HistoryMenu canReadPrivateFiles={repo.access.can_read_private_files} params={params} />
       {current.error && <button className="basis-full text-left underline" onClick={current.retry} type="button">Could not refresh latest change. Retry</button>}
     </div>
+  )
+}
+
+// Wraps like the loaded row: the message takes its own line on narrow screens.
+export function RepositoryLatestActivityPending({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <PendingSurface label="Loading latest repository change" onRetry={onRetry}>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-5 py-3 text-xs sm:px-6 lg:px-8">
+        <span className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
+          <TextSkeleton length="long" size="meta" />
+        </span>
+        <span className="flex-1 sm:flex-none">
+          <TextSkeleton length="short" size="meta" />
+        </span>
+        <TextSkeleton length="tiny" size="meta" />
+      </div>
+    </PendingSurface>
   )
 }

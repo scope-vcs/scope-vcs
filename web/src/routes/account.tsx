@@ -1,3 +1,4 @@
+import { deleteAccountForRequest } from '@/api/account'
 import {
   createCliExchangeGrantForRequest,
   listCliSessionsForRequest,
@@ -9,16 +10,18 @@ import { AppShell } from '@/components/app-shell'
 import { CopyableCodeBlock } from '@/components/copyable-code-block'
 import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
-import { SectionRow, SectionRows } from '@/components/section-rows'
+import { SectionRows } from '@/components/section-rows'
 import { Button } from '@/components/ui/button'
 import { AccountPageHeader } from '@/features/account/account-page-header'
 import { AccountPagePending } from '@/features/account/account-page-pending'
+import { CliLoginSection, CliSessionsSection } from '@/features/account/account-sections'
 import { CliSessionList } from '@/features/account/cli-session-list'
+import { DeleteAccountSection } from '@/features/account/delete-account-section'
 import { UserButton } from '@clerk/tanstack-react-start'
 import { AbsoluteTimestamp } from '@/components/timestamp'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { KeyRound, LoaderCircle, Monitor, Plus } from 'lucide-react'
+import { LoaderCircle, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { CliExchangeGrantResponse } from '@/api/types.generated'
@@ -39,6 +42,8 @@ const loadCliSessions = createServerFn({ method: 'GET' }).handler(
 const createCliExchangeGrant = createServerFn({ method: 'POST' }).handler(
   createCliExchangeGrantForRequest,
 )
+
+const deleteAccount = createServerFn({ method: 'POST' }).handler(deleteAccountForRequest)
 
 const revokeCliSession = createServerFn({ method: 'POST' })
   .validator(parseRevokeCliSessionInput)
@@ -101,11 +106,7 @@ function AccountRoute() {
         )}
 
         <SectionRows>
-          <SectionRow
-            description="Create a short-lived command for agents, remote shells, or another terminal."
-            icon={<KeyRound className="size-4" />}
-            title="One-time CLI login"
-          >
+          <CliLoginSection>
             <div className="space-y-3">
               <Button
                 disabled={pending.has('grant')}
@@ -129,20 +130,18 @@ function AccountRoute() {
                 </div>
               )}
             </div>
-          </SectionRow>
+          </CliLoginSection>
 
-          <SectionRow
-            description="Active sessions created by scope login or scope init."
-            icon={<Monitor className="size-4" />}
-            title="CLI sessions"
-          >
+          <CliSessionsSection>
             <CliSessionList
               pending={pending}
               revokeSession={(sessionId) => void revokeSession(sessionId)}
               sessions={sessions}
             />
-          </SectionRow>
+          </CliSessionsSection>
         </SectionRows>
+
+        <DeleteAccountSection deleteAccount={() => deleteAccount()} />
       </PageContent>
     </AppShell>
   )

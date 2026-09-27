@@ -7,6 +7,12 @@
   grid-template-columns: var(--request-workspace-sidebar-width, 360px) 1px minmax(0, 1fr);
   min-height: 100cqh;
   width: 100%;
+  transition: grid-template-columns 200ms ease;
+}
+
+/* Dragging the handle sets the width directly; easing would trail the pointer. */
+.request-workspace-shell:has(> .request-workspace-resize-handle:active) {
+  transition: none;
 }
 
 .request-workspace-shell[data-collapsed] {
@@ -24,42 +30,193 @@
   overflow: clip;
 }
 
+/* One list in three states: pinned, closed and open. The inner column is
+ * always the pinned width, so the closed rail is that column clipped to 54px
+ * and opening only changes how much of it shows. Nothing inside moves. */
 .request-workspace-sidebar {
+  --request-workspace-rail-shadow: rgba(27, 26, 23, 0.2);
   position: sticky;
   top: 0;
   display: flex;
+  width: 100%;
   height: 100cqh;
   min-height: 0;
-  min-width: 0;
+  overflow: hidden;
+  background: var(--background);
+  transition: width 200ms ease, box-shadow 200ms ease, background-color 120ms ease;
+}
+
+.dark .request-workspace-sidebar {
+  --request-workspace-rail-shadow: rgba(0, 0, 0, 0.6);
+}
+
+.request-workspace-sidebar-inner {
+  display: flex;
+  width: var(--request-workspace-sidebar-width);
+  min-height: 0;
+  flex: none;
   flex-direction: column;
 }
 
-.request-workspace-collapsed-view {
+.request-workspace-rail-rule,
+.request-workspace-rail-more {
   display: none;
 }
 
-.request-workspace-sidebar--collapsed .request-workspace-collapsed-view {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 8px;
+@media (min-width: 701px) {
+  .request-workspace-sidebar-container:has(> [data-state="open"]) {
+    overflow: visible;
+  }
+
+  .request-workspace-sidebar[data-state="open"] {
+    z-index: 30;
+    width: var(--request-workspace-sidebar-width);
+    border-right: 1px solid var(--border);
+    /* Only over the page it covers: the margin to its left stays flat. */
+    box-shadow: 18px 0 28px -14px var(--request-workspace-rail-shadow);
+  }
+
+  .request-workspace-sidebar[data-state="open"][data-closing] {
+    width: 100%;
+    box-shadow: none;
+  }
+
+  /* Everything the closed rail drops fades while it slides shut. */
+  .request-workspace-sidebar[data-closing] .request-workspace-row-link > :last-child,
+  .request-workspace-sidebar[data-closing] .request-workspace-row::before,
+  .request-workspace-sidebar[data-closing] .request-workspace-sidebar-tools > search,
+  .request-workspace-sidebar[data-closing] .request-workspace-needs-you > h2 > span:first-child,
+  .request-workspace-sidebar[data-closing] .request-workspace-open,
+  .request-workspace-sidebar[data-closing] .request-workspace-disclosures {
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .request-workspace-sidebar[data-closing] .request-workspace-row {
+    border-color: transparent;
+    background: none;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] {
+    cursor: pointer;
+  }
+
+  .request-workspace-sidebar[data-state="closed"]:hover {
+    background: color-mix(in srgb, var(--foreground) 3%, var(--background));
+  }
+
+  /* Closed: the caret takes the search box's place, the needs-you header
+   * shrinks to its count, and rows shrink to their avatars. */
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-tools > search {
+    visibility: hidden;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-toggle {
+    position: absolute;
+    left: 11px;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-needs-you > h2 {
+    width: 54px;
+    padding-inline: 0;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-needs-you > h2 > span:first-child {
+    display: none;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-needs-you > h2 > span:last-child {
+    width: 100%;
+    margin: 0;
+    text-align: center;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-open,
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-disclosures,
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-rows > :not(.request-workspace-row),
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-row::before,
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-row-actions,
+  /* RAIL_AVATARS in request-workspace-sidebar.tsx; the open request always stays. */
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-needs-you .request-workspace-row:nth-child(n + 7):not(.request-workspace-row--selected) {
+    display: none;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-row {
+    border-color: transparent;
+    background: none;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-row-link > :last-child {
+    opacity: 0;
+  }
+
+  .request-workspace-row-link > :last-child {
+    transition: opacity 150ms ease;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-row--selected .request-workspace-row-avatar {
+    outline: 1.5px solid var(--foreground);
+    outline-offset: 2px;
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-rail-rule {
+    display: block;
+    width: 18px;
+    height: 0;
+    margin: 6px 0 6px 18px;
+    border: 0;
+    border-top: 1px solid var(--border-strong);
+  }
+
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-rail-more {
+    display: block;
+  }
 }
 
-.request-workspace-expanded-view {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
+/* Names a closed rail's avatar beside it; lives on the body, so it is fixed. */
+.request-workspace-rail-hint {
+  position: fixed;
+  z-index: 50;
+  max-width: 16rem;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--popover);
+  box-shadow: var(--shadow-pop);
+  color: var(--popover-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+  transform: translateY(-50%);
 }
 
-.request-workspace-sidebar--collapsed .request-workspace-expanded-view {
-  display: none;
+/* Centred on the 54px rail, like the avatars above it. */
+.request-workspace-rail-more {
+  width: 34px;
+  height: 22px;
+  margin: 4px 0 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.request-workspace-sidebar:hover .request-workspace-rail-more {
+  border-color: var(--muted-foreground);
+  color: var(--foreground);
+}
+
+.request-workspace-rail-more:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .request-workspace-sidebar-tools {
+  position: relative;
   display: flex;
   flex: none;
   align-items: center;
@@ -142,8 +299,32 @@
   grid-template-columns: 20px minmax(0, 1fr);
   column-gap: 10px;
   align-items: start;
-  padding: 10px 16px 10px 15px;
+  padding: 10px 16px 10px 17px;
   text-align: left;
+}
+
+/* Avatars on the rail are larger, and every avatar centres 27px in, the middle
+ * of the collapsed rail. */
+.request-workspace-row[data-rail] .request-workspace-row-link {
+  grid-template-columns: 32px minmax(0, 1fr);
+  padding-left: 11px;
+}
+
+.request-workspace-row-avatar {
+  position: relative;
+  display: block;
+  border-radius: 999px;
+}
+
+.request-workspace-row-unread {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--background);
+  border-radius: 999px;
+  background: var(--foreground);
 }
 
 .request-workspace-row-link:focus-visible {
@@ -244,59 +425,7 @@
   width: 13px;
 }
 
-/* The spine: one pip per loaded request. */
-.request-workspace-spine {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.request-workspace-spine ul {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.request-workspace-pip {
-  display: block;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--border-strong);
-  transition: transform 120ms ease;
-}
-
-.request-workspace-pip[data-group="needs_you"] {
-  background: var(--foreground);
-}
-
-.request-workspace-pip[data-group="done"] {
-  background: var(--success);
-}
-
-.request-workspace-pip:hover {
-  transform: scale(1.35);
-}
-
-.request-workspace-pip[aria-current="page"] {
-  box-shadow: 0 0 0 2px var(--background), 0 0 0 3.5px var(--foreground);
-}
-
-.request-workspace-pip:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 3px;
-}
-
-/* Focus mode: no app chrome, the spine, and one reading column. */
+/* Focus mode: no app chrome, the rail, and one reading column. */
 html[data-focus] .application-topbar {
   display: none;
 }
@@ -336,12 +465,8 @@ html[data-focus] .application-topbar {
     display: none;
   }
 
-  .request-workspace-sidebar--collapsed .request-workspace-collapsed-view {
-    display: none;
-  }
-
-  .request-workspace-sidebar--collapsed .request-workspace-expanded-view {
-    display: flex;
+  .request-workspace-sidebar-inner {
+    width: 100%;
   }
 
   .request-workspace-shell .request-workspace-detail {
@@ -398,10 +523,12 @@ html[data-focus] .application-topbar {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .request-workspace-shell,
+  .request-workspace-row-link > :last-child,
   .request-workspace-row,
   .request-workspace-row-age,
   .request-workspace-row-actions,
-  .request-workspace-pip,
+  .request-workspace-sidebar,
   .request-workspace-group-toggle {
     transition: none;
   }

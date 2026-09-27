@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { LoaderCircle, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import type { CliSessionResponse } from '@/api/types.generated'
+import { SESSION_ROW_CLASS } from './account-sections'
 
 export function CliSessionList({
   pending,
@@ -24,10 +25,7 @@ export function CliSessionList({
     <>
       <ul className="divide-y divide-border border-y border-border">
         {sessions.map((session) => (
-          <li
-            className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-            key={session.id}
-          >
+          <li className={SESSION_ROW_CLASS} key={session.id}>
             <div className="min-w-0">
               <div className="truncate text-sm font-medium leading-5">
                 {session.label}

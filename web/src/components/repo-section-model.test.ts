@@ -8,7 +8,7 @@ import {
 
 describe('repository sections', () => {
   it('orders Runs after Requests for owners and members', () => {
-    const expected = ['Code', 'Requests', 'Runs', 'History', 'Settings']
+    const expected = ['Code', 'Requests', 'Runs', 'Settings']
     assert.deepEqual(
       repoSectionsForActor('Owner').map(({ label }) => label),
       expected,
@@ -22,7 +22,7 @@ describe('repository sections', () => {
   it('hides Runs and Settings from public actors', () => {
     assert.deepEqual(
       repoSectionsForActor('Public').map(({ label }) => label),
-      ['Code', 'Requests', 'History'],
+      ['Code', 'Requests'],
     )
   })
 

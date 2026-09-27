@@ -151,7 +151,7 @@ async fn insert_private_request_for_public_user(state: &AppState) {
             id: PRIVATE_REQUEST_ID.to_string(),
             repo_id: TEST_REPO_ID.to_string(),
             name: "private-request".to_string(),
-            author_user_id: public_user_id(),
+            author_user_id: Some(public_user_id()),
             author_role: RequestActorRole::Member,
             audience: RequestAudience::Private,
             base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),

@@ -392,6 +392,42 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
             response["entries"][0]["visibility_summary"]["made_private_count"],
             1
         );
+
+        // The visibility feed keeps the push that carried the change and drops rv1.
+        let visibility = api_request(
+            router(state.clone()),
+            "GET",
+            &format!("/v1/repos/owner/repo/history?audience={audience}&feed=visibility"),
+            (private).then(bearer_header).as_deref(),
+            None,
+        )
+        .await;
+        assert_eq!(visibility.status(), StatusCode::OK);
+        let visibility = response_json(visibility).await;
+        assert_eq!(visibility["feed"], "visibility");
+        let sources = visibility["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["source_id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(sources, ["rv2"]);
+
+        let detail = api_request(
+            router(state.clone()),
+            "GET",
+            &format!("/v1/repos/owner/repo/history/rv2?audience={audience}"),
+            (private).then(bearer_header).as_deref(),
+            None,
+        )
+        .await;
+        let detail = response_json(detail).await;
+        assert_eq!(detail["older_source_id"], "rv1");
+        assert!(detail["newer_source_id"].is_null());
+        assert_eq!(
+            detail["occurred_at_unix"],
+            response["entries"][0]["occurred_at_unix"]
+        );
     }
 }
 

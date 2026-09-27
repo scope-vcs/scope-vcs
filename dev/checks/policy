@@ -4,12 +4,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 python3 -m unittest discover -s dev/licensing -p test_generate.py
 python3 dev/licensing/generate.py --check
+python3 dev/legal/distribute.py --check
 node --test .github/scripts/check-migration-immutability.test.mjs
 node .github/scripts/check-migration-immutability.mjs
 node --test .github/scripts/check-source-size.test.mjs
 node .github/scripts/check-source-size.mjs
 node --test .github/scripts/check-rust-boundaries.test.mjs
 node .github/scripts/check-rust-boundaries.mjs
+node --test .github/scripts/scope-managed-files.test.mjs
 node .github/scripts/check-rust-toolchain-sync.mjs
 node .github/scripts/check-runtime-image-sync.mjs
 node --test media-worker/check-vendor-advisories.test.mjs

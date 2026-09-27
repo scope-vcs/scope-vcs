@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   CircleAlert,
+  LoaderCircle,
   Reply,
   RotateCcw,
 } from 'lucide-react'
@@ -32,6 +33,7 @@ import {
   useRequestDiscussionReplies,
   type RequestDiscussionThreadActions,
 } from './use-request-discussion-replies'
+import { actorHandle } from './request-actor'
 
 export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   actions,
@@ -212,7 +214,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
       ) : null}
 
       <div>
-        <RequestDiscussionActorAvatar handle={discussion.author.handle} />
+        <RequestDiscussionActorAvatar handle={actorHandle(discussion.author)} />
       </div>
 
       <div className="min-w-0">
@@ -324,13 +326,14 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                 {hasOlderReplies ? (
                   <button
                     className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-70"
+                    aria-busy={loadingReplies}
                     disabled={loadingReplies}
                     onClick={() => void loadOlderWithoutJump()}
                     type="button"
                   >
-                    {loadingReplies
-                      ? 'Loading…'
-                      : `${olderReplyCount} earlier ${olderReplyCount === 1 ? 'reply' : 'replies'}`}
+                    {/* Left-aligned, so the spinner follows the label and the label stays put. */}
+                    {`${olderReplyCount} earlier ${olderReplyCount === 1 ? 'reply' : 'replies'}`}
+                    {loadingReplies ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
                   </button>
                 ) : null}
                 <RequestDiscussionReplyList
@@ -378,7 +381,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                   quote={
                     quotedReply
                       ? {
-                          author: quotedReply.author.handle,
+                          author: actorHandle(quotedReply.author),
                           body: compactDiscussionSummary(quotedReply.body_markdown),
                         }
                       : null
@@ -401,8 +404,10 @@ function latestParticipantHandles(replies: RequestDiscussionReplyView[]) {
   const handles: string[] = []
   const seen = new Set<string>()
   for (let index = replies.length - 1; index >= 0 && handles.length < 2; index -= 1) {
-    const handle = replies[index]?.author.handle
-    if (!handle || seen.has(handle)) continue
+    const reply = replies[index]
+    if (!reply) continue
+    const handle = actorHandle(reply.author)
+    if (seen.has(handle)) continue
     seen.add(handle)
     handles.push(handle)
   }

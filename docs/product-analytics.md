@@ -44,8 +44,18 @@ Explicit local test configurations may omit it. Events include `environment`,
 ## Collection contract
 
 - Identify people with internal `scope_usr_…` IDs. Reset on sign-out and isolate
-  account changes. Browser Do Not Track remains respected; backend event capture
-  has no browser preference input.
+  account changes. Backend event capture has no browser preference input.
+- The browser client stores nothing on the device: no cookies, `localStorage`
+  or other storage. It keeps the anonymous ID and the Scope user ID in memory,
+  so every full page load starts with a new random anonymous ID. Anonymous
+  unique-visitor counts therefore count page loads rather than returning
+  visitors. Signed-in users are still attributed to their `scope_usr_…` ID once
+  the viewer identity resolves. `$identify` with `$anon_distinct_id` is sent only
+  when events were already captured under the anonymous ID in the same page
+  lifetime, for example a visitor who browses and then signs in. Otherwise the
+  client switches to the user ID without an `$identify` event.
+- Browser analytics is disabled entirely when Global Privacy Control
+  (`navigator.globalPrivacyControl === true`) or Do Not Track is set.
 - Analytics `repository_id` is the opaque `repoi_…` incarnation ID, **not** the
   domain repository ID, which contains `owner/name`. Deleting and recreating a
   repository produces a new analytics entity.

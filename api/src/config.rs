@@ -22,6 +22,7 @@ pub const CLERK_ISSUER_ENV: &str = "CLERK_ISSUER";
 pub const CLERK_JWKS_URL_ENV: &str = "CLERK_JWKS_URL";
 pub const CLERK_AUTHORIZED_PARTIES_ENV: &str = "CLERK_AUTHORIZED_PARTIES";
 pub const CLERK_AUDIENCE_ENV: &str = "CLERK_AUDIENCE";
+pub const CLERK_SECRET_KEY_ENV: &str = "CLERK_SECRET_KEY";
 pub const DEFAULT_CLERK_AUDIENCE: &str = "scope-api";
 pub const LOCAL_APP_ORIGIN: &str = "http://localhost:3000";
 #[cfg(any(test, feature = "local-dev"))]

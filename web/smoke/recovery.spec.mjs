@@ -11,6 +11,7 @@ import {
   withPage,
 } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
+import { changesBackLink } from './request-changes-smoke.mjs'
 
 const holdEventStream = (page) => page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
 
@@ -39,7 +40,7 @@ test('changes retry keeps the document and selected revision', async () => {
     assert.equal(injected, true)
     const before = page.url()
     assert.equal(new URL(before).searchParams.get('revision'), 'event_req_demo_ready_revision_2')
-    const heading = await page.getByRole('heading', { name: 'Add bounded retry timing' }).elementHandle()
+    const screenNavigation = await page.getByRole('navigation', { name: 'Request changes navigation' }).elementHandle()
     await markDocument(page, 'preserved')
     const requests = []
     page.on('request', (request) => {
@@ -57,13 +58,12 @@ test('changes retry keeps the document and selected revision', async () => {
       assert.equal(new URL(page.url()).searchParams.get(key), value)
     }
     await assertDocumentPreserved(page, 'preserved')
-    assert.equal(await heading.evaluate((element) => element.isConnected), true)
+    assert.equal(await screenNavigation.evaluate((element) => element.isConnected), true)
     await page.getByLabel('Commit file navigator').waitFor()
     await page.locator('[data-slot="pending-surface"]').waitFor({ state: 'detached' })
     assert.deepEqual(requests, ['loadRevisions_createServerFn_handler', 'loadDiscussions_createServerFn_handler'])
     assert.equal(await retry.count(), 0)
-    const discussion = page.getByRole('navigation', { name: 'Request views' }).getByRole('link', { name: 'Discussion', exact: true })
-    await discussion.click()
+    await changesBackLink(page).click()
     await page.waitForURL((url) => url.pathname.endsWith('/req_demo_ready'))
   }, {
     prepare: async (page) => {
@@ -99,11 +99,12 @@ test('a delayed file offers scoped retry and keeps its selection', async () => {
       await waitForClientHydration(expand)
       await expand.click()
       await page.getByRole('button', { name: 'app.ts', exact: true }).click()
-      await page.getByText('this file is taking longer than usual', { exact: true }).waitFor({ timeout: 30_000 })
-      assert.equal(await page.locator('[data-slot="pending-surface"]').getAttribute('aria-busy'), 'true')
+      const surface = page.locator('[data-slot="pending-surface"]')
+      await surface.getByText('Still loading', { exact: true }).waitFor({ timeout: 30_000 })
+      assert.equal(await surface.getAttribute('aria-busy'), 'true')
       assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')
       assert.equal(await page.getByLabel('Repository file navigator').isVisible(), true)
-      await page.getByRole('button', { name: 'retry file', exact: true }).click()
+      await surface.getByRole('button', { name: 'Retry loading src/app.ts', exact: true }).click()
       await page.locator('pre code').filter({ hasText: 'export function greet' }).waitFor()
       assert.equal(attempts, 2)
       assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')

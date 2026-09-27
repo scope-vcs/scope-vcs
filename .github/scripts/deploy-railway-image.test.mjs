@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -21,7 +21,11 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", chunk => input += chunk);
 process.stdin.on("end", () => {
   appendFileSync(process.env.CALLS, JSON.stringify({ args, input, railwayToken: process.env.RAILWAY_TOKEN, apiToken: process.env.RAILWAY_API_TOKEN }) + "\\n");
-  if (args[0] === "deployment") console.log(JSON.stringify([{ id: "deployment-123", serviceId: "service-123", status: "SUCCESS", meta: { imageDigest: process.env.DIGEST } }]));
+  if (args[0] === "status") console.log(JSON.stringify({ environments: { edges: [{ node: {
+    id: "environment-123", serviceInstances: { edges: [{ node: { serviceId: "service-123",
+      activeDeployments: [{ id: "deployment-123" }] } }] },
+  } }] } }));
+  else if (args[0] === "deployment") console.log(JSON.stringify([{ id: "deployment-123", serviceId: "service-123", status: "SUCCESS", meta: { imageDigest: process.env.DIGEST } }]));
   else if (args[1].includes("serviceInstanceDeployV2")) console.log(JSON.stringify({ data: { serviceInstanceDeployV2: "deployment-123" } }));
   else console.log(JSON.stringify({ data: { serviceInstanceUpdate: true } }));
 });
@@ -42,6 +46,25 @@ function baseEnv({ directory, calls }) {
     SCOPE_RAILWAY_ENVIRONMENT_ID: "environment-123",
   };
 }
+
+test("deferred image activation snapshots predecessors with only the API token", (t) => {
+  const files = fixture(t);
+  const predecessors = join(files.directory, 'predecessors');
+  mkdirSync(predecessors);
+  execFileSync(process.execPath, [script.pathname, "service-123", `ghcr.io/scope-vcs/scope-media-worker@${digest}`], {
+    env: {
+      ...baseEnv(files),
+      SCOPE_DEPLOYMENT_COMPONENT: "media-worker",
+      SCOPE_DEPLOYMENT_SOURCE_SHA: "b".repeat(40),
+      SCOPE_DEPLOYMENT_EVIDENCE_PATH: join(files.directory, 'evidence.ndjson'),
+      SCOPE_PREDECESSOR_TEARDOWN_DIR: predecessors,
+    },
+  });
+  const calls = readFileSync(files.calls, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(calls[0].args[0], 'status');
+  assert.ok(calls.every(call => call.apiToken === 'account-token' && call.railwayToken === undefined));
+  assert.deepEqual(JSON.parse(readFileSync(join(predecessors, 'media-worker.json'))).ids, []);
+});
 
 test("activates and verifies the exact deployment returned by Railway", (t) => {
   const files = fixture(t);

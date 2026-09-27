@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 
 type PopoverTriggerProps = {
   'aria-controls': string
@@ -27,13 +27,16 @@ export function Popover({
   panel,
   trigger,
 }: {
-  align?: keyof typeof ALIGN_CLASS
+  /** `auto` opens under the trigger's left edge and flips to its right edge when that would overflow. */
+  align?: keyof typeof ALIGN_CLASS | 'auto'
   className?: string
   label: string
   panel: (close: () => void) => ReactNode
   trigger: (props: PopoverTriggerProps) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  const [flipped, setFlipped] = useState(false)
+  const panelRef = useRef<HTMLDialogElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelId = useId()
@@ -57,6 +60,13 @@ export function Popover({
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [open])
+
+  // Measured before paint from the trigger, so the answer doesn't depend on the current edge.
+  useLayoutEffect(() => {
+    if (!open || align !== 'auto' || !panelRef.current || !triggerRef.current) return
+    const left = triggerRef.current.getBoundingClientRect().left
+    setFlipped(left + panelRef.current.offsetWidth > document.documentElement.clientWidth)
+  }, [align, open])
 
   function close() {
     setOpen(false)
@@ -85,11 +95,12 @@ export function Popover({
           aria-label={label}
           className={cn(
             'absolute top-full z-50 m-0 mt-1 max-w-none rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-[var(--shadow-pop)]',
-            ALIGN_CLASS[align],
+            ALIGN_CLASS[align === 'auto' ? (flipped ? 'end' : 'start') : align],
             className,
           )}
           id={panelId}
           open
+          ref={panelRef}
         >
           {panel(close)}
         </dialog>

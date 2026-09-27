@@ -125,7 +125,7 @@ async fn submission_waits_for_membership_revocation_and_rechecks_permissions() {
         .unwrap();
     assert_eq!(draft.state(), RequestState::Draft);
     assert_eq!(draft.audience, RequestAudience::Private);
-    assert_eq!(draft.author_user_id, "user_public");
+    assert_eq!(draft.author_user_id.as_deref(), Some("user_public"));
     assert!(draft.git_snapshot.is_some());
     let repo = super::super::super::request_access::repo_by_id(
         store.db.as_ref(),

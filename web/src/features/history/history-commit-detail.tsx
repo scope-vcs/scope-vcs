@@ -11,8 +11,9 @@ type CommitDetailPanelProps = ChangedFilesProps & {
 }
 
 export function CommitDetailPanel(props: CommitDetailPanelProps) {
-  const { commitContext, commitState, onCloseDiff } = props
-  const navigation = useChangedFileNavigation(onCloseDiff)
+  const { commitContext, commitState, onCloseDiff, selectedFilePath } = props
+  // With nothing selected the file list is the content, so small screens start with it open.
+  const navigation = useChangedFileNavigation(onCloseDiff, selectedFilePath === null)
 
   if (commitState.status === 'failed') {
     return (
@@ -36,7 +37,7 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
   const filesTruncated = commit.files_truncated
   return (
     <div className="scope-content-enter min-w-0">
-      <div className="border-b border-border px-5 py-4 sm:px-6">
+      <div className="border-b border-border px-5 py-4 sm:px-6 lg:px-8">
         <h3 className="break-words text-sm font-semibold leading-5">
           {historyCommitTitle(commit)}
         </h3>
@@ -54,6 +55,7 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
 
       <ChangedFilesWorkbench
         {...props}
+        expandFolders
         files={commit.files}
         navigation={navigation}
         navigationLabel="Commit file navigator"

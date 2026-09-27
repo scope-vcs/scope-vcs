@@ -12,13 +12,12 @@ import {
   RUN_ROW_TIMESTAMP_CLASS,
 } from './run-row-layout'
 
-const PENDING_RUNS: { id: string; length: TextSkeletonLength }[] = [
-  { id: 'first', length: 'medium' },
-  { id: 'second', length: 'short' },
-  { id: 'third', length: 'long' },
-  { id: 'fourth', length: 'medium' },
-  { id: 'fifth', length: 'medium' },
-]
+const RUN_LENGTHS: TextSkeletonLength[] = ['medium', 'short', 'long', 'medium', 'medium']
+// Enough rows to fill a first screen, so dividers line up with any list length.
+const PENDING_RUNS = Array.from({ length: 16 }, (_, row) => ({
+  id: `run-${row}`,
+  length: RUN_LENGTHS[row % RUN_LENGTHS.length],
+}))
 const PENDING_ACTIONS = (
   <div className="flex items-center gap-2">
     <BlockSkeleton className="h-8 w-36" />
@@ -38,7 +37,9 @@ export function RunsPagePending() {
                 <div className={RUN_ROW_CLASS} key={run.id}>
                   <BlockSkeleton className="size-3.5 shrink-0 rounded-full" />
                   <div className={RUN_ROW_PRIMARY_CLASS}>
-                    <TextSkeleton length={run.length} />
+                    {/* Below sm the loaded name and hash share one inline line
+                        box, which is taller than a text-sm line. */}
+                    <TextSkeleton className="h-6 py-1 sm:h-5 sm:py-0.5" length={run.length} />
                     <TextSkeleton
                       className="hidden sm:block"
                       length="short"

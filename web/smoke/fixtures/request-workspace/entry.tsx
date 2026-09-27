@@ -37,7 +37,7 @@ function Repository() {
   } } as RepoLiveState
   return <FixtureViewer value={viewer}>
     <RepoLayoutProvider live={live} subscribe={subscribe}>
-      <RepoShell params={{ owner: owner!, repo: repo! }}><Outlet /></RepoShell>
+      <RepoShell params={{ owner: owner!, repo: repo! }} repo={live.repo}><Outlet /></RepoShell>
     </RepoLayoutProvider>
   </FixtureViewer>
 }
@@ -64,7 +64,6 @@ function Request() {
       <Link to="/$owner/$repo/requests/$requestId" params={params}>Discussion</Link>
       <Link to="/$owner/$repo/requests/$requestId/changes" params={params}
         search={{ file: 'src/main.ts', revision: 'revision-1' }} hash="line-12">Changes</Link>
-      <Link to="/$owner/$repo/requests/$requestId/details" params={params}>Details</Link>
     </nav>
     <Outlet />
   </div>
@@ -83,7 +82,6 @@ const routeTree = root.addChildren([repository.addChildren([
       createRoute({ getParentRoute: () => request, path: '/', component: () => <p>Discussion content</p> }),
       createRoute({ getParentRoute: () => request, path: 'changes', validateSearch: (search) => search,
         component: () => <p>Changes content</p> }),
-      createRoute({ getParentRoute: () => request, path: 'details', component: () => <p>Details content</p> }),
     ]),
   ]),
 ])])

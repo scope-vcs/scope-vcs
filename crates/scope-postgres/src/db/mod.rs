@@ -4,6 +4,7 @@
 //! in `migrations/*`. Runtime behavior stays in the focused DB modules that own
 //! the workflow being persisted.
 
+mod account_deletion;
 mod auth;
 mod cache_service;
 #[cfg(any(test, feature = "seeding"))]
@@ -11,6 +12,7 @@ mod catalog_fixture;
 pub mod cleanup_queue;
 #[cfg(test)]
 mod cleanup_queue_tests;
+mod clerk_user_deletions;
 mod clerk_users;
 mod cli_auth;
 mod cli_auth_results;
@@ -46,6 +48,7 @@ mod repo_change_notifications;
 mod repo_collaboration;
 mod repo_effects;
 mod repo_invite_emails;
+mod repo_invite_retention;
 mod repo_lifecycle;
 mod repo_mutation;
 mod repo_reads;
@@ -91,6 +94,7 @@ mod test_support;
 mod workflow_catalogs;
 
 pub use crate::migrations::{MigrationLimits, MigrationPlan, PendingMigration};
+pub use account_deletion::{AccountDeletionChange, AccountDeletionError, DeletedAccount};
 pub use cache_service::{
     CacheCommitResult, CacheObjectRecord, CachePrepareResult, CacheRestoreKind, CacheRestoreRecord,
     CacheUploadCleanupClaim, CacheUploadRecord, PendingCacheDeletion, PendingOrphanCacheUpload,
@@ -118,7 +122,10 @@ pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::GitPushContext;
 pub use git_segments::RepositoryGitWriteLease;
-pub use history_reads::{RepositoryHistoryBoundary, RepositoryHistoryPage, RepositoryHistoryQuery};
+pub use history_reads::{
+    RepositoryHistoryBoundary, RepositoryHistoryNeighbors, RepositoryHistoryPage,
+    RepositoryHistoryQuery,
+};
 use json::{decode_json, encode_json};
 use locks::acquire_aggregate_lock;
 pub use maintenance::{

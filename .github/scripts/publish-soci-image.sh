@@ -12,6 +12,9 @@ readonly soci_image="$3"
 readonly repository_name="$4"
 readonly raw_tag="$5"
 readonly soci_tag="$6"
+# The largest measured startup-tool layer is 109.4 MB, leaving 40.6 MB headroom.
+# Original Rust, Debian, and browser layers exceed this size and stay lazy.
+readonly soci_min_layer_size_bytes=150000000
 
 for required_command in aws jq skopeo soci; do
   command -v "$required_command" >/dev/null || {
@@ -44,7 +47,9 @@ readonly soci_archive="$work_dir/soci.tar"
 
 skopeo copy "docker://$source_image" "oci-archive:$source_archive"
 skopeo copy --all "oci-archive:$source_archive" "docker://$raw_image"
-soci convert --standalone --platform linux/amd64 "$source_archive" "$soci_archive"
+soci convert --standalone --platform linux/amd64 \
+  --min-layer-size "$soci_min_layer_size_bytes" \
+  "$source_archive" "$soci_archive"
 skopeo copy --all "oci-archive:$soci_archive" "docker://$soci_image"
 
 image_manifest="$(aws ecr batch-get-image \

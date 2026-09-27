@@ -4,6 +4,7 @@ pub mod state;
 
 pub(crate) mod auth;
 pub(crate) mod cache_grants;
+pub(crate) mod clerk_users;
 pub(crate) mod config;
 #[cfg(any(test, feature = "local-dev", feature = "smoke-seed"))]
 #[path = "dev/seed.rs"]
@@ -18,7 +19,6 @@ pub(crate) mod git_segment_recovery;
 pub(crate) mod http;
 pub(crate) mod invite_mailer;
 pub(crate) mod media_grants;
-mod object_reencryption;
 pub(crate) mod object_store_config;
 pub(crate) mod operation_analytics;
 pub(crate) mod persistence;
@@ -28,9 +28,9 @@ pub(crate) mod repo_access;
 pub(crate) mod repo_events;
 mod repository_backfill;
 mod request_auto_merge_runtime;
+pub(crate) mod retention;
 pub(crate) mod run_attempt_effects;
 pub(crate) mod run_recovery;
-pub(crate) mod run_retention;
 pub(crate) mod runtime_budgets;
 #[cfg(feature = "smoke-seed")]
 pub mod smoke_seed;

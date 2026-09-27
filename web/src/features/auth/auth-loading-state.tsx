@@ -26,7 +26,6 @@ export function AuthLoadingState({ label }: { label: string }) {
   return (
     <PendingSurface
       className="min-h-[220px] w-full max-w-sm"
-      delay
       label={label}
       onRetry={() => window.location.reload()}
     >

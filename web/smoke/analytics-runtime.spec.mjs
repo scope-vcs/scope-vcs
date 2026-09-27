@@ -59,10 +59,11 @@ test('browser analytics transport uses the bounded proxy while analytics domains
   await page.goto(origin, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => window.analyticsReady)
   assert.equal(await page.evaluate(() => window.analyticsEnabled), true, JSON.stringify(requests))
-  await waitFor(() => deliveries.flatMap(decodeCapture).length >= 8)
+  await waitFor(() => deliveries.flatMap(decodeCapture).length >= 7)
+  assert.equal(await page.evaluate(() => localStorage.length), 0, 'analytics must not store identities')
   const events = deliveries.flatMap(decodeCapture)
   assert.deepEqual(events.map(event => event.event).sort(), [
-    '$identify', '$identify', '$identify',
+    '$identify', '$identify',
     '$pageview', '$pageview', '$pageview',
     'frontend_error', 'frontend_error',
   ].sort())
@@ -101,7 +102,7 @@ test('browser analytics transport uses the bounded proxy while analytics domains
   ).length, 2)
   assert.equal(identifies.filter(
     event => event.properties.distinct_id === 'scope_usr_two',
-  ).length, 1)
+  ).length, 0, 'switching accounts resets, leaving no anonymous events to merge')
   assert.equal(diagnostics.find(
     event => event.properties.error_origin === 'window',
   ).properties.distinct_id, 'scope_usr_one')
@@ -117,6 +118,14 @@ test('browser analytics transport uses the bounded proxy while analytics domains
   await dnt.waitForFunction(() => window.analyticsReady)
   await dnt.waitForTimeout(3500)
   assert.equal(deliveries.length, beforeDnt, 'DNT must suppress capture')
+  const gpcContext = await browser.newContext(browserOptions)
+  await gpcContext.addInitScript(normalVisitor)
+  await gpcContext.addInitScript(() => Object.defineProperty(navigator, 'globalPrivacyControl', { get: () => true }))
+  const gpc = await gpcContext.newPage()
+  await gpc.goto(origin, { waitUntil: 'domcontentloaded' })
+  await gpc.waitForFunction(() => window.analyticsReady)
+  await gpc.waitForTimeout(3500)
+  assert.equal(deliveries.length, beforeDnt, 'GPC must suppress capture')
 
   runtime = { ...runtime, SCOPE_ANALYTICS_ENVIRONMENT: 'production', RAILWAY_ENVIRONMENT_NAME: 'staging' }
   const staging = await browser.newPage()

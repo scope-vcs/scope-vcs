@@ -292,9 +292,15 @@ pub(crate) async fn persist_request_ref_to_store(
     let path = staging_repo.to_path_buf();
     let base_oid = request.base_main_oid.clone();
     let head_oid = update.new_head_oid.clone();
-    crate::git::blocking::run(move || {
+    let audience = request.audience;
+    let accepted_main_oid = repo.git_head.as_ref().map(|head| head.head_oid.clone());
+    let snapshot_base = crate::git::blocking::run(move || {
         ensure_request_ref_oid_is_commit(&path, &head_oid)?;
-        ensure_request_ref_descends_from_base(&path, &base_oid, &head_oid)
+        ensure_request_ref_descends_from_base(&path, &base_oid, &head_oid)?;
+        Ok(
+            thin_snapshot_base(audience, &base_oid, accepted_main_oid.as_deref(), &path)?
+                .map(str::to_string),
+        )
     })
     .await?;
     if request.audience == RequestAudience::Public {
@@ -302,7 +308,6 @@ pub(crate) async fn persist_request_ref_to_store(
             .await?;
     }
     let incarnation = repo.incarnation();
-    let snapshot_base = thin_snapshot_base(repo, request).map(str::to_string);
     let prepared = {
         let state = state.clone();
         let incarnation = incarnation.clone();
@@ -380,13 +385,31 @@ struct PreparedRequestRef {
     snapshot_bytes: Vec<u8>,
 }
 
-/// The base a request snapshot leaves out, if any. A private request on a Git-backed repository
-/// starts from private main, which only fast-forwards and is durably stored, so every reader can
-/// supply that base. A public request starts from the public projection, which a history
-/// redaction can rewrite, so its snapshot keeps its full history.
-fn thin_snapshot_base<'a>(repo: &Repository, request: &'a Request) -> Option<&'a str> {
-    (request.audience == RequestAudience::Private && repo.git_head.is_some())
-        .then_some(request.base_main_oid.as_str())
+/// A private request may omit its base only when that commit is in accepted Git main.
+/// Requests started from the pre-Git projection keep full snapshots even after
+/// an unrelated Git main is pushed. Public snapshots always keep full history.
+fn thin_snapshot_base<'a>(
+    audience: RequestAudience,
+    base_oid: &'a str,
+    accepted_main_oid: Option<&str>,
+    staging_repo: &FsPath,
+) -> Result<Option<&'a str>, ApiError> {
+    if audience != RequestAudience::Private {
+        return Ok(None);
+    }
+    let Some(main_oid) = accepted_main_oid else {
+        return Ok(None);
+    };
+    if !request_ref_oid_is_commit(staging_repo, main_oid)? {
+        return Ok(None);
+    }
+    git_is_ancestor(
+        staging_repo,
+        base_oid,
+        main_oid,
+        "checking request base in accepted Git main",
+    )
+    .map(|in_main| in_main.then_some(base_oid))
 }
 
 fn prepare_request_ref_snapshot(

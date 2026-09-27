@@ -65,6 +65,7 @@ pub fn router(state: AppState) -> Router {
             routes::CLI_SESSION,
             delete(http::device_login::revoke_current_cli_session),
         )
+        .route(routes::ACCOUNT, delete(http::account::delete_account))
         .route(
             routes::ACCOUNT_SESSION,
             get(http::account::get_account_session),

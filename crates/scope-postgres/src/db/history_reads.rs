@@ -6,7 +6,7 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     history::{
-        HISTORY_GENERATION_VERSION, HistoryEntry, HistoryEntryKind, HistoryFeed, HistoryView,
+        HISTORY_GENERATION_VERSION, HistoryEntry, HistoryFeed, HistoryView,
         history_view_from_projection,
     },
     projection::{Projection, ProjectionViewKey, project_graph},
@@ -34,10 +34,18 @@ pub struct RepositoryHistoryBoundary {
 
 pub struct RepositoryHistoryPage {
     pub view: HistoryView,
+    /// Adjacent all-activity entries, read only for a single-entry lookup.
+    pub neighbors: Option<RepositoryHistoryNeighbors>,
     /// Current Git revision of this audience's projection, read at the same frontier.
     pub head_oid: Option<String>,
     pub next_boundary: Option<RepositoryHistoryBoundary>,
     pub available: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RepositoryHistoryNeighbors {
+    pub older_source_id: Option<String>,
+    pub newer_source_id: Option<String>,
 }
 
 pub(super) struct HistoryViewMetadata {
@@ -252,14 +260,17 @@ impl RepositoryStore {
             let limit = limit.clamp(1, 50) as i64;
             // Separate predicates retain index bounds even after PostgreSQL chooses a generic plan.
             let mut values = vec![incarnation.repository_id().into(), audience.as_str().into()];
-            let feed_predicate = if !feed.includes(HistoryEntryKind::VisibilityChange) {
-                " AND payload->>'kind' != 'VisibilityChange'"
-            } else {
-                ""
+            let feed_predicate = match feed {
+                HistoryFeed::Updates => " AND payload->>'kind' != 'VisibilityChange'",
+                HistoryFeed::All => "",
+                HistoryFeed::Visibility => " AND payload->'visibility_changes' != '[]'::jsonb",
             };
             let sql = if let Some(source_id) = entry_source_id {
                 values.push(source_id.into());
-                "SELECT position, payload FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2 AND source_id=$3".to_string()
+                "SELECT e.position, e.payload, \
+                    (SELECT o.source_id FROM scope_repository_history_entries o WHERE o.repo_id=e.repo_id AND o.audience=e.audience AND o.position<e.position ORDER BY o.position DESC LIMIT 1) AS older_source_id, \
+                    (SELECT n.source_id FROM scope_repository_history_entries n WHERE n.repo_id=e.repo_id AND n.audience=e.audience AND n.position>e.position ORDER BY n.position LIMIT 1) AS newer_source_id \
+                 FROM scope_repository_history_entries e WHERE e.repo_id=$1 AND e.audience=$2 AND e.source_id=$3".to_string()
             } else if let Some(position) = boundary {
                 values.extend([position.into(), (limit + 1).into()]);
                 format!(
@@ -292,6 +303,17 @@ impl RepositoryStore {
             } else {
                 None
             };
+            let neighbors = match (entry_source_id, rows.first()) {
+                (Some(_), Some(row)) => Some(RepositoryHistoryNeighbors {
+                    older_source_id: row
+                        .try_get("", "older_source_id")
+                        .map_err(PostgresError::internal)?,
+                    newer_source_id: row
+                        .try_get("", "newer_source_id")
+                        .map_err(PostgresError::internal)?,
+                }),
+                _ => None,
+            };
             let mut entries = rows
                 .into_iter()
                 .map(|row| {
@@ -311,6 +333,7 @@ impl RepositoryStore {
                     generation,
                     entries,
                 },
+                neighbors,
                 next_boundary,
                 available: metadata.available,
                 head_oid: metadata.head_oid,

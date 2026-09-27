@@ -198,6 +198,15 @@ jobs:
           SCOPE_WEB_BASE_URL: http://localhost:3000
         run: ../dev/checks/integration web
 
+      # Recent successful integration jobs topped out at 384 seconds. The
+      # local build and HTTPS check add about 22 seconds, within the 20-minute cap.
+      - name: Check compiled web through HTTPS proxy
+        if: inputs.run_web && steps.projections.outcome == 'success'
+        working-directory: web
+        run: |
+          pnpm build
+          node --test smoke/built-runtime-https.mjs
+
       - name: Run two-actor CLI contribution flow
         if: inputs.run_cli && !cancelled() && steps.projections.outcome == 'success'
         env:

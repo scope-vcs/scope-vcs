@@ -1,3 +1,5 @@
+pub(crate) mod account_deletion;
+pub(crate) mod clerk_user_deletion;
 pub(crate) mod content_cleanup;
 pub(crate) mod git_receive;
 pub(crate) mod invite_email_delivery;

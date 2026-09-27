@@ -93,7 +93,7 @@ export function RequestDiscussionView({
   const canResolve = useCallback(
     (discussion: RequestDiscussion) => !['Closed', 'Merged'].includes(request.state) && (
       isMaintainer ||
-      actor.id === discussion.author.id ||
+      actor.id === discussion.author?.id ||
       actor.id === request.author_user_id
     ),
     [actor.id, isMaintainer, request.author_user_id, request.state],

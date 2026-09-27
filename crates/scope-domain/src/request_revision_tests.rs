@@ -78,7 +78,7 @@ fn revision(id: &str, position: u64) -> RequestRevision {
         id: id.to_string(),
         request_id: "request".to_string(),
         position,
-        actor_user_id: "author".to_string(),
+        actor_user_id: Some("author".to_string()),
         old_head_oid: "old".to_string(),
         new_head_oid: "new".to_string(),
         git_snapshot: source_blob(id),

@@ -54,9 +54,10 @@ impl RequestQueuePredicateAtom {
             ),
             Self::ViewerIsMaintainer => facts.viewer_is_maintainer,
             Self::ViewerIsNotMaintainer => !facts.viewer_is_maintainer,
-            Self::ViewerIsAuthor => facts
-                .viewer_user_id
-                .is_some_and(|viewer| viewer == facts.request_author_user_id),
+            Self::ViewerIsAuthor => {
+                facts.viewer_user_id.is_some()
+                    && facts.viewer_user_id == facts.request_author_user_id
+            }
             Self::ViewerIsInvitee => facts.viewer_is_invitee,
             Self::AttentionIsWaitingOrSettled => facts.attention.is_some_and(|attention| {
                 matches!(

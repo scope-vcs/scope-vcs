@@ -39,7 +39,7 @@ pub fn add_request_invitee(
             "request invite management access required",
         ));
     }
-    if input.target_user_id == request.author_user_id {
+    if request.is_author(&input.target_user_id) {
         return Err(DomainError::conflict("request author cannot be an invitee"));
     }
     if input.target_is_maintainer {
@@ -60,7 +60,7 @@ pub fn add_request_invitee(
     let invitee = RequestInvitee {
         request_id: request.id.clone(),
         user_id: input.target_user_id,
-        invited_by_user_id: input.actor_user_id,
+        invited_by_user_id: Some(input.actor_user_id),
         created_at_unix: input.now_unix,
     };
     Ok(invitee)
@@ -124,7 +124,7 @@ mod tests {
     fn invitee_facts_preserve_duplicate_limit_and_authorization_order() {
         let request = open_request();
         let mut input = AddRequestInviteeInput {
-            actor_user_id: request.author_user_id.clone(),
+            actor_user_id: request.author_user_id.clone().unwrap(),
             target_user_id: "guest".to_string(),
             actor_can_manage_invitees: false,
             target_is_maintainer: false,

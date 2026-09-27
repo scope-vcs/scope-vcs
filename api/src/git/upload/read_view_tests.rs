@@ -14,7 +14,7 @@ fn request(name: &str, head: &str, git_snapshot: Option<SourceBlob>) -> Request 
         id: format!("request-{name}"),
         repo_id: "repo".into(),
         name: name.into(),
-        author_user_id: "author".into(),
+        author_user_id: Some("author".into()),
         author_role: RequestActorRole::Public,
         audience: RequestAudience::Public,
         base_main_oid: head.into(),

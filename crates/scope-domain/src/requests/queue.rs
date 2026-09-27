@@ -108,7 +108,8 @@ pub struct RequestAttentionMutation {
 pub struct RequestQueueFacts<'a> {
     pub request_state: RequestState,
     pub request_activity_version: u64,
-    pub request_author_user_id: &'a str,
+    /// `None` once the author deleted their account.
+    pub request_author_user_id: Option<&'a str>,
     pub viewer_user_id: Option<&'a str>,
     pub viewer_is_maintainer: bool,
     pub viewer_is_invitee: bool,
@@ -408,7 +409,7 @@ mod tests {
         let classified = classify_request_queue_item(RequestQueueFacts {
             request_state: request.state(),
             request_activity_version: request.activity_version,
-            request_author_user_id: &request.author_user_id,
+            request_author_user_id: request.author_user_id.as_deref(),
             viewer_user_id: Some("maintainer"),
             viewer_is_maintainer: true,
             viewer_is_invitee: false,
@@ -433,7 +434,7 @@ mod tests {
         let classified = classify_request_queue_item(RequestQueueFacts {
             request_state: request.state(),
             request_activity_version: request.activity_version,
-            request_author_user_id: &request.author_user_id,
+            request_author_user_id: request.author_user_id.as_deref(),
             viewer_user_id: Some("maintainer"),
             viewer_is_maintainer: true,
             viewer_is_invitee: false,
@@ -463,7 +464,7 @@ mod tests {
         let classified = classify_request_queue_item(RequestQueueFacts {
             request_state: request.state(),
             request_activity_version: request.activity_version,
-            request_author_user_id: &request.author_user_id,
+            request_author_user_id: request.author_user_id.as_deref(),
             viewer_user_id: Some("maintainer"),
             viewer_is_maintainer: true,
             viewer_is_invitee: false,
@@ -502,7 +503,7 @@ mod tests {
         let classified = classify_request_queue_item(RequestQueueFacts {
             request_state: request.state(),
             request_activity_version: request.activity_version,
-            request_author_user_id: &request.author_user_id,
+            request_author_user_id: request.author_user_id.as_deref(),
             viewer_user_id: Some("maintainer"),
             viewer_is_maintainer: true,
             viewer_is_invitee: false,
@@ -644,7 +645,7 @@ mod tests {
             id: "request".into(),
             repo_id: "repo".into(),
             name: "request".into(),
-            author_user_id: "author".into(),
+            author_user_id: Some("author".into()),
             author_role: RequestActorRole::Public,
             audience: RequestAudience::Public,
             base_main_oid: "0".repeat(40),

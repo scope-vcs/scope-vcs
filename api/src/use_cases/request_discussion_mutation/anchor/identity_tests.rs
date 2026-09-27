@@ -64,7 +64,7 @@ fn visible_commit_paths_requires_revision_membership_and_full_visibility() {
         id: "revision-1".to_string(),
         request_id: "request-1".to_string(),
         position: 1,
-        actor_user_id: "owner-1".to_string(),
+        actor_user_id: Some("owner-1".to_string()),
         old_head_oid: fixture.base.clone(),
         new_head_oid: fixture.commit.clone(),
         git_snapshot: SourceBlob {

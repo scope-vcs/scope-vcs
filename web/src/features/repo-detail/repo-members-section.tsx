@@ -10,14 +10,12 @@ import type {
   RepositoryMemberResponse,
   RepoSummaryResponse,
 } from '@/api/types.generated'
-import { SectionRow, SectionRows } from '@/components/section-rows'
-import { Button } from '@/components/ui/button'
-import { MailPlus, Users } from 'lucide-react'
 import { useState } from 'react'
 import { RemovableRowList, RemoveButton } from './removable-row-list'
 import { InviteMemberDialog } from './repo-invite-dialog'
 import { InvitationList } from './repo-invite-list'
 import { visibleInvitations } from './repo-invite-model'
+import { AccessSection } from './repo-settings-sections'
 import { AlwaysOnPrivateRead, PermissionEditor } from './repo-member-permissions'
 
 /** One list for everyone with access or an invitation to it. */
@@ -54,60 +52,41 @@ export function RepositoryMembersSection({
     createInvite({ ...input, owner: params.owner, repo: params.repo })
 
   return (
-    <SectionRows>
-      <SectionRow
-        description={
-          canInvite
-            ? 'Members can read private files and take part in maintainer reviews. Only the owner manages membership.'
-            : 'Members can be invited after the first Scope push is applied.'
-        }
-        icon={<Users className="size-4" />}
-        title="Access"
-      >
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-            <div className="min-w-0">
-              <div className="truncate font-medium leading-5">@{repo.owner_handle}</div>
-              <div className="leading-5 text-muted-foreground">Owner · Full access</div>
-            </div>
-            <Button disabled={!canInvite} onClick={() => setInviting(true)} size="sm" type="button">
-              <MailPlus className="size-3.5" />
-              <span>Invite member</span>
-            </Button>
-          </div>
-
-          {collaboration.members.length > 0 && (
-            <div className="border-t border-border pt-4">
-              <MemberList
-                deleteMember={deleteMember}
-                members={collaboration.members}
-                params={params}
-                updateMember={updateMember}
-              />
-            </div>
-          )}
-
-          {invitations.length > 0 && (
-            <div className="border-t border-border pt-4">
-              <InvitationList
-                createInviteLink={createInviteLink}
-                deleteInvite={deleteInvite}
-                invites={invitations}
-                sendInviteEmail={sendInviteEmail}
-                sendNewInvitation={invite}
-              />
-            </div>
-          )}
+    <AccessSection
+      canInvite={canInvite}
+      onInvite={() => setInviting(true)}
+      ownerHandle={repo.owner_handle}
+    >
+      {collaboration.members.length > 0 && (
+        <div className="border-t border-border pt-4">
+          <MemberList
+            deleteMember={deleteMember}
+            members={collaboration.members}
+            params={params}
+            updateMember={updateMember}
+          />
         </div>
+      )}
 
-        <InviteMemberDialog
-          createInvite={invite}
-          onOpenChange={setInviting}
-          open={inviting}
-          repoLabel={`${params.owner}/${params.repo}`}
-        />
-      </SectionRow>
-    </SectionRows>
+      {invitations.length > 0 && (
+        <div className="border-t border-border pt-4">
+          <InvitationList
+            createInviteLink={createInviteLink}
+            deleteInvite={deleteInvite}
+            invites={invitations}
+            sendInviteEmail={sendInviteEmail}
+            sendNewInvitation={invite}
+          />
+        </div>
+      )}
+
+      <InviteMemberDialog
+        createInvite={invite}
+        onOpenChange={setInviting}
+        open={inviting}
+        repoLabel={`${params.owner}/${params.repo}`}
+      />
+    </AccessSection>
   )
 }
 

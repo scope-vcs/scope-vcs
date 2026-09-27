@@ -134,25 +134,21 @@ async fn evaluate_saved_head(
             request_workflow_revisions(request, files)
         }
     };
-    let pusher_is_maintainer = state
-        .metadata
-        .repositories()
-        .repository_read_access(
-            &repo.owner_handle,
-            &repo.name,
-            Some(&revision.actor_user_id),
-        )
-        .await?
-        .is_some_and(|pusher| pusher.access.is_maintainer());
-    evaluate_request_checks(
-        state,
-        request,
-        &revision.actor_user_id,
-        pusher_is_maintainer,
-        revisions,
-    )
-    .await
-    .map(Some)
+    // A pusher whose account was deleted is no maintainer: its head waits for
+    // approval like any contributor's.
+    let maintainer_pusher = match revision.actor_user_id.as_deref() {
+        Some(pusher) => state
+            .metadata
+            .repositories()
+            .repository_read_access(&repo.owner_handle, &repo.name, Some(pusher))
+            .await?
+            .is_some_and(|access| access.access.is_maintainer())
+            .then_some(pusher),
+        None => None,
+    };
+    evaluate_request_checks(state, request, maintainer_pusher, revisions)
+        .await
+        .map(Some)
 }
 
 /// The outcome for every listed request, keyed by request id, loaded in two queries.
@@ -223,14 +219,8 @@ pub(crate) async fn best_effort_evaluate_request_checks(
                 request_workflow_revisions(request, files)
             }
         };
-        evaluate_request_checks(
-            state,
-            request,
-            actor_user_id,
-            actor_is_maintainer,
-            revisions,
-        )
-        .await
+        let maintainer_pusher = actor_is_maintainer.then_some(actor_user_id);
+        evaluate_request_checks(state, request, maintainer_pusher, revisions).await
     }
     .await;
     match evaluated {
@@ -251,16 +241,14 @@ fn warn_evaluation_failed(request: &Request, error: &ApiError) {
 async fn evaluate_request_checks(
     state: &AppState,
     request: &Request,
-    actor_user_id: &str,
-    actor_is_maintainer: bool,
+    maintainer_pusher: Option<&str>,
     revisions: Result<Vec<WorkflowRevision>, String>,
 ) -> Result<RequestChecksMutation, ApiError> {
     let now_unix = unix_now()?;
     let RequestCheckPlan { evaluation, runs } = RequestCheckPlan::evaluate(
         request,
         revisions.as_deref().map_err(String::as_str),
-        actor_user_id,
-        actor_is_maintainer,
+        maintainer_pusher,
         now_unix,
     )?;
     record_checks(

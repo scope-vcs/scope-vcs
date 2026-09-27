@@ -2,20 +2,23 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { assertNoHorizontalOverflow, baseUrl, repo, repoPath, requestRepoPath, waitForClientHydration, withPage } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
-import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
+import { delayInitialRepositoryReconciliation, trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 
 test('latest repository activity survives child navigation without another request or pending state', async () => {
   let requests = 0
   let settled
-  const countActivityRequests = (page) => {
+  let delayed
+  const countActivityRequests = async (page) => {
     settled = trackRepositoryRefresh(page)
-    return page.route('**/_serverFn/**', (route) => {
+    await page.route('**/_serverFn/**', (route) => {
       if (serverFunctionName(route.request()) === 'loadRepositoryLatestActivity_createServerFn_handler') requests += 1
       return route.continue()
     })
+    delayed = await delayInitialRepositoryReconciliation(page, 400)
   }
   await withPage(repoPath, async (page) => {
     await settled()
+    assert.equal(delayed(), true, 'initial reconciliation ran with controlled latency')
     const activity = page.getByLabel('Latest repository change', { exact: true })
     await activity.waitFor()
     const original = await activity.innerText()

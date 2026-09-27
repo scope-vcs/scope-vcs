@@ -1,7 +1,7 @@
 import type { RepoParams } from '@/api/types'
 import type { RequestQueueItemResponse, RequestQueueSection } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
-import { BlockSkeleton } from '@/components/ui/skeleton'
+import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
 import { useHydrated } from '@/lib/use-hydrated'
 import { useUnixClock } from '@/lib/use-unix-clock'
 import { cn } from '@/lib/utils'
@@ -18,6 +18,7 @@ import {
   requestAttentionLabel,
   requestHasNewActivity,
 } from './request-workspace-model'
+import { actorHandle } from './request-actor'
 
 export type RequestWorkspaceListProps = {
   items: { item: RequestQueueItemResponse; section: RequestQueueSection }[]
@@ -34,6 +35,8 @@ export type RequestWorkspaceListProps = {
   params: RepoParams
   pendingId: string | null
   selectedId?: string
+  /** Rows the collapsed rail keeps, drawn with a larger avatar centred on it. */
+  rail?: boolean
 }
 
 export function RequestWorkspaceList({
@@ -47,7 +50,7 @@ export function RequestWorkspaceList({
   onLoadMore,
   ...rowProps
 }: RequestWorkspaceListProps) {
-  if (!items.length && skeleton) return <RequestWorkspaceListSkeleton />
+  if (!items.length && skeleton) return <RequestWorkspaceListSkeleton rail={rowProps.rail} />
   const rows = items.map(({ item, section }) => (
     <RequestWorkspaceRow item={item} key={item.request.id} section={section} {...rowProps} />
   ))
@@ -71,35 +74,33 @@ export function RequestWorkspaceList({
       {hasMore && (
         <Button
           className="mx-auto mt-2 mb-3"
+          aria-busy={loading}
           disabled={loading}
           onClick={onLoadMore}
           size="sm"
           type="button"
           variant="ghost"
         >
-          {loading ? (
-            <>
-              <LoaderCircle className="animate-spin" />
-              Loading…
-            </>
-          ) : (
-            'Load more'
-          )}
+          {loading ? <LoaderCircle className="animate-spin" /> : null}
+          Load more
         </Button>
       )}
     </div>
   )
 }
 
-export function RequestWorkspaceListSkeleton() {
+// Built on the row's own classes so dividers, padding and line heights match.
+export function RequestWorkspaceListSkeleton({ rail = false }: { rail?: boolean }) {
   return (
-    <div aria-label="Loading requests" className="request-workspace-rows">
+    <div className="request-workspace-rows">
       {[0, 1, 2].map((index) => (
-        <div className="grid grid-cols-[20px_1fr] gap-x-2.5 px-4 py-3" key={index}>
-          <BlockSkeleton className="size-5 rounded-full" />
-          <div className="space-y-2">
-            <BlockSkeleton className="h-3.5 w-4/5" />
-            <BlockSkeleton className="h-3 w-2/5" />
+        <div className="request-workspace-row" data-rail={rail ? '' : undefined} key={index}>
+          <div className="request-workspace-row-link">
+            <BlockSkeleton className={cn('rounded-full', rail ? 'size-8' : 'size-5')} />
+            <div className="min-w-0">
+              <TextSkeleton className="h-[18px]" length="long" size="meta" />
+              <TextSkeleton className="mt-[3px] h-[15px]" length="short" size="meta" />
+            </div>
           </div>
         </div>
       ))}
@@ -115,7 +116,8 @@ function RequestWorkspaceRow({
   params,
   pendingId,
   selectedId,
-}: Pick<RequestWorkspaceListProps, 'maintainer' | 'onAction' | 'params' | 'pendingId' | 'selectedId'> & {
+  rail,
+}: Pick<RequestWorkspaceListProps, 'maintainer' | 'onAction' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
   item: RequestQueueItemResponse
   section: RequestQueueSection
 }) {
@@ -150,6 +152,7 @@ function RequestWorkspaceRow({
       className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
       data-group={group}
       data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
+      data-rail={rail ? '' : undefined}
       data-request-id={request.id}
       style={{ '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px` } as CSSProperties}
     >
@@ -161,7 +164,10 @@ function RequestWorkspaceRow({
         search={{}}
         to="/$owner/$repo/requests/$requestId"
       >
-        <RequestDiscussionActorAvatar handle={author.handle} small />
+        <span className="request-workspace-row-avatar">
+          <RequestDiscussionActorAvatar handle={actorHandle(author)} small={!rail} />
+          {rail && unread && <span aria-hidden="true" className="request-workspace-row-unread" />}
+        </span>
         <span className="min-w-0">
           <span
             className={cn(

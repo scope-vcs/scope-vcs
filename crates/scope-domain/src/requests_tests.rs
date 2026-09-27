@@ -186,7 +186,7 @@ fn draft_close_deletes_and_open_close_preserves_exact_actor() {
     };
     assert_eq!(request.state(), RequestState::Closed);
     assert_eq!(request.closed_by_user_id.as_deref(), Some("maintainer"));
-    assert_eq!(event.actor_user_id, "maintainer");
+    assert_eq!(event.actor_user_id.as_deref(), Some("maintainer"));
 }
 
 #[test]
@@ -413,7 +413,7 @@ fn policy_for(request: &Request, viewer: ViewerKind) -> RequestPolicyDecision {
     };
     let user_id = match viewer {
         ViewerKind::Anonymous => None,
-        ViewerKind::Author => Some(request.author_user_id.as_str()),
+        ViewerKind::Author => request.author_user_id.as_deref(),
         ViewerKind::Maintainer => Some("maintainer"),
     };
     request_policy(request, RequestViewer::new(access, user_id, false))
