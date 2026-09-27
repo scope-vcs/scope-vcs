@@ -36,17 +36,19 @@ struct SeedRevisionDiscussion {
     body: &'static str,
 }
 
+// Clerk test addresses: web/journeys signs in as these users, and Clerk never
+// delivers mail to them.
 pub(super) fn collaborators() -> [UserAccount; 2] {
     [
         user(
             CONTRIBUTOR_ID,
             "river-contributor",
-            "river.contributor@example.test",
+            "river.contributor+clerk_test@example.com",
         ),
         user(
             MAINTAINER_ID,
             "maya-maintainer",
-            "maya.maintainer@example.test",
+            "maya.maintainer+clerk_test@example.com",
         ),
     ]
 }

@@ -5,5 +5,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 case "${1:-}" in
   web) cd web; pnpm test:smoke ;;
   cli) cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --ignored --nocapture ;;
-  *) echo "usage: integration web|cli (against an already running stack)" >&2; exit 2 ;;
+  journey)
+    cargo build --manifest-path cli/Cargo.toml --locked --bin scope
+    SCOPE_CLI="$(dev/cargo-target-dir cli/Cargo.toml)/debug/scope"
+    cd web; SCOPE_CLI="$SCOPE_CLI" pnpm test:journey ;;
+  *) echo "usage: integration web|cli|journey (against an already running stack)" >&2; exit 2 ;;
 esac

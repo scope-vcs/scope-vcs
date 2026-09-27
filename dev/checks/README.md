@@ -14,6 +14,7 @@ caller's working directory.
 | `policy` | License inventory freshness, complete-tree source size, Rust boundaries, toolchain pins, workflow job timeouts, gate inventory |
 | `integration web` | Browser smoke against a running seeded stack |
 | `integration cli` | Opt-in two-actor contribution flow against a running seeded stack |
+| `integration journey` | Signed-in browser contribution journey against a freshly started, signed-in seeded stack |
 | `ops` | Deployment, staging, benchmark, and AWS infrastructure tests |
 
 Callers install Rust, cargo-deny (`dev/install-cargo-deny.sh`), Node and pnpm dependencies, configure databases and secrets,
@@ -21,7 +22,11 @@ and start/stop integration stacks. The contract check needs Rust and web
 dependencies. It runs with the backend checks because the API crate generates
 the contract, so the web gate does not install Rust. CLI integration requires
 `SCOPE_API_URL`. The integration entrypoint explicitly runs the contribution
-test; ordinary CLI test runs report it as ignored.
+test; ordinary CLI test runs report it as ignored. The journey also requires
+`SCOPE_API_URL`, a stack started with `./dev/scope-dev reset` and
+`./dev/scope-dev up --signed-in`, and Clerk development keys in
+`web/.env.local`. It creates or reuses Clerk users for the seeded collaborators.
+On failure it writes screenshots and accessibility snapshots to `web/.tmp/journey`.
 GitHub retains native distribution build matrices; these scripts do not select
 platforms or provision credentials. The matrix release-builds, packages, and
 checks the installer for every selected target, so GitHub runs `cli-bundle` only
