@@ -97,11 +97,9 @@ async function syncMain(actor) {
   await actor.scope('pull')
 }
 
-// Holds the page's live updates so it keeps what it loaded. Returns a release.
-async function holdLiveUpdates(page) {
-  const events = '**/v1/repos/*/*/events'
-  await page.route(events, () => new Promise(() => {}))
-  return () => page.unroute(events)
+// Holds the page's live updates so it keeps what it loaded.
+function holdLiveUpdates(page) {
+  return page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
 }
 
 function thread(page, text) {
@@ -171,13 +169,13 @@ test('a merge of a head that moved is refused and the page shows the new head', 
   const name = `journey-stale-${runId}`
   const { id, head } = await submitRequest(name, `${name}.txt`, 'first revision\n')
   const { page } = web.maintainer
-  const release = await holdLiveUpdates(page)
   await openRequest(page, id)
   const merge = page.getByRole('button', { name: 'Merge', exact: true })
   await click(merge)
   const dialog = page.getByRole('alertdialog')
   await dialog.getByText(`${head.slice(0, 12)} → main`).waitFor()
 
+  // A live refresh may reach the page now; the open dialog keeps the head it showed.
   await writeFile(join(cli.contributor.repo, `${name}.txt`), 'second revision\n')
   await cli.contributor.commit('Revise while the maintainer reviews')
   const { request: { head_oid: newHead } } = await cli.contributor.scope('request', 'push')
@@ -187,7 +185,6 @@ test('a merge of a head that moved is refused and the page shows the new head', 
   await merge.click()
   await dialog.getByText(`${newHead.slice(0, 12)} → main`).waitFor()
   await dialog.getByRole('button', { name: 'Cancel' }).click()
-  await release()
   const { request } = await apiFetch(cli.maintainer.token, requestApi(id))
   assert.equal(request.state, 'Open')
   assert.equal(request.head_oid, newHead)
