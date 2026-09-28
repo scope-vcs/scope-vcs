@@ -46,6 +46,9 @@ export function productionReadinessAudit({ deployments, manifest, status, baseli
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const deployments = JSON.parse(process.env.SCOPE_PRODUCTION_DEPLOYMENTS_JSON);
+    const replacement = process.env.SCOPE_FAILED_WEB_REPLACEMENT_JSON
+      ? JSON.parse(process.env.SCOPE_FAILED_WEB_REPLACEMENT_JSON) : null;
+    if (replacement) deployments.web = replacement;
     process.stdout.write(productionReadinessAudit({
       deployments,
       manifest: JSON.parse(process.env.SCOPE_DEPLOYMENT_MANIFEST_JSON),

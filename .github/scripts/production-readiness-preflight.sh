@@ -10,9 +10,16 @@ environment="$(jq -er '.environments.production.environmentId' "$manifest")"
 deployments="$(env -u GITHUB_OUTPUT node .github/scripts/production-deployment-progress.mjs read | jq -ec .deployments)"
 services="$(node .github/scripts/railway-read.mjs status \
   --project "$project" --environment "$environment" --json)"
+replacement=''
+if [[ -n "${SCOPE_REPLACE_FAILED_WEB_RUN_ID:-}" ]]; then
+  replacement="$(SCOPE_DEPLOYMENT_MANIFEST_JSON="$(jq -c . "$manifest")" \
+    SCOPE_RAILWAY_SERVICES_JSON="$services" \
+    node .github/scripts/failed-web-replacement.mjs)"
+fi
 source "$(dirname "${BASH_SOURCE[0]}")/railway-private-command.sh"
 SCOPE_DEPLOYMENT_MANIFEST_JSON="$(jq -c . "$manifest")" \
   SCOPE_PRODUCTION_DEPLOYMENTS_JSON="$deployments" \
+  SCOPE_FAILED_WEB_REPLACEMENT_JSON="$replacement" \
   SCOPE_RAILWAY_SERVICES_JSON="$services" \
   node .github/scripts/production-readiness-preflight.mjs | \
   railway_private_command "$environment" sh -ceu \

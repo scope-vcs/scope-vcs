@@ -49,7 +49,7 @@ export function MarketingLandingPage({
   }
 
   return (
-    <div className={cn('marketing-page landing relative min-h-dvh overflow-clip bg-background font-sans text-base leading-normal text-foreground antialiased', lens.ready && 'lens-ready', lens.on ? 'lens-on' : 'lens-off', lens.holding && 'lens-holding')} ref={elements.page}>
+    <div className={cn('marketing-page landing relative min-h-dvh overflow-clip bg-background font-sans text-base leading-normal text-foreground antialiased', lens.ready && 'lens-ready', lens.on ? 'lens-on' : 'lens-off', lens.holding && 'lens-holding')} data-scope-page="landing" ref={elements.page}>
       <a className="fixed top-2.5 left-2.5 z-40 -translate-y-[160%] bg-foreground px-4 py-2.5 text-background focus:translate-y-0" href="#main-content">Skip to content</a>
       <div className="landing-layer" data-view="public">
         <LandingContent {...content} view="public" />
