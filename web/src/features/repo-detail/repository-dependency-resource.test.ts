@@ -5,6 +5,7 @@ import type {
   RepositoryDependencyCheckResponse,
   RepoSummaryResponse,
 } from '../../api/types.generated'
+import { resetViewerState } from '../../lib/viewer-state'
 import {
   createRepositoryDependencyResource,
   repositoryDependencyIdentity,
@@ -138,6 +139,29 @@ test('polls durable job failures less often than active checks', async () => {
 
   assert.equal(scheduler.delays.length, 2)
   assert.equal(scheduler.delays[1] > scheduler.delays[0], true)
+})
+
+test('a viewer change cancels polls so a returning viewer schedules fresh ones', async () => {
+  const scheduler = pollScheduler()
+  const resource = createRepositoryDependencyResource(scheduler.schedule)
+  await resource.ensure('repo', '4', async () => ({
+    error: 'analyzer failed',
+    report: null,
+    status: 'Failed',
+  }))
+
+  resetViewerState()
+  assert.equal(scheduler.pending, false)
+  assert.equal(resource.peek('repo'), null)
+
+  await resource.ensure('repo', '4', async () => ({
+    error: null,
+    report: null,
+    status: 'Pending',
+  }))
+  assert.equal(scheduler.pending, true)
+  assert.equal(scheduler.delays.length, 2)
+  assert.equal(scheduler.delays[1] < scheduler.delays[0], true)
 })
 
 test('hides public access and isolates changes in viewer or maintainer access', () => {
