@@ -7,6 +7,7 @@ use scope_domain::{
     repository::Repository,
     repository::collaboration::{RepositoryInvite, RepositoryMember},
 };
+use scope_postgres::db::RepositoryCollaboration;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
@@ -127,16 +128,15 @@ pub(crate) struct AcceptRepositoryInviteResponse {
 }
 
 pub(crate) fn repository_collaboration_response(
-    repo: &Repository,
-    users: &std::collections::BTreeMap<String, UserAccount>,
-    emails: &std::collections::BTreeMap<String, RepositoryInviteEmail>,
+    collaboration: &RepositoryCollaboration,
     now_unix: u64,
 ) -> RepositoryCollaborationResponse {
-    let mut members = repo
+    let mut members = collaboration
         .members
         .iter()
         .filter_map(|member| {
-            users
+            collaboration
+                .users
                 .get(&member.user_id)
                 .map(|user| repository_member_response(member, user))
         })
@@ -147,10 +147,16 @@ pub(crate) fn repository_collaboration_response(
             .then(left.user_id.cmp(&right.user_id))
     });
 
-    let mut invites = repo
-        .invitations
+    let mut invites = collaboration
+        .invites
         .iter()
-        .map(|invite| repository_invite_response(invite, emails.get(&invite.id), now_unix))
+        .map(|invite| {
+            repository_invite_response(
+                invite,
+                collaboration.invite_emails.get(&invite.id),
+                now_unix,
+            )
+        })
         .collect::<Vec<_>>();
     invites.sort_by(|left, right| {
         left.invited_email

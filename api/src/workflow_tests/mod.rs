@@ -73,6 +73,7 @@ mod landing_file;
 mod manual_runs;
 mod push_intent_completion;
 mod repo_cleanup;
+mod repo_collaboration_access;
 mod repo_events;
 mod repo_invites;
 mod repo_lifecycle;

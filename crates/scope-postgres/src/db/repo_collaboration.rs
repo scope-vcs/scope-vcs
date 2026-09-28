@@ -1,6 +1,7 @@
 use super::{
     GeneratedIdSource, RepositoryStore, acquire_aggregate_lock, auth::load_user_by_id, entities,
-    repo_effects::save_repo_mutation, repository_from_model,
+    repo_effects::save_repo_mutation, repo_invite_emails::latest_invite_emails,
+    repository_from_model, repository_rows::load_repository_collaborators,
 };
 use crate::error::{PostgresError, PostgresErrorKind};
 use scope_domain::{
@@ -36,6 +37,14 @@ impl<T> RepositoryCollaborationMutation<T> {
     }
 }
 
+pub struct RepositoryCollaboration {
+    pub members: Vec<RepositoryMember>,
+    pub invites: Vec<RepositoryInvite>,
+    pub users: BTreeMap<String, UserAccount>,
+    /// The newest email of each invite, by invite id.
+    pub invite_emails: BTreeMap<String, RepositoryInviteEmail>,
+}
+
 pub struct CreateRepositoryInviteMutation {
     pub owner: String,
     pub name: String,
@@ -66,21 +75,24 @@ pub struct UpdateRepositoryMemberPermissionsCommand {
 }
 
 impl RepositoryStore {
+    /// The members and invites an owner manages, read in the same snapshot
+    /// that authorized the viewer. `None` when the viewer cannot see the
+    /// repository; a forbidden error when they can but do not own it.
     pub async fn repository_collaboration(
         &self,
         owner: &str,
         name: &str,
-    ) -> Result<Option<(Repository, BTreeMap<String, UserAccount>)>, PostgresError> {
-        let Some(row) = entities::repository::Entity::find_by_id(repo_id(owner, name))
-            .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+        viewer_user_id: &str,
+    ) -> Result<Option<RepositoryCollaboration>, PostgresError> {
+        let Some((tx, context)) = self
+            .begin_read_access_snapshot(&repo_id(owner, name), Some(viewer_user_id))
+            .await?
         else {
             return Ok(None);
         };
-        let repo = repository_from_model(self.db.as_ref(), row).await?;
-        let user_ids = repo
-            .members
+        context.ensure_owner()?;
+        let (members, invites) = load_repository_collaborators(&tx, &context.record.id).await?;
+        let user_ids = members
             .iter()
             .map(|member| member.user_id.clone())
             .collect::<Vec<_>>();
@@ -89,7 +101,7 @@ impl RepositoryStore {
         } else {
             entities::user::Entity::find()
                 .filter(entities::user::Column::Id.is_in(user_ids))
-                .all(self.db.as_ref())
+                .all(&tx)
                 .await
                 .map_err(PostgresError::internal)?
                 .into_iter()
@@ -99,7 +111,14 @@ impl RepositoryStore {
                 })
                 .collect::<Result<_, PostgresError>>()?
         };
-        Ok(Some((repo, users)))
+        let invite_emails = latest_invite_emails(&tx, &invites).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(Some(RepositoryCollaboration {
+            members,
+            invites,
+            users,
+            invite_emails,
+        }))
     }
 
     pub async fn user(&self, user_id: &str) -> Result<UserAccount, PostgresError> {

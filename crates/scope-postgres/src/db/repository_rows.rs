@@ -495,8 +495,21 @@ where
         .ok_or_else(|| {
             PostgresError::internal_message(format!("repository history missing for {repo_id}"))
         })?;
+    let (members, invitations) = load_repository_collaborators(conn, &repo_id).await?;
+    repository.try_into_domain(facts, members, invitations, history)
+}
+
+/// Members and invites, with each invite's link hashes. Reads nothing else of
+/// the repository, so callers that only manage collaboration stay cheap.
+pub(super) async fn load_repository_collaborators<C>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<(Vec<RepositoryMember>, Vec<RepositoryInvite>), PostgresError>
+where
+    C: ConnectionTrait,
+{
     let members = entities::repository_member::Entity::find()
-        .filter(entities::repository_member::Column::RepoId.eq(repo_id.clone()))
+        .filter(entities::repository_member::Column::RepoId.eq(repo_id))
         .order_by_asc(entities::repository_member::Column::UserId)
         .all(conn)
         .await
@@ -536,5 +549,5 @@ where
             invite.try_into_domain(hashes)
         })
         .collect::<Result<Vec<RepositoryInvite>, _>>()?;
-    repository.try_into_domain(facts, members, invitations, history)
+    Ok((members, invitations))
 }
