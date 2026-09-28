@@ -166,6 +166,18 @@ escrowed encryption keys, and start services only after database/schema/object
 verification. Bucket identifiers and access credentials must be newly provisioned.
 An archive/decryption proof is not itself a browser/CLI/Git application canary.
 
+## Drill targets
+
+| Target | Value | Measured as |
+| --- | --- | --- |
+| Recovery time | 4 hours | From `DOWNLOAD_STARTED_AT` ([ROLLOUT.md](ROLLOUT.md)) to a passing schema verification |
+| Backup age | 26 hours | From the manifest's `captured_at` to `DOWNLOAD_STARTED_AT` |
+| Cadence | Quarterly | Also after any change to the recovery format, storage layout, or schema tooling |
+
+The on-call maintainer, currently `adamblumoff`, runs the drill in
+[ROLLOUT.md](ROLLOUT.md) and records both measurements with its evidence. A drill
+that misses either target is a failed drill, even if every check passed.
+
 ## Tests
 
 ```bash

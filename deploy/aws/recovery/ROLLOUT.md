@@ -56,6 +56,7 @@ unable to read backup contents. Never create permanent access keys for this dril
 
 ```bash
 umask 077
+DOWNLOAD_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
 aws s3api get-object --bucket "$RECOVERY_BUCKET" \
   --key "$COMPLETION_KEY" --version-id "$COMPLETION_VERSION" complete.json
 aws s3api get-object --bucket "$RECOVERY_BUCKET" \
@@ -72,7 +73,8 @@ verifies every required object using the escrowed keys and the same-snapshot
 reference list. Restore its database into an empty, network-none PostgreSQL18
 container with no published ports, run the reviewed maintenance schema verifier,
 and apply `rebuild-cache.sql` there because the daily capture excludes cache.
-Record only aggregate counts and hashes in drill output. Remove the isolated
+Record only aggregate counts and hashes in drill output, plus the recovery time
+and backup age measured against the [drill targets](README.md#drill-targets). Remove the isolated
 plaintext files and container after preserving the encrypted archive and proof.
 
 Do not claim an existing standalone database dump proves object or key recovery.

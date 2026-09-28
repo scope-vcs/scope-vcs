@@ -100,7 +100,10 @@ def check(value, repo=REPO, max_age=1200, now=None):
                  "Check scope-deployment-watcher.timer and scope-deployment-watcher.service on Surface. "
                  "The watcher normally reports every minute. This external check considers it overdue "
                  f"after {max_age // 60} minutes. GitHub may delay scheduled checks. "
-                 "This issue closes automatically after a healthy check.")
+                 "This issue closes automatically after a healthy check.\n\n"
+                 "While this issue is open, no daily release is dispatched and no failed release is "
+                 "repaired automatically. The assignee owns both; follow \"While Surface is offline\" in "
+                 f"https://github.com/{repo}/blob/main/deploy/automation/OPERATIONS.md.")
     return False
 
 

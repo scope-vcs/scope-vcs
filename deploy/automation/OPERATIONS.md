@@ -53,6 +53,31 @@ See [heartbeat.md](heartbeat.md) for the external missing-heartbeat alert. It us
 the existing GitHub login and sends no build jobs. GitHub scheduling and issue
 notification preferences affect alert delivery; this is not a paging SLA.
 
+## While Surface is offline
+
+Automatic dispatch and repair run only on Surface; nothing takes over while it is
+offline. An open "Surface deployment watcher stopped reporting" issue hands both to
+its assignee, the on-call maintainer (currently `adamblumoff`), until the issue
+closes:
+
+1. Comment on the issue to acknowledge that you own releases until it closes.
+2. After 2:08 a.m. Chicago, check `gh run list --workflow release.yml --limit 5`.
+   If no release ran that date, dispatch one with
+   `gh workflow run release.yml --ref main`. Leave `schedule_intent` empty; that
+   input belongs to the watcher.
+3. Repair a failed release with a PR, following the same rules as the agent:
+   squash auto-merge after `Required PR checks`, then a manual release that passes
+   its own production verification. Link the failed and corrective runs in the
+   issue.
+
+When Surface returns on the same Chicago date, it dispatches that date's daily run
+if it has not already; with nothing new on main, that run skips every deployment
+job. For whole dates it missed, it opens "Daily release did not start" issues;
+close them with a link to your manual run. It also opens an investigation for any
+failed release it had not seen. Its agent should find your corrective run from the
+issue links and record it in the incident receipt; the release resolves only
+through that receipt, as described above.
+
 ## Install or upgrade on Surface
 
 Verify hostname `adam-blumoff-surface-book-2` and fleet identity `surface` before
