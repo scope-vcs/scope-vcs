@@ -59,8 +59,11 @@ class LocalProcessTests(unittest.TestCase):
         self.helper("stop", path)
         child.wait(timeout=5)
         for _ in range(100):
-            stat = Path(f"/proc/{pid}/stat")
-            if not stat.exists() or stat.read_text().rsplit(")", 1)[1].split()[0] == "Z":
+            try:
+                state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+            except (FileNotFoundError, ProcessLookupError):
+                break
+            if state == "Z":
                 break
             time.sleep(0.01)
         else:
