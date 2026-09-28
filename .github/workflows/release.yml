@@ -32,6 +32,10 @@ on:
           - api
           - web
           - cli-downloads
+      replace_failed_web_run_id:
+        description: Failed main Release run whose live web activation needs a replacement
+        type: string
+        default: ""
 
 concurrency:
   group: scope-release
@@ -81,6 +85,19 @@ jobs:
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           RESUME_STAGING: ${{ inputs.resume_staging }}
         run: node .github/scripts/release-selection.mjs
+
+      - name: Require an exact web replacement request
+        if: inputs.replace_failed_web_run_id != ''
+        env:
+          FAILED_WEB_RUN_ID: ${{ inputs.replace_failed_web_run_id }}
+          REQUESTED_SCOPE: ${{ inputs.scope }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          RECOVER_CUTOVER_ID: ${{ steps.release.outputs.recover_cutover_id }}
+        run: |
+          [[ "$FAILED_WEB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          test "$REQUESTED_SCOPE" = web
+          test -z "$SOURCE_RUN_ID"
+          test -z "$RECOVER_CUTOVER_ID"
 
       - name: Retain selected immutable release
         if: steps.release.outputs.prepared_run_id != ''
@@ -202,6 +219,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
+          SCOPE_REPLACE_FAILED_WEB_RUN_ID: ${{ inputs.replace_failed_web_run_id }}
+          SCOPE_REQUESTED_SCOPE: ${{ inputs.scope }}
         run: bash .github/scripts/production-readiness-preflight.sh
 
   release-preparation:

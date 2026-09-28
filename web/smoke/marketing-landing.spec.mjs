@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { waitForClientHydration, withPage } from './browser-smoke.mjs'
+import { availabilityTargets, probeTarget } from '../../.github/scripts/release-availability-core.mjs'
+import { baseUrl, waitForClientHydration, withPage } from './browser-smoke.mjs'
 
 const publicLayer = '[data-view="public"]'
 const privateLayer = '[data-view="private"]'
+
+test('the served landing page satisfies the production availability gate', async () => {
+  const manifest = JSON.parse(readFileSync(new URL('../../.github/deployment-services.json', import.meta.url), 'utf8'))
+  const target = availabilityTargets({ ...manifest.releaseAvailability.production, webOrigin: baseUrl })
+    .find(({ name }) => name === 'public-homepage')
+  const result = await probeTarget(target, { timeoutMs: 5000 })
+  assert.equal(result.ok, true, JSON.stringify(result))
+})
 
 async function withLanding(run, pageOptions = {}) {
   await withPage('/', async (page) => {

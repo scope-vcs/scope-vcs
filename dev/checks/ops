@@ -75,3 +75,4 @@ node --test .github/scripts/railway-predecessor-teardown.test.mjs
 node --test .github/scripts/merge-prepared-release.test.mjs
 node --test .github/scripts/run-bounded-image-builds.test.mjs
 node --test .github/scripts/production-readiness-preflight.test.mjs
+node --test .github/scripts/failed-web-replacement.test.mjs

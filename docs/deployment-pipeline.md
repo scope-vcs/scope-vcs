@@ -71,6 +71,17 @@ Reuse still requires trusted main preparation, the validation gate, exact images
 and unchanged relevant schema, configuration, and smoke inputs. Failed smoke
 continues through the explicit resume path; it cannot be treated as successful.
 
+If web activation succeeded but its homepage observation failed, release the
+correction with `scope=web` and `replace_failed_web_run_id` set to that failed
+Release run. This builds the corrected main revision. Preflight verifies the
+failed run's main ancestry, validation, staging, prepared image, and retained
+transition evidence against the exact live web deployment before using it as
+the current baseline. It retains service health, configuration, replica, and
+database checks, and leaves every other component bound to its successful
+receipt. The failed deployment is never recorded as successful; the replacement
+must pass staging and the ordinary production observation gate. This option
+cannot be combined with `source_run_id` or an interrupted cutover.
+
 ## Dispatch and supervision
 
 The deployment watcher is the sole daily scheduler; GitHub cron is removed.

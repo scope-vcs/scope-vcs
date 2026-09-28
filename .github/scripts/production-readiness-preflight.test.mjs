@@ -95,6 +95,13 @@ test('readiness verifies deployed configuration instead of blocking candidate co
       serviceInstances: { edges: instances } } }] } } };
   const sql = productionReadinessAudit(state);
   assert.match(sql, /exact_policy := EXISTS/);
+  const failedWebReceipt = { ...receipts, web: { ...receipts.web, evidenceId: 'previous-web' } };
+  assert.throws(() => productionReadinessAudit({ ...state, deployments: failedWebReceipt }),
+    /running deployment live-web, expected previous-web/);
+  assert.match(productionReadinessAudit({ ...state, deployments: { ...failedWebReceipt,
+    web: { ...receipts.web, evidenceId: 'live-web' } } }), /exact_policy := EXISTS/);
+  assert.throws(() => productionReadinessAudit({ ...state, deployments: { ...receipts,
+    api: { ...receipts.api, evidenceId: 'wrong-api' } } }), /running deployment live-api, expected wrong-api/);
   assert.match(productionReadinessAudit({ ...state, candidateRolePolicy: 'new grants for this release' }), /exact_policy := false;/);
   const effective = instances.find(({ node }) => node.serviceName === 'api').node.activeDeployments[0].meta.serviceManifest.deploy;
   effective.healthcheckTimeout = 123;
