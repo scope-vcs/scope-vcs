@@ -178,6 +178,7 @@ async fn reconcile_claim(
         repo_name: claim.name.clone(),
         request_id: claim.intent.request_id.clone(),
         actor_user_id: claim.intent.actor_user_id.clone(),
+        expected_head_oid: None,
         expected_auto_merge: Some(scope_postgres::db::ExpectedRequestAutoMerge {
             intent_id: claim.intent.id.clone(),
             revision_id: claim.intent.revision_id.clone(),

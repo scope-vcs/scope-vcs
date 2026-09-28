@@ -406,6 +406,8 @@ export type StartRequestRequest = { name: string, title: string | null, audience
 
 export type SubmitRequestRequest = Record<symbol, never>;
 
+export type MergeRequestRequest = { expected_head_oid: GitOid, };
+
 export type EditRequestIdentityRequest = { title: string | null, description_markdown: string | null, expected_description_markdown: string | null, };
 
 export type CreateRequestDiscussionRequest = { body_markdown: string, client_discussion_id: string, anchor: RequestDiscussionAnchorInput | null, };

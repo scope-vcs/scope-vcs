@@ -214,9 +214,11 @@ pub fn submit_request(
 pub fn merge_request(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
+    expected_head_oid: GitOid,
 ) -> anyhow::Result<RequestMutationResponse> {
     execute(
-        api.request(reqwest::Method::POST, request_action_path(target, "merge")),
+        api.request(reqwest::Method::POST, request_action_path(target, "merge"))
+            .json(&MergeRequestRequest { expected_head_oid }),
         format!(
             "merge request {} for {}/{}",
             target.request_id, target.owner, target.repo
@@ -637,9 +639,13 @@ mod tests {
     fn malformed_error_bodies_use_a_scoped_status_fallback() {
         let (api_url, server) = serve_once(StatusCode::SERVICE_UNAVAILABLE, "upstream exploded");
 
-        let error = merge_request(ApiSession::new(&Client::new(), &api_url, "token"), target())
-            .unwrap_err()
-            .to_string();
+        let error = merge_request(
+            ApiSession::new(&Client::new(), &api_url, "token"),
+            target(),
+            GitOid::try_from("a".repeat(40).as_str()).unwrap(),
+        )
+        .unwrap_err()
+        .to_string();
 
         assert_eq!(
             error,

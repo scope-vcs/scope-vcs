@@ -221,9 +221,14 @@ export function parseRequestActionInput(input: unknown): RequestActionInput {
     case 'add_invitee':
     case 'remove_invitee':
       return { ...params, action: data.action, handle: id(data.handle, 'handle') }
+    case 'merge': {
+      const { expected_head_oid } = validated('merge', apiValidators.MergeRequestRequest, {
+        expected_head_oid: id(data.expected_head_oid, 'expected_head_oid'),
+      })
+      return { ...params, action: data.action, expected_head_oid }
+    }
     case 'close':
     case 'leave':
-    case 'merge':
     case 'submit':
       return { ...params, action: data.action }
     default:

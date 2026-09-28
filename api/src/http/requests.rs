@@ -18,10 +18,11 @@ use axum::{
 };
 use scope_api_contract::{
     AddRequestInviteeRequest, EditRequestIdentityRequest, LeaveRequestResponse,
-    RemoveRequestInviteeRequest, RequestActorSummaryResponse, RequestCloseResponse,
-    RequestDetailResponse, RequestInviteeMutationResponse, RequestInviteeResponse,
-    RequestListResponse, RequestMergeabilityResponse, RequestMutationResponse,
-    RequestPermissionsResponse, RequestSummaryResponse, StartRequestRequest, SubmitRequestRequest,
+    MergeRequestRequest, RemoveRequestInviteeRequest, RequestActorSummaryResponse,
+    RequestCloseResponse, RequestDetailResponse, RequestInviteeMutationResponse,
+    RequestInviteeResponse, RequestListResponse, RequestMergeabilityResponse,
+    RequestMutationResponse, RequestPermissionsResponse, RequestSummaryResponse,
+    StartRequestRequest, SubmitRequestRequest,
 };
 use scope_domain::{
     projection::{ProjectionViewKey, project_graph},
@@ -164,6 +165,7 @@ pub(crate) async fn merge_request(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
+    input: Option<Json<MergeRequestRequest>>,
 ) -> Result<Json<RequestMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let result = request_merge::merge_request(
@@ -173,6 +175,8 @@ pub(crate) async fn merge_request(
             repo_name,
             request_id,
             actor_user_id: user.id,
+            expected_head_oid: input
+                .map(|Json(input)| input.expected_head_oid.as_str().to_string()),
             expected_auto_merge: None,
         },
     )

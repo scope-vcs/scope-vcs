@@ -49,6 +49,8 @@ pub(crate) struct MergeRequestCommand {
     pub(crate) repo_name: String,
     pub(crate) request_id: String,
     pub(crate) actor_user_id: String,
+    /// The head the caller reviewed, when it names one.
+    pub(crate) expected_head_oid: Option<String>,
     pub(crate) expected_auto_merge: Option<ExpectedRequestAutoMerge>,
 }
 
@@ -129,6 +131,15 @@ pub(crate) async fn merge_request_inner(
             return Err(ApiError::forbidden("repo maintainer required").into());
         }
         return Err(ApiError::conflict("request cannot be merged").into());
+    }
+    if command
+        .expected_head_oid
+        .as_ref()
+        .is_some_and(|expected| *expected != request.head_oid)
+    {
+        return Err(
+            ApiError::conflict("request has a new revision; review it before merging").into(),
+        );
     }
     // The gate is separate from permission: the head's checks must have cleared.
     let checks =
@@ -500,6 +511,7 @@ pub(crate) async fn persist_prepared_merge_for_tests(
         repo_name: repo_name.to_string(),
         request_id: request_id.to_string(),
         actor_user_id: actor_user_id.to_string(),
+        expected_head_oid: None,
         expected_auto_merge: None,
     };
     persist_prepared_merge(

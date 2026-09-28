@@ -209,7 +209,12 @@ pub(super) fn merge_request_command(
         &format!("Merge request {} into main", before.request.name),
         args.yes,
     )?;
-    let response = merge_request(api, api_target(&context, &request_id))?;
+    // The API refuses the merge if the head moved after this load.
+    let response = merge_request(
+        api,
+        api_target(&context, &request_id),
+        before.request.head_oid,
+    )?;
     let human_lines = request_mutation_receipt_lines("Merged", &response);
     Ok(RequestCommandOutcome::new(
         "request.merge",

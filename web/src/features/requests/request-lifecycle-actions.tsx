@@ -33,6 +33,8 @@ export function RequestLifecycleActions({
   viewerId: string
 }) {
   const [dialog, setDialog] = useState<Dialog>(null)
+  // The head the merge dialog shows, kept so a live refresh cannot retarget it.
+  const [mergeHead, setMergeHead] = useState(request.head_oid)
   const [autoMergeDialogOpen, setAutoMergeDialogOpen] = useState(false)
   const busy = actions.pending !== null || autoMerge.pending !== null
   const permissions = request.permissions
@@ -58,7 +60,10 @@ export function RequestLifecycleActions({
           </Button>
         ) : null}
         {canMerge ? (
-          <Button disabled={busy} onClick={() => setDialog('merge')} size="sm" type="button" variant="success">
+          <Button disabled={busy} onClick={() => {
+            setMergeHead(request.head_oid)
+            setDialog('merge')
+          }} size="sm" type="button" variant="success">
             Merge
           </Button>
         ) : null}
@@ -93,7 +98,12 @@ export function RequestLifecycleActions({
       </RequestConfirmDialog>
       <RequestConfirmDialog
         confirmLabel="Merge request"
-        onConfirm={() => actions.run({ action: 'merge' })}
+        onConfirm={async () => {
+          const merged = await actions.run({ action: 'merge', expected_head_oid: mergeHead })
+          // Close on refusal so the error shows, and reopening names the current head.
+          if (!merged) setDialog(null)
+          return merged
+        }}
         onOpenChange={(open) => setDialog(open ? 'merge' : null)}
         open={dialog === 'merge'}
         pending={actions.pending === 'merge'}
@@ -101,7 +111,7 @@ export function RequestLifecycleActions({
       >
         <p>This completes “{request.title}” and merges its current head into main.</p>
         <p className="font-mono text-xs">
-          {shortOid(request.head_oid)} → main
+          {shortOid(mergeHead)} → main
         </p>
       </RequestConfirmDialog>
     </>
