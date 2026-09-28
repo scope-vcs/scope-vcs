@@ -26,6 +26,7 @@ function fixture() {
     config: { mode: 'ordinary', release: { attemptId: `${runId}:1`, sourceSha: sha, stage: 'web' } },
     deployments: { web: deploymentId },
     summary: { passed: false, release: { attemptId: `${runId}:1`, sourceSha: sha, stage: 'web' },
+      violations: ['1 finite requests failed during an ordinary release'],
       failures: [{ target: 'public-homepage', error: { kind: 'application' },
         deployments: { web: deploymentId } }] },
   };
@@ -58,6 +59,9 @@ for (const [name, change] of [
   ['successful web transition', value => { value.jobs[3].conclusion = 'success'; }],
   ['different attempt', value => { value.transition.config.release.attemptId = `${runId}:2`; }],
   ['unrelated probe failure', value => { value.transition.summary.failures[0].target = 'api-readiness'; }],
+  ['missing observation', value => { value.transition.summary.violations = ['post-release observation did not start']; }],
+  ['incomplete observation', value => { value.transition.summary.violations.push('no recovery observation for api-readiness'); }],
+  ['missing violations', value => { delete value.transition.summary.violations; }],
   ['different activation', value => { value.transition.deployments.web = 'other'; }],
   ['different service', value => { value.deployment.serviceId = 'other-service'; }],
   ['image substitution', value => { value.deployment.meta.imageDigest = `sha256:${'c'.repeat(64)}`; }],

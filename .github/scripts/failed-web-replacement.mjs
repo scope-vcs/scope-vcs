@@ -48,6 +48,9 @@ export function verifyFailedWebReplacement({ runId, repository, run, jobs, prepa
     && summary.failures?.length > 0 && summary.failures.every(failure =>
       failure.target === 'public-homepage' && failure.error?.kind === 'application'),
   'retained probe did not fail solely on the homepage contract');
+  requireMatch(summary.violations?.length === 1
+    && /^[1-9][0-9]* finite requests failed during an ordinary release$/.test(summary.violations[0]),
+  'transition must have completed post-release observation without other violations');
   const deploymentId = deployments?.web;
   requireMatch(typeof deploymentId === 'string' && deploymentId.length > 0
     && summary.failures.some(failure => failure.deployments?.web === deploymentId),
