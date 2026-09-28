@@ -154,79 +154,29 @@ directory isolated and remove it after the drill.
 
 For an empty local PostgreSQL drill database named `scope_recovery_drill_*`, provide
 its connection via `SCOPE_RECOVERY_DRILL_DATABASE_URL` and add `--restore-database`.
-The command rejects nonlocal servers and nonempty databases, and applies the cache
-reset when the capture excluded cache. The application drill below performs this
-restore inside its sealed namespace. Production databases are never restore targets.
+The command rejects nonlocal servers and nonempty databases. Alternatively restore
+`database.dump` into a network-none PostgreSQL container, run the current reviewed
+maintenance binary's schema verification, then apply the cache reset there when
+needed. Production databases are never restore targets.
 
-An archive/decryption proof is not an application proof. Run the application drill
-below on the verified destination; only a complete drill counts as a recovery proof.
+The archive keeps S3 object keys in the encrypted inventory and stores bytes under
+hashed local filenames. To bring up an isolated application, upload verified files
+to new isolated buckets under each inventory entry's original `key`, configure the
+escrowed encryption keys, and start services only after database/schema/object
+verification. Bucket identifiers and access credentials must be newly provisioned.
+An archive/decryption proof is not itself a browser/CLI/Git application canary.
 
-## Application drill
-
-### Drill targets
+## Drill targets
 
 | Target | Value | Measured as |
 | --- | --- | --- |
-| Recovery time | 4 hours | From `DOWNLOAD_STARTED_AT` ([ROLLOUT.md](ROLLOUT.md)) to the last canary |
-| Backup age | 26 hours | From the snapshot's `captured_at` to starting the download |
+| Recovery time | 4 hours | From `DOWNLOAD_STARTED_AT` ([ROLLOUT.md](ROLLOUT.md)) to a passing schema verification |
+| Backup age | 26 hours | From the manifest's `captured_at` to `DOWNLOAD_STARTED_AT` |
 | Cadence | Quarterly | Also after any change to the recovery format, storage layout, or schema tooling |
 
-`drill.py` enforces the two time targets; change them there and here together. The
-drill is run by the on-call maintainer, currently `adamblumoff`, with the MFA reader
-session and offline age identity described in [ROLLOUT.md](ROLLOUT.md).
-
-### Run
-
-The drill runs the recovered data as a sealed local Scope stack. Every container
-joins the network namespace of a `postgres:18.6` container started with
-`--network none`, so services talk over loopback and have no route to production
-or any external service. Containers receive only the variables `drill.py` sets:
-no Clerk secret, email key, analytics token, AWS, or Railway credentials exist
-inside, and nothing is inherited from the operator's shell. Objects are uploaded
-under their original keys into new buckets on a pinned Versity S3 gateway with
-new credentials; the database is restored with `restore.py`'s local-only restore.
-
-Services come from the release revision whose schema matches the snapshot. Check
-out that revision, build or download its release binaries, and run the drill from
-the same checkout so the image matches production (`deploy/railway/worker.Dockerfile`,
-with the reviewed Git build and dependency analyzer):
-
-```bash
-git switch --detach "$RELEASE_SHA"
-cargo build --release --locked -p api -p worker -p scope-media-service
-cargo build --release --locked --manifest-path cli/Cargo.toml --bin scope
-/tmp/scope-recovery-venv/bin/python deploy/aws/recovery/drill.py run \
-  --restored /secure/isolated-scope-recovery \
-  --binaries target/release --cli cli/target/release/scope \
-  --revision "$RELEASE_SHA" \
-  --repo "$OWNER/$REPOSITORY" --private-path "$PRIVATE_FILE" \
-  --restore-started-at "$DOWNLOAD_STARTED_AT" \
-  --evidence /secure/drill-evidence.json
-```
-
-Choose a restored repository with both public and private files; an anonymous
-clone of an all-private repository is refused. The drill adds two
-drill-only accounts with CLI sessions: a member of that repository with push
-permission and a non-member. Production identities and sessions are never copied or
-used. `scope-maintenance verify` must report the exact schema before services start.
-The canaries then check:
-
-- an anonymous Git clone of the repository omits the private file;
-- the member's `scope clone` contains it, and the non-member's API read gets 404;
-- the member pushes a commit to main and a fresh clone contains it;
-- one restored media original, read through an API grant, matches its manifest
-  checksum. A snapshot with no readable media original cannot complete the drill.
-
-Browser sign-in is not covered yet; it needs the authenticated browser canary and
-access to a Clerk development instance, which the sealed namespace does not allow.
-
-The evidence file records the snapshot time, download start, service readiness,
-finish time, both measurements against the targets, binary checksums, uploaded
-object counts, and each canary result. It contains no tokens, keys, or restored
-content. The drill is complete only when every canary passes and both targets are
-met. `drill.py` removes its containers and their data unless `--keep` is given;
-after inspecting a kept stack, run `drill.py down`. Then delete the restored
-destination and keep the encrypted archive and evidence with operational records.
+The on-call maintainer, currently `adamblumoff`, runs the drill in
+[ROLLOUT.md](ROLLOUT.md) and records both measurements with its evidence. A drill
+that misses either target is a failed drill, even if every check passed.
 
 ## Tests
 
