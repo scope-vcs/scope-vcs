@@ -6,13 +6,13 @@ import {
   completedRunLogVersion,
   EMPTY_LOG_STATE,
   runLogsResource,
-  resetRunLogCache,
   runLogCacheKey,
   stepKey,
   writeRunLogCache,
   type StepLogState,
 } from './run-log-cache'
 import type { RepositoryRunDetailResponse } from '@/api/types.generated'
+import { resetViewerState } from '../../lib/viewer-state'
 
 const readRunLogCache = (key: string) => runLogsResource.read(key) ?? {}
 
@@ -38,7 +38,7 @@ const loaded: StepLogState = {
   completedVersion: completedRunLogVersion(detail),
 }
 
-beforeEach(resetRunLogCache)
+beforeEach(resetViewerState)
 
 test('returning to completed run output reuses its loaded page without refreshing', () => {
   writeRunLogCache(key, selection, loaded)

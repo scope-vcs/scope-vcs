@@ -100,7 +100,3 @@ export function writeRequestDiscussionScroll(key: string, scrollTop: number) {
   const session = requestDiscussionResource.peek(key)
   if (session) requestDiscussionResource.write(key, { ...session, scrollTop })
 }
-
-export function resetRequestDiscussionCache() {
-  requestDiscussionResource.clear()
-}

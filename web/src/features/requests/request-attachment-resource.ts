@@ -3,6 +3,7 @@ import type {
   RequestAttachmentResponse,
 } from '@/api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
+import { onViewerChange } from '../../lib/viewer-state'
 import { createRequestAttachmentScopeTracker } from './request-attachment-scope-tracker'
 
 export type RequestAttachmentResourceValue = {
@@ -24,6 +25,7 @@ const scopeTracker = createRequestAttachmentScopeTracker({
     )
   },
 })
+onViewerChange(scopeTracker.reset)
 
 export function activateRequestAttachmentResourceScope(accessScope: string) {
   scopeTracker.activate(accessScope)

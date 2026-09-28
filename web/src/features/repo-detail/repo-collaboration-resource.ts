@@ -1,5 +1,6 @@
 import type { RepositoryCollaborationResponse } from '../../api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
+import { onViewerChange } from '../../lib/viewer-state'
 import { applyCollaborationResult, type CollaborationResult } from './repo-collaboration-results'
 
 export const repoCollaborationResource = createCachedResource<{ collaboration: RepositoryCollaborationResponse | null }>({
@@ -18,6 +19,7 @@ export function retainCollaborationResult(scope: string, result: CollaborationRe
 }
 
 const refreshedForExpiry = new Map<string, number>()
+onViewerChange(() => refreshedForExpiry.clear())
 
 /**
  * An invite expires by the clock: the server writes nothing, so no repository

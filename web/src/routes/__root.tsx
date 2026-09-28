@@ -11,7 +11,7 @@ import {
 import { lazy, Suspense, type ReactNode } from 'react'
 import { Toaster } from 'sonner'
 import { scopeClerkAppearance } from '../clerk-appearance'
-import { RequestSessionBoundary } from '@/features/requests/request-session-boundary'
+import { ViewerSessionBoundary } from '@/components/viewer-session-boundary'
 import '../styles.css'
 import commitMono400 from '@fontsource/commit-mono/files/commit-mono-latin-400-normal.woff2?url'
 import commitMono500 from '@fontsource/commit-mono/files/commit-mono-latin-500-normal.woff2?url'
@@ -146,7 +146,7 @@ function RootDocument({ children }: { children: ReactNode }) {
               }
             : {})}
         >
-          <RequestSessionBoundary />
+          <ViewerSessionBoundary />
           {children}
           <Suspense fallback={null}>
             <AnalyticsRoot />

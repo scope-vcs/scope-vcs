@@ -6,6 +6,7 @@ import type {
   RepositoryRunStepLogPageResponse,
 } from '@/api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
+import { onViewerChange } from '../../lib/viewer-state'
 import { mergeStepLogPage, runCanChange, type StepSelection } from './repository-run-detail-model'
 
 const MAX_CACHED_LOG_STEPS = 8
@@ -66,11 +67,6 @@ export function writeRunLogCache(
   ))
 }
 
-export function resetRunLogCache() {
-  inFlight.clear()
-  runLogsResource.clear()
-}
-
 export function completedRunLogVersion(detail: RepositoryRunDetailResponse) {
   if (runCanChange(detail.run.state)) return null
   return JSON.stringify([
@@ -108,6 +104,7 @@ function withBoundedLogStates(
 // Different selected steps can load concurrently; requests belong to this run
 // owner and survive navigation together with the observable log snapshot.
 const inFlight = new Map<string, Promise<boolean>>()
+onViewerChange(() => inFlight.clear())
 export type RunLogMode = 'refresh' | 'earlier' | 'latest' | 'retry'
 
 export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = 'refresh' }: {

@@ -3,6 +3,7 @@ import type {
   RepoSummaryResponse,
 } from '../../api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
+import { onViewerChange } from '../../lib/viewer-state'
 import { repoResourceScope } from './repo-resource-scope'
 
 const DEPENDENCY_POLL_DELAY_MS = 5_000
@@ -26,6 +27,11 @@ export function createRepositoryDependencyResource(
     polls.get(identity)?.()
     polls.delete(identity)
   }
+
+  function stopPolls() {
+    for (const identity of polls.keys()) stopPoll(identity)
+  }
+  onViewerChange(stopPolls)
 
   function updatePoll(
     identity: string,
@@ -77,7 +83,7 @@ export function createRepositoryDependencyResource(
       updatePoll(identity, value)
     },
     clear() {
-      for (const identity of polls.keys()) stopPoll(identity)
+      stopPolls()
       cache.clear()
     },
   }

@@ -1,34 +1,25 @@
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { activateAccountSessionViewer } from '../account/account-session-resource'
-import { activateRequestAttachmentDraftViewer } from './request-attachment-drafts'
-import { resetRequestAttachmentMediaGrants } from './request-attachment-media-resource'
-import { resetRequestAttachmentResources } from './request-attachment-resource'
-import { resetRequestDiscussionCache } from './request-discussion-cache'
-import { resetRequestMermaidResource } from './request-mermaid-resource'
-import { requestQueueResource } from './request-queue-cache'
+import { activateRequestAttachmentDraftViewer } from '@/features/requests/request-attachment-drafts'
+import { resetViewerState } from '@/lib/viewer-state'
 
 let activeViewer: string | null = null
 
-// Request caches are keyed by viewer, but a viewer change still discards
-// everything the previous viewer loaded so nothing of theirs lingers in memory.
-export function RequestSessionBoundary() {
+// Caches are keyed by viewer, but a viewer change still discards everything
+// the previous viewer loaded so nothing of theirs lingers in memory.
+export function ViewerSessionBoundary() {
   const { isLoaded, userId } = useAuth()
   const router = useRouter()
   useEffect(() => {
     if (!isLoaded) return
     const viewerId = userId ?? 'anonymous'
-    activateAccountSessionViewer(viewerId)
     const viewerChanged = activeViewer !== null && activeViewer !== viewerId
     const firstSignedInViewer = activeViewer === null && userId !== null
     if (viewerChanged) {
+      resetViewerState()
+      // Drafts persist in session storage, so they keep their own viewer lifecycle.
       activateRequestAttachmentDraftViewer(viewerId)
-      resetRequestAttachmentMediaGrants()
-      resetRequestAttachmentResources()
-      resetRequestDiscussionCache()
-      resetRequestMermaidResource()
-      requestQueueResource.clear()
     }
     activeViewer = viewerId
     if (!viewerChanged && !firstSignedInViewer) return

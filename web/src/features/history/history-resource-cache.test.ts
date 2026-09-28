@@ -8,9 +8,9 @@ import {
   historyResourceCacheStats,
   historyDiffResource,
   readHistoryDiffScroll,
-  resetHistoryResourceCache,
   writeHistoryDiffScroll,
 } from './history-resource-cache'
+import { resetViewerState } from '../../lib/viewer-state'
 
 function diff(path: string, text = 'content'): ReviewFileDiff {
   return {
@@ -62,7 +62,7 @@ test('keys resources by immutable audience-aware identities', () => {
 })
 
 test('bounds diff entries with least-recently-used eviction', () => {
-  resetHistoryResourceCache()
+  resetViewerState()
   for (let index = 0; index < 30; index += 1) {
     historyDiffResource.write(`diff-${index}`, diff(`/${index}.txt`))
   }
@@ -73,7 +73,7 @@ test('bounds diff entries with least-recently-used eviction', () => {
 })
 
 test('keeps diff scroll state with its bounded cache entry', () => {
-  resetHistoryResourceCache()
+  resetViewerState()
   historyDiffResource.write('readme', diff('/README.md'))
   writeHistoryDiffScroll('readme', 420)
   historyDiffResource.write('readme', diff('/README.md', 'updated'))
@@ -86,7 +86,7 @@ test('keeps diff scroll state with its bounded cache entry', () => {
 })
 
 test('evicts large text diffs at the byte budget', () => {
-  resetHistoryResourceCache()
+  resetViewerState()
   const largeText = 'x'.repeat(3 * 1024 * 1024)
   for (let index = 0; index < 6; index += 1) {
     historyDiffResource.write(`large-${index}`, diff(`/${index}.txt`, largeText))
