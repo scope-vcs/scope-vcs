@@ -18,6 +18,7 @@
     "generate:api-contract": "node scripts/generate-api-contract.mjs",
     "test": "node scripts/prepare-test-output.mjs && tsc -p tsconfig.test.json && TZ=UTC node --test \".test-output/**/*.test.js\"",
     "test:smoke": "node --test \"smoke/**/*.spec.mjs\"",
+    "test:journey": "node --test \"journeys/**/*.spec.mjs\"",
     "typecheck": "tsc --noEmit",
     "check:hooks": "node --test scripts/check-hooks.test.mjs && oxlint -c .oxlintrc.json src",
     "check:advisories": "pnpm audit --audit-level high",
@@ -52,6 +53,7 @@
     "web-vitals": "5.3.0"
   },
   "devDependencies": {
+    "@clerk/testing": "2.2.36",
     "@types/node": "^24.13.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

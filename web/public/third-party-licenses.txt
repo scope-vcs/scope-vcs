@@ -304,6 +304,16 @@ Repository: {"type": "git", "url": "git+https://github.com/clerk/javascript.git"
 LICENSE: text 980a9657026db6567616515b6a9eb52ee6d360924359df43c1e56cacf0058a7d
 
 ==============================================================================
+@clerk/testing 2.2.36
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@clerk/testing/-/testing-2.2.36.tgz
+
+Published author metadata: "Clerk"
+Repository: {"type": "git", "url": "git+https://github.com/clerk/javascript.git", "directory": "packages/testing"}
+LICENSE: text 980a9657026db6567616515b6a9eb52ee6d360924359df43c1e56cacf0058a7d
+
+==============================================================================
 @floating-ui/core 1.7.5
 Declared license: MIT
 Selected license: MIT
@@ -3048,6 +3058,15 @@ Repository: {"type": "git", "url": "git://github.com/cure53/DOMPurify.git"}
 LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 LICENSE-MPL: text c76f740d1521b9bed9ca7a04ad526c310493c62621b1341d623b431736533b30
 src/license_header: text 8cd07c535061d09cec0ac643b8d5131d1755c74181970a3224a32089a0923383
+
+==============================================================================
+dotenv 17.2.2
+Declared license: BSD-2-Clause
+Selected license: BSD-2-Clause
+Source: https://registry.npmjs.org/dotenv/-/dotenv-17.2.2.tgz
+
+Repository: {"type": "git", "url": "git://github.com/motdotla/dotenv.git"}
+LICENSE: text f02e65819ea320eb92759a609b6397ae3025a05ae4226c6f554026c7c0bf64b8
 
 ==============================================================================
 electron-to-chromium 1.5.430
@@ -11595,6 +11614,31 @@ modification, are permitted provided that the following conditions are met:
 3. Neither the name of the copyright holder nor the names of its
    contributors may be used to endorse or promote products derived from
    this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--- text f02e65819ea320eb92759a609b6397ae3025a05ae4226c6f554026c7c0bf64b8 ---
+Copyright (c) 2015, Scott Motte
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE

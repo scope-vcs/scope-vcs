@@ -59,6 +59,7 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
   assert.ok(bundleCommands.includes('node --test cli/distribution/install-smoke.test.mjs'));
   assert.deepEqual(commands('integration', 'cli'), ['cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --ignored --nocapture']);
   assert.deepEqual(commands('integration', 'web'), ['pnpm test:smoke']);
+  assert.deepEqual(commands('integration', 'journey'), ['cargo build --manifest-path cli/Cargo.toml --locked --bin scope', 'pnpm test:journey']);
   assert.deepEqual(commands('dependency-analyzer'), [
     'npm ci --ignore-scripts', 'npm test',
   ]);
