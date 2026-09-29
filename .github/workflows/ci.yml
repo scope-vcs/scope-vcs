@@ -68,7 +68,12 @@ jobs:
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
+      - name: Install PostgreSQL test server
+        run: sudo ./dev/install-test-postgres.sh
       - name: Check operations
+        env:
+          SCOPE_TEST_POSTGRES_BIN: /usr/lib/postgresql/18/bin
+          SCOPE_REQUIRE_POSTGRES_CLUSTER: '1'
         run: ./dev/checks/ops
 
   validation:

@@ -62,7 +62,9 @@ else console.log('true');
     maintenanceSha256: createHash('sha256').update(readFileSync(binary)).digest('hex') }));
   const plan = { metadataRestoreSafe: true, applied: ['m0001_initial'], pending: [{ name: 'm0002_metadata' }], exact: false };
   writeFileSync(join(root, 'production.json'), JSON.stringify(plan));
-  const env = { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}`, RAILWAY_TOKEN: 'test', RAILWAY_API_TOKEN: '',
+  // Like staging, put the matching PostgreSQL clients first; a distribution
+  // wrapper may choose an older pg_dump that refuses this server.
+  const env = { ...process.env, PATH: `${join(root, 'bin')}:${pgBin}:${process.env.PATH}`, RAILWAY_TOKEN: 'test', RAILWAY_API_TOKEN: '',
     TEST_GH_TRACE: join(root, 'gh-trace'), TEST_DATABASE: database, TEST_ARCHIVE: join(root, 'snapshot.zip'), GITHUB_REPOSITORY: 'scope-vcs/scope-vcs',
     GITHUB_OUTPUT: join(root, 'output'), SCOPE_DEPLOYMENT_MANIFEST: join(root, 'manifest.json'),
     SCOPE_RAILWAY_MAINTENANCE_SERVICE_ID: '11111111-1111-1111-1111-111111111111', SCOPE_MAINTENANCE_BINARY: binary, SCOPE_PREPARED_RELEASE_PATH: join(root, 'prepared.json'),
