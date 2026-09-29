@@ -27,14 +27,9 @@ pub struct RepositoryAccess {
 pub struct RepositoryAccessContext {
     pub record: RepoRecord,
     pub access: RepositoryAccess,
-    pub root_visibility: crate::policy::Visibility,
 }
 
 impl RepositoryAccessContext {
-    pub fn can_read_root(&self) -> bool {
-        self.access.can_read_private_files
-            || self.root_visibility == crate::policy::Visibility::Public
-    }
     pub fn incarnation(&self) -> RepositoryIncarnation {
         self.record.incarnation()
     }
