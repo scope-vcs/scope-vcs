@@ -95,8 +95,7 @@ async fn upload_ledger_enforces_publication_and_recovery_states() {
         .insert(store.db.as_ref())
         .await
         .unwrap();
-    repositories
-        .mark_git_segment_upload_published(&segment.segment_id, 12)
+    publish_git_segment(store.db.as_ref(), "segment-user/repo", &segment, 12)
         .await
         .unwrap();
     assert!(
@@ -106,20 +105,20 @@ async fn upload_ledger_enforces_publication_and_recovery_states() {
             .unwrap()
     );
     assert!(
-        repositories
-            .mark_git_segment_upload_deleting(&segment.segment_id, 13)
+        !retire_git_segment(store.db.as_ref(), &segment.segment_id, 13)
             .await
-            .is_err()
+            .unwrap()
     );
 
     entities::git_pack_span::Entity::delete_many()
         .exec(store.db.as_ref())
         .await
         .unwrap();
-    repositories
-        .mark_git_segment_upload_deleting(&segment.segment_id, 13)
-        .await
-        .unwrap();
+    assert!(
+        retire_git_segment(store.db.as_ref(), &segment.segment_id, 13)
+            .await
+            .unwrap()
+    );
     repositories
         .mark_git_segment_upload_deleted(&segment.segment_id, 14)
         .await
@@ -196,8 +195,7 @@ async fn repository_deletion_keeps_segment_ledger_for_physical_cleanup() {
     .insert(store.db.as_ref())
     .await
     .unwrap();
-    repositories
-        .mark_git_segment_upload_published(&segment.segment_id, 12)
+    publish_git_segment(store.db.as_ref(), "segment-user/repo", &segment, 12)
         .await
         .unwrap();
     let incarnation = repositories
@@ -262,8 +260,7 @@ async fn trigger_and_run_pins_block_compaction_retirement() {
     .insert(store.db.as_ref())
     .await
     .unwrap();
-    repositories
-        .mark_git_segment_upload_published(&segment.segment_id, 12)
+    publish_git_segment(store.db.as_ref(), "segment-user/repo", &segment, 12)
         .await
         .unwrap();
     for (ref_kind, ref_id) in [

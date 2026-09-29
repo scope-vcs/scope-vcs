@@ -210,41 +210,40 @@ async fn repo_events_stream_permission_changes_to_members() {
             .contains(r#""kind":"Connected""#)
     );
 
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.members
-                .iter_mut()
-                .find(|member| member.user_id == writer_id)
-                .unwrap()
-                .permissions
-                .can_push = false;
-            repo.bump_change_version();
-        })
-        .await
-        .unwrap();
-    let version = state
+    let updated = api_request(
+        router(state.clone()),
+        "PATCH",
+        &format!("/v1/repos/owner/repo/members/{writer_id}"),
+        Some(&bearer_header()),
+        Some(r#"{"permissions":{"can_push":false,"can_change_file_visibility":false}}"#),
+    )
+    .await;
+    expect_json(updated, StatusCode::OK).await;
+    let repo = state
         .metadata
         .repositories()
         .repository_for_tests(TEST_REPO_ID)
         .await
         .unwrap()
-        .unwrap()
-        .record
-        .change_version;
-    state
-        .publish_repo_change(
-            &test_repo_incarnation(),
-            version,
-            RepoChangeReason::VisibilityChanged,
-        )
-        .await;
+        .unwrap();
+    let member = repo
+        .members
+        .iter()
+        .find(|member| member.user_id == writer_id)
+        .unwrap();
+    assert_eq!(member.permissions, member_permissions(false, false));
+    let version = repo.record.change_version;
 
     let event = next_event(&mut stream).await;
-    assert!(event.contains("event: repo-change"));
-    assert!(event.contains(r#""reason":"visibility-changed"#));
-    assert!(event.contains(&format!(r#""version":{version}"#)));
+    assert!(event.contains("event: repo-change"), "{event}");
+    assert!(
+        event.contains(r#""reason":"member-permissions-changed""#),
+        "{event}"
+    );
+    assert!(
+        event.contains(&format!(r#""version":{version}"#)),
+        "{event}"
+    );
 }
 
 #[tokio::test]
@@ -303,11 +302,7 @@ async fn event_streams_isolate_missed_recreation_notifications() {
         .await
         .unwrap();
     state
-        .publish_repo_change(
-            &recreated_incarnation,
-            1,
-            RepoChangeReason::VisibilityChanged,
-        )
+        .publish_repo_change(&recreated_incarnation, 1, RepoChangeReason::MetadataUpdated)
         .await;
 
     let error = next_event(&mut old_stream).await;
@@ -321,14 +316,10 @@ async fn event_streams_isolate_missed_recreation_notifications() {
     state.repo_events.publish_event(repository_change_event(
         &test_repo_incarnation(),
         99,
-        RepoChangeReason::VisibilityChanged,
+        RepoChangeReason::MetadataUpdated,
     ));
     state
-        .publish_repo_change(
-            &recreated_incarnation,
-            2,
-            RepoChangeReason::VisibilityChanged,
-        )
+        .publish_repo_change(&recreated_incarnation, 2, RepoChangeReason::MetadataUpdated)
         .await;
     let update = next_event(&mut new_stream).await;
     assert!(update.contains("event: repo-change"), "{update}");

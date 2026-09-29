@@ -124,19 +124,30 @@ fn verifier_with_unknown_key_cooldown(
     )
 }
 
+async fn verify_with_cached_jwks(
+    jwt: &str,
+    issuer: &str,
+    policy: ClerkTokenPolicy,
+) -> Result<ClerkIdentity, crate::error::ApiError> {
+    let verifier = ClerkVerifier::new_with_policy(Some(issuer.to_string()), None, policy);
+    verifier.cache_jwks_for_tests(test_jwks());
+    verifier.verify(jwt).await
+}
+
 #[tokio::test]
 async fn clerk_token_verifies_issuer_signature_expiration_and_subject() {
     let jwt = token_with_audience(TEST_CLERK_USER_ID, serde_json::json!(TEST_CLERK_AUDIENCE));
-    let identity =
-        verify_clerk_token(&jwt, &test_jwks(), TEST_CLERK_ISSUER, &test_clerk_policy()).unwrap();
+    let identity = verify_with_cached_jwks(&jwt, TEST_CLERK_ISSUER, test_clerk_policy())
+        .await
+        .unwrap();
 
     assert_eq!(identity.subject, TEST_CLERK_USER_ID);
     assert_eq!(identity.email.as_deref(), Some(TEST_OWNER_EMAIL));
     assert!(identity.email_verified);
 }
 
-#[test]
-fn clerk_token_rejects_invalid_identity_and_origin_claims() {
+#[tokio::test]
+async fn clerk_token_rejects_invalid_identity_and_origin_claims() {
     let cases = [
         (
             token_with_audience(TEST_CLERK_USER_ID, serde_json::json!(TEST_CLERK_AUDIENCE)),
@@ -159,14 +170,15 @@ fn clerk_token_rejects_invalid_identity_and_origin_claims() {
         ),
     ];
     for (jwt, issuer) in cases {
-        let error =
-            verify_clerk_token(&jwt, &test_jwks(), issuer, &test_clerk_policy()).unwrap_err();
+        let error = verify_with_cached_jwks(&jwt, issuer, test_clerk_policy())
+            .await
+            .unwrap_err();
         assert_eq!(error.kind, crate::error::ErrorKind::Unauthorized);
     }
 }
 
-#[test]
-fn clerk_token_policy_cases() {
+#[tokio::test]
+async fn clerk_token_policy_cases() {
     use crate::error::ErrorKind::Unauthorized;
     for (token, policy, kind) in [
         (
@@ -181,7 +193,8 @@ fn clerk_token_policy_cases() {
         ),
     ] {
         assert_eq!(
-            verify_clerk_token(&token, &test_jwks(), TEST_CLERK_ISSUER, &policy)
+            verify_with_cached_jwks(&token, TEST_CLERK_ISSUER, policy)
+                .await
                 .unwrap_err()
                 .kind,
             kind
@@ -201,7 +214,8 @@ fn clerk_token_policy_cases() {
         ),
     ] {
         assert_eq!(
-            verify_clerk_token(&token, &test_jwks(), TEST_CLERK_ISSUER, &policy)
+            verify_with_cached_jwks(&token, TEST_CLERK_ISSUER, policy)
+                .await
                 .unwrap()
                 .subject,
             TEST_CLERK_USER_ID

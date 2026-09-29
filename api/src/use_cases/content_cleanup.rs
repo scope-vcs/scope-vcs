@@ -236,17 +236,3 @@ pub(crate) async fn drain_pending_source_blob_deletions_report(
             .collect(),
     })
 }
-
-#[cfg(test)]
-pub(crate) async fn drain_pending_orphan_objects(state: &AppState) -> Result<(), ApiError> {
-    let report = drain_pending_source_blob_deletions_report(state).await?;
-    match report.failed_object_deletes.first().map(|failure| {
-        ApiError::infrastructure_unavailable(format!(
-            "failed to clean source blob storage {}: {}",
-            failure.object_key, failure.error
-        ))
-    }) {
-        Some(error) => Err(error),
-        None => Ok(()),
-    }
-}

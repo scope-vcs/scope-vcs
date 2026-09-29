@@ -57,8 +57,7 @@ async fn persist_span(store: &MetadataStore, repo_id: &str, span: &GitPackSpan, 
             .insert(store.db.as_ref())
             .await
             .unwrap();
-        repositories
-            .mark_git_segment_upload_published(&span.segment.segment_id, 3)
+        publish_git_segment(store.db.as_ref(), repo_id, &span.segment, 3)
             .await
             .unwrap();
     }
@@ -151,8 +150,7 @@ async fn seed_scheduled_repo(store: &MetadataStore) {
         .insert(store.db.as_ref())
         .await
         .unwrap();
-    repositories
-        .mark_git_segment_upload_published(&span.segment.segment_id, 3)
+    publish_git_segment(store.db.as_ref(), "scheduler/repo", &span.segment, 3)
         .await
         .unwrap();
 }

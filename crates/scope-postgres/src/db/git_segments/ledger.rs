@@ -117,45 +117,6 @@ impl RepositoryStore {
         Ok(result.rows_affected() == 1)
     }
 
-    pub async fn mark_git_segment_upload_published(
-        &self,
-        segment_id: &str,
-        now_unix: u64,
-    ) -> Result<(), PostgresError> {
-        transition(
-            self.db.as_ref(),
-            segment_id,
-            "state = 'ready' AND EXISTS (
-                SELECT 1 FROM scope_git_segments spans
-                WHERE spans.segment_id = scope_git_segment_uploads.segment_id
-            )",
-            "published",
-            now_unix,
-        )
-        .await
-    }
-
-    pub async fn mark_git_segment_upload_deleting(
-        &self,
-        segment_id: &str,
-        now_unix: u64,
-    ) -> Result<(), PostgresError> {
-        transition(
-            self.db.as_ref(),
-            segment_id,
-            "state IN ('uploading', 'ready', 'published', 'retained') AND NOT EXISTS (
-                SELECT 1 FROM scope_git_segments spans
-                WHERE spans.segment_id = scope_git_segment_uploads.segment_id
-            ) AND NOT EXISTS (
-                SELECT 1 FROM scope_git_segment_references refs
-                WHERE refs.segment_id = scope_git_segment_uploads.segment_id
-            )",
-            "deleting",
-            now_unix,
-        )
-        .await
-    }
-
     pub async fn abandon_git_segment_upload(
         &self,
         segment_id: &str,
