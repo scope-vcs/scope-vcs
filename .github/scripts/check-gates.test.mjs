@@ -78,22 +78,24 @@ test('local and both CI callers use the shared inventory', () => {
   assert.doesNotMatch(read('.github/workflows/scope-web-ci.yml'), /rust-toolchain|rust-cache/);
 });
 
-// Suites that need tools the shared gates do not install.
-const testsOutsideSharedGates = new Set([
-  // Needs cryptography; recovery-execute.yml runs it before each capture.
-  'deploy/aws/recovery/tests/test_recovery.py',
+// Suites that need tools the shared gates do not install, with the workflow
+// that runs them instead.
+const testsOutsideSharedGates = new Map([
+  // Needs cryptography; recovery runs it before each capture.
+  ['deploy/aws/recovery/tests/test_recovery.py', '.github/workflows/recovery-execute.yml'],
   // Builds the release images with Docker; ops only checks its syntax.
-  'deploy/railway/test-runtime-containers.sh',
+  ['deploy/railway/test-runtime-containers.sh', null],
 ]);
 
-// A gate runs a test file directly, or through a unittest discovery whose
-// directory and pattern match it.
+// A gate runs a test file directly, or through a unittest discovery that
+// starts at or above its directory and whose pattern matches it.
 function runsTest(command, path) {
   const args = command.split(' ');
   if (args.includes('discover')) {
     const option = (flag, fallback) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : fallback);
     const pattern = new RegExp(`^${option('-p', 'test*.py').replaceAll('.', '\\.').replaceAll('*', '.*')}$`);
-    return dirname(path) === option('-s') && pattern.test(basename(path));
+    const start = option('-s', '.');
+    return (dirname(path) === start || dirname(path).startsWith(`${start}/`)) && pattern.test(basename(path));
   }
   return args.includes(path) && !['-n', '--check', 'py_compile'].some((flag) => args.includes(flag));
 }
@@ -106,6 +108,11 @@ test('every deployment, benchmark, and developer tooling test is run by a shared
       && existsSync(resolve(root, path)) && !testsOutsideSharedGates.has(path));
   for (const path of tests) {
     assert.ok(invoked.some((command) => runsTest(command, path)), `${path} has no test gate`);
+  }
+  for (const [path, workflow] of testsOutsideSharedGates) {
+    if (workflow === null) continue;
+    const runs = read(workflow).split('\n').some((line) => runsTest(line.trim(), path));
+    assert.ok(runs, `${workflow} must run ${path}`);
   }
 });
 
@@ -417,7 +424,7 @@ test('staging verifies pinned Git before credentials or deployment mutations', (
 
 test('every external action and reusable workflow is pinned to a full commit SHA', () => {
   const unpinned = readdirSync(resolve(root, '.github/workflows')).filter((name) => /\.ya?ml$/.test(name)).flatMap((name) => (
-    [...read(`.github/workflows/${name}`).matchAll(/^\s*(?:-\s+)?uses:\s*['"]?([^\s'"#]+)/gm)]
+    [...read(`.github/workflows/${name}`).matchAll(/^\s*(?:-\s+)?['"]?uses['"]?\s*:\s*['"]?([^\s'"#]+)/gm)]
       .map(([, action]) => action)
       .filter((action) => !action.startsWith('./') && !/@[0-9a-f]{40}$/.test(action))
       .map((action) => `${name}: ${action}`)
