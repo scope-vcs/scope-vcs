@@ -132,19 +132,15 @@ pub fn commit_upload(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EvictionDecision {
     Retain,
-    RemoveReference {
-        deletion: DeletionCandidate,
-    },
-    DeleteObject {
-        repository_id: crate::RepositoryId,
-        object_digest: CacheDigest,
-    },
+    RemoveReference { deletion: DeletionCandidate },
 }
 
 /// Decide whether a selected logical reference should be removed.
 ///
 /// When a repository is over budget, the persistence adapter selects the least
-/// recently used reference and passes it here. This function owns the actual rule.
+/// recently used reference and passes it here. This function decides removal and
+/// the deletion grace period; `claim_deletions` in the Postgres cache service
+/// deletes the object once it is past the grace period and unreferenced.
 pub fn decide_reference_eviction(
     reference: &CacheReference,
     repository_storage_bytes: u64,
@@ -156,21 +152,6 @@ pub fn decide_reference_eviction(
         })
     } else {
         Ok(EvictionDecision::Retain)
-    }
-}
-
-pub fn decide_object_deletion(
-    candidate: &DeletionCandidate,
-    live_reference_count: u64,
-    now_unix: u64,
-) -> EvictionDecision {
-    if live_reference_count > 0 || now_unix < candidate.eligible_after_unix() {
-        EvictionDecision::Retain
-    } else {
-        EvictionDecision::DeleteObject {
-            repository_id: candidate.repository_id().clone(),
-            object_digest: candidate.object_digest().clone(),
-        }
     }
 }
 
@@ -413,18 +394,6 @@ mod tests {
             deletion.eligible_after_unix(),
             reference.expires_at_unix() + DELETION_GRACE_SECONDS
         );
-        assert_eq!(
-            decide_object_deletion(&deletion, 1, deletion.eligible_after_unix()),
-            EvictionDecision::Retain
-        );
-        assert_eq!(
-            decide_object_deletion(&deletion, 0, deletion.eligible_after_unix() - 1),
-            EvictionDecision::Retain
-        );
-        assert!(matches!(
-            decide_object_deletion(&deletion, 0, deletion.eligible_after_unix()),
-            EvictionDecision::DeleteObject { .. }
-        ));
 
         assert!(matches!(
             decide_reference_eviction(&reference, MAX_REPOSITORY_CACHE_BYTES + 1, 20,),

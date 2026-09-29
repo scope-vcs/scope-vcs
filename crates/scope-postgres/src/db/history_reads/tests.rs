@@ -137,7 +137,6 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
     .expect("public access must reuse current projection facts")
     .unwrap()
     .unwrap();
-    assert!(public_access.can_read_root());
     let expected_public = history_view(
         &repo.graph,
         &repo.visibility_change_sets,
@@ -146,9 +145,9 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
     let public = store
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
-            incarnation: &repo.incarnation(),
-            version: repo.record.change_version,
-            audience: ProjectionViewKey::Public,
+            incarnation: &public_access.incarnation(),
+            version: public_access.record.change_version,
+            audience: ProjectionViewKey::from_access(public_access.access),
             feed: HistoryFeed::All,
             before: None,
             entry_source_id: None,
@@ -480,12 +479,38 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
             .map(|user| repo.access_for_user_id(user))
             .unwrap_or_else(scope_domain::repository::access::RepositoryAccess::public);
         assert_eq!(narrow.access, expected);
-        assert_eq!(
-            narrow.root_visibility,
-            repo.policy.effective_visibility(&ScopePath::root())
-        );
         if user.is_none() {
-            assert!(!narrow.can_read_root());
+            let public = store
+                .repositories()
+                .repository_history_page(RepositoryHistoryQuery {
+                    incarnation: &narrow.incarnation(),
+                    version: narrow.record.change_version,
+                    audience: ProjectionViewKey::from_access(narrow.access),
+                    feed: HistoryFeed::All,
+                    before: None,
+                    entry_source_id: None,
+                    limit: 50,
+                })
+                .await
+                .unwrap();
+            assert_eq!(
+                public.view.entries,
+                history_view(
+                    &repo.graph,
+                    &repo.visibility_change_sets,
+                    ProjectionViewKey::Public
+                )
+                .entries
+            );
+            assert_ne!(
+                public.view.entries,
+                history_view(
+                    &repo.graph,
+                    &repo.visibility_change_sets,
+                    ProjectionViewKey::Private
+                )
+                .entries
+            );
         }
     }
     assert!(

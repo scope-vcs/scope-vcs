@@ -22,7 +22,6 @@ struct AccessRow {
     website_url: Option<String>,
     publication_state: String,
     change_version: i64,
-    root_visibility: String,
 }
 
 impl RepositoryStore {
@@ -200,19 +199,24 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
     let Some(row) = Entity::find()
         .select_only()
         .columns([
-            Column::Id, Column::IncarnationId, Column::OwnerHandle, Column::Name,
-            Column::OwnerUserId, Column::Description, Column::WebsiteUrl,
-            Column::PublicationState, Column::ChangeVersion,
+            Column::Id,
+            Column::IncarnationId,
+            Column::OwnerHandle,
+            Column::Name,
+            Column::OwnerUserId,
+            Column::Description,
+            Column::WebsiteUrl,
+            Column::PublicationState,
+            Column::ChangeVersion,
         ])
-        .expr_as(sea_orm::sea_query::Expr::cust(
-            "COALESCE(jsonb_path_query_first(policy, '$.rules[*] ? (@.path == \"/\")')->>'visibility', policy->>'default_visibility')"
-        ), "root_visibility")
         .filter(Column::Id.eq(repo_id))
         .into_model::<AccessRow>()
         .one(conn)
         .await
         .map_err(PostgresError::internal)?
-    else { return Ok(None); };
+    else {
+        return Ok(None);
+    };
     let record = RepoRecord {
         id: row.id,
         incarnation_id: row.incarnation_id,
@@ -252,11 +256,7 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
             )
         }
     };
-    Ok(Some(RepositoryAccessContext {
-        record,
-        access,
-        root_visibility: entities::decode_enum(row.root_visibility)?,
-    }))
+    Ok(Some(RepositoryAccessContext { record, access }))
 }
 
 fn ensure_current_context(

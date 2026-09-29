@@ -349,26 +349,6 @@ impl DeletionCandidate {
         })
     }
 
-    pub fn restore(
-        repository_id: RepositoryId,
-        object_digest: CacheDigest,
-        eligible_after_unix: u64,
-    ) -> Self {
-        Self {
-            repository_id,
-            object_digest,
-            eligible_after_unix,
-        }
-    }
-
-    pub fn repository_id(&self) -> &RepositoryId {
-        &self.repository_id
-    }
-
-    pub fn object_digest(&self) -> &CacheDigest {
-        &self.object_digest
-    }
-
     pub fn eligible_after_unix(&self) -> u64 {
         self.eligible_after_unix
     }
