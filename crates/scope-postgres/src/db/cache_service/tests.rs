@@ -242,16 +242,8 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
     );
 }
 
-#[test]
-fn job_errors_are_bounded_and_never_empty() {
-    use super::retention::bounded_job_error;
-    assert_eq!(bounded_job_error(""), "cache object deletion failed");
-    assert_eq!(bounded_job_error("disk full"), "disk full");
-    assert_eq!(bounded_job_error(&"x".repeat(9_000)).chars().count(), 8_192);
-}
-
 #[tokio::test]
-async fn failed_deletions_with_empty_errors_stay_retryable() {
+async fn failed_deletions_store_bounded_errors_and_stay_retryable() {
     let target = TestDatabaseTarget::required().unwrap();
     let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
     let repository_id = seed_repository(&store);
@@ -280,7 +272,12 @@ async fn failed_deletions_with_empty_errors_stay_retryable() {
     let deletions = caches.claim_deletions(due, due + 60, 10).await.unwrap();
     assert_eq!(deletions.len(), 1);
 
-    for error in ["", "delete failed"] {
+    let oversized_error = "x".repeat(9_000);
+    for (error, expected) in [
+        ("", "cache object deletion failed".to_string()),
+        ("delete failed", "delete failed".to_string()),
+        (oversized_error.as_str(), "x".repeat(8_192)),
+    ] {
         caches
             .fail_deletion(&deletions[0], due + 1, error)
             .await
@@ -297,14 +294,7 @@ async fn failed_deletions_with_empty_errors_stay_retryable() {
             .unwrap()
             .try_get::<Option<String>>("", "last_error")
             .unwrap();
-        assert_eq!(
-            stored.as_deref(),
-            Some(if error.is_empty() {
-                "cache object deletion failed"
-            } else {
-                error
-            })
-        );
+        assert_eq!(stored, Some(expected));
     }
     let retried = caches.claim_deletions(due + 2, due + 60, 10).await.unwrap();
     assert_eq!(retried.len(), 1);

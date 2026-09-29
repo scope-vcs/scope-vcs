@@ -414,7 +414,7 @@ async fn expire_reference_row(
 
 /// Both cache retry tables constrain `last_error` to 1..=8192 characters, so a
 /// failure text is truncated and an empty one is replaced before it is stored.
-pub(super) fn bounded_job_error(error: &str) -> String {
+fn bounded_job_error(error: &str) -> String {
     let bounded = error.chars().take(8192).collect::<String>();
     if bounded.is_empty() {
         "cache object deletion failed".to_string()

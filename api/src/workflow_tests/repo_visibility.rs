@@ -101,38 +101,6 @@ async fn public_files_use_the_projected_blob() {
 }
 
 #[tokio::test]
-async fn file_content_falls_back_to_the_domain_while_projection_rebuilds() {
-    let state = test_state_with_repo();
-    mutate_repo(&state, |repo| {
-        repo.graph.commits.push(logical_commit(
-            "rv1",
-            "public version",
-            vec![history_change(
-                "/README.md",
-                Visibility::Public,
-                None,
-                Some(source_blob(&state, "public readme")),
-            )],
-        ));
-    })
-    .await;
-
-    let response = api_request(
-        router(state),
-        "GET",
-        "/v1/repos/owner/repo/files/content?path=README.md",
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response_json(response).await["content"]["text"],
-        "public readme"
-    );
-}
-
-#[tokio::test]
 async fn public_file_content_uses_visible_domain_state_while_projection_rebuilds() {
     let state = test_state_with_repo();
     mutate_repo(&state, |repo| {
@@ -142,7 +110,7 @@ async fn public_file_content_uses_visible_domain_state_while_projection_rebuilds
     .await;
 
     let response = api_request(
-        router(state),
+        router(state.clone()),
         "GET",
         "/v1/repos/owner/repo/files/content?path=README.md",
         None,
@@ -151,6 +119,15 @@ async fn public_file_content_uses_visible_domain_state_while_projection_rebuilds
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response_json(response).await["content"]["text"], "hello");
+    let private = api_request(
+        router(state),
+        "GET",
+        "/v1/repos/owner/repo/files/content?path=secret.txt",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(private.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

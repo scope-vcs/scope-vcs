@@ -116,15 +116,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn multipart_error_keeps_its_source() {
-        let error = BackendError::with_source("S3 get object failed", io::Error::other("closed"));
-
-        assert_eq!(error.to_string(), "S3 get object failed: closed");
-        assert_eq!(error.source().unwrap().to_string(), "closed");
-    }
-
-    #[test]
-    fn multipart_error_diagnostic_includes_the_complete_source_chain() {
+    fn backend_error_display_includes_the_complete_source_chain() {
         #[derive(Debug, thiserror::Error)]
         #[error("dispatch failure")]
         struct DispatchError {
@@ -143,5 +135,6 @@ mod tests {
             error.to_string(),
             "S3 get object failed: dispatch failure: runtime dropped the dispatch task"
         );
+        assert_eq!(error.source().unwrap().to_string(), "dispatch failure");
     }
 }

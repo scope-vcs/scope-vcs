@@ -296,7 +296,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn object_reads_forward_the_smaller_limit_and_stop_at_capacity() {
+    async fn object_store_budget_bounds_sizes_and_operations_but_not_readiness() {
         let raw = Arc::new(RecordingReadStore::default());
         let budgets = Arc::new(RuntimeBudgets::from_config(RuntimeBudgetConfig {
             object_store_concurrency: 1,
@@ -315,20 +315,42 @@ mod tests {
             vec![42; 16]
         );
         assert_eq!(raw.limit.load(Ordering::SeqCst), 16);
-        assert_eq!(
-            store.put("large", vec![0; 17]).await.unwrap_err().kind,
-            ObjectStoreErrorKind::PayloadTooLarge
-        );
+
+        let write = store.put("large", vec![0; 17]).await.unwrap_err();
+        raw.put("oversized", vec![0; 17]).await.unwrap();
+        let read = read_bounded(&store, "oversized", usize::MAX)
+            .await
+            .unwrap_err();
+        for (error, message) in [
+            (
+                write,
+                "object store write for large is too large: 17 bytes exceeds 16 bytes",
+            ),
+            (
+                read,
+                "object store read for oversized is too large: 17 bytes exceeds 16 bytes",
+            ),
+        ] {
+            assert_eq!(error.kind, ObjectStoreErrorKind::PayloadTooLarge);
+            assert_eq!(error.message, message);
+        }
+
         let _occupied = budgets.try_object_store("test").unwrap();
+        let exhausted = read_bounded(&store, "object", 1).await.unwrap_err();
+        assert_eq!(exhausted.kind, ObjectStoreErrorKind::CapacityExhausted);
         assert_eq!(
-            read_bounded(&store, "object", 1).await.unwrap_err().kind,
-            ObjectStoreErrorKind::CapacityExhausted
+            exhausted.message,
+            "object store read capacity is exhausted; retry later"
         );
         assert_eq!(
             raw.limit.load(Ordering::SeqCst),
             16,
             "exhausted capacity must prevent the backend read"
         );
+        store
+            .readiness_check()
+            .await
+            .expect("readiness must not wait for an operation permit");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
