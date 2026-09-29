@@ -44,6 +44,16 @@ fn request_file_response_maps_type_changes_and_private_visibility() {
             ApiVisibility::Private
         )]
     );
+    let file = &files[0];
+    assert_eq!(
+        (
+            file.old_mode.as_deref(),
+            file.new_mode.as_deref(),
+            file.old_oid.as_deref(),
+            file.new_oid.as_deref(),
+        ),
+        (Some("100644"), Some("100755"), Some("old"), Some("new"))
+    );
 }
 
 #[test]

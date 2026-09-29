@@ -120,6 +120,17 @@ fn malformed_records_keep_their_error_categories_and_diagnostics() {
         assert_eq!(error.public_message(), expected.public_message());
         assert_eq!(error.operator_diagnostic(), expected.operator_diagnostic());
     }
+    // A hidden change does not stop validation of the records after it.
+    let error = inspect_request_changes(
+        b":100644 100644 old new A\0private.txt\0malformed\0",
+        &Policy::new(Visibility::Private),
+        RepositoryAccess::public(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.operator_diagnostic(),
+        ApiError::internal_message("invalid request diff header malformed").operator_diagnostic()
+    );
     for bytes in [
         &b"\xff\0file\0"[..],
         &b":100644 100644 old new M\0\xff\0"[..],
