@@ -95,7 +95,7 @@ const alwaysOnGateInputs = [
   // railway-ssh.test.mjs runs the pinned OpenSSH wrapper in the operations gate.
   /^deploy\/railway\/(ssh-bin\/ssh|ssh_known_hosts)$/,
   /^bench\//, /^deploy\/(aws|postgres|automation)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
-  /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py)$/,
+  /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py|install-test-postgres\.sh)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/, /^\.scope\/runs\/checks\.yml$/,
   /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-tests|deployment-watcher-heartbeat|maintenance-runtime)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
@@ -138,6 +138,11 @@ test('gate inputs select a lane unless the always-on gates own them', () => {
   }
   for (const gate of ['ops', 'policy']) {
     for (const caller of ['ci', 'release']) assert.ok(read(`.github/workflows/${caller}.yml`).includes(`dev/checks/${gate}`), `${caller} must always run ${gate}`);
+  }
+  // PostgreSQL cluster tests skip locally but must fail, not skip, in CI.
+  for (const caller of ['ci', 'release']) {
+    const ops = read(`.github/workflows/${caller}.yml`).split('\n  ops:\n')[1].split(/\n  [\w-]+:\n/)[0];
+    assert.match(ops, /SCOPE_REQUIRE_POSTGRES_CLUSTER: '1'\n\s+run: \.\/dev\/checks\/ops\n/, `${caller} ops must require the PostgreSQL cluster tests`);
   }
 });
 
