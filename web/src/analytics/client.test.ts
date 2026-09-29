@@ -17,7 +17,7 @@ test('real client preserves event identities and stores nothing on the device', 
     return Response.json({ status: 1 })
   })
   try {
-    const context = analyticsEventContext({ environment: 'test', release: null, token: 'phc_test' })
+    const context = analyticsEventContext({ environment: 'test', release: 'web-abc123', token: 'phc_test' })
     const client = new AnalyticsClient('phc_test', 'https://scopevcs.com')
     registerAnalyticsEventContext(client, context)
     const anonymousId = client.get_distinct_id()
@@ -37,6 +37,10 @@ test('real client preserves event identities and stores nothing on the device', 
     assert.equal(captured[1].properties.$process_person_profile, true)
     assert.equal(captured[2].properties.distinct_id, afterLogout)
     assert.equal(captured[2].properties.$process_person_profile, false)
+    assert.equal(captured[2].properties.$user_id, undefined)
+    assert.equal(captured[2].properties.environment, 'test')
+    assert.equal(captured[2].properties.release, 'web-abc123')
+    assert.equal(captured[2].properties.source, 'browser')
     assert.equal(storage.size, 0)
   } finally {
     restore()
@@ -50,7 +54,7 @@ test('identify without anonymous events switches identity without $identify', as
     return Response.json({ status: 1 })
   })
   try {
-    const context = analyticsEventContext({ environment: 'test', release: null, token: 'phc_test' })
+    const context = analyticsEventContext({ environment: 'test', release: 'web-abc123', token: 'phc_test' })
     const client = new AnalyticsClient('phc_test', 'https://scopevcs.com')
     registerAnalyticsEventContext(client, context)
     client.capture('unexpected_event')
@@ -59,9 +63,12 @@ test('identify without anonymous events switches identity without $identify', as
     // Replacing a signed-in user resets first, leaving no anonymous events to merge.
     applyAnalyticsIdentityTransition(client, 'scope_usr_two', context)
     client.capture('$pageview', homePageView())
-    await until(() => captured.length === 2)
+    await until(() => captured.length >= 2)
     assert.deepEqual(captured.map(value => value.event), ['$pageview', '$pageview'])
     assert.deepEqual(captured.map(value => value.properties.distinct_id), ['scope_usr_one', 'scope_usr_two'])
+    assert.equal(captured[1].properties.environment, 'test')
+    assert.equal(captured[1].properties.release, 'web-abc123')
+    assert.equal(captured[1].properties.source, 'browser')
   } finally {
     restore()
   }

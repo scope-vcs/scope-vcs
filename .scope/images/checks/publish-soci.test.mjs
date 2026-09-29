@@ -55,13 +55,41 @@ test('rejects mutable source tags and malformed or ambiguous executable children
   for (const index of [{}, wrongPlatform, badDigest, extraChild]) assert.notEqual(publish(t, index).result.status, 0);
 });
 
-test('workflow gates local publishing and mutable main/release promotion on scans', () => {
-  const workflow = readFileSync(new URL('../../../.github/workflows/scope-checks-image.yml', import.meta.url), 'utf8');
-  assert(workflow.indexOf('- name: Scan verified executable image') < workflow.indexOf('- name: Publish verified image'));
-  const childScan = workflow.indexOf('- name: Publish raw and SOCI v2 variants');
-  const promotion = workflow.indexOf('- name: Promote scanned image to main');
-  assert(childScan > 0 && promotion > childScan);
-  assert(workflow.indexOf('- name: Record published digest') > promotion);
-  assert.equal((workflow.match(/docker push "\$\{GHCR_IMAGE_NAME\}:main"/g) ?? []).length, 1);
-  assert.match(workflow, /GHCR_IMAGE: \$\{\{ env.GHCR_IMAGE_NAME \}\}@\$\{\{ steps.image.outputs.digest \}\}/);
+test('workflow scans before publishing and keeps failure gates on promotion', (t) => {
+  const parsed = spawnSync('python3', ['-c',
+    'import json,sys,yaml; print(json.dumps(yaml.safe_load(sys.stdin)["jobs"]["build"]["steps"]))'], {
+    input: readFileSync(new URL('../../../.github/workflows/scope-checks-image.yml', import.meta.url), 'utf8'),
+    encoding: 'utf8',
+  });
+  assert.equal(parsed.status, 0, parsed.stderr);
+  const steps = JSON.parse(parsed.stdout);
+  const [scan, push, soci, promote] = ['scan-image.sh', 'docker push', 'publish-soci-image.sh', 'docker tag'].map((command) => {
+    const index = steps.findIndex((step) => step.run?.includes(command));
+    assert(index >= 0, `missing workflow command: ${command}`);
+    return index;
+  });
+  assert(scan < push && push < soci && soci < promote, 'scan must precede publication and SOCI must precede promotion');
+  assert.doesNotMatch(steps.slice(0, soci).map((step) => step.run ?? '').join('\n'), /^\s*(?:echo|printf|docker\s+(?:push|tag))\b[^\n]*:main\b/m, 'mutable main tag must follow the SOCI scan');
+  for (const index of [scan, push, soci, promote]) {
+    assert.notEqual(steps[index]['continue-on-error'], true, 'scan and publication errors must stop the job');
+    assert.doesNotMatch(steps[index].if ?? '', /\b(?:always|failure|cancelled)\s*\(/, 'publication must require prior success');
+  }
+  assert.equal(steps[scan].env.IMAGE, steps[push].env.IMAGE, 'scan and push must use the same image');
+  assert.equal(steps[promote].env.IMAGE, steps[push].env.IMAGE, 'promotion must use the scanned image');
+  assert(steps[soci].env.GHCR_IMAGE.replace(/\s/g, '').endsWith('@${{steps.' + steps[push].id + '.outputs.digest}}'), 'SOCI must use the published digest');
+
+  const { root, result } = publish(t, manifest());
+  assert.equal(result.status, 0, result.stderr);
+  writeFileSync(join(root, '.github/scripts/publish-soci-image.sh'), '#!/bin/bash\nexit "$SCAN_STATUS"\n', { mode: 0o755 });
+  for (const status of [0, 1, 2, 124]) {
+    for (const index of [scan, soci]) {
+      const scanResult = spawnSync('bash', ['-e', '-u', '-o', 'pipefail', '-c', steps[index].run], {
+        cwd: root, encoding: 'utf8',
+        env: { ...process.env, IMAGE: 'registry.test/checks:verified', FIXTURE_ROOT: root, SCAN_STATUS: String(status),
+          GHCR_IMAGE: 'source', RAW_IMAGE: 'raw', SOCI_IMAGE: 'soci', ECR_REPOSITORY: 'checks', RAW_TAG: 'raw', SOCI_TAG: 'soci' },
+      });
+      assert.equal(scanResult.status, status, 'workflow must propagate scan and SOCI exit status');
+    }
+    assert.equal(readFileSync(join(root, 'scan-args'), 'utf8'), 'docker\nregistry.test/checks:verified\nchecks-image-scan.json\n');
+  }
 });

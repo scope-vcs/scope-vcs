@@ -14,34 +14,56 @@ test('invalid queries stop publication before any dashboard or insight mutation'
 
 test('sync reuses tagged insights across pagination and preserves other dashboard associations', async () => {
   const calls = []
-  const request = async (path, options = {}) => {
-    calls.push({ path, ...options })
-    if (path === 'query/') return { results: [] }
-    if (path === 'dashboards/') return { results: [], next: 'dashboards/?offset=1' }
-    if (path === 'dashboards/?offset=1') return { results: [{ id: 9, name: 'Scope product outcomes' }], next: null }
-    if (path === 'insights/?dashboards=%5B9%5D') return { results: [{ id: 12, tags: ['mine', 'scope-product-report:activation'], dashboards: [4, 9] }], next: null }
-    if (path === 'insights/12/') return { id: 12 }
-    throw new Error(`Unexpected ${path}`)
+  const request = async (path, { method = 'GET', body } = {}) => {
+    calls.push({ path, method, body })
+    if (method === 'POST' && path === 'query/') return { results: [] }
+    if (method === 'GET' && path === 'dashboards/') return { results: [], next: 'dashboards/?offset=1' }
+    if (method === 'GET' && path === 'dashboards/?offset=1') return { results: [{ id: 9, name: 'Scope product outcomes' }], next: null }
+    if (method === 'GET' && path === 'insights/?dashboards=%5B9%5D') return { results: [{ id: 12, tags: ['mine', 'scope-product-report:activation'], dashboards: [4, 9] }], next: null }
+    if (method === 'PATCH' && path === 'insights/12/') return { id: 12 }
+    throw new Error(`Unexpected ${method} ${path}`)
   }
-  for (let run = 0; run < 2; run++) assert.equal((await syncProductReports(request, [report])).dashboardId, 9)
+  assert.equal((await syncProductReports(request, [report])).dashboardId, 9)
   const writes = calls.filter((call) => call.method === 'PATCH')
-  assert.equal(writes.length, 2)
+  assert.equal(writes.length, 1)
   assert.deepEqual(writes[0].body.dashboards, [4, 9])
   assert.deepEqual(writes[0].body.tags, ['mine', 'scope-product-report:activation'])
   assert.equal(calls.some((call) => call.method === 'POST' && call.path !== 'query/'), false)
 })
 
 test('missing reports create one dashboard and attach the new insight', async () => {
-  const request = async (path, options = {}) => {
-    if (path === 'query/') return { results: [] }
-    if (options.method === 'GET' || !options.method) return { results: [], next: null }
-    if (path === 'dashboards/') return { id: 2 }
-    assert.deepEqual(options.body.dashboards, [2])
-    return { id: 3, short_id: 'abc' }
+  const calls = []
+  const request = async (path, { method = 'GET', body } = {}) => {
+    calls.push({ path, method })
+    if (method === 'POST' && path === 'query/') {
+      assert.deepEqual(body.query, report.query.source)
+      assert.equal(body.refresh, 'blocking')
+      return { results: [] }
+    }
+    if (method === 'GET' && ['dashboards/', 'insights/?dashboards=%5B2%5D'].includes(path)) return { results: [], next: null }
+    if (method === 'POST' && path === 'dashboards/') {
+      assert.equal(body.name, 'Scope product outcomes')
+      return { id: 2 }
+    }
+    if (method === 'POST' && path === 'insights/') {
+      assert.deepEqual(body, {
+        name: report.name, description: report.description, query: report.query,
+        tags: ['scope-product-report:activation'], dashboards: [2],
+      })
+      return { id: 3, short_id: 'abc' }
+    }
+    throw new Error(`Unexpected ${method} ${path}`)
   }
   assert.deepEqual(await syncProductReports(request, [report]), {
     dashboardId: 2, insights: [{ key: 'activation', id: 3, shortId: 'abc' }],
   })
+  assert.deepEqual(calls, [
+    { path: 'query/', method: 'POST' },
+    { path: 'dashboards/', method: 'GET' },
+    { path: 'dashboards/', method: 'POST' },
+    { path: 'insights/?dashboards=%5B2%5D', method: 'GET' },
+    { path: 'insights/', method: 'POST' },
+  ])
 })
 
 test('API transport refuses foreign pagination and reports upstream failure without leaking a body', async () => {
