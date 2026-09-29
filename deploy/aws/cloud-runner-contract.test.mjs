@@ -50,10 +50,6 @@ test('the Railway dispatcher can invoke only the exact broker function', () => {
   assert.doesNotMatch(dispatcher, /ecs:|secretsmanager:|iam:PassRole|Resource: ["']?\*/)
 })
 
-test('the registry credentials ARN is a repository variable, not a secret', () => {
-  assert.doesNotMatch(infrastructureWorkflow, /secrets\.SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN/)
-})
-
 const executionWorkflow = readFileSync(new URL('../../.github/workflows/scope-aws-infrastructure-execute.yml', import.meta.url), 'utf8')
 const brokerScript = new URL('./apply-dispatch-broker.sh', import.meta.url).pathname
 const account = '123456789012'

@@ -164,8 +164,11 @@ test('imported releases extract smoke tools and initialize private credentials',
   for (const name of ['Extract candidate commands', 'Initialize smoke credentials directory']) {
     assert.doesNotMatch(workflowStep(name), /\n        if:/);
   }
+  // The archive exercised above must be the one the preparation workflow builds and uploads.
   const preparation = readFileSync(new URL('../workflows/prepare-smoke-tools.yml', import.meta.url), 'utf8');
-  assert.match(preparation, /name: Build smoke binaries/);
-  assert.match(preparation, /name: Upload staging commands/);
+  const artifact = 'name: staging-commands-${{ inputs.source_sha }}';
+  assert.ok(preparation.includes(artifact) && workflowStep('Download prepared candidate artifacts').includes(artifact));
+  assert.match(preparation, /tar -czf artifacts\/staging-commands\.tar\.gz /);
+  assert.match(preparation, /path: \|\n\s+artifacts\/staging-commands\.tar\.gz\n\s+artifacts\/staging-commands\.json\n\s+if-no-files-found: error/);
   assert.match(workflowStep('Issue smoke login without resetting existing data'), /run: bash \.\.\/\.github\/scripts\/staging-smoke-seed\.sh\n/);
 });

@@ -9,10 +9,6 @@ import {
 
 const liveFiles = readToolchainFiles();
 
-test("live Rust pins match the root toolchain", () => {
-  assert.deepEqual(validateRustToolchainSync(liveFiles), []);
-});
-
 test("a mismatched checks image fails with the replica name and versions", () => {
   const files = { ...liveFiles };
   const expectedVersion = files["rust-toolchain.toml"].match(

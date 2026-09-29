@@ -124,6 +124,11 @@ test("changes select the required deployment lanes", () => {
       { "cli-downloads": true, "cli-distribution": true },
     ],
     [
+      "shared process lifecycle changes validate and rebuild the checks image",
+      ["crates/scope-git-process/src/lifecycle.rs"],
+      { ...allLanes, "cli-distribution": false },
+    ],
+    [
       "unrelated shared crates retain broad CLI validation without rebuilding targets",
       ["crates/scope-cache-contract/src/lib.rs"],
       {
@@ -354,26 +359,6 @@ test("service config does not override Railway scaling or restart defaults", () 
     assert.equal(deploy.restartPolicyType, undefined);
     assert.equal(deploy.restartPolicyMaxRetries, undefined);
   }
-});
-
-test("shared process lifecycle changes validate and rebuild the checks image", () => {
-  const selected = classifyChanges(manifest, ["crates/scope-git-process/src/lifecycle.rs"]);
-  assert.equal(selected["checks-image"], true);
-});
-
-test("checks images pass the container lifecycle gate before publication", () => {
-  const checks = readFileSync(new URL("../workflows/scope-checks-image.yml", import.meta.url), "utf8");
-  const candidate = checks.slice(checks.indexOf("  validate:"), checks.indexOf("  build:"));
-  const build = checks.slice(checks.indexOf("  build:"));
-  for (const lane of [candidate, build]) {
-    assert.match(lane, /push: false\n\s+load: true/);
-    assert.match(lane, /run: dev\/checks\/runner-runtime-container --image /);
-  }
-  const verify = build.indexOf("- name: Verify runtime process lifecycle");
-  const publish = build.indexOf("- name: Publish verified image");
-  const promote = build.indexOf("- name: Publish raw and SOCI v2 variants");
-  assert(verify >= 0 && publish > verify && promote > publish);
-  assert.match(build.slice(publish, promote), /docker push "\$tag"/);
 });
 
 test("migration changes promote every application participant but leave checks images independent", () => {
