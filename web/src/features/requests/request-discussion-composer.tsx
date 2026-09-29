@@ -63,7 +63,7 @@ export function RequestReplyComposer({
   onCancel: () => void
   onCancelQuote: () => void
   onSubmit: (body: string, submissionId: string) => Promise<boolean>
-  quote: { author: string; body: string } | null
+  quote: { author: string; body: string; id: string } | null
   reopen: boolean
   waitAfterReply?: (body: string, submissionId: string) => Promise<boolean>
 }) {

@@ -383,6 +383,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                       ? {
                           author: actorHandle(quotedReply.author),
                           body: compactDiscussionSummary(quotedReply.body_markdown),
+                          id: quotedReply.id,
                         }
                       : null
                   }

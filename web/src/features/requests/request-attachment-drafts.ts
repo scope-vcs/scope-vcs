@@ -37,7 +37,6 @@ type RequestAttachmentDraft = {
   baseText: string | null
   initialized: boolean
   pending: boolean
-  replyToReplyId: string | null
   submission: { id: string; payload: string } | null
   text: string
 }
@@ -327,7 +326,7 @@ function evictIdleDrafts() {
 }
 
 function emptyDraft(): RequestAttachmentDraft {
-  return { attachments: [], baseText: null, initialized: false, pending: false, replyToReplyId: null, submission: null, text: '' }
+  return { attachments: [], baseText: null, initialized: false, pending: false, submission: null, text: '' }
 }
 
 function parseDraftKey(key: string) {
@@ -380,7 +379,6 @@ function persist(key: string, draft: RequestAttachmentDraft) {
       baseText: draft.baseText,
       initialized: draft.initialized,
       submission: draft.submission,
-      replyToReplyId: draft.replyToReplyId,
       text: draft.text,
     }))
   } catch {
@@ -395,7 +393,7 @@ function restore(key: string): RequestAttachmentDraft {
     if (!raw) return emptyDraft()
     const value: unknown = JSON.parse(raw)
     if (!value || typeof value !== 'object') return emptyDraft()
-    const record = value as { attachments?: unknown; baseText?: unknown; initialized?: unknown; submission?: unknown; replyToReplyId?: unknown; text?: unknown }
+    const record = value as { attachments?: unknown; baseText?: unknown; initialized?: unknown; submission?: unknown; text?: unknown }
     const attachments = Array.isArray(record.attachments)
       ? record.attachments.flatMap((item): DraftAttachment[] => {
           if (!item || typeof item !== 'object') return []
@@ -431,7 +429,6 @@ function restore(key: string): RequestAttachmentDraft {
       baseText: typeof record.baseText === 'string' ? record.baseText : null,
       initialized: record.initialized === true,
       pending: false,
-      replyToReplyId: typeof record.replyToReplyId === 'string' ? record.replyToReplyId : null,
       submission: restoredSubmission(record.submission),
       text: typeof record.text === 'string' ? record.text : '',
     }
@@ -492,9 +489,4 @@ export function runRequestContentSubmission(id: string, send: () => Promise<bool
   }).finally(() => submissions.delete(id))
   submissions.set(id, operation)
   return operation
-}
-
-export function setRequestAttachmentDraftReplyTarget(key: string, replyToReplyId: string | null) {
-  update(key, (draft) => draft.pending || draft.replyToReplyId === replyToReplyId
-    ? draft : { ...draft, replyToReplyId, submission: null })
 }
