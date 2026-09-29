@@ -103,15 +103,16 @@ function RequestDiscussionLayout() {
       result = await runRequestAction({ data: { ...requestParams, ...command } })
     } catch (error) {
       // A refused action usually means this page is stale, such as a merge of
-      // a head that has since moved. Show the current request with the error.
-      await router.invalidate().catch(() => {})
+      // a head that has since moved. Wait for the current request before another
+      // action can capture its head; background invalidation resolves too early.
+      await router.invalidate({ sync: true }).catch(() => {})
       throw error
     }
     try {
       if (result.deleted) {
         await navigate({ params: repoParams, to: '/$owner/$repo/requests' })
       } else {
-        await router.invalidate()
+        await router.invalidate({ sync: true })
       }
       return result
     } catch {
