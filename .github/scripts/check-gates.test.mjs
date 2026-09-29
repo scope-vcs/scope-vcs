@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, cpSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { classifyChanges } from './plan-production-deployment.mjs';
 import { readScopeManagedFile } from './scope-managed-files.mjs';
@@ -78,12 +78,34 @@ test('local and both CI callers use the shared inventory', () => {
   assert.doesNotMatch(read('.github/workflows/scope-web-ci.yml'), /rust-toolchain|rust-cache/);
 });
 
-test('every deployment and policy script test is run by a shared gate', () => {
+// Suites that need tools the shared gates do not install.
+const testsOutsideSharedGates = new Set([
+  // Needs cryptography; recovery-execute.yml runs it before each capture.
+  'deploy/aws/recovery/tests/test_recovery.py',
+  // Builds the release images with Docker; ops only checks its syntax.
+  'deploy/railway/test-runtime-containers.sh',
+]);
+
+// A gate runs a test file directly, or through a unittest discovery whose
+// directory and pattern match it.
+function runsTest(command, path) {
+  const args = command.split(' ');
+  if (args.includes('discover')) {
+    const option = (flag, fallback) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : fallback);
+    const pattern = new RegExp(`^${option('-p', 'test*.py').replaceAll('.', '\\.').replaceAll('*', '.*')}$`);
+    return dirname(path) === option('-s') && pattern.test(basename(path));
+  }
+  return args.includes(path) && !['-n', '--check', 'py_compile'].some((flag) => args.includes(flag));
+}
+
+test('every deployment, benchmark, and developer tooling test is run by a shared gate', () => {
   const invoked = ['ops', 'policy', 'cli'].flatMap((gate) => commands(gate));
-  for (const name of readdirSync(resolve(root, '.github/scripts'))) {
-    if (!name.endsWith('.test.mjs')) continue;
-    const path = `.github/scripts/${name}`;
-    assert.ok(invoked.some((command) => command.startsWith('node --test ') && command.split(' ').includes(path)), `${path} has no test gate`);
+  const tests = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '.github/scripts', 'bench', 'deploy', 'dev'], { cwd: root, encoding: 'utf8' })
+    .trim().split('\n')
+    .filter((path) => /(\.test\.(mjs|py)|\/test_[^/]*\.py|\/test-[^/]*\.(sh|py))$/.test(path)
+      && existsSync(resolve(root, path)) && !testsOutsideSharedGates.has(path));
+  for (const path of tests) {
+    assert.ok(invoked.some((command) => runsTest(command, path)), `${path} has no test gate`);
   }
 });
 
@@ -393,19 +415,14 @@ test('staging verifies pinned Git before credentials or deployment mutations', (
   assert.doesNotMatch(setup, /\n\s+(?:if:|continue-on-error:)/);
 });
 
-test('Node workflows cache pnpm and browser downloads by the web lockfile', () => {
-  const integrationCi = read('.github/workflows/scope-integration-ci.yml');
-  for (const workflow of [integrationCi, read('.github/workflows/rust-workspace-checks.yml'), read('.github/workflows/scope-web-ci.yml')]) {
-    assert.match(workflow, /uses: pnpm\/action-setup@[0-9a-f]{40} # v5/);
-    assert.match(workflow, /cache-dependency-path: web\/pnpm-lock\.yaml/);
-  }
-  for (const workflow of [read('.github/workflows/rust-workspace-checks.yml'), read('.github/workflows/scope-web-ci.yml')]) {
-    assert.match(workflow, /cache: pnpm/);
-  }
-  // The integration job installs web dependencies only for the web lane, so the pnpm store cache follows that lane.
-  assert.match(integrationCi, /cache: \$\{\{ inputs\.run_web && 'pnpm' \|\| '' \}\}/);
-  assert.match(integrationCi, /path: ~\/\.cache\/ms-playwright/);
-  assert.match(integrationCi, /key: playwright-\$\{\{ runner\.os \}\}-\$\{\{ hashFiles\('web\/pnpm-lock\.yaml'\) \}\}/);
+test('every external action and reusable workflow is pinned to a full commit SHA', () => {
+  const unpinned = readdirSync(resolve(root, '.github/workflows')).filter((name) => /\.ya?ml$/.test(name)).flatMap((name) => (
+    [...read(`.github/workflows/${name}`).matchAll(/^\s*(?:-\s+)?uses:\s*['"]?([^\s'"#]+)/gm)]
+      .map(([, action]) => action)
+      .filter((action) => !action.startsWith('./') && !/@[0-9a-f]{40}$/.test(action))
+      .map((action) => `${name}: ${action}`)
+  ));
+  assert.deepEqual(unpinned, []);
 });
 
 test('production success follows the complete monitored transition', () => {
@@ -431,6 +448,21 @@ test('release selection uses the trusted control revision before exposing a sour
   assert.match(candidate, /if: github\.event_name == 'pull_request'/);
   assert.doesNotMatch(candidate, /: write/);
   assert.match(checks.slice(checks.indexOf('  build:')), /if: github\.event_name != 'pull_request'/);
+});
+
+test('checks images pass the container lifecycle gate before publication', () => {
+  const checks = read('.github/workflows/scope-checks-image.yml');
+  const candidate = checks.slice(checks.indexOf('  validate:'), checks.indexOf('  build:'));
+  const build = checks.slice(checks.indexOf('  build:'));
+  for (const lane of [candidate, build]) {
+    assert.match(lane, /push: false\n\s+load: true/);
+    assert.match(lane, /run: dev\/checks\/runner-runtime-container --image /);
+  }
+  const verify = build.indexOf('- name: Verify runtime process lifecycle');
+  const publish = build.indexOf('- name: Publish verified image');
+  const promote = build.indexOf('- name: Publish raw and SOCI v2 variants');
+  assert(verify >= 0 && publish > verify && promote > publish);
+  assert.match(build.slice(publish, promote), /docker push "\$tag"/);
 });
 
 test('CI is pull-request-only and Release dispatch is owned by the watcher', () => {
@@ -524,27 +556,6 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
     assert.equal(result.status === 0, value === 'true', `assertion ${value}`);
   }
 });
-
-
-test('recovery workflow ownership includes executable policy and transport checks', () => {
-  const ops = commands('ops').join('\n');
-  assert.ok(ops.includes('python3 deploy/aws/recovery/storage.test.py'));
-  assert.ok(ops.includes('python3 -m unittest discover -s deploy/aws/recovery/tests -p test_transport.py'));
-  assert.ok(ops.includes('python3 -m py_compile .github/scripts/recovery-run.py'));
-  const contract = read('deploy/aws/recovery/storage.test.py');
-  assert.ok(contract.includes('.github/workflows/recovery.yml'));
-  assert.ok(contract.includes('.github/workflows/recovery-execute.yml'));
-});
-
-
-test('always-on operations gate executes the broker lifecycle suite', () => {
-  const ops = commands('ops');
-  assert.ok(ops.includes('python3 -m unittest discover -s deploy/aws/dispatch-broker/tests -v'));
-  for (const caller of ['ci', 'release']) {
-    assert.ok(read(`.github/workflows/${caller}.yml`).includes('dev/checks/ops'));
-  }
-});
-
 
 test('preparation can overlap CLI work while staging joins every required lane', () => {
   const release = read('.github/workflows/release.yml');

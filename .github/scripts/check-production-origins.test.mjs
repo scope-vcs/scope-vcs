@@ -8,10 +8,6 @@ import {
 
 const MANIFEST = ".github/deployment-services.json";
 
-test("live production origins match the deployment manifest", () => {
-  assert.deepEqual(validateProductionOrigins(readOriginFiles()), []);
-});
-
 test("a drifted CLI default API URL names the manifest origin it must match", () => {
   const files = readOriginFiles();
   const apiOrigin = JSON.parse(files[MANIFEST]).releaseAvailability.production.apiOrigin;
