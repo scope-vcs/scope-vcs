@@ -3,7 +3,6 @@ import { test } from 'node:test'
 import {
   ancestorFolderKeys,
   buildFileSystemTree,
-  folderCollapseKeys,
   folderVisibility,
   normalizeFilePath,
 } from './file-system-tree-model'
@@ -29,9 +28,6 @@ test('file tree normalizes, nests, sorts, and summarizes paths', () => {
   ])
   assert.deepEqual(src.files.map(({ path }) => normalizeFilePath(path)), [
     'src/components/Alert.tsx', 'src/components/Button.tsx', 'src/zeta.ts',
-  ])
-  assert.deepEqual(folderCollapseKeys(tree), [
-    'folder:/docs', 'folder:/src', 'folder:/src/components',
   ])
   assert.deepEqual(ancestorFolderKeys('/src/components/Button.tsx'), [
     'folder:/src',

@@ -31,11 +31,6 @@ export function activateRequestAttachmentResourceScope(accessScope: string) {
   scopeTracker.activate(accessScope)
 }
 
-export function resetRequestAttachmentResources() {
-  requestAttachmentResource.clear()
-  scopeTracker.reset()
-}
-
 export function requestAttachmentResourceIdentity(
   accessScope: string,
   requestId: string,

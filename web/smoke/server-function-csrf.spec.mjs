@@ -3,6 +3,11 @@ import { test } from 'node:test'
 
 const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? 'http://localhost:3000'
 const serverFunctionUrl = new URL('/_serverFn/invalid', baseUrl)
+// Forwarded headers are client-controlled, so they must not move the origin the server expects.
+// Keep the real port so only a trusted forged hostname could make the origins match.
+const forgedHost = `another.example${serverFunctionUrl.port ? `:${serverFunctionUrl.port}` : ''}`
+const forgedHostOrigin = `${serverFunctionUrl.protocol}//${forgedHost}`
+const forgedProtocol = serverFunctionUrl.protocol === 'https:' ? 'http' : 'https'
 
 test('server function requests require same-origin browser metadata', async () => {
   for (const headers of [
@@ -10,6 +15,9 @@ test('server function requests require same-origin browser metadata', async () =
     { 'Sec-Fetch-Site': 'cross-site', Origin: serverFunctionUrl.origin },
     { Origin: 'https://another.example' },
     { Referer: 'https://another.example/page' },
+    { 'X-Forwarded-Host': forgedHost, Origin: forgedHostOrigin },
+    { Forwarded: `host=${forgedHost}`, Origin: forgedHostOrigin },
+    { 'X-Forwarded-Proto': forgedProtocol, Origin: `${forgedProtocol}://${serverFunctionUrl.host}` },
     {},
   ]) {
     const response = await fetch(serverFunctionUrl, { headers })

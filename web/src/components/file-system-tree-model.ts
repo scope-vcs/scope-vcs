@@ -93,17 +93,6 @@ export function folderVisibility(
   return hasPublic ? 'Public' : 'Private'
 }
 
-export function folderCollapseKeys<TFile extends FileSystemTreeFileBase>(
-  node: Extract<FileSystemTreeNode<TFile>, { type: 'folder' }>,
-): string[] {
-  return node.children.flatMap((child) => {
-    if (child.type === 'file') {
-      return []
-    }
-    return [child.key, ...folderCollapseKeys(child)]
-  })
-}
-
 export function ancestorFolderKeys(path: string) {
   const parts = pathParts(normalizeFilePath(path)).slice(0, -1)
   return parts.map(

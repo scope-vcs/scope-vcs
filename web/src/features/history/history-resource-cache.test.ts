@@ -5,7 +5,6 @@ import {
   historyEntryCacheKey,
   historyDiffCacheKey,
   historyEntryDiffCacheKey,
-  historyResourceCacheStats,
   historyDiffResource,
   readHistoryDiffScroll,
   writeHistoryDiffScroll,
@@ -67,9 +66,21 @@ test('bounds diff entries with least-recently-used eviction', () => {
     historyDiffResource.write(`diff-${index}`, diff(`/${index}.txt`))
   }
 
-  assert.equal(historyResourceCacheStats().diffs, 20)
+  assert.equal(historyDiffResource.stats().entries, 20)
   assert.equal(historyDiffResource.read('diff-0'), null)
   assert.equal(historyDiffResource.read('diff-29')?.path, '/29.txt')
+})
+
+test('evicts large text diffs at the byte budget', () => {
+  resetViewerState()
+  const largeText = 'x'.repeat(3 * 1024 * 1024)
+  for (let index = 0; index < 6; index += 1) {
+    historyDiffResource.write(`large-${index}`, diff(`/${index}.txt`, largeText))
+  }
+
+  const stats = historyDiffResource.stats()
+  assert.ok(stats.entries < 6)
+  assert.ok(stats.totalWeight <= 32 * 1024 * 1024)
 })
 
 test('keeps diff scroll state with its bounded cache entry', () => {
@@ -83,18 +94,6 @@ test('keeps diff scroll state with its bounded cache entry', () => {
     historyDiffResource.write(`diff-${index}`, diff(`/${index}.txt`))
   }
   assert.equal(readHistoryDiffScroll('readme'), 0)
-})
-
-test('evicts large text diffs at the byte budget', () => {
-  resetViewerState()
-  const largeText = 'x'.repeat(3 * 1024 * 1024)
-  for (let index = 0; index < 6; index += 1) {
-    historyDiffResource.write(`large-${index}`, diff(`/${index}.txt`, largeText))
-  }
-
-  const stats = historyResourceCacheStats()
-  assert.ok(stats.diffs < 6)
-  assert.ok(stats.diffBytes <= 32 * 1024 * 1024)
 })
 
 test('isolates content and exact visibility preview caches for the same file and blobs', () => {
