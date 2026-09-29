@@ -1,23 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { resetViewerState } from '../../lib/viewer-state'
 import { invalidateRepoResources } from '../repo-detail/repo-resource-invalidation'
 import {
   activateRequestAttachmentMediaScope,
   requestAttachmentMediaGrantResource,
-  resetRequestAttachmentMediaGrants,
 } from './request-attachment-media-resource'
 import {
   activateRequestAttachmentResourceScope,
   requestAttachmentResource,
   requestAttachmentResourceIdentity,
-  resetRequestAttachmentResources,
 } from './request-attachment-resource'
 import type { RequestAttachmentResourceValue } from './request-attachment-resource'
 
-test.beforeEach(() => {
-  resetRequestAttachmentResources()
-  resetRequestAttachmentMediaGrants()
-})
+test.beforeEach(resetViewerState)
 
 test('attachment resources are isolated by viewer/access scope and request', () => {
   assert.notEqual(
@@ -51,13 +47,13 @@ const scope = (repo = 'repo', viewer = 'viewer', access = 'Public') =>
 const owners = [
   {
     name: 'metadata', resource: requestAttachmentResource, maxOwners: 16,
-    activate: activateRequestAttachmentResourceScope, reset: resetRequestAttachmentResources,
+    activate: activateRequestAttachmentResourceScope,
     identity: requestAttachmentResourceIdentity,
     seed: (key: string) => requestAttachmentResource.write(key, resourceValue('Processing')),
   },
   {
     name: 'media grants', resource: requestAttachmentMediaGrantResource, maxOwners: 64,
-    activate: activateRequestAttachmentMediaScope, reset: resetRequestAttachmentMediaGrants,
+    activate: activateRequestAttachmentMediaScope,
     identity: (scope: string, id: string) => `${scope}\0${id}\0${JSON.stringify({ kind: 'derivative', derivative_id: 'preview' })}`,
     seed: (key: string) => requestAttachmentMediaGrantResource.write(key, {
       media_url: '/media/attachment', grant: 'grant', expires_at_unix: 100,
@@ -66,7 +62,7 @@ const owners = [
 ]
 
 for (const owner of owners) {
-  const { resource, maxOwners, activate, reset, seed } = owner
+  const { resource, maxOwners, activate, seed } = owner
   const key = (accessScope: string, id = 'request') => owner.identity(accessScope, id)
 
   test(`${owner.name}: scope reuse retains data and changes remove only the previous scope`, () => {
@@ -123,7 +119,7 @@ for (const owner of owners) {
     assert.notEqual(resource.peek(key(anonymous.at(-1)!)), null)
   })
 
-  test(`${owner.name}: activation and reset leave the other resource's state alone`, () => {
+  test(`${owner.name}: activation leaves the other resource's state alone`, () => {
     const other = owners.find((candidate) => candidate !== owner)!
     const previous = scope()
     const next = scope('repo', 'viewer', 'Member')
@@ -134,10 +130,6 @@ for (const owner of owners) {
     other.seed(otherKey)
     activate(next)
     assert.equal(resource.peek(key(previous)), null)
-    assert.notEqual(other.resource.peek(otherKey), null)
-    seed(key(next))
-    reset()
-    assert.equal(resource.peek(key(next)), null)
     assert.notEqual(other.resource.peek(otherKey), null)
     seed(key(previous))
     activate(next)

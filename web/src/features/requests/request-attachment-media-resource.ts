@@ -20,8 +20,3 @@ onViewerChange(scopeTracker.reset)
 export function activateRequestAttachmentMediaScope(accessScope: string) {
   scopeTracker.activate(accessScope)
 }
-
-export function resetRequestAttachmentMediaGrants() {
-  requestAttachmentMediaGrantResource.clear()
-  scopeTracker.reset()
-}

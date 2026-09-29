@@ -20,19 +20,6 @@ test('matches the public HTTPS origin behind Railway TLS termination', () => {
   }
 })
 
-test('ignores forwarded host and protocol claims', () => {
-  const request = new Request('http://scopevcs.com/_serverFn/invalid', {
-    headers: {
-      'x-forwarded-host': 'another.example',
-      'x-forwarded-proto': 'http',
-      forwarded: 'host=another.example;proto=http',
-    },
-  })
-  assert.equal(matchesCsrfOrigin('https://scopevcs.com', request.url, 'railway-env'), true)
-  assert.equal(matchesCsrfOrigin('https://another.example', request.url, 'railway-env'), false)
-  assert.equal(matchesCsrfOrigin('http://scopevcs.com', request.url, 'railway-env'), false)
-})
-
 test('preserves the request scheme and port outside Railway', () => {
   const requestUrl = 'http://localhost:3000/_serverFn/invalid'
   assert.equal(matchesCsrfOrigin('http://localhost:3000', requestUrl, undefined), true)

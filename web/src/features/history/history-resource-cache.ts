@@ -87,17 +87,6 @@ export function writeHistoryDiffScroll(key: string | null, scrollTop: number) {
   if (historyDiffResource.peek(key)) diffScroll.set(key, scrollTop)
 }
 
-export function historyResourceCacheStats() {
-  const diffs = historyDiffResource.stats()
-  const entries = historyEntryResource.stats()
-  return {
-    diffBytes: diffs.totalWeight,
-    diffs: diffs.entries,
-    entryBytes: entries.totalWeight,
-    entries: entries.entries,
-  }
-}
-
 function approximateSerializedBytes(value: unknown) {
   return JSON.stringify(value).length * 2
 }
