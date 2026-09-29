@@ -4,7 +4,8 @@ import { test } from 'node:test'
 const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? 'http://localhost:3000'
 const serverFunctionUrl = new URL('/_serverFn/invalid', baseUrl)
 // Forwarded headers are client-controlled, so they must not move the origin the server expects.
-const forgedHost = 'another.example'
+// Keep the real port so only a trusted forged hostname could make the origins match.
+const forgedHost = `another.example${serverFunctionUrl.port ? `:${serverFunctionUrl.port}` : ''}`
 const forgedHostOrigin = `${serverFunctionUrl.protocol}//${forgedHost}`
 const forgedProtocol = serverFunctionUrl.protocol === 'https:' ? 'http' : 'https'
 

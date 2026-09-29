@@ -71,6 +71,18 @@ test('bounds diff entries with least-recently-used eviction', () => {
   assert.equal(historyDiffResource.read('diff-29')?.path, '/29.txt')
 })
 
+test('evicts large text diffs at the byte budget', () => {
+  resetViewerState()
+  const largeText = 'x'.repeat(3 * 1024 * 1024)
+  for (let index = 0; index < 6; index += 1) {
+    historyDiffResource.write(`large-${index}`, diff(`/${index}.txt`, largeText))
+  }
+
+  const stats = historyDiffResource.stats()
+  assert.ok(stats.entries < 6)
+  assert.ok(stats.totalWeight <= 32 * 1024 * 1024)
+})
+
 test('keeps diff scroll state with its bounded cache entry', () => {
   resetViewerState()
   historyDiffResource.write('readme', diff('/README.md'))
