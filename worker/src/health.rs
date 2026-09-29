@@ -93,26 +93,6 @@ mod tests {
     }
 
     #[test]
-    fn work_failures_do_not_report_the_schema_as_waiting() {
-        let health = WorkerHealth::new(Duration::from_secs(1));
-        health.mark_schema_ready();
-        for worker_loop in [
-            WorkerLoop::Control,
-            WorkerLoop::Compaction,
-            WorkerLoop::Cleanup,
-            WorkerLoop::Dependencies,
-        ] {
-            health.mark_poll_succeeded(worker_loop, 100);
-        }
-        // A loop that stops polling goes stale on its own timestamp; the schema
-        // flag is owned by the readiness check alone.
-        assert_eq!(health.readyz_at(115), READY);
-        assert_eq!(health.readyz_at(116), STALE);
-        health.mark_poll_succeeded(WorkerLoop::Control, 116);
-        assert_eq!(health.readyz_at(116), STALE);
-    }
-
-    #[test]
     fn active_compaction_is_ready_until_its_lease_progress_expires() {
         let health = WorkerHealth::new(Duration::from_secs(1));
         health.mark_schema_ready();

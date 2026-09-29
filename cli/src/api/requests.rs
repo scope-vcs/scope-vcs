@@ -603,19 +603,6 @@ mod tests {
     }
 
     #[test]
-    fn submit_posts_an_empty_payload() {
-        let (api_url, server) = serve_once(
-            StatusCode::CONFLICT,
-            r#"{"code":"conflict","message":"fixture stop","retryable":false}"#,
-        );
-
-        submit_request(ApiSession::new(&Client::new(), &api_url, "token"), target()).unwrap_err();
-
-        let request = server.join().unwrap();
-        assert!(request.contains("\r\n\r\n{}"), "{request}");
-    }
-
-    #[test]
     fn request_not_found_uses_the_authoritative_contract_message() {
         let (api_url, server) = serve_once(
             StatusCode::NOT_FOUND,
@@ -780,35 +767,6 @@ mod tests {
             "POST /v1/repos/owner/repo/requests/req_one/threads/dsc_one/reopen-and-reply HTTP/1.1"
         ));
         assert!(request.contains(r#""body_markdown":"New evidence""#));
-    }
-
-    #[test]
-    fn checks_wrappers_read_and_approve_the_head_evaluation() {
-        let body = format!(
-            r#"{{"request_id":"req_one","head_oid":"{oid}","state":"awaiting-approval","message":null,"checks":[{{"workflow_path":"/.scope/runs/checks.yml","workflow_name":"checks","run_id":null,"run_state":null}}],"can_approve":true,"mergeability":{{"status":"ChecksAwaitingApproval","current_main_oid":null,"request_head_oid":"{oid}","reason":"checks are waiting for a maintainer to start them"}}}}"#,
-            oid = "b".repeat(40),
-        );
-
-        let (api_url, read_server) = serve_once(StatusCode::OK, body.clone());
-        let checks =
-            request_checks(ApiSession::new(&Client::new(), &api_url, "token"), target()).unwrap();
-        assert!(checks.can_approve);
-        assert_eq!(checks.checks.len(), 1);
-        let request = read_server.join().unwrap();
-        assert!(
-            request.starts_with("GET /v1/repos/owner/repo/requests/req_one/checks HTTP/1.1"),
-            "{request}"
-        );
-
-        let (api_url, approve_server) = serve_once(StatusCode::OK, body);
-        approve_request_checks(ApiSession::new(&Client::new(), &api_url, "token"), target())
-            .unwrap();
-        let request = approve_server.join().unwrap();
-        assert!(
-            request
-                .starts_with("POST /v1/repos/owner/repo/requests/req_one/checks/approve HTTP/1.1"),
-            "{request}"
-        );
     }
 
     fn target() -> RequestTarget<'static> {

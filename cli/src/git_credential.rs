@@ -154,10 +154,12 @@ mod tests {
     #[test]
     fn write_git_credential_response_ignores_non_get_operations() {
         let mut output = Vec::new();
-        write_git_credential_response(
+        write_git_credential_response_with(
             "store",
             Cursor::new("protocol=https\nhost=scope.example\npath=git/permissioned/adam/repo\n\n"),
             &mut output,
+            "https://api.scope.example",
+            |_| panic!("store must not read a token"),
         )
         .unwrap();
 
