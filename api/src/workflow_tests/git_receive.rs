@@ -424,7 +424,17 @@ async fn pending_object_cleanup_uses_transactional_reference_rows() {
         .await
         .unwrap();
 
-    drain_pending_orphan_objects(&state).await.unwrap();
+    let report = drain_pending_source_blob_deletions_report(&state)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        report,
+        SourceBlobCleanupDrainReport {
+            skipped_referenced: 1,
+            ..Default::default()
+        }
+    );
 
     assert!(
         state

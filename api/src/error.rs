@@ -397,22 +397,48 @@ mod tests {
 
     #[tokio::test]
     async fn user_actionable_messages_stay_exact_and_uncorrelated() {
-        for api_error in [
-            ApiError::bad_request("branch name is required"),
-            ApiError::conflict("request changed; fetch and retry"),
-            ApiError::forbidden("maintainer role required"),
-            ApiError::unauthorized("sign in before retrying"),
-            ApiError::not_found("repository not found"),
-            ApiError::too_many_requests("push limit reached; retry in one minute"),
-            ApiError::payload_too_large("bundle exceeds the 10 MiB limit"),
-            ApiError::from(scope_postgres::error::PostgresError::unavailable(
+        for (api_error, expected) in [
+            (
+                ApiError::bad_request("branch name is required"),
+                "branch name is required",
+            ),
+            (
+                ApiError::conflict("request changed; fetch and retry"),
+                "request changed; fetch and retry",
+            ),
+            (
+                ApiError::forbidden("maintainer role required"),
+                "maintainer role required",
+            ),
+            (
+                ApiError::unauthorized("sign in before retrying"),
+                "sign in before retrying",
+            ),
+            (
+                ApiError::not_found("repository not found"),
+                "repository not found",
+            ),
+            (
+                ApiError::too_many_requests("push limit reached; retry in one minute"),
+                "push limit reached; retry in one minute",
+            ),
+            (
+                ApiError::payload_too_large("bundle exceeds the 10 MiB limit"),
+                "bundle exceeds the 10 MiB limit",
+            ),
+            (
+                ApiError::from(scope_postgres::error::PostgresError::unavailable(
+                    "repository projection is rebuilding; retry shortly",
+                )),
                 "repository projection is rebuilding; retry shortly",
-            )),
-            ApiError::from(scope_postgres::error::PostgresError::resource_exhausted(
+            ),
+            (
+                ApiError::from(scope_postgres::error::PostgresError::resource_exhausted(
+                    "run attempt log limit reached",
+                )),
                 "run attempt log limit reached",
-            )),
+            ),
         ] {
-            let expected = api_error.public_message().to_string();
             let error = response_error(api_error).await;
             assert_eq!(error.message, expected);
             assert_eq!(error.error_reference, None);

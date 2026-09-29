@@ -680,15 +680,28 @@ async fn restore_rejects_truncation_and_bytes_after_final_frame() {
 
 #[test]
 fn s3_rejects_parts_smaller_than_five_mib() {
-    let mut backend = TestObjectBackend::default();
-    backend.minimum_part_bytes = 5 * 1024 * 1024;
-    let mut config = GitSegmentStoreConfig::new("/tmp/scope-storage-config-test");
-    config.multipart_part_bytes = 5 * 1024 * 1024 - 1;
+    let backend: Arc<dyn ObjectBackend> = Arc::new(
+        S3Backend::new(S3Settings {
+            endpoint: "http://127.0.0.1:1".into(),
+            bucket: "test-segments".into(),
+            region: "test-region".into(),
+            access_key_id: "test-access-key".into(),
+            secret_access_key: "test-secret-key".into(),
+            force_path_style: true,
+        })
+        .unwrap(),
+    );
+    let store_with_part_bytes = |multipart_part_bytes| {
+        let mut config = GitSegmentStoreConfig::new("/tmp/scope-storage-config-test");
+        config.multipart_part_bytes = multipart_part_bytes;
+        GitSegmentStore::new(backend.clone(), test_key(), config)
+    };
 
-    let error = GitSegmentStore::new(Arc::new(backend), test_key(), config)
+    let error = store_with_part_bytes(5 * 1024 * 1024 - 1)
         .err()
         .expect("undersized S3 part must fail");
     assert!(matches!(error, GitStorageError::InvalidConfiguration(_)));
+    store_with_part_bytes(5 * 1024 * 1024).unwrap();
 }
 
 struct Fixture {

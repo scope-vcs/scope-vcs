@@ -2,7 +2,6 @@ use super::*;
 
 pub(super) struct TestObjectBackend {
     state: Mutex<TestState>,
-    pub(super) minimum_part_bytes: usize,
     pub(super) fail_begin: AtomicBool,
     pub(super) begin_failed: Notify,
     pub(super) fail_part: AtomicBool,
@@ -22,7 +21,6 @@ impl Default for TestObjectBackend {
     fn default() -> Self {
         Self {
             state: Mutex::new(TestState::default()),
-            minimum_part_bytes: 1,
             fail_begin: AtomicBool::new(false),
             begin_failed: Notify::new(),
             fail_part: AtomicBool::new(false),
@@ -107,10 +105,6 @@ impl TestObjectBackend {
 
 #[async_trait]
 impl ObjectBackend for TestObjectBackend {
-    fn minimum_part_bytes(&self) -> usize {
-        self.minimum_part_bytes
-    }
-
     async fn put(&self, key: &str, bytes: Bytes) -> Result<(), BackendError> {
         let mut state = self.state.lock().unwrap();
         state.objects.insert(key.to_string(), bytes);

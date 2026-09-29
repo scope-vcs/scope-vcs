@@ -409,23 +409,6 @@ impl AudienceClaim {
     }
 }
 
-#[cfg(test)]
-pub fn verify_clerk_token(
-    token: &str,
-    jwks: &JwkSet,
-    issuer: &str,
-    token_policy: &ClerkTokenPolicy,
-) -> Result<ClerkIdentity, ApiError> {
-    let header = validated_clerk_header(token)?;
-    let kid = header
-        .kid
-        .as_deref()
-        .expect("validated Clerk header must have a kid");
-    let jwk = signing_key(kid, jwks)
-        .ok_or_else(|| ApiError::unauthorized("Clerk signing key not found"))?;
-    verify_clerk_token_with_header(token, &header, jwk, issuer, token_policy)
-}
-
 fn verify_clerk_token_with_header(
     token: &str,
     header: &jsonwebtoken::Header,
