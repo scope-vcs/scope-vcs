@@ -77,7 +77,7 @@ export function RequestAttachmentEditor({
   onCancelQuote?: () => void
   onSubmit: (markdown: string, baseText: string | null, submissionId: string) => Promise<boolean>
   placeholder: string
-  quote?: { author: string; body: string } | null
+  quote?: { author: string; body: string; id: string } | null
   secondarySubmit?: {
     icon: ReactNode
     label: string
@@ -163,7 +163,7 @@ export function RequestAttachmentEditor({
     const markdown = markdownWithAttachments(draft.text, readyAttachments)
     const submissionId = beginRequestAttachmentSubmission(
       draftKey,
-      JSON.stringify([action, markdown, draft.baseText]),
+      JSON.stringify([action, markdown, draft.baseText, quote?.id ?? null]),
     )
     if (!submissionId) return
     setPendingAction(action)

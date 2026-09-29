@@ -8,7 +8,6 @@ import {
   finishRequestAttachmentSubmission,
   runRequestContentSubmission,
   seedRequestAttachmentDraft,
-  setRequestAttachmentDraftReplyTarget,
   removeRequestAttachmentDraftFile,
   patchRequestAttachmentDraftFile,
   readRequestAttachmentDraft,
@@ -56,7 +55,7 @@ test('an uploaded file keeps its stable markdown reference until the draft is cl
   assert.equal(requestAttachmentMarkdownReference('attachment / one'), '/request-attachments/attachment%20%2F%20one')
 
   clearRequestAttachmentDraft(key)
-  assert.deepEqual(readRequestAttachmentDraft(key), { attachments: [], baseText: null, initialized: false, pending: false, replyToReplyId: null, submission: null, text: '' })
+  assert.deepEqual(readRequestAttachmentDraft(key), { attachments: [], baseText: null, initialized: false, pending: false, submission: null, text: '' })
 })
 
 test('session restore keeps text, completed ids, and an incomplete operation for reselection', () => {
@@ -79,14 +78,12 @@ test('session restore keeps text, completed ids, and an incomplete operation for
     setRequestAttachmentDraftText(key, 'full reload draft')
     const [pending] = addRequestAttachmentDraftFiles(key, [new File(['same'], 'same.mov', { type: 'video/quicktime' })])
     assert.ok(pending)
-    setRequestAttachmentDraftReplyTarget(key, 'quoted-reply')
     const submissionId = beginRequestAttachmentSubmission(key, 'payload')
     resetRequestAttachmentDraftManager()
 
     const restored = readRequestAttachmentDraft(key)
     assert.equal(restored.text, 'full reload draft')
     assert.equal(restored.pending, false)
-    assert.equal(restored.replyToReplyId, 'quoted-reply')
     assert.equal(beginRequestAttachmentSubmission(key, 'payload'), submissionId)
     finishRequestAttachmentSubmission(submissionId!, false)
     assert.equal(restored.attachments[0]?.file, null)
@@ -199,18 +196,4 @@ test('a failed older row cannot clear a newly edited draft and quote changes sta
   await runRequestContentSubmission(oldId, async () => true)
   assert.equal(readRequestAttachmentDraft('reply').text, 'new reply')
   assert.notEqual(beginRequestAttachmentSubmission('reply', 'new reply + quote-b'), oldId)
-})
-
-
-test('quote targets survive closing and changing the quote resets the retry identity', () => {
-  const key = 'reply-quote'
-  setRequestAttachmentDraftText(key, 'reply text')
-  setRequestAttachmentDraftReplyTarget(key, 'quote-a')
-  const id = beginRequestAttachmentSubmission(key, 'same body')!
-  setRequestAttachmentDraftReplyTarget(key, 'quote-b')
-  assert.equal(readRequestAttachmentDraft(key).replyToReplyId, 'quote-a')
-  finishRequestAttachmentSubmission(id, false)
-  assert.equal(readRequestAttachmentDraft(key).replyToReplyId, 'quote-a')
-  setRequestAttachmentDraftReplyTarget(key, 'quote-b')
-  assert.notEqual(beginRequestAttachmentSubmission(key, 'same body'), id)
 })
