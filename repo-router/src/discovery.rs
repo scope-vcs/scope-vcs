@@ -247,7 +247,13 @@ fn normalize(mut addresses: Vec<SocketAddr>) -> Vec<Backend> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{collections::VecDeque, sync::Mutex};
+    use std::{
+        collections::VecDeque,
+        sync::{
+            Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
 
     fn config() -> RouterConfig {
         RouterConfig {
@@ -382,8 +388,19 @@ mod tests {
 
     #[tokio::test]
     async fn stale_failures_are_rate_limited_by_the_refresh_interval() {
-        let address = "127.0.0.1:8080".parse().unwrap();
-        let discovery = scripted(vec![Ok(vec![address]), Err("transient")]);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let resolver_calls = Arc::clone(&calls);
+        let resolver = Arc::new(move |_authority: Arc<str>| {
+            let call = resolver_calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move {
+                if call == 0 {
+                    Ok(vec!["127.0.0.1:8080".parse().unwrap()])
+                } else {
+                    Err(anyhow::anyhow!("transient"))
+                }
+            }) as ResolveFuture
+        });
+        let discovery = BackendDiscovery::with_resolver(&config(), resolver);
         discovery.backends().await.unwrap();
         age_snapshot(&discovery, Duration::from_secs(11)).await;
         assert_eq!(
@@ -395,11 +412,12 @@ mod tests {
             discovery.backends().await.unwrap().freshness,
             DiscoveryFreshness::Stale
         );
+        wait_for_refresh(&discovery).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
     async fn cached_readers_do_not_wait_for_one_delayed_refresh() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         let calls = Arc::new(AtomicUsize::new(0));
         let resolver_calls = Arc::clone(&calls);
         let refresh_started = Arc::new(Notify::new());

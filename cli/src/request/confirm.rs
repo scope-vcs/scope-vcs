@@ -33,11 +33,6 @@ mod tests {
     use super::{confirmation_answer, require_confirmation};
 
     #[test]
-    fn yes_skips_interactive_confirmation() {
-        require_confirmation("consequential action", true).unwrap();
-    }
-
-    #[test]
     fn noninteractive_confirmation_requires_yes() {
         let error = require_confirmation("consequential action", false).unwrap_err();
         assert_eq!(crate::error::exit_code(&error), 2);

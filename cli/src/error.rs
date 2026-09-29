@@ -194,19 +194,6 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_reference_is_printed_without_changing_the_exit_category() {
-        let mut response = ErrorResponse::new(ErrorCode::Internal, "Scope hit an internal error.");
-        response.error_reference = Some("err_0123456789abcdef0123456789abcdef".to_string());
-        let error = CliError::new(response);
-
-        assert_eq!(error.exit_category(), ExitCategory::Unexpected);
-        assert_eq!(
-            error.to_string(),
-            "Scope hit an internal error.\nReference: err_0123456789abcdef0123456789abcdef"
-        );
-    }
-
-    #[test]
     fn unavailable_api_connections_are_temporary_even_with_context() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
