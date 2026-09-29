@@ -56,6 +56,22 @@ fn processing_lease(attachment: &RequestAttachment) -> RequestAttachmentProcessi
     }
 }
 
+fn photo_preview() -> Vec<RequestAttachmentDerivative> {
+    vec![RequestAttachmentDerivative {
+        id: "preview_1".into(),
+        kind: RequestAttachmentDerivativeKind::ImagePreview,
+        media_type: "image/webp".into(),
+        object: RequestAttachmentStoredObject {
+            object_key: "derivatives/att_1/preview_1".into(),
+            size_bytes: 8,
+            sha256: "c".repeat(64),
+        },
+        width: Some(100),
+        height: Some(80),
+        duration_millis: None,
+    }]
+}
+
 #[test]
 fn prepare_enforces_media_and_aggregate_limits() {
     let mut input = PrepareRequestAttachmentInput {
@@ -272,19 +288,7 @@ fn validated_photo_becomes_ready_with_an_immutable_preview() {
             height: 80,
         }),
         None,
-        vec![RequestAttachmentDerivative {
-            id: "preview_1".into(),
-            kind: RequestAttachmentDerivativeKind::ImagePreview,
-            media_type: "image/webp".into(),
-            object: RequestAttachmentStoredObject {
-                object_key: "derivatives/att_1/preview_1".into(),
-                size_bytes: 8,
-                sha256: "c".repeat(64),
-            },
-            width: Some(100),
-            height: Some(80),
-            duration_millis: None,
-        }],
+        photo_preview(),
         20,
     )
     .unwrap();
@@ -298,22 +302,39 @@ fn validated_photo_becomes_ready_with_an_immutable_preview() {
 fn stale_processing_lease_cannot_publish() {
     let upload = uploaded();
     let lease = processing_lease(&upload);
-    assert!(
-        validate_processing_completion(
-            &upload,
-            &lease,
-            "stale",
-            2,
-            "image/png".into(),
-            Some(RequestAttachmentImageMetadata {
-                width: 10,
-                height: 10,
-            }),
-            None,
-            vec![],
-            20,
-        )
-        .is_err()
+    let image = Some(RequestAttachmentImageMetadata {
+        width: 100,
+        height: 80,
+    });
+    let current = validate_processing_completion(
+        &upload,
+        &lease,
+        "lease_1",
+        2,
+        "image/png".into(),
+        image.clone(),
+        None,
+        photo_preview(),
+        20,
+    )
+    .unwrap();
+    assert_eq!(current.state, RequestAttachmentState::Ready);
+
+    let stale = validate_processing_completion(
+        &upload,
+        &lease,
+        "stale",
+        2,
+        "image/png".into(),
+        image,
+        None,
+        photo_preview(),
+        20,
+    )
+    .unwrap_err();
+    assert_eq!(
+        stale,
+        DomainError::conflict("stale request attachment processing lease")
     );
 }
 
