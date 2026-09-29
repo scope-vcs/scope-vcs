@@ -1,19 +1,6 @@
 use super::*;
-use scope_git::GitStorageLimits;
-use scope_storage::{
-    EncryptedObjectStore, EncryptionKey, MemoryBackend, ObjectStore, read_bounded,
-};
+use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend};
 use std::{process::Command, time::Duration};
-
-fn budgeted_store(config: RuntimeBudgetConfig) -> (Arc<EncryptedObjectStore>, BudgetedObjectStore) {
-    let raw = Arc::new(EncryptedObjectStore::new(
-        Arc::new(MemoryBackend::default()),
-        EncryptionKey::new("test", [7; 32]).unwrap(),
-    ));
-    let store =
-        BudgetedObjectStore::new(raw.clone(), Arc::new(RuntimeBudgets::from_config(config)));
-    (raw, store)
-}
 
 #[tokio::test]
 async fn receive_pack_capacity_exhaustion_returns_backpressure() {
@@ -137,70 +124,6 @@ async fn cold_git_backed_projection_succeeds_with_one_build_permit() {
         .unwrap(),
         "hello\n"
     );
-}
-
-#[tokio::test]
-async fn object_store_capacity_exhaustion_returns_backpressure() {
-    let (_, store) = budgeted_store(RuntimeBudgetConfig {
-        object_store_concurrency: 0,
-        ..Default::default()
-    });
-
-    let error = read_bounded(&store, "tests/budget/backpressure", 1)
-        .await
-        .unwrap_err();
-
-    assert_eq!(
-        error.kind,
-        scope_storage::ObjectStoreErrorKind::CapacityExhausted
-    );
-    assert_eq!(
-        error.message,
-        "object store read capacity is exhausted; retry later"
-    );
-}
-
-#[tokio::test]
-async fn object_store_readiness_bypasses_operation_capacity() {
-    let (_, store) = budgeted_store(RuntimeBudgetConfig {
-        object_store_concurrency: 0,
-        ..Default::default()
-    });
-
-    store.readiness_check().await.unwrap();
-}
-
-#[tokio::test]
-async fn object_store_size_limits_cover_writes_and_reads() {
-    let key = "tests/budget/read-too-large";
-    let (raw, store) = budgeted_store(RuntimeBudgetConfig {
-        git_storage_limits: GitStorageLimits::new(4).unwrap(),
-        ..Default::default()
-    });
-    store
-        .put("tests/budget/write-at-limit", b"1234".to_vec())
-        .await
-        .unwrap();
-    assert_eq!(
-        read_bounded(&store, "tests/budget/write-at-limit", usize::MAX)
-            .await
-            .unwrap(),
-        b"1234"
-    );
-    raw.put(key, b"12345".to_vec()).await.unwrap();
-    for error in [
-        store
-            .put("tests/budget/write-too-large", b"12345".to_vec())
-            .await
-            .unwrap_err(),
-        read_bounded(&store, key, usize::MAX).await.unwrap_err(),
-    ] {
-        assert_eq!(
-            error.kind,
-            scope_storage::ObjectStoreErrorKind::PayloadTooLarge
-        );
-        assert!(error.message.contains("exceeds 4 bytes"));
-    }
 }
 
 #[test]

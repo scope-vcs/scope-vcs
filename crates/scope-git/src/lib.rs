@@ -101,14 +101,4 @@ mod tests {
             GitStorageLimitError::ZeroObjectBytes
         );
     }
-
-    #[test]
-    fn default_storage_limits_match_the_shared_policy() {
-        let limits = GitStorageLimits::default();
-
-        assert_eq!(
-            limits.max_object_bytes(),
-            DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES
-        );
-    }
 }

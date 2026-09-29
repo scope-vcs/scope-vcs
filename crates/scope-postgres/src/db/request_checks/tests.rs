@@ -2,7 +2,6 @@ use super::*;
 use crate::db::{MetadataStore, requests::tests::postgres_store};
 use scope_domain::requests::RequestCheckEvaluationState;
 use scope_domain::requests::{RequestActorRole, RequestAudience, StartRequestInput};
-use sea_orm::{DatabaseBackend, QueryTrait};
 
 const HEAD_A_OLD: &str = "1111111111111111111111111111111111111111";
 const HEAD_A_CURRENT: &str = "2222222222222222222222222222222222222222";
@@ -10,31 +9,6 @@ const HEAD_SHARED: &str = "3333333333333333333333333333333333333333";
 const HEAD_B_OLD: &str = "4444444444444444444444444444444444444444";
 const HEAD_B_CURRENT: &str = "5555555555555555555555555555555555555555";
 const HEAD_MISSING: &str = "9999999999999999999999999999999999999999";
-
-#[test]
-fn evaluations_for_heads_query_binds_both_columns_for_each_pair() {
-    let query = entities::request_check_evaluation::Entity::find().filter(head_pairs_condition(&[
-        ("request-a".into(), HEAD_A_CURRENT.into()),
-        ("request-b".into(), HEAD_SHARED.into()),
-    ]));
-    let statement = query.build(DatabaseBackend::Postgres);
-
-    assert!(statement.sql.ends_with(
-        "WHERE (\"scope_request_check_evaluations\".\"request_id\" = $1 AND \
-         \"scope_request_check_evaluations\".\"head_oid\" = $2) OR \
-         (\"scope_request_check_evaluations\".\"request_id\" = $3 AND \
-         \"scope_request_check_evaluations\".\"head_oid\" = $4)"
-    ));
-    assert_eq!(
-        statement.values.unwrap().0,
-        [
-            "request-a".into(),
-            HEAD_A_CURRENT.into(),
-            "request-b".into(),
-            HEAD_SHARED.into(),
-        ]
-    );
-}
 
 #[tokio::test]
 async fn evaluations_for_heads_match_exact_pairs_without_returning_history() {

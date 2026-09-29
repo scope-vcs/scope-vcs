@@ -78,8 +78,10 @@ fn mixed_visibility_records_hidden_paths_without_hiding_readable_changes() {
         assert_eq!(public.path, "public//file.txt");
         assert_eq!(public.visibility, Visibility::Public);
     }
+    // Visibility is decided before status validation, so an unsupported status
+    // on a hidden path is not an error.
     let hidden = inspect_request_changes(
-        changes,
+        &[&changes[..], b":100644 100644 old new R100\0renamed.txt\0"].concat(),
         &Policy::new(Visibility::Private),
         RepositoryAccess::public(),
     )
