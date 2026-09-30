@@ -16,6 +16,7 @@ fi
 bash -n .github/scripts/publish-soci-image.sh
 
 node --test .github/scripts/audit-railway-experiments.test.mjs
+node --test .github/scripts/check-backend-binary-sizes.test.mjs
 node --test .github/scripts/check-production-backups.test.mjs
 node --test .github/scripts/production-deployment-progress.test.mjs
 node --test .github/scripts/plan-production-deployment.test.mjs

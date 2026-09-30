@@ -15,7 +15,7 @@ caller's working directory.
 | `integration web` | Browser smoke against a running seeded stack |
 | `integration cli` | Opt-in two-actor contribution flow against a running seeded stack |
 | `integration journey` | Signed-in browser contribution journey against a freshly started, signed-in seeded stack |
-| `ops` | Deployment, staging, benchmark, and AWS infrastructure tests |
+| `ops` | Deployment, backend binary size caps, staging, benchmark, and AWS infrastructure tests |
 
 Callers install Rust, cargo-deny (`dev/install-cargo-deny.sh`), Node and pnpm dependencies, configure databases and secrets,
 and start/stop integration stacks. The contract check needs Rust and web
