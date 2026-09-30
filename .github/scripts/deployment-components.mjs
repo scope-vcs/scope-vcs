@@ -24,6 +24,18 @@ export function loadComponentConfig(component, root = sourceRoot) {
   return JSON.parse(readFileSync(resolve(root, deploymentComponent(component).runtimeConfig), 'utf8'));
 }
 
+// Every binary the backend release job builds, with its size cap. The API
+// artifact also carries the maintenance binary that ships in its image.
+export function backendBinaryCaps(source = manifest) {
+  return Object.entries(source.services)
+    .filter(([, { deployment }]) => deployment.backend && deployment.artifact.kind === 'binary')
+    .flatMap(([component, { deployment: { artifact } }]) => [artifact, artifact.maintenance].filter(Boolean)
+      .map(({ binary, maxBytes }) => {
+        if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new Error(`Component ${component} has no positive integer maxBytes for ${binary}.`);
+        return { binary, maxBytes };
+      }));
+}
+
 export function backendSelected(selection) {
   return BACKEND_COMPONENTS.some(component => selection[component] === true);
 }

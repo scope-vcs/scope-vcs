@@ -29,7 +29,8 @@
           "imageName": "cache",
           "dockerfile": "deploy/railway/prebuilt.Dockerfile",
           "installGit": false,
-          "sourceBinary": "scope-cache-service"
+          "sourceBinary": "scope-cache-service",
+          "maxBytes": 33554432
         }
       }
     },
@@ -49,7 +50,8 @@
           "imageName": "worker",
           "dockerfile": "deploy/railway/worker.Dockerfile",
           "installGit": true,
-          "sourceBinary": "worker"
+          "sourceBinary": "worker",
+          "maxBytes": 50331648
         }
       }
     },
@@ -67,7 +69,8 @@
           "imageName": "router",
           "dockerfile": "deploy/railway/prebuilt.Dockerfile",
           "installGit": false,
-          "sourceBinary": "scope-repo-router"
+          "sourceBinary": "scope-repo-router",
+          "maxBytes": 11534336
         }
       }
     },
@@ -85,7 +88,8 @@
           "imageName": "media",
           "dockerfile": "deploy/railway/prebuilt.Dockerfile",
           "installGit": false,
-          "sourceBinary": "scope-media-service"
+          "sourceBinary": "scope-media-service",
+          "maxBytes": 34603008
         },
         "reconcile": {
           "replicas": 1,
@@ -134,7 +138,12 @@
           "imageName": "api",
           "dockerfile": "deploy/railway/prebuilt.Dockerfile",
           "installGit": true,
-          "sourceBinary": "api"
+          "sourceBinary": "api",
+          "maxBytes": 71303168,
+          "maintenance": {
+            "binary": "scope-maintenance",
+            "maxBytes": 36700160
+          }
         }
       }
     },
@@ -247,6 +256,7 @@
         "deny.toml",
         "dev/install-cargo-deny.sh",
         ".github/scripts/deployment-components.mjs",
+        ".github/scripts/check-backend-binary-sizes.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/railway-artifact.mjs",
@@ -273,6 +283,7 @@
         "deny.toml",
         "dev/install-cargo-deny.sh",
         ".github/scripts/deployment-components.mjs",
+        ".github/scripts/check-backend-binary-sizes.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/railway-artifact.mjs",
@@ -331,6 +342,7 @@
         "deny.toml",
         "dev/install-cargo-deny.sh",
         ".github/scripts/deployment-components.mjs",
+        ".github/scripts/check-backend-binary-sizes.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/railway-artifact.mjs",
@@ -358,6 +370,7 @@
         "deny.toml",
         "dev/install-cargo-deny.sh",
         ".github/scripts/deployment-components.mjs",
+        ".github/scripts/check-backend-binary-sizes.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/railway-artifact.mjs",
@@ -384,6 +397,7 @@
         "deny.toml",
         "dev/install-cargo-deny.sh",
         ".github/scripts/deployment-components.mjs",
+        ".github/scripts/check-backend-binary-sizes.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/railway-artifact.mjs",

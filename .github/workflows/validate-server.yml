@@ -32,7 +32,6 @@ jobs:
     uses: ./.github/workflows/scope-api-ci.yml
     with:
       build_release_artifact: ${{ inputs.release }}
-      build_router_release: ${{ inputs.release }}
     secrets: inherit
 
   media-worker-image:
