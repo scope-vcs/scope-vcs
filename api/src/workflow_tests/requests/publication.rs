@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn public_request_reads_remain_available_before_projection_outbox_catches_up() {
+async fn public_request_reads_and_start_use_current_head_before_projection_rebuild() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
     let source = temp_git_repo("request-publication-read");
@@ -108,7 +108,7 @@ async fn public_request_reads_remain_available_before_projection_outbox_catches_
     .await;
     assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
     let private = api_request(
-        app,
+        app.clone(),
         "GET",
         "/v1/repos/owner/repo/requests/req_publication_private",
         Some(&bearer_header()),
@@ -119,5 +119,19 @@ async fn public_request_reads_remain_available_before_projection_outbox_catches_
     assert_eq!(
         response_json(private).await["request"]["mergeability"]["current_main_oid"],
         accepted.head_oid,
+    );
+
+    let started = api_request(
+        app,
+        "POST",
+        "/v1/repos/owner/repo/requests",
+        Some(&bearer_header()),
+        Some(r#"{"name":"after-publication","audience":"Public"}"#),
+    )
+    .await;
+    assert_eq!(started.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(started).await["request"]["base_main_oid"],
+        expected_public_head,
     );
 }
