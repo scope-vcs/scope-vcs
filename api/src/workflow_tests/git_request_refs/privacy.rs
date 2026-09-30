@@ -139,6 +139,7 @@ async fn configured_private_intermediate_path_cannot_enter_public_request_histor
                 },
             );
             repo.repo_config.validate().unwrap();
+            repo.bump_content_version();
         })
         .await
         .unwrap();

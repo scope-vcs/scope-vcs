@@ -133,6 +133,7 @@ pub struct RepoSummaryResponse {
     pub git_remote_url: String,
     pub lifecycle_state: RepoLifecycleState,
     pub change_version: u64,
+    pub content_version: u64,
     pub access: RepositoryAccessResponse,
     pub open_request_count: usize,
 }

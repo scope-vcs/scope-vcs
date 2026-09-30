@@ -43,7 +43,7 @@ where
     enqueue_projection_read_model_rebuild(
         conn,
         &repo.record.id,
-        repo.record.change_version,
+        repo.record.content_version,
         now_unix,
         generated_ids,
     )
@@ -61,6 +61,29 @@ pub async fn save_repository_delta<C>(
 where
     C: ConnectionTrait,
 {
+    let content_changed = after.record.content_version != before.record.content_version;
+    if !content_changed && !before.content_matches(after) {
+        return Err(PostgresError::internal_message(
+            "repository content changed without advancing its content version",
+        ));
+    }
+    save_repository_rows(conn, before, after, now_unix).await?;
+    if content_changed {
+        queue_content_rebuilds(conn, after, now_unix, generated_ids).await?;
+    }
+    Ok(())
+}
+
+/// Writes the rows that differ between two states of one repository.
+pub(super) async fn save_repository_rows<C>(
+    conn: &C,
+    before: &Repository,
+    after: &Repository,
+    now_unix: u64,
+) -> Result<(), PostgresError>
+where
+    C: ConnectionTrait,
+{
     if before.record.id != after.record.id {
         return Err(PostgresError::internal_message(
             "repository mutation cannot change repository identity",
@@ -71,7 +94,6 @@ where
             "repository mutation cannot change repository incarnation",
         ));
     }
-
     let before_row = entities::repository::Model::from_domain(before)?;
     let row = entities::repository::Model::from_domain(after)?;
     let mut active = row.clone().into_active_model();
@@ -99,6 +121,11 @@ where
         before_row.change_version,
         row.change_version
     );
+    set_if_changed!(
+        content_version,
+        before_row.content_version,
+        row.content_version
+    );
     set_if_changed!(repo_config, before_row.repo_config, row.repo_config);
     set_if_changed!(policy, before_row.policy, row.policy);
     if row_changed {
@@ -120,17 +147,28 @@ where
         },
     )
     .await?;
-    save_repository_relation_delta(conn, before, after).await?;
+    save_repository_relation_delta(conn, before, after).await
+}
+
+/// Queues the rebuilds that follow a change to a repository's content.
+pub(super) async fn queue_content_rebuilds<C>(
+    conn: &C,
+    repo: &Repository,
+    now_unix: u64,
+    generated_ids: &dyn GeneratedIdSource,
+) -> Result<(), PostgresError>
+where
+    C: ConnectionTrait,
+{
     enqueue_projection_read_model_rebuild(
         conn,
-        &after.record.id,
-        after.record.change_version,
+        &repo.record.id,
+        repo.record.content_version,
         now_unix,
         generated_ids,
     )
     .await?;
-    enqueue_dependency_analysis_for_repository(conn, after, now_unix).await?;
-    Ok(())
+    enqueue_dependency_analysis_for_repository(conn, repo, now_unix).await
 }
 
 async fn insert_repository_fact_rows<C>(

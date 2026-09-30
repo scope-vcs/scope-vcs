@@ -34,7 +34,7 @@ impl JobStore {
                             report.incarnation_id, report.repo_version,
                             report.head_oid, report.analyzer_version
                         ) IS DISTINCT FROM ROW(
-                            repository.incarnation_id, repository.change_version,
+                            repository.incarnation_id, repository.content_version,
                             head.head_oid, $1
                         )
                     ) AND (
@@ -42,7 +42,7 @@ impl JobStore {
                             job.incarnation_id, job.repo_version,
                             job.head_oid, job.analyzer_version
                         ) IS DISTINCT FROM ROW(
-                            repository.incarnation_id, repository.change_version,
+                            repository.incarnation_id, repository.content_version,
                             head.head_oid, $1
                         )
                     )
@@ -62,20 +62,20 @@ impl JobStore {
                 .query_one_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     r#"
-                        SELECT repository.incarnation_id, repository.change_version,
+                        SELECT repository.incarnation_id, repository.content_version,
                             head.head_oid,
                             COALESCE(ROW(
                                 report.incarnation_id, report.repo_version,
                                 report.head_oid, report.analyzer_version
                             ) IS NOT DISTINCT FROM ROW(
-                                repository.incarnation_id, repository.change_version,
+                                repository.incarnation_id, repository.content_version,
                                 head.head_oid, $2
                             ), FALSE) AS report_current,
                             COALESCE(ROW(
                                 job.incarnation_id, job.repo_version,
                                 job.head_oid, job.analyzer_version
                             ) IS NOT DISTINCT FROM ROW(
-                                repository.incarnation_id, repository.change_version,
+                                repository.incarnation_id, repository.content_version,
                                 head.head_oid, $2
                             ), FALSE) AS job_current
                         FROM scope_repositories repository
@@ -106,7 +106,7 @@ impl JobStore {
             enqueue_dependency_analysis_target(
                 &tx,
                 &incarnation,
-                database_u64(&current, "change_version", "repository change version")?,
+                database_u64(&current, "content_version", "repository content version")?,
                 &database_value::<String>(&current, "head_oid")?,
                 analyzer_version,
                 now_unix,

@@ -144,6 +144,7 @@ async fn accept_and_persist_content_update(
     let policy: Policy =
         serde_json::from_value(repo_row.policy.clone()).map_err(PostgresError::internal)?;
     let change_version = i64_to_u64(repo_row.change_version, "repository change version")?;
+    let content_version = i64_to_u64(repo_row.content_version, "repository content version")?;
     let git_head = entities::git_head::Entity::find_by_id(&repo_id)
         .one(tx)
         .await
@@ -154,6 +155,7 @@ async fn accept_and_persist_content_update(
     let (accepted, push_trigger_input) = {
         let state = ContentPushState {
             change_version,
+            content_version,
             policy,
             repo_config,
             live_files,
@@ -169,6 +171,7 @@ async fn accept_and_persist_content_update(
     let accepted = accepted.map_err(reviewed_update_domain_error)?;
     let AcceptedContentPush {
         change_version,
+        content_version,
         policy,
         git_head,
         git_pack_span,
@@ -181,6 +184,7 @@ async fn accept_and_persist_content_update(
     let persisted_change_version = u64_to_i64(change_version, "repository change version")?;
     let mut repo_update = repo_row.into_active_model();
     repo_update.change_version = Set(persisted_change_version);
+    repo_update.content_version = Set(u64_to_i64(content_version, "repository content version")?);
     repo_update.policy = Set(serde_json::to_value(&policy).map_err(PostgresError::internal)?);
     repo_update
         .update(tx)
@@ -219,7 +223,7 @@ async fn accept_and_persist_content_update(
         tx,
         &scope_domain::repository::RepositoryIncarnation::new(&repo_id, repo_incarnation_id)
             .map_err(PostgresError::internal)?,
-        change_version,
+        content_version,
         &git_head.head_oid,
         scope_domain::dependency_analysis::DEPENDENCY_ANALYZER_VERSION,
         now_unix,
@@ -227,7 +231,7 @@ async fn accept_and_persist_content_update(
     .await?;
     apply_repository_landing_file_mutation(tx, &repo_id, landing_file_mutation).await?;
     apply_repository_workflow_catalog(tx, &workflow_catalog).await?;
-    enqueue_projection_read_model_rebuild(tx, &repo_id, change_version, now_unix, generated_ids)
+    enqueue_projection_read_model_rebuild(tx, &repo_id, content_version, now_unix, generated_ids)
         .await?;
     if let Some(input) = push_trigger_input {
         enqueue_push_main_trigger_evaluation(

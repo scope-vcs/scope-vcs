@@ -6,6 +6,7 @@ fn content_push_requires_rules_in_the_resulting_tree() {
     let config = repo.repo_config.clone();
     let state = ContentPushState {
         change_version: repo.record.change_version,
+        content_version: repo.record.content_version,
         policy: repo.policy.clone(),
         repo_config: config.clone(),
         live_files: repo.live_files.clone(),
@@ -29,6 +30,7 @@ fn content_push_requires_rules_in_the_resulting_tree() {
 
     let missing_state = ContentPushState {
         change_version: 1,
+        content_version: 1,
         policy: Policy::new(Visibility::Public),
         repo_config: config.clone(),
         live_files: Default::default(),
@@ -68,6 +70,7 @@ fn request_merge_accepts_unchanged_tree_without_weakening_push_rules() {
     let config = repo.repo_config.clone();
     let state = ContentPushState {
         change_version: repo.record.change_version,
+        content_version: repo.record.content_version,
         policy: repo.policy.clone(),
         repo_config: config.clone(),
         live_files: repo.live_files.clone(),

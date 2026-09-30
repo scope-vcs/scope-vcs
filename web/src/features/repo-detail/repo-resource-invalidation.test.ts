@@ -6,6 +6,7 @@ import { repositoryActivityResource } from './repository-activity-resource'
 import { requestActivityIdentity, requestActivityResource } from '../requests/request-activity-resource'
 import { invalidateRepoResources, invalidateRepoSummaryResources } from './repo-resource-invalidation'
 import { repositoryDependencyResource } from './repository-dependency-resource'
+import { historyFeedResource } from '../history/history-resource-cache'
 
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
 function seed() {
@@ -19,6 +20,8 @@ function seed() {
   repositoryActivityResource.write('viewer-b', { audience: 'public', entry: null, head_oid: 'other' })
   for (const id of ['one', 'two']) requestActivityResource.write(requestActivityIdentity('viewer-a', id), { events: [], through_position: 1 })
   repositoryDependencyResource.write('viewer-a', { error: null, report: null, status: 'Pending' })
+  historyFeedResource.clear()
+  historyFeedResource.write('viewer-a\0public\0all', { entries: [], next_cursor: null })
 }
 
 test('repository updates invalidate retained activity even when its page is unmounted', () => {
@@ -32,6 +35,12 @@ test('repository updates invalidate retained activity even when its page is unmo
   assert.equal(repositoryActivityResource.getSnapshot('viewer-b').stale, false)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, true)
   assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
+})
+
+test('account deletions refresh history, whose authors carry no content version', () => {
+  seed()
+  invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'contributor-deleted' } }))
+  assert.equal(historyFeedResource.getSnapshot('viewer-a\0public\0all').stale, true)
 })
 
 test('request changes target one request and leave latest repository activity reusable', () => {
@@ -99,7 +108,7 @@ test('public code with unchanged version refreshes retained tree and file on rep
   const { repoFileCacheKey, repoFileResource } = await import('./repo-file-cache')
   repoContentResource.clear()
   repoFileResource.clear()
-  const identity = { scope: 'viewer-a', repoId: 'repo', audience: 'public' as const, changeVersion: 0 }
+  const identity = { scope: 'viewer-a', repoId: 'repo', audience: 'public' as const, contentVersion: 0 }
   const treeKey = repoContentCacheKey(identity)
   const fileKey = repoFileCacheKey({ ...identity, path: 'README.md' })
   let loads = 0
@@ -117,7 +126,7 @@ test('public code with unchanged version refreshes retained tree and file on rep
   await repoFileResource.load(fileKey, '', async () => ({ ...oldFile, oid: 'new', content: { kind: 'text', text: 'new' } }))
   assert.equal(loads, 2)
   assert.equal(repoFileResource.peek(fileKey)?.oid, 'new')
-  for (const alternate of [{ ...identity, scope: 'viewer-b' }, { ...identity, audience: 'private' as const }, { ...identity, changeVersion: 1 }]) {
+  for (const alternate of [{ ...identity, scope: 'viewer-b' }, { ...identity, audience: 'private' as const }, { ...identity, contentVersion: 1 }]) {
     assert.equal(repoContentResource.peek(repoContentCacheKey(alternate)), null)
     assert.equal(repoFileResource.peek(repoFileCacheKey({ ...alternate, path: 'README.md' })), null)
   }

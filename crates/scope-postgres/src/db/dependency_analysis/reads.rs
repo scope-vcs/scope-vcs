@@ -32,7 +32,7 @@ impl RepositoryStore {
         let Some(current) = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "SELECT repository.incarnation_id, repository.change_version, head.head_oid
+                "SELECT repository.incarnation_id, repository.content_version, head.head_oid
                  FROM scope_repositories repository
                  LEFT JOIN scope_git_heads head ON head.repo_id = repository.id
                  WHERE repository.id = $1",
@@ -46,7 +46,7 @@ impl RepositoryStore {
         };
         let current_incarnation = database_value::<String>(&current, "incarnation_id")?;
         let current_version =
-            database_u64(&current, "change_version", "repository change version")?;
+            database_u64(&current, "content_version", "repository content version")?;
         let current_head = database_value::<Option<String>>(&current, "head_oid")?;
         let report_row = tx
             .query_one_raw(Statement::from_sql_and_values(

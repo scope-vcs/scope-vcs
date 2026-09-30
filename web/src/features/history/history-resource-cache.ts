@@ -6,11 +6,20 @@ import type {
 import { createBoundedCache } from '../../lib/bounded-cache'
 import { createCachedResource } from '../../lib/cached-resource'
 import { onViewerChange } from '../../lib/viewer-state'
+import type { LoadedHistory } from './history-pagination'
 
 const MAX_ENTRY_ENTRIES = 48
 const MAX_ENTRY_BYTES = 4 * 1024 * 1024
 const MAX_DIFF_ENTRIES = 20
 const MAX_DIFF_BYTES = 32 * 1024 * 1024
+
+// One owner for every history list, so the dropdown and Settings share loaded
+// pages and reopening either shows them without a refetch.
+export const historyFeedResource = createCachedResource<LoadedHistory>({
+  maxEntries: 16,
+  maxWeight: 2 * 1024 * 1024,
+  weightOf: (value) => JSON.stringify(value).length * 2,
+})
 
 export const historyEntryResource = createCachedResource<HistoryEntryDetailResponse>({
   maxEntries: MAX_ENTRY_ENTRIES,

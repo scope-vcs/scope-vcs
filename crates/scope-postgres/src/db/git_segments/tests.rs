@@ -14,9 +14,9 @@ async fn store_with_repository(repo_id: &str) -> MetadataStore {
              VALUES ('segment_user', 'segment-user', 'segment@scope.test', TRUE);
              INSERT INTO scope_repositories (
                 id, owner_handle, name, owner_user_id, publication_state,
-                change_version, repo_config, policy, incarnation_id
+                change_version, content_version, repo_config, policy, incarnation_id
              ) VALUES (
-                '{repo_id}', 'segment-user', 'repo', 'segment_user', 'Ready', 1,
+                '{repo_id}', 'segment-user', 'repo', 'segment_user', 'Ready', 1, 1,
                 '{{\"kind\":\"scope.repo-config\",\"version\":1,\"visibility\":{{\"default\":\"private\",\"rules\":[]}}}}'::jsonb,
                 '{{\"default_visibility\":\"Private\",\"rules\":[]}}'::jsonb,
                 'segment-test-incarnation'

@@ -87,7 +87,8 @@ mod tests {
             repo: serde_json::from_value(json!({
                 "id":"repo_one", "owner_handle":"owner", "name":"repo",
                 "git_remote_url":"https://scope.example/git/public/owner/repo",
-                "lifecycle_state":"Ready", "change_version":1, "open_request_count":1,
+                "lifecycle_state":"Ready", "change_version":1, "content_version":1,
+                "open_request_count":1,
                 "access":{"actor":"Public", "can_read_private_files":false,
                     "can_push":false, "can_change_file_visibility":false,
                     "can_manage_members":false, "can_delete_repo":false}

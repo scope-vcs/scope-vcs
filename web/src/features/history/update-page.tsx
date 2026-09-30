@@ -90,7 +90,7 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
     defaultHistoryAudience(repo.access.can_read_private_files),
   )
   const { owner, repo: repoName, entryId } = params
-  const version = String(repo.change_version)
+  const version = String(repo.content_version)
   const entryIdentity = scope ? historyEntryCacheKey({ scope, audience, entry: entryId }) : null
   const loadEntry = useCallback(
     (signal: AbortSignal) => loadHistoryEntry({

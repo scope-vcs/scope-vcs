@@ -606,6 +606,7 @@ fn test_repo(owner_id: &str) -> Repository {
             website_url: None,
             lifecycle_state: RepoLifecycleState::Ready,
             change_version: 1,
+            content_version: 1,
         },
         repo_config: RepoConfig::with_default_visibility(ConfigVisibility::Public),
         first_push_token: None,

@@ -402,7 +402,10 @@ async fn catalog_without_an_accepted_head_fails_before_cursor_validation() {
     state
         .metadata
         .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, |repo| repo.git_head = None)
+        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+            repo.git_head = None;
+            repo.bump_content_version();
+        })
         .await
         .unwrap();
     for url in [

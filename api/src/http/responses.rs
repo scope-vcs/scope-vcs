@@ -330,18 +330,11 @@ pub(crate) fn repo_summary_for_user(
             &repo.record.name,
         ),
         lifecycle_state: repo.record.lifecycle_state.into(),
-        change_version: repo_change_version_for_access(repo, access),
+        change_version: access.visible_version(repo.record.change_version),
+        content_version: access.visible_version(repo.record.content_version),
         access: repository_access_response(access),
         open_request_count,
     })
-}
-
-pub(crate) fn repo_change_version_for_access(repo: &Repository, access: RepositoryAccess) -> u64 {
-    if access.actor != RepositoryActor::Public {
-        repo.record.change_version
-    } else {
-        0
-    }
 }
 
 pub(crate) fn repository_access_response(access: RepositoryAccess) -> RepositoryAccessResponse {
