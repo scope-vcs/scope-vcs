@@ -54,7 +54,7 @@ pub(super) fn collaborators() -> [UserAccount; 2] {
 }
 
 pub(super) fn add_maintainer(repo: &mut Repository) {
-    repo.members.push(RepositoryMember {
+    repo.collaboration.members.push(RepositoryMember {
         repo_id: repo.record.id.clone(),
         user_id: MAINTAINER_ID.to_string(),
         permissions: RepositoryMemberPermissions {

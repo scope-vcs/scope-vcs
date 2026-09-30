@@ -348,7 +348,7 @@ async fn run_inspection_enforces_repository_access() {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.members.push(test_repository_member(
+            repo.collaboration.members.push(test_repository_member(
                 TEST_REPO_ID,
                 member_id,
                 RepositoryMemberPermissions::default(),

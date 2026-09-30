@@ -3,7 +3,10 @@
 //! sign-in identities, its memberships and the repositories it owns go.
 
 use super::UserAccount;
-use crate::repository::{Repository, collaboration::normalize_repository_invite_email};
+use crate::repository::{
+    Repository,
+    collaboration::{CollaborationState, normalize_repository_invite_email},
+};
 
 /// The sign-in provider whose users Scope deletes along with the account.
 pub const CLERK_PROVIDER: &str = "clerk";
@@ -41,7 +44,12 @@ pub fn delete_account<'a>(
 ) -> Result<AccountDeletion, SharedRepositories> {
     let mut shared = owned
         .iter()
-        .filter(|repo| repo.members.iter().any(|member| member.user_id != user.id))
+        .filter(|repo| {
+            repo.collaboration
+                .members
+                .iter()
+                .any(|member| member.user_id != user.id)
+        })
         .map(|repo| repo.record.id.clone())
         .collect::<Vec<_>>();
     if !shared.is_empty() {
@@ -62,17 +70,20 @@ pub fn delete_account<'a>(
 /// Removes a deleted account from a repository it does not own: its
 /// membership, and the invites that name its email or that it accepted.
 /// Returns whether anything changed.
-pub fn forget_deleted_account(repo: &mut Repository, user: &UserAccount) -> bool {
+pub fn forget_deleted_account(repo: &mut CollaborationState, user: &UserAccount) -> bool {
     let email = normalize_repository_invite_email(&user.email);
-    let before = (repo.members.len(), repo.invitations.len());
-    repo.members.retain(|member| member.user_id != user.id);
-    repo.invitations.retain(|invite| {
+    let collaboration = &mut repo.collaboration;
+    let before = (collaboration.members.len(), collaboration.invitations.len());
+    collaboration
+        .members
+        .retain(|member| member.user_id != user.id);
+    collaboration.invitations.retain(|invite| {
         invite.invited_email_normalized != email
             && invite.accepted_by_user_id.as_deref() != Some(user.id.as_str())
     });
-    let changed = before != (repo.members.len(), repo.invitations.len());
+    let changed = before != (collaboration.members.len(), collaboration.invitations.len());
     if changed {
-        repo.bump_change_version();
+        repo.record.bump_change_version();
     }
     changed
 }
@@ -105,7 +116,7 @@ mod tests {
 
     fn repo(owner: &UserAccount, name: &str, members: &[&str]) -> Repository {
         let mut repo = Repository::new(owner, name, Visibility::Private, "repoi_test").unwrap();
-        repo.members = members
+        repo.collaboration.members = members
             .iter()
             .map(|id| RepositoryMember {
                 repo_id: repo.record.id.clone(),
@@ -151,7 +162,11 @@ mod tests {
     fn forgetting_an_account_drops_its_membership_and_invites() {
         let owner = user("owner");
         let leaving = user("leaving");
-        let mut shared = repo(&owner, "team", &["leaving", "staying"]);
+        let team = repo(&owner, "team", &["leaving", "staying"]);
+        let mut shared = CollaborationState {
+            record: team.record,
+            collaboration: team.collaboration,
+        };
         let invite = |id: &str, email: &str, accepted_by: Option<&str>| RepositoryInvite {
             id: id.into(),
             repo_id: shared.record.id.clone(),
@@ -167,7 +182,7 @@ mod tests {
             accepted_at_unix: accepted_by.map(|_| 1),
             revoked_at_unix: None,
         };
-        shared.invitations = vec![
+        shared.collaboration.invitations = vec![
             invite("pending", " LEAVING@example.com", None),
             invite("accepted", "old@example.com", Some("leaving")),
             invite("other", "staying@example.com", None),
@@ -177,10 +192,10 @@ mod tests {
         assert!(forget_deleted_account(&mut shared, &leaving));
         assert!(!forget_deleted_account(&mut shared, &leaving));
 
-        assert_eq!(shared.members.len(), 1);
-        assert_eq!(shared.members[0].user_id, "staying");
-        assert_eq!(shared.invitations.len(), 1);
-        assert_eq!(shared.invitations[0].id, "other");
+        assert_eq!(shared.collaboration.members.len(), 1);
+        assert_eq!(shared.collaboration.members[0].user_id, "staying");
+        assert_eq!(shared.collaboration.invitations.len(), 1);
+        assert_eq!(shared.collaboration.invitations[0].id, "other");
         assert_eq!(shared.record.change_version, version + 1);
     }
 

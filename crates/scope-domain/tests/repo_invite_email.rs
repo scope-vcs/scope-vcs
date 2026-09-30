@@ -9,21 +9,25 @@ use scope_domain::{
         InviteEmailAttempt, InviteEmailHistory, RepositoryInviteEmail, RepositoryInviteEmailState,
         RequestInviteEmailCommand, record_invite_email_attempt, request_repository_invite_email,
     },
-    repository::{RepoLifecycleState, Repository},
+    repository::{RepoLifecycleState, Repository, collaboration::CollaborationState},
 };
 
 const OWNER_ID: &str = "user_owner";
 const INVITE_ID: &str = "invite";
 const NOW: u64 = 100_000;
 
-fn repo_with_invite() -> Repository {
+fn repo_with_invite() -> CollaborationState {
     let owner = UserAccount {
         id: OWNER_ID.to_string(),
         handle: "owner".to_string(),
         email: "owner@example.com".to_string(),
         email_verified: true,
     };
-    let mut repo = Repository::new(&owner, "repo", Visibility::Private, "repoi_test").unwrap();
+    let created = Repository::new(&owner, "repo", Visibility::Private, "repoi_test").unwrap();
+    let mut repo = CollaborationState {
+        record: created.record,
+        collaboration: created.collaboration,
+    };
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
     create_repository_invite(
         &mut repo,
@@ -53,7 +57,7 @@ fn email(state: RepositoryInviteEmailState, created_at_unix: u64) -> RepositoryI
 }
 
 fn request(
-    repo: &Repository,
+    repo: &CollaborationState,
     requester: &str,
     for_invite: &[RepositoryInviteEmail],
     owner_recent_sends_unix: &[u64],

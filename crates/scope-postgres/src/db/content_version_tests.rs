@@ -97,19 +97,16 @@ async fn invites_and_metadata_edits_keep_projections_and_history_current() {
 
     store
         .repositories()
-        .create_repository_invite(
-            CreateRepositoryInviteMutation {
-                owner: "owner".into(),
-                name: "repo".into(),
-                owner_user: owner(),
-                invited_email: "invitee@example.com".into(),
-                permissions: RepositoryMemberPermissions::default(),
-                invite_id: "invite".into(),
-                email_id: "invite-email".into(),
-                now_unix: NOW,
-            },
-            &test_generated_id,
-        )
+        .create_repository_invite(CreateRepositoryInviteMutation {
+            owner: "owner".into(),
+            name: "repo".into(),
+            owner_user: owner(),
+            invited_email: "invitee@example.com".into(),
+            permissions: RepositoryMemberPermissions::default(),
+            invite_id: "invite".into(),
+            email_id: "invite-email".into(),
+            now_unix: NOW,
+        })
         .await
         .unwrap();
     store

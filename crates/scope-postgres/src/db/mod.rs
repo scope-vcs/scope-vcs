@@ -17,6 +17,7 @@ mod clerk_users;
 mod cli_auth;
 mod cli_auth_results;
 mod cli_sessions;
+mod collaboration_rows;
 mod connection;
 mod content_fences;
 mod content_push_transactions;
@@ -138,8 +139,9 @@ pub use maintenance::{
 };
 pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
 pub use repo_collaboration::{
-    CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand, RepositoryCollaboration,
-    RepositoryCollaborationMutation, UpdateRepositoryMemberPermissionsCommand,
+    CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,
+    RepositoryCollaborationMutation, RepositoryCollaborationRead,
+    UpdateRepositoryMemberPermissionsCommand,
 };
 pub use repo_invite_emails::{RepositoryInviteEmailDelivery, RequestRepositoryInviteEmailCommand};
 pub use repo_lifecycle::{CreateRepositoryCommand, RepositoryCreationError};

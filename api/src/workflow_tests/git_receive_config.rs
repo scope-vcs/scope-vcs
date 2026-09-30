@@ -16,7 +16,7 @@ fn config_with_rules(default: Visibility, rules: &[(&str, ConfigVisibility)]) ->
 }
 
 async fn install_push_only_repo(state: &AppState, mut repo: Repository) {
-    repo.members.push(test_repository_member(
+    repo.collaboration.members.push(test_repository_member(
         TEST_REPO_ID,
         PUSH_ONLY_MEMBER_ID,
         member_permissions(true, false),

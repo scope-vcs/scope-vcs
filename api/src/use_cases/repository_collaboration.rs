@@ -1,6 +1,7 @@
 use crate::{error::ApiError, repo_events::RepoChangeReason, state::AppState};
 use scope_domain::{
-    account::UserAccount, repo_collaboration::AcceptRepositoryInviteOutcome, repository::Repository,
+    account::UserAccount, repo_collaboration::AcceptRepositoryInviteOutcome,
+    repository::access::RepositoryAccessContext,
 };
 use scope_postgres::db::RepositoryCollaborationMutation;
 use scope_product_analytics::ProductEvent;
@@ -10,16 +11,11 @@ pub(crate) async fn accept_repository_invite(
     token_hash: &str,
     user: UserAccount,
     now_unix: u64,
-) -> Result<(Repository, AcceptRepositoryInviteOutcome), ApiError> {
+) -> Result<(RepositoryAccessContext, AcceptRepositoryInviteOutcome), ApiError> {
     let (repo, outcome) = state
         .metadata
         .repositories()
-        .accept_repository_invite(
-            token_hash,
-            user.clone(),
-            now_unix,
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .accept_repository_invite(token_hash, user.clone(), now_unix)
         .await?;
     // A repeated acceptance changes nothing, so it is not a second event.
     if matches!(outcome, AcceptRepositoryInviteOutcome::Accepted(_)) {

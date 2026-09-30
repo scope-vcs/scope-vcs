@@ -2,8 +2,9 @@
 //! over for the domain's retention period.
 
 use super::{
-    GeneratedIdSource, RepositoryCollaborationMutation, RepositoryStore, acquire_aggregate_lock,
-    entities, integer_columns, repo_effects::save_repo_mutation, repository_from_model,
+    RepositoryCollaborationMutation, RepositoryStore,
+    collaboration_rows::{lock_collaboration_state, save_collaboration_state},
+    entities, integer_columns,
 };
 use crate::error::PostgresError;
 use scope_domain::repo_collaboration::{
@@ -49,18 +50,11 @@ impl RepositoryStore {
         &self,
         repo_id: &str,
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<Option<RepositoryCollaborationMutation<usize>>, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "repository", repo_id).await?;
-        let Some(row) = entities::repository::Entity::find_by_id(repo_id.to_string())
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-        else {
+        let Some(mut repo) = lock_collaboration_state(&tx, repo_id).await? else {
             return Ok(None);
         };
-        let mut repo = repository_from_model(&tx, row).await?;
         let before = repo.clone();
         let pruned = prune_ended_repository_invites(&mut repo, now_unix);
         if pruned.is_empty() {
@@ -77,18 +71,10 @@ impl RepositoryStore {
             .await
             .map_err(PostgresError::internal)?;
         // Deleting the invites cascades to their links.
-        save_repo_mutation(
-            &tx,
-            &before,
-            &repo,
-            &Default::default(),
-            now_unix,
-            generated_ids,
-        )
-        .await?;
+        save_collaboration_state(&tx, &before, &repo).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(Some(RepositoryCollaborationMutation::committed(
-            &repo,
+            &repo.record,
             pruned.len(),
         )))
     }

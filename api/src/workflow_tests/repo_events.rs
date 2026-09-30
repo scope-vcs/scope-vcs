@@ -191,7 +191,7 @@ async fn repo_events_stream_permission_changes_to_members() {
     cache_test_jwks(&state);
     let writer_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", "user_writer");
     let mut repo = repo_with_readme(&state);
-    repo.members.push(test_repository_member(
+    repo.collaboration.members.push(test_repository_member(
         TEST_REPO_ID,
         writer_id.clone(),
         member_permissions(true, false),
@@ -227,6 +227,7 @@ async fn repo_events_stream_permission_changes_to_members() {
         .unwrap()
         .unwrap();
     let member = repo
+        .collaboration
         .members
         .iter()
         .find(|member| member.user_id == writer_id)

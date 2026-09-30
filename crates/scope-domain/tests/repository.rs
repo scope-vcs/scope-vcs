@@ -10,7 +10,7 @@ use scope_domain::{
         RepoLifecycleState::{AwaitingFirstPush, Ready},
         Repository, RepositoryIncarnation,
         access::MainPushMode,
-        collaboration::{RepositoryMember, RepositoryMemberPermissions},
+        collaboration::{CollaborationState, RepositoryMember, RepositoryMemberPermissions},
         credentials::{FirstPushToken, FirstPushTokenStatus},
     },
 };
@@ -40,7 +40,7 @@ fn user_principal(id: &str) -> Principal {
 }
 
 fn add_member(repo: &mut Repository, user_id: &str, can_push: bool) {
-    repo.members.push(RepositoryMember {
+    repo.collaboration.members.push(RepositoryMember {
         repo_id: repo.record.id.clone(),
         user_id: user_id.to_string(),
         permissions: RepositoryMemberPermissions {
@@ -142,8 +142,12 @@ fn unpublished_repo_is_owner_only_even_with_reader_membership() {
 fn pending_invite_does_not_grant_private_access() {
     let mut repo = test_repo(Private);
     let private_path = ScopePath::parse("/private.txt").unwrap();
+    let mut collaboration = CollaborationState {
+        record: repo.record.clone(),
+        collaboration: repo.collaboration.clone(),
+    };
     create_repository_invite(
-        &mut repo,
+        &mut collaboration,
         CreateRepositoryInviteCommand {
             id: "invite_pending".to_string(),
             invited_email: "invited@example.com".to_string(),
@@ -154,6 +158,7 @@ fn pending_invite_does_not_grant_private_access() {
         },
     )
     .unwrap();
+    repo.collaboration = collaboration.collaboration;
     let principal = user_principal("user_invited");
 
     assert!(!repo.can_read_path(&principal, &private_path));

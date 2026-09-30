@@ -1,4 +1,4 @@
-use crate::db::{entities, generated_ids::test_generated_id, requests::tests::postgres_store};
+use crate::db::{entities, requests::tests::postgres_store};
 use scope_domain::{
     repo_collaboration::{REPOSITORY_INVITE_RETENTION_SECS, REPOSITORY_INVITE_TTL_SECS},
     repository::collaboration::{RepositoryInvite, RepositoryMember, RepositoryMemberPermissions},
@@ -70,8 +70,8 @@ async fn retention_deletes_invites_over_for_thirty_days_with_their_links_and_ema
     let seeded_member = member.clone();
     repositories
         .mutate_repository_for_tests(REPO_ID, move |repo| {
-            repo.invitations = seeded;
-            repo.members = vec![seeded_member];
+            repo.collaboration.invitations = seeded;
+            repo.collaboration.members = vec![seeded_member];
         })
         .await
         .unwrap();
@@ -111,7 +111,7 @@ async fn retention_deletes_invites_over_for_thirty_days_with_their_links_and_ema
         [REPO_ID]
     );
     let mutation = repositories
-        .prune_ended_repository_invites(REPO_ID, NOW, &test_generated_id)
+        .prune_ended_repository_invites(REPO_ID, NOW)
         .await
         .unwrap()
         .unwrap();
@@ -130,13 +130,14 @@ async fn retention_deletes_invites_over_for_thirty_days_with_their_links_and_ema
         .unwrap()
         .unwrap();
     let mut invite_ids = repo
+        .collaboration
         .invitations
         .iter()
         .map(|invite| invite.id.as_str())
         .collect::<Vec<_>>();
     invite_ids.sort_unstable();
     assert_eq!(invite_ids, kept);
-    assert_eq!(repo.members, [member]);
+    assert_eq!(repo.collaboration.members, [member]);
 
     let mut link_owners = entities::repository_invite_link::Entity::find()
         .all(store.db.as_ref())
@@ -166,7 +167,7 @@ async fn retention_deletes_invites_over_for_thirty_days_with_their_links_and_ema
     );
     assert!(
         repositories
-            .prune_ended_repository_invites(REPO_ID, NOW, &test_generated_id)
+            .prune_ended_repository_invites(REPO_ID, NOW)
             .await
             .unwrap()
             .is_none()

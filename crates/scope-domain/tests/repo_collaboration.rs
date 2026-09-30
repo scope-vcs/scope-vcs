@@ -14,7 +14,8 @@ use scope_domain::{
         RepoLifecycleState::Ready as RepoReady,
         Repository,
         collaboration::{
-            RepositoryInvite, RepositoryInviteState, RepositoryMember, RepositoryMemberPermissions,
+            CollaborationState, RepositoryInvite, RepositoryInviteState, RepositoryMember,
+            RepositoryMemberPermissions,
         },
     },
 };
@@ -42,7 +43,7 @@ fn invitee() -> UserAccount {
     user("user_invitee", "Invitee@Example.com")
 }
 
-fn invite(repo: &mut Repository, link_hash: &str, now_unix: u64) -> Result<(), String> {
+fn invite(repo: &mut CollaborationState, link_hash: &str, now_unix: u64) -> Result<(), String> {
     let id = format!("{INVITE_ID}{now_unix}");
     create_repository_invite(
         repo,
@@ -61,18 +62,22 @@ fn invite(repo: &mut Repository, link_hash: &str, now_unix: u64) -> Result<(), S
         .map_err(|error| error.to_string())
 }
 
-fn repo_with_invite() -> Repository {
-    let mut repo = Repository::new(&owner(), "repo", Visibility::Private, "repoi_test").unwrap();
+fn repo_with_invite() -> CollaborationState {
+    let created = Repository::new(&owner(), "repo", Visibility::Private, "repoi_test").unwrap();
+    let mut repo = CollaborationState {
+        record: created.record,
+        collaboration: created.collaboration,
+    };
     repo.record.lifecycle_state = RepoReady;
     invite(&mut repo, FIRST_LINK, CREATED_AT).unwrap();
     repo
 }
 
 /// Everything an invite operation may change.
-fn collaboration(repo: &Repository) -> (Vec<RepositoryInvite>, Vec<RepositoryMember>, u64) {
+fn collaboration(repo: &CollaborationState) -> (Vec<RepositoryInvite>, Vec<RepositoryMember>, u64) {
     (
-        repo.invitations.clone(),
-        repo.members.clone(),
+        repo.collaboration.invitations.clone(),
+        repo.collaboration.members.clone(),
         repo.record.change_version,
     )
 }
@@ -82,14 +87,19 @@ fn invite_id() -> String {
 }
 
 fn landing(
-    repo: &Repository,
+    repo: &CollaborationState,
     viewer: Option<&UserAccount>,
     now_unix: u64,
 ) -> RepositoryInviteLanding {
-    repository_invite_landing(repo, &repo.invitations[0], viewer, now_unix)
+    repository_invite_landing(repo, &repo.collaboration.invitations[0], viewer, now_unix)
 }
 
-fn accept_error(repo: &mut Repository, user: &UserAccount, link: &str, now_unix: u64) -> String {
+fn accept_error(
+    repo: &mut CollaborationState,
+    user: &UserAccount,
+    link: &str,
+    now_unix: u64,
+) -> String {
     match accept_repository_invite(repo, user, link, now_unix) {
         Ok(_) => panic!("acceptance should be refused"),
         Err(error) => error.to_string(),
@@ -170,7 +180,7 @@ fn a_removed_member_cannot_replay_the_invite() {
 
     assert_eq!(landing(&repo, Some(&invitee()), CREATED_AT), AccessRemoved);
     assert!(accept_error(&mut repo, &invitee(), FIRST_LINK, CREATED_AT).contains("removed"));
-    assert!(repo.members.is_empty());
+    assert!(repo.collaboration.members.is_empty());
 }
 
 #[test]
@@ -238,7 +248,7 @@ fn expiry_follows_the_clock_and_frees_the_email_for_a_new_invite() {
     let stored = collaboration(&repo);
 
     assert_eq!(
-        repo.invitations[0].state(EXPIRES_AT - 1),
+        repo.collaboration.invitations[0].state(EXPIRES_AT - 1),
         RepositoryInviteState::Pending
     );
     assert!(
@@ -247,7 +257,7 @@ fn expiry_follows_the_clock_and_frees_the_email_for_a_new_invite() {
             .contains("pending")
     );
     assert_eq!(
-        repo.invitations[0].state(EXPIRES_AT),
+        repo.collaboration.invitations[0].state(EXPIRES_AT),
         RepositoryInviteState::Expired
     );
     assert_eq!(landing(&repo, Some(&invitee()), EXPIRES_AT), Expired);
@@ -274,7 +284,7 @@ fn an_invite_is_pruned_once_it_has_been_over_for_the_retention_period() {
 
     let pruned = prune_ended_repository_invites(&mut repo, pruned_at);
     assert_eq!(pruned.len(), 1);
-    assert!(repo.invitations.is_empty());
-    assert_eq!(repo.members, kept.1);
+    assert!(repo.collaboration.invitations.is_empty());
+    assert_eq!(repo.collaboration.members, kept.1);
     assert_eq!(repo.record.change_version, kept.2 + 1);
 }

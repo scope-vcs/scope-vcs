@@ -211,6 +211,7 @@ pub(super) fn store_with_public_user_membership() -> MetadataStore {
         .repositories
         .get_mut("owner/repo")
         .unwrap()
+        .collaboration
         .members
         .push(RepositoryMember {
             repo_id: "owner/repo".to_string(),

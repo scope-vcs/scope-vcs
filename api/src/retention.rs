@@ -52,11 +52,7 @@ pub(crate) async fn apply_invite_retention(
     let mut pruned = 0;
     for repo_id in repo_ids {
         let mutation = repositories
-            .prune_ended_repository_invites(
-                &repo_id,
-                now_unix,
-                &crate::persistence_ids::generate_persistence_id,
-            )
+            .prune_ended_repository_invites(&repo_id, now_unix)
             .await
             .map_err(|error| anyhow::anyhow!(error.message))?;
         if let Some(mutation) = mutation {

@@ -483,7 +483,8 @@ where
         repo.record.owner_handle.as_str(),
     ))
     .chain(
-        repo.members
+        repo.collaboration
+            .members
             .iter()
             .map(|member| (member.user_id.as_str(), member.user_id.as_str())),
     );
@@ -692,7 +693,8 @@ fn complete_test_users(catalog: &mut CatalogFixture) {
             repo.record.owner_handle.clone(),
         ))
         .chain(
-            repo.members
+            repo.collaboration
+                .members
                 .iter()
                 .map(|member| (member.user_id.clone(), member.user_id.clone())),
         )

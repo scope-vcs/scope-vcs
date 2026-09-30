@@ -1,9 +1,8 @@
 use super::{
     account::UserAccount,
-    repository::Repository,
     repository::collaboration::{
-        RepositoryInvite, RepositoryInviteState, RepositoryMember, RepositoryMemberPermissions,
-        normalize_repository_invite_email,
+        CollaborationState, RepositoryInvite, RepositoryInviteState, RepositoryMember,
+        RepositoryMemberPermissions, normalize_repository_invite_email,
     },
 };
 use crate::error::DomainError;
@@ -53,7 +52,7 @@ pub struct CreateRepositoryInviteCommand<'a> {
 }
 
 pub fn create_repository_invite(
-    repo: &mut Repository,
+    repo: &mut CollaborationState,
     command: CreateRepositoryInviteCommand<'_>,
 ) -> Result<RepositoryInvite, DomainError> {
     ensure_can_manage_members(repo, &command.owner.id)?;
@@ -66,7 +65,7 @@ pub fn create_repository_invite(
     {
         return Err(DomainError::conflict("user is already a repository member"));
     }
-    if repo.invitations.iter().any(|invite| {
+    if repo.collaboration.invitations.iter().any(|invite| {
         invite.invited_email_normalized == normalized
             && invite.state(command.now_unix) == RepositoryInviteState::Pending
     }) {
@@ -92,15 +91,15 @@ pub fn create_repository_invite(
         accepted_at_unix: None,
         revoked_at_unix: None,
     };
-    repo.invitations.push(invite.clone());
+    repo.collaboration.invitations.push(invite.clone());
     sort_invitations(repo);
-    repo.bump_change_version();
+    repo.record.bump_change_version();
     Ok(invite)
 }
 
 /// Adds one more working link. Earlier links and the expiry stay as they are.
 pub fn issue_repository_invite_link(
-    repo: &mut Repository,
+    repo: &mut CollaborationState,
     owner_user_id: &str,
     invite_id: &str,
     link_hash: String,
@@ -111,12 +110,12 @@ pub fn issue_repository_invite_link(
     invite.link_hashes.push(link_hash);
     invite.updated_at_unix = now_unix;
     let invite = invite.clone();
-    repo.bump_change_version();
+    repo.record.bump_change_version();
     Ok(invite)
 }
 
 pub fn repository_invite_landing(
-    repo: &Repository,
+    repo: &CollaborationState,
     invite: &RepositoryInvite,
     viewer: Option<&UserAccount>,
     now_unix: u64,
@@ -152,17 +151,23 @@ pub fn repository_invite_landing(
 }
 
 pub fn accept_repository_invite(
-    repo: &mut Repository,
+    repo: &mut CollaborationState,
     user: &UserAccount,
     link_hash: &str,
     now_unix: u64,
 ) -> Result<AcceptRepositoryInviteOutcome, DomainError> {
     let index = repo
+        .collaboration
         .invitations
         .iter()
         .position(|invite| invite.link_hashes.iter().any(|hash| hash == link_hash))
         .ok_or_else(|| DomainError::not_found("repository invite not found"))?;
-    match repository_invite_landing(repo, &repo.invitations[index], Some(user), now_unix) {
+    match repository_invite_landing(
+        repo,
+        &repo.collaboration.invitations[index],
+        Some(user),
+        now_unix,
+    ) {
         RepositoryInviteLanding::Open(RepositoryInviteViewer::Ready) => {}
         RepositoryInviteLanding::Open(_) => {
             return Err(DomainError::forbidden(
@@ -170,8 +175,10 @@ pub fn accept_repository_invite(
             ));
         }
         RepositoryInviteLanding::Member => {
-            let accepted_here =
-                repo.invitations[index].accepted_by_user_id.as_deref() == Some(&user.id);
+            let accepted_here = repo.collaboration.invitations[index]
+                .accepted_by_user_id
+                .as_deref()
+                == Some(&user.id);
             return match repo.member_for_user(&user.id) {
                 Some(member) if accepted_here => Ok(
                     AcceptRepositoryInviteOutcome::AlreadyAccepted(member.clone()),
@@ -195,7 +202,7 @@ pub fn accept_repository_invite(
         }
     }
 
-    let invite = &mut repo.invitations[index];
+    let invite = &mut repo.collaboration.invitations[index];
     invite.accepted_by_user_id = Some(user.id.clone());
     invite.accepted_at_unix = Some(now_unix);
     invite.updated_at_unix = now_unix;
@@ -206,14 +213,14 @@ pub fn accept_repository_invite(
         created_at_unix: now_unix,
         updated_at_unix: now_unix,
     };
-    repo.members.push(member.clone());
+    repo.collaboration.members.push(member.clone());
     sort_members(repo);
-    repo.bump_change_version();
+    repo.record.bump_change_version();
     Ok(AcceptRepositoryInviteOutcome::Accepted(member))
 }
 
 pub fn revoke_repository_invite(
-    repo: &mut Repository,
+    repo: &mut CollaborationState,
     owner_user_id: &str,
     invite_id: &str,
     now_unix: u64,
@@ -223,7 +230,7 @@ pub fn revoke_repository_invite(
     invite.revoked_at_unix = Some(now_unix);
     invite.updated_at_unix = now_unix;
     let invite = invite.clone();
-    repo.bump_change_version();
+    repo.record.bump_change_version();
     Ok(invite)
 }
 
@@ -231,10 +238,10 @@ pub fn revoke_repository_invite(
 /// `REPOSITORY_INVITE_RETENTION_SECS` ago. Members are untouched: access lives
 /// in the member list, not in the invite that granted it.
 pub fn prune_ended_repository_invites(
-    repo: &mut Repository,
+    repo: &mut CollaborationState,
     now_unix: u64,
 ) -> Vec<RepositoryInvite> {
-    let (pruned, kept) = std::mem::take(&mut repo.invitations)
+    let (pruned, kept) = std::mem::take(&mut repo.collaboration.invitations)
         .into_iter()
         .partition::<Vec<_>, _>(|invite| {
             invite
@@ -242,19 +249,20 @@ pub fn prune_ended_repository_invites(
                 .saturating_add(REPOSITORY_INVITE_RETENTION_SECS)
                 <= now_unix
         });
-    repo.invitations = kept;
+    repo.collaboration.invitations = kept;
     if !pruned.is_empty() {
-        repo.bump_change_version();
+        repo.record.bump_change_version();
     }
     pruned
 }
 
 fn pending_invite_mut<'a>(
-    repo: &'a mut Repository,
+    repo: &'a mut CollaborationState,
     invite_id: &str,
     now_unix: u64,
 ) -> Result<&'a mut RepositoryInvite, DomainError> {
     let invite = repo
+        .collaboration
         .invitations
         .iter_mut()
         .find(|invite| invite.id == invite_id)
@@ -268,7 +276,7 @@ fn pending_invite_mut<'a>(
 }
 
 pub fn update_repository_member_permissions(
-    repo: &mut Repository,
+    repo: &mut CollaborationState,
     owner_user_id: &str,
     member_user_id: &str,
     permissions: RepositoryMemberPermissions,
@@ -276,6 +284,7 @@ pub fn update_repository_member_permissions(
 ) -> Result<RepositoryMember, DomainError> {
     ensure_can_manage_members(repo, owner_user_id)?;
     let member = repo
+        .collaboration
         .members
         .iter_mut()
         .find(|member| member.user_id == member_user_id)
@@ -283,27 +292,31 @@ pub fn update_repository_member_permissions(
     member.permissions = permissions;
     member.updated_at_unix = now_unix;
     let member = member.clone();
-    repo.bump_change_version();
+    repo.record.bump_change_version();
     Ok(member)
 }
 
 pub fn remove_repository_member(
-    repo: &mut Repository,
+    repo: &mut CollaborationState,
     owner_user_id: &str,
     member_user_id: &str,
 ) -> Result<RepositoryMember, DomainError> {
     ensure_can_manage_members(repo, owner_user_id)?;
     let index = repo
+        .collaboration
         .members
         .iter()
         .position(|member| member.user_id == member_user_id)
         .ok_or_else(|| DomainError::not_found("repository member not found"))?;
-    let removed = repo.members.remove(index);
-    repo.bump_change_version();
+    let removed = repo.collaboration.members.remove(index);
+    repo.record.bump_change_version();
     Ok(removed)
 }
 
-pub fn ensure_can_manage_members(repo: &Repository, user_id: &str) -> Result<(), DomainError> {
+pub fn ensure_can_manage_members(
+    repo: &CollaborationState,
+    user_id: &str,
+) -> Result<(), DomainError> {
     if repo.access_for_user_id(user_id).can_manage_members {
         Ok(())
     } else if repo.is_owner_user(user_id) {
@@ -325,16 +338,16 @@ fn validate_invite_email(email: &str) -> Result<String, DomainError> {
     Ok(normalized)
 }
 
-fn sort_members(repo: &mut Repository) {
-    repo.members.sort_by(|left, right| {
+fn sort_members(repo: &mut CollaborationState) {
+    repo.collaboration.members.sort_by(|left, right| {
         left.user_id
             .cmp(&right.user_id)
             .then(left.created_at_unix.cmp(&right.created_at_unix))
     });
 }
 
-fn sort_invitations(repo: &mut Repository) {
-    repo.invitations.sort_by(|left, right| {
+fn sort_invitations(repo: &mut CollaborationState) {
+    repo.collaboration.invitations.sort_by(|left, right| {
         left.invited_email_normalized
             .cmp(&right.invited_email_normalized)
             .then(left.id.cmp(&right.id))

@@ -2,7 +2,6 @@ use super::*;
 use crate::{
     db::{
         MetadataStore, acquire_aggregate_lock,
-        generated_ids::test_generated_id,
         locks::wait_for_transaction_waiter,
         test_support::fixtures::{repository, source_blob, store_with_repositories, user},
     },
@@ -60,7 +59,7 @@ impl Command {
 async fn fixture(command: Command) -> MetadataStore {
     let owner = user(OWNER, "owner");
     let mut repo = repository(&owner, "repo", Visibility::Public);
-    repo.members.push(RepositoryMember {
+    repo.collaboration.members.push(RepositoryMember {
         repo_id: REPO.into(),
         user_id: MEMBER.into(),
         permissions: RepositoryMemberPermissions {
@@ -219,7 +218,7 @@ async fn run_control_that_wins_repository_lock_completes_before_real_revocation(
         let revoking = tokio::spawn(async move {
             revoking_store
                 .repositories()
-                .remove_repository_member("owner", "repo", OWNER, MEMBER, 21, &test_generated_id)
+                .remove_repository_member("owner", "repo", OWNER, MEMBER, 21)
                 .await
         });
         wait_for_transaction_waiter(&store, command_pid).await;

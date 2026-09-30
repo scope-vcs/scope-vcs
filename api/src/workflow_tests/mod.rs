@@ -620,8 +620,7 @@ fn test_repo(owner_id: &str) -> Repository {
         live_files: BTreeMap::new(),
         git_head: None,
         git_pack_spans: Vec::new(),
-        members: Vec::new(),
-        invitations: Vec::new(),
+        collaboration: Default::default(),
     }
 }
 

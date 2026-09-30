@@ -53,7 +53,7 @@ async fn state_with(readme: bool, lifecycle: RepoLifecycleState) -> AppState {
         test_repo(&test_owner_id())
     };
     repo.record.lifecycle_state = lifecycle;
-    repo.members.push(test_repository_member(
+    repo.collaboration.members.push(test_repository_member(
         TEST_REPO_ID,
         scope_postgres::db::scope_user_id_for_auth_identity("clerk", MEMBER_CLERK_ID),
         RepositoryMemberPermissions::default(),
