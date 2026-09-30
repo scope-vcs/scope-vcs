@@ -1,4 +1,4 @@
-use super::{RepositoryStore, entities, projection_encoding::LIVE_PROJECTION_SOURCE};
+use super::{entities, projection_encoding::LIVE_PROJECTION_SOURCE};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
     QueryOrder,
@@ -276,47 +276,4 @@ fn projected_files_for_audience(
         ProjectionViewKey::Public => Principal::public(),
     };
     domain_projected_file_contents(repo, &principal)
-}
-
-impl RepositoryStore {
-    pub async fn live_projection_head_oid(
-        &self,
-        repo: &Repository,
-        view_key: ProjectionViewKey,
-    ) -> Result<Option<String>, PostgresError> {
-        live_projection_head_oid_for_frontier(
-            self.db.as_ref(),
-            &repo.record.id,
-            repo.record.change_version,
-            view_key,
-        )
-        .await
-    }
-}
-
-pub(super) async fn live_projection_head_oid_for_frontier<C: ConnectionTrait>(
-    conn: &C,
-    repo_id: &str,
-    repo_version: u64,
-    view_key: ProjectionViewKey,
-) -> Result<Option<String>, PostgresError> {
-    let expected_version = projection_repo_version(repo_version)?;
-    let row = entities::projection_read_model::Entity::find()
-        .filter(entities::projection_read_model::Column::RepoId.eq(repo_id.to_string()))
-        .filter(entities::projection_read_model::Column::RepoVersion.eq(expected_version))
-        .filter(
-            entities::projection_read_model::Column::Source.eq(LIVE_PROJECTION_SOURCE.to_string()),
-        )
-        .filter(entities::projection_read_model::Column::Audience.eq(view_key.as_str().to_string()))
-        .filter(
-            entities::projection_read_model::Column::IdentityVersion
-                .eq(scope_git::PROJECTION_IDENTITY_VERSION),
-        )
-        .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
-        .ok_or_else(|| {
-            PostgresError::unavailable("repository projection is rebuilding; retry shortly")
-        })?;
-    Ok(row.head_oid)
 }

@@ -279,7 +279,7 @@ pub(crate) async fn start_request(
     let audience: RequestAudience = input.audience.into();
     validate_start_request_audience(request_actor_role(access), audience)
         .map_err(|error| ApiError::forbidden(error.message))?;
-    let base_main_oid = current_main_oid_for_audience(&state, &repo, audience)
+    let base_main_oid = current_main_oid_for_audience(&state, &repo, access, audience)
         .await?
         .ok_or_else(|| ApiError::conflict("repo has no main branch to base a request on"))?;
     let request_id = crate::persistence_ids::generate_prefixed_id("req")?;
@@ -556,13 +556,9 @@ async fn request_response_for_viewer(
 pub(crate) async fn current_main_oid_for_audience(
     state: &AppState,
     repo: &Repository,
+    access: RepositoryAccess,
     audience: RequestAudience,
 ) -> Result<Option<String>, ApiError> {
-    if audience == RequestAudience::Private
-        && let Some(head) = repo.git_head.as_ref()
-    {
-        return Ok(Some(head.head_oid.clone()));
-    }
     let view_key = match audience {
         RequestAudience::Private => ProjectionViewKey::Private,
         RequestAudience::Public => ProjectionViewKey::Public,
@@ -570,7 +566,13 @@ pub(crate) async fn current_main_oid_for_audience(
     state
         .metadata
         .repositories()
-        .live_projection_head_oid(repo, view_key)
+        .repository_main_oid_for_audience(
+            &RepositoryAccessContext {
+                record: repo.record.clone(),
+                access,
+            },
+            view_key,
+        )
         .await
         .map_err(Into::into)
 }

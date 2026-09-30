@@ -1,10 +1,13 @@
 use super::integer_columns;
 use super::{RepositoryStore, begin_metadata_read_snapshot, entities};
 use crate::error::PostgresError;
-use scope_domain::repository::{
-    RepoRecord,
-    access::{RepositoryAccess, RepositoryAccessContext, repository_access_for_user_id},
-    repo_id,
+use scope_domain::{
+    projection::ProjectionViewKey,
+    repository::{
+        RepoRecord,
+        access::{RepositoryAccess, RepositoryAccessContext, repository_access_for_user_id},
+        repo_id,
+    },
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, FromQueryResult, QueryFilter,
@@ -153,14 +156,30 @@ impl RepositoryStore {
         &self,
         context: &RepositoryAccessContext,
     ) -> Result<Option<String>, PostgresError> {
-        let audience = scope_domain::projection::ProjectionViewKey::from_access(context.access);
+        self.repository_main_oid_for_audience(
+            context,
+            ProjectionViewKey::from_access(context.access),
+        )
+        .await
+    }
+
+    pub async fn repository_main_oid_for_audience(
+        &self,
+        context: &RepositoryAccessContext,
+        audience: ProjectionViewKey,
+    ) -> Result<Option<String>, PostgresError> {
+        if audience == ProjectionViewKey::Private && !context.access.can_read_private_files {
+            return Err(PostgresError::permission_denied(
+                "private repository files require maintainer access",
+            ));
+        }
         for _ in 0..2 {
             let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
             let current = repository_access(&tx, &context.record.id, None)
                 .await?
                 .ok_or_else(|| PostgresError::not_found("repo not found"))?;
             ensure_current_context(context, &current)?;
-            if context.access.can_read_private_files
+            if audience == ProjectionViewKey::Private
                 && let Some(head) = entities::git_head::Entity::find_by_id(&context.record.id)
                     .one(&tx)
                     .await
