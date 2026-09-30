@@ -4,7 +4,7 @@
 
 use super::{
     repo_collaboration::ensure_can_manage_members,
-    repository::{Repository, collaboration::RepositoryInviteState},
+    repository::collaboration::{CollaborationState, RepositoryInviteState},
 };
 use crate::error::DomainError;
 
@@ -61,13 +61,14 @@ pub struct RequestInviteEmailCommand<'a> {
 }
 
 pub fn request_repository_invite_email(
-    repo: &Repository,
+    repo: &CollaborationState,
     command: RequestInviteEmailCommand<'_>,
     history: InviteEmailHistory<'_>,
 ) -> Result<RepositoryInviteEmail, DomainError> {
     ensure_can_manage_members(repo, command.owner_user_id)?;
     let now = command.now_unix;
     let invite = repo
+        .collaboration
         .invitations
         .iter()
         .find(|invite| invite.id == command.invite_id)

@@ -12,7 +12,7 @@ use crate::{
     projection::SourceGraph,
     repo_config::{ConfigVisibility, RepoConfig},
     repository::{
-        collaboration::{RepositoryInvite, RepositoryMember},
+        collaboration::{RepositoryCollaboration, RepositoryMember},
         credentials::{FirstPushToken, GitPushToken},
         git::{GitHead, GitPackSpan},
     },
@@ -96,8 +96,7 @@ pub struct Repository {
     pub live_files: BTreeMap<ScopePath, SourceBlob>,
     pub git_head: Option<GitHead>,
     pub git_pack_spans: Vec<GitPackSpan>,
-    pub members: Vec<RepositoryMember>,
-    pub invitations: Vec<RepositoryInvite>,
+    pub collaboration: RepositoryCollaboration,
 }
 
 impl Repository {
@@ -136,8 +135,7 @@ impl Repository {
             live_files: BTreeMap::new(),
             git_head: None,
             git_pack_spans: Vec::new(),
-            members: Vec::new(),
-            invitations: Vec::new(),
+            collaboration: RepositoryCollaboration::default(),
         })
     }
 
@@ -150,7 +148,7 @@ impl Repository {
     }
 
     pub fn member_for_user(&self, user_id: &str) -> Option<&RepositoryMember> {
-        self.members.iter().find(|member| member.user_id == user_id)
+        self.collaboration.member_for_user(user_id)
     }
 
     pub fn is_waiting_for_first_push(&self) -> bool {
@@ -163,7 +161,7 @@ impl Repository {
 
     /// Records a change that leaves every projection input as it was.
     pub fn bump_change_version(&mut self) {
-        self.record.change_version = self.record.change_version.saturating_add(1);
+        self.record.bump_change_version();
     }
 
     /// Records a change to a projection input.
@@ -206,6 +204,10 @@ impl RepoRecord {
             repository_id: self.id.clone(),
             incarnation_id: self.incarnation_id.clone(),
         }
+    }
+
+    pub fn bump_change_version(&mut self) {
+        self.change_version = self.change_version.saturating_add(1);
     }
 }
 

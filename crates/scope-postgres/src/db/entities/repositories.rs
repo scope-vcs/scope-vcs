@@ -53,8 +53,7 @@ pub mod repository {
         pub fn try_into_domain(
             self,
             facts: RepositoryFacts,
-            members: Vec<RepositoryMember>,
-            invitations: Vec<RepositoryInvite>,
+            collaboration: RepositoryCollaboration,
             history: crate::db::history_rows::RepositoryHistory,
         ) -> Result<Repository, PostgresError> {
             let lifecycle_state = decode_enum::<RepoLifecycleState>(self.publication_state)?;
@@ -83,8 +82,7 @@ pub mod repository {
                 live_files: history.live_files,
                 git_head: facts.git_head,
                 git_pack_spans: facts.git_pack_spans,
-                members,
-                invitations,
+                collaboration,
             })
         }
     }

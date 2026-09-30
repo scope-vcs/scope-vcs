@@ -20,7 +20,8 @@ impl ObjectStore for RevokeMembershipOnUpload {
             self.metadata
                 .repositories()
                 .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-                    repo.members
+                    repo.collaboration
+                        .members
                         .retain(|member| member.user_id != self.member_id);
                 })
                 .await
@@ -67,7 +68,7 @@ async fn uploaded_manual_run_revocation_queues_cleanup_and_preserves_shared_sour
             .metadata
             .repositories()
             .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-                repo.members.push(test_repository_member(
+                repo.collaboration.members.push(test_repository_member(
                     TEST_REPO_ID,
                     &member_id,
                     Default::default(),

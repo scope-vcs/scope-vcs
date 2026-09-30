@@ -7,9 +7,10 @@
 use super::{
     AuthStore, GeneratedIdSource, acquire_aggregate_lock,
     auth::load_user_by_id,
+    collaboration_rows::{load_repository_collaboration, save_collaboration_state},
     entities,
-    repo_effects::save_repo_mutation,
     repo_lifecycle::delete_locked_repository,
+    repository_access::load_repo_record,
     repository_from_model,
     request_revision_rows::revisions_for_request_ids,
     request_rows::{request_by_id, request_events_by_request_id},
@@ -18,9 +19,9 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     account::deletion::{SharedRepositories, delete_account, forget_deleted_account},
-    repo_actions::RepoEffects,
     repository::{
-        Repository, RepositoryIncarnation, collaboration::normalize_repository_invite_email,
+        RepositoryIncarnation,
+        collaboration::{CollaborationState, normalize_repository_invite_email},
     },
     requests::{CloseRequestInput, CloseRequestMutation, close_request},
 };
@@ -168,18 +169,23 @@ impl AuthStore {
         let mut others = Vec::new();
         for repo_id in repository_ids {
             acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
-            let Some(row) = entities::repository::Entity::find_by_id(repo_id)
-                .one(&tx)
-                .await
-                .map_err(PostgresError::internal)?
-            else {
+            let Some(record) = load_repo_record(&tx, &repo_id).await? else {
                 continue;
             };
-            let repo = repository_from_model(&tx, row).await?;
-            if repo.is_owner_user(user_id) {
-                owned.push(repo);
+            if record.owner_user_id == user_id {
+                // An owned repository leaves whole, with its storage.
+                let row = entities::repository::Entity::find_by_id(repo_id)
+                    .one(&tx)
+                    .await
+                    .map_err(PostgresError::internal)?
+                    .ok_or_else(|| PostgresError::internal_message("locked repository vanished"))?;
+                owned.push(repository_from_model(&tx, row).await?);
             } else {
-                others.push(repo);
+                // Any other loses at most the account's membership and invites.
+                others.push(CollaborationState {
+                    collaboration: load_repository_collaboration(&tx, &repo_id).await?,
+                    record,
+                });
             }
         }
         let deletion = delete_account(
@@ -226,7 +232,15 @@ impl AuthStore {
                 // Drafts in owned repositories leave with the repository.
                 continue;
             };
-            delete_draft(&tx, repo, &request_id, user_id, now_unix, generated_ids).await?;
+            delete_draft(
+                &tx,
+                &repo.incarnation(),
+                &request_id,
+                user_id,
+                now_unix,
+                generated_ids,
+            )
+            .await?;
         }
         for mut repo in others {
             let before = repo.clone();
@@ -237,15 +251,7 @@ impl AuthStore {
                 }
                 continue;
             }
-            save_repo_mutation(
-                &tx,
-                &before,
-                &repo,
-                &RepoEffects::default(),
-                now_unix,
-                generated_ids,
-            )
-            .await?;
+            save_collaboration_state(&tx, &before, &repo).await?;
             if was_member {
                 super::request_attention::remove_member_attention(&tx, &repo.record.id, user_id)
                     .await?;
@@ -341,7 +347,7 @@ impl AuthStore {
 /// way its author closing it would.
 async fn delete_draft(
     tx: &DatabaseTransaction,
-    repo: &Repository,
+    incarnation: &RepositoryIncarnation,
     request_id: &str,
     user_id: &str,
     now_unix: u64,
@@ -379,7 +385,7 @@ async fn delete_draft(
     };
     persist_deleted_draft(
         tx,
-        &repo.incarnation(),
+        incarnation,
         &request,
         &revisions,
         orphan_objects,

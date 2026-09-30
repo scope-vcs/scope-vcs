@@ -253,7 +253,9 @@ async fn an_expired_invite_reads_as_expired_everywhere_and_can_be_replaced() {
     state
         .metadata
         .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, move |repo| repo.invitations.push(invite))
+        .mutate_repository_for_tests(TEST_REPO_ID, move |repo| {
+            repo.collaboration.invitations.push(invite)
+        })
         .await
         .unwrap();
 
@@ -371,7 +373,8 @@ async fn a_new_invite_is_emailed_with_a_link_that_was_never_stored() {
         .unwrap()
         .unwrap();
     let invite = collaboration
-        .invites
+        .collaboration
+        .invitations
         .iter()
         .find(|i| i.id == invite_id)
         .unwrap();
@@ -427,20 +430,17 @@ async fn an_outage_is_retried_and_a_refusal_leaves_a_retryable_invite() {
     let retried = state
         .metadata
         .repositories()
-        .request_repository_invite_email(
-            scope_postgres::db::RequestRepositoryInviteEmailCommand {
-                owner: "owner".into(),
-                name: "repo".into(),
-                owner_user_id: test_owner_id(),
-                invite_id,
-                email_id: "invite_email_retry".into(),
-                now_unix: now + 3_700,
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .request_repository_invite_email(scope_postgres::db::RequestRepositoryInviteEmailCommand {
+            owner: "owner".into(),
+            name: "repo".into(),
+            owner_user_id: test_owner_id(),
+            invite_id,
+            email_id: "invite_email_retry".into(),
+            now_unix: now + 3_700,
+        })
         .await
         .unwrap();
-    assert_eq!(retried.value.id, "invite_email_retry");
+    assert_eq!(retried.value.1.id, "invite_email_retry");
     assert_eq!(deliver_at(&state, now + 3_700).await.unwrap(), 1);
     assert_eq!(mailer(&state).sent.lock().unwrap().len(), 1);
     assert_eq!(invite_email_state(&state).await, "sent");
@@ -495,7 +495,6 @@ async fn one_sender_holds_an_email_until_its_claim_lapses() {
             InviteEmailAttempt::Refused("stale sender".into()),
             None,
             now + 122,
-            &crate::persistence_ids::generate_persistence_id,
         )
         .await
         .unwrap();

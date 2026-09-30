@@ -451,7 +451,7 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
             ScopePath::parse("/file-0.txt").unwrap(),
         ))
         .unwrap();
-    repo.members.push(RepositoryMember {
+    repo.collaboration.members.push(RepositoryMember {
         repo_id: repo.record.id.clone(),
         user_id: "member".into(),
         permissions: RepositoryMemberPermissions {

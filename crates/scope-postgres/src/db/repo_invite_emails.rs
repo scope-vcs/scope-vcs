@@ -3,8 +3,9 @@
 //! here so the sender can retry them.
 
 use super::{
-    GeneratedIdSource, RepositoryCollaborationMutation, RepositoryStore, acquire_aggregate_lock,
-    entities, repo_effects::save_repo_mutation, repository_from_model,
+    RepositoryCollaborationMutation, RepositoryStore, acquire_aggregate_lock,
+    collaboration_rows::{lock_collaboration_state, save_collaboration_state},
+    entities,
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -14,7 +15,11 @@ use scope_domain::{
         RepositoryInviteEmail, RepositoryInviteEmailState, RequestInviteEmailCommand,
         record_invite_email_attempt, request_repository_invite_email,
     },
-    repository::{Repository, collaboration::RepositoryInvite, repo_id},
+    repository::{
+        RepoRecord,
+        collaboration::{CollaborationState, RepositoryInvite},
+        repo_id,
+    },
 };
 use sea_orm::{
     ActiveModelTrait,
@@ -38,19 +43,24 @@ pub struct RequestRepositoryInviteEmailCommand {
 
 /// A queued email together with the invite and repository it belongs to.
 pub struct RepositoryInviteEmailDelivery {
-    pub repo: Repository,
+    pub record: RepoRecord,
     pub invite: RepositoryInvite,
 }
 
 impl RepositoryStore {
+    /// Returns the emailed invite with its new email.
     pub async fn request_repository_invite_email(
         &self,
         command: RequestRepositoryInviteEmailCommand,
-        generated_ids: &dyn GeneratedIdSource,
-    ) -> Result<RepositoryCollaborationMutation<RepositoryInviteEmail>, PostgresError> {
+    ) -> Result<
+        RepositoryCollaborationMutation<(RepositoryInvite, RepositoryInviteEmail)>,
+        PostgresError,
+    > {
         let repo_id = repo_id(&command.owner, &command.name);
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let mut repo = lock_repository(&tx, &repo_id).await?;
+        let mut repo = lock_collaboration_state(&tx, &repo_id)
+            .await?
+            .ok_or_else(|| PostgresError::not_found(format!("repo {repo_id} not found")))?;
         let before = repo.clone();
         let email = queue_invite_email(
             &tx,
@@ -61,19 +71,21 @@ impl RepositoryStore {
             command.now_unix,
         )
         .await?;
+        let invite = repo
+            .collaboration
+            .invitations
+            .iter()
+            .find(|invite| invite.id == email.invite_id)
+            .cloned()
+            .ok_or_else(|| PostgresError::internal_message("emailed invite is missing"))?;
         // The members list shows delivery, so it has to hear about this.
-        repo.bump_change_version();
-        save_repo_mutation(
-            &tx,
-            &before,
-            &repo,
-            &Default::default(),
-            command.now_unix,
-            generated_ids,
-        )
-        .await?;
+        repo.record.bump_change_version();
+        save_collaboration_state(&tx, &before, &repo).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(RepositoryCollaborationMutation::committed(&repo, email))
+        Ok(RepositoryCollaborationMutation::committed(
+            &repo.record,
+            (invite, email),
+        ))
     }
 
     /// Claims due emails for one sender. A claim lapses by itself, so an email
@@ -137,14 +149,15 @@ impl RepositoryStore {
         claim_token: &str,
         link_hash: String,
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<Option<RepositoryCollaborationMutation<RepositoryInviteEmailDelivery>>, PostgresError>
     {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let Some(repo_id) = email_repository_id(&tx, email_id).await? else {
             return Ok(None);
         };
-        let mut repo = lock_repository(&tx, &repo_id).await?;
+        let mut repo = lock_collaboration_state(&tx, &repo_id)
+            .await?
+            .ok_or_else(|| PostgresError::not_found(format!("repo {repo_id} not found")))?;
         let Some((_, email)) = claimed_email(&tx, email_id, claim_token).await? else {
             return Ok(None);
         };
@@ -157,22 +170,14 @@ impl RepositoryStore {
             link_hash,
             now_unix,
         )?;
-        save_repo_mutation(
-            &tx,
-            &before,
-            &repo,
-            &Default::default(),
-            now_unix,
-            generated_ids,
-        )
-        .await?;
+        save_collaboration_state(&tx, &before, &repo).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        let delivery = RepositoryInviteEmailDelivery {
-            repo: repo.clone(),
-            invite,
-        };
         Ok(Some(RepositoryCollaborationMutation::committed(
-            &repo, delivery,
+            &repo.record,
+            RepositoryInviteEmailDelivery {
+                record: repo.record.clone(),
+                invite,
+            },
         )))
     }
 
@@ -186,13 +191,14 @@ impl RepositoryStore {
         attempt: InviteEmailAttempt,
         provider_message_id: Option<String>,
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<Option<RepositoryCollaborationMutation<RepositoryInviteEmail>>, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let Some(repo_id) = email_repository_id(&tx, email_id).await? else {
             return Ok(None);
         };
-        let mut repo = lock_repository(&tx, &repo_id).await?;
+        let mut repo = lock_collaboration_state(&tx, &repo_id)
+            .await?
+            .ok_or_else(|| PostgresError::not_found(format!("repo {repo_id} not found")))?;
         // Another sender took over after this one's claim lapsed. Its result
         // is the one that counts.
         let Some((row, mut email)) = claimed_email(&tx, email_id, claim_token).await? else {
@@ -225,19 +231,12 @@ impl RepositoryStore {
             return Ok(None);
         }
         let before = repo.clone();
-        repo.bump_change_version();
-        save_repo_mutation(
-            &tx,
-            &before,
-            &repo,
-            &Default::default(),
-            now_unix,
-            generated_ids,
-        )
-        .await?;
+        repo.record.bump_change_version();
+        save_collaboration_state(&tx, &before, &repo).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(Some(RepositoryCollaborationMutation::committed(
-            &repo, email,
+            &repo.record,
+            email,
         )))
     }
 }
@@ -246,7 +245,7 @@ impl RepositoryStore {
 /// transaction and under its repository lock.
 pub(super) async fn queue_invite_email(
     tx: &DatabaseTransaction,
-    repo: &Repository,
+    repo: &CollaborationState,
     owner_user_id: &str,
     invite_id: &str,
     email_id: String,
@@ -307,19 +306,6 @@ pub(super) async fn queue_invite_email(
     .await
     .map_err(PostgresError::internal)?;
     Ok(email)
-}
-
-async fn lock_repository(
-    tx: &DatabaseTransaction,
-    repo_id: &str,
-) -> Result<Repository, PostgresError> {
-    acquire_aggregate_lock(tx, "repository", repo_id).await?;
-    let row = entities::repository::Entity::find_by_id(repo_id.to_string())
-        .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
-        .ok_or_else(|| PostgresError::not_found(format!("repo {repo_id} not found")))?;
-    repository_from_model(tx, row).await
 }
 
 /// The repository an email belongs to, read before taking that repository's

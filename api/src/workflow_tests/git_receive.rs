@@ -6,7 +6,8 @@ async fn repo_with_push_member(
     permissions: RepositoryMemberPermissions,
 ) {
     let mut repo = repo_with_readme(state);
-    repo.members
+    repo.collaboration
+        .members
         .push(test_repository_member(TEST_REPO_ID, member_id, permissions));
     replace_test_repo(state, repo).await;
 }
@@ -296,7 +297,9 @@ async fn published_push_rechecks_member_permission_before_persisting() {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, move |repo| {
-            repo.members.retain(|member| member.user_id != member_id);
+            repo.collaboration
+                .members
+                .retain(|member| member.user_id != member_id);
         })
         .await
         .unwrap();

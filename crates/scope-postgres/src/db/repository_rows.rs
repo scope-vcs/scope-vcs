@@ -1,5 +1,9 @@
 use super::{
     GeneratedIdSource,
+    collaboration_rows::{
+        insert_repository_collaboration, load_repository_collaboration,
+        save_repository_collaboration_delta,
+    },
     dependency_analysis::enqueue_dependency_analysis_for_repository,
     entities,
     git_segments::{load_git_pack_spans, publish_git_segment, retire_git_segment},
@@ -14,13 +18,7 @@ use sea_orm::{
     QueryFilter, QueryOrder,
 };
 use std::collections::BTreeMap;
-use {
-    crate::error::PostgresError,
-    scope_domain::repository::{
-        Repository,
-        collaboration::{RepositoryInvite, RepositoryMember},
-    },
-};
+use {crate::error::PostgresError, scope_domain::repository::Repository};
 
 pub async fn insert_repository<C>(
     conn: &C,
@@ -39,7 +37,7 @@ where
     insert_repository_fact_rows(conn, repo, now_unix).await?;
     insert_repository_history(conn, &repo.graph, &repo.visibility_change_sets).await?;
     insert_repository_live_files(conn, &repo.record.id, &repo.live_files).await?;
-    insert_repository_relations(conn, repo).await?;
+    insert_repository_collaboration(conn, &repo.collaboration).await?;
     enqueue_projection_read_model_rebuild(
         conn,
         &repo.record.id,
@@ -147,7 +145,13 @@ where
         },
     )
     .await?;
-    save_repository_relation_delta(conn, before, after).await
+    save_repository_collaboration_delta(
+        conn,
+        &after.record.id,
+        &before.collaboration,
+        &after.collaboration,
+    )
+    .await
 }
 
 /// Queues the rebuilds that follow a change to a repository's content.
@@ -302,160 +306,6 @@ where
     Ok(())
 }
 
-async fn insert_repository_relations<C>(conn: &C, repo: &Repository) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    for member in &repo.members {
-        entities::repository_member::Model::from_domain(member)?
-            .into_active_model()
-            .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
-    }
-
-    for invite in &repo.invitations {
-        insert_repository_invite(conn, invite).await?;
-    }
-
-    Ok(())
-}
-
-async fn insert_repository_invite<C>(
-    conn: &C,
-    invite: &RepositoryInvite,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    entities::repository_invite::Model::from_domain(invite)?
-        .into_active_model()
-        .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
-    insert_repository_invite_links(conn, &invite.id, &invite.link_hashes).await
-}
-
-async fn insert_repository_invite_links<C>(
-    conn: &C,
-    invite_id: &str,
-    link_hashes: &[String],
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    if link_hashes.is_empty() {
-        return Ok(());
-    }
-    entities::repository_invite_link::Entity::insert_many(link_hashes.iter().map(|hash| {
-        entities::repository_invite_link::Model {
-            token_hash: hash.clone(),
-            invite_id: invite_id.to_string(),
-        }
-        .into_active_model()
-    }))
-    .exec(conn)
-    .await
-    .map_err(PostgresError::internal)?;
-    Ok(())
-}
-
-async fn save_repository_relation_delta<C>(
-    conn: &C,
-    before: &Repository,
-    after: &Repository,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let before_members = before
-        .members
-        .iter()
-        .map(|member| (member.user_id.as_str(), member))
-        .collect::<BTreeMap<_, _>>();
-    let after_members = after
-        .members
-        .iter()
-        .map(|member| (member.user_id.as_str(), member))
-        .collect::<BTreeMap<_, _>>();
-    for user_id in before_members.keys() {
-        if !after_members.contains_key(user_id) {
-            entities::repository_member::Entity::delete_by_id((
-                after.record.id.clone(),
-                (*user_id).to_string(),
-            ))
-            .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
-        }
-    }
-    for (user_id, member) in after_members {
-        if before_members
-            .get(user_id)
-            .is_some_and(|old| *old == member)
-        {
-            continue;
-        }
-        entities::repository_member::Entity::delete_by_id((
-            after.record.id.clone(),
-            user_id.to_string(),
-        ))
-        .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
-        entities::repository_member::Model::from_domain(member)?
-            .into_active_model()
-            .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
-    }
-
-    let before_invites = before
-        .invitations
-        .iter()
-        .map(|invite| (invite.id.as_str(), invite))
-        .collect::<BTreeMap<_, _>>();
-    let after_invites = after
-        .invitations
-        .iter()
-        .map(|invite| (invite.id.as_str(), invite))
-        .collect::<BTreeMap<_, _>>();
-    for invite_id in before_invites.keys() {
-        if !after_invites.contains_key(invite_id) {
-            entities::repository_invite::Entity::delete_by_id((*invite_id).to_string())
-                .exec(conn)
-                .await
-                .map_err(PostgresError::internal)?;
-        }
-    }
-    for (invite_id, invite) in after_invites {
-        let Some(old) = before_invites.get(invite_id) else {
-            insert_repository_invite(conn, invite).await?;
-            continue;
-        };
-        if *old == invite {
-            continue;
-        }
-        // Update in place. Deleting the row would cascade to the invite's
-        // emails, which live outside the repository aggregate.
-        entities::repository_invite::Model::from_domain(invite)?
-            .into_active_model()
-            .reset_all()
-            .update(conn)
-            .await
-            .map_err(PostgresError::internal)?;
-        // Links are only ever added.
-        let new_links = invite
-            .link_hashes
-            .iter()
-            .filter(|hash| !old.link_hashes.contains(hash))
-            .cloned()
-            .collect::<Vec<_>>();
-        insert_repository_invite_links(conn, &invite.id, &new_links).await?;
-    }
-    Ok(())
-}
-
 pub async fn load_repository_facts<C>(
     conn: &C,
     repo_ids: &[String],
@@ -533,59 +383,6 @@ where
         .ok_or_else(|| {
             PostgresError::internal_message(format!("repository history missing for {repo_id}"))
         })?;
-    let (members, invitations) = load_repository_collaborators(conn, &repo_id).await?;
-    repository.try_into_domain(facts, members, invitations, history)
-}
-
-/// Members and invites, with each invite's link hashes. Reads nothing else of
-/// the repository, so callers that only manage collaboration stay cheap.
-pub(super) async fn load_repository_collaborators<C>(
-    conn: &C,
-    repo_id: &str,
-) -> Result<(Vec<RepositoryMember>, Vec<RepositoryInvite>), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let members = entities::repository_member::Entity::find()
-        .filter(entities::repository_member::Column::RepoId.eq(repo_id))
-        .order_by_asc(entities::repository_member::Column::UserId)
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(entities::repository_member::Model::try_into_domain)
-        .collect::<Result<Vec<RepositoryMember>, _>>()?;
-    let invite_rows = entities::repository_invite::Entity::find()
-        .filter(entities::repository_invite::Column::RepoId.eq(repo_id))
-        .order_by_asc(entities::repository_invite::Column::InvitedEmailNormalized)
-        .order_by_asc(entities::repository_invite::Column::Id)
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
-    let mut link_hashes = BTreeMap::<String, Vec<String>>::new();
-    if !invite_rows.is_empty() {
-        let links = entities::repository_invite_link::Entity::find()
-            .filter(
-                entities::repository_invite_link::Column::InviteId
-                    .is_in(invite_rows.iter().map(|invite| invite.id.clone())),
-            )
-            .order_by_asc(entities::repository_invite_link::Column::TokenHash)
-            .all(conn)
-            .await
-            .map_err(PostgresError::internal)?;
-        for link in links {
-            link_hashes
-                .entry(link.invite_id)
-                .or_default()
-                .push(link.token_hash);
-        }
-    }
-    let invitations = invite_rows
-        .into_iter()
-        .map(|invite| {
-            let hashes = link_hashes.remove(&invite.id).unwrap_or_default();
-            invite.try_into_domain(hashes)
-        })
-        .collect::<Result<Vec<RepositoryInvite>, _>>()?;
-    Ok((members, invitations))
+    let collaboration = load_repository_collaboration(conn, &repo_id).await?;
+    repository.try_into_domain(facts, collaboration, history)
 }

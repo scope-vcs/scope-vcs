@@ -99,7 +99,7 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
     let owner = user("owner", "owner");
     let leaver = user("leaver", "leaver");
     let mut shared = repository(&owner, "shared", Visibility::Private);
-    shared.members = vec![
+    shared.collaboration.members = vec![
         member("owner/shared", "leaver"),
         member("owner/shared", "guest"),
     ];
@@ -275,7 +275,7 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
 async fn owning_a_repository_with_another_member_blocks_deletion() {
     let leaver = user("leaver", "leaver");
     let mut team = repository(&leaver, "team", Visibility::Private);
-    team.members = vec![member("leaver/team", "friend")];
+    team.collaboration.members = vec![member("leaver/team", "friend")];
     let store = store_with_repositories([team, repository(&leaver, "solo", Visibility::Private)]);
 
     let refused = store

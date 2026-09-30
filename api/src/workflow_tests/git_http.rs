@@ -158,7 +158,7 @@ async fn insert_push_member(state: &AppState, subject: &str) -> String {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, move |repo| {
-            repo.members.push(test_repository_member(
+            repo.collaboration.members.push(test_repository_member(
                 TEST_REPO_ID,
                 member_id,
                 member_permissions(true, false),
@@ -350,7 +350,7 @@ async fn unpublished_upload_pack_member_scope_session_stays_hidden() {
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, move |repo| {
             repo.record.lifecycle_state = RepoLifecycleState::AwaitingFirstPush;
-            repo.members.push(test_repository_member(
+            repo.collaboration.members.push(test_repository_member(
                 TEST_REPO_ID,
                 member_id,
                 RepositoryMemberPermissions::default(),

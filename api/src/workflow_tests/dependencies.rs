@@ -75,7 +75,7 @@ async fn dependency_report_is_persisted_and_maintainer_only() {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.members.push(test_repository_member(
+            repo.collaboration.members.push(test_repository_member(
                 TEST_REPO_ID,
                 &member_id,
                 RepositoryMemberPermissions::default(),
@@ -164,7 +164,7 @@ async fn dependency_report_is_persisted_and_maintainer_only() {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.members.clear();
+            repo.collaboration.members.clear();
         })
         .await
         .unwrap();
