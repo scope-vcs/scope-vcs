@@ -54,7 +54,7 @@ where
             .map(|file| {
                 entities::projection_file::Model::live(
                     &repo.record.id,
-                    repo.record.change_version,
+                    repo.record.content_version,
                     audience,
                     file,
                 )
@@ -70,7 +70,7 @@ where
 
         entities::projection_read_model::Model::live(
             &repo.record.id,
-            repo.record.change_version,
+            repo.record.content_version,
             audience,
             head_oid.clone(),
             rebuilt_at_unix,

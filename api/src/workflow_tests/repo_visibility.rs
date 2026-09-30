@@ -5,7 +5,10 @@ async fn mutate_repo(state: &AppState, configure: impl FnOnce(&mut Repository)) 
     state
         .metadata
         .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, configure)
+        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+            configure(repo);
+            repo.bump_content_version();
+        })
         .await
         .unwrap();
 }

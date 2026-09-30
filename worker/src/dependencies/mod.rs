@@ -276,7 +276,7 @@ async fn publish_change(
         event: RepoChangeEvent {
             repo_id: claim.incarnation.repository_id().to_string(),
             incarnation_id: claim.incarnation.incarnation_id().to_string(),
-            version: claim.repo_version,
+            version: claim.change_version,
             kind: RepoChangeKind::DependenciesChanged,
         },
         origin_id: worker_id.to_string(),

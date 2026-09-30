@@ -20,6 +20,8 @@ mod cli_sessions;
 mod connection;
 mod content_fences;
 mod content_push_transactions;
+#[cfg(test)]
+mod content_version_tests;
 mod dependency_analysis;
 mod entities;
 mod fast_push;

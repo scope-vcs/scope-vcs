@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 
 pub struct RepositoryHistoryQuery<'a> {
     pub incarnation: &'a RepositoryIncarnation,
-    pub version: u64,
+    pub content_version: u64,
     pub audience: ProjectionViewKey,
     pub feed: HistoryFeed,
     pub before: Option<&'a RepositoryHistoryBoundary>,
@@ -126,7 +126,7 @@ pub(super) async fn save_repository_history_view<C: ConnectionTrait>(
     let view = history_view_from_projection(projection, &repo.graph, &repo.visibility_change_sets);
     conn.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO scope_repository_history_views (repo_id,audience,repo_version,generation,available,visible_files,head_oid,identity_version,history_version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-            [repo.record.id.clone().into(), audience.as_str().into(), integer_columns::u64_to_i64(repo.record.change_version,"repository version")?.into(), view.generation.into(), available.into(), visible_files.into(), head_oid.into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
+            [repo.record.id.clone().into(), audience.as_str().into(), integer_columns::u64_to_i64(repo.record.content_version,"repository content version")?.into(), view.generation.into(), available.into(), visible_files.into(), head_oid.into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
         )).await.map_err(PostgresError::internal)?;
     for batch in view
         .entries
@@ -171,7 +171,7 @@ pub(super) async fn save_repository_history_view<C: ConnectionTrait>(
 
 impl RepositoryStore {
     /// Concurrent cache misses recheck after acquiring the repository guard, so one build
-    /// supplies every reader. A mutation invalidates the cache by advancing change_version.
+    /// supplies every reader. A content change invalidates the cache by advancing content_version.
     pub async fn ensure_history_view(
         &self,
         incarnation: &RepositoryIncarnation,
@@ -188,7 +188,8 @@ impl RepositoryStore {
                 "repository was recreated; retry the read",
             ));
         }
-        let version = integer_columns::i64_to_u64(row.change_version, "repository version")?;
+        let version =
+            integer_columns::i64_to_u64(row.content_version, "repository content version")?;
         if history_view_metadata(&tx, &row.id, version, ProjectionViewKey::Private)
             .await?
             .is_none()
@@ -208,7 +209,7 @@ impl RepositoryStore {
     ) -> Result<RepositoryHistoryPage, PostgresError> {
         let RepositoryHistoryQuery {
             incarnation,
-            version,
+            content_version,
             audience,
             feed,
             before,
@@ -221,13 +222,16 @@ impl RepositoryStore {
                 super::repository_access::repository_access(&tx, incarnation.repository_id(), None)
                     .await?
                     .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-            if current.incarnation() != *incarnation || current.record.change_version != version {
+            if current.incarnation() != *incarnation
+                || current.record.content_version != content_version
+            {
                 return Err(PostgresError::conflict(
                     "repository changed while reading history; retry",
                 ));
             }
             let Some(metadata) =
-                history_view_metadata(&tx, incarnation.repository_id(), version, audience).await?
+                history_view_metadata(&tx, incarnation.repository_id(), content_version, audience)
+                    .await?
             else {
                 tx.commit().await.map_err(PostgresError::internal)?;
                 self.ensure_history_view(incarnation).await?;

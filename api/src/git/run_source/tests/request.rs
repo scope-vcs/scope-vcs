@@ -77,6 +77,7 @@ async fn private_request_run_source_supplies_its_old_main_base_before_runner_che
         .repositories()
         .mutate_repository_for_tests("owner/repo", move |repo| {
             repo.record.change_version = 2;
+            repo.record.content_version = 2;
             repo.git_head = Some(advanced_head);
             repo.git_pack_spans = vec![first_span, advanced.stored.pack_span];
         })
@@ -261,14 +262,14 @@ async fn private_request_full_projection_snapshot_survives_later_git_main() {
                 .await
                 .unwrap();
             let head = GitHead {
-                change_version: 1,
+                change_version: 2,
                 ..accepted.stored.head
             };
             state
                 .metadata
                 .repositories()
                 .mutate_repository_for_tests("owner/repo", move |repo| {
-                    repo.record.change_version = 1;
+                    repo.bump_content_version();
                     repo.git_head = Some(head);
                     // The complete request snapshot must not read unrelated
                     // accepted Git history, even when that history cannot load.

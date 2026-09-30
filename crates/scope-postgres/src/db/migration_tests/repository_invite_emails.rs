@@ -10,8 +10,8 @@ async fn deleting_a_repository_keeps_its_emails_for_the_owner_allowance() {
         r#"
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);
         INSERT INTO scope_repositories (id,owner_handle,name,owner_user_id,publication_state,
-            change_version,repo_config,policy,incarnation_id)
-            VALUES ('owner/repo','owner','repo','owner','Ready',0,'{}','{}','repoi_m0058');
+            change_version,content_version,repo_config,policy,incarnation_id)
+            VALUES ('owner/repo','owner','repo','owner','Ready',0,0,'{}','{}','repoi_m0058');
         INSERT INTO scope_repository_invites (id,repo_id,invited_email,invited_email_normalized,
             permissions,invited_by_user_id,created_at_unix,updated_at_unix,expires_at_unix)
             VALUES ('invite','owner/repo','a@scope.test','a@scope.test','{}','owner',10,10,900);

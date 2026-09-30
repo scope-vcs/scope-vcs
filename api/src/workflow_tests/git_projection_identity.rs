@@ -26,6 +26,7 @@ async fn permissioned_scope_sessions_share_raw_live_head() {
             repo.record.lifecycle_state = RepoLifecycleState::AwaitingFirstPush;
             repo.repo_config = repo_config(Visibility::Private);
             repo.policy = Policy::new(Visibility::Private);
+            repo.bump_content_version();
         })
         .await
         .unwrap();

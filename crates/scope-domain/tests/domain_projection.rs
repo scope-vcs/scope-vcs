@@ -327,6 +327,7 @@ fn content_push_command_returns_normalized_effects_without_previous_config() {
     let accepted = accept_content_push(
         ContentPushState {
             change_version: repo.record.change_version,
+            content_version: repo.record.content_version,
             policy: repo.policy.clone(),
             repo_config: config.clone(),
             live_files: repo.live_files.clone(),
@@ -365,6 +366,7 @@ fn public_request_merge_requires_an_ordered_public_native_range() {
     let config = repo.repo_config.clone();
     let state = ContentPushState {
         change_version: repo.record.change_version,
+        content_version: repo.record.content_version,
         policy: repo.policy.clone(),
         repo_config: config.clone(),
         live_files: repo.live_files.clone(),
@@ -498,6 +500,7 @@ fn public_request_merge_rejects_private_paths() {
         let result = accept_request_merge(
             ContentPushState {
                 change_version: repo.record.change_version,
+                content_version: repo.record.content_version,
                 policy: repo.policy.clone(),
                 repo_config: config.clone(),
                 live_files: repo.live_files.clone(),

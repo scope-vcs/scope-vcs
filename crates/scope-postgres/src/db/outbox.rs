@@ -298,7 +298,7 @@ where
         tx.commit().await.map_err(PostgresError::internal)?;
         return Ok(());
     };
-    if repo.change_version != job.repo_version {
+    if repo.content_version != job.repo_version {
         tx.commit().await.map_err(PostgresError::internal)?;
         return Ok(());
     }

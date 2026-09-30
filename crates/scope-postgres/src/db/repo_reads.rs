@@ -41,6 +41,7 @@ pub struct RepoSummaryRead {
     pub website_url: Option<String>,
     pub lifecycle_state: RepoLifecycleState,
     pub change_version: u64,
+    pub content_version: u64,
     pub access: RepositoryAccess,
 }
 
@@ -66,6 +67,7 @@ struct RepoReadRow {
     owner_user_id: String,
     publication_state: String,
     change_version: i64,
+    content_version: i64,
 }
 
 impl RepositoryStore {
@@ -246,7 +248,7 @@ where
     }
 
     if let Some(files) =
-        load_live_projection_files_for_audience(conn, &row.id, row.change_version()?, audience)
+        load_live_projection_files_for_audience(conn, &row.id, row.content_version()?, audience)
             .await?
     {
         return Ok(Some(files));
@@ -279,7 +281,7 @@ where
     let lookup = load_live_projection_file_for_audience(
         conn,
         &row.id,
-        row.change_version()?,
+        row.content_version()?,
         audience,
         path,
     )
@@ -351,6 +353,7 @@ fn repo_read_query() -> sea_orm::Select<entities::repository::Entity> {
         .column(entities::repository::Column::OwnerUserId)
         .column(entities::repository::Column::PublicationState)
         .column(entities::repository::Column::ChangeVersion)
+        .column(entities::repository::Column::ContentVersion)
 }
 
 async fn member_permissions_for_viewer<C>(
@@ -448,7 +451,8 @@ fn summary_from_row(
     access: RepositoryAccess,
 ) -> Result<RepoSummaryRead, PostgresError> {
     let lifecycle_state = row.publication_state()?;
-    let change_version = access.visible_change_version(row.change_version()?);
+    let change_version = access.visible_version(row.change_version()?);
+    let content_version = access.visible_version(row.content_version()?);
     Ok(RepoSummaryRead {
         open_request_count: 0,
         id: row.id,
@@ -458,6 +462,7 @@ fn summary_from_row(
         website_url: row.website_url,
         lifecycle_state,
         change_version,
+        content_version,
         access,
     })
 }
@@ -493,7 +498,7 @@ where
     let lifecycle_state = row.publication_state()?;
     let public_files_visible = access.actor == RepositoryActor::Public
         && lifecycle_state == RepoLifecycleState::Ready
-        && public_repository_visible(conn, &row.id, row.change_version()?).await?;
+        && public_repository_visible(conn, &row.id, row.content_version()?).await?;
     Ok(can_read_repository(
         lifecycle_state,
         access,
@@ -504,12 +509,12 @@ where
 pub(super) async fn public_repository_visible<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
-    change_version: u64,
+    content_version: u64,
 ) -> Result<bool, PostgresError> {
     if let Some(view) = super::history_reads::history_view_metadata(
         conn,
         repo_id,
-        change_version,
+        content_version,
         ProjectionViewKey::Public,
     )
     .await?
@@ -519,7 +524,7 @@ pub(super) async fn public_repository_visible<C: ConnectionTrait>(
     if let Some(visible) = live_projection_has_non_control_file_for_audience(
         conn,
         repo_id,
-        change_version,
+        content_version,
         ProjectionViewKey::Public,
     )
     .await?
@@ -552,6 +557,12 @@ impl RepoReadRow {
     fn change_version(&self) -> Result<u64, PostgresError> {
         u64::try_from(self.change_version).map_err(|_| {
             PostgresError::internal_message("repository change version cannot be negative")
+        })
+    }
+
+    fn content_version(&self) -> Result<u64, PostgresError> {
+        u64::try_from(self.content_version).map_err(|_| {
+            PostgresError::internal_message("repository content version cannot be negative")
         })
     }
 }

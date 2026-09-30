@@ -19,7 +19,7 @@ use super::{
         queue_pending_repo_storage_cleanup_row,
     },
     repository_from_model,
-    repository_rows::save_repository_delta,
+    repository_rows::{queue_content_rebuilds, save_repository_delta, save_repository_rows},
     request_rows::{request_by_id, save_request_row},
 };
 #[cfg(any(test, feature = "test-support"))]
@@ -312,8 +312,8 @@ impl RepositoryStore {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         ensure_repository_users_for_tests(&tx, &repo).await?;
         acquire_aggregate_lock(&tx, "repository", &repo.record.id).await?;
-        // Raw fixture replacement bypasses domain mutations and may keep the same
-        // change_version while changing history. Discard its derived representation.
+        // Raw fixture replacement bypasses domain mutations and may change content
+        // without advancing its version. Discard its derived representation.
         tx.execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "DELETE FROM scope_repository_history_views WHERE repo_id = $1",
@@ -328,9 +328,9 @@ impl RepositoryStore {
         {
             Some(row) => {
                 let before = repository_from_model(&tx, row).await?;
-                save_repository_delta(
+                save_repository_rows(&tx, &before, &repo, CATALOG_SEED_NOW_UNIX).await?;
+                queue_content_rebuilds(
                     &tx,
-                    &before,
                     &repo,
                     CATALOG_SEED_NOW_UNIX,
                     &super::generated_ids::test_generated_id,

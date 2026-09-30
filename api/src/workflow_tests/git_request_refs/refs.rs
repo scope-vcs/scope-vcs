@@ -96,6 +96,7 @@ async fn public_request_receive_pack_requires_current_repo_read() {
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
             repo.policy = Policy::new(Visibility::Private);
             repo.graph.commits.clear();
+            repo.bump_content_version();
         })
         .await
         .unwrap();
@@ -519,7 +520,7 @@ async fn draft_push_records_revision_activity_without_touching_main() {
                     visibility: ConfigVisibility::Private,
                 },
             );
-            repo.bump_change_version();
+            repo.bump_content_version();
         })
         .await
         .unwrap();

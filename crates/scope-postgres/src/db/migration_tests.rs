@@ -14,6 +14,7 @@ mod git_manifest_retirement;
 mod git_segment_schema;
 mod maintenance_cutover;
 mod public_request_check_source;
+mod repository_content_version;
 mod repository_invite_emails;
 mod repository_invite_links;
 mod repository_landing_files;
@@ -46,6 +47,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0061_public_request_check_source",
     "m0062_request_run_source_base",
     "m0063_account_deletion",
+    "m0064_repository_content_version",
 ];
 
 pub(super) async fn isolated_database() -> (
@@ -94,7 +96,8 @@ async fn representative_business_snapshot(db: &DatabaseConnection) -> String {
                     FROM scope_auth_identities item
                 ),
                 'repositories', (
-                    SELECT jsonb_agg(to_jsonb(item) ORDER BY id)
+                    -- m0064 derives content_version from change_version.
+                    SELECT jsonb_agg(to_jsonb(item) - 'content_version' ORDER BY id)
                     FROM scope_repositories item
                 ),
                 'requests', (

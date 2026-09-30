@@ -123,7 +123,7 @@ impl VisibilityRule {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Policy {
     default_visibility: Visibility,
     rules: Vec<VisibilityRule>,

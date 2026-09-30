@@ -25,6 +25,7 @@ struct AccessRow {
     website_url: Option<String>,
     publication_state: String,
     change_version: i64,
+    content_version: i64,
 }
 
 impl RepositoryStore {
@@ -66,7 +67,7 @@ impl RepositoryStore {
                 let Some(view) = super::history_reads::history_view_metadata(
                     &tx,
                     &context.record.id,
-                    context.record.change_version,
+                    context.record.content_version,
                     scope_domain::projection::ProjectionViewKey::Public,
                 )
                 .await?
@@ -193,7 +194,7 @@ impl RepositoryStore {
             let metadata = super::history_reads::history_view_metadata(
                 &tx,
                 &context.record.id,
-                context.record.change_version,
+                context.record.content_version,
                 audience,
             )
             .await?;
@@ -227,6 +228,7 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
             Column::WebsiteUrl,
             Column::PublicationState,
             Column::ChangeVersion,
+            Column::ContentVersion,
         ])
         .filter(Column::Id.eq(repo_id))
         .into_model::<AccessRow>()
@@ -248,6 +250,10 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
         change_version: integer_columns::i64_to_u64(
             row.change_version,
             "repository change version",
+        )?,
+        content_version: integer_columns::i64_to_u64(
+            row.content_version,
+            "repository content version",
         )?,
     };
     let access = match viewer_user_id {

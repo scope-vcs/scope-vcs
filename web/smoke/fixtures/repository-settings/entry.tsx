@@ -15,7 +15,7 @@ import './styles.css'
 
 const initial = {
   id: 'owner/demo', owner_handle: 'owner', name: 'demo', lifecycle_state: 'Ready',
-  description: 'Original description', website_url: '', change_version: 0,
+  description: 'Original description', website_url: '', change_version: 0, content_version: 0,
   access: { actor: 'Owner', can_manage_members: true },
 } as RepoSummary
 const members = ['alice', 'bob'].map((name) => ({

@@ -518,6 +518,7 @@ pub(super) fn repo_summary_response(
         website_url: summary.website_url,
         lifecycle_state: summary.lifecycle_state.into(),
         change_version: summary.change_version,
+        content_version: summary.content_version,
         access: repository_access_response(summary.access),
         open_request_count: summary.open_request_count,
     })
