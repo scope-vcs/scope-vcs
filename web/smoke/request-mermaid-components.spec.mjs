@@ -15,6 +15,8 @@ const require = createRequire(import.meta.url)
 const MAX_COLD_DIAGRAM_MS = 1000
 // Measured 212 KiB plus headroom; one diagram-bearing request stays under the initial route budget.
 const MAX_LAZY_DIAGRAM_GZIP_BYTES = 256 * 1024
+// INP "good" boundary; above the 78 ms maximum of 15 CI runs plus 20 percent.
+const MAX_COLD_DIAGRAM_LONG_TASK_MS = 200
 
 test('request diagrams load on demand and reuse rendered output across navigation', { timeout: 180_000 }, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'scope-mermaid-'))
@@ -67,8 +69,8 @@ test('request diagrams load on demand and reuse rendered output across navigatio
   page.on('request', (request) => fetched.push(request.url()))
   await page.addInitScript(() => {
     window.diagramLongTasks = []
-    new PerformanceObserver((list) => window.diagramLongTasks.push(...list.getEntries().map((entry) => entry.duration)))
-      .observe({ type: 'longtask', buffered: true })
+    window.diagramLongTaskObserver = new PerformanceObserver((list) => window.diagramLongTasks.push(...list.getEntries()))
+    window.diagramLongTaskObserver.observe({ type: 'longtask', buffered: true })
     window.liveDiagramUrls = new Set()
     const create = URL.createObjectURL.bind(URL)
     const revoke = URL.revokeObjectURL.bind(URL)
@@ -86,13 +88,17 @@ test('request diagrams load on demand and reuse rendered output across navigatio
   await loadedImage(description)
   await loadedImage(discussion)
   const firstDiagramMs = await page.evaluate((start) => performance.now() - start, started)
+  assert.ok(await page.evaluate(() => PerformanceObserver.supportedEntryTypes.includes('longtask')), 'longtask entries are unsupported')
+  const longestTaskMs = await page.evaluate((start) => Math.max(0, ...[...window.diagramLongTasks, ...window.diagramLongTaskObserver.takeRecords()]
+    .filter((task) => task.startTime + task.duration >= start).map((task) => task.duration)), started)
   const lazyBytes = chunks.filter((chunk) => !initial.has(chunk.fileName) && fetched.some((url) => url.endsWith(chunk.fileName)))
     .reduce((bytes, chunk) => bytes + gzipSync(chunk.code).byteLength, 0)
   assert.ok(firstDiagramMs <= MAX_COLD_DIAGRAM_MS,
     `cold diagram render took ${Math.round(firstDiagramMs)} ms, exceeding the ${MAX_COLD_DIAGRAM_MS} ms RAIL focus-loss boundary`)
   assert.ok(lazyBytes <= MAX_LAZY_DIAGRAM_GZIP_BYTES,
     `diagram lazy JS is ${Math.round(lazyBytes / 1024)} KiB gzip, over the ${MAX_LAZY_DIAGRAM_GZIP_BYTES / 1024} KiB cap`)
-  t.diagnostic(`Longest task during cold diagram render: ${Math.round(await page.evaluate(() => Math.max(0, ...window.diagramLongTasks)))}ms.`)
+  assert.ok(longestTaskMs <= MAX_COLD_DIAGRAM_LONG_TASK_MS,
+    `cold diagram render blocked the main thread for ${Math.round(longestTaskMs)} ms, over the ${MAX_COLD_DIAGRAM_LONG_TASK_MS} ms cap`)
   assert.equal(await page.getByRole('region', { name: 'Reply', exact: true }).locator('img').count(), 0)
   assert.equal((await page.evaluate(() => window.mermaidCacheStats())).entries, 1)
   const originalSvg = await svgText(description)
