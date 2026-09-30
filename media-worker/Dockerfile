@@ -67,11 +67,16 @@ FROM docker.io/library/debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46
 
 LABEL org.opencontainers.image.source="https://github.com/scope-vcs/scope-vcs"
 
+ARG OPENSSL_VERSION=3.5.7-1~deb13u3
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates=20250419 \
         ffmpeg=7:7.1.5-0+deb13u1 \
         libaom3 libde265-0 libjpeg62-turbo libpng16-16t64 libx265-215 \
+        "libssl3t64=${OPENSSL_VERSION}" \
+        "openssl=${OPENSSL_VERSION}" \
+        "openssl-provider-legacy=${OPENSSL_VERSION}" \
     && rm -rf /var/lib/apt/lists/* \
     && echo /opt/libheif/lib > /etc/ld.so.conf.d/libheif.conf \
     && mkdir -p /tmp/scope-media-worker /scope/licenses \
