@@ -18,7 +18,9 @@ use std::collections::BTreeSet;
 
 pub struct RepositoryHistoryQuery<'a> {
     pub incarnation: &'a RepositoryIncarnation,
-    pub content_version: u64,
+    /// The repository version the viewer's audience was authorized at. Any
+    /// later change, including to membership, makes the read retry.
+    pub change_version: u64,
     pub audience: ProjectionViewKey,
     pub feed: HistoryFeed,
     pub before: Option<&'a RepositoryHistoryBoundary>,
@@ -209,7 +211,7 @@ impl RepositoryStore {
     ) -> Result<RepositoryHistoryPage, PostgresError> {
         let RepositoryHistoryQuery {
             incarnation,
-            content_version,
+            change_version,
             audience,
             feed,
             before,
@@ -223,15 +225,19 @@ impl RepositoryStore {
                     .await?
                     .ok_or_else(|| PostgresError::not_found("repo not found"))?;
             if current.incarnation() != *incarnation
-                || current.record.content_version != content_version
+                || current.record.change_version != change_version
             {
                 return Err(PostgresError::conflict(
                     "repository changed while reading history; retry",
                 ));
             }
-            let Some(metadata) =
-                history_view_metadata(&tx, incarnation.repository_id(), content_version, audience)
-                    .await?
+            let Some(metadata) = history_view_metadata(
+                &tx,
+                incarnation.repository_id(),
+                current.record.content_version,
+                audience,
+            )
+            .await?
             else {
                 tx.commit().await.map_err(PostgresError::internal)?;
                 self.ensure_history_view(incarnation).await?;

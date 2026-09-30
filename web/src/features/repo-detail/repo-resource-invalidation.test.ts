@@ -6,6 +6,7 @@ import { repositoryActivityResource } from './repository-activity-resource'
 import { requestActivityIdentity, requestActivityResource } from '../requests/request-activity-resource'
 import { invalidateRepoResources, invalidateRepoSummaryResources } from './repo-resource-invalidation'
 import { repositoryDependencyResource } from './repository-dependency-resource'
+import { historyFeedResource } from '../history/history-resource-cache'
 
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
 function seed() {
@@ -19,6 +20,8 @@ function seed() {
   repositoryActivityResource.write('viewer-b', { audience: 'public', entry: null, head_oid: 'other' })
   for (const id of ['one', 'two']) requestActivityResource.write(requestActivityIdentity('viewer-a', id), { events: [], through_position: 1 })
   repositoryDependencyResource.write('viewer-a', { error: null, report: null, status: 'Pending' })
+  historyFeedResource.clear()
+  historyFeedResource.write('viewer-a\0public\0all', { entries: [], next_cursor: null })
 }
 
 test('repository updates invalidate retained activity even when its page is unmounted', () => {
@@ -32,6 +35,12 @@ test('repository updates invalidate retained activity even when its page is unmo
   assert.equal(repositoryActivityResource.getSnapshot('viewer-b').stale, false)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, true)
   assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
+})
+
+test('account deletions refresh history, whose authors carry no content version', () => {
+  seed()
+  invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'contributor-deleted' } }))
+  assert.equal(historyFeedResource.getSnapshot('viewer-a\0public\0all').stale, true)
 })
 
 test('request changes target one request and leave latest repository activity reusable', () => {

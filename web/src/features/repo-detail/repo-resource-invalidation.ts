@@ -11,6 +11,7 @@ import { repositoryDependencyResource } from './repository-dependency-resource'
 import { repoCollaborationResource } from './repo-collaboration-resource'
 import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
+import { historyEntryResource, historyFeedResource } from '../history/history-resource-cache'
 
 // Repository summaries include request state that has no repository version.
 export function invalidateRepoSummaryResources(scope: string) {
@@ -27,6 +28,9 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, 
     requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     repoContentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     repoFileResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+    // History shows author accounts, which change without a new content version.
+    historyFeedResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+    historyEntryResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestAttachmentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     repositoryActivityResource.invalidate(scope)
     repositoryDependencyResource.invalidate(scope)

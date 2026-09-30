@@ -57,7 +57,7 @@ pub(crate) async fn get_history_page(
         .repositories()
         .repository_history_page(scope_postgres::db::RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
-            content_version: repo.record.content_version,
+            change_version: repo.record.change_version,
             audience: ProjectionViewKey::from(
                 scope_domain::projection_views::ProjectionAudience::from(audience),
             ),
@@ -104,7 +104,7 @@ pub(crate) async fn get_history_entry(
         .repositories()
         .repository_history_page(scope_postgres::db::RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
-            content_version: repo.record.content_version,
+            change_version: repo.record.change_version,
             audience: ProjectionViewKey::from(
                 scope_domain::projection_views::ProjectionAudience::from(audience),
             ),
@@ -152,7 +152,7 @@ pub(crate) async fn get_history_entry_file_diff(
         .repositories()
         .repository_history_page(scope_postgres::db::RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
-            content_version: repo.record.content_version,
+            change_version: repo.record.change_version,
             audience: ProjectionViewKey::from(
                 scope_domain::projection_views::ProjectionAudience::from(audience),
             ),
