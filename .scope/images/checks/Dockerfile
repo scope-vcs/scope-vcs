@@ -26,7 +26,7 @@ ARG NODE_VERSION=24.21.0
 ARG NODE_SHA256=fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6
 ARG NPM_VERSION=11.19.1
 ARG NPM_SHA512=cedb312b1b7f92421a02cfb68b4194e88f8346651dacd6acc5364a25ef5309d4a32b19616a1ff8aff865e7280c0fa5c0835a99f5cd93368991e2a80ec9da75d2
-ARG PNPM_VERSION=11.24.0
+ARG PNPM_VERSION=11.27.0
 ARG POSTGRES_VERSION=18.6-1.pgdg12+2
 ARG PLAYWRIGHT_VERSION=1.63.0
 ARG DEBIAN_SNAPSHOT=20260921T000000Z
@@ -83,6 +83,28 @@ RUN curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay
     && rm /tmp/npm.tgz \
     && corepack enable \
     && corepack prepare "pnpm@${PNPM_VERSION}" --activate
+
+# npm still bundles vulnerable releases. Replace only these dependencies with
+# compatible patch releases until npm ships them itself.
+RUN <<'SH'
+set -eu
+while read -r package version sha512; do
+    archive="/tmp/${package}.tgz"
+    destination="/usr/local/lib/node_modules/npm/node_modules/${package}"
+    curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
+        "https://registry.npmjs.org/${package}/-/${package}-${version}.tgz" \
+        --output "$archive"
+    echo "${sha512}  ${archive}" | sha512sum --check --strict
+    rm -rf "$destination"
+    mkdir "$destination"
+    tar --extract --gzip --file "$archive" --directory "$destination" --strip-components=1
+    test "$(node -p "require('${destination}/package.json').version")" = "$version"
+    rm "$archive"
+done <<'PACKAGES'
+brace-expansion 5.0.12 628bd0debce168b308ac38cd0cc90d4b4d6d79af77aa11211b9c72f1febe47497e770dca8bee6c0a822823de368ae2d94c75a881692d830543854d3d88d12299
+undici 6.28.1 cd6a5d4d50f9e07e3c088c9b2f4ad6437ba4a5bf5ddb7c0cede1f946d7dd99e3fbd1c587363b5fa3b3f8bd95fee42a0370ee772783eee6e5e9ee535f8dce8344
+PACKAGES
+SH
 
 RUN rustup component add \
         --toolchain "${RUSTUP_TOOLCHAIN}" \
