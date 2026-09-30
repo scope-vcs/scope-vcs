@@ -27,6 +27,7 @@ pub fn repository_response(overrides: Value) -> Value {
         git_remote_url: "https://scope.example/git/public/owner/repo".into(),
         lifecycle_state: RepoLifecycleState::Ready,
         change_version: 1,
+        content_version: 1,
         access: RepositoryAccessResponse {
             actor: RepositoryActor::Public,
             can_read_private_files: false,
