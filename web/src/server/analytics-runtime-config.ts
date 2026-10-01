@@ -2,6 +2,7 @@ import type {
   AnalyticsEnvironment,
   AnalyticsRuntimeConfig,
 } from '../analytics/config'
+import { publicRequestOrigin } from './public-origin'
 
 type RuntimeEnvironment = Readonly<Record<string, string | undefined>>
 
@@ -17,7 +18,7 @@ export function getAnalyticsRuntimeConfig(
     !environment ||
     !origin ||
     !token ||
-    new URL(requestUrl).origin !== origin ||
+    publicRequestOrigin(requestUrl, runtime.RAILWAY_ENVIRONMENT_ID) !== origin ||
     !deploymentMatches(environment, runtime.RAILWAY_ENVIRONMENT_NAME)
   ) {
     return null

@@ -16,7 +16,9 @@ token.
 
 The web service additionally requires `SCOPE_ANALYTICS_ORIGIN`, an exact HTTP(S)
 origin without a path, query, credentials, or fragment. Requests on other origins
-receive disabled configuration and cannot forward analytics. The production
+receive disabled configuration and cannot forward analytics. Railway terminates
+TLS at its edge, so on Railway the request origin is compared as HTTPS, the same
+rule the server-function CSRF check uses. The production
 origin is `https://scopevcs.com`; configure the actual canonical origin if hosting
 changes. GET `/e/config` returns only public SDK configuration or `null`, with
 `Cache-Control: no-store`. This policy runs at request time, so the same built

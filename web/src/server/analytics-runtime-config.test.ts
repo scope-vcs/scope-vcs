@@ -20,6 +20,19 @@ test('returns safe public configuration only at the configured origin', () => {
   )
 })
 
+test('enables the HTTPS origin behind Railway TLS termination', () => {
+  const railway = {
+    ...enabled,
+    RAILWAY_ENVIRONMENT_ID: 'railway-env',
+    RAILWAY_ENVIRONMENT_NAME: 'production',
+  }
+  assert.deepEqual(
+    getAnalyticsRuntimeConfig('http://scopevcs.com/e/config', railway),
+    { environment: 'production', release: 'abc123', token: 'phc_public' },
+  )
+  assert.equal(getAnalyticsRuntimeConfig('http://scopevcs.com/e/config', enabled), null)
+})
+
 test('defaults analytics off when runtime configuration is incomplete or invalid', () => {
   assert.equal(getAnalyticsRuntimeConfig('https://scopevcs.com/e/config', {}), null)
   assert.equal(getAnalyticsRuntimeConfig('https://scopevcs.com/e/config', {
