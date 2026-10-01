@@ -7,7 +7,7 @@ receipt="${2:?Runtime receipt is required}"
 manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
 environment="$(jq -er --arg name "$name" '.environments[$name].environmentId' "$manifest")"
 digest="$(jq -er '.maintenanceSha256 | select(test("^[a-f0-9]{64}$"))' "$receipt")"
-railway_private_command "$environment" sh -ceu '
+railway_private_read "$environment" sh -ceu '
   printf "%s  /app/bin/scope-maintenance\n" "$1" | sha256sum --check --status
   # Railway SSH runs an administrator shell; inspect the running service instead.
   test "$(awk "/^Uid:/ {print \$3}" /proc/1/status)" = 65532

@@ -30,6 +30,13 @@ printf '{"exact":true}\\n'
 set -euo pipefail
 [[ "$1" == ssh ]]
 touch "$TEST_CALLED"
+printf 'ssh\\n' >> "$TEST_ATTEMPTS"
+if (( "$(wc -l < "$TEST_ATTEMPTS")" <= \${TEST_SSH_FAILURES:-0} )); then
+  # A dropped connection may consume input and emit partial output first.
+  cat > /dev/null
+  printf '{"partial'
+  exit 255
+fi
 shift
 while [[ "$1" != -- ]]; do
   case "$1" in
@@ -62,7 +69,8 @@ set -eu
 cat > "$TEST_GRANTS"
 exit "\${TEST_GRANT_FAILURE:-0}"
 `, { mode: 0o700 });
-  const env = { ...process.env, PATH: `${join(dir, 'bin')}:${process.env.PATH}`, SCOPE_DEPLOYMENT_MANIFEST: join(dir, 'manifest.json'), SCOPE_MAINTENANCE_BINARY: binary, SCOPE_PREPARED_RELEASE_PATH: join(dir, 'release.json'), TEST_RESULT: join(dir, 'result'), TEST_CALLED: join(dir, 'called'), TEST_IDENTITY: join(dir, 'identity'), TEST_GRANTS: join(dir, 'grants') };
+  writeFileSync(join(dir, 'bin/sleep'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  const env = { ...process.env, PATH: `${join(dir, 'bin')}:${process.env.PATH}`, SCOPE_DEPLOYMENT_MANIFEST: join(dir, 'manifest.json'), SCOPE_MAINTENANCE_BINARY: binary, SCOPE_PREPARED_RELEASE_PATH: join(dir, 'release.json'), TEST_RESULT: join(dir, 'result'), TEST_CALLED: join(dir, 'called'), TEST_ATTEMPTS: join(dir, 'attempts'), TEST_IDENTITY: join(dir, 'identity'), TEST_GRANTS: join(dir, 'grants') };
   delete env.SCOPE_RAILWAY_MAINTENANCE_SERVICE_ID;
   delete env.SCOPE_RAILWAY_SSH_IDENTITY_FILE;
   const run = (args = [production, 'plan'], overrides = {}) => spawnSync('bash', [helper, ...args], { env: { ...env, ...overrides }, encoding: 'utf8' });
@@ -82,6 +90,22 @@ test('runs the digest-bound binary privately and removes transferred files', t =
     assert.equal(command, 'plan');
     assert.equal(existsSync(join(data, '..')), false);
   }
+});
+
+test('read-only maintenance retries an SSH transport failure with the same binary', t => {
+  const f = fixture(t);
+  const result = f.run([staging, 'plan'], { TEST_SSH_FAILURES: '1' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { exact: true });
+  assert.equal(readFileSync(f.env.TEST_ATTEMPTS, 'utf8'), 'ssh\nssh\n');
+});
+
+test('mutating maintenance attempts SSH once after a transport failure', t => {
+  const f = fixture(t);
+  const result = f.run([staging, 'apply'], { TEST_SSH_FAILURES: '1' });
+  assert.equal(result.status, 255);
+  assert.equal(readFileSync(f.env.TEST_ATTEMPTS, 'utf8'), 'ssh\n');
+  assert.equal(existsSync(f.env.TEST_RESULT), false);
 });
 
 test('rejects unknown targets and command injection before SSH', t => {

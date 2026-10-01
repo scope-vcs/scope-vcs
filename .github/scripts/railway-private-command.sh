@@ -35,3 +35,24 @@ railway_private_command() (
   ssh_bin="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../deploy/railway/ssh-bin" && pwd)" || return
   PATH="$ssh_bin:$PATH" railway ssh --project "$project" --environment "$environment" --service "$service" "${identity[@]}" -- "$remote"
 )
+
+# Use only for commands that change no state. SSH reports transport failure as
+# 255, so only that status is retried. Stdin is read to EOF and replayed on each
+# attempt; stdout comes from the final attempt only.
+railway_private_read() (
+  local attempt status
+  scope_read_input="$(mktemp "${RUNNER_TEMP:-/tmp}/scope-railway-read.XXXXXXXX")" || return
+  scope_read_output="$(mktemp "${RUNNER_TEMP:-/tmp}/scope-railway-read.XXXXXXXX")" || return
+  trap 'rm -f -- "$scope_read_input" "$scope_read_output"' EXIT
+  cat >| "$scope_read_input" || return
+  for attempt in 1 2 3; do
+    status=0
+    railway_private_command "$@" < "$scope_read_input" >| "$scope_read_output" || status=$?
+    if [[ "$status" != 255 || "$attempt" == 3 ]]; then
+      cat -- "$scope_read_output" || return
+      return "$status"
+    fi
+    echo "Railway SSH transport failed; retrying read-only command ($attempt/3)." >&2
+    sleep $((attempt * 2))
+  done
+)

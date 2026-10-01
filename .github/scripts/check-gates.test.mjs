@@ -474,7 +474,7 @@ test('checks images pass the container lifecycle gate before publication', () =>
   const publish = build.indexOf('- name: Publish verified image');
   const promote = build.indexOf('- name: Publish raw and SOCI v2 variants');
   assert(verify >= 0 && publish > verify && promote > publish);
-  assert.match(build.slice(publish, promote), /docker push "\$tag"/);
+  assert.match(build.slice(publish, promote), /bash \.github\/scripts\/push-image-tags\.sh <<< "\$TAGS"/);
 });
 
 test('CI is pull-request-only and Release dispatch is owned by the watcher', () => {
