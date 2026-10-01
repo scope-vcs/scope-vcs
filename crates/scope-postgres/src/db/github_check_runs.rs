@@ -20,11 +20,11 @@ pub(super) async fn latest_github_check_runs<C: ConnectionTrait>(
         r#"
         SELECT DISTINCT ON (commit_oid, name)
                github_check_run_id, commit_oid, name, status, conclusion,
-               details_url, started_at_unix
+               details_url
           FROM scope_github_check_runs
          WHERE repo_id = $1
            AND commit_oid IN (SELECT jsonb_array_elements_text($2::jsonb))
-         ORDER BY commit_oid, name, started_at_unix DESC, github_check_run_id DESC
+         ORDER BY commit_oid, name, github_check_run_id DESC
         "#,
         vec![repo_id.into(), serde_json::json!(commit_oids).into()],
     ))
@@ -53,11 +53,6 @@ pub(super) async fn latest_github_check_runs<C: ConnectionTrait>(
             details_url: row
                 .try_get("", "details_url")
                 .map_err(PostgresError::internal)?,
-            started_at_unix: i64_to_u64(
-                row.try_get("", "started_at_unix")
-                    .map_err(PostgresError::internal)?,
-                "GitHub check run start time",
-            )?,
         })
     })
     .collect()

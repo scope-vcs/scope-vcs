@@ -33,7 +33,6 @@ fn github_run(
     commit_oid: &str,
     name: &str,
     id: u64,
-    started_at_unix: u64,
     conclusion: Option<GitHubCheckConclusion>,
 ) -> GitHubCheckRun {
     GitHubCheckRun {
@@ -47,7 +46,6 @@ fn github_run(
         },
         conclusion,
         details_url: Some(format!("https://github.com/owner/repo/runs/{id}")),
-        started_at_unix,
     }
 }
 
@@ -232,42 +230,42 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
 
     // A required name with no run is pending, not failed.
     assert_eq!(
-        outcome(vec![github_run(HEAD, "test", 1, 10, success)]),
+        outcome(vec![github_run(HEAD, "test", 1, success)]),
         RequestChecksOutcome::Pending
     );
     // A green re-run replaces the failed run before it.
     assert_eq!(
         outcome(vec![
-            github_run(HEAD, "test", 1, 10, failure),
-            github_run(HEAD, "test", 2, 20, success),
-            github_run(HEAD, "lint", 3, 10, success),
+            github_run(HEAD, "test", 1, failure),
+            github_run(HEAD, "test", 2, success),
+            github_run(HEAD, "lint", 3, success),
         ]),
         RequestChecksOutcome::Clear
     );
-    // Runs that started together are ordered by GitHub's run id.
+    // The run GitHub created last decides, in whatever order the runs arrive.
     assert_eq!(
         outcome(vec![
-            github_run(HEAD, "test", 5, 20, failure),
-            github_run(HEAD, "test", 4, 20, success),
-            github_run(HEAD, "lint", 3, 10, success),
+            github_run(HEAD, "test", 5, failure),
+            github_run(HEAD, "test", 4, success),
+            github_run(HEAD, "lint", 3, success),
         ]),
         RequestChecksOutcome::Failed
     );
     // A run still in progress keeps the name pending even after an older pass.
     assert_eq!(
         outcome(vec![
-            github_run(HEAD, "test", 1, 10, success),
-            github_run(HEAD, "test", 2, 20, None),
-            github_run(HEAD, "lint", 3, 10, success),
+            github_run(HEAD, "test", 1, success),
+            github_run(HEAD, "test", 2, None),
+            github_run(HEAD, "lint", 3, success),
         ]),
         RequestChecksOutcome::Pending
     );
     // A green run on another commit does not count for the tested one.
     assert_eq!(
         outcome(vec![
-            github_run(OLD_HEAD, "test", 1, 30, success),
-            github_run(OLD_HEAD, "lint", 2, 30, success),
-            github_run(HEAD, "lint", 3, 10, success),
+            github_run(OLD_HEAD, "test", 1, success),
+            github_run(OLD_HEAD, "lint", 2, success),
+            github_run(HEAD, "lint", 3, success),
         ]),
         RequestChecksOutcome::Pending
     );
@@ -276,6 +274,26 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
             "req_1",
             HEAD,
             Some(&started),
+            &RequestCheckResults {
+                native_runs: Vec::new(),
+                github: GitHubCheckResults::Disconnected,
+            },
+        ),
+        RequestChecksOutcome::ConfigurationError
+    );
+    // A head still awaiting native approval cannot pass its GitHub checks either.
+    let awaiting = RequestCheckEvaluation::awaiting_approval(
+        "req_1",
+        HEAD,
+        vec![check("checks", None), github("test")],
+        1,
+    )
+    .unwrap();
+    assert_eq!(
+        request_checks_outcome(
+            "req_1",
+            HEAD,
+            Some(&awaiting),
             &RequestCheckResults {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Disconnected,
@@ -292,7 +310,7 @@ fn github_conclusions_pass_or_fail_a_completed_run() {
     let outcome = |status, conclusion| {
         let run = GitHubCheckRun {
             status,
-            ..github_run(HEAD, "test", 1, 10, conclusion)
+            ..github_run(HEAD, "test", 1, conclusion)
         };
         request_checks_outcome(
             "req_1",

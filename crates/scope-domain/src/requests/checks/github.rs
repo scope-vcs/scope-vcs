@@ -1,7 +1,9 @@
 //! Results GitHub reports for a required check name on a tested commit.
 //!
-//! GitHub keeps every run of a check, including re-runs, so the latest run to
-//! start on the tested commit decides the name. Runs on other commits never count.
+//! GitHub keeps every run of a check, including re-runs, and gives each new run a
+//! larger id, so the latest run on the tested commit decides the name. A queued run
+//! has no start time yet, which is why the id orders them. Runs on other commits
+//! never count.
 
 use super::CheckVerdict;
 use serde::{Deserialize, Serialize};
@@ -40,7 +42,6 @@ pub struct GitHubCheckRun {
     pub status: GitHubCheckStatus,
     pub conclusion: Option<GitHubCheckConclusion>,
     pub details_url: Option<String>,
-    pub started_at_unix: u64,
 }
 
 impl GitHubCheckRun {
@@ -76,15 +77,14 @@ pub enum GitHubCheckResults {
 }
 
 impl GitHubCheckResults {
-    /// The run that answers `name` on `commit_oid`: the latest to start, and of
-    /// runs that started together, the one GitHub created last.
+    /// The run that answers `name` on `commit_oid`: the one GitHub created last.
     pub fn latest(&self, commit_oid: &str, name: &str) -> Option<&GitHubCheckRun> {
         let Self::Connected(runs) = self else {
             return None;
         };
         runs.iter()
             .filter(|run| run.commit_oid == commit_oid && run.name == name)
-            .max_by_key(|run| (run.started_at_unix, run.github_check_run_id))
+            .max_by_key(|run| run.github_check_run_id)
     }
 
     /// A required name with no run yet is still pending.
