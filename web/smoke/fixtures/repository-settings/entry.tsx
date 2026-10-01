@@ -7,7 +7,8 @@ import { RepoCloneDropdown } from '@/features/repo-detail/repo-clone-dropdown'
 import { CliSessionList } from '@/features/account/cli-session-list'
 import { usePendingActions } from '@/lib/use-pending-actions'
 import { useCachedResource } from '@/lib/use-cached-resource'
-import { repoCollaborationResource, retainCollaborationResult } from '@/features/repo-detail/repo-collaboration-resource'
+import { repoSettingsResource, retainCollaborationResult, retainGitHubConnection } from '@/features/repo-detail/repo-settings-resource'
+import type { GitHubConnectionResponse } from '@/api/types.generated'
 import type { RepoSummary, RepoLiveState, RepoMember, CliSession } from '@/api/types'
 import { WorkspaceFixture } from './workspace'
 import { ChangesResourceFixture } from './changes-resource'
@@ -26,23 +27,38 @@ const members = ['alice', 'bob'].map((name) => ({
 const sessions = ['session-a', 'session-b'].map((id) => ({ id, label: id, created_at_unix: 1, expires_at_unix: 100 })) as CliSession[]
 const resolvers = new Map<string, () => void>()
 const calls: unknown[] = []
-Object.assign(window, { finishAction: (key: string) => resolvers.get(key)?.(), calls })
+Object.assign(window, { finishAction: (key: string) => resolvers.get(key)?.(), calls, setFixtureGitHub: setGitHub })
 function hold(key: string) { return new Promise<void>((resolve) => resolvers.set(key, resolve)) }
 const subscribe = () => () => {}
 const settingsScope = 'fixture-owner'
-repoCollaborationResource.write(settingsScope, { collaboration: { members, invites: [] } })
-const loadSettings = () => new Promise<{ collaboration: null }>(() => {})
+const githubConnection = {
+  github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo',
+  connected_by: { id: 'owner', handle: 'owner' }, connected_at_unix: 1_767_225_600, disconnected: null,
+}
+repoSettingsResource.write(settingsScope, {
+  collaboration: { members, invites: [] },
+  github: { configured: true, connection: githubConnection },
+})
+const loadSettings = () => new Promise<{ collaboration: null; github: null }>(() => {})
+function setGitHub(github: GitHubConnectionResponse) {
+  const current = repoSettingsResource.peek(settingsScope)
+  if (current) repoSettingsResource.write(settingsScope, { ...current, github })
+}
 
 function App() {
   const [repo, setRepo] = useState(initial)
   const { pending, run } = usePendingActions()
-  const settings = useCachedResource({ identity: settingsScope, resource: repoCollaborationResource, load: loadSettings, fallbackError: 'Settings unavailable' })
+  const settings = useCachedResource({ identity: settingsScope, resource: repoSettingsResource, load: loadSettings, fallbackError: 'Settings unavailable' })
   return <main className="mx-auto max-w-5xl p-4">
     <div className="mb-6 flex flex-wrap gap-4">
       <button onClick={() => setRepo({ ...repo, description: 'Changed elsewhere', website_url: 'https://example.com' })}>Remote metadata update</button>
       <RepoCloneDropdown cloneRemoteUrl="https://example.com/owner/demo.git" repo={repo} />
       <button>After clone</button>
       <button onClick={() => setRepo({ ...initial, id: 'owner/other', name: 'other', description: 'Other repository description' })}>Other repository settings</button>
+      <button onClick={() => setGitHub({
+        configured: true,
+        connection: { ...githubConnection, disconnected: { reason: 'app_uninstalled', at_unix: 1_767_312_000 } },
+      })}>GitHub uninstalled elsewhere</button>
     </div>
     <RepoLayoutProvider live={{ repo } as RepoLiveState} subscribe={subscribe}>
       <RepoSettingsPage
@@ -62,6 +78,18 @@ function App() {
         deleteInvite={async () => { throw new Error('unused') }}
         deleteMember={async () => { throw new Error('unused') }}
         deleteRepo={async () => { throw new Error('Deletion denied by fixture') }}
+        github={settings.value?.github ?? null}
+        disconnectGitHub={async (params) => {
+          calls.push({ disconnectGitHub: params })
+          await hold('disconnect-github')
+          const github = { configured: true, connection: null }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        startGitHubInstall={async (params) => {
+          calls.push({ startGitHubInstall: params })
+          return { install_url: '#github-install' }
+        }}
         updateMember={async (input) => {
           calls.push(input)
           await hold(input.member_user_id)

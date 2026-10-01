@@ -1,0 +1,301 @@
+//! GitHub connections, one row per Scope repository. Connecting and
+//! disconnecting re-read the viewer's access in the transaction that writes,
+//! so a maintainer removed meanwhile cannot finish. GitHub's installation
+//! events are judged by the domain for every connected link of the
+//! installation.
+
+use super::{
+    RepositoryStore, acquire_aggregate_lock,
+    integer_columns::{i64_to_u64, optional_i64_to_u64, u64_to_i64},
+    locks::acquire_shared_repository_lock,
+    repository_access::{load_repo_record, repository_access},
+    runs::unique_conflict,
+};
+use crate::error::PostgresError;
+use scope_domain::{
+    github_connection::{
+        ConnectGitHubRepository, GitHubConnection, GitHubConnectionStatus, GitHubDisconnectReason,
+        GitHubInstallationChange, connect_github_repository, disconnect_github_repository,
+    },
+    repository::RepositoryIncarnation,
+};
+use sea_orm::{
+    ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait, Value,
+};
+
+const SELECT_CONNECTION: &str = "SELECT connection.repo_id, connection.installation_id,
+        connection.github_repository_id, connection.github_full_name,
+        connection.connected_by_user_id, connected_by.handle AS connected_by_handle,
+        connection.connected_at_unix, connection.status, connection.disconnect_reason,
+        connection.disconnected_at_unix
+    FROM scope_github_connections connection
+    LEFT JOIN scope_users connected_by ON connected_by.id = connection.connected_by_user_id";
+
+/// A stored link and the handle of the account that made it, while it exists.
+pub struct GitHubConnectionRead {
+    pub connection: GitHubConnection,
+    pub connected_by_handle: Option<String>,
+}
+
+#[derive(FromQueryResult)]
+struct ConnectionRow {
+    repo_id: String,
+    installation_id: i64,
+    github_repository_id: i64,
+    github_full_name: String,
+    connected_by_user_id: Option<String>,
+    connected_by_handle: Option<String>,
+    connected_at_unix: i64,
+    status: String,
+    disconnect_reason: Option<String>,
+    disconnected_at_unix: Option<i64>,
+}
+
+impl RepositoryStore {
+    pub async fn github_connection(
+        &self,
+        repo_id: &str,
+    ) -> Result<Option<GitHubConnectionRead>, PostgresError> {
+        load_connection(
+            self.db.as_ref(),
+            "WHERE connection.repo_id = $1",
+            [repo_id.into()],
+        )
+        .await
+    }
+
+    /// Stores the link once the domain accepts it. Returns the repository
+    /// incarnation it was stored for, so the caller can announce the change.
+    pub async fn connect_github_repository(
+        &self,
+        command: ConnectGitHubRepository,
+    ) -> Result<(GitHubConnection, RepositoryIncarnation), PostgresError> {
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let repo_id = command.repository_id.clone();
+        acquire_shared_repository_lock(&tx, &repo_id).await?;
+        acquire_aggregate_lock(&tx, "github-connection", &repo_id).await?;
+        acquire_aggregate_lock(
+            &tx,
+            "github-repository",
+            &command.github_repository_id.to_string(),
+        )
+        .await?;
+        let context = repository_access(&tx, &repo_id, Some(&command.user_id))
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        let current = load_connection(&tx, "WHERE connection.repo_id = $1", [repo_id.into()])
+            .await?
+            .map(|read| read.connection);
+        let github_repository_link = load_connection(
+            &tx,
+            "WHERE connection.github_repository_id = $1 AND connection.status = 'Connected'",
+            [u64_to_i64(command.github_repository_id, "GitHub repository id")?.into()],
+        )
+        .await?
+        .map(|read| read.connection);
+        let connection = connect_github_repository(
+            context.access,
+            current.as_ref(),
+            github_repository_link.as_ref(),
+            command,
+        )?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO scope_github_connections (repo_id, installation_id,
+                github_repository_id, github_full_name, connected_by_user_id,
+                connected_at_unix, status, disconnect_reason, disconnected_at_unix)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             ON CONFLICT (repo_id) DO UPDATE SET
+                installation_id = EXCLUDED.installation_id,
+                github_repository_id = EXCLUDED.github_repository_id,
+                github_full_name = EXCLUDED.github_full_name,
+                connected_by_user_id = EXCLUDED.connected_by_user_id,
+                connected_at_unix = EXCLUDED.connected_at_unix,
+                status = EXCLUDED.status,
+                disconnect_reason = EXCLUDED.disconnect_reason,
+                disconnected_at_unix = EXCLUDED.disconnected_at_unix",
+            connection_values(&connection)?,
+        ))
+        .await
+        .map_err(|error| {
+            unique_conflict(
+                error,
+                "this GitHub repository is already connected to another Scope repository",
+            )
+        })?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok((connection, context.incarnation()))
+    }
+
+    pub async fn disconnect_github_repository(
+        &self,
+        repo_id: &str,
+        user_id: &str,
+    ) -> Result<RepositoryIncarnation, PostgresError> {
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        acquire_shared_repository_lock(&tx, repo_id).await?;
+        acquire_aggregate_lock(&tx, "github-connection", repo_id).await?;
+        let context = repository_access(&tx, repo_id, Some(user_id))
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        let current = load_connection(&tx, "WHERE connection.repo_id = $1", [repo_id.into()])
+            .await?
+            .map(|read| read.connection);
+        disconnect_github_repository(context.access, current.as_ref())?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "DELETE FROM scope_github_connections WHERE repo_id = $1",
+            [repo_id.into()],
+        ))
+        .await
+        .map_err(PostgresError::internal)?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(context.incarnation())
+    }
+
+    /// Applies what GitHub reported about an installation to each of its
+    /// connected links. Returns the repositories whose link changed.
+    pub async fn apply_github_installation_change(
+        &self,
+        installation_id: u64,
+        change: &GitHubInstallationChange,
+        now_unix: u64,
+    ) -> Result<Vec<RepositoryIncarnation>, PostgresError> {
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let rows = ConnectionRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "{SELECT_CONNECTION}
+                 WHERE connection.installation_id = $1 AND connection.status = 'Connected'
+                 ORDER BY connection.repo_id
+                 FOR UPDATE OF connection"
+            ),
+            [u64_to_i64(installation_id, "GitHub installation id")?.into()],
+        ))
+        .all(&tx)
+        .await
+        .map_err(PostgresError::internal)?;
+        let mut changed = Vec::new();
+        for row in rows {
+            let mut connection = row.into_domain()?.connection;
+            if !connection.apply_installation_change(installation_id, change, now_unix) {
+                continue;
+            }
+            let GitHubConnectionStatus::Disconnected { reason, at_unix } = connection.status else {
+                return Err(PostgresError::internal_message(
+                    "an installation change left a link connected",
+                ));
+            };
+            tx.execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "UPDATE scope_github_connections
+                 SET status = 'Disconnected', disconnect_reason = $2, disconnected_at_unix = $3
+                 WHERE repo_id = $1",
+                [
+                    connection.repository_id.clone().into(),
+                    reason_name(reason).into(),
+                    u64_to_i64(at_unix, "GitHub disconnection time")?.into(),
+                ],
+            ))
+            .await
+            .map_err(PostgresError::internal)?;
+            if let Some(record) = load_repo_record(&tx, &connection.repository_id).await? {
+                changed.push(record.incarnation());
+            }
+        }
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(changed)
+    }
+}
+
+async fn load_connection<C: ConnectionTrait>(
+    conn: &C,
+    filter: &str,
+    values: impl IntoIterator<Item = Value>,
+) -> Result<Option<GitHubConnectionRead>, PostgresError> {
+    ConnectionRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!("{SELECT_CONNECTION} {filter}"),
+        values,
+    ))
+    .one(conn)
+    .await
+    .map_err(PostgresError::internal)?
+    .map(ConnectionRow::into_domain)
+    .transpose()
+}
+
+fn connection_values(connection: &GitHubConnection) -> Result<Vec<Value>, PostgresError> {
+    let (status, reason, at_unix) = match connection.status {
+        GitHubConnectionStatus::Connected => ("Connected", None, None),
+        GitHubConnectionStatus::Disconnected { reason, at_unix } => (
+            "Disconnected",
+            Some(reason_name(reason)),
+            Some(u64_to_i64(at_unix, "GitHub disconnection time")?),
+        ),
+    };
+    Ok(vec![
+        connection.repository_id.clone().into(),
+        u64_to_i64(connection.installation_id, "GitHub installation id")?.into(),
+        u64_to_i64(connection.github_repository_id, "GitHub repository id")?.into(),
+        connection.github_full_name.clone().into(),
+        connection.connected_by.clone().into(),
+        u64_to_i64(connection.connected_at_unix, "GitHub connection time")?.into(),
+        status.into(),
+        reason.map(str::to_string).into(),
+        at_unix.into(),
+    ])
+}
+
+fn reason_name(reason: GitHubDisconnectReason) -> &'static str {
+    match reason {
+        GitHubDisconnectReason::AppUninstalled => "AppUninstalled",
+        GitHubDisconnectReason::InstallationSuspended => "InstallationSuspended",
+        GitHubDisconnectReason::RepositoryRemoved => "RepositoryRemoved",
+    }
+}
+
+impl ConnectionRow {
+    fn into_domain(self) -> Result<GitHubConnectionRead, PostgresError> {
+        let status = match (
+            self.status.as_str(),
+            self.disconnect_reason.as_deref(),
+            optional_i64_to_u64(self.disconnected_at_unix, "GitHub disconnection time")?,
+        ) {
+            ("Connected", None, None) => GitHubConnectionStatus::Connected,
+            ("Disconnected", Some(reason), Some(at_unix)) => GitHubConnectionStatus::Disconnected {
+                reason: match reason {
+                    "AppUninstalled" => GitHubDisconnectReason::AppUninstalled,
+                    "InstallationSuspended" => GitHubDisconnectReason::InstallationSuspended,
+                    "RepositoryRemoved" => GitHubDisconnectReason::RepositoryRemoved,
+                    other => {
+                        return Err(PostgresError::internal_message(format!(
+                            "unknown GitHub disconnect reason {other}"
+                        )));
+                    }
+                },
+                at_unix,
+            },
+            _ => {
+                return Err(PostgresError::internal_message(
+                    "GitHub connection status is inconsistent",
+                ));
+            }
+        };
+        Ok(GitHubConnectionRead {
+            connection: GitHubConnection {
+                repository_id: self.repo_id,
+                installation_id: i64_to_u64(self.installation_id, "GitHub installation id")?,
+                github_repository_id: i64_to_u64(
+                    self.github_repository_id,
+                    "GitHub repository id",
+                )?,
+                github_full_name: self.github_full_name,
+                connected_by: self.connected_by_user_id,
+                connected_at_unix: i64_to_u64(self.connected_at_unix, "GitHub connection time")?,
+                status,
+            },
+            connected_by_handle: self.connected_by_handle,
+        })
+    }
+}

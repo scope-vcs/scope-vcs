@@ -1,6 +1,8 @@
 import type {
   AccountSessionResponse,
   CommitFileResponse,
+  ConnectGitHubRepositoryRequest,
+  GitHubSetupRequest,
   HistoryEntryFileDiffRequest,
   HistoryEntryRequest,
   HistoryPageRequest,
@@ -133,6 +135,10 @@ export type DeleteRepoMemberInput = RepoParams & {
 export type RepoInviteInput = RepoParams & {
   invite_id: string
 }
+
+export type GitHubSetupInput = GitHubSetupRequest
+
+export type ConnectRepoGitHubInput = RepoParams & ConnectGitHubRepositoryRequest
 
 export type RepoInviteTokenInput = {
   token: string

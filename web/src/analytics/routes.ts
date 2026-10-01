@@ -21,6 +21,7 @@ const routeDecisions = {
   '/': tracked('home', '/'),
   '/account': tracked('account', '/account'),
   '/cli-login': tracked('cli_login', '/cli-login'),
+  '/github/setup': tracked('github_setup', '/github/setup'),
   '/licenses': tracked('licenses', '/licenses'),
   '/privacy': tracked('privacy', '/privacy'),
   '/terms': tracked('terms', '/terms'),

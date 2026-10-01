@@ -67,6 +67,7 @@ mod git_projection_identity;
 mod git_receive;
 mod git_receive_config;
 mod git_request_refs;
+mod github_connection;
 mod history;
 mod http;
 mod landing_file;

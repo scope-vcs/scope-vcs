@@ -1,21 +1,51 @@
-import type { RepositoryCollaborationResponse } from '../../api/types.generated'
+import type { GitHubConnectionResponse, RepositoryCollaborationResponse } from '../../api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 import { onViewerChange } from '../../lib/viewer-state'
 import { applyCollaborationResult, type CollaborationResult } from './repo-collaboration-results'
 
-export const repoCollaborationResource = createCachedResource<{ collaboration: RepositoryCollaborationResponse | null }>({
+/** The settings page's server data. `null` parts are not visible to the viewer. */
+export type RepoSettingsData = {
+  collaboration: RepositoryCollaborationResponse | null
+  github: GitHubConnectionResponse | null
+}
+
+export const repoSettingsResource = createCachedResource<RepoSettingsData>({
   maxEntries: 24,
   maxWeight: 4 * 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
 export function retainCollaborationResult(scope: string, result: CollaborationResult) {
-  const current = repoCollaborationResource.peek(scope)
+  const current = repoSettingsResource.peek(scope)
   if (!current) return
-  repoCollaborationResource.write(scope, {
+  repoSettingsResource.write(scope, {
+    ...current,
     collaboration: applyCollaborationResult(current.collaboration, result),
   })
-  repoCollaborationResource.invalidate(scope)
+  repoSettingsResource.invalidate(scope)
+}
+
+/** Keeps the connection a mutation returned, then confirms it with a refresh. */
+export function retainGitHubConnection(scope: string, github: GitHubConnectionResponse) {
+  const current = repoSettingsResource.peek(scope)
+  if (!current) return
+  repoSettingsResource.write(scope, { ...current, github })
+  repoSettingsResource.invalidate(scope)
+}
+
+/**
+ * The GitHub setup page connects a repository without knowing the viewer's
+ * settings scope. Every retained snapshot of that repository is refreshed.
+ */
+export function invalidateRepoSettings(repoId: string) {
+  repoSettingsResource.invalidateMatching((identity) => {
+    try {
+      const scope: unknown = JSON.parse(identity)
+      return Array.isArray(scope) && scope[0] === repoId
+    } catch {
+      return false
+    }
+  })
 }
 
 const refreshedForExpiry = new Map<string, number>()
@@ -38,7 +68,7 @@ export function refreshWhenNextInviteExpires(
   if (refreshedForExpiry.get(scope) === next) return
   const timer = setTimeout(() => {
     refreshedForExpiry.set(scope, next)
-    repoCollaborationResource.invalidate(scope)
+    repoSettingsResource.invalidate(scope)
   }, Math.max(0, next * 1000 - Date.now()))
   return () => clearTimeout(timer)
 }

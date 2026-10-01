@@ -56,6 +56,14 @@ impl ApiError {
         )
     }
 
+    /// A service Scope depends on failed. The public message says which one.
+    pub(crate) fn upstream_unavailable(
+        public_message: impl Into<String>,
+        diagnostic: impl Into<String>,
+    ) -> Self {
+        Self::from_diagnostic(ErrorKind::ServiceUnavailable, public_message, diagnostic)
+    }
+
     fn temporarily_unavailable(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::ServiceUnavailable, message)
     }

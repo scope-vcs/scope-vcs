@@ -1,7 +1,9 @@
+mod github;
 mod projections;
 mod repo_collaboration;
 mod requests;
 
+pub(crate) use github::*;
 pub(crate) use projections::*;
 pub(crate) use repo_collaboration::*;
 pub(crate) use requests::*;

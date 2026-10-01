@@ -60,7 +60,7 @@ scope_run_config.workspace = true
 scope_product_analytics.workspace = true
 url = "2.5.7"
 scope_git_process.workspace = true
-time.workspace = true
+time = { workspace = true, features = ["parsing"] }
 tokio = { workspace = true, features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { version = "0.1.17", features = ["sync"] }
 tower-http = { workspace = true, features = ["cors"] }

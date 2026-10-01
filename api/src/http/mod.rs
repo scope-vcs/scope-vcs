@@ -6,6 +6,7 @@ pub(crate) mod dependencies;
 pub(crate) mod device_login;
 pub(crate) mod dispatch_authorization;
 pub(crate) mod file_diffs;
+pub(crate) mod github;
 pub(crate) mod history;
 pub(crate) mod origins;
 pub(crate) mod projection_preview;

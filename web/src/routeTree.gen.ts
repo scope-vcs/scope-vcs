@@ -18,6 +18,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as OwnerIndexRouteImport } from './routes/$owner.index'
 import { Route as OwnerRepoRouteImport } from './routes/$owner.$repo'
+import { Route as GithubSetupRouteImport } from './routes/github.setup'
 import { Route as InvitesTokenRouteImport } from './routes/invites.$token'
 import { Route as SignInSplatRouteImport } from './routes/sign-in.$'
 import { Route as SignUpSplatRouteImport } from './routes/sign-up.$'
@@ -80,6 +81,11 @@ const OwnerRepoRoute = OwnerRepoRouteImport.update({
   id: '/$repo',
   path: '/$repo',
   getParentRoute: () => OwnerRoute,
+} as any)
+const GithubSetupRoute = GithubSetupRouteImport.update({
+  id: '/github/setup',
+  path: '/github/setup',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const InvitesTokenRoute = InvitesTokenRouteImport.update({
   id: '/invites/$token',
@@ -179,6 +185,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
+  '/github/setup': typeof GithubSetupRoute
   '/invites/$token': typeof InvitesTokenRoute
   '/sign-in/$': typeof SignInSplatRoute
   '/sign-up/$': typeof SignUpSplatRoute
@@ -204,6 +211,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/$owner/$repo': typeof OwnerRepoCodeIndexRoute
+  '/github/setup': typeof GithubSetupRoute
   '/invites/$token': typeof InvitesTokenRoute
   '/sign-in/$': typeof SignInSplatRoute
   '/sign-up/$': typeof SignUpSplatRoute
@@ -227,6 +235,7 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
+  '/github/setup': typeof GithubSetupRoute
   '/invites/$token': typeof InvitesTokenRoute
   '/sign-in/$': typeof SignInSplatRoute
   '/sign-up/$': typeof SignUpSplatRoute
@@ -257,6 +266,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/$owner/$repo'
+    | '/github/setup'
     | '/invites/$token'
     | '/sign-in/$'
     | '/sign-up/$'
@@ -282,6 +292,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/$owner/$repo'
+    | '/github/setup'
     | '/invites/$token'
     | '/sign-in/$'
     | '/sign-up/$'
@@ -304,6 +315,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/$owner/$repo'
+    | '/github/setup'
     | '/invites/$token'
     | '/sign-in/$'
     | '/sign-up/$'
@@ -332,6 +344,7 @@ export interface RootRouteChildren {
   LicensesRoute: typeof LicensesRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
+  GithubSetupRoute: typeof GithubSetupRoute
   InvitesTokenRoute: typeof InvitesTokenRoute
   SignInSplatRoute: typeof SignInSplatRoute
   SignUpSplatRoute: typeof SignUpSplatRoute
@@ -401,6 +414,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$owner/$repo'
       preLoaderRoute: typeof OwnerRepoRouteImport
       parentRoute: typeof OwnerRoute
+    }
+    '/github/setup': {
+      id: '/github/setup'
+      path: '/github/setup'
+      fullPath: '/github/setup'
+      preLoaderRoute: typeof GithubSetupRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/invites/$token': {
       id: '/invites/$token'
@@ -638,6 +658,7 @@ const rootRouteChildren: RootRouteChildren = {
   LicensesRoute: LicensesRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
+  GithubSetupRoute: GithubSetupRoute,
   InvitesTokenRoute: InvitesTokenRoute,
   SignInSplatRoute: SignInSplatRoute,
   SignUpSplatRoute: SignUpSplatRoute,
