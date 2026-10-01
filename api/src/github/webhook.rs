@@ -1,12 +1,16 @@
 //! GitHub webhook deliveries. The signature is checked over the raw body
 //! before anything is parsed. Every event Scope reacts to is named in
 //! `GitHubWebhookEvent::parse`; any other event is acknowledged and dropped.
+//! Deliveries can be late or redelivered, so what one reports is confirmed
+//! with GitHub before it changes a link.
 
+use super::{GitHubApp, InstallationStatus};
 use crate::error::ApiError;
 use hmac::{Hmac, KeyInit, Mac};
 use scope_domain::github_connection::GitHubInstallationChange;
 use serde::{Deserialize, de::DeserializeOwned};
 use sha2::Sha256;
+use std::collections::BTreeSet;
 
 pub(crate) const GITHUB_SIGNATURE_HEADER: &str = "x-hub-signature-256";
 pub(crate) const GITHUB_EVENT_HEADER: &str = "x-github-event";
@@ -72,6 +76,36 @@ impl GitHubWebhookEvent {
     }
 }
 
+/// The part of a reported change GitHub still confirms. An installation that
+/// is gone or suspended now is reported as such whatever the delivery said;
+/// an active one confirms only repositories it no longer reaches.
+pub(crate) async fn confirmed_installation_change(
+    app: &GitHubApp,
+    installation_id: u64,
+    reported: &GitHubInstallationChange,
+) -> Result<Option<GitHubInstallationChange>, ApiError> {
+    match app.installation_status(installation_id).await? {
+        InstallationStatus::Uninstalled => Ok(Some(GitHubInstallationChange::Uninstalled)),
+        InstallationStatus::Suspended => Ok(Some(GitHubInstallationChange::Suspended)),
+        InstallationStatus::Active => {
+            let GitHubInstallationChange::RepositoriesRemoved(removed) = reported else {
+                return Ok(None);
+            };
+            let reachable = app
+                .installation_repositories(installation_id)
+                .await?
+                .into_iter()
+                .map(|repository| repository.id)
+                .collect::<BTreeSet<_>>();
+            let gone = removed
+                .difference(&reachable)
+                .copied()
+                .collect::<BTreeSet<_>>();
+            Ok((!gone.is_empty()).then_some(GitHubInstallationChange::RepositoriesRemoved(gone)))
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct InstallationPayload {
     action: String,
@@ -105,7 +139,6 @@ fn payload<T: DeserializeOwned>(body: &[u8]) -> Result<T, ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeSet;
 
     fn sign(secret: &[u8], body: &[u8]) -> String {
         let mut mac = Hmac::<Sha256>::new_from_slice(secret).unwrap();

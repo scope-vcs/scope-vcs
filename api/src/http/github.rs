@@ -18,9 +18,12 @@ use crate::{
     auth::scope::require_scope_user,
     error::ApiError,
     github::{
-        GitHubApp,
+        GitHubApp, InstallationStatus,
         setup_tokens::GrantedRepository,
-        webhook::{GITHUB_EVENT_HEADER, GITHUB_SIGNATURE_HEADER, GitHubWebhookEvent},
+        webhook::{
+            GITHUB_EVENT_HEADER, GITHUB_SIGNATURE_HEADER, GitHubWebhookEvent,
+            confirmed_installation_change,
+        },
     },
     http::origins::public_app_origin,
     persistence::unix_now,
@@ -142,17 +145,31 @@ pub(crate) async fn connect_github_repository(
                 "The Scope GitHub App cannot reach that repository. Add it to the installation on GitHub, then connect again.",
             )
         })?;
+    let repository_id = repository.id;
     let (_, incarnation) = state
         .metadata
         .repositories()
-        .connect_github_repository(ConnectGitHubRepository {
-            repository_id: context.record.id.clone(),
-            installation_id,
-            github_repository_id: repository.id,
-            github_full_name: repository.full_name,
-            user_id: user.id,
-            now_unix: unix_now()?,
-        })
+        .connect_github_repository(
+            ConnectGitHubRepository {
+                repository_id: context.record.id.clone(),
+                installation_id,
+                github_repository_id: repository_id,
+                github_full_name: repository.full_name,
+                user_id: user.id,
+                now_unix: unix_now()?,
+            },
+            // Asked again under the installation lock, so a removal that
+            // GitHub reported meanwhile is seen here or finds the new link.
+            async || {
+                Ok::<_, ApiError>(
+                    app.installation_status(installation_id).await? == InstallationStatus::Active
+                        && app
+                            .installation_repository(installation_id, repository_id)
+                            .await?
+                            .is_some(),
+                )
+            },
+        )
         .await?;
     publish_connection_change(&state, &incarnation).await;
     connection_response(&state, &context).await.map(Json)
@@ -200,7 +217,9 @@ pub(crate) async fn receive_github_webhook(
             let changed = state
                 .metadata
                 .repositories()
-                .apply_github_installation_change(installation_id, &change, unix_now()?)
+                .apply_github_installation_change(installation_id, unix_now()?, async || {
+                    confirmed_installation_change(app, installation_id, &change).await
+                })
                 .await?;
             for incarnation in changed {
                 publish_connection_change(&state, &incarnation).await;

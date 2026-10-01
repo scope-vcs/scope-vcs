@@ -12,6 +12,7 @@ use scope_domain::{
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 
 fn member(repo: &str, user_id: &str) -> RepositoryMember {
     RepositoryMember {
@@ -228,8 +229,20 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
     let leaver = user("leaver", "leaver");
     let store = store_with_repositories([
         repository(&owner, "public", Visibility::Public),
+        repository(&owner, "linked", Visibility::Private),
         repository(&leaver, "solo", Visibility::Private),
     ]);
+    // A former member connected owner/linked to GitHub; settings show who.
+    store
+        .db
+        .execute_unprepared(
+            "INSERT INTO scope_github_connections (repo_id, installation_id,
+                github_repository_id, github_full_name, connected_by_user_id,
+                connected_at_unix, status)
+            VALUES ('owner/linked', 7, 42, 'octo/linked', 'leaver', 1, 'Connected')",
+        )
+        .await
+        .unwrap();
     // Without membership, the leaver submitted one public request and left
     // another as a draft, which nobody else could delete once they are gone.
     store
@@ -259,8 +272,16 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
             .contributed_repositories
             .iter()
             .map(|incarnation| incarnation.repository_id())
-            .collect::<Vec<_>>(),
-        ["owner/public"]
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["owner/linked", "owner/public"])
+    );
+    assert_eq!(
+        query_json(
+            &store,
+            "SELECT jsonb_agg(connected_by_user_id) FROM scope_github_connections"
+        )
+        .await,
+        json!([null])
     );
     assert_eq!(
         query_json(

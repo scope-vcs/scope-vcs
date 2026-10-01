@@ -42,7 +42,9 @@ pub enum GitHubDisconnectReason {
     RepositoryRemoved,
 }
 
-/// What GitHub reported about an installation of the Scope GitHub App.
+/// What GitHub confirms about an installation of the Scope GitHub App.
+/// Webhook deliveries can be late or repeated, so callers confirm a reported
+/// change with GitHub before applying it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubInstallationChange {
     Uninstalled,

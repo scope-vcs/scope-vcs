@@ -3,6 +3,10 @@
 //! so a maintainer removed meanwhile cannot finish. GitHub's installation
 //! events are judged by the domain for every connected link of the
 //! installation.
+//!
+//! Connecting and applying an installation event hold the same installation
+//! lock while they ask GitHub what is true now, so a revocation is either
+//! seen by the connect or finds the new link when it is applied.
 
 use super::{
     RepositoryStore, acquire_aggregate_lock,
@@ -64,12 +68,15 @@ impl RepositoryStore {
         .await
     }
 
-    /// Stores the link once the domain accepts it. Returns the repository
+    /// Stores the link once the domain accepts it and, under the
+    /// installation lock, `still_reachable` confirms with GitHub that the
+    /// installation still reaches the repository. Returns the repository
     /// incarnation it was stored for, so the caller can announce the change.
-    pub async fn connect_github_repository(
+    pub async fn connect_github_repository<E: From<PostgresError>>(
         &self,
         command: ConnectGitHubRepository,
-    ) -> Result<(GitHubConnection, RepositoryIncarnation), PostgresError> {
+        still_reachable: impl AsyncFnOnce() -> Result<bool, E>,
+    ) -> Result<(GitHubConnection, RepositoryIncarnation), E> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let repo_id = command.repository_id.clone();
         acquire_shared_repository_lock(&tx, &repo_id).await?;
@@ -80,6 +87,7 @@ impl RepositoryStore {
             &command.github_repository_id.to_string(),
         )
         .await?;
+        acquire_installation_lock(&tx, command.installation_id).await?;
         let context = repository_access(&tx, &repo_id, Some(&command.user_id))
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
@@ -98,7 +106,14 @@ impl RepositoryStore {
             current.as_ref(),
             github_repository_link.as_ref(),
             command,
-        )?;
+        )
+        .map_err(PostgresError::from)?;
+        if !still_reachable().await? {
+            return Err(PostgresError::permission_denied(
+                "The Scope GitHub App cannot reach that repository. Add it to the installation on GitHub, then connect again.",
+            )
+            .into());
+        }
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_github_connections (repo_id, installation_id,
@@ -153,15 +168,18 @@ impl RepositoryStore {
         Ok(context.incarnation())
     }
 
-    /// Applies what GitHub reported about an installation to each of its
-    /// connected links. Returns the repositories whose link changed.
-    pub async fn apply_github_installation_change(
+    /// Applies an installation event to each connected link of the
+    /// installation. Deliveries can be stale, so under the installation lock
+    /// `confirm` asks GitHub what is true now and returns the change to apply,
+    /// if any. Returns the repositories whose link changed.
+    pub async fn apply_github_installation_change<E: From<PostgresError>>(
         &self,
         installation_id: u64,
-        change: &GitHubInstallationChange,
         now_unix: u64,
-    ) -> Result<Vec<RepositoryIncarnation>, PostgresError> {
+        confirm: impl AsyncFnOnce() -> Result<Option<GitHubInstallationChange>, E>,
+    ) -> Result<Vec<RepositoryIncarnation>, E> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        acquire_installation_lock(&tx, installation_id).await?;
         let rows = ConnectionRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
@@ -175,16 +193,23 @@ impl RepositoryStore {
         .all(&tx)
         .await
         .map_err(PostgresError::internal)?;
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+        let Some(change) = confirm().await? else {
+            return Ok(Vec::new());
+        };
         let mut changed = Vec::new();
         for row in rows {
             let mut connection = row.into_domain()?.connection;
-            if !connection.apply_installation_change(installation_id, change, now_unix) {
+            if !connection.apply_installation_change(installation_id, &change, now_unix) {
                 continue;
             }
             let GitHubConnectionStatus::Disconnected { reason, at_unix } = connection.status else {
                 return Err(PostgresError::internal_message(
                     "an installation change left a link connected",
-                ));
+                )
+                .into());
             };
             tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -206,6 +231,15 @@ impl RepositoryStore {
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(changed)
     }
+}
+
+/// Serializes connecting through an installation with that installation's
+/// events.
+async fn acquire_installation_lock<C: ConnectionTrait>(
+    conn: &C,
+    installation_id: u64,
+) -> Result<(), PostgresError> {
+    acquire_aggregate_lock(conn, "github-installation", &installation_id.to_string()).await
 }
 
 async fn load_connection<C: ConnectionTrait>(

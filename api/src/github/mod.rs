@@ -7,7 +7,7 @@ pub(crate) mod config;
 pub(crate) mod setup_tokens;
 pub(crate) mod webhook;
 
-pub(crate) use client::GitHubRepository;
+pub(crate) use client::{GitHubRepository, InstallationStatus};
 use config::GitHubAppConfig;
 use jsonwebtoken::EncodingKey;
 use setup_tokens::SetupTokenSigner;

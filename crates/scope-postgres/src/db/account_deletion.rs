@@ -58,8 +58,8 @@ pub struct DeletedAccount {
     pub deleted_repositories: Vec<AccountDeletionChange>,
     /// Repositories that lost the account's membership or invites.
     pub changed_repositories: Vec<AccountDeletionChange>,
-    /// Other repositories whose requests, discussions or runs now show a
-    /// deleted user, or lost the account's drafts.
+    /// Other repositories whose requests, discussions, runs or GitHub
+    /// connection now show a deleted user, or lost the account's drafts.
     pub contributed_repositories: Vec<RepositoryIncarnation>,
 }
 
@@ -84,6 +84,7 @@ const CONTRIBUTED_REPOSITORIES_SQL: &str = r#"
         JOIN scope_requests r ON r.id = i.request_id
         WHERE $1 IN (i.user_id, i.invited_by_user_id)
     UNION SELECT repo_id FROM scope_runs WHERE requested_by_user_id = $1
+    UNION SELECT repo_id FROM scope_github_connections WHERE connected_by_user_id = $1
 "#;
 
 impl AuthStore {

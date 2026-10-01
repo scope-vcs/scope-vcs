@@ -86,3 +86,11 @@ settings offer to reconnect. Unsuspending does not reconnect by itself.
 `POST /v1/github/webhooks` checks `X-Hub-Signature-256` over the raw body
 before reading it and answers 401 to a bad signature. `api/src/github/webhook.rs`
 names every event Scope acts on; other events are acknowledged with 204.
+
+Deliveries can arrive late or be redelivered, so an installation event is
+confirmed with GitHub before it changes a link: the app asks whether the
+installation still exists or is suspended and, for a removed repository,
+whether the installation still reaches it. If GitHub says access is intact,
+the event is ignored. Connecting and applying an installation event hold the
+same installation lock while they ask GitHub, so a removal that lands during
+a connect is either seen by the connect or finds the new link.
