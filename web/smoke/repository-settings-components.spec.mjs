@@ -81,10 +81,10 @@ test('repository components retain drafts, previews and pending actions across r
     await page.evaluate(() => window.finishAction('disconnect-github'))
     await checks.getByText('Not connected to GitHub.').waitFor()
     await checks.getByRole('button', { name: 'Connect GitHub', exact: true }).click()
-    await page.waitForFunction(() => location.hash === '#github-install')
+    await page.waitForFunction(() => location.hash === '#github-authorize')
     assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
       { disconnectGitHub: { owner: 'owner', repo: 'demo' } },
-      { startGitHubInstall: { owner: 'owner', repo: 'demo' } },
+      { startGitHubAuthorization: { owner: 'owner', repo: 'demo' } },
     ])
 
     const alice = page.getByRole('listitem').filter({ hasText: 'alice@example.com' })

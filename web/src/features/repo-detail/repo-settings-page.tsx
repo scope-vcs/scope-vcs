@@ -9,7 +9,7 @@ import type {
 import type {
   DeleteRepoResponse,
   GitHubConnectionResponse,
-  GitHubInstallResponse,
+  GitHubAuthorizeResponse,
   RepositoryCollaborationResponse,
   RepositoryInviteLinkResponse,
   RepositoryInviteResponse,
@@ -51,7 +51,7 @@ export function RepoSettingsPage({
   disconnectGitHub,
   github,
   params,
-  startGitHubInstall,
+  startGitHubAuthorization,
   updateMember,
   updateMetadata,
   visibilityLog,
@@ -71,7 +71,7 @@ export function RepoSettingsPage({
   /** `null` while it loads, and for viewers who cannot manage it. */
   github: GitHubConnectionResponse | null
   params: RepoParams
-  startGitHubInstall: (params: RepoParams) => Promise<GitHubInstallResponse>
+  startGitHubAuthorization: (params: RepoParams) => Promise<GitHubAuthorizeResponse>
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
   updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummaryResponse>
   /** Rendered only for readers who can see private files. */
@@ -167,7 +167,7 @@ export function RepoSettingsPage({
           <RepoChecksSection
             disconnect={() => disconnectGitHub(params)}
             github={github}
-            startInstall={() => startGitHubInstall(params)}
+            startAuthorization={() => startGitHubAuthorization(params)}
           />
         )}
 

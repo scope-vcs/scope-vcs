@@ -86,9 +86,9 @@ function App() {
           retainGitHubConnection(settingsScope, github)
           return github
         }}
-        startGitHubInstall={async (params) => {
-          calls.push({ startGitHubInstall: params })
-          return { install_url: '#github-install' }
+        startGitHubAuthorization={async (params) => {
+          calls.push({ startGitHubAuthorization: params })
+          return { authorize_url: '#github-authorize' }
         }}
         updateMember={async (input) => {
           calls.push(input)

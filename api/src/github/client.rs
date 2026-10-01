@@ -1,6 +1,6 @@
 //! The GitHub REST calls Scope makes, as the app, as one installation of it,
-//! or as a GitHub user during setup. User tokens are used for one request
-//! and never stored.
+//! or as a GitHub user during setup. User tokens are used for one setup and
+//! never stored.
 
 use super::GitHubApp;
 use crate::{error::ApiError, persistence::unix_now};
@@ -27,6 +27,36 @@ pub(crate) struct GitHubRepository {
     pub(crate) id: u64,
     pub(crate) full_name: String,
     pub(crate) private: bool,
+    /// What the GitHub user may do, on lists read with a user token.
+    #[serde(default)]
+    permissions: Option<RepositoryPermissions>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+struct RepositoryPermissions {
+    #[serde(default)]
+    admin: bool,
+    #[serde(default)]
+    maintain: bool,
+    #[serde(default)]
+    push: bool,
+}
+
+impl GitHubRepository {
+    /// Read access is not enough: connecting lets Scope push the repository
+    /// and run its workflows with its secrets.
+    fn user_can_push(&self) -> bool {
+        self.permissions.is_some_and(|permissions| {
+            permissions.push || permissions.maintain || permissions.admin
+        })
+    }
+}
+
+/// A repository the GitHub user can push, and the installation that reaches it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PushableRepository {
+    pub(crate) installation_id: u64,
+    pub(crate) repository: GitHubRepository,
 }
 
 pub(super) struct InstallationToken {
@@ -105,36 +135,40 @@ impl GitHubApp {
         }
     }
 
-    pub(crate) async fn user_can_access_installation(
+    /// Every repository the GitHub user can push through an installation of
+    /// the app they can access. A user token from the app only sees that
+    /// app's installations.
+    pub(crate) async fn user_pushable_repositories(
         &self,
         user_token: &str,
-        installation_id: u64,
-    ) -> Result<bool, ApiError> {
+    ) -> Result<Vec<PushableRepository>, ApiError> {
         let installations = self
             .pages::<InstallationsPage, _>(user_token, "/user/installations", |page| {
                 page.installations
             })
             .await?
             .unwrap_or_default();
-        Ok(installations
-            .iter()
-            .any(|installation| installation.id == installation_id))
-    }
-
-    /// The installation's repositories that the GitHub user can also reach.
-    pub(crate) async fn user_installation_repositories(
-        &self,
-        user_token: &str,
-        installation_id: u64,
-    ) -> Result<Vec<GitHubRepository>, ApiError> {
-        Ok(self
-            .pages::<RepositoriesPage, _>(
-                user_token,
-                &format!("/user/installations/{installation_id}/repositories"),
-                |page| page.repositories,
-            )
-            .await?
-            .unwrap_or_default())
+        let mut pushable = Vec::new();
+        for installation in installations {
+            let repositories = self
+                .pages::<RepositoriesPage, _>(
+                    user_token,
+                    &format!("/user/installations/{}/repositories", installation.id),
+                    |page| page.repositories,
+                )
+                .await?
+                .unwrap_or_default();
+            pushable.extend(
+                repositories
+                    .into_iter()
+                    .filter(GitHubRepository::user_can_push)
+                    .map(|repository| PushableRepository {
+                        installation_id: installation.id,
+                        repository,
+                    }),
+            );
+        }
+        Ok(pushable)
     }
 
     /// The repository, when the installation can still reach it.

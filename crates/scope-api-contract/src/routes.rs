@@ -43,7 +43,7 @@ routes! {
             repo_config(owner: &str, repo: &str);
         REPO_METADATA = "/v1/repos/{owner}/{repo}/metadata" => "repoMetadata";
         REPO_GITHUB = "/v1/repos/{owner}/{repo}/github" => "repoGitHub";
-        REPO_GITHUB_INSTALL = "/v1/repos/{owner}/{repo}/github/install" => "repoGitHubInstall";
+        REPO_GITHUB_AUTHORIZE = "/v1/repos/{owner}/{repo}/github/authorize" => "repoGitHubAuthorize";
         GITHUB_SETUP = "/v1/github/setup" => "githubSetup";
         REPO_DEPENDENCIES = "/v1/repos/{owner}/{repo}/dependencies"
             => "repoDependencies",

@@ -20,7 +20,7 @@ import {
 import {
   disconnectRepoGitHubForRequest,
   loadRepoGitHubConnectionForRequest,
-  startRepoGitHubInstallForRequest,
+  startRepoGitHubAuthorizationForRequest,
 } from '@/api/github'
 import { loadOptionalResource } from '@/api/http'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
@@ -54,9 +54,9 @@ const loadRepoGitHubConnection = createServerFn({ method: 'GET' })
   .validator(parseRepoParams)
   .handler(({ data }) => loadOptionalResource(() => loadRepoGitHubConnectionForRequest(data, getRequest().signal)))
 
-const startRepoGitHubInstall = createServerFn({ method: 'POST' })
+const startRepoGitHubAuthorization = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
-  .handler(({ data }) => startRepoGitHubInstallForRequest(data))
+  .handler(({ data }) => startRepoGitHubAuthorizationForRequest(data))
 
 const disconnectRepoGitHub = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
@@ -168,7 +168,7 @@ function RepoSettingsRoute() {
             return github
           }}
           github={resource.value?.github ?? null}
-          startGitHubInstall={(data) => startRepoGitHubInstall({ data })}
+          startGitHubAuthorization={(data) => startRepoGitHubAuthorization({ data })}
           deleteMember={(data) => retainResult(
             deleteRepoMember({ data }),
             (member) => ({ type: 'memberRemoved', member }),

@@ -1,4 +1,4 @@
-import type { GitHubConnectionResponse, GitHubInstallResponse } from '@/api/types.generated'
+import type { GitHubConnectionResponse, GitHubAuthorizeResponse } from '@/api/types.generated'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
@@ -12,11 +12,11 @@ import { ChecksSection } from './repo-settings-sections'
 export function RepoChecksSection({
   disconnect,
   github,
-  startInstall,
+  startAuthorization,
 }: {
   disconnect: () => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
-  startInstall: () => Promise<GitHubInstallResponse>
+  startAuthorization: () => Promise<GitHubAuthorizeResponse>
 }) {
   const [pending, setPending] = useState<'connect' | 'disconnect' | null>(null)
   const [error, setError] = useState<{ title: string; message: string } | null>(null)
@@ -25,9 +25,9 @@ export function RepoChecksSection({
     setError(null)
     setPending('connect')
     try {
-      const { install_url } = await startInstall()
-      // Pending lasts until GitHub's install screen replaces this page.
-      window.location.assign(install_url)
+      const { authorize_url } = await startAuthorization()
+      // Pending lasts until GitHub's authorization screen replaces this page.
+      window.location.assign(authorize_url)
     } catch (cause) {
       setPending(null)
       setError({ title: 'GitHub could not be opened', message: resourceErrorMessage(cause, 'Try again.') })

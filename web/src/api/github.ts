@@ -1,8 +1,8 @@
 import { createApiClient } from '@/api/client'
 import type { ConnectRepoGitHubInput, GitHubSetupInput, RepoParams } from './types'
 import type {
+  GitHubAuthorizeResponse,
   GitHubConnectionResponse,
-  GitHubInstallResponse,
   GitHubSetupResponse,
 } from './types.generated'
 import { repoRoute } from './paths'
@@ -20,12 +20,12 @@ export async function loadRepoGitHubConnectionForRequest(
   )
 }
 
-export async function startRepoGitHubInstallForRequest(
+export async function startRepoGitHubAuthorizationForRequest(
   data: RepoParams,
-): Promise<GitHubInstallResponse> {
+): Promise<GitHubAuthorizeResponse> {
   return createApiClient().post(
-    repoRoute(ApiRouteTemplates.repoGitHubInstall, data),
-    apiValidators.GitHubInstallResponse,
+    repoRoute(ApiRouteTemplates.repoGitHubAuthorize, data),
+    apiValidators.GitHubAuthorizeResponse,
     { auth: 'required' },
   )
 }
@@ -38,7 +38,7 @@ export async function completeGitHubSetupForRequest(
     apiValidators.GitHubSetupResponse,
     {
       auth: 'required',
-      body: { state: data.state, installation_id: data.installation_id, code: data.code },
+      body: { state: data.state, code: data.code },
     },
   )
 }
