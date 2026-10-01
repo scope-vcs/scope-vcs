@@ -12,12 +12,65 @@ import {
   availabilityTargets,
   parseAvailabilityConfig,
   probeTarget,
+  readMaintenanceMarkers,
 } from "./release-availability-core.mjs";
 import { runAvailabilityProbe } from "./release-availability.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "release-availability.mjs");
 const WRAPPER = join(dirname(fileURLToPath(import.meta.url)), "with-release-availability.sh");
 const SOURCE_SHA = "a".repeat(40);
+
+test("cutover marker publication never exposes an unfinished timestamp", async (t) => {
+  for (const phase of ["start", "end"]) await t.test(phase, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "scope-marker-publication-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const ready = join(root, "clock-ready");
+    const release = join(root, "clock-release");
+    const startFile = join(root, "maintenance-start");
+    const endFile = join(root, "maintenance-end");
+    const marker = phase === "start" ? startFile : endFile;
+    const timestamp = Date.now();
+    if (phase === "end") {
+      await writeFile(startFile, String(timestamp - 2_000));
+      await writeFile(endFile, String(timestamp - 1_000));
+    }
+    await writeFile(join(root, "date"), `#!/usr/bin/env bash
+set -eu
+: > "$MARKER_CLOCK_READY"
+while [[ ! -e "$MARKER_CLOCK_RELEASE" ]]; do sleep 0.01; done
+printf '%s\\n' "$MARKER_TIMESTAMP"
+`, { mode: 0o755 });
+    const child = spawn("bash", ["-euc", 'source "$1"; "$2"', "marker-test",
+      join(dirname(SCRIPT), "release-cutover.sh"), `mark_maintenance_${phase}`], {
+      env: { ...process.env, PATH: `${root}:${process.env.PATH}`,
+        SCOPE_PREPARED_RELEASE_PATH: "unused", SCOPE_DEPLOYMENT_SOURCE_SHA: SOURCE_SHA,
+        SCOPE_RELEASE_MAINTENANCE_START_FILE: startFile, SCOPE_RELEASE_MAINTENANCE_END_FILE: endFile,
+        MARKER_CLOCK_READY: ready, MARKER_CLOCK_RELEASE: release, MARKER_TIMESTAMP: String(timestamp) },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const exited = once(child, "exit");
+    const errors = collect(child.stderr);
+    const parsed = parseAvailabilityConfig(config("https://web.example.test", "https://api.example.test", {
+      mode: "maintenance", maintenance: { startFile, endFile, warningAfterMs: 10_000 },
+    }));
+    try {
+      await waitForFile(ready);
+      // Pause the real clock command at the same boundary that failed in production.
+      await readMaintenanceMarkers(parsed, new AvailabilityEvidence(parsed));
+      const visible = await readFile(marker, "utf8").catch((error) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      assert.equal(visible, phase === "start" ? null : String(timestamp - 1_000));
+    } finally {
+      await writeFile(release, "");
+      const [status] = await exited;
+      assert.equal(status, 0, await errors);
+    }
+    assert.equal((await readFile(marker, "utf8")).trim(), String(timestamp));
+    await readMaintenanceMarkers(parsed, new AvailabilityEvidence(parsed));
+  });
+});
 
 test("constructs and verifies the real public release requests", async (t) => {
   const requests = [];

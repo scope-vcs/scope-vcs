@@ -21,12 +21,13 @@ if [[ "${SCOPE_RECOVER_CLOSED_CUTOVER:-0}" == 1 ]]; then
   node .github/scripts/production-deployment-progress.mjs cutover-read \
     --id "$SCOPE_RELEASE_CUTOVER_ID" --source-sha "$SCOPE_DEPLOYMENT_SOURCE_SHA" > "$output/cutover.json"
   node --input-type=module - "$output/cutover.json" "$SCOPE_RELEASE_MAINTENANCE_START_FILE" <<'NODE'
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 const journal = JSON.parse(readFileSync(process.argv[2], "utf8"));
 const closures = journal.events.filter(({phase}) => phase === "closing" || phase === "reclosing");
 const start = closures.length ? Math.min(...closures.map(({at}) => Date.parse(at))) : Date.now();
 if (!Number.isFinite(start)) throw new Error("Recovery closure timestamp is invalid");
-writeFileSync(process.argv[3], `${start}\n`);
+execFileSync("bash", [".github/scripts/write-release-marker.sh", process.argv[3], String(start)]);
 NODE
 fi
 bash .github/scripts/with-release-availability.sh "$output/config.json" "$output" -- "$@"
