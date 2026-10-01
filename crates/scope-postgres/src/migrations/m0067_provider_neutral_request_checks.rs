@@ -49,7 +49,8 @@ impl MigrationTrait for Migration {
                     );
 
                 -- Check runs GitHub reports for commits Scope pushed. Every run
-                -- is kept: a re-run is a new row, and the latest to start decides.
+                -- is kept: a re-run is a new row with a larger id, and the latest
+                -- run decides.
                 CREATE TABLE scope_github_check_runs (
                     github_check_run_id bigint PRIMARY KEY,
                     repo_id varchar NOT NULL
@@ -59,8 +60,6 @@ impl MigrationTrait for Migration {
                     status varchar NOT NULL,
                     conclusion varchar,
                     details_url text,
-                    started_at_unix bigint NOT NULL,
-                    completed_at_unix bigint,
                     updated_at_unix bigint NOT NULL,
                     CONSTRAINT scope_github_check_run_values CHECK (
                         github_check_run_id > 0 AND
@@ -72,15 +71,13 @@ impl MigrationTrait for Migration {
                             'timed_out', 'action_required', 'stale', 'startup_failure'
                         ) AND
                         ((status = 'completed') = (conclusion IS NOT NULL)) AND
-                        started_at_unix >= 0 AND
-                        (completed_at_unix IS NULL OR completed_at_unix >= 0) AND
                         updated_at_unix >= 0
                     )
                 );
 
                 CREATE INDEX idx_scope_github_check_runs_commit
                     ON scope_github_check_runs(
-                        repo_id, commit_oid, name, started_at_unix DESC, github_check_run_id DESC
+                        repo_id, commit_oid, name, github_check_run_id DESC
                     );
                 "#,
             )

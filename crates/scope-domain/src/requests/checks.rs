@@ -420,14 +420,15 @@ pub fn request_checks_outcome(
     }) else {
         return RequestChecksOutcome::NotEvaluated;
     };
+    // A GitHub check can never pass without a connection, whatever else the head awaits.
+    if evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected {
+        return RequestChecksOutcome::ConfigurationError;
+    }
     match evaluation.state {
         RequestCheckEvaluationState::NoChecks => RequestChecksOutcome::Clear,
         RequestCheckEvaluationState::AwaitingApproval => RequestChecksOutcome::AwaitingApproval,
         RequestCheckEvaluationState::ConfigurationError => RequestChecksOutcome::ConfigurationError,
         RequestCheckEvaluationState::Started => {
-            if evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected {
-                return RequestChecksOutcome::ConfigurationError;
-            }
             let mut outcome = RequestChecksOutcome::Clear;
             for check in &evaluation.checks {
                 let verdict = match check {
