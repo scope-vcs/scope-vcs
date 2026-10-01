@@ -13,12 +13,15 @@ export function RunsFilterBar({
   onStatusFilterChange,
   params,
   selectedWorkflow,
+  showWorkflowFilter,
   statusFilter,
   workflows,
 }: {
   onStatusFilterChange: (filter: RunStatusFilter) => void
   params: RepoParams
   selectedWorkflow?: string
+  /** Workflow pages exist only while the repository may run its workflows. */
+  showWorkflowFilter: boolean
   statusFilter: RunStatusFilter
   workflows: RepositoryRunWorkflowListResponse['workflows']
 }) {
@@ -26,29 +29,31 @@ export function RunsFilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <select
-        aria-label="Filter by workflow"
-        className={cn(SELECT_CLASS, 'max-w-44')}
-        onChange={(event) => {
-          const value = event.target.value
-          if (value === '') {
-            void navigate({ params, to: '/$owner/$repo/runs' })
-            return
-          }
-          void navigate({
-            params: { ...params, workflow: value },
-            to: '/$owner/$repo/runs/workflows/$workflow',
-          })
-        }}
-        value={selectedWorkflow ?? ''}
-      >
-        <option value="">All workflows</option>
-        {workflows.map((item) => (
-          <option key={item.key} value={item.key}>
-            {item.name}
-          </option>
-        ))}
-      </select>
+      {showWorkflowFilter ? (
+        <select
+          aria-label="Filter by workflow"
+          className={cn(SELECT_CLASS, 'max-w-44')}
+          onChange={(event) => {
+            const value = event.target.value
+            if (value === '') {
+              void navigate({ params, to: '/$owner/$repo/runs' })
+              return
+            }
+            void navigate({
+              params: { ...params, workflow: value },
+              to: '/$owner/$repo/runs/workflows/$workflow',
+            })
+          }}
+          value={selectedWorkflow ?? ''}
+        >
+          <option value="">All workflows</option>
+          {workflows.map((item) => (
+            <option key={item.key} value={item.key}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+      ) : null}
       <select
         aria-label="Filter by status"
         className={SELECT_CLASS}

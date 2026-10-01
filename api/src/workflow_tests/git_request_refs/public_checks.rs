@@ -17,6 +17,7 @@ async fn native_repo_with_public_request(label: &str, workflow: &str) -> AppStat
     commit_all(&source, "publish trusted main workflow");
     let bare = clone_test_repo(&source, &format!("{label}-bare"), true);
     apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+    allow_native_runs(&state).await;
     state
         .metadata
         .auth()

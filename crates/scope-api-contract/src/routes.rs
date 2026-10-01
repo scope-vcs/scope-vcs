@@ -186,6 +186,8 @@ routes! {
         READINESS = "/readyz";
         ADMIN_CLEANUP = "/v1/admin/cleanup";
         ADMIN_CLEANUP_DRAIN = "/v1/admin/cleanup/drain";
+        ADMIN_NATIVE_RUNS_ACCOUNTS = "/v1/admin/native-runs/accounts";
+        ADMIN_NATIVE_RUNS_ACCOUNT = "/v1/admin/native-runs/accounts/{handle}";
         CLI_BROWSER_LOGIN = "/v1/cli/browser-login";
         CLI_BROWSER_LOGIN_EXCHANGE = "/v1/cli/browser-login/{request_id}/exchange",
             cli_browser_login_exchange(request_id: &str);

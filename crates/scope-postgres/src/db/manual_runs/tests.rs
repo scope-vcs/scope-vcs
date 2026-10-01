@@ -3,7 +3,9 @@ use crate::{
     db::{
         MetadataStore,
         locks::wait_for_transaction_waiter,
-        test_support::fixtures::{repository, source_blob, store_with_repositories, user},
+        test_support::fixtures::{
+            repository, source_blob, store_with_native_run_repositories, user,
+        },
     },
     error::PostgresErrorKind,
 };
@@ -24,7 +26,7 @@ fn fixture() -> (
         created_at_unix: 1,
         updated_at_unix: 1,
     });
-    let store = store_with_repositories([repository]);
+    let store = store_with_native_run_repositories([repository]);
     let request = ManualRunRequest::new(
         "owner/repo".into(),
         "member".into(),

@@ -91,6 +91,7 @@ function RepositoryRunsPageContent({
     )
   }
 
+  const nativeRunsAvailable = initialResources.workflows.native_runs_available
   const selectedWorkflow = workflow
     ? initialResources.workflows.workflows.find((item) => item.key === workflow)
     : undefined
@@ -103,6 +104,7 @@ function RepositoryRunsPageContent({
             onStatusFilterChange={setStatusFilter}
             params={params}
             selectedWorkflow={workflow}
+            showWorkflowFilter={nativeRunsAvailable}
             statusFilter={statusFilter}
             workflows={initialResources.workflows.workflows}
           />
@@ -111,6 +113,11 @@ function RepositoryRunsPageContent({
       />
       <div className="min-w-0 border-t border-border">
         <main className="min-w-0 px-4 pb-14 sm:px-6 lg:px-8">
+          {nativeRunsAvailable ? null : (
+            <p className="pt-5 text-sm text-muted-foreground">
+              Scope runs are not available for this repository.
+            </p>
+          )}
           {initialResources.workflowsError ? (
             <div className="pt-5">
               <PageErrorAlert title="Workflow filter unavailable">

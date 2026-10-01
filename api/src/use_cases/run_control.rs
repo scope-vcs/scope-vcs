@@ -36,6 +36,13 @@ pub(crate) async fn create_manual_run(
     state: &AppState,
     command: ManualRunCommand,
 ) -> Result<InspectedRun, ApiError> {
+    // Enqueuing refuses an unlisted owner too; refusing first skips the upload.
+    state
+        .metadata
+        .native_runs()
+        .repository_availability(command.request.repository_id())
+        .await?
+        .require()?;
     let inspect_root = state.data_dir.join("run-bundle-inspection");
     let bundle = command.bundle;
     let git_oid = command.request.git_oid().to_string();

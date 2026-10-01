@@ -37,6 +37,11 @@ pub(crate) async fn get_repository_run_workflows(
 ) -> Result<Json<RepositoryRunWorkflowListResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let repo = require_repo_member(&state, &user.id, &owner, &repo_name).await?;
+    let native_runs = state
+        .metadata
+        .native_runs()
+        .repository_availability(&repo.record.id)
+        .await?;
     let workflows = current_workflows(&state, &repo.record.id)
         .await?
         .into_iter()
@@ -49,7 +54,10 @@ pub(crate) async fn get_repository_run_workflows(
             job_count: revision.definition().jobs().len(),
         })
         .collect();
-    Ok(Json(RepositoryRunWorkflowListResponse { workflows }))
+    Ok(Json(RepositoryRunWorkflowListResponse {
+        workflows,
+        native_runs_available: native_runs.is_available(),
+    }))
 }
 
 pub(crate) async fn get_repository_run_history(
@@ -60,6 +68,11 @@ pub(crate) async fn get_repository_run_history(
 ) -> Result<Json<RepositoryRunHistoryPageResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let repo = require_repo_member(&state, &user.id, &owner, &repo_name).await?;
+    let native_runs = state
+        .metadata
+        .native_runs()
+        .repository_availability(&repo.record.id)
+        .await?;
     let workflow = query
         .workflow
         .as_deref()
@@ -112,7 +125,7 @@ pub(crate) async fn get_repository_run_history(
     });
     let runs = entries
         .iter()
-        .map(|entry| repository_run_summary(&entry.run, &entry.jobs))
+        .map(|entry| repository_run_summary(&entry.run, &entry.jobs, native_runs))
         .collect::<Vec<_>>();
     Ok(Json(RepositoryRunHistoryPageResponse { runs, next_cursor }))
 }

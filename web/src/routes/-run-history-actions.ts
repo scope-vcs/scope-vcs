@@ -20,7 +20,8 @@ export const loadRepoRunPage = createServerFn({ method: 'GET' })
         .then((workflows) => ({ error: null, workflows }))
         .catch((error: unknown) => ({
           error: resourceErrorMessage(error, 'Workflow catalog unavailable.'),
-          workflows: { workflows: [] },
+          // Unknown availability keeps the controls; enqueuing still enforces it.
+          workflows: { workflows: [], native_runs_available: true },
         })),
     ])
     return {

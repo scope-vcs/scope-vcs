@@ -1,5 +1,6 @@
 pub mod app;
 pub mod maintenance_http;
+pub mod native_runs_maintenance;
 pub mod state;
 
 pub(crate) mod auth;

@@ -9,6 +9,7 @@ const SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_CHUNK_BYTES";
 const SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES";
 const SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV: &str = "SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY";
 const CLOUD_RUN_MAX_CONCURRENCY_ENV: &str = "SCOPE_CLOUD_RUN_MAX_CONCURRENCY";
+const DISPATCH_BROKER_FUNCTION_ARN_ENV: &str = "SCOPE_DISPATCH_BROKER_FUNCTION_ARN";
 const DEFAULT_HEALTH_PORT: u16 = 8081;
 
 /// Outbox jobs claimed per control poll.
@@ -81,17 +82,15 @@ impl WorkerSettings {
     }
 }
 
+/// Cloud execution runs exactly when a dispatch broker is configured.
+/// `SCOPE_CLOUD_RUN_MAX_CONCURRENCY=0` pauses admission while cleanup continues.
 fn cloud_execution_from_env() -> anyhow::Result<Option<CloudExecutionSettings>> {
-    let enabled = non_empty_env("SCOPE_CLOUD_RUNS_ENABLED")
-        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "yes"));
-    if !enabled {
+    let Some(dispatch_broker_function_arn) = non_empty_env(DISPATCH_BROKER_FUNCTION_ARN_ENV) else {
         return Ok(None);
-    }
+    };
     let aws_region = required_env("AWS_REGION")?;
-    let dispatch_broker_function_arn = parse_broker_function_arn(
-        &required_env("SCOPE_DISPATCH_BROKER_FUNCTION_ARN")?,
-        &aws_region,
-    )?;
+    let dispatch_broker_function_arn =
+        parse_broker_function_arn(&dispatch_broker_function_arn, &aws_region)?;
     Ok(Some(CloudExecutionSettings {
         aws_region,
         dispatch_broker_function_arn,

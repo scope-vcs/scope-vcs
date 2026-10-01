@@ -17,6 +17,7 @@ struct InspectableRun {
 async fn active_run(log_chunks: usize) -> InspectableRun {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
+    allow_native_runs(&state).await;
     let revision = scope_run_config::parse_workflow(
         "/.scope/runs/inspection.yml",
         workflow_named("Inspection").as_bytes(),

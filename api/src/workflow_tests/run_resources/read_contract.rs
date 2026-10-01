@@ -83,7 +83,10 @@ async fn owners_and_members_can_read_run_resources_before_the_first_push() {
     let workflows = scope_api_contract::routes::repo_run_workflows(TEST_REPO_OWNER, TEST_REPO_NAME);
     for auth in [bearer_header(), member] {
         for (url, expected) in [
-            (workflows.clone(), serde_json::json!({"workflows": []})),
+            (
+                workflows.clone(),
+                serde_json::json!({"workflows": [], "native_runs_available": false}),
+            ),
             (
                 history_url(""),
                 serde_json::json!({"runs": [], "next_cursor": null}),
@@ -268,7 +271,7 @@ async fn all_run_resource_reads_ignore_locked_history_and_invitations() {
             serde_json::json!({"workflows": [{
                 "key": "test", "name": "Test", "path": "/.scope/runs/test.yml",
                 "manual": true, "push_main": false, "job_count": 1,
-            }]}),
+            }], "native_runs_available": true}),
         );
         for (query, expected) in [
             ("workflow=test", vec!["run_test"]),

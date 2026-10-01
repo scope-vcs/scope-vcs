@@ -1,7 +1,7 @@
 use super::*;
 use crate::db::{
     MetadataStore,
-    test_support::fixtures::{repository, source_blob, store_with_repositories, user},
+    test_support::fixtures::{repository, source_blob, store_with_native_run_repositories, user},
 };
 use scope_domain::{
     policy::Visibility,
@@ -69,7 +69,7 @@ async fn fixture(count: usize) -> MetadataStore {
         Visibility::Private,
     );
     let repository_id = repo.record.id.clone();
-    let store = store_with_repositories([repo]);
+    let store = store_with_native_run_repositories([repo]);
     let revision = workflow(&repository_id);
     for index in 0..count {
         store

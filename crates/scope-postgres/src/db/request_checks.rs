@@ -2,13 +2,14 @@
 
 use super::{
     RequestStore, entities,
+    native_runs::lock_native_runs_availability,
     request_access::{ensure_user_exists, lock_request_repository},
     runs::{enqueue_run_in_transaction, save_workflow_revision},
 };
 use crate::error::PostgresError;
 use scope_domain::{
     requests::{
-        RequestCheckEvaluation, RequestCheckPlan, RequestRevision,
+        Request, RequestCheckEvaluation, RequestCheckPlan, RequestRevision,
         stop_request_auto_merge_for_check_evaluation,
     },
     runs::{
@@ -81,26 +82,20 @@ impl RequestStore {
                 created_runs: Vec::new(),
             });
         }
+        // Evaluating read the owner's listing outside this transaction. Checks
+        // that wait on native runs are recorded only while it still holds.
+        if command.evaluation.uses_native_runs() {
+            lock_native_runs_availability(&tx, &request.repo_id)
+                .await?
+                .require()?;
+        }
         let created_runs = start_runs(&tx, &command.revisions, command.runs).await?;
         for revision in &command.revisions {
             save_workflow_revision(&tx, revision, command.evaluation.updated_at_unix).await?;
         }
         save_evaluation(&tx, &command.evaluation).await?;
-        if let Some(stored) = active_auto_merge
-            && let Some(stopped) = stop_request_auto_merge_for_check_evaluation(
-                &request,
-                &stored.intent,
-                &command.evaluation,
-                super::request_auto_merge::automatic_event_id("stopped", &stored.intent.id),
-            )?
-        {
-            super::request_auto_merge::persist_existing_auto_merge_mutation(
-                &tx,
-                stored.model,
-                &stopped,
-            )
+        stop_auto_merge_for_evaluation(&tx, active_auto_merge, &request, &command.evaluation)
             .await?;
-        }
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(RequestChecksMutation {
             evaluation: command.evaluation,
@@ -234,7 +229,28 @@ async fn start_runs(
     Ok(created)
 }
 
-async fn evaluation_for_head<C: ConnectionTrait>(
+/// A head whose checks can no longer pass stops the request's auto-merge.
+pub(super) async fn stop_auto_merge_for_evaluation(
+    tx: &DatabaseTransaction,
+    active_auto_merge: Option<super::request_auto_merge::StoredIntent>,
+    request: &Request,
+    evaluation: &RequestCheckEvaluation,
+) -> Result<(), PostgresError> {
+    if let Some(stored) = active_auto_merge
+        && let Some(stopped) = stop_request_auto_merge_for_check_evaluation(
+            request,
+            &stored.intent,
+            evaluation,
+            super::request_auto_merge::automatic_event_id("stopped", &stored.intent.id),
+        )?
+    {
+        super::request_auto_merge::persist_existing_auto_merge_mutation(tx, stored.model, &stopped)
+            .await?;
+    }
+    Ok(())
+}
+
+pub(super) async fn evaluation_for_head<C: ConnectionTrait>(
     conn: &C,
     request_id: &str,
     head_oid: &str,
@@ -250,7 +266,7 @@ async fn evaluation_for_head<C: ConnectionTrait>(
     .transpose()
 }
 
-async fn save_evaluation(
+pub(super) async fn save_evaluation(
     tx: &DatabaseTransaction,
     evaluation: &RequestCheckEvaluation,
 ) -> Result<(), PostgresError> {

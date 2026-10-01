@@ -503,6 +503,11 @@ fn authorize(
 }
 
 async fn record_terminal_check_evidence(store: &super::super::MetadataStore) {
+    store
+        .native_runs()
+        .add_account("owner", None, 1)
+        .await
+        .unwrap();
     let revision = scope_run_config::parse_workflow(
         "/.scope/runs/check.yml",
         br#"

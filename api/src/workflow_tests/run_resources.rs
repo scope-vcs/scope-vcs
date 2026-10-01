@@ -23,6 +23,7 @@ pub(super) async fn state_with_pushed_workflow_checkout(
     commit_all(&source, "add workflow");
     let bare = clone_test_repo(&source, &format!("{label}-bare"), true);
     apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+    allow_native_runs(&state).await;
     (state, source)
 }
 
@@ -48,6 +49,7 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
     commit_all(&source, "add workflow");
     let bare = clone_test_repo(&source, "run-history-pages-bare", true);
     apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+    allow_native_runs(&state).await;
 
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await

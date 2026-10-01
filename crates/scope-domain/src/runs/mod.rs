@@ -1,4 +1,5 @@
 pub mod attempt;
+pub mod availability;
 pub mod cache;
 pub mod catalog;
 pub mod dispatch_authorization;

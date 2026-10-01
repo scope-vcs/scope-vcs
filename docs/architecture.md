@@ -137,7 +137,15 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
 - `request_revision_inspection.rs` for shared Git revision membership checks
   and raw diff execution used by review and discussion anchors;
 - `run_control.rs` and `run_inspection.rs` for run mutations and authorized run,
-  detail, and log reads; and
+  detail, and log reads;
+- `native_runs.rs` for the operator-managed list of accounts that may use
+  Scope's hosted runner. `scope-domain/src/runs/availability.rs` owns the rule:
+  a repository may create native runs only while its owning account is listed.
+  Run creation, retry, push-to-main triggers, request check evaluation, and
+  admission share-lock the listing in `scope-postgres/src/db/native_runs.rs`.
+  An unlisted repository's request checks are `NoChecks`. Removing an account
+  turns its waiting request checks into configuration errors and cancels its
+  unfinished runs; and
 - `content_cleanup.rs` for repository-storage cleanup and source-blob cleanup
   coordination.
 
@@ -291,8 +299,9 @@ their own timeouts. The policy gate runs the check.
 - `docs/railway-experiments.md` documents the owner and expiry policy for
   provider experiments.
 - `deploy/aws/OPERATIONS.md` documents Fargate cloud-run provisioning and
-  operation; `deploy/railway/MEDIA.md` documents request media resources,
-  backup, and restore.
+  operation, and `deploy/aws/DISPATCH-BROKER.md` documents admission, its pause
+  switch, and the native runs allowlist; `deploy/railway/MEDIA.md` documents
+  request media resources, backup, and restore.
 - `bench/README.md` documents local Git and deployed-system benchmarks;
   `dev/checks/README.md` documents the check entrypoints.
 - `.scope/RULES.md`, `AGENTS.md`, and `CLAUDE.md` are contribution and agent

@@ -395,3 +395,115 @@ async fn known_source_rejects_workflows_without_manual_trigger() {
             .is_none()
     );
 }
+
+#[tokio::test]
+async fn an_unlisted_owner_starts_no_manual_runs_and_hides_workflow_controls() {
+    let (state, checkout) =
+        state_with_pushed_workflow_checkout("manual-unlisted-owner", WORKFLOW).await;
+    let workflows = expect_json(
+        api_request(
+            router(state.clone()),
+            "GET",
+            &scope_api_contract::routes::repo_run_workflows(TEST_REPO_OWNER, TEST_REPO_NAME),
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(workflows["native_runs_available"], true);
+    state
+        .metadata
+        .native_runs()
+        .remove_account(TEST_REPO_OWNER, unix_now())
+        .await
+        .unwrap();
+
+    let git_oid = git_head_oid(&checkout);
+    let resolved = router(state.clone())
+        .oneshot(resolve_request(
+            &git_oid,
+            "77777777777777777777777777777777",
+            "test",
+            &bearer_header(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resolved.status(), StatusCode::FORBIDDEN);
+    let uploaded = router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "{}?workflow=test&git_oid={git_oid}&request_id={}",
+                    scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME),
+                    "88888888888888888888888888888888",
+                ))
+                .header(AUTHORIZATION, bearer_header())
+                .header(CONTENT_TYPE, "application/octet-stream")
+                .body(Body::from(b"not inspected".to_vec()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = uploaded.status();
+    assert_eq!(
+        response_json(uploaded).await["message"],
+        scope_domain::runs::availability::NATIVE_RUNS_UNAVAILABLE
+    );
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    for run_id in [
+        "run_77777777777777777777777777777777",
+        "run_88888888888888888888888888888888",
+    ] {
+        assert!(state.metadata.runs().run(run_id).await.unwrap().is_none());
+    }
+
+    let workflows = expect_json(
+        api_request(
+            router(state),
+            "GET",
+            &scope_api_contract::routes::repo_run_workflows(TEST_REPO_OWNER, TEST_REPO_NAME),
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(workflows["native_runs_available"], false);
+}
+
+#[tokio::test]
+async fn an_unlisted_owners_push_to_main_starts_no_runs() {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    let source = temp_git_repo("push-main-unlisted-owner");
+    fs::create_dir_all(source.join(".scope/runs")).unwrap();
+    fs::write(
+        source.join(".scope/runs/test.yml"),
+        WORKFLOW.replace("manual: true", "push:\n    branches:\n      - main"),
+    )
+    .unwrap();
+    run_git(Some(&source), &["add", "."], "stage workflow source").unwrap();
+    commit_all(&source, "add push workflow");
+    let bare = clone_test_repo(&source, "push-main-unlisted-owner-bare", true);
+    apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+
+    let summary = drain_outbox(&state, "push-main-unlisted-owner").await;
+
+    assert!(summary.created_runs.is_empty());
+    let evaluation = state
+        .metadata
+        .runs()
+        .push_trigger_evaluation(TEST_REPO_ID, &git_head_oid(&source))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        evaluation.state,
+        scope_domain::runs::trigger::PushTriggerEvaluationState::Succeeded
+    );
+    assert!(evaluation.checks.is_empty());
+}

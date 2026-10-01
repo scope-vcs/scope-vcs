@@ -42,6 +42,7 @@ mod manual_runs;
 mod migration_harness_tests;
 #[cfg(test)]
 mod migration_tests;
+mod native_runs;
 mod object_references;
 mod outbox;
 mod projection_encoding;
@@ -137,6 +138,7 @@ pub use maintenance::{
     apply_maintenance_migrations, migration_plan, migration_preflight,
     repository_workflow_catalogs_for_maintenance, verify_schema,
 };
+pub use native_runs::{NativeRunsAccountListing, NativeRunsWithdrawal};
 pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
 pub use repo_collaboration::{
     CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,
@@ -195,7 +197,7 @@ pub use run_log_writes::AppendRunLogResult;
 pub use runs::{AttemptMutation, DispatchClaim, EnqueueRunResult};
 pub use stores::{
     AdminStore, AuthStore, CacheStore, CleanupStore, JobStore, MediaStore, MetadataStore,
-    RepositoryStore, RequestStore, RunStore,
+    NativeRunsStore, RepositoryStore, RequestStore, RunStore,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use test_support::TestDatabaseTarget;

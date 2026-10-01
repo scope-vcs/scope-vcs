@@ -31,18 +31,37 @@ pub fn repository(owner: &UserAccount, name: &str, visibility: Visibility) -> Re
 pub fn store_with_repositories(
     repositories: impl IntoIterator<Item = Repository>,
 ) -> MetadataStore {
+    seeded_store(CatalogFixture {
+        repositories: repositories
+            .into_iter()
+            .map(|repo| (repo.record.id.clone(), repo))
+            .collect(),
+        ..Default::default()
+    })
+}
+
+/// Repositories whose owners are listed for native runs.
+pub fn store_with_native_run_repositories(
+    repositories: impl IntoIterator<Item = Repository>,
+) -> MetadataStore {
+    let repositories = repositories
+        .into_iter()
+        .map(|repo| (repo.record.id.clone(), repo))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    seeded_store(CatalogFixture {
+        native_runs_accounts: repositories
+            .values()
+            .map(|repo| repo.record.owner_user_id.clone())
+            .collect(),
+        repositories,
+        ..Default::default()
+    })
+}
+
+fn seeded_store(catalog: CatalogFixture) -> MetadataStore {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
-    store
-        .admin()
-        .seed_catalog_for_tests(CatalogFixture {
-            repositories: repositories
-                .into_iter()
-                .map(|repo| (repo.record.id.clone(), repo))
-                .collect(),
-            ..Default::default()
-        })
-        .unwrap();
+    store.admin().seed_catalog_for_tests(catalog).unwrap();
     store
 }
 

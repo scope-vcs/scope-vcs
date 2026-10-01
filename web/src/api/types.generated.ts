@@ -458,7 +458,11 @@ export type RepositoryRunAttemptResponse = { id: string, number: number, externa
 
 export type RepositoryRunWorkflowResponse = { key: string, name: string, path: string, manual: boolean, push_main: boolean, job_count: number, };
 
-export type RepositoryRunWorkflowListResponse = { workflows: Array<RepositoryRunWorkflowResponse>, };
+export type RepositoryRunWorkflowListResponse = { workflows: Array<RepositoryRunWorkflowResponse>, 
+/**
+ * Whether the repository's owner is listed for Scope's hosted runner.
+ */
+native_runs_available: boolean, };
 
 export type RepositoryRunHistoryPageResponse = { runs: Array<RepositoryRunSummaryResponse>, next_cursor: string | null, };
 

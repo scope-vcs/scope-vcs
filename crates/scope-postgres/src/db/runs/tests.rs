@@ -3,7 +3,9 @@ use crate::{
     db::{
         MetadataStore, acquire_aggregate_lock,
         locks::wait_for_transaction_waiter,
-        test_support::fixtures::{repository, source_blob, store_with_repositories, user},
+        test_support::fixtures::{
+            repository, source_blob, store_with_native_run_repositories, user,
+        },
     },
     error::PostgresErrorKind,
 };
@@ -69,7 +71,8 @@ async fn fixture(command: Command) -> MetadataStore {
         created_at_unix: 1,
         updated_at_unix: 1,
     });
-    let store = store_with_repositories([repo, repository(&owner, "other", Visibility::Public)]);
+    let store =
+        store_with_native_run_repositories([repo, repository(&owner, "other", Visibility::Public)]);
     let revision = scope_run_config::parse_workflow(
         "/.scope/runs/test.yml",
         br#"
