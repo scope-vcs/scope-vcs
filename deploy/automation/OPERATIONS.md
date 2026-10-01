@@ -40,8 +40,8 @@ They never bypass protection or push directly to main. An interrupted worktree i
 preserved for the replacement provider.
 
 The supervisor allows three agent recoveries after the initial dispatch. It
-resumes a prematurely finished agent after two minutes, falls back from Codex to
-Claude on an error or repeated early exit, and interrupts an agent with no
+resumes a prematurely finished agent after two minutes, falls back from Claude to
+Codex on an error or repeated early exit, and interrupts an agent with no
 activity for twenty minutes. It waits for the old agent to stop before resuming.
 Unanswered approval/input requests escalate after ten minutes. An investigation
 has a four-hour recovery limit. The agent is instructed to cap corrective
@@ -93,7 +93,9 @@ manual dispatch and release concurrency. Do not install the scheduler while the
 GitHub cron is still active. Stop the watcher timer and wait for its current
 service invocation to finish. Inspect any existing T3 deployment monitor before
 initializing new supervision state. Do not start a second agent while an old one
-is repairing a release.
+is repairing a release. Upgrade only when no investigation is open: an open
+incident keeps its stored provider, and a version that changes the primary
+provider would treat that provider with the new roles.
 
 From a checkout of the delivered main revision, install the Python modules and
 systemd units. Preserve `supervision.json`, receipts, inboxes, and any existing

@@ -13,7 +13,7 @@ def at(seconds):
 
 
 def info(**changes):
-    return {"created_at": at(0), "dispatch_at": at(0), "provider": "codex", "recoveries": 0, **changes}
+    return {"created_at": at(0), "dispatch_at": at(0), "provider": policy.PRIMARY_PROVIDER, "recoveries": 0, **changes}
 
 
 def thread(state="completed", **changes):
@@ -92,7 +92,7 @@ class SupervisionTests(unittest.TestCase):
 
     def test_errors_fallback_and_fallback_provider_errors_resume(self):
         self.assertEqual(policy.supervise(info(), thread("error"), at(120)), ("fallback", "agent_unavailable"))
-        self.assertEqual(policy.supervise(info(provider="claudeAgent"), thread("error"), at(120)), ("resume", "agent_unavailable"))
+        self.assertEqual(policy.supervise(info(provider=policy.FALLBACK_PROVIDER), thread("error"), at(120)), ("resume", "agent_unavailable"))
 
     def test_recovery_attempts_are_bounded_for_both_providers(self):
         for provider in ("codex", "claudeAgent"):

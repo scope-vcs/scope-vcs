@@ -15,7 +15,7 @@ skip unchanged work. `ci.yml` validates pull requests without deploying; it and
 Release call the same reusable validation workflow.
 
 On Surface, `scope-deployment-watcher.timer` checks GitHub every minute, all day.
-Its local `deployment_watcher.py` starts a Codex thread in T3 when a main Release
+Its local `deployment_watcher.py` starts a Claude thread in T3 when a main Release
 workflow appears, then follows the release and handles corrections. The watcher
 also owns the durable daily dispatch intent and alerts on a missing release run.
 Its persisted run and command IDs prevent duplicate threads after retries. See
