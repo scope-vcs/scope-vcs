@@ -68,6 +68,7 @@ FROM docker.io/library/debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46
 LABEL org.opencontainers.image.source="https://github.com/scope-vcs/scope-vcs"
 
 ARG OPENSSL_VERSION=3.5.7-1~deb13u3
+ARG PCRE2_VERSION=10.46-1~deb13u3
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -77,6 +78,7 @@ RUN apt-get update \
         "libssl3t64=${OPENSSL_VERSION}" \
         "openssl=${OPENSSL_VERSION}" \
         "openssl-provider-legacy=${OPENSSL_VERSION}" \
+        "libpcre2-8-0=${PCRE2_VERSION}" \
     && rm -rf /var/lib/apt/lists/* \
     && echo /opt/libheif/lib > /etc/ld.so.conf.d/libheif.conf \
     && mkdir -p /tmp/scope-media-worker /scope/licenses \
