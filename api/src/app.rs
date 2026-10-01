@@ -140,6 +140,24 @@ pub fn router(state: AppState) -> Router {
             axum::routing::patch(http::repo_metadata::update_repo_metadata),
         )
         .route(
+            routes::REPO_GITHUB,
+            get(http::github::get_github_connection)
+                .post(http::github::connect_github_repository)
+                .delete(http::github::disconnect_github_repository),
+        )
+        .route(
+            routes::REPO_GITHUB_INSTALL,
+            post(http::github::start_github_install),
+        )
+        .route(
+            routes::GITHUB_SETUP,
+            post(http::github::complete_github_setup),
+        )
+        .route(
+            routes::GITHUB_WEBHOOKS,
+            post(http::github::receive_github_webhook),
+        )
+        .route(
             routes::REPO_RUN_WORKFLOWS,
             get(http::run_resources::get_repository_run_workflows),
         )

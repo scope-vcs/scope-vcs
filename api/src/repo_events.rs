@@ -46,6 +46,7 @@ pub(crate) enum RepoChangeReason {
     RequestInviteeRemoved,
     RequestAttentionChanged,
     NativeRunsChanged,
+    GitHubConnectionChanged,
 }
 
 impl RepoChangeReason {
@@ -80,6 +81,7 @@ impl RepoChangeReason {
             Self::RequestInviteeRemoved => "request-invitee-removed",
             Self::RequestAttentionChanged => "request-attention-changed",
             Self::NativeRunsChanged => "native-runs-changed",
+            Self::GitHubConnectionChanged => "github-connection-changed",
         }
     }
 }

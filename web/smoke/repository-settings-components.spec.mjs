@@ -66,6 +66,27 @@ test('repository components retain drafts, previews and pending actions across r
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.keyboard.press('Escape')
 
+    const checks = page.locator('section').filter({ has: page.getByText('Checks', { exact: true }) })
+    await checks.getByText('Connected to octo/demo').waitFor()
+    await checks.getByText('Connected by @owner on Jan 01, 2026, 12:00 AM UTC.').waitFor()
+    assert.equal(await checks.getByRole('link', { name: 'octo/demo' }).getAttribute('href'), 'https://github.com/octo/demo')
+    await page.getByRole('button', { name: 'GitHub uninstalled elsewhere', exact: true }).click()
+    await checks.getByText('The Scope GitHub App was uninstalled from the GitHub account.').waitFor()
+    await checks.getByRole('button', { name: 'Reconnect', exact: true }).waitFor()
+    await page.evaluate(() => window.calls.splice(0))
+    const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null } }
+    await page.evaluate((github) => window.setFixtureGitHub(github), github)
+    await checks.getByRole('button', { name: 'Disconnect', exact: true }).click()
+    assert.equal(await checks.getByRole('button', { name: 'Disconnect', exact: true }).isDisabled(), true)
+    await page.evaluate(() => window.finishAction('disconnect-github'))
+    await checks.getByText('Not connected to GitHub.').waitFor()
+    await checks.getByRole('button', { name: 'Connect GitHub', exact: true }).click()
+    await page.waitForFunction(() => location.hash === '#github-install')
+    assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+      { disconnectGitHub: { owner: 'owner', repo: 'demo' } },
+      { startGitHubInstall: { owner: 'owner', repo: 'demo' } },
+    ])
+
     const alice = page.getByRole('listitem').filter({ hasText: 'alice@example.com' })
     const bob = page.getByRole('listitem').filter({ hasText: 'bob@example.com' })
     await alice.getByRole('switch', { name: 'Change file visibility' }).click()

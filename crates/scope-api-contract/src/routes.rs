@@ -42,6 +42,9 @@ routes! {
             => "repoConfig",
             repo_config(owner: &str, repo: &str);
         REPO_METADATA = "/v1/repos/{owner}/{repo}/metadata" => "repoMetadata";
+        REPO_GITHUB = "/v1/repos/{owner}/{repo}/github" => "repoGitHub";
+        REPO_GITHUB_INSTALL = "/v1/repos/{owner}/{repo}/github/install" => "repoGitHubInstall";
+        GITHUB_SETUP = "/v1/github/setup" => "githubSetup";
         REPO_DEPENDENCIES = "/v1/repos/{owner}/{repo}/dependencies"
             => "repoDependencies",
             repo_dependencies(owner: &str, repo: &str);
@@ -197,6 +200,7 @@ routes! {
         CLI_EXCHANGE_GRANTS_EXCHANGE = "/v1/cli/exchange-grants/exchange";
         CLI_SESSION = "/v1/cli/session";
         DISPATCH_AUTHORIZE = "/internal/cloud-dispatch/authorize";
+        GITHUB_WEBHOOKS = "/v1/github/webhooks";
         ATTEMPT_CLAIM = "/v1/runtime-protocol/attempts/{attempt_id}/claim",
             attempt_claim(attempt_id: &str);
         ATTEMPT_HEARTBEAT = "/v1/runtime-protocol/attempts/{attempt_id}/heartbeat",

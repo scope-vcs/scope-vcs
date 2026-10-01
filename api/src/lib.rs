@@ -17,6 +17,7 @@ mod env_guard;
 pub(crate) mod error;
 pub(crate) mod git;
 pub(crate) mod git_segment_recovery;
+pub(crate) mod github;
 pub(crate) mod http;
 pub(crate) mod invite_mailer;
 pub(crate) mod media_grants;

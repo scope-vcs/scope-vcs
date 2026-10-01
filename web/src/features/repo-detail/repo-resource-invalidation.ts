@@ -8,7 +8,7 @@ import { requestActivityIdentity, requestActivityResource } from '../requests/re
 import { requestAttachmentResource, requestAttachmentResourceIdentity } from '../requests/request-attachment-resource'
 import { repositoryActivityResource } from './repository-activity-resource'
 import { repositoryDependencyResource } from './repository-dependency-resource'
-import { repoCollaborationResource } from './repo-collaboration-resource'
+import { repoSettingsResource } from './repo-settings-resource'
 import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
 import { historyEntryResource, historyFeedResource } from '../history/history-resource-cache'
@@ -24,7 +24,7 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, 
     // A pending summary reconciles the queue on acceptance. Invalidating here
     // as well would cancel and restart that same four-section refresh.
     if (!summaryPending) requestQueueResource.invalidate(scope)
-    repoCollaborationResource.invalidate(scope)
+    repoSettingsResource.invalidate(scope)
     requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     repoContentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))

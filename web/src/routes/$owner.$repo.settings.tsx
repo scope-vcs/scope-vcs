@@ -17,6 +17,11 @@ import {
   updateRepoMemberForRequest,
   updateRepoMetadataForRequest,
 } from '@/api/repo-settings'
+import {
+  disconnectRepoGitHubForRequest,
+  loadRepoGitHubConnectionForRequest,
+  startRepoGitHubInstallForRequest,
+} from '@/api/github'
 import { loadOptionalResource } from '@/api/http'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
 import { VisibilityLogSection } from '@/features/repo-detail/visibility-log-section'
@@ -31,9 +36,10 @@ import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import {
   refreshWhenNextInviteExpires,
-  repoCollaborationResource,
+  repoSettingsResource,
   retainCollaborationResult,
-} from '@/features/repo-detail/repo-collaboration-resource'
+  retainGitHubConnection,
+} from '@/features/repo-detail/repo-settings-resource'
 import type { CollaborationResult } from '@/features/repo-detail/repo-collaboration-results'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { createFileRoute } from '@tanstack/react-router'
@@ -43,6 +49,18 @@ import { getRequest } from '@tanstack/react-start/server'
 const loadRepoSettings = createServerFn({ method: 'GET' })
   .validator(parseRepoParams)
   .handler(({ data }) => loadOptionalResource(() => loadRepoCollaborationForRequest(data, getRequest().signal)))
+
+const loadRepoGitHubConnection = createServerFn({ method: 'GET' })
+  .validator(parseRepoParams)
+  .handler(({ data }) => loadOptionalResource(() => loadRepoGitHubConnectionForRequest(data, getRequest().signal)))
+
+const startRepoGitHubInstall = createServerFn({ method: 'POST' })
+  .validator(parseRepoParams)
+  .handler(({ data }) => startRepoGitHubInstallForRequest(data))
+
+const disconnectRepoGitHub = createServerFn({ method: 'POST' })
+  .validator(parseRepoParams)
+  .handler(({ data }) => disconnectRepoGitHubForRequest(data))
 
 const deleteRepo = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
@@ -88,14 +106,19 @@ function RepoSettingsRoute() {
   const { isLoaded, userId } = useAuth()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
   const { owner, repo: repoName } = params
-  const load = useCallback(async (signal: AbortSignal) => ({
-    collaboration: await loadRepoSettings({ data: { owner, repo: repoName }, signal }),
-  }), [owner, repoName])
+  const load = useCallback(async (signal: AbortSignal) => {
+    const data = { owner, repo: repoName }
+    const [collaboration, github] = await Promise.all([
+      loadRepoSettings({ data, signal }),
+      loadRepoGitHubConnection({ data, signal }),
+    ])
+    return { collaboration, github }
+  }, [owner, repoName])
   const resource = useCachedResource({
     identity: scope,
-    resource: repoCollaborationResource,
+    resource: repoSettingsResource,
     load,
-    fallbackError: 'Repository access settings could not be loaded.',
+    fallbackError: 'Repository settings could not be loaded.',
   })
 
   const collaboration = resource.value?.collaboration ?? null
@@ -139,6 +162,13 @@ function RepoSettingsRoute() {
             (invite) => ({ type: 'inviteUpdated', invite }),
           )}
           deleteRepo={(data) => deleteRepo({ data })}
+          disconnectGitHub={async (data) => {
+            const github = await disconnectRepoGitHub({ data })
+            if (scope) retainGitHubConnection(scope, github)
+            return github
+          }}
+          github={resource.value?.github ?? null}
+          startGitHubInstall={(data) => startRepoGitHubInstall({ data })}
           deleteMember={(data) => retainResult(
             deleteRepoMember({ data }),
             (member) => ({ type: 'memberRemoved', member }),
