@@ -1,10 +1,13 @@
 //! What a request's checks say about merging it, and the evaluation every push
 //! to a request head records. A head whose evaluation failed holds the merge and
-//! is evaluated again when someone looks at the request.
+//! is evaluated again when someone looks at the request. A repository linked to
+//! GitHub needs only its required check names; any other reads the workflows
+//! at the head.
 
 use crate::{
     error::ApiError,
     git::{
+        command::{run_git_output, successful_git_output},
         import::{ReadWorkflowFiles, read_repository_workflow_files},
         request_refs::with_request_revision_store_repo,
     },
@@ -17,13 +20,18 @@ use scope_api_contract::RunChangeKind;
 use scope_domain::{
     repository::{RepoRecord, RepositoryIncarnation},
     requests::{
-        Request, RequestAudience, RequestCheckEvaluation, RequestCheckPlan, RequestCheckResults,
-        RequestChecksOutcome, request_checks_outcome, request_head_awaits_evaluation,
+        Request, RequestAudience, RequestCheckEvaluation, RequestCheckPlan, RequestCheckProvider,
+        RequestCheckResults, RequestChecksOutcome, changes_github_workflows,
+        request_checks_outcome, request_head_awaits_evaluation,
     },
     runs::{availability::NativeRunsAvailability, workflow::revision::WorkflowRevision},
 };
 use scope_postgres::db::{RecordRequestChecksCommand, RequestChecksMutation, RequestListRow};
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, future::Future, path::Path};
+
+/// The request-triggered workflows at a head, or the configuration error that
+/// rejects them.
+type NativeRevisions = Result<Vec<WorkflowRevision>, String>;
 
 /// The evaluation recorded for a request's current head, the results its checks
 /// have, and what the two together mean for merging.
@@ -124,22 +132,6 @@ async fn evaluate_saved_head(
     else {
         return Ok(None);
     };
-    let native_runs = native_runs_availability(state, request).await?;
-    let revisions = match request.audience {
-        _ if !native_runs.is_available() => Ok(Vec::new()),
-        RequestAudience::Public => public_request_workflow_revisions(state, request).await?,
-        RequestAudience::Private => {
-            let files = with_request_revision_store_repo(
-                state,
-                &repo.incarnation(),
-                request,
-                &revision,
-                |path, revision| read_repository_workflow_files(path, &revision.new_head_oid),
-            )
-            .await?;
-            request_workflow_revisions(request, files)
-        }
-    };
     // A pusher whose account was deleted is no maintainer: its head waits for
     // approval like any contributor's.
     let maintainer_pusher = match revision.actor_user_id.as_deref() {
@@ -152,12 +144,35 @@ async fn evaluate_saved_head(
             .then_some(pusher),
         None => None,
     };
-    evaluate_request_checks(state, request, native_runs, maintainer_pusher, revisions)
-        .await
-        .map(Some)
+    let native_revisions = async {
+        Ok(match request.audience {
+            RequestAudience::Public => public_request_workflow_revisions(state, request).await?,
+            RequestAudience::Private => {
+                let files = with_request_revision_store_repo(
+                    state,
+                    &repo.incarnation(),
+                    request,
+                    &revision,
+                    |path, revision| read_repository_workflow_files(path, &revision.new_head_oid),
+                )
+                .await?;
+                request_workflow_revisions(request, files)
+            }
+        })
+    };
+    // Boxed so the commands that look at a request, such as a merge, keep a
+    // small future of their own.
+    Box::pin(evaluate_request_checks(
+        state,
+        request,
+        maintainer_pusher,
+        native_revisions,
+    ))
+    .await
+    .map(Some)
 }
 
-/// An unlisted owner's workflow files are ordinary files, so they are not read.
+/// Whether the repository's owner is listed for native runs.
 async fn native_runs_availability(
     state: &AppState,
     request: &Request,
@@ -215,10 +230,8 @@ pub(crate) async fn best_effort_evaluate_request_checks(
 ) {
     let path = staging_repo.to_path_buf();
     let head_oid = request.head_oid.clone();
-    let evaluated = async {
-        let native_runs = native_runs_availability(state, request).await?;
-        let revisions = match request.audience {
-            _ if !native_runs.is_available() => Ok(Vec::new()),
+    let native_revisions = async {
+        Ok(match request.audience {
             RequestAudience::Public => public_request_workflow_revisions(state, request).await?,
             RequestAudience::Private => {
                 let files = crate::git::blocking::run(move || {
@@ -227,15 +240,76 @@ pub(crate) async fn best_effort_evaluate_request_checks(
                 .await?;
                 request_workflow_revisions(request, files)
             }
-        };
-        let maintainer_pusher = actor_is_maintainer.then_some(actor_user_id);
-        evaluate_request_checks(state, request, native_runs, maintainer_pusher, revisions).await
-    }
-    .await;
+        })
+    };
+    let maintainer_pusher = actor_is_maintainer.then_some(actor_user_id);
+    let evaluated =
+        evaluate_request_checks(state, request, maintainer_pusher, native_revisions).await;
     match evaluated {
         Ok(mutation) => publish_request_checks_change(state, incarnation, &mutation).await,
         Err(error) => warn_evaluation_failed(request, &error),
     }
+}
+
+/// Whether the request changes GitHub workflow files between its base and its
+/// head. Approving its GitHub checks would run them with the repository's
+/// secrets, so a head Scope cannot read counts as changing them.
+pub(crate) async fn changes_github_workflow_files(
+    state: &AppState,
+    repo: &RepoRecord,
+    request: &Request,
+) -> bool {
+    const ACTION: &str = "reading request workflow changes";
+    let changed = async {
+        let Some(revision) = state
+            .metadata
+            .requests()
+            .request_revision_with_head(&request.id, &request.head_oid)
+            .await?
+        else {
+            return Ok(true);
+        };
+        let base_oid = request.base_main_oid.clone();
+        with_request_revision_store_repo(
+            state,
+            &repo.incarnation(),
+            request,
+            &revision,
+            move |path, revision| {
+                let output = successful_git_output(
+                    run_git_output(
+                        Some(path),
+                        &[
+                            "diff",
+                            "--name-only",
+                            "-z",
+                            &base_oid,
+                            &revision.new_head_oid,
+                            "--",
+                            ".github/workflows",
+                        ],
+                        ACTION,
+                    )?,
+                    ACTION,
+                )?;
+                Ok(changes_github_workflows(
+                    output
+                        .stdout
+                        .split(|byte| *byte == 0)
+                        .filter_map(|path| std::str::from_utf8(path).ok()),
+                ))
+            },
+        )
+        .await
+    };
+    changed.await.unwrap_or_else(|error: ApiError| {
+        tracing::warn!(
+            request_id = request.id,
+            error = %error.operator_diagnostic(),
+            "could not read whether a request changes GitHub workflows"
+        );
+        true
+    })
 }
 
 fn warn_evaluation_failed(request: &Request, error: &ApiError) {
@@ -247,27 +321,58 @@ fn warn_evaluation_failed(request: &Request, error: &ApiError) {
     );
 }
 
+/// Evaluates the head with the repository's check provider. Workflow files
+/// are only read when the repository runs its checks natively.
 async fn evaluate_request_checks(
     state: &AppState,
     request: &Request,
-    native_runs: NativeRunsAvailability,
     maintainer_pusher: Option<&str>,
-    revisions: Result<Vec<WorkflowRevision>, String>,
+    native_revisions: impl Future<Output = Result<NativeRevisions, ApiError>>,
 ) -> Result<RequestChecksMutation, ApiError> {
+    let repositories = state.metadata.repositories();
+    let connection = repositories
+        .github_connection(&request.repo_id)
+        .await?
+        .map(|read| read.connection);
     let now_unix = unix_now()?;
-    let RequestCheckPlan { evaluation, runs } = RequestCheckPlan::evaluate(
-        request,
-        native_runs,
-        revisions.as_deref().map_err(String::as_str),
-        maintainer_pusher,
-        now_unix,
-    )?;
+    let (plan, revisions) = match RequestCheckProvider::for_repository(connection.as_ref()) {
+        RequestCheckProvider::GitHub => {
+            let required = repositories
+                .github_required_checks(&request.repo_id)
+                .await?;
+            (
+                RequestCheckPlan::evaluate_github(request, &required, maintainer_pusher, now_unix)?,
+                Vec::new(),
+            )
+        }
+        RequestCheckProvider::Native => {
+            // An unlisted owner's workflow files are ordinary files, so they
+            // are not read.
+            let native_runs = native_runs_availability(state, request).await?;
+            let revisions = if native_runs.is_available() {
+                native_revisions.await?
+            } else {
+                Ok(Vec::new())
+            };
+            (
+                RequestCheckPlan::evaluate(
+                    request,
+                    native_runs,
+                    revisions.as_deref().map_err(String::as_str),
+                    maintainer_pusher,
+                    now_unix,
+                )?,
+                revisions.unwrap_or_default(),
+            )
+        }
+    };
     record_checks(
         state,
         RecordRequestChecksCommand {
-            evaluation,
-            revisions: revisions.unwrap_or_default(),
-            runs,
+            evaluation: plan.evaluation,
+            revisions,
+            runs: plan.runs,
+            push_to_github: plan.push_to_github,
         },
     )
     .await
@@ -280,7 +385,7 @@ async fn evaluate_request_checks(
 async fn public_request_workflow_revisions(
     state: &AppState,
     request: &Request,
-) -> Result<Result<Vec<WorkflowRevision>, String>, ApiError> {
+) -> Result<NativeRevisions, ApiError> {
     let catalog = repository_workflows::current_catalog(state, &request.repo_id)
         .await?
         .ok_or_else(|| {
@@ -298,12 +403,7 @@ async fn public_request_workflow_revisions(
     )
 }
 
-/// The request-triggered workflows at the head, or the configuration error that
-/// rejects them.
-fn request_workflow_revisions(
-    request: &Request,
-    files: ReadWorkflowFiles,
-) -> Result<Vec<WorkflowRevision>, String> {
+fn request_workflow_revisions(request: &Request, files: ReadWorkflowFiles) -> NativeRevisions {
     let files = match files {
         ReadWorkflowFiles::Files(files) => files,
         ReadWorkflowFiles::Rejected(message) => return Err(message),
@@ -348,6 +448,9 @@ pub(crate) async fn publish_request_checks_change(
                 RunChangeKind::Created,
             )
             .await;
+    }
+    if mutation.queued_github_push {
+        state.github_push_wakeup.notify_one();
     }
     state
         .publish_request_summary_refresh(incarnation, RepoChangeReason::RequestChecksUpdated)

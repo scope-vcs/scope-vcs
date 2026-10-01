@@ -256,6 +256,7 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
                 evaluation,
                 revisions: vec![revision.clone()],
                 runs: Vec::new(),
+                push_to_github: false,
             })
             .await
             .unwrap();
@@ -309,6 +310,7 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
             .unwrap(),
             revisions: vec![revision],
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap_err();

@@ -21,6 +21,7 @@ const PRIVATE_REQUEST_REF: &str = "refs/heads/private-request";
 mod cache;
 mod checks;
 mod cleanup;
+mod github_checks;
 mod http;
 mod landed;
 mod merge;

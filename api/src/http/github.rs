@@ -7,12 +7,13 @@
 //! through installations of the app. The connect call then checks the chosen
 //! repository against that proof and against the installation itself before
 //! the link is stored. Installing the app is a separate step on GitHub; no
-//! installation id from a redirect is ever used.
+//! installation id from a redirect is ever used. Maintainers also name the
+//! checks GitHub must pass here.
 
 use super::responses::{
     ConnectGitHubRepositoryRequest, GitHubAuthorizeRequest, GitHubAuthorizeResponse,
-    GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse, github_connection_response,
-    github_repository_response,
+    GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse,
+    SetGitHubRequiredChecksRequest, github_connection_response, github_repository_response,
 };
 use crate::{
     auth::scope::require_scope_user,
@@ -30,6 +31,7 @@ use crate::{
     repo_access::find_read_access,
     repo_events::RepoChangeReason,
     state::AppState,
+    use_cases::github_check_results,
 };
 use axum::{
     Json,
@@ -195,6 +197,25 @@ pub(crate) async fn disconnect_github_repository(
     connection_response(&state, &context).await.map(Json)
 }
 
+/// A maintainer replaces the check names GitHub must pass. Heads already
+/// evaluated keep the checks they were evaluated with.
+pub(crate) async fn set_github_required_checks(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Json(input): Json<SetGitHubRequiredChecksRequest>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let user = require_scope_user(&state, &headers).await?;
+    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
+    let (_, incarnation) = state
+        .metadata
+        .repositories()
+        .set_github_required_checks(&context.record.id, &user.id, input.names)
+        .await?;
+    publish_connection_change(&state, &incarnation).await;
+    connection_response(&state, &context).await.map(Json)
+}
+
 /// Deliveries are verified before anything in them is read, and a rejected
 /// one changes nothing.
 pub(crate) async fn receive_github_webhook(
@@ -227,6 +248,27 @@ pub(crate) async fn receive_github_webhook(
                 .await?;
             for incarnation in changed {
                 publish_connection_change(&state, &incarnation).await;
+            }
+        }
+        // GitHub does not resend a delivery Scope fails, so a failed read is
+        // left to the reconciler instead of failing the delivery.
+        GitHubWebhookEvent::ChecksChanged {
+            github_repository_id,
+            commit_oid,
+        } => {
+            if let Err(error) = github_check_results::refresh_checks_for_delivery(
+                &state,
+                github_repository_id,
+                &commit_oid,
+            )
+            .await
+            {
+                tracing::warn!(
+                    github_repository_id,
+                    commit_oid,
+                    error = %error.operator_diagnostic(),
+                    "reading GitHub checks for a delivery failed"
+                );
             }
         }
         GitHubWebhookEvent::Ignored => {}
@@ -286,12 +328,16 @@ async fn connection_response(
     state: &AppState,
     context: &RepositoryAccessContext,
 ) -> Result<GitHubConnectionResponse, ApiError> {
-    let read = state
-        .metadata
-        .repositories()
-        .github_connection(&context.record.id)
+    let repositories = state.metadata.repositories();
+    let read = repositories.github_connection(&context.record.id).await?;
+    let required_checks = repositories
+        .github_required_checks(&context.record.id)
         .await?;
-    Ok(github_connection_response(state.github.is_some(), read))
+    Ok(github_connection_response(
+        state.github.is_some(),
+        read,
+        required_checks,
+    ))
 }
 
 /// The connection has no repository version of its own, so maintainers'

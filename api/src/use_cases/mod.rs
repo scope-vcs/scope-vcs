@@ -2,6 +2,8 @@ pub(crate) mod account_deletion;
 pub(crate) mod clerk_user_deletion;
 pub(crate) mod content_cleanup;
 pub(crate) mod git_receive;
+pub(crate) mod github_check_results;
+pub(crate) mod github_pushes;
 pub(crate) mod invite_email_delivery;
 pub(crate) mod native_commit_details;
 pub(crate) mod native_runs;

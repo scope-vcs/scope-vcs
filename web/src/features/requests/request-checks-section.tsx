@@ -3,7 +3,11 @@ import type { RequestChecksResponse } from '@/api/types.generated'
 import { Link } from '@tanstack/react-router'
 import { RunStatusIcon } from '../runs/run-status-icon'
 import { type RequestCheckRow, requestCheckRow } from './request-check-rows'
-import { requestCheckEvaluationNote } from './request-labels'
+import {
+  requestCheckEvaluationNote,
+  requestChecksWorkflowWarning,
+  requestGitHubPushNote,
+} from './request-labels'
 import { CHECKS_SECTION_CLASS, RequestChecksPending } from './request-checks-pending'
 
 const LOGS_LINK_CLASS =
@@ -22,6 +26,8 @@ export function RequestChecksSection({
   // Checks always arrive or fail, so their row is reserved while they load.
   if (!checks && !error) return <RequestChecksPending />
   const note = checks ? requestCheckEvaluationNote(checks) : null
+  const warning = checks ? requestChecksWorkflowWarning(checks) : null
+  const push = requestGitHubPushNote(checks?.github_push ?? null)
 
   return (
     <section
@@ -35,6 +41,18 @@ export function RequestChecksSection({
         </p>
       ) : null}
       {note ? <p className="mt-2 text-[13px] text-muted-foreground">{note}</p> : null}
+      {warning ? (
+        <p className="mt-2 text-[13px] text-warning-strong" role="note">
+          {warning}
+        </p>
+      ) : null}
+      {push ? (
+        <p
+          className={`mt-2 break-words text-[13px] ${push.failed ? 'text-danger-strong' : 'text-muted-foreground'}`}
+        >
+          {push.text}
+        </p>
+      ) : null}
       {checks?.checks.length ? (
         <ul className="mt-2.5 grid gap-1.5">
           {checks.checks.map(requestCheckRow).map((row) => (

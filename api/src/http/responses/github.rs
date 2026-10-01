@@ -11,6 +11,15 @@ pub(crate) struct GitHubConnectionResponse {
     /// `false` when this server has no GitHub App, so nothing can connect.
     pub(crate) configured: bool,
     pub(crate) connection: Option<GitHubConnectionDetailsResponse>,
+    /// The check names GitHub must pass before a request merges.
+    pub(crate) required_checks: Vec<String>,
+}
+
+/// The whole list of required check names, replacing the stored one.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct SetGitHubRequiredChecksRequest {
+    pub(crate) names: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -99,6 +108,7 @@ pub(crate) struct ConnectGitHubRepositoryRequest {
 pub(crate) fn github_connection_response(
     configured: bool,
     read: Option<GitHubConnectionRead>,
+    required_checks: Vec<String>,
 ) -> GitHubConnectionResponse {
     let connection = read.filter(|_| configured).map(|read| {
         let connection = read.connection;
@@ -134,6 +144,7 @@ pub(crate) fn github_connection_response(
     GitHubConnectionResponse {
         configured,
         connection,
+        required_checks,
     }
 }
 

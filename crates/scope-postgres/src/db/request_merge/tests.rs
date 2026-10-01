@@ -99,6 +99,7 @@ async fn cancellation_after_preparation_fences_the_final_content_commit() {
             evaluation: RequestCheckEvaluation::no_checks("req_1", REQUEST_HEAD, 6).unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();

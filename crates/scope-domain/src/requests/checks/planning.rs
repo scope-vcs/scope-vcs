@@ -4,11 +4,14 @@ use super::{
 };
 use crate::{error::DomainError, runs::availability::NativeRunsAvailability};
 
-/// The evaluation and runs to persist together after reading workflow revisions.
+/// The evaluation, runs and GitHub push to persist together.
 #[derive(Clone, Debug)]
 pub struct RequestCheckPlan {
     pub evaluation: RequestCheckEvaluation,
     pub runs: Vec<Run>,
+    /// Whether the tested commit goes to GitHub now, where the repository's
+    /// workflows run with its secrets.
+    pub push_to_github: bool,
 }
 
 impl RequestCheckPlan {
@@ -24,38 +27,30 @@ impl RequestCheckPlan {
         now_unix: u64,
     ) -> Result<Self, DomainError> {
         if !native_runs.is_available() {
-            return Ok(Self {
-                evaluation: RequestCheckEvaluation::no_checks(
-                    &request.id,
-                    &request.head_oid,
-                    now_unix,
-                )?,
-                runs: Vec::new(),
-            });
+            return Ok(Self::native(
+                RequestCheckEvaluation::no_checks(&request.id, &request.head_oid, now_unix)?,
+                Vec::new(),
+            ));
         }
         let revisions = match revisions {
             Ok(revisions) => revisions,
             Err(message) => {
-                return Ok(Self {
-                    evaluation: RequestCheckEvaluation::configuration_error(
+                return Ok(Self::native(
+                    RequestCheckEvaluation::configuration_error(
                         &request.id,
                         &request.head_oid,
                         message,
                         now_unix,
                     )?,
-                    runs: Vec::new(),
-                });
+                    Vec::new(),
+                ));
             }
         };
         if revisions.is_empty() {
-            return Ok(Self {
-                evaluation: RequestCheckEvaluation::no_checks(
-                    &request.id,
-                    &request.head_oid,
-                    now_unix,
-                )?,
-                runs: Vec::new(),
-            });
+            return Ok(Self::native(
+                RequestCheckEvaluation::no_checks(&request.id, &request.head_oid, now_unix)?,
+                Vec::new(),
+            ));
         }
         let mut checks = revisions
             .iter()
@@ -87,10 +82,46 @@ impl RequestCheckPlan {
                 Vec::new(),
             )
         };
-        Ok(Self { evaluation, runs })
+        Ok(Self::native(evaluation, runs))
     }
 
-    /// Approval may start recorded checks even after the request has closed.
+    /// Every required check name becomes a check GitHub answers for the head.
+    /// A maintainer's head goes to GitHub at once, even when no check is
+    /// required, so the repository's workflows still run on it. Anyone else's
+    /// head waits for a maintainer, because the pushed branch gets the
+    /// repository's secrets; with nothing required it is never sent.
+    pub fn evaluate_github(
+        request: &Request,
+        required_check_names: &[String],
+        maintainer_pusher: Option<&str>,
+        now_unix: u64,
+    ) -> Result<Self, DomainError> {
+        let starts = maintainer_pusher.is_some() && request_checks_start_immediately(request, true);
+        let checks = required_check_names
+            .iter()
+            .map(|name| RequestCheck::GitHub { name: name.clone() })
+            .collect::<Vec<_>>();
+        let evaluation = if checks.is_empty() {
+            RequestCheckEvaluation::no_checks(&request.id, &request.head_oid, now_unix)?
+        } else if starts {
+            RequestCheckEvaluation::started(&request.id, &request.head_oid, checks, now_unix)?
+        } else {
+            RequestCheckEvaluation::awaiting_approval(
+                &request.id,
+                &request.head_oid,
+                checks,
+                now_unix,
+            )?
+        };
+        Ok(Self {
+            evaluation,
+            runs: Vec::new(),
+            push_to_github: starts,
+        })
+    }
+
+    /// Approval may start recorded checks even after the request has closed,
+    /// but a request that can no longer merge sends nothing to GitHub.
     pub fn approve(
         request: &Request,
         mut evaluation: RequestCheckEvaluation,
@@ -112,7 +143,19 @@ impl RequestCheckPlan {
             now_unix,
         )?;
         evaluation.approve(runs.iter().map(|run| run.id.clone()).collect(), now_unix)?;
-        Ok(Self { evaluation, runs })
+        Ok(Self {
+            push_to_github: evaluation.asks_github() && !request.is_terminal(),
+            evaluation,
+            runs,
+        })
+    }
+
+    fn native(evaluation: RequestCheckEvaluation, runs: Vec<Run>) -> Self {
+        Self {
+            evaluation,
+            runs,
+            push_to_github: false,
+        }
     }
 }
 

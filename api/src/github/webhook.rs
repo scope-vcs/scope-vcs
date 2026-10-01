@@ -3,6 +3,8 @@
 //! `GitHubWebhookEvent::parse`; any other event is acknowledged and dropped.
 //! Deliveries can be late or redelivered, so what one reports is confirmed
 //! with GitHub before it changes a link.
+//! Check deliveries carry no results Scope trusts: they only say which
+//! commit to read from GitHub's API again.
 
 use super::{GitHubApp, InstallationStatus};
 use crate::error::ApiError;
@@ -35,12 +37,36 @@ pub(crate) enum GitHubWebhookEvent {
         installation_id: u64,
         change: GitHubInstallationChange,
     },
+    /// Something about a commit's checks changed. The delivery only prompts
+    /// Scope to read the commit's check runs again.
+    ChecksChanged {
+        github_repository_id: u64,
+        commit_oid: String,
+    },
     Ignored,
 }
 
 impl GitHubWebhookEvent {
     pub(crate) fn parse(event: &str, body: &[u8]) -> Result<Self, ApiError> {
         match event {
+            "check_run" | "check_suite" | "workflow_run" => {
+                let payload: ChecksPayload = payload(body)?;
+                let subject = match event {
+                    "check_run" => payload.check_run,
+                    "check_suite" => payload.check_suite,
+                    _ => payload.workflow_run,
+                };
+                let (Some(repository), Some(subject)) = (payload.repository, subject) else {
+                    return Ok(Self::Ignored);
+                };
+                if !is_commit_oid(&subject.head_sha) {
+                    return Ok(Self::Ignored);
+                }
+                Ok(Self::ChecksChanged {
+                    github_repository_id: repository.id,
+                    commit_oid: subject.head_sha,
+                })
+            }
             "installation" => {
                 let payload: InstallationPayload = payload(body)?;
                 let change = match payload.action.as_str() {
@@ -123,6 +149,28 @@ struct InstallationRepositoriesPayload {
 #[derive(Deserialize)]
 struct Installation {
     id: u64,
+}
+
+/// `check_run`, `check_suite` and `workflow_run` deliveries each name their
+/// subject under their own key.
+#[derive(Deserialize)]
+struct ChecksPayload {
+    repository: Option<Repository>,
+    check_run: Option<ChecksSubject>,
+    check_suite: Option<ChecksSubject>,
+    workflow_run: Option<ChecksSubject>,
+}
+
+#[derive(Deserialize)]
+struct ChecksSubject {
+    head_sha: String,
+}
+
+fn is_commit_oid(value: &str) -> bool {
+    value.len() == 40
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 #[derive(Deserialize)]
@@ -218,5 +266,45 @@ mod tests {
             assert_eq!(parse(event, body).unwrap(), GitHubWebhookEvent::Ignored);
         }
         assert!(parse("installation", "{}").is_err());
+    }
+
+    #[test]
+    fn check_events_name_the_repository_and_commit_to_read_again() {
+        let parse = |event: &str, body: serde_json::Value| {
+            GitHubWebhookEvent::parse(event, body.to_string().as_bytes()).unwrap()
+        };
+        let sha = "a".repeat(40);
+        let changed = GitHubWebhookEvent::ChecksChanged {
+            github_repository_id: 42,
+            commit_oid: sha.clone(),
+        };
+        for event in ["check_run", "check_suite", "workflow_run"] {
+            assert_eq!(
+                parse(
+                    event,
+                    serde_json::json!({
+                        "action": "completed",
+                        "repository": { "id": 42 },
+                        (event): { "head_sha": sha },
+                    })
+                ),
+                changed,
+                "{event}"
+            );
+        }
+        assert_eq!(
+            parse(
+                "check_run",
+                serde_json::json!({ "repository": { "id": 42 }, "check_run": { "head_sha": "main" } })
+            ),
+            GitHubWebhookEvent::Ignored
+        );
+        assert_eq!(
+            parse(
+                "workflow_run",
+                serde_json::json!({ "repository": { "id": 42 }, "check_run": { "head_sha": sha } })
+            ),
+            GitHubWebhookEvent::Ignored
+        );
     }
 }

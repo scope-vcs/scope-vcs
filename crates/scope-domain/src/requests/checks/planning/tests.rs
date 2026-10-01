@@ -311,3 +311,84 @@ fn approval_rejects_an_evaluation_from_another_request_or_head() {
         );
     }
 }
+
+#[test]
+fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_at_once() {
+    let request = request();
+    let required = ["ci / test".to_string(), "ci / lint".to_string()];
+
+    let maintainer =
+        RequestCheckPlan::evaluate_github(&request, &required, Some("owner"), 30).unwrap();
+    assert_eq!(
+        maintainer.evaluation.state,
+        RequestCheckEvaluationState::Started
+    );
+    assert_eq!(
+        maintainer.evaluation.checks,
+        [
+            RequestCheck::GitHub {
+                name: "ci / test".into()
+            },
+            RequestCheck::GitHub {
+                name: "ci / lint".into()
+            },
+        ]
+    );
+    assert_eq!(maintainer.evaluation.tested_oid, request.head_oid);
+    assert!(maintainer.runs.is_empty());
+    assert!(maintainer.push_to_github);
+
+    let contributor = RequestCheckPlan::evaluate_github(&request, &required, None, 30).unwrap();
+    assert_eq!(
+        contributor.evaluation.state,
+        RequestCheckEvaluationState::AwaitingApproval
+    );
+    assert!(!contributor.push_to_github);
+
+    // Approval sends the head, unless the request can no longer merge.
+    let approved =
+        RequestCheckPlan::approve(&request, contributor.evaluation.clone(), &[], "owner", 40)
+            .unwrap();
+    assert_eq!(
+        approved.evaluation.state,
+        RequestCheckEvaluationState::Started
+    );
+    assert!(approved.runs.is_empty());
+    assert!(approved.push_to_github);
+    let closed = Request {
+        closed_at_unix: Some(35),
+        ..request.clone()
+    };
+    let approved_closed =
+        RequestCheckPlan::approve(&closed, contributor.evaluation, &[], "owner", 40).unwrap();
+    assert!(!approved_closed.push_to_github);
+}
+
+#[test]
+fn with_no_required_checks_only_a_maintainers_head_still_runs_the_workflows() {
+    let request = request();
+    let maintainer = RequestCheckPlan::evaluate_github(&request, &[], Some("owner"), 30).unwrap();
+    assert_eq!(
+        maintainer.evaluation.state,
+        RequestCheckEvaluationState::NoChecks
+    );
+    assert!(maintainer.push_to_github);
+    let contributor = RequestCheckPlan::evaluate_github(&request, &[], None, 30).unwrap();
+    assert_eq!(
+        contributor.evaluation.state,
+        RequestCheckEvaluationState::NoChecks
+    );
+    assert!(!contributor.push_to_github);
+    // Native evaluations never push.
+    assert!(
+        !RequestCheckPlan::evaluate(
+            &request,
+            AVAILABLE,
+            Ok(&[revision("test")]),
+            Some("owner"),
+            30
+        )
+        .unwrap()
+        .push_to_github
+    );
+}

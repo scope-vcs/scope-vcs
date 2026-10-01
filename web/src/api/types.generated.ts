@@ -206,7 +206,11 @@ export type GitHubConnectionResponse = {
 /**
  * `false` when this server has no GitHub App, so nothing can connect.
  */
-configured: boolean, connection: GitHubConnectionDetailsResponse | null, };
+configured: boolean, connection: GitHubConnectionDetailsResponse | null, 
+/**
+ * The check names GitHub must pass before a request merges.
+ */
+required_checks: Array<string>, };
 
 export type GitHubConnectionDetailsResponse = { github_full_name: string, github_url: string, 
 /**
@@ -243,6 +247,8 @@ install_url: string, grant: string, };
 export type GitHubRepositoryResponse = { id: number, full_name: string, private: boolean, };
 
 export type ConnectGitHubRepositoryRequest = { grant: string, github_repository_id: number, };
+
+export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
 
 export type HistoryPageRequest = { feed: HistoryFeed | null, audience: ProjectionPreviewAudience | null, before: string | null, };
 
@@ -376,6 +382,14 @@ export type GitHubCheckStatus = "queued" | "in_progress" | "completed" | "waitin
 
 export type GitHubCheckConclusion = "success" | "neutral" | "skipped" | "failure" | "cancelled" | "timed_out" | "action_required" | "stale" | "startup_failure";
 
+export type RequestGitHubPushState = "awaiting_approval" | "sending" | "sent" | "failed";
+
+export type RequestGitHubPushResponse = { state: RequestGitHubPushState, branch: string, 
+/**
+ * Only maintainers see what GitHub answered.
+ */
+error: string | null, };
+
 export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null, };
 
 export type RequestChecksResponse = { request_id: string, head_oid: GitOid, 
@@ -384,9 +398,19 @@ export type RequestChecksResponse = { request_id: string, head_oid: GitOid,
  */
 state: RequestCheckEvaluationState | null, message: string | null, checks: Array<RequestCheckResponse>, 
 /**
- * Whether the viewer can start native runs that wait for a maintainer.
+ * Whether the viewer can start checks that wait for a maintainer.
  */
-can_approve: boolean, mergeability: RequestMergeabilityResponse, };
+can_approve: boolean, 
+/**
+ * Set when the repository's checks run on GitHub and the head is on its
+ * way there or waits for approval to go.
+ */
+github_push: RequestGitHubPushResponse | null, 
+/**
+ * Whether approving would run workflow files this request changes. Only
+ * worked out for a viewer who can approve GitHub checks.
+ */
+changes_github_workflows: boolean, mergeability: RequestMergeabilityResponse, };
 
 export type RequestEventResponse = { id: string, position: number, 
 /**
@@ -537,6 +561,7 @@ export const ApiRouteTemplates = {
   repoMetadata: "/v1/repos/{owner}/{repo}/metadata",
   repoGitHub: "/v1/repos/{owner}/{repo}/github",
   repoGitHubAuthorize: "/v1/repos/{owner}/{repo}/github/authorize",
+  repoGitHubRequiredChecks: "/v1/repos/{owner}/{repo}/github/required-checks",
   githubSetup: "/v1/github/setup",
   repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",

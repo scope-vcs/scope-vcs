@@ -3,6 +3,7 @@ import type {
   RepoInviteInput,
   DeleteRepoMemberInput,
   RepoParams,
+  SetRepoGitHubRequiredChecksInput,
   UpdateRepoMemberInput,
   UpdateRepoMetadataInput,
 } from '@/api/types'
@@ -51,6 +52,7 @@ export function RepoSettingsPage({
   disconnectGitHub,
   github,
   params,
+  setGitHubRequiredChecks,
   startGitHubAuthorization,
   updateMember,
   updateMetadata,
@@ -71,6 +73,9 @@ export function RepoSettingsPage({
   /** `null` while it loads, and for viewers who cannot manage it. */
   github: GitHubConnectionResponse | null
   params: RepoParams
+  setGitHubRequiredChecks: (
+    input: SetRepoGitHubRequiredChecksInput,
+  ) => Promise<GitHubConnectionResponse>
   startGitHubAuthorization: (params: RepoParams) => Promise<GitHubAuthorizeResponse>
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
   updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummaryResponse>
@@ -167,6 +172,7 @@ export function RepoSettingsPage({
           <RepoCiSection
             disconnect={() => disconnectGitHub(params)}
             github={github}
+            setRequiredChecks={(names) => setGitHubRequiredChecks({ ...params, names })}
             startAuthorization={() => startGitHubAuthorization(params)}
           />
         )}

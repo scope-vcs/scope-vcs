@@ -145,6 +145,7 @@ async fn a_maintainers_push_starts_the_request_workflows_at_its_head() {
             .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();
@@ -353,6 +354,7 @@ async fn record_awaiting_approval(state: &AppState, request_id: &str) {
             evaluation,
             revisions,
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();

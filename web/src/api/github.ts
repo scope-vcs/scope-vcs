@@ -4,6 +4,7 @@ import type {
   GitHubSetupInput,
   RepoGitHubAuthorizeInput,
   RepoParams,
+  SetRepoGitHubRequiredChecksInput,
 } from './types'
 import type {
   GitHubAuthorizeResponse,
@@ -67,6 +68,16 @@ export async function connectRepoGitHubForRequest(
       auth: 'required',
       body: { grant: data.grant, github_repository_id: data.github_repository_id },
     },
+  )
+}
+
+export async function setRepoGitHubRequiredChecksForRequest(
+  data: SetRepoGitHubRequiredChecksInput,
+): Promise<GitHubConnectionResponse> {
+  return createApiClient().put(
+    repoRoute(ApiRouteTemplates.repoGitHubRequiredChecks, data),
+    apiValidators.GitHubConnectionResponse,
+    { auth: 'required', body: { names: data.names } },
   )
 }
 

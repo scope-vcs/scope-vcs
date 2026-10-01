@@ -1,7 +1,11 @@
 //! The checks recorded for request heads, and the transactions that start them.
+//! Starting GitHub checks queues the push of the tested commit in the same
+//! transaction, so an evaluation is never started without its push.
 
 use super::{
     RequestStore, entities,
+    github_connections::repository_github_connection,
+    github_pushes::queue_github_push,
     native_runs::lock_native_runs_availability,
     request_access::{ensure_user_exists, lock_request_repository},
     runs::{enqueue_run_in_transaction, save_workflow_revision},
@@ -22,13 +26,14 @@ use sea_orm::{
     QueryFilter, TransactionTrait, sea_query::OnConflict,
 };
 
-/// A head's evaluation together with the runs it starts now and the revisions
-/// it may start later.
+/// A head's evaluation together with the runs it starts now, the revisions it
+/// may start later, and whether its tested commit goes to GitHub now.
 #[derive(Clone, Debug)]
 pub struct RecordRequestChecksCommand {
     pub evaluation: RequestCheckEvaluation,
     pub revisions: Vec<WorkflowRevision>,
     pub runs: Vec<Run>,
+    pub push_to_github: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -43,6 +48,8 @@ pub struct RequestChecksMutation {
     pub evaluation: RequestCheckEvaluation,
     /// Runs this transaction created; a repeated evaluation creates none.
     pub created_runs: Vec<Run>,
+    /// Whether this transaction queued a push to GitHub.
+    pub queued_github_push: bool,
 }
 
 impl RequestStore {
@@ -80,6 +87,7 @@ impl RequestStore {
             return Ok(RequestChecksMutation {
                 evaluation,
                 created_runs: Vec::new(),
+                queued_github_push: false,
             });
         }
         // Evaluating read the owner's listing outside this transaction. Checks
@@ -94,12 +102,23 @@ impl RequestStore {
             save_workflow_revision(&tx, revision, command.evaluation.updated_at_unix).await?;
         }
         save_evaluation(&tx, &command.evaluation).await?;
+        if command.push_to_github {
+            queue_github_push(
+                &tx,
+                &request.repo_id,
+                &request.id,
+                Some(&command.evaluation.tested_oid),
+                command.evaluation.updated_at_unix,
+            )
+            .await?;
+        }
         stop_auto_merge_for_evaluation(&tx, active_auto_merge, &request, &command.evaluation)
             .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(RequestChecksMutation {
             evaluation: command.evaluation,
             created_runs,
+            queued_github_push: command.push_to_github,
         })
     }
 
@@ -140,7 +159,11 @@ impl RequestStore {
             .try_into_domain(identity)?;
             revisions.push(revision);
         }
-        let RequestCheckPlan { evaluation, runs } = RequestCheckPlan::approve(
+        let RequestCheckPlan {
+            evaluation,
+            runs,
+            push_to_github,
+        } = RequestCheckPlan::approve(
             &request,
             evaluation,
             &revisions,
@@ -149,10 +172,21 @@ impl RequestStore {
         )?;
         let created_runs = start_runs(&tx, &revisions, runs).await?;
         save_evaluation(&tx, &evaluation).await?;
+        if push_to_github {
+            queue_github_push(
+                &tx,
+                &request.repo_id,
+                &request.id,
+                Some(&evaluation.tested_oid),
+                command.now_unix,
+            )
+            .await?;
+        }
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(RequestChecksMutation {
             evaluation,
             created_runs,
+            queued_github_push: push_to_github,
         })
     }
 
@@ -163,6 +197,20 @@ impl RequestStore {
     ) -> Result<Option<RequestRevision>, PostgresError> {
         super::request_revision_rows::latest_revision_for_request(self.db.as_ref(), request_id)
             .await
+    }
+
+    /// The revision whose push saved `head_oid`, which holds that commit.
+    pub async fn request_revision_with_head(
+        &self,
+        request_id: &str,
+        head_oid: &str,
+    ) -> Result<Option<RequestRevision>, PostgresError> {
+        super::request_revision_rows::latest_revision_with_head(
+            self.db.as_ref(),
+            request_id,
+            head_oid,
+        )
+        .await
     }
 
     pub async fn request_check_evaluation(
@@ -241,11 +289,20 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
             .map(|row| Ok((row.id.clone(), row.try_into_domain()?.state)))
             .collect::<Result<_, PostgresError>>()?
     };
-    // No repository records a GitHub connection yet, so what GitHub reported is
-    // all there is to read.
-    let github = GitHubCheckResults::Connected(
-        super::github_check_runs::latest_github_check_runs(conn, repo_id, &tested_oids).await?,
-    );
+    // GitHub's results only count while GitHub still lets Scope use the
+    // repository; a link that is gone or disconnected can never pass a check.
+    let github = if tested_oids.is_empty() {
+        GitHubCheckResults::Connected(Vec::new())
+    } else if repository_github_connection(conn, repo_id)
+        .await?
+        .is_some_and(|connection| connection.is_connected())
+    {
+        GitHubCheckResults::Connected(
+            super::github_check_runs::latest_github_check_runs(conn, repo_id, &tested_oids).await?,
+        )
+    } else {
+        GitHubCheckResults::Disconnected
+    };
     Ok(RequestCheckResults {
         native_runs,
         github,

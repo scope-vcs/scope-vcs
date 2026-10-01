@@ -66,6 +66,13 @@ pub(super) async fn persist_lifecycle_mutation(
     save_request_row(tx, &mutation.request).await?;
     if mutation.request.is_terminal() {
         super::request_invitees::delete_request_invitees(tx, &mutation.request.id).await?;
+        super::github_pushes::queue_github_branch_deletion(
+            tx,
+            &mutation.request.repo_id,
+            &mutation.request.id,
+            mutation.request.updated_at_unix,
+        )
+        .await?;
     }
     for event in &mutation.events {
         insert_request_event_row(tx, event).await?;

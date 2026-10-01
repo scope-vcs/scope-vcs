@@ -81,7 +81,7 @@ fn approval_starts_only_native_runs_and_github_checks_need_none() {
         10,
     )
     .unwrap();
-    assert!(evaluation.native_checks_await_approval());
+    assert!(evaluation.awaits_approval());
     assert!(
         evaluation
             .approve(vec!["run_a".into(), "run_b".into()], 11)
@@ -95,11 +95,13 @@ fn approval_starts_only_native_runs_and_github_checks_need_none() {
     let github_only =
         RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci / test")], 1).unwrap();
     assert_eq!(github_only.tested_oid, HEAD);
-    assert!(
-        !RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![github("ci / test")], 1)
-            .unwrap()
-            .native_checks_await_approval()
-    );
+    // Approving GitHub checks starts no run: it sends the tested commit to GitHub.
+    let mut awaiting_github =
+        RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![github("ci / test")], 1)
+            .unwrap();
+    assert!(awaiting_github.awaits_approval());
+    awaiting_github.approve(Vec::new(), 2).unwrap();
+    assert_eq!(awaiting_github.state, RequestCheckEvaluationState::Started);
     assert!(RequestCheckEvaluation::started("req_1", HEAD, vec![github(" ")], 1).is_err());
 }
 
@@ -416,4 +418,123 @@ fn withdrawing_native_runs_ends_only_a_wait() {
         assert!(!github_only.uses_native_runs());
         assert_eq!(github_only.withdraw_native_runs(&[], 9).unwrap(), None);
     }
+}
+
+#[test]
+fn a_repository_linked_to_github_uses_github_checks_even_once_disconnected() {
+    use crate::github_connection::{GitHubConnectionStatus, GitHubDisconnectReason};
+    let mut connection = GitHubConnection {
+        repository_id: "owner/repo".into(),
+        installation_id: 7,
+        github_repository_id: 42,
+        github_full_name: "octo/repo".into(),
+        connected_by: None,
+        connected_at_unix: 1,
+        status: GitHubConnectionStatus::Connected,
+    };
+    assert_eq!(
+        RequestCheckProvider::for_repository(None),
+        RequestCheckProvider::Native
+    );
+    assert_eq!(
+        RequestCheckProvider::for_repository(Some(&connection)),
+        RequestCheckProvider::GitHub
+    );
+    connection.status = GitHubConnectionStatus::Disconnected {
+        reason: GitHubDisconnectReason::AppUninstalled,
+        at_unix: 2,
+    };
+    assert_eq!(
+        RequestCheckProvider::for_repository(Some(&connection)),
+        RequestCheckProvider::GitHub
+    );
+}
+
+fn push(target_oid: &str, state: GitHubPushState, last_error: Option<&str>) -> GitHubPush {
+    GitHubPush {
+        id: "push_1".into(),
+        repo_id: "owner/repo".into(),
+        request_id: "req_1".into(),
+        target_oid: Some(target_oid.into()),
+        state,
+        attempts: 1,
+        last_error: last_error.map(str::to_string),
+    }
+}
+
+#[test]
+fn the_push_status_follows_the_latest_push_of_the_tested_commit() {
+    let awaiting =
+        RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![github("ci")], 1).unwrap();
+    assert_eq!(
+        GitHubPushStatus::for_evaluation(&awaiting, None),
+        Some(GitHubPushStatus::AwaitingApproval)
+    );
+    let started = RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci")], 1).unwrap();
+    // A push of an older head says nothing about this one.
+    assert_eq!(
+        GitHubPushStatus::for_evaluation(
+            &started,
+            Some(&push(OLD_HEAD, GitHubPushState::Succeeded, None))
+        ),
+        None
+    );
+    assert_eq!(
+        GitHubPushStatus::for_evaluation(
+            &started,
+            Some(&push(HEAD, GitHubPushState::Queued, Some("refused")))
+        ),
+        Some(GitHubPushStatus::Sending {
+            last_error: Some("refused".into())
+        })
+    );
+    assert_eq!(
+        GitHubPushStatus::for_evaluation(
+            &started,
+            Some(&push(HEAD, GitHubPushState::Succeeded, None))
+        ),
+        Some(GitHubPushStatus::Sent)
+    );
+    assert_eq!(
+        GitHubPushStatus::for_evaluation(
+            &started,
+            Some(&push(HEAD, GitHubPushState::Failed, Some("refused")))
+        ),
+        Some(GitHubPushStatus::Failed {
+            error: "refused".into()
+        })
+    );
+    // A native evaluation awaiting approval sends nothing to GitHub.
+    let native =
+        RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![check("checks", None)], 1)
+            .unwrap();
+    assert_eq!(GitHubPushStatus::for_evaluation(&native, None), None);
+}
+
+#[test]
+fn failed_pushes_back_off_and_then_give_up() {
+    assert_eq!(github_push_retry_at(1, 100), Some(130));
+    assert_eq!(github_push_retry_at(2, 100), Some(220));
+    assert_eq!(github_push_retry_at(3, 100), Some(700));
+    assert_eq!(github_push_retry_at(4, 100), Some(1900));
+    assert_eq!(github_push_retry_at(5, 100), None);
+    assert_eq!(github_push_retry_at(0, 100), None);
+    assert_eq!(
+        github_request_ref("req_1"),
+        "refs/heads/scope/requests/req_1"
+    );
+}
+
+#[test]
+fn only_paths_under_github_workflows_are_workflow_changes() {
+    assert!(changes_github_workflows([
+        "/src/main.rs",
+        "/.github/workflows/ci.yml"
+    ]));
+    assert!(changes_github_workflows([".github/workflows/nested/x.yml"]));
+    assert!(!changes_github_workflows([
+        "/.github/dependabot.yml",
+        "/docs/.github/workflows/ci.yml",
+        "/.github/workflows"
+    ]));
 }

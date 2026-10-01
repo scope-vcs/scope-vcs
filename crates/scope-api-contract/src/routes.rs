@@ -44,6 +44,8 @@ routes! {
         REPO_METADATA = "/v1/repos/{owner}/{repo}/metadata" => "repoMetadata";
         REPO_GITHUB = "/v1/repos/{owner}/{repo}/github" => "repoGitHub";
         REPO_GITHUB_AUTHORIZE = "/v1/repos/{owner}/{repo}/github/authorize" => "repoGitHubAuthorize";
+        REPO_GITHUB_REQUIRED_CHECKS = "/v1/repos/{owner}/{repo}/github/required-checks"
+            => "repoGitHubRequiredChecks";
         GITHUB_SETUP = "/v1/github/setup" => "githubSetup";
         REPO_DEPENDENCIES = "/v1/repos/{owner}/{repo}/dependencies"
             => "repoDependencies",

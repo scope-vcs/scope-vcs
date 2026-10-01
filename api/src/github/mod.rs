@@ -1,9 +1,10 @@
 //! The Scope GitHub App: its configuration, the credentials it acts with,
-//! the GitHub REST calls Scope makes, and the proofs and deliveries that
-//! cross GitHub's install screen and webhooks.
+//! the GitHub REST calls and pushes Scope makes, and the proofs and
+//! deliveries that cross GitHub's install screen and webhooks.
 
 mod client;
 pub(crate) mod config;
+pub(crate) mod push;
 pub(crate) mod setup_tokens;
 pub(crate) mod webhook;
 
@@ -28,6 +29,7 @@ pub(crate) struct GitHubApp {
     http: reqwest::Client,
     api_url: String,
     web_url: String,
+    git_url: String,
     installation_tokens: Mutex<HashMap<u64, client::InstallationToken>>,
 }
 
@@ -39,14 +41,16 @@ impl GitHubApp {
             tracing::info!("the Scope GitHub App is not configured; GitHub connections are off");
             return Ok(None);
         };
-        Self::new(config, GITHUB_API_URL, GITHUB_WEB_URL).map(Some)
+        Self::new(config, GITHUB_API_URL, GITHUB_WEB_URL, GITHUB_WEB_URL).map(Some)
     }
 
-    /// The URLs are GitHub's own outside tests.
+    /// The URLs are GitHub's own outside tests. `git_url` is where
+    /// repositories are pushed, as `<git_url>/<owner>/<name>.git`.
     pub(crate) fn new(
         config: GitHubAppConfig,
         api_url: &str,
         web_url: &str,
+        git_url: &str,
     ) -> anyhow::Result<Self> {
         let private_key =
             EncodingKey::from_rsa_pem(config.private_key.as_bytes()).map_err(|error| {
@@ -69,6 +73,7 @@ impl GitHubApp {
                 .build()?,
             api_url: api_url.trim_end_matches('/').to_string(),
             web_url: web_url.trim_end_matches('/').to_string(),
+            git_url: git_url.trim_end_matches('/').to_string(),
             installation_tokens: Mutex::default(),
         })
     }

@@ -95,6 +95,8 @@ function checks(
 ): RequestChecksResponse {
   return {
     can_approve: state === 'awaiting-approval',
+    changes_github_workflows: false,
+    github_push: null,
     checks: [{
       provider: 'native',
       run_id: run ? 'run' : null,

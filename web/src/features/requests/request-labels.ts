@@ -80,20 +80,56 @@ export function requestMergeabilityTone(request: RequestLabelSource): BadgeVaria
 }
 
 export function requestCheckEvaluationNote(checks: RequestChecksResponse) {
-  if (checks.state === 'configuration-error') {
-    return checks.message ?? 'This head’s workflow configuration is invalid.'
-  }
   if (checks.state === null) {
     return 'The checks for this commit have not been worked out yet.'
   }
-  // Only Scope's own runs wait for a maintainer to start them.
-  if (
-    checks.state === 'awaiting-approval'
-    && checks.checks.some((check) => check.provider === 'native')
-  ) {
-    return 'These checks wait for a maintainer to start them.'
+  // Why the checks cannot pass, such as a GitHub connection that is gone.
+  if (checks.message) return checks.message
+  if (checks.state === 'configuration-error') {
+    return 'This head’s workflow configuration is invalid.'
+  }
+  if (checks.state === 'awaiting-approval') {
+    // GitHub checks wait for approval because the pushed branch gets the
+    // repository's secrets.
+    return checks.github_push
+      ? 'These checks wait for a maintainer. Approving sends this revision to GitHub Actions.'
+      : 'These checks wait for a maintainer to start them.'
   }
   return CHECK_EVALUATION_NOTES[checks.state]
+}
+
+/** Shown to a maintainer before approving GitHub checks for workflow changes. */
+export function requestChecksWorkflowWarning(checks: RequestChecksResponse) {
+  return checks.can_approve && checks.changes_github_workflows
+    ? 'This request changes GitHub workflow files. Approving runs them with your repository’s secrets.'
+    : null
+}
+
+/** Where the tested commit is on its way to GitHub, with what GitHub answered. */
+export function requestGitHubPushNote(
+  push: RequestChecksResponse['github_push'],
+): { text: string; failed: boolean } | null {
+  if (!push) return null
+  switch (push.state) {
+    case 'awaiting_approval':
+      return null
+    case 'sending':
+      return {
+        text: push.error
+          ? `Sending to GitHub again. The last attempt failed: ${push.error}`
+          : 'Sending this revision to GitHub.',
+        failed: false,
+      }
+    case 'sent':
+      return { text: `Sent to GitHub as ${push.branch}.`, failed: false }
+    case 'failed':
+      return {
+        text: push.error
+          ? `Sending to GitHub failed: ${push.error}`
+          : 'Sending to GitHub failed.',
+        failed: true,
+      }
+  }
 }
 
 export function requestEventBody(event: RequestEventResponse) {

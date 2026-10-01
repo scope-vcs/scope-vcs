@@ -37,7 +37,7 @@ const githubConnection = {
 }
 repoSettingsResource.write(settingsScope, {
   collaboration: { members, invites: [] },
-  github: { configured: true, connection: githubConnection },
+  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'] },
 })
 const loadSettings = () => new Promise<{ collaboration: null; github: null }>(() => {})
 function setGitHub(github: GitHubConnectionResponse) {
@@ -58,6 +58,7 @@ function App() {
       <button onClick={() => setGitHub({
         configured: true,
         connection: { ...githubConnection, disconnected: { reason: 'app_uninstalled', at_unix: 1_767_312_000 } },
+        required_checks: ['ci / test'],
       })}>GitHub uninstalled elsewhere</button>
     </div>
     <RepoLayoutProvider live={{ repo } as RepoLiveState} subscribe={subscribe}>
@@ -82,7 +83,15 @@ function App() {
         disconnectGitHub={async (params) => {
           calls.push({ disconnectGitHub: params })
           await hold('disconnect-github')
-          const github = { configured: true, connection: null }
+          const github = { configured: true, connection: null, required_checks: [] }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        setGitHubRequiredChecks={async (input) => {
+          calls.push({ setGitHubRequiredChecks: input.names })
+          await hold('required-checks')
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const github = { ...current, required_checks: input.names }
           retainGitHubConnection(settingsScope, github)
           return github
         }}

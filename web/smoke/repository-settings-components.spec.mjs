@@ -74,8 +74,21 @@ test('repository components retain drafts, previews and pending actions across r
     await checks.getByText('The Scope GitHub App was uninstalled from the GitHub account.').waitFor()
     await checks.getByRole('button', { name: 'Reconnect', exact: true }).waitFor()
     await page.evaluate(() => window.calls.splice(0))
-    const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null } }
+    const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null }, required_checks: ['ci / test'] }
     await page.evaluate((github) => window.setFixtureGitHub(github), github)
+    await checks.getByText('ci / test', { exact: true }).waitFor()
+    await checks.getByRole('textbox', { name: 'Check name' }).fill(' lint ')
+    await checks.getByRole('button', { name: 'Add', exact: true }).click()
+    assert.equal(await checks.getByRole('button', { name: 'Add', exact: true }).isDisabled(), true)
+    await page.evaluate(() => window.finishAction('required-checks'))
+    await checks.getByText('lint', { exact: true }).waitFor()
+    assert.equal(await checks.getByRole('textbox', { name: 'Check name' }).inputValue(), '')    await checks.getByRole('button', { name: 'Stop requiring ci / test', exact: true }).click()
+    await page.evaluate(() => window.finishAction('required-checks'))
+    await checks.getByText('ci / test', { exact: true }).waitFor({ state: 'detached' })
+    assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+      { setGitHubRequiredChecks: ['ci / test', 'lint'] },
+      { setGitHubRequiredChecks: ['lint'] },
+    ])
     await checks.getByRole('button', { name: 'Disconnect', exact: true }).click()
     assert.equal(await checks.getByRole('button', { name: 'Disconnect', exact: true }).isDisabled(), true)
     await page.evaluate(() => window.finishAction('disconnect-github'))
