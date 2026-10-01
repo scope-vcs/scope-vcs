@@ -7,7 +7,7 @@ import json
 import uuid
 from pathlib import Path
 
-from deployment_policy import MAX_RECOVERIES, TERMINAL, completion, running, stamp, supervise, timestamp, trusted_run
+from deployment_policy import FALLBACK_PROVIDER, MAX_RECOVERIES, PRIMARY_PROVIDER, TERMINAL, completion, running, stamp, supervise, timestamp, trusted_run
 from deployment_runtime import CHECKOUT, PROJECT_ID, REPOSITORY, SELECTIONS, T3Client, create_worktree, github, jobs, save_json
 import deployment_scheduler
 from heartbeat import alert, heartbeat
@@ -215,7 +215,7 @@ def new_incident(state: dict, record: dict) -> dict:
         incident_id = f"scope-release-{record['run_id']}-{record['attempt']}-{suffix}"
         suffix += 1
     info = {"incident_id": incident_id, "thread_id": str(uuid.uuid5(uuid.NAMESPACE_URL, incident_id)),
-            "provider": "codex", "created_at": stamp(), "dispatch_at": stamp(),
+            "provider": PRIMARY_PROVIDER, "created_at": stamp(), "dispatch_at": stamp(),
             "recoveries": 0, "generation": 0, "status": "monitoring", "owns_agent": False,
             "worktree": str(Path.home() / ".codex/worktrees" / incident_id / "scope-vcs")}
     state["threads"][incident_id] = info
@@ -322,8 +322,8 @@ def monitor(client: T3Client, state: dict, info: dict, shell: dict) -> None:
     info["generation"] += 1
     if action == "fallback":
         # The policy waits for interruption to complete before another provider touches the worktree.
-        info["provider"] = "claudeAgent"
-        info["thread_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, info["incident_id"] + "-claude"))
+        info["provider"] = FALLBACK_PROVIDER
+        info["thread_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, info["incident_id"] + "-" + FALLBACK_PROVIDER))
     queue_turn(state, info)
     dispatch_pending(client, state, info)
 

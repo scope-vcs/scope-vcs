@@ -9,6 +9,8 @@ INPUT_SECONDS = 10 * 60
 RETRY_SECONDS = 2 * 60
 DEADLINE_SECONDS = 4 * 60 * 60
 TERMINAL = {"verified", "no_change", "recovered", "escalated"}
+PRIMARY_PROVIDER = "claudeAgent"
+FALLBACK_PROVIDER = "codex"
 
 
 def timestamp(value: str) -> float:
@@ -68,7 +70,7 @@ def supervise(info: dict, thread: dict, now: str) -> tuple[str, str]:
             return "escalate", "deadline_exceeded"
         if info["recoveries"] >= MAX_RECOVERIES:
             return "escalate", "attempts_exhausted"
-        return "fallback" if info["provider"] == "codex" else "resume", "agent_unavailable"
+        return "fallback" if info["provider"] == PRIMARY_PROVIDER else "resume", "agent_unavailable"
     if deadline_exceeded:
         return ("interrupt" if running(thread) else "escalate"), "deadline_exceeded"
     idle = at - last_activity(thread, info["dispatch_at"])
@@ -81,4 +83,4 @@ def supervise(info: dict, thread: dict, now: str) -> tuple[str, str]:
     if info["recoveries"] >= MAX_RECOVERIES:
         return "escalate", "attempts_exhausted"
     error = (thread.get("latestTurn") or {}).get("state") == "error"
-    return ("fallback" if info["provider"] == "codex" and (error or info["recoveries"] >= 1) else "resume"), "agent_unavailable"
+    return ("fallback" if info["provider"] == PRIMARY_PROVIDER and (error or info["recoveries"] >= 1) else "resume"), "agent_unavailable"

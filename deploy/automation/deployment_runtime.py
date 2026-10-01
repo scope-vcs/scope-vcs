@@ -16,8 +16,8 @@ PROJECT_ID = "62235978-ccf8-4b75-b773-0a5375f2d330"
 SELECTIONS = {
     "codex": {"instanceId": "codex", "model": "gpt-6-astra",
               "options": [{"id": "reasoningEffort", "value": "high"}]},
-    "claudeAgent": {"instanceId": "claudeAgent", "model": "claude-fable-5-1",
-                    "options": [{"id": "effort", "value": "medium"},
+    "claudeAgent": {"instanceId": "claudeAgent", "model": "claude-opus-5-5",
+                    "options": [{"id": "effort", "value": "high"},
                                 {"id": "contextWindow", "value": "200k"}]},
 }
 

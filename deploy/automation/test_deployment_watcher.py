@@ -360,7 +360,7 @@ class WatcherTests(unittest.TestCase):
         self.assertNotEqual(self.saved()["runs"]["456"]["incident_id"], info["incident_id"])
         self.mocks["alert"].assert_called_once_with(
             123, "approval_required", recoveries=0,
-            thread_id=info["thread_id"], provider="codex")
+            thread_id=info["thread_id"], provider="claudeAgent")
 
     def test_pending_dispatch_remains_idempotent_after_release_finishes(self):
         self.runs = [release()]
@@ -440,7 +440,7 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(self.saved()["runs"]["123"]["status"], "escalated")
         self.mocks["alert"].assert_called_once_with(
             123, "verification_failed", recoveries=0,
-            thread_id=info["thread_id"], provider="codex")
+            thread_id=info["thread_id"], provider="claudeAgent")
         self.mocks["heartbeat"].assert_called_once()
         self.assertEqual(self.client.dispatch.call_args.args[0]["type"], "thread.turn.interrupt")
 
