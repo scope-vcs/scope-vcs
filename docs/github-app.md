@@ -9,12 +9,17 @@ Scope repository on a server.
 
 Create a GitHub App owned by the organization that runs Scope, with:
 
-- **Callback URL**: `https://<web origin>/github/setup`. Also set the
-  **Setup URL** to the same address if GitHub offers it.
-- **Request user authorization (OAuth) during installation**: on. GitHub then
-  sends the installer back with a code that proves which installations and
-  repositories they can reach. **Redirect on update**: on, so changing the
-  repositories of an existing installation also returns to Scope.
+- **Callback URL**: `https://<web origin>/github/setup`. Scope sends this as
+  the OAuth `redirect_uri`, so it must match exactly.
+- **Request user authorization (OAuth) during installation**: off. With it on,
+  GitHub disables the Setup URL. Connecting uses the standard OAuth web flow
+  instead, which always returns its code with Scope's state.
+- **Expire user authorization tokens**: GitHub's default is fine. Scope uses a
+  user token for one setup and never stores it.
+- **Setup URL**: `https://<web origin>/github/setup`, so a maintainer who
+  installs the app from the connect page comes back to finish. Turn on
+  **Redirect on update** so adding repositories to an existing installation
+  also comes back.
 - **Webhook URL**: `https://<api origin>/v1/github/webhooks`, with a random
   webhook secret.
 - **Repository permissions**: Contents read and write, Workflows read and
@@ -24,7 +29,9 @@ Create a GitHub App owned by the organization that runs Scope, with:
   other three are chosen on the registration page.
 - **Where can this app be installed**: any account.
 
-Generate a private key and a client secret on the app's page.
+Generate a private key and a client secret on the app's page. The API also
+needs `SCOPE_APP_ORIGIN` set to the web origin, which it uses to build the
+callback address.
 
 ## API configuration
 
@@ -43,23 +50,30 @@ API at startup.
 
 ## Connecting
 
-1. A maintainer chooses Connect GitHub in repository settings. The API returns
-   the app's install URL with a signed `state` naming the Scope repository,
-   the maintainer, and a ten-minute expiry.
-2. After GitHub's install screen, `/github/setup` sends the state, the
-   installation ID and the OAuth code to `POST /v1/github/setup`. The API checks
-   the state, that the same person is signed in and is still a maintainer,
-   exchanges the code for a user token, and confirms through that token that
-   the person can reach the installation. It returns the installation's
-   repositories that person can reach and a signed grant listing them. The
+1. A maintainer chooses Connect GitHub in repository settings.
+   `POST /v1/repos/{owner}/{repo}/github/authorize` returns GitHub's OAuth URL
+   for the app with a signed `state` naming the Scope repository, the
+   maintainer, and a ten-minute expiry.
+2. GitHub returns to `/github/setup` with a code and the state. The page sends
+   both to `POST /v1/github/setup`. The API checks the state, that the same
+   person is signed in and is still a maintainer, and exchanges the code for a
+   user token. Through that token it lists the installations of the app the
+   person can access and, in each, the repositories they can push (push,
+   maintain or admin; read access is not enough). It returns those
+   repositories and a signed grant recording each one's installation. The
    user token is not stored.
-3. The maintainer picks a repository (it is chosen for them when there is only
-   one) and `POST /v1/repos/{owner}/{repo}/github` stores the link after checking
-   the grant and confirming with an installation token that the app still
-   reaches the repository.
+3. The maintainer picks a repository and `POST /v1/repos/{owner}/{repo}/github`
+   stores the link after checking the grant and confirming with an
+   installation token that the app still reaches the repository.
 
-An installation ID arriving from a redirect is never trusted on its own:
-installation IDs are guessable.
+When the repository is missing from the list, the page links to the app's
+install page and offers Check again, which restarts the OAuth step. Before
+leaving for the install page it remembers the Scope repository in session
+storage. GitHub's Setup URL brings the maintainer back to `/github/setup`
+without a code or state; the page then restarts the OAuth step for the
+remembered repository. Installation ids GitHub adds to that URL are never
+used: installation ids are guessable, and only the user token and the
+installation token decide what can be connected.
 
 A Scope repository has at most one link, and a GitHub repository is connected
 to at most one Scope repository at a time. Disconnecting in settings removes

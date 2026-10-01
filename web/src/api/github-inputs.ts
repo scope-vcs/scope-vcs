@@ -7,7 +7,6 @@ export function parseGitHubSetupInput(input: unknown): GitHubSetupInput {
   const data = input as Partial<GitHubSetupInput> | null
   return {
     state: requiredText(data?.state, SETUP_INCOMPLETE),
-    installation_id: positiveId(data?.installation_id, SETUP_INCOMPLETE),
     code: requiredText(data?.code, SETUP_INCOMPLETE),
   }
 }

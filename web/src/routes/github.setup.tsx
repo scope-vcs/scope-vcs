@@ -1,10 +1,19 @@
 import {
   completeGitHubSetupForRequest,
   connectRepoGitHubForRequest,
+  startRepoGitHubAuthorizationForRequest,
 } from '@/api/github'
 import { parseConnectRepoGitHubInput, parseGitHubSetupInput } from '@/api/github-inputs'
-import { GitHubSetupView, type GitHubSetupSearch } from '@/features/github/github-setup-view'
+import { parseRepoParams } from '@/api/repo-params'
+import {
+  encodePendingGitHubTarget,
+  parsePendingGitHubTarget,
+  PENDING_GITHUB_TARGET_KEY,
+  type GitHubSetupSearch,
+} from '@/features/github/github-setup-model'
+import { GitHubSetupView } from '@/features/github/github-setup-view'
 import { invalidateRepoSettings } from '@/features/repo-detail/repo-settings-resource'
+import { readAndClearSessionValue, storeSessionValue } from '@/lib/session-storage'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 
@@ -16,13 +25,16 @@ const connectRepoGitHub = createServerFn({ method: 'POST' })
   .validator(parseConnectRepoGitHubInput)
   .handler(({ data }) => connectRepoGitHubForRequest(data))
 
-// GitHub returns here from its install screen. Its Callback URL and Setup URL
-// both point at this path.
+const startRepoGitHubAuthorization = createServerFn({ method: 'POST' })
+  .validator(parseRepoParams)
+  .handler(({ data }) => startRepoGitHubAuthorizationForRequest(data))
+
+// The app's Callback URL (after OAuth) and Setup URL (after installing) are
+// both this path. Installation ids GitHub adds to the URL are never read.
 export const Route = createFileRoute('/github/setup')({
   validateSearch: (search: Record<string, unknown>): GitHubSetupSearch => ({
     code: text(search.code),
-    installation_id: positiveId(search.installation_id),
-    setup_action: text(search.setup_action),
+    error: text(search.error),
     state: text(search.state),
   }),
   component: GitHubSetupRoute,
@@ -42,16 +54,16 @@ function GitHubSetupRoute() {
           to: '/$owner/$repo/settings',
         })
       }}
+      rememberPendingTarget={(target) =>
+        storeSessionValue(PENDING_GITHUB_TARGET_KEY, encodePendingGitHubTarget(target))}
       search={search}
+      startAuthorization={(data) => startRepoGitHubAuthorization({ data })}
+      takePendingTarget={() =>
+        parsePendingGitHubTarget(readAndClearSessionValue(PENDING_GITHUB_TARGET_KEY))}
     />
   )
 }
 
 function text(value: unknown) {
   return typeof value === 'string' && value ? value : undefined
-}
-
-function positiveId(value: unknown) {
-  const id = typeof value === 'string' ? Number(value) : value
-  return typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? id : undefined
 }

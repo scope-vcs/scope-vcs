@@ -49,14 +49,16 @@ devYjVgcWWz1N5F0wHsGA68ppkppNUQeDKoG05CHMCChPdD8onOqyFdw/mPPgXGi
 fAFIvg2Ihs8lJFryn8Z/kFk=
 -----END PRIVATE KEY-----"#;
 
-/// What the fake GitHub reports. Every list is one page.
+/// What the fake GitHub reports. Every list is one page, and every
+/// repository is listed with the installation that reaches it.
 struct FakeGitHub {
     /// Installations the GitHub user's token can see.
     user_installations: Mutex<Vec<u64>>,
-    /// Repositories the user can reach through the installation.
-    user_repositories: Mutex<Vec<serde_json::Value>>,
-    /// Repositories the installation itself can reach.
-    installation_repositories: Mutex<Vec<serde_json::Value>>,
+    /// Repositories the user can see through each installation, with the
+    /// user's permissions on them.
+    user_repositories: Mutex<Vec<(u64, serde_json::Value)>>,
+    /// Repositories each installation itself can reach.
+    installation_repositories: Mutex<Vec<(u64, serde_json::Value)>>,
     token_mints: AtomicUsize,
 }
 
@@ -64,13 +66,40 @@ fn github_repository(id: u64, full_name: &str) -> serde_json::Value {
     serde_json::json!({ "id": id, "full_name": full_name, "private": true, "owner": {} })
 }
 
+/// The repository as a user token lists it, with that user's permissions.
+fn user_repository(id: u64, full_name: &str, push: bool) -> serde_json::Value {
+    let mut repository = github_repository(id, full_name);
+    repository["permissions"] =
+        serde_json::json!({ "admin": false, "maintain": false, "push": push, "pull": true });
+    repository
+}
+
+fn listed(
+    repositories: &Mutex<Vec<(u64, serde_json::Value)>>,
+    installation_id: u64,
+) -> Json<serde_json::Value> {
+    let repositories = repositories
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(id, _)| *id == installation_id)
+        .map(|(_, repository)| repository.clone())
+        .collect::<Vec<_>>();
+    Json(serde_json::json!({ "total_count": repositories.len(), "repositories": repositories }))
+}
+
 impl FakeGitHub {
     fn new() -> Arc<Self> {
-        let repository = github_repository(GITHUB_REPOSITORY_ID, "octo/checks");
         Arc::new(Self {
             user_installations: Mutex::new(vec![INSTALLATION_ID]),
-            user_repositories: Mutex::new(vec![repository.clone()]),
-            installation_repositories: Mutex::new(vec![repository]),
+            user_repositories: Mutex::new(vec![(
+                INSTALLATION_ID,
+                user_repository(GITHUB_REPOSITORY_ID, "octo/checks", true),
+            )]),
+            installation_repositories: Mutex::new(vec![(
+                INSTALLATION_ID,
+                github_repository(GITHUB_REPOSITORY_ID, "octo/checks"),
+            )]),
             token_mints: AtomicUsize::new(0),
         })
     }
@@ -118,12 +147,7 @@ impl FakeGitHub {
                      AxumPath(id): AxumPath<u64>,
                      headers: AxumHeaderMap| async move {
                         assert_eq!(bearer(&headers), USER_TOKEN);
-                        assert_eq!(id, INSTALLATION_ID);
-                        let repositories = fake.user_repositories.lock().unwrap().clone();
-                        Json(serde_json::json!({
-                            "total_count": repositories.len(),
-                            "repositories": repositories,
-                        }))
+                        listed(&fake.user_repositories, id)
                     },
                 ),
             )
@@ -147,15 +171,11 @@ impl FakeGitHub {
                 "/installation/repositories",
                 get(
                     |AxumState(fake): AxumState<Arc<FakeGitHub>>, headers: AxumHeaderMap| async move {
-                        assert_eq!(
-                            bearer(&headers),
-                            format!("installation-token-{INSTALLATION_ID}")
-                        );
-                        let repositories = fake.installation_repositories.lock().unwrap().clone();
-                        Json(serde_json::json!({
-                            "total_count": repositories.len(),
-                            "repositories": repositories,
-                        }))
+                        let installation_id = bearer(&headers)
+                            .strip_prefix("installation-token-")
+                            .and_then(|id| id.parse().ok())
+                            .unwrap();
+                        listed(&fake.installation_repositories, installation_id)
                     },
                 ),
             )
@@ -201,13 +221,14 @@ async fn request(
     .await
 }
 
-/// Starts the flow in settings and returns the state GitHub would send back.
-async fn install_state(state: &AppState, bearer: &str) -> String {
+/// Starts the flow in settings and returns the state GitHub's OAuth screen
+/// would send back.
+async fn setup_state(state: &AppState, bearer: &str) -> String {
     let body = expect_json(
         request(
             state,
             "POST",
-            "/v1/repos/owner/repo/github/install",
+            "/v1/repos/owner/repo/github/authorize",
             Some(bearer),
             None,
         )
@@ -215,33 +236,29 @@ async fn install_state(state: &AppState, bearer: &str) -> String {
         StatusCode::OK,
     )
     .await;
-    let url = url::Url::parse(body["install_url"].as_str().unwrap()).unwrap();
-    assert_eq!(url.path(), "/apps/scope-checks/installations/new");
-    url.query_pairs()
-        .find(|(name, _)| name == "state")
-        .map(|(_, value)| value.into_owned())
-        .unwrap()
+    let url = url::Url::parse(body["authorize_url"].as_str().unwrap()).unwrap();
+    assert_eq!(url.path(), "/login/oauth/authorize");
+    let query = url.query_pairs().into_owned().collect::<BTreeMap<_, _>>();
+    assert_eq!(query["client_id"], "Iv1.client");
+    assert!(query["redirect_uri"].ends_with("/github/setup"));
+    query["state"].clone()
 }
 
-async fn setup(state: &AppState, bearer: &str, install_state: &str, code: &str) -> Response {
+async fn setup(state: &AppState, bearer: &str, setup_state: &str, code: &str) -> Response {
     request(
         state,
         "POST",
         "/v1/github/setup",
         Some(bearer),
-        Some(serde_json::json!({
-            "state": install_state,
-            "installation_id": INSTALLATION_ID,
-            "code": code,
-        })),
+        Some(serde_json::json!({ "state": setup_state, "code": code })),
     )
     .await
 }
 
 async fn grant(state: &AppState) -> String {
-    let install_state = install_state(state, &bearer_header()).await;
+    let setup_state = setup_state(state, &bearer_header()).await;
     let body = expect_json(
-        setup(state, &bearer_header(), &install_state, GOOD_CODE).await,
+        setup(state, &bearer_header(), &setup_state, GOOD_CODE).await,
         StatusCode::OK,
     )
     .await;
@@ -331,7 +348,7 @@ async fn github_is_off_when_the_app_is_not_configured() {
     let install = request(
         &state,
         "POST",
-        "/v1/repos/owner/repo/github/install",
+        "/v1/repos/owner/repo/github/authorize",
         Some(&bearer_header()),
         None,
     )
@@ -357,14 +374,20 @@ async fn a_maintainer_connects_through_github_setup() {
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
 
     let member = add_member(&state).await;
-    let install_state = install_state(&state, &member).await;
+    let setup_state = setup_state(&state, &member).await;
     let body = expect_json(
-        setup(&state, &member, &install_state, GOOD_CODE).await,
+        setup(&state, &member, &setup_state, GOOD_CODE).await,
         StatusCode::OK,
     )
     .await;
     assert_eq!(body["owner_handle"], "owner");
     assert_eq!(body["repo_name"], "repo");
+    assert!(
+        body["install_url"]
+            .as_str()
+            .unwrap()
+            .ends_with("/apps/scope-checks/installations/new")
+    );
     assert_eq!(
         body["repositories"],
         serde_json::json!([{ "id": GITHUB_REPOSITORY_ID, "full_name": "octo/checks", "private": true }])
@@ -408,32 +431,92 @@ async fn a_maintainer_connects_through_github_setup() {
 }
 
 #[tokio::test]
-async fn setup_requires_the_github_user_to_reach_the_installation() {
+async fn setup_offers_only_repositories_the_github_user_can_push() {
     let (state, fake) = github_state().await;
-    let install_state = install_state(&state, &bearer_header()).await;
+    let setup_state = setup_state(&state, &bearer_header()).await;
 
-    let refused = setup(&state, &bearer_header(), &install_state, "stolen-code").await;
+    let refused = setup(&state, &bearer_header(), &setup_state, "stolen-code").await;
     assert_eq!(refused.status(), StatusCode::FORBIDDEN);
 
-    fake.user_installations.lock().unwrap().clear();
-    let response = setup(&state, &bearer_header(), &install_state, GOOD_CODE).await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    // A second installation the user can push through, and a repository the
+    // first installation reaches that this user can only read.
+    fake.user_installations.lock().unwrap().push(8);
+    fake.user_repositories.lock().unwrap().extend([
+        (
+            INSTALLATION_ID,
+            user_repository(43, "octo/read-only", false),
+        ),
+        (8, user_repository(44, "other/pushable", true)),
+    ]);
+    fake.installation_repositories.lock().unwrap().extend([
+        (INSTALLATION_ID, github_repository(43, "octo/read-only")),
+        (8, github_repository(44, "other/pushable")),
+    ]);
+    let body = expect_json(
+        setup(&state, &bearer_header(), &setup_state, GOOD_CODE).await,
+        StatusCode::OK,
+    )
+    .await;
+    let offered = body["repositories"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|repository| repository["full_name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(offered, ["octo/checks", "other/pushable"]);
+    let grant = body["grant"].as_str().unwrap();
+
+    // The installation reaches it, but this GitHub user cannot push it.
+    let read_only = connect(&state, &bearer_header(), grant, 43).await;
+    assert_eq!(read_only.status(), StatusCode::FORBIDDEN);
     assert_eq!(
-        response_json(response).await["message"],
-        "Your GitHub account cannot access that installation of the Scope GitHub App."
+        response_json(read_only).await["message"],
+        "Your GitHub account cannot push that repository through the Scope GitHub App."
     );
     assert_eq!(
         connection(&state).await["connection"],
         serde_json::Value::Null
     );
+
+    // Each granted repository connects through its own installation.
+    expect_json(
+        connect(&state, &bearer_header(), grant, 44).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        connection(&state).await["connection"]["github_full_name"],
+        "other/pushable"
+    );
+}
+
+#[tokio::test]
+async fn setup_without_installations_offers_nothing_to_connect() {
+    let (state, fake) = github_state().await;
+    fake.user_installations.lock().unwrap().clear();
+    let setup_state = setup_state(&state, &bearer_header()).await;
+    let body = expect_json(
+        setup(&state, &bearer_header(), &setup_state, GOOD_CODE).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(body["repositories"], serde_json::json!([]));
+    let response = connect(
+        &state,
+        &bearer_header(),
+        body["grant"].as_str().unwrap(),
+        GITHUB_REPOSITORY_ID,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
 async fn setup_belongs_to_the_maintainer_who_started_it() {
     let (state, _fake) = github_state().await;
-    let install_state = install_state(&state, &bearer_header()).await;
+    let setup_state = setup_state(&state, &bearer_header()).await;
     let member = add_member(&state).await;
-    let response = setup(&state, &member, &install_state, GOOD_CODE).await;
+    let response = setup(&state, &member, &setup_state, GOOD_CODE).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     let forged = setup(&state, &bearer_header(), "e30.c2lnbmF0dXJl", GOOD_CODE).await;
@@ -446,7 +529,7 @@ async fn non_maintainers_cannot_start_or_finish_a_connection() {
     let outsider = bearer_header_for("user_github_outsider", "outsider@example.com");
     for (method, uri) in [
         ("GET", "/v1/repos/owner/repo/github"),
-        ("POST", "/v1/repos/owner/repo/github/install"),
+        ("POST", "/v1/repos/owner/repo/github/authorize"),
         ("DELETE", "/v1/repos/owner/repo/github"),
     ] {
         let response = request(&state, method, uri, Some(&outsider), None).await;
@@ -455,9 +538,9 @@ async fn non_maintainers_cannot_start_or_finish_a_connection() {
 
     // A member removed after setup cannot use the grant they were given.
     let member = add_member(&state).await;
-    let install_state = install_state(&state, &member).await;
+    let setup_state = setup_state(&state, &member).await;
     let body = expect_json(
-        setup(&state, &member, &install_state, GOOD_CODE).await,
+        setup(&state, &member, &setup_state, GOOD_CODE).await,
         StatusCode::OK,
     )
     .await;
@@ -487,7 +570,7 @@ async fn only_repositories_the_user_and_installation_reach_can_connect() {
     fake.user_repositories
         .lock()
         .unwrap()
-        .push(github_repository(43, "octo/elsewhere"));
+        .push((INSTALLATION_ID, user_repository(43, "octo/elsewhere", true)));
     let grant = grant(&state).await;
 
     // Shown to the user, but no longer reachable by the installation.
@@ -497,7 +580,7 @@ async fn only_repositories_the_user_and_installation_reach_can_connect() {
     fake.installation_repositories
         .lock()
         .unwrap()
-        .push(github_repository(44, "octo/hidden"));
+        .push((INSTALLATION_ID, github_repository(44, "octo/hidden")));
     let response = connect(&state, &bearer_header(), &grant, 44).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(

@@ -1,8 +1,9 @@
-//! Signed, expiring proofs for the connect flow. GitHub passes the install
-//! state back unchanged, so it names who started the flow and for which
-//! repository; an installation id arriving with it is never trusted on its
-//! own. The connect grant then carries what the signed-in GitHub account was
-//! shown to reach, so the user token never needs to be stored.
+//! Signed, expiring proofs for the connect flow. GitHub's OAuth screen passes
+//! the setup state back with its code, so the state names who started the
+//! flow and for which Scope repository. The connect grant then carries the
+//! repositories the signed-in GitHub account was shown to push and the
+//! installation that reaches each, so the user token is never stored and no
+//! installation id from a URL is trusted.
 
 use crate::error::ApiError;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -10,9 +11,9 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::Sha256;
 
-/// Long enough for GitHub's install screen and a repository choice.
+/// Long enough for GitHub's authorization screen and a repository choice.
 pub(crate) const GITHUB_SETUP_TTL_SECS: u64 = 10 * 60;
-const INSTALL_STATE_KIND: &str = "scope.github-install";
+const SETUP_STATE_KIND: &str = "scope.github-setup";
 const CONNECT_GRANT_KIND: &str = "scope.github-connect";
 const KEY_DERIVATION_CONTEXT: &[u8] = b"scope.github-setup.signing-key.v1";
 const INVALID_SETUP: &str =
@@ -21,7 +22,7 @@ type HmacSha256 = Hmac<Sha256>;
 
 /// Who started connecting which Scope repository.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub(crate) struct InstallState {
+pub(crate) struct SetupState {
     kind: String,
     pub(crate) owner: String,
     pub(crate) repo: String,
@@ -29,16 +30,31 @@ pub(crate) struct InstallState {
     expires_at_unix: u64,
 }
 
-/// What one signed-in GitHub account can reach through one installation.
+/// The repositories one signed-in GitHub account can push through the app.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct ConnectGrant {
     kind: String,
     pub(crate) owner: String,
     pub(crate) repo: String,
     pub(crate) user_id: String,
-    pub(crate) installation_id: u64,
-    pub(crate) repository_ids: Vec<u64>,
+    repositories: Vec<GrantedRepository>,
     expires_at_unix: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub(crate) struct GrantedRepository {
+    pub(crate) id: u64,
+    pub(crate) installation_id: u64,
+}
+
+impl ConnectGrant {
+    /// The installation that reaches the repository, when the grant covers it.
+    pub(crate) fn installation_for(&self, repository_id: u64) -> Option<u64> {
+        self.repositories
+            .iter()
+            .find(|repository| repository.id == repository_id)
+            .map(|repository| repository.installation_id)
+    }
 }
 
 pub(crate) struct SetupTokenSigner {
@@ -57,9 +73,9 @@ impl SetupTokenSigner {
         }
     }
 
-    pub(crate) fn install_state(&self, owner: &str, repo: &str, user_id: &str, now: u64) -> String {
-        self.sign(&InstallState {
-            kind: INSTALL_STATE_KIND.to_string(),
+    pub(crate) fn setup_state(&self, owner: &str, repo: &str, user_id: &str, now: u64) -> String {
+        self.sign(&SetupState {
+            kind: SETUP_STATE_KIND.to_string(),
             owner: owner.to_string(),
             repo: repo.to_string(),
             user_id: user_id.to_string(),
@@ -67,21 +83,16 @@ impl SetupTokenSigner {
         })
     }
 
-    pub(crate) fn open_install_state(
-        &self,
-        token: &str,
-        now: u64,
-    ) -> Result<InstallState, ApiError> {
-        self.open::<InstallState>(token)
-            .filter(|state| state.kind == INSTALL_STATE_KIND && now < state.expires_at_unix)
+    pub(crate) fn open_setup_state(&self, token: &str, now: u64) -> Result<SetupState, ApiError> {
+        self.open::<SetupState>(token)
+            .filter(|state| state.kind == SETUP_STATE_KIND && now < state.expires_at_unix)
             .ok_or_else(|| ApiError::forbidden(INVALID_SETUP))
     }
 
     pub(crate) fn connect_grant(
         &self,
-        state: &InstallState,
-        installation_id: u64,
-        repository_ids: Vec<u64>,
+        state: &SetupState,
+        repositories: Vec<GrantedRepository>,
         now: u64,
     ) -> String {
         self.sign(&ConnectGrant {
@@ -89,8 +100,7 @@ impl SetupTokenSigner {
             owner: state.owner.clone(),
             repo: state.repo.clone(),
             user_id: state.user_id.clone(),
-            installation_id,
-            repository_ids,
+            repositories,
             expires_at_unix: now.saturating_add(GITHUB_SETUP_TTL_SECS),
         })
     }
@@ -135,10 +145,10 @@ mod tests {
     const NOW: u64 = 1_000_000;
 
     #[test]
-    fn install_state_round_trips_until_it_expires() {
+    fn setup_state_round_trips_until_it_expires() {
         let signer = SetupTokenSigner::from_client_secret("client-secret");
-        let token = signer.install_state("owner", "repo", "user_owner", NOW);
-        let state = signer.open_install_state(&token, NOW + 1).unwrap();
+        let token = signer.setup_state("owner", "repo", "user_owner", NOW);
+        let state = signer.open_setup_state(&token, NOW + 1).unwrap();
         assert_eq!(
             (state.owner.as_str(), state.repo.as_str()),
             ("owner", "repo")
@@ -147,7 +157,7 @@ mod tests {
 
         assert!(
             signer
-                .open_install_state(&token, NOW + GITHUB_SETUP_TTL_SECS)
+                .open_setup_state(&token, NOW + GITHUB_SETUP_TTL_SECS)
                 .is_err()
         );
     }
@@ -155,30 +165,34 @@ mod tests {
     #[test]
     fn tampered_or_foreign_tokens_are_rejected() {
         let signer = SetupTokenSigner::from_client_secret("client-secret");
-        let token = signer.install_state("owner", "repo", "user_owner", NOW);
+        let token = signer.setup_state("owner", "repo", "user_owner", NOW);
         let other = SetupTokenSigner::from_client_secret("rotated-secret");
-        assert!(other.open_install_state(&token, NOW).is_err());
+        assert!(other.open_setup_state(&token, NOW).is_err());
 
         let (payload, signature) = token.split_once('.').unwrap();
         let forged_claims = String::from_utf8(URL_SAFE_NO_PAD.decode(payload).unwrap())
             .unwrap()
             .replace("user_owner", "user_attacker");
         let forged = format!("{}.{signature}", URL_SAFE_NO_PAD.encode(forged_claims));
-        assert!(signer.open_install_state(&forged, NOW).is_err());
-        assert!(signer.open_install_state("not-a-token", NOW).is_err());
+        assert!(signer.open_setup_state(&forged, NOW).is_err());
+        assert!(signer.open_setup_state("not-a-token", NOW).is_err());
     }
 
     #[test]
-    fn install_state_and_connect_grant_are_not_interchangeable() {
+    fn setup_state_and_connect_grant_are_not_interchangeable() {
         let signer = SetupTokenSigner::from_client_secret("client-secret");
-        let state_token = signer.install_state("owner", "repo", "user_owner", NOW);
-        let state = signer.open_install_state(&state_token, NOW).unwrap();
-        let grant_token = signer.connect_grant(&state, 7, vec![42], NOW);
+        let state_token = signer.setup_state("owner", "repo", "user_owner", NOW);
+        let state = signer.open_setup_state(&state_token, NOW).unwrap();
+        let granted = GrantedRepository {
+            id: 42,
+            installation_id: 7,
+        };
+        let grant_token = signer.connect_grant(&state, vec![granted], NOW);
 
         assert!(signer.open_connect_grant(&state_token, NOW).is_err());
-        assert!(signer.open_install_state(&grant_token, NOW).is_err());
+        assert!(signer.open_setup_state(&grant_token, NOW).is_err());
         let grant = signer.open_connect_grant(&grant_token, NOW).unwrap();
-        assert_eq!(grant.installation_id, 7);
-        assert_eq!(grant.repository_ids, vec![42]);
+        assert_eq!(grant.installation_for(42), Some(7));
+        assert_eq!(grant.installation_for(43), None);
     }
 }

@@ -77,16 +77,21 @@ impl GitHubApp {
         &self.setup_tokens
     }
 
-    /// GitHub's install screen for the app. GitHub passes `state` back to
-    /// the setup page unchanged.
-    pub(crate) fn install_url(&self, state: &str) -> String {
-        let mut url = reqwest::Url::parse(&format!(
-            "{}/apps/{}/installations/new",
-            self.web_url, self.slug
-        ))
-        .expect("GitHub install URL must be valid");
-        url.query_pairs_mut().append_pair("state", state);
+    /// GitHub's OAuth screen for the app. GitHub sends the user back to
+    /// `redirect_uri`, the app's Callback URL, with a code and `state`.
+    pub(crate) fn authorize_url(&self, state: &str, redirect_uri: &str) -> String {
+        let mut url = reqwest::Url::parse(&format!("{}/login/oauth/authorize", self.web_url))
+            .expect("GitHub authorize URL must be valid");
+        url.query_pairs_mut()
+            .append_pair("client_id", &self.client_id)
+            .append_pair("state", state)
+            .append_pair("redirect_uri", redirect_uri);
         url.into()
+    }
+
+    /// GitHub's screen for installing the app on more repositories.
+    pub(crate) fn install_url(&self) -> String {
+        format!("{}/apps/{}/installations/new", self.web_url, self.slug)
     }
 
     pub(crate) fn webhook_signature_matches(&self, signature: Option<&str>, body: &[u8]) -> bool {

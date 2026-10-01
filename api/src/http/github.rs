@@ -1,14 +1,16 @@
 //! Connecting a repository to GitHub, and GitHub's webhook deliveries.
 //!
-//! Connecting takes two calls after GitHub's install screen. The setup call
-//! proves who is connecting: the signed state names the Scope user and
-//! repository that started the flow, and the GitHub user's own token shows
-//! which installation and repositories that person can reach. The connect
-//! call then checks the chosen repository against that proof and against the
-//! installation itself before the link is stored.
+//! Connecting uses GitHub's OAuth web flow, which always returns its code
+//! with the signed state Scope sent. The setup call proves who is connecting:
+//! the state names the Scope user and repository that started the flow, and
+//! the GitHub user's own token shows which repositories that person can push
+//! through installations of the app. The connect call then checks the chosen
+//! repository against that proof and against the installation itself before
+//! the link is stored. Installing the app is a separate step on GitHub; no
+//! installation id from a redirect is ever used.
 
 use super::responses::{
-    ConnectGitHubRepositoryRequest, GitHubConnectionResponse, GitHubInstallResponse,
+    ConnectGitHubRepositoryRequest, GitHubAuthorizeResponse, GitHubConnectionResponse,
     GitHubSetupRequest, GitHubSetupResponse, github_connection_response,
     github_repository_response,
 };
@@ -17,8 +19,10 @@ use crate::{
     error::ApiError,
     github::{
         GitHubApp,
+        setup_tokens::GrantedRepository,
         webhook::{GITHUB_EVENT_HEADER, GITHUB_SIGNATURE_HEADER, GitHubWebhookEvent},
     },
+    http::origins::public_app_origin,
     persistence::unix_now,
     repo_access::find_read_access,
     repo_events::RepoChangeReason,
@@ -45,22 +49,24 @@ pub(crate) async fn get_github_connection(
     connection_response(&state, &context).await.map(Json)
 }
 
-pub(crate) async fn start_github_install(
+/// Where to send the maintainer to authorize the app on GitHub.
+pub(crate) async fn start_github_authorization(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo)): Path<(String, String)>,
-) -> Result<Json<GitHubInstallResponse>, ApiError> {
+) -> Result<Json<GitHubAuthorizeResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
     let app = configured_app(&state)?;
-    let install_state = app.setup_tokens().install_state(
+    let setup_state = app.setup_tokens().setup_state(
         &context.record.owner_handle,
         &context.record.name,
         &user.id,
         unix_now()?,
     );
-    Ok(Json(GitHubInstallResponse {
-        install_url: app.install_url(&install_state),
+    let callback = format!("{}/github/setup", public_app_origin("connect GitHub")?);
+    Ok(Json(GitHubAuthorizeResponse {
+        authorize_url: app.authorize_url(&setup_state, &callback),
     }))
 }
 
@@ -72,42 +78,35 @@ pub(crate) async fn complete_github_setup(
     let user = require_scope_user(&state, &headers).await?;
     let app = configured_app(&state)?;
     let now = unix_now()?;
-    let install_state = app.setup_tokens().open_install_state(&input.state, now)?;
-    if install_state.user_id != user.id {
+    let setup_state = app.setup_tokens().open_setup_state(&input.state, now)?;
+    if setup_state.user_id != user.id {
         return Err(ApiError::forbidden(
             "Another Scope account started this GitHub setup. Start again from repository settings.",
         ));
     }
     let context =
-        maintainer_access(&state, &install_state.owner, &install_state.repo, &user.id).await?;
+        maintainer_access(&state, &setup_state.owner, &setup_state.repo, &user.id).await?;
     let user_token = app.exchange_user_code(&input.code).await?;
-    if !app
-        .user_can_access_installation(&user_token, input.installation_id)
-        .await?
-    {
-        return Err(ApiError::forbidden(
-            "Your GitHub account cannot access that installation of the Scope GitHub App.",
-        ));
-    }
-    let repositories = app
-        .user_installation_repositories(&user_token, input.installation_id)
-        .await?;
+    let pushable = app.user_pushable_repositories(&user_token).await?;
     let grant = app.setup_tokens().connect_grant(
-        &install_state,
-        input.installation_id,
-        repositories
+        &setup_state,
+        pushable
             .iter()
-            .map(|repository| repository.id)
+            .map(|pushable| GrantedRepository {
+                id: pushable.repository.id,
+                installation_id: pushable.installation_id,
+            })
             .collect(),
         now,
     );
     Ok(Json(GitHubSetupResponse {
         owner_handle: context.record.owner_handle,
         repo_name: context.record.name,
-        repositories: repositories
+        repositories: pushable
             .into_iter()
-            .map(github_repository_response)
+            .map(|pushable| github_repository_response(pushable.repository))
             .collect(),
+        install_url: app.install_url(),
         grant,
     }))
 }
@@ -129,13 +128,14 @@ pub(crate) async fn connect_github_repository(
             "This GitHub setup was for another repository or account. Start again from repository settings.",
         ));
     }
-    if !grant.repository_ids.contains(&input.github_repository_id) {
+    // Only repositories the GitHub user could push were granted.
+    let Some(installation_id) = grant.installation_for(input.github_repository_id) else {
         return Err(ApiError::forbidden(
-            "Your GitHub account cannot reach that repository through the Scope GitHub App.",
+            "Your GitHub account cannot push that repository through the Scope GitHub App.",
         ));
-    }
+    };
     let repository = app
-        .installation_repository(grant.installation_id, input.github_repository_id)
+        .installation_repository(installation_id, input.github_repository_id)
         .await?
         .ok_or_else(|| {
             ApiError::forbidden(
@@ -147,7 +147,7 @@ pub(crate) async fn connect_github_repository(
         .repositories()
         .connect_github_repository(ConnectGitHubRepository {
             repository_id: context.record.id.clone(),
-            installation_id: grant.installation_id,
+            installation_id,
             github_repository_id: repository.id,
             github_full_name: repository.full_name,
             user_id: user.id,

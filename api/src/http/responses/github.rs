@@ -42,29 +42,31 @@ pub(crate) enum GitHubDisconnectReasonResponse {
     RepositoryRemoved,
 }
 
+/// GitHub's OAuth screen for the app, carrying a signed setup state.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct GitHubInstallResponse {
-    pub(crate) install_url: String,
+pub(crate) struct GitHubAuthorizeResponse {
+    pub(crate) authorize_url: String,
 }
 
-/// What GitHub's install screen sent back to the setup page.
+/// What GitHub's OAuth screen sent back to the setup page.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubSetupRequest {
     pub(crate) state: String,
-    pub(crate) installation_id: u64,
     pub(crate) code: String,
 }
 
-/// The GitHub repositories the maintainer may connect, and the grant that
-/// connecting one of them requires.
+/// The GitHub repositories the maintainer can push through the app, and the
+/// grant that connecting one of them requires.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubSetupResponse {
     pub(crate) owner_handle: String,
     pub(crate) repo_name: String,
     pub(crate) repositories: Vec<GitHubRepositoryResponse>,
+    /// Where to install the app on a repository that is missing.
+    pub(crate) install_url: String,
     pub(crate) grant: String,
 }
 

@@ -222,11 +222,15 @@ export type GitHubDisconnectionResponse = { reason: GitHubDisconnectReasonRespon
 
 export type GitHubDisconnectReasonResponse = "app_uninstalled" | "installation_suspended" | "repository_removed";
 
-export type GitHubInstallResponse = { install_url: string, };
+export type GitHubAuthorizeResponse = { authorize_url: string, };
 
-export type GitHubSetupRequest = { state: string, installation_id: number, code: string, };
+export type GitHubSetupRequest = { state: string, code: string, };
 
-export type GitHubSetupResponse = { owner_handle: string, repo_name: string, repositories: Array<GitHubRepositoryResponse>, grant: string, };
+export type GitHubSetupResponse = { owner_handle: string, repo_name: string, repositories: Array<GitHubRepositoryResponse>, 
+/**
+ * Where to install the app on a repository that is missing.
+ */
+install_url: string, grant: string, };
 
 export type GitHubRepositoryResponse = { id: number, full_name: string, private: boolean, };
 
@@ -524,7 +528,7 @@ export const ApiRouteTemplates = {
   repoConfig: "/v1/repos/{owner}/{repo}/config",
   repoMetadata: "/v1/repos/{owner}/{repo}/metadata",
   repoGitHub: "/v1/repos/{owner}/{repo}/github",
-  repoGitHubInstall: "/v1/repos/{owner}/{repo}/github/install",
+  repoGitHubAuthorize: "/v1/repos/{owner}/{repo}/github/authorize",
   githubSetup: "/v1/github/setup",
   repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",

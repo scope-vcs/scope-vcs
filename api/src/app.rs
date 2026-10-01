@@ -146,8 +146,8 @@ pub fn router(state: AppState) -> Router {
                 .delete(http::github::disconnect_github_repository),
         )
         .route(
-            routes::REPO_GITHUB_INSTALL,
-            post(http::github::start_github_install),
+            routes::REPO_GITHUB_AUTHORIZE,
+            post(http::github::start_github_authorization),
         )
         .route(
             routes::GITHUB_SETUP,
