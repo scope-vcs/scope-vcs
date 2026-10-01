@@ -3,7 +3,8 @@
 //! repository is connected to at most one Scope repository at a time. The
 //! link only lasts while the Scope GitHub App can reach the repository: when
 //! GitHub reports otherwise, the link is kept as disconnected with a reason, so
-//! maintainers see why checks stopped instead of an empty section.
+//! maintainers see why checks stopped instead of an empty section. Maintainers
+//! also name the checks GitHub must pass for a request to merge.
 
 use crate::{error::DomainError, repository::access::RepositoryAccess};
 use serde::{Deserialize, Serialize};
@@ -158,6 +159,40 @@ pub fn disconnect_github_repository(
         ));
     }
     Ok(())
+}
+
+pub const GITHUB_REQUIRED_CHECKS_LIMIT: usize = 50;
+const GITHUB_CHECK_NAME_MAX_CHARS: usize = 255;
+
+/// A maintainer names the checks GitHub must pass before a request merges,
+/// the way GitHub's own branch protection names them. Names are trimmed and
+/// kept in the order given; a repeated name counts once.
+pub fn set_github_required_checks(
+    access: RepositoryAccess,
+    names: Vec<String>,
+) -> Result<Vec<String>, DomainError> {
+    ensure_maintainer(access)?;
+    let mut required = Vec::new();
+    for name in names {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(DomainError::invalid_input("Check names cannot be empty."));
+        }
+        if name.chars().count() > GITHUB_CHECK_NAME_MAX_CHARS {
+            return Err(DomainError::invalid_input(format!(
+                "Check names can be at most {GITHUB_CHECK_NAME_MAX_CHARS} characters."
+            )));
+        }
+        if !required.iter().any(|existing| existing == name) {
+            required.push(name.to_string());
+        }
+    }
+    if required.len() > GITHUB_REQUIRED_CHECKS_LIMIT {
+        return Err(DomainError::invalid_input(format!(
+            "A repository can require at most {GITHUB_REQUIRED_CHECKS_LIMIT} checks."
+        )));
+    }
+    Ok(required)
 }
 
 /// Starting a connection is gated like finishing one, so a viewer who could

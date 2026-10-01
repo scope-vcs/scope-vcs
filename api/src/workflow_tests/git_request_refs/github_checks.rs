@@ -1,0 +1,542 @@
+//! Request checks in a repository connected to GitHub: the tested commit is
+//! pushed to a branch GitHub runs workflows on, and GitHub's check runs for
+//! that commit decide the merge.
+
+use super::super::fake_github::{
+    FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, INSTALLATION_ID, InstallationState,
+    WEBHOOK_SECRET, check_run, webhook,
+};
+use super::*;
+use crate::use_cases::{github_check_results, github_pushes};
+use scope_api_contract::routes::{
+    repo_request_auto_merge, repo_request_checks, repo_request_checks_approve, repo_request_merge,
+};
+use scope_domain::github_connection::ConnectGitHubRepository;
+use std::sync::atomic::Ordering;
+
+const REQUIRED_CHECK: &str = "ci / test";
+
+/// Connects the repository to the fake GitHub with these required checks.
+async fn connect_github(state: &mut AppState, required: &[&str]) -> Arc<FakeGitHub> {
+    let fake = FakeGitHub::install(state).await;
+    let repositories = state.metadata.repositories();
+    repositories
+        .connect_github_repository(
+            ConnectGitHubRepository {
+                repository_id: TEST_REPO_ID.to_string(),
+                installation_id: INSTALLATION_ID,
+                github_repository_id: GITHUB_REPOSITORY_ID,
+                github_full_name: GITHUB_FULL_NAME.to_string(),
+                user_id: test_owner_id(),
+                now_unix: unix_now(),
+            },
+            async || Ok::<_, scope_postgres::error::PostgresError>(true),
+        )
+        .await
+        .unwrap();
+    repositories
+        .set_github_required_checks(
+            TEST_REPO_ID,
+            &test_owner_id(),
+            required.iter().map(|name| name.to_string()).collect(),
+        )
+        .await
+        .unwrap();
+    fake
+}
+
+/// An open private request the owner pushed in a repository connected to
+/// GitHub. The server stays alive for the caller's later pushes.
+struct OwnerRequest {
+    state: AppState,
+    fake: Arc<FakeGitHub>,
+    request_id: String,
+    source: TempGitRepo,
+    remote: String,
+    _server: TestServer,
+}
+
+async fn owner_request(label: &str, required: &[&str]) -> OwnerRequest {
+    let (mut state, source, _base_head) =
+        super::super::push_intent_completion::published_git_fixture(label).await;
+    let fake = connect_github(&mut state, required).await;
+    let bearer = bearer_header();
+    let started = api_request(
+        router(state.clone()),
+        "POST",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests"),
+        Some(&bearer),
+        Some(r#"{"name":"checks","audience":"Private"}"#),
+    )
+    .await;
+    let request_id = expect_json(started, StatusCode::OK).await["request"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (origin, server) = spawn_test_server(&state).await;
+    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    configure_bearer_header(&source, &remote, &bearer);
+    push_change(
+        &source,
+        &remote,
+        "refs/heads/checks",
+        "request.txt",
+        "request work\n",
+        "request change",
+    )
+    .unwrap();
+    let submitted = api_request(
+        router(state.clone()),
+        "POST",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests/{request_id}/submit"),
+        Some(&bearer),
+        Some("{}"),
+    )
+    .await;
+    assert_eq!(submitted.status(), StatusCode::OK);
+    OwnerRequest {
+        state,
+        fake,
+        request_id,
+        source,
+        remote,
+        _server: server,
+    }
+}
+
+impl OwnerRequest {
+    fn head(&self) -> String {
+        git_head_oid(&self.source)
+    }
+
+    fn branch(&self) -> String {
+        format!("scope/requests/{}", self.request_id)
+    }
+
+    async fn checks(&self) -> serde_json::Value {
+        checks(&self.state, &self.request_id, &bearer_header()).await
+    }
+}
+
+async fn checks(state: &AppState, request_id: &str, bearer: &str) -> serde_json::Value {
+    expect_json(
+        api_request(
+            router(state.clone()),
+            "GET",
+            &repo_request_checks(TEST_REPO_OWNER, TEST_REPO_NAME, request_id),
+            Some(bearer),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await
+}
+
+async fn push_pass(state: &AppState, now_unix: u64) -> usize {
+    github_pushes::push_due_github_branches(state, now_unix)
+        .await
+        .unwrap()
+}
+
+/// GitHub says a check run on the commit changed.
+async fn deliver_check_run(state: &AppState, repository_id: u64, commit_oid: &str) {
+    let delivery = webhook(
+        state,
+        "check_run",
+        serde_json::json!({
+            "action": "completed",
+            "repository": { "id": repository_id, "full_name": GITHUB_FULL_NAME },
+            "check_run": { "id": 1, "head_sha": commit_oid },
+        }),
+        WEBHOOK_SECRET,
+    )
+    .await;
+    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
+}
+
+async fn merge(state: &AppState, request_id: &str) -> Response {
+    api_request(
+        router(state.clone()),
+        "POST",
+        &repo_request_merge(TEST_REPO_OWNER, TEST_REPO_NAME, request_id),
+        Some(&bearer_header()),
+        None,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_maintainers_push_reaches_github_and_github_results_decide_the_merge() {
+    let request = owner_request("github-checks-maintainer", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+
+    let waiting = request.checks().await;
+    assert_eq!(waiting["state"], "started");
+    assert_eq!(waiting["can_approve"], false);
+    assert_eq!(
+        waiting["checks"],
+        serde_json::json!([{
+            "provider": "github", "name": REQUIRED_CHECK,
+            "status": null, "conclusion": null, "details_url": null,
+        }])
+    );
+    assert_eq!(waiting["github_push"]["state"], "sending");
+    assert_eq!(waiting["github_push"]["branch"], request.branch());
+    assert_eq!(waiting["mergeability"]["status"], "ChecksPending");
+
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&request.branch()), Some(head.clone()));
+    assert_eq!(request.checks().await["github_push"]["state"], "sent");
+
+    // A delivery only prompts a read; what GitHub's API lists is stored.
+    fake.report_check_runs(&head, vec![check_run(1, REQUIRED_CHECK, &head, None)]);
+    deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
+    assert_eq!(fake.check_run_reads.load(Ordering::SeqCst), 1);
+    let running = request.checks().await;
+    assert_eq!(running["checks"][0]["status"], "in_progress");
+    assert_eq!(
+        running["checks"][0]["details_url"],
+        format!("https://github.com/{GITHUB_FULL_NAME}/actions/runs/1")
+    );
+
+    fake.report_check_runs(
+        &head,
+        vec![check_run(1, REQUIRED_CHECK, &head, Some("failure"))],
+    );
+    deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
+    assert_eq!(
+        request.checks().await["mergeability"]["status"],
+        "ChecksFailed"
+    );
+    assert_eq!(
+        expect_json(
+            merge(state, &request.request_id).await,
+            StatusCode::CONFLICT
+        )
+        .await["message"],
+        "a check did not succeed"
+    );
+
+    // Re-running the check on GitHub adds a newer run, which decides.
+    fake.report_check_runs(
+        &head,
+        vec![
+            check_run(1, REQUIRED_CHECK, &head, Some("failure")),
+            check_run(2, REQUIRED_CHECK, &head, Some("success")),
+        ],
+    );
+    deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
+    assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
+    expect_json(merge(state, &request.request_id).await, StatusCode::OK).await;
+
+    // Merging deletes the branch Scope pushed.
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&request.branch()), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_new_revision_replaces_the_branch_and_an_older_green_run_does_not_count() {
+    let request = owner_request("github-checks-revision", &[REQUIRED_CHECK]).await;
+    let (state, fake) = (&request.state, &request.fake);
+    let first_head = request.head();
+    push_pass(state, unix_now()).await;
+    fake.report_check_runs(
+        &first_head,
+        vec![check_run(1, REQUIRED_CHECK, &first_head, Some("success"))],
+    );
+    deliver_check_run(state, GITHUB_REPOSITORY_ID, &first_head).await;
+    assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
+
+    push_change(
+        &request.source,
+        &request.remote,
+        "refs/heads/checks",
+        "request.txt",
+        "revised work\n",
+        "revise request",
+    )
+    .unwrap();
+    let second_head = request.head();
+    let revised = request.checks().await;
+    assert_eq!(revised["head_oid"], second_head);
+    assert_eq!(revised["checks"][0]["status"], serde_json::Value::Null);
+    assert_eq!(revised["mergeability"]["status"], "ChecksPending");
+
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&request.branch()), Some(second_head));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
+    let (mut state, _owner_source) =
+        test_state_with_mergeable_request("github-checks-contributor").await;
+    let fake = connect_github(&mut state, &[REQUIRED_CHECK]).await;
+    insert_member_user(&state).await;
+    let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
+    let public = bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL);
+    let (source, remote, _server) = request_push_checkout(
+        &state,
+        "github-checks-contributor-push",
+        PUBLIC_SUBJECT,
+        PUBLIC_EMAIL,
+    )
+    .await;
+    fs::create_dir_all(source.join(".github/workflows")).unwrap();
+    push_change(
+        &source,
+        &remote,
+        REQUEST_REF,
+        ".github/workflows/ci.yml",
+        "on: push\n",
+        "change the workflow",
+    )
+    .unwrap();
+    let head = git_head_oid(&source);
+    let branch = format!("scope/requests/{REQUEST_ID}");
+    let submitted = api_request(
+        router(state.clone()),
+        "POST",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests/{REQUEST_ID}/submit"),
+        Some(&public),
+        Some("{}"),
+    )
+    .await;
+    assert_eq!(submitted.status(), StatusCode::OK);
+
+    assert_eq!(push_pass(&state, unix_now()).await, 0);
+    assert_eq!(fake.branch_head(&branch), None);
+    let waiting = checks(&state, REQUEST_ID, &member).await;
+    assert_eq!(waiting["state"], "awaiting-approval");
+    assert_eq!(waiting["can_approve"], true);
+    assert_eq!(waiting["github_push"]["state"], "awaiting_approval");
+    assert_eq!(waiting["changes_github_workflows"], true);
+    let contributor_view = checks(&state, REQUEST_ID, &public).await;
+    assert_eq!(contributor_view["can_approve"], false);
+    assert_eq!(contributor_view["changes_github_workflows"], false);
+
+    let approved = expect_json(
+        api_request(
+            router(state.clone()),
+            "POST",
+            &repo_request_checks_approve(TEST_REPO_OWNER, TEST_REPO_NAME, REQUEST_ID),
+            Some(&member),
+            Some("{}"),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(approved["state"], "started");
+    assert_eq!(approved["github_push"]["state"], "sending");
+    assert_eq!(push_pass(&state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&branch), Some(head));
+
+    // Closing the request deletes its branch.
+    expect_json(
+        api_request(
+            router(state.clone()),
+            "DELETE",
+            &scope_api_contract::routes::repo_request(TEST_REPO_OWNER, TEST_REPO_NAME, REQUEST_ID),
+            Some(&public),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(push_pass(&state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&branch), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_push_retries_with_backoff_then_gives_up_with_its_last_error() {
+    let request = owner_request("github-checks-push-failure", &[REQUIRED_CHECK]).await;
+    let (state, fake) = (&request.state, &request.fake);
+    fs::remove_dir_all(fake.repository_path()).unwrap();
+
+    let now = unix_now();
+    assert_eq!(push_pass(state, now).await, 1);
+    let retrying = request.checks().await["github_push"].clone();
+    assert_eq!(retrying["state"], "sending");
+    assert!(
+        retrying["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("GitHub refused the push"),
+        "{retrying}"
+    );
+    // The next attempt waits out its delay: 30 seconds, then 2, 10 and 30 minutes.
+    assert_eq!(push_pass(state, now + 29).await, 0);
+    let mut at = now;
+    for delay in [30, 120, 600, 1800] {
+        at += delay;
+        assert_eq!(push_pass(state, at).await, 1, "after {delay} seconds");
+    }
+    let failed = request.checks().await["github_push"].clone();
+    assert_eq!(failed["state"], "failed");
+    assert!(
+        failed["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("GitHub refused the push")
+    );
+    assert_eq!(push_pass(state, at + 24 * 60 * 60).await, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn required_checks_gate_auto_merge_and_a_passing_rerun_completes_it() {
+    let request = owner_request("github-checks-auto-merge", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+    push_pass(state, unix_now()).await;
+    let auto_merge = |method: &'static str, body: Option<String>| {
+        let state = state.clone();
+        let route = repo_request_auto_merge(TEST_REPO_OWNER, TEST_REPO_NAME, &request.request_id);
+        async move {
+            expect_json(
+                api_request(
+                    router(state),
+                    method,
+                    &route,
+                    Some(&bearer_header()),
+                    body.as_deref(),
+                )
+                .await,
+                StatusCode::OK,
+            )
+            .await
+        }
+    };
+    let authorize = |ready: serde_json::Value| {
+        Some(
+            serde_json::json!({
+                "expected_revision_id": ready["revision_id"],
+                "expected_head_oid": head,
+            })
+            .to_string(),
+        )
+    };
+    let reconcile = |now| crate::use_cases::request_auto_merge::reconcile_once(state, now);
+
+    let active = auto_merge("POST", authorize(auto_merge("GET", None).await)).await;
+    assert_eq!(active["intent"]["status"], "Active");
+    assert_eq!(active["waiting_reason"], "Waiting for checks to finish");
+
+    fake.report_check_runs(
+        &head,
+        vec![check_run(1, REQUIRED_CHECK, &head, Some("failure"))],
+    );
+    deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
+    reconcile(unix_now() + 1).await.unwrap();
+    let stopped = auto_merge("GET", None).await;
+    assert_eq!(stopped["intent"]["status"], "Stopped");
+    assert_eq!(stopped["intent"]["reason"], "ChecksFailed");
+
+    fake.report_check_runs(
+        &head,
+        vec![
+            check_run(1, REQUIRED_CHECK, &head, Some("failure")),
+            check_run(2, REQUIRED_CHECK, &head, Some("success")),
+        ],
+    );
+    deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
+    let active = auto_merge("POST", authorize(auto_merge("GET", None).await)).await;
+    assert_eq!(active["intent"]["status"], "Active");
+    reconcile(unix_now() + 2).await.unwrap();
+    assert_eq!(
+        auto_merge("GET", None).await["intent"]["status"],
+        "Fulfilled"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_reconciler_reads_results_a_delivery_never_announced() {
+    let request = owner_request("github-checks-reconciler", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+    push_pass(state, unix_now()).await;
+    fake.report_check_runs(
+        &head,
+        vec![check_run(1, REQUIRED_CHECK, &head, Some("success"))],
+    );
+    assert_eq!(
+        request.checks().await["mergeability"]["status"],
+        "ChecksPending"
+    );
+
+    let now = unix_now();
+    assert_eq!(
+        github_check_results::reconcile_github_checks_once(state, now)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
+    // Settled checks are not read again, and pending ones wait out the interval.
+    assert_eq!(
+        github_check_results::reconcile_github_checks_once(state, now + 600)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(fake.check_run_reads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_disconnected_repository_cannot_pass_its_checks_and_gives_up_pushing() {
+    let request = owner_request("github-checks-disconnected", &[REQUIRED_CHECK]).await;
+    let state = &request.state;
+    request
+        .fake
+        .installation_states
+        .lock()
+        .unwrap()
+        .insert(INSTALLATION_ID, InstallationState::Uninstalled);
+    let uninstalled = webhook(
+        state,
+        "installation",
+        serde_json::json!({ "action": "deleted", "installation": { "id": INSTALLATION_ID } }),
+        WEBHOOK_SECRET,
+    )
+    .await;
+    assert_eq!(uninstalled.status(), StatusCode::NO_CONTENT);
+
+    let checks = request.checks().await;
+    assert_eq!(checks["mergeability"]["status"], "ChecksConfigurationError");
+    assert!(
+        checks["message"]
+            .as_str()
+            .unwrap()
+            .contains("no longer connected to GitHub")
+    );
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    let push = request.checks().await["github_push"].clone();
+    assert_eq!(push["state"], "failed");
+    assert!(
+        push["error"]
+            .as_str()
+            .unwrap()
+            .contains("no longer connected to GitHub")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn with_no_required_checks_a_maintainers_head_still_runs_the_workflows() {
+    let request = owner_request("github-checks-none-required", &[]).await;
+    let checks = request.checks().await;
+    assert_eq!(checks["state"], "no-checks");
+    assert_eq!(checks["mergeability"]["status"], "Ready");
+    assert_eq!(checks["github_push"]["state"], "sending");
+    assert_eq!(push_pass(&request.state, unix_now()).await, 1);
+    assert_eq!(
+        request.fake.branch_head(&request.branch()),
+        Some(request.head())
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deliveries_about_unknown_repositories_or_commits_are_acknowledged() {
+    let request = owner_request("github-checks-unknown-delivery", &[REQUIRED_CHECK]).await;
+    deliver_check_run(&request.state, GITHUB_REPOSITORY_ID + 1, &request.head()).await;
+    deliver_check_run(&request.state, GITHUB_REPOSITORY_ID, &"f".repeat(40)).await;
+    assert_eq!(request.fake.check_run_reads.load(Ordering::SeqCst), 0);
+}

@@ -6,16 +6,19 @@ import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { LoaderCircle, Plug, Unplug } from 'lucide-react'
 import { useState } from 'react'
 import { githubConnectionView } from './repo-github-connection-model'
+import { RepoRequiredChecks } from './repo-required-checks'
 import { CiSection } from './repo-settings-sections'
 
 /** `github` is `null` until it loads. */
 export function RepoCiSection({
   disconnect,
   github,
+  setRequiredChecks,
   startAuthorization,
 }: {
   disconnect: () => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
+  setRequiredChecks: (names: string[]) => Promise<GitHubConnectionResponse>
   startAuthorization: () => Promise<GitHubAuthorizeResponse>
 }) {
   const [pending, setPending] = useState<'connect' | 'disconnect' | null>(null)
@@ -109,6 +112,10 @@ export function RepoCiSection({
             </div>
             {connectButton('Reconnect')}
           </div>
+        )}
+
+        {(view.kind === 'connected' || view.kind === 'disconnected') && (
+          <RepoRequiredChecks names={github.required_checks} save={setRequiredChecks} />
         )}
 
         {error && <PageErrorAlert className="mt-0" title={error.title}>{error.message}</PageErrorAlert>}

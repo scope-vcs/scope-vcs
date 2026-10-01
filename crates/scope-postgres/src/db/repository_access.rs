@@ -103,6 +103,14 @@ impl RepositoryStore {
         Ok(context)
     }
 
+    /// The repository's record by id, for background work that only knows the id.
+    pub async fn repository_record(
+        &self,
+        repo_id: &str,
+    ) -> Result<Option<RepoRecord>, PostgresError> {
+        load_repo_record(self.db.as_ref(), repo_id).await
+    }
+
     pub async fn repository_content_source(
         &self,
         incarnation: &scope_domain::repository::RepositoryIncarnation,

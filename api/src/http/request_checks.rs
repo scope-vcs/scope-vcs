@@ -15,11 +15,15 @@ use axum::{
     http::HeaderMap,
 };
 use scope_api_contract::{
-    RequestCheckResponse, RequestChecksResponse, RequestMergeabilityResponse,
+    RequestCheckResponse, RequestChecksResponse, RequestGitHubPushResponse, RequestGitHubPushState,
+    RequestMergeabilityResponse,
 };
 use scope_domain::{
     repository::{RepoRecord, access::RepositoryAccess},
-    requests::{Request, RequestCheck, RequestCheckResults, request_mergeability},
+    requests::{
+        GitHubPushStatus, Request, RequestCheck, RequestCheckResults, github_request_branch,
+        request_checks_message, request_mergeability,
+    },
 };
 use scope_postgres::db::ApproveRequestChecksCommand;
 
@@ -90,28 +94,65 @@ async fn checks_response(
         request_head_oid: git_oid_response(request.head_oid.clone())?,
         reason: decision.reason.map(str::to_string),
     };
-    let (evaluation_state, message, checks, can_approve) = match evaluation {
-        Some(evaluation) => (
-            Some(evaluation.state.into()),
-            evaluation.message.clone(),
-            evaluation
-                .checks
-                .iter()
-                .map(|check| check_response(check, &evaluation.tested_oid, &results))
-                .collect(),
-            evaluation.native_checks_await_approval() && access.is_maintainer(),
-        ),
-        None => (None, None, Vec::new(), false),
+    let Some(evaluation) = evaluation else {
+        return Ok(RequestChecksResponse {
+            request_id: request.id.clone(),
+            head_oid: git_oid_response(request.head_oid.clone())?,
+            state: None,
+            message: None,
+            checks: Vec::new(),
+            can_approve: false,
+            github_push: None,
+            changes_github_workflows: false,
+            mergeability,
+        });
     };
+    let can_approve = evaluation.awaits_approval() && access.is_maintainer();
+    let latest_push = state
+        .metadata
+        .requests()
+        .latest_github_push(&request.id)
+        .await?;
+    let github_push = GitHubPushStatus::for_evaluation(&evaluation, latest_push.as_ref())
+        .map(|status| github_push_response(&request.id, status, access));
+    let changes_github_workflows = can_approve
+        && evaluation.asks_github()
+        && request_checks::changes_github_workflow_files(state, repo, request).await;
     Ok(RequestChecksResponse {
         request_id: request.id.clone(),
         head_oid: git_oid_response(request.head_oid.clone())?,
-        state: evaluation_state,
-        message,
-        checks,
+        state: Some(evaluation.state.into()),
+        message: request_checks_message(&evaluation, &results),
+        checks: evaluation
+            .checks
+            .iter()
+            .map(|check| check_response(check, &evaluation.tested_oid, &results))
+            .collect(),
         can_approve,
+        github_push,
+        changes_github_workflows,
         mergeability,
     })
+}
+
+/// What GitHub answered can name private repositories and paths, so only
+/// maintainers read it.
+fn github_push_response(
+    request_id: &str,
+    status: GitHubPushStatus,
+    access: RepositoryAccess,
+) -> RequestGitHubPushResponse {
+    let (state, error) = match status {
+        GitHubPushStatus::AwaitingApproval => (RequestGitHubPushState::AwaitingApproval, None),
+        GitHubPushStatus::Sending { last_error } => (RequestGitHubPushState::Sending, last_error),
+        GitHubPushStatus::Sent => (RequestGitHubPushState::Sent, None),
+        GitHubPushStatus::Failed { error } => (RequestGitHubPushState::Failed, Some(error)),
+    };
+    RequestGitHubPushResponse {
+        state,
+        branch: github_request_branch(request_id),
+        error: error.filter(|_| access.is_maintainer()),
+    }
 }
 
 fn check_response(

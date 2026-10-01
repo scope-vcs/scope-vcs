@@ -1,8 +1,9 @@
 use scope_domain::{
     error::DomainErrorKind,
     github_connection::{
-        ConnectGitHubRepository, GitHubConnection, GitHubConnectionStatus, GitHubDisconnectReason,
-        GitHubInstallationChange, connect_github_repository, disconnect_github_repository,
+        ConnectGitHubRepository, GITHUB_REQUIRED_CHECKS_LIMIT, GitHubConnection,
+        GitHubConnectionStatus, GitHubDisconnectReason, GitHubInstallationChange,
+        connect_github_repository, disconnect_github_repository, set_github_required_checks,
     },
     repository::{
         RepoLifecycleState, access::repository_access_for_user_id,
@@ -184,4 +185,37 @@ fn installation_changes_disconnect_only_affected_links() {
         NOW
     ));
     assert!(link.is_connected());
+}
+
+#[test]
+fn maintainers_name_required_checks_once_each_in_their_order() {
+    let names = |names: &[&str]| names.iter().map(|name| name.to_string()).collect();
+    assert_eq!(
+        set_github_required_checks(member(), names(&[" ci / test ", "lint", "ci / test"])).unwrap(),
+        ["ci / test", "lint"]
+    );
+    assert_eq!(
+        set_github_required_checks(owner(), Vec::new()).unwrap(),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        set_github_required_checks(outsider(), names(&["ci"]))
+            .unwrap_err()
+            .kind,
+        DomainErrorKind::Forbidden
+    );
+    for invalid in [
+        names(&["  "]),
+        vec!["x".repeat(256)],
+        (0..=GITHUB_REQUIRED_CHECKS_LIMIT)
+            .map(|index| format!("check {index}"))
+            .collect(),
+    ] {
+        assert_eq!(
+            set_github_required_checks(owner(), invalid)
+                .unwrap_err()
+                .kind,
+            DomainErrorKind::InvalidInput
+        );
+    }
 }

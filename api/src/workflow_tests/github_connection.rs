@@ -1,246 +1,15 @@
+use super::fake_github::{
+    FakeGitHub, GITHUB_REPOSITORY_ID, GOOD_CODE, INSTALLATION_ID, InstallationState,
+    WEBHOOK_SECRET, github_repository, user_repository, webhook,
+};
 use super::*;
-use crate::github::{GitHubApp, config::GitHubAppConfig};
-use axum::{
-    Json, Router,
-    extract::{Path as AxumPath, State as AxumState},
-    http::HeaderMap as AxumHeaderMap,
-    response::IntoResponse,
-    routing::{get, post},
-};
-use hmac::{Hmac, KeyInit, Mac};
 use scope_domain::github_connection::ConnectGitHubRepository;
-use sha2::Sha256;
-use std::sync::{
-    Mutex,
-    atomic::{AtomicUsize, Ordering},
-};
-
-const INSTALLATION_ID: u64 = 7;
-const GITHUB_REPOSITORY_ID: u64 = 42;
-const WEBHOOK_SECRET: &str = "webhook-secret";
-const GOOD_CODE: &str = "good-code";
-const USER_TOKEN: &str = "github-user-token";
-
-const TEST_GITHUB_APP_KEY: &str = r#"-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC4cQ891SPDKdll
-u6REtNymNf7NeHFFFGKzfb9SciQj/946ZwJqoPL1irW9TnGXEKiwlPQP/3eW0ltu
-3Cfvxnc/mhYUsciWJ7vZcfJpfDq+eP8QDFE0vS4Z2rndcp9m5iW3gTVqpkoVCD70
-/DT2U7A30soOjUBpQbAd+QlkeBITJ8UaBk1mlB1l5dDiT6QjmrSr/1jEph5LbOLR
-N4JEWBgRAeF5fowRWhHAa782zjDVQScqW9EonJJkY1PBn9Mmcmtjt5S+gTLAlKhQ
-nzYb040N4l3XInl0/KbBz5odHTgTfUguAN3Xll/5cZbnGpTpH2KIhTbpRhrkRY0h
-0nUkiC1JAgMBAAECggEAPEyqQPrX0Ex0SLBKCjRfFu/8N8yyq3T4t9nanOe4LRTP
-4KQgxB+OjvwkYpmsxUiq/eAU0s4gmOx4/At5+wgVoHON2IIvI/glj/eS2y3EPtVr
-/iEow2c+FTHPJjj9KDUCC7ZwckefXLTvcESsRAQkTnvZl1xSvJa/L21lxrUCo8QD
-ymnxwh5NBRoIWdxk22mFKdV5EEW43ObmlquDfkcj7F0BQPnc6n713LAzN6y/kD8h
-lzY8L2WbZx/yPtUTrvH2qW60wHPVftFsf1aU72Fm31/WsegYJCr+1lIkzLH2agsJ
-7dDVN1nxdNT2vE53X6O7gIvfXluCxBI4U0tIqbv66QKBgQDzb2/6nd1LLitMzJ6B
-EHzaAQEVn2OXJ9/Be71w4sATsbfRZsuD70jBp0MiZNYnNCYHYeFVQzk1Ew1HiM+V
-XcfMCHxPNXOpz86GzC5Ji8fv1UqZuvhKY+U4AJvaxTCdPeJA6Lj6ny6RRNXc6VZi
-wDW+ZCiKnHSOZaVKfn/JAOLydwKBgQDB9iBSZqS31+qHq6G3I0oy2ka0cMMyA12t
-rnDwBk2Bnj6lHScMks+2qjtTDdpqWWi3kVP+kJteHxcWuhmYtWkOVml8E5iWaQI2
-0tsFGsI/8eY9h5e5NSMnVk1+gMcTFHunLH3I+uge0fjCdZFNBJPEu64i3so5IDNJ
-9L3xZvQOPwKBgHM5D9uj1Ra8p6oWP//++dmGGClP5Cerq/E8zJIeAaRQvhzTdwjf
-vaRLsy8YY3Ty7f0Yizt8Mhu5BNQTIY4lcWhVq+Eh/7kkrzCGfHI7Q0t1vXW+Vb+A
-QQKc5yhJpZUHsYvfm46kwbnoxwFlQIpFSCrx5W6WV2T/H5l+/qT5UnJJAoGAGH8S
-Q/Xstb9SQoI9sViGpXeF2IIpVOax7R6L6vSQ017+AHJ3HRJpo2NKjMnCHQ5fuFdl
-aVAwHyoEC33Df9LhissFFYOQEOcAPZZRzQo9IEBX2MuIMP7yCqTOsrxm6BT9LPbk
-h/6QVFwmc8DPcg+y7fTaIFNM7PwRHjUHzDY5epcCgYEA79Ml0vv7k19sDB8A13aH
-BZ1CTKR1DddDiEGE3LaFRAJp+wAcZ7z7prc3fxQsQZGOEM6Z3Pjcjnol1bt29rE0
-devYjVgcWWz1N5F0wHsGA68ppkppNUQeDKoG05CHMCChPdD8onOqyFdw/mPPgXGi
-fAFIvg2Ihs8lJFryn8Z/kFk=
------END PRIVATE KEY-----"#;
-
-/// What the fake GitHub reports. Every list is one page, and every
-/// repository is listed with the installation that reaches it.
-struct FakeGitHub {
-    /// Installations the GitHub user's token can see.
-    user_installations: Mutex<Vec<u64>>,
-    /// Repositories the user can see through each installation, with the
-    /// user's permissions on them.
-    user_repositories: Mutex<Vec<(u64, serde_json::Value)>>,
-    /// Repositories each installation itself can reach.
-    installation_repositories: Mutex<Vec<(u64, serde_json::Value)>>,
-    /// Installations GitHub now reports as suspended or gone; others are active.
-    installation_states: Mutex<BTreeMap<u64, InstallationState>>,
-    token_mints: AtomicUsize,
-    installation_listings: AtomicUsize,
-    /// The installation stops reaching every repository from this listing on.
-    revoke_at_listing: Mutex<Option<usize>>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum InstallationState {
-    Suspended,
-    Uninstalled,
-}
-
-fn github_repository(id: u64, full_name: &str) -> serde_json::Value {
-    serde_json::json!({ "id": id, "full_name": full_name, "private": true, "owner": {} })
-}
-
-/// The repository as a user token lists it, with that user's permissions.
-fn user_repository(id: u64, full_name: &str, push: bool) -> serde_json::Value {
-    let mut repository = github_repository(id, full_name);
-    repository["permissions"] =
-        serde_json::json!({ "admin": false, "maintain": false, "push": push, "pull": true });
-    repository
-}
-
-fn listed(
-    repositories: &Mutex<Vec<(u64, serde_json::Value)>>,
-    installation_id: u64,
-) -> Json<serde_json::Value> {
-    let repositories = repositories
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|(id, _)| *id == installation_id)
-        .map(|(_, repository)| repository.clone())
-        .collect::<Vec<_>>();
-    Json(serde_json::json!({ "total_count": repositories.len(), "repositories": repositories }))
-}
-
-impl FakeGitHub {
-    fn new() -> Arc<Self> {
-        Arc::new(Self {
-            user_installations: Mutex::new(vec![INSTALLATION_ID]),
-            user_repositories: Mutex::new(vec![(
-                INSTALLATION_ID,
-                user_repository(GITHUB_REPOSITORY_ID, "octo/checks", true),
-            )]),
-            installation_repositories: Mutex::new(vec![(
-                INSTALLATION_ID,
-                github_repository(GITHUB_REPOSITORY_ID, "octo/checks"),
-            )]),
-            installation_states: Mutex::default(),
-            token_mints: AtomicUsize::new(0),
-            installation_listings: AtomicUsize::new(0),
-            revoke_at_listing: Mutex::default(),
-        })
-    }
-
-    async fn serve(self: Arc<Self>) -> String {
-        fn bearer(headers: &AxumHeaderMap) -> String {
-            headers
-                .get(AUTHORIZATION)
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.strip_prefix("Bearer "))
-                .unwrap_or_default()
-                .to_string()
-        }
-        let app = Router::new()
-            .route(
-                "/login/oauth/access_token",
-                post(|Json(body): Json<serde_json::Value>| async move {
-                    Json(if body["code"] == GOOD_CODE {
-                        serde_json::json!({ "access_token": USER_TOKEN, "token_type": "bearer" })
-                    } else {
-                        serde_json::json!({ "error": "bad_verification_code" })
-                    })
-                }),
-            )
-            .route(
-                "/user/installations",
-                get(
-                    |AxumState(fake): AxumState<Arc<FakeGitHub>>, headers: AxumHeaderMap| async move {
-                        assert_eq!(bearer(&headers), USER_TOKEN);
-                        let installations = fake.user_installations.lock().unwrap().clone();
-                        Json(serde_json::json!({
-                            "total_count": installations.len(),
-                            "installations": installations
-                                .iter()
-                                .map(|id| serde_json::json!({ "id": id }))
-                                .collect::<Vec<_>>(),
-                        }))
-                    },
-                ),
-            )
-            .route(
-                "/user/installations/{id}/repositories",
-                get(
-                    |AxumState(fake): AxumState<Arc<FakeGitHub>>,
-                     AxumPath(id): AxumPath<u64>,
-                     headers: AxumHeaderMap| async move {
-                        assert_eq!(bearer(&headers), USER_TOKEN);
-                        listed(&fake.user_repositories, id)
-                    },
-                ),
-            )
-            .route(
-                "/app/installations/{id}",
-                get(
-                    |AxumState(fake): AxumState<Arc<FakeGitHub>>,
-                     AxumPath(id): AxumPath<u64>,
-                     headers: AxumHeaderMap| async move {
-                        assert_eq!(bearer(&headers).split('.').count(), 3);
-                        match fake.installation_states.lock().unwrap().get(&id) {
-                            Some(InstallationState::Uninstalled) => {
-                                StatusCode::NOT_FOUND.into_response()
-                            }
-                            Some(InstallationState::Suspended) => Json(serde_json::json!({
-                                "id": id, "suspended_at": "2026-10-01T00:00:00Z",
-                            }))
-                            .into_response(),
-                            None => Json(serde_json::json!({ "id": id, "suspended_at": null }))
-                                .into_response(),
-                        }
-                    },
-                ),
-            )
-            .route(
-                "/app/installations/{id}/access_tokens",
-                post(
-                    |AxumState(fake): AxumState<Arc<FakeGitHub>>,
-                     AxumPath(id): AxumPath<u64>,
-                     headers: AxumHeaderMap| async move {
-                        // An app JWT: three dot-separated parts.
-                        assert_eq!(bearer(&headers).split('.').count(), 3);
-                        fake.token_mints.fetch_add(1, Ordering::SeqCst);
-                        Json(serde_json::json!({
-                            "token": format!("installation-token-{id}"),
-                            "expires_at": "2099-01-01T00:00:00Z",
-                        }))
-                    },
-                ),
-            )
-            .route(
-                "/installation/repositories",
-                get(
-                    |AxumState(fake): AxumState<Arc<FakeGitHub>>, headers: AxumHeaderMap| async move {
-                        let installation_id = bearer(&headers)
-                            .strip_prefix("installation-token-")
-                            .and_then(|id| id.parse().ok())
-                            .unwrap();
-                        let listing = fake.installation_listings.fetch_add(1, Ordering::SeqCst) + 1;
-                        if *fake.revoke_at_listing.lock().unwrap() == Some(listing) {
-                            fake.installation_repositories.lock().unwrap().clear();
-                        }
-                        listed(&fake.installation_repositories, installation_id)
-                    },
-                ),
-            )
-            .with_state(self);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        url
-    }
-}
+use std::sync::atomic::Ordering;
 
 async fn github_state() -> (AppState, Arc<FakeGitHub>) {
-    let fake = FakeGitHub::new();
-    let url = Arc::clone(&fake).serve().await;
     let mut state = test_state_with_readme().await;
     cache_test_jwks(&state);
-    let config = GitHubAppConfig {
-        app_id: 123,
-        slug: "scope-checks".to_string(),
-        private_key: TEST_GITHUB_APP_KEY.to_string(),
-        client_id: "Iv1.client".to_string(),
-        client_secret: "client-secret".to_string(),
-        webhook_secret: WEBHOOK_SECRET.to_string(),
-    };
-    state.github = Some(Arc::new(GitHubApp::new(config, &url, &url).unwrap()));
+    let fake = FakeGitHub::install(&mut state).await;
     (state, fake)
 }
 
@@ -343,26 +112,6 @@ async fn connection(state: &AppState) -> serde_json::Value {
     .await
 }
 
-async fn webhook(state: &AppState, event: &str, body: serde_json::Value, secret: &str) -> Response {
-    let body = body.to_string();
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
-    mac.update(body.as_bytes());
-    let signature = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
-    router(state.clone())
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/v1/github/webhooks")
-                .header("X-GitHub-Event", event)
-                .header("X-Hub-Signature-256", signature)
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .unwrap(),
-        )
-        .await
-        .unwrap()
-}
-
 async fn add_member(state: &AppState) -> String {
     let subject = "user_github_member";
     let email = "github-member@example.com";
@@ -395,7 +144,7 @@ async fn github_is_off_when_the_app_is_not_configured() {
     let body = connection(&state).await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": false, "connection": null })
+        serde_json::json!({ "configured": false, "connection": null, "required_checks": [] })
     );
     let install = authorize_response(&state, &bearer_header(), serde_json::json!({})).await;
     assert_eq!(install.status(), StatusCode::NOT_FOUND);
@@ -414,7 +163,7 @@ async fn a_maintainer_connects_through_github_setup() {
     let (state, fake) = github_state().await;
     assert_eq!(
         connection(&state).await,
-        serde_json::json!({ "configured": true, "connection": null })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [] })
     );
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
 
@@ -682,6 +431,59 @@ async fn a_github_repository_connects_to_one_scope_repository() {
 }
 
 #[tokio::test]
+async fn maintainers_name_the_checks_github_must_pass() {
+    let (state, _fake) = github_state().await;
+    let set = |bearer: String, names: serde_json::Value| {
+        let state = state.clone();
+        async move {
+            request(
+                &state,
+                "PUT",
+                "/v1/repos/owner/repo/github/required-checks",
+                Some(&bearer),
+                Some(serde_json::json!({ "names": names })),
+            )
+            .await
+        }
+    };
+    let mut events = state.repo_events.subscribe(TEST_REPO_ID);
+    let member = add_member(&state).await;
+    let body = expect_json(
+        set(
+            member,
+            serde_json::json!([" ci / test ", "lint", "ci / test"]),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        body["required_checks"],
+        serde_json::json!(["ci / test", "lint"])
+    );
+    assert_eq!(
+        connection(&state).await["required_checks"],
+        body["required_checks"]
+    );
+    assert_eq!(
+        events.try_recv().unwrap().kind,
+        crate::repo_events::RepoChangeKind::RepositoryChanged {
+            reason: "github-connection-changed".into()
+        }
+    );
+
+    let outsider = bearer_header_for("user_github_outsider", "outsider@example.com");
+    let refused = set(outsider, serde_json::json!(["deploy"])).await;
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+    let empty = set(bearer_header(), serde_json::json!([" "])).await;
+    assert_eq!(empty.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        connection(&state).await["required_checks"],
+        serde_json::json!(["ci / test", "lint"])
+    );
+}
+
+#[tokio::test]
 async fn a_maintainer_disconnects() {
     let (state, _fake) = github_state().await;
     let grant = grant(&state).await;
@@ -704,7 +506,7 @@ async fn a_maintainer_disconnects() {
     .await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": true, "connection": null })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [] })
     );
     let again = request(
         &state,

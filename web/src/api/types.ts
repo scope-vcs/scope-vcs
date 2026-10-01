@@ -4,6 +4,7 @@ import type {
   ConnectGitHubRepositoryRequest,
   GitHubAuthorizeRequest,
   GitHubSetupRequest,
+  SetGitHubRequiredChecksRequest,
   HistoryEntryFileDiffRequest,
   HistoryEntryRequest,
   HistoryPageRequest,
@@ -142,6 +143,8 @@ export type GitHubSetupInput = GitHubSetupRequest
 export type RepoGitHubAuthorizeInput = RepoParams & GitHubAuthorizeRequest
 
 export type ConnectRepoGitHubInput = RepoParams & ConnectGitHubRepositoryRequest
+
+export type SetRepoGitHubRequiredChecksInput = RepoParams & SetGitHubRequiredChecksRequest
 
 export type RepoInviteTokenInput = {
   token: string

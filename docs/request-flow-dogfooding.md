@@ -17,7 +17,7 @@ to test native merge: it may receive only commits already merged on GitHub main.
 | Start interrupted after remote creation | Recover the same request and branch; no duplicate request or lost commits | CLI request workflow recovery test |
 | Push to another request | Target head advances; current branch identity and upstream remain unchanged | CLI request workflow recovery test |
 | Contributor and maintainer review | Draft visibility, checkout, diff, discussions, and access agree | Two-actor contribution integration |
-| Checks and revised heads | Only maintainers approve Scope runs; pending or failed checks block merge; a check result for an older head does not count; a new head needs fresh approval | Two-actor contribution integration and API request-check tests |
+| Checks and revised heads | Only maintainers approve checks, whether Scope runs or a push to GitHub; pending or failed checks block merge; a check result for an older head does not count; a new head needs fresh approval | Two-actor contribution integration and API request-check and GitHub check tests |
 | Auto merge | Authorization binds to a revision; cancellation, failed checks, and newer revisions stop it | Two-actor contribution integration and API auto-merge tests |
 | Native merge | Correct files reach main; private files remain private; conflicting main changes stop merge | Two-actor contribution integration and API auto-merge tests |
 | Close and interrupted responses | Inspect state before retry; authorized repeat close distinguishes closed/merged; concurrent close has one transition; unauthorized actors remain denied | Two-actor contribution integration, domain and API close tests |

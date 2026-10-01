@@ -155,6 +155,7 @@ async fn record_queued_request_check(state: &AppState, request_id: &str) -> Stri
                 .unwrap(),
             revisions,
             runs,
+            push_to_github: false,
         })
         .await
         .unwrap();
@@ -484,6 +485,7 @@ async fn configuration_failure_stays_stopped_if_the_evaluation_later_clears() {
             .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();
@@ -508,6 +510,7 @@ async fn configuration_failure_stays_stopped_if_the_evaluation_later_clears() {
             .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();

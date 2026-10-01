@@ -68,6 +68,20 @@ impl RepositoryStore {
         .await
     }
 
+    /// The connected link that holds a GitHub repository, if any.
+    pub async fn github_connection_for_github_repository(
+        &self,
+        github_repository_id: u64,
+    ) -> Result<Option<GitHubConnection>, PostgresError> {
+        Ok(load_connection(
+            self.db.as_ref(),
+            "WHERE connection.github_repository_id = $1 AND connection.status = 'Connected'",
+            [u64_to_i64(github_repository_id, "GitHub repository id")?.into()],
+        )
+        .await?
+        .map(|read| read.connection))
+    }
+
     /// Stores the link once the domain accepts it and, under the
     /// installation lock, `still_reachable` confirms with GitHub that the
     /// installation still reaches the repository. Returns the repository
@@ -240,6 +254,18 @@ async fn acquire_installation_lock<C: ConnectionTrait>(
     installation_id: u64,
 ) -> Result<(), PostgresError> {
     acquire_aggregate_lock(conn, "github-installation", &installation_id.to_string()).await
+}
+
+/// The repository's link, as its checks need it.
+pub(super) async fn repository_github_connection<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<Option<GitHubConnection>, PostgresError> {
+    Ok(
+        load_connection(conn, "WHERE connection.repo_id = $1", [repo_id.into()])
+            .await?
+            .map(|read| read.connection),
+    )
 }
 
 async fn load_connection<C: ConnectionTrait>(

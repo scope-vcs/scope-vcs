@@ -3,9 +3,9 @@ use crate::api::{
     RepositoryActor, RequestActivityPageResponse, RequestAudience, RequestCheckEvaluationState,
     RequestCheckResponse, RequestChecksResponse, RequestCloseResponse,
     RequestDiscussionMutationResponse, RequestDiscussionReplyMutationResponse, RequestEventPayload,
-    RequestInviteeMutationResponse, RequestListItemResponse, RequestMergeabilityResponse,
-    RequestMergeabilityStatus, RequestMutationResponse, RequestPermissionsResponse, RequestState,
-    RequestSummaryResponse,
+    RequestGitHubPushResponse, RequestGitHubPushState, RequestInviteeMutationResponse,
+    RequestListItemResponse, RequestMergeabilityResponse, RequestMergeabilityStatus,
+    RequestMutationResponse, RequestPermissionsResponse, RequestState, RequestSummaryResponse,
 };
 use crate::display::{short_oid, terminal_text};
 
@@ -344,14 +344,48 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
     for check in &checks.checks {
         lines.push(check_line(check));
     }
+    if let Some(push) = &checks.github_push {
+        lines.push(github_push_line(push));
+    }
     lines.push(format!(
         "Mergeability: {}",
         mergeability_label(&checks.mergeability)
     ));
     if checks.can_approve {
-        lines.push("Start these checks with `scope request checks --approve`.".to_string());
+        if checks.changes_github_workflows {
+            lines.push(
+                "This request changes GitHub workflow files. Approving runs them with your repository's secrets."
+                    .to_string(),
+            );
+        }
+        lines.push(if checks.github_push.is_some() {
+            "Send this revision to GitHub Actions with `scope request checks --approve`."
+                .to_string()
+        } else {
+            "Start these checks with `scope request checks --approve`.".to_string()
+        });
     }
     lines
+}
+
+/// Where the tested commit is on its way to the GitHub branch its workflows run on.
+fn github_push_line(push: &RequestGitHubPushResponse) -> String {
+    let branch = terminal_text(&push.branch);
+    let error = push.error.as_deref().map(terminal_text);
+    match (push.state, error) {
+        (RequestGitHubPushState::AwaitingApproval, _) => {
+            format!("GitHub: waits for approval before going to {branch}")
+        }
+        (RequestGitHubPushState::Sending, None) => format!("GitHub: sending to {branch}"),
+        (RequestGitHubPushState::Sending, Some(error)) => {
+            format!("GitHub: sending to {branch} again; the last attempt failed: {error}")
+        }
+        (RequestGitHubPushState::Sent, _) => format!("GitHub: sent to {branch}"),
+        (RequestGitHubPushState::Failed, None) => format!("GitHub: sending to {branch} failed"),
+        (RequestGitHubPushState::Failed, Some(error)) => {
+            format!("GitHub: sending to {branch} failed: {error}")
+        }
+    }
 }
 
 fn evaluation_state_label(state: Option<RequestCheckEvaluationState>) -> &'static str {

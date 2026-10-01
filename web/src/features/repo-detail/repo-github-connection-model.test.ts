@@ -12,24 +12,25 @@ const connection: GitHubConnectionDetailsResponse = {
 }
 
 test('the CI section describes each connection state', () => {
-  assert.deepEqual(githubConnectionView({ configured: false, connection: null }), { kind: 'unconfigured' })
+  assert.deepEqual(githubConnectionView({ configured: false, connection: null, required_checks: [] }), { kind: 'unconfigured' })
   // A stored link is not offered when the server can no longer use it.
-  assert.deepEqual(githubConnectionView({ configured: false, connection }), { kind: 'unconfigured' })
-  assert.deepEqual(githubConnectionView({ configured: true, connection: null }), { kind: 'not_connected' })
-  assert.deepEqual(githubConnectionView({ configured: true, connection }), {
+  assert.deepEqual(githubConnectionView({ configured: false, connection, required_checks: [] }), { kind: 'unconfigured' })
+  assert.deepEqual(githubConnectionView({ configured: true, connection: null, required_checks: [] }), { kind: 'not_connected' })
+  assert.deepEqual(githubConnectionView({ configured: true, connection, required_checks: [] }), {
     kind: 'connected',
     name: 'octo/checks',
     url: 'https://github.com/octo/checks',
     detail: 'Connected by @owner on Jan 01, 2026, 12:00 AM UTC.',
   })
   assert.equal(
-    githubConnectionView({ configured: true, connection: { ...connection, connected_by: null } }).kind,
+    githubConnectionView({ configured: true, connection: { ...connection, connected_by: null }, required_checks: [] }).kind,
     'connected',
   )
   assert.deepEqual(
     githubConnectionView({
       configured: true,
       connection: { ...connection, disconnected: { reason: 'repository_removed', at_unix: 1_767_312_000 } },
+      required_checks: [],
     }),
     {
       kind: 'disconnected',

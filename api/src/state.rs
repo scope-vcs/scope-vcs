@@ -24,6 +24,7 @@ pub struct AppState {
     pub(crate) clerk_users: crate::clerk_users::ClerkUsers,
     /// `None` when the Scope GitHub App is not configured.
     pub(crate) github: Option<Arc<crate::github::GitHubApp>>,
+    pub(crate) github_push_wakeup: Arc<tokio::sync::Notify>,
     pub(crate) invite_email_wakeup: Arc<tokio::sync::Notify>,
     pub(crate) invite_mailer: crate::invite_mailer::InviteMailer,
     pub(crate) metadata: MetadataStore,
@@ -67,6 +68,7 @@ impl AppState {
             clerk_user_deletion_wakeup: Arc::new(tokio::sync::Notify::new()),
             clerk_users: crate::clerk_users::ClerkUsers::from_env(),
             github: crate::github::GitHubApp::from_env()?.map(Arc::new),
+            github_push_wakeup: Arc::new(tokio::sync::Notify::new()),
             invite_email_wakeup: Arc::new(tokio::sync::Notify::new()),
             invite_mailer: crate::invite_mailer::InviteMailer::from_env(),
             metadata,
@@ -93,6 +95,8 @@ impl AppState {
         state.start_retention();
         state.start_request_ref_cleanup();
         state.start_invite_email_delivery();
+        state.start_github_pushes();
+        state.start_github_check_reconciliation();
         state.start_clerk_user_deletion();
         state.start_git_segment_recovery();
         best_effort_drain_pending_repo_storage_deletions(&state).await;
@@ -115,6 +119,7 @@ impl AppState {
             clerk_user_deletion_wakeup: Arc::new(tokio::sync::Notify::new()),
             clerk_users: crate::clerk_users::ClerkUsers::Scripted(Default::default()),
             github: None,
+            github_push_wakeup: Arc::new(tokio::sync::Notify::new()),
             invite_email_wakeup: Arc::new(tokio::sync::Notify::new()),
             invite_mailer: crate::invite_mailer::InviteMailer::Recording(Default::default()),
             metadata,

@@ -1,11 +1,12 @@
 //! The GitHub REST calls Scope makes, as the app, as one installation of it,
 //! or as a GitHub user during setup. User tokens are used for one setup and
-//! never stored.
+//! never stored; installation tokens are cached in memory only.
 
 use super::GitHubApp;
 use crate::{error::ApiError, persistence::unix_now};
 use jsonwebtoken::{Algorithm, Header};
 use reqwest::{Method, RequestBuilder, StatusCode};
+use scope_domain::requests::{GitHubCheckConclusion, GitHubCheckRun, GitHubCheckStatus};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -109,6 +110,63 @@ pub(crate) enum InstallationStatus {
 #[derive(Deserialize)]
 struct RepositoriesPage {
     repositories: Vec<GitHubRepository>,
+}
+
+#[derive(Deserialize)]
+struct CheckRunsPage {
+    check_runs: Vec<CheckRun>,
+}
+
+/// Status and conclusion stay text until mapped, so a value GitHub adds later
+/// drops one run instead of failing the whole read.
+#[derive(Deserialize)]
+struct CheckRun {
+    id: u64,
+    name: String,
+    status: String,
+    conclusion: Option<String>,
+    details_url: Option<String>,
+    html_url: Option<String>,
+}
+
+impl CheckRun {
+    fn into_domain(self, commit_oid: &str) -> Option<GitHubCheckRun> {
+        let status: Option<GitHubCheckStatus> = parse_enum(&self.status);
+        let conclusion: Option<Option<GitHubCheckConclusion>> = match &self.conclusion {
+            Some(conclusion) => parse_enum(conclusion).map(Some),
+            None => Some(None),
+        };
+        // Only a completed run has a conclusion.
+        let (Some(status), Some(conclusion)) = (status, conclusion) else {
+            return self.skip();
+        };
+        if (status == GitHubCheckStatus::Completed) != conclusion.is_some() {
+            return self.skip();
+        }
+        Some(GitHubCheckRun {
+            commit_oid: commit_oid.to_string(),
+            name: self.name,
+            github_check_run_id: self.id,
+            status,
+            conclusion,
+            // GitHub Actions points `details_url` at the job's logs.
+            details_url: self.details_url.or(self.html_url),
+        })
+    }
+
+    fn skip(&self) -> Option<GitHubCheckRun> {
+        tracing::warn!(
+            check_run_id = self.id,
+            status = self.status,
+            conclusion = ?self.conclusion,
+            "skipping a GitHub check run Scope cannot read"
+        );
+        None
+    }
+}
+
+fn parse_enum<T: DeserializeOwned>(value: &str) -> Option<T> {
+    serde_json::from_value(serde_json::Value::String(value.to_string())).ok()
 }
 
 impl GitHubApp {
@@ -243,6 +301,34 @@ impl GitHubApp {
         Ok(status)
     }
 
+    /// Every check run GitHub reports for a commit, re-runs included. `None`
+    /// when the installation or the repository can no longer be reached.
+    pub(crate) async fn commit_check_runs(
+        &self,
+        installation_id: u64,
+        full_name: &str,
+        commit_oid: &str,
+    ) -> Result<Option<Vec<GitHubCheckRun>>, ApiError> {
+        let Some(token) = self.installation_token(installation_id).await? else {
+            return Ok(None);
+        };
+        let Some(runs) = self
+            .pages::<CheckRunsPage, _>(
+                &token,
+                &format!("/repos/{full_name}/commits/{commit_oid}/check-runs?filter=all"),
+                |page| page.check_runs,
+            )
+            .await?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(
+            runs.into_iter()
+                .filter_map(|run| run.into_domain(commit_oid))
+                .collect(),
+        ))
+    }
+
     /// A token that acts as the installation. `None` when the installation
     /// no longer exists.
     pub(crate) async fn installation_token(
@@ -312,11 +398,12 @@ impl GitHubApp {
         items: impl Fn(P) -> Vec<T>,
     ) -> Result<Option<Vec<T>>, ApiError> {
         let mut all = Vec::new();
+        let separator = if path.contains('?') { '&' } else { '?' };
         for page in 1..=MAX_PAGES {
             let request = self
                 .request(
                     Method::GET,
-                    &format!("{path}?per_page={PAGE_SIZE}&page={page}"),
+                    &format!("{path}{separator}per_page={PAGE_SIZE}&page={page}"),
                 )
                 .bearer_auth(token);
             let Some(page) = send::<P>(request).await? else {

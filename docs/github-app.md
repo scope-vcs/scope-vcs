@@ -1,9 +1,10 @@
 # Scope GitHub App
 
 A maintainer connects a Scope repository to the project's GitHub repository
-by installing the Scope GitHub App. Later phases push request revisions to
-that repository and read the results of its workflows. One app serves every
-Scope repository on a server.
+by installing the Scope GitHub App. Scope then pushes each request revision
+to a branch of that repository, GitHub Actions runs the project's workflows
+on it, and the results decide whether the request can merge. One app serves
+every Scope repository on a server.
 
 ## Registering the app
 
@@ -24,9 +25,9 @@ Create a GitHub App owned by the organization that runs Scope, with:
   webhook secret.
 - **Repository permissions**: Contents read and write, Workflows read and
   write, Checks read, Actions read, Metadata read.
-- **Subscribed events**: Check run, Workflow run, Installation, Installation
-  repositories. Installation events are always delivered to GitHub Apps; the
-  other three are chosen on the registration page.
+- **Subscribed events**: Check run, Check suite, Workflow run, Installation,
+  Installation repositories. Installation events are always delivered to
+  GitHub Apps; the others are chosen on the registration page.
 - **Where can this app be installed**: any account.
 
 Generate a private key and a client secret on the app's page. The callback
@@ -83,6 +84,79 @@ the link. Uninstalling or suspending the app, or removing the repository from
 the installation, keeps the link as disconnected with the reason, and
 settings offer to reconnect. Unsuspending does not reconnect by itself.
 
+## Request checks
+
+A repository with a GitHub link, connected or disconnected, answers its
+request checks on GitHub. Any other repository runs its own `.scope/runs`
+workflows. A repository never uses both.
+
+### Running workflows on requests
+
+Add a push trigger for Scope's branches to each workflow that should run on
+requests. Existing triggers stay:
+
+```yaml
+on:
+  pull_request:
+  push:
+    branches: ['scope/**']
+```
+
+GitHub runs the workflow files in the pushed commit. Workflows that read
+`github.event.pull_request` find it empty on a branch push and need a
+fallback.
+
+### Required checks
+
+The Checks section of repository settings lists the check names GitHub must
+pass, the names GitHub's own branch protection uses, such as `ci / test`.
+`PUT /v1/repos/{owner}/{repo}/github/required-checks` replaces the list.
+Every push to a request records an evaluation with one GitHub check per
+required name and the head as the tested commit. Changing the list affects
+heads pushed afterwards.
+
+A request can merge when the latest run of each required name on the tested
+commit passed: success, neutral or skipped. A re-run on GitHub is a newer run
+and decides. A name with no run yet is pending, and the request view lists it
+as having no run. Runs on any other commit never count, so a rebase or amend
+needs its own green runs. Merge and auto-merge both wait for this.
+
+### Pushing revisions
+
+Scope pushes the tested commit to `scope/requests/<request id>` in the
+connected repository with `git push --force`, so a new revision replaces the
+branch. The installation token reaches git as an `http.extraHeader` through
+git's environment, never in its arguments or the URL. Merging, closing or
+deleting the request deletes the branch.
+
+A maintainer's push goes to GitHub at once, even when no check is required,
+so workflows still run. Anyone else's push waits until a maintainer approves
+the checks, because a pushed branch receives the repository's secrets. When
+the request changes files under `.github/workflows/`, the request view warns
+the maintainer before approving. With no required checks, a contributor's
+push is never sent.
+
+Pushes are jobs in `scope_github_pushes`, run by a background loop in the API
+with leases. A newer push of a branch replaces queued ones, and a branch is
+pushed by one process at a time. A failed push is tried again after 30
+seconds, then 2, 10 and 30 minutes, and then gives up. The request view shows
+whether the revision is waiting for approval, being sent, sent, or failed,
+and shows maintainers the last error. A push to a repository whose link is
+gone gives up at once.
+
+### Reading results
+
+GitHub's API is the source of results. A `check_run`, `check_suite` or
+`workflow_run` delivery for a commit some request was evaluated against makes
+Scope read `GET /repos/{owner}/{repo}/commits/{sha}/check-runs?filter=all`
+and replace what it stored for that commit. A background reconciler reads
+again every two minutes for started evaluations of open requests whose checks
+are still pending, which covers dropped deliveries. New results refresh open
+request views and wake auto-merge.
+
+When the link is disconnected or removed, evaluations that ask GitHub become
+configuration errors: they never pass and never wait forever.
+
 ## Webhooks
 
 `POST /v1/github/webhooks` checks `X-Hub-Signature-256` over the raw body
@@ -96,6 +170,9 @@ whether the installation still reaches it. If GitHub says access is intact,
 the event is ignored. Connecting and applying an installation event hold the
 same installation lock while they ask GitHub, so a removal that lands during
 a connect is either seen by the connect or finds the new link.
+
+Check deliveries for repositories or commits Scope does not test are
+acknowledged with 204, and a failed read is left to the reconciler.
 
 ## Local development
 

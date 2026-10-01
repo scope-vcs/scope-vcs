@@ -239,7 +239,7 @@ pub fn request_list_mergeability(
             ),
             RequestChecksOutcome::ConfigurationError => (
                 RequestMergeabilityStatus::ChecksConfigurationError,
-                Some("the request head's workflow configuration is invalid"),
+                Some("the request head's checks cannot run as configured"),
             ),
         },
     };

@@ -95,6 +95,7 @@ async fn record_no_checks(store: &MetadataStore, request_id: &str, head_oid: &st
             evaluation: RequestCheckEvaluation::no_checks(request_id, head_oid, now_unix).unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();
@@ -118,6 +119,7 @@ async fn the_first_evaluation_of_a_head_stands() {
             .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();
@@ -158,6 +160,7 @@ async fn a_request_that_can_no_longer_merge_records_no_evaluation() {
             evaluation: RequestCheckEvaluation::no_checks("request-a", HEAD_A_CURRENT, 10).unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap_err();
