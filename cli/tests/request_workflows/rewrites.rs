@@ -113,3 +113,76 @@ fn request_push_replaces_amended_history_unless_someone_else_pushed() {
     assert!(error["recovery"].is_null(), "{error}");
     assert_eq!(request_head(), someone_else);
 }
+
+#[test]
+fn request_push_without_a_seen_head_only_builds_on_the_current_head() {
+    let dir = TempDir::new("request-push-unseen");
+    create_repo_with_head(dir.path());
+    let base = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+    let bare = TempDir::new("request-push-unseen-bare");
+    run_git(bare.path(), ["init", "--bare"]);
+    run_git(
+        dir.path(),
+        [
+            "push",
+            bare.path().to_str().unwrap(),
+            "main",
+            "main:refs/heads/fix-one",
+        ],
+    );
+    // Someone else pushes to the request before this checkout ever fetches it.
+    let other = TempDir::new("request-push-unseen-other");
+    run_git(
+        other.path(),
+        [
+            "clone",
+            "--quiet",
+            "--branch",
+            "fix-one",
+            bare.path().to_str().unwrap(),
+            ".",
+        ],
+    );
+    fs::write(other.path().join("other.txt"), "someone else\n").unwrap();
+    run_git(other.path(), ["add", "other.txt"]);
+    commit_all(other.path(), "Someone else's change");
+    run_git(other.path(), ["push", "--quiet", "origin", "fix-one"]);
+    let someone_else = git_stdout(other.path(), ["rev-parse", "HEAD"]);
+
+    let mut detail = request();
+    detail["base_main_oid"] = base.clone().into();
+    detail["head_oid"] = someone_else.clone().into();
+    detail["mergeability"]["current_main_oid"] = base.clone().into();
+    detail["mergeability"]["request_head_oid"] = someone_else.clone().into();
+    let server = FixtureServer::with_request(detail);
+    let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
+    run_git(dir.path(), ["switch", "--quiet", "-c", "fix-one"]);
+    fs::write(dir.path().join("fix.txt"), "mine\n").unwrap();
+    run_git(dir.path(), ["add", "fix.txt"]);
+    commit_all(dir.path(), "My change");
+
+    let output = transport
+        .command(&server, dir.path())
+        .args([
+            "--json",
+            "request",
+            "push",
+            "--remote",
+            "scope",
+            "--request",
+            "req_one",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(5), "{output:?}");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let error: Value = serde_json::from_str(stderr.lines().last().unwrap()).unwrap();
+    assert_eq!(
+        error["message"],
+        "Someone else updated this request. Fetch it and try again."
+    );
+    assert_eq!(
+        git_stdout(bare.path(), ["rev-parse", "refs/heads/fix-one"]),
+        someone_else
+    );
+}

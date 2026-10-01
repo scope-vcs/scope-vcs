@@ -167,7 +167,12 @@ pub(super) fn push_request_branch(
         api.token,
     )?;
     ensure_public_request_paths_allowed(git_repo, &detail, &current_main_oid, &request_head_oid)?;
-    let expected_head_oid = last_seen_request_head(git_repo, &context.target, &detail.request)?;
+    let expected_head_oid = last_seen_request_head(
+        git_repo,
+        &context.target,
+        &detail.request,
+        &request_head_oid,
+    )?;
     // A failed push changed nothing, so its error needs no recovery receipt.
     push_request_head(
         &context.target,

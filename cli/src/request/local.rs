@@ -101,16 +101,29 @@ pub(super) fn push_request_head(
 }
 
 /// The request head this checkout last saw: its remote-tracking ref, which start,
-/// checkout, push and fetch keep current, or the head Scope reports when it has none.
+/// checkout, push and fetch keep current. Without one, the checkout has never seen
+/// the head Scope reports, so the push may only build on that head, never replace it.
 pub(super) fn last_seen_request_head(
     git_repo: &GitRepo,
     target: &ScopeRemote,
     request: &RequestSummaryResponse,
+    request_head_oid: &str,
 ) -> anyhow::Result<String> {
-    Ok(
-        scope_remote_head_oid(git_repo, &target.remote, &request.name)?
-            .unwrap_or_else(|| request.head_oid.as_str().to_string()),
-    )
+    if let Some(seen) = scope_remote_head_oid(git_repo, &target.remote, &request.name)? {
+        return Ok(seen);
+    }
+    let server_head = request.head_oid.as_str();
+    if try_run_git_in_repo(
+        git_repo,
+        &["merge-base", "--is-ancestor", server_head, request_head_oid],
+    )? {
+        return Ok(server_head.to_string());
+    }
+    Err(CliError::new(ErrorResponse::new(
+        ErrorCode::Conflict,
+        STALE_REQUEST_PUSH_ERROR,
+    ))
+    .into())
 }
 
 pub(super) fn request_id_for_context(
