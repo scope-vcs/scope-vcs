@@ -108,12 +108,14 @@ wait_while_monitoring() {
 "$@"
 command_status=$?
 if ((command_status == 0)); then
-  node --input-type=module - "$config_path" <<'NODE'
-import { readFileSync, writeFileSync } from "node:fs";
+  node --input-type=module - "$config_path" "$script_dir/write-release-marker.sh" <<'NODE'
+import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 const config = JSON.parse(readFileSync(process.argv[2], "utf8"));
-if (config.release.observationStartFile) writeFileSync(config.release.observationStartFile, `${Date.now()}\n`, { mode: 0o600 });
+if (config.release.observationStartFile) execFileSync("bash", [process.argv[3], config.release.observationStartFile]);
 NODE
-  if ! wait_while_monitoring "$observation_seconds"; then
+  command_status=$?
+  if ((command_status == 0)) && ! wait_while_monitoring "$observation_seconds"; then
     echo "availability monitor exited during the post-release observation" >&2
     command_status=1
   fi

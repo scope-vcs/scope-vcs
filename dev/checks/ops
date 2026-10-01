@@ -45,6 +45,7 @@ node --test .github/scripts/railway-read.test.mjs
 node --test .github/scripts/railway-retry.test.mjs
 node --test .github/scripts/staging-railway-token.test.mjs
 node --test .github/scripts/release-availability.test.mjs
+bash -n .github/scripts/write-release-marker.sh
 node --test .github/scripts/release-cutover-journal.test.mjs
 node --test .github/scripts/recovery-preparation-trust.test.mjs
 node --test .github/scripts/release-selection.test.mjs

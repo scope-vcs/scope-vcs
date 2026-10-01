@@ -105,12 +105,12 @@ apply_cutover() {
 
 mark_maintenance_start() {
   if [[ -n "${SCOPE_RELEASE_MAINTENANCE_START_FILE:-}" && ! -e "$SCOPE_RELEASE_MAINTENANCE_START_FILE" ]]; then
-    date +%s%3N > "$SCOPE_RELEASE_MAINTENANCE_START_FILE"
+    bash .github/scripts/write-release-marker.sh "$SCOPE_RELEASE_MAINTENANCE_START_FILE"
   fi
 }
 
 mark_maintenance_end() {
   if [[ -n "${SCOPE_RELEASE_MAINTENANCE_END_FILE:-}" ]]; then
-    date +%s%3N > "$SCOPE_RELEASE_MAINTENANCE_END_FILE"
+    bash .github/scripts/write-release-marker.sh "$SCOPE_RELEASE_MAINTENANCE_END_FILE"
   fi
 }
