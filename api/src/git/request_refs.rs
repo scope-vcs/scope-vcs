@@ -15,7 +15,10 @@ use crate::{
 use scope_domain::{
     content::SourceBlob,
     repository::{Repository, RepositoryIncarnation},
-    requests::{Request, RequestAudience, canonical_request_ref},
+    requests::{
+        Request, RequestAudience, RequestRevisionGitFacts, canonical_request_ref,
+        request_base_after_revision,
+    },
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{
@@ -44,8 +47,6 @@ pub(crate) const REQUEST_REF_DELETE_ERROR: &str = "Scope does not accept request
 pub(crate) const REQUEST_REF_SINGLE_UPDATE_ERROR: &str =
     "Scope accepts exactly one request ref update";
 pub(crate) const REQUEST_REF_COMMIT_ERROR: &str = "Scope request refs must point at commits";
-pub(crate) const REQUEST_REF_FAST_FORWARD_ERROR: &str =
-    "Scope rejects non-fast-forward request pushes";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RequestRefUpdate {
@@ -262,10 +263,6 @@ while read old new ref; do
     echo "{REQUEST_REF_COMMIT_ERROR}" >&2
     exit 1
   fi
-  if [ "$old" != "{EMPTY_GIT_OID}" ] && ! git merge-base --is-ancestor "$old" "$new"; then
-    echo "{REQUEST_REF_FAST_FORWARD_ERROR}" >&2
-    exit 1
-  fi
 done
 if [ "$count" -ne 1 ]; then
   echo "{REQUEST_REF_SINGLE_UPDATE_ERROR}" >&2
@@ -279,6 +276,7 @@ fi
 pub(crate) struct PersistedRequestRef {
     pub(crate) previous_head: Option<String>,
     pub(crate) git_snapshot: SourceBlob,
+    pub(crate) git_facts: RequestRevisionGitFacts,
     pub(crate) fence: scope_postgres::db::ContentRefFence,
 }
 
@@ -292,21 +290,24 @@ pub(crate) async fn persist_request_ref_to_store(
     let path = staging_repo.to_path_buf();
     let base_oid = request.base_main_oid.clone();
     let head_oid = update.new_head_oid.clone();
-    let audience = request.audience;
-    let accepted_main_oid = repo.git_head.as_ref().map(|head| head.head_oid.clone());
-    let snapshot_base = crate::git::blocking::run(move || {
+    crate::git::blocking::run(move || {
         ensure_request_ref_oid_is_commit(&path, &head_oid)?;
-        ensure_request_ref_descends_from_base(&path, &base_oid, &head_oid)?;
-        Ok(
-            thin_snapshot_base(audience, &base_oid, accepted_main_oid.as_deref(), &path)?
-                .map(str::to_string),
-        )
+        ensure_request_ref_descends_from_base(&path, &base_oid, &head_oid)
     })
     .await?;
-    if request.audience == RequestAudience::Public {
-        ensure_public_request_ref_is_public_safe(repo, state, staging_repo, &update.new_head_oid)
-            .await?;
-    }
+    let accepted_main_oid = repo.git_head.as_ref().map(|head| head.head_oid.clone());
+    let main_oid = match request.audience {
+        RequestAudience::Public => Some(
+            ensure_public_request_ref_is_public_safe(
+                repo,
+                state,
+                staging_repo,
+                &update.new_head_oid,
+            )
+            .await?,
+        ),
+        RequestAudience::Private => accepted_main_oid.clone(),
+    };
     let incarnation = repo.incarnation();
     let prepared = {
         let state = state.clone();
@@ -321,7 +322,10 @@ pub(crate) async fn persist_request_ref_to_store(
                 &path,
                 &request,
                 &update,
-                snapshot_base.as_deref(),
+                RequestMainTips {
+                    accepted: accepted_main_oid.as_deref(),
+                    audience: main_oid.as_deref(),
+                },
             )
         })
         .await?
@@ -330,6 +334,7 @@ pub(crate) async fn persist_request_ref_to_store(
         store_lock,
         previous_head,
         git_snapshot,
+        git_facts,
         snapshot_bytes,
     } = prepared;
     let fence = match state
@@ -374,6 +379,7 @@ pub(crate) async fn persist_request_ref_to_store(
     Ok(PersistedRequestRef {
         previous_head,
         git_snapshot,
+        git_facts,
         fence,
     })
 }
@@ -382,7 +388,15 @@ struct PreparedRequestRef {
     store_lock: locks::GitLockFile,
     previous_head: Option<String>,
     git_snapshot: SourceBlob,
+    git_facts: RequestRevisionGitFacts,
     snapshot_bytes: Vec<u8>,
+}
+
+/// Main tips a request push is read against: accepted Git main, which thin private
+/// snapshots are based on, and the main view of the request's audience.
+struct RequestMainTips<'a> {
+    accepted: Option<&'a str>,
+    audience: Option<&'a str>,
 }
 
 /// A private request may omit its base only when that commit is in accepted Git main.
@@ -418,7 +432,7 @@ fn prepare_request_ref_snapshot(
     staging_repo: &FsPath,
     request: &Request,
     update: &RequestRefUpdate,
-    snapshot_base: Option<&str>,
+    main_tips: RequestMainTips<'_>,
 ) -> Result<PreparedRequestRef, ApiError> {
     let store_lock = acquire_request_ref_store_lock(state, incarnation)?;
     let store_repo = ensure_request_ref_store_repo_locked(state, incarnation)?;
@@ -433,10 +447,22 @@ fn prepare_request_ref_snapshot(
     let logical_old_head = update
         .old_head_oid
         .as_deref()
-        .or(Some(request.head_oid.as_str()));
-    validate_pushed_commit_range(staging_repo, logical_old_head, &update.new_head_oid)?;
-    ensure_request_ref_store_head_matches_push(expected_stored_head, logical_old_head)?;
-    ensure_request_ref_is_fast_forward(staging_repo, logical_old_head, &update.new_head_oid)?;
+        .unwrap_or(request.head_oid.as_str());
+    validate_pushed_commit_range(staging_repo, Some(logical_old_head), &update.new_head_oid)?;
+    ensure_request_ref_store_head_matches_push(expected_stored_head, Some(logical_old_head))?;
+    let git_facts = request_revision_git_facts(
+        staging_repo,
+        &request.base_main_oid,
+        logical_old_head,
+        &update.new_head_oid,
+        main_tips.audience,
+    )?;
+    let snapshot_base = thin_snapshot_base(
+        request.audience,
+        request_base_after_revision(request, &git_facts),
+        main_tips.accepted,
+        staging_repo,
+    )?;
     let refspec = format!("+{}:{}", update.request_ref, update.request_ref);
     run_git(
         Some(&store_repo),
@@ -455,6 +481,7 @@ fn prepare_request_ref_snapshot(
         store_lock,
         previous_head,
         git_snapshot,
+        git_facts,
         snapshot_bytes,
     })
 }
@@ -472,25 +499,59 @@ fn ensure_request_ref_descends_from_base(
     ))
 }
 
-fn ensure_request_ref_is_fast_forward(
+/// Reads where a new head stands against the old head and against `main_oid`, the tip of
+/// the request's main view. A push may rebase or amend, so the old head need not be kept.
+fn request_revision_git_facts(
     repo: &FsPath,
-    old_head_oid: Option<&str>,
+    base_oid: &str,
+    old_head_oid: &str,
     new_head_oid: &str,
-) -> Result<(), ApiError> {
-    let Some(old_head_oid) = old_head_oid else {
-        return Ok(());
-    };
-    if git_is_ancestor(
+    main_oid: Option<&str>,
+) -> Result<RequestRevisionGitFacts, ApiError> {
+    let contains_old_head = git_is_ancestor(
         repo,
         old_head_oid,
         new_head_oid,
-        "checking request branch fast-forward",
-    )? {
-        return Ok(());
+        "checking whether the request push kept its old head",
+    )?;
+    let contained_main_oid = match main_oid {
+        Some(main_oid) if request_ref_oid_is_commit(repo, main_oid)? => {
+            git_merge_base(repo, main_oid, new_head_oid)?
+        }
+        _ => None,
+    };
+    let contained_main_descends_from_base = match contained_main_oid.as_deref() {
+        Some(contained_main_oid) => git_is_ancestor(
+            repo,
+            base_oid,
+            contained_main_oid,
+            "checking request main against its recorded base",
+        )?,
+        None => false,
+    };
+    Ok(RequestRevisionGitFacts {
+        contains_old_head,
+        contained_main_oid,
+        contained_main_descends_from_base,
+    })
+}
+
+fn git_merge_base(repo: &FsPath, left: &str, right: &str) -> Result<Option<String>, ApiError> {
+    const ACTION: &str = "reading the request head's merge base with main";
+    let output = run_git_output(Some(repo), &["merge-base", left, right], ACTION)?;
+    match output.status.code() {
+        Some(0) => Ok(Some(
+            String::from_utf8(output.stdout)
+                .map_err(ApiError::bad_request)?
+                .trim()
+                .to_string(),
+        )),
+        Some(1) => Ok(None),
+        _ => Err(ApiError::infrastructure_unavailable(format!(
+            "{ACTION}: {}",
+            crate::git::command::truncated_git_stderr(&output.stderr).trim(),
+        ))),
     }
-    Err(ApiError::conflict(
-        "request branch update must be a fast-forward; fetch and rebase",
-    ))
 }
 
 fn ensure_request_ref_oid_is_commit(repo: &FsPath, oid: &str) -> Result<(), ApiError> {

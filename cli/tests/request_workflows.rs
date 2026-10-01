@@ -4,6 +4,9 @@ mod pull;
 #[cfg(unix)]
 #[path = "request_workflows/recovery.rs"]
 mod recovery;
+#[cfg(unix)]
+#[path = "request_workflows/rewrites.rs"]
+mod rewrites;
 mod support;
 
 use axum::{
@@ -601,6 +604,75 @@ impl FixtureServer {
     }
     fn command(&self, cwd: &std::path::Path) -> Command {
         self.server.command(cwd)
+    }
+}
+
+/// Adds a `scope` remote for the fixture server and runs the CLI with a Git shim that
+/// sends that remote's transport to a local bare repository.
+#[cfg(unix)]
+struct BareRepoTransport {
+    shim: TempDir,
+    public: String,
+    permissioned: String,
+    file_url: String,
+}
+
+#[cfg(unix)]
+impl BareRepoTransport {
+    fn new(server: &FixtureServer, checkout: &std::path::Path, bare: &std::path::Path) -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let public = format!("{}/git/public/owner/repo", server.server.api_url);
+        let permissioned = format!("{}/git/permissioned/owner/repo", server.server.api_url);
+        run_git(checkout, ["remote", "add", "scope", &public]);
+        run_git(
+            checkout,
+            ["remote", "set-url", "--push", "scope", &permissioned],
+        );
+        let shim = TempDir::new("request-git-transport");
+        let shim_path = shim.path().join("git");
+        fs::write(
+            &shim_path,
+            r#"#!/bin/bash
+args=()
+for arg in "$@"; do
+  if [[ "$arg" == "$SCOPE_TEST_PUBLIC_URL" || "$arg" == "$SCOPE_TEST_PERMISSIONED_URL" ]]; then
+    args+=("$SCOPE_TEST_FILE_URL")
+  else
+    args+=("$arg")
+  fi
+done
+exec "$SCOPE_TEST_REAL_GIT" "${args[@]}"
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&shim_path, fs::Permissions::from_mode(0o700)).unwrap();
+        Self {
+            shim,
+            public,
+            permissioned,
+            file_url: reqwest::Url::from_directory_path(bare).unwrap().to_string(),
+        }
+    }
+
+    fn command(&self, server: &FixtureServer, cwd: &std::path::Path) -> Command {
+        let existing_path = std::env::var_os("PATH").unwrap();
+        let real_git = std::env::split_paths(&existing_path)
+            .map(|dir| dir.join("git"))
+            .find(|path| path.is_file())
+            .unwrap();
+        let test_path = std::env::join_paths(
+            std::iter::once(self.shim.path().to_path_buf())
+                .chain(std::env::split_paths(&existing_path)),
+        )
+        .unwrap();
+        let mut command = server.command(cwd);
+        command
+            .env("PATH", test_path)
+            .env("SCOPE_TEST_REAL_GIT", real_git)
+            .env("SCOPE_TEST_PUBLIC_URL", &self.public)
+            .env("SCOPE_TEST_PERMISSIONED_URL", &self.permissioned)
+            .env("SCOPE_TEST_FILE_URL", &self.file_url);
+        command
     }
 }
 

@@ -60,8 +60,9 @@ const CONTRIBUTIONS: &str = r#"
         VALUES ('event', 'authored', 'leaver', 'Closed',
             2, jsonb_build_object('Closed', jsonb_build_object('head_oid', repeat('b', 40))), 3);
     INSERT INTO scope_request_revisions (id, request_id, position, actor_user_id, old_head_oid,
-        new_head_oid, git_snapshot, created_at_unix)
-        VALUES ('revision', 'open', 1, 'leaver', repeat('a', 40), repeat('b', 40), '{}', 2);
+        new_head_oid, base_main_oid, rewrote_history, git_snapshot, created_at_unix)
+        VALUES ('revision', 'open', 1, 'leaver', repeat('a', 40), repeat('b', 40),
+            repeat('a', 40), FALSE, '{}', 2);
     INSERT INTO scope_request_discussions (id, request_id, opened_position, last_activity_position,
         author_user_id, body_markdown, status, client_discussion_id, created_at_unix)
         VALUES ('discussion', 'merged', 1, 2, 'leaver', 'Looks good', 'Open', 'client', 2);

@@ -2,16 +2,17 @@ use crate::api::ApiSession;
 use crate::display::short_oid;
 use crate::{
     api::{RepoSummaryResponse, RequestSummaryResponse, get_repo, list_requests},
+    error::CliError,
     git_repo::{
-        GitRepo, branch_config_value, current_branch, fetch_scope_remote_with_bearer,
-        push_head_to_ref_with_bearer, run_git_in_repo, scope_remote_head_oid,
-        set_branch_config_value, try_run_git_in_repo,
+        GitRepo, StaleRefLease, branch_config_value, current_branch,
+        fetch_scope_remote_with_bearer, push_head_to_ref_with_bearer, run_git_in_repo,
+        scope_remote_head_oid, set_branch_config_value, try_run_git_in_repo,
     },
     git_transport::ScopeRemote,
     push::DEFAULT_SCOPE_BRANCH,
 };
 use anyhow::{Context, bail};
-use scope_api_contract::RequestAudience;
+use scope_api_contract::{ErrorCode, ErrorResponse, RequestAudience};
 
 const REQUEST_REMOTE_KEY: &str = "scopeRequestRemote";
 const REQUEST_ID_KEY: &str = "scopeRequestId";
@@ -66,10 +67,15 @@ pub(super) fn refresh_main_projection(
         .context("Scope main projection did not produce a local remote ref")
 }
 
+const STALE_REQUEST_PUSH_ERROR: &str = "Someone else updated this request. Fetch it and try again.";
+
+/// Pushes `request_head_oid`, which may rebase or amend the request, only while Scope
+/// still holds `expected_head_oid`, the request head this checkout last saw.
 pub(super) fn push_request_head(
     target: &ScopeRemote,
     session_token: &str,
     request_head_oid: &str,
+    expected_head_oid: &str,
     request_id: &str,
     request_name: &str,
 ) -> anyhow::Result<()> {
@@ -78,9 +84,33 @@ pub(super) fn push_request_head(
         &target.permissioned_url,
         request_head_oid,
         &request_ref,
+        expected_head_oid,
         session_token,
     )
-    .with_context(|| format!("push request branch for {request_id}"))
+    .map_err(|error| {
+        if error.is::<StaleRefLease>() {
+            CliError::new(ErrorResponse::new(
+                ErrorCode::Conflict,
+                STALE_REQUEST_PUSH_ERROR,
+            ))
+            .into()
+        } else {
+            error.context(format!("push request branch for {request_id}"))
+        }
+    })
+}
+
+/// The request head this checkout last saw: its remote-tracking ref, which start,
+/// checkout, push and fetch keep current, or the head Scope reports when it has none.
+pub(super) fn last_seen_request_head(
+    git_repo: &GitRepo,
+    target: &ScopeRemote,
+    request: &RequestSummaryResponse,
+) -> anyhow::Result<String> {
+    Ok(
+        scope_remote_head_oid(git_repo, &target.remote, &request.name)?
+            .unwrap_or_else(|| request.head_oid.as_str().to_string()),
+    )
 }
 
 pub(super) fn request_id_for_context(

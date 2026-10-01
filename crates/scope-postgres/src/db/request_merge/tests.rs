@@ -13,7 +13,9 @@ use scope_domain::{
         git::{GitHead, GitPackSpan},
         updates::RequestMergeOrigin,
     },
-    requests::{RecordRequestRevisionInput, RequestCheckEvaluation, RequestState},
+    requests::{
+        RecordRequestRevisionInput, RequestCheckEvaluation, RequestRevisionGitFacts, RequestState,
+    },
     reviewed_updates::content::{
         ReviewedContentChange, ReviewedUpdateInput, apply_reviewed_update_to_repo,
     },
@@ -275,6 +277,11 @@ async fn merge_store() -> super::super::MetadataStore {
                 expected_old_head_oid: Some("head".into()),
                 new_head_oid: REQUEST_HEAD.into(),
                 git_snapshot: source_blob(REQUEST_HEAD),
+                git_facts: RequestRevisionGitFacts {
+                    contains_old_head: true,
+                    contained_main_oid: None,
+                    contained_main_descends_from_base: false,
+                },
                 event_id: "event_merge_revision".into(),
                 body: None,
                 now_unix: 5,

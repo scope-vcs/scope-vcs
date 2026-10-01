@@ -45,9 +45,10 @@ pub use discussions::{
 mod lifecycle;
 pub use lifecycle::{
     CloseRequestInput, CloseRequestMutation, RecordRequestRevisionInput,
-    RecordWorkingRequestUploadInput, RequestRevisionMutation, StartRequestFacts, StartRequestInput,
-    StartRequestMutation, WorkingRequestUploadMutation, close_request, record_request_revision,
-    record_working_request_upload, start_request, validate_request_name,
+    RecordWorkingRequestUploadInput, RequestRevisionGitFacts, RequestRevisionMutation,
+    StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
+    close_request, record_request_revision, record_working_request_upload,
+    request_base_after_revision, start_request, validate_request_name,
     validate_start_request_audience,
 };
 mod invitees;

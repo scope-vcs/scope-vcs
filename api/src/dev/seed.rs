@@ -40,8 +40,8 @@ use scope_domain::{
     repository::{RepoLifecycleState, Repository},
     requests::{
         EditRequestIdentityInput, RecordRequestRevisionInput, RecordWorkingRequestUploadInput,
-        RequestActorRole, RequestAudience, StartRequestFacts, StartRequestInput,
-        canonical_request_ref, edit_request_identity, record_request_revision,
+        RequestActorRole, RequestAudience, RequestRevisionGitFacts, StartRequestFacts,
+        StartRequestInput, canonical_request_ref, edit_request_identity, record_request_revision,
         record_working_request_upload, start_request,
     },
 };
@@ -543,6 +543,12 @@ fn seed_owner_request(
                 expected_old_head_oid: Some(current_head_oid),
                 new_head_oid: revision.head_oid.clone(),
                 git_snapshot: revision.snapshot,
+                // Seeded revisions extend their request on top of its base.
+                git_facts: RequestRevisionGitFacts {
+                    contains_old_head: true,
+                    contained_main_oid: None,
+                    contained_main_descends_from_base: false,
+                },
                 event_id,
                 body: Some(revision.note.to_string()),
                 now_unix: now_unix + 3 + index as u64,

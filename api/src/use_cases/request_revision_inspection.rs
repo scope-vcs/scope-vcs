@@ -133,6 +133,8 @@ fn git_mode(mode: &str) -> Option<String> {
     (mode != "000000").then(|| mode.to_string())
 }
 
+/// A revision's commits follow `commits_after_oid`, never the old head of a push that
+/// rewrote history: the revision's repository only holds the new head's history.
 pub(crate) fn commit_belongs_to_revision(
     raw_repo: &FsPath,
     revision: &RequestRevision,
@@ -148,7 +150,7 @@ pub(crate) fn commit_belongs_to_revision(
     Ok(!git_is_ancestor(
         raw_repo,
         commit_oid,
-        &revision.old_head_oid,
+        revision.commits_after_oid(),
         ACTION,
     )?)
 }

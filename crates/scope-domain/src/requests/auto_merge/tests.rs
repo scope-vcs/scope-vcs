@@ -49,6 +49,8 @@ fn revision(head_oid: &str) -> RequestRevision {
         actor_user_id: Some("author".into()),
         old_head_oid: "base".into(),
         new_head_oid: head_oid.into(),
+        base_main_oid: "base".into(),
+        rewrote_history: false,
         git_snapshot: open_request().git_snapshot.unwrap(),
         created_at_unix: 2,
     }

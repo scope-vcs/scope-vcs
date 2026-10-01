@@ -1,5 +1,5 @@
 use super::*;
-use scope_domain::requests::RecordRequestRevisionInput;
+use scope_domain::requests::{RecordRequestRevisionInput, RequestRevisionGitFacts};
 
 const REQUEST_HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -234,6 +234,11 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
                 expected_old_head_oid: Some(REQUEST_HEAD.to_string()),
                 new_head_oid: revision_head.to_string(),
                 git_snapshot: snapshot,
+                git_facts: RequestRevisionGitFacts {
+                    contains_old_head: true,
+                    contained_main_oid: None,
+                    contained_main_descends_from_base: false,
+                },
                 event_id: "attention-incoming-revision".to_string(),
                 body: None,
                 now_unix: 50,

@@ -85,6 +85,16 @@ turn a branch that already holds commits into a request, run it with
 contain Scope's main. When a push to main carries an open request's head, Scope
 records that request as merged.
 
+`scope request push` also updates a request after you rebase or amend it. The
+push replaces the request head only if Scope still has the head this checkout
+last saw. If someone else pushed to the request since then, the push stops with
+"Someone else updated this request. Fetch it and try again." Run `scope pull`,
+bring their commits into your branch, and push again. A request branch must
+still contain the main commit it is based on. Each push moves that base forward
+to the newest main commit the branch contains. If public main moves before a
+public request merges, rebase onto it or merge it, then run
+`scope request push`.
+
 Maintainers can inspect requests and their checks from any directory by naming
 the repository explicitly. Checkout requires a local Git repository:
 
