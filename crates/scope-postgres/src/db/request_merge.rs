@@ -166,7 +166,7 @@ impl RequestStore {
                 &request.id,
                 &request.head_oid,
                 checks.evaluation.as_ref(),
-                &checks.run_states,
+                &checks.results,
             ) {
                 RequestAutoMergeReadiness::Ready => {}
                 RequestAutoMergeReadiness::Waiting(_) => {

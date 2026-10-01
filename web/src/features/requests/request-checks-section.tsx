@@ -1,15 +1,15 @@
 import type { RepoParams } from '@/api/types'
-import type {
-  RequestCheckResponse,
-  RequestChecksResponse,
-} from '@/api/types.generated'
+import type { RequestChecksResponse } from '@/api/types.generated'
 import { Link } from '@tanstack/react-router'
-import { runStatus } from '../runs/run-status'
 import { RunStatusIcon } from '../runs/run-status-icon'
+import { type RequestCheckRow, requestCheckRow } from './request-check-rows'
 import { requestCheckEvaluationNote } from './request-labels'
 import { CHECKS_SECTION_CLASS, RequestChecksPending } from './request-checks-pending'
 
-/** What the request head owes before it can merge: one row per workflow. */
+const LOGS_LINK_CLASS =
+  'font-mono text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline'
+
+/** What the request head owes before it can merge: one row per check. */
 export function RequestChecksSection({
   checks,
   error,
@@ -37,26 +37,15 @@ export function RequestChecksSection({
       {note ? <p className="mt-2 text-[13px] text-muted-foreground">{note}</p> : null}
       {checks?.checks.length ? (
         <ul className="mt-2.5 grid gap-1.5">
-          {checks.checks.map((check) => (
+          {checks.checks.map(requestCheckRow).map((row) => (
             <li
               className="flex min-w-0 items-center gap-2 text-[13px]"
-              key={check.workflow_path}
+              key={row.key}
             >
-              <RunStatusIcon state={checkState(check)} />
-              <span className="min-w-0 flex-1 truncate">{check.workflow_name}</span>
-              {check.run_id ? (
-                <Link
-                  className="font-mono text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                  params={{ ...params, runId: check.run_id }}
-                  to="/$owner/$repo/runs/$runId"
-                >
-                  {checkStateLabel(check)}
-                </Link>
-              ) : (
-                <span className="font-mono text-xs text-muted-foreground">
-                  {checkStateLabel(check)}
-                </span>
-              )}
+              <RunStatusIcon state={row.state} />
+              <span className="min-w-0 flex-1 truncate">{row.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{row.provider}</span>
+              <CheckLogs params={params} row={row} />
             </li>
           ))}
         </ul>
@@ -65,11 +54,29 @@ export function RequestChecksSection({
   )
 }
 
-/** A recorded check without a run is waiting, not passing. */
-function checkState(check: RequestCheckResponse) {
-  return check.run_state ?? 'pending'
-}
-
-function checkStateLabel(check: RequestCheckResponse) {
-  return check.run_state ? runStatus(check.run_state).label : 'not started'
+function CheckLogs({ params, row }: { params: RepoParams; row: RequestCheckRow }) {
+  if (!row.logs) {
+    return <span className="shrink-0 font-mono text-xs text-muted-foreground">{row.label}</span>
+  }
+  if ('runId' in row.logs) {
+    return (
+      <Link
+        className={`shrink-0 ${LOGS_LINK_CLASS}`}
+        params={{ ...params, runId: row.logs.runId }}
+        to="/$owner/$repo/runs/$runId"
+      >
+        {row.label}
+      </Link>
+    )
+  }
+  return (
+    <a
+      className={`shrink-0 ${LOGS_LINK_CLASS}`}
+      href={row.logs.href}
+      rel="noopener noreferrer"
+      target="_blank"
+    >
+      {row.label}
+    </a>
+  )
 }

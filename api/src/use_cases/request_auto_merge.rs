@@ -48,7 +48,7 @@ pub(crate) async fn view(
         &request.id,
         &request.head_oid,
         checks.evaluation.as_ref(),
-        &checks.run_states,
+        &checks.results,
     );
     Ok(RequestAutoMergeView {
         request,
@@ -163,7 +163,7 @@ async fn reconcile_claim(
         &claim.intent.request_id,
         &claim.intent.head_oid,
         checks.evaluation.as_ref(),
-        &checks.run_states,
+        &checks.results,
     ) {
         RequestAutoMergeReadiness::Waiting(_) => {
             return release(state, claim, now_unix, None).await;

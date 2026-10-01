@@ -330,13 +330,21 @@ export type RequestAutoMergeIntentResponse = { id: string, revision_id: string, 
 
 export type RequestAutoMergeResponse = { request_id: string, revision_id: string | null, head_oid: GitOid, intent: RequestAutoMergeIntentResponse | null, waiting_reason: string | null, can_enable: boolean, can_cancel: boolean, };
 
-export type RequestCheckResponse = { workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, };
+export type GitHubCheckStatus = "queued" | "in_progress" | "completed" | "waiting" | "requested" | "pending";
+
+export type GitHubCheckConclusion = "success" | "neutral" | "skipped" | "failure" | "cancelled" | "timed_out" | "action_required" | "stale" | "startup_failure";
+
+export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null, };
 
 export type RequestChecksResponse = { request_id: string, head_oid: GitOid, 
 /**
  * `None` while the head has no evaluation: nothing is known about its checks yet.
  */
-state: RequestCheckEvaluationState | null, message: string | null, checks: Array<RequestCheckResponse>, can_approve: boolean, mergeability: RequestMergeabilityResponse, };
+state: RequestCheckEvaluationState | null, message: string | null, checks: Array<RequestCheckResponse>, 
+/**
+ * Whether the viewer can start native runs that wait for a maintainer.
+ */
+can_approve: boolean, mergeability: RequestMergeabilityResponse, };
 
 export type RequestEventResponse = { id: string, position: number, 
 /**

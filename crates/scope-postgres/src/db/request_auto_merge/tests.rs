@@ -10,7 +10,7 @@ use scope_domain::{
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     content_ref::ContentRef,
     requests::{
-        RecordRequestRevisionInput, RequestAutoMergeIntentStatus, RequestCheck,
+        NativeRequestCheck, RecordRequestRevisionInput, RequestAutoMergeIntentStatus, RequestCheck,
         RequestCheckEvaluation, RequestCheckEvaluationState,
     },
     runs::{
@@ -539,13 +539,18 @@ jobs:
         .await
         .unwrap();
 
-    let mut check = RequestCheck::for_revision(&revision);
+    let mut check = NativeRequestCheck::for_revision(&revision);
     check.run_id = Some("run-check-evidence".into());
     store
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
-            evaluation: RequestCheckEvaluation::started("req_1", "a".repeat(40), vec![check], 6)
-                .unwrap(),
+            evaluation: RequestCheckEvaluation::started(
+                "req_1",
+                "a".repeat(40),
+                vec![RequestCheck::Native(check)],
+                6,
+            )
+            .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
         })

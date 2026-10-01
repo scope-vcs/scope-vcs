@@ -86,7 +86,9 @@ pub(crate) async fn list_requests(
     } else {
         current_main_oid_for_context(&state, &repo).await?
     };
-    let checks = crate::use_cases::request_checks::checks_outcomes(&state, &requests).await?;
+    let checks =
+        crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &requests)
+            .await?;
     let requests = requests
         .into_iter()
         .map(|request| {

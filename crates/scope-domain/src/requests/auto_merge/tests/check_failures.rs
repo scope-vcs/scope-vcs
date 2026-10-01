@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     content_ref::ContentRef,
-    requests::{RequestCheck, RequestEventPayload},
+    requests::RequestEventPayload,
     runs::{
         run::{Run, RunState},
         source::{RunSource, RunTrigger},
@@ -14,23 +14,19 @@ use crate::{
 fn configuration_error_only_stops_its_authorized_head() {
     let request = open_request();
     let intent = active_intent();
-    let check = RequestCheck {
-        workflow_path: "/.scope/runs/check.yml".into(),
-        workflow_name: "check".into(),
-        workflow_revision_digest: "c".repeat(64),
-        run_id: None,
-    };
     let evaluations = [
         RequestCheckEvaluation::no_checks("request_1", HEAD, 4).unwrap(),
-        RequestCheckEvaluation::awaiting_approval("request_1", HEAD, vec![check.clone()], 4)
-            .unwrap(),
+        RequestCheckEvaluation::awaiting_approval(
+            "request_1",
+            HEAD,
+            vec![native_check('c', None)],
+            4,
+        )
+        .unwrap(),
         RequestCheckEvaluation::started(
             "request_1",
             HEAD,
-            vec![RequestCheck {
-                run_id: Some("run_1".into()),
-                ..check
-            }],
+            vec![native_check('c', Some("run_1"))],
             4,
         )
         .unwrap(),

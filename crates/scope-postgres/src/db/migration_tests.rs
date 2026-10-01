@@ -13,6 +13,7 @@ mod fresh_schema;
 mod git_manifest_retirement;
 mod git_segment_schema;
 mod maintenance_cutover;
+mod provider_neutral_request_checks;
 mod public_request_check_source;
 mod repository_content_version;
 mod repository_invite_emails;
@@ -48,6 +49,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0062_request_run_source_base",
     "m0063_account_deletion",
     "m0064_repository_content_version",
+    "m0067_provider_neutral_request_checks",
 ];
 
 pub(super) async fn isolated_database() -> (

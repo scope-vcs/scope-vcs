@@ -5,17 +5,16 @@ use super::{
     generated_ids::generate_id,
     integer_columns::u64_to_i64,
     request_access::{ensure_user_exists, lock_request_repository},
+    request_checks::{evaluation_for_head, request_check_results},
     request_revision_rows::latest_revision_for_request,
     request_rows::{insert_request_event_row, request_by_id, save_request_row},
 };
 use crate::error::PostgresError;
-use scope_domain::{
-    requests::{
-        AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, RequestAutoMergeIntent,
-        RequestAutoMergeMutation, RequestAutoMergeStopReason, authorize_request_auto_merge,
-        cancel_request_auto_merge, stop_request_auto_merge, stop_request_auto_merge_for_check_run,
-    },
-    runs::run::RunState,
+use scope_domain::requests::{
+    AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, RequestAutoMergeIntent,
+    RequestAutoMergeMutation, RequestAutoMergeStopReason, RequestCheckEvaluation,
+    RequestCheckResults, authorize_request_auto_merge, cancel_request_auto_merge,
+    stop_request_auto_merge, stop_request_auto_merge_for_check_run,
 };
 use sea_orm::{
     ActiveModelTrait,
@@ -82,8 +81,8 @@ pub struct StopClaimedRequestAutoMergeCommand {
 
 #[derive(Clone, Debug)]
 pub struct RequestAutoMergeCheckState {
-    pub evaluation: Option<scope_domain::requests::RequestCheckEvaluation>,
-    pub run_states: Vec<(String, RunState)>,
+    pub evaluation: Option<RequestCheckEvaluation>,
+    pub results: RequestCheckResults,
 }
 
 impl RequestStore {
@@ -370,12 +369,12 @@ pub(super) async fn lock_active_auto_merge_for_run(
     let Some(stored) = lock_active_intent_for_request(tx, &request_id).await? else {
         return Ok(None);
     };
-    let state = request_auto_merge_check_state(tx, &stored.intent).await?;
-    if state
-        .evaluation
+    let evaluation =
+        evaluation_for_head(tx, &stored.intent.request_id, &stored.intent.head_oid).await?;
+    if evaluation
         .iter()
-        .flat_map(|evaluation| &evaluation.checks)
-        .any(|check| check.run_id.as_deref() == Some(run_id))
+        .flat_map(RequestCheckEvaluation::run_ids)
+        .any(|id| id == run_id)
     {
         Ok(Some(stored))
     } else {
@@ -393,8 +392,9 @@ pub(super) async fn request_id_for_check_run<C: ConnectionTrait>(
             r#"
             SELECT evaluation.request_id
               FROM scope_request_check_evaluations evaluation
-             WHERE evaluation.checks @>
-                   jsonb_build_array(jsonb_build_object('run_id', $1::text))
+             WHERE evaluation.checks @> jsonb_build_array(
+                   jsonb_build_object('provider', 'native', 'run_id', $1::text)
+               )
              LIMIT 1
             "#,
             [run_id.into()],
@@ -413,16 +413,7 @@ async fn lock_request_check_evidence(
     request_id: &str,
     head_oid: &str,
 ) -> Result<(), PostgresError> {
-    let evaluation = entities::request_check_evaluation::Entity::find_by_id((
-        request_id.to_string(),
-        head_oid.to_string(),
-    ))
-    .one(tx)
-    .await
-    .map_err(PostgresError::internal)?
-    .map(entities::request_check_evaluation::Model::try_into_domain)
-    .transpose()?;
-    let Some(evaluation) = evaluation else {
+    let Some(evaluation) = evaluation_for_head(tx, request_id, head_oid).await? else {
         return Ok(());
     };
     let mut run_ids = evaluation.run_ids().map(str::to_string).collect::<Vec<_>>();
@@ -547,35 +538,11 @@ pub(super) async fn request_auto_merge_check_state<C: sea_orm::ConnectionTrait>(
     conn: &C,
     intent: &RequestAutoMergeIntent,
 ) -> Result<RequestAutoMergeCheckState, PostgresError> {
-    let evaluation = entities::request_check_evaluation::Entity::find_by_id((
-        intent.request_id.clone(),
-        intent.head_oid.clone(),
-    ))
-    .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
-    .map(entities::request_check_evaluation::Model::try_into_domain)
-    .transpose()?;
-    let run_ids = evaluation
-        .iter()
-        .flat_map(|evaluation| evaluation.checks.iter())
-        .filter_map(|check| check.run_id.clone())
-        .collect::<Vec<_>>();
-    let run_states = if run_ids.is_empty() {
-        Vec::new()
-    } else {
-        entities::run::Entity::find()
-            .filter(entities::run::Column::Id.is_in(run_ids))
-            .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
-            .into_iter()
-            .map(|row| Ok((row.id.clone(), row.try_into_domain()?.state)))
-            .collect::<Result<_, PostgresError>>()?
-    };
+    let evaluation = evaluation_for_head(conn, &intent.request_id, &intent.head_oid).await?;
+    let results = request_check_results(conn, &intent.repo_id, &evaluation).await?;
     Ok(RequestAutoMergeCheckState {
         evaluation,
-        run_states,
+        results,
     })
 }
 

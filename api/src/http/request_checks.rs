@@ -15,12 +15,11 @@ use axum::{
     http::HeaderMap,
 };
 use scope_api_contract::{
-    RequestCheckEvaluationState, RequestCheckResponse, RequestChecksResponse,
-    RequestMergeabilityResponse,
+    RequestCheckResponse, RequestChecksResponse, RequestMergeabilityResponse,
 };
 use scope_domain::{
     repository::{RepoRecord, access::RepositoryAccess},
-    requests::{Request, request_mergeability},
+    requests::{Request, RequestCheck, RequestCheckResults, request_mergeability},
 };
 use scope_postgres::db::ApproveRequestChecksCommand;
 
@@ -81,7 +80,7 @@ async fn checks_response(
 ) -> Result<RequestChecksResponse, ApiError> {
     let RequestChecksView {
         evaluation,
-        run_states,
+        results,
         outcome,
     } = request_checks::readable_checks_view(state, repo, request).await?;
     let decision = request_mergeability(request, access, outcome);
@@ -91,27 +90,18 @@ async fn checks_response(
         request_head_oid: git_oid_response(request.head_oid.clone())?,
         reason: decision.reason.map(str::to_string),
     };
-    let (evaluation_state, message, checks) = match evaluation {
+    let (evaluation_state, message, checks, can_approve) = match evaluation {
         Some(evaluation) => (
             Some(evaluation.state.into()),
-            evaluation.message,
+            evaluation.message.clone(),
             evaluation
                 .checks
-                .into_iter()
-                .map(|check| RequestCheckResponse {
-                    workflow_path: check.workflow_path,
-                    workflow_name: check.workflow_name,
-                    run_state: check.run_id.as_deref().and_then(|run_id| {
-                        run_states
-                            .iter()
-                            .find(|(id, _)| id == run_id)
-                            .map(|(_, state)| (*state).into())
-                    }),
-                    run_id: check.run_id,
-                })
+                .iter()
+                .map(|check| check_response(check, &evaluation.tested_oid, &results))
                 .collect(),
+            evaluation.native_checks_await_approval() && access.is_maintainer(),
         ),
-        None => (None, None, Vec::new()),
+        None => (None, None, Vec::new(), false),
     };
     Ok(RequestChecksResponse {
         request_id: request.id.clone(),
@@ -119,8 +109,37 @@ async fn checks_response(
         state: evaluation_state,
         message,
         checks,
-        can_approve: evaluation_state == Some(RequestCheckEvaluationState::AwaitingApproval)
-            && access.is_maintainer(),
+        can_approve,
         mergeability,
     })
+}
+
+fn check_response(
+    check: &RequestCheck,
+    tested_oid: &str,
+    results: &RequestCheckResults,
+) -> RequestCheckResponse {
+    match check {
+        RequestCheck::Native(check) => RequestCheckResponse::Native {
+            workflow_path: check.workflow_path.clone(),
+            workflow_name: check.workflow_name.clone(),
+            run_id: check.run_id.clone(),
+            run_state: check.run_id.as_deref().and_then(|run_id| {
+                results
+                    .native_runs
+                    .iter()
+                    .find(|(id, _)| id == run_id)
+                    .map(|(_, state)| (*state).into())
+            }),
+        },
+        RequestCheck::GitHub { name } => {
+            let run = results.github.latest(tested_oid, name);
+            RequestCheckResponse::GitHub {
+                name: name.clone(),
+                status: run.map(|run| run.status.into()),
+                conclusion: run.and_then(|run| run.conclusion.map(Into::into)),
+                details_url: run.and_then(|run| run.details_url.clone()),
+            }
+        }
+    }
 }

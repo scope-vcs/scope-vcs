@@ -1,10 +1,11 @@
-//! What a request's head owes before it can merge: its evaluated workflow runs.
+//! What a request's head owes before it can merge: its evaluated checks.
 //!
-//! Every push evaluates workflows for that revision: public requests use the
-//! accepted main catalog; private requests carry workflows at their head. A maintainer's push
-//! starts the request-triggered runs at once; another contributor's push records
-//! them and waits for a maintainer to approve. The evaluation for the current head
-//! decides whether the request can merge.
+//! Every push evaluates the checks for that revision. A check is a workflow Scope
+//! runs natively or a check GitHub reports under a required name. Native workflows
+//! come from the accepted main catalog for public requests and from the head for
+//! private ones. A maintainer's push starts the native runs at once; another
+//! contributor's push records them and waits for a maintainer to approve. The
+//! evaluation for the current head decides whether the request can merge.
 
 use super::{Request, RequestState, limits::validate_required};
 use crate::{
@@ -19,24 +20,54 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod github;
 mod planning;
+pub use github::{GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus};
 pub use planning::RequestCheckPlan;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RequestCheckEvaluationState {
-    /// The evaluation selected no request-triggered workflow.
+    /// The evaluation selected no check.
     NoChecks,
-    /// The workflows are known; a maintainer has not started them.
+    /// The checks are known; a maintainer has not started them.
     AwaitingApproval,
-    /// Every check has a run.
+    /// Every native check has a run. A GitHub check needs nothing recorded here:
+    /// its results arrive for the tested commit once that commit reaches GitHub.
     Started,
     /// The selected workflow definitions could not be used.
     ConfigurationError,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RequestCheck {
+#[serde(tag = "provider")]
+pub enum RequestCheck {
+    #[serde(rename = "native")]
+    Native(NativeRequestCheck),
+    /// A check GitHub must report as passed on the tested commit.
+    #[serde(rename = "github")]
+    GitHub { name: String },
+}
+
+impl RequestCheck {
+    pub fn native(&self) -> Option<&NativeRequestCheck> {
+        match self {
+            Self::Native(check) => Some(check),
+            Self::GitHub { .. } => None,
+        }
+    }
+
+    fn native_mut(&mut self) -> Option<&mut NativeRequestCheck> {
+        match self {
+            Self::Native(check) => Some(check),
+            Self::GitHub { .. } => None,
+        }
+    }
+}
+
+/// A workflow Scope runs itself against the request head.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NativeRequestCheck {
     pub workflow_path: String,
     pub workflow_name: String,
     /// The compiled definition selected for the head, kept so approval starts exactly it.
@@ -44,7 +75,7 @@ pub struct RequestCheck {
     pub run_id: Option<String>,
 }
 
-impl RequestCheck {
+impl NativeRequestCheck {
     pub fn for_revision(revision: &WorkflowRevision) -> Self {
         Self {
             workflow_path: revision.workflow().path().as_str().to_string(),
@@ -108,6 +139,8 @@ impl RequestCheck {
 pub struct RequestCheckEvaluation {
     pub request_id: String,
     pub head_oid: String,
+    /// The commit whose results answer the checks. Native runs test the head itself.
+    pub tested_oid: String,
     pub state: RequestCheckEvaluationState,
     pub message: Option<String>,
     pub checks: Vec<RequestCheck>,
@@ -137,7 +170,12 @@ impl RequestCheckEvaluation {
         checks: Vec<RequestCheck>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
-        if checks.is_empty() || checks.iter().any(|check| check.run_id.is_some()) {
+        if checks.is_empty()
+            || checks
+                .iter()
+                .filter_map(RequestCheck::native)
+                .any(|check| check.run_id.is_some())
+        {
             return Err(DomainError::invalid_input(
                 "checks awaiting approval must exist and cannot have runs",
             ));
@@ -187,10 +225,11 @@ impl RequestCheckEvaluation {
         )
     }
 
-    /// A maintainer starts the recorded checks; each check receives its run in order.
+    /// A maintainer starts the recorded checks; each native check receives its run
+    /// in order.
     pub fn approve(&mut self, run_ids: Vec<String>, now_unix: u64) -> Result<(), DomainError> {
         self.ensure_awaiting_approval()?;
-        if run_ids.len() != self.checks.len() {
+        if run_ids.len() != self.native_checks().count() {
             return Err(DomainError::invalid_input(
                 "approval must start every recorded check",
             ));
@@ -200,7 +239,12 @@ impl RequestCheckEvaluation {
                 "request check approval cannot predate the evaluation",
             ));
         }
-        for (check, run_id) in self.checks.iter_mut().zip(run_ids) {
+        for (check, run_id) in self
+            .checks
+            .iter_mut()
+            .filter_map(RequestCheck::native_mut)
+            .zip(run_ids)
+        {
             check.run_id = Some(run_id);
         }
         ensure_every_check_started(&self.checks)?;
@@ -218,10 +262,25 @@ impl RequestCheckEvaluation {
         Ok(())
     }
 
+    /// Whether a maintainer has native runs to start.
+    pub fn native_checks_await_approval(&self) -> bool {
+        self.state == RequestCheckEvaluationState::AwaitingApproval
+            && self.native_checks().next().is_some()
+    }
+
+    pub fn native_checks(&self) -> impl Iterator<Item = &NativeRequestCheck> {
+        self.checks.iter().filter_map(RequestCheck::native)
+    }
+
     pub fn run_ids(&self) -> impl Iterator<Item = &str> {
+        self.native_checks()
+            .filter_map(|check| check.run_id.as_deref())
+    }
+
+    pub fn asks_github(&self) -> bool {
         self.checks
             .iter()
-            .filter_map(|check| check.run_id.as_deref())
+            .any(|check| matches!(check, RequestCheck::GitHub { .. }))
     }
 
     fn new(
@@ -237,15 +296,21 @@ impl RequestCheckEvaluation {
         validate_required("request id", &request_id)?;
         validate_git_oid("request check head", &head_oid)?;
         for check in &checks {
-            validate_required("check workflow path", &check.workflow_path)?;
-            validate_required("check workflow name", &check.workflow_name)?;
-            validate_sha256_hash(
-                "check workflow revision digest",
-                &check.workflow_revision_digest,
-            )?;
+            match check {
+                RequestCheck::Native(check) => {
+                    validate_required("check workflow path", &check.workflow_path)?;
+                    validate_required("check workflow name", &check.workflow_name)?;
+                    validate_sha256_hash(
+                        "check workflow revision digest",
+                        &check.workflow_revision_digest,
+                    )?;
+                }
+                RequestCheck::GitHub { name } => validate_required("check name", name)?,
+            }
         }
         Ok(Self {
             request_id,
+            tested_oid: head_oid.clone(),
             head_oid,
             state,
             message,
@@ -257,7 +322,12 @@ impl RequestCheckEvaluation {
 }
 
 fn ensure_every_check_started(checks: &[RequestCheck]) -> Result<(), DomainError> {
-    if checks.is_empty() || checks.iter().any(|check| check.run_id.is_none()) {
+    if checks.is_empty()
+        || checks
+            .iter()
+            .filter_map(RequestCheck::native)
+            .any(|check| check.run_id.is_none())
+    {
         return Err(DomainError::invalid_input(
             "started checks must exist and each needs a run",
         ));
@@ -266,10 +336,10 @@ fn ensure_every_check_started(checks: &[RequestCheck]) -> Result<(), DomainError
 }
 
 /// The outcome the checks impose on merging, from the evaluation for the request's
-/// current head and the states of the runs it started.
+/// current head and the results its checks have.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestChecksOutcome {
-    /// The head asks for nothing, or every run it asked for succeeded.
+    /// The head asks for nothing, or every check it asked for passed.
     Clear,
     /// No evaluation is recorded for the head, so nothing is known to have passed.
     NotEvaluated,
@@ -279,11 +349,27 @@ pub enum RequestChecksOutcome {
     ConfigurationError,
 }
 
+/// The results that answer recorded checks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequestCheckResults {
+    /// The states of the native runs the evaluations started.
+    pub native_runs: Vec<(String, RunState)>,
+    pub github: GitHubCheckResults,
+}
+
+/// What one check says on its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CheckVerdict {
+    Passed,
+    Pending,
+    Failed,
+}
+
 pub fn request_checks_outcome(
     request_id: &str,
     head_oid: &str,
     evaluation: Option<&RequestCheckEvaluation>,
-    run_states: &[(String, RunState)],
+    results: &RequestCheckResults,
 ) -> RequestChecksOutcome {
     let Some(evaluation) = evaluation.filter(|evaluation| {
         evaluation.request_id == request_id && evaluation.head_oid == head_oid
@@ -295,25 +381,39 @@ pub fn request_checks_outcome(
         RequestCheckEvaluationState::AwaitingApproval => RequestChecksOutcome::AwaitingApproval,
         RequestCheckEvaluationState::ConfigurationError => RequestChecksOutcome::ConfigurationError,
         RequestCheckEvaluationState::Started => {
+            if evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected {
+                return RequestChecksOutcome::ConfigurationError;
+            }
             let mut outcome = RequestChecksOutcome::Clear;
-            for run_id in evaluation.run_ids() {
-                let state = run_states
-                    .iter()
-                    .find(|(id, _)| id == run_id)
-                    .map(|(_, state)| *state);
-                match state {
-                    Some(RunState::Succeeded) => {}
-                    Some(state) if !state.is_terminal() => {
-                        if outcome == RequestChecksOutcome::Clear {
-                            outcome = RequestChecksOutcome::Pending;
-                        }
+            for check in &evaluation.checks {
+                let verdict = match check {
+                    RequestCheck::Native(check) => native_verdict(check, &results.native_runs),
+                    RequestCheck::GitHub { name } => {
+                        results.github.verdict(&evaluation.tested_oid, name)
                     }
-                    // A missing run can never succeed, so it blocks like a failure.
-                    Some(_) | None => return RequestChecksOutcome::Failed,
+                };
+                match verdict {
+                    CheckVerdict::Passed => {}
+                    CheckVerdict::Pending => outcome = RequestChecksOutcome::Pending,
+                    CheckVerdict::Failed => return RequestChecksOutcome::Failed,
                 }
             }
             outcome
         }
+    }
+}
+
+fn native_verdict(check: &NativeRequestCheck, runs: &[(String, RunState)]) -> CheckVerdict {
+    let state = check.run_id.as_deref().and_then(|run_id| {
+        runs.iter()
+            .find(|(id, _)| id == run_id)
+            .map(|(_, state)| *state)
+    });
+    match state {
+        Some(RunState::Succeeded) => CheckVerdict::Passed,
+        Some(state) if !state.is_terminal() => CheckVerdict::Pending,
+        // A missing run can never succeed, so it blocks like a failure.
+        Some(_) | None => CheckVerdict::Failed,
     }
 }
 
@@ -331,134 +431,4 @@ pub fn request_checks_start_immediately(request: &Request, actor_is_maintainer: 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::requests::fixtures::open_request;
-
-    const HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
-    fn check(name: &str, run_id: Option<&str>) -> RequestCheck {
-        RequestCheck {
-            workflow_path: format!("/.scope/runs/{name}.yml"),
-            workflow_name: name.to_string(),
-            workflow_revision_digest: "b".repeat(64),
-            run_id: run_id.map(str::to_string),
-        }
-    }
-
-    #[test]
-    fn approval_gives_every_recorded_check_its_run_in_order() {
-        let mut evaluation = RequestCheckEvaluation::awaiting_approval(
-            "req_1",
-            HEAD,
-            vec![check("checks", None), check("lint", None)],
-            10,
-        )
-        .unwrap();
-        assert!(evaluation.approve(vec!["run_a".into()], 11).is_err());
-        evaluation
-            .approve(vec!["run_a".into(), "run_b".into()], 11)
-            .unwrap();
-        assert_eq!(evaluation.state, RequestCheckEvaluationState::Started);
-        assert_eq!(evaluation.run_ids().collect::<Vec<_>>(), ["run_a", "run_b"]);
-        assert_eq!(evaluation.updated_at_unix, 11);
-        assert!(evaluation.approve(vec![], 12).is_err());
-        assert!(
-            RequestCheckEvaluation::started("req_1", HEAD, vec![check("checks", None)], 1).is_err()
-        );
-        assert!(RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![], 1).is_err());
-    }
-
-    #[test]
-    fn only_a_pushed_head_that_can_still_merge_is_evaluated_on_a_look() {
-        let pushed = open_request();
-        let awaits = |request: &Request| {
-            request_head_awaits_evaluation(request, RequestChecksOutcome::NotEvaluated)
-        };
-
-        assert!(awaits(&pushed));
-        assert!(!request_head_awaits_evaluation(
-            &pushed,
-            RequestChecksOutcome::Pending
-        ));
-        assert!(!awaits(&Request {
-            git_snapshot: None,
-            ..pushed.clone()
-        }));
-        assert!(!awaits(&Request {
-            closed_at_unix: Some(20),
-            ..pushed.clone()
-        }));
-        assert!(!awaits(&Request {
-            merged_at_unix: Some(20),
-            ..pushed
-        }));
-    }
-
-    #[test]
-    fn outcome_follows_the_current_head_and_its_runs() {
-        let mut request = open_request();
-        request.head_oid = HEAD.to_string();
-        let started = RequestCheckEvaluation::started(
-            &request.id,
-            HEAD,
-            vec![check("checks", Some("run_a")), check("lint", Some("run_b"))],
-            1,
-        )
-        .unwrap();
-        let outcome = |runs: &[(&str, RunState)]| {
-            let runs = runs
-                .iter()
-                .map(|(id, state)| (id.to_string(), *state))
-                .collect::<Vec<_>>();
-            request_checks_outcome(&request.id, HEAD, Some(&started), &runs)
-        };
-
-        assert_eq!(
-            request_checks_outcome(&request.id, HEAD, None, &[]),
-            RequestChecksOutcome::NotEvaluated
-        );
-        assert_eq!(
-            outcome(&[("run_a", RunState::Succeeded), ("run_b", RunState::Running)]),
-            RequestChecksOutcome::Pending
-        );
-        assert_eq!(
-            outcome(&[
-                ("run_a", RunState::Succeeded),
-                ("run_b", RunState::Succeeded)
-            ]),
-            RequestChecksOutcome::Clear
-        );
-        assert_eq!(
-            outcome(&[("run_a", RunState::Failed), ("run_b", RunState::Running)]),
-            RequestChecksOutcome::Failed
-        );
-        assert_eq!(
-            outcome(&[("run_a", RunState::Succeeded)]),
-            RequestChecksOutcome::Failed
-        );
-
-        let stale = RequestCheckEvaluation::awaiting_approval(
-            &request.id,
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            vec![check("checks", None)],
-            1,
-        )
-        .unwrap();
-        assert_eq!(
-            request_checks_outcome(&request.id, HEAD, Some(&stale), &[]),
-            RequestChecksOutcome::NotEvaluated
-        );
-        let waiting = RequestCheckEvaluation::awaiting_approval(
-            &request.id,
-            HEAD,
-            vec![check("checks", None)],
-            1,
-        )
-        .unwrap();
-        assert_eq!(
-            request_checks_outcome(&request.id, HEAD, Some(&waiting), &[]),
-            RequestChecksOutcome::AwaitingApproval
-        );
-    }
-}
+mod tests;

@@ -103,10 +103,10 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
         "request_id": "req_one", "head_oid": oid('b'), "state": "awaiting-approval",
         "message": null, "can_approve": true,
         "checks": [
-            {"workflow_path": "/.scope/runs/checks.yml", "workflow_name": "checks\u{001b}[31m",
-                "run_id": null, "run_state": null},
-            {"workflow_path": "/.scope/runs/lint.yml", "workflow_name": "lint",
-                "run_id": null, "run_state": null}
+            {"provider": "native", "workflow_path": "/.scope/runs/checks.yml",
+                "workflow_name": "checks\u{001b}[31m", "run_id": null, "run_state": null},
+            {"provider": "native", "workflow_path": "/.scope/runs/lint.yml",
+                "workflow_name": "lint", "run_id": null, "run_state": null}
         ],
         "mergeability": {
             "status": "ChecksAwaitingApproval", "current_main_oid": oid('a'),
@@ -123,8 +123,14 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
         rendered.contains("waiting for maintainer approval"),
         "{rendered}"
     );
-    assert!(rendered.contains("checks [31m · not started"), "{rendered}");
-    assert!(rendered.contains("lint · not started"), "{rendered}");
+    assert!(
+        rendered.contains("checks [31m · Scope · not started"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("lint · Scope · not started"),
+        "{rendered}"
+    );
     assert!(
         rendered.contains("Mergeability: checks are waiting for a maintainer to start them"),
         "{rendered}"
@@ -137,17 +143,24 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
 }
 
 #[test]
-fn started_checks_report_each_run_state_and_a_missing_run() {
+fn started_checks_report_each_provider_state_and_where_its_logs_are() {
     let checks: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "started",
         "message": null, "can_approve": false,
         "checks": [
-            {"workflow_path": "/.scope/runs/checks.yml", "workflow_name": "checks",
-                "run_id": "run_a", "run_state": "succeeded"},
-            {"workflow_path": "/.scope/runs/lint.yml", "workflow_name": "lint",
-                "run_id": "run_b", "run_state": "running"},
-            {"workflow_path": "/.scope/runs/docs.yml", "workflow_name": "docs",
-                "run_id": "run_c", "run_state": null}
+            {"provider": "native", "workflow_path": "/.scope/runs/checks.yml",
+                "workflow_name": "checks", "run_id": "run_a", "run_state": "succeeded"},
+            {"provider": "native", "workflow_path": "/.scope/runs/lint.yml",
+                "workflow_name": "lint", "run_id": "run_b", "run_state": "running"},
+            {"provider": "native", "workflow_path": "/.scope/runs/docs.yml",
+                "workflow_name": "docs", "run_id": "run_c", "run_state": null},
+            {"provider": "github", "name": "ci / test", "status": "completed",
+                "conclusion": "timed_out",
+                "details_url": "https://github.com/o/r/runs/1\u{001b}[31m"},
+            {"provider": "github", "name": "ci / lint", "status": "in_progress",
+                "conclusion": null, "details_url": null},
+            {"provider": "github", "name": "ci / docs", "status": null,
+                "conclusion": null, "details_url": null}
         ],
         "mergeability": {
             "status": "ChecksPending", "current_main_oid": oid('a'),
@@ -160,12 +173,27 @@ fn started_checks_report_each_run_state_and_a_missing_run() {
 
     assert!(rendered.contains("Checks: started"), "{rendered}");
     assert!(
-        rendered.contains("checks · succeeded (run_a)"),
+        rendered.contains("checks · Scope · succeeded (run_a)"),
         "{rendered}"
     );
-    assert!(rendered.contains("lint · running (run_b)"), "{rendered}");
     assert!(
-        rendered.contains("docs · run is gone (run_c)"),
+        rendered.contains("lint · Scope · running (run_b)"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("docs · Scope · run is gone (run_c)"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("ci / test · GitHub · timed out (https://github.com/o/r/runs/1 [31m)"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("ci / lint · GitHub · in progress\n"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("ci / docs · GitHub · no run yet"),
         "{rendered}"
     );
     assert!(
@@ -173,6 +201,7 @@ fn started_checks_report_each_run_state_and_a_missing_run() {
         "{rendered}"
     );
     assert!(!rendered.contains("--approve"), "{rendered}");
+    assert!(!rendered.contains('\u{1b}'), "{rendered:?}");
 }
 
 #[test]

@@ -23,6 +23,30 @@ test('a head nobody evaluated says so instead of claiming it asks for no checks'
   )
 })
 
+test('only native checks awaiting approval carry the approval note', () => {
+  const awaiting = (checks: RequestChecksResponse['checks']) =>
+    ({ state: 'awaiting-approval', message: null, checks }) as RequestChecksResponse
+  const native = {
+    provider: 'native',
+    run_id: null,
+    run_state: null,
+    workflow_name: 'checks',
+    workflow_path: '/.scope/runs/checks.yml',
+  } as const
+  const github = {
+    provider: 'github',
+    conclusion: null,
+    details_url: null,
+    name: 'ci / test',
+    status: null,
+  } as const
+  assert.equal(
+    requestCheckEvaluationNote(awaiting([github, native])),
+    'These checks wait for a maintainer to start them.',
+  )
+  assert.equal(requestCheckEvaluationNote(awaiting([github])), null)
+})
+
 test('activity describes submission', () => {
   assert.equal(
     requestEventBody(event('Submitted', {
