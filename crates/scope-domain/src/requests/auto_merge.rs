@@ -5,11 +5,11 @@
 //! revision identity and head oid so an A -> B -> A push cannot revive it.
 
 use super::{
-    Request, RequestCheckEvaluation, RequestChecksOutcome, RequestEvent, RequestEventKind,
-    RequestEventPayload, RequestRevision, RequestState, advance_request_activity,
+    Request, RequestCheckEvaluation, RequestCheckResults, RequestChecksOutcome, RequestEvent,
+    RequestEventKind, RequestEventPayload, RequestRevision, RequestState, advance_request_activity,
     request_checks_outcome, validate_required,
 };
-use crate::{error::DomainError, runs::run::RunState, runs::validation::validate_git_oid};
+use crate::{error::DomainError, runs::validation::validate_git_oid};
 use serde::{Deserialize, Serialize};
 
 mod check_failures;
@@ -148,9 +148,9 @@ pub fn request_auto_merge_readiness(
     request_id: &str,
     head_oid: &str,
     evaluation: Option<&RequestCheckEvaluation>,
-    run_states: &[(String, RunState)],
+    results: &RequestCheckResults,
 ) -> RequestAutoMergeReadiness {
-    match request_checks_outcome(request_id, head_oid, evaluation, run_states) {
+    match request_checks_outcome(request_id, head_oid, evaluation, results) {
         RequestChecksOutcome::Clear => RequestAutoMergeReadiness::Ready,
         RequestChecksOutcome::NotEvaluated => RequestAutoMergeReadiness::Waiting(
             RequestAutoMergeWaitingReason::CheckEvaluationMissing,

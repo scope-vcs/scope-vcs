@@ -1,7 +1,7 @@
 use super::*;
 use scope_domain::requests::{
-    RecordRequestRevisionInput, RequestActorRole, RequestAudience, RequestCheck,
-    RequestCheckEvaluation, RequestRevisionGitFacts, StartRequestInput,
+    NativeRequestCheck, RecordRequestRevisionInput, RequestActorRole, RequestAudience,
+    RequestCheck, RequestCheckEvaluation, RequestRevisionGitFacts, StartRequestInput,
 };
 use scope_domain::runs::run::RunState;
 use scope_postgres::db::{RecordRequestChecksCommand, SubmitRequestCommand};
@@ -145,10 +145,10 @@ async fn record_queued_request_check(state: &AppState, request_id: &str) -> Stri
     let mut checks = Vec::new();
     let mut runs = Vec::new();
     for revision in &revisions {
-        let mut check = RequestCheck::for_revision(revision);
+        let mut check = NativeRequestCheck::for_revision(revision);
         let run = check.run(&request, revision, &test_owner_id(), 5).unwrap();
         check.run_id = Some(run.id.clone());
-        checks.push(check);
+        checks.push(RequestCheck::Native(check));
         runs.push(run);
     }
     assert_eq!(runs.len(), 1);

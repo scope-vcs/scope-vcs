@@ -108,13 +108,16 @@ scope request merge --request fix-parser --yes
 scope request merge --request fix-parser --auto --yes
 ```
 
-Every push to a request evaluates the workflows its head asks for. A maintainer's
-push starts those checks at once; an outside contributor's push records them until a
-maintainer runs `scope request checks --approve`. `scope request checks` shows the
-evaluation, each workflow's run and state, and what merging still waits on: an open
-request merges only after every check succeeds. If evaluating a push failed, the
-request cannot merge until its checks are worked out; `scope request checks` and
-`scope request merge` both work them out again.
+Every push to a request evaluates the checks its head asks for. A check is a
+workflow Scope runs itself or a check GitHub reports for the tested commit. A
+maintainer's push starts Scope's runs at once; an outside contributor's push records
+them until a maintainer runs `scope request checks --approve`. `scope request checks`
+shows the evaluation, each check's provider and state, and where its logs are: the
+run id for `scope run logs` or the GitHub page. It also shows what merging still
+waits on: an open request merges only after every check passes. A GitHub check with
+no run yet is pending. If evaluating a push failed, the request cannot merge until
+its checks are worked out; `scope request checks` and `scope request merge` both
+work them out again.
 
 When checks are still running, a maintainer can authorize the current request
 revision to merge later with `scope request merge --auto --yes`. The command

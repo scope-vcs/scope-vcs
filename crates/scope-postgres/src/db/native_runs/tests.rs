@@ -9,8 +9,8 @@ use crate::{
 use scope_domain::{
     policy::Visibility,
     requests::{
-        RequestActorRole, RequestAudience, RequestCheck, RequestCheckEvaluation,
-        RequestCheckEvaluationState, StartRequestInput,
+        NativeRequestCheck, RequestActorRole, RequestAudience, RequestCheck,
+        RequestCheckEvaluation, RequestCheckEvaluationState, StartRequestInput,
     },
     runs::{
         availability::NATIVE_RUNS_UNAVAILABLE,
@@ -241,7 +241,9 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
             RequestCheckEvaluation::awaiting_approval(
                 request_id,
                 &head_oid,
-                vec![RequestCheck::for_revision(&revision)],
+                vec![RequestCheck::Native(NativeRequestCheck::for_revision(
+                    &revision,
+                ))],
                 3,
             )
         } else {
@@ -299,7 +301,9 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
             evaluation: RequestCheckEvaluation::awaiting_approval(
                 "settled",
                 "c".repeat(40),
-                vec![RequestCheck::for_revision(&revision)],
+                vec![RequestCheck::Native(NativeRequestCheck::for_revision(
+                    &revision,
+                ))],
                 11,
             )
             .unwrap(),

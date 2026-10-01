@@ -1,6 +1,6 @@
 use super::*;
 use scope_api_contract::routes::{repo_request, repo_request_checks, repo_request_checks_approve};
-use scope_domain::requests::{RequestCheck, RequestCheckEvaluation};
+use scope_domain::requests::{NativeRequestCheck, RequestCheck, RequestCheckEvaluation};
 use scope_domain::runs::source::RunTrigger;
 use scope_postgres::db::RecordRequestChecksCommand;
 
@@ -115,6 +115,7 @@ async fn a_maintainers_push_starts_the_request_workflows_at_its_head() {
         checks["checks"][0]["workflow_path"],
         "/.scope/runs/checks.yml"
     );
+    assert_eq!(checks["checks"][0]["provider"], "native");
     assert_eq!(checks["checks"][0]["workflow_name"], "checks");
     assert_eq!(checks["checks"][0]["run_state"], "queued");
     assert_eq!(checks["mergeability"]["status"], "ChecksPending");
@@ -334,7 +335,10 @@ async fn record_awaiting_approval(state: &AppState, request_id: &str) {
         [("/.scope/runs/checks.yml", workflow.as_bytes())],
     )
     .unwrap();
-    let checks = revisions.iter().map(RequestCheck::for_revision).collect();
+    let checks = revisions
+        .iter()
+        .map(|revision| RequestCheck::Native(NativeRequestCheck::for_revision(revision)))
+        .collect();
     let evaluation = RequestCheckEvaluation::awaiting_approval(
         &request.id,
         &request.head_oid,

@@ -1,10 +1,11 @@
 use crate::api::{
-    LeaveRequestResponse, RepoSummaryResponse, RepositoryActor, RequestActivityPageResponse,
-    RequestAudience, RequestCheckEvaluationState, RequestCheckResponse, RequestChecksResponse,
-    RequestCloseResponse, RequestDiscussionMutationResponse,
-    RequestDiscussionReplyMutationResponse, RequestEventPayload, RequestInviteeMutationResponse,
-    RequestListItemResponse, RequestMergeabilityResponse, RequestMergeabilityStatus,
-    RequestMutationResponse, RequestPermissionsResponse, RequestState, RequestSummaryResponse,
+    GitHubCheckConclusion, GitHubCheckStatus, LeaveRequestResponse, RepoSummaryResponse,
+    RepositoryActor, RequestActivityPageResponse, RequestAudience, RequestCheckEvaluationState,
+    RequestCheckResponse, RequestChecksResponse, RequestCloseResponse,
+    RequestDiscussionMutationResponse, RequestDiscussionReplyMutationResponse, RequestEventPayload,
+    RequestInviteeMutationResponse, RequestListItemResponse, RequestMergeabilityResponse,
+    RequestMergeabilityStatus, RequestMutationResponse, RequestPermissionsResponse, RequestState,
+    RequestSummaryResponse,
 };
 use crate::display::{short_oid, terminal_text};
 
@@ -341,11 +342,7 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
         lines.push("  This head asks for no checks.".to_string());
     }
     for check in &checks.checks {
-        lines.push(format!(
-            "  {} · {}",
-            terminal_text(&check.workflow_name),
-            check_run_label(check)
-        ));
+        lines.push(check_line(check));
     }
     lines.push(format!(
         "Mergeability: {}",
@@ -367,15 +364,72 @@ fn evaluation_state_label(state: Option<RequestCheckEvaluationState>) -> &'stati
     }
 }
 
-fn check_run_label(check: &RequestCheckResponse) -> String {
-    match (&check.run_id, check.run_state) {
-        (Some(run_id), Some(state)) => format!(
-            "{} ({})",
-            crate::run::run_state_label(state),
-            terminal_text(run_id)
-        ),
-        (Some(run_id), None) => format!("run is gone ({})", terminal_text(run_id)),
-        (None, _) => "not started".to_string(),
+/// One check with its provider, its state, and where its logs are: a native run
+/// id for `scope run logs`, or the page GitHub links to.
+fn check_line(check: &RequestCheckResponse) -> String {
+    match check {
+        RequestCheckResponse::Native {
+            workflow_name,
+            run_id,
+            run_state,
+            ..
+        } => {
+            let state = match (run_id, run_state) {
+                (Some(run_id), Some(state)) => format!(
+                    "{} ({})",
+                    crate::run::run_state_label(*state),
+                    terminal_text(run_id)
+                ),
+                (Some(run_id), None) => format!("run is gone ({})", terminal_text(run_id)),
+                (None, _) => "not started".to_string(),
+            };
+            format!("  {} · Scope · {state}", terminal_text(workflow_name))
+        }
+        RequestCheckResponse::GitHub {
+            name,
+            status,
+            conclusion,
+            details_url,
+        } => {
+            let state = match (status, conclusion) {
+                (None, _) => "no run yet",
+                (Some(_), Some(conclusion)) => github_conclusion_label(*conclusion),
+                (Some(status), None) => github_status_label(*status),
+            };
+            match details_url {
+                Some(url) => format!(
+                    "  {} · GitHub · {state} ({})",
+                    terminal_text(name),
+                    terminal_text(url)
+                ),
+                None => format!("  {} · GitHub · {state}", terminal_text(name)),
+            }
+        }
+    }
+}
+
+fn github_status_label(status: GitHubCheckStatus) -> &'static str {
+    match status {
+        GitHubCheckStatus::Queued => "queued",
+        GitHubCheckStatus::InProgress => "in progress",
+        GitHubCheckStatus::Completed => "completed",
+        GitHubCheckStatus::Waiting => "waiting",
+        GitHubCheckStatus::Requested => "requested",
+        GitHubCheckStatus::Pending => "pending",
+    }
+}
+
+fn github_conclusion_label(conclusion: GitHubCheckConclusion) -> &'static str {
+    match conclusion {
+        GitHubCheckConclusion::Success => "succeeded",
+        GitHubCheckConclusion::Neutral => "neutral",
+        GitHubCheckConclusion::Skipped => "skipped",
+        GitHubCheckConclusion::Failure => "failed",
+        GitHubCheckConclusion::Cancelled => "cancelled",
+        GitHubCheckConclusion::TimedOut => "timed out",
+        GitHubCheckConclusion::ActionRequired => "action required",
+        GitHubCheckConclusion::Stale => "stale",
+        GitHubCheckConclusion::StartupFailure => "startup failure",
     }
 }
 

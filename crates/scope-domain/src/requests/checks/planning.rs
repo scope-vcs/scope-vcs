@@ -1,5 +1,5 @@
 use super::{
-    Request, RequestCheck, RequestCheckEvaluation, Run, WorkflowRevision,
+    NativeRequestCheck, Request, RequestCheck, RequestCheckEvaluation, Run, WorkflowRevision,
     request_checks_start_immediately,
 };
 use crate::{error::DomainError, runs::availability::NativeRunsAvailability};
@@ -59,16 +59,21 @@ impl RequestCheckPlan {
         }
         let mut checks = revisions
             .iter()
-            .map(RequestCheck::for_revision)
+            .map(NativeRequestCheck::for_revision)
             .collect::<Vec<_>>();
         let starter = maintainer_pusher.filter(|_| request_checks_start_immediately(request, true));
         let (evaluation, runs) = if let Some(starter) = starter {
-            let runs = plan_runs(request, &checks, revisions, starter, now_unix)?;
+            let runs = plan_runs(request, checks.iter(), revisions, starter, now_unix)?;
             for (check, run) in checks.iter_mut().zip(&runs) {
                 check.run_id = Some(run.id.clone());
             }
             (
-                RequestCheckEvaluation::started(&request.id, &request.head_oid, checks, now_unix)?,
+                RequestCheckEvaluation::started(
+                    &request.id,
+                    &request.head_oid,
+                    checks.into_iter().map(RequestCheck::Native).collect(),
+                    now_unix,
+                )?,
                 runs,
             )
         } else {
@@ -76,7 +81,7 @@ impl RequestCheckPlan {
                 RequestCheckEvaluation::awaiting_approval(
                     &request.id,
                     &request.head_oid,
-                    checks,
+                    checks.into_iter().map(RequestCheck::Native).collect(),
                     now_unix,
                 )?,
                 Vec::new(),
@@ -101,7 +106,7 @@ impl RequestCheckPlan {
         }
         let runs = plan_runs(
             request,
-            &evaluation.checks,
+            evaluation.native_checks(),
             revisions,
             actor_user_id,
             now_unix,
@@ -111,20 +116,22 @@ impl RequestCheckPlan {
     }
 }
 
-fn plan_runs(
+/// The native checks receive their runs in order, one per revision.
+fn plan_runs<'a>(
     request: &Request,
-    checks: &[RequestCheck],
+    checks: impl IntoIterator<Item = &'a NativeRequestCheck>,
     revisions: &[WorkflowRevision],
     actor_user_id: &str,
     now_unix: u64,
 ) -> Result<Vec<Run>, DomainError> {
+    let checks = checks.into_iter().collect::<Vec<_>>();
     if checks.len() != revisions.len() {
         return Err(DomainError::invalid_input(
             "approval must start every recorded check",
         ));
     }
     checks
-        .iter()
+        .into_iter()
         .zip(revisions)
         .map(|(check, revision)| check.run(request, revision, actor_user_id, now_unix))
         .collect()

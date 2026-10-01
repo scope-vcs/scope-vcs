@@ -30,6 +30,7 @@ mod generated_ids;
 mod git_compaction;
 mod git_push_reads;
 mod git_segments;
+mod github_check_runs;
 mod history_reads;
 mod history_rows;
 mod integer_columns;
