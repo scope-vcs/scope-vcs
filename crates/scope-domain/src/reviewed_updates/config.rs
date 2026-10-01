@@ -80,6 +80,6 @@ pub fn apply_reviewed_config_to_repo(
         set.occurred_at_unix = Some(update.occurred_at_unix);
         repo.visibility_change_sets.push(set);
     }
-    repo.bump_change_version();
+    repo.bump_content_version();
     Ok(true)
 }

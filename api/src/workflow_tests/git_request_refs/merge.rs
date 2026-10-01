@@ -451,7 +451,7 @@ async fn public_merge_rejects_path_made_private_after_request_push() {
                     visibility: ConfigVisibility::Private,
                 },
             );
-            repo.bump_change_version();
+            repo.bump_content_version();
         })
         .await
         .unwrap();

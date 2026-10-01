@@ -606,6 +606,7 @@ fn test_repo(owner_id: &str) -> Repository {
             website_url: None,
             lifecycle_state: RepoLifecycleState::Ready,
             change_version: 1,
+            content_version: 1,
         },
         repo_config: RepoConfig::with_default_visibility(ConfigVisibility::Public),
         first_push_token: None,
@@ -619,8 +620,7 @@ fn test_repo(owner_id: &str) -> Repository {
         live_files: BTreeMap::new(),
         git_head: None,
         git_pack_spans: Vec::new(),
-        members: Vec::new(),
-        invitations: Vec::new(),
+        collaboration: Default::default(),
     }
 }
 

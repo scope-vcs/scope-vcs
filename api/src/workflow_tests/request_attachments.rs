@@ -148,7 +148,7 @@ async fn add_writer(state: &AppState) -> String {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.members.push(test_repository_member(
+            repo.collaboration.members.push(test_repository_member(
                 TEST_REPO_ID,
                 writer.id.clone(),
                 member_permissions(true, false),
@@ -389,7 +389,9 @@ async fn request_attachment_upload_ownership_does_not_survive_revoked_request_ac
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.members.retain(|member| member.user_id != writer_id);
+            repo.collaboration
+                .members
+                .retain(|member| member.user_id != writer_id);
         })
         .await
         .unwrap();

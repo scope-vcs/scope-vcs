@@ -19,12 +19,11 @@ use scope_domain::history::{
     HistoryEntry, HistoryEntryFile, HistoryEntryKind as DomainHistoryEntryKind,
     HistoryEntryVisibilityChange, HistoryView,
 };
-use scope_domain::policy::ScopePath;
 use scope_domain::{
     account::UserAccount,
-    repository::access::{RepositoryAccess, RepositoryActor},
+    repository::access::{RepositoryAccess, RepositoryActor, can_read_repository},
     repository::credentials::{FirstPushToken, GitPushToken},
-    repository::{RepoLifecycleState as DomainRepoLifecycleState, Repository},
+    repository::{RepoRecord, Repository},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -303,45 +302,44 @@ pub(crate) fn repo_summary_for_user(
     open_request_count: usize,
     git_origin: &str,
 ) -> Option<RepoSummaryResponse> {
-    let access = repo.access_for_user_id(user_id);
-    if access.actor == RepositoryActor::Public {
-        return None;
-    }
-    let lifecycle_allows_read = repo.record.lifecycle_state == DomainRepoLifecycleState::Ready
-        || access.actor == RepositoryActor::Owner;
-    if !lifecycle_allows_read
-        || !repo
-            .policy
-            .can_read(&ScopePath::root(), access.can_read_private_files)
-    {
+    repo_summary_for_access(
+        &repo.record,
+        repo.access_for_user_id(user_id),
+        open_request_count,
+        git_origin,
+    )
+}
+
+/// The summary a maintainer sees. Maintainers read private files once they
+/// can read the repository at all, so its policy never hides the summary.
+pub(crate) fn repo_summary_for_access(
+    record: &RepoRecord,
+    access: RepositoryAccess,
+    open_request_count: usize,
+    git_origin: &str,
+) -> Option<RepoSummaryResponse> {
+    if !access.is_maintainer() || !can_read_repository(record.lifecycle_state, access, false) {
         return None;
     }
 
     Some(RepoSummaryResponse {
-        id: repo.record.id.clone(),
-        owner_handle: repo.record.owner_handle.clone(),
-        name: repo.record.name.clone(),
-        description: repo.record.description.clone(),
-        website_url: repo.record.website_url.clone(),
+        id: record.id.clone(),
+        owner_handle: record.owner_handle.clone(),
+        name: record.name.clone(),
+        description: record.description.clone(),
+        website_url: record.website_url.clone(),
         git_remote_url: repository_git_remote_url(
             git_origin,
             access.actor,
-            &repo.record.owner_handle,
-            &repo.record.name,
+            &record.owner_handle,
+            &record.name,
         ),
-        lifecycle_state: repo.record.lifecycle_state.into(),
-        change_version: repo_change_version_for_access(repo, access),
+        lifecycle_state: record.lifecycle_state.into(),
+        change_version: access.visible_version(record.change_version),
+        content_version: access.visible_version(record.content_version),
         access: repository_access_response(access),
         open_request_count,
     })
-}
-
-pub(crate) fn repo_change_version_for_access(repo: &Repository, access: RepositoryAccess) -> u64 {
-    if access.actor != RepositoryActor::Public {
-        repo.record.change_version
-    } else {
-        0
-    }
 }
 
 pub(crate) fn repository_access_response(access: RepositoryAccess) -> RepositoryAccessResponse {

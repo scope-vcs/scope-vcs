@@ -25,6 +25,7 @@ struct AccessRow {
     website_url: Option<String>,
     publication_state: String,
     change_version: i64,
+    content_version: i64,
 }
 
 impl RepositoryStore {
@@ -66,7 +67,7 @@ impl RepositoryStore {
                 let Some(view) = super::history_reads::history_view_metadata(
                     &tx,
                     &context.record.id,
-                    context.record.change_version,
+                    context.record.content_version,
                     scope_domain::projection::ProjectionViewKey::Public,
                 )
                 .await?
@@ -193,7 +194,7 @@ impl RepositoryStore {
             let metadata = super::history_reads::history_view_metadata(
                 &tx,
                 &context.record.id,
-                context.record.change_version,
+                context.record.content_version,
                 audience,
             )
             .await?;
@@ -214,41 +215,8 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
     repo_id: &str,
     viewer_user_id: Option<&str>,
 ) -> Result<Option<RepositoryAccessContext>, PostgresError> {
-    use entities::repository::{Column, Entity};
-    let Some(row) = Entity::find()
-        .select_only()
-        .columns([
-            Column::Id,
-            Column::IncarnationId,
-            Column::OwnerHandle,
-            Column::Name,
-            Column::OwnerUserId,
-            Column::Description,
-            Column::WebsiteUrl,
-            Column::PublicationState,
-            Column::ChangeVersion,
-        ])
-        .filter(Column::Id.eq(repo_id))
-        .into_model::<AccessRow>()
-        .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
-    else {
+    let Some(record) = load_repo_record(conn, repo_id).await? else {
         return Ok(None);
-    };
-    let record = RepoRecord {
-        id: row.id,
-        incarnation_id: row.incarnation_id,
-        owner_handle: row.owner_handle,
-        name: row.name,
-        owner_user_id: row.owner_user_id,
-        description: row.description,
-        website_url: row.website_url,
-        lifecycle_state: entities::decode_enum(row.publication_state)?,
-        change_version: integer_columns::i64_to_u64(
-            row.change_version,
-            "repository change version",
-        )?,
     };
     let access = match viewer_user_id {
         None => RepositoryAccess::public(),
@@ -276,6 +244,54 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
         }
     };
     Ok(Some(RepositoryAccessContext { record, access }))
+}
+
+/// The repository row without its configuration or policy.
+pub(super) async fn load_repo_record<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<Option<RepoRecord>, PostgresError> {
+    use entities::repository::{Column, Entity};
+    let Some(row) = Entity::find()
+        .select_only()
+        .columns([
+            Column::Id,
+            Column::IncarnationId,
+            Column::OwnerHandle,
+            Column::Name,
+            Column::OwnerUserId,
+            Column::Description,
+            Column::WebsiteUrl,
+            Column::PublicationState,
+            Column::ChangeVersion,
+            Column::ContentVersion,
+        ])
+        .filter(Column::Id.eq(repo_id))
+        .into_model::<AccessRow>()
+        .one(conn)
+        .await
+        .map_err(PostgresError::internal)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(RepoRecord {
+        id: row.id,
+        incarnation_id: row.incarnation_id,
+        owner_handle: row.owner_handle,
+        name: row.name,
+        owner_user_id: row.owner_user_id,
+        description: row.description,
+        website_url: row.website_url,
+        lifecycle_state: entities::decode_enum(row.publication_state)?,
+        change_version: integer_columns::i64_to_u64(
+            row.change_version,
+            "repository change version",
+        )?,
+        content_version: integer_columns::i64_to_u64(
+            row.content_version,
+            "repository content version",
+        )?,
+    }))
 }
 
 fn ensure_current_context(

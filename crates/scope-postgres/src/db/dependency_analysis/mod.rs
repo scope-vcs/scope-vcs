@@ -34,7 +34,9 @@ pub struct DependencySnapshotFile {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DependencyAnalysisClaim {
     pub incarnation: RepositoryIncarnation,
-    pub repo_version: u64,
+    pub content_version: u64,
+    /// The repository version when the claim was taken, for the change event.
+    pub change_version: u64,
     pub git_head: GitHead,
     pub git_pack_spans: Vec<GitPackSpan>,
     pub analyzer_version: String,
@@ -60,7 +62,7 @@ pub(super) async fn enqueue_dependency_analysis_for_repository<C: ConnectionTrai
     enqueue_dependency_analysis_target(
         conn,
         &repository.incarnation(),
-        repository.record.change_version,
+        repository.record.content_version,
         &head.head_oid,
         DEPENDENCY_ANALYZER_VERSION,
         now_unix,
@@ -128,7 +130,7 @@ impl JobStore {
         let repository = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "SELECT incarnation_id, change_version FROM scope_repositories WHERE id = $1",
+                "SELECT incarnation_id, change_version, content_version FROM scope_repositories WHERE id = $1",
                 [repo_id.clone().into()],
             ))
             .await
@@ -145,18 +147,18 @@ impl JobStore {
             database_value::<String>(&repository, "incarnation_id")?,
         )
         .map_err(PostgresError::internal)?;
-        let repo_version =
+        let content_version =
             database_u64(&job, "repo_version", "dependency target repository version")?;
         if incarnation.incarnation_id() != database_value::<String>(&job, "incarnation_id")?
-            || repo_version
-                != database_u64(&repository, "change_version", "repository change version")?
+            || content_version
+                != database_u64(&repository, "content_version", "repository content version")?
             || head.head_oid != database_value::<String>(&job, "head_oid")?
         {
             let analyzer_version = database_value::<String>(&job, "analyzer_version")?;
             enqueue_dependency_analysis_target(
                 &tx,
                 &incarnation,
-                database_u64(&repository, "change_version", "repository change version")?,
+                database_u64(&repository, "content_version", "repository content version")?,
                 &head.head_oid,
                 &analyzer_version,
                 now_unix,
@@ -191,7 +193,12 @@ impl JobStore {
         .await?;
         let claim = DependencyAnalysisClaim {
             incarnation,
-            repo_version,
+            content_version,
+            change_version: database_u64(
+                &repository,
+                "change_version",
+                "repository change version",
+            )?,
             git_pack_spans: load_git_pack_spans(&tx, &repo_id).await?,
             git_head: head,
             analyzer_version,
@@ -324,7 +331,7 @@ impl JobStore {
             [
                 claim.incarnation.repository_id().into(),
                 claim.incarnation.incarnation_id().into(),
-                i64::try_from(claim.repo_version)
+                i64::try_from(claim.content_version)
                     .map_err(|_| {
                         PostgresError::internal_message(
                             "dependency repository version exceeds database bigint",
@@ -479,7 +486,7 @@ async fn current_claim_repository<C: ConnectionTrait>(
               AND job.incarnation_id = $4 AND job.repo_version = $5
               AND job.head_oid = $6 AND job.analyzer_version = $7
               AND repository.incarnation_id = job.incarnation_id
-              AND repository.change_version = job.repo_version
+              AND repository.content_version = job.repo_version
               AND head.head_oid = job.head_oid
         "#,
         [
@@ -487,7 +494,7 @@ async fn current_claim_repository<C: ConnectionTrait>(
             claim.lease_generation.clone().into(),
             now.into(),
             claim.incarnation.incarnation_id().into(),
-            i64::try_from(claim.repo_version)
+            i64::try_from(claim.content_version)
                 .map_err(|_| {
                     PostgresError::internal_message(
                         "dependency repository version exceeds database bigint",

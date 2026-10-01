@@ -17,7 +17,7 @@ fn fixture() -> (
     SourceBlob,
 ) {
     let mut repository = repository(&user("owner", "owner"), "repo", Visibility::Private);
-    repository.members.push(RepositoryMember {
+    repository.collaboration.members.push(RepositoryMember {
         repo_id: "owner/repo".into(),
         user_id: "member".into(),
         permissions: Default::default(),
@@ -144,14 +144,7 @@ async fn uploaded_enqueue_that_wins_repository_lock_completes_before_real_revoca
     let revoking = tokio::spawn(async move {
         revoking_store
             .repositories()
-            .remove_repository_member(
-                "owner",
-                "repo",
-                "owner",
-                "member",
-                20,
-                &crate::db::generated_ids::test_generated_id,
-            )
+            .remove_repository_member("owner", "repo", "owner", "member", 20)
             .await
     });
     wait_for_transaction_waiter(&store, command_pid).await;

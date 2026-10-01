@@ -20,7 +20,7 @@ test('keys file entries by repository version, audience and normalized path', ()
   const base = {
     scope: 'viewer-a',
     audience: 'public' as const,
-    changeVersion: 3,
+    contentVersion: 3,
     path: 'README.html',
     repoId: 'repo-1',
   }
@@ -36,7 +36,7 @@ test('keys file entries by repository version, audience and normalized path', ()
   assert.equal(repoFileCacheKey(base), repoFileCacheKey({ ...base, path: '/README.html' }))
   assert.notEqual(
     repoFileCacheKey(base),
-    repoFileCacheKey({ ...base, changeVersion: 4 }),
+    repoFileCacheKey({ ...base, contentVersion: 4 }),
   )
   assert.notEqual(
     repoFileCacheKey(base),

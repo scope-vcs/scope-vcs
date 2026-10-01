@@ -107,14 +107,14 @@ impl RepositoryAccess {
         matches!(self.actor, RepositoryActor::Owner | RepositoryActor::Member)
     }
 
-    /// The repository change counter a viewer may see. Private-only mutations
-    /// advance it too, so public viewers get 0 rather than a signal of
+    /// A repository version a viewer may see. Private-only mutations advance
+    /// the versions too, so public viewers get 0 rather than a signal of
     /// activity they cannot read.
-    pub fn visible_change_version(self, change_version: u64) -> u64 {
+    pub fn visible_version(self, version: u64) -> u64 {
         if self.actor == RepositoryActor::Public {
             0
         } else {
-            change_version
+            version
         }
     }
 
@@ -230,17 +230,17 @@ mod tests {
 
     #[test]
     fn public_viewers_never_see_the_change_version() {
-        assert_eq!(RepositoryAccess::public().visible_change_version(7), 0);
+        assert_eq!(RepositoryAccess::public().visible_version(7), 0);
         let owner =
             repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "owner");
-        assert_eq!(owner.visible_change_version(7), 7);
+        assert_eq!(owner.visible_version(7), 7);
         let member = repository_access_for_user_id(
             "owner",
             RepoLifecycleState::Ready,
             Some(RepositoryMemberPermissions::default()),
             "member",
         );
-        assert_eq!(member.visible_change_version(7), 7);
+        assert_eq!(member.visible_version(7), 7);
     }
 
     #[test]

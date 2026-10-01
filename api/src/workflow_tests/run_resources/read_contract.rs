@@ -19,7 +19,7 @@ async fn add_member(state: &AppState) -> String {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.members.push(test_repository_member(
+            repo.collaboration.members.push(test_repository_member(
                 TEST_REPO_ID,
                 id,
                 RepositoryMemberPermissions::default(),
@@ -402,7 +402,10 @@ async fn catalog_without_an_accepted_head_fails_before_cursor_validation() {
     state
         .metadata
         .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, |repo| repo.git_head = None)
+        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+            repo.git_head = None;
+            repo.bump_content_version();
+        })
         .await
         .unwrap();
     for url in [

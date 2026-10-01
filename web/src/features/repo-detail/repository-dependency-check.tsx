@@ -34,7 +34,7 @@ export function RepositoryDependencyCheck({
     identity,
     load,
     resource: repositoryDependencyResource,
-    version: String(repo.change_version),
+    version: String(repo.content_version),
   })
 
   if (!identity) return null

@@ -80,19 +80,16 @@ async fn collaboration_publication_keeps_the_committed_invite_result_and_version
     let invite = state
         .metadata
         .repositories()
-        .create_repository_invite(
-            scope_postgres::db::CreateRepositoryInviteMutation {
-                owner: "owner".to_string(),
-                name: "repo".to_string(),
-                owner_user: owner,
-                invited_email: "later@example.com".to_string(),
-                permissions: Default::default(),
-                invite_id: "invite_version".to_string(),
-                email_id: "email_version".to_string(),
-                now_unix: unix_now(),
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .create_repository_invite(scope_postgres::db::CreateRepositoryInviteMutation {
+            owner: "owner".to_string(),
+            name: "repo".to_string(),
+            owner_user: owner,
+            invited_email: "later@example.com".to_string(),
+            permissions: Default::default(),
+            invite_id: "invite_version".to_string(),
+            email_id: "email_version".to_string(),
+            now_unix: unix_now(),
+        })
         .await
         .unwrap();
     assert_eq!(invite.change_version, initial_version + 1);
@@ -108,7 +105,6 @@ async fn collaboration_publication_keeps_the_committed_invite_result_and_version
             &test_owner_id(),
             &invite.value.0.id,
             unix_now(),
-            &crate::persistence_ids::generate_persistence_id,
         )
         .await
         .unwrap();

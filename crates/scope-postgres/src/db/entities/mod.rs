@@ -30,7 +30,9 @@ use scope_domain::{
     account::UserAccount,
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob, is_supported_git_file_mode},
     repo_actions::RepoStorageCleanup,
-    repository::collaboration::{RepositoryInvite, RepositoryMember, RepositoryMemberPermissions},
+    repository::collaboration::{
+        RepositoryCollaboration, RepositoryInvite, RepositoryMember, RepositoryMemberPermissions,
+    },
     repository::credentials::{FirstPushToken, GitPushToken},
     repository::git::{
         GitHead, GitPackSpan, GitSegmentRef, GitSegmentUpload, GitSegmentUploadState,

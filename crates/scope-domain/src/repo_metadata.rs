@@ -99,6 +99,7 @@ mod tests {
             Some("https://example.com/docs")
         );
         assert_eq!(repo.record.change_version, 2);
+        assert_eq!(repo.record.content_version, 1, "metadata is not content");
         assert!(
             !update_repo_metadata(
                 &mut repo,
@@ -152,7 +153,7 @@ mod tests {
     #[test]
     fn every_member_can_edit_but_an_outsider_cannot() {
         let mut repo = repository();
-        repo.members.push(RepositoryMember {
+        repo.collaboration.members.push(RepositoryMember {
             user_id: "member-id".into(),
             repo_id: repo.record.id.clone(),
             permissions: RepositoryMemberPermissions::default(),

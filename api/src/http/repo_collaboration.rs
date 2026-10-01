@@ -22,7 +22,6 @@ use axum::{
 use scope_domain::{
     account::UserAccount,
     repo_collaboration::{AcceptRepositoryInviteOutcome, repository_invite_landing},
-    repository::Repository,
     repository::access::RepositoryAccess,
     requests::{Request, RequestViewer, request_policy},
 };
@@ -65,19 +64,16 @@ pub(crate) async fn create_repository_invite(
             let now = unix_now()?;
             let invite = metadata
                 .repositories()
-                .create_repository_invite(
-                    scope_postgres::db::CreateRepositoryInviteMutation {
-                        owner: mutation_owner,
-                        name: mutation_repo_name,
-                        owner_user: user.clone(),
-                        invited_email: input.email,
-                        permissions: input.permissions.into(),
-                        invite_id: random_token("repo_invite_", "failed to generate invite id")?,
-                        email_id: random_token("invite_email_", "failed to generate email id")?,
-                        now_unix: now,
-                    },
-                    &crate::persistence_ids::generate_persistence_id,
-                )
+                .create_repository_invite(scope_postgres::db::CreateRepositoryInviteMutation {
+                    owner: mutation_owner,
+                    name: mutation_repo_name,
+                    owner_user: user.clone(),
+                    invited_email: input.email,
+                    permissions: input.permissions.into(),
+                    invite_id: random_token("repo_invite_", "failed to generate invite id")?,
+                    email_id: random_token("invite_email_", "failed to generate email id")?,
+                    now_unix: now,
+                })
                 .await?;
             Ok(map_committed_mutation(invite, |(invite, email)| {
                 repository_invite_response(&invite, email.as_ref(), now)
@@ -108,29 +104,20 @@ pub(crate) async fn create_repository_invite_email(
         RepoChangeReason::InviteUpdated,
         |user| async move {
             let now = unix_now()?;
-            let repositories = metadata.repositories();
-            let mutation = repositories
+            let mutation = metadata
+                .repositories()
                 .request_repository_invite_email(
                     scope_postgres::db::RequestRepositoryInviteEmailCommand {
-                        owner: mutation_owner.clone(),
-                        name: mutation_repo_name.clone(),
-                        owner_user_id: user.id.clone(),
-                        invite_id: invite_id.clone(),
+                        owner: mutation_owner,
+                        name: mutation_repo_name,
+                        owner_user_id: user.id,
+                        invite_id,
                         email_id: random_token("invite_email_", "failed to generate email id")?,
                         now_unix: now,
                     },
-                    &crate::persistence_ids::generate_persistence_id,
                 )
                 .await?;
-            let invite = repositories
-                .repository_collaboration(&mutation_owner, &mutation_repo_name, &user.id)
-                .await?
-                .ok_or_else(|| ApiError::not_found("repository not found"))?
-                .invites
-                .into_iter()
-                .find(|invite| invite.id == invite_id)
-                .ok_or_else(|| ApiError::not_found("repository invite not found"))?;
-            Ok(map_committed_mutation(mutation, |email| {
+            Ok(map_committed_mutation(mutation, |(invite, email)| {
                 repository_invite_response(&invite, Some(&email), now)
             }))
         },
@@ -169,7 +156,6 @@ pub(crate) async fn create_repository_invite_link(
                         link_hash,
                         now_unix: unix_now()?,
                     },
-                    &crate::persistence_ids::generate_persistence_id,
                 )
                 .await?;
             Ok(map_committed_mutation(mutation, |_| {
@@ -211,7 +197,6 @@ pub(crate) async fn update_repository_member(
                         permissions: input.permissions.into(),
                         now_unix,
                     },
-                    &crate::persistence_ids::generate_persistence_id,
                 )
                 .await?;
             Ok(map_committed_mutation(mutation, |member| {
@@ -248,7 +233,6 @@ pub(crate) async fn delete_repository_invite(
                     &user.id,
                     &invite_id,
                     now,
-                    &crate::persistence_ids::generate_persistence_id,
                 )
                 .await?;
             Ok(map_committed_mutation(mutation, |invite| {
@@ -287,7 +271,6 @@ pub(crate) async fn delete_repository_member(
                     &user.id,
                     &member_user_id,
                     now_unix,
-                    &crate::persistence_ids::generate_persistence_id,
                 )
                 .await?;
             Ok(map_committed_mutation(mutation, |member| {
@@ -317,7 +300,7 @@ pub(crate) async fn get_repository_invite(
     let landing = repository_invite_landing(&repo, &invite, viewer.as_ref(), unix_now()?);
     Ok(Json(repository_invite_landing_response(
         landing,
-        &repo,
+        &repo.record,
         &invite,
         viewer.as_ref(),
     )))
@@ -347,9 +330,10 @@ pub(crate) async fn accept_repository_invite(
         AcceptRepositoryInviteOutcome::AlreadyAccepted(member) => member,
     };
     let open_request_count =
-        open_request_count_for_access(&state, &repo, repo.access_for_user_id(&user.id)).await?;
-    let summary = repo_summary_for_user(&repo, &user.id, open_request_count, &git_origin)
-        .ok_or_else(|| ApiError::internal_message("accepted invite member cannot read repo"))?;
+        open_request_count_for_access(&state, &repo.record.id, repo.access).await?;
+    let summary =
+        repo_summary_for_access(&repo.record, repo.access, open_request_count, &git_origin)
+            .ok_or_else(|| ApiError::internal_message("accepted invite member cannot read repo"))?;
     Ok(Json(AcceptRepositoryInviteResponse {
         repo: summary,
         member: repository_member_response(&member, &user),
@@ -388,13 +372,13 @@ fn repository_invite_url(secret: &str) -> Result<String, ApiError> {
 
 async fn open_request_count_for_access(
     state: &AppState,
-    repo: &Repository,
+    repo_id: &str,
     access: RepositoryAccess,
 ) -> Result<usize, ApiError> {
     Ok(state
         .metadata
         .requests()
-        .requests_by_repo_id(&repo.record.id)
+        .requests_by_repo_id(repo_id)
         .await?
         .into_iter()
         .filter(|request| request_counts_for_access(request, access))

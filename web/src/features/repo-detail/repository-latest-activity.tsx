@@ -25,7 +25,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
     identity,
     load,
     resource: repositoryActivityResource,
-    version: String(repo.change_version),
+    version: String(repo.content_version),
     fallbackError: 'Latest change unavailable.',
   })
 

@@ -91,7 +91,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
-            version: repo.record.change_version,
+            change_version: repo.record.change_version,
             audience: ProjectionViewKey::Private,
             feed: HistoryFeed::All,
             before: None,
@@ -115,7 +115,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
             .repositories()
             .repository_history_page(RepositoryHistoryQuery {
                 incarnation: &repo.incarnation(),
-                version: repo.record.change_version,
+                change_version: repo.record.change_version,
                 audience: ProjectionViewKey::Private,
                 feed: HistoryFeed::All,
                 before: first.next_boundary.as_ref(),
@@ -146,7 +146,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &public_access.incarnation(),
-            version: public_access.record.change_version,
+            change_version: public_access.record.change_version,
             audience: ProjectionViewKey::from_access(public_access.access),
             feed: HistoryFeed::All,
             before: None,
@@ -164,7 +164,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
-            version: repo.record.change_version,
+            change_version: repo.record.change_version,
             audience: ProjectionViewKey::Public,
             feed: HistoryFeed::All,
             before: None,
@@ -199,7 +199,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
         )
         .unwrap(),
     );
-    repo.record.change_version += 1;
+    repo.bump_content_version();
     let expected = history_view(
         &repo.graph,
         &repo.visibility_change_sets,
@@ -233,7 +233,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
         history_view_metadata(
             store.db.as_ref(),
             &repo.record.id,
-            repo.record.change_version,
+            repo.record.content_version,
             ProjectionViewKey::Public,
         )
         .await
@@ -253,7 +253,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
             .repositories()
             .repository_history_page(RepositoryHistoryQuery {
                 incarnation: &repo.incarnation(),
-                version: repo.record.change_version,
+                change_version: repo.record.change_version,
                 audience: ProjectionViewKey::Public,
                 feed: HistoryFeed::All,
                 before: before.as_ref(),
@@ -280,7 +280,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
-            version: repo.record.change_version,
+            change_version: repo.record.change_version,
             audience: ProjectionViewKey::Public,
             feed: HistoryFeed::All,
             before: None,
@@ -296,7 +296,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
     next_commit.message = "Another update".into();
     next_commit.changes[0].path = ScopePath::parse("/another-file.txt").unwrap();
     repo.graph.commits.push(next_commit);
-    repo.record.change_version += 1;
+    repo.bump_content_version();
     store
         .repositories()
         .replace_repository_for_tests(repo.clone())
@@ -306,7 +306,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
-            version: repo.record.change_version,
+            change_version: repo.record.change_version,
             audience: ProjectionViewKey::Public,
             feed: HistoryFeed::All,
             before: first_boundary.as_ref(),
@@ -345,7 +345,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
         history_view_metadata(
             store.db.as_ref(),
             &repo.record.id,
-            repo.record.change_version,
+            repo.record.content_version,
             ProjectionViewKey::Private
         )
         .await
@@ -356,7 +356,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
-            version: repo.record.change_version,
+            change_version: repo.record.change_version,
             audience: ProjectionViewKey::Private,
             feed: HistoryFeed::All,
             before: Some(&RepositoryHistoryBoundary {
@@ -389,6 +389,8 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
         .await
         .unwrap()
         .unwrap();
+    // A membership change advances only change_version; reads authorized
+    // before it must still retry.
     store.db.execute_unprepared("UPDATE scope_repositories SET change_version=change_version+1 WHERE id='owner/history'").await.unwrap();
     assert!(
         store
@@ -402,7 +404,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
             .repositories()
             .repository_history_page(RepositoryHistoryQuery {
                 incarnation: &repo.incarnation(),
-                version: repo.record.change_version,
+                change_version: repo.record.change_version,
                 audience: ProjectionViewKey::Private,
                 feed: HistoryFeed::All,
                 before: None,
@@ -442,13 +444,14 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
         repository::collaboration::{RepositoryMember, RepositoryMemberPermissions},
     };
     let (store, mut repo) = fixture(4);
+    repo.bump_content_version();
     repo.policy = Policy::new(Visibility::Private);
     repo.policy
         .add_rule(VisibilityRule::public(
             ScopePath::parse("/file-0.txt").unwrap(),
         ))
         .unwrap();
-    repo.members.push(RepositoryMember {
+    repo.collaboration.members.push(RepositoryMember {
         repo_id: repo.record.id.clone(),
         user_id: "member".into(),
         permissions: RepositoryMemberPermissions {
@@ -484,7 +487,7 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
                 .repositories()
                 .repository_history_page(RepositoryHistoryQuery {
                     incarnation: &narrow.incarnation(),
-                    version: narrow.record.change_version,
+                    change_version: narrow.record.change_version,
                     audience: ProjectionViewKey::from_access(narrow.access),
                     feed: HistoryFeed::All,
                     before: None,
@@ -582,7 +585,7 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
             .unwrap(),
         );
     }
-    repo.record.change_version += 1;
+    repo.bump_content_version();
     store
         .repositories()
         .replace_repository_for_tests(repo.clone())
@@ -591,7 +594,7 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
     let incarnation = repo.incarnation();
     let query = |feed, before| RepositoryHistoryQuery {
         incarnation: &incarnation,
-        version: repo.record.change_version,
+        change_version: repo.record.change_version,
         audience: ProjectionViewKey::Private,
         feed,
         before,

@@ -12,7 +12,7 @@ use crate::{
 };
 use scope_domain::{
     repo_invite_email::InviteEmailAttempt,
-    repository::{Repository, collaboration::RepositoryInvite},
+    repository::{RepoRecord, collaboration::RepositoryInvite},
 };
 use scope_postgres::error::PostgresErrorKind;
 use std::time::Duration;
@@ -77,7 +77,6 @@ async fn deliver_invite_email(
             outcome.attempt,
             outcome.provider_message_id,
             current_time()?,
-            &crate::persistence_ids::generate_persistence_id,
         )
         .await?
     {
@@ -99,13 +98,7 @@ async fn send_invite_email(
     // The link is created here and never stored; the invite keeps its hash.
     let (secret, link_hash) = generate_repository_invite_token()?;
     let issued = match repositories
-        .issue_repository_invite_email_link(
-            email_id,
-            claim_token,
-            link_hash,
-            now,
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .issue_repository_invite_email_link(email_id, claim_token, link_hash, now)
         .await
     {
         Ok(Some(issued)) => issued,
@@ -125,7 +118,7 @@ async fn send_invite_email(
         .await?;
     let message = invite_email_message(
         email_id,
-        &delivery.repo,
+        &delivery.record,
         &delivery.invite,
         &inviter.email,
         &secret,
@@ -136,7 +129,7 @@ async fn send_invite_email(
 
 fn invite_email_message(
     email_id: &str,
-    repo: &Repository,
+    repo: &RepoRecord,
     invite: &RepositoryInvite,
     inviter_email: &str,
     secret: &str,
@@ -144,8 +137,8 @@ fn invite_email_message(
 ) -> Result<InviteEmailMessage, ApiError> {
     let origin = public_app_origin("building repository invite email")?;
     let link = format!("{}/invites/{secret}", origin.trim_end_matches('/'));
-    let owner = &repo.record.owner_handle;
-    let repository = format!("{owner}/{}", repo.record.name);
+    let owner = &repo.owner_handle;
+    let repository = format!("{owner}/{}", repo.name);
     let push = if invite.permissions.can_push {
         " You'll also be able to push changes."
     } else {
@@ -224,6 +217,7 @@ mod tests {
     use super::*;
     use scope_domain::{
         account::UserAccount, policy::Visibility, repo_collaboration::REPOSITORY_INVITE_TTL_SECS,
+        repository::Repository,
     };
 
     #[test]
@@ -234,10 +228,12 @@ mod tests {
             email: "owner@example.com".into(),
             email_verified: true,
         };
-        let repo = Repository::new(&owner, "repo", Visibility::Private, "repoi_test").unwrap();
+        let repo = Repository::new(&owner, "repo", Visibility::Private, "repoi_test")
+            .unwrap()
+            .record;
         let invite = RepositoryInvite {
             id: "invite".into(),
-            repo_id: repo.record.id.clone(),
+            repo_id: repo.id.clone(),
             invited_email: "<b>odd</b>@example.com".into(),
             invited_email_normalized: "<b>odd</b>@example.com".into(),
             permissions: Default::default(),

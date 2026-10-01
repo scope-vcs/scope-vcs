@@ -342,7 +342,7 @@ async fn removing_a_member_releases_their_request_claim_and_attention() {
         .await
         .unwrap()
         .unwrap();
-    repo.members.push(RepositoryMember {
+    repo.collaboration.members.push(RepositoryMember {
         repo_id: repo.record.id.clone(),
         user_id: "user_public".into(),
         permissions: RepositoryMemberPermissions::default(),
@@ -372,14 +372,7 @@ async fn removing_a_member_releases_their_request_claim_and_attention() {
     );
     store
         .repositories()
-        .remove_repository_member(
-            "owner",
-            "repo",
-            "user_owner",
-            "user_public",
-            5,
-            &super::super::super::generated_ids::test_generated_id,
-        )
+        .remove_repository_member("owner", "repo", "user_owner", "user_public", 5)
         .await
         .unwrap();
     let unclaimed = queue_row(&store, RequestQueueSection::Unclaimed, 5).await;

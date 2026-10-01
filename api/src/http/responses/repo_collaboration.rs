@@ -4,10 +4,10 @@ use scope_domain::{
     account::UserAccount,
     repo_collaboration::{RepositoryInviteLanding, RepositoryInviteViewer},
     repo_invite_email::{RepositoryInviteEmail, RepositoryInviteEmailState},
-    repository::Repository,
+    repository::RepoRecord,
     repository::collaboration::{RepositoryInvite, RepositoryMember},
 };
-use scope_postgres::db::RepositoryCollaboration;
+use scope_postgres::db::RepositoryCollaborationRead;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
@@ -128,15 +128,15 @@ pub(crate) struct AcceptRepositoryInviteResponse {
 }
 
 pub(crate) fn repository_collaboration_response(
-    collaboration: &RepositoryCollaboration,
+    read: &RepositoryCollaborationRead,
     now_unix: u64,
 ) -> RepositoryCollaborationResponse {
-    let mut members = collaboration
+    let mut members = read
+        .collaboration
         .members
         .iter()
         .filter_map(|member| {
-            collaboration
-                .users
+            read.users
                 .get(&member.user_id)
                 .map(|user| repository_member_response(member, user))
         })
@@ -147,15 +147,12 @@ pub(crate) fn repository_collaboration_response(
             .then(left.user_id.cmp(&right.user_id))
     });
 
-    let mut invites = collaboration
-        .invites
+    let mut invites = read
+        .collaboration
+        .invitations
         .iter()
         .map(|invite| {
-            repository_invite_response(
-                invite,
-                collaboration.invite_emails.get(&invite.id),
-                now_unix,
-            )
+            repository_invite_response(invite, read.invite_emails.get(&invite.id), now_unix)
         })
         .collect::<Vec<_>>();
     invites.sort_by(|left, right| {
@@ -205,12 +202,12 @@ pub(crate) fn repository_invite_response(
 
 pub(crate) fn repository_invite_landing_response(
     landing: RepositoryInviteLanding,
-    repo: &Repository,
+    repo: &RepoRecord,
     invite: &RepositoryInvite,
     viewer: Option<&UserAccount>,
 ) -> RepositoryInviteLandingResponse {
-    let owner_handle = repo.record.owner_handle.clone();
-    let repo_name = repo.record.name.clone();
+    let owner_handle = repo.owner_handle.clone();
+    let repo_name = repo.name.clone();
     match landing {
         RepositoryInviteLanding::Open(viewer_state) => RepositoryInviteLandingResponse::Open {
             viewer: match viewer_state {

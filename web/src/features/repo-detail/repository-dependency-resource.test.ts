@@ -22,6 +22,7 @@ function repo(actor: RepositoryActor): RepoSummaryResponse {
       can_read_private_files: actor !== 'Public',
     },
     change_version: 4,
+    content_version: 4,
     description: null,
     git_remote_url: 'https://example.com/acme/repo.git',
     id: 'repo-1',

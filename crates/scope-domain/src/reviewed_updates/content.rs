@@ -74,6 +74,7 @@ pub fn authorize_reviewed_update(
 #[derive(Clone, Debug)]
 pub struct ContentPushState {
     pub change_version: u64,
+    pub content_version: u64,
     pub policy: Policy,
     pub repo_config: RepoConfig,
     pub live_files: BTreeMap<ScopePath, SourceBlob>,
@@ -83,6 +84,7 @@ pub struct ContentPushState {
 #[derive(Clone, Debug)]
 pub struct AcceptedContentPush {
     pub change_version: u64,
+    pub content_version: u64,
     pub policy: Policy,
     pub git_head: GitHead,
     pub git_pack_span: GitPackSpan,
@@ -242,7 +244,7 @@ pub fn apply_reviewed_update_to_repo(
     repo.git_head = Some(update.git_head);
     repo.first_push_token = None;
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
-    repo.bump_change_version();
+    repo.bump_content_version();
     Ok(())
 }
 
@@ -253,6 +255,7 @@ fn apply_content_only_update(
     let accepted = accept_content_push(
         ContentPushState {
             change_version: repo.record.change_version,
+            content_version: repo.record.content_version,
             policy: repo.policy.clone(),
             repo_config: repo.repo_config.clone(),
             live_files: repo.live_files.clone(),
@@ -272,6 +275,7 @@ pub fn apply_request_merge_to_repo(
     let accepted = accept_request_merge(
         ContentPushState {
             change_version: repo.record.change_version,
+            content_version: repo.record.content_version,
             policy: repo.policy.clone(),
             repo_config: repo.repo_config.clone(),
             live_files: repo.live_files.clone(),
@@ -296,6 +300,7 @@ fn apply_accepted_content_push(repo: &mut Repository, accepted: AcceptedContentP
         }
     }
     repo.record.change_version = accepted.change_version;
+    repo.record.content_version = accepted.content_version;
     repo.policy = accepted.policy;
     repo.graph.commits.push(accepted.logical_commit);
     repo.git_pack_spans.push(accepted.git_pack_span);
@@ -379,6 +384,7 @@ fn accept_content_update(
         )
         .map_err(ReviewedUpdateError::InvalidPolicy)?;
     let change_version = state.change_version.saturating_add(1);
+    let content_version = state.content_version.saturating_add(1);
     update.git_head.change_version = change_version;
     let logical_prefix = if allow_unchanged_tree {
         "rv_merge"
@@ -396,6 +402,7 @@ fn accept_content_update(
     };
     Ok(AcceptedContentPush {
         change_version,
+        content_version,
         policy,
         git_head: update.git_head,
         git_pack_span: update.git_pack_span,

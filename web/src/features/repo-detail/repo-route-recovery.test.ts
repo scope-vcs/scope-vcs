@@ -17,7 +17,7 @@ const live: RepoLiveState = {
   repo: {
     id: 'repo-1', owner_handle: 'owner', name: 'repo', description: null,
     website_url: null, git_remote_url: 'https://scope.test/repo.git',
-    lifecycle_state: 'Ready', change_version: 1, open_request_count: 0,
+    lifecycle_state: 'Ready', change_version: 1, content_version: 1, open_request_count: 0,
     access: {
       actor: 'Public', can_read_private_files: false, can_push: false,
       can_change_file_visibility: false, can_manage_members: false, can_delete_repo: false,

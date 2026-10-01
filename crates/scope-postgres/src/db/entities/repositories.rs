@@ -16,6 +16,7 @@ pub mod repository {
         pub website_url: Option<String>,
         pub publication_state: String,
         pub change_version: i64,
+        pub content_version: i64,
         pub repo_config: Json,
         pub policy: Json,
     }
@@ -40,6 +41,10 @@ pub mod repository {
                     repo.record.change_version,
                     "repository change version",
                 )?,
+                content_version: u64_to_i64(
+                    repo.record.content_version,
+                    "repository content version",
+                )?,
                 repo_config: encode_json(&repo.repo_config)?,
                 policy: encode_json(&repo.policy)?,
             })
@@ -48,8 +53,7 @@ pub mod repository {
         pub fn try_into_domain(
             self,
             facts: RepositoryFacts,
-            members: Vec<RepositoryMember>,
-            invitations: Vec<RepositoryInvite>,
+            collaboration: RepositoryCollaboration,
             history: crate::db::history_rows::RepositoryHistory,
         ) -> Result<Repository, PostgresError> {
             let lifecycle_state = decode_enum::<RepoLifecycleState>(self.publication_state)?;
@@ -64,6 +68,10 @@ pub mod repository {
                     website_url: self.website_url,
                     lifecycle_state,
                     change_version: i64_to_u64(self.change_version, "repository change version")?,
+                    content_version: i64_to_u64(
+                        self.content_version,
+                        "repository content version",
+                    )?,
                 },
                 repo_config: decode_json(self.repo_config)?,
                 first_push_token: facts.first_push_token,
@@ -74,8 +82,7 @@ pub mod repository {
                 live_files: history.live_files,
                 git_head: facts.git_head,
                 git_pack_spans: facts.git_pack_spans,
-                members,
-                invitations,
+                collaboration,
             })
         }
     }

@@ -185,7 +185,7 @@ async fn insert_member_user(state: &AppState) {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.members.push(test_repository_member(
+            repo.collaboration.members.push(test_repository_member(
                 TEST_REPO_ID,
                 member_user_id(),
                 RepositoryMemberPermissions::default(),

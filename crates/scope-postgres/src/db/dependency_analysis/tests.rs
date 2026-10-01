@@ -129,7 +129,7 @@ async fn retained_edges_are_reevaluated_and_stale_policy_completion_is_rejected(
         .repositories()
         .mutate_repository_for_tests(REPO_ID, |repository| {
             repository.repo_config.visibility.rules.clear();
-            repository.bump_change_version();
+            repository.bump_content_version();
         })
         .await
         .unwrap();
@@ -138,7 +138,7 @@ async fn retained_edges_are_reevaluated_and_stale_policy_completion_is_rejected(
 
     store
         .repositories()
-        .mutate_repository_for_tests(REPO_ID, Repository::bump_change_version)
+        .mutate_repository_for_tests(REPO_ID, Repository::bump_content_version)
         .await
         .unwrap();
     assert_eq!(
@@ -169,7 +169,7 @@ async fn retained_edges_are_reevaluated_and_stale_policy_completion_is_rejected(
 }
 
 #[tokio::test]
-async fn failed_refresh_retains_the_previous_report() {
+async fn changes_outside_content_keep_the_report_current() {
     let store = seeded_store().await;
     let initial = schedule_and_claim(&store, "worker-a", NOW, 30).await;
     store
@@ -180,6 +180,27 @@ async fn failed_refresh_retains_the_previous_report() {
     store
         .repositories()
         .mutate_repository_for_tests(REPO_ID, Repository::bump_change_version)
+        .await
+        .unwrap();
+    assert_eq!(
+        read_report(&store).await.status,
+        DependencyCheckStatus::Ready
+    );
+    assert!(claim_job(&store, "worker-b", NOW + 2, 30).await.is_none());
+}
+
+#[tokio::test]
+async fn failed_refresh_retains_the_previous_report() {
+    let store = seeded_store().await;
+    let initial = schedule_and_claim(&store, "worker-a", NOW, 30).await;
+    store
+        .jobs()
+        .complete_dependency_analysis_claim(&initial, output(), NOW + 1)
+        .await
+        .unwrap();
+    store
+        .repositories()
+        .mutate_repository_for_tests(REPO_ID, Repository::bump_content_version)
         .await
         .unwrap();
     let updating = read_report(&store).await;
@@ -295,13 +316,13 @@ async fn repeated_backfill_preserves_a_lease_and_repository_updates_enqueue_new_
     store
         .repositories()
         .mutate_repository_for_tests(REPO_ID, |repository| {
-            repository.bump_change_version();
+            repository.bump_content_version();
             repository.git_head = Some(GitHead::new("c".repeat(40), 2, 2));
         })
         .await
         .unwrap();
     let content_update = claim_job(&store, "worker-b", NOW + 5, 30).await.unwrap();
-    assert_eq!(content_update.repo_version, 2);
+    assert_eq!(content_update.content_version, 2);
     assert_eq!(content_update.git_head.head_oid, "c".repeat(40));
     assert!(content_update.reusable_analysis.is_none());
 }

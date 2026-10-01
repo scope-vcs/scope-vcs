@@ -72,10 +72,10 @@ async fn seed_compaction_repo(store: &MetadataStore) -> [GitPackSpan; 3] {
                 VALUES ('user_compaction', 'compaction', 'compaction@scope.test', TRUE);
                 INSERT INTO scope_repositories (
                     id, owner_handle, name, owner_user_id, publication_state,
-                    change_version, repo_config, policy, incarnation_id
+                    change_version, content_version, repo_config, policy, incarnation_id
                 ) VALUES (
                     'repo_compaction', 'compaction', 'repo', 'user_compaction', 'Ready',
-                    4,
+                    4, 4,
                     '{"kind":"scope.repo-config","version":1,"visibility":{"default":"private","rules":[]}}'::jsonb,
                     '{"default_visibility":"Private","rules":[]}'::jsonb,
                     'repoi_compaction_repo'
@@ -116,10 +116,10 @@ async fn seed_scheduled_repo(store: &MetadataStore) {
                 VALUES ('scheduler_user', 'scheduler-user', 'scheduler@scope.test', TRUE);
                 INSERT INTO scope_repositories (
                     id, owner_handle, name, owner_user_id, publication_state,
-                    change_version, repo_config, policy, incarnation_id
+                    change_version, content_version, repo_config, policy, incarnation_id
                 ) VALUES (
                     'scheduler/repo', 'scheduler-user', 'repo', 'scheduler_user', 'Ready',
-                    1,
+                    1, 1,
                     '{"kind":"scope.repo-config","version":1,"visibility":{"default":"private","rules":[]}}'::jsonb,
                     '{"default_visibility":"Private","rules":[]}'::jsonb,
                     'repoi_scheduler_repo'

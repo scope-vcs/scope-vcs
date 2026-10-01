@@ -117,7 +117,7 @@ async fn a_repository_other_members_use_blocks_deletion() {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.members.push(RepositoryMember {
+            repo.collaboration.members.push(RepositoryMember {
                 repo_id: TEST_REPO_ID.into(),
                 user_id: member.id.clone(),
                 permissions: RepositoryMemberPermissions::default(),
