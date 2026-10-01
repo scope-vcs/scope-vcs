@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
     extract::{Path as AxumPath, State as AxumState},
     http::HeaderMap as AxumHeaderMap,
+    response::IntoResponse,
     routing::{get, post},
 };
 use hmac::{Hmac, KeyInit, Mac};
@@ -59,7 +60,18 @@ struct FakeGitHub {
     user_repositories: Mutex<Vec<(u64, serde_json::Value)>>,
     /// Repositories each installation itself can reach.
     installation_repositories: Mutex<Vec<(u64, serde_json::Value)>>,
+    /// Installations GitHub now reports as suspended or gone; others are active.
+    installation_states: Mutex<BTreeMap<u64, InstallationState>>,
     token_mints: AtomicUsize,
+    installation_listings: AtomicUsize,
+    /// The installation stops reaching every repository from this listing on.
+    revoke_at_listing: Mutex<Option<usize>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InstallationState {
+    Suspended,
+    Uninstalled,
 }
 
 fn github_repository(id: u64, full_name: &str) -> serde_json::Value {
@@ -100,7 +112,10 @@ impl FakeGitHub {
                 INSTALLATION_ID,
                 github_repository(GITHUB_REPOSITORY_ID, "octo/checks"),
             )]),
+            installation_states: Mutex::default(),
             token_mints: AtomicUsize::new(0),
+            installation_listings: AtomicUsize::new(0),
+            revoke_at_listing: Mutex::default(),
         })
     }
 
@@ -152,6 +167,27 @@ impl FakeGitHub {
                 ),
             )
             .route(
+                "/app/installations/{id}",
+                get(
+                    |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                     AxumPath(id): AxumPath<u64>,
+                     headers: AxumHeaderMap| async move {
+                        assert_eq!(bearer(&headers).split('.').count(), 3);
+                        match fake.installation_states.lock().unwrap().get(&id) {
+                            Some(InstallationState::Uninstalled) => {
+                                StatusCode::NOT_FOUND.into_response()
+                            }
+                            Some(InstallationState::Suspended) => Json(serde_json::json!({
+                                "id": id, "suspended_at": "2026-10-01T00:00:00Z",
+                            }))
+                            .into_response(),
+                            None => Json(serde_json::json!({ "id": id, "suspended_at": null }))
+                                .into_response(),
+                        }
+                    },
+                ),
+            )
+            .route(
                 "/app/installations/{id}/access_tokens",
                 post(
                     |AxumState(fake): AxumState<Arc<FakeGitHub>>,
@@ -175,6 +211,10 @@ impl FakeGitHub {
                             .strip_prefix("installation-token-")
                             .and_then(|id| id.parse().ok())
                             .unwrap();
+                        let listing = fake.installation_listings.fetch_add(1, Ordering::SeqCst) + 1;
+                        if *fake.revoke_at_listing.lock().unwrap() == Some(listing) {
+                            fake.installation_repositories.lock().unwrap().clear();
+                        }
                         listed(&fake.installation_repositories, installation_id)
                     },
                 ),
@@ -606,14 +646,17 @@ async fn a_github_repository_connects_to_one_scope_repository() {
     state
         .metadata
         .repositories()
-        .connect_github_repository(ConnectGitHubRepository {
-            repository_id: "owner/other".to_string(),
-            installation_id: INSTALLATION_ID,
-            github_repository_id: GITHUB_REPOSITORY_ID,
-            github_full_name: "octo/checks".to_string(),
-            user_id: test_owner_id(),
-            now_unix: unix_now(),
-        })
+        .connect_github_repository(
+            ConnectGitHubRepository {
+                repository_id: "owner/other".to_string(),
+                installation_id: INSTALLATION_ID,
+                github_repository_id: GITHUB_REPOSITORY_ID,
+                github_full_name: "octo/checks".to_string(),
+                user_id: test_owner_id(),
+                now_unix: unix_now(),
+            },
+            async || Ok::<_, scope_postgres::error::PostgresError>(true),
+        )
         .await
         .unwrap();
 
@@ -663,8 +706,8 @@ async fn a_maintainer_disconnects() {
 }
 
 #[tokio::test]
-async fn webhooks_disconnect_links_github_takes_away() {
-    let (state, _fake) = github_state().await;
+async fn webhooks_disconnect_links_github_confirms_are_gone() {
+    let (state, fake) = github_state().await;
     let grant = grant(&state).await;
     let installation = serde_json::json!({ "id": INSTALLATION_ID });
 
@@ -696,16 +739,18 @@ async fn webhooks_disconnect_links_github_takes_away() {
     .await;
     assert_eq!(ignored.status(), StatusCode::NO_CONTENT);
 
-    for (event, body, reason) in [
+    for (event, body, reason, take_away) in [
         (
             "installation",
             serde_json::json!({ "action": "deleted", "installation": installation }),
             "app_uninstalled",
+            Some(InstallationState::Uninstalled),
         ),
         (
             "installation",
             serde_json::json!({ "action": "suspend", "installation": installation }),
             "installation_suspended",
+            Some(InstallationState::Suspended),
         ),
         (
             "installation_repositories",
@@ -715,13 +760,29 @@ async fn webhooks_disconnect_links_github_takes_away() {
                 "repositories_removed": [{ "id": GITHUB_REPOSITORY_ID, "full_name": "octo/checks" }],
             }),
             "repository_removed",
+            None,
         ),
     ] {
+        fake.installation_states.lock().unwrap().clear();
+        *fake.installation_repositories.lock().unwrap() = vec![(
+            INSTALLATION_ID,
+            github_repository(GITHUB_REPOSITORY_ID, "octo/checks"),
+        )];
         expect_json(
             connect(&state, &bearer_header(), &grant, GITHUB_REPOSITORY_ID).await,
             StatusCode::OK,
         )
         .await;
+        // GitHub has taken the repository away by the time the event arrives.
+        match take_away {
+            Some(installation_state) => {
+                fake.installation_states
+                    .lock()
+                    .unwrap()
+                    .insert(INSTALLATION_ID, installation_state);
+            }
+            None => fake.installation_repositories.lock().unwrap().clear(),
+        }
         let mut events = state.repo_events.subscribe(TEST_REPO_ID);
         let delivery = webhook(&state, event, body, WEBHOOK_SECRET).await;
         assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
@@ -734,4 +795,62 @@ async fn webhooks_disconnect_links_github_takes_away() {
             }
         );
     }
+}
+
+#[tokio::test]
+async fn a_stale_delivery_leaves_a_link_github_still_allows() {
+    let (state, _fake) = github_state().await;
+    let grant = grant(&state).await;
+    expect_json(
+        connect(&state, &bearer_header(), &grant, GITHUB_REPOSITORY_ID).await,
+        StatusCode::OK,
+    )
+    .await;
+    let installation = serde_json::json!({ "id": INSTALLATION_ID });
+    // Access was restored and the link reconnected before these old
+    // deliveries were retried. GitHub reports the installation active and the
+    // repository reachable, so none of them disconnects the link.
+    let mut events = state.repo_events.subscribe(TEST_REPO_ID);
+    for (event, body) in [
+        (
+            "installation",
+            serde_json::json!({ "action": "deleted", "installation": installation }),
+        ),
+        (
+            "installation",
+            serde_json::json!({ "action": "suspend", "installation": installation }),
+        ),
+        (
+            "installation_repositories",
+            serde_json::json!({
+                "action": "removed",
+                "installation": installation,
+                "repositories_removed": [{ "id": GITHUB_REPOSITORY_ID, "full_name": "octo/checks" }],
+            }),
+        ),
+    ] {
+        let delivery = webhook(&state, event, body, WEBHOOK_SECRET).await;
+        assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            connection(&state).await["connection"]["disconnected"],
+            serde_json::Value::Null,
+            "{event}"
+        );
+    }
+    assert!(events.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn connect_sees_access_revoked_before_it_stores_the_link() {
+    let (state, fake) = github_state().await;
+    let grant = grant(&state).await;
+    // The first listing confirms the repository; GitHub removes it before
+    // the check made under the installation lock.
+    *fake.revoke_at_listing.lock().unwrap() = Some(2);
+    let response = connect(&state, &bearer_header(), &grant, GITHUB_REPOSITORY_ID).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        connection(&state).await["connection"],
+        serde_json::Value::Null
+    );
 }

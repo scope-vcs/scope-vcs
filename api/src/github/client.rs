@@ -94,6 +94,19 @@ struct InstallationSummary {
 }
 
 #[derive(Deserialize)]
+struct InstallationDetail {
+    suspended_at: Option<String>,
+}
+
+/// What GitHub says about an installation now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum InstallationStatus {
+    Active,
+    Suspended,
+    Uninstalled,
+}
+
+#[derive(Deserialize)]
 struct RepositoriesPage {
     repositories: Vec<GitHubRepository>,
 }
@@ -177,18 +190,57 @@ impl GitHubApp {
         installation_id: u64,
         repository_id: u64,
     ) -> Result<Option<GitHubRepository>, ApiError> {
+        Ok(self
+            .installation_repositories(installation_id)
+            .await?
+            .into_iter()
+            .find(|repository| repository.id == repository_id))
+    }
+
+    /// Every repository the installation reaches now. Empty when the
+    /// installation no longer exists.
+    pub(crate) async fn installation_repositories(
+        &self,
+        installation_id: u64,
+    ) -> Result<Vec<GitHubRepository>, ApiError> {
         let Some(token) = self.installation_token(installation_id).await? else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
-        let repositories = self
+        Ok(self
             .pages::<RepositoriesPage, _>(&token, "/installation/repositories", |page| {
                 page.repositories
             })
             .await?
-            .unwrap_or_default();
-        Ok(repositories
-            .into_iter()
-            .find(|repository| repository.id == repository_id))
+            .unwrap_or_default())
+    }
+
+    /// Asks GitHub, as the app, whether the installation exists and is
+    /// suspended. A cached token for an installation that is not active is
+    /// dropped.
+    pub(crate) async fn installation_status(
+        &self,
+        installation_id: u64,
+    ) -> Result<InstallationStatus, ApiError> {
+        let request = self
+            .request(
+                Method::GET,
+                &format!("/app/installations/{installation_id}"),
+            )
+            .bearer_auth(self.app_jwt(unix_now()?)?);
+        let status = match send::<InstallationDetail>(request).await? {
+            None => InstallationStatus::Uninstalled,
+            Some(InstallationDetail {
+                suspended_at: Some(_),
+            }) => InstallationStatus::Suspended,
+            Some(_) => InstallationStatus::Active,
+        };
+        if status != InstallationStatus::Active {
+            self.installation_tokens
+                .lock()
+                .expect("installation token cache lock must not be poisoned")
+                .remove(&installation_id);
+        }
+        Ok(status)
     }
 
     /// A token that acts as the installation. `None` when the installation
