@@ -41,6 +41,10 @@ Do not modify any other supervisor state, watcher source, services, or settings.
 Read {inbox} on every monitoring cycle. It lists new releases assigned to this investigation
 while your turn is running; cover each release and keep all corrective work in this thread.
 
+Read the open GitHub issues labelled release-flake before diagnosing a failure. Follow the
+repository rule for re-running a failed check: record the failure first, and fix a failure
+that already has an open issue before you finish, even when a re-run lets the release pass.
+
 Do not stop merely because you are waiting for CI or a release. Poll while it is running.
 You are authorized to fix, PR, auto-merge, and redeploy within this task. Do not ask for
 routine permission. If credentials, a real approval boundary, or a decision prevents you

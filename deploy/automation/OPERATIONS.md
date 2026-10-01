@@ -37,7 +37,9 @@ One conversation owns an open investigation. Newly discovered releases appear in
 its `inboxes` file, which the prompt requires the agent to read each monitoring
 cycle. Repairs use PRs with squash auto-merge after `Required PR checks` passes.
 They never bypass protection or push directly to main. An interrupted worktree is
-preserved for the replacement provider.
+preserved for the replacement provider. A failure the agent re-runs without
+repairing is recorded in a `release-flake` issue, as `AGENTS.md` requires; when it
+recurs, the agent fixes its cause in that investigation.
 
 The supervisor allows three agent recoveries after the initial dispatch. It
 resumes a prematurely finished agent after two minutes, falls back from Claude to
