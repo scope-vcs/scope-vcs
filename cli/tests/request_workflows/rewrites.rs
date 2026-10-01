@@ -112,6 +112,44 @@ fn request_push_replaces_amended_history_unless_someone_else_pushed() {
     );
     assert!(error["recovery"].is_null(), "{error}");
     assert_eq!(request_head(), someone_else);
+
+    // A fetch moves the tracking ref, but this branch never included that work.
+    run_git(
+        dir.path(),
+        [
+            "fetch",
+            "--quiet",
+            bare.path().to_str().unwrap(),
+            "+refs/heads/fix-one:refs/remotes/scope/fix-one",
+        ],
+    );
+    assert_eq!(push().status.code(), Some(5));
+    assert_eq!(request_head(), someone_else);
+
+    // Once the branch builds on that work, its own rewrite can replace it.
+    run_git(dir.path(), ["reset", "--quiet", "--hard", &someone_else]);
+    fs::write(dir.path().join("fix.txt"), "rebased\n").unwrap();
+    run_git(dir.path(), ["add", "fix.txt"]);
+    commit_all(dir.path(), "Fix one on top");
+    run_git(
+        dir.path(),
+        [
+            "-c",
+            "user.email=scope@example.test",
+            "-c",
+            "user.name=Scope Test",
+            "commit",
+            "--quiet",
+            "--amend",
+            "-m",
+            "Fix one, amended on top",
+        ],
+    );
+    assert_eq!(success(push())["command"], "request.push");
+    assert_eq!(
+        request_head(),
+        git_stdout(dir.path(), ["rev-parse", "HEAD"])
+    );
 }
 
 #[test]

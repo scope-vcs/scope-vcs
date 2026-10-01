@@ -171,6 +171,7 @@ pub(super) fn push_request_branch(
         git_repo,
         &context.target,
         &detail.request,
+        &branch,
         &request_head_oid,
     )?;
     // A failed push changed nothing, so its error needs no recovery receipt.

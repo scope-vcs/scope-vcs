@@ -5,8 +5,8 @@ use crate::{
     error::CliError,
     git_repo::{
         GitRepo, StaleRefLease, branch_config_value, current_branch,
-        fetch_scope_remote_with_bearer, push_head_to_ref_with_bearer, run_git_in_repo,
-        scope_remote_head_oid, set_branch_config_value, try_run_git_in_repo,
+        fetch_scope_remote_with_bearer, git_output_in_repo, push_head_to_ref_with_bearer,
+        run_git_in_repo, scope_remote_head_oid, set_branch_config_value, try_run_git_in_repo,
     },
     git_transport::ScopeRemote,
     push::DEFAULT_SCOPE_BRANCH,
@@ -100,30 +100,60 @@ pub(super) fn push_request_head(
     })
 }
 
-/// The request head this checkout last saw: its remote-tracking ref, which start,
-/// checkout, push and fetch keep current. Without one, the checkout has never seen
-/// the head Scope reports, so the push may only build on that head, never replace it.
+/// The request head a push may replace: the one this checkout last fetched, kept in its
+/// remote-tracking ref, or the head Scope reports when there is none. Like Git's
+/// `--force-if-includes`, a push may replace that head only after this branch has
+/// included it, so a fetch alone never authorizes discarding someone else's commits.
 pub(super) fn last_seen_request_head(
     git_repo: &GitRepo,
     target: &ScopeRemote,
     request: &RequestSummaryResponse,
+    branch: &str,
     request_head_oid: &str,
 ) -> anyhow::Result<String> {
-    if let Some(seen) = scope_remote_head_oid(git_repo, &target.remote, &request.name)? {
-        return Ok(seen);
-    }
-    let server_head = request.head_oid.as_str();
-    if try_run_git_in_repo(
-        git_repo,
-        &["merge-base", "--is-ancestor", server_head, request_head_oid],
-    )? {
-        return Ok(server_head.to_string());
+    let lease = scope_remote_head_oid(git_repo, &target.remote, &request.name)?
+        .unwrap_or_else(|| request.head_oid.as_str().to_string());
+    if git_is_ancestor(git_repo, &lease, request_head_oid)?
+        || branch_reflog_includes(git_repo, branch, &lease)?
+    {
+        return Ok(lease);
     }
     Err(CliError::new(ErrorResponse::new(
         ErrorCode::Conflict,
         STALE_REQUEST_PUSH_ERROR,
     ))
     .into())
+}
+
+fn branch_reflog_includes(git_repo: &GitRepo, branch: &str, oid: &str) -> anyhow::Result<bool> {
+    let entries = git_output_in_repo(
+        git_repo,
+        &[
+            "log",
+            "--walk-reflogs",
+            "--format=%H",
+            &format!("refs/heads/{branch}"),
+        ],
+    )?;
+    if !entries.status.success() {
+        return Ok(false);
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for entry in String::from_utf8_lossy(&entries.stdout).lines() {
+        if seen.insert(entry) && git_is_ancestor(git_repo, oid, entry)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn git_is_ancestor(git_repo: &GitRepo, ancestor: &str, descendant: &str) -> anyhow::Result<bool> {
+    Ok(git_output_in_repo(
+        git_repo,
+        &["merge-base", "--is-ancestor", ancestor, descendant],
+    )?
+    .status
+    .success())
 }
 
 pub(super) fn request_id_for_context(
