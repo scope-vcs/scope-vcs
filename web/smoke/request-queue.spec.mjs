@@ -8,7 +8,6 @@ import {
   withPage,
 } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
-import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 
 test('public repository requests route is anonymously readable', async () => {
   await withPage(`${repoPath}/requests`, async (page) => {
@@ -24,11 +23,9 @@ test('public repository requests route is anonymously readable', async () => {
 })
 
 test('request queue search is keyboard accessible and mobile rows do not overflow', async () => {
-  let settled
   await withPage(
     `${requestRepoPath}/requests`,
     async (page) => {
-      await settled()
       const readyRow = page.getByRole('link', {
         name: /Add bounded retry timing/,
       })
@@ -69,7 +66,7 @@ test('request queue search is keyboard accessible and mobile rows do not overflo
         true,
       )
     },
-    { prepare: page => { settled = trackRepositoryRefresh(page) }, viewport: { height: 844, width: 390 } },
+    { viewport: { height: 844, width: 390 } },
   )
 })
 
