@@ -13,14 +13,19 @@ export class StaleBuildError extends Error {
   }
 }
 
+let staleBuild = false
+
 /**
  * Server-function transport. A stale-build response becomes a StaleBuildError
- * and a persistent reload notice instead of a result the caller would retry.
+ * and a persistent reload notice. Later calls fail the same way without a
+ * request, so no poller or retry loop keeps calling the removed function.
  */
 export const fetchServerFunction: typeof fetch = async (input, init) => {
+  if (staleBuild) throw new StaleBuildError()
   const response = await fetch(input, init)
   if (!response.headers.has(STALE_BUILD_HEADER)) return response
   await response.body?.cancel()
+  staleBuild = true
   toast(STALE_BUILD_MESSAGE, {
     id: STALE_BUILD_HEADER,
     duration: Number.POSITIVE_INFINITY,

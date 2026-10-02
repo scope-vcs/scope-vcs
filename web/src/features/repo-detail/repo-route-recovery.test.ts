@@ -7,6 +7,7 @@ import {
   fetchRepoRouteState,
   isRetryableRepoLoadError,
   loadRepoRouteState,
+  type RepoRouteLoadResult,
 } from './repo-route-recovery'
 
 const originalFetch = globalThis.fetch
@@ -88,12 +89,31 @@ test('proxy failures are retryable while access responses retain their status', 
   assert.equal(isRetryableRepoLoadError(new InvalidApiResponseError('GET', '/repo', 403, 'text/html', 'content-type')), false)
 })
 
-test('a stale build stops repository recovery instead of retrying', async () => {
-  globalThis.fetch = async () => new Response('updated', { status: 409, headers: { [STALE_BUILD_HEADER]: '1' } })
-  await assert.rejects(fetchRepoRouteState('https://scope.test/_serverFn/id'), StaleBuildError)
-  assert.equal(isRetryableRepoLoadError(new StaleBuildError()), false)
-  globalThis.fetch = async () => new Response('conflict', { status: 409 })
+// The stale-build flag lasts for the page, so no later test in this file can use the transport.
+test('a stale build stops server-function requests and keeps refreshed route data', async () => {
+  let requests = 0
+  globalThis.fetch = async () => { requests += 1; return new Response('conflict', { status: 409 }) }
   assert.equal((await fetchRepoRouteState('https://scope.test/_serverFn/id')).status, 409)
+  globalThis.fetch = async () => {
+    requests += 1
+    return new Response('updated', { status: 409, headers: { [STALE_BUILD_HEADER]: '1' } })
+  }
+  await assert.rejects(fetchRepoRouteState('https://scope.test/_serverFn/id'), StaleBuildError)
+  await assert.rejects(fetchRepoRouteState('https://scope.test/_serverFn/other'), StaleBuildError)
+  assert.equal(requests, 2)
+
+  const stale = async (): Promise<RepoRouteLoadResult> => { throw new StaleBuildError() }
+  await assert.rejects(loadRepoRouteState({ load: stale, refresh: false, signal: new AbortController().signal }), StaleBuildError)
+  const controller = new AbortController()
+  let loads = 0
+  const refreshing = loadRepoRouteState({
+    load: () => { loads += 1; return stale() }, refresh: true, signal: controller.signal,
+    wait: () => assert.fail('a stale build must not retry'),
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+  controller.abort()
+  await assert.rejects(refreshing, { name: 'AbortError' })
+  assert.equal(loads, 1)
 })
 
 test('successful network reads retain distinct identities even when the summary is unchanged', async () => {

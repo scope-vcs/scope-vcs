@@ -1,6 +1,6 @@
 import { HttpError, InvalidApiResponseError } from '../../api/http'
 import type { RepoLiveState } from '../../api/types'
-import { fetchServerFunction } from '../../lib/stale-build'
+import { fetchServerFunction, StaleBuildError } from '../../lib/stale-build'
 
 export type RepoRouteState = RepoLiveState & { refreshId: string }
 
@@ -49,7 +49,11 @@ export async function loadRepoRouteState({
       }
       throw new RepoRouteUnavailable(result.unavailable)
     } catch (error) {
-      if (!refresh || !isRetryableRepoLoadError(error)) throw error
+      if (!refresh) throw error
+      // Retrying cannot fix a stale build. Leave the background reload pending so
+      // the loaded route keeps its data until the user reloads or navigates.
+      if (error instanceof StaleBuildError) return await waitForAbort(signal)
+      if (!isRetryableRepoLoadError(error)) throw error
       signal.throwIfAborted()
       // The router owns the current data and this attempt. Keeping a background
       // reload pending leaves the stream owner mounted until recovery or navigation.
@@ -69,6 +73,14 @@ function waitForRetry(signal: AbortSignal) {
       clearTimeout(timer)
       reject(signal.reason)
     }
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+  })
+}
+
+function waitForAbort(signal: AbortSignal) {
+  return new Promise<never>((_resolve, reject) => {
+    const abort = () => reject(signal.reason)
     signal.addEventListener('abort', abort, { once: true })
     if (signal.aborted) abort()
   })
