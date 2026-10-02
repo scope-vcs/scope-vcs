@@ -1,15 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { assertNoHorizontalOverflow, baseUrl, repo, repoPath, requestRepoPath, waitForClientHydration, withPage } from './browser-smoke.mjs'
+import { assertNoHorizontalOverflow, baseUrl, repo, repoPath, requestRepoPath, trackPageSettle, waitForClientHydration, withPage } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
-import { delayInitialRepositoryReconciliation, trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
+import { delayInitialRepositoryReconciliation } from './repo-refresh-smoke.mjs'
 
 test('latest repository activity survives child navigation without another request or pending state', async () => {
   let requests = 0
-  let settled
   let delayed
   const countActivityRequests = async (page) => {
-    settled = trackRepositoryRefresh(page)
     await page.route('**/_serverFn/**', (route) => {
       if (serverFunctionName(route.request()) === 'loadRepositoryLatestActivity_createServerFn_handler') requests += 1
       return route.continue()
@@ -17,7 +15,6 @@ test('latest repository activity survives child navigation without another reque
     delayed = await delayInitialRepositoryReconciliation(page, 400)
   }
   await withPage(repoPath, async (page) => {
-    await settled()
     assert.equal(delayed(), true, 'initial reconciliation ran with controlled latency')
     const activity = page.getByLabel('Latest repository change', { exact: true })
     await activity.waitFor()
@@ -40,9 +37,7 @@ test('latest repository activity survives child navigation without another reque
 })
 
 test('request queue and summary are reused across actual child-route navigation', async () => {
-  let settled
   await withPage(`${requestRepoPath}/requests`, async page => {
-    await settled()
     const reads = []
     page.on('request', request => {
       const name = serverFunctionName(request)
@@ -55,7 +50,7 @@ test('request queue and summary are reused across actual child-route navigation'
     await page.getByRole('link', { name: /Add bounded retry timing/ }).waitFor()
     await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
     assert.deepEqual(reads, [])
-  }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
+  })
 })
 
 test('repository events received off-page refresh retained activity without blanking it', async () => {
@@ -66,7 +61,9 @@ test('repository events received off-page refresh retained activity without blan
   let release
   const held = new Promise((resolve) => { release = resolve })
   const prepare = async (page) => {
-    settled = trackRepositoryRefresh(page)
+    // This test owns the event stream, so the page settles only after the
+    // test emits Connected.
+    settled = trackPageSettle(page)
     await page.addInitScript(() => {
       const originalFetch = window.fetch.bind(window)
       const streams = new Set()
@@ -141,7 +138,7 @@ test('repository events received off-page refresh retained activity without blan
       release()
       await activity.getByRole('link', { name: 'New repository activity', exact: true }).waitFor()
       assert.equal(requests, initialRequests + 1)
-    }, { prepare })
+    }, { prepare, settle: false })
   } finally {
     release()
   }
@@ -149,23 +146,18 @@ test('repository events received off-page refresh retained activity without blan
 
 test('leaving and returning during a file load reuses its pending resource request', async () => {
   let requests = 0
-  let settled
   let holdRequestedFile = false
   let release
   const held = new Promise((resolve) => { release = resolve })
-  const holdFile = (page) => {
-    settled = trackRepositoryRefresh(page)
-    return page.route('**/_serverFn/**', async (route) => {
-      if (holdRequestedFile && serverFunctionName(route.request()) === 'loadRepoFile_createServerFn_handler') {
-        requests += 1
-        await held
-      }
-      await route.continue()
-    })
-  }
+  const holdFile = (page) => page.route('**/_serverFn/**', async (route) => {
+    if (holdRequestedFile && serverFunctionName(route.request()) === 'loadRepoFile_createServerFn_handler') {
+      requests += 1
+      await held
+    }
+    await route.continue()
+  })
   try {
     await withPage(repoPath, async (page) => {
-      await settled()
       holdRequestedFile = true
       await waitForClientHydration(page.getByRole('button', { name: 'Switch to light mode' }))
       await page.evaluate((to) => { void globalThis.__TSR_ROUTER__.navigate({ to, search: { file: 'src/app.ts' } }) }, repoPath)

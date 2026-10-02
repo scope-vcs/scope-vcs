@@ -6,11 +6,11 @@ import {
   assertPassiveSkeleton,
   baseUrl,
   repoPath,
+  trackPageSettle,
   withBlankPage,
   within,
   withPage,
 } from './browser-smoke.mjs'
-import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 
 test('repository shell renders before the initial file is ready', async () => {
   for (const scenario of [
@@ -108,8 +108,11 @@ async function assertShellBeforeFileReady({ content, path, requestPath }) {
         assert.equal(fileRequests, 2) // Initial file and connection catch-up.
       },
       {
+        // The initial file request is held, so the page cannot settle before
+        // the shell is measured; it settles once the request is released.
+        settle: false,
         prepare: async (page) => {
-          settled = trackRepositoryRefresh(page)
+          settled = trackPageSettle(page)
           // Ensure the initial file read precedes Connected so this startup
           // test has a deterministic catch-up budget while the file is held.
           await page.route('**/events', async route => {

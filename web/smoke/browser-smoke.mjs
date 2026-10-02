@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright'
+import { serverFunctionName } from './server-functions-smoke.mjs'
 
 // deploy-staging.yml, scope-integration-ci.yml, and dev/check set these two.
 export const baseUrl = (process.env.SCOPE_WEB_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '')
@@ -17,6 +18,9 @@ export const repoPath = `/${repo}`
 // Request fixtures are seeded in the smoke owner's update-demo repository.
 export const requestRepoPath = `/${owner}/update-demo`
 export const authEnabled = process.env.SCOPE_SMOKE_AUTH_ENABLED === '1'
+// Set SCOPE_SMOKE_LATENCY_MS (for example 200) to reproduce timing races that
+// only show up under CI load or real network latency.
+const serverFunctionLatencyMs = Number(process.env.SCOPE_SMOKE_LATENCY_MS ?? 0)
 
 export async function withBlankPage(run, pageOptions = {}) {
   const browser = await chromium.launch({ headless: true })
@@ -24,6 +28,28 @@ export async function withBlankPage(run, pageOptions = {}) {
   const pageErrors = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
   try {
+    // The Vite dev server shows every internal error on every open page,
+    // including a request that another test's closing browser reset. Its
+    // overlay would intercept this page's pointer events.
+    await page.addInitScript(() => {
+      globalThis.customElements?.define('vite-error-overlay', class extends HTMLElement {
+        connectedCallback() { this.remove() }
+      })
+    })
+    if (serverFunctionLatencyMs > 0) {
+      // Throttling applies below request interception, so requests a test's
+      // own route handler continues are delayed too.
+      const session = await page.context().newCDPSession(page)
+      await session.send('Network.enable')
+      await session.send('Network.emulateNetworkConditionsByRule', {
+        matchedNetworkConditions: [{
+          urlPattern: '*://*:*/_serverFn/*',
+          latency: serverFunctionLatencyMs,
+          downloadThroughput: -1,
+          uploadThroughput: -1,
+        }],
+      })
+    }
     await run(page)
     assert.deepEqual(pageErrors, [])
   } finally {
@@ -32,9 +58,12 @@ export async function withBlankPage(run, pageOptions = {}) {
 }
 
 // `prepare` runs before navigation for routes and init scripts that must be
-// in place when the document loads.
-export async function withPage(path, run, { prepare, ...pageOptions } = {}) {
+// in place when the document loads. `run` starts once the page has settled;
+// tests that assert the loading state itself pass `settle: false`.
+export async function withPage(path, run, { prepare, settle = true, ...pageOptions } = {}) {
   await withBlankPage(async (page) => {
+    // A page without JavaScript never hydrates, so it has nothing to settle.
+    const settled = settle && pageOptions.javaScriptEnabled !== false ? trackPageSettle(page) : null
     await prepare?.(page)
     const response = await page.goto(new URL(path, `${baseUrl}/`).toString(), {
       timeout: 30_000,
@@ -42,8 +71,44 @@ export async function withPage(path, run, { prepare, ...pageOptions } = {}) {
     })
     assert(response, `navigation to ${path} did not produce a response`)
     assert(response.status() < 400, `navigation to ${path} returned ${response.status()}`)
+    await settled?.()
     await run(page)
   }, pageOptions)
+}
+
+// Install before navigation. The returned function waits for the router to
+// hydrate, for repository pages to receive the live-state summary their
+// event stream's catch-up loads, for 200 ms without a server function in
+// flight, and for the router to be idle again.
+export function trackPageSettle(page) {
+  const pending = new Set()
+  let summaries = 0
+  let lastActivity = Date.now()
+  page.on('request', request => {
+    if (!request.url().includes('/_serverFn/')) return
+    pending.add(request)
+    lastActivity = Date.now()
+  })
+  const finish = request => {
+    if (!pending.delete(request)) return
+    if (serverFunctionName(request) === 'loadRepoLiveState_createServerFn_handler') summaries++
+    lastActivity = Date.now()
+  }
+  page.on('requestfinished', finish)
+  page.on('requestfailed', finish)
+  return async () => {
+    // The router resolves its first location once it has hydrated the matches.
+    await page.waitForFunction(() => Boolean(globalThis.__TSR_ROUTER__?.state.resolvedLocation))
+    // Only the repository layout opens an event stream.
+    const repository = await page.evaluate(() =>
+      globalThis.__TSR_ROUTER__.state.matches.some(({ routeId }) => routeId === '/$owner/$repo'))
+    const deadline = Date.now() + 30_000
+    while ((repository && !summaries) || pending.size || Date.now() - lastActivity < 200) {
+      assert(Date.now() < deadline, `page did not settle: ${summaries} live-state summaries, pending ${[...pending].map(serverFunctionName).join(', ')}`)
+      await delay(50)
+    }
+    await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
+  }
 }
 
 async function isClientHydrated(locator) {

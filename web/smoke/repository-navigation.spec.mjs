@@ -16,21 +16,18 @@ import {
 } from './browser-smoke.mjs'
 import { assertUpdateFileSelectionKeepsDocument } from './update-navigation-smoke.mjs'
 import { assertRepositoryMarkdownUsesClientNavigation } from './repository-markdown-navigation-smoke.mjs'
-import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 
 const primaryLink = (page, name) => page
   .getByRole('navigation', { name: 'Primary' })
   .getByRole('link', { name, exact: true })
 
 test('public repository history opens from the latest change and lists its seeded push', async () => {
-  let settled
   await withPage(repoPath, async (page) => {
     await assertCurrentRepoSection(page, 'Code')
     const trigger = page
       .getByLabel('Latest repository change')
       .getByRole('button', { name: 'History', exact: true })
     await waitForClientHydration(trigger)
-    await settled()
     const documentSentinel = 'scope-history-menu-navigation'
     await markDocument(page, documentSentinel)
     await trigger.click()
@@ -48,7 +45,7 @@ test('public repository history opens from the latest change and lists its seede
       await page.evaluate(() => document.querySelector('#main-content')?.scrollTop),
       0,
     )
-  }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
+  })
 })
 
 test('repository Markdown routes relative file links without replacing the document', async () => {

@@ -9,12 +9,9 @@ import {
   within,
   withPage,
 } from './browser-smoke.mjs'
-import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 
 test('public repository exposes only its projected source', async () => {
-  let settled
   await withPage(repoPath, async (page) => {
-    await settled()
     await assertCurrentRepoSection(page, 'Code')
     await assertPageHeading(page, 'Code')
     await page.getByText('2 files', { exact: true }).waitFor()
@@ -324,5 +321,5 @@ test('public repository exposes only its projected source', async () => {
       0,
     )
     assert.equal(await page.getByRole('heading', { name: 'Runners' }).count(), 0)
-  }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
+  })
 })

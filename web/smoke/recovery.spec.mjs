@@ -13,6 +13,8 @@ import {
 import { serverFunctionName } from './server-functions-smoke.mjs'
 import { changesBackLink } from './request-changes-smoke.mjs'
 
+// A held event stream never sends Connected, so the page never loads the
+// live-state summary that settles a repository page.
 const holdEventStream = (page) => page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
 
 test(`sign-in keeps Scope navigation when authentication is ${authEnabled ? 'enabled' : 'disabled'}`, async () => {
@@ -78,6 +80,7 @@ test('changes retry keeps the document and selected revision', async () => {
         }
       })
     },
+    settle: false,
   })
 })
 
@@ -108,7 +111,7 @@ test('a delayed file offers scoped retry and keeps its selection', async () => {
       await page.locator('pre code').filter({ hasText: 'export function greet' }).waitFor()
       assert.equal(attempts, 2)
       assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')
-    }, { prepare: holdEventStream })
+    }, { prepare: holdEventStream, settle: false })
   } finally {
     release()
   }

@@ -7,7 +7,6 @@ import {
   withPage,
 } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
-import { trackRepositoryRefresh } from './repo-refresh-smoke.mjs'
 import {
   assertFileSelectionSkipsRevisionReload,
   assertRequestCrossLinksStayInDocument,
@@ -136,14 +135,48 @@ test('reply disclosure preserves scroll and remains reversible', async () => {
   })
 })
 
+test('a live refresh in flight leaves the reader where they scrolled', async () => {
+  let markSummaryRequested
+  let releaseSummary
+  const summaryRequested = new Promise((resolve) => { markSummaryRequested = resolve })
+  const summaryHeld = new Promise((resolve) => { releaseSummary = resolve })
+  const isSummary = (request) => serverFunctionName(request) === 'loadRepoLiveState_createServerFn_handler'
+  try {
+    await withPage(requestPath, async (page) => {
+      await summaryRequested
+      const mainContent = page.locator('#main-content')
+      const scrollTop = await mainContent.evaluate((element) => {
+        element.scrollTop = 300
+        return element.scrollTop
+      })
+      assert(scrollTop > 0)
+      const summaryFinished = page.waitForEvent('requestfinished', isSummary)
+      releaseSummary()
+      await summaryFinished
+      await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
+      assert.equal(await mainContent.evaluate((element) => element.scrollTop), scrollTop)
+    }, {
+      // The reader scrolls while the connection catch-up is still loading.
+      settle: false,
+      prepare: (page) => page.route('**/_serverFn/**', async (route) => {
+        if (!isSummary(route.request())) return route.fallback()
+        markSummaryRequested()
+        const response = await route.fetch()
+        await summaryHeld
+        await route.fulfill({ response })
+      }),
+    })
+  } finally {
+    releaseSummary()
+  }
+})
+
 test('revision and discussion links retain the document and request shell', async () => {
   await withPage(requestPath, assertRequestCrossLinksStayInDocument)
 })
 
 test('changes navigation preserves the request shell and collapsed replies', async () => {
-  let settled
   await withPage(requestPath, async (page) => {
-    await settled()
     const shell = await captureRequestShell(page)
     const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
     const disclosure = retryThread.getByRole('button', { name: 'Hide 3 replies' })
@@ -192,17 +225,15 @@ test('changes navigation preserves the request shell and collapsed replies', asy
     await restoredRetryThread.getByRole('button', { name: 'Show 3 replies' }).click()
     await assertReplyRegion(page, restoredRetryReplies, true)
     await assertNodesPreserved(page, shell)
-  }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
+  })
 })
 
 test('file and revision selection reload only the selected changes payload', async () => {
-  let settled
   await withPage(`${requestPath}/changes`, async (page) => {
-    await settled()
     await page.getByLabel('Commit file navigator').waitFor()
     await assertFileSelectionSkipsRevisionReload(page, 'retry.ts', '/src/retry.ts')
     await assertRevisionStepReloadsSelectedPayload(page)
-  }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
+  })
 })
 
 async function assertBefore(first, second) {
@@ -228,14 +259,11 @@ async function assertReplyRegion(page, region, expanded) {
 }
 
 test('Details opens a drawer that reuses request data and preserves discussion state', async () => {
-  let settled
   await withPage(requestPath, async (page) => {
-    await settled()
     const details = page.getByRole('button', { name: 'Details', exact: true })
     const thread = page.locator('#discussion-discussion_demo_retry_cap')
     const collapse = thread.getByRole('button', { name: 'Hide 3 replies' })
     await waitForClientHydration(collapse)
-    await settled()
     await collapse.click()
     await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
     const header = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Add bounded retry timing', exact: true }) })
@@ -261,7 +289,7 @@ test('Details opens a drawer that reuses request data and preserves discussion s
     const quote = page.locator('#reply-discussion_reply_demo_retry_cap_quote a[href^="#discussion="]')
     await quote.click()
     await page.waitForFunction(() => document.activeElement?.id === 'reply-discussion_reply_demo_retry_cap_maintainer')
-  }, { prepare: page => { settled = trackRepositoryRefresh(page) } })
+  })
 })
 
 test('the changes screen renders on mobile before hydration', async () => {
