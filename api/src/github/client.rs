@@ -157,6 +157,7 @@ struct WorkflowRun {
     html_url: String,
     check_suite_id: Option<u64>,
     run_started_at: Option<String>,
+    created_at: String,
     updated_at: String,
 }
 
@@ -167,10 +168,12 @@ impl WorkflowRun {
             Some(conclusion) => parse_enum(conclusion).map(Some),
             None => Some(None),
         };
-        let updated_at_unix = parse_time(&self.updated_at);
-        let (Some(status), Some(conclusion), Some(updated_at_unix)) =
-            (status, conclusion, updated_at_unix)
-        else {
+        let (Some(status), Some(conclusion), Some(created_at_unix), Some(updated_at_unix)) = (
+            status,
+            conclusion,
+            parse_time(&self.created_at),
+            parse_time(&self.updated_at),
+        ) else {
             return self.skip();
         };
         if (status == GitHubCheckStatus::Completed) != conclusion.is_some()
@@ -192,6 +195,7 @@ impl WorkflowRun {
             html_url: self.html_url,
             check_suite_id: self.check_suite_id,
             run_started_at_unix: self.run_started_at.as_deref().and_then(parse_time),
+            created_at_unix,
             updated_at_unix,
         })
     }

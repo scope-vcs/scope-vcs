@@ -99,6 +99,25 @@ impl GitHubSetupCheck {
         GitHubBranch::SetupCheck
     }
 
+    /// Whether the test is of the GitHub repository the link now names. A
+    /// test of a repository Scope was connected to before says nothing about
+    /// this one.
+    pub fn is_of(&self, connection: &GitHubConnection) -> bool {
+        self.github_repository_id == connection.github_repository_id
+    }
+
+    /// Whether GitHub started the run for this test: on the setup branch, for
+    /// the tested commit, after the test began. Testing an unchanged main
+    /// again pushes the same commit to the same branch, so the earlier test's
+    /// runs match on branch and commit and only their age tells them apart.
+    /// GitHub creates a run only once the push reaches it, which is after the
+    /// test began.
+    pub fn started(&self, run: &GitHubWorkflowRun) -> bool {
+        run.head_oid == self.commit_oid
+            && run.scope_branch() == Some(Self::branch())
+            && run.created_at_unix >= self.started_at_unix
+    }
+
     pub fn is_running(&self) -> bool {
         matches!(
             self.state,
@@ -118,15 +137,13 @@ impl GitHubSetupCheck {
         }
     }
 
-    /// Looks at the workflow runs GitHub reports on the setup branch for the
-    /// test's commit. Returns whether the test ended, which is when its
-    /// branch is no longer needed.
+    /// Looks at the workflow runs GitHub reports, of which only the ones it
+    /// started for this test count. Returns whether the test ended, which is
+    /// when its branch is no longer needed.
     pub fn observe(&mut self, runs: &[GitHubWorkflowRun], now_unix: u64) -> bool {
         let runs = runs
             .iter()
-            .filter(|run| {
-                run.head_oid == self.commit_oid && run.scope_branch() == Some(Self::branch())
-            })
+            .filter(|run| self.started(run))
             .collect::<Vec<_>>();
         let timed_out = now_unix
             >= self
@@ -149,7 +166,7 @@ impl GitHubSetupCheck {
     }
 
     /// What the maintainer should read about the test besides its runs.
-    /// `workflows_started` is whether any workflow ran on the setup branch.
+    /// `workflows_started` is whether GitHub started any run for the test.
     pub fn message(&self, workflows_started: bool) -> Option<String> {
         match self.state {
             GitHubSetupCheckState::Failed => self.last_error.clone(),

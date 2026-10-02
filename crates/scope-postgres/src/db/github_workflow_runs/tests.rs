@@ -16,6 +16,7 @@ fn run(id: u64, branch: &str, started_at: u64, updated_at: u64) -> GitHubWorkflo
         html_url: format!("https://github.com/octo/repo/actions/runs/{id}"),
         check_suite_id: Some(id),
         run_started_at_unix: Some(started_at),
+        created_at_unix: started_at,
         updated_at_unix: updated_at,
     }
 }

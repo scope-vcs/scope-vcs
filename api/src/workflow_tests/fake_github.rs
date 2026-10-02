@@ -124,13 +124,31 @@ pub(super) fn suite_check_run(
     run
 }
 
-/// A workflow run as GitHub's API reports it. Its check suite id is its own id.
+/// A workflow run GitHub created just now, as its API reports it. Its check
+/// suite id is its own id.
 pub(super) fn workflow_run(
     id: u64,
     branch: &str,
     commit_oid: &str,
     conclusion: Option<&str>,
 ) -> serde_json::Value {
+    workflow_run_created_at(id, branch, commit_oid, conclusion, unix_now())
+}
+
+/// A workflow run GitHub created at `created_at_unix`.
+pub(super) fn workflow_run_created_at(
+    id: u64,
+    branch: &str,
+    commit_oid: &str,
+    conclusion: Option<&str>,
+    created_at_unix: u64,
+) -> serde_json::Value {
+    let time = |unix: u64| {
+        time::OffsetDateTime::from_unix_timestamp(unix as i64)
+            .unwrap()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap()
+    };
     serde_json::json!({
         "id": id,
         "name": "ci",
@@ -141,8 +159,10 @@ pub(super) fn workflow_run(
         "conclusion": conclusion,
         "html_url": format!("https://github.com/{GITHUB_FULL_NAME}/actions/runs/{id}"),
         "check_suite_id": id,
-        "run_started_at": "2026-10-01T00:00:00Z",
-        "updated_at": format!("2026-10-01T00:{:02}:00Z", if conclusion.is_some() { 30 } else { 10 }),
+        "run_started_at": time(created_at_unix),
+        "created_at": time(created_at_unix),
+        // A finished run was updated after it started.
+        "updated_at": time(created_at_unix + if conclusion.is_some() { 30 } else { 0 }),
     })
 }
 

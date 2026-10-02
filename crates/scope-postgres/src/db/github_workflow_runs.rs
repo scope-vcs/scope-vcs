@@ -13,7 +13,7 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Valu
 
 const SELECT_RUN: &str = "run.github_run_id, run.workflow_name, run.head_branch, run.head_oid,
     run.event, run.status, run.conclusion, run.html_url, run.check_suite_id,
-    run.run_started_at_unix, run.github_updated_at_unix";
+    run.run_started_at_unix, run.github_created_at_unix, run.github_updated_at_unix";
 
 #[derive(FromQueryResult)]
 struct WorkflowRunRow {
@@ -27,6 +27,7 @@ struct WorkflowRunRow {
     html_url: String,
     check_suite_id: Option<i64>,
     run_started_at_unix: Option<i64>,
+    github_created_at_unix: i64,
     github_updated_at_unix: i64,
 }
 
@@ -67,6 +68,7 @@ impl RepositoryStore {
             optional_u64_to_i64(run.check_suite_id, "GitHub check suite id")?.into(),
             optional_u64_to_i64(run.run_started_at_unix, "GitHub run start")?.into(),
             u64_to_i64(run.updated_at_unix, "GitHub run update")?.into(),
+            u64_to_i64(run.created_at_unix, "GitHub run creation")?.into(),
         ];
         // A run id belongs to one GitHub repository, which may since have been
         // connected to another Scope repository.
@@ -76,8 +78,8 @@ impl RepositoryStore {
                 "INSERT INTO scope_github_workflow_runs (github_run_id, repo_id,
                     github_repository_id, workflow_name, head_branch, head_oid, event, status,
                     conclusion, html_url, check_suite_id, run_started_at_unix,
-                    github_updated_at_unix)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    github_updated_at_unix, github_created_at_unix)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                  ON CONFLICT (github_run_id) DO UPDATE SET
                     repo_id = EXCLUDED.repo_id,
                     github_repository_id = EXCLUDED.github_repository_id,
@@ -87,6 +89,7 @@ impl RepositoryStore {
                     conclusion = EXCLUDED.conclusion, html_url = EXCLUDED.html_url,
                     check_suite_id = EXCLUDED.check_suite_id,
                     run_started_at_unix = EXCLUDED.run_started_at_unix,
+                    github_created_at_unix = EXCLUDED.github_created_at_unix,
                     github_updated_at_unix = EXCLUDED.github_updated_at_unix
                   WHERE scope_github_workflow_runs.github_updated_at_unix
                         <= EXCLUDED.github_updated_at_unix",
@@ -185,6 +188,7 @@ impl WorkflowRunRow {
             html_url: self.html_url,
             check_suite_id: optional_i64_to_u64(self.check_suite_id, "GitHub check suite id")?,
             run_started_at_unix: optional_i64_to_u64(self.run_started_at_unix, "GitHub run start")?,
+            created_at_unix: i64_to_u64(self.github_created_at_unix, "GitHub run creation")?,
             updated_at_unix: i64_to_u64(self.github_updated_at_unix, "GitHub run update")?,
         })
     }

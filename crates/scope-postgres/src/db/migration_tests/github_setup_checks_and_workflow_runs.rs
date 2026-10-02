@@ -24,9 +24,9 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
             VALUES ('owner/one',42,repeat('a',40),'waiting',10);
         INSERT INTO scope_github_workflow_runs (github_run_id,repo_id,github_repository_id,
             workflow_name,head_branch,head_oid,event,status,conclusion,html_url,check_suite_id,
-            run_started_at_unix,github_updated_at_unix)
+            run_started_at_unix,github_created_at_unix,github_updated_at_unix)
             VALUES (1,'owner/one',42,'ci','scope/setup-check',repeat('a',40),'push','completed',
-                    'success','https://github.com/octo/one/actions/runs/1',5,10,20);
+                    'success','https://github.com/octo/one/actions/runs/1',5,10,10,20);
         INSERT INTO scope_github_check_runs (github_check_run_id,repo_id,github_repository_id,
             commit_oid,name,status,conclusion,details_url,updated_at_unix,check_suite_id)
             VALUES (1,'owner/one',42,repeat('a',40),'test','completed','success',NULL,20,5);

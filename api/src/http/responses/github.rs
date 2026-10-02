@@ -228,7 +228,14 @@ pub(crate) fn github_connection_response(
     can_confirm_public: bool,
     setup_check: Option<GitHubSetupCheckRead>,
 ) -> GitHubConnectionResponse {
-    let connection = read.filter(|_| configured).map(|read| {
+    let read = read.filter(|_| configured);
+    // A test of the GitHub repository Scope was connected to before says
+    // nothing about the one it is connected to now.
+    let setup_check = setup_check.filter(|setup| {
+        read.as_ref()
+            .is_some_and(|read| setup.check.is_of(&read.connection))
+    });
+    let connection = read.map(|read| {
         let connection = read.connection;
         let (public_on_github, public_confirmed) = match connection.visibility {
             GitHubRepositoryVisibility::Private => (false, true),
@@ -267,9 +274,7 @@ pub(crate) fn github_connection_response(
     });
     GitHubConnectionResponse {
         configured,
-        setup_check: setup_check
-            .filter(|_| connection.is_some())
-            .map(github_setup_check_response),
+        setup_check: setup_check.map(github_setup_check_response),
         connection,
         required_checks,
         can_confirm_public,

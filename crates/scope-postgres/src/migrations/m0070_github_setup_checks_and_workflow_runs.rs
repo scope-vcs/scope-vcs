@@ -88,6 +88,7 @@ impl MigrationTrait for Migration {
                     html_url text NOT NULL,
                     check_suite_id bigint,
                     run_started_at_unix bigint,
+                    github_created_at_unix bigint NOT NULL,
                     github_updated_at_unix bigint NOT NULL,
                     CONSTRAINT scope_github_workflow_run_values CHECK (
                         github_run_id > 0 AND github_repository_id > 0 AND
@@ -102,7 +103,7 @@ impl MigrationTrait for Migration {
                         ((status = 'completed') = (conclusion IS NOT NULL)) AND
                         (check_suite_id IS NULL OR check_suite_id > 0) AND
                         (run_started_at_unix IS NULL OR run_started_at_unix >= 0) AND
-                        github_updated_at_unix >= 0
+                        github_created_at_unix >= 0 AND github_updated_at_unix >= 0
                     )
                 );
 

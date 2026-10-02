@@ -146,8 +146,12 @@ creating `scope/**` branches, the test fails at once and shows GitHub's
 answer. Otherwise a background pass reads, every 30 seconds, the workflow runs
 GitHub started on `scope/setup-check` for that commit
 (`GET /repos/{owner}/{repo}/actions/runs?branch=...&head_sha=...`) and the
-commit's check runs. Only check runs filed under those workflow runs' check
-suites count, so runs GitHub started for the same commit on main do not. The
+commit's check runs. Only workflow runs GitHub created after the test began
+count, so testing an unchanged main again ignores the earlier test's runs on
+the same branch. Only check runs filed under those workflow runs' check
+suites count, so runs GitHub started for the same commit on main do not. A
+test belongs to the GitHub repository it pushed to, and settings stop showing
+it once the repository is connected to another one. The
 test ends when every workflow run it saw completed, or after 15 minutes, and
 then deletes the branch. The check names it saw are listed, and each can be
 made a required check with one click. A test that ends without any workflow
