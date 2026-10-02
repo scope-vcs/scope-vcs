@@ -60,7 +60,7 @@ pub async fn run_native_runs_command_for_maintenance(
         }
         NativeRunsCommand::Add { handle, note } => {
             serde_json::to_string(&NativeRunsAccountResponse::from_listing(
-                native_runs::add_account(&metadata, &handle, note)
+                native_runs::add_account(&metadata, &RepoChangeBus::default(), &handle, note)
                     .await
                     .map_err(operator_error)?,
             ))?

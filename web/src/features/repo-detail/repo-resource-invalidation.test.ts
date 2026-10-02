@@ -7,6 +7,7 @@ import { requestActivityIdentity, requestActivityResource } from '../requests/re
 import { invalidateRepoResources, invalidateRepoSummaryResources } from './repo-resource-invalidation'
 import { repositoryDependencyResource } from './repository-dependency-resource'
 import { historyFeedResource } from '../history/history-resource-cache'
+import { runWorkflowsResource } from '../runs/run-workflows-resource'
 
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
 function seed() {
@@ -41,6 +42,17 @@ test('account deletions refresh history, whose authors carry no content version'
   seed()
   invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'contributor-deleted' } }))
   assert.equal(historyFeedResource.getSnapshot('viewer-a\0public\0all').stale, true)
+})
+
+test('allowlist changes refresh the retained Runs page workflows and their availability', () => {
+  runWorkflowsResource.clear()
+  for (const scope of ['viewer-a', 'viewer-b']) runWorkflowsResource.write(scope, { workflows: [], native_runs_available: true })
+  invalidateRepoResources('viewer-a', event({ RunChanged: { run_id: 'run', change: 'StatusChanged' } }))
+  assert.equal(runWorkflowsResource.getSnapshot('viewer-a').stale, false)
+  invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'native-runs-changed' } }))
+  assert.equal(runWorkflowsResource.getSnapshot('viewer-a').stale, true)
+  assert.equal(runWorkflowsResource.peek('viewer-a')?.native_runs_available, true)
+  assert.equal(runWorkflowsResource.getSnapshot('viewer-b').stale, false)
 })
 
 test('request changes target one request and leave latest repository activity reusable', () => {

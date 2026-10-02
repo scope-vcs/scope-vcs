@@ -127,6 +127,58 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
     }
 }
 
+#[test]
+fn run_start_reports_why_scope_refuses_the_run() {
+    let checkout = TempDir::new("run-source-refused");
+    create_repo_with_head(checkout.path());
+    let app = Router::new()
+        .route(
+            "/v1/session",
+            get(|| async {
+                Json(support::session_response(
+                    "user-test",
+                    "owner",
+                    "owner@example.test",
+                ))
+            }),
+        )
+        .route(
+            "/v1/repos/owner/repo/runs/resolve",
+            post(|| async {
+                (
+                    axum::http::StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({
+                        "code": "forbidden",
+                        "message": "Scope runs are not available for this repository.",
+                        "retryable": false,
+                    })),
+                )
+            }),
+        );
+    let server = TestServer::new(app);
+    run_git(
+        checkout.path(),
+        [
+            "remote",
+            "add",
+            "scope",
+            &format!("{}/git/permissioned/owner/repo", server.api_url),
+        ],
+    );
+    let output = server
+        .command(checkout.path())
+        .args(["run", "start", "checks", "--no-watch"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Scope runs are not available for this repository."),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("Uploading source"), "{stderr}");
+}
+
 fn run_response(query: &CreateManualRunQuery) -> serde_json::Value {
     serde_json::json!({
         "id":format!("run_{}", query.request_id), "repository_id":"owner/repo", "workflow_name":"checks", "git_oid":query.git_oid,

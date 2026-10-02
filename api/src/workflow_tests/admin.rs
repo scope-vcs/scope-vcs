@@ -204,6 +204,10 @@ async fn native_runs_accounts_require_the_operator_token() {
 async fn operators_list_and_remove_native_runs_accounts() {
     let state = operator_state();
     let account = format!("/v1/admin/native-runs/accounts/{TEST_REPO_OWNER}");
+    let mut events = state.repo_events.subscribe(TEST_REPO_ID);
+    let availability_changed = serde_json::json!({
+        "RepositoryChanged": { "reason": "native-runs-changed" }
+    });
     let added = expect_json(
         api_request(
             router(state.clone()),
@@ -219,6 +223,11 @@ async fn operators_list_and_remove_native_runs_accounts() {
     assert_eq!(added["handle"], TEST_REPO_OWNER);
     assert_eq!(added["user_id"], test_owner_id());
     assert_eq!(added["note"], "design partner");
+    // Open Runs pages learn that the owner's repositories may now run workflows.
+    assert_eq!(
+        serde_json::to_value(events.try_recv().unwrap().kind).unwrap(),
+        availability_changed
+    );
     let listed = expect_json(
         api_request(
             router(state.clone()),
@@ -246,6 +255,10 @@ async fn operators_list_and_remove_native_runs_accounts() {
     )
     .await;
     assert_eq!(removed["removed"], true);
+    assert_eq!(
+        serde_json::to_value(events.try_recv().unwrap().kind).unwrap(),
+        availability_changed
+    );
     assert!(
         state
             .metadata

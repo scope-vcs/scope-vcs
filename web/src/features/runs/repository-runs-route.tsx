@@ -3,6 +3,7 @@ import { RepositoryRunsPage } from '@/features/runs/repository-runs-page'
 import {
   loadRepoRunHistory,
   loadRepoRunPage,
+  loadRepoRunWorkflows,
 } from '@/routes/-run-history-actions'
 import { useCallback } from 'react'
 
@@ -22,12 +23,18 @@ export function RepositoryRunsRoute({
       loadRepoRunHistory({ data: input, signal }),
     [],
   )
+  const loadWorkflows = useCallback(
+    (input: RepoParams, signal?: AbortSignal) =>
+      loadRepoRunWorkflows({ data: input, signal }),
+    [],
+  )
 
   return (
     <RepositoryRunsPage
       initialResources={initialResources}
       key={`${params.owner}/${params.repo}/${workflow ?? 'all'}/${initialResources ? 'member' : 'denied'}`}
       loadHistory={loadHistory}
+      loadWorkflows={loadWorkflows}
       params={params}
       workflow={workflow}
     />

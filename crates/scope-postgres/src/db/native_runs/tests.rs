@@ -107,19 +107,32 @@ async fn operators_list_accounts_by_handle() {
         .add_account(OWNER_HANDLE, Some(" design partner ".into()), 5)
         .await
         .unwrap();
-    assert_eq!(added.handle, OWNER_HANDLE);
-    assert_eq!(added.account.user_id, OWNER_ID);
-    assert_eq!(added.account.note.as_deref(), Some("design partner"));
+    assert_eq!(added.listing.handle, OWNER_HANDLE);
+    assert_eq!(added.listing.account.user_id, OWNER_ID);
+    assert_eq!(
+        added.listing.account.note.as_deref(),
+        Some("design partner")
+    );
+    let owned = |repositories: &[scope_domain::repository::RepositoryIncarnation]| {
+        repositories
+            .iter()
+            .map(|repository| repository.repository_id().to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(owned(&added.repositories), ["native-owner/native-repo"]);
     let renoted = native_runs
         .add_account(OWNER_HANDLE, None, 9)
         .await
-        .unwrap();
+        .unwrap()
+        .listing;
     assert_eq!(renoted.account.added_at_unix, 5);
     assert_eq!(renoted.account.note, None);
     assert_eq!(native_runs.accounts().await.unwrap(), [renoted]);
 
+    // Every owned repository changes availability, even with nothing to settle.
     let removal = native_runs.remove_account(OWNER_HANDLE, 10).await.unwrap();
     assert!(removal.removed);
+    assert_eq!(owned(&removal.repositories), ["native-owner/native-repo"]);
     assert!(native_runs.accounts().await.unwrap().is_empty());
     assert!(
         !native_runs

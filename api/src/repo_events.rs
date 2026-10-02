@@ -11,7 +11,8 @@ use std::{
 use tokio::sync::broadcast;
 
 const REPO_CHANGE_CHANNEL_CAPACITY: usize = 128;
-/// Asks request summaries to refresh rather than naming a repository version.
+/// Names no repository version, so clients refresh request summaries and
+/// other state that changes without one.
 pub(crate) const REQUEST_SUMMARY_REFRESH_VERSION: u64 = 0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,6 +45,7 @@ pub(crate) enum RepoChangeReason {
     RequestInviteeAdded,
     RequestInviteeRemoved,
     RequestAttentionChanged,
+    NativeRunsChanged,
 }
 
 impl RepoChangeReason {
@@ -77,6 +79,7 @@ impl RepoChangeReason {
             Self::RequestInviteeAdded => "request-invitee-added",
             Self::RequestInviteeRemoved => "request-invitee-removed",
             Self::RequestAttentionChanged => "request-attention-changed",
+            Self::NativeRunsChanged => "native-runs-changed",
         }
     }
 }

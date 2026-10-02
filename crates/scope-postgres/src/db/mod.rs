@@ -138,7 +138,7 @@ pub use maintenance::{
     apply_maintenance_migrations, migration_plan, migration_preflight,
     repository_workflow_catalogs_for_maintenance, verify_schema,
 };
-pub use native_runs::{NativeRunsAccountListing, NativeRunsWithdrawal};
+pub use native_runs::{NativeRunsAccountListing, NativeRunsAddition, NativeRunsWithdrawal};
 pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
 pub use repo_collaboration::{
     CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,

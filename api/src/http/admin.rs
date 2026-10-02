@@ -144,7 +144,8 @@ pub(crate) async fn add_native_runs_account(
 ) -> Result<Json<NativeRunsAccountResponse>, ApiError> {
     ensure_operator(&state, &headers)?;
     let Json(input) = input.unwrap_or_default();
-    let listing = native_runs::add_account(&state.metadata, &handle, input.note).await?;
+    let listing =
+        native_runs::add_account(&state.metadata, &state.repo_events, &handle, input.note).await?;
     Ok(Json(NativeRunsAccountResponse::from_listing(listing)))
 }
 

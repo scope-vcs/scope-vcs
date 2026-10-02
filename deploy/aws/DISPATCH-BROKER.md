@@ -31,8 +31,9 @@ registries do not receive those registry credentials.
   An unlisted repository creates no runs and its requests report no checks. Removing
   an account cancels its repositories' unfinished runs: queued jobs end as canceled
   at once and running attempts stop at their next heartbeat. Requests still waiting
-  on its checks show a configuration error. Migration m0066 listed every account
-  whose repositories already had runs.
+  on its checks show a configuration error. Adding or removing an account notifies
+  open pages for each repository it owns. Migration m0066 listed every account whose
+  repositories already had runs or recorded request checks.
 - Remove direct ECS, Secrets Manager, and `iam:PassRole` grants from the worker
   identity. Remove old worker ECS settings, public API URL, registry ARN, and
   secret-name HMAC key once the cutover is verified.

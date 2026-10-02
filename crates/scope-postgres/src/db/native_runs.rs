@@ -3,11 +3,15 @@
 //! account waits for them and nothing they start can outlive the removal
 //! unseen. Withdrawal then settles what the removed account left waiting.
 
-use super::{NativeRunsStore, integer_columns};
+use super::{NativeRunsStore, entities, integer_columns};
 use crate::error::PostgresError;
-use scope_domain::runs::availability::{NativeRunsAccount, NativeRunsAvailability};
+use scope_domain::{
+    repository::RepositoryIncarnation,
+    runs::availability::{NativeRunsAccount, NativeRunsAvailability},
+};
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseTransaction, QueryResult, Statement, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
+    QueryResult, Statement, TransactionTrait,
 };
 
 mod withdrawal;
@@ -21,6 +25,13 @@ mod tests;
 pub struct NativeRunsAccountListing {
     pub account: NativeRunsAccount,
     pub handle: String,
+}
+
+/// A listing just added or renoted, with the repositories it makes available.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeRunsAddition {
+    pub listing: NativeRunsAccountListing,
+    pub repositories: Vec<RepositoryIncarnation>,
 }
 
 impl NativeRunsStore {
@@ -46,7 +57,7 @@ impl NativeRunsStore {
         handle: &str,
         note: Option<String>,
         now_unix: u64,
-    ) -> Result<NativeRunsAccountListing, PostgresError> {
+    ) -> Result<NativeRunsAddition, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let user_id = user_id_for_handle(&tx, handle).await?;
         let account = NativeRunsAccount::new(user_id, note, now_unix)?;
@@ -68,8 +79,12 @@ impl NativeRunsStore {
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::internal_message("native runs listing was not stored"))?;
         let listing = listing_from_row(&row)?;
+        let repositories = owned_repositories(&tx, &listing.account.user_id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(listing)
+        Ok(NativeRunsAddition {
+            listing,
+            repositories,
+        })
     }
 
     /// Unlists the account, then settles its repositories: requests waiting on
@@ -135,6 +150,22 @@ async fn availability<C: ConnectionTrait>(
         .map_err(PostgresError::internal)?
         .is_some();
     Ok(NativeRunsAvailability::for_owner(listed))
+}
+
+async fn owned_repositories<C: ConnectionTrait>(
+    conn: &C,
+    user_id: &str,
+) -> Result<Vec<RepositoryIncarnation>, PostgresError> {
+    entities::repository::Entity::find()
+        .filter(entities::repository::Column::OwnerUserId.eq(user_id))
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(|row| {
+            RepositoryIncarnation::new(row.id, row.incarnation_id).map_err(PostgresError::internal)
+        })
+        .collect()
 }
 
 async fn user_id_for_handle(

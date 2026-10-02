@@ -31,6 +31,10 @@ export const loadRepoRunPage = createServerFn({ method: 'GET' })
     }
   }))
 
+export const loadRepoRunWorkflows = createServerFn({ method: 'GET' })
+  .validator(parseRepoRunHistoryInput)
+  .handler(({ data }) => loadOptionalResource(() => loadRepoRunWorkflowsForRequest(data)))
+
 export const loadRepoRunHistory = createServerFn({ method: 'GET' })
   .validator(parseRepoRunHistoryInput)
   .handler(({ data }) => loadOptionalResource(() => loadRepoRunHistoryForRequest(data)))

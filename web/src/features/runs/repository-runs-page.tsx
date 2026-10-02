@@ -3,7 +3,7 @@ import type {
   RepositoryRunHistoryPageResponse,
   RepositoryRunWorkflowListResponse,
 } from '@/api/types.generated'
-import { resourceErrorMessage } from '@/lib/use-cached-resource'
+import { resourceErrorMessage, useCachedResource } from '@/lib/use-cached-resource'
 import { PageContent, WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,7 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { initializeRunHistory, loadMoreRunHistory, refreshRunHistory, runHistoryCacheKey, runHistoryResource } from './run-history-cache'
+import { runWorkflowsResource } from './run-workflows-resource'
 
 const HISTORY_CHANGES = ['Created', 'StatusChanged'] as const
 
@@ -35,6 +36,10 @@ type RepositoryRunsPageProps = {
     input: RepoRunHistoryInput,
     signal?: AbortSignal,
   ) => Promise<RepositoryRunHistoryPageResponse | null>
+  loadWorkflows: (
+    input: RepoParams,
+    signal?: AbortSignal,
+  ) => Promise<RepositoryRunWorkflowListResponse | null>
   params: RepoParams
   workflow?: string
 }
@@ -42,19 +47,22 @@ type RepositoryRunsPageProps = {
 export function RepositoryRunsPage(props: RepositoryRunsPageProps) {
   const { userId, isLoaded } = useAuth()
   const { repo } = useRepoLayout()
-  const cacheKey = isLoaded && props.initialResources
-    ? runHistoryCacheKey(repoResourceScope(repo, userId ?? null), props.workflow)
+  const scope = isLoaded && props.initialResources
+    ? repoResourceScope(repo, userId ?? null)
     : null
-  return <RepositoryRunsPageContent initialResources={props.initialResources} loadHistory={props.loadHistory} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} />
+  const cacheKey = scope ? runHistoryCacheKey(scope, props.workflow) : null
+  return <RepositoryRunsPageContent initialResources={props.initialResources} loadHistory={props.loadHistory} loadWorkflows={props.loadWorkflows} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} scope={scope} />
 }
 
 function RepositoryRunsPageContent({
   cacheKey,
   initialResources,
   loadHistory,
+  loadWorkflows,
   params,
+  scope,
   workflow,
-}: RepositoryRunsPageProps & { cacheKey: string | null }) {
+}: RepositoryRunsPageProps & { cacheKey: string | null; scope: string | null }) {
   const [key] = useState(() => cacheKey ?? crypto.randomUUID())
   useState(() => initializeRunHistory(key, initialResources?.history ?? null))
   const snapshot = useSyncExternalStore(
@@ -68,6 +76,17 @@ function RepositoryRunsPageContent({
   const [statusFilter, setStatusFilter] = useState<RunStatusFilter>('any')
   const { owner, repo } = params
   const input = useMemo(() => ({ owner, repo, workflow }), [owner, repo, workflow])
+  const workflowResource = useCachedResource({
+    fallbackError: 'Workflow catalog unavailable.',
+    identity: scope,
+    initialValue: initialResources?.workflowsError ? null : initialResources?.workflows,
+    load: useCallback(async (signal: AbortSignal) => {
+      const workflows = await loadWorkflows({ owner, repo }, signal)
+      if (!workflows) throw new Error('Workflow catalog unavailable.')
+      return workflows
+    }, [loadWorkflows, owner, repo]),
+    resource: runWorkflowsResource,
+  })
   const refreshRuns = useRunLiveRefresh({
     acceptedChanges: HISTORY_CHANGES,
     mutable: history !== null,
@@ -91,9 +110,13 @@ function RepositoryRunsPageContent({
     )
   }
 
-  const nativeRunsAvailable = initialResources.workflows.native_runs_available
+  const workflows = workflowResource.value ?? initialResources.workflows
+  const workflowsError = workflowResource.value
+    ? null
+    : workflowResource.error ?? initialResources.workflowsError
+  const nativeRunsAvailable = workflows.native_runs_available
   const selectedWorkflow = workflow
-    ? initialResources.workflows.workflows.find((item) => item.key === workflow)
+    ? workflows.workflows.find((item) => item.key === workflow)
     : undefined
 
   return (
@@ -106,7 +129,7 @@ function RepositoryRunsPageContent({
             selectedWorkflow={workflow}
             showWorkflowFilter={nativeRunsAvailable}
             statusFilter={statusFilter}
-            workflows={initialResources.workflows.workflows}
+            workflows={workflows.workflows}
           />
         )}
         title="Runs"
@@ -118,12 +141,12 @@ function RepositoryRunsPageContent({
               Scope runs are not available for this repository.
             </p>
           )}
-          {initialResources.workflowsError ? (
+          {workflowsError ? (
             <div className="pt-5">
               <PageErrorAlert title="Workflow filter unavailable">
                 <div>
                   <p>Run history is still available.</p>
-                  <p className="mt-1 text-xs">{initialResources.workflowsError}</p>
+                  <p className="mt-1 text-xs">{workflowsError}</p>
                 </div>
               </PageErrorAlert>
             </div>

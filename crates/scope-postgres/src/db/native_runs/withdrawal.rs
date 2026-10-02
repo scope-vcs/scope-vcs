@@ -3,7 +3,7 @@
 //! order as the operations it competes with, and is skipped if the owner was
 //! listed again in the meantime.
 
-use super::availability;
+use super::{availability, owned_repositories};
 use crate::{
     db::{
         acquire_aggregate_lock, entities,
@@ -31,7 +31,7 @@ pub struct NativeRunsWithdrawal {
     pub user_id: String,
     /// Whether this removal unlisted the account; `false` when it was not listed.
     pub removed: bool,
-    /// The account's repositories, when this removal changed any of them.
+    /// The account's repositories, whose availability changed.
     pub repositories: Vec<RepositoryIncarnation>,
     pub withdrawn_evaluations: Vec<RequestCheckEvaluation>,
     pub canceled_runs: Vec<Run>,
@@ -60,19 +60,7 @@ pub(super) async fn settle(
             withdrawal.canceled_runs.push(run);
         }
     }
-    if !withdrawal.withdrawn_evaluations.is_empty() || !withdrawal.canceled_runs.is_empty() {
-        withdrawal.repositories = entities::repository::Entity::find()
-            .filter(entities::repository::Column::OwnerUserId.eq(user_id))
-            .all(db)
-            .await
-            .map_err(PostgresError::internal)?
-            .into_iter()
-            .map(|row| {
-                RepositoryIncarnation::new(row.id, row.incarnation_id)
-                    .map_err(PostgresError::internal)
-            })
-            .collect::<Result<_, _>>()?;
-    }
+    withdrawal.repositories = owned_repositories(db, user_id).await?;
     Ok(withdrawal)
 }
 

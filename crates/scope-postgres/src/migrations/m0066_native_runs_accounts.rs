@@ -31,13 +31,23 @@ impl MigrationTrait for Migration {
                     )
                 );
 
-                -- Owners whose repositories already use native runs keep them.
+                -- Owners whose repositories already use native runs keep them,
+                -- including a request whose recorded checks still await approval.
                 INSERT INTO scope_native_runs_accounts (user_id, added_at_unix, note)
-                SELECT DISTINCT repo.owner_user_id,
+                SELECT repo.owner_user_id,
                        extract(epoch FROM now())::bigint,
                        'Used native runs before the allowlist'
-                FROM scope_runs run
-                JOIN scope_repositories repo ON repo.id = run.repo_id;
+                FROM scope_repositories repo
+                WHERE EXISTS (SELECT 1 FROM scope_runs run WHERE run.repo_id = repo.id)
+                   OR EXISTS (
+                       SELECT 1
+                       FROM scope_requests request
+                       JOIN scope_request_check_evaluations evaluation
+                         ON evaluation.request_id = request.id
+                       WHERE request.repo_id = repo.id
+                         AND jsonb_array_length(evaluation.checks) > 0
+                   )
+                GROUP BY repo.owner_user_id;
                 "#,
             )
             .await?;
