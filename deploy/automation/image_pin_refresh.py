@@ -29,7 +29,8 @@ checksum verified. Do not weaken, skip, or add exceptions to the scan.
 
 If nothing needs to change, say so and finish without a PR. Otherwise run the required local
 checks, commit on a branch, open a PR, and enable squash auto-merge after Required PR checks
-pass. That CI builds and scans both images; rely on it when this machine cannot build them.
+pass. That CI builds and scans only an image whose own files changed; rely on it for those
+when this machine cannot build them, and check the other image's pins against their source.
 Main is protected. Never bypass checks or push directly to main. Follow repository review
 and Scope mirroring instructions.
 

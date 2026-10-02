@@ -59,8 +59,8 @@ The same watcher poll starts one T3 agent each week, from Monday 9:00 a.m.
 America/Chicago, to refresh the pinned packages in the checks and media worker
 images before a stale pin fails the release scan. The agent opens a PR only when a
 pin changes and enables squash auto-merge after `Required PR checks` passes; that
-CI builds and scans both images. The scan gate is unchanged, and a failed release
-scan is still repaired by the release agent.
+CI builds and scans each image whose files changed. The scan gate is unchanged,
+and a failed release scan is still repaired by the release agent.
 
 The weekly intent lives in `~/.local/state/scope-deployment-watcher/image-pin-refresh.json`
 and is written before dispatch, so a retry reuses the same thread. The refresh
