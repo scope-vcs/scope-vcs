@@ -475,3 +475,15 @@ async fn a_contribution_that_new_private_main_conflicts_with_reports_it() {
         Some(old)
     );
 }
+
+/// The commit the request's evaluation for `head` tests.
+pub(super) async fn tested_commit(state: &AppState, head: &str) -> String {
+    state
+        .metadata
+        .requests()
+        .request_check_evaluation(REQUEST_ID, head)
+        .await
+        .unwrap()
+        .unwrap()
+        .tested_oid
+}

@@ -338,14 +338,7 @@ async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
     assert_eq!(approved["github_push"]["state"], "sending");
     assert_eq!(push_pass(&state, unix_now()).await, 1);
     // A public contribution is sent as its check commit, which builds on the head.
-    let tested = state
-        .metadata
-        .requests()
-        .request_check_evaluation(REQUEST_ID, &head)
-        .await
-        .unwrap()
-        .unwrap()
-        .tested_oid;
+    let tested = public::tested_commit(&state, &head).await;
     assert_ne!(tested, head);
     assert_eq!(fake.branch_head(&branch), Some(tested));
 
