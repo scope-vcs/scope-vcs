@@ -1,13 +1,36 @@
 use super::*;
 use crate::{
     content::SourceBlob,
-    requests::{RequestActorRole, RequestCheckEvaluationState},
+    requests::{
+        GitHubCheckResults, NativeRequestCheck, RequestActorRole, RequestCheck,
+        RequestCheckEvaluationState,
+    },
+    runs::run::RunState,
 };
 
 mod check_failures;
 
 const HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const OTHER_HEAD: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+fn results(native_runs: &[(&str, RunState)]) -> RequestCheckResults {
+    RequestCheckResults {
+        native_runs: native_runs
+            .iter()
+            .map(|(id, state)| (id.to_string(), *state))
+            .collect(),
+        github: GitHubCheckResults::Connected(Vec::new()),
+    }
+}
+
+fn native_check(digest: char, run_id: Option<&str>) -> RequestCheck {
+    RequestCheck::Native(NativeRequestCheck {
+        workflow_path: "/.scope/runs/test.yml".into(),
+        workflow_name: "test".into(),
+        workflow_revision_digest: digest.to_string().repeat(64),
+        run_id: run_id.map(str::to_string),
+    })
+}
 
 fn open_request() -> Request {
     Request {
@@ -207,18 +230,18 @@ fn a_terminal_check_result_stops_the_intent_permanently() {
 #[test]
 fn unattended_readiness_requires_an_explicit_evaluation() {
     assert_eq!(
-        request_auto_merge_readiness("request_1", HEAD, None, &[]),
+        request_auto_merge_readiness("request_1", HEAD, None, &results(&[])),
         RequestAutoMergeReadiness::Waiting(RequestAutoMergeWaitingReason::CheckEvaluationMissing)
     );
     let no_checks = RequestCheckEvaluation::no_checks("request_1", HEAD, 3).unwrap();
     assert_eq!(
-        request_auto_merge_readiness("request_1", HEAD, Some(&no_checks), &[]),
+        request_auto_merge_readiness("request_1", HEAD, Some(&no_checks), &results(&[])),
         RequestAutoMergeReadiness::Ready
     );
     let configuration_error =
         RequestCheckEvaluation::configuration_error("request_1", HEAD, "bad workflow", 3).unwrap();
     assert_eq!(
-        request_auto_merge_readiness("request_1", HEAD, Some(&configuration_error), &[]),
+        request_auto_merge_readiness("request_1", HEAD, Some(&configuration_error), &results(&[])),
         RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ChecksConfigurationError)
     );
 }
@@ -228,12 +251,7 @@ fn terminal_run_failure_is_a_stop_even_if_a_retry_could_later_succeed() {
     let evaluation = RequestCheckEvaluation::started(
         "request_1",
         HEAD,
-        vec![super::super::RequestCheck {
-            workflow_path: "/.scope/runs/test.yml".into(),
-            workflow_name: "test".into(),
-            workflow_revision_digest: "c".repeat(64),
-            run_id: Some("run_1".into()),
-        }],
+        vec![native_check('c', Some("run_1"))],
         3,
     )
     .unwrap();
@@ -242,7 +260,7 @@ fn terminal_run_failure_is_a_stop_even_if_a_retry_could_later_succeed() {
             "request_1",
             HEAD,
             Some(&evaluation),
-            &[("run_1".into(), RunState::Failed)],
+            &results(&[("run_1", RunState::Failed)]),
         ),
         RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ChecksFailed)
     );
@@ -251,7 +269,7 @@ fn terminal_run_failure_is_a_stop_even_if_a_retry_could_later_succeed() {
             "request_1",
             HEAD,
             Some(&evaluation),
-            &[("run_1".into(), RunState::Succeeded)],
+            &results(&[("run_1", RunState::Succeeded)]),
         ),
         RequestAutoMergeReadiness::Ready
     );
@@ -310,12 +328,7 @@ fn evaluation_state_is_explicitly_interpreted() {
     let awaiting = RequestCheckEvaluation::awaiting_approval(
         "request_1",
         HEAD,
-        vec![super::super::RequestCheck {
-            workflow_path: "/.scope/runs/test.yml".into(),
-            workflow_name: "test".into(),
-            workflow_revision_digest: "d".repeat(64),
-            run_id: None,
-        }],
+        vec![native_check('d', None)],
         3,
     )
     .unwrap();
@@ -324,7 +337,7 @@ fn evaluation_state_is_explicitly_interpreted() {
         RequestCheckEvaluationState::AwaitingApproval
     );
     assert_eq!(
-        request_auto_merge_readiness("request_1", HEAD, Some(&awaiting), &[])
+        request_auto_merge_readiness("request_1", HEAD, Some(&awaiting), &results(&[]))
             .waiting_reason_message(),
         Some("Waiting for check approval")
     );

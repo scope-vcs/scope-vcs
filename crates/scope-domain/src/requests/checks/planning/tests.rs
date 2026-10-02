@@ -80,12 +80,12 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
             .unwrap();
             assert_eq!(plan.evaluation.request_id, request.id);
             assert_eq!(plan.evaluation.head_oid, request.head_oid);
+            assert_eq!(plan.evaluation.tested_oid, request.head_oid);
             assert_eq!(plan.evaluation.created_at_unix, 30);
             assert_eq!(plan.evaluation.updated_at_unix, 30);
             assert_eq!(
                 plan.evaluation
-                    .checks
-                    .iter()
+                    .native_checks()
                     .map(|c| c.workflow_name.as_str())
                     .collect::<Vec<_>>(),
                 ["test", "lint"]
@@ -104,7 +104,7 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
                     plan.evaluation.run_ids().collect::<Vec<_>>(),
                     repeated.evaluation.run_ids().collect::<Vec<_>>()
                 );
-                for (run, check) in plan.runs.iter().zip(&plan.evaluation.checks) {
+                for (run, check) in plan.runs.iter().zip(plan.evaluation.native_checks()) {
                     assert_eq!(check.run_id.as_deref(), Some(run.id.as_str()));
                     assert_eq!(run.state, RunState::Queued);
                     assert_eq!(run.trigger, RunTrigger::Request);

@@ -117,7 +117,8 @@ pub(crate) async fn request_queue(
         .iter()
         .map(|row| row.request.clone())
         .collect::<Vec<_>>();
-    let checks = crate::use_cases::request_checks::checks_outcomes(&state, &rows).await?;
+    let checks =
+        crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &rows).await?;
     let requests = page
         .rows
         .into_iter()

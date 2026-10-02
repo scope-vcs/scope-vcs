@@ -632,6 +632,7 @@ pub mod request_check_evaluation {
         pub request_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
         pub head_oid: String,
+        pub tested_oid: String,
         pub state: String,
         pub message: Option<String>,
         pub checks: Json,
@@ -648,6 +649,7 @@ pub mod request_check_evaluation {
             Ok(Self {
                 request_id: value.request_id.clone(),
                 head_oid: value.head_oid.clone(),
+                tested_oid: value.tested_oid.clone(),
                 state: encode_enum(value.state)?,
                 message: value.message.clone(),
                 checks: encode_json(&value.checks)?,
@@ -660,6 +662,7 @@ pub mod request_check_evaluation {
             Ok(RequestCheckEvaluation {
                 request_id: self.request_id,
                 head_oid: self.head_oid,
+                tested_oid: self.tested_oid,
                 state: decode_enum(self.state)?,
                 message: self.message,
                 checks: decode_json(self.checks)?,

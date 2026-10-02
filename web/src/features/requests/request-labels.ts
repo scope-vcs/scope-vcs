@@ -42,10 +42,10 @@ const MERGEABILITY = {
   { label: string; tone: BadgeVariant }
 >
 
-// What the evaluation itself says, when it is not simply the runs and their states.
+// What the evaluation itself says, when it is not simply the checks and their states.
 const CHECK_EVALUATION_NOTES = {
   'no-checks': 'This head asks for no checks.',
-  'awaiting-approval': 'These checks wait for a maintainer to start them.',
+  'awaiting-approval': null,
   'started': null,
   'configuration-error': null,
 } as const satisfies Record<RequestCheckEvaluationState, string | null>
@@ -85,6 +85,13 @@ export function requestCheckEvaluationNote(checks: RequestChecksResponse) {
   }
   if (checks.state === null) {
     return 'The checks for this commit have not been worked out yet.'
+  }
+  // Only Scope's own runs wait for a maintainer to start them.
+  if (
+    checks.state === 'awaiting-approval'
+    && checks.checks.some((check) => check.provider === 'native')
+  ) {
+    return 'These checks wait for a maintainer to start them.'
   }
   return CHECK_EVALUATION_NOTES[checks.state]
 }

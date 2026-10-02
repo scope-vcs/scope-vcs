@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RequestChecksResponse } from '@/api/types.generated'
+import type { RequestChecksResponse, RunState } from '@/api/types.generated'
 import { invalidateRepoResources } from '../repo-detail/repo-resource-invalidation'
 import {
   requestChecksIdentity,
@@ -48,7 +48,7 @@ test('approval writes the refreshed evaluation without another read', async () =
 
   assert.equal(calls, 1)
   assert.equal(requestChecksResource.peek(identity)?.state, 'started')
-  assert.equal(requestChecksResource.peek(identity)?.checks[0]?.run_state, 'queued')
+  assert.equal(runState(requestChecksResource.peek(identity)), 'queued')
 })
 
 for (const kind of [
@@ -70,29 +70,35 @@ for (const kind of [
     })
 
     assert.equal(requestChecksResource.getSnapshot(identity).stale, true)
-    assert.equal(requestChecksResource.peek(identity)?.checks[0]?.run_state, 'running')
+    assert.equal(runState(requestChecksResource.peek(identity)), 'running')
     assert.equal(requestChecksResource.getSnapshot(other).stale, false)
 
     // A failed refresh keeps showing the rows it still has.
     const refresh = requestChecksResource.ensure(identity, '2', async () => {
       throw new Error('temporary outage')
     })
-    assert.equal(requestChecksResource.peek(identity)?.checks[0]?.run_state, 'running')
+    assert.equal(runState(requestChecksResource.peek(identity)), 'running')
     await refresh
-    assert.equal(requestChecksResource.peek(identity)?.checks[0]?.run_state, 'running')
+    assert.equal(runState(requestChecksResource.peek(identity)), 'running')
     assert.equal(requestChecksResource.getSnapshot(identity).error instanceof Error, true)
   })
 }
 
+function runState(response: RequestChecksResponse | null) {
+  const check = response?.checks[0]
+  return check?.provider === 'native' ? check.run_state : undefined
+}
+
 function checks(
   state: RequestChecksResponse['state'],
-  runState: RequestChecksResponse['checks'][number]['run_state'],
+  run: RunState | null,
 ): RequestChecksResponse {
   return {
     can_approve: state === 'awaiting-approval',
     checks: [{
-      run_id: runState ? 'run' : null,
-      run_state: runState,
+      provider: 'native',
+      run_id: run ? 'run' : null,
+      run_state: run,
       workflow_name: 'checks',
       workflow_path: '/.scope/runs/checks.yml',
     }],

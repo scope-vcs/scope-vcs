@@ -23,7 +23,8 @@ const runTables = names(`run_attempt_cache_setups run_attempt_caches run_attempt
 const nativeRunsTables = names('native_runs_accounts');
 const collaborationTables = names(`request_discussion_read_states request_discussion_replies
   request_discussions request_events request_invitees request_ratings request_revisions requests
-  request_claims request_attention_states request_check_evaluations request_auto_merge_intents`);
+  request_claims request_attention_states request_check_evaluations request_auto_merge_intents
+  github_check_runs`);
 const authTables = names(`auth_identities cli_browser_logins cli_device_logins cli_exchange_grants
   cli_sessions clerk_user_deletions users`);
 export const tables = [...cacheTables, ...mediaTables, ...repositoryTables, ...runTables,

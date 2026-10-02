@@ -17,21 +17,19 @@ use scope_api_contract::RunChangeKind;
 use scope_domain::{
     repository::{RepoRecord, RepositoryIncarnation},
     requests::{
-        Request, RequestAudience, RequestCheckEvaluation, RequestCheckPlan, RequestChecksOutcome,
-        request_checks_outcome, request_head_awaits_evaluation,
+        Request, RequestAudience, RequestCheckEvaluation, RequestCheckPlan, RequestCheckResults,
+        RequestChecksOutcome, request_checks_outcome, request_head_awaits_evaluation,
     },
-    runs::{
-        availability::NativeRunsAvailability, run::RunState, workflow::revision::WorkflowRevision,
-    },
+    runs::{availability::NativeRunsAvailability, workflow::revision::WorkflowRevision},
 };
 use scope_postgres::db::{RecordRequestChecksCommand, RequestChecksMutation, RequestListRow};
 use std::{collections::HashMap, path::Path};
 
-/// The evaluation recorded for a request's current head, the states of the runs
-/// it started, and what the two together mean for merging.
+/// The evaluation recorded for a request's current head, the results its checks
+/// have, and what the two together mean for merging.
 pub(crate) struct RequestChecksView {
     pub(crate) evaluation: Option<RequestCheckEvaluation>,
-    pub(crate) run_states: Vec<(String, RunState)>,
+    pub(crate) results: RequestCheckResults,
     pub(crate) outcome: RequestChecksOutcome,
 }
 
@@ -82,16 +80,20 @@ pub(crate) async fn recorded_checks_view(
         .requests()
         .request_check_evaluation(&request.id, &request.head_oid)
         .await?;
-    let run_states = run_states(state, evaluation.iter()).await?;
+    let results = state
+        .metadata
+        .requests()
+        .request_check_results(&request.repo_id, evaluation.as_slice())
+        .await?;
     let outcome = request_checks_outcome(
         &request.id,
         &request.head_oid,
         evaluation.as_ref(),
-        &run_states,
+        &results,
     );
     Ok(RequestChecksView {
         evaluation,
-        run_states,
+        results,
         outcome,
     })
 }
@@ -167,9 +169,11 @@ async fn native_runs_availability(
         .await?)
 }
 
-/// The outcome for every listed request, keyed by request id, loaded in two queries.
+/// The outcome for every listed request in one repository, keyed by request id,
+/// loaded for the whole list at once.
 pub(crate) async fn checks_outcomes(
     state: &AppState,
+    repo_id: &str,
     requests: &[RequestListRow],
 ) -> Result<HashMap<String, RequestChecksOutcome>, ApiError> {
     let heads = requests
@@ -181,7 +185,11 @@ pub(crate) async fn checks_outcomes(
         .requests()
         .request_check_evaluations(&heads)
         .await?;
-    let run_states = run_states(state, evaluations.iter()).await?;
+    let results = state
+        .metadata
+        .requests()
+        .request_check_results(repo_id, &evaluations)
+        .await?;
     Ok(requests
         .iter()
         .map(|row| {
@@ -190,26 +198,9 @@ pub(crate) async fn checks_outcomes(
                 .find(|evaluation| evaluation.request_id == row.id);
             (
                 row.id.clone(),
-                request_checks_outcome(&row.id, &row.head_oid, evaluation, &run_states),
+                request_checks_outcome(&row.id, &row.head_oid, evaluation, &results),
             )
         })
-        .collect())
-}
-
-async fn run_states<'a>(
-    state: &AppState,
-    evaluations: impl Iterator<Item = &'a RequestCheckEvaluation>,
-) -> Result<Vec<(String, RunState)>, ApiError> {
-    let run_ids = evaluations
-        .flat_map(|evaluation| evaluation.run_ids().map(str::to_string))
-        .collect::<Vec<_>>();
-    Ok(state
-        .metadata
-        .runs()
-        .runs_by_ids(&run_ids)
-        .await?
-        .into_iter()
-        .map(|run| (run.id, run.state))
         .collect())
 }
 

@@ -9,8 +9,8 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     requests::{
-        Request, RequestCheckEvaluation, RequestCheckPlan, RequestRevision,
-        stop_request_auto_merge_for_check_evaluation,
+        GitHubCheckResults, Request, RequestCheckEvaluation, RequestCheckPlan, RequestCheckResults,
+        RequestRevision, stop_request_auto_merge_for_check_evaluation,
     },
     runs::{
         run::Run,
@@ -120,8 +120,8 @@ impl RequestStore {
             .await?
             .ok_or_else(|| PostgresError::not_found("request head has no recorded checks"))?;
         evaluation.ensure_awaiting_approval()?;
-        let mut revisions = Vec::with_capacity(evaluation.checks.len());
-        for check in &evaluation.checks {
+        let mut revisions = Vec::new();
+        for check in evaluation.native_checks() {
             let identity = WorkflowIdentity::new(
                 &request.repo_id,
                 scope_domain::runs::workflow::identity::WorkflowPath::parse(
@@ -173,6 +173,15 @@ impl RequestStore {
         evaluation_for_head(self.db.as_ref(), request_id, head_oid).await
     }
 
+    /// The results that answer the checks of evaluations in one repository.
+    pub async fn request_check_results(
+        &self,
+        repo_id: &str,
+        evaluations: &[RequestCheckEvaluation],
+    ) -> Result<RequestCheckResults, PostgresError> {
+        request_check_results(self.db.as_ref(), repo_id, evaluations).await
+    }
+
     /// The evaluation for each `(request id, head oid)` pair that has one.
     pub async fn request_check_evaluations(
         &self,
@@ -205,6 +214,42 @@ fn head_pairs_condition(heads: &[(String, String)]) -> Condition {
                     .add(entities::request_check_evaluation::Column::HeadOid.eq(head_oid.clone())),
             )
         })
+}
+
+pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    evaluations: impl IntoIterator<Item = &'a RequestCheckEvaluation>,
+) -> Result<RequestCheckResults, PostgresError> {
+    let mut run_ids = Vec::new();
+    let mut tested_oids = Vec::new();
+    for evaluation in evaluations {
+        run_ids.extend(evaluation.run_ids().map(str::to_string));
+        if evaluation.asks_github() {
+            tested_oids.push(evaluation.tested_oid.clone());
+        }
+    }
+    let native_runs = if run_ids.is_empty() {
+        Vec::new()
+    } else {
+        entities::run::Entity::find()
+            .filter(entities::run::Column::Id.is_in(run_ids))
+            .all(conn)
+            .await
+            .map_err(PostgresError::internal)?
+            .into_iter()
+            .map(|row| Ok((row.id.clone(), row.try_into_domain()?.state)))
+            .collect::<Result<_, PostgresError>>()?
+    };
+    // No repository records a GitHub connection yet, so what GitHub reported is
+    // all there is to read.
+    let github = GitHubCheckResults::Connected(
+        super::github_check_runs::latest_github_check_runs(conn, repo_id, &tested_oids).await?,
+    );
+    Ok(RequestCheckResults {
+        native_runs,
+        github,
+    })
 }
 
 async fn start_runs(

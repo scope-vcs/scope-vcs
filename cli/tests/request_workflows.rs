@@ -711,7 +711,7 @@ fn checks_evaluation(state: &str, run: Option<(&str, &str)>) -> Value {
     let awaiting = state == "awaiting-approval";
     json!({
         "request_id":"req_one","head_oid":OID,"state":state,"message":null,
-        "checks":[{"workflow_path":"/.scope/runs/checks.yml","workflow_name":"Checks",
+        "checks":[{"provider":"native","workflow_path":"/.scope/runs/checks.yml","workflow_name":"Checks",
             "run_id":run.map(|(id, _)| id),"run_state":run.map(|(_, state)| state)}],
         "can_approve":awaiting,
         "mergeability":{

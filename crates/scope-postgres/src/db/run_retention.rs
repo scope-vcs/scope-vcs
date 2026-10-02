@@ -163,7 +163,7 @@ fn active_auto_merge_evidence_is_absent() -> sea_orm::sea_query::SimpleExpr {
                AND evaluation.head_oid = intent.head_oid
              WHERE intent.status = 'Active'
                AND evaluation.checks @> jsonb_build_array(
-                   jsonb_build_object('run_id', scope_runs.id)
+                   jsonb_build_object('provider', 'native', 'run_id', scope_runs.id)
                )
         )",
     )
