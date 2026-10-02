@@ -323,7 +323,7 @@ fn upload_output<S: ExecutionSink>(
         }
     }
     for pending in pending_utf8 {
-        upload.pending.push_str(&String::from_utf8_lossy(&pending));
+        upload.pending.push_str(&decode_lossy(&pending));
     }
     upload.flush(true)?;
     Ok(OutputSummary {
@@ -417,7 +417,16 @@ fn decode_utf8_chunk(mut pending: Vec<u8>, bytes: Vec<u8>) -> (String, Vec<u8>) 
     let suffix = incomplete_utf8_suffix(&pending);
     let split_at = pending.len() - suffix;
     let remainder = pending.split_off(split_at);
-    (String::from_utf8_lossy(&pending).into_owned(), remainder)
+    (decode_lossy(&pending), remainder)
+}
+
+fn decode_lossy(bytes: &[u8]) -> String {
+    replace_nul(&String::from_utf8_lossy(bytes))
+}
+
+/// Scope rejects run text containing NUL, so the runtime replaces it with U+FFFD.
+pub(crate) fn replace_nul(text: &str) -> String {
+    text.replace('\0', "\u{FFFD}")
 }
 
 fn incomplete_utf8_suffix(bytes: &[u8]) -> usize {

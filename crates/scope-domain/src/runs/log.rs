@@ -36,6 +36,11 @@ impl RunLogChunk {
                 "run log chunk cannot exceed {MAX_RUN_LOG_CHUNK_BYTES} bytes"
             )));
         }
+        if text.contains('\0') {
+            return Err(DomainError::invalid_input(
+                "run log text cannot contain NUL characters",
+            ));
+        }
         Ok(Self {
             attempt_id,
             step_index,
@@ -43,5 +48,20 @@ impl RunLogChunk {
             text,
             created_at_unix,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::DomainErrorKind;
+
+    #[test]
+    fn run_log_text_rejects_nul_but_accepts_replacement_characters() {
+        let error = RunLogChunk::new("attempt-1", 0, 1, "before\0after", 1).unwrap_err();
+        assert_eq!(error.kind, DomainErrorKind::InvalidInput);
+
+        let chunk = RunLogChunk::new("attempt-1", 0, 1, "before\u{FFFD}after", 1).unwrap();
+        assert_eq!(chunk.text, "before\u{FFFD}after");
     }
 }

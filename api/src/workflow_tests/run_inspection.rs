@@ -318,6 +318,20 @@ async fn append_attempt_log_is_idempotent_and_rejects_sequence_gaps() {
 }
 
 #[tokio::test]
+async fn append_attempt_log_rejects_nul_text_as_bad_request() {
+    let fixture = active_run(2).await;
+    let response = api_request(
+        router(fixture.state),
+        "POST",
+        &scope_api_contract::routes::attempt_logs(&fixture.attempt_id),
+        Some("Bearer scope_attempt_inspection"),
+        Some(r#"{"step_index":0,"sequence":3,"text":"before\u0000after"}"#),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn run_inspection_enforces_repository_access() {
     let fixture = inspectable_run(false, 2).await;
     let response = api_request(

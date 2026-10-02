@@ -44,7 +44,7 @@ impl RunAttempt {
         }
         if !valid_setup_failure_message(message) {
             return Err(DomainError::invalid_input(
-                "capacity rejection message is required and must not exceed 2048 bytes",
+                "capacity rejection message is required, must not exceed 2048 bytes, and cannot contain NUL characters",
             ));
         }
         self.validate_execution(steps)?;
