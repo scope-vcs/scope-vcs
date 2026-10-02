@@ -10,6 +10,7 @@ test('an unknown server function becomes a plain-text stale-build conflict', asy
   assert.equal(response.headers.get('content-type'), 'text/plain; charset=utf-8')
   assert.equal(response.headers.get('cache-control'), 'no-store')
   assert.equal(await response.text(), 'Scope was updated. Reload to continue.')
+  assert.equal(staleServerFunctionResponse(new Error('Invalid server function ID: invalid'))?.status, 409)
   assert.equal(staleServerFunctionResponse(new Error('database unavailable')), null)
   assert.equal(staleServerFunctionResponse('Server function info not found for 3fdb0bfd'), null)
 })

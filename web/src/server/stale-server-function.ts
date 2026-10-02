@@ -1,8 +1,12 @@
 import { STALE_BUILD_HEADER, STALE_BUILD_MESSAGE } from '../lib/stale-build'
 
 // TanStack Start's resolver is internal, so its error text is the only signal.
-// The built-server smoke requests an unknown ID, so an upgrade that changes the text fails there.
-const UNKNOWN_SERVER_FUNCTION = 'Server function info not found for '
+// Production builds and the Vite dev server word it differently. The built-server
+// and local-stack smokes request an unknown ID, so an upgrade that changes either fails there.
+const UNKNOWN_SERVER_FUNCTION_PREFIXES = [
+  'Server function info not found for ',
+  'Invalid server function ID: ',
+]
 
 /**
  * A tab built before a deploy can call a server function the current build no
@@ -11,7 +15,8 @@ const UNKNOWN_SERVER_FUNCTION = 'Server function info not found for '
  * error instead of treating the body as a result.
  */
 export function staleServerFunctionResponse(error: unknown): Response | null {
-  if (!(error instanceof Error) || !error.message.startsWith(UNKNOWN_SERVER_FUNCTION)) return null
+  if (!(error instanceof Error)) return null
+  if (!UNKNOWN_SERVER_FUNCTION_PREFIXES.some((prefix) => error.message.startsWith(prefix))) return null
   return new Response(STALE_BUILD_MESSAGE, {
     status: 409,
     headers: {
