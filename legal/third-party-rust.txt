@@ -5541,10 +5541,10 @@ Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-yoke-derive 0.8.3
+yoke-derive 0.8.4
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/yoke-derive/yoke-derive-0.8.3.crate
+Source: https://static.crates.io/crates/yoke-derive/yoke-derive-0.8.4.crate
 
 Published author metadata: ["Manish Goregaokar <manishsmail@gmail.com>"]
 Repository: "https://github.com/unicode-org/icu4x"
