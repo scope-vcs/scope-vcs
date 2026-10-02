@@ -27,6 +27,7 @@ fn native_results(runs: &[(&str, RunState)]) -> RequestCheckResults {
             .collect(),
         github: GitHubCheckResults::Connected(Vec::new()),
         withheld_from_github: Vec::new(),
+        private_main_oid: None,
     }
 }
 
@@ -227,6 +228,7 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Connected(runs),
                 withheld_from_github: Vec::new(),
+                private_main_oid: None,
             },
         )
     };
@@ -283,6 +285,7 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Disconnected,
                 withheld_from_github: Vec::new(),
+                private_main_oid: None,
             },
         ),
         RequestChecksOutcome::ConfigurationError
@@ -304,6 +307,7 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Disconnected,
                 withheld_from_github: Vec::new(),
+                private_main_oid: None,
             },
         ),
         RequestChecksOutcome::ConfigurationError
@@ -327,6 +331,7 @@ fn github_conclusions_pass_or_fail_a_completed_run() {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Connected(vec![run]),
                 withheld_from_github: Vec::new(),
+                private_main_oid: None,
             },
         )
     };
@@ -375,6 +380,7 @@ fn a_disconnected_github_provider_leaves_native_only_heads_alone() {
                 native_runs: vec![("run_a".to_string(), RunState::Succeeded)],
                 github: GitHubCheckResults::Disconnected,
                 withheld_from_github: Vec::new(),
+                private_main_oid: None,
             },
         ),
         RequestChecksOutcome::Clear
@@ -533,6 +539,7 @@ fn a_request_withheld_from_a_public_github_repository_cannot_pass_and_says_why()
             Some(GitHubCheckConclusion::Success),
         )]),
         withheld_from_github: Vec::new(),
+        private_main_oid: None,
     };
     assert_eq!(
         request_checks_outcome("req_1", HEAD, Some(&started), &results),
@@ -704,4 +711,38 @@ fn only_paths_under_github_workflows_are_workflow_changes() {
         "/docs/.github/workflows/ci.yml",
         "/.github/workflows"
     ]));
+}
+
+#[test]
+fn a_check_commit_counts_only_while_private_main_is_the_one_it_was_built_on() {
+    let check_commit = "c".repeat(40);
+    let mut evaluation =
+        RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci / test")], 10).unwrap();
+    evaluation.tested_oid = check_commit.clone();
+    evaluation.check_commit_base =
+        Some(CheckCommitBase::new("d".repeat(40), "e".repeat(40)).unwrap());
+    let results = |private_main: &str| RequestCheckResults {
+        native_runs: Vec::new(),
+        github: GitHubCheckResults::Connected(vec![github_run(
+            &check_commit,
+            "ci / test",
+            1,
+            Some(GitHubCheckConclusion::Success),
+        )]),
+        withheld_from_github: Vec::new(),
+        private_main_oid: Some(private_main.to_string()),
+    };
+    let outcome = |private_main: &str| {
+        request_checks_outcome("req_1", HEAD, Some(&evaluation), &results(private_main))
+    };
+    assert_eq!(outcome(&"d".repeat(40)), RequestChecksOutcome::Clear);
+    assert!(!evaluation.needs_new_check_commit(Some(&"d".repeat(40))));
+    // A green run on a check commit built on an older private main says nothing
+    // about what the merge would produce now.
+    assert_eq!(outcome(&"f".repeat(40)), RequestChecksOutcome::Pending);
+    assert!(evaluation.needs_new_check_commit(Some(&"f".repeat(40))));
+    // A head tested as it is never goes stale.
+    let head =
+        RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci / test")], 10).unwrap();
+    assert!(!head.needs_new_check_commit(Some(&"f".repeat(40))));
 }

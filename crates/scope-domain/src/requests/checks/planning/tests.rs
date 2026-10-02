@@ -551,3 +551,68 @@ fn a_check_commit_message_names_the_request_and_its_short_head() {
         "Scope check for req_1 at a1a1a1a1a1a1"
     );
 }
+
+#[test]
+fn started_checks_move_to_a_check_commit_on_new_private_main_and_send_it_at_once() {
+    let request = request();
+    let required = ["ci / test".to_string()];
+    let started =
+        RequestCheckPlan::evaluate_github(&request, check_commit(), &required, Some("owner"), 30)
+            .unwrap()
+            .evaluation;
+    let new_base = CheckCommitBase::new("1".repeat(40), "e".repeat(40)).unwrap();
+    let renewed = RequestCheckPlan::rebuild_check_commit(
+        &request,
+        started.clone(),
+        GitHubTestedCommit::CheckCommit {
+            oid: "2".repeat(40),
+            base: new_base.clone(),
+        },
+        40,
+    )
+    .unwrap();
+    assert_eq!(renewed.evaluation.tested_oid, "2".repeat(40));
+    assert_eq!(renewed.evaluation.check_commit_base, Some(new_base));
+    assert_eq!(
+        renewed.evaluation.state,
+        RequestCheckEvaluationState::Started
+    );
+    assert_eq!(renewed.evaluation.created_at_unix, 30);
+    assert_eq!(renewed.evaluation.updated_at_unix, 40);
+    assert!(renewed.push_to_github);
+
+    // New private main can conflict where the old one did not.
+    let conflict = RequestCheckPlan::rebuild_check_commit(
+        &request,
+        started.clone(),
+        GitHubTestedCommit::Conflict,
+        40,
+    )
+    .unwrap();
+    assert_eq!(
+        conflict.evaluation.state,
+        RequestCheckEvaluationState::ConfigurationError
+    );
+    assert_eq!(
+        conflict.evaluation.message.as_deref(),
+        Some(PRIVATE_CODE_CONFLICT_MESSAGE)
+    );
+    assert_eq!(conflict.evaluation.tested_oid, request.head_oid);
+    assert_eq!(conflict.evaluation.created_at_unix, 30);
+    assert!(!conflict.push_to_github);
+
+    // Only started checks on a check commit for the current head are moved.
+    let waiting = RequestCheckPlan::evaluate_github(&request, check_commit(), &required, None, 30)
+        .unwrap()
+        .evaluation;
+    let moved_on = Request {
+        head_oid: "9".repeat(40),
+        ..request.clone()
+    };
+    for (request, evaluation) in [(&request, waiting), (&moved_on, started)] {
+        assert!(
+            RequestCheckPlan::rebuild_check_commit(request, evaluation, check_commit(), 40)
+                .is_err()
+        );
+    }
+}

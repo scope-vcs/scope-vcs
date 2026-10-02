@@ -1,7 +1,7 @@
 use super::{
     GitHubCheckTarget, GitHubTestedCommit, NativeRequestCheck, PRIVATE_CODE_CONFLICT_MESSAGE,
-    Request, RequestCheck, RequestCheckEvaluation, Run, WorkflowRevision,
-    request_checks_start_immediately,
+    Request, RequestCheck, RequestCheckEvaluation, RequestCheckEvaluationState, Run,
+    WorkflowRevision, request_checks_start_immediately,
 };
 use crate::{error::DomainError, runs::availability::NativeRunsAvailability};
 
@@ -144,6 +144,60 @@ impl RequestCheckPlan {
             evaluation,
             runs: Vec::new(),
             push_to_github: starts,
+        })
+    }
+
+    /// Moves started checks onto a check commit built again on current private
+    /// main. The head is the one a maintainer already approved, and private
+    /// main is trusted, so the new commit goes to GitHub at once; results for
+    /// the old commit stop counting because they belong to another commit. A
+    /// contribution that now conflicts with private code has nothing to test.
+    pub fn rebuild_check_commit(
+        request: &Request,
+        mut evaluation: RequestCheckEvaluation,
+        tested: GitHubTestedCommit,
+        now_unix: u64,
+    ) -> Result<Self, DomainError> {
+        if evaluation.request_id != request.id
+            || evaluation.head_oid != request.head_oid
+            || evaluation.state != RequestCheckEvaluationState::Started
+            || !evaluation.tests_check_commit()
+        {
+            return Err(DomainError::conflict(
+                "request checks no longer test a check commit for this head",
+            ));
+        }
+        if now_unix < evaluation.created_at_unix {
+            return Err(DomainError::invalid_input(
+                "a new check commit cannot predate the evaluation",
+            ));
+        }
+        let (oid, base) = match tested {
+            GitHubTestedCommit::CheckCommit { oid, base } => (oid, base),
+            GitHubTestedCommit::Conflict => {
+                let mut conflict = RequestCheckEvaluation::configuration_error(
+                    &request.id,
+                    &request.head_oid,
+                    PRIVATE_CODE_CONFLICT_MESSAGE,
+                    now_unix,
+                )?;
+                conflict.created_at_unix = evaluation.created_at_unix;
+                return Ok(Self::native(conflict, Vec::new()));
+            }
+            GitHubTestedCommit::Head => {
+                return Err(DomainError::invalid_input(
+                    "the tested commit does not fit the request's audience",
+                ));
+            }
+        };
+        evaluation.tested_oid = evaluation.head_oid.clone();
+        evaluation.check_commit_base = None;
+        evaluation.test_check_commit(oid, base)?;
+        evaluation.updated_at_unix = now_unix;
+        Ok(Self {
+            push_to_github: !request.is_terminal(),
+            evaluation,
+            runs: Vec::new(),
         })
     }
 

@@ -191,6 +191,17 @@ contribution that conflicts with private code records a configuration error,
 "This contribution conflicts with private code, so its checks cannot run. A
 maintainer must resolve the conflict.", and nothing is pushed.
 
+A check commit counts only while private main is the one it was built on,
+because the merge applies the contribution to private main as it is. Once
+private main moves, by a push or a merge, its checks are pending again, even
+if they passed. Scope builds a new check commit on the new private main for
+every open public contribution with started checks and pushes it at once: the
+head is the one a maintainer approved, and private main is trusted. The merge
+gate does the same for the request it is asked to merge, so a merge waits for
+the new commit's checks. Results for the old commit no longer count. When the
+contribution conflicts with the new private main, its checks become the
+conflict configuration error.
+
 The check commit is private code. It exists only in temporary private staging
 repositories and on the connected GitHub repository. Request views and the
 checks response name only the head, for maintainers and contributors alike. A

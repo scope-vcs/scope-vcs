@@ -368,6 +368,22 @@ impl RequestCheckEvaluation {
         self.check_commit_base.is_some()
     }
 
+    /// Whether the tested commit still stands for what merging the head would
+    /// produce. A head always does; a check commit only while private main is
+    /// the one it was built on.
+    pub fn check_commit_is_current(&self, private_main_oid: Option<&str>) -> bool {
+        self.check_commit_base
+            .as_ref()
+            .is_none_or(|base| Some(base.private_main_oid.as_str()) == private_main_oid)
+    }
+
+    /// Whether started checks test a check commit private main has moved past,
+    /// so a new check commit must be built and sent before they can count.
+    pub fn needs_new_check_commit(&self, private_main_oid: Option<&str>) -> bool {
+        self.state == RequestCheckEvaluationState::Started
+            && !self.check_commit_is_current(private_main_oid)
+    }
+
     /// Whose code the tested commit carries. A public contribution's check
     /// commit is built on private main, so it is private code wherever it goes.
     pub fn tested_code_audience(&self, request_audience: RequestAudience) -> RequestAudience {
@@ -468,6 +484,9 @@ pub struct RequestCheckResults {
     /// Private requests whose revisions the connected GitHub repository may
     /// not receive: it became public and no one confirmed that since.
     pub withheld_from_github: Vec<String>,
+    /// Private main now. A check commit counts only while it is built on it,
+    /// because the merge applies the contribution to private main as it is.
+    pub private_main_oid: Option<String>,
 }
 
 impl RequestCheckResults {
@@ -505,6 +524,13 @@ pub fn request_checks_outcome(
         RequestCheckEvaluationState::NoChecks => RequestChecksOutcome::Clear,
         RequestCheckEvaluationState::AwaitingApproval => RequestChecksOutcome::AwaitingApproval,
         RequestCheckEvaluationState::ConfigurationError => RequestChecksOutcome::ConfigurationError,
+        // Results for a check commit built on an older private main say nothing
+        // about what the merge would produce now; a new check commit must run.
+        RequestCheckEvaluationState::Started
+            if !evaluation.check_commit_is_current(results.private_main_oid.as_deref()) =>
+        {
+            RequestChecksOutcome::Pending
+        }
         RequestCheckEvaluationState::Started => {
             let mut outcome = RequestChecksOutcome::Clear;
             for check in &evaluation.checks {

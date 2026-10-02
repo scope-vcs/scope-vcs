@@ -63,6 +63,55 @@ async fn approve(state: &AppState, head: &str) -> Response {
     .await
 }
 
+/// The owner pushes a change to private main from the original checkout.
+async fn push_main_change(
+    state: &AppState,
+    owner_source: &FsPath,
+    remote: &str,
+    path: &str,
+    content: &str,
+) {
+    fs::write(owner_source.join(path), content).unwrap();
+    run_git(Some(owner_source), &["add", path], "stage main change").unwrap();
+    commit_all(owner_source, "change main");
+    configure_bearer_header(owner_source, remote, &bearer_header());
+    configure_push_intent_header(state, owner_source, remote, &test_owner_id()).await;
+    run_git(
+        Some(owner_source),
+        &["push", remote, "HEAD:refs/heads/main"],
+        "push main change",
+    )
+    .unwrap();
+    drain_outbox(state, "github-public-main-change").await;
+}
+
+/// The public user's request with `path` changed, submitted and approved.
+async fn approved_contribution(
+    state: &AppState,
+    label: &str,
+    path: &str,
+    content: &str,
+) -> (TempGitRepo, String, TestServer, String) {
+    let (source, remote, server) =
+        request_push_checkout(state, label, PUBLIC_SUBJECT, PUBLIC_EMAIL).await;
+    push_change(&source, &remote, REQUEST_REF, path, content, "contribute").unwrap();
+    let head = git_head_oid(&source);
+    submit_public_request(state).await;
+    expect_json(approve(state, &head).await, StatusCode::OK).await;
+    (source, remote, server, head)
+}
+
+async fn tested_oid(state: &AppState, head: &str) -> String {
+    state
+        .metadata
+        .requests()
+        .request_check_evaluation(REQUEST_ID, head)
+        .await
+        .unwrap()
+        .unwrap()
+        .tested_oid
+}
+
 fn file_at(repo: &FsPath, oid: &str, path: &str) -> String {
     git_stdout_text(
         repo,
@@ -199,23 +248,14 @@ async fn a_contribution_that_conflicts_with_private_code_reports_it_and_pushes_n
 
     // Main changes the line the contribution changes after the contributor
     // cloned it.
-    fs::write(owner_source.join("README.md"), "maintainer line\n").unwrap();
-    run_git(
-        Some(&owner_source),
-        &["add", "README.md"],
-        "stage main change",
+    push_main_change(
+        &state,
+        &owner_source,
+        &remote,
+        "README.md",
+        "maintainer line\n",
     )
-    .unwrap();
-    commit_all(&owner_source, "change main");
-    configure_bearer_header(&owner_source, &remote, &bearer_header());
-    configure_push_intent_header(&state, &owner_source, &remote, &test_owner_id()).await;
-    run_git(
-        Some(&owner_source),
-        &["push", &remote, "HEAD:refs/heads/main"],
-        "push main change",
-    )
-    .unwrap();
-    drain_outbox(&state, "github-public-conflict-main").await;
+    .await;
 
     push_change(
         &source,
@@ -308,4 +348,130 @@ async fn a_check_commit_is_private_code_and_waits_for_a_public_repository_to_be_
         .unwrap()
         .tested_oid;
     assert_eq!(fake.branch_head(&branch), Some(tested));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn green_checks_on_an_older_private_main_do_not_clear_the_merge() {
+    let (state, fake, owner_source) = private_file_repository("github-public-check-stale").await;
+    let (_source, remote, _server, head) = approved_contribution(
+        &state,
+        "github-public-check-stale-push",
+        "request.txt",
+        "contribution\n",
+    )
+    .await;
+    let branch = format!("scope/requests/{REQUEST_ID}");
+    assert_eq!(push_pass(&state, unix_now()).await, 1);
+    let old = tested_oid(&state, &head).await;
+    fake.report_check_runs(
+        &old,
+        vec![check_run(1, REQUIRED_CHECK, &old, Some("success"))],
+    );
+    deliver_check_run(&state, GITHUB_REPOSITORY_ID, &old).await;
+    let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
+    assert_eq!(
+        checks(&state, REQUEST_ID, &member).await["mergeability"]["status"],
+        "Ready"
+    );
+
+    // Private main moves on without touching anything the contribution changed.
+    push_main_change(
+        &state,
+        &owner_source,
+        &remote,
+        PRIVATE_FILE,
+        "new private code\n",
+    )
+    .await;
+
+    // The merge refuses the green run on the old check commit and a check
+    // commit on the new private main goes to GitHub instead.
+    let refused = merge(&state, REQUEST_ID).await;
+    assert_eq!(refused.status(), StatusCode::CONFLICT);
+    let renewed = tested_oid(&state, &head).await;
+    assert_ne!(renewed, old);
+    assert_eq!(
+        checks(&state, REQUEST_ID, &member).await["mergeability"]["status"],
+        "ChecksPending"
+    );
+    assert_eq!(push_pass(&state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&branch), Some(renewed.clone()));
+    let github = fake.repository_path();
+    assert_eq!(
+        file_at(&github, &renewed, PRIVATE_FILE),
+        "new private code\n"
+    );
+    assert_eq!(file_at(&github, &renewed, "request.txt"), "contribution\n");
+
+    // Results on the new check commit decide.
+    fake.report_check_runs(
+        &renewed,
+        vec![check_run(2, REQUIRED_CHECK, &renewed, Some("failure"))],
+    );
+    deliver_check_run(&state, GITHUB_REPOSITORY_ID, &renewed).await;
+    assert_eq!(
+        checks(&state, REQUEST_ID, &member).await["mergeability"]["status"],
+        "ChecksFailed"
+    );
+    fake.report_check_runs(
+        &renewed,
+        vec![
+            check_run(2, REQUIRED_CHECK, &renewed, Some("failure")),
+            check_run(3, REQUIRED_CHECK, &renewed, Some("success")),
+        ],
+    );
+    deliver_check_run(&state, GITHUB_REPOSITORY_ID, &renewed).await;
+    assert_eq!(
+        checks(&state, REQUEST_ID, &member).await["mergeability"]["status"],
+        "Ready"
+    );
+    expect_json(merge(&state, REQUEST_ID).await, StatusCode::OK).await;
+    assert_eq!(
+        live_file_content(&state, "/request.txt").await.as_deref(),
+        Some("contribution\n")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_contribution_that_new_private_main_conflicts_with_reports_it() {
+    let (state, fake, owner_source) =
+        private_file_repository("github-public-check-new-conflict").await;
+    let (_source, remote, _server, head) = approved_contribution(
+        &state,
+        "github-public-check-new-conflict-push",
+        "README.md",
+        "contributor line\n",
+    )
+    .await;
+    assert_eq!(push_pass(&state, unix_now()).await, 1);
+    let old = tested_oid(&state, &head).await;
+    fake.report_check_runs(
+        &old,
+        vec![check_run(1, REQUIRED_CHECK, &old, Some("success"))],
+    );
+    deliver_check_run(&state, GITHUB_REPOSITORY_ID, &old).await;
+
+    push_main_change(
+        &state,
+        &owner_source,
+        &remote,
+        "README.md",
+        "maintainer line\n",
+    )
+    .await;
+
+    let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
+    let view = checks(&state, REQUEST_ID, &member).await;
+    assert_eq!(view["state"], "configuration-error");
+    assert_eq!(view["message"], PRIVATE_CODE_CONFLICT_MESSAGE);
+    assert_eq!(view["mergeability"]["status"], "ChecksConfigurationError");
+    assert_eq!(
+        merge(&state, REQUEST_ID).await.status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(push_pass(&state, unix_now()).await, 0);
+    assert_eq!(
+        fake.branch_head(&format!("scope/requests/{REQUEST_ID}")),
+        Some(old)
+    );
 }
