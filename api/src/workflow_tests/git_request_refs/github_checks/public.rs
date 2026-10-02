@@ -1,6 +1,7 @@
 //! GitHub checks for public contributions test the contribution merged onto
 //! private main, which holds files the public view lacks.
 
+use super::public_repositories::make_github_repository_public;
 use super::*;
 use crate::use_cases::public_check_commits::public_tested_commit;
 use scope_domain::{

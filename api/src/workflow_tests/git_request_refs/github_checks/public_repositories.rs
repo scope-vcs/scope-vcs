@@ -3,13 +3,13 @@
 use super::*;
 
 /// GitHub now lists the connected repository as public.
-fn make_github_repository_public(fake: &FakeGitHub) {
+pub(super) fn make_github_repository_public(fake: &FakeGitHub) {
     let mut public = github_repository(GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME);
     public["private"] = serde_json::json!(false);
     *fake.installation_repositories.lock().unwrap() = vec![(INSTALLATION_ID, public)];
 }
 
-async fn github_settings(state: &AppState) -> serde_json::Value {
+pub(super) async fn github_settings(state: &AppState) -> serde_json::Value {
     expect_json(
         api_request(
             router(state.clone()),
