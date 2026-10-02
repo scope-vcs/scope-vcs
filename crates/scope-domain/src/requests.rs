@@ -23,11 +23,12 @@ pub use auto_merge::{
 pub mod attachments;
 mod checks;
 pub use checks::{
-    GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubBranch, GitHubCheckConclusion, GitHubCheckResults,
-    GitHubCheckRun, GitHubCheckStatus, GitHubPush, GitHubPushDestination, GitHubPushState,
-    GitHubPushStatus, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, RequestCheck,
+    CheckCommitBase, GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubBranch, GitHubCheckConclusion,
+    GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus, GitHubCheckTarget, GitHubPush,
+    GitHubPushDestination, GitHubPushState, GitHubPushStatus, GitHubTestedCommit,
+    NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck,
     RequestCheckEvaluation, RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider,
-    RequestCheckResults, RequestChecksOutcome, changes_github_workflows,
+    RequestCheckResults, RequestChecksOutcome, changes_github_workflows, check_commit_message,
     ensure_approving_reviewed_head, github_push_retry_at, github_retry_at, request_checks_message,
     request_checks_outcome, request_checks_start_immediately, request_head_awaits_evaluation,
 };

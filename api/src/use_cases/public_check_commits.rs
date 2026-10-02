@@ -1,0 +1,221 @@
+//! The check commits GitHub tests for public contributions. A check commit is
+//! built in a private staging repository that sees private history through
+//! alternates and holds a copy of the contribution's head. It is written only
+//! there, built again from the evaluation's recorded base when it is pushed,
+//! and never enters the request revision store, the private replica or any
+//! public projection.
+
+use crate::{
+    error::ApiError,
+    git::{
+        cache::GitRepoHandle,
+        check_commit::write_check_commit,
+        command::{git_stdout_text, run_git},
+        request_ref_public_safety::public_contribution_base,
+        request_refs::with_request_revision_store_repo,
+        storage::{receive_pack_staging_repo_path, remove_dir_if_exists},
+    },
+    persistence::ensure_private_dir,
+    state::AppState,
+};
+use scope_domain::{
+    repository::{Repository, RepositoryIncarnation},
+    requests::{
+        CheckCommitBase, GitHubTestedCommit, Request, RequestRevision, canonical_request_ref,
+    },
+};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+const CHECK_HEAD_REF: &str = "refs/scope/internal/check-head";
+
+/// What GitHub tests for a public contribution's head: the head merged onto
+/// current private main, or the conflict that prevents it.
+pub(crate) async fn public_tested_commit(
+    state: &AppState,
+    repo: &Repository,
+    request: &Request,
+    revision: &RequestRevision,
+) -> Result<GitHubTestedCommit, ApiError> {
+    let staging = CheckStaging::open(state, &repo.incarnation(), request, revision).await?;
+    let built = async {
+        let public_base_oid =
+            public_contribution_base(repo, state, &staging.path, &revision.new_head_oid).await?;
+        let base = CheckCommitBase::new(staging.private_main_oid.clone(), public_base_oid)?;
+        let path = staging.path.clone();
+        let request_id = request.id.clone();
+        let head_oid = revision.new_head_oid.clone();
+        let written = {
+            let base = base.clone();
+            crate::git::blocking::run(move || {
+                write_check_commit(&path, &request_id, &head_oid, &base)
+            })
+            .await?
+        };
+        Ok(match written {
+            Some(oid) => GitHubTestedCommit::CheckCommit { oid, base },
+            None => GitHubTestedCommit::Conflict,
+        })
+    }
+    .await;
+    staging.remove().await;
+    built
+}
+
+/// Builds the check commit `base` describes again and runs `action` in a
+/// repository that holds it. A commit that comes out different from
+/// `expected_oid` is never handed over.
+pub(crate) async fn with_check_commit<T: Send + 'static>(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    request: &Request,
+    revision: &RequestRevision,
+    base: &CheckCommitBase,
+    expected_oid: &str,
+    action: impl FnOnce(&Path) -> T + Send + 'static,
+) -> Result<T, ApiError> {
+    let staging = CheckStaging::open(state, incarnation, request, revision).await?;
+    let path = staging.path.clone();
+    let request_id = request.id.clone();
+    let head_oid = revision.new_head_oid.clone();
+    let base = base.clone();
+    let expected_oid = expected_oid.to_string();
+    let result = crate::git::blocking::run(move || {
+        if write_check_commit(&path, &request_id, &head_oid, &base)?.as_deref()
+            != Some(expected_oid.as_str())
+        {
+            return Err(ApiError::internal_message(
+                "the check commit built again differs from the tested commit",
+            ));
+        }
+        Ok(action(&path))
+    })
+    .await;
+    staging.remove().await;
+    result
+}
+
+/// A temporary bare repository with private history behind an alternate and the
+/// contribution's head fetched from its revision.
+struct CheckStaging {
+    path: PathBuf,
+    private_main_oid: String,
+    /// Keeps the private replica the alternate points at from being evicted.
+    private: GitRepoHandle,
+}
+
+impl CheckStaging {
+    async fn open(
+        state: &AppState,
+        incarnation: &RepositoryIncarnation,
+        request: &Request,
+        revision: &RequestRevision,
+    ) -> Result<Self, ApiError> {
+        let (Some(head), spans) = state
+            .metadata
+            .repositories()
+            .repository_content_source(incarnation)
+            .await?
+        else {
+            return Err(ApiError::conflict("repo has no accepted Git head"));
+        };
+        let private = state
+            .repository_engine
+            .materialize_repository(state, incarnation, &head, &spans)
+            .await?;
+        let staging = Self {
+            path: receive_pack_staging_repo_path(state, incarnation)?,
+            private_main_oid: head.head_oid,
+            private,
+        };
+        let initialized = {
+            let path = staging.path.clone();
+            let private_objects = staging.private.join("objects");
+            crate::git::blocking::run(move || {
+                if let Some(parent) = path.parent() {
+                    ensure_private_dir(parent)?;
+                }
+                run_git(
+                    None,
+                    &["init", "--quiet", "--bare", path.to_string_lossy().as_ref()],
+                    "initializing check commit repository",
+                )?;
+                let private_objects =
+                    fs::canonicalize(private_objects).map_err(ApiError::internal)?;
+                fs::write(
+                    path.join("objects/info/alternates"),
+                    format!("{}\n", private_objects.display()),
+                )
+                .map_err(ApiError::internal)
+            })
+            .await
+        };
+        let fetched = match initialized {
+            Ok(()) => {
+                let path = staging.path.clone();
+                let request_ref = canonical_request_ref(&request.name);
+                with_request_revision_store_repo(
+                    state,
+                    incarnation,
+                    request,
+                    revision,
+                    move |revision_repo, revision| {
+                        fetch_head(&path, revision_repo, &request_ref, &revision.new_head_oid)
+                    },
+                )
+                .await
+            }
+            Err(error) => Err(error),
+        };
+        match fetched {
+            Ok(()) => Ok(staging),
+            Err(error) => {
+                staging.remove().await;
+                Err(error)
+            }
+        }
+    }
+
+    async fn remove(self) {
+        let path = self.path.clone();
+        if let Err(error) = crate::git::blocking::run(move || remove_dir_if_exists(&path)).await {
+            tracing::warn!(
+                path = %self.path.display(),
+                error = %error.operator_diagnostic(),
+                "could not remove a check commit repository"
+            );
+        }
+    }
+}
+
+fn fetch_head(
+    staging: &Path,
+    revision_repo: &Path,
+    request_ref: &str,
+    head_oid: &str,
+) -> Result<(), ApiError> {
+    run_git(
+        Some(staging),
+        &[
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            revision_repo.to_string_lossy().as_ref(),
+            &format!("+{request_ref}:{CHECK_HEAD_REF}"),
+        ],
+        "fetching the contribution for its check commit",
+    )?;
+    let fetched = git_stdout_text(
+        staging,
+        &["rev-parse", "--verify", CHECK_HEAD_REF],
+        "reading the contribution for its check commit",
+    )?;
+    if fetched.trim() != head_oid {
+        return Err(ApiError::infrastructure_unavailable(
+            "request revision does not hold its head",
+        ));
+    }
+    Ok(())
+}
