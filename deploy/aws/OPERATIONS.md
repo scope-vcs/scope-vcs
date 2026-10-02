@@ -1,8 +1,8 @@
 # Fargate cloud runner operations
 
-CloudFormation owns the runner VPC, public subnets, route to the internet, security group, ECS cluster, log group, task execution role, private ECR checks-image repository, GitHub OIDC publisher role, dispatcher IAM user, exact private-registry secret grant, and optional budget. Do not create parallel resources in the AWS Console.
+CloudFormation owns the runner VPC, public subnets, route to the internet, security group, ECS cluster, log group, task execution role, private ECR runner base image repository, GitHub OIDC publisher role, dispatcher IAM user, exact private-registry secret grant, and optional budget. Do not create parallel resources in the AWS Console.
 
-The cluster uses Fargate On-Demand. Each task gets a public IPv4 address because the runner must reach ECR, the Scope API, the cache, and source hosts. The security group has no inbound rules and permits outbound HTTPS only. There is no NAT gateway or idle compute cost. Checks images live in private ECR in the same region as Fargate and are published as SOCI v2 image indexes so Fargate can lazy-load their filesystems.
+The cluster uses Fargate On-Demand. Each task gets a public IPv4 address because the runner must reach ECR, the Scope API, the cache, and source hosts. The security group has no inbound rules and permits outbound HTTPS only. There is no NAT gateway or idle compute cost. The runner base image lives in private ECR in the same region as Fargate. It contains only the runner runtime at `/scope/bin/scope-runner-runtime`, Git, and a shell. Workflows that need more tools build their own image from it.
 
 The worker registers one `scope-runner-<attempt ID>` task definition per attempt because ECS cannot override either the container image or secret references in `RunTask`. The definition contains the digest-pinned image and a reference to a per-attempt Secrets Manager bootstrap credential. When `SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN` is set, it also contains that exact ARN as ECS repository credentials. Neither credential value is placed in the ECS task override or returned by `DescribeTasks`. After ECS reports the task stopped, the worker deregisters the task definition and force-deletes the one-use bootstrap secret.
 
@@ -99,21 +99,21 @@ deploy/aws/apply-cloud-runner.sh apply <change-set ARN>
 
 The script exits successfully when the stack already matches the template.
 
-Apply this infrastructure before merging a workflow that publishes to ECR. Then configure the one non-secret GitHub Actions variable from the CloudFormation output:
+Apply this infrastructure before merging a workflow that publishes to ECR. Then configure the one non-secret GitHub Actions variable from the CloudFormation output. A stack that still publishes the checks image needs the staged update in [Move publishing to the runner base image](#move-publishing-to-the-runner-base-image) first.
 
 ```bash
 publisher_role_arn="$(aws cloudformation describe-stacks \
   --region us-east-1 \
   --stack-name scope-cloud-runner-production \
-  --query "Stacks[0].Outputs[?OutputKey=='ChecksImagePublisherRoleArn'].OutputValue | [0]" \
+  --query "Stacks[0].Outputs[?OutputKey=='RunnerBaseImagePublisherRoleArn'].OutputValue | [0]" \
   --output text)"
 
-gh variable set SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN \
+gh variable set SCOPE_RUNNER_IMAGE_AWS_ROLE_ARN \
   --repo scope-vcs/scope-vcs \
   --body "$publisher_role_arn"
 ```
 
-GitHub receives temporary AWS credentials through OIDC. There is no AWS access key to create or store for image publishing. The role accepts only this repository's branch refs and the `scope-checks-image.yml` reusable workflow, and it can write only the checks-image repository.
+GitHub receives temporary AWS credentials through OIDC. There is no AWS access key to create or store for image publishing. The role accepts only this repository's `main` branch and the `scope-runner-image.yml` reusable workflow, and it can write only the runner base image repository.
 
 Configure the infrastructure role at the same time:
 
@@ -212,29 +212,84 @@ For the public mode proof, run a digest-pinned image from a registry without con
 
 Use IAM simulation after the stack update. The dispatcher must be denied `secretsmanager:GetSecretValue` for both the registry secret and a sample attempt secret. The task execution role must be allowed for the exact registry ARN and the attempt prefix, and denied for an unrelated secret.
 
-## Verify and measure SOCI
+## Move publishing to the runner base image
 
-The image workflow publishes one build in three forms during the migration experiment: GHCR, an unchanged raw ECR copy, and a converted ECR SOCI v2 image. Its artifact records every digest. Verify the SOCI tag before running it:
+A stack that still holds the `scope-vcs/production/checks` repository needs this update once. It keeps the publisher role `scope-cloud-runner-production-github-checks-publisher` and its name, and changes only its trust conditions and repository grant. The protected `scope-infrastructure-execution` role may not change GitHub roles, so a routine apply of this change rolls back. Run every step below with the temporary administration identity from [SECURITY.md](SECURITY.md), before any release that includes this change. The first such release selects the new `runner-image` component and publishes at once. That identity must not be root: `apply-cloud-runner.sh` refuses root credentials, and root cannot assume roles. A short-lived IAM user or role with AdministratorAccess works; delete it when the steps are done.
 
-```bash
-aws ecr batch-get-image \
-  --region us-east-1 \
-  --repository-name scope-vcs/production/checks \
-  --image-ids imageTag=<SOCI tag> \
-  --query 'images[0].imageManifest' \
-  --output text \
-  | jq -e '.manifests[] | select(.artifactType == "application/vnd.amazon.soci.index.v2+json")'
-```
+Before step 1, confirm the runner stack matches main's template without this change: plan main's `cloud-runner.yaml` and review it. Step 3's change set must contain only this change, so apply any pending main changes first. Changes the routine `AWS infrastructure` workflow may make go through it; changes to `GitHubOidcProvider`, `GitHubInfrastructureRole` or other GitHub trust need this same privileged path, applied and reviewed as their own change set before step 1.
 
-Run ten cold tasks for each digest, changing only the pinned image: GHCR, raw ECR, then SOCI ECR. For every task, preserve `createdAt`, `pullStartedAt`, `pullStoppedAt`, and `startedAt` from `aws ecs describe-tasks`. The task must also print the metadata endpoint's snapshotter:
+1. Let the execution role manage the new repository. Update the security stack from `security-deployment-role.yaml`, review the change set, then execute it:
 
-```bash
-node -e 'fetch(process.env.ECS_CONTAINER_METADATA_URI_V4).then(r => r.json()).then(m => console.log(JSON.stringify({snapshotter:m.Snapshotter})))'
-```
+   ```bash
+   aws cloudformation create-change-set \
+     --region us-east-1 \
+     --stack-name scope-security-deployment-role \
+     --change-set-name runner-base-repository \
+     --template-body file://deploy/aws/security-deployment-role.yaml \
+     --parameters ParameterKey=RegistryCredentialsSecretArn,UsePreviousValue=true \
+     --capabilities CAPABILITY_NAMED_IAM
+   aws cloudformation describe-change-set --region us-east-1 \
+     --stack-name scope-security-deployment-role --change-set-name runner-base-repository
+   aws cloudformation execute-change-set --region us-east-1 \
+     --stack-name scope-security-deployment-role --change-set-name runner-base-repository
+   aws cloudformation wait stack-update-complete --region us-east-1 \
+     --stack-name scope-security-deployment-role
+   ```
 
-The raw variants should report `overlayfs`; the SOCI variant must report `soci`. Compare median and p95 `startedAt - createdAt`, image-pull duration, and end-to-end execution time. Promote only the converted top-level digest—not the raw image digest or the child SOCI descriptor—when the experiment reaches median startup at or below 45 seconds, p95 at or below 60 seconds, and execution time within 5% of baseline.
+2. Create a temporary CloudFormation service role that may change the publisher role:
 
-Pin the promoted digest in `.scope/runs/checks.yml`, deploy, and observe three healthy production runs. During that hold, the image workflow intentionally keeps GHCR and raw ECR variants available for rollback and measurement. After the hold, remove GHCR publication and keep the last known-good digest as the rollback target. The repository retains tagged artifacts; its lifecycle policy deletes only untagged artifacts older than fourteen days.
+   ```bash
+   aws iam create-role \
+     --role-name scope-runner-publisher-migration \
+     --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"cloudformation.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+   aws iam attach-role-policy \
+     --role-name scope-runner-publisher-migration \
+     --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+   ```
+
+3. Plan the runner stack with that role:
+
+   ```bash
+   SCOPE_AWS_EXECUTION_ROLE_ARN="arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/scope-runner-publisher-migration" \
+   deploy/aws/apply-cloud-runner.sh plan
+   ```
+
+   Pass the same `BUDGET_NOTIFICATION_EMAIL`, `MONTHLY_BUDGET_USD` and `SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN` as routine applies. The change set must add `RunnerBaseImageRepository`, remove `ChecksImageRepository`, and modify `ChecksImagePublisherRole` and `RunnerTaskExecutionRole` with `Replacement` `False`. Stop if it shows anything else, in particular a change to `GitHubOidcProvider` or `GitHubInfrastructureRole`.
+
+4. Apply that exact change set with the same environment, then confirm the role ARN output:
+
+   ```bash
+   deploy/aws/apply-cloud-runner.sh apply <change-set ARN>
+   ```
+
+5. Delete the temporary role:
+
+   ```bash
+   aws iam detach-role-policy \
+     --role-name scope-runner-publisher-migration \
+     --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+   aws iam delete-role --role-name scope-runner-publisher-migration
+   ```
+
+   CloudFormation keeps the last service role on the stack, so it now names a role that no longer exists. Every routine plan passes `scope-infrastructure-execution`, and the next applied change associates it again. Check `aws cloudformation describe-stacks --stack-name scope-cloud-runner-production --query 'Stacks[0].RoleARN'` after that apply.
+
+6. Set `SCOPE_RUNNER_IMAGE_AWS_ROLE_ARN` from the `RunnerBaseImagePublisherRoleArn` output, as shown above. The ARN is the same role the checks image used.
+
+7. Merge, then release. After the release publishes the runner base image, delete the retained `scope-vcs/production/checks` repository, the `SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN` variable, and the `checks` package on GHCR:
+
+   ```bash
+   aws ecr delete-repository --region us-east-1 \
+     --repository-name scope-vcs/production/checks --force
+   gh variable delete SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN --repo scope-vcs/scope-vcs
+   ```
+
+   Delete the GHCR package from the organization's package settings.
+
+Between step 4 and the merge, the publisher role accepts only `scope-runner-image.yml` on `main`, so a release from the old `main` that selects the checks image fails to publish it. Do not release in that window.
+
+## Publish the runner base image
+
+`runner-runtime/Dockerfile` builds the runner base image. When a change selects the `runner-image` component, pull requests and Scope request branches build the image, run `dev/checks/runner-runtime-container` against it, and scan it. A release that selects the component repeats those checks on `main`, then pushes the image to `scope-vcs/production/runner-base` under a tag unique to the run. The `runner-image-<commit>` artifact and the run summary record the digest. Pin workflows to that digest, not the tag. The repository retains tagged images; its lifecycle policy deletes only untagged artifacts older than fourteen days.
 
 ## Disable and roll back
 

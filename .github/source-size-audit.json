@@ -67,11 +67,6 @@
       "reason": "Prepare, part reservation, acknowledgement, and finalization share current authorization, idempotency, repository quota locks, and the durable upload inventory."
     },
     {
-      "path": "crates/scope-run-config/src/lib.rs",
-      "owner": "workflow configuration compiler",
-      "reason": "YAML decoding, validation, domain compilation, repository catalog parsing, and grammar fixtures define one compiler."
-    },
-    {
       "path": "media-worker/src/codec.rs",
       "owner": "request media codec pipeline",
       "reason": "Photo and video conversion share verified codec capabilities, output inspection, bounded subprocess policy, and failure classification; container and source inspection are already isolated in codec/inspection."

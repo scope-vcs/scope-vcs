@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -9,34 +8,24 @@ import {
 
 const liveFiles = readToolchainFiles();
 
-test("a mismatched checks image fails with the replica name and versions", () => {
+test("a mismatched runner base image fails with the replica name and versions", () => {
   const files = { ...liveFiles };
   const expectedVersion = files["rust-toolchain.toml"].match(
     /channel\s*=\s*"([^"]+)"/,
   )[1];
-  files[".scope/images/checks/Dockerfile"] = readFileSync(
-    new URL("fixtures/mismatched-checks.Dockerfile", import.meta.url),
-    "utf8",
-  ).replaceAll("1.98.0", expectedVersion);
-
-  assert.deepEqual(validateRustToolchainSync(files), [
-    `.scope/images/checks/Dockerfile: Rust base image must match Rust ${expectedVersion}; found 1.97.0`,
-  ]);
-});
-
-test("checks image Rust stages must share one base digest", {
-  skip: liveFiles[".scope/images/checks/Dockerfile"] === undefined
-    && "Scope keeps .scope/images private, so this checkout does not include it",
-}, () => {
-  const files = { ...liveFiles };
-  const dockerfile = files[".scope/images/checks/Dockerfile"];
-  const [digest] = dockerfile.match(/sha256:[0-9a-f]{64}(?= AS scope-runtime-builder)/);
-  files[".scope/images/checks/Dockerfile"] = dockerfile.replace(
-    `${digest} AS scope-runtime-builder`,
-    `sha256:${"b".repeat(64)} AS scope-runtime-builder`,
+  files["runner-runtime/Dockerfile"] = files["runner-runtime/Dockerfile"].replace(
+    `rust:${expectedVersion}-slim-bookworm`,
+    "rust:1.97.0-slim-bookworm",
   );
 
   assert.deepEqual(validateRustToolchainSync(files), [
-    ".scope/images/checks/Dockerfile: Rust stages must use the same base digest",
+    `runner-runtime/Dockerfile: Rust base image must match Rust ${expectedVersion}; found 1.97.0`,
   ]);
+});
+
+test("a missing replica fails instead of passing silently", () => {
+  const files = { ...liveFiles };
+  delete files["runner-runtime/Dockerfile"];
+
+  assert.deepEqual(validateRustToolchainSync(files), ["runner-runtime/Dockerfile: file is missing"]);
 });

@@ -34,9 +34,10 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
         run: |
           mode=release
-          [[ "$EVENT_NAME" == "pull_request" ]] && mode=pull-request
+          [[ "$EVENT_NAME" == "pull_request" || "$GIT_REF" == refs/heads/scope/* ]] && mode=pull-request
           matrix="$(node .github/scripts/select-cli-distribution-targets.mjs --mode "$mode")"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 

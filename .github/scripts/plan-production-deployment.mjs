@@ -5,7 +5,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { RAILWAY_COMPONENTS, backendSelected } from "./deployment-components.mjs";
 
-export const COMPONENTS = ["checks-image", ...RAILWAY_COMPONENTS];
+export const COMPONENTS = ["runner-image", ...RAILWAY_COMPONENTS];
 const SELECTIONS = [...COMPONENTS, "cli-distribution"];
 
 function matchesScope(path, scope) {
@@ -45,7 +45,7 @@ export function classifyChanges(manifest, paths, requestedScope = "changed") {
 export function includeMigrationParticipants(selection, apiChanges) {
   if (!backendSelected(selection)) return selection;
   if (Array.isArray(apiChanges) && !apiChanges.some((path) => path.startsWith("crates/scope-postgres/src/migrations/"))) return selection;
-  return { ...selection, ...Object.fromEntries(SELECTIONS.filter((component) => component !== "checks-image").map((component) => [component, true])) };
+  return { ...selection, ...Object.fromEntries(SELECTIONS.filter((component) => component !== "runner-image").map((component) => [component, true])) };
 }
 
 export function planFromDeploymentProgress(manifest, pathsByComponent, requestedScope = "changed") {
@@ -117,7 +117,7 @@ function main() {
   for (const [component, selected] of Object.entries(selection)) {
     if (!SELECTIONS.includes(component) || typeof selected !== "boolean") throw new Error(`Invalid deployment selection for ${component}`);
     const outputName = {
-      "checks-image": "checks_image",
+      "runner-image": "runner_image",
       "run-worker": "worker",
       "git-router": "router",
       "media-api": "media",

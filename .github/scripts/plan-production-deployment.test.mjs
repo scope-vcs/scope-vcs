@@ -18,7 +18,7 @@ function repositoryJson(path) {
 
 function deploymentSelection(overrides = {}) {
   return {
-    "checks-image": false,
+    "runner-image": false,
     cache: false,
     "run-worker": false,
     "media-worker": false,
@@ -34,7 +34,7 @@ function deploymentSelection(overrides = {}) {
 
 test("changes select the required deployment lanes", () => {
   const allLanes = {
-    "checks-image": true,
+    "runner-image": true,
     cache: true,
     "run-worker": true,
     "media-worker": true,
@@ -52,15 +52,15 @@ test("changes select the required deployment lanes", () => {
     ["documentation-only changes do not deploy", ["docs/cache.md"], {}],
     ["cache service changes run backend only", ["cache-service/src/main.rs"], { cache: true }],
     [
-      "runner changes publish the checks image and nothing else",
+      "runner changes publish the runner base image and nothing else",
       ["runner-runtime/src/main.rs"],
-      { "checks-image": true },
+      { "runner-image": true },
     ],
     [
-      "toolchain changes publish the checks image and rebuild Rust services",
+      "toolchain changes publish the runner base image and rebuild Rust services",
       ["rust-toolchain.toml"],
       {
-        "checks-image": true,
+        "runner-image": true,
         cache: true,
         "run-worker": true,
         "media-worker": true,
@@ -124,7 +124,7 @@ test("changes select the required deployment lanes", () => {
       { "cli-downloads": true, "cli-distribution": true },
     ],
     [
-      "shared process lifecycle changes validate and rebuild the checks image",
+      "shared process lifecycle changes validate and rebuild the runner base image",
       ["crates/scope-git-process/src/lifecycle.rs"],
       { ...allLanes, "cli-distribution": false },
     ],
@@ -132,7 +132,7 @@ test("changes select the required deployment lanes", () => {
       "unrelated shared crates retain broad CLI validation without rebuilding targets",
       ["crates/scope-cache-contract/src/lib.rs"],
       {
-        "checks-image": true,
+        "runner-image": true,
         cache: true,
         "run-worker": true,
         "media-worker": true,
@@ -244,7 +244,7 @@ test("an unseeded production ledger deploys every component", () => {
 
 test("skipped components remain selected across a later backend-only change", () => {
   const selection = planFromDeploymentProgress(manifest, {
-    "checks-image": [],
+    "runner-image": [],
     cache: ["cache-service/src/main.rs"],
     "run-worker": [],
     "media-worker": [],
@@ -258,7 +258,7 @@ test("skipped components remain selected across a later backend-only change", ()
   });
 
   assert.deepEqual(selection, {
-    "checks-image": false,
+    "runner-image": false,
     cache: true,
     "run-worker": false,
     "media-worker": false,
@@ -273,7 +273,7 @@ test("skipped components remain selected across a later backend-only change", ()
 
 test("CLI deployment progress selects distribution builds only for binary inputs", () => {
   const broadOnly = planFromDeploymentProgress(manifest, {
-    "checks-image": [],
+    "runner-image": [],
     cache: [],
     "run-worker": [],
     "media-worker": [],
@@ -284,7 +284,7 @@ test("CLI deployment progress selects distribution builds only for binary inputs
     "cli-downloads": ["api/src/main.rs"],
   });
   const binaryChange = planFromDeploymentProgress(manifest, {
-    "checks-image": [],
+    "runner-image": [],
     cache: [],
     "run-worker": [],
     "media-worker": [],
@@ -304,7 +304,7 @@ test("CLI deployment progress selects distribution builds only for binary inputs
 
 test("manual scopes ignore pending production components", () => {
   assert.deepEqual(planFromDeploymentProgress(manifest, {}, "web"), {
-    "checks-image": false,
+    "runner-image": false,
     cache: false,
     "run-worker": false,
     "media-worker": false,
@@ -361,11 +361,11 @@ test("service config does not override Railway scaling or restart defaults", () 
   }
 });
 
-test("migration changes promote every application participant but leave checks images independent", () => {
+test("migration changes promote every application participant but leave the runner base image independent", () => {
   for (const apiChanges of [null, undefined, ["crates/scope-postgres/src/migrations/999_next.rs"]]) {
     const selected = includeMigrationParticipants(deploymentSelection({ api: true }), apiChanges);
-    assert.equal(selected["checks-image"], false);
-    for (const [component, value] of Object.entries(selected)) if (component !== "checks-image") assert.equal(value, true, component);
+    assert.equal(selected["runner-image"], false);
+    for (const [component, value] of Object.entries(selected)) if (component !== "runner-image") assert.equal(value, true, component);
   }
   const apiOnly = deploymentSelection({ api: true });
   assert.deepEqual(includeMigrationParticipants(apiOnly, ["api/src/main.rs"]), apiOnly);

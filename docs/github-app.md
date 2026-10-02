@@ -342,3 +342,31 @@ publicly with Tailscale Funnel and use the funnel address as the Webhook URL:
 tailscale funnel --bg --https=8443 --set-path=/v1/github/webhooks \
   http://127.0.0.1:8080/v1/github/webhooks
 ```
+
+## Scope's own repository
+
+Scope's workflows in `.github/workflows` carry the `scope/**` push trigger.
+The same change replaces the checks image with the runner base image, so the
+switch has steps on both sides of the merge.
+
+Before merging, and before any release that includes the change, follow
+[Move publishing to the runner base image](../deploy/aws/OPERATIONS.md#move-publishing-to-the-runner-base-image).
+It updates the AWS stacks and sets `SCOPE_RUNNER_IMAGE_AWS_ROLE_ARN`. The
+first release afterwards publishes the runner base image, which needs both.
+
+After that release:
+
+1. Connect the Scope repository to `scope-vcs/scope-vcs` from its repository
+   settings. That GitHub repository is public, so private requests and
+   private files pushed there become public, as
+   [Public GitHub repositories](#public-github-repositories) describes. The
+   connect must be done by an owner who can change file visibility, and they
+   must confirm the public-repository acknowledgment on the setup page.
+2. Confirm that workflows start: push a request and check that CI runs on its
+   `scope/requests/<id>` branch. Note the check names GitHub reports.
+3. Choose the required checks in the CI section. Expect `Required PR
+   checks`, the job that aggregates every other CI result.
+4. Delete what the old checks image left behind, as the last step of the
+   operations guide describes: the retained ECR repository
+   `scope-vcs/production/checks`, the GitHub variable
+   `SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN` and the `checks` container package on GHCR.

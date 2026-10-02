@@ -19,9 +19,9 @@ PROMPT = """Refresh the pinned packages in Scope's release images so the nightly
 stopped by a pin that has gone stale. Work in this thread's dedicated worktree, which starts
 at current main.
 
-Release and PR CI scan both images with .scope/images/checks/scan-image.sh, which fails on
+Release and PR CI scan both images with .github/scripts/scan-image.sh, which fails on
 any HIGH or CRITICAL finding that has a fixed version. The pins live in two files:
-.scope/images/checks/Dockerfile pins a Debian snapshot and exact tool versions, and
+runner-runtime/Dockerfile pins a Debian snapshot for the runner base image, and
 media-worker/Dockerfile pins exact Debian package versions. Move the snapshot to the newest
 one available, move each exact package pin to the newest version its source offers, and
 update a tool pin when a newer release fixes a finding. Keep every pin exact and every

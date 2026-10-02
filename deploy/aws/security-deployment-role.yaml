@@ -39,7 +39,7 @@ Resources:
           - ecr:BatchGetImage
           - ecr:GetDownloadUrlForLayer
           Resource:
-            Fn::Sub: arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/scope-vcs/production/checks
+            Fn::Sub: arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/scope-vcs/production/runner-base
         - Effect: Allow
           Action:
           - secretsmanager:CreateSecret
@@ -258,7 +258,7 @@ Resources:
             - ecr:TagResource
             - ecr:UntagResource
             Resource:
-              Fn::Sub: arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/scope-vcs/production/checks
+              Fn::Sub: arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/scope-vcs/production/runner-base
           - Effect: Allow
             Action:
             - ec2:DescribeVpcs

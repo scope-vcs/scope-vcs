@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Installs the PostgreSQL 18 server tools that the disposable-cluster tests in
 # dev/checks/ops run. Ubuntu runners ship an older major version, so this adds
-# the PGDG apt repository after verifying its signing key against the checksum
-# the Scope checks image pins. Run as root on Ubuntu.
+# the PGDG apt repository after verifying its signing key against a pinned
+# checksum. Run as root on Ubuntu.
 key_sha256=0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76
 key=/etc/apt/keyrings/postgresql.asc
 

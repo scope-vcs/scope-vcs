@@ -48,7 +48,6 @@
     .repo li { height: 38px; margin: 0 -10px; padding: 0 10px; display: flex; align-items: center; gap: 12px; border-radius: 8px; }
     .repo li:hover { background: var(--muted); }
     .repo li span { margin-left: auto; color: var(--muted-foreground); font-size: 12px; white-space: nowrap; }
-    .repo .lock { width: 14px; height: 14px; margin-left: auto; color: var(--foreground); }
 
     .second { padding: 32px 0 160px; display: grid; grid-template-columns: 1fr 1fr; gap: 96px 80px; align-items: start; }
     .second > div { min-width: 0; }
@@ -88,7 +87,6 @@
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5Z"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14 3v5h5"/></symbol>
     <symbol id="mark" viewBox="0 0 96 96"><path d="M33 48C49 48 48 27 62 27H66M33 48C49 48 48 69 62 69H66" stroke-width="9"/><circle cx="76" cy="27" r="8" stroke-width="9"/><circle cx="76" cy="69" r="8" stroke-width="9"/><circle cx="24" cy="48" r="9" fill="currentColor" stroke="none"/></symbol>
-    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
     <symbol id="logo" viewBox="0 0 386.436700079 96">
       <use href="#mark" width="96" height="96" fill="none" stroke="currentColor" stroke-linecap="round"/>
       <g fill="currentColor" transform="translate(96.010964621 18.973212625) scale(1.164728734)">
@@ -121,8 +119,6 @@
             <li><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>worker/<span>background jobs</span></li>
             <li><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>runner-runtime/<span>CI runner</span></li>
             <li><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>README.md</li>
-            <li><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>.scope/images/<svg class="icon lock" role="img" aria-label="private"><use href="#i-lock"/></svg></li>
-            <li><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>.scope/runs/<svg class="icon lock" role="img" aria-label="private"><use href="#i-lock"/></svg></li>
           </ul>
         </div>
       </section>

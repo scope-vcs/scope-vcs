@@ -221,26 +221,27 @@
         "legal/"
       ]
     },
-    "checks-image": {
+    "runner-image": {
       "files": [
         "Cargo.lock",
         "Cargo.toml",
         "rust-toolchain.toml",
         "dev/tool-versions.json",
         "deploy/railway/install-git.sh",
-        "dev/install-cargo-deny.sh",
-        ".github/workflows/scope-checks-image.yml",
-        ".github/scripts/publish-soci-image.sh",
+        ".github/workflows/scope-runner-image.yml",
+        ".github/scripts/push-image-tags.sh",
+        ".github/scripts/scan-image.sh",
+        ".github/scripts/scan-report.mjs",
         "dev/checks/runner-runtime-container"
       ],
       "prefixes": [
-        ".scope/images/checks/",
         "runner-runtime/",
         "crates/scope-api-contract/",
         "crates/scope-cache-contract/",
         "crates/scope-cache-domain/",
         "crates/scope-domain/",
-        "crates/scope-git-process/"
+        "crates/scope-git-process/",
+        "crates/scope-service-runtime/"
       ]
     },
     "cache": {
@@ -306,6 +307,8 @@
         "Cargo.toml",
         "rust-toolchain.toml",
         ".github/workflows/scope-media-worker-image.yml",
+        ".github/scripts/scan-image.sh",
+        ".github/scripts/scan-report.mjs",
         ".github/workflows/deploy-backend.yml",
         "dev/checks/backend",
         "deny.toml",

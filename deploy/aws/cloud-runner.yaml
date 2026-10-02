@@ -27,12 +27,12 @@ Parameters:
     Type: String
     Default: scope-vcs/scope-vcs
     AllowedPattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
-    Description: GitHub owner and repository allowed to publish checks images.
+    Description: GitHub owner and repository allowed to publish runner base images.
   GitHubRepositoryId:
     Type: String
     Default: "1272896256"
     AllowedPattern: "^[0-9]+$"
-    Description: Immutable GitHub repository ID allowed to publish checks images.
+    Description: Immutable GitHub repository ID allowed to publish runner base images.
   GitHubRepositoryOwnerId:
     Type: String
     Default: "321219119"
@@ -159,12 +159,12 @@ Resources:
       LogGroupName: !Sub /scope-vcs/${Environment}/cloud-runner
       RetentionInDays: 14
 
-  ChecksImageRepository:
+  RunnerBaseImageRepository:
     Type: AWS::ECR::Repository
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      RepositoryName: !Sub scope-vcs/${Environment}/checks
+      RepositoryName: !Sub scope-vcs/${Environment}/runner-base
       EncryptionConfiguration:
         EncryptionType: AES256
       ImageScanningConfiguration:
@@ -189,7 +189,7 @@ Resources:
           }
       Tags:
         - Key: Component
-          Value: checks-image
+          Value: runner-base-image
 
   GitHubOidcProvider:
     Type: AWS::IAM::OIDCProvider
@@ -202,6 +202,9 @@ Resources:
         - Key: Component
           Value: checks-image
 
+  # The logical ID, role name, policy name and tags predate the runner base
+  # image. Changing them would replace security-owned GitHub trust, so only the
+  # trust conditions and the repository grant changed. See OPERATIONS.md.
   ChecksImagePublisherRole:
     Type: AWS::IAM::Role
     Properties:
@@ -222,10 +225,10 @@ Resources:
                 token.actions.githubusercontent.com:repository_id: !Ref GitHubRepositoryId
               StringLike:
                 token.actions.githubusercontent.com:sub: !Sub
-                  - repo:${RepositoryOwner}@${GitHubRepositoryOwnerId}/${RepositoryName}@${GitHubRepositoryId}:ref:refs/heads/*
+                  - repo:${RepositoryOwner}@${GitHubRepositoryOwnerId}/${RepositoryName}@${GitHubRepositoryId}:ref:refs/heads/main
                   - RepositoryOwner: !Select [0, !Split ["/", !Ref GitHubRepository]]
                     RepositoryName: !Select [1, !Split ["/", !Ref GitHubRepository]]
-                token.actions.githubusercontent.com:job_workflow_ref: !Sub ${GitHubRepository}/.github/workflows/scope-checks-image.yml@refs/heads/*
+                token.actions.githubusercontent.com:job_workflow_ref: !Sub ${GitHubRepository}/.github/workflows/scope-runner-image.yml@refs/heads/main
       Policies:
         - PolicyName: publish-checks-images
           PolicyDocument:
@@ -244,7 +247,7 @@ Resources:
                   - ecr:InitiateLayerUpload
                   - ecr:PutImage
                   - ecr:UploadLayerPart
-                Resource: !GetAtt ChecksImageRepository.Arn
+                Resource: !GetAtt RunnerBaseImageRepository.Arn
       Tags:
         - Key: Component
           Value: checks-image
@@ -357,7 +360,7 @@ Resources:
                   - ecr:BatchCheckLayerAvailability
                   - ecr:BatchGetImage
                   - ecr:GetDownloadUrlForLayer
-                Resource: !GetAtt ChecksImageRepository.Arn
+                Resource: !GetAtt RunnerBaseImageRepository.Arn
 
   RailwayDispatcherUser:
     Type: AWS::IAM::User
@@ -424,14 +427,14 @@ Outputs:
   RailwayDispatcherUserName:
     Description: IAM user for the Railway worker; create its access key outside CloudFormation.
     Value: !Ref RailwayDispatcherUser
-  ChecksImageRepositoryName:
-    Description: Private ECR repository name for raw and SOCI v2 checks images.
-    Value: !Ref ChecksImageRepository
-  ChecksImageRepositoryUri:
-    Description: Private ECR repository URI for raw and SOCI v2 checks images.
-    Value: !GetAtt ChecksImageRepository.RepositoryUri
-  ChecksImagePublisherRoleArn:
-    Description: GitHub Actions OIDC role for publishing checks images.
+  RunnerBaseImageRepositoryName:
+    Description: Private ECR repository name for runner base images.
+    Value: !Ref RunnerBaseImageRepository
+  RunnerBaseImageRepositoryUri:
+    Description: Private ECR repository URI for runner base images.
+    Value: !GetAtt RunnerBaseImageRepository.RepositoryUri
+  RunnerBaseImagePublisherRoleArn:
+    Description: GitHub Actions OIDC role for publishing runner base images.
     Value: !GetAtt ChecksImagePublisherRole.Arn
   GitHubInfrastructureRoleArn:
     Description: GitHub Actions OIDC role for CLI-driven infrastructure plans and applies.

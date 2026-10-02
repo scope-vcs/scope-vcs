@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { classifyChanges } from './plan-production-deployment.mjs';
-import { readScopeManagedFile } from './scope-managed-files.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
@@ -65,14 +64,10 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
   ]);
 });
 
-test('local and both CI callers use the shared inventory', () => {
+test('local and GitHub callers use the shared inventory', () => {
   const github = ['rust-workspace-checks', 'scope-api-ci', 'scope-cli-build', 'scope-web-ci', 'ci', 'release', 'scope-integration-ci']
     .map((name) => read(`.github/workflows/${name}.yml`)).join('\n');
-  const scope = readScopeManagedFile('.scope/runs/checks.yml', { root });
-  for (const gate of gates) {
-    assert.ok(github.includes(`dev/checks/${gate}`), `GitHub: ${gate}`);
-    if (scope !== undefined) assert.ok(scope.includes(`dev/checks/${gate}`), `Scope: ${gate}`);
-  }
+  for (const gate of gates) assert.ok(github.includes(`dev/checks/${gate}`), `GitHub: ${gate}`);
   for (const gate of ['policy', 'contract']) assert.ok(read('dev/check').includes(`dev/checks/${gate}`), `local: ${gate}`);
   assert.doesNotMatch(read('web/package.json'), /dev\/checks\/contract/);
   assert.doesNotMatch(read('.github/workflows/scope-web-ci.yml'), /rust-toolchain|rust-cache/);
@@ -125,7 +120,7 @@ const alwaysOnGateInputs = [
   /^deploy\/railway\/(ssh-bin\/ssh|ssh_known_hosts)$/,
   /^bench\//, /^deploy\/(aws|postgres|automation)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py|install-test-postgres\.sh)$/,
-  /^\.github\/(source-size-audit|railway-experiments)\.json$/, /^\.scope\/runs\/checks\.yml$/,
+  /^\.github\/(source-size-audit|railway-experiments)\.json$/,
   /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-tests|deployment-watcher-heartbeat|maintenance-runtime)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
@@ -158,7 +153,7 @@ function scriptsCoveredByAlwaysOnGates() {
 test('gate inputs select a lane unless the always-on gates own them', () => {
   const paths = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' }).trim().split('\n');
   const gateInputs = paths.filter((path) => existsSync(resolve(root, path)) && /^(dev\/|\.github\/(scripts|workflows)\/|bench\/|deploy\/)/.test(path));
-  gateInputs.push('.scope/runs/checks.yml', '.github/source-size-audit.json', '.github/railway-experiments.json');
+  gateInputs.push('.github/source-size-audit.json', '.github/railway-experiments.json');
   const coveredScripts = scriptsCoveredByAlwaysOnGates();
   for (const path of gateInputs) {
     const selected = Object.values(classifyChanges(manifest, [path])).some(Boolean);
@@ -280,7 +275,7 @@ function releaseJobs() {
 
 function releasePath(selected, { reuse = false, resumeStaging = false, failure = '', cancelled = false, ref = 'refs/heads/main', backendActivatesWeb = false } = {}) {
   const jobs = releaseJobs();
-  const outputs = Object.fromEntries(['checks_image', 'cache', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
+  const outputs = Object.fromEntries(['runner_image', 'cache', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
     .map((key) => [key, String(selected.includes(key))]));
   outputs.backend_selected = String(['cache', 'worker', 'media_worker', 'router', 'media', 'api']
     .some((key) => outputs[key] === 'true'));
@@ -309,9 +304,9 @@ test('release paths stage applications once and leave no-op and distribution-onl
   assert.equal(cli.staging.result, 'skipped');
   assert.equal(cli['cli-deploy'].result, 'success');
   assert.equal(cli['production-health-gate'].result, 'success');
-  const checks = releasePath(['checks_image']);
-  assert.equal(checks.staging.result, 'skipped');
-  assert.equal(checks['production-health-gate'].result, 'success');
+  const runner = releasePath(['runner_image']);
+  assert.equal(runner.staging.result, 'skipped');
+  assert.equal(runner['production-health-gate'].result, 'success');
 });
 
 test('failed preflight, staging or activation cannot publish a successful release', () => {
@@ -455,33 +450,44 @@ test('release selection uses the trusted control revision before exposing a sour
   assert.match(read('.github/workflows/deploy-backend.yml'), /ref: \$\{\{ github\.sha \}\}\n\s+persist-credentials: false/);
   assert.match(release.split('\njobs:')[0], /deployments: read/);
   assert.doesNotMatch(release.split('\njobs:')[0], /: write/);
-  const checks = read('.github/workflows/scope-checks-image.yml');
-  const candidate = checks.slice(checks.indexOf('  validate:'), checks.indexOf('  build:'));
-  assert.match(candidate, /if: github\.event_name == 'pull_request'/);
+  const runner = read('.github/workflows/scope-runner-image.yml');
+  const candidate = runner.slice(runner.indexOf('\n  validate:\n'), runner.indexOf('\n  publish:\n'));
+  assert.match(candidate, /if: \$\{\{ !inputs\.publish \}\}/);
   assert.doesNotMatch(candidate, /: write/);
-  assert.match(checks.slice(checks.indexOf('  build:')), /if: github\.event_name != 'pull_request'/);
+  const publish = runner.slice(runner.indexOf('\n  publish:\n'));
+  assert.match(publish, /if: inputs\.publish\n/);
+  assert.match(publish, /- name: Require main for publication\n\s+run: test "\$GITHUB_REF" = refs\/heads\/main\n/);
 });
 
-test('checks images pass the container lifecycle gate before publication', () => {
-  const checks = read('.github/workflows/scope-checks-image.yml');
-  const candidate = checks.slice(checks.indexOf('  validate:'), checks.indexOf('  build:'));
-  const build = checks.slice(checks.indexOf('  build:'));
-  for (const lane of [candidate, build]) {
+test('runner base images pass the container lifecycle gate and scan before publication', () => {
+  const runner = read('.github/workflows/scope-runner-image.yml');
+  const candidate = runner.slice(runner.indexOf('\n  validate:\n'), runner.indexOf('\n  publish:\n'));
+  const publish = runner.slice(runner.indexOf('\n  publish:\n'));
+  for (const lane of [candidate, publish]) {
+    assert.match(lane, /file: runner-runtime\/Dockerfile\n/);
     assert.match(lane, /push: false\n\s+load: true/);
     assert.match(lane, /run: dev\/checks\/runner-runtime-container --image /);
+    assert.match(lane, /run: \.github\/scripts\/scan-image\.sh docker /);
   }
-  const verify = build.indexOf('- name: Verify runtime process lifecycle');
-  const publish = build.indexOf('- name: Publish verified image');
-  const promote = build.indexOf('- name: Publish raw and SOCI v2 variants');
-  assert(verify >= 0 && publish > verify && promote > publish);
-  assert.match(build.slice(publish, promote), /bash \.github\/scripts\/push-image-tags\.sh <<< "\$TAGS"/);
+  const verify = publish.indexOf('- name: Verify runtime process lifecycle');
+  const scan = publish.indexOf('- name: Scan verified image before publishing');
+  const push = publish.indexOf('- name: Publish verified image');
+  assert(verify >= 0 && scan > verify && push > scan);
+  assert.match(publish.slice(push), /bash \.github\/scripts\/push-image-tags\.sh <<< "\$IMAGE"/);
 });
 
-test('CI is pull-request-only and Release dispatch is owned by the watcher', () => {
+test('CI runs on pull requests and Scope request branches, and Release dispatch is owned by the watcher', () => {
   const ci = read('.github/workflows/ci.yml');
   const release = read('.github/workflows/release.yml');
-  assert.match(ci, /  pull_request:/);
-  assert.doesNotMatch(ci.split('\nconcurrency:')[0], /schedule:|workflow_dispatch:|push:/);
+  const ciTriggers = ci.split('\nconcurrency:')[0];
+  assert.match(ciTriggers, /  pull_request:\n  push:\n    branches: \['scope\/\*\*'\]\n/);
+  assert.doesNotMatch(ciTriggers, /schedule:|workflow_dispatch:/);
+  // Concurrent Scope requests must not share a group, and a new branch has no
+  // previous commit to compare against.
+  assert.match(ci, /group: scope-ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
+  assert.match(ci, /base="\$\(git merge-base origin\/main HEAD\)"/);
+  assert.match(ci, /BASE_SHA: \$\{\{ steps\.base\.outputs\.sha \}\}/);
+  assert.doesNotMatch(ci, /github\.event\.before/);
   const triggers = release.split('\nconcurrency:')[0];
   assert.doesNotMatch(triggers, /schedule:|cron:/);
   assert.match(triggers, /schedule_intent:/);
@@ -537,13 +543,13 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
   assert.ok(expression, 'validation predicate must be evaluated in the assertion, not the job condition');
   const evaluate = Function('inputs', 'needs', `return (${expression.replace(/needs\.([\w-]+)/g, 'needs["$1"]')});`);
   const selectedBy = {
-    'checks-image': ['checks_image'],
+    'runner-image': ['runner_image'],
     'server-validation': ['backend', 'web'],
     'cli-validation': ['cli'],
     'integration-validation': ['web', 'cli'],
   };
   for (const mask of Array.from({ length: 16 }, (_, i) => i)) {
-    const inputs = Object.fromEntries(['checks_image', 'backend', 'web', 'cli'].map((key, index) => [key, String(Boolean(mask & (1 << index)))]));
+    const inputs = Object.fromEntries(['runner_image', 'backend', 'web', 'cli'].map((key, index) => [key, String(Boolean(mask & (1 << index)))]));
     inputs.reuse_artifacts = false;
     inputs.validate_server = true;
     const needs = Object.fromEntries(Object.entries(selectedBy).map(([name, keys]) => [name, {

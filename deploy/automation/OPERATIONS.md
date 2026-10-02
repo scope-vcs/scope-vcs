@@ -58,7 +58,7 @@ notification preferences affect alert delivery; this is not a paging SLA.
 ## Weekly image pin refresh
 
 The same watcher poll starts one T3 agent each week, from Monday 9:00 a.m.
-America/Chicago, to refresh the pinned packages in the checks and media worker
+America/Chicago, to refresh the pinned packages in the runner base and media worker
 images before a stale pin fails the release scan. The agent opens a PR only when a
 pin changes and enables squash auto-merge after `Required PR checks` passes; that
 CI builds and scans each image whose files changed. The scan gate is unchanged,

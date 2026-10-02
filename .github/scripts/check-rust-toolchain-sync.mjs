@@ -4,8 +4,6 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { isScopeManagedPath, readScopeManagedFile } from "./scope-managed-files.mjs";
-
 const ROOT_TOOLCHAIN = "rust-toolchain.toml";
 const EXACT_VERSION = /^channel\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"\s*$/m;
 
@@ -27,33 +25,15 @@ const REPLICAS = [
   workflowReplica(".github/workflows/scope-integration-ci.yml", 2),
   workflowReplica(".github/workflows/prepare-smoke-tools.yml"),
   {
-    path: ".scope/images/checks/Dockerfile",
+    path: "runner-runtime/Dockerfile",
     label: "Rust base image",
     pattern: /FROM\s+--platform=linux\/amd64\s+rust:([0-9]+\.[0-9]+\.[0-9]+)-slim-bookworm@sha256:[0-9a-f]{64}/g,
-    count: 2,
+    count: 1,
   },
   {
     path: "media-worker/Dockerfile",
     label: "Rust base image",
     pattern: /FROM\s+docker\.io\/library\/rust:([0-9]+\.[0-9]+\.[0-9]+)-(?:bookworm|trixie)@sha256:[0-9a-f]{64}/g,
-    count: 1,
-  },
-  {
-    path: ".scope/images/checks/Dockerfile",
-    label: "RUSTUP_TOOLCHAIN",
-    pattern: /RUSTUP_TOOLCHAIN=([0-9]+\.[0-9]+\.[0-9]+)-x86_64-unknown-linux-gnu/g,
-    count: 1,
-  },
-  {
-    path: ".scope/images/checks/Dockerfile",
-    label: "rustc version assertion",
-    pattern: /rustc --version[^\n]+?=\s*"([0-9]+\.[0-9]+\.[0-9]+)"/g,
-    count: 1,
-  },
-  {
-    path: ".scope/runs/checks.yml",
-    label: "RUSTUP_TOOLCHAIN",
-    pattern: /RUSTUP_TOOLCHAIN:\s*([0-9]+\.[0-9]+\.[0-9]+)-x86_64-unknown-linux-gnu/g,
     count: 1,
   },
 ];
@@ -65,12 +45,7 @@ export const TOOLCHAIN_FILES = [
 
 export function readToolchainFiles(root = ".") {
   const files = {};
-  for (const path of TOOLCHAIN_FILES) {
-    const content = isScopeManagedPath(path)
-      ? readScopeManagedFile(path, { root })
-      : readFileSync(resolve(root, path), "utf8");
-    if (content !== undefined) files[path] = content;
-  }
+  for (const path of TOOLCHAIN_FILES) files[path] = readFileSync(resolve(root, path), "utf8");
   return files;
 }
 
@@ -85,8 +60,7 @@ export function validateRustToolchainSync(files) {
   for (const replica of REPLICAS) {
     const content = files[replica.path];
     if (content === undefined) {
-      // Only a public projection omits Scope-managed files; the reader reported the skip.
-      if (!isScopeManagedPath(replica.path)) errors.push(`${replica.path}: file is missing`);
+      errors.push(`${replica.path}: file is missing`);
       continue;
     }
 
@@ -104,16 +78,6 @@ export function validateRustToolchainSync(files) {
         `${replica.path}: ${replica.label} must match Rust ${expected}; found ${mismatches.join(", ")}`,
       );
     }
-  }
-
-  const dockerfile = files[".scope/images/checks/Dockerfile"] ?? "";
-  const baseDigests = [
-    ...dockerfile.matchAll(
-      /FROM\s+--platform=linux\/amd64\s+rust:[^\s@]+@(sha256:[0-9a-f]{64})/g,
-    ),
-  ].map((match) => match[1]);
-  if (baseDigests.length === 2 && new Set(baseDigests).size !== 1) {
-    errors.push(".scope/images/checks/Dockerfile: Rust stages must use the same base digest");
   }
 
   return errors;

@@ -1,10 +1,16 @@
 name: CI
 
+# Scope pushes each request revision to scope/requests/<id>, so the same checks
+# that gate pull requests gate Scope requests.
 on:
   pull_request:
+  push:
+    branches: ['scope/**']
 
+# A branch push has no pull request number. Its ref keeps each Scope request in
+# its own group.
 concurrency:
-  group: scope-ci-pr-${{ github.event.pull_request.number }}
+  group: scope-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -16,22 +22,38 @@ jobs:
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     outputs:
-      checks_image: ${{ steps.plan.outputs.checks_image }}
+      runner_image: ${{ steps.plan.outputs.runner_image }}
       backend_selected: ${{ steps.plan.outputs.backend_selected }}
       web: ${{ steps.plan.outputs.web }}
       cli: ${{ steps.plan.outputs.cli }}
       cli_distribution: ${{ steps.plan.outputs.cli_distribution }}
     steps:
-      - name: Checkout pull request
+      - name: Checkout revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # A new branch has no previous commit, so a branch push compares against
+      # its merge base with main.
+      - name: Find comparison base
+        id: base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            base="$PULL_REQUEST_BASE_SHA"
+          else
+            base="$(git merge-base origin/main HEAD)"
+          fi
+          [[ "$base" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
 
       - name: Select affected components
         id: plan
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ steps.base.outputs.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REQUESTED_SCOPE: changed
         run: >-
@@ -86,7 +108,7 @@ jobs:
       packages: write
     uses: ./.github/workflows/validate.yml
     with:
-      checks_image: ${{ needs.plan.outputs.checks_image }}
+      runner_image: ${{ needs.plan.outputs.runner_image }}
       backend: ${{ needs.plan.outputs.backend_selected }}
       web: ${{ needs.plan.outputs.web }}
       cli: ${{ needs.plan.outputs.cli }}

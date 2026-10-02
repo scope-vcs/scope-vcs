@@ -38,7 +38,7 @@ valid after the environment is renamed. GitHub uses the credential environment
 `staging` for staging work.
 
 Component keys describe their roles: `api`, `run-worker`, `cache`, `git-router`,
-`media-api`, `media-worker`, `web`, and `cli-downloads`. `checks-image` and
+`media-api`, `media-worker`, `web`, and `cli-downloads`. `runner-image` and
 `cli-distribution` track the other published artifacts. Runtime executable names
 and existing image repositories are independent of these orchestration keys.
 
