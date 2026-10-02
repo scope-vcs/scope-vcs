@@ -219,23 +219,37 @@ A stack that still holds the `scope-vcs/production/checks` repository needs this
 1. Let the execution role manage the new repository. Update the security stack from `security-deployment-role.yaml`, review the change set, then execute it:
 
    ```bash
-   aws cloudformation create-change-set      --region us-east-1      --stack-name scope-security-deployment      --change-set-name runner-base-repository      --template-body file://deploy/aws/security-deployment-role.yaml      --parameters ParameterKey=RegistryCredentialsSecretArn,UsePreviousValue=true      --capabilities CAPABILITY_NAMED_IAM
-   aws cloudformation describe-change-set --region us-east-1      --stack-name scope-security-deployment --change-set-name runner-base-repository
-   aws cloudformation execute-change-set --region us-east-1      --stack-name scope-security-deployment --change-set-name runner-base-repository
-   aws cloudformation wait stack-update-complete --region us-east-1      --stack-name scope-security-deployment
+   aws cloudformation create-change-set \
+     --region us-east-1 \
+     --stack-name scope-security-deployment \
+     --change-set-name runner-base-repository \
+     --template-body file://deploy/aws/security-deployment-role.yaml \
+     --parameters ParameterKey=RegistryCredentialsSecretArn,UsePreviousValue=true \
+     --capabilities CAPABILITY_NAMED_IAM
+   aws cloudformation describe-change-set --region us-east-1 \
+     --stack-name scope-security-deployment --change-set-name runner-base-repository
+   aws cloudformation execute-change-set --region us-east-1 \
+     --stack-name scope-security-deployment --change-set-name runner-base-repository
+   aws cloudformation wait stack-update-complete --region us-east-1 \
+     --stack-name scope-security-deployment
    ```
 
 2. Create a temporary CloudFormation service role that may change the publisher role:
 
    ```bash
-   aws iam create-role      --role-name scope-runner-publisher-migration      --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"cloudformation.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
-   aws iam attach-role-policy      --role-name scope-runner-publisher-migration      --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+   aws iam create-role \
+     --role-name scope-runner-publisher-migration \
+     --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"cloudformation.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+   aws iam attach-role-policy \
+     --role-name scope-runner-publisher-migration \
+     --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
    ```
 
 3. Plan the runner stack with that role:
 
    ```bash
-   SCOPE_AWS_EXECUTION_ROLE_ARN="arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/scope-runner-publisher-migration"    deploy/aws/apply-cloud-runner.sh plan
+   SCOPE_AWS_EXECUTION_ROLE_ARN="arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/scope-runner-publisher-migration" \
+   deploy/aws/apply-cloud-runner.sh plan
    ```
 
    Pass the same `BUDGET_NOTIFICATION_EMAIL`, `MONTHLY_BUDGET_USD` and `SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN` as routine applies. The change set must add `RunnerBaseImageRepository`, remove `ChecksImageRepository`, and modify `ChecksImagePublisherRole` and `RunnerTaskExecutionRole` with `Replacement` `False`. Stop if it shows anything else, in particular a change to `GitHubOidcProvider` or `GitHubInfrastructureRole`.
@@ -249,7 +263,9 @@ A stack that still holds the `scope-vcs/production/checks` repository needs this
 5. Delete the temporary role:
 
    ```bash
-   aws iam detach-role-policy      --role-name scope-runner-publisher-migration      --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+   aws iam detach-role-policy \
+     --role-name scope-runner-publisher-migration \
+     --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
    aws iam delete-role --role-name scope-runner-publisher-migration
    ```
 
@@ -260,7 +276,8 @@ A stack that still holds the `scope-vcs/production/checks` repository needs this
 7. Merge, then release. After the release publishes the runner base image, delete the retained `scope-vcs/production/checks` repository, the `SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN` variable, and the `checks` package on GHCR:
 
    ```bash
-   aws ecr delete-repository --region us-east-1      --repository-name scope-vcs/production/checks --force
+   aws ecr delete-repository --region us-east-1 \
+     --repository-name scope-vcs/production/checks --force
    gh variable delete SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN --repo scope-vcs/scope-vcs
    ```
 
