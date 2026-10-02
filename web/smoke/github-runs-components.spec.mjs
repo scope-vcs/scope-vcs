@@ -70,7 +70,42 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
   assert.equal(await rows.count(), 3)
   assert.deepEqual(await page.evaluate(() => window.loads), [])
 
-  // A change GitHub reported refreshes the list without blanking it.
+  // Older runs load below the list; the list stays while they load.
+  const older = page.getByRole('button', { name: 'Load older runs' })
+  await older.click()
+  await page.waitForFunction(() => window.loads.length === 1)
+  assert.deepEqual(await page.evaluate(() => window.loads), ['all after page-2'])
+  assert.equal(await rows.count(), 3)
+  await page.evaluate(() => window.finishLoad())
+  await page.getByText('Showing 5', { exact: true }).waitFor()
+  assert.equal(await older.count(), 0)
+
+  // One workflow's runs load on their own and keep the filter in view.
+  const filter = page.getByRole('combobox', { name: 'Filter by workflow' })
+  await filter.selectOption('lint')
+  await page.getByRole('list', { name: 'Loading runs' }).waitFor()
+  await page.evaluate(() => window.finishLoad())
+  await page.getByText('Showing 1', { exact: true }).waitFor()
+  assert.equal(await rows.first().getByRole('link', { name: 'lint', exact: true }).count(), 1)
+  for (const [width, name] of [[1280, 'desktop'], [390, 'phone']]) {
+    await page.setViewportSize({ width, height: 844 })
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      true,
+      `${name} filter has no horizontal scroll`,
+    )
+    if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+      await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.runs-filter-${name}.png` })
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  // Every workflow's runs come back at once, both pages of them.
+  await filter.selectOption('')
+  await page.getByText('Showing 5', { exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.loads), ['all after page-2', 'lint'])
+
+  // A change GitHub reported refreshes the loaded pages without blanking them.
+  await page.evaluate(() => window.clearLoads())
   await page.evaluate(() => window.setNextRuns({
     actions_url: 'https://github.com/octo/demo/actions',
     workflow_runs: [{
@@ -78,10 +113,12 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
       status: 'queued', conclusion: null, html_url: 'https://github.com/octo/demo/actions/runs/9',
       run_started_at_unix: null, updated_at_unix: Math.floor(Date.now() / 1000), request_id: null,
     }],
+    workflows: ['lint'],
+    next_cursor: null,
   }))
   await page.evaluate(() => window.emitRunsChanged())
   await page.waitForFunction(() => window.loads.length === 1)
-  assert.equal(await rows.count(), 3)
+  assert.equal(await rows.count(), 5)
   await page.evaluate(() => window.finishLoad())
   await page.getByRole('link', { name: 'lint', exact: true }).waitFor()
   assert.equal(await rows.count(), 1)

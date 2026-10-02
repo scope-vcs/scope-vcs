@@ -4,6 +4,7 @@ pub(crate) mod content_cleanup;
 pub(crate) mod git_receive;
 pub(crate) mod github_check_results;
 pub(crate) mod github_pushes;
+pub(crate) mod github_run_imports;
 pub(crate) mod github_setup_checks;
 pub(crate) mod github_workflow_runs;
 pub(crate) mod invite_email_delivery;

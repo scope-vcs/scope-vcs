@@ -92,7 +92,11 @@ async fn connect(state: &AppState, bearer: &str, grant: &str, repository_id: u64
         "POST",
         "/v1/repos/owner/repo/github",
         Some(bearer),
-        Some(serde_json::json!({ "grant": grant, "github_repository_id": repository_id })),
+        Some(serde_json::json!({
+            "grant": grant,
+            "github_repository_id": repository_id,
+            "run_import_count": 50,
+        })),
     )
     .await
 }
@@ -144,7 +148,7 @@ async fn github_is_off_when_the_app_is_not_configured() {
     let body = connection(&state).await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": false, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null })
+        serde_json::json!({ "configured": false, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null, "run_import_count": 50, "run_import": null })
     );
     let install = authorize_response(&state, &bearer_header(), serde_json::json!({})).await;
     assert_eq!(install.status(), StatusCode::NOT_FOUND);
@@ -163,7 +167,7 @@ async fn a_maintainer_connects_through_github_setup() {
     let (state, fake) = github_state().await;
     assert_eq!(
         connection(&state).await,
-        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null, "run_import_count": 50, "run_import": null })
     );
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
 
@@ -176,6 +180,8 @@ async fn a_maintainer_connects_through_github_setup() {
     .await;
     assert_eq!(body["owner_handle"], "owner");
     assert_eq!(body["repo_name"], "repo");
+    // The setup page starts from the repository's import count.
+    assert_eq!(body["run_import_count"], 50);
     assert!(
         body["install_url"]
             .as_str()
@@ -207,6 +213,9 @@ async fn a_maintainer_connects_through_github_setup() {
         connected["connection"]["disconnected"],
         serde_json::Value::Null
     );
+    // Connecting queued an import of the repository's recent runs.
+    assert_eq!(connected["run_import"]["state"], "queued");
+    assert_eq!(connected["run_import"]["run_count"], 50);
     // The owner sees the same link; only the owner may confirm a public repository.
     let owner_view = connection(&state).await;
     assert_eq!(owner_view["connection"], connected["connection"]);
@@ -419,6 +428,7 @@ async fn a_github_repository_connects_to_one_scope_repository() {
                 github_full_name: "octo/checks".to_string(),
                 github_private: true,
                 acknowledge_public: false,
+                run_import_count: 0,
                 user_id: test_owner_id(),
                 now_unix: unix_now(),
             },
@@ -463,6 +473,7 @@ async fn a_public_github_repository_connects_only_with_a_confirmation_from_who_m
                     "grant": grant,
                     "github_repository_id": 45,
                     "acknowledge_public": acknowledge_public,
+                    "run_import_count": 0,
                 })),
             )
             .await
@@ -593,7 +604,7 @@ async fn a_maintainer_disconnects() {
     .await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null, "run_import_count": 50, "run_import": null })
     );
     let again = request(
         &state,

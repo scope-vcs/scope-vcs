@@ -39,6 +39,7 @@ fn connection() -> GitHubConnection {
             github_full_name: "octo/repo".into(),
             github_private: true,
             acknowledge_public: false,
+            run_import_count: 50,
             user_id: OWNER.into(),
             now_unix: NOW,
         },

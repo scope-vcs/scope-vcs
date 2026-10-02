@@ -6,6 +6,7 @@ import type {
   GitHubAuthorizeRequest,
   GitHubSetupRequest,
   SetGitHubRequiredChecksRequest,
+  SetGitHubRunImportCountRequest,
   HistoryEntryFileDiffRequest,
   HistoryEntryRequest,
   HistoryPageRequest,
@@ -149,6 +150,14 @@ export type ConnectRepoGitHubInput = RepoParams & ConnectGitHubRepositoryRequest
 export type ApproveRequestChecksInput = RequestParams & ApproveRequestChecksRequest
 
 export type SetRepoGitHubRequiredChecksInput = RepoParams & SetGitHubRequiredChecksRequest
+
+export type SetRepoGitHubRunImportCountInput = RepoParams & SetGitHubRunImportCountRequest
+
+/** A page of the GitHub runs list, of one workflow when `workflow` names it. */
+export type RepoGitHubWorkflowRunsInput = RepoParams & {
+  workflow?: string
+  after?: string
+}
 
 export type RepoInviteTokenInput = {
   token: string

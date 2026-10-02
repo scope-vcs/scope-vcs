@@ -17,7 +17,8 @@ const appliedMigrations = ['m0043_retire_git_manifests.rs', 'm0044_request_atten
   'm0057_repository_invite_links.rs', 'm0058_repository_invite_emails.rs', 'm0063_account_deletion.rs',
   'm0064_repository_content_version.rs', 'm0066_native_runs_accounts.rs',
   'm0067_provider_neutral_request_checks.rs', 'm0068_github_connections.rs',
-  'm0069_github_request_checks.rs', 'm0070_github_setup_checks_and_workflow_runs.rs'];
+  'm0069_github_request_checks.rs', 'm0070_github_setup_checks_and_workflow_runs.rs',
+  'm0072_github_run_imports.rs'];
 
 // A migration that creates a table without a reviewed grant fails the runtime
 // cutover. Applying it here makes the inventory comparison catch that first.

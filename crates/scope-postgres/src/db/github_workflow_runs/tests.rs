@@ -21,6 +21,20 @@ fn run(id: u64, branch: &str, started_at: u64, updated_at: u64) -> GitHubWorkflo
     }
 }
 
+fn page(repo_id: &str, github_repository_id: u64, limit: u64) -> GitHubWorkflowRunPageQuery<'_> {
+    GitHubWorkflowRunPageQuery {
+        repo_id,
+        github_repository_id,
+        workflow_name: None,
+        after: None,
+        limit,
+    }
+}
+
+fn ids(listed: &[GitHubWorkflowRunRead]) -> Vec<u64> {
+    listed.iter().map(|read| read.run.github_run_id).collect()
+}
+
 #[tokio::test]
 async fn runs_list_newest_first_and_link_their_request_while_it_exists() {
     let store = postgres_store();
@@ -38,7 +52,7 @@ async fn runs_list_newest_first_and_link_their_request_while_it_exists() {
     }
 
     let listed = repositories
-        .recent_github_workflow_runs(REPO, 42, 10)
+        .github_workflow_run_page(page(REPO, 42, 10))
         .await
         .unwrap();
     assert_eq!(
@@ -48,17 +62,9 @@ async fn runs_list_newest_first_and_link_their_request_while_it_exists() {
             .collect::<Vec<_>>(),
         [(3, None), (2, Some("req_1")), (1, None)]
     );
-    assert_eq!(
-        repositories
-            .recent_github_workflow_runs(REPO, 42, 1)
-            .await
-            .unwrap()
-            .len(),
-        1
-    );
     assert!(
         repositories
-            .recent_github_workflow_runs("other/repo", 42, 10)
+            .github_workflow_run_page(page("other/repo", 42, 10))
             .await
             .unwrap()
             .is_empty()
@@ -66,10 +72,75 @@ async fn runs_list_newest_first_and_link_their_request_while_it_exists() {
     // A repository reconnected to another GitHub repository lists only its runs.
     assert!(
         repositories
-            .recent_github_workflow_runs(REPO, 43, 10)
+            .github_workflow_run_page(page(REPO, 43, 10))
             .await
             .unwrap()
             .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn pages_continue_after_their_last_run_and_keep_to_one_workflow() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    // Runs 4 and 5 started in the same second, so the newer id lists first.
+    for (id, workflow, started_at) in [
+        (1, "ci", 10),
+        (2, "lint", 20),
+        (3, "ci", 30),
+        (4, "ci", 40),
+        (5, "lint", 40),
+    ] {
+        let run = GitHubWorkflowRun {
+            workflow_name: workflow.into(),
+            ..run(id, "main", started_at, started_at)
+        };
+        repositories
+            .save_github_workflow_run(REPO, 42, &run)
+            .await
+            .unwrap();
+    }
+    repositories
+        .save_github_workflow_run(
+            REPO,
+            43,
+            &GitHubWorkflowRun {
+                workflow_name: "deploy".into(),
+                ..run(6, "main", 50, 50)
+            },
+        )
+        .await
+        .unwrap();
+
+    let first = repositories
+        .github_workflow_run_page(page(REPO, 42, 2))
+        .await
+        .unwrap();
+    assert_eq!(ids(&first), [5, 4]);
+    let last = &first[1].run;
+    let rest = repositories
+        .github_workflow_run_page(GitHubWorkflowRunPageQuery {
+            after: Some(GitHubWorkflowRunCursor {
+                listed_at_unix: last.listed_at_unix(),
+                github_run_id: last.github_run_id,
+            }),
+            ..page(REPO, 42, 10)
+        })
+        .await
+        .unwrap();
+    assert_eq!(ids(&rest), [3, 2, 1]);
+    let ci = repositories
+        .github_workflow_run_page(GitHubWorkflowRunPageQuery {
+            workflow_name: Some("ci"),
+            ..page(REPO, 42, 10)
+        })
+        .await
+        .unwrap();
+    assert_eq!(ids(&ci), [4, 3, 1]);
+    // Only the connected GitHub repository's workflows are named.
+    assert_eq!(
+        repositories.github_workflow_names(REPO, 42).await.unwrap(),
+        ["ci", "lint"]
     );
 }
 
@@ -88,7 +159,7 @@ async fn an_older_read_of_a_run_does_not_replace_a_newer_one() {
         .unwrap();
     let stored = || async {
         repositories
-            .recent_github_workflow_runs(REPO, 42, 10)
+            .github_workflow_run_page(page(REPO, 42, 10))
             .await
             .unwrap()
             .remove(0)
@@ -173,4 +244,50 @@ async fn a_pending_read_is_claimed_when_due_and_ends_answered_or_given_up() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn a_run_stays_with_the_scope_repository_its_github_repository_is_connected_to() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    let saved = run(1, "main", 10, 10);
+    repositories
+        .save_github_workflow_run(REPO, 42, &saved)
+        .await
+        .unwrap();
+    // The GitHub repository is connected to another Scope repository now.
+    store
+        .db
+        .execute_unprepared(
+            "INSERT INTO scope_repositories (id, owner_handle, name, owner_user_id,
+                publication_state, change_version, content_version, repo_config, policy,
+                incarnation_id)
+             VALUES ('owner/other', 'owner', 'other', 'user_owner', 'Ready', 0, 0, '{}', '{}',
+                'repoi_other');
+             INSERT INTO scope_github_connections (repo_id, installation_id,
+                github_repository_id, github_full_name, connected_by_user_id,
+                connected_at_unix, status)
+             VALUES ('owner/other', 7, 42, 'octo/repo', 'user_owner', 1, 'Connected');",
+        )
+        .await
+        .unwrap();
+    async fn listed(repositories: &RepositoryStore, repo_id: &str) -> Vec<u64> {
+        ids(&repositories
+            .github_workflow_run_page(page(repo_id, 42, 10))
+            .await
+            .unwrap())
+    }
+    repositories
+        .save_github_workflow_run("owner/other", 42, &saved)
+        .await
+        .unwrap();
+    assert_eq!(listed(&repositories, "owner/other").await, [1]);
+    // A late read for the former Scope repository, even of the same progress,
+    // does not take the run back.
+    repositories
+        .save_github_workflow_run(REPO, 42, &saved)
+        .await
+        .unwrap();
+    assert_eq!(listed(&repositories, "owner/other").await, [1]);
+    assert_eq!(listed(&repositories, REPO).await, Vec::<u64>::new());
 }

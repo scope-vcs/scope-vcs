@@ -52,6 +52,12 @@ impl GitHubWorkflowRun {
         }
     }
 
+    /// When the run started, or when GitHub last changed it before it
+    /// started. Runs list newest first by it.
+    pub fn listed_at_unix(&self) -> u64 {
+        self.run_started_at_unix.unwrap_or(self.updated_at_unix)
+    }
+
     pub fn is_completed(&self) -> bool {
         self.status == GitHubCheckStatus::Completed
     }

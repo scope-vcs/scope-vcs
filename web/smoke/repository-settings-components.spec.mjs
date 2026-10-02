@@ -74,7 +74,7 @@ test('repository components retain drafts, previews and pending actions across r
     await checks.getByText('The Scope GitHub App was uninstalled from the GitHub account.').waitFor()
     await checks.getByRole('button', { name: 'Reconnect', exact: true }).waitFor()
     await page.evaluate(() => window.calls.splice(0))
-    const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false }, required_checks: [], can_confirm_public: true }
+    const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false }, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
     await page.evaluate((github) => window.setFixtureGitHub(github), becamePublic)
     await checks.getByText('This GitHub repository became public, so Scope stopped sending private requests there.', { exact: false }).waitFor()
     await checks.getByRole('button', { name: 'Allow private requests', exact: true }).click()
@@ -82,7 +82,7 @@ test('repository components retain drafts, previews and pending actions across r
     assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
       { confirmPublicGitHub: { owner: 'owner', repo: 'demo' } },
     ])
-    const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true }, required_checks: ['ci / test'], can_confirm_public: true }
+    const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true }, required_checks: ['ci / test'], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
     await page.evaluate((github) => window.setFixtureGitHub(github), github)
     await checks.getByText('ci / test', { exact: true }).waitFor()
     await checks.getByRole('textbox', { name: 'Check name' }).fill(' lint ')
@@ -125,6 +125,51 @@ test('repository components retain drafts, previews and pending actions across r
       }
     }
     await page.setViewportSize({ width: 1280, height: 900 })
+
+    // How many recent runs to import, and the latest import from the settings data.
+    const recentRuns = checks.getByRole('spinbutton', { name: 'Recent runs to import' })
+    const save = checks.getByRole('button', { name: 'Save', exact: true })
+    const importNow = checks.getByRole('button', { name: 'Import now', exact: true })
+    assert.equal(await recentRuns.inputValue(), '50')
+    assert.equal(await save.isDisabled(), true)
+    await recentRuns.fill('1001')
+    await checks.getByText('Enter a whole number from 0 to 1000.', { exact: true }).waitFor()
+    assert.equal(await save.isDisabled(), true)
+    await recentRuns.fill('200')
+    await save.click()
+    await page.evaluate(() => window.finishAction('run-import-count'))
+    await page.waitForFunction(() => window.fixtureGitHub().run_import_count === 200)
+    assert.equal(await recentRuns.inputValue(), '200')
+    await importNow.click()
+    await page.evaluate(() => window.finishAction('run-import'))
+    await checks.getByText('Importing up to 200 runs from GitHub.', { exact: true }).waitFor()
+    assert.equal(await importNow.isDisabled(), true)
+    const imported = (runImport) => page.evaluate((runImport) => {
+      const github = window.fixtureGitHub()
+      window.setFixtureGitHub({ ...github, run_import: { ...github.run_import, ...runImport } })
+    }, runImport)
+    // A failed attempt shows what GitHub answered while it waits to retry,
+    // and importing now replaces it.
+    await imported({ error: 'GitHub answered 502 Bad Gateway for /repos/octo/demo/actions/runs: Server Error' })
+    await checks.getByText('Import failed: GitHub answered 502 Bad Gateway for /repos/octo/demo/actions/runs: Server Error. Retrying.', { exact: true }).waitFor()
+    assert.equal(await importNow.isDisabled(), false)
+    for (const [width, name] of [[1280, 'desktop'], [390, 'phone']]) {
+      await page.setViewportSize({ width, height: 900 })
+      const bounds = await checks.last().boundingBox()
+      assert(bounds.x >= 0 && bounds.x + bounds.width <= width, `${name} run import fits`)
+      if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+        await recentRuns.scrollIntoViewIfNeeded()
+        await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.run-import-${name}.png` })
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await imported({ state: 'succeeded', error: null, imported_count: 200, finished_at_unix: 4 })
+    await checks.getByText('Imported 200 runs.', { exact: true }).waitFor()
+    assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+      { setGitHubRunImportCount: 200 },
+      { startGitHubRunImport: { owner: 'owner', repo: 'demo' } },
+    ])
+
     await checks.getByRole('button', { name: 'Disconnect', exact: true }).click()
     assert.equal(await checks.getByRole('button', { name: 'Disconnect', exact: true }).isDisabled(), true)
     await page.evaluate(() => window.finishAction('disconnect-github'))

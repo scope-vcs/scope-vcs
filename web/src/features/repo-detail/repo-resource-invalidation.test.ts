@@ -8,7 +8,7 @@ import { invalidateRepoResources, invalidateRepoSummaryResources } from './repo-
 import { repositoryDependencyResource } from './repository-dependency-resource'
 import { historyFeedResource } from '../history/history-resource-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
-import { githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
+import { githubWorkflowRunsIdentity, githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
 
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
 function seed() {
@@ -95,22 +95,30 @@ test('run changes refresh request-owned state without invalidating repository re
   assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
 })
 
-test('GitHub workflow runs refresh only the retained GitHub run list', () => {
+test('GitHub workflow runs refresh only the retained GitHub run lists', () => {
   seed()
   githubWorkflowRunsResource.clear()
-  const runs = { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [] }
-  for (const scope of ['viewer-a', 'viewer-b']) githubWorkflowRunsResource.write(scope, runs)
+  const runs = {
+    list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], workflows: [], next_cursor: null },
+    pages: 1,
+  }
+  const all = githubWorkflowRunsIdentity('viewer-a', null)
+  const lint = githubWorkflowRunsIdentity('viewer-a', 'lint')
+  const other = githubWorkflowRunsIdentity('viewer-b', null)
+  for (const identity of [all, lint, other]) githubWorkflowRunsResource.write(identity, runs)
   invalidateRepoResources('viewer-a', event('GitHubWorkflowRunsChanged'))
-  assert.equal(githubWorkflowRunsResource.getSnapshot('viewer-a').stale, true)
-  assert.equal(githubWorkflowRunsResource.peek('viewer-a'), runs)
-  assert.equal(githubWorkflowRunsResource.getSnapshot('viewer-b').stale, false)
+  // Every filter of the scope refreshes, keeping what it lists meanwhile.
+  assert.equal(githubWorkflowRunsResource.getSnapshot(all).stale, true)
+  assert.equal(githubWorkflowRunsResource.getSnapshot(lint).stale, true)
+  assert.equal(githubWorkflowRunsResource.peek(all), runs)
+  assert.equal(githubWorkflowRunsResource.getSnapshot(other).stale, false)
   assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, false)
   assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, false)
 
   // A connection change can switch the page between GitHub and Scope runs.
-  githubWorkflowRunsResource.write('viewer-a', runs)
+  githubWorkflowRunsResource.write(all, runs)
   invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'github-connection-changed' } }))
-  assert.equal(githubWorkflowRunsResource.getSnapshot('viewer-a').stale, true)
+  assert.equal(githubWorkflowRunsResource.getSnapshot(all).stale, true)
 })
 
 test('connection and lag recovery invalidate retained resources only in their scope', () => {

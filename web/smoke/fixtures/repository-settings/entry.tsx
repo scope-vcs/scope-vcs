@@ -27,7 +27,12 @@ const members = ['alice', 'bob'].map((name) => ({
 const sessions = ['session-a', 'session-b'].map((id) => ({ id, label: id, created_at_unix: 1, expires_at_unix: 100 })) as CliSession[]
 const resolvers = new Map<string, () => void>()
 const calls: unknown[] = []
-Object.assign(window, { finishAction: (key: string) => resolvers.get(key)?.(), calls, setFixtureGitHub: setGitHub })
+Object.assign(window, {
+  finishAction: (key: string) => resolvers.get(key)?.(),
+  calls,
+  fixtureGitHub: () => repoSettingsResource.peek(settingsScope)?.github,
+  setFixtureGitHub: setGitHub,
+})
 function hold(key: string) { return new Promise<void>((resolve) => resolvers.set(key, resolve)) }
 const subscribe = () => () => {}
 const settingsScope = 'fixture-owner'
@@ -38,7 +43,7 @@ const githubConnection = {
 }
 repoSettingsResource.write(settingsScope, {
   collaboration: { members, invites: [] },
-  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], can_confirm_public: true, setup_check: null },
+  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null },
 })
 const loadSettings = () => new Promise<{ collaboration: null; github: null }>(() => {})
 function setGitHub(github: GitHubConnectionResponse) {
@@ -62,6 +67,8 @@ function App() {
         required_checks: ['ci / test'],
         can_confirm_public: true,
         setup_check: null,
+        run_import_count: 50,
+        run_import: null,
       })}>GitHub uninstalled elsewhere</button>
     </div>
     <RepoLayoutProvider live={{ repo } as RepoLiveState} subscribe={subscribe}>
@@ -86,7 +93,7 @@ function App() {
         disconnectGitHub={async (params) => {
           calls.push({ disconnectGitHub: params })
           await hold('disconnect-github')
-          const github = { configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null }
+          const github = { configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
           retainGitHubConnection(settingsScope, github)
           return github
         }}
@@ -102,6 +109,28 @@ function App() {
           await hold('required-checks')
           const current = repoSettingsResource.peek(settingsScope)!.github!
           const github = { ...current, required_checks: input.names }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        setGitHubRunImportCount={async (input) => {
+          calls.push({ setGitHubRunImportCount: input.count })
+          await hold('run-import-count')
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const github = { ...current, run_import_count: input.count }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        startGitHubRunImport={async (params) => {
+          calls.push({ startGitHubRunImport: params })
+          await hold('run-import')
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const github = {
+            ...current,
+            run_import: {
+              state: 'queued' as const, run_count: current.run_import_count, imported_count: 0,
+              error: null, queued_at_unix: 3, finished_at_unix: null,
+            },
+          }
           retainGitHubConnection(settingsScope, github)
           return github
         }}

@@ -8,14 +8,15 @@
 //! repository against that proof and against the installation itself before
 //! the link is stored. Installing the app is a separate step on GitHub; no
 //! installation id from a redirect is ever used. Maintainers also name the
-//! checks GitHub must pass and test the connection here, and members read the
-//! workflow runs GitHub reported.
+//! checks GitHub must pass, test the connection and import GitHub's recent
+//! workflow runs here, and members read the workflow runs GitHub reported.
 
 use super::responses::{
     ConnectGitHubRepositoryRequest, GitHubAuthorizeRequest, GitHubAuthorizeResponse,
-    GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse,
+    GitHubConnectionParts, GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse,
     GitHubWorkflowRunListResponse, GitHubWorkflowRunsResponse, SetGitHubRequiredChecksRequest,
-    github_connection_response, github_repository_response, github_workflow_run_response,
+    SetGitHubRunImportCountRequest, github_connection_response, github_repository_response,
+    github_workflow_run_response,
 };
 use crate::{
     auth::scope::require_scope_user,
@@ -41,7 +42,7 @@ use crate::{
 use axum::{
     Json,
     body::Bytes,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
 use scope_domain::{
@@ -51,9 +52,18 @@ use scope_domain::{
     repository::{RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
     requests::RequestCheckProvider,
 };
+use scope_postgres::db::{GitHubWorkflowRunCursor, GitHubWorkflowRunPageQuery};
+use serde::Deserialize;
 
-/// The Runs page lists this many of GitHub's runs and links to the rest.
-const WORKFLOW_RUNS_SHOWN: u64 = 50;
+/// The Runs page lists GitHub's runs this many at a time.
+const WORKFLOW_RUN_PAGE_SIZE: usize = 50;
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct GitHubWorkflowRunsQuery {
+    /// Lists only this workflow's runs.
+    workflow: Option<String>,
+    after: Option<String>,
+}
 
 pub(crate) async fn get_github_connection(
     State(state): State<AppState>,
@@ -119,7 +129,13 @@ pub(crate) async fn complete_github_setup(
             .collect(),
         now,
     );
+    let run_import_count = state
+        .metadata
+        .repositories()
+        .github_run_import_count(&context.record.id)
+        .await?;
     Ok(Json(GitHubSetupResponse {
+        run_import_count,
         owner_handle: context.record.owner_handle,
         repo_name: context.record.name,
         repositories: pushable
@@ -175,6 +191,7 @@ pub(crate) async fn connect_github_repository(
                 // What GitHub reports now, not what setup listed.
                 github_private: repository.private,
                 acknowledge_public: input.acknowledge_public,
+                run_import_count: input.run_import_count,
                 user_id: user.id,
                 now_unix: unix_now()?,
             },
@@ -192,8 +209,10 @@ pub(crate) async fn connect_github_repository(
         )
         .await?;
     publish_connection_change(&state, &incarnation).await;
-    // Connecting queued the commits open requests' GitHub checks test.
+    // Connecting queued the commits open requests' GitHub checks test, and
+    // the import of the repository's recent runs.
     state.github_push_wakeup.notify_one();
+    state.github_run_import_wakeup.notify_one();
     connection_response(&state, &context).await.map(Json)
 }
 
@@ -272,12 +291,52 @@ pub(crate) async fn start_github_setup_check(
     connection_response(&state, &context).await.map(Json)
 }
 
-/// What a repository's Runs page lists when its checks run on GitHub. Members
-/// read it like Scope's own runs.
+/// A maintainer sets how many of GitHub's most recent workflow runs the
+/// repository imports. It applies to the next import.
+pub(crate) async fn set_github_run_import_count(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Json(input): Json<SetGitHubRunImportCountRequest>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let user = require_scope_user(&state, &headers).await?;
+    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
+    let (_, incarnation) = state
+        .metadata
+        .repositories()
+        .set_github_run_import_count(&context.record.id, &user.id, input.count)
+        .await?;
+    publish_connection_change(&state, &incarnation).await;
+    connection_response(&state, &context).await.map(Json)
+}
+
+/// A maintainer imports the connected repository's recent runs again with
+/// its current count.
+pub(crate) async fn start_github_run_import(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let user = require_scope_user(&state, &headers).await?;
+    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
+    configured_app(&state)?;
+    let (_, incarnation) = state
+        .metadata
+        .repositories()
+        .start_github_run_import(&context.record.id, &user.id, unix_now()?)
+        .await?;
+    state.github_run_import_wakeup.notify_one();
+    publish_connection_change(&state, &incarnation).await;
+    connection_response(&state, &context).await.map(Json)
+}
+
+/// What a repository's Runs page lists when its checks run on GitHub, a page
+/// at a time. Members read it like Scope's own runs.
 pub(crate) async fn get_github_workflow_runs(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo)): Path<(String, String)>,
+    Query(query): Query<GitHubWorkflowRunsQuery>,
 ) -> Result<Json<GitHubWorkflowRunsResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let context = require_repo_member(&state, &user.id, &owner, &repo).await?;
@@ -298,23 +357,57 @@ pub(crate) async fn get_github_workflow_runs(
             github: None,
         }));
     };
-    let workflow_runs = repositories
-        .recent_github_workflow_runs(
-            &context.record.id,
-            connection.github_repository_id,
-            WORKFLOW_RUNS_SHOWN,
-        )
-        .await?
-        .into_iter()
-        .map(github_workflow_run_response)
-        .collect();
+    // Names are stored as GitHub reports them, so the chosen one is matched
+    // exactly.
+    let workflow_name = query.workflow.as_deref().filter(|name| !name.is_empty());
+    let after = query
+        .after
+        .as_deref()
+        .map(parse_workflow_run_cursor)
+        .transpose()?;
+    let mut runs = repositories
+        .github_workflow_run_page(GitHubWorkflowRunPageQuery {
+            repo_id: &context.record.id,
+            github_repository_id: connection.github_repository_id,
+            workflow_name,
+            after,
+            limit: (WORKFLOW_RUN_PAGE_SIZE + 1) as u64,
+        })
+        .await?;
+    let has_more = runs.len() > WORKFLOW_RUN_PAGE_SIZE;
+    runs.truncate(WORKFLOW_RUN_PAGE_SIZE);
+    let next_cursor = runs
+        .last()
+        .filter(|_| has_more)
+        .map(|last| encode_workflow_run_cursor(last.run.listed_at_unix(), last.run.github_run_id));
+    let workflows = repositories
+        .github_workflow_names(&context.record.id, connection.github_repository_id)
+        .await?;
     Ok(Json(GitHubWorkflowRunsResponse {
         configured: true,
         github: Some(GitHubWorkflowRunListResponse {
             actions_url: format!("https://github.com/{}/actions", connection.github_full_name),
-            workflow_runs,
+            workflow_runs: runs.into_iter().map(github_workflow_run_response).collect(),
+            workflows,
+            next_cursor,
         }),
     }))
+}
+
+fn encode_workflow_run_cursor(listed_at_unix: u64, github_run_id: u64) -> String {
+    format!("{listed_at_unix}.{github_run_id}")
+}
+
+fn parse_workflow_run_cursor(value: &str) -> Result<GitHubWorkflowRunCursor, ApiError> {
+    value
+        .split_once('.')
+        .and_then(|(listed_at, run_id)| {
+            Some(GitHubWorkflowRunCursor {
+                listed_at_unix: listed_at.parse().ok()?,
+                github_run_id: run_id.parse().ok()?,
+            })
+        })
+        .ok_or_else(|| ApiError::bad_request("invalid workflow run cursor"))
 }
 
 /// Deliveries are verified before anything in them is read, and a rejected
@@ -467,12 +560,20 @@ async fn connection_response(
         .github_required_checks(&context.record.id)
         .await?;
     let setup_check = repositories.github_setup_check(&context.record.id).await?;
+    let run_import_count = repositories
+        .github_run_import_count(&context.record.id)
+        .await?;
+    let run_import = repositories.github_run_import(&context.record.id).await?;
     Ok(github_connection_response(
         state.github.is_some(),
-        read,
-        required_checks,
-        can_publish_to_github(context.access),
-        setup_check,
+        GitHubConnectionParts {
+            read,
+            required_checks,
+            can_confirm_public: can_publish_to_github(context.access),
+            setup_check,
+            run_import_count,
+            run_import,
+        },
     ))
 }
 

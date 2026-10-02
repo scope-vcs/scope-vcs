@@ -183,7 +183,11 @@ pub(crate) async fn refresh_branch_workflow_runs(
     Ok(())
 }
 
-async fn publish(state: &AppState, connection: &GitHubConnection) -> Result<(), ApiError> {
+/// Tells the repository's open Runs pages that its GitHub runs changed.
+pub(crate) async fn publish(
+    state: &AppState,
+    connection: &GitHubConnection,
+) -> Result<(), ApiError> {
     if let Some(record) = state
         .metadata
         .repositories()
@@ -197,7 +201,7 @@ async fn publish(state: &AppState, connection: &GitHubConnection) -> Result<(), 
     Ok(())
 }
 
-fn configured_app(state: &AppState) -> Result<&crate::github::GitHubApp, ApiError> {
+pub(crate) fn configured_app(state: &AppState) -> Result<&crate::github::GitHubApp, ApiError> {
     state
         .github
         .as_deref()

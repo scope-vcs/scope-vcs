@@ -12,7 +12,10 @@
 //! repository that later becomes public receives no private request until
 //! such a maintainer confirms again.
 
-use crate::{error::DomainError, repository::access::RepositoryAccess};
+use crate::{
+    error::DomainError, github_run_import::validate_github_run_import_count,
+    repository::access::RepositoryAccess,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -86,6 +89,9 @@ pub struct ConnectGitHubRepository {
     /// The maintainer confirmed that a public repository makes what Scope
     /// pushes there public.
     pub acknowledge_public: bool,
+    /// How many of GitHub's most recent workflow runs to import, which
+    /// becomes the repository's import count.
+    pub run_import_count: u32,
     pub user_id: String,
     pub now_unix: u64,
 }
@@ -160,6 +166,7 @@ pub fn connect_github_repository(
     command: ConnectGitHubRepository,
 ) -> Result<GitHubConnection, DomainError> {
     ensure_maintainer(access)?;
+    validate_github_run_import_count(command.run_import_count)?;
     if command.installation_id == 0 || command.github_repository_id == 0 {
         return Err(DomainError::invalid_input(
             "GitHub installation and repository ids must be positive",

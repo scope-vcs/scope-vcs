@@ -219,7 +219,15 @@ can_confirm_public: boolean,
 /**
  * The latest connection test, while the repository has a link.
  */
-setup_check: GitHubSetupCheckResponse | null, };
+setup_check: GitHubSetupCheckResponse | null, 
+/**
+ * How many of GitHub's most recent workflow runs connecting imports.
+ */
+run_import_count: number, 
+/**
+ * The latest import of the linked GitHub repository's runs.
+ */
+run_import: GitHubRunImportResponse | null, };
 
 export type GitHubConnectionDetailsResponse = { github_full_name: string, github_url: string, 
 /**
@@ -260,7 +268,12 @@ export type GitHubSetupResponse = { owner_handle: string, repo_name: string, rep
 /**
  * Where to install the app on a repository that is missing.
  */
-install_url: string, grant: string, };
+install_url: string, grant: string, 
+/**
+ * How many recent workflow runs the repository imports, which
+ * connecting can change.
+ */
+run_import_count: number, };
 
 export type GitHubRepositoryResponse = { id: number, full_name: string, private: boolean, };
 
@@ -269,9 +282,33 @@ export type ConnectGitHubRepositoryRequest = { grant: string, github_repository_
  * Required for a public GitHub repository: everything Scope pushes there,
  * private requests and private files included, becomes public.
  */
-acknowledge_public: boolean, };
+acknowledge_public: boolean, 
+/**
+ * How many of GitHub's most recent workflow runs to import, which
+ * becomes the repository's import count.
+ */
+run_import_count: number, };
 
 export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
+
+export type SetGitHubRunImportCountRequest = { count: number, };
+
+export type GitHubRunImportStateResponse = "queued" | "running" | "succeeded" | "failed";
+
+export type GitHubRunImportResponse = { state: GitHubRunImportStateResponse, 
+/**
+ * The most runs it reads.
+ */
+run_count: number, 
+/**
+ * How many runs it stored, once it succeeded.
+ */
+imported_count: number, 
+/**
+ * What GitHub answered when the latest attempt failed. A queued import
+ * with an error tries again.
+ */
+error: string | null, queued_at_unix: number, finished_at_unix: number | null, };
 
 export type GitHubSetupCheckStateResponse = "pushing" | "waiting" | "finished" | "failed";
 
@@ -301,9 +338,18 @@ export type GitHubWorkflowRunListResponse = {
  */
 actions_url: string, 
 /**
- * The most recent runs, newest first.
+ * A page of runs, newest first.
  */
-workflow_runs: Array<GitHubWorkflowRunResponse>, };
+workflow_runs: Array<GitHubWorkflowRunResponse>, 
+/**
+ * The names of the workflows with stored runs, which the list can be
+ * narrowed to.
+ */
+workflows: Array<string>, 
+/**
+ * Continues the list after this page, while there is more.
+ */
+next_cursor: string | null, };
 
 export type GitHubWorkflowRunResponse = { id: number, workflow_name: string, branch: string | null, head_oid: string, event: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, html_url: string, run_started_at_unix: number | null, updated_at_unix: number, 
 /**
@@ -633,6 +679,7 @@ export const ApiRouteTemplates = {
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
   repoGitHubSetupCheck: "/v1/repos/{owner}/{repo}/github/setup-check",
   repoGitHubWorkflowRuns: "/v1/repos/{owner}/{repo}/github/workflow-runs",
+  repoGitHubRunImport: "/v1/repos/{owner}/{repo}/github/run-import",
   githubSetup: "/v1/github/setup",
   repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",

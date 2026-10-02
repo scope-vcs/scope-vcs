@@ -4,6 +4,7 @@ use scope_domain::{
     github_connection::{
         GitHubConnectionStatus, GitHubDisconnectReason, GitHubRepositoryVisibility,
     },
+    github_run_import::{GitHubRunImport, GitHubRunImportState},
     github_setup_check::{GitHubSetupCheck, GitHubSetupCheckState},
 };
 use scope_postgres::db::{GitHubConnectionRead, GitHubSetupCheckRead, GitHubWorkflowRunRead};
@@ -23,6 +24,37 @@ pub(crate) struct GitHubConnectionResponse {
     pub(crate) can_confirm_public: bool,
     /// The latest connection test, while the repository has a link.
     pub(crate) setup_check: Option<GitHubSetupCheckResponse>,
+    /// How many of GitHub's most recent workflow runs connecting imports.
+    pub(crate) run_import_count: u32,
+    /// The latest import of the linked GitHub repository's runs.
+    pub(crate) run_import: Option<GitHubRunImportResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "type-export", ts(rename_all = "snake_case"))]
+pub(crate) enum GitHubRunImportStateResponse {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+}
+
+/// An import of the GitHub repository's most recent workflow runs.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubRunImportResponse {
+    pub(crate) state: GitHubRunImportStateResponse,
+    /// The most runs it reads.
+    pub(crate) run_count: u32,
+    /// How many runs it stored, once it succeeded.
+    pub(crate) imported_count: u32,
+    /// What GitHub answered when the latest attempt failed. A queued import
+    /// with an error tries again.
+    pub(crate) error: Option<String>,
+    pub(crate) queued_at_unix: u64,
+    pub(crate) finished_at_unix: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -66,8 +98,13 @@ pub(crate) struct GitHubWorkflowRunsResponse {
 pub(crate) struct GitHubWorkflowRunListResponse {
     /// The repository's Actions page, which has every run and its logs.
     pub(crate) actions_url: String,
-    /// The most recent runs, newest first.
+    /// A page of runs, newest first.
     pub(crate) workflow_runs: Vec<GitHubWorkflowRunResponse>,
+    /// The names of the workflows with stored runs, which the list can be
+    /// narrowed to.
+    pub(crate) workflows: Vec<String>,
+    /// Continues the list after this page, while there is more.
+    pub(crate) next_cursor: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -85,6 +122,13 @@ pub(crate) struct GitHubWorkflowRunResponse {
     pub(crate) updated_at_unix: u64,
     /// The Scope request whose branch the run is on.
     pub(crate) request_id: Option<String>,
+}
+
+/// How many of GitHub's most recent workflow runs the repository imports.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct SetGitHubRunImportCountRequest {
+    pub(crate) count: u32,
 }
 
 /// The whole list of required check names, replacing the stored one.
@@ -165,6 +209,9 @@ pub(crate) struct GitHubSetupResponse {
     /// Where to install the app on a repository that is missing.
     pub(crate) install_url: String,
     pub(crate) grant: String,
+    /// How many recent workflow runs the repository imports, which
+    /// connecting can change.
+    pub(crate) run_import_count: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -184,6 +231,9 @@ pub(crate) struct ConnectGitHubRepositoryRequest {
     /// private requests and private files included, becomes public.
     #[serde(default)]
     pub(crate) acknowledge_public: bool,
+    /// How many of GitHub's most recent workflow runs to import, which
+    /// becomes the repository's import count.
+    pub(crate) run_import_count: u32,
 }
 
 pub(crate) fn github_setup_check_response(read: GitHubSetupCheckRead) -> GitHubSetupCheckResponse {
@@ -223,19 +273,38 @@ pub(crate) fn github_workflow_run_response(
     }
 }
 
+/// What a maintainer's settings read about the repository's GitHub link.
+pub(crate) struct GitHubConnectionParts {
+    pub(crate) read: Option<GitHubConnectionRead>,
+    pub(crate) required_checks: Vec<String>,
+    pub(crate) can_confirm_public: bool,
+    pub(crate) setup_check: Option<GitHubSetupCheckRead>,
+    pub(crate) run_import_count: u32,
+    pub(crate) run_import: Option<GitHubRunImport>,
+}
+
 pub(crate) fn github_connection_response(
     configured: bool,
-    read: Option<GitHubConnectionRead>,
-    required_checks: Vec<String>,
-    can_confirm_public: bool,
-    setup_check: Option<GitHubSetupCheckRead>,
+    parts: GitHubConnectionParts,
 ) -> GitHubConnectionResponse {
+    let GitHubConnectionParts {
+        read,
+        required_checks,
+        can_confirm_public,
+        setup_check,
+        run_import_count,
+        run_import,
+    } = parts;
     let read = read.filter(|_| configured);
-    // A test of the GitHub repository Scope was connected to before says
-    // nothing about the one it is connected to now.
+    // A test or an import of the GitHub repository Scope was connected to
+    // before says nothing about the one it is connected to now.
     let setup_check = setup_check.filter(|setup| {
         read.as_ref()
             .is_some_and(|read| setup.check.is_of(&read.connection))
+    });
+    let run_import = run_import.filter(|import| {
+        read.as_ref()
+            .is_some_and(|read| import.is_of(&read.connection))
     });
     let connection = read.map(|read| {
         let connection = read.connection;
@@ -280,6 +349,24 @@ pub(crate) fn github_connection_response(
         connection,
         required_checks,
         can_confirm_public,
+        run_import_count,
+        run_import: run_import.map(github_run_import_response),
+    }
+}
+
+fn github_run_import_response(import: GitHubRunImport) -> GitHubRunImportResponse {
+    GitHubRunImportResponse {
+        state: match import.state {
+            GitHubRunImportState::Queued => GitHubRunImportStateResponse::Queued,
+            GitHubRunImportState::Running => GitHubRunImportStateResponse::Running,
+            GitHubRunImportState::Succeeded => GitHubRunImportStateResponse::Succeeded,
+            GitHubRunImportState::Failed => GitHubRunImportStateResponse::Failed,
+        },
+        run_count: import.run_count,
+        imported_count: import.imported_count,
+        error: import.last_error,
+        queued_at_unix: import.queued_at_unix,
+        finished_at_unix: import.finished_at_unix,
     }
 }
 

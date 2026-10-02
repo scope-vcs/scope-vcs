@@ -254,6 +254,7 @@ async fn reconnect_to_another_repository(state: &AppState) {
                 github_full_name: "octo/other".to_string(),
                 github_private: true,
                 acknowledge_public: false,
+                run_import_count: 0,
                 user_id: test_owner_id(),
                 now_unix: unix_now(),
             },

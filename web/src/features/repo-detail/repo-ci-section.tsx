@@ -7,6 +7,7 @@ import { LoaderCircle, Plug, Unplug } from 'lucide-react'
 import { useState } from 'react'
 import { openGitHubAuthorization } from '../github/github-authorization'
 import { githubConnectionView, githubVisibilityView } from './repo-github-connection-model'
+import { RepoGitHubRunImport } from './repo-github-run-import'
 import { RepoGitHubSetupCheck } from './repo-github-setup-check'
 import { RepoRequiredChecks } from './repo-required-checks'
 import { CiSection } from './repo-settings-sections'
@@ -17,14 +18,18 @@ export function RepoCiSection({
   disconnect,
   github,
   setRequiredChecks,
+  setRunImportCount,
   startAuthorization,
+  startRunImport,
   startSetupCheck,
 }: {
   confirmPublic: () => Promise<GitHubConnectionResponse>
   disconnect: () => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
   setRequiredChecks: (names: string[]) => Promise<GitHubConnectionResponse>
+  setRunImportCount: (count: number) => Promise<GitHubConnectionResponse>
   startAuthorization: () => Promise<GitHubAuthorizeResponse>
+  startRunImport: () => Promise<GitHubConnectionResponse>
   startSetupCheck: () => Promise<GitHubConnectionResponse>
 }) {
   const [pending, setPending] = useState<'connect' | 'disconnect' | 'confirm' | null>(null)
@@ -171,6 +176,17 @@ export function RepoCiSection({
 
         {(view.kind === 'connected' || view.kind === 'disconnected') && (
           <RepoRequiredChecks names={github.required_checks} save={setRequiredChecks} />
+        )}
+
+        {(view.kind === 'connected' || view.kind === 'disconnected') && (
+          <RepoGitHubRunImport
+            connected={view.kind === 'connected'}
+            github={github}
+            importNow={startRunImport}
+            // A saved count starts a fresh draft.
+            key={github.run_import_count}
+            saveCount={setRunImportCount}
+          />
         )}
 
         {error && <PageErrorAlert className="mt-0" title={error.title}>{error.message}</PageErrorAlert>}
