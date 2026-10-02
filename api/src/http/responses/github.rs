@@ -55,6 +55,8 @@ pub(crate) struct GitHubSetupCheckResponse {
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubWorkflowRunsResponse {
+    /// Whether this server can connect repositories to GitHub at all.
+    pub(crate) configured: bool,
     /// `None` when the repository is not linked to GitHub; its runs are Scope's own.
     pub(crate) github: Option<GitHubWorkflowRunListResponse>,
 }

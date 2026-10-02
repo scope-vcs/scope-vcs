@@ -85,5 +85,57 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
   await page.evaluate(() => window.finishLoad())
   await page.getByRole('link', { name: 'lint', exact: true }).waitFor()
   assert.equal(await rows.count(), 1)
+
+  // Without workflows or a GitHub link, the page says where runs come from
+  // and lets a maintainer connect GitHub through the settings' flow.
+  const sentence = page.getByText('Runs come from this project’s GitHub Actions workflows once GitHub is connected.')
+  const connect = page.getByRole('button', { name: 'Connect GitHub', exact: true })
+  await page.goto(new URL('/octo/demo/runs-empty', base).href)
+  await sentence.waitFor()
+  await connect.waitFor()
+  for (const [width, name] of [[1280, 'desktop'], [390, 'phone']]) {
+    await page.setViewportSize({ width, height: 844 })
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      true,
+      `${name} has no horizontal scroll`,
+    )
+    if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+      await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.connect-${name}.png` })
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await connect.click()
+  await page.waitForFunction(() => location.hash === '#github-authorize')
+  assert.deepEqual(await page.evaluate(() => window.authorizeCalls), [{ owner: 'octo', repo: 'demo' }])
+  // The setup flow returns to the page connecting started from.
+  assert.equal(
+    await page.evaluate(() => sessionStorage.getItem('scope.github-setup.return-path')),
+    '/octo/demo/runs-empty',
+  )
+
+  // Someone who is not a maintainer reads the sentence without the button.
+  await page.evaluate(() => window.setActor('Public'))
+  await sentence.waitFor()
+  assert.equal(await connect.count(), 0)
+
+  // A server without GitHub promises nothing.
+  await page.goto(new URL('/octo/demo/runs-empty?configured=false', base).href)
+  await page.getByText('Push to main with a matching trigger', { exact: false }).waitFor()
+  assert.equal(await sentence.count(), 0)
+  assert.equal(await connect.count(), 0)
+
+  // A connected repository without runs points maintainers to its connection test.
+  await page.goto(new URL('/octo/demo/runs-connected', base).href)
+  const test = page.getByRole('link', { name: 'Test connection', exact: true })
+  await test.waitFor()
+  assert.equal(await test.getAttribute('href'), '/octo/demo/settings#ci')
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.connected-empty-phone.png` })
+    await page.setViewportSize({ width: 1280, height: 900 })
+  }
+  await test.click()
+  await page.getByRole('heading', { name: 'Settings' }).waitFor()
   assert.deepEqual(errors, [])
 })

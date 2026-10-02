@@ -3,9 +3,23 @@ import type { RepositoryRunHistoryPageResponse } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/empty-state'
 import { LoaderCircle, TerminalSquare } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { RunRow } from './run-row'
 
+/** A repository's Runs page before any of its workflows ran. */
+export function NoRunsEmptyState({ selectedWorkflowName }: { selectedWorkflowName?: string }) {
+  return (
+    <EmptyState
+      description="Push to main with a matching trigger, or run a workflow manually from the CLI."
+      icon={<TerminalSquare />}
+      title={selectedWorkflowName ? `No ${selectedWorkflowName} runs yet` : 'No runs yet'}
+    />
+  )
+}
+
+/** `empty` replaces the usual state for a repository without runs. */
 export function RunHistoryList({
+  empty,
   loadMore,
   loadingMore,
   params,
@@ -14,6 +28,7 @@ export function RunHistoryList({
   showLoadMore,
   totalRunCount,
 }: {
+  empty?: ReactNode
   loadMore: () => void
   loadingMore: boolean
   params: RepoParams
@@ -23,13 +38,7 @@ export function RunHistoryList({
   totalRunCount: number
 }) {
   if (totalRunCount === 0) {
-    return (
-      <EmptyState
-        description="Push to main with a matching trigger, or run a workflow manually from the CLI."
-        icon={<TerminalSquare />}
-        title={selectedWorkflowName ? `No ${selectedWorkflowName} runs yet` : 'No runs yet'}
-      />
-    )
+    return empty ?? <NoRunsEmptyState selectedWorkflowName={selectedWorkflowName} />
   }
 
   return (

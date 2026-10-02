@@ -5,6 +5,7 @@ import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { LoaderCircle, Plug, Unplug } from 'lucide-react'
 import { useState } from 'react'
+import { openGitHubAuthorization } from '../github/github-authorization'
 import { githubConnectionView, githubVisibilityView } from './repo-github-connection-model'
 import { RepoGitHubSetupCheck } from './repo-github-setup-check'
 import { RepoRequiredChecks } from './repo-required-checks'
@@ -33,9 +34,8 @@ export function RepoCiSection({
     setError(null)
     setPending('connect')
     try {
-      const { authorize_url } = await startAuthorization()
       // Pending lasts until GitHub's authorization screen replaces this page.
-      window.location.assign(authorize_url)
+      await openGitHubAuthorization(startAuthorization)
     } catch (cause) {
       setPending(null)
       setError({ title: 'GitHub could not be opened', message: resourceErrorMessage(cause, 'Try again.') })

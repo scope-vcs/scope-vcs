@@ -6,7 +6,8 @@ import {
   loadRepoRunHistory,
   loadRepoRunPage,
 } from '@/routes/-run-history-actions'
-import { useCallback } from 'react'
+import { loadRepoSettingsData, startRepoGitHubAuthorization } from '@/routes/-repo-settings-actions'
+import { useCallback, useMemo } from 'react'
 
 type RunPageResources = Awaited<ReturnType<typeof loadRepoRunPage>>
 
@@ -29,6 +30,13 @@ export function RepositoryRunsRoute({
     [],
   )
 
+  const configured = initialResources?.kind === 'native' && initialResources.githubConfigured
+  const github = useMemo(() => ({
+    configured,
+    loadSettings: loadRepoSettingsData,
+    startAuthorization: startRepoGitHubAuthorization,
+  }), [configured])
+
   // GitHub keeps its own workflow filters, so every Runs route lists all runs.
   if (initialResources?.kind === 'github') {
     return (
@@ -43,6 +51,7 @@ export function RepositoryRunsRoute({
 
   return (
     <RepositoryRunsPage
+      github={github}
       initialResources={initialResources}
       key={`${params.owner}/${params.repo}/${workflow ?? 'all'}/${initialResources ? 'member' : 'denied'}`}
       loadHistory={loadHistory}

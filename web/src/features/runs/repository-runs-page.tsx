@@ -9,6 +9,7 @@ import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { RunHistoryList } from './run-history-list'
+import { RunsCiEmptyState, type RunsGitHubActions } from './runs-ci-empty-state'
 import { useRunLiveRefresh } from './run-live-refresh'
 import { RunsFilterBar } from './runs-filter-bar'
 import {
@@ -30,6 +31,8 @@ type RunPageResources = {
 }
 
 type RepositoryRunsPageProps = {
+  /** How an empty page offers to connect GitHub. */
+  github: RunsGitHubActions | null
   initialResources: RunPageResources | null
   loadHistory: (
     input: RepoRunHistoryInput,
@@ -45,11 +48,12 @@ export function RepositoryRunsPage(props: RepositoryRunsPageProps) {
   const cacheKey = isLoaded && props.initialResources
     ? runHistoryCacheKey(repoResourceScope(repo, userId ?? null), props.workflow)
     : null
-  return <RepositoryRunsPageContent initialResources={props.initialResources} loadHistory={props.loadHistory} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} />
+  return <RepositoryRunsPageContent github={props.github} initialResources={props.initialResources} loadHistory={props.loadHistory} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} />
 }
 
 function RepositoryRunsPageContent({
   cacheKey,
+  github,
   initialResources,
   loadHistory,
   params,
@@ -135,6 +139,13 @@ function RepositoryRunsPageContent({
           ) : null}
           <div className="pt-7">
             <RunHistoryList
+              empty={github && !workflow ? (
+                <RunsCiEmptyState
+                  github={github}
+                  hasWorkflows={initialResources.workflows.workflows.length > 0}
+                  params={params}
+                />
+              ) : undefined}
               loadMore={() => void loadMore()}
               loadingMore={loadingMore}
               params={params}
