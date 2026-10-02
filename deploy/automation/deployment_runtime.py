@@ -22,6 +22,20 @@ SELECTIONS = {
 }
 
 
+def thread_create_command(thread_id: str, title: str, worktree: str, provider: str, created_at: str) -> dict:
+    return {"type": "thread.create", "commandId": thread_id + "-create", "threadId": thread_id,
+            "projectId": PROJECT_ID, "title": title, "modelSelection": SELECTIONS[provider],
+            "runtimeMode": "full-access", "interactionMode": "default", "branch": None,
+            "worktreePath": worktree, "createdAt": created_at}
+
+
+def turn_start_command(command_id: str, thread_id: str, text: str, provider: str, created_at: str) -> dict:
+    return {"type": "thread.turn.start", "commandId": command_id, "threadId": thread_id,
+            "message": {"messageId": command_id + "-prompt", "role": "user", "text": text, "attachments": []},
+            "modelSelection": SELECTIONS[provider], "runtimeMode": "full-access",
+            "interactionMode": "default", "createdAt": created_at}
+
+
 def save_json(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = path.with_suffix(".tmp")

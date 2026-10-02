@@ -8,8 +8,9 @@ import uuid
 from pathlib import Path
 
 from deployment_policy import FALLBACK_PROVIDER, MAX_RECOVERIES, PRIMARY_PROVIDER, TERMINAL, completion, running, stamp, supervise, timestamp, trusted_run
-from deployment_runtime import CHECKOUT, PROJECT_ID, REPOSITORY, SELECTIONS, T3Client, create_worktree, github, jobs, save_json
+from deployment_runtime import CHECKOUT, PROJECT_ID, REPOSITORY, T3Client, create_worktree, github, jobs, save_json, thread_create_command, turn_start_command
 import deployment_scheduler
+import image_pin_refresh
 from heartbeat import alert, heartbeat
 
 STATE_DIR = Path.home() / ".local/state/scope-deployment-watcher"
@@ -227,13 +228,10 @@ def queue_turn(state: dict, info: dict) -> None:
     releases = "\n".join(f"https://github.com/{REPOSITORY}/actions/runs/{r['run_id']} (attempt {r['attempt']})" for r in records)
     info["dispatch_at"] = stamp()
     command_id = f"{info['incident_id']}-supervisor-{info['generation']}"
-    info["pending_command"] = {
-        "type": "thread.turn.start", "commandId": command_id, "threadId": info["thread_id"],
-        "message": {"messageId": command_id + "-prompt", "role": "user",
-                    "text": PROMPT.format(releases=releases, receipt=receipt_path(info), inbox=inbox_path(info)), "attachments": []},
-        "modelSelection": SELECTIONS[info["provider"]], "runtimeMode": "full-access",
-        "interactionMode": "default", "createdAt": info["dispatch_at"],
-    }
+    info["pending_command"] = turn_start_command(
+        command_id, info["thread_id"],
+        PROMPT.format(releases=releases, receipt=receipt_path(info), inbox=inbox_path(info)),
+        info["provider"], info["dispatch_at"])
     info["owns_agent"] = True
     # Persist the exact command before dispatch, so uncertain responses retry idempotently.
     persist(state)
@@ -243,12 +241,9 @@ def dispatch_pending(client: T3Client, state: dict, info: dict) -> None:
     if "commit" not in info:
         info["commit"] = create_worktree(Path(info["worktree"]))
         persist(state)
-    client.dispatch({"type": "thread.create", "commandId": info["thread_id"] + "-create",
-                     "threadId": info["thread_id"], "projectId": PROJECT_ID,
-                     "title": "Scope deployment · " + info["incident_id"].removeprefix("scope-release-"),
-                     "modelSelection": SELECTIONS[info["provider"]], "runtimeMode": "full-access",
-                     "interactionMode": "default", "branch": None, "worktreePath": info["worktree"],
-                     "createdAt": info["created_at"]})
+    client.dispatch(thread_create_command(
+        info["thread_id"], "Scope deployment · " + info["incident_id"].removeprefix("scope-release-"),
+        info["worktree"], info["provider"], info["created_at"]))
     client.dispatch(info["pending_command"])
     info.pop("pending_command")
     info.pop("stopping_at", None)
@@ -393,6 +388,7 @@ def poll(*, initialize: bool = False, dry_run: bool = False) -> dict:
                 monitor(client, state, info, shells.get(info["thread_id"], {}))
     state["last_poll_at"] = stamp()
     persist(state)
+    image_pin_refresh.poll(release_open=bool(active))
     if scheduler_error is not None:
         raise RuntimeError("Daily release scheduler failed") from scheduler_error
     heartbeat()

@@ -53,6 +53,23 @@ See [heartbeat.md](heartbeat.md) for the external missing-heartbeat alert. It us
 the existing GitHub login and sends no build jobs. GitHub scheduling and issue
 notification preferences affect alert delivery; this is not a paging SLA.
 
+## Weekly image pin refresh
+
+The same watcher poll starts one T3 agent each week, from Monday 9:00 a.m.
+America/Chicago, to refresh the pinned packages in the checks and media worker
+images before a stale pin fails the release scan. The agent opens a PR only when a
+pin changes and enables squash auto-merge after `Required PR checks` passes; that
+CI builds and scans each image whose files changed. The scan gate is unchanged,
+and a failed release scan is still repaired by the release agent.
+
+The weekly intent lives in `~/.local/state/scope-deployment-watcher/image-pin-refresh.json`
+and is written before dispatch, so a retry reuses the same thread. The refresh
+waits while a release investigation is open. If Surface is offline on Monday, it
+starts at the next poll in that week; a missed week is skipped. The watcher does
+not supervise this agent: a start that fails for ten minutes opens an assigned
+issue, and an agent that stops early is not resumed. The first poll after
+installation starts the current week's refresh if Monday 9:00 a.m. has passed.
+
 ## While Surface is offline
 
 Automatic dispatch and repair run only on Surface; nothing takes over while it is
@@ -105,7 +122,7 @@ agent worktree:
 systemctl --user stop scope-deployment-watcher.timer
 while systemctl --user is-active --quiet scope-deployment-watcher.service; do sleep 2; done
 install -d -m 700 ~/.local/share/scope-automation/release-supervisor ~/.local/state/scope-deployment-watcher
-install -m 600 deploy/automation/deployment_watcher.py deploy/automation/deployment_policy.py deploy/automation/deployment_runtime.py deploy/automation/deployment_scheduler.py deploy/automation/heartbeat.py ~/.local/share/scope-automation/release-supervisor/
+install -m 600 deploy/automation/deployment_watcher.py deploy/automation/deployment_policy.py deploy/automation/deployment_runtime.py deploy/automation/deployment_scheduler.py deploy/automation/image_pin_refresh.py deploy/automation/heartbeat.py ~/.local/share/scope-automation/release-supervisor/
 install -d -m 755 ~/.config/systemd/user
 install -m 644 deploy/automation/scope-deployment-watcher.service deploy/automation/scope-deployment-watcher.timer ~/.config/systemd/user/
 systemctl --user daemon-reload
