@@ -16,6 +16,8 @@ Proceed with behavior-preserving refactors. Involve the user before choosing beh
 
 Pushes and merges to main do not deploy changes. Releases happen separately.
 
+Do not re-run a failed check to pass it without a repair until the failure is recorded: open a `release-flake` issue, or comment on the open one for that failure, with the test or step name, the run link, and the failure output. An open `release-flake` issue for the same failure means it has recurred; fix its cause before finishing the task and close the issue with that fix.
+
 Set autoreview's timeout to 15 minutes with `--engine-timeout-seconds 900`. Do independent work while it runs.
 
 <!-- scope:rules:start -->
