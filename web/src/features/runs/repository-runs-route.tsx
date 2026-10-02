@@ -1,4 +1,4 @@
-import type { RepoParams, RepoRunHistoryInput } from '@/api/types'
+import type { RepoGitHubWorkflowRunsInput, RepoParams, RepoRunHistoryInput } from '@/api/types'
 import { GitHubWorkflowRunsPage } from '@/features/runs/github-workflow-runs'
 import { RepositoryRunsPage } from '@/features/runs/repository-runs-page'
 import {
@@ -32,7 +32,8 @@ export function RepositoryRunsRoute({
     [],
   )
   const loadGitHubRuns = useCallback(
-    (data: RepoParams, signal: AbortSignal) => loadRepoGitHubWorkflowRuns({ data, signal }),
+    (data: RepoGitHubWorkflowRunsInput, signal: AbortSignal) =>
+      loadRepoGitHubWorkflowRuns({ data, signal }),
     [],
   )
 
@@ -43,7 +44,8 @@ export function RepositoryRunsRoute({
     startAuthorization: startRepoGitHubAuthorization,
   }), [configured])
 
-  // GitHub keeps its own workflow filters, so every Runs route lists all runs.
+  // GitHub's runs are filtered on the page itself, so every Runs route,
+  // a workflow's route included, starts from all of them.
   if (initialResources?.kind === 'github') {
     return (
       <GitHubWorkflowRunsPage

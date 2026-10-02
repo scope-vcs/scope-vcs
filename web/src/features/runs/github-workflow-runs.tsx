@@ -1,4 +1,4 @@
-import type { RepoParams } from '@/api/types'
+import type { RepoGitHubWorkflowRunsInput, RepoParams } from '@/api/types'
 import type {
   GitHubWorkflowRunListResponse,
   GitHubWorkflowRunsResponse,
@@ -8,25 +8,37 @@ import { PageErrorAlert } from '@/components/page-error-alert'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
-import { ExternalLink, FlaskConical, TerminalSquare } from 'lucide-react'
-import { useCallback } from 'react'
+import { ExternalLink, FlaskConical, LoaderCircle, TerminalSquare } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
-import { type GitHubWorkflowRunRow, githubWorkflowRunRow } from './github-workflow-run-model'
-import { githubWorkflowRunsResource } from './github-workflow-runs-resource'
+import {
+  type GitHubWorkflowRunRow,
+  githubWorkflowFilterOptions,
+  githubWorkflowRunRow,
+  reloadGitHubWorkflowRunPages,
+} from './github-workflow-run-model'
+import {
+  githubWorkflowRunsIdentity,
+  githubWorkflowRunsResource,
+  loadMoreGitHubWorkflowRuns,
+} from './github-workflow-runs-resource'
 import { RunStatusIcon } from './run-status-icon'
 import { RUN_ROW_CLASS, RUN_ROW_TIMESTAMP_CLASS } from './run-row-layout'
 
 const LINK_CLASS = 'underline-offset-2 hover:text-foreground hover:underline'
+const SELECT_CLASS = 'h-8 max-w-44 rounded-md border border-input bg-secondary px-2 text-sm text-foreground shadow-[var(--shadow-card)] outline-none transition-colors focus-visible:border-ring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 /**
  * The Runs page of a repository whose checks run on GitHub. It lists the
- * workflow runs GitHub reported and links each to GitHub, which keeps the
- * logs. Repository events refresh the list in place.
+ * workflow runs GitHub reported, a page at a time and optionally of one
+ * workflow, and links each to GitHub, which keeps the logs. Repository events
+ * refresh the loaded pages in place.
  */
 export function GitHubWorkflowRunsPage({
   initialRuns,
@@ -34,38 +46,78 @@ export function GitHubWorkflowRunsPage({
   params,
 }: {
   initialRuns: GitHubWorkflowRunListResponse
-  loadRuns: (params: RepoParams, signal: AbortSignal) => Promise<GitHubWorkflowRunsResponse>
+  loadRuns: (input: RepoGitHubWorkflowRunsInput, signal: AbortSignal) => Promise<GitHubWorkflowRunsResponse>
   params: RepoParams
 }) {
   const { isLoaded, userId } = useAuth()
   const { repo } = useRepoLayout()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
+  // GitHub names workflows freely, so the filter is page state, not a route.
+  const [workflow, setWorkflow] = useState<string | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const identity = scope ? githubWorkflowRunsIdentity(scope, workflow) : null
   const { owner, repo: repoName } = params
-  const load = useCallback(async (signal: AbortSignal) => {
-    const { github } = await loadRuns({ owner, repo: repoName }, signal)
+  const loadPage = useCallback(async (signal: AbortSignal, after?: string) => {
+    const { github } = await loadRuns(
+      { owner, repo: repoName, ...(workflow === null ? {} : { workflow }), ...(after ? { after } : {}) },
+      signal,
+    )
     if (!github) throw new Error('This repository no longer runs its checks on GitHub. Reload to see its runs.')
     return github
-  }, [loadRuns, owner, repoName])
+  }, [loadRuns, owner, repoName, workflow])
+  const load = useCallback((signal: AbortSignal) => reloadGitHubWorkflowRunPages(
+    (identity ? githubWorkflowRunsResource.peek(identity)?.pages : undefined) ?? 1,
+    (after) => loadPage(signal, after),
+  ), [identity, loadPage])
+  // Only the list of every workflow came with the page.
+  const initialValue = useMemo(
+    () => (workflow === null ? { list: initialRuns, pages: 1 } : null),
+    [initialRuns, workflow],
+  )
   const resource = useCachedResource({
     fallbackError: 'Runs could not refresh.',
-    identity: scope,
-    initialValue: initialRuns,
+    identity,
+    initialValue,
     load,
     resource: githubWorkflowRunsResource,
   })
-  const runs = resource.value ?? initialRuns
-  const rows = runs.workflow_runs.map(githubWorkflowRunRow)
+  const runs = resource.value?.list ?? initialValue?.list ?? null
+  const rows = useMemo(() => runs?.workflow_runs.map(githubWorkflowRunRow) ?? [], [runs])
+  const workflows = githubWorkflowFilterOptions((runs ?? initialRuns).workflows, workflow)
+
+  async function loadMore() {
+    if (!identity) return
+    setLoadingMore(true)
+    try {
+      await loadMoreGitHubWorkflowRuns(identity, (after, signal) => loadPage(signal, after))
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   return (
     <WorkbenchPane>
       <WorkbenchBar
         actions={(
-          <Button asChild size="sm" variant="secondary">
-            <a href={runs.actions_url} rel="noopener noreferrer" target="_blank">
-              <ExternalLink className="size-3.5" />
-              <span>All runs on GitHub</span>
-            </a>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {workflows.length > 0 || workflow !== null ? (
+              <select
+                aria-label="Filter by workflow"
+                className={SELECT_CLASS}
+                onChange={(event) => setWorkflow(event.target.value === '' ? null : event.target.value)}
+                value={workflow ?? ''}
+              >
+                <option value="">All workflows</option>
+                {workflows.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            ) : null}
+            <Button asChild size="sm" variant="secondary">
+              <a href={(runs ?? initialRuns).actions_url} rel="noopener noreferrer" target="_blank">
+                <ExternalLink className="size-3.5" />
+                <span>All runs on GitHub</span>
+              </a>
+            </Button>
+          </div>
         )}
         summary="Workflow runs from GitHub Actions"
         title="Runs"
@@ -85,30 +137,71 @@ export function GitHubWorkflowRunsPage({
             </div>
           ) : null}
           <div className="pt-7">
-            {rows.length === 0 ? (
-              <EmptyState
-                // The connection test shows whether workflows start on Scope's branches.
-                action={repo.access.actor !== 'Public' ? (
-                  <Button asChild size="sm" variant="secondary">
-                    <Link hash="ci" params={params} to="/$owner/$repo/settings">
-                      <FlaskConical className="size-3.5" />
-                      <span>Test connection</span>
-                    </Link>
-                  </Button>
-                ) : undefined}
-                description="Runs appear here once GitHub Actions starts a workflow for this repository."
-                icon={<TerminalSquare />}
-                title="No runs yet"
-              />
+            {!runs ? (
+              resource.error ? null : <GitHubWorkflowRunsSkeleton />
+            ) : rows.length === 0 ? (
+              workflow === null ? (
+                <EmptyState
+                  // The connection test shows whether workflows start on Scope's branches.
+                  action={repo.access.actor !== 'Public' ? (
+                    <Button asChild size="sm" variant="secondary">
+                      <Link hash="ci" params={params} to="/$owner/$repo/settings">
+                        <FlaskConical className="size-3.5" />
+                        <span>Test connection</span>
+                      </Link>
+                    </Button>
+                  ) : undefined}
+                  description="Runs appear here once GitHub Actions starts a workflow for this repository."
+                  icon={<TerminalSquare />}
+                  title="No runs yet"
+                />
+              ) : (
+                <EmptyState
+                  description="GitHub has not reported a run of this workflow."
+                  icon={<TerminalSquare />}
+                  title={`No ${workflow} runs`}
+                />
+              )
             ) : (
-              <ul className="divide-y divide-border">
-                {rows.map((row) => <GitHubWorkflowRunItem key={row.key} params={params} row={row} />)}
-              </ul>
+              <>
+                <ul className="divide-y divide-border">
+                  {rows.map((row) => <GitHubWorkflowRunItem key={row.key} params={params} row={row} />)}
+                </ul>
+                <div className="flex items-center justify-center gap-3 pt-5">
+                  {runs.next_cursor ? (
+                    <Button
+                      aria-busy={loadingMore}
+                      disabled={loadingMore}
+                      onClick={() => void loadMore()}
+                      variant="secondary"
+                    >
+                      {loadingMore ? <LoaderCircle className="animate-spin" /> : null}
+                      Load older runs
+                    </Button>
+                  ) : null}
+                  <span className="text-xs text-muted-foreground">Showing {rows.length}</span>
+                </div>
+              </>
             )}
           </div>
         </main>
       </div>
     </WorkbenchPane>
+  )
+}
+
+/** Stands in for a filter's runs until they first load. */
+function GitHubWorkflowRunsSkeleton() {
+  return (
+    <ul aria-busy="true" aria-label="Loading runs" className="divide-y divide-border">
+      {Array.from({ length: 4 }, (_, index) => (
+        <li className={RUN_ROW_CLASS} key={index}>
+          <TextSkeleton length="tiny" />
+          <TextSkeleton className="flex-1" length="long" />
+          <TextSkeleton length="short" />
+        </li>
+      ))}
+    </ul>
   )
 }
 

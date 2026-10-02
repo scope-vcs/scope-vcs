@@ -34,6 +34,7 @@ mod github_check_runs;
 mod github_connections;
 mod github_pushes;
 mod github_required_checks;
+mod github_run_imports;
 mod github_setup_checks;
 mod github_workflow_runs;
 mod history_reads;
@@ -138,8 +139,12 @@ pub use git_segments::RepositoryGitWriteLease;
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
 pub use github_pushes::{GitHubPushOutcome, GitHubPushStanding};
+pub use github_run_imports::GitHubRunImportOutcome;
 pub use github_setup_checks::GitHubSetupCheckRead;
-pub use github_workflow_runs::{GitHubWorkflowRunRead, GitHubWorkflowRunReadJob};
+pub use github_workflow_runs::{
+    GitHubWorkflowRunCursor, GitHubWorkflowRunPageQuery, GitHubWorkflowRunRead,
+    GitHubWorkflowRunReadJob,
+};
 pub use history_reads::{
     RepositoryHistoryBoundary, RepositoryHistoryNeighbors, RepositoryHistoryPage,
     RepositoryHistoryQuery,

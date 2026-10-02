@@ -9,6 +9,8 @@ const notConnected: GitHubConnectionResponse = {
   required_checks: [],
   can_confirm_public: true,
   setup_check: null,
+  run_import_count: 50,
+  run_import: null,
 }
 
 const offer = (patch: Partial<Parameters<typeof runsCiOffer>[0]> = {}) => runsCiOffer({

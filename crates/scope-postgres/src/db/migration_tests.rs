@@ -14,6 +14,7 @@ mod git_manifest_retirement;
 mod git_segment_schema;
 mod github_connections;
 mod github_request_checks;
+mod github_run_imports;
 mod github_setup_checks_and_workflow_runs;
 mod maintenance_cutover;
 mod native_runs_accounts;
@@ -62,6 +63,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0069_github_request_checks",
     "m0070_github_setup_checks_and_workflow_runs",
     "m0071_public_check_commits",
+    "m0072_github_run_imports",
 ];
 
 pub(super) async fn isolated_database() -> (

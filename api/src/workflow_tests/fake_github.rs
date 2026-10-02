@@ -56,8 +56,9 @@ devYjVgcWWz1N5F0wHsGA68ppkppNUQeDKoG05CHMCChPdD8onOqyFdw/mPPgXGi
 fAFIvg2Ihs8lJFryn8Z/kFk=
 -----END PRIVATE KEY-----"#;
 
-/// What the fake GitHub reports. Every list is one page, and every
-/// repository is listed with the installation that reaches it.
+/// What the fake GitHub reports. Every list but a repository's whole run list
+/// is one page, and every repository is listed with the installation that
+/// reaches it.
 pub(super) struct FakeGitHub {
     /// Installations the GitHub user's token can see.
     pub(super) user_installations: Mutex<Vec<u64>>,
@@ -77,10 +78,16 @@ pub(super) struct FakeGitHub {
     pub(super) check_run_reads: AtomicUsize,
     /// GitHub answers check-run reads with an error while this is set.
     pub(super) check_runs_unavailable: AtomicBool,
-    /// Workflow runs GitHub Actions reports, as its API lists them.
-    pub(super) workflow_runs: Mutex<Vec<serde_json::Value>>,
+    /// Workflow runs GitHub Actions reports for each repository, by full
+    /// name, as its API lists them.
+    workflow_runs: Mutex<HashMap<String, Vec<serde_json::Value>>>,
     /// GitHub answers reads of one workflow run with an error while this is set.
     pub(super) workflow_run_unavailable: AtomicBool,
+    /// Pages of a repository's whole run list read so far.
+    pub(super) run_list_reads: AtomicUsize,
+    /// GitHub answers reads of a repository's whole run list with an error
+    /// while this is set.
+    pub(super) run_list_unavailable: AtomicBool,
     /// Holds `<owner>/<name>.git` for every repository pushes reach.
     git_root: tempfile::TempDir,
 }
@@ -212,6 +219,8 @@ impl FakeGitHub {
             check_runs_unavailable: AtomicBool::new(false),
             workflow_runs: Mutex::default(),
             workflow_run_unavailable: AtomicBool::new(false),
+            run_list_reads: AtomicUsize::new(0),
+            run_list_unavailable: AtomicBool::new(false),
             git_root: tempfile::tempdir().unwrap(),
         });
         let repository = fake.repository_path();
@@ -262,9 +271,30 @@ impl FakeGitHub {
             .then(|| String::from_utf8(output.stdout).unwrap().trim().to_string())
     }
 
-    /// Replaces the workflow runs GitHub reports.
+    /// Replaces the workflow runs GitHub reports for the connected repository.
     pub(super) fn report_workflow_runs(&self, runs: Vec<serde_json::Value>) {
-        *self.workflow_runs.lock().unwrap() = runs;
+        self.report_repository_workflow_runs(GITHUB_FULL_NAME, runs);
+    }
+
+    /// Replaces the workflow runs GitHub reports for a repository.
+    pub(super) fn report_repository_workflow_runs(
+        &self,
+        full_name: &str,
+        runs: Vec<serde_json::Value>,
+    ) {
+        self.workflow_runs
+            .lock()
+            .unwrap()
+            .insert(full_name.to_string(), runs);
+    }
+
+    fn repository_workflow_runs(&self, full_name: &str) -> Vec<serde_json::Value> {
+        self.workflow_runs
+            .lock()
+            .unwrap()
+            .get(full_name)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Makes GitHub refuse every push with `message`, the way a branch ruleset does.
@@ -428,24 +458,39 @@ impl FakeGitHub {
                     |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                      AxumPath((owner, name)): AxumPath<(String, String)>,
                      AxumQuery(query): AxumQuery<HashMap<String, String>>| async move {
-                        assert_eq!(format!("{owner}/{name}"), GITHUB_FULL_NAME);
-                        let runs = if query["page"] == "1" {
-                            fake.workflow_runs
-                                .lock()
-                                .unwrap()
-                                .iter()
+                        let runs = fake.repository_workflow_runs(&format!("{owner}/{name}"));
+                        let page = query["page"].parse::<usize>().unwrap();
+                        let per_page = query["per_page"].parse::<usize>().unwrap();
+                        let runs = if query.contains_key("branch") {
+                            // One branch's runs for a commit fit on one page.
+                            runs.into_iter()
                                 .filter(|run| {
-                                    run["head_branch"] == query["branch"].as_str()
+                                    page == 1
+                                        && run["head_branch"] == query["branch"].as_str()
                                         && run["head_sha"] == query["head_sha"].as_str()
                                 })
-                                .cloned()
-                                .collect()
+                                .collect::<Vec<_>>()
                         } else {
-                            Vec::new()
+                            fake.run_list_reads.fetch_add(1, Ordering::SeqCst);
+                            if fake.run_list_unavailable.load(Ordering::SeqCst) {
+                                return (
+                                    StatusCode::BAD_GATEWAY,
+                                    Json(serde_json::json!({ "message": "Server Error" })),
+                                )
+                                    .into_response();
+                            }
+                            // The whole list is newest first, which here is the highest id.
+                            let mut runs = runs;
+                            runs.sort_by_key(|run| std::cmp::Reverse(run["id"].as_u64()));
+                            runs.into_iter()
+                                .skip((page - 1) * per_page)
+                                .take(per_page)
+                                .collect()
                         };
                         Json(serde_json::json!({
                             "total_count": runs.len(), "workflow_runs": runs,
                         }))
+                        .into_response()
                     },
                 ),
             )
@@ -454,16 +499,12 @@ impl FakeGitHub {
                 get(
                     |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                      AxumPath((owner, name, id)): AxumPath<(String, String, u64)>| async move {
-                        assert_eq!(format!("{owner}/{name}"), GITHUB_FULL_NAME);
                         if fake.workflow_run_unavailable.load(Ordering::SeqCst) {
                             return StatusCode::SERVICE_UNAVAILABLE.into_response();
                         }
-                        fake.workflow_runs
-                            .lock()
-                            .unwrap()
-                            .iter()
+                        fake.repository_workflow_runs(&format!("{owner}/{name}"))
+                            .into_iter()
                             .find(|run| run["id"] == id)
-                            .cloned()
                             .map_or_else(
                                 || StatusCode::NOT_FOUND.into_response(),
                                 |run| Json(run).into_response(),

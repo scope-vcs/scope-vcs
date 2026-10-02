@@ -14,18 +14,18 @@ const connection: GitHubConnectionDetailsResponse = {
 }
 
 test('the CI section describes each connection state', () => {
-  assert.deepEqual(githubConnectionView({ configured: false, connection: null, required_checks: [], can_confirm_public: true, setup_check: null }), { kind: 'unconfigured' })
+  assert.deepEqual(githubConnectionView({ configured: false, connection: null, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'unconfigured' })
   // A stored link is not offered when the server can no longer use it.
-  assert.deepEqual(githubConnectionView({ configured: false, connection, required_checks: [], can_confirm_public: true, setup_check: null }), { kind: 'unconfigured' })
-  assert.deepEqual(githubConnectionView({ configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null }), { kind: 'not_connected' })
-  assert.deepEqual(githubConnectionView({ configured: true, connection, required_checks: [], can_confirm_public: true, setup_check: null }), {
+  assert.deepEqual(githubConnectionView({ configured: false, connection, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'unconfigured' })
+  assert.deepEqual(githubConnectionView({ configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'not_connected' })
+  assert.deepEqual(githubConnectionView({ configured: true, connection, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), {
     kind: 'connected',
     name: 'octo/checks',
     url: 'https://github.com/octo/checks',
     detail: 'Connected by @owner on Jan 01, 2026, 12:00 AM UTC.',
   })
   assert.equal(
-    githubConnectionView({ configured: true, connection: { ...connection, connected_by: null }, required_checks: [], can_confirm_public: true, setup_check: null }).kind,
+    githubConnectionView({ configured: true, connection: { ...connection, connected_by: null }, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }).kind,
     'connected',
   )
   assert.deepEqual(
@@ -35,6 +35,8 @@ test('the CI section describes each connection state', () => {
       required_checks: [],
       can_confirm_public: true,
       setup_check: null,
+      run_import_count: 50,
+      run_import: null,
     }),
     {
       kind: 'disconnected',
@@ -52,6 +54,8 @@ test('a public GitHub repository is shown, and one that became public waits for 
     required_checks: [],
     can_confirm_public,
     setup_check: null,
+    run_import_count: 50,
+    run_import: null,
   })
   assert.equal(githubVisibilityView(github({})), null)
   assert.deepEqual(githubVisibilityView(github({ public_on_github: true })), { kind: 'public' })

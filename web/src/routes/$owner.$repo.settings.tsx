@@ -20,9 +20,14 @@ import {
   confirmRepoGitHubPublicForRequest,
   disconnectRepoGitHubForRequest,
   setRepoGitHubRequiredChecksForRequest,
+  setRepoGitHubRunImportCountForRequest,
+  startRepoGitHubRunImportForRequest,
   startRepoGitHubSetupCheckForRequest,
 } from '@/api/github'
-import { parseSetRepoGitHubRequiredChecksInput } from '@/api/github-inputs'
+import {
+  parseSetRepoGitHubRequiredChecksInput,
+  parseSetRepoGitHubRunImportCountInput,
+} from '@/api/github-inputs'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
 import { VisibilityLogSection } from '@/features/repo-detail/visibility-log-section'
 import { RepoSettingsPending } from '@/features/repo-detail/repo-settings-pending'
@@ -61,6 +66,14 @@ const confirmRepoGitHubPublic = createServerFn({ method: 'POST' })
 const setRepoGitHubRequiredChecks = createServerFn({ method: 'POST' })
   .validator(parseSetRepoGitHubRequiredChecksInput)
   .handler(({ data }) => setRepoGitHubRequiredChecksForRequest(data))
+
+const setRepoGitHubRunImportCount = createServerFn({ method: 'POST' })
+  .validator(parseSetRepoGitHubRunImportCountInput)
+  .handler(({ data }) => setRepoGitHubRunImportCountForRequest(data))
+
+const startRepoGitHubRunImport = createServerFn({ method: 'POST' })
+  .validator(parseRepoParams)
+  .handler(({ data }) => startRepoGitHubRunImportForRequest(data))
 
 const deleteRepo = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
@@ -174,7 +187,17 @@ function RepoSettingsRoute() {
             if (scope) retainGitHubConnection(scope, github)
             return github
           }}
+          setGitHubRunImportCount={async (data) => {
+            const github = await setRepoGitHubRunImportCount({ data })
+            if (scope) retainGitHubConnection(scope, github)
+            return github
+          }}
           startGitHubAuthorization={startRepoGitHubAuthorization}
+          startGitHubRunImport={async (data) => {
+            const github = await startRepoGitHubRunImport({ data })
+            if (scope) retainGitHubConnection(scope, github)
+            return github
+          }}
           startGitHubSetupCheck={async (data) => {
             const github = await startRepoGitHubSetupCheck({ data })
             if (scope) retainGitHubConnection(scope, github)

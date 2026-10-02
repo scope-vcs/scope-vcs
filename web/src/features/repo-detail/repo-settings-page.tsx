@@ -4,6 +4,7 @@ import type {
   DeleteRepoMemberInput,
   RepoParams,
   SetRepoGitHubRequiredChecksInput,
+  SetRepoGitHubRunImportCountInput,
   UpdateRepoMemberInput,
   UpdateRepoMetadataInput,
 } from '@/api/types'
@@ -54,7 +55,9 @@ export function RepoSettingsPage({
   github,
   params,
   setGitHubRequiredChecks,
+  setGitHubRunImportCount,
   startGitHubAuthorization,
+  startGitHubRunImport,
   startGitHubSetupCheck,
   updateMember,
   updateMetadata,
@@ -79,7 +82,11 @@ export function RepoSettingsPage({
   setGitHubRequiredChecks: (
     input: SetRepoGitHubRequiredChecksInput,
   ) => Promise<GitHubConnectionResponse>
+  setGitHubRunImportCount: (
+    input: SetRepoGitHubRunImportCountInput,
+  ) => Promise<GitHubConnectionResponse>
   startGitHubAuthorization: (params: RepoParams) => Promise<GitHubAuthorizeResponse>
+  startGitHubRunImport: (params: RepoParams) => Promise<GitHubConnectionResponse>
   startGitHubSetupCheck: (params: RepoParams) => Promise<GitHubConnectionResponse>
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
   updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummaryResponse>
@@ -178,7 +185,9 @@ export function RepoSettingsPage({
             disconnect={() => disconnectGitHub(params)}
             github={github}
             setRequiredChecks={(names) => setGitHubRequiredChecks({ ...params, names })}
+            setRunImportCount={(count) => setGitHubRunImportCount({ ...params, count })}
             startAuthorization={() => startGitHubAuthorization(params)}
+            startRunImport={() => startGitHubRunImport(params)}
             startSetupCheck={() => startGitHubSetupCheck(params)}
           />
         )}

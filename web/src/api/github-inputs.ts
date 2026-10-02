@@ -2,9 +2,14 @@ import type {
   ConnectRepoGitHubInput,
   GitHubSetupInput,
   RepoGitHubAuthorizeInput,
+  RepoGitHubWorkflowRunsInput,
   SetRepoGitHubRequiredChecksInput,
+  SetRepoGitHubRunImportCountInput,
 } from './types'
 import { parseRepoParams } from './repo-params'
+
+/** The most recent runs a repository can import from GitHub. */
+export const GITHUB_RUN_IMPORT_MAX_COUNT = 1000
 
 const SETUP_INCOMPLETE = 'GitHub did not send everything needed to finish connecting. Start again from repository settings.'
 
@@ -34,7 +39,42 @@ export function parseConnectRepoGitHubInput(input: unknown): ConnectRepoGitHubIn
     github_repository_id: positiveId(data.github_repository_id, 'Choose a GitHub repository.'),
     // Only an explicit yes confirms that a public repository makes pushes public.
     acknowledge_public: data.acknowledge_public === true,
+    run_import_count: runImportCount(data.run_import_count),
   }
+}
+
+export function parseSetRepoGitHubRunImportCountInput(input: unknown): SetRepoGitHubRunImportCountInput {
+  const params = parseRepoParams(input)
+  return { ...params, count: runImportCount((input as Partial<SetRepoGitHubRunImportCountInput>).count) }
+}
+
+export function parseRepoGitHubWorkflowRunsInput(input: unknown): RepoGitHubWorkflowRunsInput {
+  const params = parseRepoParams(input)
+  const data = input as Partial<RepoGitHubWorkflowRunsInput>
+  return {
+    ...params,
+    workflow: optionalText(data.workflow, 'Choose a workflow.'),
+    after: optionalText(data.after, 'Runs could not continue from there.'),
+  }
+}
+
+/** Whether `value` is a count of recent runs a repository can import. */
+export function isRunImportCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value)
+    && value >= 0 && value <= GITHUB_RUN_IMPORT_MAX_COUNT
+}
+
+function runImportCount(value: unknown) {
+  if (!isRunImportCount(value)) {
+    throw new Error(`Choose between 0 and ${GITHUB_RUN_IMPORT_MAX_COUNT} recent runs to import.`)
+  }
+  return value
+}
+
+function optionalText(value: unknown, message: string) {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || !value) throw new Error(message)
+  return value
 }
 
 export function parseSetRepoGitHubRequiredChecksInput(

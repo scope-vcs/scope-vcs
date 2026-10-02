@@ -52,6 +52,8 @@ routes! {
             => "repoGitHubSetupCheck";
         REPO_GITHUB_WORKFLOW_RUNS = "/v1/repos/{owner}/{repo}/github/workflow-runs"
             => "repoGitHubWorkflowRuns";
+        REPO_GITHUB_RUN_IMPORT = "/v1/repos/{owner}/{repo}/github/run-import"
+            => "repoGitHubRunImport";
         GITHUB_SETUP = "/v1/github/setup" => "githubSetup";
         REPO_DEPENDENCIES = "/v1/repos/{owner}/{repo}/dependencies"
             => "repoDependencies",

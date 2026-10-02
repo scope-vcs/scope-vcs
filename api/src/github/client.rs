@@ -162,6 +162,20 @@ struct WorkflowRun {
     updated_at: String,
 }
 
+/// One page of a repository's workflow runs, newest first.
+pub(crate) struct WorkflowRunListPage {
+    /// The runs Scope can read; GitHub's others are skipped.
+    pub(crate) runs: Vec<GitHubWorkflowRun>,
+    /// Whether GitHub lists more runs after this page.
+    pub(crate) more: bool,
+}
+
+/// What GitHub says when it refuses a request.
+#[derive(Deserialize)]
+struct ErrorBody {
+    message: String,
+}
+
 fn first_attempt() -> u32 {
     1
 }
@@ -470,6 +484,37 @@ impl GitHubApp {
             }))
     }
 
+    /// Page `page` of the workflow runs GitHub has for the repository,
+    /// newest first. `None` when the installation or the repository can no
+    /// longer be reached.
+    pub(crate) async fn recent_workflow_runs(
+        &self,
+        installation_id: u64,
+        full_name: &str,
+        page: usize,
+    ) -> Result<Option<WorkflowRunListPage>, ApiError> {
+        let Some(token) = self.installation_token(installation_id).await? else {
+            return Ok(None);
+        };
+        let request = self
+            .request(
+                Method::GET,
+                &format!("/repos/{full_name}/actions/runs?per_page={PAGE_SIZE}&page={page}"),
+            )
+            .bearer_auth(token);
+        Ok(send::<WorkflowRunsPage>(request).await?.map(|page| {
+            let more = page.workflow_runs.len() == PAGE_SIZE;
+            WorkflowRunListPage {
+                runs: page
+                    .workflow_runs
+                    .into_iter()
+                    .filter_map(WorkflowRun::into_domain)
+                    .collect(),
+                more,
+            }
+        }))
+    }
+
     /// A token that acts as the installation. `None` when the installation
     /// no longer exists.
     pub(crate) async fn installation_token(
@@ -581,9 +626,13 @@ async fn send<T: DeserializeOwned>(request: RequestBuilder) -> Result<Option<T>,
     if !status.is_success() {
         let url = response.url().path().to_string();
         let body = response.text().await.unwrap_or_default();
+        // GitHub explains a refusal in its body's message.
+        let detail = serde_json::from_str::<ErrorBody>(&body)
+            .map(|body| body.message)
+            .unwrap_or(body);
         return Err(unavailable(format!(
             "GitHub answered {status} for {url}: {}",
-            body.chars().take(500).collect::<String>()
+            detail.chars().take(500).collect::<String>()
         )));
     }
     response

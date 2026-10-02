@@ -7,7 +7,7 @@ import { invalidateRepoResources } from '@/features/repo-detail/repo-resource-in
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { GitHubWorkflowRunsPage } from '@/features/runs/github-workflow-runs'
 import { RunsCiEmptyState } from '@/features/runs/runs-ci-empty-state'
-import type { RepoParams } from '@/api/types'
+import type { RepoGitHubWorkflowRunsInput, RepoParams } from '@/api/types'
 import type { RepoLiveState } from '@/api/types'
 import type { GitHubWorkflowRunListResponse, GitHubWorkflowRunResponse } from '@/api/types.generated'
 import './styles.css'
@@ -27,7 +27,11 @@ const initialRuns: GitHubWorkflowRunListResponse = {
     run(2, { workflow_name: 'Release images and publish the container manifests for every platform', conclusion: 'failure' }),
     run(3, { branch: 'scope/setup-check' }),
   ],
+  workflows: ['ci', 'lint', 'Release images and publish the container manifests for every platform'],
+  next_cursor: 'page-2',
 }
+/** The page after the first. */
+const olderRuns = [run(4, {}), run(5, { workflow_name: 'lint' })]
 let nextRuns = initialRuns
 const resolvers: (() => void)[] = []
 const loads: string[] = []
@@ -41,6 +45,7 @@ Object.assign(window, {
   authorizeCalls,
   loads,
   setNextRuns: (runs: GitHubWorkflowRunListResponse) => { nextRuns = runs },
+  clearLoads: () => { loads.length = 0 },
   finishLoad: () => resolvers.shift()?.(),
   emitRunsChanged: () => invalidateRepoResources(repoResourceScope(live.repo, 'adam'), {
     repo_id: 'octo/demo', incarnation_id: 'incarnation', version: 0, kind: 'GitHubWorkflowRunsChanged',
@@ -48,15 +53,23 @@ Object.assign(window, {
 })
 const subscribe = () => () => {}
 
-async function loadRuns() {
-  loads.push('load')
+/** Each load waits for `finishLoad`; `loads` names the filter and cursor it asked for. */
+async function loadRuns({ after, workflow }: RepoGitHubWorkflowRunsInput) {
+  loads.push(`${workflow ?? 'all'}${after ? ` after ${after}` : ''}`)
   await new Promise<void>((resolve) => resolvers.push(resolve))
-  return { configured: true, github: nextRuns }
+  if (workflow) {
+    const runs = [...nextRuns.workflow_runs, ...olderRuns].filter((listed) => listed.workflow_name === workflow)
+    return { configured: true, github: { ...nextRuns, workflow_runs: runs, next_cursor: null } }
+  }
+  return {
+    configured: true,
+    github: after ? { ...nextRuns, workflow_runs: olderRuns, next_cursor: null } : nextRuns,
+  }
 }
 
 const loadSettings = async () => ({
   collaboration: null,
-  github: { configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null },
+  github: { configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null },
 })
 async function startAuthorization(params: RepoParams) {
   authorizeCalls.push(params)
@@ -92,9 +105,10 @@ function EmptyRuns() {
 /** A connected repository GitHub reported no runs for yet. */
 function ConnectedNoRuns() {
   const { owner, repo } = useParams({ strict: false })
+  const none = { actions_url: 'https://github.com/octo/demo/actions', workflow_runs: [], workflows: [], next_cursor: null }
   return <GitHubWorkflowRunsPage
-    initialRuns={{ actions_url: 'https://github.com/octo/demo/actions', workflow_runs: [] }}
-    loadRuns={async () => ({ configured: true, github: { actions_url: 'https://github.com/octo/demo/actions', workflow_runs: [] } })}
+    initialRuns={none}
+    loadRuns={async () => ({ configured: true, github: none })}
     params={{ owner: owner!, repo: repo! }}
   />
 }

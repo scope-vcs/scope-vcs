@@ -41,6 +41,7 @@ fn command(repository_id: &str, github_repository_id: u64) -> ConnectGitHubRepos
         github_full_name: format!("octo/repo-{github_repository_id}"),
         github_private: true,
         acknowledge_public: false,
+        run_import_count: 50,
         user_id: OWNER.to_string(),
         now_unix: NOW,
     }

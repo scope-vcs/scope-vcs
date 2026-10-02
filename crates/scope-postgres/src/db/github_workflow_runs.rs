@@ -60,6 +60,25 @@ pub struct GitHubWorkflowRunRead {
     pub request_id: Option<String>,
 }
 
+/// Which listed runs a page holds.
+#[derive(Clone, Copy, Debug)]
+pub struct GitHubWorkflowRunPageQuery<'a> {
+    pub repo_id: &'a str,
+    pub github_repository_id: u64,
+    pub workflow_name: Option<&'a str>,
+    /// The page starts after this run.
+    pub after: Option<GitHubWorkflowRunCursor>,
+    pub limit: u64,
+}
+
+/// Where a run is in the list: runs list newest first by
+/// [`GitHubWorkflowRun::listed_at_unix`], then by id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GitHubWorkflowRunCursor {
+    pub listed_at_unix: u64,
+    pub github_run_id: u64,
+}
+
 #[derive(FromQueryResult)]
 struct ListedRow {
     #[sea_orm(nested)]
@@ -231,14 +250,32 @@ impl RepositoryStore {
         Ok(())
     }
 
-    /// The most recent workflow runs the GitHub repository reported for the
-    /// repository, newest first.
-    pub async fn recent_github_workflow_runs(
+    /// A page of the workflow runs the GitHub repository reported for the
+    /// repository, newest first, of one workflow when `workflow_name` names it.
+    pub async fn github_workflow_run_page(
         &self,
-        repo_id: &str,
-        github_repository_id: u64,
-        limit: u64,
+        query: GitHubWorkflowRunPageQuery<'_>,
     ) -> Result<Vec<GitHubWorkflowRunRead>, PostgresError> {
+        let mut values: Vec<Value> = vec![
+            query.repo_id.into(),
+            u64_to_i64(query.github_repository_id, "GitHub repository id")?.into(),
+            u64_to_i64(query.limit, "GitHub workflow run page size")?.into(),
+        ];
+        let mut filters = String::new();
+        if let Some(workflow_name) = query.workflow_name {
+            values.push(workflow_name.into());
+            filters.push_str(&format!(" AND run.workflow_name = ${}", values.len()));
+        }
+        if let Some(after) = query.after {
+            values.push(u64_to_i64(after.listed_at_unix, "GitHub workflow run cursor")?.into());
+            values.push(u64_to_i64(after.github_run_id, "GitHub workflow run cursor")?.into());
+            filters.push_str(&format!(
+                " AND (coalesce(run.run_started_at_unix, run.github_updated_at_unix),
+                       run.github_run_id) < (${}, ${})",
+                values.len() - 1,
+                values.len()
+            ));
+        }
         ListedRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
@@ -247,16 +284,12 @@ impl RepositoryStore {
                    LEFT JOIN scope_requests request
                      ON request.repo_id = run.repo_id
                     AND run.head_branch = 'scope/requests/' || request.id
-                  WHERE run.repo_id = $1 AND run.github_repository_id = $3
+                  WHERE run.repo_id = $1 AND run.github_repository_id = $2{filters}
                   ORDER BY coalesce(run.run_started_at_unix, run.github_updated_at_unix) DESC,
                            run.github_run_id DESC
-                  LIMIT $2"
+                  LIMIT $3"
             ),
-            [
-                repo_id.into(),
-                u64_to_i64(limit, "GitHub workflow run page size")?.into(),
-                u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
-            ],
+            values,
         ))
         .all(self.db.as_ref())
         .await
@@ -271,6 +304,34 @@ impl RepositoryStore {
             Ok(GitHubWorkflowRunRead { run, request_id })
         })
         .collect()
+    }
+
+    /// The names of the workflows whose runs the GitHub repository reported
+    /// for the repository, in name order.
+    pub async fn github_workflow_names(
+        &self,
+        repo_id: &str,
+        github_repository_id: u64,
+    ) -> Result<Vec<String>, PostgresError> {
+        self.db
+            .query_all_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT DISTINCT workflow_name FROM scope_github_workflow_runs
+                  WHERE repo_id = $1 AND github_repository_id = $2
+                  ORDER BY workflow_name",
+                [
+                    repo_id.into(),
+                    u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
+                ],
+            ))
+            .await
+            .map_err(PostgresError::internal)?
+            .into_iter()
+            .map(|row| {
+                row.try_get("", "workflow_name")
+                    .map_err(PostgresError::internal)
+            })
+            .collect()
     }
 }
 

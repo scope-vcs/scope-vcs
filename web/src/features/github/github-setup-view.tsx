@@ -9,12 +9,17 @@ import { AppShell } from '@/components/app-shell'
 import { PageContent, PageHeader } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { BlockSkeleton } from '@/components/ui/skeleton'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { SignInButton, useAuth } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
 import { ExternalLink, LoaderCircle, LogIn, Plug, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import {
+  RUN_IMPORT_COUNT_HINT,
+  parseRunImportCount,
+} from '../repo-detail/repo-github-run-import-model'
 import { githubSetupStep, type GitHubSetupSearch } from './github-setup-model'
 
 type SetupState =
@@ -64,19 +69,16 @@ function GitHubSetup({ actions, search }: { actions: SetupActions; search: GitHu
     })
   }
 
-  async function connectRepository(
-    setup: GitHubSetupResponse,
-    githubRepositoryId: number,
-    acknowledgePublic: boolean,
-  ) {
+  async function connectRepository(setup: GitHubSetupResponse, choice: RepositoryConnection) {
     setState({ kind: 'pending', setup })
     try {
       await actions.connect({
         owner: setup.owner_handle,
         repo: setup.repo_name,
         grant: setup.grant,
-        github_repository_id: githubRepositoryId,
-        acknowledge_public: acknowledgePublic,
+        github_repository_id: choice.githubRepositoryId,
+        acknowledge_public: choice.acknowledgePublic,
+        run_import_count: choice.runImportCount,
       })
       await actions.onConnected(setup)
     } catch (error) {
@@ -173,7 +175,7 @@ function GitHubSetup({ actions, search }: { actions: SetupActions; search: GitHu
         {setup && setup.repositories.length > 0 && (
           <RepositoryChoice
             onChoose={(selected) => setState({ kind: 'choosing', setup, selected })}
-            onConnect={(id, acknowledgePublic) => void connectRepository(setup, id, acknowledgePublic)}
+            onConnect={(choice) => void connectRepository(setup, choice)}
             pending={pending}
             selected={state.kind === 'choosing' ? state.selected : null}
             setup={setup}
@@ -200,6 +202,13 @@ async function startAuthorization(actions: SetupActions, target: RepoParams) {
   window.location.assign(authorize_url)
 }
 
+/** What the maintainer chose before connecting. */
+type RepositoryConnection = {
+  githubRepositoryId: number
+  acknowledgePublic: boolean
+  runImportCount: number
+}
+
 function RepositoryChoice({
   onChoose,
   onConnect,
@@ -208,12 +217,14 @@ function RepositoryChoice({
   setup,
 }: {
   onChoose: (id: number) => void
-  onConnect: (id: number, acknowledgePublic: boolean) => void
+  onConnect: (choice: RepositoryConnection) => void
   pending: boolean
   selected: number | null
   setup: GitHubSetupResponse
 }) {
   const [acknowledged, setAcknowledged] = useState(false)
+  const [runImportDraft, setRunImportDraft] = useState(String(setup.run_import_count))
+  const runImportCount = parseRunImportCount(runImportDraft)
   const chosen = setup.repositories.find((repository) => repository.id === selected)
   const isPublic = chosen ? !chosen.private : false
   return (
@@ -221,7 +232,12 @@ function RepositoryChoice({
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault()
-        if (selected !== null) onConnect(selected, isPublic && acknowledged)
+        if (selected === null || runImportCount === null) return
+        onConnect({
+          githubRepositoryId: selected,
+          acknowledgePublic: isPublic && acknowledged,
+          runImportCount,
+        })
       }}
     >
       <fieldset className="divide-y divide-border border-y border-border">
@@ -255,9 +271,35 @@ function RepositoryChoice({
           </span>
         </label>
       )}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="leading-5" htmlFor="github-run-import-count">Recent runs to import</label>
+          <Input
+            aria-describedby="github-run-import-count-help"
+            aria-invalid={runImportCount === null}
+            className="h-8 w-24"
+            disabled={pending}
+            id="github-run-import-count"
+            inputMode="numeric"
+            max={1000}
+            min={0}
+            onChange={(event) => setRunImportDraft(event.target.value)}
+            type="number"
+            value={runImportDraft}
+          />
+        </div>
+        <p
+          className={runImportCount === null ? 'leading-5 text-danger-strong' : 'leading-5 text-muted-foreground'}
+          id="github-run-import-count-help"
+        >
+          {runImportCount === null
+            ? RUN_IMPORT_COUNT_HINT
+            : 'Scope reads this many of GitHub’s most recent workflow runs for the Runs page. 0 imports none.'}
+        </p>
+      </div>
       <div className="flex flex-wrap gap-2">
         <Button
-          disabled={pending || selected === null || (isPublic && !acknowledged)}
+          disabled={pending || selected === null || runImportCount === null || (isPublic && !acknowledged)}
           size="sm"
           type="submit"
         >

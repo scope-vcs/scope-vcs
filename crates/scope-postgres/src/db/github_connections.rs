@@ -10,6 +10,9 @@
 
 use super::{
     RepositoryStore, acquire_aggregate_lock,
+    github_run_imports::{
+        delete_github_run_import, queue_github_run_import, save_run_import_count,
+    },
     integer_columns::{i64_to_u64, optional_i64_to_u64, u64_to_i64},
     locks::acquire_shared_repository_lock,
     repository_access::{load_repo_record, repository_access},
@@ -22,6 +25,7 @@ use scope_domain::{
         GitHubInstallationChange, GitHubRepositoryVisibility, acknowledge_public_github_repository,
         connect_github_repository, disconnect_github_repository,
     },
+    github_run_import::GitHubRunImport,
     repository::RepositoryIncarnation,
     requests::{GitHubBranch, GitHubPushDestination},
 };
@@ -118,6 +122,7 @@ impl RepositoryStore {
         )
         .await?
         .map(|read| read.connection);
+        let run_import_count = command.run_import_count;
         let connection = connect_github_repository(
             context.access,
             current.as_ref(),
@@ -158,6 +163,13 @@ impl RepositoryStore {
             )
         })?;
         requeue_started_github_evaluations(&tx, &connection).await?;
+        // The newly linked repository's recent runs, so its Runs page does
+        // not start empty.
+        save_run_import_count(&tx, &connection.repository_id, run_import_count).await?;
+        match GitHubRunImport::queue(&connection, run_import_count, connection.connected_at_unix) {
+            Some(import) => queue_github_run_import(&tx, &import).await?,
+            None => delete_github_run_import(&tx, &connection.repository_id).await?,
+        }
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok((connection, context.incarnation()))
     }
@@ -238,6 +250,7 @@ impl RepositoryStore {
         ))
         .await
         .map_err(PostgresError::internal)?;
+        delete_github_run_import(&tx, repo_id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(context.incarnation())
     }

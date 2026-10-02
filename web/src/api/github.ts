@@ -3,8 +3,10 @@ import type {
   ConnectRepoGitHubInput,
   GitHubSetupInput,
   RepoGitHubAuthorizeInput,
+  RepoGitHubWorkflowRunsInput,
   RepoParams,
   SetRepoGitHubRequiredChecksInput,
+  SetRepoGitHubRunImportCountInput,
 } from './types'
 import type {
   GitHubAuthorizeResponse,
@@ -67,7 +69,12 @@ export async function connectRepoGitHubForRequest(
     apiValidators.GitHubConnectionResponse,
     {
       auth: 'required',
-      body: { grant: data.grant, github_repository_id: data.github_repository_id },
+      body: {
+        grant: data.grant,
+        github_repository_id: data.github_repository_id,
+        acknowledge_public: data.acknowledge_public,
+        run_import_count: data.run_import_count,
+      },
     },
   )
 }
@@ -113,12 +120,38 @@ export async function startRepoGitHubSetupCheckForRequest(
   )
 }
 
-export async function loadRepoGitHubWorkflowRunsForRequest(
+/** How many recent workflow runs the repository imports from GitHub. */
+export async function setRepoGitHubRunImportCountForRequest(
+  data: SetRepoGitHubRunImportCountInput,
+): Promise<GitHubConnectionResponse> {
+  return createApiClient().put(
+    repoRoute(ApiRouteTemplates.repoGitHubRunImport, data),
+    apiValidators.GitHubConnectionResponse,
+    { auth: 'required', body: { count: data.count } },
+  )
+}
+
+/** Imports the connected repository's recent runs again with its current count. */
+export async function startRepoGitHubRunImportForRequest(
   data: RepoParams,
+): Promise<GitHubConnectionResponse> {
+  return createApiClient().post(
+    repoRoute(ApiRouteTemplates.repoGitHubRunImport, data),
+    apiValidators.GitHubConnectionResponse,
+    { auth: 'required' },
+  )
+}
+
+export async function loadRepoGitHubWorkflowRunsForRequest(
+  data: RepoGitHubWorkflowRunsInput,
   api: ApiClient = createApiClient(),
 ): Promise<GitHubWorkflowRunsResponse> {
+  const query = new URLSearchParams()
+  if (data.workflow) query.set('workflow', data.workflow)
+  if (data.after) query.set('after', data.after)
+  const suffix = query.size ? `?${query}` : ''
   return api.get(
-    repoRoute(ApiRouteTemplates.repoGitHubWorkflowRuns, data),
+    `${repoRoute(ApiRouteTemplates.repoGitHubWorkflowRuns, data)}${suffix}`,
     apiValidators.GitHubWorkflowRunsResponse,
     { auth: 'optional' },
   )

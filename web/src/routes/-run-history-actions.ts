@@ -1,7 +1,7 @@
 import { createApiClient } from '@/api/client'
 import { loadRepoGitHubWorkflowRunsForRequest } from '@/api/github'
+import { parseRepoGitHubWorkflowRunsInput } from '@/api/github-inputs'
 import { loadOptionalResource } from '@/api/http'
-import { parseRepoParams } from '@/api/repo-params'
 import {
   loadRepoRunDetailForRequest,
   loadRepoRunHistoryForRequest,
@@ -18,7 +18,10 @@ export const loadRepoRunPage = createServerFn({ method: 'GET' })
   .validator(parseRepoRunHistoryInput)
   .handler(({ data }) => loadOptionalResource(async () => {
     const api = createApiClient()
-    const { configured, github } = await loadRepoGitHubWorkflowRunsForRequest(data, api)
+    const { configured, github } = await loadRepoGitHubWorkflowRunsForRequest(
+      { owner: data.owner, repo: data.repo },
+      api,
+    )
     if (github) return { kind: 'github' as const, github }
     const [history, workflowResource] = await Promise.all([
       loadRepoRunHistoryForRequest(data, api),
@@ -44,7 +47,7 @@ export const loadRepoRunWorkflows = createServerFn({ method: 'GET' })
   .handler(({ data }) => loadOptionalResource(() => loadRepoRunWorkflowsForRequest(data)))
 
 export const loadRepoGitHubWorkflowRuns = createServerFn({ method: 'GET' })
-  .validator(parseRepoParams)
+  .validator(parseRepoGitHubWorkflowRunsInput)
   .handler(({ data }) => loadRepoGitHubWorkflowRunsForRequest(data))
 
 export const loadRepoRunHistory = createServerFn({ method: 'GET' })

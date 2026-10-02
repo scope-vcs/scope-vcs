@@ -69,6 +69,7 @@ mod git_receive;
 mod git_receive_config;
 mod git_request_refs;
 mod github_connection;
+mod github_run_imports;
 mod history;
 mod http;
 mod landing_file;

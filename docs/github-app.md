@@ -8,7 +8,9 @@ every Scope repository on a server.
 
 ## Registering the app
 
-Create a GitHub App owned by the organization that runs Scope, with:
+Create a GitHub App owned by the organization that runs Scope, with the
+settings below. [Production GitHub App](github-app-production.md) is the
+checklist for the production app.
 
 - **Callback URL**: `https://<web origin>/github/setup`. Scope sends this as
   the OAuth `redirect_uri`, so it must match exactly.
@@ -71,9 +73,12 @@ API at startup.
    maintain or admin; read access is not enough). It returns those
    repositories and a signed grant recording each one's installation. The
    user token is not stored.
-3. The maintainer picks a repository and `POST /v1/repos/{owner}/{repo}/github`
-   stores the link after checking the grant and confirming with an
-   installation token that the app still reaches the repository.
+3. The maintainer picks a repository and how many of its recent workflow runs
+   to import, prefilled with the repository's import count (see
+   [Importing recent runs](#importing-recent-runs)).
+   `POST /v1/repos/{owner}/{repo}/github` stores the link after checking the
+   grant and confirming with an installation token that the app still reaches
+   the repository. The count it carries becomes the repository's count.
 
 When the repository is missing from the list, the page links to the app's
 install page and offers Check again, which restarts the OAuth step. Before
@@ -90,7 +95,8 @@ the link. Uninstalling or suspending the app, or removing the repository from
 the installation, keeps the link as disconnected with the reason, and
 settings offer to reconnect. Unsuspending does not reconnect by itself.
 Connecting, or reconnecting, sends again the tested commit of every open
-request whose GitHub checks are started.
+request whose GitHub checks are started, and queues an import of the GitHub
+repository's recent runs.
 
 ### Public GitHub repositories
 
@@ -282,8 +288,13 @@ include the scope/** push trigger."
 A repository with a GitHub link lists GitHub Actions workflow runs on its Runs
 page instead of Scope's own runs:
 `GET /v1/repos/{owner}/{repo}/github/workflow-runs`, readable by repository
-members, returns the 50 most recent with their workflow, branch, commit,
-status and time, and a link to the repository's Actions page for the rest.
+members, returns a page of 50 runs, newest first, with their workflow, branch,
+commit, status and time, and a link to the repository's Actions page.
+`next_cursor` continues the list (`?after=<cursor>`), and the page's Load older
+runs button appends the next page. `workflows` names every workflow with
+stored runs; `?workflow=<name>` lists only that workflow's runs, and the page
+offers them as a workflow filter. Runs list in the order they started, or by
+when GitHub last changed them before they started.
 Every run links to GitHub, which keeps the logs; a run on
 `scope/requests/<id>` also links to its request while the request exists.
 Repositories without a link keep their native runs. When such a repository
@@ -304,7 +315,42 @@ GitHub does not answer is read again every 30 seconds with the push job's
 backoff before it is given up. Deliveries for repositories that are not
 connected are ignored. Each
 stored run sends a `GitHubWorkflowRunsChanged` repository event, which open
-Runs pages use to refresh their list in place.
+Runs pages use to refresh their list in place: a page reads again as many
+pages as it had loaded, of the workflow it shows, and keeps listing the old
+runs meanwhile.
+
+### Importing recent runs
+
+Deliveries only report runs that change after connecting, so connecting also
+imports the GitHub repository's history. Each repository has an import count,
+50 until a maintainer changes it, from 0 to 1000; 0 imports nothing. The setup
+page asks for it before Connect, and the CI section of repository settings
+shows it (`PUT /v1/repos/{owner}/{repo}/github/run-import` with `{ "count" }`,
+maintainers only). Counts live in `scope_github_run_import_counts`.
+
+Connecting, or reconnecting to any GitHub repository, queues an import of that
+GitHub repository in `scope_github_run_imports`, which keeps a repository's
+latest import. A background loop in the API claims it with a lease, without
+holding up the connect call, and reads
+`GET /repos/{owner}/{repo}/actions/runs?per_page=100&page=<n>` with the
+installation token, page by page, until it has stored as many runs as the
+count or GitHub lists no more. Runs are stored the same way deliveries store
+them, so an import never moves a run back and a later delivery still moves it
+forward. Each page sends `GitHubWorkflowRunsChanged`. Before each page the
+import checks that its claim still holds, so an import replaced by a newer one
+or by a reconnect stops storing runs; disconnecting removes the import. Like
+everything else, imported runs belong to the GitHub repository they came
+from, and a repository reconnected to another lists only the new one's runs.
+
+A failed attempt keeps GitHub's answer and is tried again after 30 seconds,
+then 2, 10 and 30 minutes, and then gives up. The connection response carries
+`run_import_count` and the latest import of the linked GitHub repository
+(`run_import`: its state, count, how many runs it stored, and GitHub's last
+answer). Settings show "Importing up to 50 runs from GitHub.", "Imported 50
+runs." or "Import failed: <GitHub's answer>. Retrying.", and refresh when the
+import ends. Import now (`POST /v1/repos/{owner}/{repo}/github/run-import`,
+maintainers only) queues a new import with the current count. It waits for an
+import that is still working, and replaces one waiting to retry.
 
 ## Webhooks
 

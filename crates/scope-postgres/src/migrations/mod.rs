@@ -28,6 +28,7 @@ mod m0068_github_connections;
 mod m0069_github_request_checks;
 mod m0070_github_setup_checks_and_workflow_runs;
 mod m0071_public_check_commits;
+mod m0072_github_run_imports;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -191,6 +192,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0071_public_check_commits::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0072_github_run_imports::Migration),
             metadata_restore_safe: true,
         },
     ]
