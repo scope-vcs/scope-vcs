@@ -311,6 +311,8 @@ impl RepositoryStore {
             ))
             .await
             .map_err(PostgresError::internal)?;
+            // A disconnected repository has no import left to run.
+            delete_github_run_import(&tx, &connection.repository_id).await?;
             if let Some(record) = load_repo_record(&tx, &connection.repository_id).await? {
                 changed.push(record.incarnation());
             }

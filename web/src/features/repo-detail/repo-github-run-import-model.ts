@@ -14,7 +14,10 @@ export const RUN_IMPORT_COUNT_HINT = `Enter a whole number from 0 to ${GITHUB_RU
 export type GitHubRunImportView = {
   /** Still reading GitHub, or waiting to try again. */
   inProgress: boolean
-  /** Waiting to try again after GitHub failed; importing now replaces it. */
+  /**
+   * Waiting to try again after GitHub failed; importing now replaces it. An
+   * attempt already reading GitHub again is left to finish.
+   */
   retrying: boolean
   status: string
   failed: boolean
@@ -28,7 +31,12 @@ export function githubRunImportView(runImport: GitHubRunImportResponse | null): 
     case 'queued':
     case 'running':
       return error
-        ? { inProgress: true, retrying: true, failed: true, status: `Import failed: ${error}. Retrying.` }
+        ? {
+          inProgress: true,
+          retrying: runImport.state === 'queued',
+          failed: true,
+          status: `Import failed: ${error}. Retrying.`,
+        }
         : {
           inProgress: true,
           retrying: false,

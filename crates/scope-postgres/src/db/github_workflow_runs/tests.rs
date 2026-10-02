@@ -245,3 +245,49 @@ async fn a_pending_read_is_claimed_when_due_and_ends_answered_or_given_up() {
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn a_run_stays_with_the_scope_repository_its_github_repository_is_connected_to() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    let saved = run(1, "main", 10, 10);
+    repositories
+        .save_github_workflow_run(REPO, 42, &saved)
+        .await
+        .unwrap();
+    // The GitHub repository is connected to another Scope repository now.
+    store
+        .db
+        .execute_unprepared(
+            "INSERT INTO scope_repositories (id, owner_handle, name, owner_user_id,
+                publication_state, change_version, content_version, repo_config, policy,
+                incarnation_id)
+             VALUES ('owner/other', 'owner', 'other', 'user_owner', 'Ready', 0, 0, '{}', '{}',
+                'repoi_other');
+             INSERT INTO scope_github_connections (repo_id, installation_id,
+                github_repository_id, github_full_name, connected_by_user_id,
+                connected_at_unix, status)
+             VALUES ('owner/other', 7, 42, 'octo/repo', 'user_owner', 1, 'Connected');",
+        )
+        .await
+        .unwrap();
+    async fn listed(repositories: &RepositoryStore, repo_id: &str) -> Vec<u64> {
+        ids(&repositories
+            .github_workflow_run_page(page(repo_id, 42, 10))
+            .await
+            .unwrap())
+    }
+    repositories
+        .save_github_workflow_run("owner/other", 42, &saved)
+        .await
+        .unwrap();
+    assert_eq!(listed(&repositories, "owner/other").await, [1]);
+    // A late read for the former Scope repository, even of the same progress,
+    // does not take the run back.
+    repositories
+        .save_github_workflow_run(REPO, 42, &saved)
+        .await
+        .unwrap();
+    assert_eq!(listed(&repositories, "owner/other").await, [1]);
+    assert_eq!(listed(&repositories, REPO).await, Vec::<u64>::new());
+}

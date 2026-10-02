@@ -2,12 +2,14 @@
 //! latest import. Changing the count and starting an import re-read the
 //! viewer's access in the writing transaction. Imports run in a leased
 //! background pass: a claim that lapses is taken up again, and an import
-//! queued meanwhile replaces the row, so the old claim can no longer record
-//! anything.
+//! queued meanwhile replaces the row, so the old claim can no longer store
+//! runs or record anything. Disconnecting, by a maintainer or because GitHub
+//! took the repository away, deletes the import.
 
 use super::{
     RepositoryStore, acquire_aggregate_lock,
     github_connections::repository_github_connection,
+    github_workflow_runs::save_workflow_run,
     integer_columns::{i32_to_u32, i64_to_u64, optional_i64_to_u64, u32_to_i32, u64_to_i64},
     locks::acquire_shared_repository_lock,
     repository_access::repository_access,
@@ -18,6 +20,7 @@ use scope_domain::{
         GITHUB_RUN_IMPORT_DEFAULT_COUNT, GitHubRunImport, GitHubRunImportState,
         github_run_import_error, set_github_run_import_count, start_github_run_import,
     },
+    github_workflow_runs::GitHubWorkflowRun,
     repository::RepositoryIncarnation,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
@@ -162,26 +165,50 @@ impl RepositoryStore {
         .collect()
     }
 
-    /// Whether the import held by `claim_token` may still store runs: its
-    /// lease, judged by the database's clock, has not run out and no newer
-    /// import replaced it.
-    pub async fn github_run_import_claim_holds(
+    /// Stores a page of runs the import held by `claim_token` read, while
+    /// that claim holds and the repository is still connected to the GitHub
+    /// repository the import reads. The import row and the link are locked
+    /// while the runs are written, so a newer import, a disconnect or a
+    /// reconnect either waits for the page or makes it store nothing. Returns
+    /// `false` when the page was not stored; the import should then stop.
+    pub async fn store_github_run_import_page(
         &self,
         repo_id: &str,
         claim_token: &str,
+        runs: &[GitHubWorkflowRun],
     ) -> Result<bool, PostgresError> {
-        Ok(self
-            .db
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        // The lease is judged by the database's clock, which every process shares.
+        let Some(row) = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "SELECT 1 AS held FROM scope_github_run_imports
-                  WHERE repo_id = $1 AND claim_token = $2 AND state = 'running'
-                    AND lease_until_unix > extract(epoch FROM now())::bigint",
+                "SELECT import.github_repository_id
+                   FROM scope_github_run_imports import
+                   JOIN scope_github_connections connection
+                     ON connection.repo_id = import.repo_id
+                    AND connection.github_repository_id = import.github_repository_id
+                    AND connection.status = 'Connected'
+                  WHERE import.repo_id = $1 AND import.claim_token = $2
+                    AND import.state = 'running'
+                    AND import.lease_until_unix > extract(epoch FROM now())::bigint
+                    FOR UPDATE OF import FOR SHARE OF connection",
                 [repo_id.into(), claim_token.into()],
             ))
             .await
             .map_err(PostgresError::internal)?
-            .is_some())
+        else {
+            return Ok(false);
+        };
+        let github_repository_id = i64_to_u64(
+            row.try_get("", "github_repository_id")
+                .map_err(PostgresError::internal)?,
+            "GitHub repository id",
+        )?;
+        for run in runs {
+            save_workflow_run(&tx, repo_id, github_repository_id, run).await?;
+        }
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(true)
     }
 
     /// Records how a claimed import ended. Returns `false` when the claim was

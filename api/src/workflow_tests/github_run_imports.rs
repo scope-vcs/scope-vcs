@@ -382,3 +382,27 @@ async fn only_maintainers_change_the_count_within_its_bounds_and_import_again() 
     assert_eq!(connection(&state).await["run_import"]["imported_count"], 25);
     assert_eq!(ids(&runs_page(&state, "").await).len(), 25);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_workflow_filter_matches_names_exactly_as_github_reports_them() {
+    let (state, fake) = github_state().await;
+    let mut runs = history(1, 3);
+    runs[0]["name"] = serde_json::json!(" deploy ");
+    fake.report_workflow_runs(runs);
+    connect(&state, GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME, 50).await;
+    import_pass(&state, unix_now()).await;
+
+    let mut workflows = runs_page(&state, "").await["workflows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|name| name.as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    workflows.sort();
+    assert_eq!(workflows, [" deploy ", "ci", "lint"]);
+    assert_eq!(ids(&runs_page(&state, "?workflow=%20deploy%20").await), [1]);
+    assert_eq!(
+        ids(&runs_page(&state, "?workflow=deploy").await),
+        Vec::<u64>::new()
+    );
+}

@@ -1,7 +1,10 @@
 use super::*;
 use crate::db::requests::tests::postgres_store;
 use crate::error::PostgresErrorKind;
-use scope_domain::github_connection::ConnectGitHubRepository;
+use scope_domain::{
+    github_connection::{ConnectGitHubRepository, GitHubInstallationChange},
+    requests::{GitHubCheckConclusion, GitHubCheckStatus},
+};
 
 const REPO: &str = "owner/repo";
 const OWNER: &str = "user_owner";
@@ -124,7 +127,7 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
     );
     assert!(
         repositories
-            .github_run_import_claim_holds(REPO, "claim_1")
+            .store_github_run_import_page(REPO, "claim_1", &[])
             .await
             .unwrap()
     );
@@ -287,7 +290,7 @@ async fn importing_again_waits_for_a_working_import_but_replaces_one_waiting_to_
     );
     assert!(
         !repositories
-            .github_run_import_claim_holds(REPO, "claim_1")
+            .store_github_run_import_page(REPO, "claim_1", &[])
             .await
             .unwrap()
     );
@@ -315,4 +318,124 @@ async fn importing_again_waits_for_a_working_import_but_replaces_one_waiting_to_
         .await
         .unwrap_err();
     assert_eq!(member.kind, PostgresErrorKind::PermissionDenied);
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+fn run(id: u64) -> GitHubWorkflowRun {
+    GitHubWorkflowRun {
+        github_run_id: id,
+        workflow_name: "ci".into(),
+        head_branch: Some("main".into()),
+        head_oid: "a".repeat(40),
+        event: "push".into(),
+        status: GitHubCheckStatus::Completed,
+        conclusion: Some(GitHubCheckConclusion::Success),
+        html_url: format!("https://github.com/octo/repo/actions/runs/{id}"),
+        check_suite_id: Some(id),
+        run_started_at_unix: Some(10),
+        run_attempt: 1,
+        updated_at_unix: 20,
+    }
+}
+
+async fn listed(store: &crate::db::MetadataStore, repo_id: &str) -> Vec<u64> {
+    store
+        .repositories()
+        .github_workflow_run_page(crate::db::GitHubWorkflowRunPageQuery {
+            repo_id,
+            github_repository_id: 42,
+            workflow_name: None,
+            after: None,
+            limit: 10,
+        })
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|read| read.run.github_run_id)
+        .collect()
+}
+
+#[tokio::test]
+async fn a_page_is_stored_only_while_its_claim_holds_and_the_repository_stays_connected() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    connect(&store, 42, 50).await;
+    let t = now();
+    repositories
+        .claim_due_github_run_imports("claim_1", t, t + 600, 5)
+        .await
+        .unwrap();
+    assert!(
+        repositories
+            .store_github_run_import_page(REPO, "claim_1", &[run(1)])
+            .await
+            .unwrap()
+    );
+    assert_eq!(listed(&store, REPO).await, [1]);
+
+    // GitHub took the repository away: the import is gone with the link, and
+    // a page it read meanwhile stores nothing.
+    repositories
+        .apply_github_installation_change(7, t, async || {
+            Ok::<_, PostgresError>(Some(GitHubInstallationChange::Uninstalled))
+        })
+        .await
+        .unwrap();
+    assert_eq!(repositories.github_run_import(REPO).await.unwrap(), None);
+    assert!(
+        !repositories
+            .store_github_run_import_page(REPO, "claim_1", &[run(2)])
+            .await
+            .unwrap()
+    );
+    assert_eq!(listed(&store, REPO).await, [1]);
+
+    // Reconnecting queues a new import; the old claim still stores nothing.
+    connect(&store, 42, 50).await;
+    assert!(
+        !repositories
+            .store_github_run_import_page(REPO, "claim_1", &[run(2)])
+            .await
+            .unwrap()
+    );
+    repositories
+        .claim_due_github_run_imports("claim_2", t, t + 600, 5)
+        .await
+        .unwrap();
+    assert!(
+        repositories
+            .store_github_run_import_page(REPO, "claim_2", &[run(2)])
+            .await
+            .unwrap()
+    );
+    assert_eq!(listed(&store, REPO).await, [2, 1]);
+}
+
+#[tokio::test]
+async fn suspending_or_removing_the_repository_also_drops_its_import() {
+    for change in [
+        GitHubInstallationChange::Suspended,
+        GitHubInstallationChange::RepositoriesRemoved([42].into()),
+    ] {
+        let store = postgres_store();
+        connect(&store, 42, 50).await;
+        store
+            .repositories()
+            .apply_github_installation_change(7, 20, async || {
+                Ok::<_, PostgresError>(Some(change.clone()))
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            store.repositories().github_run_import(REPO).await.unwrap(),
+            None,
+            "{change:?}"
+        );
+    }
 }

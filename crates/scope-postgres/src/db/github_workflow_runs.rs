@@ -94,53 +94,7 @@ impl RepositoryStore {
         github_repository_id: u64,
         run: &GitHubWorkflowRun,
     ) -> Result<(), PostgresError> {
-        let progress = run.progress();
-        let values: Vec<Value> = vec![
-            u64_to_i64(run.github_run_id, "GitHub workflow run id")?.into(),
-            repo_id.into(),
-            u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
-            run.workflow_name.clone().into(),
-            run.head_branch.clone().into(),
-            run.head_oid.clone().into(),
-            run.event.clone().into(),
-            encode_enum(run.status)?.into(),
-            run.conclusion.map(encode_enum).transpose()?.into(),
-            run.html_url.clone().into(),
-            optional_u64_to_i64(run.check_suite_id, "GitHub check suite id")?.into(),
-            optional_u64_to_i64(run.run_started_at_unix, "GitHub run start")?.into(),
-            u64_to_i64(progress.updated_at_unix, "GitHub run update")?.into(),
-            u32_to_i32(progress.run_attempt, "GitHub run attempt")?.into(),
-            i16::from(progress.stage).into(),
-        ];
-        // A run id belongs to one GitHub repository, which may since have been
-        // connected to another Scope repository.
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "INSERT INTO scope_github_workflow_runs (github_run_id, repo_id,
-                    github_repository_id, workflow_name, head_branch, head_oid, event, status,
-                    conclusion, html_url, check_suite_id, run_started_at_unix,
-                    github_updated_at_unix, run_attempt, stage)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-                 ON CONFLICT (github_run_id) DO UPDATE SET
-                    repo_id = EXCLUDED.repo_id,
-                    github_repository_id = EXCLUDED.github_repository_id,
-                    workflow_name = EXCLUDED.workflow_name,
-                    head_branch = EXCLUDED.head_branch, head_oid = EXCLUDED.head_oid,
-                    event = EXCLUDED.event, status = EXCLUDED.status,
-                    conclusion = EXCLUDED.conclusion, html_url = EXCLUDED.html_url,
-                    check_suite_id = EXCLUDED.check_suite_id,
-                    run_started_at_unix = EXCLUDED.run_started_at_unix,
-                    github_updated_at_unix = EXCLUDED.github_updated_at_unix,
-                    run_attempt = EXCLUDED.run_attempt, stage = EXCLUDED.stage
-                  WHERE (scope_github_workflow_runs.run_attempt, scope_github_workflow_runs.stage,
-                         scope_github_workflow_runs.github_updated_at_unix)
-                        <= (EXCLUDED.run_attempt, EXCLUDED.stage, EXCLUDED.github_updated_at_unix)",
-                values,
-            ))
-            .await
-            .map_err(PostgresError::internal)?;
-        Ok(())
+        save_workflow_run(self.db.as_ref(), repo_id, github_repository_id, run).await
     }
 
     /// Keeps a run a delivery named for a later read, unless one is waiting.
@@ -333,6 +287,70 @@ impl RepositoryStore {
             })
             .collect()
     }
+}
+
+/// Stores a run unless what is stored has come further, or belongs to another
+/// Scope repository than the one its GitHub repository is connected to.
+pub(super) async fn save_workflow_run<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    github_repository_id: u64,
+    run: &GitHubWorkflowRun,
+) -> Result<(), PostgresError> {
+    let progress = run.progress();
+    let values: Vec<Value> = vec![
+        u64_to_i64(run.github_run_id, "GitHub workflow run id")?.into(),
+        repo_id.into(),
+        u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
+        run.workflow_name.clone().into(),
+        run.head_branch.clone().into(),
+        run.head_oid.clone().into(),
+        run.event.clone().into(),
+        encode_enum(run.status)?.into(),
+        run.conclusion.map(encode_enum).transpose()?.into(),
+        run.html_url.clone().into(),
+        optional_u64_to_i64(run.check_suite_id, "GitHub check suite id")?.into(),
+        optional_u64_to_i64(run.run_started_at_unix, "GitHub run start")?.into(),
+        u64_to_i64(progress.updated_at_unix, "GitHub run update")?.into(),
+        u32_to_i32(progress.run_attempt, "GitHub run attempt")?.into(),
+        i16::from(progress.stage).into(),
+    ];
+    // A run id belongs to one GitHub repository, which may since have been
+    // connected to another Scope repository. It moves only to the Scope
+    // repository that GitHub repository is connected to now, so a late
+    // read for the former one cannot take it back.
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "INSERT INTO scope_github_workflow_runs (github_run_id, repo_id,
+                github_repository_id, workflow_name, head_branch, head_oid, event, status,
+                conclusion, html_url, check_suite_id, run_started_at_unix,
+                github_updated_at_unix, run_attempt, stage)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             ON CONFLICT (github_run_id) DO UPDATE SET
+                repo_id = EXCLUDED.repo_id,
+                github_repository_id = EXCLUDED.github_repository_id,
+                workflow_name = EXCLUDED.workflow_name,
+                head_branch = EXCLUDED.head_branch, head_oid = EXCLUDED.head_oid,
+                event = EXCLUDED.event, status = EXCLUDED.status,
+                conclusion = EXCLUDED.conclusion, html_url = EXCLUDED.html_url,
+                check_suite_id = EXCLUDED.check_suite_id,
+                run_started_at_unix = EXCLUDED.run_started_at_unix,
+                github_updated_at_unix = EXCLUDED.github_updated_at_unix,
+                run_attempt = EXCLUDED.run_attempt, stage = EXCLUDED.stage
+              WHERE (scope_github_workflow_runs.run_attempt, scope_github_workflow_runs.stage,
+                     scope_github_workflow_runs.github_updated_at_unix)
+                    <= (EXCLUDED.run_attempt, EXCLUDED.stage, EXCLUDED.github_updated_at_unix)
+                AND (scope_github_workflow_runs.repo_id = EXCLUDED.repo_id
+                     OR EXISTS (
+                         SELECT 1 FROM scope_github_connections connection
+                          WHERE connection.repo_id = EXCLUDED.repo_id
+                            AND connection.github_repository_id = EXCLUDED.github_repository_id
+                            AND connection.status = 'Connected'))",
+        values,
+    ))
+    .await
+    .map_err(PostgresError::internal)?;
+    Ok(())
 }
 
 /// The runs on one of Scope's branches for one commit.

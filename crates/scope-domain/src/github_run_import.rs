@@ -71,8 +71,9 @@ pub fn validate_github_run_import_count(count: u32) -> Result<u32, DomainError> 
 }
 
 /// A maintainer imports the connected repository's recent runs again with
-/// the repository's current count. An import that is waiting to retry is
-/// replaced; one that is still working is left to finish.
+/// the repository's current count. An import waiting to retry is replaced;
+/// one waiting for its first attempt, or reading GitHub, retry or not, is left
+/// to finish.
 pub fn start_github_run_import(
     access: RepositoryAccess,
     connection: Option<&GitHubConnection>,
@@ -91,7 +92,7 @@ pub fn start_github_run_import(
         ));
     };
     if current.is_some_and(|current| {
-        current.is_of(connection) && current.in_progress() && current.last_error.is_none()
+        current.is_of(connection) && current.in_progress() && !current.is_waiting_to_retry()
     }) {
         return Err(DomainError::conflict("An import is already running."));
     }
@@ -120,6 +121,12 @@ impl GitHubRunImport {
     /// Whether the import reads the GitHub repository the link now names.
     pub fn is_of(&self, connection: &GitHubConnection) -> bool {
         self.github_repository_id == connection.github_repository_id
+    }
+
+    /// Whether a failed attempt waits for the next one, which nothing reads
+    /// GitHub for meanwhile.
+    pub fn is_waiting_to_retry(&self) -> bool {
+        self.state == GitHubRunImportState::Queued && self.last_error.is_some()
     }
 
     pub fn in_progress(&self) -> bool {

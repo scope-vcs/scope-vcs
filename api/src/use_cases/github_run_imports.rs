@@ -5,18 +5,17 @@
 //! as many as the import asked for or GitHub has no more. Runs are stored the
 //! way GitHub's reports store them, so an import never moves a run back and a
 //! later report still moves it forward. A failed attempt is tried again after
-//! the usual delays and keeps GitHub's answer for the settings page. Before
-//! each page the import checks that its claim still holds, so one replaced by
-//! a newer import, or by a reconnect, stops storing runs.
+//! the usual delays and keeps GitHub's answer for the settings page. Each page
+//! is stored in one transaction with a check that the import's claim still
+//! holds and the repository is still connected to the GitHub repository it
+//! reads, so one replaced by a newer import, a disconnect or a reconnect stores
+//! nothing more.
 
 use crate::{
     auth::tokens::random_token, error::ApiError, persistence::unix_now,
     repo_events::RepoChangeReason, state::AppState, use_cases::github_workflow_runs,
 };
-use scope_domain::{
-    github_connection::GitHubConnection, github_run_import::GitHubRunImport,
-    requests::github_retry_at,
-};
+use scope_domain::{github_run_import::GitHubRunImport, requests::github_retry_at};
 use scope_postgres::db::GitHubRunImportOutcome;
 use std::time::Duration;
 
@@ -156,13 +155,6 @@ async fn import_runs(
     let mut imported = 0;
     let mut page = 1;
     while import.remaining(imported) > 0 {
-        if !repositories
-            .github_run_import_claim_holds(&import.repository_id, claim_token)
-            .await
-            .map_err(ApiError::from)?
-        {
-            return Err(ImportFailure::Stale);
-        }
         let Some(listed) = app
             .recent_workflow_runs(
                 connection.installation_id,
@@ -179,7 +171,17 @@ async fn import_runs(
         };
         let wanted = usize::try_from(import.remaining(imported)).unwrap_or(usize::MAX);
         let runs = listed.runs.into_iter().take(wanted).collect::<Vec<_>>();
-        store_runs(state, &connection, &runs).await?;
+        if !repositories
+            .store_github_run_import_page(&import.repository_id, claim_token, &runs)
+            .await
+            .map_err(ApiError::from)?
+        {
+            return Err(ImportFailure::Stale);
+        }
+        if !runs.is_empty() {
+            // Open Runs pages show a long import's runs as they arrive.
+            github_workflow_runs::publish(state, &connection).await?;
+        }
         imported += u32::try_from(runs.len()).unwrap_or(u32::MAX);
         if !listed.more {
             break;
@@ -187,29 +189,6 @@ async fn import_runs(
         page += 1;
     }
     Ok(imported)
-}
-
-/// Stores a page of runs and tells open Runs pages, so a long import shows
-/// its runs as they arrive.
-async fn store_runs(
-    state: &AppState,
-    connection: &GitHubConnection,
-    runs: &[scope_domain::github_workflow_runs::GitHubWorkflowRun],
-) -> Result<(), ApiError> {
-    if runs.is_empty() {
-        return Ok(());
-    }
-    let repositories = state.metadata.repositories();
-    for run in runs {
-        repositories
-            .save_github_workflow_run(
-                &connection.repository_id,
-                connection.github_repository_id,
-                run,
-            )
-            .await?;
-    }
-    github_workflow_runs::publish(state, connection).await
 }
 
 impl AppState {

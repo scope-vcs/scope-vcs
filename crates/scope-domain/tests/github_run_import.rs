@@ -140,6 +140,20 @@ fn importing_again_needs_a_connected_link_a_count_and_no_import_still_working() 
         DomainErrorKind::Conflict
     );
 
+    // A retry reading GitHub keeps the error of the attempt before it, and is
+    // still left to finish.
+    let retry_running = GitHubRunImport {
+        last_error: Some("GitHub answered 502".into()),
+        ..running.clone()
+    };
+    assert!(!retry_running.is_waiting_to_retry());
+    assert_eq!(
+        start(owner(), Some(&connection), Some(&retry_running), 50)
+            .unwrap_err()
+            .kind,
+        DomainErrorKind::Conflict
+    );
+
     // One waiting to try again is replaced, and one of a former GitHub
     // repository says nothing about this one.
     let retrying = GitHubRunImport {
@@ -147,6 +161,7 @@ fn importing_again_needs_a_connected_link_a_count_and_no_import_still_working() 
         last_error: Some("GitHub answered 502".into()),
         ..running.clone()
     };
+    assert!(retrying.is_waiting_to_retry());
     let started = start(member(), Some(&connection), Some(&retrying), 200).unwrap();
     assert_eq!(
         (

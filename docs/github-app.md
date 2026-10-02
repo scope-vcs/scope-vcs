@@ -292,7 +292,8 @@ members, returns a page of 50 runs, newest first, with their workflow, branch,
 commit, status and time, and a link to the repository's Actions page.
 `next_cursor` continues the list (`?after=<cursor>`), and the page's Load older
 runs button appends the next page. `workflows` names every workflow with
-stored runs; `?workflow=<name>` lists only that workflow's runs, and the page
+stored runs as GitHub reports them; `?workflow=<name>` lists only the runs of
+the workflow with exactly that name, and the page
 offers them as a workflow filter. Runs list in the order they started, or by
 when GitHub last changed them before they started.
 Every run links to GitHub, which keeps the logs; a run on
@@ -336,11 +337,17 @@ holding up the connect call, and reads
 installation token, page by page, until it has stored as many runs as the
 count or GitHub lists no more. Runs are stored the same way deliveries store
 them, so an import never moves a run back and a later delivery still moves it
-forward. Each page sends `GitHubWorkflowRunsChanged`. Before each page the
-import checks that its claim still holds, so an import replaced by a newer one
-or by a reconnect stops storing runs; disconnecting removes the import. Like
-everything else, imported runs belong to the GitHub repository they came
-from, and a repository reconnected to another lists only the new one's runs.
+forward. Each page sends `GitHubWorkflowRunsChanged`. Each page is stored in
+one transaction that first checks, with the import row and the link locked,
+that the import's claim still holds and the repository is still connected to
+the GitHub repository it reads, so an import replaced by a newer one, by a
+disconnect or by a reconnect stores nothing more. Disconnecting, by a
+maintainer or because GitHub uninstalled, suspended or removed access,
+deletes the import. Like everything else, imported runs belong to the GitHub
+repository they came from, and a repository reconnected to another lists
+only the new one's runs. A stored run moves to another Scope repository only
+when its GitHub repository is connected to that one, so a late read for the
+former Scope repository cannot take it back.
 
 A failed attempt keeps GitHub's answer and is tried again after 30 seconds,
 then 2, 10 and 30 minutes, and then gives up. The connection response carries
@@ -350,7 +357,8 @@ answer). Settings show "Importing up to 50 runs from GitHub.", "Imported 50
 runs." or "Import failed: <GitHub's answer>. Retrying.", and refresh when the
 import ends. Import now (`POST /v1/repos/{owner}/{repo}/github/run-import`,
 maintainers only) queues a new import with the current count. It waits for an
-import that is still working, and replaces one waiting to retry.
+import that is queued for its first attempt or reading GitHub, a retry
+included, and replaces one waiting for its next attempt.
 
 ## Webhooks
 

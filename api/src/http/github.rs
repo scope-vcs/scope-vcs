@@ -357,11 +357,9 @@ pub(crate) async fn get_github_workflow_runs(
             github: None,
         }));
     };
-    let workflow_name = query
-        .workflow
-        .as_deref()
-        .map(str::trim)
-        .filter(|name| !name.is_empty());
+    // Names are stored as GitHub reports them, so the chosen one is matched
+    // exactly.
+    let workflow_name = query.workflow.as_deref().filter(|name| !name.is_empty());
     let after = query
         .after
         .as_deref()
