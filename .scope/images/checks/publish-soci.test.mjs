@@ -63,7 +63,7 @@ test('workflow scans before publishing and keeps failure gates on promotion', (t
   });
   assert.equal(parsed.status, 0, parsed.stderr);
   const steps = JSON.parse(parsed.stdout);
-  const [scan, push, soci, promote] = ['scan-image.sh', 'docker push', 'publish-soci-image.sh', 'docker tag'].map((command) => {
+  const [scan, push, soci, promote] = ['scan-image.sh', 'push-image-tags.sh', 'publish-soci-image.sh', 'docker tag'].map((command) => {
     const index = steps.findIndex((step) => step.run?.includes(command));
     assert(index >= 0, `missing workflow command: ${command}`);
     return index;

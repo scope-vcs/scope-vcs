@@ -197,9 +197,7 @@ jobs:
           IMAGE: ${{ steps.tags.outputs.ghcr_image }}
           TAGS: ${{ steps.tags.outputs.tags }}
         run: |
-          while IFS= read -r tag; do
-            docker push "$tag"
-          done <<< "$TAGS"
+          bash .github/scripts/push-image-tags.sh <<< "$TAGS"
           digest="$(docker image inspect "$IMAGE" --format '{{json .RepoDigests}}' \
             | jq -er --arg prefix "${IMAGE%:*}@" '.[] | select(startswith($prefix)) | ltrimstr($prefix)')"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]

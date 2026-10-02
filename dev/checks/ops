@@ -14,6 +14,7 @@ else
   echo "Skipped .scope/images/checks: Scope keeps it private, so this checkout does not include it." >&2
 fi
 bash -n .github/scripts/publish-soci-image.sh
+node --test .github/scripts/push-image-tags.test.mjs
 
 node --test .github/scripts/audit-railway-experiments.test.mjs
 node --test .github/scripts/check-backend-binary-sizes.test.mjs

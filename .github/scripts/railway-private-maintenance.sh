@@ -4,8 +4,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/railway-private-command.sh"
 environment="${1:?Maintenance environment is required}"
 command="${2:?Maintenance command is required}"
 [[ "$#" == 2 ]]
+# Only commands that read the database may repeat after an SSH transport failure.
 case "$command" in
-  preflight|plan|verify|fence|drain-writers|validate-workflow-catalogs|apply|backfill-workflow-catalogs) ;;
+  preflight|plan|verify|validate-workflow-catalogs) private_command=railway_private_read ;;
+  fence|drain-writers|apply|backfill-workflow-catalogs) private_command=railway_private_command ;;
   *) echo 'Unsupported private maintenance command.' >&2; exit 2 ;;
 esac
 binary="${SCOPE_MAINTENANCE_BINARY:-./target/release/scope-maintenance}"
@@ -15,7 +17,7 @@ digest="$(jq -er '.maintenanceSha256' "$prepared")"
 manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
 lock="$(jq -er '.releasePolicy.migrationLockTimeoutSeconds | select(type == "number" and . > 0 and floor == .)' "$manifest")"
 statement="$(jq -er '.releasePolicy.migrationStatementTimeoutSeconds | select(type == "number" and . > 0 and floor == .)' "$manifest")"
-railway_private_command "$environment" sh -ceu '
+"$private_command" "$environment" sh -ceu '
   umask 077
   directory=$(mktemp -d /tmp/scope-maintenance.XXXXXXXX)
   trap '\''rm -rf -- "$directory"'\'' EXIT

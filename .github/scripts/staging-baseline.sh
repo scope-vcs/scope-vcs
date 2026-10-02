@@ -67,7 +67,7 @@ fi
 # or migrating this staging baseline, including snapshots restored above.
 maintenance preflight >/dev/null
 # Require representative preexisting data; candidate seeding would invalidate the upgrade test.
-[[ "$(railway_private_command "$environment" sh -c 'exec psql "$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "$1"' scope-baseline 'SELECT count(*) > 0 FROM scope_repositories')" == t ]]
+[[ "$(railway_private_read "$environment" sh -c 'exec psql "$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "$1"' scope-baseline 'SELECT count(*) > 0 FROM scope_repositories' < /dev/null)" == t ]]
 # No schema change needs no new baseline dump. Reconciliation above still runs.
 if jq -e '.pending | length == 0' "$SCOPE_PRODUCTION_MIGRATION_PLAN" >/dev/null; then
   exit 0

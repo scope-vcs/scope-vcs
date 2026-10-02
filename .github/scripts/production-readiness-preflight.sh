@@ -22,7 +22,7 @@ SCOPE_DEPLOYMENT_MANIFEST_JSON="$(jq -c . "$manifest")" \
   SCOPE_FAILED_WEB_REPLACEMENT_JSON="$replacement" \
   SCOPE_RAILWAY_SERVICES_JSON="$services" \
   node .github/scripts/production-readiness-preflight.mjs | \
-  railway_private_command "$environment" sh -ceu \
+  railway_private_read "$environment" sh -ceu \
     'exec psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1' >/dev/null
 
 echo 'Production deployment receipts, live Railway services, and database roles are ready.'
