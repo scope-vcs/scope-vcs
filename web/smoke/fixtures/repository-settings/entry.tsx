@@ -34,10 +34,11 @@ const settingsScope = 'fixture-owner'
 const githubConnection = {
   github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo',
   connected_by: { id: 'owner', handle: 'owner' }, connected_at_unix: 1_767_225_600, disconnected: null,
+  public_on_github: false, public_confirmed: true,
 }
 repoSettingsResource.write(settingsScope, {
   collaboration: { members, invites: [] },
-  github: { configured: true, connection: githubConnection },
+  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], can_confirm_public: true },
 })
 const loadSettings = () => new Promise<{ collaboration: null; github: null }>(() => {})
 function setGitHub(github: GitHubConnectionResponse) {
@@ -58,6 +59,8 @@ function App() {
       <button onClick={() => setGitHub({
         configured: true,
         connection: { ...githubConnection, disconnected: { reason: 'app_uninstalled', at_unix: 1_767_312_000 } },
+        required_checks: ['ci / test'],
+        can_confirm_public: true,
       })}>GitHub uninstalled elsewhere</button>
     </div>
     <RepoLayoutProvider live={{ repo } as RepoLiveState} subscribe={subscribe}>
@@ -82,7 +85,22 @@ function App() {
         disconnectGitHub={async (params) => {
           calls.push({ disconnectGitHub: params })
           await hold('disconnect-github')
-          const github = { configured: true, connection: null }
+          const github = { configured: true, connection: null, required_checks: [], can_confirm_public: true }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        confirmPublicGitHub={async (params) => {
+          calls.push({ confirmPublicGitHub: params })
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const github = { ...current, connection: { ...current.connection!, public_confirmed: true } }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        setGitHubRequiredChecks={async (input) => {
+          calls.push({ setGitHubRequiredChecks: input.names })
+          await hold('required-checks')
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const github = { ...current, required_checks: input.names }
           retainGitHubConnection(settingsScope, github)
           return github
         }}

@@ -1,6 +1,8 @@
 use crate::github::GitHubRepository;
 use scope_api_contract::RequestActorSummaryResponse;
-use scope_domain::github_connection::{GitHubConnectionStatus, GitHubDisconnectReason};
+use scope_domain::github_connection::{
+    GitHubConnectionStatus, GitHubDisconnectReason, GitHubRepositoryVisibility,
+};
 use scope_postgres::db::GitHubConnectionRead;
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +13,18 @@ pub(crate) struct GitHubConnectionResponse {
     /// `false` when this server has no GitHub App, so nothing can connect.
     pub(crate) configured: bool,
     pub(crate) connection: Option<GitHubConnectionDetailsResponse>,
+    /// The check names GitHub must pass before a request merges.
+    pub(crate) required_checks: Vec<String>,
+    /// Whether the viewer may confirm that a public GitHub repository
+    /// receives what Scope pushes, private requests included.
+    pub(crate) can_confirm_public: bool,
+}
+
+/// The whole list of required check names, replacing the stored one.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct SetGitHubRequiredChecksRequest {
+    pub(crate) names: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -23,6 +37,11 @@ pub(crate) struct GitHubConnectionDetailsResponse {
     pub(crate) connected_at_unix: u64,
     /// Set when GitHub took the repository away from Scope.
     pub(crate) disconnected: Option<GitHubDisconnectionResponse>,
+    /// Everything Scope pushes to a public GitHub repository is public.
+    pub(crate) public_on_github: bool,
+    /// False while a repository that became public waits for a maintainer to
+    /// confirm; private requests are not sent there meanwhile.
+    pub(crate) public_confirmed: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -94,15 +113,27 @@ pub(crate) struct GitHubRepositoryResponse {
 pub(crate) struct ConnectGitHubRepositoryRequest {
     pub(crate) grant: String,
     pub(crate) github_repository_id: u64,
+    /// Required for a public GitHub repository: everything Scope pushes there,
+    /// private requests and private files included, becomes public.
+    #[serde(default)]
+    pub(crate) acknowledge_public: bool,
 }
 
 pub(crate) fn github_connection_response(
     configured: bool,
     read: Option<GitHubConnectionRead>,
+    required_checks: Vec<String>,
+    can_confirm_public: bool,
 ) -> GitHubConnectionResponse {
     let connection = read.filter(|_| configured).map(|read| {
         let connection = read.connection;
+        let (public_on_github, public_confirmed) = match connection.visibility {
+            GitHubRepositoryVisibility::Private => (false, true),
+            GitHubRepositoryVisibility::Public { acknowledged } => (true, acknowledged),
+        };
         GitHubConnectionDetailsResponse {
+            public_on_github,
+            public_confirmed,
             github_url: format!("https://github.com/{}", connection.github_full_name),
             github_full_name: connection.github_full_name,
             connected_by: connection
@@ -134,6 +165,8 @@ pub(crate) fn github_connection_response(
     GitHubConnectionResponse {
         configured,
         connection,
+        required_checks,
+        can_confirm_public,
     }
 }
 

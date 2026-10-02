@@ -206,7 +206,16 @@ export type GitHubConnectionResponse = {
 /**
  * `false` when this server has no GitHub App, so nothing can connect.
  */
-configured: boolean, connection: GitHubConnectionDetailsResponse | null, };
+configured: boolean, connection: GitHubConnectionDetailsResponse | null, 
+/**
+ * The check names GitHub must pass before a request merges.
+ */
+required_checks: Array<string>, 
+/**
+ * Whether the viewer may confirm that a public GitHub repository
+ * receives what Scope pushes, private requests included.
+ */
+can_confirm_public: boolean, };
 
 export type GitHubConnectionDetailsResponse = { github_full_name: string, github_url: string, 
 /**
@@ -216,7 +225,16 @@ connected_by: RequestActorSummaryResponse | null, connected_at_unix: number,
 /**
  * Set when GitHub took the repository away from Scope.
  */
-disconnected: GitHubDisconnectionResponse | null, };
+disconnected: GitHubDisconnectionResponse | null, 
+/**
+ * Everything Scope pushes to a public GitHub repository is public.
+ */
+public_on_github: boolean, 
+/**
+ * False while a repository that became public waits for a maintainer to
+ * confirm; private requests are not sent there meanwhile.
+ */
+public_confirmed: boolean, };
 
 export type GitHubDisconnectionResponse = { reason: GitHubDisconnectReasonResponse, at_unix: number, };
 
@@ -242,7 +260,14 @@ install_url: string, grant: string, };
 
 export type GitHubRepositoryResponse = { id: number, full_name: string, private: boolean, };
 
-export type ConnectGitHubRepositoryRequest = { grant: string, github_repository_id: number, };
+export type ConnectGitHubRepositoryRequest = { grant: string, github_repository_id: number, 
+/**
+ * Required for a public GitHub repository: everything Scope pushes there,
+ * private requests and private files included, becomes public.
+ */
+acknowledge_public: boolean, };
+
+export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
 
 export type HistoryPageRequest = { feed: HistoryFeed | null, audience: ProjectionPreviewAudience | null, before: string | null, };
 
@@ -376,6 +401,14 @@ export type GitHubCheckStatus = "queued" | "in_progress" | "completed" | "waitin
 
 export type GitHubCheckConclusion = "success" | "neutral" | "skipped" | "failure" | "cancelled" | "timed_out" | "action_required" | "stale" | "startup_failure";
 
+export type RequestGitHubPushState = "awaiting_approval" | "sending" | "sent" | "failed";
+
+export type RequestGitHubPushResponse = { state: RequestGitHubPushState, branch: string, 
+/**
+ * Only maintainers see what GitHub answered.
+ */
+error: string | null, };
+
 export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null, };
 
 export type RequestChecksResponse = { request_id: string, head_oid: GitOid, 
@@ -384,9 +417,24 @@ export type RequestChecksResponse = { request_id: string, head_oid: GitOid,
  */
 state: RequestCheckEvaluationState | null, message: string | null, checks: Array<RequestCheckResponse>, 
 /**
- * Whether the viewer can start native runs that wait for a maintainer.
+ * Whether the viewer can start checks that wait for a maintainer.
  */
-can_approve: boolean, mergeability: RequestMergeabilityResponse, };
+can_approve: boolean, 
+/**
+ * Set when the repository's checks run on GitHub and the head is on its
+ * way there or waits for approval to go.
+ */
+github_push: RequestGitHubPushResponse | null, 
+/**
+ * Whether approving would run workflow files this request changes. Only
+ * worked out for a viewer who can approve GitHub checks.
+ */
+changes_github_workflows: boolean, 
+/**
+ * Whether this private request's checks run in a public GitHub
+ * repository, where everything Scope pushes is public.
+ */
+private_request_on_public_github: boolean, mergeability: RequestMergeabilityResponse, };
 
 export type RequestEventResponse = { id: string, position: number, 
 /**
@@ -457,6 +505,8 @@ export type StartRequestRequest = { name: string, title: string | null, audience
 export type SubmitRequestRequest = Record<symbol, never>;
 
 export type MergeRequestRequest = { expected_head_oid: GitOid, };
+
+export type ApproveRequestChecksRequest = { expected_head_oid: GitOid, };
 
 export type EditRequestIdentityRequest = { title: string | null, description_markdown: string | null, expected_description_markdown: string | null, };
 
@@ -537,6 +587,8 @@ export const ApiRouteTemplates = {
   repoMetadata: "/v1/repos/{owner}/{repo}/metadata",
   repoGitHub: "/v1/repos/{owner}/{repo}/github",
   repoGitHubAuthorize: "/v1/repos/{owner}/{repo}/github/authorize",
+  repoGitHubRequiredChecks: "/v1/repos/{owner}/{repo}/github/required-checks",
+  repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
   githubSetup: "/v1/github/setup",
   repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",

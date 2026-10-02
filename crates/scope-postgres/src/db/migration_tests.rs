@@ -13,6 +13,7 @@ mod fresh_schema;
 mod git_manifest_retirement;
 mod git_segment_schema;
 mod github_connections;
+mod github_request_checks;
 mod maintenance_cutover;
 mod native_runs_accounts;
 mod provider_neutral_request_checks;
@@ -56,6 +57,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0066_native_runs_accounts",
     "m0067_provider_neutral_request_checks",
     "m0068_github_connections",
+    "m0069_github_request_checks",
 ];
 
 pub(super) async fn isolated_database() -> (

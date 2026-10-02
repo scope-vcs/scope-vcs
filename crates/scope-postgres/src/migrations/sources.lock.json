@@ -25,5 +25,6 @@
   "m0065_request_revision_rewrites.rs": "cfb2158fe0f00b34992dfc4419607271e995fe2fd68d8dc022334da88ef51f29",
   "m0066_native_runs_accounts.rs": "2d21b75f6a2f647f9e492fd976e58fddcfc07a7642a81864b73a2cee4fd045d3",
   "m0067_provider_neutral_request_checks.rs": "ef830d9295c7722397fcd2c58c05a0d9eb2ebe287012f103b54e594d90fc186c",
-  "m0068_github_connections.rs": "f0b80a84edc996eadf1eaf7b8c7831d46220a8e5cadbfae3625450efda254509"
+  "m0068_github_connections.rs": "f0b80a84edc996eadf1eaf7b8c7831d46220a8e5cadbfae3625450efda254509",
+  "m0069_github_request_checks.rs": "ceeeb8cbffa917bc0815032efa21e88fea2efcabda59f68bc39dac3c2fb0d119"
 }

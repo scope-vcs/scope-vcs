@@ -59,6 +59,7 @@ mod clone_access;
 mod cloud_runs;
 mod dependencies;
 mod device_login;
+mod fake_github;
 mod git_binary;
 mod git_http;
 mod git_http_gzip;

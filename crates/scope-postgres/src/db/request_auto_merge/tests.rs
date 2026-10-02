@@ -46,6 +46,7 @@ async fn recording_configuration_error_stops_matching_active_intent_immediately(
             .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();
@@ -80,6 +81,7 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
             .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();
@@ -110,6 +112,7 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
             .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();
@@ -134,6 +137,7 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
             evaluation: RequestCheckEvaluation::no_checks("req_1", "a".repeat(40), 8).unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();
@@ -148,6 +152,7 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
             .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();
@@ -563,6 +568,7 @@ jobs:
             .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
+            push_to_github: false,
         })
         .await
         .unwrap();

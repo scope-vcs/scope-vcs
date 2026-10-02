@@ -309,6 +309,13 @@ impl RequestStore {
                 save_request_row(&tx, request).await?;
                 delete_request_invitees(&tx, &request.id).await?;
                 insert_request_event_row(&tx, event).await?;
+                super::github_pushes::queue_github_branch_deletion(
+                    &tx,
+                    &request.repo_id,
+                    &request.id,
+                    now_unix,
+                )
+                .await?;
                 if let Some(stored) = active_auto_merge {
                     let stopped = stop_request_auto_merge(
                         request,
@@ -327,8 +334,9 @@ impl RequestStore {
     }
 }
 
-/// Deletes a draft the domain decided to delete. Its refs, attachments and
-/// orphaned objects are queued for cleanup in the same transaction.
+/// Deletes a draft the domain decided to delete. Its refs, GitHub branch,
+/// attachments and orphaned objects are queued for cleanup in the same
+/// transaction.
 pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
     tx: &C,
     incarnation: &RepositoryIncarnation,
@@ -346,6 +354,8 @@ pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
         generated_ids,
     )
     .await?;
+    super::github_pushes::queue_github_branch_deletion(tx, &request.repo_id, &request.id, now_unix)
+        .await?;
     tombstone_request_attachments(tx, &request.id, now_unix).await?;
     for revision in revisions {
         delete_object_reference(tx, "request_revision_snapshot", &revision.id).await?;

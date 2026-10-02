@@ -132,9 +132,15 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
 - `request_discussion_mutation.rs` for discussion commands, authorization
   context, persistence, result loading, and timeline publication;
 - `request_checks.rs` for evaluating the checks a pushed request head asks
-  for, starting or holding its native runs, reading what native runs and GitHub
-  check results mean for a merge, and evaluating a head again from its saved
-  revision when its push could not;
+  for with the repository's provider, starting or holding its native runs or
+  its push to GitHub, reading what native runs and GitHub check results mean
+  for a merge, and evaluating a head again from its saved revision when its
+  push could not;
+- `github_pushes.rs` for the leased loop that pushes tested commits to their
+  GitHub request branches and deletes branches of settled requests, with
+  retries; and `github_check_results.rs` for reading GitHub's check runs when
+  a webhook names a tested commit and for the reconciler that reads pending
+  ones a delivery missed;
 - `request_revision_inspection.rs` for shared Git revision membership checks
   and raw diff execution used by review and discussion anchors;
 - `run_control.rs` and `run_inspection.rs` for run mutations and authorized run,
@@ -152,12 +158,16 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
 
 `api/src/github/` owns the Scope GitHub App: its configuration, app and
 installation tokens (installation tokens are cached until shortly before they
-expire), the GitHub REST calls, the signed setup state, and webhook
-verification. `api/src/http/github.rs` runs the connect flow and dispatches
-webhook events. Connection rules live in
-`scope-domain/src/github_connection.rs` and links in
-`scope-postgres/src/db/github_connections.rs`. Registration and the connect
-flow are described in [the GitHub App guide](github-app.md).
+expire), the GitHub REST calls, git pushes authenticated through git's
+environment, the signed setup state, and webhook verification.
+`api/src/http/github.rs` runs the connect flow, sets required checks and
+dispatches webhook events. Connection and required-check rules live in
+`scope-domain/src/github_connection.rs`; which provider answers a repository's
+checks, the GitHub evaluation, push retries and push status live in
+`scope-domain/src/requests/checks/`. Links, required checks, push jobs and
+check runs are stored by the `github_*` modules in `scope-postgres/src/db/`.
+Registration, the connect flow and how checks run are described in
+[the GitHub App guide](github-app.md).
 
 The other applications remain narrow:
 

@@ -1,9 +1,10 @@
 # Scope GitHub App
 
 A maintainer connects a Scope repository to the project's GitHub repository
-by installing the Scope GitHub App. Later phases push request revisions to
-that repository and read the results of its workflows. One app serves every
-Scope repository on a server.
+by installing the Scope GitHub App. Scope then pushes each request revision
+to a branch of that repository, GitHub Actions runs the project's workflows
+on it, and the results decide whether the request can merge. One app serves
+every Scope repository on a server.
 
 ## Registering the app
 
@@ -24,9 +25,10 @@ Create a GitHub App owned by the organization that runs Scope, with:
   webhook secret.
 - **Repository permissions**: Contents read and write, Workflows read and
   write, Checks read, Actions read, Metadata read.
-- **Subscribed events**: Check run, Workflow run, Installation, Installation
-  repositories. Installation events are always delivered to GitHub Apps; the
-  other three are chosen on the registration page.
+- **Subscribed events**: Check run, Check suite, Workflow run, Repository,
+  Installation, Installation repositories. Installation events are always
+  delivered to GitHub Apps; the others are chosen on the registration page.
+  Repository events report a repository made public or private.
 - **Where can this app be installed**: any account.
 
 Generate a private key and a client secret on the app's page. The callback
@@ -82,6 +84,122 @@ to at most one Scope repository at a time. Disconnecting in settings removes
 the link. Uninstalling or suspending the app, or removing the repository from
 the installation, keeps the link as disconnected with the reason, and
 settings offer to reconnect. Unsuspending does not reconnect by itself.
+Connecting, or reconnecting, sends again the tested commit of every open
+request whose GitHub checks are started.
+
+### Public GitHub repositories
+
+Everything Scope pushes to a public GitHub repository is public there,
+private requests and private files included. Connecting one needs a
+maintainer who can change file visibility, and the connect call must carry
+`acknowledge_public`: the setup page asks the maintainer to confirm it.
+Whether a repository is public is what GitHub reports when connecting, not
+what setup listed.
+
+A connected repository can become public later. A `repository` delivery
+saying it was made public or private makes Scope ask GitHub which it is now,
+and every push of a private request asks GitHub first as well. A repository
+that became public receives no private request: their checks become
+configuration errors and their pushes give up. Settings say so, and a
+maintainer who can change file visibility can allow private requests with
+`POST /v1/repos/{owner}/{repo}/github/public-confirmation`, which sends the
+held requests again. Settings show a public repository as public, and a
+private request's checks say that its changes are public on GitHub.
+
+## Request checks
+
+A repository with a GitHub link, connected or disconnected, answers its
+request checks on GitHub. Any other repository runs its own `.scope/runs`
+workflows. A repository never uses both.
+
+### Running workflows on requests
+
+Add a push trigger for Scope's branches to each workflow that should run on
+requests. Existing triggers stay:
+
+```yaml
+on:
+  pull_request:
+  push:
+    branches: ['scope/**']
+```
+
+GitHub runs the workflow files in the pushed commit. Workflows that read
+`github.event.pull_request` find it empty on a branch push and need a
+fallback.
+
+### Required checks
+
+Maintainers list the check names GitHub must pass under Required checks in
+the CI section of repository settings. They are the names GitHub's own branch
+protection uses, such as `ci / test`.
+`PUT /v1/repos/{owner}/{repo}/github/required-checks` replaces the list.
+Every push to a request records an evaluation with one GitHub check per
+required name and the head as the tested commit. Changing the list affects
+heads pushed afterwards.
+
+A request can merge when the latest run of each required name on the tested
+commit passed: success, neutral or skipped. A re-run on GitHub is a newer run
+and decides. A name with no run yet is pending, and the request view lists it
+as having no run. Runs on any other commit never count, so a rebase or amend
+needs its own green runs. Merge and auto-merge both wait for this.
+
+### Pushing revisions
+
+Scope pushes the tested commit to `scope/requests/<request id>` in the
+connected repository with `git push --force`, so a new revision replaces the
+branch. The installation token reaches git as an `http.extraHeader` through
+git's environment, never in its arguments or the URL. Merging, closing or
+deleting the request deletes the branch from the GitHub repository it was
+pushed to. Deleting the Scope repository queues the same deletions; they
+name the GitHub repository and installation themselves, so they run after
+the Scope repository is gone, while the installation exists.
+
+A maintainer's push goes to GitHub at once, even when no check is required,
+so workflows still run. Anyone else's push waits until a maintainer approves
+the checks, because a pushed branch receives the repository's secrets.
+Approval names the head the maintainer reviewed, and a newer head is
+refused. When the request changes files under `.github/workflows/`, the
+request view warns the maintainer before approving. With no required checks, a contributor's
+push is never sent.
+
+Pushes are jobs in `scope_github_pushes`, run by a background loop in the API
+with leases. Each push is claimed on its own with a lease well past the push
+timeout. A branch's pushes are ordered by a sequence that only grows; a newer
+push replaces queued ones, and a branch is pushed by one process at a time.
+Right before git runs, a push checks, by the database's clock, that its claim
+still holds and that no newer push of its branch was queued; otherwise it
+sends and records nothing. A commit is pushed only while the repository is
+still connected to the GitHub repository and installation the push was
+queued for. A failed push is tried again after 30
+seconds, then 2, 10 and 30 minutes, and then gives up. The request view shows
+whether the revision is waiting for approval, being sent, sent, or failed,
+and shows maintainers the last error. A push to a repository whose link is
+gone gives up at once.
+
+### Reading results
+
+GitHub's API is the source of results. A `check_run`, `check_suite` or
+`workflow_run` delivery for a commit some request was evaluated against makes
+Scope read `GET /repos/{owner}/{repo}/commits/{sha}/check-runs?filter=all`
+and replace what it stored for that commit. Runs are stored per GitHub
+repository, and only the connected repository's runs count, so a Scope
+repository reconnected to another GitHub repository starts over. Every read
+is numbered before Scope asks GitHub, and its answer is stored only when no
+later read was stored first, so a slow, older answer cannot bring back a
+stale result.
+
+A background reconciler reads the commits of started evaluations of open
+requests every two minutes while their checks are pending and every ten once
+they settle, which covers dropped deliveries, including a failed re-run of a
+check that had passed. Merging, by hand or automatically, reads the commit
+again when what Scope stored is more than a minute old or a newer read is
+still asking GitHub, and does not merge while GitHub cannot answer. The
+reconciler keeps the two-minute pace while any open request testing a commit
+is pending. New results refresh open request views and wake auto-merge.
+
+When the link is disconnected or removed, evaluations that ask GitHub become
+configuration errors: they never pass and never wait forever.
 
 ## Webhooks
 
@@ -96,6 +214,9 @@ whether the installation still reaches it. If GitHub says access is intact,
 the event is ignored. Connecting and applying an installation event hold the
 same installation lock while they ask GitHub, so a removal that lands during
 a connect is either seen by the connect or finds the new link.
+
+Check deliveries for repositories or commits Scope does not test are
+acknowledged with 204, and a failed read is left to the reconciler.
 
 ## Local development
 

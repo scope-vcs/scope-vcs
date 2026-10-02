@@ -1,8 +1,10 @@
 use scope_domain::{
     error::DomainErrorKind,
     github_connection::{
-        ConnectGitHubRepository, GitHubConnection, GitHubConnectionStatus, GitHubDisconnectReason,
-        GitHubInstallationChange, connect_github_repository, disconnect_github_repository,
+        ConnectGitHubRepository, GITHUB_REQUIRED_CHECKS_LIMIT, GitHubConnection,
+        GitHubConnectionStatus, GitHubDisconnectReason, GitHubInstallationChange,
+        GitHubRepositoryVisibility, acknowledge_public_github_repository,
+        connect_github_repository, disconnect_github_repository, set_github_required_checks,
     },
     repository::{
         RepoLifecycleState, access::repository_access_for_user_id,
@@ -37,6 +39,8 @@ fn command(repository_id: &str, github_repository_id: u64) -> ConnectGitHubRepos
         installation_id: 7,
         github_repository_id,
         github_full_name: format!("octo/repo-{github_repository_id}"),
+        github_private: true,
+        acknowledge_public: false,
         user_id: OWNER.to_string(),
         now_unix: NOW,
     }
@@ -184,4 +188,123 @@ fn installation_changes_disconnect_only_affected_links() {
         NOW
     ));
     assert!(link.is_connected());
+}
+
+#[test]
+fn maintainers_name_required_checks_once_each_in_their_order() {
+    let names = |names: &[&str]| names.iter().map(|name| name.to_string()).collect();
+    assert_eq!(
+        set_github_required_checks(member(), names(&[" ci / test ", "lint", "ci / test"])).unwrap(),
+        ["ci / test", "lint"]
+    );
+    assert_eq!(
+        set_github_required_checks(owner(), Vec::new()).unwrap(),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        set_github_required_checks(outsider(), names(&["ci"]))
+            .unwrap_err()
+            .kind,
+        DomainErrorKind::Forbidden
+    );
+    for invalid in [
+        names(&["  "]),
+        vec!["x".repeat(256)],
+        (0..=GITHUB_REQUIRED_CHECKS_LIMIT)
+            .map(|index| format!("check {index}"))
+            .collect(),
+    ] {
+        assert_eq!(
+            set_github_required_checks(owner(), invalid)
+                .unwrap_err()
+                .kind,
+            DomainErrorKind::InvalidInput
+        );
+    }
+}
+
+fn publisher() -> scope_domain::repository::access::RepositoryAccess {
+    repository_access_for_user_id(
+        OWNER,
+        RepoLifecycleState::Ready,
+        Some(RepositoryMemberPermissions {
+            can_change_file_visibility: true,
+            ..RepositoryMemberPermissions::default()
+        }),
+        "user_publisher",
+    )
+}
+
+#[test]
+fn only_a_maintainer_who_can_change_file_visibility_connects_a_public_repository_knowingly() {
+    let public = |acknowledge_public| ConnectGitHubRepository {
+        github_private: false,
+        acknowledge_public,
+        ..command("owner/repo", 42)
+    };
+    // Without confirming, even the owner is refused.
+    assert_eq!(
+        connect_github_repository(owner(), None, None, public(false))
+            .unwrap_err()
+            .kind,
+        DomainErrorKind::Conflict
+    );
+    // A member who cannot change file visibility is refused even when confirming.
+    assert_eq!(
+        connect_github_repository(member(), None, None, public(true))
+            .unwrap_err()
+            .kind,
+        DomainErrorKind::Forbidden
+    );
+    for access in [owner(), publisher()] {
+        let link = connect_github_repository(access, None, None, public(true)).unwrap();
+        assert_eq!(
+            link.visibility,
+            GitHubRepositoryVisibility::Public { acknowledged: true }
+        );
+        assert!(link.may_receive_private_requests());
+    }
+    // A private repository needs no confirmation.
+    assert_eq!(
+        connect_github_repository(member(), None, None, command("owner/repo", 42))
+            .unwrap()
+            .visibility,
+        GitHubRepositoryVisibility::Private
+    );
+}
+
+#[test]
+fn a_repository_that_becomes_public_receives_no_private_request_until_confirmed() {
+    let mut link = connected("owner/repo", 42);
+    assert!(!link.apply_visibility(true));
+    assert!(link.apply_visibility(false));
+    assert_eq!(
+        link.visibility,
+        GitHubRepositoryVisibility::Public {
+            acknowledged: false
+        }
+    );
+    assert!(!link.may_receive_private_requests());
+    assert!(!link.apply_visibility(false));
+
+    assert_eq!(
+        acknowledge_public_github_repository(member(), Some(&link))
+            .unwrap_err()
+            .kind,
+        DomainErrorKind::Forbidden
+    );
+    let confirmed = acknowledge_public_github_repository(publisher(), Some(&link)).unwrap();
+    assert!(confirmed.may_receive_private_requests());
+
+    // Going private and public again asks again.
+    let mut link = confirmed;
+    assert!(link.apply_visibility(true));
+    assert!(link.apply_visibility(false));
+    assert!(!link.may_receive_private_requests());
+    assert_eq!(
+        acknowledge_public_github_repository(owner(), Some(&connected("owner/repo", 42)))
+            .unwrap_err()
+            .kind,
+        DomainErrorKind::Conflict
+    );
 }

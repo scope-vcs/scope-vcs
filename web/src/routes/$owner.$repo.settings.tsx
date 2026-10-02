@@ -19,11 +19,14 @@ import {
   updateRepoMetadataForRequest,
 } from '@/api/repo-settings'
 import {
+  confirmRepoGitHubPublicForRequest,
   disconnectRepoGitHubForRequest,
   loadRepoGitHubConnectionForRequest,
   currentWebOrigin,
+  setRepoGitHubRequiredChecksForRequest,
   startRepoGitHubAuthorizationForRequest,
 } from '@/api/github'
+import { parseSetRepoGitHubRequiredChecksInput } from '@/api/github-inputs'
 import { loadOptionalResource } from '@/api/http'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
 import { VisibilityLogSection } from '@/features/repo-detail/visibility-log-section'
@@ -63,6 +66,14 @@ const startRepoGitHubAuthorization = createServerFn({ method: 'POST' })
 const disconnectRepoGitHub = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
   .handler(({ data }) => disconnectRepoGitHubForRequest(data))
+
+const confirmRepoGitHubPublic = createServerFn({ method: 'POST' })
+  .validator(parseRepoParams)
+  .handler(({ data }) => confirmRepoGitHubPublicForRequest(data))
+
+const setRepoGitHubRequiredChecks = createServerFn({ method: 'POST' })
+  .validator(parseSetRepoGitHubRequiredChecksInput)
+  .handler(({ data }) => setRepoGitHubRequiredChecksForRequest(data))
 
 const deleteRepo = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
@@ -164,12 +175,22 @@ function RepoSettingsRoute() {
             (invite) => ({ type: 'inviteUpdated', invite }),
           )}
           deleteRepo={(data) => deleteRepo({ data })}
+          confirmPublicGitHub={async (data) => {
+            const github = await confirmRepoGitHubPublic({ data })
+            if (scope) retainGitHubConnection(scope, github)
+            return github
+          }}
           disconnectGitHub={async (data) => {
             const github = await disconnectRepoGitHub({ data })
             if (scope) retainGitHubConnection(scope, github)
             return github
           }}
           github={resource.value?.github ?? null}
+          setGitHubRequiredChecks={async (data) => {
+            const github = await setRepoGitHubRequiredChecks({ data })
+            if (scope) retainGitHubConnection(scope, github)
+            return github
+          }}
           startGitHubAuthorization={(data) => startRepoGitHubAuthorization({ data: { ...data, web_origin: currentWebOrigin() } })}
           deleteMember={(data) => retainResult(
             deleteRepoMember({ data }),

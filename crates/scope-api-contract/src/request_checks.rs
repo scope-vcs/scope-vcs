@@ -63,6 +63,37 @@ pub enum RequestCheckResponse {
     },
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+pub enum RequestGitHubPushState {
+    /// Nothing leaves Scope until a maintainer approves.
+    AwaitingApproval,
+    /// Queued or being pushed; `error` says why the last attempt failed.
+    Sending,
+    Sent,
+    Failed,
+}
+
+/// Where the tested commit is on its way to the branch GitHub runs workflows on.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestGitHubPushResponse {
+    pub state: RequestGitHubPushState,
+    pub branch: String,
+    /// Only maintainers see what GitHub answered.
+    pub error: Option<String>,
+}
+
+/// Starts the checks of the head the maintainer reviewed. A newer head is
+/// refused, because approving runs its code.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct ApproveRequestChecksRequest {
+    pub expected_head_oid: GitOid,
+}
+
 /// The checks recorded for the request's current head.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -73,7 +104,16 @@ pub struct RequestChecksResponse {
     pub state: Option<RequestCheckEvaluationState>,
     pub message: Option<String>,
     pub checks: Vec<RequestCheckResponse>,
-    /// Whether the viewer can start native runs that wait for a maintainer.
+    /// Whether the viewer can start checks that wait for a maintainer.
     pub can_approve: bool,
+    /// Set when the repository's checks run on GitHub and the head is on its
+    /// way there or waits for approval to go.
+    pub github_push: Option<RequestGitHubPushResponse>,
+    /// Whether approving would run workflow files this request changes. Only
+    /// worked out for a viewer who can approve GitHub checks.
+    pub changes_github_workflows: bool,
+    /// Whether this private request's checks run in a public GitHub
+    /// repository, where everything Scope pushes is public.
+    pub private_request_on_public_github: bool,
     pub mergeability: RequestMergeabilityResponse,
 }

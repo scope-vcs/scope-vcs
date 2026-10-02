@@ -1,6 +1,6 @@
 import { parseRepoParams } from './repo-params'
 import { parseFilePath } from './file-path-input'
-import type { RequestParams } from './types'
+import type { ApproveRequestChecksInput, RequestParams } from './types'
 import type { RequestActionInput } from '../features/requests/request-actions-api'
 import type {
   AuthorizeRequestAutoMergeInput,
@@ -234,6 +234,16 @@ export function parseRequestActionInput(input: unknown): RequestActionInput {
     default:
       throw new Error('Unsupported request action.')
   }
+}
+
+export function parseApproveRequestChecksInput(input: unknown): ApproveRequestChecksInput {
+  const data = object(input)
+  const body = validated(
+    'check approval',
+    apiValidators.ApproveRequestChecksRequest,
+    { expected_head_oid: id(data.expected_head_oid, 'expected_head_oid') },
+  )
+  return { ...parseRequestParams(data), ...body }
 }
 
 export function parseAuthorizeRequestAutoMergeInput(

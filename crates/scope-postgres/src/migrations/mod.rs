@@ -25,6 +25,7 @@ mod m0065_request_revision_rewrites;
 mod m0066_native_runs_accounts;
 mod m0067_provider_neutral_request_checks;
 mod m0068_github_connections;
+mod m0069_github_request_checks;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -176,6 +177,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0068_github_connections::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0069_github_request_checks::Migration),
             metadata_restore_safe: true,
         },
     ]

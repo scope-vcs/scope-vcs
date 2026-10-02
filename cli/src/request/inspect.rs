@@ -267,8 +267,18 @@ pub(super) fn request_checks(
         load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
     let target = api_target(&context, &request_id);
     // Approval answers with the refreshed evaluation, so one call reports both.
+    // It names a head, and the server refuses a newer one.
     let checks = if args.approve {
-        crate::api::approve_request_checks(api, target)?
+        let head = match args.head {
+            Some(head) => head,
+            None => crate::api::request_checks(api, target)?
+                .head_oid
+                .as_str()
+                .to_string(),
+        };
+        let expected_head_oid = crate::api::GitOid::try_from(head.as_str())
+            .map_err(|error| anyhow::anyhow!("--head: {error}"))?;
+        crate::api::approve_request_checks(api, target, expected_head_oid)?
     } else {
         crate::api::request_checks(api, target)?
     };

@@ -144,15 +144,18 @@ pub fn request_checks(
     )
 }
 
+/// Starts the checks of `expected_head_oid`; the server refuses a newer head.
 pub fn approve_request_checks(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
+    expected_head_oid: GitOid,
 ) -> anyhow::Result<RequestChecksResponse> {
     execute(
         api.request(
             reqwest::Method::POST,
             routes::repo_request_checks_approve(target.owner, target.repo, target.request_id),
-        ),
+        )
+        .json(&ApproveRequestChecksRequest { expected_head_oid }),
         format!(
             "approve request checks {} for {}/{}",
             target.request_id, target.owner, target.repo

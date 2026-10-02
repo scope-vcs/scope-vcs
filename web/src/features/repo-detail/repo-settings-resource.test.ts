@@ -52,14 +52,17 @@ test('a GitHub connection change keeps the rest of the settings and refreshes ev
   const collaboration = { members: [member], invites: [] }
   const scope = (repoId: string, viewer: string) => JSON.stringify([repoId, viewer, { actor: 'Owner' }])
   for (const identity of [scope('owner/repo', 'a'), scope('owner/repo', 'b'), scope('owner/other', 'a')]) {
-    await repoSettingsResource.load(identity, '', async () => ({ collaboration, github: { configured: true, connection: null } }))
+    await repoSettingsResource.load(identity, '', async () => ({ collaboration, github: { configured: true, connection: null, required_checks: [], can_confirm_public: true } }))
   }
   const github = {
     configured: true,
     connection: {
       github_full_name: 'octo/checks', github_url: 'https://github.com/octo/checks',
       connected_by: null, connected_at_unix: 1, disconnected: null,
+      public_on_github: false, public_confirmed: true,
     },
+    required_checks: ['ci / test'],
+    can_confirm_public: true,
   }
   retainGitHubConnection(scope('owner/repo', 'a'), github)
   assert.deepEqual(repoSettingsResource.peek(scope('owner/repo', 'a')), { collaboration, github })

@@ -1,15 +1,17 @@
 //! What a request's head owes before it can merge: its evaluated checks.
 //!
-//! Every push evaluates the checks for that revision. A check is a workflow Scope
-//! runs natively or a check GitHub reports under a required name. Native workflows
+//! Every push evaluates the checks for that revision. A repository answers its
+//! checks with one provider: a repository linked to GitHub asks GitHub for each
+//! required check name, and any other runs Scope's own workflows. Native workflows
 //! come from the accepted main catalog for public requests and from the head for
-//! private ones. A maintainer's push starts the native runs at once; another
+//! private ones. A maintainer's push starts the checks at once; another
 //! contributor's push records them and waits for a maintainer to approve. The
 //! evaluation for the current head decides whether the request can merge.
 
 use super::{Request, RequestState, limits::validate_required};
 use crate::{
     error::DomainError,
+    github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
     runs::{
         availability::NATIVE_RUNS_UNAVAILABLE,
         run::{Run, RunState},
@@ -22,9 +24,33 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod github;
+mod github_push;
 mod planning;
 pub use github::{GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus};
+pub use github_push::{
+    GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus, changes_github_workflows,
+    github_push_retry_at, github_request_branch, github_request_ref,
+};
 pub use planning::RequestCheckPlan;
+
+/// Who answers a repository's request checks, never both. A repository linked
+/// to GitHub keeps asking GitHub after GitHub takes the link away, so its
+/// requests say why they cannot pass instead of quietly switching to native runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RequestCheckProvider {
+    Native,
+    GitHub,
+}
+
+impl RequestCheckProvider {
+    pub fn for_repository(github_connection: Option<&GitHubConnection>) -> Self {
+        if github_connection.is_some() {
+            Self::GitHub
+        } else {
+            Self::Native
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -34,7 +60,7 @@ pub enum RequestCheckEvaluationState {
     /// The checks are known; a maintainer has not started them.
     AwaitingApproval,
     /// Every native check has a run. A GitHub check needs nothing recorded here:
-    /// its results arrive for the tested commit once that commit reaches GitHub.
+    /// its results arrive for the tested commit once Scope pushes it to GitHub.
     Started,
     /// The selected workflow definitions could not be used.
     ConfigurationError,
@@ -306,10 +332,10 @@ impl RequestCheckEvaluation {
         Ok(Some(withdrawn))
     }
 
-    /// Whether a maintainer has native runs to start.
-    pub fn native_checks_await_approval(&self) -> bool {
+    /// Whether a maintainer has checks to start: native runs to create, or a
+    /// commit to send to GitHub.
+    pub fn awaits_approval(&self) -> bool {
         self.state == RequestCheckEvaluationState::AwaitingApproval
-            && self.native_checks().next().is_some()
     }
 
     pub fn native_checks(&self) -> impl Iterator<Item = &NativeRequestCheck> {
@@ -399,6 +425,15 @@ pub struct RequestCheckResults {
     /// The states of the native runs the evaluations started.
     pub native_runs: Vec<(String, RunState)>,
     pub github: GitHubCheckResults,
+    /// Private requests whose revisions the connected GitHub repository may
+    /// not receive: it became public and no one confirmed that since.
+    pub withheld_from_github: Vec<String>,
+}
+
+impl RequestCheckResults {
+    fn withholds(&self, evaluation: &RequestCheckEvaluation) -> bool {
+        evaluation.asks_github() && self.withheld_from_github.contains(&evaluation.request_id)
+    }
 }
 
 /// What one check says on its own.
@@ -421,7 +456,9 @@ pub fn request_checks_outcome(
         return RequestChecksOutcome::NotEvaluated;
     };
     // A GitHub check can never pass without a connection, whatever else the head awaits.
-    if evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected {
+    if (evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected)
+        || results.withholds(evaluation)
+    {
         return RequestChecksOutcome::ConfigurationError;
     }
     match evaluation.state {
@@ -448,6 +485,27 @@ pub fn request_checks_outcome(
     }
 }
 
+/// What the request should say about its checks besides their states: the
+/// evaluation's own message, or why GitHub checks cannot pass.
+pub fn request_checks_message(
+    evaluation: &RequestCheckEvaluation,
+    results: &RequestCheckResults,
+) -> Option<String> {
+    if let Some(message) = &evaluation.message {
+        return Some(message.clone());
+    }
+    if evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected {
+        return Some(
+            "This repository is no longer connected to GitHub, so its checks cannot pass. \
+             A maintainer can reconnect it in repository settings."
+                .to_string(),
+        );
+    }
+    results
+        .withholds(evaluation)
+        .then(|| PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string())
+}
+
 fn native_verdict(check: &NativeRequestCheck, runs: &[(String, RunState)]) -> CheckVerdict {
     let state = check.run_id.as_deref().and_then(|run_id| {
         runs.iter()
@@ -468,6 +526,21 @@ pub fn request_head_awaits_evaluation(request: &Request, outcome: RequestChecksO
     outcome == RequestChecksOutcome::NotEvaluated
         && request.git_snapshot.is_some()
         && !request.is_terminal()
+}
+
+/// A maintainer approves the head they reviewed. Approval runs the head's code,
+/// with the repository's secrets on GitHub, so a head pushed after the review
+/// must be reviewed again.
+pub fn ensure_approving_reviewed_head(
+    request: &Request,
+    reviewed_head_oid: &str,
+) -> Result<(), DomainError> {
+    if request.head_oid != reviewed_head_oid {
+        return Err(DomainError::conflict(
+            "This request has a new revision. Review it before approving its checks.",
+        ));
+    }
+    Ok(())
 }
 
 /// Whether the pusher's request runs start at once or wait for a maintainer.

@@ -1,4 +1,9 @@
-import type { ConnectRepoGitHubInput, GitHubSetupInput, RepoGitHubAuthorizeInput } from './types'
+import type {
+  ConnectRepoGitHubInput,
+  GitHubSetupInput,
+  RepoGitHubAuthorizeInput,
+  SetRepoGitHubRequiredChecksInput,
+} from './types'
 import { parseRepoParams } from './repo-params'
 
 const SETUP_INCOMPLETE = 'GitHub did not send everything needed to finish connecting. Start again from repository settings.'
@@ -27,7 +32,20 @@ export function parseConnectRepoGitHubInput(input: unknown): ConnectRepoGitHubIn
     ...params,
     grant: requiredText(data.grant, SETUP_INCOMPLETE),
     github_repository_id: positiveId(data.github_repository_id, 'Choose a GitHub repository.'),
+    // Only an explicit yes confirms that a public repository makes pushes public.
+    acknowledge_public: data.acknowledge_public === true,
   }
+}
+
+export function parseSetRepoGitHubRequiredChecksInput(
+  input: unknown,
+): SetRepoGitHubRequiredChecksInput {
+  const params = parseRepoParams(input)
+  const names = (input as Partial<SetRepoGitHubRequiredChecksInput>).names
+  if (!Array.isArray(names) || names.some((name) => typeof name !== 'string')) {
+    throw new Error('Required checks must be a list of check names.')
+  }
+  return { ...params, names }
 }
 
 function requiredText(value: unknown, message: string) {

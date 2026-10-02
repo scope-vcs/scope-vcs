@@ -1,9 +1,11 @@
 import type {
   AccountSessionResponse,
+  ApproveRequestChecksRequest,
   CommitFileResponse,
   ConnectGitHubRepositoryRequest,
   GitHubAuthorizeRequest,
   GitHubSetupRequest,
+  SetGitHubRequiredChecksRequest,
   HistoryEntryFileDiffRequest,
   HistoryEntryRequest,
   HistoryPageRequest,
@@ -142,6 +144,11 @@ export type GitHubSetupInput = GitHubSetupRequest
 export type RepoGitHubAuthorizeInput = RepoParams & GitHubAuthorizeRequest
 
 export type ConnectRepoGitHubInput = RepoParams & ConnectGitHubRepositoryRequest
+
+/** Approval names the head the maintainer reviewed; a newer head is refused. */
+export type ApproveRequestChecksInput = RequestParams & ApproveRequestChecksRequest
+
+export type SetRepoGitHubRequiredChecksInput = RepoParams & SetGitHubRequiredChecksRequest
 
 export type RepoInviteTokenInput = {
   token: string
