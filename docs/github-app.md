@@ -126,12 +126,12 @@ on:
 
 GitHub runs the workflow files in the pushed commit. Workflows that read
 `github.event.pull_request` find it empty on a branch push and need a
-fallback. Once connected, the Checks section of repository settings shows
+fallback. Once connected, the CI section of repository settings shows
 this trigger.
 
 ### Testing the connection
 
-Test connection in the Checks section
+Test connection in the CI section
 (`POST /v1/repos/{owner}/{repo}/github/setup-check`, maintainers only) sends
 the repository's current main to `scope/setup-check` with the same push jobs
 requests use. A repository keeps its latest test in
