@@ -116,3 +116,30 @@ test('a delayed file offers scoped retry and keeps its selection', async () => {
     release()
   }
 })
+
+test('a stale build shows one reload notice instead of retrying', async () => {
+  const names = []
+  await withPage(repoPath, async (page) => {
+    await page.locator('iframe[title="README.html preview"]').waitFor()
+    await page.route('**/_serverFn/**', async (route) => {
+      names.push(serverFunctionName(route.request()))
+      await route.fulfill({
+        status: 409,
+        headers: { 'content-type': 'text/plain; charset=utf-8', 'x-scope-stale-build': '1' },
+        body: 'Scope was updated. Reload to continue.',
+      })
+    })
+    const expand = page.getByRole('button', { name: 'Expand src', exact: true })
+    await waitForClientHydration(expand)
+    await expand.click()
+    await page.getByRole('button', { name: 'app.ts', exact: true }).click()
+    const notice = page.locator('[data-sonner-toast]').filter({ hasText: 'Scope was updated. Reload to continue.' })
+    await notice.getByRole('button', { name: 'Reload', exact: true }).waitFor()
+    assert.equal(await notice.count(), 1)
+    const requested = names.length
+    assert.ok(requested > 0)
+    // Refresh retries run every two seconds, so a quiet interval shows they stopped.
+    await page.waitForTimeout(5_000)
+    assert.equal(names.length, requested)
+  }, { prepare: holdEventStream, settle: false })
+})

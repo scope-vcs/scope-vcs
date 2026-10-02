@@ -1,3 +1,5 @@
+import { StaleBuildError } from './stale-build'
+
 export type RefreshScheduler = (callback: () => void, delayMs: number) => () => void
 
 type RefreshCoordinator<Request> = {
@@ -11,6 +13,7 @@ const REFRESH_RETRY_DELAY_MS = 2_000
  * Serialises live refreshes: requests arriving while one is in flight merge
  * into the next, a failed refresh merges its request back and retries after a
  * delay, an optional timeout aborts a hung refresh, and stop cancels all of it.
+ * A stale build stops the coordinator, because no retry can succeed.
  * What a request means (reasons, versions) stays with the caller.
  */
 export function createRefreshCoordinator<Request>({
@@ -32,6 +35,15 @@ export function createRefreshCoordinator<Request>({
   let refreshInFlight = false
   let stopped = false
 
+  const stop = () => {
+    stopped = true
+    pending = null
+    cancelRetry?.()
+    cancelRetry = null
+    activeController?.abort()
+    activeController = null
+  }
+
   const flush = async () => {
     if (stopped || refreshInFlight || pending === null) return
     cancelRetry?.()
@@ -50,7 +62,8 @@ export function createRefreshCoordinator<Request>({
       await (timeoutMs === undefined
         ? refresh(request, controller.signal)
         : Promise.race([refresh(request, controller.signal), abortRejection(controller.signal)]))
-    } catch {
+    } catch (error) {
+      if (error instanceof StaleBuildError) stop()
       failed = true
       if (!stopped) pending = pending === null ? request : merge(pending, request)
     } finally {
@@ -77,14 +90,7 @@ export function createRefreshCoordinator<Request>({
       cancelRetry = null
       void flush()
     },
-    stop() {
-      stopped = true
-      pending = null
-      cancelRetry?.()
-      cancelRetry = null
-      activeController?.abort()
-      activeController = null
-    },
+    stop,
   }
 }
 

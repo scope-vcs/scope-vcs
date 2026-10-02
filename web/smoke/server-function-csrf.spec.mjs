@@ -29,8 +29,10 @@ test('server function requests require same-origin browser metadata', async () =
     { Origin: serverFunctionUrl.origin },
     { Referer: new URL('/repositories', baseUrl).href },
   ]) {
+    // The ID is unknown, so an accepted request reaches the stale-build response.
     const response = await fetch(serverFunctionUrl, { headers })
-    assert.notEqual(response.status, 403, JSON.stringify(headers))
+    assert.equal(response.status, 409, JSON.stringify(headers))
+    assert.equal(response.headers.get('x-scope-stale-build'), '1', JSON.stringify(headers))
   }
 
   if (serverFunctionUrl.protocol === 'https:') {
