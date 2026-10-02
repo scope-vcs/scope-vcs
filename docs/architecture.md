@@ -141,6 +141,9 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   retries; and `github_check_results.rs` for reading GitHub's check runs when
   a webhook names a tested commit and for the reconciler that reads pending
   ones a delivery missed;
+- `public_check_commits.rs` for building the check commit GitHub tests for a
+  public contribution, the contribution merged onto private main in a
+  temporary private staging repository, at evaluation and again at push;
 - `request_revision_inspection.rs` for shared Git revision membership checks
   and raw diff execution used by review and discussion anchors;
 - `run_control.rs` and `run_inspection.rs` for run mutations and authorized run,

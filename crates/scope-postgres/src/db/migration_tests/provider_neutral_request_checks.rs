@@ -130,7 +130,9 @@ async fn stored_checks_become_native_checks_that_test_their_head() {
     db.execute_unprepared(
         r#"UPDATE scope_request_check_evaluations
               SET checks = '[{"provider":"github","name":"ci / test"}]',
-                  tested_oid = repeat('f', 40)
+                  tested_oid = repeat('f', 40),
+                  check_private_main_oid = repeat('1', 40),
+                  check_public_base_oid = repeat('2', 40)
             WHERE request_id = 'waiting'"#,
     )
     .await

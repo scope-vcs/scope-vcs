@@ -69,6 +69,7 @@ mod repository_rows;
 mod request_access;
 mod request_attention;
 mod request_auto_merge;
+mod request_check_commits;
 mod request_checks;
 mod request_discussion_commands;
 mod request_discussion_rows;
@@ -167,6 +168,7 @@ pub use request_auto_merge::{
     ClaimDueRequestAutoMergesCommand, ClaimedRequestAutoMerge, ReleaseRequestAutoMergeClaimCommand,
     RequestAutoMergeCheckState, StopClaimedRequestAutoMergeCommand,
 };
+pub use request_check_commits::RebuildCheckCommitCommand;
 pub use request_checks::{
     ApproveRequestChecksCommand, RecordRequestChecksCommand, RequestChecksMutation,
 };

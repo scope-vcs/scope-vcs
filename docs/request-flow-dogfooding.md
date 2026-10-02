@@ -37,6 +37,14 @@ snapshot after maintainer approval. Private requests use definitions at their
 head. A fixture that inserts an approval record directly cannot prove this source
 selection works.
 
+In a repository connected to GitHub, a public request's checks run on a check
+commit: the contribution merged onto private main, pushed to
+`scope/requests/<request id>` only after a maintainer approves. Confirm on GitHub
+that the branch holds the private files as well as the contribution, and that the
+request view never shows that commit's id. A contribution that conflicts with
+private code should report that conflict as a configuration error and push
+nothing.
+
 ## Record what happened
 
 For each relevant scenario, record **passed**, **failed**, **setup-blocked**, or

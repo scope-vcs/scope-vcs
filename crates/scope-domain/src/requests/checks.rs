@@ -4,11 +4,12 @@
 //! checks with one provider: a repository linked to GitHub asks GitHub for each
 //! required check name, and any other runs Scope's own workflows. Native workflows
 //! come from the accepted main catalog for public requests and from the head for
-//! private ones. A maintainer's push starts the checks at once; another
+//! private ones. GitHub tests a private head as it is and a public contribution
+//! merged onto private main. A maintainer's push starts the checks at once; another
 //! contributor's push records them and waits for a maintainer to approve. The
 //! evaluation for the current head decides whether the request can merge.
 
-use super::{Request, RequestState, limits::validate_required};
+use super::{Request, RequestAudience, RequestState, limits::validate_required};
 use crate::{
     error::DomainError,
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
@@ -26,6 +27,7 @@ use sha2::{Digest, Sha256};
 mod github;
 mod github_push;
 mod planning;
+mod tested_commit;
 pub use github::{
     GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun,
     GitHubCheckStatus, NO_GITHUB_WORKFLOWS_STARTED,
@@ -35,6 +37,10 @@ pub use github_push::{
     changes_github_workflows, github_push_retry_at, github_retry_at,
 };
 pub use planning::RequestCheckPlan;
+pub use tested_commit::{
+    CheckCommitBase, GitHubCheckTarget, GitHubTestedCommit, PRIVATE_CODE_CONFLICT_MESSAGE,
+    check_commit_message,
+};
 
 /// Who answers a repository's request checks, never both. A repository linked
 /// to GitHub keeps asking GitHub after GitHub takes the link away, so its
@@ -155,10 +161,10 @@ impl NativeRequestCheck {
             RunTrigger::Request,
             Some(requested_by_user_id.to_string()),
             match request.audience {
-                super::RequestAudience::Private => {
+                RequestAudience::Private => {
                     RunSource::request_git_snapshot(snapshot, request.base_main_oid.clone())?
                 }
-                super::RequestAudience::Public => RunSource::ephemeral_git_bundle(snapshot)?,
+                RequestAudience::Public => RunSource::ephemeral_git_bundle(snapshot)?,
             },
             now_unix,
         )
@@ -171,6 +177,8 @@ pub struct RequestCheckEvaluation {
     pub head_oid: String,
     /// The commit whose results answer the checks. Native runs test the head itself.
     pub tested_oid: String,
+    /// Set when GitHub tests a check commit built from the head instead of the head.
+    pub check_commit_base: Option<CheckCommitBase>,
     pub state: RequestCheckEvaluationState,
     pub message: Option<String>,
     pub checks: Vec<RequestCheck>,
@@ -356,6 +364,50 @@ impl RequestCheckEvaluation {
             .any(|check| matches!(check, RequestCheck::GitHub { .. }))
     }
 
+    pub fn tests_check_commit(&self) -> bool {
+        self.check_commit_base.is_some()
+    }
+
+    /// Whether the tested commit still stands for what merging the head would
+    /// produce. A head always does; a check commit only while private main is
+    /// the one it was built on.
+    pub fn check_commit_is_current(&self, private_main_oid: Option<&str>) -> bool {
+        self.check_commit_base
+            .as_ref()
+            .is_none_or(|base| Some(base.private_main_oid.as_str()) == private_main_oid)
+    }
+
+    /// Whether started checks test a check commit private main has moved past,
+    /// so a new check commit must be built and sent before they can count.
+    pub fn needs_new_check_commit(&self, private_main_oid: Option<&str>) -> bool {
+        self.state == RequestCheckEvaluationState::Started
+            && !self.check_commit_is_current(private_main_oid)
+    }
+
+    /// Whose code the tested commit carries. A public contribution's check
+    /// commit is built on private main, so it is private code wherever it goes.
+    pub fn tested_code_audience(&self, request_audience: RequestAudience) -> RequestAudience {
+        if self.tests_check_commit() {
+            RequestAudience::Private
+        } else {
+            request_audience
+        }
+    }
+
+    /// GitHub answers the checks for a check commit built from the head. Native
+    /// runs always test the head itself.
+    fn test_check_commit(&mut self, oid: String, base: CheckCommitBase) -> Result<(), DomainError> {
+        validate_git_oid("request check commit", &oid)?;
+        if oid == self.head_oid || self.native_checks().next().is_some() {
+            return Err(DomainError::invalid_input(
+                "only GitHub checks can test a commit other than the head",
+            ));
+        }
+        self.tested_oid = oid;
+        self.check_commit_base = Some(base);
+        Ok(())
+    }
+
     fn new(
         request_id: impl Into<String>,
         head_oid: impl Into<String>,
@@ -384,6 +436,7 @@ impl RequestCheckEvaluation {
         Ok(Self {
             request_id,
             tested_oid: head_oid.clone(),
+            check_commit_base: None,
             head_oid,
             state,
             message,
@@ -431,6 +484,9 @@ pub struct RequestCheckResults {
     /// Private requests whose revisions the connected GitHub repository may
     /// not receive: it became public and no one confirmed that since.
     pub withheld_from_github: Vec<String>,
+    /// Private main now. A check commit counts only while it is built on it,
+    /// because the merge applies the contribution to private main as it is.
+    pub private_main_oid: Option<String>,
 }
 
 impl RequestCheckResults {
@@ -468,6 +524,13 @@ pub fn request_checks_outcome(
         RequestCheckEvaluationState::NoChecks => RequestChecksOutcome::Clear,
         RequestCheckEvaluationState::AwaitingApproval => RequestChecksOutcome::AwaitingApproval,
         RequestCheckEvaluationState::ConfigurationError => RequestChecksOutcome::ConfigurationError,
+        // Results for a check commit built on an older private main say nothing
+        // about what the merge would produce now; a new check commit must run.
+        RequestCheckEvaluationState::Started
+            if !evaluation.check_commit_is_current(results.private_main_oid.as_deref()) =>
+        {
+            RequestChecksOutcome::Pending
+        }
         RequestCheckEvaluationState::Started => {
             let mut outcome = RequestChecksOutcome::Clear;
             for check in &evaluation.checks {

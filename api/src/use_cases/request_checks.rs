@@ -1,8 +1,8 @@
 //! What a request's checks say about merging it, and the evaluation every push
 //! to a request head records. A head whose evaluation failed holds the merge and
 //! is evaluated again when someone looks at the request. A repository linked to
-//! GitHub needs only its required check names; any other reads the workflows
-//! at the head.
+//! GitHub needs only its required check names and, for a public contribution,
+//! the check commit GitHub tests; any other reads the workflows at the head.
 
 use crate::{
     error::ApiError,
@@ -12,21 +12,25 @@ use crate::{
         request_refs::with_request_revision_store_repo,
     },
     persistence::unix_now,
+    repo_access::find_repo,
     repo_events::RepoChangeReason,
     state::AppState,
-    use_cases::repository_workflows,
+    use_cases::{public_check_commits::public_tested_commit, repository_workflows},
 };
 use scope_api_contract::RunChangeKind;
 use scope_domain::{
-    repository::{RepoRecord, RepositoryIncarnation},
+    repository::{RepoRecord, Repository, RepositoryIncarnation},
     requests::{
-        Request, RequestAudience, RequestCheckEvaluation, RequestCheckPlan, RequestCheckProvider,
-        RequestCheckResults, RequestChecksOutcome, changes_github_workflows,
-        request_checks_outcome, request_head_awaits_evaluation,
+        GitHubCheckTarget, GitHubTestedCommit, Request, RequestAudience, RequestCheckEvaluation,
+        RequestCheckPlan, RequestCheckProvider, RequestCheckResults, RequestChecksOutcome,
+        RequestRevision, changes_github_workflows, request_checks_outcome,
+        request_head_awaits_evaluation,
     },
     runs::{availability::NativeRunsAvailability, workflow::revision::WorkflowRevision},
 };
-use scope_postgres::db::{RecordRequestChecksCommand, RequestChecksMutation, RequestListRow};
+use scope_postgres::db::{
+    RebuildCheckCommitCommand, RecordRequestChecksCommand, RequestChecksMutation, RequestListRow,
+};
 use std::{collections::HashMap, future::Future, path::Path};
 
 /// The request-triggered workflows at a head, or the configuration error that
@@ -51,6 +55,22 @@ pub(crate) async fn checks_view(
     request: &Request,
 ) -> Result<RequestChecksView, ApiError> {
     let view = recorded_checks_view(state, request).await?;
+    // Checks on a check commit private main has moved past cannot clear the
+    // merge, which applies the contribution to private main as it is now.
+    if let Some(evaluation) = view.evaluation.as_ref().filter(|evaluation| {
+        !request.is_terminal()
+            && evaluation.needs_new_check_commit(view.results.private_main_oid.as_deref())
+    }) {
+        let repo = find_repo(state, &repo.owner_handle, &repo.name).await?;
+        Box::pin(renew_check_commit(
+            state,
+            &repo,
+            request,
+            &evaluation.tested_oid,
+        ))
+        .await?;
+        return recorded_checks_view(state, request).await;
+    }
     if !request_head_awaits_evaluation(request, view.outcome) {
         return Ok(view);
     }
@@ -160,6 +180,11 @@ async fn evaluate_saved_head(
             }
         })
     };
+    let check_commit = async {
+        let repo = find_repo(state, &repo.owner_handle, &repo.name).await?;
+        // Boxed: building a check commit is a large future.
+        Box::pin(public_tested_commit(state, &repo, request, &revision)).await
+    };
     // Boxed so the commands that look at a request, such as a merge, keep a
     // small future of their own.
     Box::pin(evaluate_request_checks(
@@ -167,6 +192,7 @@ async fn evaluate_saved_head(
         request,
         maintainer_pusher,
         native_revisions,
+        check_commit,
     ))
     .await
     .map(Some)
@@ -222,8 +248,9 @@ pub(crate) async fn checks_outcomes(
 /// The push is already committed when this runs, so nothing here can fail it.
 pub(crate) async fn best_effort_evaluate_request_checks(
     state: &AppState,
-    incarnation: &RepositoryIncarnation,
+    repo: &Repository,
     request: &Request,
+    revision: &RequestRevision,
     actor_user_id: &str,
     actor_is_maintainer: bool,
     staging_repo: &Path,
@@ -242,13 +269,102 @@ pub(crate) async fn best_effort_evaluate_request_checks(
             }
         })
     };
+    // Boxed: building a check commit is a large future.
+    let check_commit = Box::pin(public_tested_commit(state, repo, request, revision));
     let maintainer_pusher = actor_is_maintainer.then_some(actor_user_id);
-    let evaluated =
-        evaluate_request_checks(state, request, maintainer_pusher, native_revisions).await;
+    let evaluated = evaluate_request_checks(
+        state,
+        request,
+        maintainer_pusher,
+        native_revisions,
+        check_commit,
+    )
+    .await;
     match evaluated {
-        Ok(mutation) => publish_request_checks_change(state, incarnation, &mutation).await,
+        Ok(mutation) => {
+            publish_request_checks_change(state, &repo.incarnation(), &mutation).await;
+        }
         Err(error) => warn_evaluation_failed(request, &error),
     }
+}
+
+/// Moves the head's started checks onto a check commit built again on current
+/// private main, and sends it. `None` when someone else already did, or the head
+/// moved on.
+async fn renew_check_commit(
+    state: &AppState,
+    repo: &Repository,
+    request: &Request,
+    replaced_tested_oid: &str,
+) -> Result<Option<RequestChecksMutation>, ApiError> {
+    let revision = state
+        .metadata
+        .requests()
+        .request_revision_with_head(&request.id, &request.head_oid)
+        .await?
+        .ok_or_else(|| ApiError::conflict("request head has no saved revision"))?;
+    let tested = Box::pin(public_tested_commit(state, repo, request, &revision)).await?;
+    let mutation = state
+        .metadata
+        .requests()
+        .rebuild_request_check_commit(RebuildCheckCommitCommand {
+            request_id: request.id.clone(),
+            head_oid: request.head_oid.clone(),
+            replaced_tested_oid: replaced_tested_oid.to_string(),
+            tested,
+            now_unix: unix_now()?,
+        })
+        .await?;
+    if let Some(mutation) = &mutation {
+        publish_request_checks_change(state, &repo.incarnation(), mutation).await;
+    }
+    Ok(mutation)
+}
+
+/// Private main moved, so every open public contribution with started checks
+/// needs a check commit built on it. Runs in the background: the change that
+/// moved main is already committed, and the merge gate renews a request's check
+/// commit itself before it can count.
+pub(crate) fn renew_stale_check_commits_in_background(state: &AppState, owner: &str, name: &str) {
+    let (state, owner, name) = (state.clone(), owner.to_string(), name.to_string());
+    tokio::spawn(async move {
+        let renewed = async {
+            let repo = find_repo(&state, &owner, &name).await?;
+            let requests = state
+                .metadata
+                .requests()
+                .requests_needing_new_check_commit(&repo.record.id)
+                .await?;
+            for request in requests {
+                let Some(evaluation) = state
+                    .metadata
+                    .requests()
+                    .request_check_evaluation(&request.id, &request.head_oid)
+                    .await?
+                else {
+                    continue;
+                };
+                if let Err(error) =
+                    renew_check_commit(&state, &repo, &request, &evaluation.tested_oid).await
+                {
+                    tracing::warn!(
+                        request_id = request.id,
+                        error = %error.operator_diagnostic(),
+                        "renewing a request's check commit failed"
+                    );
+                }
+            }
+            Ok::<_, ApiError>(())
+        };
+        if let Err(error) = renewed.await {
+            tracing::warn!(
+                owner,
+                repo = name,
+                error = %error.operator_diagnostic(),
+                "renewing check commits after private main moved failed"
+            );
+        }
+    });
 }
 
 /// Whether the request changes GitHub workflow files between its base and its
@@ -322,12 +438,14 @@ fn warn_evaluation_failed(request: &Request, error: &ApiError) {
 }
 
 /// Evaluates the head with the repository's check provider. Workflow files
-/// are only read when the repository runs its checks natively.
+/// are only read when the repository runs its checks natively, and a check
+/// commit is only built when GitHub tests a public contribution.
 async fn evaluate_request_checks(
     state: &AppState,
     request: &Request,
     maintainer_pusher: Option<&str>,
     native_revisions: impl Future<Output = Result<NativeRevisions, ApiError>>,
+    check_commit: impl Future<Output = Result<GitHubTestedCommit, ApiError>>,
 ) -> Result<RequestChecksMutation, ApiError> {
     let repositories = state.metadata.repositories();
     let connection = repositories
@@ -340,8 +458,18 @@ async fn evaluate_request_checks(
             let required = repositories
                 .github_required_checks(&request.repo_id)
                 .await?;
+            let tested = match GitHubCheckTarget::for_request(request) {
+                GitHubCheckTarget::Head => GitHubTestedCommit::Head,
+                GitHubCheckTarget::CheckCommit => check_commit.await?,
+            };
             (
-                RequestCheckPlan::evaluate_github(request, &required, maintainer_pusher, now_unix)?,
+                RequestCheckPlan::evaluate_github(
+                    request,
+                    tested,
+                    &required,
+                    maintainer_pusher,
+                    now_unix,
+                )?,
                 Vec::new(),
             )
         }

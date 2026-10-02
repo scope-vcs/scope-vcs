@@ -1,6 +1,7 @@
 use super::{
-    NativeRequestCheck, Request, RequestCheck, RequestCheckEvaluation, Run, WorkflowRevision,
-    request_checks_start_immediately,
+    GitHubCheckTarget, GitHubTestedCommit, NativeRequestCheck, PRIVATE_CODE_CONFLICT_MESSAGE,
+    Request, RequestCheck, RequestCheckEvaluation, RequestCheckEvaluationState, Run,
+    WorkflowRevision, request_checks_start_immediately,
 };
 use crate::{error::DomainError, runs::availability::NativeRunsAvailability};
 
@@ -85,23 +86,46 @@ impl RequestCheckPlan {
         Ok(Self::native(evaluation, runs))
     }
 
-    /// Every required check name becomes a check GitHub answers for the head.
-    /// A maintainer's head goes to GitHub at once, even when no check is
+    /// Every required check name becomes a check GitHub answers for the tested
+    /// commit: a private request's head, or a public contribution's check
+    /// commit. A contribution that conflicts with private code has nothing to
+    /// test. A maintainer's head goes to GitHub at once, even when no check is
     /// required, so the repository's workflows still run on it. Anyone else's
     /// head waits for a maintainer, because the pushed branch gets the
     /// repository's secrets; with nothing required it is never sent.
     pub fn evaluate_github(
         request: &Request,
+        tested: GitHubTestedCommit,
         required_check_names: &[String],
         maintainer_pusher: Option<&str>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
+        if tested.target() != GitHubCheckTarget::for_request(request) {
+            return Err(DomainError::invalid_input(
+                "the tested commit does not fit the request's audience",
+            ));
+        }
+        let check_commit = match tested {
+            GitHubTestedCommit::Head => None,
+            GitHubTestedCommit::CheckCommit { oid, base } => Some((oid, base)),
+            GitHubTestedCommit::Conflict => {
+                return Ok(Self::native(
+                    RequestCheckEvaluation::configuration_error(
+                        &request.id,
+                        &request.head_oid,
+                        PRIVATE_CODE_CONFLICT_MESSAGE,
+                        now_unix,
+                    )?,
+                    Vec::new(),
+                ));
+            }
+        };
         let starts = maintainer_pusher.is_some() && request_checks_start_immediately(request, true);
         let checks = required_check_names
             .iter()
             .map(|name| RequestCheck::GitHub { name: name.clone() })
             .collect::<Vec<_>>();
-        let evaluation = if checks.is_empty() {
+        let mut evaluation = if checks.is_empty() {
             RequestCheckEvaluation::no_checks(&request.id, &request.head_oid, now_unix)?
         } else if starts {
             RequestCheckEvaluation::started(&request.id, &request.head_oid, checks, now_unix)?
@@ -113,10 +137,67 @@ impl RequestCheckPlan {
                 now_unix,
             )?
         };
+        if let Some((oid, base)) = check_commit {
+            evaluation.test_check_commit(oid, base)?;
+        }
         Ok(Self {
             evaluation,
             runs: Vec::new(),
             push_to_github: starts,
+        })
+    }
+
+    /// Moves started checks onto a check commit built again on current private
+    /// main. The head is the one a maintainer already approved, and private
+    /// main is trusted, so the new commit goes to GitHub at once; results for
+    /// the old commit stop counting because they belong to another commit. A
+    /// contribution that now conflicts with private code has nothing to test.
+    pub fn rebuild_check_commit(
+        request: &Request,
+        mut evaluation: RequestCheckEvaluation,
+        tested: GitHubTestedCommit,
+        now_unix: u64,
+    ) -> Result<Self, DomainError> {
+        if evaluation.request_id != request.id
+            || evaluation.head_oid != request.head_oid
+            || evaluation.state != RequestCheckEvaluationState::Started
+            || !evaluation.tests_check_commit()
+        {
+            return Err(DomainError::conflict(
+                "request checks no longer test a check commit for this head",
+            ));
+        }
+        if now_unix < evaluation.created_at_unix {
+            return Err(DomainError::invalid_input(
+                "a new check commit cannot predate the evaluation",
+            ));
+        }
+        let (oid, base) = match tested {
+            GitHubTestedCommit::CheckCommit { oid, base } => (oid, base),
+            GitHubTestedCommit::Conflict => {
+                let mut conflict = RequestCheckEvaluation::configuration_error(
+                    &request.id,
+                    &request.head_oid,
+                    PRIVATE_CODE_CONFLICT_MESSAGE,
+                    now_unix,
+                )?;
+                conflict.created_at_unix = evaluation.created_at_unix;
+                return Ok(Self::native(conflict, Vec::new()));
+            }
+            GitHubTestedCommit::Head => {
+                return Err(DomainError::invalid_input(
+                    "the tested commit does not fit the request's audience",
+                ));
+            }
+        };
+        evaluation.tested_oid = evaluation.head_oid.clone();
+        evaluation.check_commit_base = None;
+        evaluation.test_check_commit(oid, base)?;
+        evaluation.updated_at_unix = now_unix;
+        Ok(Self {
+            push_to_github: !request.is_terminal(),
+            evaluation,
+            runs: Vec::new(),
         })
     }
 
@@ -150,6 +231,7 @@ impl RequestCheckPlan {
         })
     }
 
+    /// A plan that sends nothing to GitHub.
     fn native(evaluation: RequestCheckEvaluation, runs: Vec<Run>) -> Self {
         Self {
             evaluation,

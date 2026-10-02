@@ -289,8 +289,9 @@ pub(super) async fn persist_request_ref_revision(
             persisted.fence.release().await;
             crate::use_cases::request_checks::best_effort_evaluate_request_checks(
                 state,
-                &incarnation,
+                &repo,
                 &mutation.request,
+                &mutation.revision,
                 actor_user_id,
                 repo.access_for_user_id(actor_user_id).is_maintainer(),
                 staging_repo,

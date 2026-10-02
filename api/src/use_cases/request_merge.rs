@@ -8,6 +8,7 @@ use crate::{
             reviewed_update_from_staging_repo,
         },
         projection_repo::verify_projection_materialization,
+        request_merge_tree::{MergedTree, merge_request_tree},
         request_ref_public_safety::validate_public_request_merge_range,
         request_refs::attach_visible_request_refs,
         storage::{receive_pack_staging_repo_path, remove_dir_if_exists},
@@ -144,6 +145,9 @@ pub(crate) async fn merge_request_inner(
     // The gate is separate from permission: the head's checks must have cleared,
     // on GitHub's word as of now rather than a delivery that may have been lost.
     crate::use_cases::github_check_results::confirm_recent_github_checks(state, &request).await?;
+    // A check commit counts only while it is built on private main as read
+    // here. The merge is fenced to the main loaded above, earlier, so main
+    // moving in between fails the merge rather than landing an untested tree.
     let checks =
         crate::use_cases::request_checks::checks_outcome(state, &repo.record, &request).await?;
     if checks != RequestChecksOutcome::Clear {
@@ -204,6 +208,11 @@ pub(crate) async fn merge_request_inner(
             RepoChangeReason::RequestMerged,
         )
         .await;
+    crate::use_cases::request_checks::renew_stale_check_commits_in_background(
+        state,
+        &command.owner,
+        &command.repo_name,
+    );
     Ok(MergeRequestResult {
         repo: committed_repo,
         access,
@@ -582,42 +591,15 @@ fn merge_main_oid_for_execution(
         &["config", "user.email", "merge@scope.local"],
         "configuring request merge email",
     )?;
-    let merge_base = format!("--merge-base={request_base_oid}");
-    let merge_tree = run_git_output(
-        Some(repo),
-        &[
-            "merge-tree",
-            "--write-tree",
-            &merge_base,
-            current_main_oid,
-            request_head_oid,
-        ],
-        "merging request trees",
-    )?;
-    if !merge_tree.status.success() {
-        let diagnostic = String::from_utf8_lossy(&merge_tree.stderr);
-        if merge_tree.status.code() == Some(1) {
-            return Err(MergeMainFailure::Conflict(ApiError::conflict(format!(
-                "request cannot merge cleanly: {}",
-                diagnostic.trim()
-            ))));
-        }
-        return Err(MergeMainFailure::Other(
-            ApiError::infrastructure_unavailable(format!(
-                "git merge-tree exited with {}: {}",
-                merge_tree.status,
-                diagnostic.trim()
-            )),
-        ));
-    }
-    let tree_oid = String::from_utf8(merge_tree.stdout)
-        .map_err(ApiError::internal)?
-        .lines()
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| ApiError::internal_message("Git merge-tree returned no tree"))?
-        .to_string();
+    let tree_oid =
+        match merge_request_tree(repo, request_base_oid, current_main_oid, request_head_oid)? {
+            MergedTree::Clean(tree_oid) => tree_oid,
+            MergedTree::Conflict(diagnostic) => {
+                return Err(MergeMainFailure::Conflict(ApiError::conflict(format!(
+                    "request cannot merge cleanly: {diagnostic}"
+                ))));
+            }
+        };
     let message = format!("Merge request {request_name}");
     let commit = run_git_output(
         Some(repo),

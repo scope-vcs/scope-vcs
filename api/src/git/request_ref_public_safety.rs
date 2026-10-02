@@ -92,6 +92,24 @@ pub(crate) async fn validate_public_request_merge_range(
     })
 }
 
+/// The newest public main commit a public contribution's head contains, which
+/// its check commit merges from. Once the head contains current public main,
+/// that is the merge base the merge itself uses.
+pub(crate) async fn public_contribution_base(
+    repo: &Repository,
+    state: &AppState,
+    staging_repo: &FsPath,
+    request_head_oid: &str,
+) -> Result<String, ApiError> {
+    fetch_current_public_projection(repo, state, staging_repo).await?;
+    git_stdout_text(
+        staging_repo,
+        &["merge-base", PUBLIC_REQUEST_BASE_REF, request_head_oid],
+        "finding the public contribution base",
+    )
+    .map(|oid| oid.trim().to_string())
+}
+
 fn validated_public_parent_oids(
     staging_repo: &FsPath,
     commit_oids: &[String],

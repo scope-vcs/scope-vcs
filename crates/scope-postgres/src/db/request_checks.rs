@@ -217,6 +217,23 @@ impl RequestStore {
         evaluation_for_head(self.db.as_ref(), request_id, head_oid).await
     }
 
+    /// The evaluation whose checks GitHub answers for `tested_oid`: the head
+    /// itself, or the check commit built from it.
+    pub async fn request_check_evaluation_testing(
+        &self,
+        request_id: &str,
+        tested_oid: &str,
+    ) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
+        entities::request_check_evaluation::Entity::find()
+            .filter(entities::request_check_evaluation::Column::RequestId.eq(request_id))
+            .filter(entities::request_check_evaluation::Column::TestedOid.eq(tested_oid))
+            .one(self.db.as_ref())
+            .await
+            .map_err(PostgresError::internal)?
+            .map(entities::request_check_evaluation::Model::try_into_domain)
+            .transpose()
+    }
+
     /// The results that answer the checks of evaluations in one repository.
     pub async fn request_check_results(
         &self,
@@ -268,11 +285,17 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
     let mut run_ids = Vec::new();
     let mut tested_oids = Vec::new();
     let mut github_request_ids = Vec::new();
+    let mut check_commit_request_ids = Vec::new();
     for evaluation in evaluations {
         run_ids.extend(evaluation.run_ids().map(str::to_string));
         if evaluation.asks_github() {
             tested_oids.push(evaluation.tested_oid.clone());
-            github_request_ids.push(evaluation.request_id.clone());
+            // A check commit is private code whatever the request's audience.
+            if evaluation.tests_check_commit() {
+                check_commit_request_ids.push(evaluation.request_id.clone());
+            } else {
+                github_request_ids.push(evaluation.request_id.clone());
+            }
         }
     }
     let native_runs = if run_ids.is_empty() {
@@ -297,11 +320,13 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
             .await?
             .filter(|connection| connection.is_connected())
     };
-    // A repository that became public on GitHub gets no private request until
-    // a maintainer confirms; those requests' checks cannot pass meanwhile.
+    // A repository that became public on GitHub gets no private code until a
+    // maintainer confirms; those requests' checks cannot pass meanwhile.
     let withheld_from_github = match &connection {
         Some(connection) if !connection.may_receive_private_requests() => {
-            private_request_ids(conn, &github_request_ids).await?
+            let mut withheld = private_request_ids(conn, &github_request_ids).await?;
+            withheld.extend(check_commit_request_ids.iter().cloned());
+            withheld
         }
         _ => Vec::new(),
     };
@@ -320,10 +345,16 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
     } else {
         GitHubCheckResults::Disconnected
     };
+    let private_main_oid = if check_commit_request_ids.is_empty() {
+        None
+    } else {
+        super::request_check_commits::private_main_oid(conn, repo_id).await?
+    };
     Ok(RequestCheckResults {
         native_runs,
         github,
         withheld_from_github,
+        private_main_oid,
     })
 }
 
@@ -388,7 +419,7 @@ pub(super) async fn stop_auto_merge_for_evaluation(
 /// Queues the push of the tested commit to the GitHub repository linked now.
 /// Returns `false` when no link is left to push to; the evaluation then
 /// cannot pass, which the request shows.
-async fn queue_tested_commit_push(
+pub(super) async fn queue_tested_commit_push(
     tx: &DatabaseTransaction,
     request: &Request,
     tested_oid: &str,
@@ -437,10 +468,14 @@ pub(super) async fn save_evaluation(
                 entities::request_check_evaluation::Column::HeadOid,
             ])
             .update_columns([
+                entities::request_check_evaluation::Column::TestedOid,
                 entities::request_check_evaluation::Column::State,
                 entities::request_check_evaluation::Column::Message,
                 entities::request_check_evaluation::Column::Checks,
+                entities::request_check_evaluation::Column::CreatedAtUnix,
                 entities::request_check_evaluation::Column::UpdatedAtUnix,
+                entities::request_check_evaluation::Column::CheckPrivateMainOid,
+                entities::request_check_evaluation::Column::CheckPublicBaseOid,
             ])
             .to_owned(),
         )

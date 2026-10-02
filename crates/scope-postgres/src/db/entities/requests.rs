@@ -1,8 +1,8 @@
 use super::*;
 use scope_domain::requests::{
-    Request, RequestActorRole, RequestAttention, RequestAttentionReason, RequestAttentionState,
-    RequestAudience, RequestCheckEvaluation, RequestClaim, RequestDiscussion,
-    RequestDiscussionAnchor, RequestDiscussionReadState, RequestDiscussionReply,
+    CheckCommitBase, Request, RequestActorRole, RequestAttention, RequestAttentionReason,
+    RequestAttentionState, RequestAudience, RequestCheckEvaluation, RequestClaim,
+    RequestDiscussion, RequestDiscussionAnchor, RequestDiscussionReadState, RequestDiscussionReply,
     RequestDiscussionStatus, RequestEvent, RequestEventKind, RequestEventPayload, RequestInvitee,
     RequestRating, RequestRevision,
 };
@@ -638,6 +638,8 @@ pub mod request_check_evaluation {
         pub checks: Json,
         pub created_at_unix: i64,
         pub updated_at_unix: i64,
+        pub check_private_main_oid: Option<String>,
+        pub check_public_base_oid: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -655,6 +657,14 @@ pub mod request_check_evaluation {
                 checks: encode_json(&value.checks)?,
                 created_at_unix: u64_to_i64(value.created_at_unix, "request check creation time")?,
                 updated_at_unix: u64_to_i64(value.updated_at_unix, "request check update time")?,
+                check_private_main_oid: value
+                    .check_commit_base
+                    .as_ref()
+                    .map(|base| base.private_main_oid.clone()),
+                check_public_base_oid: value
+                    .check_commit_base
+                    .as_ref()
+                    .map(|base| base.public_base_oid.clone()),
             })
         }
 
@@ -663,6 +673,17 @@ pub mod request_check_evaluation {
                 request_id: self.request_id,
                 head_oid: self.head_oid,
                 tested_oid: self.tested_oid,
+                check_commit_base: match (self.check_private_main_oid, self.check_public_base_oid) {
+                    (Some(private_main_oid), Some(public_base_oid)) => {
+                        Some(CheckCommitBase::new(private_main_oid, public_base_oid)?)
+                    }
+                    (None, None) => None,
+                    _ => {
+                        return Err(PostgresError::internal_message(
+                            "request check commit names only one of its bases",
+                        ));
+                    }
+                },
                 state: decode_enum(self.state)?,
                 message: self.message,
                 checks: decode_json(self.checks)?,
