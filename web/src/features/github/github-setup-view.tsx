@@ -118,7 +118,7 @@ function GitHubSetup({ actions, search }: { actions: SetupActions; search: GitHu
   if (state.kind === 'incomplete') {
     return (
       <Closed
-        description="Start connecting from the Checks section of repository settings."
+        description="Start connecting from the CI section of repository settings."
         title="Nothing to connect"
       />
     )

@@ -66,7 +66,7 @@ test('repository components retain drafts, previews and pending actions across r
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.keyboard.press('Escape')
 
-    const checks = page.locator('section').filter({ has: page.getByText('Checks', { exact: true }) })
+    const checks = page.locator('section').filter({ has: page.getByText('CI', { exact: true }) })
     await checks.getByText('Connected to octo/demo').waitFor()
     await checks.getByText('Connected by @owner on Jan 01, 2026, 12:00 AM UTC.').waitFor()
     assert.equal(await checks.getByRole('link', { name: 'octo/demo' }).getAttribute('href'), 'https://github.com/octo/demo')

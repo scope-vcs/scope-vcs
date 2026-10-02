@@ -24,13 +24,13 @@ export const REPOSITORY_DETAIL_FIELDS = {
   website_url: 'Website or documentation',
 } as const
 
-export function ChecksSection({ children }: { children: ReactNode }) {
+export function CiSection({ children }: { children: ReactNode }) {
   return (
     <SectionRows>
       <SectionRow
         description="Run the GitHub Actions workflows of a connected GitHub repository on requests."
         icon={<CircleCheck className="size-4" />}
-        title="Checks"
+        title="CI"
       >
         {children}
       </SectionRow>

@@ -5,7 +5,7 @@ import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
 import { useParams } from '@tanstack/react-router'
 import {
   AccessSection,
-  ChecksSection,
+  CiSection,
   DangerZoneSection,
   REPOSITORY_DETAIL_FIELDS,
   RepositoryDetailsSection,
@@ -30,9 +30,9 @@ export function RepoSettingsPending() {
             <Button disabled size="sm" type="button">Save details</Button>
           </div>
         </RepositoryDetailsSection>
-        <ChecksSection>
+        <CiSection>
           <TextSkeleton length="long" />
-        </ChecksSection>
+        </CiSection>
         <DangerZoneSection />
         <AccessSection canInvite ownerHandle={owner} />
       </PageContent>

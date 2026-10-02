@@ -6,10 +6,10 @@ import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { LoaderCircle, Plug, Unplug } from 'lucide-react'
 import { useState } from 'react'
 import { githubConnectionView } from './repo-github-connection-model'
-import { ChecksSection } from './repo-settings-sections'
+import { CiSection } from './repo-settings-sections'
 
 /** `github` is `null` until it loads. */
-export function RepoChecksSection({
+export function RepoCiSection({
   disconnect,
   github,
   startAuthorization,
@@ -48,9 +48,9 @@ export function RepoChecksSection({
 
   if (!github) {
     return (
-      <ChecksSection>
+      <CiSection>
         <TextSkeleton length="long" />
-      </ChecksSection>
+      </CiSection>
     )
   }
 
@@ -69,7 +69,7 @@ export function RepoChecksSection({
   )
 
   return (
-    <ChecksSection>
+    <CiSection>
       <div className="space-y-3 text-sm">
         {view.kind === 'unconfigured' && (
           <p className="leading-5 text-muted-foreground">GitHub is not configured on this server.</p>
@@ -113,6 +113,6 @@ export function RepoChecksSection({
 
         {error && <PageErrorAlert className="mt-0" title={error.title}>{error.message}</PageErrorAlert>}
       </div>
-    </ChecksSection>
+    </CiSection>
   )
 }

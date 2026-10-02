@@ -11,7 +11,7 @@ const connection: GitHubConnectionDetailsResponse = {
   disconnected: null,
 }
 
-test('the checks section describes each connection state', () => {
+test('the CI section describes each connection state', () => {
   assert.deepEqual(githubConnectionView({ configured: false, connection: null }), { kind: 'unconfigured' })
   // A stored link is not offered when the server can no longer use it.
   assert.deepEqual(githubConnectionView({ configured: false, connection }), { kind: 'unconfigured' })

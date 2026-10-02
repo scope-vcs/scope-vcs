@@ -29,7 +29,7 @@ import {
   RepositoryMembersSection,
 } from './repo-members-section'
 import { MemberAccessSummary } from './repo-member-permissions'
-import { RepoChecksSection } from './repo-checks-section'
+import { RepoCiSection } from './repo-ci-section'
 import { RepositoryMetadataForm } from './repository-metadata-form'
 import { AccessSection, DangerZoneSection } from './repo-settings-sections'
 import { useRepoLayout } from './repo-layout-context'
@@ -164,7 +164,7 @@ export function RepoSettingsPage({
         {repo.access.can_read_private_files && visibilityLog}
 
         {repo.access.actor !== 'Public' && (
-          <RepoChecksSection
+          <RepoCiSection
             disconnect={() => disconnectGitHub(params)}
             github={github}
             startAuthorization={() => startGitHubAuthorization(params)}
