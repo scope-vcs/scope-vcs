@@ -130,8 +130,9 @@ fallback.
 
 ### Required checks
 
-The Checks section of repository settings lists the check names GitHub must
-pass, the names GitHub's own branch protection uses, such as `ci / test`.
+Maintainers list the check names GitHub must pass under Required checks in
+the CI section of repository settings. They are the names GitHub's own branch
+protection uses, such as `ci / test`.
 `PUT /v1/repos/{owner}/{repo}/github/required-checks` replaces the list.
 Every push to a request records an evaluation with one GitHub check per
 required name and the head as the tested commit. Changing the list affects
