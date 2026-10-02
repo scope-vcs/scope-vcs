@@ -214,24 +214,26 @@ Use IAM simulation after the stack update. The dispatcher must be denied `secret
 
 ## Move publishing to the runner base image
 
-A stack that still holds the `scope-vcs/production/checks` repository needs this update once. It keeps the publisher role `scope-cloud-runner-production-github-checks-publisher` and its name, and changes only its trust conditions and repository grant. The protected `scope-infrastructure-execution` role may not change GitHub roles, so a routine apply of this change rolls back. Run every step below with the temporary administration identity from [SECURITY.md](SECURITY.md), from the change's branch, before merging it and before any release that includes it. The first such release selects the new `runner-image` component and publishes at once.
+A stack that still holds the `scope-vcs/production/checks` repository needs this update once. It keeps the publisher role `scope-cloud-runner-production-github-checks-publisher` and its name, and changes only its trust conditions and repository grant. The protected `scope-infrastructure-execution` role may not change GitHub roles, so a routine apply of this change rolls back. Run every step below with the temporary administration identity from [SECURITY.md](SECURITY.md), before any release that includes this change. The first such release selects the new `runner-image` component and publishes at once. That identity must not be root: `apply-cloud-runner.sh` refuses root credentials, and root cannot assume roles. A short-lived IAM user or role with AdministratorAccess works; delete it when the steps are done.
+
+Before step 1, confirm the runner stack matches main's template without this change: plan main's `cloud-runner.yaml` and review it. Step 3's change set must contain only this change, so apply any pending main changes first. Changes the routine `AWS infrastructure` workflow may make go through it; changes to `GitHubOidcProvider`, `GitHubInfrastructureRole` or other GitHub trust need this same privileged path, applied and reviewed as their own change set before step 1.
 
 1. Let the execution role manage the new repository. Update the security stack from `security-deployment-role.yaml`, review the change set, then execute it:
 
    ```bash
    aws cloudformation create-change-set \
      --region us-east-1 \
-     --stack-name scope-security-deployment \
+     --stack-name scope-security-deployment-role \
      --change-set-name runner-base-repository \
      --template-body file://deploy/aws/security-deployment-role.yaml \
      --parameters ParameterKey=RegistryCredentialsSecretArn,UsePreviousValue=true \
      --capabilities CAPABILITY_NAMED_IAM
    aws cloudformation describe-change-set --region us-east-1 \
-     --stack-name scope-security-deployment --change-set-name runner-base-repository
+     --stack-name scope-security-deployment-role --change-set-name runner-base-repository
    aws cloudformation execute-change-set --region us-east-1 \
-     --stack-name scope-security-deployment --change-set-name runner-base-repository
+     --stack-name scope-security-deployment-role --change-set-name runner-base-repository
    aws cloudformation wait stack-update-complete --region us-east-1 \
-     --stack-name scope-security-deployment
+     --stack-name scope-security-deployment-role
    ```
 
 2. Create a temporary CloudFormation service role that may change the publisher role:
