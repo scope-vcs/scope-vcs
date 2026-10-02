@@ -1,5 +1,6 @@
 import { HttpError, InvalidApiResponseError } from '../../api/http'
 import type { RepoLiveState } from '../../api/types'
+import { fetchServerFunction } from '../../lib/stale-build'
 
 export type RepoRouteState = RepoLiveState & { refreshId: string }
 
@@ -15,8 +16,9 @@ export function isRetryableRepoLoadError(error: unknown) {
 
 // Server-function transport failures happen before the API's error envelope
 // reaches the browser. Keep their status rather than treating them as access errors.
+// A call-site fetch replaces the global one, so it keeps stale-build detection.
 export const fetchRepoRouteState: typeof fetch = async (input, init) => {
-  const response = await fetch(input, init)
+  const response = await fetchServerFunction(input, init)
   if (response.status >= 500) {
     await response.body?.cancel()
     throw new RepoRouteUnavailable('Repository refresh is temporarily unavailable.')

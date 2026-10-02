@@ -104,9 +104,11 @@ test('compiled web server accepts same-origin HTTPS and rejects hostile origins 
     const navigation = await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
     assert(navigation && navigation.status() < 400,
       `compiled page returned ${navigation?.status()} through HTTPS: ${(await navigation?.text())?.slice(-2_000)}; server: ${output}`)
-    const browserStatus = await page.evaluate(async () =>
-      (await fetch('/_serverFn/invalid', { method: 'POST', body: '{}', signal: AbortSignal.timeout(5_000) })).status)
-    assert.notEqual(browserStatus, 403, 'same-origin HTTPS browser request was rejected')
+    const browserResponse = await page.evaluate(async () => {
+      const response = await fetch('/_serverFn/invalid', { method: 'POST', body: '{}', signal: AbortSignal.timeout(5_000) })
+      return { status: response.status, stale: response.headers.get('x-scope-stale-build') }
+    })
+    assert.deepEqual(browserResponse, { status: 409, stale: '1' }, 'same-origin HTTPS browser request for an unknown server function')
 
     const endpoint = `${baseUrl}/_serverFn/invalid`
     for (const headers of [
@@ -115,7 +117,8 @@ test('compiled web server accepts same-origin HTTPS and rejects hostile origins 
       { 'Sec-Fetch-Site': 'same-origin' },
     ]) {
       const response = await api.get(endpoint, { headers })
-      assert.notEqual(response.status(), 403, JSON.stringify(headers))
+      assert.equal(response.status(), 409, JSON.stringify(headers))
+      assert.equal(response.headers()['x-scope-stale-build'], '1', JSON.stringify(headers))
     }
     for (const headers of [
       { Origin: `http://127.0.0.1:${proxy.address().port}` },

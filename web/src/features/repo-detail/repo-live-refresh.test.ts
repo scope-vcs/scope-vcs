@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import type { RepoChangeEvent } from '@/api/types.generated'
 import { createRepoRefreshCoordinator } from './repo-live-refresh'
 import { runRepoEventStream } from './repo-event-stream'
+import { StaleBuildError } from '../../lib/stale-build'
 
 const TEST_INCARNATION_ID = 'repoi-owner-repo'
 
@@ -133,6 +134,21 @@ test('failed refresh retries once and stop cancels pending retry', async () => {
   await tick()
   stopped.stop()
   assert.equal(cancelled, true)
+})
+
+test('a stale build stops refreshing without scheduling a retry', async () => {
+  let attempts = 0
+  let retries = 0
+  const coordinator = coordinatorFor(async () => {
+    attempts += 1
+    throw new StaleBuildError()
+  }, 0, true, () => { retries += 1; return () => {} })
+  coordinator.onEvent(event(1))
+  await tick()
+  coordinator.onEvent(event(2))
+  await tick()
+  assert.equal(attempts, 1)
+  assert.equal(retries, 0)
 })
 
 function coordinatorFor(

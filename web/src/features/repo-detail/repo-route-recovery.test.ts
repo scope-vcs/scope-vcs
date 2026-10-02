@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 import { HttpError, InvalidApiResponseError } from '../../api/http'
 import type { RepoLiveState } from '../../api/types'
+import { STALE_BUILD_HEADER, StaleBuildError } from '../../lib/stale-build'
 import {
   fetchRepoRouteState,
   isRetryableRepoLoadError,
@@ -85,6 +86,14 @@ test('proxy failures are retryable while access responses retain their status', 
   assert.equal((await fetchRepoRouteState('https://scope.test/_serverFn/id')).status, 403)
   assert.equal(isRetryableRepoLoadError(new InvalidApiResponseError('GET', '/repo', 502, 'text/html', 'content-type')), true)
   assert.equal(isRetryableRepoLoadError(new InvalidApiResponseError('GET', '/repo', 403, 'text/html', 'content-type')), false)
+})
+
+test('a stale build stops repository recovery instead of retrying', async () => {
+  globalThis.fetch = async () => new Response('updated', { status: 409, headers: { [STALE_BUILD_HEADER]: '1' } })
+  await assert.rejects(fetchRepoRouteState('https://scope.test/_serverFn/id'), StaleBuildError)
+  assert.equal(isRetryableRepoLoadError(new StaleBuildError()), false)
+  globalThis.fetch = async () => new Response('conflict', { status: 409 })
+  assert.equal((await fetchRepoRouteState('https://scope.test/_serverFn/id')).status, 409)
 })
 
 test('successful network reads retain distinct identities even when the summary is unchanged', async () => {
