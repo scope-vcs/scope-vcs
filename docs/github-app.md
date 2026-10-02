@@ -357,7 +357,11 @@ first release afterwards publishes the runner base image, which needs both.
 After that release:
 
 1. Connect the Scope repository to `scope-vcs/scope-vcs` from its repository
-   settings.
+   settings. That GitHub repository is public, so private requests and
+   private files pushed there become public, as
+   [Public GitHub repositories](#public-github-repositories) describes. The
+   connect must be done by an owner who can change file visibility, and they
+   must confirm the public-repository acknowledgment on the setup page.
 2. Confirm that workflows start: push a request and check that CI runs on its
    `scope/requests/<id>` branch. Note the check names GitHub reports.
 3. Choose the required checks in the Checks section. Expect `Required PR
