@@ -138,7 +138,7 @@ pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
 pub use github_pushes::{GitHubPushOutcome, GitHubPushStanding};
 pub use github_setup_checks::GitHubSetupCheckRead;
-pub use github_workflow_runs::GitHubWorkflowRunRead;
+pub use github_workflow_runs::{GitHubWorkflowRunRead, GitHubWorkflowRunReadJob};
 pub use history_reads::{
     RepositoryHistoryBoundary, RepositoryHistoryNeighbors, RepositoryHistoryPage,
     RepositoryHistoryQuery,

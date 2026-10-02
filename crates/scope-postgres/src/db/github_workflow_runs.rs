@@ -1,11 +1,14 @@
 //! Workflow runs GitHub Actions reported for connected repositories. Each
-//! read from GitHub replaces the stored run unless what is stored is newer,
-//! so a slow read cannot move a run backwards.
+//! read from GitHub replaces the stored run unless what is stored has come
+//! further, so a slow read cannot move a run backwards. A run a delivery
+//! named but GitHub could not be asked about yet waits as a pending read.
 
 use super::{
     RepositoryStore,
     entities::{decode_enum, encode_enum},
-    integer_columns::{i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u64_to_i64},
+    integer_columns::{
+        i32_to_u32, i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u32_to_i32, u64_to_i64,
+    },
 };
 use crate::error::PostgresError;
 use scope_domain::{github_workflow_runs::GitHubWorkflowRun, requests::GitHubBranch};
@@ -13,7 +16,7 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Valu
 
 const SELECT_RUN: &str = "run.github_run_id, run.workflow_name, run.head_branch, run.head_oid,
     run.event, run.status, run.conclusion, run.html_url, run.check_suite_id,
-    run.run_started_at_unix, run.github_created_at_unix, run.github_updated_at_unix";
+    run.run_started_at_unix, run.run_attempt, run.github_updated_at_unix";
 
 #[derive(FromQueryResult)]
 struct WorkflowRunRow {
@@ -27,8 +30,26 @@ struct WorkflowRunRow {
     html_url: String,
     check_suite_id: Option<i64>,
     run_started_at_unix: Option<i64>,
-    github_created_at_unix: i64,
+    run_attempt: i32,
     github_updated_at_unix: i64,
+}
+
+/// A workflow run a delivery named that Scope still has to read from GitHub.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubWorkflowRunReadJob {
+    pub repo_id: String,
+    pub github_repository_id: u64,
+    pub github_run_id: u64,
+    /// Attempts so far, this one included.
+    pub attempts: u32,
+}
+
+#[derive(FromQueryResult)]
+struct ReadJobRow {
+    repo_id: String,
+    github_repository_id: i64,
+    github_run_id: i64,
+    attempts: i32,
 }
 
 /// A listed run, and the request whose branch it ran on while that request
@@ -54,6 +75,7 @@ impl RepositoryStore {
         github_repository_id: u64,
         run: &GitHubWorkflowRun,
     ) -> Result<(), PostgresError> {
+        let progress = run.progress();
         let values: Vec<Value> = vec![
             u64_to_i64(run.github_run_id, "GitHub workflow run id")?.into(),
             repo_id.into(),
@@ -67,8 +89,9 @@ impl RepositoryStore {
             run.html_url.clone().into(),
             optional_u64_to_i64(run.check_suite_id, "GitHub check suite id")?.into(),
             optional_u64_to_i64(run.run_started_at_unix, "GitHub run start")?.into(),
-            u64_to_i64(run.updated_at_unix, "GitHub run update")?.into(),
-            u64_to_i64(run.created_at_unix, "GitHub run creation")?.into(),
+            u64_to_i64(progress.updated_at_unix, "GitHub run update")?.into(),
+            u32_to_i32(progress.run_attempt, "GitHub run attempt")?.into(),
+            i16::from(progress.stage).into(),
         ];
         // A run id belongs to one GitHub repository, which may since have been
         // connected to another Scope repository.
@@ -78,8 +101,8 @@ impl RepositoryStore {
                 "INSERT INTO scope_github_workflow_runs (github_run_id, repo_id,
                     github_repository_id, workflow_name, head_branch, head_oid, event, status,
                     conclusion, html_url, check_suite_id, run_started_at_unix,
-                    github_updated_at_unix, github_created_at_unix)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                    github_updated_at_unix, run_attempt, stage)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                  ON CONFLICT (github_run_id) DO UPDATE SET
                     repo_id = EXCLUDED.repo_id,
                     github_repository_id = EXCLUDED.github_repository_id,
@@ -89,12 +112,120 @@ impl RepositoryStore {
                     conclusion = EXCLUDED.conclusion, html_url = EXCLUDED.html_url,
                     check_suite_id = EXCLUDED.check_suite_id,
                     run_started_at_unix = EXCLUDED.run_started_at_unix,
-                    github_created_at_unix = EXCLUDED.github_created_at_unix,
-                    github_updated_at_unix = EXCLUDED.github_updated_at_unix
-                  WHERE scope_github_workflow_runs.github_updated_at_unix
-                        <= EXCLUDED.github_updated_at_unix",
+                    github_updated_at_unix = EXCLUDED.github_updated_at_unix,
+                    run_attempt = EXCLUDED.run_attempt, stage = EXCLUDED.stage
+                  WHERE (scope_github_workflow_runs.run_attempt, scope_github_workflow_runs.stage,
+                         scope_github_workflow_runs.github_updated_at_unix)
+                        <= (EXCLUDED.run_attempt, EXCLUDED.stage, EXCLUDED.github_updated_at_unix)",
                 values,
             ))
+            .await
+            .map_err(PostgresError::internal)?;
+        Ok(())
+    }
+
+    /// Keeps a run a delivery named for a later read, unless one is waiting.
+    pub async fn queue_github_workflow_run_read(
+        &self,
+        repo_id: &str,
+        github_repository_id: u64,
+        github_run_id: u64,
+        now_unix: u64,
+    ) -> Result<(), PostgresError> {
+        self.db
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "INSERT INTO scope_github_workflow_run_reads (repo_id, github_repository_id,
+                    github_run_id, attempts, next_attempt_at_unix)
+                 VALUES ($1, $2, $3, 0, $4)
+                 ON CONFLICT DO NOTHING",
+                [
+                    repo_id.into(),
+                    u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
+                    u64_to_i64(github_run_id, "GitHub workflow run id")?.into(),
+                    u64_to_i64(now_unix, "GitHub workflow run read time")?.into(),
+                ],
+            ))
+            .await
+            .map_err(PostgresError::internal)?;
+        Ok(())
+    }
+
+    /// Takes pending reads that are due for this process, putting their next
+    /// try at `retry_at_unix` in case it never reports back.
+    pub async fn claim_due_github_workflow_run_reads(
+        &self,
+        now_unix: u64,
+        retry_at_unix: u64,
+        limit: u64,
+    ) -> Result<Vec<GitHubWorkflowRunReadJob>, PostgresError> {
+        ReadJobRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE scope_github_workflow_run_reads read
+                SET attempts = read.attempts + 1, next_attempt_at_unix = $2
+               FROM (SELECT repo_id, github_repository_id, github_run_id
+                       FROM scope_github_workflow_run_reads
+                      WHERE next_attempt_at_unix <= $1
+                      ORDER BY next_attempt_at_unix
+                      LIMIT $3
+                      FOR UPDATE SKIP LOCKED) due
+              WHERE read.repo_id = due.repo_id
+                AND read.github_repository_id = due.github_repository_id
+                AND read.github_run_id = due.github_run_id
+          RETURNING read.repo_id, read.github_repository_id, read.github_run_id, read.attempts",
+            [
+                u64_to_i64(now_unix, "GitHub workflow run read time")?.into(),
+                u64_to_i64(retry_at_unix, "GitHub workflow run read time")?.into(),
+                u64_to_i64(limit, "GitHub workflow run read batch size")?.into(),
+            ],
+        ))
+        .all(self.db.as_ref())
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(|row| {
+            Ok(GitHubWorkflowRunReadJob {
+                repo_id: row.repo_id,
+                github_repository_id: i64_to_u64(row.github_repository_id, "GitHub repository id")?,
+                github_run_id: i64_to_u64(row.github_run_id, "GitHub workflow run id")?,
+                attempts: i32_to_u32(row.attempts, "GitHub workflow run read attempts")?,
+            })
+        })
+        .collect()
+    }
+
+    /// Ends a pending read: answered, or given up when `retry_at_unix` is
+    /// `None`. Otherwise it is tried again then.
+    pub async fn finish_github_workflow_run_read(
+        &self,
+        job: &GitHubWorkflowRunReadJob,
+        retry_at_unix: Option<u64>,
+    ) -> Result<(), PostgresError> {
+        let key: Vec<Value> = vec![
+            job.repo_id.clone().into(),
+            u64_to_i64(job.github_repository_id, "GitHub repository id")?.into(),
+            u64_to_i64(job.github_run_id, "GitHub workflow run id")?.into(),
+        ];
+        let statement = match retry_at_unix {
+            None => Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "DELETE FROM scope_github_workflow_run_reads
+                  WHERE repo_id = $1 AND github_repository_id = $2 AND github_run_id = $3",
+                key,
+            ),
+            Some(retry_at) => {
+                let mut values = key;
+                values.push(u64_to_i64(retry_at, "GitHub workflow run read time")?.into());
+                Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "UPDATE scope_github_workflow_run_reads SET next_attempt_at_unix = $4
+                      WHERE repo_id = $1 AND github_repository_id = $2 AND github_run_id = $3",
+                    values,
+                )
+            }
+        };
+        self.db
+            .execute_raw(statement)
             .await
             .map_err(PostgresError::internal)?;
         Ok(())
@@ -188,7 +319,7 @@ impl WorkflowRunRow {
             html_url: self.html_url,
             check_suite_id: optional_i64_to_u64(self.check_suite_id, "GitHub check suite id")?,
             run_started_at_unix: optional_i64_to_u64(self.run_started_at_unix, "GitHub run start")?,
-            created_at_unix: i64_to_u64(self.github_created_at_unix, "GitHub run creation")?,
+            run_attempt: i32_to_u32(self.run_attempt, "GitHub run attempt")?,
             updated_at_unix: i64_to_u64(self.github_updated_at_unix, "GitHub run update")?,
         })
     }

@@ -354,20 +354,16 @@ pub(crate) async fn receive_github_webhook(
             commit_oid,
             workflow_run_id,
         } => {
-            if let Some(run_id) = workflow_run_id
-                && let Err(error) = github_workflow_runs::refresh_workflow_run_for_delivery(
+            // The run is kept for a later read before the delivery is
+            // acknowledged, so a read GitHub does not answer now is not lost.
+            if let Some(run_id) = workflow_run_id {
+                github_workflow_runs::refresh_workflow_run_for_delivery(
                     &state,
                     github_repository_id,
                     run_id,
+                    unix_now()?,
                 )
-                .await
-            {
-                tracing::warn!(
-                    github_repository_id,
-                    run_id,
-                    error = %error.operator_diagnostic(),
-                    "reading a GitHub workflow run for a delivery failed"
-                );
+                .await?;
             }
             if let Err(error) = github_check_results::refresh_checks_for_delivery(
                 &state,

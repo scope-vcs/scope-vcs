@@ -24,7 +24,7 @@ use sea_orm::{
 };
 
 const SELECT_CHECK: &str = "repo_id, github_repository_id, commit_oid, state, started_at_unix, \
-    finished_at_unix, last_error";
+    finished_at_unix, last_error, push_id, baseline_run_ids";
 
 #[derive(FromQueryResult)]
 struct SetupCheckRow {
@@ -35,6 +35,8 @@ struct SetupCheckRow {
     started_at_unix: i64,
     finished_at_unix: Option<i64>,
     last_error: Option<String>,
+    push_id: Option<String>,
+    baseline_run_ids: Option<serde_json::Value>,
 }
 
 /// A test and what GitHub ran for it on the setup branch.
@@ -77,12 +79,11 @@ impl RepositoryStore {
             main_oid.as_deref(),
             now_unix,
         )?;
-        save_check(&tx, &check).await?;
         // The domain only starts a test of a connected repository.
         let connection = connection.ok_or_else(|| {
             PostgresError::internal_message("a setup check started without a connection")
         })?;
-        queue_github_push(
+        let push_id = queue_github_push(
             &tx,
             repo_id,
             &GitHubSetupCheck::branch(),
@@ -91,8 +92,34 @@ impl RepositoryStore {
             now_unix,
         )
         .await?;
+        let check = GitHubSetupCheck {
+            push_id: Some(push_id),
+            ..check
+        };
+        save_check(&tx, &check).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok((check, context.incarnation()))
+    }
+
+    /// Records the workflow runs GitHub listed on the setup branch right
+    /// before `push_id` sends main. Returns `false` when the push is no longer
+    /// the test's, which then must not send anything.
+    pub async fn record_github_setup_check_baseline(
+        &self,
+        repo_id: &str,
+        push_id: &str,
+        run_ids: Vec<u64>,
+    ) -> Result<bool, PostgresError> {
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let Some(mut check) = load_check(&tx, repo_id, true).await? else {
+            return Ok(false);
+        };
+        if !check.record_baseline(push_id, run_ids) {
+            return Ok(false);
+        }
+        save_check(&tx, &check).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(true)
     }
 
     pub async fn github_setup_check(
@@ -206,21 +233,18 @@ impl RepositoryStore {
     }
 }
 
-/// Answers the repository's test of `commit_oid` with how its push ended.
+/// Answers the repository's test with how its push `push_id` ended.
 pub(super) async fn record_setup_check_push<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
-    commit_oid: &str,
+    push_id: &str,
     result: Result<(), &str>,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
-    let Some(mut check) = load_check(conn, repo_id, true)
-        .await?
-        .filter(|check| check.commit_oid == commit_oid)
-    else {
+    let Some(mut check) = load_check(conn, repo_id, true).await? else {
         return Ok(());
     };
-    check.record_push(result, now_unix);
+    check.record_push(push_id, result, now_unix);
     save_check(conn, &check).await
 }
 
@@ -263,10 +287,11 @@ async fn save_check<C: ConnectionTrait>(
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_github_setup_checks (repo_id, commit_oid, state, started_at_unix,
-            finished_at_unix, last_error, github_repository_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+            finished_at_unix, last_error, github_repository_id, push_id, baseline_run_ids)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (repo_id) DO UPDATE SET
             github_repository_id = EXCLUDED.github_repository_id,
+            push_id = EXCLUDED.push_id, baseline_run_ids = EXCLUDED.baseline_run_ids,
             commit_oid = EXCLUDED.commit_oid, state = EXCLUDED.state,
             started_at_unix = EXCLUDED.started_at_unix,
             finished_at_unix = EXCLUDED.finished_at_unix, last_error = EXCLUDED.last_error",
@@ -278,6 +303,12 @@ async fn save_check<C: ConnectionTrait>(
             optional_u64_to_i64(check.finished_at_unix, "GitHub setup check end")?.into(),
             check.last_error.clone().into(),
             u64_to_i64(check.github_repository_id, "GitHub repository id")?.into(),
+            check.push_id.clone().into(),
+            check
+                .baseline_run_ids
+                .as_ref()
+                .map(|ids| serde_json::json!(ids))
+                .into(),
         ],
     ))
     .await
@@ -314,6 +345,12 @@ impl SetupCheckRow {
             started_at_unix: i64_to_u64(self.started_at_unix, "GitHub setup check start")?,
             finished_at_unix: optional_i64_to_u64(self.finished_at_unix, "GitHub setup check end")?,
             last_error: self.last_error,
+            push_id: self.push_id,
+            baseline_run_ids: self
+                .baseline_run_ids
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(PostgresError::internal)?,
         })
     }
 }

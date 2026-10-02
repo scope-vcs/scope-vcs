@@ -102,13 +102,20 @@ pub struct GitHubPush {
 }
 
 /// When a push whose latest attempt just failed tries again, or `None` when
-/// it gives up. A connection test waits on its push, so the setup branch
-/// reports its first failure instead of trying again.
+/// it gives up. A connection test waits on its push of main, so that push
+/// reports its first failure instead of trying again; deleting the setup
+/// branch afterwards retries like any other job.
 pub fn github_push_retry_at(push: &GitHubPush, now_unix: u64) -> Option<u64> {
-    if push.branch == GitHubBranch::SetupCheck {
+    if push.branch == GitHubBranch::SetupCheck && push.target_oid.is_some() {
         return None;
     }
-    let index = usize::try_from(push.attempts.checked_sub(1)?).ok()?;
+    github_retry_at(push.attempts, now_unix)
+}
+
+/// When work against GitHub whose `attempts`-th attempt just failed tries
+/// again, or `None` when it gives up.
+pub fn github_retry_at(attempts: u32, now_unix: u64) -> Option<u64> {
+    let index = usize::try_from(attempts.checked_sub(1)?).ok()?;
     RETRY_DELAYS_SECS
         .get(index)
         .map(|delay| now_unix.saturating_add(*delay))

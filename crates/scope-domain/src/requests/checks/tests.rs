@@ -664,12 +664,18 @@ fn failed_pushes_back_off_and_then_give_up() {
     assert_eq!(retry_at(4), Some(1900));
     assert_eq!(retry_at(5), None);
     assert_eq!(retry_at(0), None);
-    // A connection test reports its first failure.
+    // A connection test's push of main reports its first failure, but
+    // deleting the setup branch afterwards retries like any job.
     let setup = GitHubPush {
         branch: GitHubBranch::SetupCheck,
         ..push(HEAD, GitHubPushState::Running, None)
     };
     assert_eq!(github_push_retry_at(&setup, 100), None);
+    let setup_deletion = GitHubPush {
+        target_oid: None,
+        ..setup
+    };
+    assert_eq!(github_push_retry_at(&setup_deletion, 100), Some(130));
 }
 
 #[test]

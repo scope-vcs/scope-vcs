@@ -245,12 +245,13 @@ impl RequestStore {
             return Ok(None);
         };
         if push.branch == GitHubSetupCheck::branch()
-            && let (Some(target_oid), Some(result)) = (&push.target_oid, push_result)
+            && push.target_oid.is_some()
+            && let Some(result) = push_result
         {
             super::github_setup_checks::record_setup_check_push(
                 &tx,
                 &push.repo_id,
-                target_oid,
+                &push.id,
                 result.as_ref().map(|_| ()).map_err(String::as_str),
                 now_unix,
             )
@@ -285,7 +286,7 @@ impl RequestStore {
 
 /// Queues a push of `target_oid` to the branch in `destination`, or its
 /// deletion when `None`, replacing every push of the branch that is not
-/// running.
+/// running. Returns the job's id.
 pub(super) async fn queue_github_push<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
@@ -293,7 +294,7 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
     target_oid: Option<&str>,
     destination: &GitHubPushDestination,
     now_unix: u64,
-) -> Result<(), PostgresError> {
+) -> Result<String, PostgresError> {
     let git_ref = branch.git_ref();
     let request_id = match branch {
         GitHubBranch::Request(request_id) => Some(request_id.clone()),
@@ -326,13 +327,14 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
     ))
     .await
     .map_err(PostgresError::internal)?;
-    conn.execute_raw(Statement::from_sql_and_values(
+    conn.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_github_pushes (id, repo_id, request_id, ref, sequence,
             installation_id, github_repository_id, github_full_name, target_oid, kind,
             state, attempts, next_attempt_at_unix, created_at_unix, updated_at_unix)
          VALUES ('github_push_' || replace(gen_random_uuid()::text, '-', ''), $1, $2, $3, $4,
-            $5, $6, $7, $8, $9, 'queued', 0, $10, $10, $10)",
+            $5, $6, $7, $8, $9, 'queued', 0, $10, $10, $10)
+         RETURNING id",
         [
             repo_id.into(),
             request_id.into(),
@@ -352,8 +354,10 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
         ],
     ))
     .await
-    .map_err(PostgresError::internal)?;
-    Ok(())
+    .map_err(PostgresError::internal)?
+    .ok_or_else(|| PostgresError::internal_message("GitHub push insert returned no row"))?
+    .try_get("", "id")
+    .map_err(PostgresError::internal)
 }
 
 /// A request that merged, closed or was deleted gives up its GitHub branch,
@@ -398,7 +402,8 @@ pub(super) async fn queue_pushed_branch_deletion<C: ConnectionTrait>(
         return Ok(());
     };
     let pushed = pushed.into_domain()?;
-    queue_github_push(conn, repo_id, branch, None, &pushed.destination, now_unix).await
+    queue_github_push(conn, repo_id, branch, None, &pushed.destination, now_unix).await?;
+    Ok(())
 }
 
 /// A repository about to be deleted gives up every branch it pushed whose

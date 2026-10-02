@@ -374,7 +374,8 @@ async fn a_failed_push_retries_with_backoff_then_gives_up_with_its_last_error() 
     );
     // The next attempt waits out its delay: 30 seconds, then 2, 10 and 30 minutes.
     assert_eq!(push_pass(state, now + 29).await, 0);
-    let mut at = now;
+    // The first attempt ended a moment after `now` by the real clock.
+    let mut at = now + 1;
     for delay in [30, 120, 600, 1800] {
         at += delay;
         assert_eq!(push_pass(state, at).await, 1, "after {delay} seconds");
@@ -898,7 +899,28 @@ async fn an_approval_of_a_head_the_maintainer_did_not_review_is_refused() {
 async fn a_pushed_head_without_any_run_says_no_workflow_started_after_ten_minutes() {
     let request = owner_request("github-checks-no-runs", &[REQUIRED_CHECK]).await;
     let (state, fake, head) = (&request.state, &request.fake, request.head());
-    push_pass(state, unix_now()).await;
+    // The pass that sends the head began before it; waiting for workflows
+    // counts from when GitHub got the branch, not from then.
+    let now = unix_now();
+    let requests = state.metadata.requests();
+    let push = requests
+        .claim_due_github_pushes("claim", now, now + 600, 1)
+        .await
+        .unwrap()
+        .remove(0);
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+    github_pushes::run_claimed_push(state, &push, "claim", now).await;
+    assert_eq!(fake.branch_head(&request.branch()), Some(head.clone()));
+    let sent = requests
+        .latest_github_push(&request.request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        sent.updated_at_unix > now,
+        "{} > {now}",
+        sent.updated_at_unix
+    );
     assert_eq!(request.checks().await["message"], serde_json::Value::Null);
 
     let request_id = request.request_id.as_str();

@@ -32,7 +32,7 @@ pub use github::{
 };
 pub use github_push::{
     GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus,
-    changes_github_workflows, github_push_retry_at,
+    changes_github_workflows, github_push_retry_at, github_retry_at,
 };
 pub use planning::RequestCheckPlan;
 

@@ -20,9 +20,21 @@ pub struct GitHubWorkflowRun {
     /// The check suite holding the run's jobs as check runs.
     pub check_suite_id: Option<u64>,
     pub run_started_at_unix: Option<u64>,
-    /// When GitHub created the run, which a re-run keeps.
-    pub created_at_unix: u64,
-    /// When GitHub last changed the run. A stored run only moves forward.
+    /// Which attempt the run is on; re-running it on GitHub starts the next.
+    pub run_attempt: u32,
+    /// When GitHub last changed the run, to the second.
+    pub updated_at_unix: u64,
+}
+
+/// How far a run has come, to order two reads of it. GitHub dates a run to
+/// the second, so two reads can carry the same time; within an attempt a run
+/// only moves from waiting to running to completed. A later attempt, which a
+/// re-run on GitHub starts, comes after every state of an earlier one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct GitHubWorkflowRunProgress {
+    pub run_attempt: u32,
+    /// 0 waiting, 1 running, 2 completed.
+    pub stage: u8,
     pub updated_at_unix: u64,
 }
 
@@ -43,6 +55,23 @@ impl GitHubWorkflowRun {
     pub fn is_completed(&self) -> bool {
         self.status == GitHubCheckStatus::Completed
     }
+
+    /// A stored run is replaced only by a read whose progress is not behind,
+    /// so a slow read cannot move a completed run back to running.
+    pub fn progress(&self) -> GitHubWorkflowRunProgress {
+        GitHubWorkflowRunProgress {
+            run_attempt: self.run_attempt,
+            stage: match self.status {
+                GitHubCheckStatus::Completed => 2,
+                GitHubCheckStatus::InProgress => 1,
+                GitHubCheckStatus::Queued
+                | GitHubCheckStatus::Waiting
+                | GitHubCheckStatus::Requested
+                | GitHubCheckStatus::Pending => 0,
+            },
+            updated_at_unix: self.updated_at_unix,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -61,7 +90,7 @@ mod tests {
             html_url: "https://github.com/octo/repo/actions/runs/1".into(),
             check_suite_id: Some(5),
             run_started_at_unix: Some(10),
-            created_at_unix: 10,
+            run_attempt: 1,
             updated_at_unix: 10,
         }
     }
@@ -86,5 +115,31 @@ mod tests {
         ] {
             assert_eq!(run(branch).request_id(), None, "{branch:?}");
         }
+    }
+
+    #[test]
+    fn a_run_moves_forward_through_its_stages_and_a_rerun_starts_over_later() {
+        let running = run(Some("main"));
+        let completed = GitHubWorkflowRun {
+            status: GitHubCheckStatus::Completed,
+            conclusion: Some(GitHubCheckConclusion::Success),
+            ..running.clone()
+        };
+        // Read in the same second, completed still comes after running, even
+        // when the running read arrives last.
+        assert!(completed.progress() > running.progress());
+        // A newer time within the same attempt cannot undo completion.
+        let later_running = GitHubWorkflowRun {
+            updated_at_unix: 11,
+            ..running.clone()
+        };
+        assert!(later_running.progress() < completed.progress());
+        // A re-run on GitHub is a later attempt.
+        let rerun = GitHubWorkflowRun {
+            run_attempt: 2,
+            status: GitHubCheckStatus::Queued,
+            ..running
+        };
+        assert!(rerun.progress() > completed.progress());
     }
 }

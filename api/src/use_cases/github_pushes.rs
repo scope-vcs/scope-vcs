@@ -78,7 +78,11 @@ pub(crate) async fn run_claimed_push(
     claim_token: &str,
     now_unix: u64,
 ) {
-    let outcome = match send(state, push, claim_token).await {
+    let sent = send(state, push, claim_token).await;
+    // A push can take minutes, and when it ended is when GitHub got the
+    // branch, which is what waiting for workflows counts from.
+    let now_unix = unix_now().map_or(now_unix, |finished| finished.max(now_unix));
+    let outcome = match sent {
         Ok(()) => GitHubPushOutcome::Succeeded,
         Err(PushFailure::Retry(error)) => GitHubPushOutcome::Failed {
             error,
@@ -307,6 +311,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             .repository_engine
             .materialize_repository(state, &incarnation, &head, &spans)
             .await?;
+        record_setup_check_baseline(state, &app, push).await?;
         return crate::git::blocking::run(move || Ok(push_when_current(repo.as_ref()))).await?;
     };
     let revision = requests
@@ -320,6 +325,49 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         Ok(push_when_current(repo))
     })
     .await?
+}
+
+/// Asks GitHub, right before the connection test's push, which workflow runs
+/// it already lists on the setup branch for the commit: they are an earlier
+/// test's, and only runs GitHub starts after are this test's. A push that is
+/// no longer its test's sends nothing.
+async fn record_setup_check_baseline(
+    state: &AppState,
+    app: &GitHubApp,
+    push: &GitHubPush,
+) -> Result<(), PushFailure> {
+    let destination = &push.destination;
+    let target_oid = push.target_oid.as_deref().unwrap_or_default();
+    let runs = app
+        .branch_workflow_runs(
+            destination.installation_id,
+            &destination.github_full_name,
+            &push.branch.name(),
+            target_oid,
+        )
+        .await?
+        .ok_or_else(|| {
+            PushFailure::GiveUp(
+                "The Scope GitHub App can no longer reach this GitHub repository.".to_string(),
+            )
+        })?;
+    let recorded = state
+        .metadata
+        .repositories()
+        .record_github_setup_check_baseline(
+            &push.repo_id,
+            &push.id,
+            runs.iter().map(|run| run.github_run_id).collect(),
+        )
+        .await
+        .map_err(ApiError::from)?;
+    if recorded {
+        Ok(())
+    } else {
+        Err(PushFailure::GiveUp(
+            "The connection test this push belonged to has ended.".to_string(),
+        ))
+    }
 }
 
 async fn installation_token(app: &GitHubApp, installation_id: u64) -> Result<String, PushFailure> {

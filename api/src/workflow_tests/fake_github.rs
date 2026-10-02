@@ -79,6 +79,8 @@ pub(super) struct FakeGitHub {
     pub(super) check_runs_unavailable: AtomicBool,
     /// Workflow runs GitHub Actions reports, as its API lists them.
     pub(super) workflow_runs: Mutex<Vec<serde_json::Value>>,
+    /// GitHub answers reads of one workflow run with an error while this is set.
+    pub(super) workflow_run_unavailable: AtomicBool,
     /// Holds `<owner>/<name>.git` for every repository pushes reach.
     git_root: tempfile::TempDir,
 }
@@ -124,7 +126,7 @@ pub(super) fn suite_check_run(
     run
 }
 
-/// A workflow run GitHub created just now, as its API reports it. Its check
+/// A workflow run GitHub started just now, as its API reports it. Its check
 /// suite id is its own id.
 pub(super) fn workflow_run(
     id: u64,
@@ -132,16 +134,16 @@ pub(super) fn workflow_run(
     commit_oid: &str,
     conclusion: Option<&str>,
 ) -> serde_json::Value {
-    workflow_run_created_at(id, branch, commit_oid, conclusion, unix_now())
+    workflow_run_started_at(id, branch, commit_oid, conclusion, unix_now())
 }
 
-/// A workflow run GitHub created at `created_at_unix`.
-pub(super) fn workflow_run_created_at(
+/// A workflow run GitHub started at `started_at_unix`.
+pub(super) fn workflow_run_started_at(
     id: u64,
     branch: &str,
     commit_oid: &str,
     conclusion: Option<&str>,
-    created_at_unix: u64,
+    started_at_unix: u64,
 ) -> serde_json::Value {
     let time = |unix: u64| {
         time::OffsetDateTime::from_unix_timestamp(unix as i64)
@@ -159,10 +161,10 @@ pub(super) fn workflow_run_created_at(
         "conclusion": conclusion,
         "html_url": format!("https://github.com/{GITHUB_FULL_NAME}/actions/runs/{id}"),
         "check_suite_id": id,
-        "run_started_at": time(created_at_unix),
-        "created_at": time(created_at_unix),
+        "run_started_at": time(started_at_unix),
+        "run_attempt": 1,
         // A finished run was updated after it started.
-        "updated_at": time(created_at_unix + if conclusion.is_some() { 30 } else { 0 }),
+        "updated_at": time(started_at_unix + if conclusion.is_some() { 30 } else { 0 }),
     })
 }
 
@@ -209,6 +211,7 @@ impl FakeGitHub {
             check_run_reads: AtomicUsize::new(0),
             check_runs_unavailable: AtomicBool::new(false),
             workflow_runs: Mutex::default(),
+            workflow_run_unavailable: AtomicBool::new(false),
             git_root: tempfile::tempdir().unwrap(),
         });
         let repository = fake.repository_path();
@@ -273,6 +276,11 @@ impl FakeGitHub {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
         }
+    }
+
+    /// Lets GitHub accept pushes again.
+    pub(super) fn accept_pushes(&self) {
+        fs::remove_file(self.repository_path().join("hooks/pre-receive")).unwrap();
     }
 
     pub(super) fn report_check_runs(&self, commit_oid: &str, runs: Vec<serde_json::Value>) {
@@ -447,6 +455,9 @@ impl FakeGitHub {
                     |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                      AxumPath((owner, name, id)): AxumPath<(String, String, u64)>| async move {
                         assert_eq!(format!("{owner}/{name}"), GITHUB_FULL_NAME);
+                        if fake.workflow_run_unavailable.load(Ordering::SeqCst) {
+                            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                        }
                         fake.workflow_runs
                             .lock()
                             .unwrap()
