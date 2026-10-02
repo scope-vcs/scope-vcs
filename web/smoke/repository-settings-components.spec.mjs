@@ -82,7 +82,8 @@ test('repository components retain drafts, previews and pending actions across r
     assert.equal(await checks.getByRole('button', { name: 'Add', exact: true }).isDisabled(), true)
     await page.evaluate(() => window.finishAction('required-checks'))
     await checks.getByText('lint', { exact: true }).waitFor()
-    assert.equal(await checks.getByRole('textbox', { name: 'Check name' }).inputValue(), '')    await checks.getByRole('button', { name: 'Stop requiring ci / test', exact: true }).click()
+    assert.equal(await checks.getByRole('textbox', { name: 'Check name' }).inputValue(), '')
+    await checks.getByRole('button', { name: 'Stop requiring ci / test', exact: true }).click()
     await page.evaluate(() => window.finishAction('required-checks'))
     await checks.getByText('ci / test', { exact: true }).waitFor({ state: 'detached' })
     assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [

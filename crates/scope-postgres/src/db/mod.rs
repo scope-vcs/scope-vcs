@@ -132,9 +132,9 @@ pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::GitPushContext;
 pub use git_segments::RepositoryGitWriteLease;
-pub use github_check_runs::GitHubCheckRefreshCandidate;
+pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
-pub use github_pushes::GitHubPushOutcome;
+pub use github_pushes::{GitHubPushOutcome, GitHubPushStanding};
 pub use history_reads::{
     RepositoryHistoryBoundary, RepositoryHistoryNeighbors, RepositoryHistoryPage,
     RepositoryHistoryQuery,

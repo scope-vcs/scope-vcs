@@ -16,7 +16,7 @@ use std::{
     collections::HashMap,
     sync::{
         Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
@@ -75,6 +75,8 @@ pub(super) struct FakeGitHub {
     /// Check runs reported for each commit, as GitHub's API lists them.
     pub(super) check_runs: Mutex<HashMap<String, Vec<serde_json::Value>>>,
     pub(super) check_run_reads: AtomicUsize,
+    /// GitHub answers check-run reads with an error while this is set.
+    pub(super) check_runs_unavailable: AtomicBool,
     /// Holds `<owner>/<name>.git` for every repository pushes reach.
     git_root: tempfile::TempDir,
 }
@@ -148,6 +150,7 @@ impl FakeGitHub {
             revoke_at_listing: Mutex::default(),
             check_runs: Mutex::default(),
             check_run_reads: AtomicUsize::new(0),
+            check_runs_unavailable: AtomicBool::new(false),
             git_root: tempfile::tempdir().unwrap(),
         });
         let repository = fake.repository_path();
@@ -319,6 +322,9 @@ impl FakeGitHub {
                         );
                         assert_eq!(query["filter"], "all");
                         fake.check_run_reads.fetch_add(1, Ordering::SeqCst);
+                        if fake.check_runs_unavailable.load(Ordering::SeqCst) {
+                            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                        }
                         let runs = if query["page"] == "1" {
                             fake.check_runs
                                 .lock()
@@ -330,6 +336,7 @@ impl FakeGitHub {
                             Vec::new()
                         };
                         Json(serde_json::json!({ "total_count": runs.len(), "check_runs": runs }))
+                            .into_response()
                     },
                 ),
             )

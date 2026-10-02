@@ -186,3 +186,66 @@ async fn only_a_branch_scope_pushed_is_deleted() {
         }]
     );
 }
+
+#[tokio::test]
+async fn a_lapsed_or_replaced_claim_may_not_push_or_record() {
+    let store = postgres_store();
+    let requests = store.requests();
+    let db = store.db.as_ref();
+    queue_github_push(db, REPO, "req_1", Some(&oid('a')), 10)
+        .await
+        .unwrap();
+    let push = requests
+        .claim_due_github_pushes("claim_1", 10, 100, 1)
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(
+        requests
+            .github_push_standing(&push.id, "claim_1")
+            .await
+            .unwrap(),
+        GitHubPushStanding::Current
+    );
+
+    // The claim lapsed and another process took the push over.
+    requests
+        .claim_due_github_pushes("claim_2", 100, 300, 1)
+        .await
+        .unwrap();
+    assert_eq!(
+        requests
+            .github_push_standing(&push.id, "claim_1")
+            .await
+            .unwrap(),
+        GitHubPushStanding::Lost
+    );
+    assert!(
+        requests
+            .finish_github_push(&push.id, "claim_1", GitHubPushOutcome::Succeeded, 110)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    // A newer revision of the branch replaces the push the live claim holds.
+    queue_github_push(db, REPO, "req_1", Some(&oid('b')), 120)
+        .await
+        .unwrap();
+    assert_eq!(
+        requests
+            .github_push_standing(&push.id, "claim_2")
+            .await
+            .unwrap(),
+        GitHubPushStanding::Superseded
+    );
+    requests
+        .drop_superseded_github_push(&push.id, "claim_2")
+        .await
+        .unwrap();
+    let next = requests
+        .claim_due_github_pushes("claim_3", 130, 400, 1)
+        .await
+        .unwrap();
+    assert_eq!(next[0].target_oid.as_deref(), Some(oid('b').as_str()));
+}

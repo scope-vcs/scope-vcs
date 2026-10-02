@@ -17,7 +17,7 @@ async fn github_pushes_name_their_branch_and_only_running_pushes_hold_a_lease() 
             attempts,next_attempt_at_unix,created_at_unix,updated_at_unix)
             VALUES ('push_1','owner/one','req_1','refs/heads/scope/requests/req_1',
                     repeat('a',40),'push','queued',0,10,10,10);
-        INSERT INTO scope_github_check_refreshes VALUES ('owner/one',repeat('a',40),10);
+        INSERT INTO scope_github_check_refreshes VALUES ('owner/one',42,repeat('a',40),10,0,0,NULL);
         "#,
     )
     .await

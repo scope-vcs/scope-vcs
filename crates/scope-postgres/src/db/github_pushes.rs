@@ -36,7 +36,81 @@ pub enum GitHubPushOutcome {
     },
 }
 
+/// Whether a claimed push may still run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GitHubPushStanding {
+    /// The claim holds and no later push of the branch was queued.
+    Current,
+    /// The claim holds, but a later push of the branch replaces this one.
+    Superseded,
+    /// Another process took the push over, or it already ended.
+    Lost,
+}
+
 impl RequestStore {
+    /// Whether the push held by `claim_token` may still run. Asked right
+    /// before pushing, so a push whose claim lapsed while it waited, or whose
+    /// branch was queued for a newer commit, sends nothing.
+    pub async fn github_push_standing(
+        &self,
+        id: &str,
+        claim_token: &str,
+    ) -> Result<GitHubPushStanding, PostgresError> {
+        let Some(row) = self
+            .db
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT EXISTS (
+                        SELECT 1 FROM scope_github_pushes later
+                         WHERE later.repo_id = push.repo_id AND later.ref = push.ref
+                           AND (later.created_at_unix, later.id)
+                               > (push.created_at_unix, push.id)
+                    ) AS superseded
+                   FROM scope_github_pushes push
+                  WHERE push.id = $1 AND push.claim_token = $2 AND push.state = 'running'",
+                [id.into(), claim_token.into()],
+            ))
+            .await
+            .map_err(PostgresError::internal)?
+        else {
+            return Ok(GitHubPushStanding::Lost);
+        };
+        Ok(
+            if row
+                .try_get::<bool>("", "superseded")
+                .map_err(PostgresError::internal)?
+            {
+                GitHubPushStanding::Superseded
+            } else {
+                GitHubPushStanding::Current
+            },
+        )
+    }
+
+    /// Removes a claimed push a later push of its branch replaces.
+    pub async fn drop_superseded_github_push(
+        &self,
+        id: &str,
+        claim_token: &str,
+    ) -> Result<(), PostgresError> {
+        self.db
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "DELETE FROM scope_github_pushes push
+                  WHERE push.id = $1 AND push.claim_token = $2 AND push.state = 'running'
+                    AND EXISTS (
+                        SELECT 1 FROM scope_github_pushes later
+                         WHERE later.repo_id = push.repo_id AND later.ref = push.ref
+                           AND (later.created_at_unix, later.id)
+                               > (push.created_at_unix, push.id)
+                    )",
+                [id.into(), claim_token.into()],
+            ))
+            .await
+            .map_err(PostgresError::internal)?;
+        Ok(())
+    }
+
     /// Claims pushes that are due, or whose last claim lapsed, for `claim_token`.
     pub async fn claim_due_github_pushes(
         &self,

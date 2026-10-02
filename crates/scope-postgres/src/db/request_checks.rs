@@ -290,15 +290,26 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
             .collect::<Result<_, PostgresError>>()?
     };
     // GitHub's results only count while GitHub still lets Scope use the
-    // repository; a link that is gone or disconnected can never pass a check.
+    // repository, and only those of the GitHub repository connected now; a
+    // link that is gone or disconnected can never pass a check.
+    let connection = if tested_oids.is_empty() {
+        None
+    } else {
+        repository_github_connection(conn, repo_id)
+            .await?
+            .filter(|connection| connection.is_connected())
+    };
     let github = if tested_oids.is_empty() {
         GitHubCheckResults::Connected(Vec::new())
-    } else if repository_github_connection(conn, repo_id)
-        .await?
-        .is_some_and(|connection| connection.is_connected())
-    {
+    } else if let Some(connection) = connection {
         GitHubCheckResults::Connected(
-            super::github_check_runs::latest_github_check_runs(conn, repo_id, &tested_oids).await?,
+            super::github_check_runs::latest_github_check_runs(
+                conn,
+                repo_id,
+                connection.github_repository_id,
+                &tested_oids,
+            )
+            .await?,
         )
     } else {
         GitHubCheckResults::Disconnected
