@@ -49,16 +49,6 @@ Repository: {"type": "git", "url": "https://github.com/babel/babel.git", "direct
 LICENSE: text 8f08c824b2bb54eda2b6ee6053d2eeed46877b3b7b2ef3f60fc2b9fa580f54b2
 
 ==============================================================================
-@babel/generator 7.29.7
-Declared license: MIT
-Selected license: MIT
-Source: https://registry.npmjs.org/@babel/generator/-/generator-7.29.7.tgz
-
-Published author metadata: "The Babel Team (https://babel.dev/team)"
-Repository: {"type": "git", "url": "https://github.com/babel/babel.git", "directory": "packages/babel-generator"}
-LICENSE: text 8f08c824b2bb54eda2b6ee6053d2eeed46877b3b7b2ef3f60fc2b9fa580f54b2
-
-==============================================================================
 @babel/generator 7.29.8
 Declared license: MIT
 Selected license: MIT
@@ -1474,90 +1464,90 @@ Repository: {"type": "git", "url": "git+https://github.com/TanStack/query.git", 
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/react-router 1.170.36
+@tanstack/react-router 1.170.41
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/react-router/-/react-router-1.170.36.tgz
+Source: https://registry.npmjs.org/@tanstack/react-router/-/react-router-1.170.41.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/react-router"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/react-start 1.168.54
+@tanstack/react-start 1.168.60
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/react-start/-/react-start-1.168.54.tgz
+Source: https://registry.npmjs.org/@tanstack/react-start/-/react-start-1.168.60.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/react-start"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/react-start-client 1.168.34
+@tanstack/react-start-client 1.168.39
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/react-start-client/-/react-start-client-1.168.34.tgz
+Source: https://registry.npmjs.org/@tanstack/react-start-client/-/react-start-client-1.168.39.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/react-start-client"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/react-start-rsc 0.1.53
+@tanstack/react-start-rsc 0.1.59
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/react-start-rsc/-/react-start-rsc-0.1.53.tgz
+Source: https://registry.npmjs.org/@tanstack/react-start-rsc/-/react-start-rsc-0.1.59.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/react-start-rsc"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/react-start-server 1.167.41
+@tanstack/react-start-server 1.167.46
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/react-start-server/-/react-start-server-1.167.41.tgz
+Source: https://registry.npmjs.org/@tanstack/react-start-server/-/react-start-server-1.167.46.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/react-start-server"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/react-store 0.11.1
+@tanstack/react-store 0.11.2
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/react-store/-/react-store-0.11.1.tgz
+Source: https://registry.npmjs.org/@tanstack/react-store/-/react-store-0.11.2.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "https://github.com/TanStack/store.git", "directory": "packages/react-store"}
 LICENSE: text d71ca6db0f8bd8b31d8426ec6e7410457eac2ed6832138e6f5ea8566b248ef28
 
 ==============================================================================
-@tanstack/router-core 1.171.30
+@tanstack/router-core 1.171.34
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/router-core/-/router-core-1.171.30.tgz
+Source: https://registry.npmjs.org/@tanstack/router-core/-/router-core-1.171.34.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/router-core"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/router-generator 1.167.36
+@tanstack/router-generator 1.167.40
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/router-generator/-/router-generator-1.167.36.tgz
+Source: https://registry.npmjs.org/@tanstack/router-generator/-/router-generator-1.167.40.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/router-generator"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/router-plugin 1.168.38
+@tanstack/router-plugin 1.168.42
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/router-plugin/-/router-plugin-1.168.38.tgz
+Source: https://registry.npmjs.org/@tanstack/router-plugin/-/router-plugin-1.168.42.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/router-plugin"}
@@ -1574,10 +1564,10 @@ Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git",
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/start-client-core 1.170.30
+@tanstack/start-client-core 1.170.34
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/start-client-core/-/start-client-core-1.170.30.tgz
+Source: https://registry.npmjs.org/@tanstack/start-client-core/-/start-client-core-1.170.34.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/start-client-core"}
@@ -1594,40 +1584,40 @@ Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git",
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/start-plugin-core 1.171.44
+@tanstack/start-plugin-core 1.171.49
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/start-plugin-core/-/start-plugin-core-1.171.44.tgz
+Source: https://registry.npmjs.org/@tanstack/start-plugin-core/-/start-plugin-core-1.171.49.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/start-plugin-core"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/start-server-core 1.169.35
+@tanstack/start-server-core 1.169.39
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/start-server-core/-/start-server-core-1.169.35.tgz
+Source: https://registry.npmjs.org/@tanstack/start-server-core/-/start-server-core-1.169.39.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/start-server-core"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/start-storage-context 1.167.32
+@tanstack/start-storage-context 1.167.36
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/start-storage-context/-/start-storage-context-1.167.32.tgz
+Source: https://registry.npmjs.org/@tanstack/start-storage-context/-/start-storage-context-1.167.36.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/start-storage-context"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/store 0.11.1
+@tanstack/store 0.11.2
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/store/-/store-0.11.1.tgz
+Source: https://registry.npmjs.org/@tanstack/store/-/store-0.11.2.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/store.git", "directory": "packages/store"}
@@ -4900,15 +4890,6 @@ Source: https://registry.npmjs.org/space-separated-tokens/-/space-separated-toke
 Published author metadata: "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)"
 Repository: "wooorm/space-separated-tokens"
 license: text d9c32f07344cb9c8160725e998daa6a4bf5760ff6508ee645e0f192a06e929cb
-
-==============================================================================
-srvx 0.11.16
-Declared license: MIT
-Selected license: MIT
-Source: https://registry.npmjs.org/srvx/-/srvx-0.11.16.tgz
-
-Repository: "h3js/srvx"
-LICENSE: text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94
 
 ==============================================================================
 srvx 0.11.22
