@@ -10,8 +10,8 @@
 //! installation id from a redirect is ever used.
 
 use super::responses::{
-    ConnectGitHubRepositoryRequest, GitHubAuthorizeResponse, GitHubConnectionResponse,
-    GitHubSetupRequest, GitHubSetupResponse, github_connection_response,
+    ConnectGitHubRepositoryRequest, GitHubAuthorizeRequest, GitHubAuthorizeResponse,
+    GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse, github_connection_response,
     github_repository_response,
 };
 use crate::{
@@ -57,6 +57,7 @@ pub(crate) async fn start_github_authorization(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo)): Path<(String, String)>,
+    Json(input): Json<GitHubAuthorizeRequest>,
 ) -> Result<Json<GitHubAuthorizeResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
@@ -67,7 +68,10 @@ pub(crate) async fn start_github_authorization(
         &user.id,
         unix_now()?,
     );
-    let callback = format!("{}/github/setup", public_app_origin("connect GitHub")?);
+    let callback = format!(
+        "{}/github/setup",
+        callback_origin(&state, input.web_origin.as_deref())?
+    );
     Ok(Json(GitHubAuthorizeResponse {
         authorize_url: app.authorize_url(&setup_state, &callback),
     }))
@@ -228,6 +232,34 @@ pub(crate) async fn receive_github_webhook(
         GitHubWebhookEvent::Ignored => {}
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Where GitHub sends the maintainer back. GitHub itself only accepts the
+/// app's registered callback URLs; this keeps Scope from naming an origin it
+/// does not serve.
+fn callback_origin(state: &AppState, web_origin: Option<&str>) -> Result<String, ApiError> {
+    let public = || public_app_origin("connect GitHub");
+    let Some(web_origin) = web_origin else {
+        return public();
+    };
+    let origin = url::Url::parse(web_origin)
+        .ok()
+        .filter(|url| {
+            matches!(url.scheme(), "http" | "https")
+                && url.path() == "/"
+                && url.query().is_none()
+                && url.fragment().is_none()
+                && url.username().is_empty()
+                && url.password().is_none()
+        })
+        .map(|url| url.origin().ascii_serialization());
+    let allowed = origin.filter(|origin| {
+        public().is_ok_and(|public| &public == origin)
+            || state.clerk.token_policy.is_authorized_party(origin)
+    });
+    allowed.ok_or_else(|| {
+        ApiError::bad_request("This page's address is not an allowed Scope web origin.")
+    })
 }
 
 /// Only maintainers see or change the connection. Readers who are not get

@@ -1,5 +1,10 @@
 import { createApiClient } from '@/api/client'
-import type { ConnectRepoGitHubInput, GitHubSetupInput, RepoParams } from './types'
+import type {
+  ConnectRepoGitHubInput,
+  GitHubSetupInput,
+  RepoGitHubAuthorizeInput,
+  RepoParams,
+} from './types'
 import type {
   GitHubAuthorizeResponse,
   GitHubConnectionResponse,
@@ -20,13 +25,22 @@ export async function loadRepoGitHubConnectionForRequest(
   )
 }
 
+/**
+ * The origin of the page connecting GitHub, so GitHub can return to the same
+ * address, such as a development stack reached over a tailnet. The API
+ * accepts it only when it is an allowed Scope web origin.
+ */
+export function currentWebOrigin() {
+  return typeof window === 'undefined' ? null : window.location.origin
+}
+
 export async function startRepoGitHubAuthorizationForRequest(
-  data: RepoParams,
+  data: RepoGitHubAuthorizeInput,
 ): Promise<GitHubAuthorizeResponse> {
   return createApiClient().post(
     repoRoute(ApiRouteTemplates.repoGitHubAuthorize, data),
     apiValidators.GitHubAuthorizeResponse,
-    { auth: 'required' },
+    { auth: 'required', body: { web_origin: data.web_origin } },
   )
 }
 

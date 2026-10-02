@@ -5,6 +5,7 @@ import {
   parseUpdateRepoMemberInput,
   parseUpdateRepoMetadataInput,
 } from '@/api/repo-inputs'
+import { parseRepoGitHubAuthorizeInput } from '@/api/github-inputs'
 import { parseRepoParams } from '@/api/repo-params'
 import {
   createRepoInviteForRequest,
@@ -20,6 +21,7 @@ import {
 import {
   disconnectRepoGitHubForRequest,
   loadRepoGitHubConnectionForRequest,
+  currentWebOrigin,
   startRepoGitHubAuthorizationForRequest,
 } from '@/api/github'
 import { loadOptionalResource } from '@/api/http'
@@ -55,7 +57,7 @@ const loadRepoGitHubConnection = createServerFn({ method: 'GET' })
   .handler(({ data }) => loadOptionalResource(() => loadRepoGitHubConnectionForRequest(data, getRequest().signal)))
 
 const startRepoGitHubAuthorization = createServerFn({ method: 'POST' })
-  .validator(parseRepoParams)
+  .validator(parseRepoGitHubAuthorizeInput)
   .handler(({ data }) => startRepoGitHubAuthorizationForRequest(data))
 
 const disconnectRepoGitHub = createServerFn({ method: 'POST' })
@@ -168,7 +170,7 @@ function RepoSettingsRoute() {
             return github
           }}
           github={resource.value?.github ?? null}
-          startGitHubAuthorization={(data) => startRepoGitHubAuthorization({ data })}
+          startGitHubAuthorization={(data) => startRepoGitHubAuthorization({ data: { ...data, web_origin: currentWebOrigin() } })}
           deleteMember={(data) => retainResult(
             deleteRepoMember({ data }),
             (member) => ({ type: 'memberRemoved', member }),

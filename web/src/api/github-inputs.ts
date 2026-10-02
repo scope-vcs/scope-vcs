@@ -1,4 +1,4 @@
-import type { ConnectRepoGitHubInput, GitHubSetupInput } from './types'
+import type { ConnectRepoGitHubInput, GitHubSetupInput, RepoGitHubAuthorizeInput } from './types'
 import { parseRepoParams } from './repo-params'
 
 const SETUP_INCOMPLETE = 'GitHub did not send everything needed to finish connecting. Start again from repository settings.'
@@ -8,6 +8,15 @@ export function parseGitHubSetupInput(input: unknown): GitHubSetupInput {
   return {
     state: requiredText(data?.state, SETUP_INCOMPLETE),
     code: requiredText(data?.code, SETUP_INCOMPLETE),
+  }
+}
+
+export function parseRepoGitHubAuthorizeInput(input: unknown): RepoGitHubAuthorizeInput {
+  const params = parseRepoParams(input)
+  const data = input as Partial<RepoGitHubAuthorizeInput>
+  return {
+    ...params,
+    web_origin: typeof data.web_origin === 'string' && data.web_origin ? data.web_origin : null,
   }
 }
 

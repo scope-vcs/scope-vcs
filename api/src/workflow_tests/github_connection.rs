@@ -264,15 +264,17 @@ async fn request(
 /// Starts the flow in settings and returns the state GitHub's OAuth screen
 /// would send back.
 async fn setup_state(state: &AppState, bearer: &str) -> String {
+    authorize(state, bearer, serde_json::json!({})).await["state"].clone()
+}
+
+/// The query of the GitHub OAuth URL the authorize call returned.
+async fn authorize(
+    state: &AppState,
+    bearer: &str,
+    body: serde_json::Value,
+) -> BTreeMap<String, String> {
     let body = expect_json(
-        request(
-            state,
-            "POST",
-            "/v1/repos/owner/repo/github/authorize",
-            Some(bearer),
-            None,
-        )
-        .await,
+        authorize_response(state, bearer, body).await,
         StatusCode::OK,
     )
     .await;
@@ -280,8 +282,18 @@ async fn setup_state(state: &AppState, bearer: &str) -> String {
     assert_eq!(url.path(), "/login/oauth/authorize");
     let query = url.query_pairs().into_owned().collect::<BTreeMap<_, _>>();
     assert_eq!(query["client_id"], "Iv1.client");
-    assert!(query["redirect_uri"].ends_with("/github/setup"));
-    query["state"].clone()
+    query
+}
+
+async fn authorize_response(state: &AppState, bearer: &str, body: serde_json::Value) -> Response {
+    request(
+        state,
+        "POST",
+        "/v1/repos/owner/repo/github/authorize",
+        Some(bearer),
+        Some(body),
+    )
+    .await
 }
 
 async fn setup(state: &AppState, bearer: &str, setup_state: &str, code: &str) -> Response {
@@ -385,14 +397,7 @@ async fn github_is_off_when_the_app_is_not_configured() {
         body,
         serde_json::json!({ "configured": false, "connection": null })
     );
-    let install = request(
-        &state,
-        "POST",
-        "/v1/repos/owner/repo/github/authorize",
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
+    let install = authorize_response(&state, &bearer_header(), serde_json::json!({})).await;
     assert_eq!(install.status(), StatusCode::NOT_FOUND);
     let delivery = webhook(
         &state,
@@ -572,7 +577,14 @@ async fn non_maintainers_cannot_start_or_finish_a_connection() {
         ("POST", "/v1/repos/owner/repo/github/authorize"),
         ("DELETE", "/v1/repos/owner/repo/github"),
     ] {
-        let response = request(&state, method, uri, Some(&outsider), None).await;
+        let response = request(
+            &state,
+            method,
+            uri,
+            Some(&outsider),
+            Some(serde_json::json!({})),
+        )
+        .await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {uri}");
     }
 
@@ -853,4 +865,47 @@ async fn connect_sees_access_revoked_before_it_stores_the_link() {
         connection(&state).await["connection"],
         serde_json::Value::Null
     );
+}
+
+#[tokio::test]
+async fn github_returns_to_an_allowed_web_origin() {
+    let (mut state, _fake) = github_state().await;
+    let tailnet = "https://dev-box.tail0000.ts.net:4443";
+    state.clerk.token_policy.authorized_parties = vec![
+        crate::config::LOCAL_APP_ORIGIN.to_string(),
+        tailnet.to_string(),
+    ];
+    let public = crate::http::origins::public_app_origin("test").unwrap();
+
+    let missing = authorize(&state, &bearer_header(), serde_json::json!({})).await;
+    assert_eq!(missing["redirect_uri"], format!("{public}/github/setup"));
+    let configured = authorize(
+        &state,
+        &bearer_header(),
+        serde_json::json!({ "web_origin": format!("{tailnet}/") }),
+    )
+    .await;
+    assert_eq!(
+        configured["redirect_uri"],
+        format!("{tailnet}/github/setup")
+    );
+
+    for origin in [
+        "https://attacker.example",
+        "https://dev-box.tail0000.ts.net:4443/github/setup",
+        "javascript:alert(1)",
+        "not a url",
+    ] {
+        let response = authorize_response(
+            &state,
+            &bearer_header(),
+            serde_json::json!({ "web_origin": origin }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{origin}");
+        assert_eq!(
+            response_json(response).await["message"],
+            "This page's address is not an allowed Scope web origin."
+        );
+    }
 }
