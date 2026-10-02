@@ -4,7 +4,7 @@
 
 use super::super::fake_github::{
     FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, INSTALLATION_ID, InstallationState,
-    WEBHOOK_SECRET, check_run, webhook,
+    WEBHOOK_SECRET, check_run, github_repository, webhook,
 };
 use super::*;
 use crate::use_cases::{github_check_results, github_pushes};
@@ -12,6 +12,7 @@ use scope_api_contract::routes::{
     repo_request_auto_merge, repo_request_checks, repo_request_checks_approve, repo_request_merge,
 };
 use scope_domain::github_connection::ConnectGitHubRepository;
+use scope_postgres::db::RecordRequestChecksCommand;
 use std::sync::atomic::Ordering;
 
 const REQUIRED_CHECK: &str = "ci / test";
@@ -27,6 +28,8 @@ async fn connect_github(state: &mut AppState, required: &[&str]) -> Arc<FakeGitH
                 installation_id: INSTALLATION_ID,
                 github_repository_id: GITHUB_REPOSITORY_ID,
                 github_full_name: GITHUB_FULL_NAME.to_string(),
+                github_private: true,
+                acknowledge_public: false,
                 user_id: test_owner_id(),
                 now_unix: unix_now(),
             },
@@ -321,7 +324,7 @@ async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
             "POST",
             &repo_request_checks_approve(TEST_REPO_OWNER, TEST_REPO_NAME, REQUEST_ID),
             Some(&member),
-            Some("{}"),
+            Some(&reviewed_head_body(&state, REQUEST_ID).await),
         )
         .await,
         StatusCode::OK,
@@ -573,6 +576,8 @@ async fn a_repository_reconnected_to_another_github_repository_ignores_the_old_r
                 installation_id: INSTALLATION_ID,
                 github_repository_id: GITHUB_REPOSITORY_ID + 1,
                 github_full_name: "octo/other".to_string(),
+                github_private: true,
+                acknowledge_public: false,
                 user_id: test_owner_id(),
                 now_unix: unix_now(),
             },
@@ -650,7 +655,7 @@ async fn a_disconnected_repository_cannot_pass_its_checks_and_gives_up_pushing()
         push["error"]
             .as_str()
             .unwrap()
-            .contains("no longer connected to GitHub")
+            .contains("no longer connected")
     );
 }
 
@@ -674,4 +679,310 @@ async fn deliveries_about_unknown_repositories_or_commits_are_acknowledged() {
     deliver_check_run(&request.state, GITHUB_REPOSITORY_ID + 1, &request.head()).await;
     deliver_check_run(&request.state, GITHUB_REPOSITORY_ID, &"f".repeat(40)).await;
     assert_eq!(request.fake.check_run_reads.load(Ordering::SeqCst), 0);
+}
+
+/// Reconnects the repository to the fake GitHub repository.
+async fn reconnect(state: &AppState) {
+    state
+        .metadata
+        .repositories()
+        .connect_github_repository(
+            ConnectGitHubRepository {
+                repository_id: TEST_REPO_ID.to_string(),
+                installation_id: INSTALLATION_ID,
+                github_repository_id: GITHUB_REPOSITORY_ID,
+                github_full_name: GITHUB_FULL_NAME.to_string(),
+                github_private: true,
+                acknowledge_public: false,
+                user_id: test_owner_id(),
+                now_unix: unix_now(),
+            },
+            async || Ok::<_, scope_postgres::error::PostgresError>(true),
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_push_gives_up_when_the_connection_changes_and_reconnecting_sends_it_again() {
+    let request = owner_request("github-checks-connection-changed", &[REQUIRED_CHECK]).await;
+    let (state, fake) = (&request.state, &request.fake);
+    let requests = state.metadata.requests();
+    let now = unix_now();
+    let push = requests
+        .claim_due_github_pushes("claim", now, now + 600, 1)
+        .await
+        .unwrap()
+        .remove(0);
+    // The maintainer disconnects while the push is on its way.
+    state
+        .metadata
+        .repositories()
+        .disconnect_github_repository(TEST_REPO_ID, &test_owner_id())
+        .await
+        .unwrap();
+    github_pushes::run_claimed_push(state, &push, "claim", now).await;
+    assert_eq!(fake.branch_head(&request.branch()), None);
+    assert_eq!(request.checks().await["github_push"]["state"], "failed");
+
+    // Reconnecting sends the tested commit again.
+    reconnect(state).await;
+    assert_eq!(request.checks().await["github_push"]["state"], "sending");
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&request.branch()), Some(request.head()));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deleting_the_repository_deletes_the_branches_it_pushed() {
+    let request = owner_request("github-checks-repository-deleted", &[REQUIRED_CHECK]).await;
+    let (state, fake) = (&request.state, &request.fake);
+    push_pass(state, unix_now()).await;
+    assert_eq!(fake.branch_head(&request.branch()), Some(request.head()));
+
+    let deleted = api_request(
+        router(state.clone()),
+        "DELETE",
+        &format!("/v1/repos/{TEST_REPO_ID}"),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(deleted.status(), StatusCode::OK);
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&request.branch()), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_merge_waits_for_a_read_still_asking_github() {
+    let request = owner_request("github-checks-pending-read", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+    fake.report_check_runs(
+        &head,
+        vec![check_run(1, REQUIRED_CHECK, &head, Some("success"))],
+    );
+    deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
+    assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
+
+    // A delivery started a newer read that has not answered yet; the green
+    // answer is seconds old but no longer settled.
+    let commit = scope_postgres::db::GitHubCheckCommit {
+        repo_id: TEST_REPO_ID.to_string(),
+        github_repository_id: GITHUB_REPOSITORY_ID,
+        commit_oid: head.clone(),
+    };
+    state
+        .metadata
+        .requests()
+        .start_github_check_read(&commit)
+        .await
+        .unwrap();
+    fake.report_check_runs(
+        &head,
+        vec![
+            check_run(1, REQUIRED_CHECK, &head, Some("success")),
+            check_run(2, REQUIRED_CHECK, &head, Some("failure")),
+        ],
+    );
+    assert_eq!(
+        expect_json(
+            merge(state, &request.request_id).await,
+            StatusCode::CONFLICT
+        )
+        .await["message"],
+        "a check did not succeed"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_commit_is_read_every_two_minutes_while_any_request_testing_it_is_pending() {
+    let request = owner_request("github-checks-shared-commit", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+    // A second open request tests the same commit and also requires lint.
+    let requests = state.metadata.requests();
+    let mut other = requests
+        .request_for_tests(&request.request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    other.id = "req_shared_commit".into();
+    other.name = "shared-commit".into();
+    requests
+        .insert_request_for_tests(other.clone())
+        .await
+        .unwrap();
+    requests
+        .record_request_checks(RecordRequestChecksCommand {
+            evaluation: scope_domain::requests::RequestCheckEvaluation::started(
+                &other.id,
+                &head,
+                vec![
+                    scope_domain::requests::RequestCheck::GitHub {
+                        name: REQUIRED_CHECK.into(),
+                    },
+                    scope_domain::requests::RequestCheck::GitHub {
+                        name: "ci / lint".into(),
+                    },
+                ],
+                unix_now(),
+            )
+            .unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+            push_to_github: false,
+        })
+        .await
+        .unwrap();
+    fake.report_check_runs(
+        &head,
+        vec![check_run(1, REQUIRED_CHECK, &head, Some("success"))],
+    );
+
+    let now = unix_now();
+    assert_eq!(
+        github_check_results::reconcile_github_checks_once(state, now)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
+    // The first request settled, but the second still waits on lint.
+    assert_eq!(
+        github_check_results::reconcile_github_checks_once(state, now + 120)
+            .await
+            .unwrap(),
+        1
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_approval_of_a_head_the_maintainer_did_not_review_is_refused() {
+    let (mut state, _owner_source) =
+        test_state_with_mergeable_request("github-checks-stale-approval").await;
+    connect_github(&mut state, &[REQUIRED_CHECK]).await;
+    insert_member_user(&state).await;
+    let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
+    let (_source, _remote, _server, _head) =
+        request_checkout(&state, "github-checks-stale-approval-push").await;
+    let submitted = api_request(
+        router(state.clone()),
+        "POST",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests/{REQUEST_ID}/submit"),
+        Some(&bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL)),
+        Some("{}"),
+    )
+    .await;
+    assert_eq!(submitted.status(), StatusCode::OK);
+    let refused = api_request(
+        router(state.clone()),
+        "POST",
+        &repo_request_checks_approve(TEST_REPO_OWNER, TEST_REPO_NAME, REQUEST_ID),
+        Some(&member),
+        Some(&serde_json::json!({ "expected_head_oid": "0".repeat(40) }).to_string()),
+    )
+    .await;
+    assert_eq!(
+        expect_json(refused, StatusCode::CONFLICT).await["message"],
+        "This request has a new revision. Review it before approving its checks."
+    );
+    assert_eq!(
+        checks(&state, REQUEST_ID, &member).await["state"],
+        "awaiting-approval"
+    );
+    assert_eq!(push_pass(&state, unix_now()).await, 0);
+}
+
+/// GitHub now lists the connected repository as public.
+fn make_github_repository_public(fake: &FakeGitHub) {
+    let mut public = github_repository(GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME);
+    public["private"] = serde_json::json!(false);
+    *fake.installation_repositories.lock().unwrap() = vec![(INSTALLATION_ID, public)];
+}
+
+async fn github_settings(state: &AppState) -> serde_json::Value {
+    expect_json(
+        api_request(
+            router(state.clone()),
+            "GET",
+            "/v1/repos/owner/repo/github",
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_private_request_is_not_sent_to_a_repository_that_became_public_until_confirmed() {
+    let request = owner_request("github-checks-became-public", &[REQUIRED_CHECK]).await;
+    let (state, fake) = (&request.state, &request.fake);
+    make_github_repository_public(fake);
+
+    // No delivery said so; the push asks GitHub first and holds the request.
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&request.branch()), None);
+    let held = request.checks().await;
+    assert_eq!(held["github_push"]["state"], "failed");
+    assert_eq!(held["mergeability"]["status"], "ChecksConfigurationError");
+    assert_eq!(
+        held["message"],
+        scope_domain::github_connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE
+    );
+    assert_eq!(held["private_request_on_public_github"], true);
+    let settings = github_settings(state).await;
+    assert_eq!(settings["connection"]["public_on_github"], true);
+    assert_eq!(settings["connection"]["public_confirmed"], false);
+
+    // A maintainer who can change file visibility confirms; the request goes.
+    let confirmed = expect_json(
+        api_request(
+            router(state.clone()),
+            "POST",
+            "/v1/repos/owner/repo/github/public-confirmation",
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(confirmed["connection"]["public_confirmed"], true);
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&request.branch()), Some(request.head()));
+    assert_eq!(
+        request.checks().await["mergeability"]["status"],
+        "ChecksPending"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_delivery_saying_the_repository_became_public_holds_private_requests() {
+    let request = owner_request("github-checks-publicized", &[REQUIRED_CHECK]).await;
+    let (state, fake) = (&request.state, &request.fake);
+    // A late delivery is checked against what GitHub says now.
+    let publicized = serde_json::json!({
+        "action": "publicized",
+        "repository": { "id": GITHUB_REPOSITORY_ID, "full_name": GITHUB_FULL_NAME },
+    });
+    let delivery = webhook(state, "repository", publicized.clone(), WEBHOOK_SECRET).await;
+    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        github_settings(state).await["connection"]["public_on_github"],
+        false
+    );
+
+    make_github_repository_public(fake);
+    let delivery = webhook(state, "repository", publicized, WEBHOOK_SECRET).await;
+    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        github_settings(state).await["connection"]["public_confirmed"],
+        false
+    );
+    assert_eq!(
+        request.checks().await["mergeability"]["status"],
+        "ChecksConfigurationError"
+    );
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&request.branch()), None);
 }

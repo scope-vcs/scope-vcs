@@ -86,6 +86,14 @@ pub struct RequestGitHubPushResponse {
     pub error: Option<String>,
 }
 
+/// Starts the checks of the head the maintainer reviewed. A newer head is
+/// refused, because approving runs its code.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct ApproveRequestChecksRequest {
+    pub expected_head_oid: GitOid,
+}
+
 /// The checks recorded for the request's current head.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -104,5 +112,8 @@ pub struct RequestChecksResponse {
     /// Whether approving would run workflow files this request changes. Only
     /// worked out for a viewer who can approve GitHub checks.
     pub changes_github_workflows: bool,
+    /// Whether this private request's checks run in a public GitHub
+    /// repository, where everything Scope pushes is public.
+    pub private_request_on_public_github: bool,
     pub mergeability: RequestMergeabilityResponse,
 }

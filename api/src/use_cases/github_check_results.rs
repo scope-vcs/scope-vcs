@@ -75,10 +75,12 @@ pub(crate) async fn confirm_recent_github_checks(
     let Some(connection) = connected(state, &request.repo_id).await? else {
         return Ok(());
     };
+    // A read still asking GitHub means something changed there, so the stored
+    // answer is not trusted however recent it is.
     let read_at = state
         .metadata
         .requests()
-        .github_check_read_started_at(&check_commit(&connection, &evaluation.tested_oid))
+        .settled_github_check_read_started_at(&check_commit(&connection, &evaluation.tested_oid))
         .await?;
     let now_unix = unix_now()?;
     if read_at.is_some_and(|read_at| read_at.saturating_add(MERGE_FRESHNESS_SECS) > now_unix) {
@@ -215,7 +217,7 @@ pub(crate) async fn reconcile_github_checks_once(
                 continue;
             }
         }
-        if !checks_pending(state, &candidate.request_id, &candidate.head_oid, commit).await? {
+        if !any_checks_pending(state, commit).await? {
             requests
                 .schedule_github_check_refresh(
                     commit,
@@ -227,26 +229,27 @@ pub(crate) async fn reconcile_github_checks_once(
     Ok(refreshed)
 }
 
-async fn checks_pending(
+/// Whether any open request testing the commit still waits on its checks.
+/// Requests can share a commit and require different checks.
+async fn any_checks_pending(
     state: &AppState,
-    request_id: &str,
-    head_oid: &str,
     commit: &GitHubCheckCommit,
 ) -> Result<bool, ApiError> {
     let requests = state.metadata.requests();
-    let Some(evaluation) = requests
-        .request_check_evaluation(request_id, head_oid)
-        .await?
-    else {
-        return Ok(false);
-    };
-    let results = requests
-        .request_check_results(&commit.repo_id, std::slice::from_ref(&evaluation))
+    let evaluations = requests
+        .current_github_evaluations_testing(&commit.repo_id, &commit.commit_oid)
         .await?;
-    Ok(
-        request_checks_outcome(request_id, head_oid, Some(&evaluation), &results)
-            == RequestChecksOutcome::Pending,
-    )
+    let results = requests
+        .request_check_results(&commit.repo_id, &evaluations)
+        .await?;
+    Ok(evaluations.iter().any(|evaluation| {
+        request_checks_outcome(
+            &evaluation.request_id,
+            &evaluation.head_oid,
+            Some(evaluation),
+            &results,
+        ) == RequestChecksOutcome::Pending
+    }))
 }
 
 impl AppState {

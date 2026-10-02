@@ -31,7 +31,7 @@ use crate::{
     repo_access::find_read_access,
     repo_events::RepoChangeReason,
     state::AppState,
-    use_cases::github_check_results,
+    use_cases::{github_check_results, github_pushes},
 };
 use axum::{
     Json,
@@ -40,7 +40,9 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use scope_domain::{
-    github_connection::{ConnectGitHubRepository, ensure_can_manage_github_connection},
+    github_connection::{
+        ConnectGitHubRepository, can_publish_to_github, ensure_can_manage_github_connection,
+    },
     repository::{RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
 };
 
@@ -161,6 +163,9 @@ pub(crate) async fn connect_github_repository(
                 installation_id,
                 github_repository_id: repository_id,
                 github_full_name: repository.full_name,
+                // What GitHub reports now, not what setup listed.
+                github_private: repository.private,
+                acknowledge_public: input.acknowledge_public,
                 user_id: user.id,
                 now_unix: unix_now()?,
             },
@@ -178,6 +183,8 @@ pub(crate) async fn connect_github_repository(
         )
         .await?;
     publish_connection_change(&state, &incarnation).await;
+    // Connecting queued the commits open requests' GitHub checks test.
+    state.github_push_wakeup.notify_one();
     connection_response(&state, &context).await.map(Json)
 }
 
@@ -213,6 +220,26 @@ pub(crate) async fn set_github_required_checks(
         .set_github_required_checks(&context.record.id, &user.id, input.names)
         .await?;
     publish_connection_change(&state, &incarnation).await;
+    connection_response(&state, &context).await.map(Json)
+}
+
+/// A maintainer who can change file visibility confirms that the connected
+/// GitHub repository, which became public, may receive private requests.
+pub(crate) async fn confirm_public_github_repository(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let user = require_scope_user(&state, &headers).await?;
+    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
+    let incarnation = state
+        .metadata
+        .repositories()
+        .acknowledge_public_github_repository(&context.record.id, &user.id)
+        .await?;
+    publish_connection_change(&state, &incarnation).await;
+    // Private requests waiting on the confirmation can be sent now.
+    state.github_push_wakeup.notify_one();
     connection_response(&state, &context).await.map(Json)
 }
 
@@ -268,6 +295,26 @@ pub(crate) async fn receive_github_webhook(
                     commit_oid,
                     error = %error.operator_diagnostic(),
                     "reading GitHub checks for a delivery failed"
+                );
+            }
+        }
+        // GitHub reports a visibility change; a repository that became public
+        // receives no private request until a maintainer confirms.
+        GitHubWebhookEvent::RepositoryVisibilityChanged {
+            github_repository_id,
+        } => {
+            if let Some(connection) = state
+                .metadata
+                .repositories()
+                .github_connection_for_github_repository(github_repository_id)
+                .await?
+                && let Err(error) =
+                    github_pushes::refresh_github_visibility(&state, &connection).await
+            {
+                tracing::warn!(
+                    github_repository_id,
+                    error = %error.operator_diagnostic(),
+                    "reading a GitHub repository's visibility failed"
                 );
             }
         }
@@ -337,6 +384,7 @@ async fn connection_response(
         state.github.is_some(),
         read,
         required_checks,
+        can_publish_to_github(context.access),
     ))
 }
 

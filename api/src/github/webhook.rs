@@ -43,12 +43,28 @@ pub(crate) enum GitHubWebhookEvent {
         github_repository_id: u64,
         commit_oid: String,
     },
+    /// A repository was made public or private. Deliveries can arrive out of
+    /// order, so Scope asks GitHub which it is now.
+    RepositoryVisibilityChanged {
+        github_repository_id: u64,
+    },
     Ignored,
 }
 
 impl GitHubWebhookEvent {
     pub(crate) fn parse(event: &str, body: &[u8]) -> Result<Self, ApiError> {
         match event {
+            "repository" => {
+                let payload: RepositoryPayload = payload(body)?;
+                match (payload.action.as_str(), payload.repository) {
+                    ("publicized" | "privatized", Some(repository)) => {
+                        Ok(Self::RepositoryVisibilityChanged {
+                            github_repository_id: repository.id,
+                        })
+                    }
+                    _ => Ok(Self::Ignored),
+                }
+            }
             "check_run" | "check_suite" | "workflow_run" => {
                 let payload: ChecksPayload = payload(body)?;
                 let subject = match event {
@@ -149,6 +165,12 @@ struct InstallationRepositoriesPayload {
 #[derive(Deserialize)]
 struct Installation {
     id: u64,
+}
+
+#[derive(Deserialize)]
+struct RepositoryPayload {
+    action: String,
+    repository: Option<Repository>,
 }
 
 /// `check_run`, `check_suite` and `workflow_run` deliveries each name their
@@ -266,6 +288,25 @@ mod tests {
             assert_eq!(parse(event, body).unwrap(), GitHubWebhookEvent::Ignored);
         }
         assert!(parse("installation", "{}").is_err());
+    }
+
+    #[test]
+    fn visibility_events_name_the_repository_to_ask_about() {
+        let parse = |body: serde_json::Value| {
+            GitHubWebhookEvent::parse("repository", body.to_string().as_bytes()).unwrap()
+        };
+        for action in ["publicized", "privatized"] {
+            assert_eq!(
+                parse(serde_json::json!({ "action": action, "repository": { "id": 42 } })),
+                GitHubWebhookEvent::RepositoryVisibilityChanged {
+                    github_repository_id: 42
+                }
+            );
+        }
+        assert_eq!(
+            parse(serde_json::json!({ "action": "renamed", "repository": { "id": 42 } })),
+            GitHubWebhookEvent::Ignored
+        );
     }
 
     #[test]

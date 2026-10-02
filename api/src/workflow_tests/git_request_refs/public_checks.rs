@@ -95,7 +95,7 @@ async fn public_request_checks_use_trusted_main_without_exposing_its_workflow() 
             "POST",
             &repo_request_checks_approve(TEST_REPO_OWNER, TEST_REPO_NAME, REQUEST_ID),
             Some(&bearer_header()),
-            Some("{}"),
+            Some(&reviewed_head_body(&state, REQUEST_ID).await),
         )
         .await,
         StatusCode::OK,
@@ -145,7 +145,7 @@ async fn public_request_checks_use_trusted_main_without_exposing_its_workflow() 
             "POST",
             &repo_request_checks_approve(TEST_REPO_OWNER, TEST_REPO_NAME, REQUEST_ID),
             Some(&bearer_header()),
-            Some("{}"),
+            Some(&reviewed_head_body(&state, REQUEST_ID).await),
         )
         .await,
         StatusCode::OK,

@@ -6,6 +6,7 @@ import {
   requestChecksWorkflowWarning,
   requestEventBody,
   requestGitHubPushNote,
+  requestPublicGitHubNote,
 } from './request-labels'
 import type {
   RequestChecksResponse,
@@ -59,6 +60,16 @@ test('approving workflow changes warns only the maintainer who can approve', () 
   )
   assert.equal(requestChecksWorkflowWarning(checks(false, true)), null)
   assert.equal(requestChecksWorkflowWarning(checks(true, false)), null)
+})
+
+test('a private request checked in a public GitHub repository says it is public there', () => {
+  const checks = (private_request_on_public_github: boolean) =>
+    ({ private_request_on_public_github }) as RequestChecksResponse
+  assert.equal(requestPublicGitHubNote(checks(false)), null)
+  assert.equal(
+    requestPublicGitHubNote(checks(true)),
+    'This private request’s checks run in a public GitHub repository, so its changes are public on GitHub.',
+  )
 })
 
 test('the push note follows the tested commit on its way to GitHub', () => {

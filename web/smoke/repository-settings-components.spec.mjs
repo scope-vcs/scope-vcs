@@ -74,7 +74,15 @@ test('repository components retain drafts, previews and pending actions across r
     await checks.getByText('The Scope GitHub App was uninstalled from the GitHub account.').waitFor()
     await checks.getByRole('button', { name: 'Reconnect', exact: true }).waitFor()
     await page.evaluate(() => window.calls.splice(0))
-    const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null }, required_checks: ['ci / test'] }
+    const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false }, required_checks: [], can_confirm_public: true }
+    await page.evaluate((github) => window.setFixtureGitHub(github), becamePublic)
+    await checks.getByText('This GitHub repository became public, so Scope stopped sending private requests there.', { exact: false }).waitFor()
+    await checks.getByRole('button', { name: 'Allow private requests', exact: true }).click()
+    await checks.getByText('Public on GitHub: everything Scope pushes here is public.', { exact: true }).waitFor()
+    assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+      { confirmPublicGitHub: { owner: 'owner', repo: 'demo' } },
+    ])
+    const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true }, required_checks: ['ci / test'], can_confirm_public: true }
     await page.evaluate((github) => window.setFixtureGitHub(github), github)
     await checks.getByText('ci / test', { exact: true }).waitFor()
     await checks.getByRole('textbox', { name: 'Check name' }).fill(' lint ')

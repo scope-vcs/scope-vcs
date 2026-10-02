@@ -11,7 +11,7 @@
 use super::{Request, RequestState, limits::validate_required};
 use crate::{
     error::DomainError,
-    github_connection::GitHubConnection,
+    github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
     runs::{
         availability::NATIVE_RUNS_UNAVAILABLE,
         run::{Run, RunState},
@@ -28,8 +28,8 @@ mod github_push;
 mod planning;
 pub use github::{GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus};
 pub use github_push::{
-    GitHubPush, GitHubPushState, GitHubPushStatus, changes_github_workflows, github_push_retry_at,
-    github_request_branch, github_request_ref,
+    GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus, changes_github_workflows,
+    github_push_retry_at, github_request_branch, github_request_ref,
 };
 pub use planning::RequestCheckPlan;
 
@@ -425,6 +425,15 @@ pub struct RequestCheckResults {
     /// The states of the native runs the evaluations started.
     pub native_runs: Vec<(String, RunState)>,
     pub github: GitHubCheckResults,
+    /// Private requests whose revisions the connected GitHub repository may
+    /// not receive: it became public and no one confirmed that since.
+    pub withheld_from_github: Vec<String>,
+}
+
+impl RequestCheckResults {
+    fn withholds(&self, evaluation: &RequestCheckEvaluation) -> bool {
+        evaluation.asks_github() && self.withheld_from_github.contains(&evaluation.request_id)
+    }
 }
 
 /// What one check says on its own.
@@ -447,7 +456,9 @@ pub fn request_checks_outcome(
         return RequestChecksOutcome::NotEvaluated;
     };
     // A GitHub check can never pass without a connection, whatever else the head awaits.
-    if evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected {
+    if (evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected)
+        || results.withholds(evaluation)
+    {
         return RequestChecksOutcome::ConfigurationError;
     }
     match evaluation.state {
@@ -480,15 +491,19 @@ pub fn request_checks_message(
     evaluation: &RequestCheckEvaluation,
     results: &RequestCheckResults,
 ) -> Option<String> {
-    evaluation.message.clone().or_else(|| {
-        (evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected).then(
-            || {
-                "This repository is no longer connected to GitHub, so its checks cannot pass. \
-                 A maintainer can reconnect it in repository settings."
-                    .to_string()
-            },
-        )
-    })
+    if let Some(message) = &evaluation.message {
+        return Some(message.clone());
+    }
+    if evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected {
+        return Some(
+            "This repository is no longer connected to GitHub, so its checks cannot pass. \
+             A maintainer can reconnect it in repository settings."
+                .to_string(),
+        );
+    }
+    results
+        .withholds(evaluation)
+        .then(|| PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string())
 }
 
 fn native_verdict(check: &NativeRequestCheck, runs: &[(String, RunState)]) -> CheckVerdict {
@@ -511,6 +526,21 @@ pub fn request_head_awaits_evaluation(request: &Request, outcome: RequestChecksO
     outcome == RequestChecksOutcome::NotEvaluated
         && request.git_snapshot.is_some()
         && !request.is_terminal()
+}
+
+/// A maintainer approves the head they reviewed. Approval runs the head's code,
+/// with the repository's secrets on GitHub, so a head pushed after the review
+/// must be reviewed again.
+pub fn ensure_approving_reviewed_head(
+    request: &Request,
+    reviewed_head_oid: &str,
+) -> Result<(), DomainError> {
+    if request.head_oid != reviewed_head_oid {
+        return Err(DomainError::conflict(
+            "This request has a new revision. Review it before approving its checks.",
+        ));
+    }
+    Ok(())
 }
 
 /// Whether the pusher's request runs start at once or wait for a maintainer.

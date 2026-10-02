@@ -228,6 +228,12 @@ async fn stored_request(state: &AppState, id: &str) -> Request {
         .unwrap()
 }
 
+/// An approval of the request's current head, as a maintainer who reviewed it sends.
+async fn reviewed_head_body(state: &AppState, request_id: &str) -> String {
+    serde_json::json!({ "expected_head_oid": stored_request(state, request_id).await.head_oid })
+        .to_string()
+}
+
 async fn request_event_count(state: &AppState) -> usize {
     state
         .metadata

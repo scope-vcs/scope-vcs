@@ -210,7 +210,12 @@ configured: boolean, connection: GitHubConnectionDetailsResponse | null,
 /**
  * The check names GitHub must pass before a request merges.
  */
-required_checks: Array<string>, };
+required_checks: Array<string>, 
+/**
+ * Whether the viewer may confirm that a public GitHub repository
+ * receives what Scope pushes, private requests included.
+ */
+can_confirm_public: boolean, };
 
 export type GitHubConnectionDetailsResponse = { github_full_name: string, github_url: string, 
 /**
@@ -220,7 +225,16 @@ connected_by: RequestActorSummaryResponse | null, connected_at_unix: number,
 /**
  * Set when GitHub took the repository away from Scope.
  */
-disconnected: GitHubDisconnectionResponse | null, };
+disconnected: GitHubDisconnectionResponse | null, 
+/**
+ * Everything Scope pushes to a public GitHub repository is public.
+ */
+public_on_github: boolean, 
+/**
+ * False while a repository that became public waits for a maintainer to
+ * confirm; private requests are not sent there meanwhile.
+ */
+public_confirmed: boolean, };
 
 export type GitHubDisconnectionResponse = { reason: GitHubDisconnectReasonResponse, at_unix: number, };
 
@@ -246,7 +260,12 @@ install_url: string, grant: string, };
 
 export type GitHubRepositoryResponse = { id: number, full_name: string, private: boolean, };
 
-export type ConnectGitHubRepositoryRequest = { grant: string, github_repository_id: number, };
+export type ConnectGitHubRepositoryRequest = { grant: string, github_repository_id: number, 
+/**
+ * Required for a public GitHub repository: everything Scope pushes there,
+ * private requests and private files included, becomes public.
+ */
+acknowledge_public: boolean, };
 
 export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
 
@@ -410,7 +429,12 @@ github_push: RequestGitHubPushResponse | null,
  * Whether approving would run workflow files this request changes. Only
  * worked out for a viewer who can approve GitHub checks.
  */
-changes_github_workflows: boolean, mergeability: RequestMergeabilityResponse, };
+changes_github_workflows: boolean, 
+/**
+ * Whether this private request's checks run in a public GitHub
+ * repository, where everything Scope pushes is public.
+ */
+private_request_on_public_github: boolean, mergeability: RequestMergeabilityResponse, };
 
 export type RequestEventResponse = { id: string, position: number, 
 /**
@@ -481,6 +505,8 @@ export type StartRequestRequest = { name: string, title: string | null, audience
 export type SubmitRequestRequest = Record<symbol, never>;
 
 export type MergeRequestRequest = { expected_head_oid: GitOid, };
+
+export type ApproveRequestChecksRequest = { expected_head_oid: GitOid, };
 
 export type EditRequestIdentityRequest = { title: string | null, description_markdown: string | null, expected_description_markdown: string | null, };
 
@@ -562,6 +588,7 @@ export const ApiRouteTemplates = {
   repoGitHub: "/v1/repos/{owner}/{repo}/github",
   repoGitHubAuthorize: "/v1/repos/{owner}/{repo}/github/authorize",
   repoGitHubRequiredChecks: "/v1/repos/{owner}/{repo}/github/required-checks",
+  repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
   githubSetup: "/v1/github/setup",
   repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",

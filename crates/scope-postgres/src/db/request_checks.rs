@@ -3,7 +3,8 @@
 //! transaction, so an evaluation is never started without its push.
 
 use super::{
-    RequestStore, entities,
+    RequestStore,
+    entities::{self, encode_enum},
     github_connections::repository_github_connection,
     github_pushes::queue_github_push,
     native_runs::lock_native_runs_availability,
@@ -13,8 +14,9 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     requests::{
-        GitHubCheckResults, Request, RequestCheckEvaluation, RequestCheckPlan, RequestCheckResults,
-        RequestRevision, stop_request_auto_merge_for_check_evaluation,
+        GitHubCheckResults, GitHubPushDestination, Request, RequestAudience,
+        RequestCheckEvaluation, RequestCheckPlan, RequestCheckResults, RequestRevision,
+        ensure_approving_reviewed_head, stop_request_auto_merge_for_check_evaluation,
     },
     runs::{
         run::Run,
@@ -40,6 +42,8 @@ pub struct RecordRequestChecksCommand {
 pub struct ApproveRequestChecksCommand {
     pub request_id: String,
     pub actor_user_id: String,
+    /// The head the maintainer reviewed; a newer head is refused.
+    pub reviewed_head_oid: String,
     pub now_unix: u64,
 }
 
@@ -102,23 +106,21 @@ impl RequestStore {
             save_workflow_revision(&tx, revision, command.evaluation.updated_at_unix).await?;
         }
         save_evaluation(&tx, &command.evaluation).await?;
-        if command.push_to_github {
-            queue_github_push(
+        let queued_github_push = command.push_to_github
+            && queue_tested_commit_push(
                 &tx,
-                &request.repo_id,
-                &request.id,
-                Some(&command.evaluation.tested_oid),
+                &request,
+                &command.evaluation.tested_oid,
                 command.evaluation.updated_at_unix,
             )
             .await?;
-        }
         stop_auto_merge_for_evaluation(&tx, active_auto_merge, &request, &command.evaluation)
             .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(RequestChecksMutation {
             evaluation: command.evaluation,
             created_runs,
-            queued_github_push: command.push_to_github,
+            queued_github_push,
         })
     }
 
@@ -135,6 +137,7 @@ impl RequestStore {
         if !repo.access.is_maintainer() {
             return Err(PostgresError::permission_denied("repo maintainer required"));
         }
+        ensure_approving_reviewed_head(&request, &command.reviewed_head_oid)?;
         let evaluation = evaluation_for_head(&tx, &request.id, &request.head_oid)
             .await?
             .ok_or_else(|| PostgresError::not_found("request head has no recorded checks"))?;
@@ -172,21 +175,14 @@ impl RequestStore {
         )?;
         let created_runs = start_runs(&tx, &revisions, runs).await?;
         save_evaluation(&tx, &evaluation).await?;
-        if push_to_github {
-            queue_github_push(
-                &tx,
-                &request.repo_id,
-                &request.id,
-                Some(&evaluation.tested_oid),
-                command.now_unix,
-            )
-            .await?;
-        }
+        let queued_github_push = push_to_github
+            && queue_tested_commit_push(&tx, &request, &evaluation.tested_oid, command.now_unix)
+                .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(RequestChecksMutation {
             evaluation,
             created_runs,
-            queued_github_push: push_to_github,
+            queued_github_push,
         })
     }
 
@@ -271,10 +267,12 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
 ) -> Result<RequestCheckResults, PostgresError> {
     let mut run_ids = Vec::new();
     let mut tested_oids = Vec::new();
+    let mut github_request_ids = Vec::new();
     for evaluation in evaluations {
         run_ids.extend(evaluation.run_ids().map(str::to_string));
         if evaluation.asks_github() {
             tested_oids.push(evaluation.tested_oid.clone());
+            github_request_ids.push(evaluation.request_id.clone());
         }
     }
     let native_runs = if run_ids.is_empty() {
@@ -299,6 +297,14 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
             .await?
             .filter(|connection| connection.is_connected())
     };
+    // A repository that became public on GitHub gets no private request until
+    // a maintainer confirms; those requests' checks cannot pass meanwhile.
+    let withheld_from_github = match &connection {
+        Some(connection) if !connection.may_receive_private_requests() => {
+            private_request_ids(conn, &github_request_ids).await?
+        }
+        _ => Vec::new(),
+    };
     let github = if tested_oids.is_empty() {
         GitHubCheckResults::Connected(Vec::new())
     } else if let Some(connection) = connection {
@@ -317,7 +323,23 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
     Ok(RequestCheckResults {
         native_runs,
         github,
+        withheld_from_github,
     })
+}
+
+async fn private_request_ids<C: ConnectionTrait>(
+    conn: &C,
+    request_ids: &[String],
+) -> Result<Vec<String>, PostgresError> {
+    Ok(entities::request::Entity::find()
+        .filter(entities::request::Column::Id.is_in(request_ids.iter().cloned()))
+        .filter(entities::request::Column::Audience.eq(encode_enum(RequestAudience::Private)?))
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(|row| row.id)
+        .collect())
 }
 
 async fn start_runs(
@@ -361,6 +383,30 @@ pub(super) async fn stop_auto_merge_for_evaluation(
             .await?;
     }
     Ok(())
+}
+
+/// Queues the push of the tested commit to the GitHub repository linked now.
+/// Returns `false` when no link is left to push to; the evaluation then
+/// cannot pass, which the request shows.
+async fn queue_tested_commit_push(
+    tx: &DatabaseTransaction,
+    request: &Request,
+    tested_oid: &str,
+    now_unix: u64,
+) -> Result<bool, PostgresError> {
+    let Some(connection) = repository_github_connection(tx, &request.repo_id).await? else {
+        return Ok(false);
+    };
+    queue_github_push(
+        tx,
+        &request.repo_id,
+        &request.id,
+        Some(tested_oid),
+        &GitHubPushDestination::of(&connection),
+        now_unix,
+    )
+    .await?;
+    Ok(true)
 }
 
 pub(super) async fn evaluation_for_head<C: ConnectionTrait>(

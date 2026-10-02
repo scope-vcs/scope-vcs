@@ -144,7 +144,7 @@ async fn github_is_off_when_the_app_is_not_configured() {
     let body = connection(&state).await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": false, "connection": null, "required_checks": [] })
+        serde_json::json!({ "configured": false, "connection": null, "required_checks": [], "can_confirm_public": true })
     );
     let install = authorize_response(&state, &bearer_header(), serde_json::json!({})).await;
     assert_eq!(install.status(), StatusCode::NOT_FOUND);
@@ -163,7 +163,7 @@ async fn a_maintainer_connects_through_github_setup() {
     let (state, fake) = github_state().await;
     assert_eq!(
         connection(&state).await,
-        serde_json::json!({ "configured": true, "connection": null, "required_checks": [] })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true })
     );
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
 
@@ -207,7 +207,11 @@ async fn a_maintainer_connects_through_github_setup() {
         connected["connection"]["disconnected"],
         serde_json::Value::Null
     );
-    assert_eq!(connection(&state).await, connected);
+    // The owner sees the same link; only the owner may confirm a public repository.
+    let owner_view = connection(&state).await;
+    assert_eq!(owner_view["connection"], connected["connection"]);
+    assert_eq!(connected["can_confirm_public"], false);
+    assert_eq!(owner_view["can_confirm_public"], true);
     assert_eq!(
         events.try_recv().unwrap().kind,
         crate::repo_events::RepoChangeKind::RepositoryChanged {
@@ -413,6 +417,8 @@ async fn a_github_repository_connects_to_one_scope_repository() {
                 installation_id: INSTALLATION_ID,
                 github_repository_id: GITHUB_REPOSITORY_ID,
                 github_full_name: "octo/checks".to_string(),
+                github_private: true,
+                acknowledge_public: false,
                 user_id: test_owner_id(),
                 now_unix: unix_now(),
             },
@@ -428,6 +434,87 @@ async fn a_github_repository_connects_to_one_scope_repository() {
         response_json(response).await["message"],
         "octo/checks is already connected to another Scope repository."
     );
+}
+
+#[tokio::test]
+async fn a_public_github_repository_connects_only_with_a_confirmation_from_who_may_publish() {
+    let (state, fake) = github_state().await;
+    let mut public = github_repository(45, "octo/public");
+    public["private"] = serde_json::json!(false);
+    let mut user_public = user_repository(45, "octo/public", true);
+    user_public["private"] = serde_json::json!(false);
+    fake.user_repositories
+        .lock()
+        .unwrap()
+        .push((INSTALLATION_ID, user_public));
+    fake.installation_repositories
+        .lock()
+        .unwrap()
+        .push((INSTALLATION_ID, public));
+    let connect_public = |bearer: String, grant: String, acknowledge_public: bool| {
+        let state = state.clone();
+        async move {
+            request(
+                &state,
+                "POST",
+                "/v1/repos/owner/repo/github",
+                Some(&bearer),
+                Some(serde_json::json!({
+                    "grant": grant,
+                    "github_repository_id": 45,
+                    "acknowledge_public": acknowledge_public,
+                })),
+            )
+            .await
+        }
+    };
+
+    // A member who cannot change file visibility may not, even confirming.
+    let member = add_member(&state).await;
+    let setup_state = setup_state(&state, &member).await;
+    let member_grant = expect_json(
+        setup(&state, &member, &setup_state, GOOD_CODE).await,
+        StatusCode::OK,
+    )
+    .await["grant"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let refused = connect_public(member, member_grant, true).await;
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+
+    // The owner must confirm that everything pushed there becomes public.
+    let grant = grant(&state).await;
+    let unconfirmed = connect_public(bearer_header(), grant.clone(), false).await;
+    assert_eq!(
+        expect_json(unconfirmed, StatusCode::CONFLICT).await["message"],
+        scope_domain::github_connection::PUBLIC_GITHUB_REPOSITORY_CONFIRMATION
+    );
+    assert_eq!(
+        connection(&state).await["connection"],
+        serde_json::Value::Null
+    );
+    let connected = expect_json(
+        connect_public(bearer_header(), grant, true).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(connected["connection"]["public_on_github"], true);
+    assert_eq!(connected["connection"]["public_confirmed"], true);
+    assert_eq!(connected["can_confirm_public"], true);
+}
+
+#[tokio::test]
+async fn a_private_github_repository_needs_no_confirmation() {
+    let (state, _fake) = github_state().await;
+    let grant = grant(&state).await;
+    let connected = expect_json(
+        connect(&state, &bearer_header(), &grant, GITHUB_REPOSITORY_ID).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(connected["connection"]["public_on_github"], false);
+    assert_eq!(connected["connection"]["public_confirmed"], true);
 }
 
 #[tokio::test]
@@ -506,7 +593,7 @@ async fn a_maintainer_disconnects() {
     .await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": true, "connection": null, "required_checks": [] })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true })
     );
     let again = request(
         &state,

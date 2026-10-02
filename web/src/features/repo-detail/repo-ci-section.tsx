@@ -5,23 +5,25 @@ import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { LoaderCircle, Plug, Unplug } from 'lucide-react'
 import { useState } from 'react'
-import { githubConnectionView } from './repo-github-connection-model'
+import { githubConnectionView, githubVisibilityView } from './repo-github-connection-model'
 import { RepoRequiredChecks } from './repo-required-checks'
 import { CiSection } from './repo-settings-sections'
 
 /** `github` is `null` until it loads. */
 export function RepoCiSection({
+  confirmPublic,
   disconnect,
   github,
   setRequiredChecks,
   startAuthorization,
 }: {
+  confirmPublic: () => Promise<GitHubConnectionResponse>
   disconnect: () => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
   setRequiredChecks: (names: string[]) => Promise<GitHubConnectionResponse>
   startAuthorization: () => Promise<GitHubAuthorizeResponse>
 }) {
-  const [pending, setPending] = useState<'connect' | 'disconnect' | null>(null)
+  const [pending, setPending] = useState<'connect' | 'disconnect' | 'confirm' | null>(null)
   const [error, setError] = useState<{ title: string; message: string } | null>(null)
 
   async function connect() {
@@ -49,6 +51,18 @@ export function RepoCiSection({
     }
   }
 
+  async function confirmPublicRepository() {
+    setError(null)
+    setPending('confirm')
+    try {
+      await confirmPublic()
+    } catch (cause) {
+      setError({ title: 'Confirmation failed', message: resourceErrorMessage(cause, 'Try again.') })
+    } finally {
+      setPending(null)
+    }
+  }
+
   if (!github) {
     return (
       <CiSection>
@@ -58,6 +72,7 @@ export function RepoCiSection({
   }
 
   const view = githubConnectionView(github)
+  const visibility = githubVisibilityView(github)
   const spinner = <LoaderCircle className="size-3.5 animate-spin" />
   const connectButton = (label: string) => (
     <Button disabled={pending !== null} onClick={() => void connect()} size="sm" type="button">
@@ -111,6 +126,35 @@ export function RepoCiSection({
               <div className="leading-5 text-muted-foreground">{view.reason}</div>
             </div>
             {connectButton('Reconnect')}
+          </div>
+        )}
+
+        {visibility?.kind === 'public' && (
+          <p className="leading-5 text-muted-foreground">
+            Public on GitHub: everything Scope pushes here is public.
+          </p>
+        )}
+
+        {visibility?.kind === 'unconfirmed' && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="min-w-0 flex-1 leading-5 text-warning-strong" role="note">
+              This GitHub repository became public, so Scope stopped sending private requests there.
+              {visibility.canConfirm
+                ? ' Allowing them makes their changes and private files public on GitHub.'
+                : ' A maintainer who can change file visibility can allow them.'}
+            </p>
+            {visibility.canConfirm && (
+              <Button
+                disabled={pending !== null}
+                onClick={() => void confirmPublicRepository()}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                {pending === 'confirm' && spinner}
+                <span>Allow private requests</span>
+              </Button>
+            )}
           </div>
         )}
 

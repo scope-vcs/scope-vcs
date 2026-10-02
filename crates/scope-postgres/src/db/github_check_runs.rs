@@ -11,7 +11,7 @@ use super::{
     integer_columns::{i64_to_u64, optional_i64_to_u64, u64_to_i64},
 };
 use crate::error::PostgresError;
-use scope_domain::requests::GitHubCheckRun;
+use scope_domain::requests::{GitHubCheckRun, RequestCheckEvaluation};
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait, Value,
 };
@@ -170,8 +170,10 @@ impl RequestStore {
         Ok(true)
     }
 
-    /// When the stored read of the commit's check runs started, if any was stored.
-    pub async fn github_check_read_started_at(
+    /// When the stored read of the commit's check runs started. `None` before
+    /// any read was stored, and while a later read is still asking GitHub:
+    /// something changed on GitHub that the stored answer may not show.
+    pub async fn settled_github_check_read_started_at(
         &self,
         commit: &GitHubCheckCommit,
     ) -> Result<Option<u64>, PostgresError> {
@@ -180,7 +182,8 @@ impl RequestStore {
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT applied_read_started_at_unix FROM scope_github_check_refreshes
-                  WHERE repo_id = $1 AND github_repository_id = $2 AND commit_oid = $3",
+                  WHERE repo_id = $1 AND github_repository_id = $2 AND commit_oid = $3
+                    AND started_reads = applied_read",
                 commit.key_values()?,
             ))
             .await
@@ -193,6 +196,47 @@ impl RequestStore {
                 .map_err(PostgresError::internal)?,
             "GitHub check read time",
         )
+    }
+
+    /// The started GitHub evaluations of open requests' current heads that
+    /// test the commit in the repository.
+    pub async fn current_github_evaluations_testing(
+        &self,
+        repo_id: &str,
+        commit_oid: &str,
+    ) -> Result<Vec<RequestCheckEvaluation>, PostgresError> {
+        let heads = self
+            .db
+            .query_all_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT evaluation.request_id, evaluation.head_oid
+                  FROM scope_request_check_evaluations evaluation
+                  JOIN scope_requests request
+                    ON request.id = evaluation.request_id
+                   AND request.head_oid = evaluation.head_oid
+                 WHERE request.repo_id = $1
+                   AND evaluation.tested_oid = $2
+                   AND evaluation.state = 'started'
+                   AND evaluation.checks @? '$[*] ? (@.provider == "github")'
+                   AND request.merged_at_unix IS NULL
+                   AND request.closed_at_unix IS NULL
+                "#,
+                [repo_id.into(), commit_oid.into()],
+            ))
+            .await
+            .map_err(PostgresError::internal)?
+            .into_iter()
+            .map(|row| {
+                Ok((
+                    row.try_get::<String>("", "request_id")
+                        .map_err(PostgresError::internal)?,
+                    row.try_get::<String>("", "head_oid")
+                        .map_err(PostgresError::internal)?,
+                ))
+            })
+            .collect::<Result<Vec<_>, PostgresError>>()?;
+        self.request_check_evaluations(&heads).await
     }
 
     /// Whether any request in the repository was evaluated against `commit_oid`.

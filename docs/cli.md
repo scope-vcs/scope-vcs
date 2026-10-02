@@ -114,7 +114,8 @@ settings, answered by GitHub Actions on the pushed commit; any other repository
 runs its own `.scope/runs` workflows. A maintainer's push starts the checks at
 once: Scope starts its runs, or sends the revision to GitHub. An outside
 contributor's push records them until a maintainer runs
-`scope request checks --approve`. `scope request checks` shows the evaluation,
+`scope request checks --approve --head <head>`, naming the head they reviewed;
+a newer head is refused. `scope request checks` shows the evaluation,
 each check's provider and state, and where its logs are: the run id for
 `scope run logs` or the GitHub page. For GitHub checks it also shows whether the
 revision is waiting for approval, being sent, sent, or failed to send, and warns

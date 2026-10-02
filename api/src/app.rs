@@ -154,6 +154,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::put(http::github::set_github_required_checks),
         )
         .route(
+            routes::REPO_GITHUB_PUBLIC_CONFIRMATION,
+            post(http::github::confirm_public_github_repository),
+        )
+        .route(
             routes::GITHUB_SETUP,
             post(http::github::complete_github_setup),
         )

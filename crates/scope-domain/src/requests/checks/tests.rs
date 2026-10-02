@@ -26,6 +26,7 @@ fn native_results(runs: &[(&str, RunState)]) -> RequestCheckResults {
             .map(|(id, state)| (id.to_string(), *state))
             .collect(),
         github: GitHubCheckResults::Connected(Vec::new()),
+        withheld_from_github: Vec::new(),
     }
 }
 
@@ -224,6 +225,7 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
             &RequestCheckResults {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Connected(runs),
+                withheld_from_github: Vec::new(),
             },
         )
     };
@@ -279,6 +281,7 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
             &RequestCheckResults {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Disconnected,
+                withheld_from_github: Vec::new(),
             },
         ),
         RequestChecksOutcome::ConfigurationError
@@ -299,6 +302,7 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
             &RequestCheckResults {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Disconnected,
+                withheld_from_github: Vec::new(),
             },
         ),
         RequestChecksOutcome::ConfigurationError
@@ -321,6 +325,7 @@ fn github_conclusions_pass_or_fail_a_completed_run() {
             &RequestCheckResults {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Connected(vec![run]),
+                withheld_from_github: Vec::new(),
             },
         )
     };
@@ -368,6 +373,7 @@ fn a_disconnected_github_provider_leaves_native_only_heads_alone() {
             &RequestCheckResults {
                 native_runs: vec![("run_a".to_string(), RunState::Succeeded)],
                 github: GitHubCheckResults::Disconnected,
+                withheld_from_github: Vec::new(),
             },
         ),
         RequestChecksOutcome::Clear
@@ -431,6 +437,7 @@ fn a_repository_linked_to_github_uses_github_checks_even_once_disconnected() {
         connected_by: None,
         connected_at_unix: 1,
         status: GitHubConnectionStatus::Connected,
+        visibility: crate::github_connection::GitHubRepositoryVisibility::Private,
     };
     assert_eq!(
         RequestCheckProvider::for_repository(None),
@@ -456,9 +463,91 @@ fn push(target_oid: &str, state: GitHubPushState, last_error: Option<&str>) -> G
         repo_id: "owner/repo".into(),
         request_id: "req_1".into(),
         target_oid: Some(target_oid.into()),
+        destination: GitHubPushDestination {
+            installation_id: 7,
+            github_repository_id: 42,
+            github_full_name: "octo/repo".into(),
+        },
         state,
         attempts: 1,
         last_error: last_error.map(str::to_string),
+    }
+}
+
+#[test]
+fn a_request_withheld_from_a_public_github_repository_cannot_pass_and_says_why() {
+    let started = RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci")], 1).unwrap();
+    let mut results = RequestCheckResults {
+        native_runs: Vec::new(),
+        github: GitHubCheckResults::Connected(vec![github_run(
+            HEAD,
+            "ci",
+            1,
+            Some(GitHubCheckConclusion::Success),
+        )]),
+        withheld_from_github: Vec::new(),
+    };
+    assert_eq!(
+        request_checks_outcome("req_1", HEAD, Some(&started), &results),
+        RequestChecksOutcome::Clear
+    );
+    results.withheld_from_github = vec!["req_1".into()];
+    assert_eq!(
+        request_checks_outcome("req_1", HEAD, Some(&started), &results),
+        RequestChecksOutcome::ConfigurationError
+    );
+    assert_eq!(
+        request_checks_message(&started, &results).as_deref(),
+        Some(PRIVATE_REQUESTS_WITHHELD_MESSAGE)
+    );
+}
+
+#[test]
+fn approval_names_the_head_the_maintainer_reviewed() {
+    let mut request = open_request();
+    request.head_oid = HEAD.into();
+    assert!(ensure_approving_reviewed_head(&request, HEAD).is_ok());
+    assert_eq!(
+        ensure_approving_reviewed_head(&request, OLD_HEAD)
+            .unwrap_err()
+            .kind,
+        crate::error::DomainErrorKind::Conflict
+    );
+}
+
+#[test]
+fn a_push_is_revoked_by_a_disconnect_or_a_reconnect_elsewhere() {
+    use crate::github_connection::{GitHubConnectionStatus, GitHubDisconnectReason};
+    let connection = GitHubConnection {
+        repository_id: "owner/repo".into(),
+        installation_id: 7,
+        github_repository_id: 42,
+        github_full_name: "octo/repo".into(),
+        connected_by: None,
+        connected_at_unix: 1,
+        status: GitHubConnectionStatus::Connected,
+        visibility: crate::github_connection::GitHubRepositoryVisibility::Private,
+    };
+    let destination = GitHubPushDestination::of(&connection);
+    assert!(destination.is_connected_through(&connection));
+    for changed in [
+        GitHubConnection {
+            github_repository_id: 43,
+            ..connection.clone()
+        },
+        GitHubConnection {
+            installation_id: 8,
+            ..connection.clone()
+        },
+        GitHubConnection {
+            status: GitHubConnectionStatus::Disconnected {
+                reason: GitHubDisconnectReason::AppUninstalled,
+                at_unix: 2,
+            },
+            ..connection.clone()
+        },
+    ] {
+        assert!(!destination.is_connected_through(&changed));
     }
 }
 

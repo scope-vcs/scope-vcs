@@ -49,6 +49,7 @@ export function RepoSettingsPage({
   collaboration,
   collaborationLoading,
   deleteRepo,
+  confirmPublicGitHub,
   disconnectGitHub,
   github,
   params,
@@ -69,6 +70,7 @@ export function RepoSettingsPage({
   /** The member list is still loading; the rest of the page does not need it. */
   collaborationLoading: boolean
   deleteRepo: (params: RepoParams) => Promise<DeleteRepoResponse>
+  confirmPublicGitHub: (params: RepoParams) => Promise<GitHubConnectionResponse>
   disconnectGitHub: (params: RepoParams) => Promise<GitHubConnectionResponse>
   /** `null` while it loads, and for viewers who cannot manage it. */
   github: GitHubConnectionResponse | null
@@ -170,6 +172,7 @@ export function RepoSettingsPage({
 
         {repo.access.actor !== 'Public' && (
           <RepoCiSection
+            confirmPublic={() => confirmPublicGitHub(params)}
             disconnect={() => disconnectGitHub(params)}
             github={github}
             setRequiredChecks={(names) => setGitHubRequiredChecks({ ...params, names })}
