@@ -40,6 +40,7 @@ async fn reads_the_latest_run_of_each_name_on_the_requested_commits() {
                 status: GitHubCheckStatus::Completed,
                 conclusion: Some(GitHubCheckConclusion::Success),
                 details_url: Some("https://github.com/owner/repo/runs/2".into()),
+                check_suite_id: None,
             },
             GitHubCheckRun {
                 commit_oid: "a".repeat(40),
@@ -48,6 +49,7 @@ async fn reads_the_latest_run_of_each_name_on_the_requested_commits() {
                 status: GitHubCheckStatus::Queued,
                 conclusion: None,
                 details_url: None,
+                check_suite_id: None,
             },
         ]
     );
@@ -83,6 +85,7 @@ fn run(id: u64, conclusion: GitHubCheckConclusion) -> GitHubCheckRun {
         status: GitHubCheckStatus::Completed,
         conclusion: Some(conclusion),
         details_url: None,
+        check_suite_id: None,
     }
 }
 

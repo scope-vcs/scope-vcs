@@ -1,8 +1,5 @@
-import type {
-  GitHubCheckConclusion,
-  GitHubCheckStatus,
-  RequestCheckResponse,
-} from '@/api/types.generated'
+import type { RequestCheckResponse } from '@/api/types.generated'
+import { githubRunResult } from '../runs/github-run-status'
 import { runStatus } from '../runs/run-status'
 
 /** One check as the request page lists it, with where its logs are. */
@@ -14,29 +11,6 @@ export type RequestCheckRow = {
   state: string
   label: string
   logs: { runId: string } | { href: string } | null
-}
-
-type CheckResult = { state: string; label: string }
-
-const GITHUB_STATUS: Record<GitHubCheckStatus, CheckResult> = {
-  queued: { state: 'queued', label: 'queued' },
-  in_progress: { state: 'running', label: 'in progress' },
-  completed: { state: 'pending', label: 'completed' },
-  waiting: { state: 'queued', label: 'waiting' },
-  requested: { state: 'queued', label: 'requested' },
-  pending: { state: 'queued', label: 'pending' },
-}
-
-const GITHUB_CONCLUSION: Record<GitHubCheckConclusion, CheckResult> = {
-  success: { state: 'succeeded', label: 'succeeded' },
-  neutral: { state: 'succeeded', label: 'neutral' },
-  skipped: { state: 'skipped', label: 'skipped' },
-  failure: { state: 'failed', label: 'failed' },
-  cancelled: { state: 'failed', label: 'cancelled' },
-  timed_out: { state: 'failed', label: 'timed out' },
-  action_required: { state: 'failed', label: 'action required' },
-  stale: { state: 'failed', label: 'stale' },
-  startup_failure: { state: 'failed', label: 'startup failure' },
 }
 
 export function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
@@ -51,11 +25,9 @@ export function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
       logs: check.run_id ? { runId: check.run_id } : null,
     }
   }
-  const result: CheckResult = check.conclusion
-    ? GITHUB_CONCLUSION[check.conclusion]
-    : check.status
-      ? GITHUB_STATUS[check.status]
-      : { state: 'pending', label: 'no run yet' }
+  const result = check.status
+    ? githubRunResult(check.status, check.conclusion)
+    : { state: 'pending', label: 'no run yet' }
   return {
     key: `github:${check.name}`,
     name: check.name,

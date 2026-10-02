@@ -4,22 +4,49 @@
 //! the commit under test to a branch it owns, `scope/requests/<request id>`. A
 //! newer revision replaces the branch, and merging or closing the request deletes
 //! it. A failed push is tried again after growing delays, then given up with its
-//! last error for the request to show.
+//! last error for the request to show. A maintainer's connection test pushes
+//! main to `scope/setup-check` the same way.
 
 use super::RequestCheckEvaluation;
 use crate::github_connection::GitHubConnection;
 
 const REQUEST_BRANCH_PREFIX: &str = "scope/requests/";
+const SETUP_CHECK_BRANCH: &str = "scope/setup-check";
 /// The wait after each failed attempt. The attempt after the last wait is the last.
 const RETRY_DELAYS_SECS: [u64; 4] = [30, 2 * 60, 10 * 60, 30 * 60];
 const WORKFLOWS_DIRECTORY: &str = ".github/workflows/";
 
-pub fn github_request_branch(request_id: &str) -> String {
-    format!("{REQUEST_BRANCH_PREFIX}{request_id}")
+/// A branch Scope owns in the connected GitHub repository.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitHubBranch {
+    /// Holds the commit a request's checks test.
+    Request(String),
+    /// Holds main while a maintainer tests the connection.
+    SetupCheck,
 }
 
-pub fn github_request_ref(request_id: &str) -> String {
-    format!("refs/heads/{}", github_request_branch(request_id))
+impl GitHubBranch {
+    /// The Scope branch a GitHub branch name is, if it is one.
+    pub fn parse(branch: &str) -> Option<Self> {
+        if branch == SETUP_CHECK_BRANCH {
+            return Some(Self::SetupCheck);
+        }
+        branch
+            .strip_prefix(REQUEST_BRANCH_PREFIX)
+            .filter(|request_id| !request_id.is_empty() && !request_id.contains('/'))
+            .map(|request_id| Self::Request(request_id.to_string()))
+    }
+
+    pub fn name(&self) -> String {
+        match self {
+            Self::Request(request_id) => format!("{REQUEST_BRANCH_PREFIX}{request_id}"),
+            Self::SetupCheck => SETUP_CHECK_BRANCH.to_string(),
+        }
+    }
+
+    pub fn git_ref(&self) -> String {
+        format!("refs/heads/{}", self.name())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,30 +85,30 @@ impl GitHubPushDestination {
     }
 }
 
-/// One push or deletion of a request's branch on GitHub.
+/// One push or deletion of a Scope branch on GitHub.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubPush {
     pub id: String,
     pub repo_id: String,
-    pub request_id: String,
+    pub branch: GitHubBranch,
     /// The commit the branch should point at; `None` deletes the branch.
     pub target_oid: Option<String>,
     pub destination: GitHubPushDestination,
     pub state: GitHubPushState,
     pub attempts: u32,
     pub last_error: Option<String>,
+    /// When the push last changed; for a finished push, when it finished.
+    pub updated_at_unix: u64,
 }
 
-impl GitHubPush {
-    pub fn git_ref(&self) -> String {
-        github_request_ref(&self.request_id)
+/// When a push whose latest attempt just failed tries again, or `None` when
+/// it gives up. A connection test waits on its push, so the setup branch
+/// reports its first failure instead of trying again.
+pub fn github_push_retry_at(push: &GitHubPush, now_unix: u64) -> Option<u64> {
+    if push.branch == GitHubBranch::SetupCheck {
+        return None;
     }
-}
-
-/// When a push whose `attempts`-th attempt just failed tries again, or `None`
-/// when it gives up.
-pub fn github_push_retry_at(attempts: u32, now_unix: u64) -> Option<u64> {
-    let index = usize::try_from(attempts.checked_sub(1)?).ok()?;
+    let index = usize::try_from(push.attempts.checked_sub(1)?).ok()?;
     RETRY_DELAYS_SECS
         .get(index)
         .map(|delay| now_unix.saturating_add(*delay))

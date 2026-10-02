@@ -38,10 +38,12 @@ pub(crate) enum GitHubWebhookEvent {
         change: GitHubInstallationChange,
     },
     /// Something about a commit's checks changed. The delivery only prompts
-    /// Scope to read the commit's check runs again.
+    /// Scope to read the commit's check runs again, and for a workflow run
+    /// delivery, that run.
     ChecksChanged {
         github_repository_id: u64,
         commit_oid: String,
+        workflow_run_id: Option<u64>,
     },
     /// A repository was made public or private. Deliveries can arrive out of
     /// order, so Scope asks GitHub which it is now.
@@ -81,6 +83,7 @@ impl GitHubWebhookEvent {
                 Ok(Self::ChecksChanged {
                     github_repository_id: repository.id,
                     commit_oid: subject.head_sha,
+                    workflow_run_id: subject.id.filter(|_| event == "workflow_run"),
                 })
             }
             "installation" => {
@@ -185,10 +188,11 @@ struct ChecksPayload {
 
 #[derive(Deserialize)]
 struct ChecksSubject {
+    id: Option<u64>,
     head_sha: String,
 }
 
-fn is_commit_oid(value: &str) -> bool {
+pub(super) fn is_commit_oid(value: &str) -> bool {
     value.len() == 40
         && value
             .bytes()
@@ -315,21 +319,25 @@ mod tests {
             GitHubWebhookEvent::parse(event, body.to_string().as_bytes()).unwrap()
         };
         let sha = "a".repeat(40);
-        let changed = GitHubWebhookEvent::ChecksChanged {
-            github_repository_id: 42,
-            commit_oid: sha.clone(),
-        };
-        for event in ["check_run", "check_suite", "workflow_run"] {
+        for (event, workflow_run_id) in [
+            ("check_run", None),
+            ("check_suite", None),
+            ("workflow_run", Some(9)),
+        ] {
             assert_eq!(
                 parse(
                     event,
                     serde_json::json!({
                         "action": "completed",
                         "repository": { "id": 42 },
-                        (event): { "head_sha": sha },
+                        (event): { "id": 9, "head_sha": sha },
                     })
                 ),
-                changed,
+                GitHubWebhookEvent::ChecksChanged {
+                    github_repository_id: 42,
+                    commit_oid: sha.clone(),
+                    workflow_run_id,
+                },
                 "{event}"
             );
         }

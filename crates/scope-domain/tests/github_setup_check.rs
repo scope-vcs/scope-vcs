@@ -1,0 +1,207 @@
+use scope_domain::{
+    error::DomainErrorKind,
+    github_connection::{
+        ConnectGitHubRepository, GitHubConnection, GitHubConnectionStatus, GitHubDisconnectReason,
+        GitHubRepositoryVisibility, connect_github_repository,
+    },
+    github_setup_check::{
+        GITHUB_SETUP_CHECK_TIMEOUT_SECS, GitHubSetupCheck, GitHubSetupCheckState,
+        start_github_setup_check,
+    },
+    github_workflow_runs::GitHubWorkflowRun,
+    repository::{
+        RepoLifecycleState,
+        access::{RepositoryAccess, repository_access_for_user_id},
+    },
+    requests::{GitHubCheckConclusion, GitHubCheckStatus, NO_GITHUB_WORKFLOWS_STARTED},
+};
+
+const OWNER: &str = "user_owner";
+const NOW: u64 = 1_000;
+
+fn main_oid() -> String {
+    "a".repeat(40)
+}
+
+fn owner() -> RepositoryAccess {
+    repository_access_for_user_id(OWNER, RepoLifecycleState::Ready, None, OWNER)
+}
+
+fn connection() -> GitHubConnection {
+    connect_github_repository(
+        owner(),
+        None,
+        None,
+        ConnectGitHubRepository {
+            repository_id: "owner/repo".into(),
+            installation_id: 7,
+            github_repository_id: 42,
+            github_full_name: "octo/repo".into(),
+            github_private: true,
+            acknowledge_public: false,
+            user_id: OWNER.into(),
+            now_unix: NOW,
+        },
+    )
+    .unwrap()
+}
+
+fn started() -> GitHubSetupCheck {
+    start_github_setup_check(owner(), Some(&connection()), None, Some(&main_oid()), NOW).unwrap()
+}
+
+fn run(
+    branch: &str,
+    commit_oid: &str,
+    conclusion: Option<GitHubCheckConclusion>,
+) -> GitHubWorkflowRun {
+    GitHubWorkflowRun {
+        github_run_id: 1,
+        workflow_name: "ci".into(),
+        head_branch: Some(branch.into()),
+        head_oid: commit_oid.into(),
+        event: "push".into(),
+        status: if conclusion.is_some() {
+            GitHubCheckStatus::Completed
+        } else {
+            GitHubCheckStatus::InProgress
+        },
+        conclusion,
+        html_url: "https://github.com/octo/repo/actions/runs/1".into(),
+        check_suite_id: Some(5),
+        run_started_at_unix: Some(NOW),
+        updated_at_unix: NOW,
+    }
+}
+
+#[test]
+fn a_maintainer_tests_main_of_a_connected_repository_one_test_at_a_time() {
+    let check = started();
+    assert_eq!(check.state, GitHubSetupCheckState::Pushing);
+    assert_eq!(check.commit_oid, main_oid());
+
+    let outsider =
+        repository_access_for_user_id(OWNER, RepoLifecycleState::Ready, None, "user_outsider");
+    let mut disconnected = connection();
+    disconnected.status = GitHubConnectionStatus::Disconnected {
+        reason: GitHubDisconnectReason::AppUninstalled,
+        at_unix: NOW,
+    };
+    let mut unconfirmed_public = connection();
+    unconfirmed_public.visibility = GitHubRepositoryVisibility::Public {
+        acknowledged: false,
+    };
+    for (access, connection, current, main) in [
+        (outsider, Some(connection()), None, Some(main_oid())),
+        (owner(), None, None, Some(main_oid())),
+        (owner(), Some(disconnected), None, Some(main_oid())),
+        (owner(), Some(unconfirmed_public), None, Some(main_oid())),
+        (owner(), Some(connection()), None, None),
+        (
+            owner(),
+            Some(connection()),
+            Some(check.clone()),
+            Some(main_oid()),
+        ),
+    ] {
+        let error = start_github_setup_check(
+            access,
+            connection.as_ref(),
+            current.as_ref(),
+            main.as_deref(),
+            NOW,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                error.kind,
+                DomainErrorKind::Forbidden | DomainErrorKind::Conflict
+            ),
+            "{error:?}"
+        );
+    }
+
+    // A finished test can be run again.
+    let mut finished = check;
+    finished.record_push(Err("refused"), NOW + 1);
+    assert!(
+        start_github_setup_check(
+            owner(),
+            Some(&connection()),
+            Some(&finished),
+            Some(&main_oid()),
+            NOW + 2
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_refused_push_ends_the_test_with_what_github_answered() {
+    let mut check = started();
+    check.record_push(Err("GitHub refused the push: rule violations"), NOW + 5);
+    assert_eq!(check.state, GitHubSetupCheckState::Failed);
+    assert_eq!(check.finished_at_unix, Some(NOW + 5));
+    assert_eq!(
+        check.message(false).as_deref(),
+        Some("GitHub refused the push: rule violations")
+    );
+    // A late success for the same push changes nothing.
+    check.record_push(Ok(()), NOW + 6);
+    assert_eq!(check.state, GitHubSetupCheckState::Failed);
+}
+
+#[test]
+fn the_test_ends_once_every_run_on_the_setup_branch_completed() {
+    let mut check = started();
+    check.record_push(Ok(()), NOW + 1);
+    assert_eq!(check.state, GitHubSetupCheckState::Waiting);
+
+    let oid = main_oid();
+    // Runs on other branches or commits, such as main's own push, do not count.
+    let elsewhere = [
+        run("main", &oid, Some(GitHubCheckConclusion::Success)),
+        run(
+            "scope/setup-check",
+            &"b".repeat(40),
+            Some(GitHubCheckConclusion::Success),
+        ),
+    ];
+    assert!(!check.observe(&elsewhere, NOW + 10));
+    assert!(!check.observe(&[run("scope/setup-check", &oid, None)], NOW + 10));
+    assert_eq!(check.state, GitHubSetupCheckState::Waiting);
+
+    assert!(check.observe(
+        &[run(
+            "scope/setup-check",
+            &oid,
+            Some(GitHubCheckConclusion::Failure)
+        )],
+        NOW + 20
+    ));
+    assert_eq!(check.state, GitHubSetupCheckState::Finished);
+    assert_eq!(check.finished_at_unix, Some(NOW + 20));
+    // A failing workflow still started, which is all the test asks.
+    assert_eq!(check.message(true), None);
+}
+
+#[test]
+fn a_test_without_runs_stops_waiting_and_says_to_add_the_trigger() {
+    let mut check = started();
+    check.record_push(Ok(()), NOW + 1);
+    let timeout = NOW + GITHUB_SETUP_CHECK_TIMEOUT_SECS;
+    assert!(!check.observe(&[], timeout - 1));
+    assert!(check.observe(&[], timeout));
+    assert_eq!(check.state, GitHubSetupCheckState::Finished);
+    assert_eq!(
+        check.message(false).as_deref(),
+        Some(NO_GITHUB_WORKFLOWS_STARTED)
+    );
+    // A finished test stays finished.
+    assert!(!check.observe(&[], timeout + 60));
+
+    let mut stuck = started();
+    assert!(stuck.observe(&[], timeout));
+    assert_eq!(stuck.state, GitHubSetupCheckState::Failed);
+    assert!(stuck.message(false).is_some());
+}

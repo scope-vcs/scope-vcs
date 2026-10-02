@@ -375,6 +375,8 @@ pub enum RepoChangeKind {
     Connected,
     Lagged,
     DependenciesChanged,
+    /// GitHub reported a workflow run of the connected repository.
+    GitHubWorkflowRunsChanged,
     RepositoryChanged {
         reason: String,
     },

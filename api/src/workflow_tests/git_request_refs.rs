@@ -22,6 +22,7 @@ mod cache;
 mod checks;
 mod cleanup;
 mod github_checks;
+mod github_setup_and_runs;
 mod http;
 mod landed;
 mod merge;

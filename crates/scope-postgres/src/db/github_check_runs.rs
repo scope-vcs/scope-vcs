@@ -8,7 +8,7 @@
 use super::{
     RequestStore,
     entities::{decode_enum, encode_enum},
-    integer_columns::{i64_to_u64, optional_i64_to_u64, u64_to_i64},
+    integer_columns::{i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u64_to_i64},
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{GitHubCheckRun, RequestCheckEvaluation};
@@ -131,6 +131,7 @@ impl RequestStore {
                 run.conclusion.map(encode_enum).transpose()?.into(),
                 run.details_url.clone().into(),
                 started_at.into(),
+                optional_u64_to_i64(run.check_suite_id, "GitHub check suite id")?.into(),
             ];
             // A run id belongs to one GitHub repository, which may since have
             // been connected to another Scope repository.
@@ -138,15 +139,16 @@ impl RequestStore {
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_github_check_runs (github_check_run_id, repo_id,
                     github_repository_id, commit_oid, name, status, conclusion, details_url,
-                    updated_at_unix)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    updated_at_unix, check_suite_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                  ON CONFLICT (github_check_run_id) DO UPDATE SET
                     repo_id = EXCLUDED.repo_id,
                     github_repository_id = EXCLUDED.github_repository_id,
                     commit_oid = EXCLUDED.commit_oid, name = EXCLUDED.name,
                     status = EXCLUDED.status, conclusion = EXCLUDED.conclusion,
                     details_url = EXCLUDED.details_url,
-                    updated_at_unix = EXCLUDED.updated_at_unix",
+                    updated_at_unix = EXCLUDED.updated_at_unix,
+                    check_suite_id = EXCLUDED.check_suite_id",
                 values,
             ))
             .await
@@ -239,12 +241,19 @@ impl RequestStore {
         self.request_check_evaluations(&heads).await
     }
 
-    /// Whether any request in the repository was evaluated against `commit_oid`.
-    pub async fn github_commit_is_tested(
+    /// Whether Scope reads GitHub's check runs for `commit_oid`: some request
+    /// in the repository was evaluated against it, or a running connection
+    /// test pushed it.
+    pub async fn github_commit_is_watched(
         &self,
         repo_id: &str,
         commit_oid: &str,
     ) -> Result<bool, PostgresError> {
+        if super::github_setup_checks::setup_check_watches(self.db.as_ref(), repo_id, commit_oid)
+            .await?
+        {
+            return Ok(true);
+        }
         self.db
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -391,7 +400,7 @@ pub(super) async fn latest_github_check_runs<C: ConnectionTrait>(
         r#"
         SELECT DISTINCT ON (commit_oid, name)
                github_check_run_id, commit_oid, name, status, conclusion,
-               details_url
+               details_url, check_suite_id
           FROM scope_github_check_runs
          WHERE repo_id = $1
            AND github_repository_id = $2
@@ -429,6 +438,11 @@ pub(super) async fn latest_github_check_runs<C: ConnectionTrait>(
             details_url: row
                 .try_get("", "details_url")
                 .map_err(PostgresError::internal)?,
+            check_suite_id: optional_i64_to_u64(
+                row.try_get("", "check_suite_id")
+                    .map_err(PostgresError::internal)?,
+                "GitHub check suite id",
+            )?,
         })
     })
     .collect()

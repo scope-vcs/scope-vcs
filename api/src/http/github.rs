@@ -8,12 +8,14 @@
 //! repository against that proof and against the installation itself before
 //! the link is stored. Installing the app is a separate step on GitHub; no
 //! installation id from a redirect is ever used. Maintainers also name the
-//! checks GitHub must pass here.
+//! checks GitHub must pass and test the connection here, and members read the
+//! workflow runs GitHub reported.
 
 use super::responses::{
     ConnectGitHubRepositoryRequest, GitHubAuthorizeRequest, GitHubAuthorizeResponse,
     GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse,
-    SetGitHubRequiredChecksRequest, github_connection_response, github_repository_response,
+    GitHubWorkflowRunListResponse, GitHubWorkflowRunsResponse, SetGitHubRequiredChecksRequest,
+    github_connection_response, github_repository_response, github_workflow_run_response,
 };
 use crate::{
     auth::scope::require_scope_user,
@@ -31,7 +33,10 @@ use crate::{
     repo_access::find_read_access,
     repo_events::RepoChangeReason,
     state::AppState,
-    use_cases::{github_check_results, github_pushes},
+    use_cases::{
+        github_check_results, github_pushes, github_setup_checks::publish_setup_check_change,
+        github_workflow_runs, run_inspection::require_repo_member,
+    },
 };
 use axum::{
     Json,
@@ -44,7 +49,11 @@ use scope_domain::{
         ConnectGitHubRepository, can_publish_to_github, ensure_can_manage_github_connection,
     },
     repository::{RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
+    requests::RequestCheckProvider,
 };
+
+/// The Runs page lists this many of GitHub's runs and links to the rest.
+const WORKFLOW_RUNS_SHOWN: u64 = 50;
 
 pub(crate) async fn get_github_connection(
     State(state): State<AppState>,
@@ -243,6 +252,67 @@ pub(crate) async fn confirm_public_github_repository(
     connection_response(&state, &context).await.map(Json)
 }
 
+/// A maintainer tests the connection: main goes to the setup branch and the
+/// test waits for the workflows GitHub starts there.
+pub(crate) async fn start_github_setup_check(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let user = require_scope_user(&state, &headers).await?;
+    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
+    configured_app(&state)?;
+    state
+        .metadata
+        .repositories()
+        .start_github_setup_check(&context.record.id, &user.id, unix_now()?)
+        .await?;
+    state.github_push_wakeup.notify_one();
+    publish_setup_check_change(&state, &context.record.id).await?;
+    connection_response(&state, &context).await.map(Json)
+}
+
+/// What a repository's Runs page lists when its checks run on GitHub. Members
+/// read it like Scope's own runs.
+pub(crate) async fn get_github_workflow_runs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+) -> Result<Json<GitHubWorkflowRunsResponse>, ApiError> {
+    let user = require_scope_user(&state, &headers).await?;
+    let context = require_repo_member(&state, &user.id, &owner, &repo).await?;
+    let repositories = state.metadata.repositories();
+    // A repository whose checks run on GitHub lists GitHub's runs, even once
+    // GitHub took the link away.
+    let connection = repositories
+        .github_connection(&context.record.id)
+        .await?
+        .map(|read| read.connection)
+        .filter(|_| state.github.is_some());
+    let (RequestCheckProvider::GitHub, Some(connection)) = (
+        RequestCheckProvider::for_repository(connection.as_ref()),
+        connection,
+    ) else {
+        return Ok(Json(GitHubWorkflowRunsResponse { github: None }));
+    };
+    let workflow_runs = repositories
+        .recent_github_workflow_runs(
+            &context.record.id,
+            connection.github_repository_id,
+            WORKFLOW_RUNS_SHOWN,
+        )
+        .await?
+        .into_iter()
+        .map(github_workflow_run_response)
+        .collect();
+    Ok(Json(GitHubWorkflowRunsResponse {
+        github: Some(GitHubWorkflowRunListResponse {
+            actions_url: format!("https://github.com/{}/actions", connection.github_full_name),
+            workflow_runs,
+        }),
+    }))
+}
+
 /// Deliveries are verified before anything in them is read, and a rejected
 /// one changes nothing.
 pub(crate) async fn receive_github_webhook(
@@ -282,7 +352,23 @@ pub(crate) async fn receive_github_webhook(
         GitHubWebhookEvent::ChecksChanged {
             github_repository_id,
             commit_oid,
+            workflow_run_id,
         } => {
+            if let Some(run_id) = workflow_run_id
+                && let Err(error) = github_workflow_runs::refresh_workflow_run_for_delivery(
+                    &state,
+                    github_repository_id,
+                    run_id,
+                )
+                .await
+            {
+                tracing::warn!(
+                    github_repository_id,
+                    run_id,
+                    error = %error.operator_diagnostic(),
+                    "reading a GitHub workflow run for a delivery failed"
+                );
+            }
             if let Err(error) = github_check_results::refresh_checks_for_delivery(
                 &state,
                 github_repository_id,
@@ -380,11 +466,13 @@ async fn connection_response(
     let required_checks = repositories
         .github_required_checks(&context.record.id)
         .await?;
+    let setup_check = repositories.github_setup_check(&context.record.id).await?;
     Ok(github_connection_response(
         state.github.is_some(),
         read,
         required_checks,
         can_publish_to_github(context.access),
+        setup_check,
     ))
 }
 

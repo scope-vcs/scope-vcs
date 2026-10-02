@@ -98,6 +98,33 @@ test('repository components retain drafts, previews and pending actions across r
       { setGitHubRequiredChecks: ['ci / test', 'lint'] },
       { setGitHubRequiredChecks: ['lint'] },
     ])
+
+    // The trigger to add, and a test whose checks become required in one click.
+    await checks.getByText("branches: ['scope/**']", { exact: false }).waitFor()
+    const testConnection = checks.getByRole('button', { name: 'Test connection', exact: true })
+    await testConnection.click()
+    assert.equal(await testConnection.isDisabled(), true)
+    await page.evaluate(() => window.finishAction('setup-check'))
+    await checks.getByText('Workflows ran on main (abcdef1). Choose the checks a request must pass.').waitFor()
+    const ran = checks.getByRole('list', { name: 'Checks GitHub ran' })
+    await ran.getByText('Required', { exact: true }).waitFor()
+    const longName = 'test / unit and integration on every supported platform'
+    await ran.getByRole('button', { name: `Require ${longName}`, exact: true }).click()
+    await page.evaluate(() => window.finishAction('required-checks'))
+    await ran.getByRole('button', { name: `Require ${longName}`, exact: true }).waitFor({ state: 'detached' })
+    assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+      { startGitHubSetupCheck: { owner: 'owner', repo: 'demo' } },
+      { setGitHubRequiredChecks: ['lint', longName] },
+    ])
+    for (const [width, name] of [[1280, 'desktop'], [390, 'phone']]) {
+      await page.setViewportSize({ width, height: 900 })
+      const bounds = await checks.last().boundingBox()
+      assert(bounds.x >= 0 && bounds.x + bounds.width <= width, `${name} checks fit`)
+      if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+        await checks.last().screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.checks-${name}.png` })
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 900 })
     await checks.getByRole('button', { name: 'Disconnect', exact: true }).click()
     assert.equal(await checks.getByRole('button', { name: 'Disconnect', exact: true }).isDisabled(), true)
     await page.evaluate(() => window.finishAction('disconnect-github'))

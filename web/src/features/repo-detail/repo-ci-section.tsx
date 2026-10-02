@@ -6,6 +6,7 @@ import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { LoaderCircle, Plug, Unplug } from 'lucide-react'
 import { useState } from 'react'
 import { githubConnectionView, githubVisibilityView } from './repo-github-connection-model'
+import { RepoGitHubSetupCheck } from './repo-github-setup-check'
 import { RepoRequiredChecks } from './repo-required-checks'
 import { CiSection } from './repo-settings-sections'
 
@@ -16,12 +17,14 @@ export function RepoCiSection({
   github,
   setRequiredChecks,
   startAuthorization,
+  startSetupCheck,
 }: {
   confirmPublic: () => Promise<GitHubConnectionResponse>
   disconnect: () => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
   setRequiredChecks: (names: string[]) => Promise<GitHubConnectionResponse>
   startAuthorization: () => Promise<GitHubAuthorizeResponse>
+  startSetupCheck: () => Promise<GitHubConnectionResponse>
 }) {
   const [pending, setPending] = useState<'connect' | 'disconnect' | 'confirm' | null>(null)
   const [error, setError] = useState<{ title: string; message: string } | null>(null)
@@ -156,6 +159,14 @@ export function RepoCiSection({
               </Button>
             )}
           </div>
+        )}
+
+        {view.kind === 'connected' && (
+          <RepoGitHubSetupCheck
+            github={github}
+            requireCheck={(name) => setRequiredChecks([...github.required_checks, name])}
+            startTest={startSetupCheck}
+          />
         )}
 
         {(view.kind === 'connected' || view.kind === 'disconnected') && (

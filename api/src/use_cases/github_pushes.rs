@@ -1,5 +1,6 @@
-//! Sends request branches to GitHub: pushes the commit a request's checks
-//! test, and deletes the branch once the request merges or closes. Pushes are
+//! Sends Scope's branches to GitHub: pushes the commit a request's checks
+//! test, and deletes the branch once the request merges or closes, and pushes
+//! main for a connection test and deletes it once the test ends. Pushes are
 //! claimed with a lease, so one a dying process left half done is taken up by
 //! another. Right before git runs, a push checks that its claim still holds
 //! and that no newer push of its branch was queued, so an old commit never
@@ -14,9 +15,10 @@ use crate::{
 };
 use scope_domain::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
-    requests::{GitHubPush, RequestAudience, github_push_retry_at},
+    requests::{GitHubBranch, GitHubPush, RequestAudience, github_push_retry_at},
 };
 use scope_postgres::db::{GitHubPushOutcome, GitHubPushStanding};
+use std::path::Path;
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -80,7 +82,7 @@ pub(crate) async fn run_claimed_push(
         Ok(()) => GitHubPushOutcome::Succeeded,
         Err(PushFailure::Retry(error)) => GitHubPushOutcome::Failed {
             error,
-            retry_at_unix: github_push_retry_at(push.attempts, now_unix),
+            retry_at_unix: github_push_retry_at(push, now_unix),
         },
         Err(PushFailure::GiveUp(error)) => GitHubPushOutcome::Failed {
             error,
@@ -91,10 +93,10 @@ pub(crate) async fn run_claimed_push(
     if let GitHubPushOutcome::Failed { error, .. } = &outcome {
         tracing::warn!(
             push_id = push.id,
-            request_id = push.request_id,
+            branch = push.branch.name(),
             attempts = push.attempts,
             %error,
-            "sending a request branch to GitHub failed"
+            "sending a branch to GitHub failed"
         );
     }
     match state
@@ -223,23 +225,33 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         ensure_current(state, push, claim_token, None).await?;
         let token = installation_token(&app, destination.installation_id).await?;
         let remote = app.push_remote(&destination.github_full_name, &token);
-        let git_ref = push.git_ref();
+        let git_ref = push.branch.git_ref();
         return crate::git::blocking::run(move || Ok(remote.delete(&git_ref)))
             .await?
             .map_err(PushFailure::Retry);
     };
     let requests = state.metadata.requests();
     let gone = || PushFailure::GiveUp("Scope no longer has this revision.".to_string());
-    let request = requests
-        .request_by_id(&push.request_id)
-        .await
-        .map_err(ApiError::from)?
-        .ok_or_else(gone)?;
-    let audience = Some(request.audience);
+    let request = match &push.branch {
+        GitHubBranch::Request(request_id) => Some(
+            requests
+                .request_by_id(request_id)
+                .await
+                .map_err(ApiError::from)?
+                .ok_or_else(gone)?,
+        ),
+        GitHubBranch::SetupCheck => None,
+    };
+    // Main holds private files, so it goes only where a private request may.
+    let audience = Some(
+        request
+            .as_ref()
+            .map_or(RequestAudience::Private, |request| request.audience),
+    );
     ensure_current(state, push, claim_token, audience).await?;
     // A webhook may never have said the repository became public, so GitHub
-    // is asked before a private request is sent there.
-    if request.audience == RequestAudience::Private
+    // is asked before private content is sent there.
+    if audience == Some(RequestAudience::Private)
         && let Some(connection) = state
             .metadata
             .repositories()
@@ -254,12 +266,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
     }
     let token = installation_token(&app, destination.installation_id).await?;
     let remote = app.push_remote(&destination.github_full_name, &token);
-    let git_ref = push.git_ref();
-    let revision = requests
-        .request_revision_with_head(&request.id, &target_oid)
-        .await
-        .map_err(ApiError::from)?
-        .ok_or_else(gone)?;
+    let git_ref = push.branch.git_ref();
     let incarnation = state
         .metadata
         .repositories()
@@ -268,14 +275,12 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         .map_err(ApiError::from)?
         .ok_or_else(gone)?
         .incarnation();
-    // The revision store holds the commit with the history it builds on, the
-    // way merge preparation reads a request head. Filling it may take a
-    // while, so the claim and the connection are checked again once the
-    // commit is at hand.
+    // Reading the commit may take a while, so the claim and the connection
+    // are checked again once it is at hand.
     let (check_state, check_push, claim_token) =
         (state.clone(), push.clone(), claim_token.to_string());
-    with_request_revision_store_repo(state, &incarnation, &request, &revision, move |repo, _| {
-        Ok(crate::git::blocking::block_on(ensure_current(
+    let push_when_current = move |repo: &Path| {
+        crate::git::blocking::block_on(ensure_current(
             &check_state,
             &check_push,
             &claim_token,
@@ -285,7 +290,34 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             remote
                 .push(repo, &target_oid, &git_ref)
                 .map_err(PushFailure::Retry)
-        }))
+        })
+    };
+    let Some(request) = request else {
+        // Main's own store holds the commit, as it was when the test started.
+        let (Some(head), spans) = state
+            .metadata
+            .repositories()
+            .repository_content_source(&incarnation)
+            .await
+            .map_err(ApiError::from)?
+        else {
+            return Err(gone());
+        };
+        let repo = state
+            .repository_engine
+            .materialize_repository(state, &incarnation, &head, &spans)
+            .await?;
+        return crate::git::blocking::run(move || Ok(push_when_current(repo.as_ref()))).await?;
+    };
+    let revision = requests
+        .request_revision_with_head(&request.id, push.target_oid.as_deref().unwrap_or_default())
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(gone)?;
+    // The revision store holds the commit with the history it builds on, the
+    // way merge preparation reads a request head.
+    with_request_revision_store_repo(state, &incarnation, &request, &revision, move |repo, _| {
+        Ok(push_when_current(repo))
     })
     .await?
 }

@@ -28,7 +28,7 @@ async fn queue<C: ConnectionTrait>(conn: &C, request_id: &str, target: Option<ch
     queue_github_push(
         conn,
         REPO,
-        request_id,
+        &GitHubBranch::Request(request_id.to_string()),
         target.map(oid).as_deref(),
         &destination(),
         at,
@@ -53,7 +53,7 @@ async fn a_branch_is_pushed_by_one_claim_at_a_time_and_the_newest_push_wins() {
     assert_eq!(first.len(), 2);
     let pushed = first
         .iter()
-        .find(|push| push.request_id == "req_1")
+        .find(|push| push.branch == GitHubBranch::Request("req_1".into()))
         .unwrap()
         .clone();
     assert_eq!(pushed.target_oid.as_deref(), Some(oid('a').as_str()));
@@ -332,7 +332,7 @@ async fn deleting_a_repository_leaves_deletions_of_the_branches_it_pushed() {
         .unwrap();
     assert_eq!(deletions.len(), 2);
     for deletion in deletions {
-        assert_eq!(deletion.target_oid, None, "{}", deletion.request_id);
+        assert_eq!(deletion.target_oid, None, "{:?}", deletion.branch);
         assert_eq!(deletion.destination, destination());
     }
 }
