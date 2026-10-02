@@ -1,8 +1,8 @@
 # Fargate cloud runner operations
 
-CloudFormation owns the runner VPC, public subnets, route to the internet, security group, ECS cluster, log group, task execution role, private ECR checks-image repository, GitHub OIDC publisher role, dispatcher IAM user, exact private-registry secret grant, and optional budget. Do not create parallel resources in the AWS Console.
+CloudFormation owns the runner VPC, public subnets, route to the internet, security group, ECS cluster, log group, task execution role, private ECR runner base image repository, GitHub OIDC publisher role, dispatcher IAM user, exact private-registry secret grant, and optional budget. Do not create parallel resources in the AWS Console.
 
-The cluster uses Fargate On-Demand. Each task gets a public IPv4 address because the runner must reach ECR, the Scope API, the cache, and source hosts. The security group has no inbound rules and permits outbound HTTPS only. There is no NAT gateway or idle compute cost. Checks images live in private ECR in the same region as Fargate and are published as SOCI v2 image indexes so Fargate can lazy-load their filesystems.
+The cluster uses Fargate On-Demand. Each task gets a public IPv4 address because the runner must reach ECR, the Scope API, the cache, and source hosts. The security group has no inbound rules and permits outbound HTTPS only. There is no NAT gateway or idle compute cost. The runner base image lives in private ECR in the same region as Fargate. It contains only the runner runtime at `/scope/bin/scope-runner-runtime`, Git, and a shell. Workflows that need more tools build their own image from it.
 
 The worker registers one `scope-runner-<attempt ID>` task definition per attempt because ECS cannot override either the container image or secret references in `RunTask`. The definition contains the digest-pinned image and a reference to a per-attempt Secrets Manager bootstrap credential. When `SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN` is set, it also contains that exact ARN as ECS repository credentials. Neither credential value is placed in the ECS task override or returned by `DescribeTasks`. After ECS reports the task stopped, the worker deregisters the task definition and force-deletes the one-use bootstrap secret.
 
@@ -105,15 +105,15 @@ Apply this infrastructure before merging a workflow that publishes to ECR. Then 
 publisher_role_arn="$(aws cloudformation describe-stacks \
   --region us-east-1 \
   --stack-name scope-cloud-runner-production \
-  --query "Stacks[0].Outputs[?OutputKey=='ChecksImagePublisherRoleArn'].OutputValue | [0]" \
+  --query "Stacks[0].Outputs[?OutputKey=='RunnerBaseImagePublisherRoleArn'].OutputValue | [0]" \
   --output text)"
 
-gh variable set SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN \
+gh variable set SCOPE_RUNNER_IMAGE_AWS_ROLE_ARN \
   --repo scope-vcs/scope-vcs \
   --body "$publisher_role_arn"
 ```
 
-GitHub receives temporary AWS credentials through OIDC. There is no AWS access key to create or store for image publishing. The role accepts only this repository's branch refs and the `scope-checks-image.yml` reusable workflow, and it can write only the checks-image repository.
+GitHub receives temporary AWS credentials through OIDC. There is no AWS access key to create or store for image publishing. The role accepts only this repository's `main` branch and the `scope-runner-image.yml` reusable workflow, and it can write only the runner base image repository.
 
 Configure the infrastructure role at the same time:
 
@@ -212,29 +212,9 @@ For the public mode proof, run a digest-pinned image from a registry without con
 
 Use IAM simulation after the stack update. The dispatcher must be denied `secretsmanager:GetSecretValue` for both the registry secret and a sample attempt secret. The task execution role must be allowed for the exact registry ARN and the attempt prefix, and denied for an unrelated secret.
 
-## Verify and measure SOCI
+## Publish the runner base image
 
-The image workflow publishes one build in three forms during the migration experiment: GHCR, an unchanged raw ECR copy, and a converted ECR SOCI v2 image. Its artifact records every digest. Verify the SOCI tag before running it:
-
-```bash
-aws ecr batch-get-image \
-  --region us-east-1 \
-  --repository-name scope-vcs/production/checks \
-  --image-ids imageTag=<SOCI tag> \
-  --query 'images[0].imageManifest' \
-  --output text \
-  | jq -e '.manifests[] | select(.artifactType == "application/vnd.amazon.soci.index.v2+json")'
-```
-
-Run ten cold tasks for each digest, changing only the pinned image: GHCR, raw ECR, then SOCI ECR. For every task, preserve `createdAt`, `pullStartedAt`, `pullStoppedAt`, and `startedAt` from `aws ecs describe-tasks`. The task must also print the metadata endpoint's snapshotter:
-
-```bash
-node -e 'fetch(process.env.ECS_CONTAINER_METADATA_URI_V4).then(r => r.json()).then(m => console.log(JSON.stringify({snapshotter:m.Snapshotter})))'
-```
-
-The raw variants should report `overlayfs`; the SOCI variant must report `soci`. Compare median and p95 `startedAt - createdAt`, image-pull duration, and end-to-end execution time. Promote only the converted top-level digest—not the raw image digest or the child SOCI descriptor—when the experiment reaches median startup at or below 45 seconds, p95 at or below 60 seconds, and execution time within 5% of baseline.
-
-Pin the promoted digest in `.scope/runs/checks.yml`, deploy, and observe three healthy production runs. During that hold, the image workflow intentionally keeps GHCR and raw ECR variants available for rollback and measurement. After the hold, remove GHCR publication and keep the last known-good digest as the rollback target. The repository retains tagged artifacts; its lifecycle policy deletes only untagged artifacts older than fourteen days.
+`runner-runtime/Dockerfile` builds the runner base image. When a change selects the `runner-image` component, pull requests and Scope request branches build the image, run `dev/checks/runner-runtime-container` against it, and scan it. A release that selects the component repeats those checks on `main`, then pushes the image to `scope-vcs/production/runner-base` under a tag unique to the run. The `runner-image-<commit>` artifact and the run summary record the digest. Pin workflows to that digest, not the tag. The repository retains tagged images; its lifecycle policy deletes only untagged artifacts older than fourteen days.
 
 ## Disable and roll back
 

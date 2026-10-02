@@ -1,8 +1,8 @@
 # Check entrypoints
 
-These scripts own the check commands used by `dev/check`, GitHub Actions, and
-`.scope/runs/checks.yml`. They run from the repository root, regardless of the
-caller's working directory.
+These scripts own the check commands used by `dev/check` and GitHub Actions,
+including runs on `scope/requests/*` branches. They run from the repository
+root, regardless of the caller's working directory.
 
 | Entrypoint | Coverage |
 | --- | --- |
@@ -31,14 +31,8 @@ GitHub retains native distribution build matrices; these scripts do not select
 platforms or provision credentials. The matrix release-builds, packages, and
 checks the installer for every selected target, so GitHub runs `cli-bundle` only
 when the matrix is not selected; it covers the host so no pull request loses the
-release build or installer check. `dev/check cli` and `.scope/runs/checks.yml`
-always run both. Repository policy always checks the full checkout, including
+release build or installer check. `dev/check cli` always runs both. Repository policy always checks the full checkout, including
 source outside `web/`.
-
-Scope keeps every `.scope` path except `RULES.md` private, so public projections
-omit the checks image and workflow. Checks that compare against those files skip
-them there and print what they skipped. GitHub Actions always checks out the
-complete tree, so a missing file fails there instead.
 
 The CLI distribution matrix also runs the portable version and license commands
 and the installer check on native Linux, macOS, and Windows runners. It also runs

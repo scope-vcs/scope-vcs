@@ -3,7 +3,7 @@ name: Validate selected components
 on:
   workflow_call:
     inputs:
-      checks_image:
+      runner_image:
         type: string
         default: "false"
       backend:
@@ -38,15 +38,14 @@ permissions:
   contents: read
 
 jobs:
-  checks-image:
-    name: Checks image
-    if: ${{ !inputs.reuse_artifacts && inputs.checks_image == 'true' }}
+  runner-image:
+    name: Runner base image
+    if: ${{ !inputs.reuse_artifacts && inputs.runner_image == 'true' }}
     permissions:
       contents: read
       deployments: write
       id-token: write
-      packages: write
-    uses: ./.github/workflows/scope-checks-image.yml
+    uses: ./.github/workflows/scope-runner-image.yml
     with:
       publish: ${{ inputs.release }}
     secrets: inherit
@@ -75,6 +74,7 @@ jobs:
         ${{ (inputs.release) ||
         (inputs.cli_distribution == 'true' &&
         (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/scope/')) ||
         (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository &&
         github.actor != 'dependabot[bot]'))) }}
@@ -93,7 +93,7 @@ jobs:
   production-validation-gate:
     name: Production validation gate
     needs:
-      - checks-image
+      - runner-image
       - server-validation
       - cli-validation
       - integration-validation
@@ -109,7 +109,7 @@ jobs:
         env:
           VALIDATIONS_PASSED: >-
             ${{ inputs.reuse_artifacts || (
-            (inputs.checks_image != 'true' || needs.checks-image.result == 'success') &&
+            (inputs.runner_image != 'true' || needs.runner-image.result == 'success') &&
             (!inputs.validate_server || needs.server-validation.result == 'success') &&
             (inputs.cli != 'true' || needs.cli-validation.result == 'success') &&
             ((inputs.web != 'true' && inputs.cli != 'true') ||

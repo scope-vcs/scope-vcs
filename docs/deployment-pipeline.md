@@ -69,8 +69,8 @@ The unfenced rolling path retains sequential activation.
 Read-only maintenance SSH calls (plan, preflight, verify, catalog validation,
 runtime verification, and the production readiness audit) make up to three
 attempts when SSH reports a transport failure; migrations, backfills, writer
-fencing and draining, restores, dumps, and seeding never retry one. Checks image
-tag pushes also make up to three attempts.
+fencing and draining, restores, dumps, and seeding never retry one. Runner base
+image pushes also make up to three attempts.
 
 If the original staging job passed, requesting smoke resume does not repeat it.
 Reuse still requires trusted main preparation, the validation gate, exact images,

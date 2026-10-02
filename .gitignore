@@ -1,10 +1,6 @@
 /.scope/*
 !/.scope/
 !/.scope/RULES.md
-!/.scope/runs/
-!/.scope/runs/**
-!/.scope/images/
-!/.scope/images/**
 target/
 node_modules/
 .turbo/

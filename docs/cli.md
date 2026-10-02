@@ -154,6 +154,11 @@ scope request discussion start --body-file - < review.md
 
 ## Workflows and runs
 
+Native runs execute `.scope/runs` workflows on Scope's own runner. They are
+available only to repositories whose owner the server allowlists. Other
+repositories run checks on GitHub Actions through
+[the GitHub App](github-app.md).
+
 ```sh
 scope run workflows
 scope run start checks --no-watch

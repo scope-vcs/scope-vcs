@@ -54,9 +54,9 @@ print_outputs() {
     RunnerExecutionRoleArn \
     RunnerLogGroupName \
     RailwayDispatcherUserName \
-    ChecksImageRepositoryName \
-    ChecksImageRepositoryUri \
-    ChecksImagePublisherRoleArn \
+    RunnerBaseImageRepositoryName \
+    RunnerBaseImageRepositoryUri \
+    RunnerBaseImagePublisherRoleArn \
     GitHubInfrastructureRoleArn; do
     output_value="$(aws_command cloudformation describe-stacks \
       --stack-name "$stack_name" \

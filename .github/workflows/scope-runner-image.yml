@@ -1,0 +1,202 @@
+name: Runner base image
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_IMAGE: scope-runner-base:candidate
+  ECR_REPOSITORY: scope-vcs/production/runner-base
+
+jobs:
+  validate:
+    name: Validate runner base image
+    if: ${{ !inputs.publish }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read Git build version
+        id: git
+        run: |
+          echo "version=$(jq -er '.git.version' dev/tool-versions.json)" >> "$GITHUB_OUTPUT"
+          echo "source_sha256=$(jq -er '.git.sourceSha256' dev/tool-versions.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
+        with:
+          cache-key: runner-runtime/Dockerfile
+
+      - name: Build candidate image
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: runner-runtime/Dockerfile
+          platforms: linux/amd64
+          provenance: false
+          push: false
+          load: true
+          tags: ${{ env.CANDIDATE_IMAGE }}
+          build-args: |
+            GIT_VERSION=${{ steps.git.outputs.version }}
+            GIT_SOURCE_SHA256=${{ steps.git.outputs.source_sha256 }}
+
+      - name: Verify runtime process lifecycle
+        run: dev/checks/runner-runtime-container --image "$CANDIDATE_IMAGE"
+
+      - name: Scan candidate image
+        run: .github/scripts/scan-image.sh docker "$CANDIDATE_IMAGE" runner-image-scan.json
+
+      - name: Retain vulnerability report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runner-image-scan-candidate
+          path: runner-image-scan.json
+          if-no-files-found: warn
+
+  publish:
+    name: Publish runner base image
+    if: inputs.publish
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      deployments: write
+      id-token: write
+    steps:
+      - name: Require main for publication
+        run: test "$GITHUB_REF" = refs/heads/main
+
+      - name: Checkout exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify checked out revision
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Read Git build version
+        id: git
+        run: |
+          echo "version=$(jq -er '.git.version' dev/tool-versions.json)" >> "$GITHUB_OUTPUT"
+          echo "source_sha256=$(jq -er '.git.sourceSha256' dev/tool-versions.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ vars.SCOPE_RUNNER_IMAGE_AWS_ROLE_ARN }}
+          role-session-name: scope-runner-image-${{ github.run_id }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      # ECR tags are immutable, so every attempt publishes under its own tag.
+      - name: Prepare image tag
+        id: tags
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_ID: ${{ github.run_id }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          test -n "$ECR_REGISTRY"
+          echo "image=${ECR_REGISTRY}/${ECR_REPOSITORY}:${SOURCE_SHA}-${RUN_ID}-${RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
+        with:
+          cache-key: runner-runtime/Dockerfile
+
+      - name: Build image for verification
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: runner-runtime/Dockerfile
+          platforms: linux/amd64
+          provenance: false
+          push: false
+          load: true
+          tags: ${{ steps.tags.outputs.image }}
+          build-args: |
+            GIT_VERSION=${{ steps.git.outputs.version }}
+            GIT_SOURCE_SHA256=${{ steps.git.outputs.source_sha256 }}
+
+      - name: Verify runtime process lifecycle
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+        run: dev/checks/runner-runtime-container --image "$IMAGE"
+
+      - name: Scan verified image before publishing
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+        run: .github/scripts/scan-image.sh docker "$IMAGE" runner-image-scan.json
+
+      - name: Retain vulnerability report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runner-image-scan
+          path: runner-image-scan.json
+          if-no-files-found: warn
+
+      - name: Publish verified image
+        id: image
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          bash .github/scripts/push-image-tags.sh <<< "$IMAGE"
+          digest="$(docker image inspect "$IMAGE" --format '{{json .RepoDigests}}' \
+            | jq -er --arg prefix "${IMAGE%:*}@" '.[] | select(startswith($prefix)) | ltrimstr($prefix)')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          {
+            echo "Published the runner base image:"
+            echo
+            echo "- \`${IMAGE%:*}@${digest}\`"
+            echo
+            echo "Source commit: \`${SOURCE_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "source_sha=$SOURCE_SHA" "image=${IMAGE%:*}@$digest" > runner-image.txt
+
+      - name: Upload published image reference
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runner-image-${{ github.sha }}
+          path: runner-image.txt
+          if-no-files-found: error
+
+      - name: Record successful production revision
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: >-
+          node .github/scripts/production-deployment-progress.mjs record
+          --component runner-image
+          --source-sha "$SOURCE_SHA"
+          --provider ecr
+          --evidence-id "$IMAGE_DIGEST"
+          --log-url "$LOG_URL"

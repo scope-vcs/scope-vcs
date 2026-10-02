@@ -17,7 +17,7 @@ to test native merge: it may receive only commits already merged on GitHub main.
 | Start interrupted after remote creation | Recover the same request and branch; no duplicate request or lost commits | CLI request workflow recovery test |
 | Push to another request | Target head advances; current branch identity and upstream remain unchanged | CLI request workflow recovery test |
 | Contributor and maintainer review | Draft visibility, checkout, diff, discussions, and access agree | Two-actor contribution integration |
-| Checks and revised heads | Only maintainers approve checks, whether Scope runs or a push to GitHub; pending or failed checks block merge; a check result for an older head does not count; a new head needs fresh approval | Two-actor contribution integration and API request-check and GitHub check tests |
+| Checks and revised heads | Contributor heads reach `scope/requests/<id>` only after maintainer approval; the request shows the GitHub checks for the same commit that a pull request would run; required checks block merge; a result for an older head does not count; a new head gets fresh results | Two-actor contribution integration and API request-check and GitHub check tests |
 | Auto merge | Authorization binds to a revision; cancellation, failed checks, and newer revisions stop it | Two-actor contribution integration and API auto-merge tests |
 | Native merge | Correct files reach main; private files remain private; conflicting main changes stop merge | Two-actor contribution integration and API auto-merge tests |
 | Close and interrupted responses | Inspect state before retry; authorized repeat close distinguishes closed/merged; concurrent close has one transition; unauthorized actors remain denied | Two-actor contribution integration, domain and API close tests |
@@ -26,16 +26,12 @@ to test native merge: it may receive only commits already merged on GitHub main.
 Run the CLI contribution integration against a seeded stack with
 `SCOPE_API_URL=http://localhost:8080 dev/checks/integration cli`. Its two actors use
 separate sessions. The checks scenario deliberately leaves its checks pending when
-no runner is present; it proves approval and merge gating, not successful execution.
+no runner is present; it proves approval and merge gating, not that workflows ran.
 API auto-merge tests cover completed checks and conflict handling separately.
 
-Scope runs for public requests must be exercised through an actual public clone.
-Workflow files are private, so that clone cannot carry the workflow definitions.
-Public requests select the accepted main workflow catalog on the server, retain the
-selected definitions for their head, and run them against the public request's
-snapshot after maintainer approval. Private requests use definitions at their
-head. A fixture that inserts an approval record directly cannot prove this source
-selection works.
+Checks on this repository's requests come from its GitHub Actions workflows on
+`scope/requests/<id>`. Until this repository is connected to GitHub, record
+request checks as setup-blocked. Do not start Scope runs.
 
 In a repository connected to GitHub, a public request's checks run on a check
 commit: the contribution merged onto private main, pushed to
@@ -52,7 +48,7 @@ For each relevant scenario, record **passed**, **failed**, **setup-blocked**, or
 role, request/head, expected result, actual result, and the next action. Keep local
 fix verification separate from behavior observed with the released CLI and hosted
 service. A setup failure is useful evidence, but it does not count as a lifecycle
-pass. A pending check is not a successful check.
+pass. A pending or queued check is not a successful check.
 
 A useful PR note can be short:
 

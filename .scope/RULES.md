@@ -9,4 +9,7 @@ from their personal agent skills. The skill is not part of this repository, and
 contributors without it or without a `scope` remote have nothing to mirror. A
 Scope failure never blocks GitHub delivery; it is noted in the PR description.
 
+Checks on this repository's Scope requests come from its GitHub Actions
+workflows on `scope/requests/<id>`. Do not start Scope runs.
+
 Main on Scope only ever receives commits already on GitHub's main.

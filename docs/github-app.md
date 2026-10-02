@@ -342,3 +342,23 @@ publicly with Tailscale Funnel and use the funnel address as the Webhook URL:
 tailscale funnel --bg --https=8443 --set-path=/v1/github/webhooks \
   http://127.0.0.1:8080/v1/github/webhooks
 ```
+
+## Scope's own repository
+
+Scope's workflows in `.github/workflows` already carry the `scope/**` push
+trigger. After a release that includes it, a maintainer finishes the switch:
+
+1. Connect the Scope repository to `scope-vcs/scope-vcs` from its repository
+   settings.
+2. Confirm that workflows start: push a request and check that CI runs on its
+   `scope/requests/<id>` branch. Note the check names GitHub reports.
+3. Choose the required checks in the Checks section. Expect `Required PR
+   checks`, the job that aggregates every other CI result.
+4. Apply the cloud runner stack, then set the GitHub variable
+   `SCOPE_RUNNER_IMAGE_AWS_ROLE_ARN` from its `RunnerBaseImagePublisherRoleArn`
+   output, as described in `deploy/aws/OPERATIONS.md`.
+5. Delete what the old checks image left behind. The ECR repository
+   `scope-vcs/production/checks` has `DeletionPolicy: Retain`, so removing it
+   from the stack keeps it; delete it by hand after the stack update. Also
+   delete the GitHub variable `SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN` and the
+   `checks` container package on GHCR.

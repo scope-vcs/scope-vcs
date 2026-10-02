@@ -82,7 +82,7 @@ jobs:
             source=remote
             image="ghcr.io/scope-vcs/scope-media-worker@${DIGEST}"
           fi
-          .scope/images/checks/scan-image.sh "$source" "$image" \
+          .github/scripts/scan-image.sh "$source" "$image" \
             media-worker-vulnerabilities.json media-worker-sbom.cdx.json
           jq --slurpfile vendor media-worker/codec-vendor.cdx.json \
             '.components += $vendor[0].components' \
