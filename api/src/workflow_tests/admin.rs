@@ -168,6 +168,120 @@ async fn admin_cleanup_drain_reports_deleted_and_failed_source_blobs() {
     );
 }
 
+#[tokio::test]
+async fn native_runs_accounts_require_the_operator_token() {
+    let account = format!("/v1/admin/native-runs/accounts/{TEST_REPO_OWNER}");
+    for (method, uri) in [
+        ("GET", "/v1/admin/native-runs/accounts"),
+        ("PUT", account.as_str()),
+        ("DELETE", account.as_str()),
+    ] {
+        for (state, auth, status) in [
+            (
+                test_state_with_repo(),
+                None,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (operator_state(), None, StatusCode::UNAUTHORIZED),
+            (
+                operator_state(),
+                Some(&*bearer_header()),
+                StatusCode::UNAUTHORIZED,
+            ),
+        ] {
+            assert_eq!(
+                api_request(router(state), method, uri, auth, None)
+                    .await
+                    .status(),
+                status,
+                "{method} {uri}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn operators_list_and_remove_native_runs_accounts() {
+    let state = operator_state();
+    let account = format!("/v1/admin/native-runs/accounts/{TEST_REPO_OWNER}");
+    let mut events = state.repo_events.subscribe(TEST_REPO_ID);
+    let availability_changed = serde_json::json!({
+        "RepositoryChanged": { "reason": "native-runs-changed" }
+    });
+    let added = expect_json(
+        api_request(
+            router(state.clone()),
+            "PUT",
+            &account,
+            Some(OPERATOR_AUTH),
+            Some(r#"{"note":"design partner"}"#),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(added["handle"], TEST_REPO_OWNER);
+    assert_eq!(added["user_id"], test_owner_id());
+    assert_eq!(added["note"], "design partner");
+    // Open Runs pages learn that the owner's repositories may now run workflows.
+    assert_eq!(
+        serde_json::to_value(events.try_recv().unwrap().kind).unwrap(),
+        availability_changed
+    );
+    let listed = expect_json(
+        api_request(
+            router(state.clone()),
+            "GET",
+            "/v1/admin/native-runs/accounts",
+            Some(OPERATOR_AUTH),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["accounts"], serde_json::json!([added]));
+
+    let removed = expect_json(
+        api_request(
+            router(state.clone()),
+            "DELETE",
+            &account,
+            Some(OPERATOR_AUTH),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(removed["removed"], true);
+    assert_eq!(
+        serde_json::to_value(events.try_recv().unwrap().kind).unwrap(),
+        availability_changed
+    );
+    assert!(
+        state
+            .metadata
+            .native_runs()
+            .accounts()
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        api_request(
+            router(state),
+            "PUT",
+            "/v1/admin/native-runs/accounts/nobody",
+            Some(OPERATOR_AUTH),
+            None,
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+}
+
 fn operator_state() -> AppState {
     let mut state = test_state_with_repo();
     state.operator_token = Some(Arc::<str>::from(OPERATOR_TOKEN));

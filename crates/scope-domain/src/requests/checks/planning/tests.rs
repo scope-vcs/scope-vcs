@@ -4,6 +4,7 @@ use crate::{
     content_ref::ContentRef,
     requests::{RequestAudience, RequestCheckEvaluationState, fixtures::open_request},
     runs::{
+        availability::NativeRunsAvailability,
         run::RunState,
         source::RunTrigger,
         workflow::{
@@ -15,6 +16,8 @@ use crate::{
         },
     },
 };
+
+const AVAILABLE: NativeRunsAvailability = NativeRunsAvailability::Available;
 
 fn request() -> Request {
     let mut request = open_request();
@@ -69,6 +72,7 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
         for maintainer in [false, true] {
             let plan = RequestCheckPlan::evaluate(
                 &request,
+                AVAILABLE,
                 Ok(&revisions),
                 maintainer.then_some("actor"),
                 30,
@@ -88,9 +92,14 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
             );
             if maintainer {
                 assert_eq!(plan.evaluation.state, RequestCheckEvaluationState::Started);
-                let repeated =
-                    RequestCheckPlan::evaluate(&request, Ok(&revisions), Some("other"), 40)
-                        .unwrap();
+                let repeated = RequestCheckPlan::evaluate(
+                    &request,
+                    AVAILABLE,
+                    Ok(&revisions),
+                    Some("other"),
+                    40,
+                )
+                .unwrap();
                 assert_eq!(
                     plan.evaluation.run_ids().collect::<Vec<_>>(),
                     repeated.evaluation.run_ids().collect::<Vec<_>>()
@@ -127,9 +136,14 @@ fn empty_and_rejected_workflows_need_no_snapshot_or_runs() {
         ..request()
     };
     for maintainer in [false, true] {
-        let empty =
-            RequestCheckPlan::evaluate(&request, Ok(&[]), maintainer.then_some("actor"), 30)
-                .unwrap();
+        let empty = RequestCheckPlan::evaluate(
+            &request,
+            AVAILABLE,
+            Ok(&[]),
+            maintainer.then_some("actor"),
+            30,
+        )
+        .unwrap();
         assert_eq!(
             empty.evaluation.state,
             RequestCheckEvaluationState::NoChecks
@@ -137,6 +151,7 @@ fn empty_and_rejected_workflows_need_no_snapshot_or_runs() {
         assert!(empty.runs.is_empty());
         let rejected = RequestCheckPlan::evaluate(
             &request,
+            AVAILABLE,
             Err("invalid workflow"),
             maintainer.then_some("actor"),
             30,
@@ -155,10 +170,31 @@ fn empty_and_rejected_workflows_need_no_snapshot_or_runs() {
 }
 
 #[test]
+fn a_repository_without_native_runs_asks_for_no_checks() {
+    let revisions = [revision("test")];
+    let request = request();
+    for workflows in [Ok(&revisions[..]), Err("invalid workflow")] {
+        for maintainer in [false, true] {
+            let plan = RequestCheckPlan::evaluate(
+                &request,
+                NativeRunsAvailability::Unavailable,
+                workflows,
+                maintainer.then_some("actor"),
+                30,
+            )
+            .unwrap();
+            assert_eq!(plan.evaluation.state, RequestCheckEvaluationState::NoChecks);
+            assert!(plan.evaluation.checks.is_empty());
+            assert!(plan.runs.is_empty());
+        }
+    }
+}
+
+#[test]
 fn approval_after_closing_starts_the_recorded_workflows_in_order() {
     let revisions = [revision("test"), revision("lint")];
     let request = request();
-    let waiting = RequestCheckPlan::evaluate(&request, Ok(&revisions), None, 30)
+    let waiting = RequestCheckPlan::evaluate(&request, AVAILABLE, Ok(&revisions), None, 30)
         .unwrap()
         .evaluation;
     let closed = Request {
@@ -168,7 +204,8 @@ fn approval_after_closing_starts_the_recorded_workflows_in_order() {
     let approved =
         RequestCheckPlan::approve(&closed, waiting, &revisions, "maintainer", 40).unwrap();
     let immediate =
-        RequestCheckPlan::evaluate(&request, Ok(&revisions), Some("maintainer"), 40).unwrap();
+        RequestCheckPlan::evaluate(&request, AVAILABLE, Ok(&revisions), Some("maintainer"), 40)
+            .unwrap();
     assert_eq!(approved.runs, immediate.runs);
     assert_eq!(approved.evaluation.checks, immediate.evaluation.checks);
     assert_eq!(
@@ -187,7 +224,7 @@ fn approval_after_closing_starts_the_recorded_workflows_in_order() {
 fn approval_rejects_missing_or_mismatched_revisions_and_invalid_time() {
     let request = request();
     let revisions = [revision("test"), revision("lint")];
-    let waiting = RequestCheckPlan::evaluate(&request, Ok(&revisions), None, 30)
+    let waiting = RequestCheckPlan::evaluate(&request, AVAILABLE, Ok(&revisions), None, 30)
         .unwrap()
         .evaluation;
     for (revisions, time, expected) in [
@@ -220,7 +257,7 @@ fn approval_rejects_missing_or_mismatched_revisions_and_invalid_time() {
 fn both_start_paths_reject_missing_or_mismatched_snapshots() {
     let revisions = [revision("test")];
     let original = request();
-    let waiting = RequestCheckPlan::evaluate(&original, Ok(&revisions), None, 30)
+    let waiting = RequestCheckPlan::evaluate(&original, AVAILABLE, Ok(&revisions), None, 30)
         .unwrap()
         .evaluation;
     let mut mismatched = original.clone();
@@ -236,7 +273,7 @@ fn both_start_paths_reject_missing_or_mismatched_snapshots() {
         (mismatched, "request snapshot does not match its head"),
     ] {
         assert_eq!(
-            RequestCheckPlan::evaluate(&request, Ok(&revisions), Some("actor"), 40)
+            RequestCheckPlan::evaluate(&request, AVAILABLE, Ok(&revisions), Some("actor"), 40)
                 .unwrap_err()
                 .message,
             expected
@@ -254,7 +291,7 @@ fn both_start_paths_reject_missing_or_mismatched_snapshots() {
 fn approval_rejects_an_evaluation_from_another_request_or_head() {
     let request = request();
     let revisions = [revision("test")];
-    let waiting = RequestCheckPlan::evaluate(&request, Ok(&revisions), None, 30)
+    let waiting = RequestCheckPlan::evaluate(&request, AVAILABLE, Ok(&revisions), None, 30)
         .unwrap()
         .evaluation;
     for (request_id, head_oid) in [

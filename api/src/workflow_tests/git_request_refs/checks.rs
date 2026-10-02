@@ -38,8 +38,19 @@ async fn owner_request_push(
     label: &str,
     workflows: &[(&str, String)],
 ) -> (AppState, String, TestServer) {
+    owner_request_push_with_native_runs(label, workflows, true).await
+}
+
+async fn owner_request_push_with_native_runs(
+    label: &str,
+    workflows: &[(&str, String)],
+    native_runs: bool,
+) -> (AppState, String, TestServer) {
     let (state, source, _base_head) =
         super::super::push_intent_completion::published_git_fixture(label).await;
+    if native_runs {
+        allow_native_runs(&state).await;
+    }
     let app = router(state.clone());
     let bearer = bearer_header();
     let started = api_request(
@@ -314,6 +325,7 @@ async fn merging_an_unevaluated_head_evaluates_it_instead() {
 
 /// Seed an awaiting evaluation to exercise the approval transaction in isolation.
 async fn record_awaiting_approval(state: &AppState, request_id: &str) {
+    allow_native_runs(state).await;
     forget_evaluations(state, request_id).await;
     let request = stored_request(state, request_id).await;
     let workflow = request_workflow();
@@ -547,4 +559,98 @@ async fn recorded_checks_can_be_approved_by_a_maintainer_after_the_request_close
         run.requested_by_user_id.as_deref(),
         Some(&*member_user_id())
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unlisted_owners_request_workflows_are_ignored() {
+    let (state, request_id, _server) = owner_request_push_with_native_runs(
+        "request-checks-unlisted",
+        &[(".scope/runs/checks.yml", request_workflow())],
+        false,
+    )
+    .await;
+
+    let checks = checks(&state, &request_id, &bearer_header()).await;
+
+    assert_eq!(checks["state"], "no-checks");
+    assert!(checks["checks"].as_array().unwrap().is_empty());
+    assert_eq!(checks["mergeability"]["status"], "Ready");
+    assert!(
+        state
+            .metadata
+            .runs()
+            .repository_run_history_page(scope_postgres::db::RunHistoryPageQuery {
+                repository_id: TEST_REPO_ID,
+                workflow_path: None,
+                git_oid: None,
+                after: None,
+                limit: 10,
+            })
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removing_the_owner_stops_admission_and_ends_the_wait_on_checks() {
+    let (mut state, request_id, _server) = owner_request_push(
+        "request-checks-withdrawn",
+        &[(".scope/runs/checks.yml", request_workflow())],
+    )
+    .await;
+    let started = checks(&state, &request_id, &bearer_header()).await;
+    assert_eq!(started["state"], "started");
+    let run_id = started["checks"][0]["run_id"].as_str().unwrap().to_string();
+
+    state.operator_token = Some(Arc::from("operator-secret"));
+    let removal = expect_json(
+        api_request(
+            router(state.clone()),
+            "DELETE",
+            &format!("/v1/admin/native-runs/accounts/{TEST_REPO_OWNER}"),
+            Some("Bearer operator-secret"),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(removal["removed"], true);
+    assert_eq!(removal["withdrawn_request_ids"][0], request_id.as_str());
+    assert_eq!(removal["canceled_run_ids"][0], run_id.as_str());
+
+    let withdrawn = checks(&state, &request_id, &bearer_header()).await;
+    assert_eq!(withdrawn["state"], "configuration-error");
+    assert_eq!(
+        withdrawn["message"],
+        scope_domain::runs::availability::NATIVE_RUNS_UNAVAILABLE
+    );
+    assert_eq!(
+        withdrawn["mergeability"]["status"],
+        "ChecksConfigurationError"
+    );
+    assert_eq!(
+        listed_status(&state, &request_id).await,
+        "ChecksConfigurationError"
+    );
+    let run = state.metadata.runs().run(&run_id).await.unwrap().unwrap();
+    assert_eq!(run.state, scope_domain::runs::run::RunState::Canceled);
+    let now = unix_now();
+    assert!(matches!(
+        state
+            .metadata
+            .runs()
+            .admit_next_job(
+                10,
+                "attempt-withdrawn",
+                &"e".repeat(64),
+                "runtime",
+                now,
+                now + 60
+            )
+            .await
+            .unwrap(),
+        scope_postgres::db::DispatchAdmission::Empty
+    ));
 }

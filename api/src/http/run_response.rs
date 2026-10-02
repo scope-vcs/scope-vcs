@@ -1,5 +1,6 @@
 use scope_api_contract::{RepositoryRunSummaryResponse, RunResponse};
 use scope_domain::runs::{
+    availability::NativeRunsAvailability,
     job::{RunJob, can_retry_run},
     run::Run,
 };
@@ -19,7 +20,12 @@ pub(super) fn run_response(run: &Run, logs_truncated: bool) -> RunResponse {
     }
 }
 
-pub(super) fn repository_run_summary(run: &Run, jobs: &[RunJob]) -> RepositoryRunSummaryResponse {
+/// A retry queues the run again, so it is offered only while native runs are available.
+pub(super) fn repository_run_summary(
+    run: &Run,
+    jobs: &[RunJob],
+    native_runs: NativeRunsAvailability,
+) -> RepositoryRunSummaryResponse {
     RepositoryRunSummaryResponse {
         id: run.id.clone(),
         workflow_name: run.workflow.path().name().to_string(),
@@ -31,6 +37,6 @@ pub(super) fn repository_run_summary(run: &Run, jobs: &[RunJob]) -> RepositoryRu
         updated_at_unix: run.updated_at_unix,
         completed_at_unix: run.completed_at_unix,
         can_cancel: run.can_request_cancellation(),
-        can_retry: can_retry_run(run, jobs),
+        can_retry: native_runs.is_available() && can_retry_run(run, jobs),
     }
 }

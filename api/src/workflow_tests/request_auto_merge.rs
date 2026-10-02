@@ -26,6 +26,7 @@ async fn open_request_with_revision(
 ) -> (AppState, String) {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
+    allow_native_runs(&state).await;
     if author_user_id != test_owner_id() {
         state
             .metadata

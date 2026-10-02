@@ -65,6 +65,11 @@ pub struct RunStore {
     pub(super) db: Arc<DatabaseConnection>,
 }
 
+#[derive(Clone)]
+pub struct NativeRunsStore {
+    pub(super) db: Arc<DatabaseConnection>,
+}
+
 impl MetadataStore {
     pub async fn acquire_content_ref_fence(
         &self,
@@ -129,6 +134,12 @@ impl MetadataStore {
 
     pub fn runs(&self) -> RunStore {
         RunStore {
+            db: Arc::clone(&self.db),
+        }
+    }
+
+    pub fn native_runs(&self) -> NativeRunsStore {
+        NativeRunsStore {
             db: Arc::clone(&self.db),
         }
     }

@@ -110,7 +110,12 @@ pub(crate) async fn get_repository_run_detail(
 ) -> Result<Json<RepositoryRunDetailResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let detail = inspect_run_detail(&state, &user.id, &owner, &repo_name, &run_id).await?;
-    let run = repository_run_summary(&detail.run, &detail.jobs);
+    let native_runs = state
+        .metadata
+        .native_runs()
+        .repository_availability(detail.run.workflow.repository_id())
+        .await?;
+    let run = repository_run_summary(&detail.run, &detail.jobs, native_runs);
     Ok(Json(build_run_detail_response(detail, run)?))
 }
 
@@ -264,6 +269,7 @@ mod tests {
         content_ref::ContentRef,
         runs::{
             attempt::MAX_RUN_ATTEMPTS,
+            availability::NativeRunsAvailability,
             job::{RunJob, RunJobState},
             run::{Run, RunState},
             source::{RunSource, RunTrigger},
@@ -278,14 +284,29 @@ mod tests {
     fn run_summary_allows_retry_when_every_job_has_capacity() {
         let run = terminal_run();
         let available = terminal_job(1);
-        assert!(repository_run_summary(&run, &[available]).can_retry);
+        assert!(
+            repository_run_summary(&run, &[available], NativeRunsAvailability::Available).can_retry
+        );
     }
 
     #[test]
     fn run_summary_hides_retry_when_any_job_is_exhausted() {
         let run = terminal_run();
         let exhausted = terminal_job(MAX_RUN_ATTEMPTS);
-        assert!(!repository_run_summary(&run, &[exhausted]).can_retry);
+        assert!(
+            !repository_run_summary(&run, &[exhausted], NativeRunsAvailability::Available)
+                .can_retry
+        );
+    }
+
+    #[test]
+    fn run_summary_hides_retry_without_native_runs() {
+        let run = terminal_run();
+        let available = terminal_job(1);
+        assert!(
+            !repository_run_summary(&run, &[available], NativeRunsAvailability::Unavailable)
+                .can_retry
+        );
     }
 
     fn terminal_run() -> Run {

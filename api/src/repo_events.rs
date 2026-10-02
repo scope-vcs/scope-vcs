@@ -2,6 +2,7 @@ use scope_api_contract::RepoChangeNotification;
 pub(crate) use scope_api_contract::{RepoChangeEvent, RepoChangeKind, RunChangeKind};
 use scope_domain::repository::RepositoryIncarnation;
 use scope_domain::requests::RequestAudience as DomainRequestAudience;
+use scope_postgres::db::MetadataStore;
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
@@ -10,7 +11,9 @@ use std::{
 use tokio::sync::broadcast;
 
 const REPO_CHANGE_CHANNEL_CAPACITY: usize = 128;
-const REQUEST_SUMMARY_REFRESH_VERSION: u64 = 0;
+/// Names no repository version, so clients refresh request summaries and
+/// other state that changes without one.
+pub(crate) const REQUEST_SUMMARY_REFRESH_VERSION: u64 = 0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RepoChangeReason {
@@ -42,6 +45,7 @@ pub(crate) enum RepoChangeReason {
     RequestInviteeAdded,
     RequestInviteeRemoved,
     RequestAttentionChanged,
+    NativeRunsChanged,
 }
 
 impl RepoChangeReason {
@@ -75,6 +79,7 @@ impl RepoChangeReason {
             Self::RequestInviteeAdded => "request-invitee-added",
             Self::RequestInviteeRemoved => "request-invitee-removed",
             Self::RequestAttentionChanged => "request-attention-changed",
+            Self::NativeRunsChanged => "native-runs-changed",
         }
     }
 }
@@ -279,26 +284,32 @@ impl crate::state::AppState {
         event: RepoChangeEvent,
         description: &'static str,
     ) {
-        self.repo_events.publish_event(event.clone());
-        let payload = match self.repo_events.notification_payload(&event) {
-            Ok(payload) => payload,
-            Err(error) => {
-                tracing::warn!(repo_id = %event.repo_id, %error, "failed to serialize {description} notification");
-                return;
-            }
-        };
-        if let Err(error) = self
-            .metadata
-            .repositories()
-            .notify_repo_change(&payload)
-            .await
-        {
-            tracing::warn!(
-                repo_id = %event.repo_id,
-                error = %error.message,
-                "failed to publish {description} notification"
-            );
+        publish_repo_event(&self.repo_events, &self.metadata, event, description).await;
+    }
+}
+
+/// Delivers to this process's subscribers and notifies every other process.
+/// Tools outside the API pass a bus of their own, which has no subscribers.
+pub(crate) async fn publish_repo_event(
+    bus: &RepoChangeBus,
+    metadata: &MetadataStore,
+    event: RepoChangeEvent,
+    description: &'static str,
+) {
+    bus.publish_event(event.clone());
+    let payload = match bus.notification_payload(&event) {
+        Ok(payload) => payload,
+        Err(error) => {
+            tracing::warn!(repo_id = %event.repo_id, %error, "failed to serialize {description} notification");
+            return;
         }
+    };
+    if let Err(error) = metadata.repositories().notify_repo_change(&payload).await {
+        tracing::warn!(
+            repo_id = %event.repo_id,
+            error = %error.message,
+            "failed to publish {description} notification"
+        );
     }
 }
 

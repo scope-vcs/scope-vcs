@@ -12,6 +12,7 @@ import { repoCollaborationResource } from './repo-collaboration-resource'
 import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
 import { historyEntryResource, historyFeedResource } from '../history/history-resource-cache'
+import { runWorkflowsResource } from '../runs/run-workflows-resource'
 
 // Repository summaries include request state that has no repository version.
 export function invalidateRepoSummaryResources(scope: string) {
@@ -34,6 +35,8 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, 
     requestAttachmentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     repositoryActivityResource.invalidate(scope)
     repositoryDependencyResource.invalidate(scope)
+    // Workflows follow main, and availability follows the owner's allowlisting.
+    runWorkflowsResource.invalidate(scope)
     requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestChecksResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestAutoMergeResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))

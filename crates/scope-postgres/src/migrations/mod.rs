@@ -22,6 +22,7 @@ mod m0062_request_run_source_base;
 mod m0063_account_deletion;
 mod m0064_repository_content_version;
 mod m0065_request_revision_rewrites;
+mod m0066_native_runs_accounts;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -161,6 +162,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0065_request_revision_rewrites::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0066_native_runs_accounts::Migration),
             metadata_restore_safe: true,
         },
     ]

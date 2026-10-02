@@ -401,6 +401,7 @@ pub(super) async fn queued_runs(count: usize) -> MetadataStore {
     let repo_id = repository.record.id.clone();
     let mut catalog = CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner.clone());
+    catalog.native_runs_accounts.insert(owner.id.clone());
     catalog.repositories.insert(repo_id.clone(), repository);
     metadata.admin().seed_catalog_for_tests(catalog).unwrap();
     let identity = WorkflowIdentity::new(

@@ -238,7 +238,7 @@ Pin the promoted digest in `.scope/runs/checks.yml`, deploy, and observe three h
 
 ## Disable and roll back
 
-Disable cloud execution in the worker before changing infrastructure. Stop any remaining task by ARN:
+Pause new admission with `SCOPE_CLOUD_RUN_MAX_CONCURRENCY=0` before changing infrastructure; cancellation and cleanup keep running. Stop any remaining task by ARN:
 
 ```bash
 aws ecs stop-task \

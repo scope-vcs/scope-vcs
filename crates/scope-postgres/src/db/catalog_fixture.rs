@@ -12,11 +12,13 @@ use scope_domain::{
         RequestEvent, RequestRevision,
     },
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Default)]
 pub struct CatalogFixture {
     pub users: BTreeMap<String, UserAccount>,
+    /// User ids listed for native runs.
+    pub native_runs_accounts: BTreeSet<String>,
     pub repositories: BTreeMap<String, Repository>,
     pub repository_landing_files: BTreeMap<String, RepositoryLandingFile>,
     pub git_segment_uploads: Vec<GitSegmentUpload>,

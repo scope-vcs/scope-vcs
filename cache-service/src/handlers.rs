@@ -653,6 +653,7 @@ mod tests {
         repository.record.lifecycle_state = RepoLifecycleState::Ready;
         let repository_id = repository.record.id.clone();
         let mut catalog = CatalogFixture::default();
+        catalog.native_runs_accounts.insert(owner.id.clone());
         catalog.users.insert(owner.id.clone(), owner);
         catalog
             .repositories

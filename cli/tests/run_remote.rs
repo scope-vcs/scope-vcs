@@ -41,7 +41,7 @@ impl Server {
 #[test]
 fn run_discovery_and_history_work_without_a_checkout_and_preserve_pagination() {
     let server = Server::new(Router::new()
-        .route("/v1/repos/owner/repo/run-workflows", get(|| async { Json(serde_json::json!({"workflows":[{"key":"checks","name":"Checks","path":"/.scope/runs/checks.yml","manual":true,"push_main":true,"job_count":1}]})) }))
+        .route("/v1/repos/owner/repo/run-workflows", get(|| async { Json(serde_json::json!({"workflows":[{"key":"checks","name":"Checks","path":"/.scope/runs/checks.yml","manual":true,"push_main":true,"job_count":1}],"native_runs_available":true})) }))
         .route("/v1/repos/owner/repo/runs", get(|Query(query): Query<HashMap<String,String>>| async move {
             assert_eq!(query.get("workflow").unwrap(), "checks"); assert_eq!(query.get("limit").unwrap(), "2"); assert_eq!(query.get("after").unwrap(), "v2:99:checks");
             Json(serde_json::json!({"runs":[],"next_cursor":"v2:42:checks"}))

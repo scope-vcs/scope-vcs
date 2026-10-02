@@ -591,6 +591,18 @@ async fn seed_catalog_rows(
             .await
             .map_err(PostgresError::internal)?;
     }
+    for user_id in &catalog.native_runs_accounts {
+        tx.execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "INSERT INTO scope_native_runs_accounts (user_id, added_at_unix) VALUES ($1, $2)",
+            [
+                user_id.clone().into(),
+                (CATALOG_SEED_NOW_UNIX as i64).into(),
+            ],
+        ))
+        .await
+        .map_err(PostgresError::internal)?;
+    }
     for upload in &catalog.git_segment_uploads {
         entities::git_segment_upload::Model::from_domain(upload)?
             .into_active_model()

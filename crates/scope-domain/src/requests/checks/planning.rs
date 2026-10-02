@@ -2,7 +2,7 @@ use super::{
     Request, RequestCheck, RequestCheckEvaluation, Run, WorkflowRevision,
     request_checks_start_immediately,
 };
-use crate::error::DomainError;
+use crate::{error::DomainError, runs::availability::NativeRunsAvailability};
 
 /// The evaluation and runs to persist together after reading workflow revisions.
 #[derive(Clone, Debug)]
@@ -14,13 +14,25 @@ pub struct RequestCheckPlan {
 impl RequestCheckPlan {
     /// `maintainer_pusher` is the maintainer whose push starts the runs at
     /// once. Anyone else's push, including one by a since-deleted account,
-    /// waits for a maintainer's approval.
+    /// waits for a maintainer's approval. A repository without native runs
+    /// asks for no checks, whatever its workflow files say.
     pub fn evaluate(
         request: &Request,
+        native_runs: NativeRunsAvailability,
         revisions: Result<&[WorkflowRevision], &str>,
         maintainer_pusher: Option<&str>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
+        if !native_runs.is_available() {
+            return Ok(Self {
+                evaluation: RequestCheckEvaluation::no_checks(
+                    &request.id,
+                    &request.head_oid,
+                    now_unix,
+                )?,
+                runs: Vec::new(),
+            });
+        }
         let revisions = match revisions {
             Ok(revisions) => revisions,
             Err(message) => {

@@ -2,6 +2,7 @@ use super::{
     GeneratedIdKind, GeneratedIdSource, RunStore, entities,
     generated_ids::generate_id,
     git_segments::{insert_git_segment_references, release_git_segment_references},
+    native_runs::lock_native_runs_availability,
     outbox::ClaimedOutboxJob,
     runs::enqueue_run_in_transaction,
 };
@@ -121,7 +122,11 @@ where
         tx.commit().await.map_err(PostgresError::internal)?;
         return Ok(Vec::new());
     }
-    let revisions = if let Some(message) = &payload.input.configuration_error {
+    // The listing is held until commit, so a removal waits for these runs.
+    let native_runs = lock_native_runs_availability(&tx, &job.repo_id).await?;
+    let revisions = if !native_runs.is_available() {
+        Vec::new()
+    } else if let Some(message) = &payload.input.configuration_error {
         evaluation
             .configuration_error(message.clone(), now_unix)
             .map_err(PostgresError::from)?;
@@ -759,6 +764,7 @@ jobs:
                 updated_at_unix: 1,
             })
             .collect();
+        catalog.native_runs_accounts.insert(owner.id.clone());
         catalog.users.insert(owner.id.clone(), owner);
         store.admin().seed_catalog_for_tests(catalog).unwrap();
         repo.record.id

@@ -20,7 +20,8 @@ export const loadRepoRunPage = createServerFn({ method: 'GET' })
         .then((workflows) => ({ error: null, workflows }))
         .catch((error: unknown) => ({
           error: resourceErrorMessage(error, 'Workflow catalog unavailable.'),
-          workflows: { workflows: [] },
+          // Unknown availability keeps the controls; enqueuing still enforces it.
+          workflows: { workflows: [], native_runs_available: true },
         })),
     ])
     return {
@@ -29,6 +30,10 @@ export const loadRepoRunPage = createServerFn({ method: 'GET' })
       workflowsError: workflowResource.error,
     }
   }))
+
+export const loadRepoRunWorkflows = createServerFn({ method: 'GET' })
+  .validator(parseRepoRunHistoryInput)
+  .handler(({ data }) => loadOptionalResource(() => loadRepoRunWorkflowsForRequest(data)))
 
 export const loadRepoRunHistory = createServerFn({ method: 'GET' })
   .validator(parseRepoRunHistoryInput)

@@ -253,6 +253,8 @@ pub struct RepositoryRunWorkflowResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RepositoryRunWorkflowListResponse {
     pub workflows: Vec<RepositoryRunWorkflowResponse>,
+    /// Whether the repository's owner is listed for Scope's hosted runner.
+    pub native_runs_available: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -1,5 +1,6 @@
 use super::{
     DispatchClaim, RunStore,
+    native_runs::lock_native_runs_availability,
     run_attempt_persistence::{locked_jobs, locked_run},
     run_state_sql::{
         attempt_active_states, attempt_terminal_states, queued_job_state, run_active_states,
@@ -25,6 +26,7 @@ pub(super) async fn lock_admission(tx: &DatabaseTransaction) -> Result<(), Postg
 
 impl RunStore {
     /// Count, select, transition, and persist under one global admission lock.
+    /// Only jobs of repositories whose owner is listed for native runs are admitted.
     #[allow(clippy::too_many_arguments)]
     pub async fn admit_next_job(
         &self,
@@ -61,7 +63,7 @@ impl RunStore {
             .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!(
-                    "SELECT job.run_id, job.job_key FROM scope_run_jobs job
+                    "SELECT job.run_id, job.job_key, run.repo_id FROM scope_run_jobs job
              JOIN scope_runs run ON run.id = job.run_id
              WHERE job.state = {queued}
                AND run.state IN ({runs})
@@ -70,6 +72,11 @@ impl RunStore {
                     OR job.capacity_retry_next_attempt_at_unix <= {now_unix})
                AND (job.capacity_retry_first_rejected_at_unix IS NULL
                     OR {now_unix} < job.capacity_retry_first_rejected_at_unix + {window})
+               AND EXISTS (
+                 SELECT 1 FROM scope_repositories repo
+                 JOIN scope_native_runs_accounts account ON account.user_id = repo.owner_user_id
+                 WHERE repo.id = run.repo_id
+               )
                AND NOT EXISTS (
                  SELECT 1 FROM scope_run_attempts previous
                  WHERE previous.run_id = job.run_id AND previous.job_key = job.job_key
@@ -95,6 +102,17 @@ impl RunStore {
         let job_key = row
             .try_get::<String>("", "job_key")
             .map_err(PostgresError::internal)?;
+        // A removal of the owner's listing waits for this admission, or this
+        // admission sees the removal and leaves the job to be canceled.
+        let repository_id = row
+            .try_get::<String>("", "repo_id")
+            .map_err(PostgresError::internal)?;
+        if !lock_native_runs_availability(&tx, &repository_id)
+            .await?
+            .is_available()
+        {
+            return Ok(DispatchAdmission::Contended);
+        }
         // Match cancellation/completion lock order: all jobs, then run, then attempt.
         let jobs = locked_jobs(&tx, &run_id).await?;
         let run = locked_run(&tx, &run_id).await?;

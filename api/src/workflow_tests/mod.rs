@@ -132,6 +132,16 @@ fn test_state_with_repo() -> AppState {
     state
 }
 
+/// Lists the test repository's owner for Scope's hosted runner.
+async fn allow_native_runs(state: &AppState) {
+    state
+        .metadata
+        .native_runs()
+        .add_account(TEST_REPO_OWNER, None, unix_now())
+        .await
+        .unwrap();
+}
+
 async fn replace_test_repo(state: &AppState, repo: Repository) {
     state
         .metadata

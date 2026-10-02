@@ -2,6 +2,7 @@ use super::integer_columns;
 use super::{
     RunStore, entities,
     git_segments::insert_git_segment_references,
+    native_runs::lock_native_runs_availability,
     object_references::insert_object_reference,
     run_attempt_persistence::{
         attempt_run_id, locked_attempt_steps, locked_heartbeat_context, locked_jobs, locked_run,
@@ -294,6 +295,9 @@ impl RunStore {
         authorize_run_control(&tx, actor_user_id, repository_id).await?;
         let _active_auto_merge =
             super::request_auto_merge::lock_active_auto_merge_for_run(&tx, run_id).await?;
+        lock_native_runs_availability(&tx, repository_id)
+            .await?
+            .require()?;
         let mut jobs = locked_jobs(&tx, run_id).await?;
         let mut run = locked_run(&tx, run_id).await?;
         require_run_repository(&run, repository_id)?;
@@ -343,6 +347,8 @@ pub struct EnqueueRunResult {
     pub inserted: bool,
 }
 
+/// Every native run is created here, so this is where an unlisted owner's
+/// repository is refused.
 pub(super) async fn enqueue_run_in_transaction(
     tx: &DatabaseTransaction,
     run: Run,
@@ -350,6 +356,9 @@ pub(super) async fn enqueue_run_in_transaction(
 ) -> Result<EnqueueRunResult, PostgresError> {
     run.validate_workflow_revision(&revision)
         .map_err(PostgresError::from)?;
+    lock_native_runs_availability(tx, run.workflow.repository_id())
+        .await?
+        .require()?;
     let requested_jobs = create_run_jobs(&run, &revision).map_err(PostgresError::from)?;
     save_workflow_revision(tx, &revision, run.created_at_unix).await?;
     let model = entities::run::ActiveModel::from_domain(&run)?;

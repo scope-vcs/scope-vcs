@@ -2,7 +2,7 @@ use super::*;
 use crate::db::{
     MetadataStore,
     locks::wait_for_transaction_waiter,
-    test_support::fixtures::{repository, source_blob, store_with_repositories, user},
+    test_support::fixtures::{repository, source_blob, store_with_native_run_repositories, user},
 };
 use scope_domain::{
     policy::Visibility,
@@ -13,7 +13,7 @@ use scope_domain::{
 };
 
 async fn fixture() -> MetadataStore {
-    let store = store_with_repositories([repository(
+    let store = store_with_native_run_repositories([repository(
         &user("owner", "owner"),
         "repo",
         Visibility::Private,

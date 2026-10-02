@@ -217,6 +217,8 @@ fn build_catalog(
     let [contributor, maintainer] = request_discussions::collaborators();
     let mut catalog = scope_postgres::db::CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner.clone());
+    // The demo repositories run their `.scope/runs` workflows on the hosted runner.
+    catalog.native_runs_accounts.insert(owner.id.clone());
     catalog
         .users
         .insert(contributor.id.clone(), contributor.clone());

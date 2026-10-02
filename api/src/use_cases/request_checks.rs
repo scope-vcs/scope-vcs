@@ -20,7 +20,9 @@ use scope_domain::{
         Request, RequestAudience, RequestCheckEvaluation, RequestCheckPlan, RequestChecksOutcome,
         request_checks_outcome, request_head_awaits_evaluation,
     },
-    runs::{run::RunState, workflow::revision::WorkflowRevision},
+    runs::{
+        availability::NativeRunsAvailability, run::RunState, workflow::revision::WorkflowRevision,
+    },
 };
 use scope_postgres::db::{RecordRequestChecksCommand, RequestChecksMutation, RequestListRow};
 use std::{collections::HashMap, path::Path};
@@ -120,7 +122,9 @@ async fn evaluate_saved_head(
     else {
         return Ok(None);
     };
+    let native_runs = native_runs_availability(state, request).await?;
     let revisions = match request.audience {
+        _ if !native_runs.is_available() => Ok(Vec::new()),
         RequestAudience::Public => public_request_workflow_revisions(state, request).await?,
         RequestAudience::Private => {
             let files = with_request_revision_store_repo(
@@ -146,9 +150,21 @@ async fn evaluate_saved_head(
             .then_some(pusher),
         None => None,
     };
-    evaluate_request_checks(state, request, maintainer_pusher, revisions)
+    evaluate_request_checks(state, request, native_runs, maintainer_pusher, revisions)
         .await
         .map(Some)
+}
+
+/// An unlisted owner's workflow files are ordinary files, so they are not read.
+async fn native_runs_availability(
+    state: &AppState,
+    request: &Request,
+) -> Result<NativeRunsAvailability, ApiError> {
+    Ok(state
+        .metadata
+        .native_runs()
+        .repository_availability(&request.repo_id)
+        .await?)
 }
 
 /// The outcome for every listed request, keyed by request id, loaded in two queries.
@@ -209,7 +225,9 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     let path = staging_repo.to_path_buf();
     let head_oid = request.head_oid.clone();
     let evaluated = async {
+        let native_runs = native_runs_availability(state, request).await?;
         let revisions = match request.audience {
+            _ if !native_runs.is_available() => Ok(Vec::new()),
             RequestAudience::Public => public_request_workflow_revisions(state, request).await?,
             RequestAudience::Private => {
                 let files = crate::git::blocking::run(move || {
@@ -220,7 +238,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
             }
         };
         let maintainer_pusher = actor_is_maintainer.then_some(actor_user_id);
-        evaluate_request_checks(state, request, maintainer_pusher, revisions).await
+        evaluate_request_checks(state, request, native_runs, maintainer_pusher, revisions).await
     }
     .await;
     match evaluated {
@@ -241,12 +259,14 @@ fn warn_evaluation_failed(request: &Request, error: &ApiError) {
 async fn evaluate_request_checks(
     state: &AppState,
     request: &Request,
+    native_runs: NativeRunsAvailability,
     maintainer_pusher: Option<&str>,
     revisions: Result<Vec<WorkflowRevision>, String>,
 ) -> Result<RequestChecksMutation, ApiError> {
     let now_unix = unix_now()?;
     let RequestCheckPlan { evaluation, runs } = RequestCheckPlan::evaluate(
         request,
+        native_runs,
         revisions.as_deref().map_err(String::as_str),
         maintainer_pusher,
         now_unix,

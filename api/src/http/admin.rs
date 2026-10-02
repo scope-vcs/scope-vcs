@@ -3,16 +3,20 @@ use crate::{
     config::SCOPE_OPERATOR_TOKEN_ENV,
     error::ApiError,
     state::AppState,
-    use_cases::content_cleanup::{self, CleanupDrainReport},
+    use_cases::{
+        content_cleanup::{self, CleanupDrainReport},
+        native_runs,
+    },
 };
 use axum::{
     Json,
-    extract::State,
+    extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
 use scope_domain::content::SourceBlob;
 use scope_domain::repo_actions::RepoStorageCleanup;
-use serde::Serialize;
+use scope_postgres::db::{NativeRunsAccountListing, NativeRunsWithdrawal};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AdminCleanupStatusResponse {
@@ -95,6 +99,106 @@ pub(crate) async fn drain_cleanup(
             report,
         }),
     ))
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct NativeRunsAccountListResponse {
+    accounts: Vec<NativeRunsAccountResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct NativeRunsAccountResponse {
+    handle: String,
+    user_id: String,
+    added_at_unix: u64,
+    note: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct AddNativeRunsAccountRequest {
+    note: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct NativeRunsRemovalResponse {
+    user_id: String,
+    removed: bool,
+    withdrawn_request_ids: Vec<String>,
+    canceled_run_ids: Vec<String>,
+}
+
+pub(crate) async fn list_native_runs_accounts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<NativeRunsAccountListResponse>, ApiError> {
+    ensure_operator(&state, &headers)?;
+    let accounts = native_runs::list_accounts(&state.metadata).await?;
+    Ok(Json(NativeRunsAccountListResponse::from_listings(accounts)))
+}
+
+pub(crate) async fn add_native_runs_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(handle): Path<String>,
+    input: Option<Json<AddNativeRunsAccountRequest>>,
+) -> Result<Json<NativeRunsAccountResponse>, ApiError> {
+    ensure_operator(&state, &headers)?;
+    let Json(input) = input.unwrap_or_default();
+    let listing =
+        native_runs::add_account(&state.metadata, &state.repo_events, &handle, input.note).await?;
+    Ok(Json(NativeRunsAccountResponse::from_listing(listing)))
+}
+
+pub(crate) async fn remove_native_runs_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(handle): Path<String>,
+) -> Result<Json<NativeRunsRemovalResponse>, ApiError> {
+    ensure_operator(&state, &headers)?;
+    let withdrawal =
+        native_runs::remove_account(&state.metadata, &state.repo_events, &handle).await?;
+    Ok(Json(NativeRunsRemovalResponse::from_withdrawal(withdrawal)))
+}
+
+impl NativeRunsAccountListResponse {
+    pub(crate) fn from_listings(listings: Vec<NativeRunsAccountListing>) -> Self {
+        Self {
+            accounts: listings
+                .into_iter()
+                .map(NativeRunsAccountResponse::from_listing)
+                .collect(),
+        }
+    }
+}
+
+impl NativeRunsAccountResponse {
+    pub(crate) fn from_listing(listing: NativeRunsAccountListing) -> Self {
+        Self {
+            handle: listing.handle,
+            user_id: listing.account.user_id,
+            added_at_unix: listing.account.added_at_unix,
+            note: listing.account.note,
+        }
+    }
+}
+
+impl NativeRunsRemovalResponse {
+    pub(crate) fn from_withdrawal(withdrawal: NativeRunsWithdrawal) -> Self {
+        Self {
+            user_id: withdrawal.user_id,
+            removed: withdrawal.removed,
+            withdrawn_request_ids: withdrawal
+                .withdrawn_evaluations
+                .into_iter()
+                .map(|evaluation| evaluation.request_id)
+                .collect(),
+            canceled_run_ids: withdrawal
+                .canceled_runs
+                .into_iter()
+                .map(|run| run.id)
+                .collect(),
+        }
+    }
 }
 
 async fn cleanup_status(state: &AppState) -> Result<AdminCleanupStatusResponse, ApiError> {

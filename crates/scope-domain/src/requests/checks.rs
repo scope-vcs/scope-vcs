@@ -10,6 +10,7 @@ use super::{Request, RequestState, limits::validate_required};
 use crate::{
     error::DomainError,
     runs::{
+        availability::NATIVE_RUNS_UNAVAILABLE,
         run::{Run, RunState},
         source::{RunSource, RunTrigger},
         validation::{validate_git_oid, validate_sha256_hash},
@@ -209,6 +210,14 @@ impl RequestCheckEvaluation {
         Ok(())
     }
 
+    /// Whether this evaluation holds the request on native runs, recorded or started.
+    pub fn uses_native_runs(&self) -> bool {
+        matches!(
+            self.state,
+            RequestCheckEvaluationState::AwaitingApproval | RequestCheckEvaluationState::Started
+        )
+    }
+
     pub fn ensure_awaiting_approval(&self) -> Result<(), DomainError> {
         if self.state != RequestCheckEvaluationState::AwaitingApproval {
             return Err(DomainError::conflict(
@@ -216,6 +225,39 @@ impl RequestCheckEvaluation {
             ));
         }
         Ok(())
+    }
+
+    /// Once a repository loses native runs, a head still waiting on them would
+    /// wait forever. It becomes a configuration error instead; a head whose
+    /// checks already finished keeps its result. `None` means nothing changes.
+    pub fn withdraw_native_runs(
+        &self,
+        run_states: &[(String, RunState)],
+        now_unix: u64,
+    ) -> Result<Option<Self>, DomainError> {
+        let waiting = match request_checks_outcome(
+            &self.request_id,
+            &self.head_oid,
+            Some(self),
+            run_states,
+        ) {
+            RequestChecksOutcome::AwaitingApproval | RequestChecksOutcome::Pending => true,
+            RequestChecksOutcome::Clear
+            | RequestChecksOutcome::NotEvaluated
+            | RequestChecksOutcome::Failed
+            | RequestChecksOutcome::ConfigurationError => false,
+        };
+        if !waiting {
+            return Ok(None);
+        }
+        let mut withdrawn = Self::configuration_error(
+            &self.request_id,
+            &self.head_oid,
+            NATIVE_RUNS_UNAVAILABLE,
+            now_unix.max(self.updated_at_unix),
+        )?;
+        withdrawn.created_at_unix = self.created_at_unix;
+        Ok(Some(withdrawn))
     }
 
     pub fn run_ids(&self) -> impl Iterator<Item = &str> {
@@ -460,5 +502,43 @@ mod tests {
             request_checks_outcome(&request.id, HEAD, Some(&waiting), &[]),
             RequestChecksOutcome::AwaitingApproval
         );
+    }
+
+    #[test]
+    fn withdrawing_native_runs_ends_only_a_wait() {
+        let awaiting = RequestCheckEvaluation::awaiting_approval(
+            "req_1",
+            HEAD,
+            vec![check("checks", None)],
+            5,
+        )
+        .unwrap();
+        let withdrawn = awaiting.withdraw_native_runs(&[], 9).unwrap().unwrap();
+        assert_eq!(
+            withdrawn.state,
+            RequestCheckEvaluationState::ConfigurationError
+        );
+        assert_eq!(withdrawn.message.as_deref(), Some(NATIVE_RUNS_UNAVAILABLE));
+        assert!(withdrawn.checks.is_empty());
+        assert_eq!(
+            (withdrawn.created_at_unix, withdrawn.updated_at_unix),
+            (5, 9)
+        );
+        assert_eq!(
+            request_checks_outcome("req_1", HEAD, Some(&withdrawn), &[]),
+            RequestChecksOutcome::ConfigurationError
+        );
+
+        let started =
+            RequestCheckEvaluation::started("req_1", HEAD, vec![check("checks", Some("run_a"))], 5)
+                .unwrap();
+        let running = [("run_a".to_string(), RunState::Queued)];
+        assert!(started.withdraw_native_runs(&running, 9).unwrap().is_some());
+        for finished in [RunState::Succeeded, RunState::Failed, RunState::Canceled] {
+            let runs = [("run_a".to_string(), finished)];
+            assert_eq!(started.withdraw_native_runs(&runs, 9).unwrap(), None);
+        }
+        let none = RequestCheckEvaluation::no_checks("req_1", HEAD, 5).unwrap();
+        assert_eq!(none.withdraw_native_runs(&[], 9).unwrap(), None);
     }
 }

@@ -13,6 +13,7 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     state.product_analytics = analytics;
     state.dispatch_broker_token = Some(Arc::from("broker-secret"));
     cache_test_jwks(&state);
+    allow_native_runs(&state).await;
     let app = router(state.clone());
     let source = temp_git_repo("cloud-runtime-protocol");
     fs::create_dir_all(source.join(".scope/runs")).unwrap();
