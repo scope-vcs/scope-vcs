@@ -5,7 +5,6 @@ import {
   parseUpdateRepoMemberInput,
   parseUpdateRepoMetadataInput,
 } from '@/api/repo-inputs'
-import { parseRepoGitHubAuthorizeInput } from '@/api/github-inputs'
 import { parseRepoParams } from '@/api/repo-params'
 import {
   createRepoInviteForRequest,
@@ -13,7 +12,6 @@ import {
   deleteRepoInviteForRequest,
   deleteRepoMemberForRequest,
   deleteRepoForRequest,
-  loadRepoCollaborationForRequest,
   sendRepoInviteEmailForRequest,
   updateRepoMemberForRequest,
   updateRepoMetadataForRequest,
@@ -21,14 +19,10 @@ import {
 import {
   confirmRepoGitHubPublicForRequest,
   disconnectRepoGitHubForRequest,
-  loadRepoGitHubConnectionForRequest,
-  currentWebOrigin,
   setRepoGitHubRequiredChecksForRequest,
-  startRepoGitHubAuthorizationForRequest,
   startRepoGitHubSetupCheckForRequest,
 } from '@/api/github'
 import { parseSetRepoGitHubRequiredChecksInput } from '@/api/github-inputs'
-import { loadOptionalResource } from '@/api/http'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
 import { VisibilityLogSection } from '@/features/repo-detail/visibility-log-section'
 import { RepoSettingsPending } from '@/features/repo-detail/repo-settings-pending'
@@ -50,19 +44,7 @@ import type { CollaborationResult } from '@/features/repo-detail/repo-collaborat
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { getRequest } from '@tanstack/react-start/server'
-
-const loadRepoSettings = createServerFn({ method: 'GET' })
-  .validator(parseRepoParams)
-  .handler(({ data }) => loadOptionalResource(() => loadRepoCollaborationForRequest(data, getRequest().signal)))
-
-const loadRepoGitHubConnection = createServerFn({ method: 'GET' })
-  .validator(parseRepoParams)
-  .handler(({ data }) => loadOptionalResource(() => loadRepoGitHubConnectionForRequest(data, getRequest().signal)))
-
-const startRepoGitHubAuthorization = createServerFn({ method: 'POST' })
-  .validator(parseRepoGitHubAuthorizeInput)
-  .handler(({ data }) => startRepoGitHubAuthorizationForRequest(data))
+import { loadRepoSettingsData, startRepoGitHubAuthorization } from './-repo-settings-actions'
 
 const startRepoGitHubSetupCheck = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
@@ -124,14 +106,10 @@ function RepoSettingsRoute() {
   const { isLoaded, userId } = useAuth()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
   const { owner, repo: repoName } = params
-  const load = useCallback(async (signal: AbortSignal) => {
-    const data = { owner, repo: repoName }
-    const [collaboration, github] = await Promise.all([
-      loadRepoSettings({ data, signal }),
-      loadRepoGitHubConnection({ data, signal }),
-    ])
-    return { collaboration, github }
-  }, [owner, repoName])
+  const load = useCallback(
+    (signal: AbortSignal) => loadRepoSettingsData({ owner, repo: repoName }, signal),
+    [owner, repoName],
+  )
   const resource = useCachedResource({
     identity: scope,
     resource: repoSettingsResource,
@@ -196,7 +174,7 @@ function RepoSettingsRoute() {
             if (scope) retainGitHubConnection(scope, github)
             return github
           }}
-          startGitHubAuthorization={(data) => startRepoGitHubAuthorization({ data: { ...data, web_origin: currentWebOrigin() } })}
+          startGitHubAuthorization={startRepoGitHubAuthorization}
           startGitHubSetupCheck={async (data) => {
             const github = await startRepoGitHubSetupCheck({ data })
             if (scope) retainGitHubConnection(scope, github)

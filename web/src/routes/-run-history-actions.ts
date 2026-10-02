@@ -18,7 +18,7 @@ export const loadRepoRunPage = createServerFn({ method: 'GET' })
   .validator(parseRepoRunHistoryInput)
   .handler(({ data }) => loadOptionalResource(async () => {
     const api = createApiClient()
-    const { github } = await loadRepoGitHubWorkflowRunsForRequest(data, api)
+    const { configured, github } = await loadRepoGitHubWorkflowRunsForRequest(data, api)
     if (github) return { kind: 'github' as const, github }
     const [history, workflowResource] = await Promise.all([
       loadRepoRunHistoryForRequest(data, api),
@@ -32,6 +32,7 @@ export const loadRepoRunPage = createServerFn({ method: 'GET' })
     ])
     return {
       kind: 'native' as const,
+      githubConfigured: configured,
       history,
       workflows: workflowResource.workflows,
       workflowsError: workflowResource.error,

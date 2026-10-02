@@ -54,7 +54,12 @@ API at startup.
 
 ## Connecting
 
-1. A maintainer chooses Connect GitHub in repository settings.
+1. A maintainer chooses Connect GitHub in the CI section of repository
+   settings, or on the Runs page of a repository with no runs, no workflows of
+   its own and no link. The page they started from is kept in session
+   storage, and the setup page returns there once the repository is
+   connected, when it is a page of that repository; otherwise it opens the
+   repository's settings.
    `POST /v1/repos/{owner}/{repo}/github/authorize`, sent with the page's
    origin, returns GitHub's OAuth URL for the app with a signed `state` naming
    the Scope repository, the maintainer, and a ten-minute expiry.
@@ -250,7 +255,12 @@ members, returns the 50 most recent with their workflow, branch, commit,
 status and time, and a link to the repository's Actions page for the rest.
 Every run links to GitHub, which keeps the logs; a run on
 `scope/requests/<id>` also links to its request while the request exists.
-Repositories without a link keep their native runs.
+Repositories without a link keep their native runs. When such a repository
+has no runs and no workflows of its own, and the server has a GitHub App,
+the Runs page says its runs come from GitHub Actions once GitHub is connected
+and offers maintainers Connect GitHub. The workflow runs response says
+whether the server has a GitHub App (`configured`). A connected repository
+without runs yet links maintainers to Test connection in the CI settings.
 
 Runs are stored in `scope_github_workflow_runs`. A `workflow_run` delivery for
 a connected repository makes Scope read `GET /repos/{owner}/{repo}/actions/runs/{id}`

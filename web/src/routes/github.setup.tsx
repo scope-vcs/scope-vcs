@@ -1,16 +1,15 @@
 import {
   completeGitHubSetupForRequest,
   connectRepoGitHubForRequest,
-  currentWebOrigin,
-  startRepoGitHubAuthorizationForRequest,
 } from '@/api/github'
 import {
   parseConnectRepoGitHubInput,
   parseGitHubSetupInput,
-  parseRepoGitHubAuthorizeInput,
 } from '@/api/github-inputs'
 import {
   encodePendingGitHubTarget,
+  GITHUB_RETURN_PATH_KEY,
+  githubReturnPath,
   parsePendingGitHubTarget,
   PENDING_GITHUB_TARGET_KEY,
   type GitHubSetupSearch,
@@ -20,6 +19,7 @@ import { invalidateRepoSettings } from '@/features/repo-detail/repo-settings-res
 import { readAndClearSessionValue, storeSessionValue } from '@/lib/session-storage'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
+import { startRepoGitHubAuthorization } from './-repo-settings-actions'
 
 const completeGitHubSetup = createServerFn({ method: 'POST' })
   .validator(parseGitHubSetupInput)
@@ -29,9 +29,6 @@ const connectRepoGitHub = createServerFn({ method: 'POST' })
   .validator(parseConnectRepoGitHubInput)
   .handler(({ data }) => connectRepoGitHubForRequest(data))
 
-const startRepoGitHubAuthorization = createServerFn({ method: 'POST' })
-  .validator(parseRepoGitHubAuthorizeInput)
-  .handler(({ data }) => startRepoGitHubAuthorizationForRequest(data))
 
 // The app's Callback URL (after OAuth) and Setup URL (after installing) are
 // both this path. Installation ids GitHub adds to the URL are never read.
@@ -53,15 +50,18 @@ function GitHubSetupRoute() {
       connect={(data) => connectRepoGitHub({ data })}
       onConnected={async (setup) => {
         invalidateRepoSettings(`${setup.owner_handle}/${setup.repo_name}`)
+        // Back to the page connecting started from, such as the Runs page.
         await navigate({
-          params: { owner: setup.owner_handle, repo: setup.repo_name },
-          to: '/$owner/$repo/settings',
+          href: githubReturnPath(
+            readAndClearSessionValue(GITHUB_RETURN_PATH_KEY),
+            { owner: setup.owner_handle, repo: setup.repo_name },
+          ),
         })
       }}
       rememberPendingTarget={(target) =>
         storeSessionValue(PENDING_GITHUB_TARGET_KEY, encodePendingGitHubTarget(target))}
       search={search}
-      startAuthorization={(data) => startRepoGitHubAuthorization({ data: { ...data, web_origin: currentWebOrigin() } })}
+      startAuthorization={startRepoGitHubAuthorization}
       takePendingTarget={() =>
         parsePendingGitHubTarget(readAndClearSessionValue(PENDING_GITHUB_TARGET_KEY))}
     />

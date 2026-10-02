@@ -287,6 +287,10 @@ message: string | null, };
 
 export type GitHubWorkflowRunsResponse = { 
 /**
+ * Whether this server can connect repositories to GitHub at all.
+ */
+configured: boolean, 
+/**
  * `None` when the repository is not linked to GitHub; its runs are Scope's own.
  */
 github: GitHubWorkflowRunListResponse | null, };

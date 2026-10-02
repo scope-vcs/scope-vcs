@@ -293,7 +293,10 @@ pub(crate) async fn get_github_workflow_runs(
         RequestCheckProvider::for_repository(connection.as_ref()),
         connection,
     ) else {
-        return Ok(Json(GitHubWorkflowRunsResponse { github: None }));
+        return Ok(Json(GitHubWorkflowRunsResponse {
+            configured: state.github.is_some(),
+            github: None,
+        }));
     };
     let workflow_runs = repositories
         .recent_github_workflow_runs(
@@ -306,6 +309,7 @@ pub(crate) async fn get_github_workflow_runs(
         .map(github_workflow_run_response)
         .collect();
     Ok(Json(GitHubWorkflowRunsResponse {
+        configured: true,
         github: Some(GitHubWorkflowRunListResponse {
             actions_url: format!("https://github.com/{}/actions", connection.github_full_name),
             workflow_runs,

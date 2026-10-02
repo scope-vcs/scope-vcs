@@ -51,3 +51,20 @@ export function parsePendingGitHubTarget(value: string | null): RepoParams | nul
 function isSegment(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && !value.includes('/')
 }
+
+export const GITHUB_RETURN_PATH_KEY = 'scope.github-setup.return-path'
+
+/**
+ * Where to go once the repository is connected: the page connecting started
+ * from, kept in session storage, when it is a page of that same repository.
+ * Anything else, or nothing, leads to the repository's settings.
+ */
+export function githubReturnPath(stored: string | null, connected: RepoParams) {
+  const base = `/${encodeURIComponent(connected.owner)}/${encodeURIComponent(connected.repo)}`
+  if (stored === base) return stored
+  const rest = stored?.startsWith(`${base}/`) ? stored.slice(base.length) : null
+  const samePage = rest !== null
+    && /^(\/[A-Za-z0-9._~%-]+)+$/.test(rest)
+    && !rest.split('/').some((segment) => segment === '.' || segment === '..')
+  return samePage ? `${base}${rest}` : `${base}/settings`
+}

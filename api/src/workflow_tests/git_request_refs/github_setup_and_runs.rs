@@ -389,10 +389,20 @@ async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_repository_without_github_keeps_its_native_runs() {
-    let (state, _source, _main) =
+    let (mut state, _source, _main) =
         super::super::push_intent_completion::published_git_fixture("github-runs-native").await;
+    // The page says whether this server could connect GitHub at all.
     let listed = github_request(&state, "GET", "/workflow-runs", &bearer_header()).await;
-    assert_eq!(listed["github"], serde_json::Value::Null);
+    assert_eq!(
+        listed,
+        serde_json::json!({ "configured": false, "github": null })
+    );
+    FakeGitHub::install(&mut state).await;
+    let listed = github_request(&state, "GET", "/workflow-runs", &bearer_header()).await;
+    assert_eq!(
+        listed,
+        serde_json::json!({ "configured": true, "github": null })
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

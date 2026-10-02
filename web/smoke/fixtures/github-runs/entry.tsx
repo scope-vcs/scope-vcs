@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider, useParams } from '@tanstack/react-router'
 import { RepoShell } from '@/components/repo-shell'
@@ -5,6 +6,8 @@ import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
 import { invalidateRepoResources } from '@/features/repo-detail/repo-resource-invalidation'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { GitHubWorkflowRunsPage } from '@/features/runs/github-workflow-runs'
+import { RunsCiEmptyState } from '@/features/runs/runs-ci-empty-state'
+import type { RepoParams } from '@/api/types'
 import type { RepoLiveState } from '@/api/types'
 import type { GitHubWorkflowRunListResponse, GitHubWorkflowRunResponse } from '@/api/types.generated'
 import './styles.css'
@@ -28,11 +31,14 @@ const initialRuns: GitHubWorkflowRunListResponse = {
 let nextRuns = initialRuns
 const resolvers: (() => void)[] = []
 const loads: string[] = []
-const live = { repo: {
+const authorizeCalls: RepoParams[] = []
+const repoSummary = (actor: string) => ({
   id: 'octo/demo', owner_handle: 'octo', name: 'demo', lifecycle_state: 'Ready', open_request_count: 0,
-  access: { actor: 'Owner' },
-} } as RepoLiveState
+  access: { actor },
+}) as RepoLiveState['repo']
+const live = { repo: repoSummary('Owner') } as RepoLiveState
 Object.assign(window, {
+  authorizeCalls,
   loads,
   setNextRuns: (runs: GitHubWorkflowRunListResponse) => { nextRuns = runs },
   finishLoad: () => resolvers.shift()?.(),
@@ -45,14 +51,52 @@ const subscribe = () => () => {}
 async function loadRuns() {
   loads.push('load')
   await new Promise<void>((resolve) => resolvers.push(resolve))
-  return { github: nextRuns }
+  return { configured: true, github: nextRuns }
+}
+
+const loadSettings = async () => ({
+  collaboration: null,
+  github: { configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null },
+})
+async function startAuthorization(params: RepoParams) {
+  authorizeCalls.push(params)
+  return { authorize_url: '#github-authorize' }
 }
 
 function Repository() {
   const { owner, repo } = useParams({ strict: false })
-  return <RepoLayoutProvider live={live} subscribe={subscribe}>
-    <RepoShell params={{ owner: owner!, repo: repo! }} repo={live.repo}><Outlet /></RepoShell>
+  const [actor, setActor] = useState('Owner')
+  Object.assign(window, { setActor })
+  const state = { ...live, repo: repoSummary(actor) }
+  return <RepoLayoutProvider live={state} subscribe={subscribe}>
+    <RepoShell params={{ owner: owner!, repo: repo! }} repo={state.repo}><Outlet /></RepoShell>
   </RepoLayoutProvider>
+}
+
+/**
+ * A repository with no runs, no workflows of its own and no GitHub link, on a
+ * server with GitHub unless `?configured=false`.
+ */
+function EmptyRuns() {
+  const { owner, repo } = useParams({ strict: false })
+  const configured = new URLSearchParams(location.search).get('configured') !== 'false'
+  return <main className="px-4 pt-7">
+    <RunsCiEmptyState
+      github={{ configured, loadSettings, startAuthorization }}
+      hasWorkflows={false}
+      params={{ owner: owner!, repo: repo! }}
+    />
+  </main>
+}
+
+/** A connected repository GitHub reported no runs for yet. */
+function ConnectedNoRuns() {
+  const { owner, repo } = useParams({ strict: false })
+  return <GitHubWorkflowRunsPage
+    initialRuns={{ actions_url: 'https://github.com/octo/demo/actions', workflow_runs: [] }}
+    loadRuns={async () => ({ configured: true, github: { actions_url: 'https://github.com/octo/demo/actions', workflow_runs: [] } })}
+    params={{ owner: owner!, repo: repo! }}
+  />
 }
 
 function Runs() {
@@ -73,6 +117,9 @@ const repository = createRoute({ getParentRoute: () => root, path: '$owner/$repo
 const routeTree = root.addChildren([repository.addChildren([
   createRoute({ getParentRoute: () => repository, path: '/', component: () => <p>Code</p> }),
   createRoute({ getParentRoute: () => repository, path: 'runs', component: Runs }),
+  createRoute({ getParentRoute: () => repository, path: 'runs-empty', component: EmptyRuns }),
+  createRoute({ getParentRoute: () => repository, path: 'runs-connected', component: ConnectedNoRuns }),
+  createRoute({ getParentRoute: () => repository, path: 'settings', component: () => <h1>Settings</h1> }),
   createRoute({ getParentRoute: () => repository, path: 'requests/$requestId', component: Request }),
 ])])
 const router = createRouter({ routeTree })

@@ -12,7 +12,7 @@ import { useCachedResource } from '@/lib/use-cached-resource'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
-import { ExternalLink, TerminalSquare } from 'lucide-react'
+import { ExternalLink, FlaskConical, TerminalSquare } from 'lucide-react'
 import { useCallback } from 'react'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
@@ -87,6 +87,15 @@ export function GitHubWorkflowRunsPage({
           <div className="pt-7">
             {rows.length === 0 ? (
               <EmptyState
+                // The connection test shows whether workflows start on Scope's branches.
+                action={repo.access.actor !== 'Public' ? (
+                  <Button asChild size="sm" variant="secondary">
+                    <Link hash="ci" params={params} to="/$owner/$repo/settings">
+                      <FlaskConical className="size-3.5" />
+                      <span>Test connection</span>
+                    </Link>
+                  </Button>
+                ) : undefined}
                 description="Runs appear here once GitHub Actions starts a workflow for this repository."
                 icon={<TerminalSquare />}
                 title="No runs yet"
