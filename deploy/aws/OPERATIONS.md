@@ -99,7 +99,7 @@ deploy/aws/apply-cloud-runner.sh apply <change-set ARN>
 
 The script exits successfully when the stack already matches the template.
 
-Apply this infrastructure before merging a workflow that publishes to ECR. Then configure the one non-secret GitHub Actions variable from the CloudFormation output:
+Apply this infrastructure before merging a workflow that publishes to ECR. Then configure the one non-secret GitHub Actions variable from the CloudFormation output. A stack that still publishes the checks image needs the staged update in [Move publishing to the runner base image](#move-publishing-to-the-runner-base-image) first.
 
 ```bash
 publisher_role_arn="$(aws cloudformation describe-stacks \
@@ -211,6 +211,62 @@ Check the task's image digest, exit code, stopped reason, and timestamps. Confir
 For the public mode proof, run a digest-pinned image from a registry without configured credentials and confirm that the task definition has no `repositoryCredentials`. For the private mode proof, apply the exact-secret execution-role grant and configure the broker ARN and registry host, then run a digest-pinned private image. Confirm that the task reaches `RUNNING`, claims its Scope attempt, and references the exact configured ARN. Do not print or fetch the secret value during either proof.
 
 Use IAM simulation after the stack update. The dispatcher must be denied `secretsmanager:GetSecretValue` for both the registry secret and a sample attempt secret. The task execution role must be allowed for the exact registry ARN and the attempt prefix, and denied for an unrelated secret.
+
+## Move publishing to the runner base image
+
+A stack that still holds the `scope-vcs/production/checks` repository needs this update once. It keeps the publisher role `scope-cloud-runner-production-github-checks-publisher` and its name, and changes only its trust conditions and repository grant. The protected `scope-infrastructure-execution` role may not change GitHub roles, so a routine apply of this change rolls back. Run every step below with the temporary administration identity from [SECURITY.md](SECURITY.md), from the change's branch, before merging it and before any release that includes it. The first such release selects the new `runner-image` component and publishes at once.
+
+1. Let the execution role manage the new repository. Update the security stack from `security-deployment-role.yaml`, review the change set, then execute it:
+
+   ```bash
+   aws cloudformation create-change-set      --region us-east-1      --stack-name scope-security-deployment      --change-set-name runner-base-repository      --template-body file://deploy/aws/security-deployment-role.yaml      --parameters ParameterKey=RegistryCredentialsSecretArn,UsePreviousValue=true      --capabilities CAPABILITY_NAMED_IAM
+   aws cloudformation describe-change-set --region us-east-1      --stack-name scope-security-deployment --change-set-name runner-base-repository
+   aws cloudformation execute-change-set --region us-east-1      --stack-name scope-security-deployment --change-set-name runner-base-repository
+   aws cloudformation wait stack-update-complete --region us-east-1      --stack-name scope-security-deployment
+   ```
+
+2. Create a temporary CloudFormation service role that may change the publisher role:
+
+   ```bash
+   aws iam create-role      --role-name scope-runner-publisher-migration      --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"cloudformation.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+   aws iam attach-role-policy      --role-name scope-runner-publisher-migration      --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+   ```
+
+3. Plan the runner stack with that role:
+
+   ```bash
+   SCOPE_AWS_EXECUTION_ROLE_ARN="arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/scope-runner-publisher-migration"    deploy/aws/apply-cloud-runner.sh plan
+   ```
+
+   Pass the same `BUDGET_NOTIFICATION_EMAIL`, `MONTHLY_BUDGET_USD` and `SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN` as routine applies. The change set must add `RunnerBaseImageRepository`, remove `ChecksImageRepository`, and modify `ChecksImagePublisherRole` and `RunnerTaskExecutionRole` with `Replacement` `False`. Stop if it shows anything else, in particular a change to `GitHubOidcProvider` or `GitHubInfrastructureRole`.
+
+4. Apply that exact change set with the same environment, then confirm the role ARN output:
+
+   ```bash
+   deploy/aws/apply-cloud-runner.sh apply <change-set ARN>
+   ```
+
+5. Delete the temporary role:
+
+   ```bash
+   aws iam detach-role-policy      --role-name scope-runner-publisher-migration      --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+   aws iam delete-role --role-name scope-runner-publisher-migration
+   ```
+
+   CloudFormation keeps the last service role on the stack, so it now names a role that no longer exists. Every routine plan passes `scope-infrastructure-execution`, and the next applied change associates it again. Check `aws cloudformation describe-stacks --stack-name scope-cloud-runner-production --query 'Stacks[0].RoleARN'` after that apply.
+
+6. Set `SCOPE_RUNNER_IMAGE_AWS_ROLE_ARN` from the `RunnerBaseImagePublisherRoleArn` output, as shown above. The ARN is the same role the checks image used.
+
+7. Merge, then release. After the release publishes the runner base image, delete the retained `scope-vcs/production/checks` repository, the `SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN` variable, and the `checks` package on GHCR:
+
+   ```bash
+   aws ecr delete-repository --region us-east-1      --repository-name scope-vcs/production/checks --force
+   gh variable delete SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN --repo scope-vcs/scope-vcs
+   ```
+
+   Delete the GHCR package from the organization's package settings.
+
+Between step 4 and the merge, the publisher role accepts only `scope-runner-image.yml` on `main`, so a release from the old `main` that selects the checks image fails to publish it. Do not release in that window.
 
 ## Publish the runner base image
 

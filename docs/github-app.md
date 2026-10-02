@@ -345,8 +345,16 @@ tailscale funnel --bg --https=8443 --set-path=/v1/github/webhooks \
 
 ## Scope's own repository
 
-Scope's workflows in `.github/workflows` already carry the `scope/**` push
-trigger. After a release that includes it, a maintainer finishes the switch:
+Scope's workflows in `.github/workflows` carry the `scope/**` push trigger.
+The same change replaces the checks image with the runner base image, so the
+switch has steps on both sides of the merge.
+
+Before merging, and before any release that includes the change, follow
+[Move publishing to the runner base image](../deploy/aws/OPERATIONS.md#move-publishing-to-the-runner-base-image).
+It updates the AWS stacks and sets `SCOPE_RUNNER_IMAGE_AWS_ROLE_ARN`. The
+first release afterwards publishes the runner base image, which needs both.
+
+After that release:
 
 1. Connect the Scope repository to `scope-vcs/scope-vcs` from its repository
    settings.
@@ -354,11 +362,7 @@ trigger. After a release that includes it, a maintainer finishes the switch:
    `scope/requests/<id>` branch. Note the check names GitHub reports.
 3. Choose the required checks in the Checks section. Expect `Required PR
    checks`, the job that aggregates every other CI result.
-4. Apply the cloud runner stack, then set the GitHub variable
-   `SCOPE_RUNNER_IMAGE_AWS_ROLE_ARN` from its `RunnerBaseImagePublisherRoleArn`
-   output, as described in `deploy/aws/OPERATIONS.md`.
-5. Delete what the old checks image left behind. The ECR repository
-   `scope-vcs/production/checks` has `DeletionPolicy: Retain`, so removing it
-   from the stack keeps it; delete it by hand after the stack update. Also
-   delete the GitHub variable `SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN` and the
-   `checks` container package on GHCR.
+4. Delete what the old checks image left behind, as the last step of the
+   operations guide describes: the retained ECR repository
+   `scope-vcs/production/checks`, the GitHub variable
+   `SCOPE_CHECKS_IMAGE_AWS_ROLE_ARN` and the `checks` container package on GHCR.

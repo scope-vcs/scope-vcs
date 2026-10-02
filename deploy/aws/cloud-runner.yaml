@@ -200,12 +200,15 @@ Resources:
         - sts.amazonaws.com
       Tags:
         - Key: Component
-          Value: runner-base-image
+          Value: checks-image
 
-  RunnerBaseImagePublisherRole:
+  # The logical ID, role name, policy name and tags predate the runner base
+  # image. Changing them would replace security-owned GitHub trust, so only the
+  # trust conditions and the repository grant changed. See OPERATIONS.md.
+  ChecksImagePublisherRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${AWS::StackName}-github-runner-base-publisher
+      RoleName: !Sub ${AWS::StackName}-github-checks-publisher
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -227,7 +230,7 @@ Resources:
                     RepositoryName: !Select [1, !Split ["/", !Ref GitHubRepository]]
                 token.actions.githubusercontent.com:job_workflow_ref: !Sub ${GitHubRepository}/.github/workflows/scope-runner-image.yml@refs/heads/main
       Policies:
-        - PolicyName: publish-runner-base-images
+        - PolicyName: publish-checks-images
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -247,7 +250,7 @@ Resources:
                 Resource: !GetAtt RunnerBaseImageRepository.Arn
       Tags:
         - Key: Component
-          Value: runner-base-image
+          Value: checks-image
 
   GitHubInfrastructureRole:
     Type: AWS::IAM::Role
@@ -432,7 +435,7 @@ Outputs:
     Value: !GetAtt RunnerBaseImageRepository.RepositoryUri
   RunnerBaseImagePublisherRoleArn:
     Description: GitHub Actions OIDC role for publishing runner base images.
-    Value: !GetAtt RunnerBaseImagePublisherRole.Arn
+    Value: !GetAtt ChecksImagePublisherRole.Arn
   GitHubInfrastructureRoleArn:
     Description: GitHub Actions OIDC role for CLI-driven infrastructure plans and applies.
     Value: !GetAtt GitHubInfrastructureRole.Arn
