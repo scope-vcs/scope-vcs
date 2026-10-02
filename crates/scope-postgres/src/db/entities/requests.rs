@@ -318,6 +318,8 @@ pub mod request_revision {
         pub actor_user_id: Option<String>,
         pub old_head_oid: String,
         pub new_head_oid: String,
+        pub base_main_oid: String,
+        pub rewrote_history: bool,
         pub git_snapshot: Json,
         pub created_at_unix: i64,
     }
@@ -336,6 +338,8 @@ pub mod request_revision {
                 actor_user_id: value.actor_user_id.clone(),
                 old_head_oid: value.old_head_oid.clone(),
                 new_head_oid: value.new_head_oid.clone(),
+                base_main_oid: value.base_main_oid.clone(),
+                rewrote_history: value.rewrote_history,
                 git_snapshot: encode_json(&value.git_snapshot)?,
                 created_at_unix: u64_to_i64(
                     value.created_at_unix,
@@ -352,6 +356,8 @@ pub mod request_revision {
                 actor_user_id: self.actor_user_id,
                 old_head_oid: self.old_head_oid,
                 new_head_oid: self.new_head_oid,
+                base_main_oid: self.base_main_oid,
+                rewrote_history: self.rewrote_history,
                 git_snapshot: decode_json::<SourceBlob>(self.git_snapshot)?,
                 created_at_unix: i64_to_u64(
                     self.created_at_unix,

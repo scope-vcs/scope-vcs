@@ -692,21 +692,11 @@ async fn active_invitee_can_push_request_ref_but_uninvited_maintainer_cannot() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_ref_push_rejects_history_unrelated_to_recorded_base() {
     let state = test_state_with_request().await;
-    state
-        .metadata
-        .requests()
-        .mutate_request_for_tests(REQUEST_ID, |request| {
-            request.author_user_id = Some(test_owner_id());
-            request.author_role = RequestActorRole::Owner;
-            request.audience = RequestAudience::Private;
-        })
-        .await
-        .unwrap();
     let (source, permissioned_remote, _server) = request_push_checkout(
         &state,
         "request-ref-unrelated-history",
-        TEST_CLERK_USER_ID,
-        TEST_OWNER_EMAIL,
+        PUBLIC_SUBJECT,
+        PUBLIC_EMAIL,
     )
     .await;
     run_git(
@@ -729,14 +719,25 @@ async fn request_ref_push_rejects_history_unrelated_to_recorded_base() {
     )
     .unwrap();
     commit_all(&source, "unrelated request change");
+    // Force past Git's own fast-forward check so Scope's base rule decides.
     let output = run_git_output(
         Some(&source),
-        &["push", &permissioned_remote, &format!("HEAD:{REQUEST_REF}")],
+        &[
+            "push",
+            &permissioned_remote,
+            &format!("+HEAD:{REQUEST_REF}"),
+        ],
         "push unrelated request ref",
     )
     .unwrap();
 
     assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("request branch must descend from its recorded base"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert_request_branch_unchanged(&state).await;
 }
 

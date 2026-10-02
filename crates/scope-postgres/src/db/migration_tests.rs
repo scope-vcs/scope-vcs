@@ -19,6 +19,7 @@ mod repository_invite_emails;
 mod repository_invite_links;
 mod repository_landing_files;
 mod repository_workflow_catalogs;
+mod request_revision_rewrites;
 mod request_run_source_base;
 mod run_attempt_active_indexes;
 mod run_execution_invariants;
@@ -48,6 +49,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0062_request_run_source_base",
     "m0063_account_deletion",
     "m0064_repository_content_version",
+    "m0065_request_revision_rewrites",
 ];
 
 pub(super) async fn isolated_database() -> (

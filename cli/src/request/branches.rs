@@ -77,6 +77,7 @@ pub(super) fn start_request_branch(
         &context.target,
         api.token,
         &request_head_oid,
+        response.request.head_oid.as_str(),
         &response.request.id,
         &response.request.name,
     )
@@ -166,23 +167,22 @@ pub(super) fn push_request_branch(
         api.token,
     )?;
     ensure_public_request_paths_allowed(git_repo, &detail, &current_main_oid, &request_head_oid)?;
+    let expected_head_oid = last_seen_request_head(
+        git_repo,
+        &context.target,
+        &detail.request,
+        &branch,
+        &request_head_oid,
+    )?;
+    // A failed push changed nothing, so its error needs no recovery receipt.
     push_request_head(
         &context.target,
         api.token,
         &request_head_oid,
+        &expected_head_oid,
         &detail.request.id,
         &detail.request.name,
-    )
-    .map_err(|error| {
-        recovery::request_partial(
-            &context,
-            &detail.request,
-            &branch,
-            "push_request_head",
-            false,
-            error,
-        )
-    })?;
+    )?;
     let recover = |stage, error| {
         recovery::request_partial(&context, &detail.request, &branch, stage, true, error)
     };

@@ -11,7 +11,7 @@ use scope_domain::{
     content_ref::ContentRef,
     requests::{
         RecordRequestRevisionInput, RequestAutoMergeIntentStatus, RequestCheck,
-        RequestCheckEvaluation, RequestCheckEvaluationState,
+        RequestCheckEvaluation, RequestCheckEvaluationState, RequestRevisionGitFacts,
     },
     runs::{
         run::Run,
@@ -467,6 +467,11 @@ async fn open_request_with_revision(store: &super::super::MetadataStore) -> Stri
                     git_oid: "a".repeat(40),
                     git_file_mode: DEFAULT_GIT_FILE_MODE.into(),
                     size_bytes: 1,
+                },
+                git_facts: RequestRevisionGitFacts {
+                    contains_old_head: true,
+                    contained_main_oid: None,
+                    contained_main_descends_from_base: false,
                 },
                 event_id: "revision_current".into(),
                 body: None,

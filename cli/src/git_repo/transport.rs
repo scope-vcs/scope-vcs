@@ -28,25 +28,44 @@ pub fn push_head_with_bearer(
     )
 }
 
+/// Git refused a leased push because the remote ref no longer held the expected commit.
+#[derive(Debug)]
+pub struct StaleRefLease;
+
+impl std::fmt::Display for StaleRefLease {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("the remote ref no longer holds the expected commit")
+    }
+}
+
+impl std::error::Error for StaleRefLease {}
+
+/// Replaces `refname` with `commit_oid` only while it still holds `expected_oid`, so a
+/// rebased or amended head can replace history nobody else has updated since.
 pub fn push_head_to_ref_with_bearer(
     destination: &str,
     commit_oid: &str,
     refname: &str,
+    expected_oid: &str,
     bearer_token: &str,
 ) -> anyhow::Result<()> {
     let plan = git_push_ref_auth_plan(
         destination,
         commit_oid,
         refname,
+        expected_oid,
         bearer_token,
         inherited_git_config_count(),
     );
-    run_git_plan_output(
-        plan,
-        None,
-        "run authenticated Scope request branch push",
-        "git push to Scope request ref failed",
-    )
+    let output = git_command(plan, None)
+        .output()
+        .context("run authenticated Scope request branch push")?;
+    // Git prints push status reasons such as "stale info" untranslated.
+    if !output.status.success() && String::from_utf8_lossy(&output.stderr).contains("(stale info)")
+    {
+        return Err(StaleRefLease.into());
+    }
+    finish_git_plan_output(output, "git push to Scope request ref failed")
 }
 
 pub fn clone_with_bearer(
@@ -117,10 +136,12 @@ pub fn fetch_scope_remote_with_bearer_cancellable(
     finish_git_plan_output(output, "refresh Scope Git remote before push review failed")
 }
 
+/// The lease alone permits a non-fast-forward update. A `+` refspec would override it.
 pub fn git_push_ref_auth_plan(
     destination: &str,
     commit_oid: &str,
     refname: &str,
+    expected_oid: &str,
     bearer_token: &str,
     inherited_config_count: Option<usize>,
 ) -> GitCommandPlan {
@@ -129,6 +150,7 @@ pub fn git_push_ref_auth_plan(
             "-c".to_string(),
             "push.recurseSubmodules=no".to_string(),
             "push".to_string(),
+            format!("--force-with-lease={refname}:{expected_oid}"),
             destination.to_string(),
             format!("{commit_oid}:{refname}"),
         ],

@@ -111,6 +111,11 @@ fn open_request_edits_and_revisions_stay_open() {
             expected_old_head_oid: Some("head".to_string()),
             new_head_oid: "head-2".to_string(),
             git_snapshot: source_blob("head-2"),
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
+            },
             event_id: "event_revision".to_string(),
             body: None,
             now_unix: 22,

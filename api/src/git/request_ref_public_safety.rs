@@ -20,6 +20,8 @@ use scope_git::DEFAULT_GIT_BRANCH;
 use std::{collections::BTreeSet, path::Path as FsPath};
 
 const PUBLIC_REQUEST_BASE_REF: &str = "refs/scope/internal/public-request-base";
+const PUBLIC_MAIN_MOVED_ERROR: &str =
+    "Public main moved. Rebase onto it or merge it, then run scope request push.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ValidatedPublicRequestRange {
@@ -28,13 +30,14 @@ pub(crate) struct ValidatedPublicRequestRange {
     pub(crate) commits: Vec<NativePublicCommit>,
 }
 
+/// Returns the current public main the request was checked against.
 pub(super) async fn ensure_public_request_ref_is_public_safe(
     repo: &Repository,
     state: &AppState,
     staging_repo: &FsPath,
     new_head_oid: &str,
-) -> Result<(), ApiError> {
-    let (_, public_visible_paths) =
+) -> Result<String, ApiError> {
+    let (public_main_oid, public_visible_paths) =
         fetch_current_public_projection(repo, state, staging_repo).await?;
     ensure_public_request_branch_is_based_on_public_main(staging_repo, new_head_oid)?;
     let commit_oids = commits_after(staging_repo, PUBLIC_REQUEST_BASE_REF, new_head_oid)?;
@@ -43,7 +46,7 @@ pub(super) async fn ensure_public_request_ref_is_public_safe(
         validate_pushed_tree(staging_repo, &commit_oid)?;
         ensure_public_request_commit_paths(repo, &public_visible_paths, staging_repo, &commit_oid)?;
     }
-    Ok(())
+    Ok(public_main_oid)
 }
 
 pub(crate) async fn validate_public_request_merge_range(
@@ -63,9 +66,7 @@ pub(crate) async fn validate_public_request_merge_range(
     }
     let public_parent_oids = validated_public_parent_oids(staging_repo, &commit_oids)?;
     if !public_parent_oids.contains(&public_base_oid) {
-        return Err(ApiError::conflict(
-            "public main advanced; merge current public main into the request branch and push again",
-        ));
+        return Err(ApiError::conflict(PUBLIC_MAIN_MOVED_ERROR));
     }
 
     let mut commits = Vec::with_capacity(commit_oids.len());
@@ -131,7 +132,7 @@ fn validated_public_parent_oids(
                 public_parent_oids.insert(parent_oid);
             } else {
                 return Err(ApiError::conflict(
-                    "public request contains a parent outside public history; rewrite the branch onto public main and push again",
+                    "public request contains a parent outside public history",
                 ));
             }
         }
@@ -238,9 +239,7 @@ fn ensure_public_head_is_request_ancestor(
     )? {
         return Ok(());
     }
-    Err(ApiError::conflict(
-        "public main advanced; merge current public main into the request branch and push again",
-    ))
+    Err(ApiError::conflict(PUBLIC_MAIN_MOVED_ERROR))
 }
 
 fn public_request_commit_fact(
@@ -490,7 +489,12 @@ mod tests {
         )
         .unwrap();
 
-        assert!(ensure_public_head_is_request_ancestor(&repo, &request_head).is_err());
+        assert_eq!(
+            ensure_public_head_is_request_ancestor(&repo, &request_head)
+                .unwrap_err()
+                .public_message(),
+            PUBLIC_MAIN_MOVED_ERROR
+        );
 
         let _ = fs::remove_dir_all(repo);
     }

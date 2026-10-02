@@ -59,9 +59,22 @@ pub struct RecordRequestRevisionInput {
     pub expected_old_head_oid: Option<String>,
     pub new_head_oid: String,
     pub git_snapshot: SourceBlob,
+    pub git_facts: RequestRevisionGitFacts,
     pub event_id: String,
     pub body: Option<String>,
     pub now_unix: u64,
+}
+
+/// What Git says about a new request head. The caller reads these facts from the
+/// request's main view: private main for a private request, public main for a public one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequestRevisionGitFacts {
+    /// The new head contains the old head.
+    pub contains_old_head: bool,
+    /// The newest main commit the new head contains, when main could be read.
+    pub contained_main_oid: Option<String>,
+    /// `contained_main_oid` descends from the request's recorded base.
+    pub contained_main_descends_from_base: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -204,6 +217,7 @@ pub fn record_request_revision(
     validate_expected_head(&request, input.expected_old_head_oid.as_deref())?;
     validate_snapshot_head(&input.git_snapshot, &input.new_head_oid)?;
     let old_head_oid = request.head_oid.clone();
+    request.base_main_oid = request_base_after_revision(&request, &input.git_facts).to_string();
     request.head_oid = input.new_head_oid.clone();
     let old_git_snapshot = request.git_snapshot.replace(input.git_snapshot.clone());
     request.updated_at_unix = input.now_unix;
@@ -222,13 +236,32 @@ pub fn record_request_revision(
         },
         created_at_unix: input.now_unix,
     };
-    let revision = super::revisions::revision(&request, &event, old_head_oid, input.new_head_oid)?;
+    let revision = super::revisions::revision(
+        &request,
+        &event,
+        old_head_oid,
+        input.new_head_oid,
+        !input.git_facts.contains_old_head,
+    )?;
     Ok(RequestRevisionMutation {
         request,
         event,
         revision,
         orphan_objects: old_git_snapshot.into_iter().collect(),
     })
+}
+
+/// A revision moves the request base forward to the newest main commit its head contains,
+/// so main's own changes stop counting as request changes. The base never moves onto
+/// history that does not descend from it.
+pub fn request_base_after_revision<'a>(
+    request: &'a Request,
+    facts: &'a RequestRevisionGitFacts,
+) -> &'a str {
+    match facts.contained_main_oid.as_deref() {
+        Some(main_oid) if facts.contained_main_descends_from_base => main_oid,
+        _ => &request.base_main_oid,
+    }
 }
 
 pub fn close_request(

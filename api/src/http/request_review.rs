@@ -401,7 +401,7 @@ fn request_revision_commit_oids(
     revision: &RequestRevision,
     limit: usize,
 ) -> Result<Vec<String>, ApiError> {
-    let exclude_old_head = format!("^{}", revision.old_head_oid);
+    let exclude_earlier_history = format!("^{}", revision.commits_after_oid());
     let max_count = format!("--max-count={}", limit.saturating_add(1));
     let max_output_bytes = limit.saturating_add(1).saturating_mul(41);
     let output = run_git_output_bounded(
@@ -412,7 +412,7 @@ fn request_revision_commit_oids(
             "--reverse",
             "--topo-order",
             &revision.new_head_oid,
-            &exclude_old_head,
+            &exclude_earlier_history,
         ],
         "reading request revision commits",
         max_output_bytes,

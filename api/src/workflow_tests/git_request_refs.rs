@@ -29,6 +29,7 @@ mod privacy;
 mod public_checks;
 mod refs;
 mod review;
+mod rewrites;
 mod root_history;
 
 use http::public_get_json;

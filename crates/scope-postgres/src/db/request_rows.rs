@@ -427,6 +427,10 @@ where
             Expr::value(row.description_markdown),
         )
         .col_expr(
+            entities::request::Column::BaseMainOid,
+            Expr::value(row.base_main_oid),
+        )
+        .col_expr(
             entities::request::Column::HeadOid,
             Expr::value(row.head_oid),
         )

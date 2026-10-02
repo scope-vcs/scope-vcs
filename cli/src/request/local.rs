@@ -2,16 +2,17 @@ use crate::api::ApiSession;
 use crate::display::short_oid;
 use crate::{
     api::{RepoSummaryResponse, RequestSummaryResponse, get_repo, list_requests},
+    error::CliError,
     git_repo::{
-        GitRepo, branch_config_value, current_branch, fetch_scope_remote_with_bearer,
-        push_head_to_ref_with_bearer, run_git_in_repo, scope_remote_head_oid,
-        set_branch_config_value, try_run_git_in_repo,
+        GitRepo, StaleRefLease, branch_config_value, current_branch,
+        fetch_scope_remote_with_bearer, git_output_in_repo, push_head_to_ref_with_bearer,
+        run_git_in_repo, scope_remote_head_oid, set_branch_config_value, try_run_git_in_repo,
     },
     git_transport::ScopeRemote,
     push::DEFAULT_SCOPE_BRANCH,
 };
 use anyhow::{Context, bail};
-use scope_api_contract::RequestAudience;
+use scope_api_contract::{ErrorCode, ErrorResponse, RequestAudience};
 
 const REQUEST_REMOTE_KEY: &str = "scopeRequestRemote";
 const REQUEST_ID_KEY: &str = "scopeRequestId";
@@ -66,10 +67,15 @@ pub(super) fn refresh_main_projection(
         .context("Scope main projection did not produce a local remote ref")
 }
 
+const STALE_REQUEST_PUSH_ERROR: &str = "Someone else updated this request. Fetch it and try again.";
+
+/// Pushes `request_head_oid`, which may rebase or amend the request, only while Scope
+/// still holds `expected_head_oid`, the request head this checkout last saw.
 pub(super) fn push_request_head(
     target: &ScopeRemote,
     session_token: &str,
     request_head_oid: &str,
+    expected_head_oid: &str,
     request_id: &str,
     request_name: &str,
 ) -> anyhow::Result<()> {
@@ -78,9 +84,76 @@ pub(super) fn push_request_head(
         &target.permissioned_url,
         request_head_oid,
         &request_ref,
+        expected_head_oid,
         session_token,
     )
-    .with_context(|| format!("push request branch for {request_id}"))
+    .map_err(|error| {
+        if error.is::<StaleRefLease>() {
+            CliError::new(ErrorResponse::new(
+                ErrorCode::Conflict,
+                STALE_REQUEST_PUSH_ERROR,
+            ))
+            .into()
+        } else {
+            error.context(format!("push request branch for {request_id}"))
+        }
+    })
+}
+
+/// The request head a push may replace: the one this checkout last fetched, kept in its
+/// remote-tracking ref, or the head Scope reports when there is none. Like Git's
+/// `--force-if-includes`, a push may replace that head only after this branch has
+/// included it, so a fetch alone never authorizes discarding someone else's commits.
+pub(super) fn last_seen_request_head(
+    git_repo: &GitRepo,
+    target: &ScopeRemote,
+    request: &RequestSummaryResponse,
+    branch: &str,
+    request_head_oid: &str,
+) -> anyhow::Result<String> {
+    let lease = scope_remote_head_oid(git_repo, &target.remote, &request.name)?
+        .unwrap_or_else(|| request.head_oid.as_str().to_string());
+    if git_is_ancestor(git_repo, &lease, request_head_oid)?
+        || branch_reflog_includes(git_repo, branch, &lease)?
+    {
+        return Ok(lease);
+    }
+    Err(CliError::new(ErrorResponse::new(
+        ErrorCode::Conflict,
+        STALE_REQUEST_PUSH_ERROR,
+    ))
+    .into())
+}
+
+fn branch_reflog_includes(git_repo: &GitRepo, branch: &str, oid: &str) -> anyhow::Result<bool> {
+    let entries = git_output_in_repo(
+        git_repo,
+        &[
+            "log",
+            "--walk-reflogs",
+            "--format=%H",
+            &format!("refs/heads/{branch}"),
+        ],
+    )?;
+    if !entries.status.success() {
+        return Ok(false);
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for entry in String::from_utf8_lossy(&entries.stdout).lines() {
+        if seen.insert(entry) && git_is_ancestor(git_repo, oid, entry)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn git_is_ancestor(git_repo: &GitRepo, ancestor: &str, descendant: &str) -> anyhow::Result<bool> {
+    Ok(git_output_in_repo(
+        git_repo,
+        &["merge-base", "--is-ancestor", ancestor, descendant],
+    )?
+    .status
+    .success())
 }
 
 pub(super) fn request_id_for_context(

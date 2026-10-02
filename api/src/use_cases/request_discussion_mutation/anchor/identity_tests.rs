@@ -67,6 +67,8 @@ fn visible_commit_paths_requires_revision_membership_and_full_visibility() {
         actor_user_id: Some("owner-1".to_string()),
         old_head_oid: fixture.base.clone(),
         new_head_oid: fixture.commit.clone(),
+        base_main_oid: fixture.base.clone(),
+        rewrote_history: false,
         git_snapshot: SourceBlob {
             content_ref: ContentRef::blob_sha256("snapshot"),
             sha256: "snapshot".to_string(),

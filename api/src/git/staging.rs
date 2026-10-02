@@ -2,10 +2,8 @@ use crate::{
     config::EMPTY_GIT_OID,
     error::ApiError,
     git::{
-        command::run_git,
-        projection_repo::projection_bare_repo_for_state,
-        request_refs::{REQUEST_REF_COMMIT_ERROR, REQUEST_REF_FAST_FORWARD_ERROR},
-        storage::receive_pack_staging_repo_path,
+        command::run_git, projection_repo::projection_bare_repo_for_state,
+        request_refs::REQUEST_REF_COMMIT_ERROR, storage::receive_pack_staging_repo_path,
     },
     persistence::ensure_private_dir,
     repo_access::find_repo,
@@ -171,10 +169,6 @@ while read old new ref; do
     refs/heads/*)
       if ! git cat-file -e "$new^{{commit}}"; then
         echo "{REQUEST_REF_COMMIT_ERROR}" >&2
-        exit 1
-      fi
-      if [ "$old" != "{EMPTY_GIT_OID}" ] && ! git merge-base --is-ancestor "$old" "$new"; then
-        echo "{REQUEST_REF_FAST_FORWARD_ERROR}" >&2
         exit 1
       fi
       ;;

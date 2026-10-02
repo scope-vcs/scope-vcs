@@ -14,7 +14,7 @@ use scope_domain::{
     repository::{RepoLifecycleState, Repository},
     requests::{
         RecordRequestRevisionInput, RequestActorRole, RequestAudience, RequestDiscussionAnchor,
-        RequestDiscussionStatus, RequestState,
+        RequestDiscussionStatus, RequestRevisionGitFacts, RequestState,
     },
 };
 
@@ -37,6 +37,11 @@ async fn revision_window_bounds_recent_rows_and_keeps_an_explicit_older_revision
                     expected_old_head_oid: Some(old_head),
                     new_head_oid: new_head.clone(),
                     git_snapshot: source_blob(&new_head),
+                    git_facts: RequestRevisionGitFacts {
+                        contains_old_head: true,
+                        contained_main_oid: None,
+                        contained_main_descends_from_base: false,
+                    },
                     event_id: format!("revision_event_{number}"),
                     body: None,
                     now_unix: 3 + number,
@@ -63,6 +68,54 @@ async fn revision_window_bounds_recent_rows_and_keeps_an_explicit_older_revision
             .collect::<Vec<_>>(),
         [revision_ids[0].as_str(), revision_ids[2].as_str()]
     );
+}
+
+#[tokio::test]
+async fn rewritten_revision_moves_the_stored_request_base() {
+    let store = postgres_store();
+    start_public_request(&store).await;
+
+    let mutation = store
+        .requests()
+        .record_request_revision(
+            RecordRequestRevisionInput {
+                request_id: "req_1".to_string(),
+                actor_user_id: "user_public".to_string(),
+                actor_can_edit: true,
+                expected_old_head_oid: Some("head".to_string()),
+                new_head_oid: "rebased".to_string(),
+                git_snapshot: source_blob("rebased"),
+                git_facts: RequestRevisionGitFacts {
+                    contains_old_head: false,
+                    contained_main_oid: Some("newer-main".to_string()),
+                    contained_main_descends_from_base: true,
+                },
+                event_id: "event_rebased".to_string(),
+                body: None,
+                now_unix: 4,
+            },
+            &super::super::generated_ids::test_generated_id,
+        )
+        .await
+        .unwrap();
+
+    let request = store
+        .requests()
+        .request_for_tests("req_1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(request.base_main_oid, "newer-main");
+    assert_eq!(request.head_oid, "rebased");
+    let revision = store
+        .requests()
+        .request_revision("req_1", &mutation.revision.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(revision.rewrote_history);
+    assert_eq!(revision.base_main_oid, "newer-main");
+    assert_eq!(revision.commits_after_oid(), "newer-main");
 }
 
 #[tokio::test]
@@ -461,6 +514,11 @@ async fn close_draft_request_deletes_request_and_events() {
                 expected_old_head_oid: Some("head".to_string()),
                 new_head_oid: "head-2".to_string(),
                 git_snapshot: source_blob("head-2"),
+                git_facts: RequestRevisionGitFacts {
+                    contains_old_head: true,
+                    contained_main_oid: None,
+                    contained_main_descends_from_base: false,
+                },
                 event_id: "event_revision".to_string(),
                 body: None,
                 now_unix: 4,

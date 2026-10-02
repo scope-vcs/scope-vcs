@@ -1,7 +1,7 @@
 use super::*;
 use scope_domain::requests::{
     RecordRequestRevisionInput, RequestActorRole, RequestAudience, RequestCheck,
-    RequestCheckEvaluation, StartRequestInput,
+    RequestCheckEvaluation, RequestRevisionGitFacts, StartRequestInput,
 };
 use scope_domain::runs::run::RunState;
 use scope_postgres::db::{RecordRequestChecksCommand, SubmitRequestCommand};
@@ -111,6 +111,11 @@ async fn record_revision(
                 expected_old_head_oid: expected_old_head_oid.map(str::to_string),
                 new_head_oid: new_head_oid.to_string(),
                 git_snapshot,
+                git_facts: RequestRevisionGitFacts {
+                    contains_old_head: true,
+                    contained_main_oid: None,
+                    contained_main_descends_from_base: false,
+                },
                 event_id: event_id.clone(),
                 body: None,
                 now_unix,

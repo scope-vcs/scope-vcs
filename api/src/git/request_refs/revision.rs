@@ -250,6 +250,8 @@ mod tests {
                 request_id: "request".into(),
                 position: 1,
                 actor_user_id: Some("owner".into()),
+                base_main_oid: old_head_oid.clone(),
+                rewrote_history: false,
                 old_head_oid,
                 new_head_oid,
                 git_snapshot,
@@ -425,6 +427,8 @@ mod tests {
             actor_user_id: Some("owner".into()),
             old_head_oid: request.base_main_oid.clone(),
             new_head_oid: request.head_oid.clone(),
+            base_main_oid: request.base_main_oid.clone(),
+            rewrote_history: false,
             git_snapshot: scope_storage::content_object_for_bytes(
                 scope_storage::ContentObjectKind::GitBundle,
                 b"bundle",

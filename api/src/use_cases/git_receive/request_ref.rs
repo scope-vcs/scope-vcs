@@ -264,6 +264,7 @@ pub(super) async fn persist_request_ref_revision(
                 expected_old_head_oid,
                 new_head_oid: update.new_head_oid.clone(),
                 git_snapshot: persisted.git_snapshot.clone(),
+                git_facts: persisted.git_facts.clone(),
                 event_id: crate::persistence_ids::generate_prefixed_id("event_request_revision")?,
                 body: None,
                 now_unix,
