@@ -81,6 +81,17 @@ export async function setRepoGitHubRequiredChecksForRequest(
   )
 }
 
+/** Allows private requests to go to a connected repository that became public. */
+export async function confirmRepoGitHubPublicForRequest(
+  data: RepoParams,
+): Promise<GitHubConnectionResponse> {
+  return createApiClient().post(
+    repoRoute(ApiRouteTemplates.repoGitHubPublicConfirmation, data),
+    apiValidators.GitHubConnectionResponse,
+    { auth: 'required' },
+  )
+}
+
 export async function disconnectRepoGitHubForRequest(
   data: RepoParams,
 ): Promise<GitHubConnectionResponse> {

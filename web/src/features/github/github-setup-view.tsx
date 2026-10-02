@@ -64,7 +64,11 @@ function GitHubSetup({ actions, search }: { actions: SetupActions; search: GitHu
     })
   }
 
-  async function connectRepository(setup: GitHubSetupResponse, githubRepositoryId: number) {
+  async function connectRepository(
+    setup: GitHubSetupResponse,
+    githubRepositoryId: number,
+    acknowledgePublic: boolean,
+  ) {
     setState({ kind: 'pending', setup })
     try {
       await actions.connect({
@@ -72,6 +76,7 @@ function GitHubSetup({ actions, search }: { actions: SetupActions; search: GitHu
         repo: setup.repo_name,
         grant: setup.grant,
         github_repository_id: githubRepositoryId,
+        acknowledge_public: acknowledgePublic,
       })
       await actions.onConnected(setup)
     } catch (error) {
@@ -168,7 +173,7 @@ function GitHubSetup({ actions, search }: { actions: SetupActions; search: GitHu
         {setup && setup.repositories.length > 0 && (
           <RepositoryChoice
             onChoose={(selected) => setState({ kind: 'choosing', setup, selected })}
-            onConnect={(id) => void connectRepository(setup, id)}
+            onConnect={(id, acknowledgePublic) => void connectRepository(setup, id, acknowledgePublic)}
             pending={pending}
             selected={state.kind === 'choosing' ? state.selected : null}
             setup={setup}
@@ -203,17 +208,20 @@ function RepositoryChoice({
   setup,
 }: {
   onChoose: (id: number) => void
-  onConnect: (id: number) => void
+  onConnect: (id: number, acknowledgePublic: boolean) => void
   pending: boolean
   selected: number | null
   setup: GitHubSetupResponse
 }) {
+  const [acknowledged, setAcknowledged] = useState(false)
+  const chosen = setup.repositories.find((repository) => repository.id === selected)
+  const isPublic = chosen ? !chosen.private : false
   return (
     <form
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault()
-        if (selected !== null) onConnect(selected)
+        if (selected !== null) onConnect(selected, isPublic && acknowledged)
       }}
     >
       <fieldset className="divide-y divide-border border-y border-border">
@@ -232,8 +240,27 @@ function RepositoryChoice({
           </label>
         ))}
       </fieldset>
+      {isPublic && (
+        <label className="flex items-start gap-3 leading-5">
+          <input
+            checked={acknowledged}
+            className="mt-1"
+            disabled={pending}
+            onChange={(event) => setAcknowledged(event.target.checked)}
+            type="checkbox"
+          />
+          <span>
+            {chosen?.full_name} is public. Everything Scope pushes there, including private
+            requests and private files, becomes public on GitHub.
+          </span>
+        </label>
+      )}
       <div className="flex flex-wrap gap-2">
-        <Button disabled={pending || selected === null} size="sm" type="submit">
+        <Button
+          disabled={pending || selected === null || (isPublic && !acknowledged)}
+          size="sm"
+          type="submit"
+        >
           {pending ? <LoaderCircle className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />}
           <span>Connect repository</span>
         </Button>

@@ -69,6 +69,20 @@ test('request actions validate the action and only require handles for invitee a
   assert.throws(() => parsers.parseRequestActionInput({ ...request, action: 'delete' }))
 })
 
+test('a check approval names the head the maintainer reviewed', () => {
+  assert.deepEqual(
+    parsers.parseApproveRequestChecksInput({
+      ...request,
+      expected_head_oid: 'a'.repeat(40),
+      extra: 'discard',
+    }),
+    { ...request, expected_head_oid: 'a'.repeat(40) },
+  )
+  assert.throws(() => parsers.parseApproveRequestChecksInput(request))
+  assert.throws(() =>
+    parsers.parseApproveRequestChecksInput({ ...request, expected_head_oid: 'not-an-oid' }))
+})
+
 test('auto-merge actions preserve exact optimistic concurrency identifiers', () => {
   assert.deepEqual(
     parsers.parseAuthorizeRequestAutoMergeInput({

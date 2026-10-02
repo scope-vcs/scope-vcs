@@ -7,6 +7,7 @@
 //! last error for the request to show.
 
 use super::RequestCheckEvaluation;
+use crate::github_connection::GitHubConnection;
 
 const REQUEST_BRANCH_PREFIX: &str = "scope/requests/";
 /// The wait after each failed attempt. The attempt after the last wait is the last.
@@ -29,6 +30,34 @@ pub enum GitHubPushState {
     Failed,
 }
 
+/// The GitHub repository a push goes to, as the connection named it when the
+/// push was queued. A deletion keeps it after the Scope repository is gone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubPushDestination {
+    pub installation_id: u64,
+    pub github_repository_id: u64,
+    pub github_full_name: String,
+}
+
+impl GitHubPushDestination {
+    pub fn of(connection: &GitHubConnection) -> Self {
+        Self {
+            installation_id: connection.installation_id,
+            github_repository_id: connection.github_repository_id,
+            github_full_name: connection.github_full_name.clone(),
+        }
+    }
+
+    /// A commit is pushed only while the repository is still connected the
+    /// way it was when the push was queued: a disconnect, or a reconnect to
+    /// another repository or installation, revokes the push.
+    pub fn is_connected_through(&self, connection: &GitHubConnection) -> bool {
+        connection.is_connected()
+            && connection.installation_id == self.installation_id
+            && connection.github_repository_id == self.github_repository_id
+    }
+}
+
 /// One push or deletion of a request's branch on GitHub.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubPush {
@@ -37,6 +66,7 @@ pub struct GitHubPush {
     pub request_id: String,
     /// The commit the branch should point at; `None` deletes the branch.
     pub target_oid: Option<String>,
+    pub destination: GitHubPushDestination,
     pub state: GitHubPushState,
     pub attempts: u32,
     pub last_error: Option<String>,

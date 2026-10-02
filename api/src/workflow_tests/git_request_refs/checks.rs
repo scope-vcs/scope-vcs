@@ -403,7 +403,7 @@ async fn checks_awaiting_approval_wait_for_a_maintainer_and_gate_the_merge() {
         "POST",
         &approve_route(REQUEST_ID),
         Some(&public),
-        Some("{}"),
+        Some(&reviewed_head_body(&state, REQUEST_ID).await),
     )
     .await;
     assert_eq!(refused.status(), StatusCode::FORBIDDEN);
@@ -427,7 +427,7 @@ async fn checks_awaiting_approval_wait_for_a_maintainer_and_gate_the_merge() {
             "POST",
             &approve_route(REQUEST_ID),
             Some(&member),
-            Some("{}"),
+            Some(&reviewed_head_body(&state, REQUEST_ID).await),
         )
         .await,
         StatusCode::OK,
@@ -520,7 +520,7 @@ async fn recorded_checks_can_be_approved_by_a_maintainer_after_the_request_close
         "POST",
         &approve_route(REQUEST_ID),
         Some(&public),
-        Some("{}"),
+        Some(&reviewed_head_body(&state, REQUEST_ID).await),
     )
     .await;
     assert_eq!(refused.status(), StatusCode::FORBIDDEN);
@@ -531,7 +531,7 @@ async fn recorded_checks_can_be_approved_by_a_maintainer_after_the_request_close
             "POST",
             &approve_route(REQUEST_ID),
             Some(&member),
-            Some("{}"),
+            Some(&reviewed_head_body(&state, REQUEST_ID).await),
         )
         .await,
         StatusCode::OK,

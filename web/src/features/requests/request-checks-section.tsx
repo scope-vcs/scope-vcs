@@ -7,6 +7,7 @@ import {
   requestCheckEvaluationNote,
   requestChecksWorkflowWarning,
   requestGitHubPushNote,
+  requestPublicGitHubNote,
 } from './request-labels'
 import { CHECKS_SECTION_CLASS, RequestChecksPending } from './request-checks-pending'
 
@@ -28,6 +29,7 @@ export function RequestChecksSection({
   const note = checks ? requestCheckEvaluationNote(checks) : null
   const warning = checks ? requestChecksWorkflowWarning(checks) : null
   const push = requestGitHubPushNote(checks?.github_push ?? null)
+  const publicOnGitHub = checks ? requestPublicGitHubNote(checks) : null
 
   return (
     <section
@@ -45,6 +47,9 @@ export function RequestChecksSection({
         <p className="mt-2 text-[13px] text-warning-strong" role="note">
           {warning}
         </p>
+      ) : null}
+      {publicOnGitHub ? (
+        <p className="mt-2 text-[13px] text-muted-foreground">{publicOnGitHub}</p>
       ) : null}
       {push ? (
         <p

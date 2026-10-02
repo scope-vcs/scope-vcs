@@ -30,15 +30,20 @@ impl MigrationTrait for Migration {
                     )
                 );
 
-                -- Pushes and deletions of request branches on GitHub. The
-                -- request id is not a reference: a deleted draft's branch still
-                -- has to be removed after its request row is gone.
+                -- Pushes and deletions of request branches on GitHub. Neither
+                -- the repository nor the request is a reference: a deleted
+                -- draft's or repository's branches still have to be removed
+                -- from the GitHub repository each job names. A branch's jobs
+                -- are ordered by sequence, which only grows.
                 CREATE TABLE scope_github_pushes (
                     id varchar PRIMARY KEY,
-                    repo_id varchar NOT NULL
-                        REFERENCES scope_repositories(id) ON DELETE CASCADE,
+                    repo_id varchar NOT NULL,
                     request_id varchar NOT NULL,
                     ref varchar NOT NULL,
+                    sequence bigint NOT NULL,
+                    installation_id bigint NOT NULL,
+                    github_repository_id bigint NOT NULL,
+                    github_full_name varchar NOT NULL,
                     target_oid varchar,
                     kind varchar NOT NULL,
                     state varchar NOT NULL,
@@ -51,6 +56,9 @@ impl MigrationTrait for Migration {
                     updated_at_unix bigint NOT NULL,
                     CONSTRAINT scope_github_push_values CHECK (
                         ref = 'refs/heads/scope/requests/' || request_id AND
+                        sequence > 0 AND installation_id > 0 AND
+                        github_repository_id > 0 AND
+                        length(btrim(github_full_name)) > 0 AND
                         kind IN ('push', 'delete') AND
                         ((kind = 'push') = (target_oid IS NOT NULL)) AND
                         (target_oid IS NULL OR length(target_oid) = 40) AND
@@ -67,11 +75,22 @@ impl MigrationTrait for Migration {
                     ON scope_github_pushes(next_attempt_at_unix)
                     WHERE state IN ('queued', 'running');
 
-                CREATE INDEX idx_scope_github_pushes_ref
-                    ON scope_github_pushes(repo_id, ref, created_at_unix);
+                CREATE UNIQUE INDEX idx_scope_github_pushes_ref
+                    ON scope_github_pushes(repo_id, ref, sequence);
 
                 CREATE INDEX idx_scope_github_pushes_request
-                    ON scope_github_pushes(request_id, created_at_unix DESC);
+                    ON scope_github_pushes(request_id, sequence DESC);
+
+                -- Whether the GitHub repository is public, and if so whether a
+                -- maintainer who can change file visibility confirmed that what
+                -- Scope pushes there becomes public. Links made before were
+                -- checked for private repositories only.
+                ALTER TABLE scope_github_connections
+                    ADD COLUMN github_visibility varchar NOT NULL DEFAULT 'Private',
+                    ADD CONSTRAINT scope_github_connection_visibility CHECK (
+                        github_visibility IN
+                            ('Private', 'PublicUnacknowledged', 'PublicAcknowledged')
+                    );
 
                 -- A check run belongs to the GitHub repository that reported
                 -- it, so a Scope repository reconnected to another GitHub

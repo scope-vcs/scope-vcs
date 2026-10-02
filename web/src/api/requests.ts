@@ -1,7 +1,7 @@
 import { createApiClient } from '@/api/client'
 import { requestRoute } from './paths'
 import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
-import type { ReviewFileDiff, RequestParams } from './types'
+import type { ApproveRequestChecksInput, ReviewFileDiff, RequestParams } from './types'
 import type {
   RequestChecksResponse,
   RequestDetailResponse,
@@ -47,12 +47,12 @@ export async function getRequestChecks(
 }
 
 export async function approveRequestChecks(
-  data: RequestParams,
+  data: ApproveRequestChecksInput,
 ): Promise<RequestChecksResponse> {
   return createApiClient().post(
     requestRoute(ApiRouteTemplates.repoRequestChecksApprove, data),
     apiValidators.RequestChecksResponse,
-    { auth: 'required' },
+    { auth: 'required', body: { expected_head_oid: data.expected_head_oid } },
   )
 }
 

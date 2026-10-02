@@ -102,7 +102,7 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
     let checks: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "awaiting-approval",
         "message": null, "can_approve": true, "github_push": null,
-        "changes_github_workflows": false,
+        "changes_github_workflows": false, "private_request_on_public_github": false,
         "checks": [
             {"provider": "native", "workflow_path": "/.scope/runs/checks.yml",
                 "workflow_name": "checks\u{001b}[31m", "run_id": null, "run_state": null},
@@ -137,7 +137,10 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
         "{rendered}"
     );
     assert!(
-        rendered.contains("scope request checks --approve"),
+        rendered.contains(&format!(
+            "scope request checks --approve --head {}",
+            oid('b')
+        )),
         "{rendered}"
     );
     assert!(!rendered.contains('\u{1b}'), "{rendered:?}");
@@ -148,7 +151,7 @@ fn started_checks_report_each_provider_state_and_where_its_logs_are() {
     let checks: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "started",
         "message": null, "can_approve": false, "github_push": null,
-        "changes_github_workflows": false,
+        "changes_github_workflows": false, "private_request_on_public_github": false,
         "checks": [
             {"provider": "native", "workflow_path": "/.scope/runs/checks.yml",
                 "workflow_name": "checks", "run_id": "run_a", "run_state": "succeeded"},
@@ -212,7 +215,7 @@ fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workf
         serde_json::from_value::<RequestChecksResponse>(json!({
             "request_id": "req_one", "head_oid": oid('b'), "state": state,
             "message": null, "can_approve": can_approve, "github_push": push,
-            "changes_github_workflows": can_approve,
+            "changes_github_workflows": can_approve, "private_request_on_public_github": false,
             "checks": [{"provider": "github", "name": "ci / test", "status": null,
                 "conclusion": null, "details_url": null}],
             "mergeability": {
@@ -244,7 +247,7 @@ fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workf
     );
     assert!(
         awaiting.contains(
-            "Send this revision to GitHub Actions with `scope request checks --approve`."
+            "Send this revision to GitHub Actions with `scope request checks --approve --head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`."
         ),
         "{awaiting}"
     );
@@ -268,7 +271,16 @@ fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workf
         assert!(rendered.contains(line), "{rendered}");
         assert!(!rendered.contains("--approve"), "{rendered}");
         assert!(!rendered.contains('\u{1b}'), "{rendered:?}");
+        assert!(!rendered.contains("public GitHub repository"), "{rendered}");
     }
+
+    let mut public = checks("started", push("sent", None), false);
+    public.private_request_on_public_github = true;
+    assert!(
+        request_checks_lines(&public)
+            .join("\n")
+            .contains("this private request is public there")
+    );
 }
 
 #[test]
@@ -276,7 +288,7 @@ fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
     let no_checks: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "no-checks",
         "message": null, "can_approve": false, "github_push": null,
-        "changes_github_workflows": false, "checks": [],
+        "changes_github_workflows": false, "private_request_on_public_github": false, "checks": [],
         "mergeability": {
             "status": "Ready", "current_main_oid": oid('a'),
             "request_head_oid": oid('b'), "reason": null
@@ -286,7 +298,7 @@ fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
     let broken: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "configuration-error",
         "message": "checks.yml: unknown key 'runs-on'", "can_approve": false, "github_push": null,
-        "changes_github_workflows": false, "checks": [],
+        "changes_github_workflows": false, "private_request_on_public_github": false, "checks": [],
         "mergeability": {
             "status": "ChecksConfigurationError", "current_main_oid": oid('a'),
             "request_head_oid": oid('b'),
@@ -317,7 +329,7 @@ fn a_head_nobody_evaluated_says_its_checks_are_not_worked_out() {
     let unevaluated: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": null,
         "message": null, "can_approve": false, "github_push": null,
-        "changes_github_workflows": false, "checks": [],
+        "changes_github_workflows": false, "private_request_on_public_github": false, "checks": [],
         "mergeability": {
             "status": "ChecksNotEvaluated", "current_main_oid": oid('a'),
             "request_head_oid": oid('b'),

@@ -19,6 +19,7 @@ import {
   updateRepoMetadataForRequest,
 } from '@/api/repo-settings'
 import {
+  confirmRepoGitHubPublicForRequest,
   disconnectRepoGitHubForRequest,
   loadRepoGitHubConnectionForRequest,
   currentWebOrigin,
@@ -65,6 +66,10 @@ const startRepoGitHubAuthorization = createServerFn({ method: 'POST' })
 const disconnectRepoGitHub = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
   .handler(({ data }) => disconnectRepoGitHubForRequest(data))
+
+const confirmRepoGitHubPublic = createServerFn({ method: 'POST' })
+  .validator(parseRepoParams)
+  .handler(({ data }) => confirmRepoGitHubPublicForRequest(data))
 
 const setRepoGitHubRequiredChecks = createServerFn({ method: 'POST' })
   .validator(parseSetRepoGitHubRequiredChecksInput)
@@ -170,6 +175,11 @@ function RepoSettingsRoute() {
             (invite) => ({ type: 'inviteUpdated', invite }),
           )}
           deleteRepo={(data) => deleteRepo({ data })}
+          confirmPublicGitHub={async (data) => {
+            const github = await confirmRepoGitHubPublic({ data })
+            if (scope) retainGitHubConnection(scope, github)
+            return github
+          }}
           disconnectGitHub={async (data) => {
             const github = await disconnectRepoGitHub({ data })
             if (scope) retainGitHubConnection(scope, github)

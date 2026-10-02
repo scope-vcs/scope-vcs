@@ -9,10 +9,13 @@
 
 use crate::{
     auth::tokens::random_token, error::ApiError,
-    git::request_refs::with_request_revision_store_repo, persistence::unix_now,
+    git::request_refs::with_request_revision_store_repo, github::GitHubApp, persistence::unix_now,
     repo_events::RepoChangeReason, state::AppState,
 };
-use scope_domain::requests::{GitHubPush, github_push_retry_at};
+use scope_domain::{
+    github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
+    requests::{GitHubPush, RequestAudience, github_push_retry_at},
+};
 use scope_postgres::db::{GitHubPushOutcome, GitHubPushStanding};
 use std::time::Duration;
 
@@ -112,34 +115,36 @@ pub(crate) async fn run_claimed_push(
 }
 
 /// Asked right before git runs. A push whose claim lapsed sends nothing, and
-/// one a newer push of its branch replaces is dropped unsent.
+/// one a newer push of its branch replaces is dropped unsent. A commit is
+/// pushed only while the repository is still connected the way it was when
+/// the push was queued, and a private request's commit only while that
+/// repository may receive private requests. A deletion runs wherever the
+/// branch was pushed, even once the Scope repository is gone.
 async fn ensure_current(
     state: &AppState,
-    push_id: &str,
+    push: &GitHubPush,
     claim_token: &str,
+    audience: Option<RequestAudience>,
 ) -> Result<(), PushFailure> {
     let requests = state.metadata.requests();
     match requests
-        .github_push_standing(push_id, claim_token)
+        .github_push_standing(&push.id, claim_token)
         .await
         .map_err(ApiError::from)?
     {
-        GitHubPushStanding::Current => Ok(()),
+        GitHubPushStanding::Current => {}
         GitHubPushStanding::Superseded => {
             requests
-                .drop_superseded_github_push(push_id, claim_token)
+                .drop_superseded_github_push(&push.id, claim_token)
                 .await
                 .map_err(ApiError::from)?;
-            Err(PushFailure::Stale)
+            return Err(PushFailure::Stale);
         }
-        GitHubPushStanding::Lost => Err(PushFailure::Stale),
+        GitHubPushStanding::Lost => return Err(PushFailure::Stale),
     }
-}
-
-async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<(), PushFailure> {
-    let app = state.github.clone().ok_or_else(|| {
-        PushFailure::GiveUp("GitHub is not configured on this server.".to_string())
-    })?;
+    if push.target_oid.is_none() {
+        return Ok(());
+    }
     let connection = state
         .metadata
         .repositories()
@@ -147,25 +152,78 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         .await
         .map_err(ApiError::from)?
         .map(|read| read.connection)
-        .filter(|connection| connection.is_connected())
+        .filter(|connection| push.destination.is_connected_through(connection))
         .ok_or_else(|| {
             PushFailure::GiveUp(
-                "This repository is no longer connected to GitHub. Reconnect it in repository settings."
+                "This repository is no longer connected to that GitHub repository. Reconnect it in repository settings."
                     .to_string(),
             )
         })?;
-    let token = app
-        .installation_token(connection.installation_id)
+    ensure_may_receive(&connection, audience)
+}
+
+fn ensure_may_receive(
+    connection: &GitHubConnection,
+    audience: Option<RequestAudience>,
+) -> Result<(), PushFailure> {
+    if audience == Some(RequestAudience::Private) && !connection.may_receive_private_requests() {
+        return Err(PushFailure::GiveUp(
+            PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Asks GitHub whether the connected repository is public now and records
+/// what it says. Returns the link as it stands after.
+pub(crate) async fn refresh_github_visibility(
+    state: &AppState,
+    connection: &GitHubConnection,
+) -> Result<GitHubConnection, ApiError> {
+    let app = state
+        .github
+        .as_deref()
+        .ok_or_else(|| ApiError::not_found("GitHub is not configured on this server"))?;
+    let repository = app
+        .installation_repository(connection.installation_id, connection.github_repository_id)
         .await?
         .ok_or_else(|| {
-            PushFailure::GiveUp(
-                "The Scope GitHub App is no longer installed for this repository.".to_string(),
+            ApiError::upstream_unavailable(
+                "The Scope GitHub App can no longer reach this GitHub repository.",
+                format!(
+                    "installation {} no longer lists {}",
+                    connection.installation_id, connection.github_full_name
+                ),
             )
         })?;
-    let remote = app.push_remote(&connection.github_full_name, &token);
-    let git_ref = push.git_ref();
+    let mut refreshed = connection.clone();
+    if refreshed.apply_visibility(repository.private)
+        && let Some(incarnation) = state
+            .metadata
+            .repositories()
+            .apply_github_repository_visibility(connection.github_repository_id, repository.private)
+            .await?
+    {
+        state
+            .publish_request_summary_refresh(
+                &incarnation,
+                RepoChangeReason::GitHubConnectionChanged,
+            )
+            .await;
+    }
+    Ok(refreshed)
+}
+
+async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<(), PushFailure> {
+    let app = state.github.clone().ok_or_else(|| {
+        PushFailure::GiveUp("GitHub is not configured on this server.".to_string())
+    })?;
+    let destination = &push.destination;
     let Some(target_oid) = push.target_oid.clone() else {
-        ensure_current(state, &push.id, claim_token).await?;
+        ensure_current(state, push, claim_token, None).await?;
+        let token = installation_token(&app, destination.installation_id).await?;
+        let remote = app.push_remote(&destination.github_full_name, &token);
+        let git_ref = push.git_ref();
         return crate::git::blocking::run(move || Ok(remote.delete(&git_ref)))
             .await?
             .map_err(PushFailure::Retry);
@@ -177,6 +235,26 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         .await
         .map_err(ApiError::from)?
         .ok_or_else(gone)?;
+    let audience = Some(request.audience);
+    ensure_current(state, push, claim_token, audience).await?;
+    // A webhook may never have said the repository became public, so GitHub
+    // is asked before a private request is sent there.
+    if request.audience == RequestAudience::Private
+        && let Some(connection) = state
+            .metadata
+            .repositories()
+            .github_connection(&push.repo_id)
+            .await
+            .map_err(ApiError::from)?
+    {
+        ensure_may_receive(
+            &refresh_github_visibility(state, &connection.connection).await?,
+            audience,
+        )?;
+    }
+    let token = installation_token(&app, destination.installation_id).await?;
+    let remote = app.push_remote(&destination.github_full_name, &token);
+    let git_ref = push.git_ref();
     let revision = requests
         .request_revision_with_head(&request.id, &target_oid)
         .await
@@ -192,20 +270,34 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         .incarnation();
     // The revision store holds the commit with the history it builds on, the
     // way merge preparation reads a request head. Filling it may take a
-    // while, so the claim is checked once the commit is at hand.
-    let (check_state, push_id, claim_token) =
-        (state.clone(), push.id.clone(), claim_token.to_string());
+    // while, so the claim and the connection are checked again once the
+    // commit is at hand.
+    let (check_state, check_push, claim_token) =
+        (state.clone(), push.clone(), claim_token.to_string());
     with_request_revision_store_repo(state, &incarnation, &request, &revision, move |repo, _| {
-        Ok(
-            crate::git::blocking::block_on(ensure_current(&check_state, &push_id, &claim_token))
-                .and_then(|()| {
-                    remote
-                        .push(repo, &target_oid, &git_ref)
-                        .map_err(PushFailure::Retry)
-                }),
-        )
+        Ok(crate::git::blocking::block_on(ensure_current(
+            &check_state,
+            &check_push,
+            &claim_token,
+            audience,
+        ))
+        .and_then(|()| {
+            remote
+                .push(repo, &target_oid, &git_ref)
+                .map_err(PushFailure::Retry)
+        }))
     })
     .await?
+}
+
+async fn installation_token(app: &GitHubApp, installation_id: u64) -> Result<String, PushFailure> {
+    app.installation_token(installation_id)
+        .await?
+        .ok_or_else(|| {
+            PushFailure::GiveUp(
+                "The Scope GitHub App is no longer installed for this repository.".to_string(),
+            )
+        })
 }
 
 async fn publish_push_change(state: &AppState, repo_id: &str) {

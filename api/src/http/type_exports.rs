@@ -1,7 +1,7 @@
 use crate::http::{responses::*, routes};
 use schemars::JsonSchema;
 use scope_api_contract::{
-    AccountSessionResponse, AddRequestInviteeRequest, AttemptState,
+    AccountSessionResponse, AddRequestInviteeRequest, ApproveRequestChecksRequest, AttemptState,
     AuthorizeRequestAutoMergeRequest, BrowserLoginExchangeRequest, BrowserLoginStartRequest,
     BrowserLoginStartResponse, CacheColdReason, CacheFinalState, CachePreparation,
     CancelRequestAutoMergeRequest, CliExchangeGrantExchangeRequest, CliSessionTokenResponse,
@@ -279,6 +279,7 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         StartRequestRequest,
         SubmitRequestRequest,
         MergeRequestRequest,
+        ApproveRequestChecksRequest,
         EditRequestIdentityRequest,
         CreateRequestDiscussionRequest,
         CreateRequestDiscussionReplyRequest,
@@ -312,6 +313,7 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
     );
     let schemas = response_schemas!(
         RepositoryDependencyCheckResponse,
+        ApproveRequestChecksRequest,
         AuthorizeRequestAutoMergeRequest,
         CancelRequestAutoMergeRequest,
         MergeRequestRequest,

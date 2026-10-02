@@ -295,6 +295,12 @@ pub(super) struct RequestChecksArgs {
         help = "Start the checks this head is waiting on, then show them (maintainers)"
     )]
     pub(super) approve: bool,
+    #[arg(
+        long,
+        requires = "approve",
+        help = "The head you reviewed; approval is refused if the request has moved past it (defaults to the head the server reports now)"
+    )]
+    pub(super) head: Option<String>,
 }
 
 #[derive(Parser)]

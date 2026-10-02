@@ -79,7 +79,8 @@ export function RequestUnavailablePage({ params }: { params: RepoParams }) {
 }
 
 type RequestDetailPageProps = {
-  approveChecks: () => Promise<RequestChecksResponse>
+  /** Approves the checks of the head the viewer was shown. */
+  approveChecks: (expectedHeadOid: string) => Promise<RequestChecksResponse>
   authorizeAutoMerge: (input: Pick<
     AuthorizeRequestAutoMergeInput,
     'expected_head_oid' | 'expected_revision_id'

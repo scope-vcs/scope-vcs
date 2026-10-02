@@ -15,13 +15,14 @@ export type RequestChecksController = {
 }
 
 // The resource owns the evaluation; approval answers with the refreshed one, so
-// the result is written back instead of triggering another read.
+// the result is written back instead of triggering another read. Approval names
+// the head the viewer was shown, so a head pushed since is refused, not run.
 export function useRequestChecks({
   approve,
   identity,
   load,
 }: {
-  approve: () => Promise<RequestChecksResponse>
+  approve: (expectedHeadOid: string) => Promise<RequestChecksResponse>
   identity: string | null
   load: (signal: AbortSignal) => Promise<RequestChecksResponse>
 }): RequestChecksController {
@@ -35,18 +36,19 @@ export function useRequestChecks({
   const [approving, setApproving] = useState(false)
   const [approveError, setApproveError] = useState<string | null>(null)
 
+  const shownHeadOid = resource.value?.head_oid ?? null
   const runApproval = useCallback(async () => {
-    if (!identity) return
+    if (!identity || !shownHeadOid) return
     setApproving(true)
     setApproveError(null)
     try {
-      requestChecksResource.write(identity, await approve())
+      requestChecksResource.write(identity, await approve(shownHeadOid))
     } catch (cause) {
       setApproveError(resourceErrorMessage(cause, 'The checks could not be started.'))
     } finally {
       setApproving(false)
     }
-  }, [approve, identity])
+  }, [approve, identity, shownHeadOid])
 
   return {
     approve: runApproval,

@@ -347,6 +347,12 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
     if let Some(push) = &checks.github_push {
         lines.push(github_push_line(push));
     }
+    if checks.private_request_on_public_github {
+        lines.push(
+            "GitHub: the checks run in a public GitHub repository, so this private request is public there."
+                .to_string(),
+        );
+    }
     lines.push(format!(
         "Mergeability: {}",
         mergeability_label(&checks.mergeability)
@@ -358,11 +364,15 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
                     .to_string(),
             );
         }
+        // The command names this head, so a head pushed since is not approved.
+        let command = format!(
+            "`scope request checks --approve --head {}`",
+            checks.head_oid.as_str()
+        );
         lines.push(if checks.github_push.is_some() {
-            "Send this revision to GitHub Actions with `scope request checks --approve`."
-                .to_string()
+            format!("Send this revision to GitHub Actions with {command}.")
         } else {
-            "Start these checks with `scope request checks --approve`.".to_string()
+            format!("Start these checks with {command}.")
         });
     }
     lines

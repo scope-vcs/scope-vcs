@@ -32,6 +32,8 @@ export function parseConnectRepoGitHubInput(input: unknown): ConnectRepoGitHubIn
     ...params,
     grant: requiredText(data.grant, SETUP_INCOMPLETE),
     github_repository_id: positiveId(data.github_repository_id, 'Choose a GitHub repository.'),
+    // Only an explicit yes confirms that a public repository makes pushes public.
+    acknowledge_public: data.acknowledge_public === true,
   }
 }
 

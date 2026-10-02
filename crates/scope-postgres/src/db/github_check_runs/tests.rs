@@ -102,7 +102,7 @@ async fn a_read_that_answers_late_cannot_replace_a_later_one() {
     };
     assert_eq!(
         requests
-            .github_check_read_started_at(&commit)
+            .settled_github_check_read_started_at(&commit)
             .await
             .unwrap(),
         None
@@ -140,10 +140,31 @@ async fn a_read_that_answers_late_cannot_replace_a_later_one() {
     assert_eq!(latest().await, [run(2, GitHubCheckConclusion::Failure)]);
     assert_eq!(
         requests
-            .github_check_read_started_at(&commit)
+            .settled_github_check_read_started_at(&commit)
             .await
             .unwrap(),
         Some(20)
+    );
+
+    // While a later read is still asking GitHub, the stored one is not settled.
+    let pending = requests.start_github_check_read(&commit).await.unwrap();
+    assert_eq!(
+        requests
+            .settled_github_check_read_started_at(&commit)
+            .await
+            .unwrap(),
+        None
+    );
+    requests
+        .apply_github_check_read(&commit, pending, 30, &[])
+        .await
+        .unwrap();
+    assert_eq!(
+        requests
+            .settled_github_check_read_started_at(&commit)
+            .await
+            .unwrap(),
+        Some(30)
     );
 }
 

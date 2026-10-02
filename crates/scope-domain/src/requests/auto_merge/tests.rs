@@ -20,6 +20,7 @@ fn results(native_runs: &[(&str, RunState)]) -> RequestCheckResults {
             .map(|(id, state)| (id.to_string(), *state))
             .collect(),
         github: GitHubCheckResults::Connected(Vec::new()),
+        withheld_from_github: Vec::new(),
     }
 }
 

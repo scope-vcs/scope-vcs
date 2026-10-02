@@ -15,14 +15,15 @@ use axum::{
     http::HeaderMap,
 };
 use scope_api_contract::{
-    RequestCheckResponse, RequestChecksResponse, RequestGitHubPushResponse, RequestGitHubPushState,
-    RequestMergeabilityResponse,
+    ApproveRequestChecksRequest, RequestCheckResponse, RequestChecksResponse,
+    RequestGitHubPushResponse, RequestGitHubPushState, RequestMergeabilityResponse,
 };
 use scope_domain::{
+    github_connection::GitHubRepositoryVisibility,
     repository::{RepoRecord, access::RepositoryAccess},
     requests::{
-        GitHubPushStatus, Request, RequestCheck, RequestCheckResults, github_request_branch,
-        request_checks_message, request_mergeability,
+        GitHubPushStatus, Request, RequestAudience, RequestCheck, RequestCheckResults,
+        github_request_branch, request_checks_message, request_mergeability,
     },
 };
 use scope_postgres::db::ApproveRequestChecksCommand;
@@ -52,6 +53,7 @@ pub(crate) async fn approve_request_checks(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
+    Json(input): Json<ApproveRequestChecksRequest>,
 ) -> Result<Json<RequestChecksResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
@@ -65,6 +67,7 @@ pub(crate) async fn approve_request_checks(
         .approve_request_checks(ApproveRequestChecksCommand {
             request_id: request.id.clone(),
             actor_user_id: user.id.clone(),
+            reviewed_head_oid: input.expected_head_oid.as_str().to_string(),
             now_unix: unix_now()?,
         })
         .await?;
@@ -94,6 +97,16 @@ async fn checks_response(
         request_head_oid: git_oid_response(request.head_oid.clone())?,
         reason: decision.reason.map(str::to_string),
     };
+    let private_request_on_public_github = request.audience == RequestAudience::Private
+        && state
+            .metadata
+            .repositories()
+            .github_connection(&request.repo_id)
+            .await?
+            .is_some_and(|read| {
+                read.connection.is_connected()
+                    && read.connection.visibility != GitHubRepositoryVisibility::Private
+            });
     let Some(evaluation) = evaluation else {
         return Ok(RequestChecksResponse {
             request_id: request.id.clone(),
@@ -104,6 +117,7 @@ async fn checks_response(
             can_approve: false,
             github_push: None,
             changes_github_workflows: false,
+            private_request_on_public_github,
             mergeability,
         });
     };
@@ -131,6 +145,7 @@ async fn checks_response(
         can_approve,
         github_push,
         changes_github_workflows,
+        private_request_on_public_github,
         mergeability,
     })
 }

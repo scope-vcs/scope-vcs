@@ -1,5 +1,6 @@
 import {
   parseRequestParams,
+  parseApproveRequestChecksInput,
   parseAuthorizeRequestAutoMergeInput,
   parseCancelRequestAutoMergeInput,
   parseUpdateDescriptionInput,
@@ -45,7 +46,7 @@ const loadChecks = createServerFn({ method: 'GET' })
   .handler(({ data }) => getRequestChecks(data))
 
 const approveChecks = createServerFn({ method: 'POST' })
-  .validator(parseRequestParams)
+  .validator(parseApproveRequestChecksInput)
   .handler(({ data }) => approveRequestChecks(data))
 
 const loadAutoMerge = createServerFn({ method: 'GET' })
@@ -133,7 +134,8 @@ function RequestDiscussionLayout() {
 
   return (
     <RequestDetailPage
-      approveChecks={() => approveChecks({ data: requestParams })}
+      approveChecks={(expectedHeadOid) =>
+        approveChecks({ data: { ...requestParams, expected_head_oid: expectedHeadOid } })}
       authorizeAutoMerge={(input) =>
         authorizeAutoMerge({
           data: { ...requestParams, ...input },
