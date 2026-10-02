@@ -4,7 +4,7 @@
 
 use super::super::fake_github::{
     FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, WEBHOOK_SECRET, suite_check_run, webhook,
-    workflow_run,
+    workflow_run, workflow_run_created_at,
 };
 use super::github_checks::{connect_github, owner_request, push_pass};
 use super::*;
@@ -138,6 +138,124 @@ async fn a_connection_test_pushes_main_lists_the_checks_it_saw_and_deletes_its_b
     assert_eq!(required["setup_check"]["state"], "finished");
 }
 
+/// Runs one connection test of main until GitHub reports `run_id` on the
+/// setup branch completed with a `test` check. Returns when GitHub created
+/// the run.
+async fn finished_test(state: &AppState, fake: &FakeGitHub, main: &str, run_id: u64) -> u64 {
+    github_request(state, "POST", "/setup-check", &bearer_header()).await;
+    push_pass(state, unix_now()).await;
+    let created_at = unix_now();
+    fake.report_workflow_runs(vec![workflow_run_created_at(
+        run_id,
+        SETUP_BRANCH,
+        main,
+        Some("success"),
+        created_at,
+    )]);
+    fake.report_check_runs(
+        main,
+        vec![suite_check_run(
+            run_id,
+            "test",
+            main,
+            Some("success"),
+            run_id,
+        )],
+    );
+    assert_eq!(
+        reconcile_github_setup_checks_once(state, unix_now())
+            .await
+            .unwrap(),
+        1
+    );
+    push_pass(state, unix_now()).await;
+    created_at
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn testing_unchanged_main_again_waits_for_its_own_runs() {
+    let (state, fake, main) = connected_repository("github-setup-again").await;
+    let earlier_run_created_at = finished_test(&state, &fake, &main, 11).await;
+    // GitHub dates runs to the second; the next test starts in a later one.
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+
+    // The same main goes to the same branch, where GitHub still lists the
+    // earlier test's completed run.
+    github_request(&state, "POST", "/setup-check", &bearer_header()).await;
+    assert_eq!(push_pass(&state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(SETUP_BRANCH), Some(main.clone()));
+    assert_eq!(
+        reconcile_github_setup_checks_once(&state, unix_now())
+            .await
+            .unwrap(),
+        0
+    );
+    let waiting = setup_check(&state).await;
+    assert_eq!(waiting["state"], "waiting");
+    assert_eq!(waiting["check_names"], serde_json::json!([]));
+    assert_eq!(fake.branch_head(SETUP_BRANCH), Some(main.clone()));
+
+    // This push's own run, with checks of its own, ends it.
+    fake.report_workflow_runs(vec![
+        workflow_run_created_at(
+            11,
+            SETUP_BRANCH,
+            &main,
+            Some("success"),
+            earlier_run_created_at,
+        ),
+        workflow_run(12, SETUP_BRANCH, &main, Some("success")),
+    ]);
+    fake.report_check_runs(
+        &main,
+        vec![
+            suite_check_run(11, "test", &main, Some("success"), 11),
+            suite_check_run(12, "lint", &main, Some("success"), 12),
+        ],
+    );
+    assert_eq!(
+        reconcile_github_setup_checks_once(&state, unix_now())
+            .await
+            .unwrap(),
+        1
+    );
+    let finished = setup_check(&state).await;
+    assert_eq!(finished["state"], "finished");
+    assert_eq!(finished["check_names"], serde_json::json!(["lint"]));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_test_of_another_github_repository_is_not_shown_after_reconnecting() {
+    let (state, fake, main) = connected_repository("github-setup-reconnected").await;
+    finished_test(&state, &fake, &main, 11).await;
+    assert_eq!(setup_check(&state).await["state"], "finished");
+
+    let repositories = state.metadata.repositories();
+    repositories
+        .disconnect_github_repository(TEST_REPO_ID, &test_owner_id())
+        .await
+        .unwrap();
+    repositories
+        .connect_github_repository(
+            scope_domain::github_connection::ConnectGitHubRepository {
+                repository_id: TEST_REPO_ID.to_string(),
+                installation_id: super::super::fake_github::INSTALLATION_ID,
+                github_repository_id: GITHUB_REPOSITORY_ID + 1,
+                github_full_name: "octo/other".to_string(),
+                github_private: true,
+                acknowledge_public: false,
+                user_id: test_owner_id(),
+                now_unix: unix_now(),
+            },
+            async || Ok::<_, scope_postgres::error::PostgresError>(true),
+        )
+        .await
+        .unwrap();
+    let connection = github_request(&state, "GET", "", &bearer_header()).await;
+    assert_eq!(connection["connection"]["github_full_name"], "octo/other");
+    assert_eq!(connection["setup_check"], serde_json::Value::Null);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_refused_setup_push_reports_what_github_answered() {
     let (state, fake, _main) = connected_repository("github-setup-refused").await;
@@ -211,8 +329,10 @@ async fn only_maintainers_test_the_connection() {
 async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
     let request = owner_request("github-workflow-runs", &[]).await;
     let (state, fake, head) = (&request.state, &request.fake, request.head());
-    let on_request = workflow_run(21, &request.branch(), &head, None);
-    let on_main = workflow_run(22, "main", &"b".repeat(40), Some("failure"));
+    // Both runs started at once, so the newer id lists first.
+    let started = unix_now();
+    let on_request = workflow_run_created_at(21, &request.branch(), &head, None, started);
+    let on_main = workflow_run_created_at(22, "main", &"b".repeat(40), Some("failure"), started);
     fake.report_workflow_runs(vec![on_request.clone(), on_main.clone()]);
     deliver_workflow_run(state, &on_request).await;
     deliver_workflow_run(state, &on_main).await;
@@ -250,7 +370,7 @@ async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
     assert_eq!(runs[0]["conclusion"], "failure");
 
     // An update reaches the stored run.
-    let completed = workflow_run(21, &request.branch(), &head, Some("success"));
+    let completed = workflow_run_created_at(21, &request.branch(), &head, Some("success"), started);
     fake.report_workflow_runs(vec![completed.clone(), on_main]);
     deliver_workflow_run(state, &completed).await;
     let listed = github_request(state, "GET", "/workflow-runs", &bearer_header()).await;

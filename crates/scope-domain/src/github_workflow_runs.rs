@@ -20,6 +20,8 @@ pub struct GitHubWorkflowRun {
     /// The check suite holding the run's jobs as check runs.
     pub check_suite_id: Option<u64>,
     pub run_started_at_unix: Option<u64>,
+    /// When GitHub created the run, which a re-run keeps.
+    pub created_at_unix: u64,
     /// When GitHub last changed the run. A stored run only moves forward.
     pub updated_at_unix: u64,
 }
@@ -59,6 +61,7 @@ mod tests {
             html_url: "https://github.com/octo/repo/actions/runs/1".into(),
             check_suite_id: Some(5),
             run_started_at_unix: Some(10),
+            created_at_unix: 10,
             updated_at_unix: 10,
         }
     }

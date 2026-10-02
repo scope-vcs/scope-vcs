@@ -109,29 +109,32 @@ impl RepositoryStore {
             &GitHubSetupCheck::branch(),
             &check.commit_oid,
         )
-        .await?;
+        .await?
+        .into_iter()
+        .filter(|run| check.started(run))
+        .collect::<Vec<_>>();
         // Each workflow run files its jobs under its own check suite, so only
-        // check runs of the setup branch's runs count, not ones main's own
-        // push on GitHub started for the same commit.
+        // check runs of the runs this test started count: not ones main's own
+        // push on GitHub started for the same commit, nor an earlier test's.
+        let suites = runs
+            .iter()
+            .filter_map(|run| run.check_suite_id)
+            .map(|suite| u64_to_i64(suite, "GitHub check suite id"))
+            .collect::<Result<Vec<_>, _>>()?;
         let check_names = self
             .db
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "SELECT DISTINCT check_run.name
-                   FROM scope_github_check_runs check_run
-                   JOIN scope_github_workflow_runs run
-                     ON run.repo_id = check_run.repo_id
-                    AND run.github_repository_id = check_run.github_repository_id
-                    AND run.check_suite_id = check_run.check_suite_id
-                  WHERE check_run.repo_id = $1 AND check_run.github_repository_id = $4
-                    AND check_run.commit_oid = $2
-                    AND run.head_branch = $3 AND run.head_oid = $2
-                  ORDER BY check_run.name",
+                "SELECT DISTINCT name
+                   FROM scope_github_check_runs
+                  WHERE repo_id = $1 AND github_repository_id = $2 AND commit_oid = $3
+                    AND check_suite_id IN (SELECT jsonb_array_elements_text($4::jsonb)::bigint)
+                  ORDER BY name",
                 [
                     repo_id.into(),
-                    check.commit_oid.clone().into(),
-                    GitHubSetupCheck::branch().name().into(),
                     u64_to_i64(check.github_repository_id, "GitHub repository id")?.into(),
+                    check.commit_oid.clone().into(),
+                    serde_json::json!(suites).into(),
                 ],
             ))
             .await

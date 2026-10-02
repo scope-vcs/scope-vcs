@@ -46,6 +46,7 @@ fn setup_run(id: u64, suite: u64, conclusion: Option<GitHubCheckConclusion>) -> 
         html_url: format!("https://github.com/octo/repo/actions/runs/{id}"),
         check_suite_id: Some(suite),
         run_started_at_unix: Some(20),
+        created_at_unix: 20,
         updated_at_unix: 20 + id,
     }
 }

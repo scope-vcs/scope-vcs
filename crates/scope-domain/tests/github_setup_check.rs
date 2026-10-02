@@ -69,8 +69,9 @@ fn run(
         conclusion,
         html_url: "https://github.com/octo/repo/actions/runs/1".into(),
         check_suite_id: Some(5),
-        run_started_at_unix: Some(NOW),
-        updated_at_unix: NOW,
+        run_started_at_unix: Some(NOW + 2),
+        created_at_unix: NOW + 2,
+        updated_at_unix: NOW + 2,
     }
 }
 
@@ -183,6 +184,53 @@ fn the_test_ends_once_every_run_on_the_setup_branch_completed() {
     assert_eq!(check.finished_at_unix, Some(NOW + 20));
     // A failing workflow still started, which is all the test asks.
     assert_eq!(check.message(true), None);
+}
+
+#[test]
+fn testing_unchanged_main_again_ignores_the_earlier_tests_runs() {
+    let oid = main_oid();
+    let earlier_run = run(
+        "scope/setup-check",
+        &oid,
+        Some(GitHubCheckConclusion::Success),
+    );
+    let mut earlier = started();
+    earlier.record_push(Ok(()), NOW + 1);
+    assert!(earlier.observe(std::slice::from_ref(&earlier_run), NOW + 20));
+
+    // The same main goes to the same branch again; the earlier test's
+    // completed run must not end this one.
+    let later_start = NOW + 100;
+    let mut again = start_github_setup_check(
+        owner(),
+        Some(&connection()),
+        Some(&earlier),
+        Some(&oid),
+        later_start,
+    )
+    .unwrap();
+    again.record_push(Ok(()), later_start + 1);
+    assert!(!again.started(&earlier_run));
+    assert!(!again.observe(std::slice::from_ref(&earlier_run), later_start + 10));
+    assert_eq!(again.state, GitHubSetupCheckState::Waiting);
+
+    let new_run = GitHubWorkflowRun {
+        github_run_id: 2,
+        created_at_unix: later_start + 3,
+        ..earlier_run.clone()
+    };
+    assert!(again.started(&new_run));
+    assert!(again.observe(&[earlier_run, new_run], later_start + 20));
+    assert_eq!(again.state, GitHubSetupCheckState::Finished);
+}
+
+#[test]
+fn a_test_belongs_to_the_github_repository_it_pushed_to() {
+    let check = started();
+    assert!(check.is_of(&connection()));
+    let mut other = connection();
+    other.github_repository_id = 43;
+    assert!(!check.is_of(&other));
 }
 
 #[test]
