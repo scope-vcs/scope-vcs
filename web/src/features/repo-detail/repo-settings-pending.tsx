@@ -1,10 +1,11 @@
 import { PageContent } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
 import { Button } from '@/components/ui/button'
-import { BlockSkeleton } from '@/components/ui/skeleton'
+import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
 import { useParams } from '@tanstack/react-router'
 import {
   AccessSection,
+  CiSection,
   DangerZoneSection,
   REPOSITORY_DETAIL_FIELDS,
   RepositoryDetailsSection,
@@ -29,6 +30,9 @@ export function RepoSettingsPending() {
             <Button disabled size="sm" type="button">Save details</Button>
           </div>
         </RepositoryDetailsSection>
+        <CiSection>
+          <TextSkeleton length="long" />
+        </CiSection>
         <DangerZoneSection />
         <AccessSection canInvite ownerHandle={owner} />
       </PageContent>

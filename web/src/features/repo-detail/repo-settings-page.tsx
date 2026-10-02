@@ -8,6 +8,8 @@ import type {
 } from '@/api/types'
 import type {
   DeleteRepoResponse,
+  GitHubConnectionResponse,
+  GitHubAuthorizeResponse,
   RepositoryCollaborationResponse,
   RepositoryInviteLinkResponse,
   RepositoryInviteResponse,
@@ -27,6 +29,7 @@ import {
   RepositoryMembersSection,
 } from './repo-members-section'
 import { MemberAccessSummary } from './repo-member-permissions'
+import { RepoCiSection } from './repo-ci-section'
 import { RepositoryMetadataForm } from './repository-metadata-form'
 import { AccessSection, DangerZoneSection } from './repo-settings-sections'
 import { useRepoLayout } from './repo-layout-context'
@@ -45,7 +48,10 @@ export function RepoSettingsPage({
   collaboration,
   collaborationLoading,
   deleteRepo,
+  disconnectGitHub,
+  github,
   params,
+  startGitHubAuthorization,
   updateMember,
   updateMetadata,
   visibilityLog,
@@ -61,7 +67,11 @@ export function RepoSettingsPage({
   /** The member list is still loading; the rest of the page does not need it. */
   collaborationLoading: boolean
   deleteRepo: (params: RepoParams) => Promise<DeleteRepoResponse>
+  disconnectGitHub: (params: RepoParams) => Promise<GitHubConnectionResponse>
+  /** `null` while it loads, and for viewers who cannot manage it. */
+  github: GitHubConnectionResponse | null
   params: RepoParams
+  startGitHubAuthorization: (params: RepoParams) => Promise<GitHubAuthorizeResponse>
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
   updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummaryResponse>
   /** Rendered only for readers who can see private files. */
@@ -152,6 +162,14 @@ export function RepoSettingsPage({
         )}
 
         {repo.access.can_read_private_files && visibilityLog}
+
+        {repo.access.actor !== 'Public' && (
+          <RepoCiSection
+            disconnect={() => disconnectGitHub(params)}
+            github={github}
+            startAuthorization={() => startGitHubAuthorization(params)}
+          />
+        )}
 
         {repo.access.actor === 'Owner' && (
           <DangerZoneSection onDelete={() => dispatch({ repo, type: 'deleteTargetChanged' })} />

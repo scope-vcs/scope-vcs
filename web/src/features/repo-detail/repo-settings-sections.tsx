@@ -1,6 +1,6 @@
 import { SectionRow, SectionRows } from '@/components/section-rows'
 import { Button } from '@/components/ui/button'
-import { MailPlus, Trash2, Users } from 'lucide-react'
+import { CircleCheck, MailPlus, Trash2, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 // The fixed parts of each settings section. The loaded page and its pending
@@ -23,6 +23,20 @@ export const REPOSITORY_DETAIL_FIELDS = {
   description: 'Description',
   website_url: 'Website or documentation',
 } as const
+
+export function CiSection({ children }: { children: ReactNode }) {
+  return (
+    <SectionRows>
+      <SectionRow
+        description="Run the GitHub Actions workflows of a connected GitHub repository on requests."
+        icon={<CircleCheck className="size-4" />}
+        title="CI"
+      >
+        {children}
+      </SectionRow>
+    </SectionRows>
+  )
+}
 
 /** A control without `onDelete` is drawn disabled while the page loads. */
 export function DangerZoneSection({ onDelete }: { onDelete?: () => void }) {

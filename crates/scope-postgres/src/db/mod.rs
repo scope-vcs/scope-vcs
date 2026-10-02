@@ -31,6 +31,7 @@ mod git_compaction;
 mod git_push_reads;
 mod git_segments;
 mod github_check_runs;
+mod github_connections;
 mod history_reads;
 mod history_rows;
 mod integer_columns;
@@ -129,6 +130,7 @@ pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::GitPushContext;
 pub use git_segments::RepositoryGitWriteLease;
+pub use github_connections::GitHubConnectionRead;
 pub use history_reads::{
     RepositoryHistoryBoundary, RepositoryHistoryNeighbors, RepositoryHistoryPage,
     RepositoryHistoryQuery,

@@ -16,7 +16,7 @@ const repositoryTables = names(`file_changes git_compaction_jobs git_heads git_s
   repository_history_entries repository_history_views repository_invites repository_invite_links
   repository_invite_emails repository_landing_files repository_members repository_workflow_catalogs repository_workflow_files visibility_change_sets
   visibility_changes workflow_revisions dependency_analyses dependency_reports dependency_analysis_jobs
-  request_ref_cleanup_jobs`);
+  request_ref_cleanup_jobs github_connections`);
 const runTables = names(`run_attempt_cache_setups run_attempt_caches run_attempt_steps run_attempts
   runs run_jobs run_logs`);
 // Operators list accounts through the API; run creation and admission share-lock a listing.

@@ -202,6 +202,48 @@ export type RepositoryInviteViewerResponse = "ready" | "signed_out" | "wrong_acc
 
 export type AcceptRepositoryInviteResponse = { repo: RepoSummaryResponse, member: RepositoryMemberResponse, };
 
+export type GitHubConnectionResponse = { 
+/**
+ * `false` when this server has no GitHub App, so nothing can connect.
+ */
+configured: boolean, connection: GitHubConnectionDetailsResponse | null, };
+
+export type GitHubConnectionDetailsResponse = { github_full_name: string, github_url: string, 
+/**
+ * `None` once that account was deleted.
+ */
+connected_by: RequestActorSummaryResponse | null, connected_at_unix: number, 
+/**
+ * Set when GitHub took the repository away from Scope.
+ */
+disconnected: GitHubDisconnectionResponse | null, };
+
+export type GitHubDisconnectionResponse = { reason: GitHubDisconnectReasonResponse, at_unix: number, };
+
+export type GitHubDisconnectReasonResponse = "app_uninstalled" | "installation_suspended" | "repository_removed";
+
+export type GitHubAuthorizeRequest = { 
+/**
+ * The origin of the page that started connecting. GitHub returns there
+ * when it is an allowed Scope web origin, so a development stack reached
+ * at another address works. Without it, the public app origin is used.
+ */
+web_origin: string | null, };
+
+export type GitHubAuthorizeResponse = { authorize_url: string, };
+
+export type GitHubSetupRequest = { state: string, code: string, };
+
+export type GitHubSetupResponse = { owner_handle: string, repo_name: string, repositories: Array<GitHubRepositoryResponse>, 
+/**
+ * Where to install the app on a repository that is missing.
+ */
+install_url: string, grant: string, };
+
+export type GitHubRepositoryResponse = { id: number, full_name: string, private: boolean, };
+
+export type ConnectGitHubRepositoryRequest = { grant: string, github_repository_id: number, };
+
 export type HistoryPageRequest = { feed: HistoryFeed | null, audience: ProjectionPreviewAudience | null, before: string | null, };
 
 export type HistoryEntryRequest = { audience: ProjectionPreviewAudience | null, };
@@ -493,6 +535,9 @@ export const ApiRouteTemplates = {
   repo: "/v1/repos/{owner}/{repo}",
   repoConfig: "/v1/repos/{owner}/{repo}/config",
   repoMetadata: "/v1/repos/{owner}/{repo}/metadata",
+  repoGitHub: "/v1/repos/{owner}/{repo}/github",
+  repoGitHubAuthorize: "/v1/repos/{owner}/{repo}/github/authorize",
+  githubSetup: "/v1/github/setup",
   repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",
   repoRuns: "/v1/repos/{owner}/{repo}/runs",

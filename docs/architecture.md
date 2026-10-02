@@ -150,6 +150,15 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
 - `content_cleanup.rs` for repository-storage cleanup and source-blob cleanup
   coordination.
 
+`api/src/github/` owns the Scope GitHub App: its configuration, app and
+installation tokens (installation tokens are cached until shortly before they
+expire), the GitHub REST calls, the signed setup state, and webhook
+verification. `api/src/http/github.rs` runs the connect flow and dispatches
+webhook events. Connection rules live in
+`scope-domain/src/github_connection.rs` and links in
+`scope-postgres/src/db/github_connections.rs`. Registration and the connect
+flow are described in [the GitHub App guide](github-app.md).
+
 The other applications remain narrow:
 
 - `worker/` runs independent control, compaction, and cleanup roles and pauses
@@ -293,6 +302,8 @@ their own timeouts. The policy gate runs the check.
 - `docs/architecture.md` is the current technical ownership guide.
 - `docs/cli.md` documents the standalone CLI, its distribution, and the
   download service.
+- `docs/github-app.md` documents registering and configuring the Scope
+  GitHub App and how a repository is connected.
 - `docs/licensing.md` documents third-party license inventory generation.
 - `docs/maintenance-cutovers.md` documents releases, migration recovery, and
   the forward-only cutover rule; `docs/operations/current-schema-baseline.md`
