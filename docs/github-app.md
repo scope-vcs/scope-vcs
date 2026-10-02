@@ -364,7 +364,7 @@ After that release:
    must confirm the public-repository acknowledgment on the setup page.
 2. Confirm that workflows start: push a request and check that CI runs on its
    `scope/requests/<id>` branch. Note the check names GitHub reports.
-3. Choose the required checks in the Checks section. Expect `Required PR
+3. Choose the required checks in the CI section. Expect `Required PR
    checks`, the job that aggregates every other CI result.
 4. Delete what the old checks image left behind, as the last step of the
    operations guide describes: the retained ECR repository
