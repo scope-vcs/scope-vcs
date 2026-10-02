@@ -14,7 +14,7 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     requests::{
-        GitHubCheckResults, GitHubPushDestination, Request, RequestAudience,
+        GitHubBranch, GitHubCheckResults, GitHubPushDestination, Request, RequestAudience,
         RequestCheckEvaluation, RequestCheckPlan, RequestCheckResults, RequestRevision,
         ensure_approving_reviewed_head, stop_request_auto_merge_for_check_evaluation,
     },
@@ -400,7 +400,7 @@ async fn queue_tested_commit_push(
     queue_github_push(
         tx,
         &request.repo_id,
-        &request.id,
+        &GitHubBranch::Request(request.id.clone()),
         Some(tested_oid),
         &GitHubPushDestination::of(&connection),
         now_unix,

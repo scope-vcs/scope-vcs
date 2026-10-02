@@ -8,6 +8,15 @@
 use super::CheckVerdict;
 use serde::{Deserialize, Serialize};
 
+/// GitHub starts nothing for a pushed branch when no workflow has Scope's push
+/// trigger, and reports nothing either, so Scope says so once a pushed commit
+/// has waited long enough.
+pub const NO_GITHUB_WORKFLOWS_STARTED: &str =
+    "No workflows started. Check that your workflows include the scope/** push trigger.";
+/// How long a commit Scope pushed may go without any check run before Scope
+/// says no workflow started.
+pub const GITHUB_WORKFLOWS_START_WITHIN_SECS: u64 = 10 * 60;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GitHubCheckStatus {
@@ -42,6 +51,8 @@ pub struct GitHubCheckRun {
     pub status: GitHubCheckStatus,
     pub conclusion: Option<GitHubCheckConclusion>,
     pub details_url: Option<String>,
+    /// The check suite GitHub filed the run under; each workflow run has its own.
+    pub check_suite_id: Option<u64>,
 }
 
 impl GitHubCheckRun {
@@ -85,6 +96,14 @@ impl GitHubCheckResults {
         runs.iter()
             .filter(|run| run.commit_oid == commit_oid && run.name == name)
             .max_by_key(|run| run.github_check_run_id)
+    }
+
+    /// Whether GitHub reported any run at all on the commit.
+    pub fn any_on(&self, commit_oid: &str) -> bool {
+        match self {
+            Self::Connected(runs) => runs.iter().any(|run| run.commit_oid == commit_oid),
+            Self::Disconnected => false,
+        }
     }
 
     /// A required name with no run yet is still pending.

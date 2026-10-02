@@ -1,4 +1,5 @@
-//! Reads what GitHub reports for the commits request checks test. A webhook
+//! Reads what GitHub reports for the commits request checks and connection
+//! tests watch. A webhook
 //! delivery prompts a read of the commit it names, a reconciler reads open
 //! requests' commits in case a delivery never came, and a merge reads them
 //! again when what Scope stored is not recent. Either way GitHub's API is the
@@ -7,6 +8,7 @@
 
 use crate::{
     error::ApiError, persistence::unix_now, repo_events::RepoChangeReason, state::AppState,
+    use_cases::github_setup_checks,
 };
 use scope_domain::{
     github_connection::GitHubConnection,
@@ -28,7 +30,7 @@ const RECONCILE_BATCH_SIZE: u64 = 20;
 const MERGE_FRESHNESS_SECS: u64 = 60;
 
 /// A delivery said a commit's checks changed. Repositories and commits Scope
-/// does not test are acknowledged and ignored.
+/// does not watch are acknowledged and ignored.
 pub(crate) async fn refresh_checks_for_delivery(
     state: &AppState,
     github_repository_id: u64,
@@ -45,7 +47,7 @@ pub(crate) async fn refresh_checks_for_delivery(
     if !state
         .metadata
         .requests()
-        .github_commit_is_tested(&connection.repository_id, commit_oid)
+        .github_commit_is_watched(&connection.repository_id, commit_oid)
         .await?
     {
         return Ok(());
@@ -117,7 +119,7 @@ async fn connected(state: &AppState, repo_id: &str) -> Result<Option<GitHubConne
 /// Replaces the stored check runs of a commit with what GitHub reports, then
 /// tells open views and auto-merge to look again. The read is numbered
 /// before GitHub is asked, so a slower, older read cannot replace it.
-async fn refresh_commit_checks(
+pub(crate) async fn refresh_commit_checks(
     state: &AppState,
     connection: &GitHubConnection,
     commit_oid: &str,
@@ -262,7 +264,12 @@ impl AppState {
                 interval.tick().await;
                 let pass = async {
                     state.metadata.admin().readiness_check().await?;
-                    reconcile_github_checks_once(&state, unix_now()?).await
+                    let now = unix_now()?;
+                    // Neither pass waits on the other's failure.
+                    let checks = reconcile_github_checks_once(&state, now).await;
+                    let setup_checks =
+                        github_setup_checks::reconcile_github_setup_checks_once(&state, now).await;
+                    checks.and(setup_checks)
                 };
                 if let Err(error) = pass.await {
                     tracing::warn!(

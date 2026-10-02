@@ -48,6 +48,10 @@ routes! {
             => "repoGitHubRequiredChecks";
         REPO_GITHUB_PUBLIC_CONFIRMATION = "/v1/repos/{owner}/{repo}/github/public-confirmation"
             => "repoGitHubPublicConfirmation";
+        REPO_GITHUB_SETUP_CHECK = "/v1/repos/{owner}/{repo}/github/setup-check"
+            => "repoGitHubSetupCheck";
+        REPO_GITHUB_WORKFLOW_RUNS = "/v1/repos/{owner}/{repo}/github/workflow-runs"
+            => "repoGitHubWorkflowRuns";
         GITHUB_SETUP = "/v1/github/setup" => "githubSetup";
         REPO_DEPENDENCIES = "/v1/repos/{owner}/{repo}/dependencies"
             => "repoDependencies",

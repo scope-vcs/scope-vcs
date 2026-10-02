@@ -258,6 +258,21 @@ impl crate::state::AppState {
         self.publish_repo_event(event, "request discussion").await;
     }
 
+    /// Workflow runs have no repository version, so open Runs pages refresh
+    /// on every change GitHub reports.
+    pub(crate) async fn publish_github_workflow_runs_change(
+        &self,
+        incarnation: &RepositoryIncarnation,
+    ) {
+        let event = RepoChangeEvent {
+            repo_id: incarnation.repository_id().to_string(),
+            incarnation_id: incarnation.incarnation_id().to_string(),
+            version: 0,
+            kind: RepoChangeKind::GitHubWorkflowRunsChanged,
+        };
+        self.publish_repo_event(event, "GitHub workflow run").await;
+    }
+
     pub(crate) async fn publish_run_change(
         &self,
         repo_id: &str,

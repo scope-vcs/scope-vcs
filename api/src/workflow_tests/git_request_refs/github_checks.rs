@@ -20,7 +20,7 @@ mod native_runs_list;
 const REQUIRED_CHECK: &str = "ci / test";
 
 /// Connects the repository to the fake GitHub with these required checks.
-async fn connect_github(state: &mut AppState, required: &[&str]) -> Arc<FakeGitHub> {
+pub(super) async fn connect_github(state: &mut AppState, required: &[&str]) -> Arc<FakeGitHub> {
     let fake = FakeGitHub::install(state).await;
     let repositories = state.metadata.repositories();
     repositories
@@ -52,16 +52,16 @@ async fn connect_github(state: &mut AppState, required: &[&str]) -> Arc<FakeGitH
 
 /// An open private request the owner pushed in a repository connected to
 /// GitHub. The server stays alive for the caller's later pushes.
-struct OwnerRequest {
-    state: AppState,
-    fake: Arc<FakeGitHub>,
-    request_id: String,
+pub(super) struct OwnerRequest {
+    pub(super) state: AppState,
+    pub(super) fake: Arc<FakeGitHub>,
+    pub(super) request_id: String,
     source: TempGitRepo,
     remote: String,
     _server: TestServer,
 }
 
-async fn owner_request(label: &str, required: &[&str]) -> OwnerRequest {
+pub(super) async fn owner_request(label: &str, required: &[&str]) -> OwnerRequest {
     let (mut state, source, _base_head) =
         super::super::push_intent_completion::published_git_fixture(label).await;
     let fake = connect_github(&mut state, required).await;
@@ -110,11 +110,11 @@ async fn owner_request(label: &str, required: &[&str]) -> OwnerRequest {
 }
 
 impl OwnerRequest {
-    fn head(&self) -> String {
+    pub(super) fn head(&self) -> String {
         git_head_oid(&self.source)
     }
 
-    fn branch(&self) -> String {
+    pub(super) fn branch(&self) -> String {
         format!("scope/requests/{}", self.request_id)
     }
 
@@ -138,7 +138,7 @@ async fn checks(state: &AppState, request_id: &str, bearer: &str) -> serde_json:
     .await
 }
 
-async fn push_pass(state: &AppState, now_unix: u64) -> usize {
+pub(super) async fn push_pass(state: &AppState, now_unix: u64) -> usize {
     github_pushes::push_due_github_branches(state, now_unix)
         .await
         .unwrap()
@@ -987,4 +987,52 @@ async fn a_delivery_saying_the_repository_became_public_holds_private_requests()
     );
     assert_eq!(push_pass(state, unix_now()).await, 1);
     assert_eq!(fake.branch_head(&request.branch()), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pushed_head_without_any_run_says_no_workflow_started_after_ten_minutes() {
+    let request = owner_request("github-checks-no-runs", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+    push_pass(state, unix_now()).await;
+    assert_eq!(request.checks().await["message"], serde_json::Value::Null);
+
+    let request_id = request.request_id.as_str();
+    let message_at = |now_unix| async move {
+        let context = crate::repo_access::find_read_access(
+            state,
+            TEST_REPO_OWNER,
+            TEST_REPO_NAME,
+            Some(&test_owner_id()),
+        )
+        .await
+        .unwrap();
+        let scope_request = state
+            .metadata
+            .requests()
+            .request_by_id(request_id)
+            .await
+            .unwrap()
+            .unwrap();
+        crate::http::request_checks::checks_response(
+            state,
+            &context.record,
+            &scope_request,
+            context.access,
+            None,
+            now_unix,
+        )
+        .await
+        .unwrap()
+        .message
+    };
+    let later = unix_now() + scope_domain::requests::GITHUB_WORKFLOWS_START_WITHIN_SECS;
+    assert_eq!(
+        message_at(later).await.as_deref(),
+        Some(scope_domain::requests::NO_GITHUB_WORKFLOWS_STARTED)
+    );
+
+    // Any run on the head, even one nobody requires, shows workflows start.
+    fake.report_check_runs(&head, vec![check_run(1, "lint", &head, None)]);
+    deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
+    assert_eq!(message_at(later).await, None);
 }

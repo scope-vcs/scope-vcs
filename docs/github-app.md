@@ -126,7 +126,33 @@ on:
 
 GitHub runs the workflow files in the pushed commit. Workflows that read
 `github.event.pull_request` find it empty on a branch push and need a
-fallback.
+fallback. Once connected, the Checks section of repository settings shows
+this trigger.
+
+### Testing the connection
+
+Test connection in the Checks section
+(`POST /v1/repos/{owner}/{repo}/github/setup-check`, maintainers only) sends
+the repository's current main to `scope/setup-check` with the same push jobs
+requests use. A repository keeps its latest test in
+`scope_github_setup_checks`, so the result stays across reloads and
+navigation; the connection response (`GET /v1/repos/{owner}/{repo}/github`)
+carries it. A second test waits until the first ends. Main holds private
+files, so it goes only where a private request may: a GitHub repository that
+became public is not tested until a maintainer allows private requests there.
+
+If GitHub refuses the push, for example because a branch ruleset restricts
+creating `scope/**` branches, the test fails at once and shows GitHub's
+answer. Otherwise a background pass reads, every 30 seconds, the workflow runs
+GitHub started on `scope/setup-check` for that commit
+(`GET /repos/{owner}/{repo}/actions/runs?branch=...&head_sha=...`) and the
+commit's check runs. Only check runs filed under those workflow runs' check
+suites count, so runs GitHub started for the same commit on main do not. The
+test ends when every workflow run it saw completed, or after 15 minutes, and
+then deletes the branch. The check names it saw are listed, and each can be
+made a required check with one click. A test that ends without any workflow
+run says: "No workflows started. Check that your workflows include the
+scope/** push trigger."
 
 ### Required checks
 
@@ -201,6 +227,30 @@ is pending. New results refresh open request views and wake auto-merge.
 When the link is disconnected or removed, evaluations that ask GitHub become
 configuration errors: they never pass and never wait forever.
 
+GitHub starts nothing, and reports nothing, for a branch none of whose
+workflows has the push trigger. So when the tested commit has had no check run
+at all for 10 minutes after its push succeeded, the request view (web and
+`scope request checks`) says "No workflows started. Check that your workflows
+include the scope/** push trigger."
+
+## Runs page
+
+A repository with a GitHub link lists GitHub Actions workflow runs on its Runs
+page instead of Scope's own runs:
+`GET /v1/repos/{owner}/{repo}/github/workflow-runs`, readable by repository
+members, returns the 50 most recent with their workflow, branch, commit,
+status and time, and a link to the repository's Actions page for the rest.
+Every run links to GitHub, which keeps the logs; a run on
+`scope/requests/<id>` also links to its request while the request exists.
+Repositories without a link keep their native runs.
+
+Runs are stored in `scope_github_workflow_runs`. A `workflow_run` delivery for
+a connected repository makes Scope read `GET /repos/{owner}/{repo}/actions/runs/{id}`
+and store what GitHub answers; a read never replaces a run GitHub updated
+later. Deliveries for repositories that are not connected are ignored. Each
+stored run sends a `GitHubWorkflowRunsChanged` repository event, which open
+Runs pages use to refresh their list in place.
+
 ## Webhooks
 
 `POST /v1/github/webhooks` checks `X-Hub-Signature-256` over the raw body
@@ -215,8 +265,9 @@ the event is ignored. Connecting and applying an installation event hold the
 same installation lock while they ask GitHub, so a removal that lands during
 a connect is either seen by the connect or finds the new link.
 
-Check deliveries for repositories or commits Scope does not test are
-acknowledged with 204, and a failed read is left to the reconciler.
+Check deliveries for repositories or commits Scope does not watch (no request
+evaluation and no running connection test uses them) are acknowledged with
+204, and a failed read is left to the reconciler.
 
 ## Local development
 

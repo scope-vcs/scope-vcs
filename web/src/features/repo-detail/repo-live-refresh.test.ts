@@ -55,6 +55,7 @@ test('coordinator ignores stale and wrong-repo events', async () => {
   coordinator.onEvent(event(2))
   coordinator.onEvent(discussionEvent(3))
   coordinator.onEvent(runEvent(3))
+  coordinator.onEvent({ ...runEvent(0), kind: 'GitHubWorkflowRunsChanged' })
   coordinator.onEvent(event(3, 'changed', 'other/repo'))
   await tick()
   assert.equal(refreshes, 0)

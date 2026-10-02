@@ -26,10 +26,13 @@ use sha2::{Digest, Sha256};
 mod github;
 mod github_push;
 mod planning;
-pub use github::{GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus};
+pub use github::{
+    GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun,
+    GitHubCheckStatus, NO_GITHUB_WORKFLOWS_STARTED,
+};
 pub use github_push::{
-    GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus, changes_github_workflows,
-    github_push_retry_at, github_request_branch, github_request_ref,
+    GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus,
+    changes_github_workflows, github_push_retry_at,
 };
 pub use planning::RequestCheckPlan;
 
@@ -486,10 +489,14 @@ pub fn request_checks_outcome(
 }
 
 /// What the request should say about its checks besides their states: the
-/// evaluation's own message, or why GitHub checks cannot pass.
+/// evaluation's own message, why GitHub checks cannot pass, or that GitHub
+/// started no workflow for the tested commit long after it arrived there.
+/// `push` is the latest push of the request's branch.
 pub fn request_checks_message(
     evaluation: &RequestCheckEvaluation,
     results: &RequestCheckResults,
+    push: Option<&GitHubPush>,
+    now_unix: u64,
 ) -> Option<String> {
     if let Some(message) = &evaluation.message {
         return Some(message.clone());
@@ -501,9 +508,21 @@ pub fn request_checks_message(
                 .to_string(),
         );
     }
-    results
-        .withholds(evaluation)
-        .then(|| PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string())
+    if results.withholds(evaluation) {
+        return Some(PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string());
+    }
+    if !evaluation.asks_github() {
+        return None;
+    }
+    let pushed_at = push
+        .filter(|push| {
+            push.state == GitHubPushState::Succeeded
+                && push.target_oid.as_deref() == Some(&evaluation.tested_oid)
+        })
+        .map(|push| push.updated_at_unix)?;
+    (now_unix >= pushed_at.saturating_add(GITHUB_WORKFLOWS_START_WITHIN_SECS)
+        && !results.github.any_on(&evaluation.tested_oid))
+    .then(|| NO_GITHUB_WORKFLOWS_STARTED.to_string())
 }
 
 fn native_verdict(check: &NativeRequestCheck, runs: &[(String, RunState)]) -> CheckVerdict {

@@ -157,6 +157,8 @@ export function createRepoRefreshCoordinator({
     onEvent(event) {
       if (
         event.repo_id !== repoId ||
+        // GitHub workflow runs change no summary; their own list refreshes.
+        event.kind === 'GitHubWorkflowRunsChanged' ||
         typeof event.kind === 'object' &&
           ('RequestTimelineChanged' in event.kind || 'RunChanged' in event.kind)
       ) {

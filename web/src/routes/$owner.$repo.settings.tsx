@@ -25,6 +25,7 @@ import {
   currentWebOrigin,
   setRepoGitHubRequiredChecksForRequest,
   startRepoGitHubAuthorizationForRequest,
+  startRepoGitHubSetupCheckForRequest,
 } from '@/api/github'
 import { parseSetRepoGitHubRequiredChecksInput } from '@/api/github-inputs'
 import { loadOptionalResource } from '@/api/http'
@@ -62,6 +63,10 @@ const loadRepoGitHubConnection = createServerFn({ method: 'GET' })
 const startRepoGitHubAuthorization = createServerFn({ method: 'POST' })
   .validator(parseRepoGitHubAuthorizeInput)
   .handler(({ data }) => startRepoGitHubAuthorizationForRequest(data))
+
+const startRepoGitHubSetupCheck = createServerFn({ method: 'POST' })
+  .validator(parseRepoParams)
+  .handler(({ data }) => startRepoGitHubSetupCheckForRequest(data))
 
 const disconnectRepoGitHub = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
@@ -192,6 +197,11 @@ function RepoSettingsRoute() {
             return github
           }}
           startGitHubAuthorization={(data) => startRepoGitHubAuthorization({ data: { ...data, web_origin: currentWebOrigin() } })}
+          startGitHubSetupCheck={async (data) => {
+            const github = await startRepoGitHubSetupCheck({ data })
+            if (scope) retainGitHubConnection(scope, github)
+            return github
+          }}
           deleteMember={(data) => retainResult(
             deleteRepoMember({ data }),
             (member) => ({ type: 'memberRemoved', member }),

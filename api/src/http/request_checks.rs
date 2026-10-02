@@ -22,8 +22,8 @@ use scope_domain::{
     github_connection::GitHubRepositoryVisibility,
     repository::{RepoRecord, access::RepositoryAccess},
     requests::{
-        GitHubPushStatus, Request, RequestAudience, RequestCheck, RequestCheckResults,
-        github_request_branch, request_checks_message, request_mergeability,
+        GitHubBranch, GitHubPushStatus, Request, RequestAudience, RequestCheck,
+        RequestCheckResults, request_checks_message, request_mergeability,
     },
 };
 use scope_postgres::db::ApproveRequestChecksCommand;
@@ -44,9 +44,16 @@ pub(crate) async fn get_request_checks(
     )
     .await?;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    checks_response(&state, &repo.record, &request, access, current_main_oid)
-        .await
-        .map(Json)
+    checks_response(
+        &state,
+        &repo.record,
+        &request,
+        access,
+        current_main_oid,
+        unix_now()?,
+    )
+    .await
+    .map(Json)
 }
 
 pub(crate) async fn approve_request_checks(
@@ -73,17 +80,26 @@ pub(crate) async fn approve_request_checks(
         .await?;
     request_checks::publish_request_checks_change(&state, &repo.incarnation(), &mutation).await;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    checks_response(&state, &repo.record, &request, access, current_main_oid)
-        .await
-        .map(Json)
+    checks_response(
+        &state,
+        &repo.record,
+        &request,
+        access,
+        current_main_oid,
+        unix_now()?,
+    )
+    .await
+    .map(Json)
 }
 
-async fn checks_response(
+/// What the viewer sees of the request head's checks at `now_unix`.
+pub(crate) async fn checks_response(
     state: &AppState,
     repo: &RepoRecord,
     request: &Request,
     access: RepositoryAccess,
     current_main_oid: Option<String>,
+    now_unix: u64,
 ) -> Result<RequestChecksResponse, ApiError> {
     let RequestChecksView {
         evaluation,
@@ -136,7 +152,7 @@ async fn checks_response(
         request_id: request.id.clone(),
         head_oid: git_oid_response(request.head_oid.clone())?,
         state: Some(evaluation.state.into()),
-        message: request_checks_message(&evaluation, &results),
+        message: request_checks_message(&evaluation, &results, latest_push.as_ref(), now_unix),
         checks: evaluation
             .checks
             .iter()
@@ -165,7 +181,7 @@ fn github_push_response(
     };
     RequestGitHubPushResponse {
         state,
-        branch: github_request_branch(request_id),
+        branch: GitHubBranch::Request(request_id.to_string()).name(),
         error: error.filter(|_| access.is_maintainer()),
     }
 }
