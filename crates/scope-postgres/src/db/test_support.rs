@@ -440,6 +440,29 @@ impl RequestStore {
         Ok(())
     }
 
+    /// Makes every stored read of the repository's GitHub checks `seconds` older.
+    pub async fn age_github_check_reads_for_tests(
+        &self,
+        repo_id: &str,
+        seconds: u64,
+    ) -> Result<(), PostgresError> {
+        use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+        self.db
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "UPDATE scope_github_check_refreshes
+                    SET applied_read_started_at_unix = applied_read_started_at_unix - $2
+                  WHERE repo_id = $1 AND applied_read > 0",
+                [
+                    repo_id.into(),
+                    super::integer_columns::u64_to_i64(seconds, "test age")?.into(),
+                ],
+            ))
+            .await
+            .map_err(PostgresError::internal)?;
+        Ok(())
+    }
+
     pub async fn mutate_request_for_tests(
         &self,
         request_id: &str,

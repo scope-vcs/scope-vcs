@@ -137,8 +137,11 @@ the maintainer before approving. With no required checks, a contributor's
 push is never sent.
 
 Pushes are jobs in `scope_github_pushes`, run by a background loop in the API
-with leases. A newer push of a branch replaces queued ones, and a branch is
-pushed by one process at a time. A failed push is tried again after 30
+with leases. Each push is claimed on its own with a lease well past the push
+timeout. A newer push of a branch replaces queued ones, and a branch is pushed
+by one process at a time. Right before git runs, a push checks that its claim
+still holds and that no newer push of its branch was queued; otherwise it
+sends and records nothing. A failed push is tried again after 30
 seconds, then 2, 10 and 30 minutes, and then gives up. The request view shows
 whether the revision is waiting for approval, being sent, sent, or failed,
 and shows maintainers the last error. A push to a repository whose link is
@@ -149,10 +152,20 @@ gone gives up at once.
 GitHub's API is the source of results. A `check_run`, `check_suite` or
 `workflow_run` delivery for a commit some request was evaluated against makes
 Scope read `GET /repos/{owner}/{repo}/commits/{sha}/check-runs?filter=all`
-and replace what it stored for that commit. A background reconciler reads
-again every two minutes for started evaluations of open requests whose checks
-are still pending, which covers dropped deliveries. New results refresh open
-request views and wake auto-merge.
+and replace what it stored for that commit. Runs are stored per GitHub
+repository, and only the connected repository's runs count, so a Scope
+repository reconnected to another GitHub repository starts over. Every read
+is numbered before Scope asks GitHub, and its answer is stored only when no
+later read was stored first, so a slow, older answer cannot bring back a
+stale result.
+
+A background reconciler reads the commits of started evaluations of open
+requests every two minutes while their checks are pending and every ten once
+they settle, which covers dropped deliveries, including a failed re-run of a
+check that had passed. Merging, by hand or automatically, reads the commit
+again when what Scope stored is more than a minute old, and does not merge
+while GitHub cannot answer. New results refresh open request views and wake
+auto-merge.
 
 When the link is disconnected or removed, evaluations that ask GitHub become
 configuration errors: they never pass and never wait forever.

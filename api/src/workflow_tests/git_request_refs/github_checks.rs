@@ -471,14 +471,149 @@ async fn the_reconciler_reads_results_a_delivery_never_announced() {
         1
     );
     assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
-    // Settled checks are not read again, and pending ones wait out the interval.
+    // Settled checks wait ten minutes for their next read, not two.
     assert_eq!(
-        github_check_results::reconcile_github_checks_once(state, now + 600)
+        github_check_results::reconcile_github_checks_once(state, now + 120)
             .await
             .unwrap(),
         0
     );
     assert_eq!(fake.check_run_reads.load(Ordering::SeqCst), 1);
+
+    // A re-run failed and its delivery was lost; the slower read still sees it.
+    fake.report_check_runs(
+        &head,
+        vec![
+            check_run(1, REQUIRED_CHECK, &head, Some("success")),
+            check_run(2, REQUIRED_CHECK, &head, Some("failure")),
+        ],
+    );
+    assert_eq!(
+        github_check_results::reconcile_github_checks_once(state, now + 600)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        request.checks().await["mergeability"]["status"],
+        "ChecksFailed"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_merge_reads_stale_green_checks_again_and_refuses_when_github_cannot_answer() {
+    let request = owner_request("github-checks-stale-merge", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+    push_pass(state, unix_now()).await;
+    fake.report_check_runs(
+        &head,
+        vec![check_run(1, REQUIRED_CHECK, &head, Some("success"))],
+    );
+    deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
+    assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
+
+    // The stored green is old, and GitHub cannot be asked: the merge waits.
+    state
+        .metadata
+        .requests()
+        .age_github_check_reads_for_tests(TEST_REPO_ID, 120)
+        .await
+        .unwrap();
+    fake.check_runs_unavailable.store(true, Ordering::SeqCst);
+    let unreachable = merge(state, &request.request_id).await;
+    assert_eq!(unreachable.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response_json(unreachable).await["message"],
+        "Scope could not confirm this request's checks with GitHub. Try again."
+    );
+
+    // A re-run failed without a delivery; the merge reads it and refuses.
+    fake.check_runs_unavailable.store(false, Ordering::SeqCst);
+    fake.report_check_runs(
+        &head,
+        vec![
+            check_run(1, REQUIRED_CHECK, &head, Some("success")),
+            check_run(2, REQUIRED_CHECK, &head, Some("failure")),
+        ],
+    );
+    assert_eq!(
+        expect_json(
+            merge(state, &request.request_id).await,
+            StatusCode::CONFLICT
+        )
+        .await["message"],
+        "a check did not succeed"
+    );
+    assert_eq!(
+        request.checks().await["mergeability"]["status"],
+        "ChecksFailed"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_repository_reconnected_to_another_github_repository_ignores_the_old_runs() {
+    let request = owner_request("github-checks-reconnected", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+    fake.report_check_runs(
+        &head,
+        vec![check_run(1, REQUIRED_CHECK, &head, Some("success"))],
+    );
+    deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
+    assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
+
+    let repositories = state.metadata.repositories();
+    repositories
+        .disconnect_github_repository(TEST_REPO_ID, &test_owner_id())
+        .await
+        .unwrap();
+    repositories
+        .connect_github_repository(
+            ConnectGitHubRepository {
+                repository_id: TEST_REPO_ID.to_string(),
+                installation_id: INSTALLATION_ID,
+                github_repository_id: GITHUB_REPOSITORY_ID + 1,
+                github_full_name: "octo/other".to_string(),
+                user_id: test_owner_id(),
+                now_unix: unix_now(),
+            },
+            async || Ok::<_, scope_postgres::error::PostgresError>(true),
+        )
+        .await
+        .unwrap();
+    let checks = request.checks().await;
+    assert_eq!(checks["checks"][0]["status"], serde_json::Value::Null);
+    assert_eq!(checks["mergeability"]["status"], "ChecksPending");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_push_whose_claim_lapsed_neither_pushes_nor_records() {
+    let request = owner_request("github-checks-stale-claim", &[REQUIRED_CHECK]).await;
+    let (state, fake) = (&request.state, &request.fake);
+    let requests = state.metadata.requests();
+    let now = unix_now();
+    let push = requests
+        .claim_due_github_pushes("first_claim", now, now + 10, 1)
+        .await
+        .unwrap()
+        .remove(0);
+    // The first claim lapsed while its process stalled, and another took over.
+    requests
+        .claim_due_github_pushes("second_claim", now + 10, now + 100, 1)
+        .await
+        .unwrap();
+
+    github_pushes::run_claimed_push(state, &push, "first_claim", now).await;
+    assert_eq!(fake.branch_head(&request.branch()), None);
+    let latest = requests
+        .latest_github_push(&request.request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        latest.state,
+        scope_domain::requests::GitHubPushState::Running
+    );
+    assert_eq!(latest.attempts, 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

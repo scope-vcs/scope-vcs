@@ -73,16 +73,43 @@ impl MigrationTrait for Migration {
                 CREATE INDEX idx_scope_github_pushes_request
                     ON scope_github_pushes(request_id, created_at_unix DESC);
 
-                -- When Scope last read GitHub's check runs for a tested commit,
-                -- so the reconciler asks about each commit at a modest pace.
+                -- A check run belongs to the GitHub repository that reported
+                -- it, so a Scope repository reconnected to another GitHub
+                -- repository never counts the old one's runs. Nothing has
+                -- stored check runs before this migration.
+                DELETE FROM scope_github_check_runs;
+                DROP INDEX idx_scope_github_check_runs_commit;
+                ALTER TABLE scope_github_check_runs
+                    ADD COLUMN github_repository_id bigint NOT NULL,
+                    ADD CONSTRAINT scope_github_check_run_repository CHECK (
+                        github_repository_id > 0
+                    );
+                CREATE INDEX idx_scope_github_check_runs_commit
+                    ON scope_github_check_runs(
+                        repo_id, github_repository_id, commit_oid, name,
+                        github_check_run_id DESC
+                    );
+
+                -- Reads of GitHub's check runs for a tested commit. Every read
+                -- takes the next number before it asks GitHub, and its answer
+                -- is stored only when no later read was stored first. The
+                -- reconciler reads a commit again at next_read_at_unix.
                 CREATE TABLE scope_github_check_refreshes (
                     repo_id varchar NOT NULL
                         REFERENCES scope_repositories(id) ON DELETE CASCADE,
+                    github_repository_id bigint NOT NULL,
                     commit_oid varchar NOT NULL,
-                    refreshed_at_unix bigint NOT NULL,
-                    PRIMARY KEY (repo_id, commit_oid),
+                    next_read_at_unix bigint NOT NULL,
+                    started_reads bigint NOT NULL,
+                    applied_read bigint NOT NULL,
+                    -- When the stored read started; NULL before any.
+                    applied_read_started_at_unix bigint,
+                    PRIMARY KEY (repo_id, github_repository_id, commit_oid),
                     CONSTRAINT scope_github_check_refresh_values CHECK (
-                        length(commit_oid) = 40 AND refreshed_at_unix >= 0
+                        github_repository_id > 0 AND length(commit_oid) = 40 AND
+                        next_read_at_unix >= 0 AND
+                        applied_read >= 0 AND started_reads >= applied_read AND
+                        ((applied_read = 0) = (applied_read_started_at_unix IS NULL))
                     )
                 );
 

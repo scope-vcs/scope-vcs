@@ -141,7 +141,9 @@ pub(crate) async fn merge_request_inner(
             ApiError::conflict("request has a new revision; review it before merging").into(),
         );
     }
-    // The gate is separate from permission: the head's checks must have cleared.
+    // The gate is separate from permission: the head's checks must have cleared,
+    // on GitHub's word as of now rather than a delivery that may have been lost.
+    crate::use_cases::github_check_results::confirm_recent_github_checks(state, &request).await?;
     let checks =
         crate::use_cases::request_checks::checks_outcome(state, &repo.record, &request).await?;
     if checks != RequestChecksOutcome::Clear {
