@@ -590,20 +590,32 @@ fn producer_finishes_while_upload_is_blocked_and_spooled_logs_survive_exit_grace
 }
 
 #[test]
-fn batched_invalid_utf8_preserves_replacement_text_within_the_chunk_limit() {
-    let sink = FakeSink::new([]);
-    let job = job(&[("bytes", "head -c 70000 /dev/zero | tr '\\0' '\\377'")]);
-    sink.run(&job, Duration::from_secs(2)).unwrap();
-    let chunks = sink
-        .calls()
-        .into_iter()
-        .filter_map(|call| match call {
-            Call::Append { text, .. } => Some(text),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert!(chunks.iter().all(|text| text.len() <= 64 * 1024));
-    assert_eq!(chunks.concat(), "�".repeat(70000));
+fn batched_invalid_utf8_and_nul_upload_replacement_text_within_the_chunk_limit() {
+    for command in [
+        "head -c 70000 /dev/zero | tr '\\0' '\\377'",
+        "head -c 70000 /dev/zero",
+    ] {
+        let sink = FakeSink::new([]);
+        let outcome = sink
+            .run(&job(&[("bytes", command)]), Duration::from_secs(2))
+            .unwrap();
+        assert_eq!(
+            outcome,
+            ExecutionOutcome::Succeeded {
+                logs_truncated: false
+            }
+        );
+        let chunks = sink
+            .calls()
+            .into_iter()
+            .filter_map(|call| match call {
+                Call::Append { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(chunks.iter().all(|text| text.len() <= 64 * 1024));
+        assert_eq!(chunks.concat(), "�".repeat(70000), "{command}");
+    }
 }
 
 fn job(steps: &[(&str, &str)]) -> WorkflowJob {

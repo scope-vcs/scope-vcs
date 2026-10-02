@@ -439,7 +439,9 @@ impl RunAttempt {
 }
 
 pub(crate) fn valid_setup_failure_message(message: &str) -> bool {
-    !message.trim().is_empty() && message.len() <= MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES
+    !message.trim().is_empty()
+        && message.len() <= MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES
+        && !message.contains('\0')
 }
 
 fn step_matches_conclusion(step: Option<&RunAttemptStep>, conclusion: StepConclusion) -> bool {

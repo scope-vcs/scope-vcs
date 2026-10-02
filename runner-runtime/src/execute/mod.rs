@@ -6,6 +6,7 @@ mod spool;
 mod supervisor;
 
 pub(crate) use heartbeat::{HEARTBEAT_INTERVAL, Heartbeat};
+pub(crate) use output::replace_nul;
 pub(crate) use sink::{AppendLogError, AppendLogOutcome, ExecutionSink};
 pub(crate) use supervisor::{ExecutionOutcome, run_steps};
 

@@ -492,3 +492,24 @@ fn cancellation_wins_over_pre_start_attempt_exhaustion() {
     assert_eq!(run.state, RunState::Canceled);
     assert!(!crate::runs::job::can_retry_run(&run, &[job]));
 }
+
+#[test]
+fn runtime_setup_failure_message_cannot_contain_nul() {
+    let (_, run, mut job, mut attempt, mut steps) = dispatched_attempt();
+    let error = attempt
+        .complete(
+            &run,
+            &mut job,
+            &mut steps,
+            &"b".repeat(64),
+            AttemptConclusion::SetupFailed {
+                exit_code: 1,
+                message: "setup\0failed".into(),
+            },
+            false,
+            12,
+        )
+        .unwrap_err();
+    assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
+    assert_eq!(attempt.state, AttemptState::Dispatching);
+}

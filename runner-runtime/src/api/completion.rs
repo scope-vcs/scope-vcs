@@ -1,10 +1,14 @@
 use super::{RuntimeClient, ensure_success};
+use crate::execute::replace_nul;
 use anyhow::Context as _;
 use scope_api_contract::{
     AttemptConclusionRequest, AttemptStatusResponse, CompleteAttemptRequest,
     CompleteAttemptStepRequest, StepConclusionRequest,
 };
-use scope_domain::runs::{exit_code::SetupFailure, step::StepConclusion};
+use scope_domain::runs::{
+    exit_code::SetupFailure,
+    step::{MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES, StepConclusion},
+};
 
 impl RuntimeClient {
     pub fn complete_step(
@@ -40,10 +44,12 @@ impl RuntimeClient {
     }
 
     pub fn complete_setup_failure(&self, message: &str) -> anyhow::Result<()> {
+        let mut message = replace_nul(message);
+        message.truncate(message.floor_char_boundary(MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES));
         self.complete(
             AttemptConclusionRequest::SetupFailed {
                 exit_code: SetupFailure::RuntimeSetup.exit_code(),
-                message: message.chars().take(2048).collect(),
+                message,
             },
             false,
         )

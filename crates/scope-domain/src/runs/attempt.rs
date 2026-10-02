@@ -369,7 +369,7 @@ impl RunAttempt {
                 }
                 if !super::step::valid_setup_failure_message(&message) {
                     return Err(DomainError::invalid_input(
-                        "runtime setup failure message is required and must not exceed 2048 bytes",
+                        "runtime setup failure message is required, must not exceed 2048 bytes, and cannot contain NUL characters",
                     ));
                 }
                 skip_pending_steps(steps, now_unix);
