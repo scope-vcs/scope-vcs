@@ -1,10 +1,14 @@
 import {
   completeGitHubSetupForRequest,
   connectRepoGitHubForRequest,
+  currentWebOrigin,
   startRepoGitHubAuthorizationForRequest,
 } from '@/api/github'
-import { parseConnectRepoGitHubInput, parseGitHubSetupInput } from '@/api/github-inputs'
-import { parseRepoParams } from '@/api/repo-params'
+import {
+  parseConnectRepoGitHubInput,
+  parseGitHubSetupInput,
+  parseRepoGitHubAuthorizeInput,
+} from '@/api/github-inputs'
 import {
   encodePendingGitHubTarget,
   parsePendingGitHubTarget,
@@ -26,7 +30,7 @@ const connectRepoGitHub = createServerFn({ method: 'POST' })
   .handler(({ data }) => connectRepoGitHubForRequest(data))
 
 const startRepoGitHubAuthorization = createServerFn({ method: 'POST' })
-  .validator(parseRepoParams)
+  .validator(parseRepoGitHubAuthorizeInput)
   .handler(({ data }) => startRepoGitHubAuthorizationForRequest(data))
 
 // The app's Callback URL (after OAuth) and Setup URL (after installing) are
@@ -57,7 +61,7 @@ function GitHubSetupRoute() {
       rememberPendingTarget={(target) =>
         storeSessionValue(PENDING_GITHUB_TARGET_KEY, encodePendingGitHubTarget(target))}
       search={search}
-      startAuthorization={(data) => startRepoGitHubAuthorization({ data })}
+      startAuthorization={(data) => startRepoGitHubAuthorization({ data: { ...data, web_origin: currentWebOrigin() } })}
       takePendingTarget={() =>
         parsePendingGitHubTarget(readAndClearSessionValue(PENDING_GITHUB_TARGET_KEY))}
     />

@@ -29,9 +29,11 @@ Create a GitHub App owned by the organization that runs Scope, with:
   other three are chosen on the registration page.
 - **Where can this app be installed**: any account.
 
-Generate a private key and a client secret on the app's page. The API also
-needs `SCOPE_APP_ORIGIN` set to the web origin, which it uses to build the
-callback address.
+Generate a private key and a client secret on the app's page. The callback
+address is built from the origin of the page that started connecting when
+that origin is `SCOPE_APP_ORIGIN` or one of `CLERK_AUTHORIZED_PARTIES`, and
+from `SCOPE_APP_ORIGIN` otherwise. Any other page origin is refused. Register
+a callback URL for every web origin maintainers connect from.
 
 ## API configuration
 
@@ -51,9 +53,9 @@ API at startup.
 ## Connecting
 
 1. A maintainer chooses Connect GitHub in repository settings.
-   `POST /v1/repos/{owner}/{repo}/github/authorize` returns GitHub's OAuth URL
-   for the app with a signed `state` naming the Scope repository, the
-   maintainer, and a ten-minute expiry.
+   `POST /v1/repos/{owner}/{repo}/github/authorize`, sent with the page's
+   origin, returns GitHub's OAuth URL for the app with a signed `state` naming
+   the Scope repository, the maintainer, and a ten-minute expiry.
 2. GitHub returns to `/github/setup` with a code and the state. The page sends
    both to `POST /v1/github/setup`. The API checks the state, that the same
    person is signed in and is still a maintainer, and exchanges the code for a
@@ -94,3 +96,22 @@ whether the installation still reaches it. If GitHub says access is intact,
 the event is ignored. Connecting and applying an installation event hold the
 same installation lock while they ask GitHub, so a removal that lands during
 a connect is either seen by the connect or finds the new link.
+
+## Local development
+
+`./dev/scope-dev up` passes the six `SCOPE_GITHUB_` variables from the root
+`.env.local` to the API. Write the private key on one line with its line
+breaks as `\n`. Use a separate development GitHub App.
+
+To connect from another device on a tailnet, serve the web app and API with
+`tailscale serve` and set `SCOPE_DEV_TAILNET_WEB_ORIGIN` and
+`SCOPE_DEV_TAILNET_API_ORIGIN` in `.env.local`, as described in
+`./dev/scope-dev help`. Register both `http://localhost:3000/github/setup` and
+`<tailnet web origin>/github/setup` as callback URLs, and use one of them as
+the Setup URL. GitHub must reach the webhook, so expose only that path
+publicly with Tailscale Funnel and use the funnel address as the Webhook URL:
+
+```sh
+tailscale funnel --bg --https=8443 --set-path=/v1/github/webhooks \
+  http://127.0.0.1:8080/v1/github/webhooks
+```

@@ -2,6 +2,7 @@ import type {
   AccountSessionResponse,
   CommitFileResponse,
   ConnectGitHubRepositoryRequest,
+  GitHubAuthorizeRequest,
   GitHubSetupRequest,
   HistoryEntryFileDiffRequest,
   HistoryEntryRequest,
@@ -137,6 +138,8 @@ export type RepoInviteInput = RepoParams & {
 }
 
 export type GitHubSetupInput = GitHubSetupRequest
+
+export type RepoGitHubAuthorizeInput = RepoParams & GitHubAuthorizeRequest
 
 export type ConnectRepoGitHubInput = RepoParams & ConnectGitHubRepositoryRequest
 

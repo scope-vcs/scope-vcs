@@ -42,6 +42,17 @@ pub(crate) enum GitHubDisconnectReasonResponse {
     RepositoryRemoved,
 }
 
+/// Starts authorizing the app for a repository.
+#[derive(Debug, Default, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubAuthorizeRequest {
+    /// The origin of the page that started connecting. GitHub returns there
+    /// when it is an allowed Scope web origin, so a development stack reached
+    /// at another address works. Without it, the public app origin is used.
+    #[serde(default)]
+    pub(crate) web_origin: Option<String>,
+}
+
 /// GitHub's OAuth screen for the app, carrying a signed setup state.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]

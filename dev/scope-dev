@@ -35,6 +35,18 @@ device through a proxy such as `tailscale serve`:
   SCOPE_DEV_TAILNET_MEDIA_ORIGIN  origin that proxies to http://localhost:8083
 The web dev server accepts the web origin's host automatically.
 
+optional configuration in .env.local, for connecting repositories to GitHub
+(all six or none; see docs/github-app.md):
+  SCOPE_GITHUB_APP_ID, SCOPE_GITHUB_APP_SLUG, SCOPE_GITHUB_APP_CLIENT_ID,
+  SCOPE_GITHUB_APP_CLIENT_SECRET, SCOPE_GITHUB_WEBHOOK_SECRET, and
+  SCOPE_GITHUB_APP_PRIVATE_KEY on one line with its line breaks written as \n.
+Register http://localhost:3000/github/setup and the tailnet web origin's
+/github/setup as the app's callback URLs. Serve the web app and API over the
+tailnet with `tailscale serve`, and expose only the webhook path publicly,
+since GitHub must reach it:
+  tailscale funnel --bg --https=8443 --set-path=/v1/github/webhooks \
+    http://127.0.0.1:8080/v1/github/webhooks
+
 local services:
   web  http://localhost:3000
   API  http://localhost:8080
@@ -267,6 +279,8 @@ write_api_runner() {
   fi
 
   write_runner_preamble "$runner" "$ROOT"
+  # The runner holds the database URL and GitHub App secrets.
+  chmod 700 "$runner"
   cat >> "$runner" <<EOF
 export SCOPE_ENV="local"
 export SCOPE_OBJECT_STORE="filesystem"
@@ -285,6 +299,14 @@ export CLERK_AUTHORIZED_PARTIES="$LOCAL_WEB_ORIGIN${tailnet_web_origin:+,$tailne
 export SCOPE_DEV_USER_EMAIL="$dev_email"
 EOF
   printf 'export DATABASE_URL=%q\n' "$database_url" >> "$runner"
+  local name value
+  for name in SCOPE_GITHUB_APP_ID SCOPE_GITHUB_APP_SLUG SCOPE_GITHUB_APP_PRIVATE_KEY \
+    SCOPE_GITHUB_APP_CLIENT_ID SCOPE_GITHUB_APP_CLIENT_SECRET SCOPE_GITHUB_WEBHOOK_SECRET; do
+    value="$(read_dotenv_value "$ROOT/.env.local" "$name")"
+    if [[ -n "$value" ]]; then
+      printf 'export %s=%q\n' "$name" "$value" >> "$runner"
+    fi
+  done
   if [[ -n "$dev_handle" ]]; then
     printf 'export SCOPE_DEV_USER_HANDLE=%q\n' "$dev_handle" >> "$runner"
   else
@@ -298,7 +320,6 @@ EOF
 fi
 EOF
   printf 'exec %q\n' "$LOCAL_CARGO_TARGET_DIR/debug/api" >> "$runner"
-  chmod +x "$runner"
 }
 
 write_media_runner() {
