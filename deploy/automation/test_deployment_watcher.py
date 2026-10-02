@@ -55,6 +55,10 @@ class WatcherTests(unittest.TestCase):
         scheduler = patch.object(watcher.deployment_scheduler, "poll", return_value={})
         scheduler.start()
         self.addCleanup(scheduler.stop)
+        self.refresh = MagicMock()
+        refresh = patch.object(watcher.image_pin_refresh, "poll", self.refresh)
+        refresh.start()
+        self.addCleanup(refresh.stop)
         watcher.persist({"installed_at": BEFORE, "listed_through": BEFORE, "runs": {}, "threads": {}})
 
     def github(self, path):
@@ -311,6 +315,13 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(record["attempt_started_at"], retried_at)
         self.assertEqual(record["status"], "monitoring")
         self.assertEqual(len(self.starts()), 1)
+
+    def test_image_pin_refresh_waits_while_a_release_investigation_is_open(self):
+        watcher.poll()
+        self.refresh.assert_called_once_with(release_open=False)
+        self.runs = [release()]
+        watcher.poll()
+        self.assertEqual(self.refresh.call_args.kwargs, {"release_open": True})
 
     def test_initial_prompt_includes_all_grouped_releases(self):
         self.runs = [release(123), release(456)]
