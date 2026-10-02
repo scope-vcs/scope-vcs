@@ -16,7 +16,7 @@ fn run(id: u64, branch: &str, started_at: u64, updated_at: u64) -> GitHubWorkflo
         html_url: format!("https://github.com/octo/repo/actions/runs/{id}"),
         check_suite_id: Some(id),
         run_started_at_unix: Some(started_at),
-        created_at_unix: started_at,
+        run_attempt: 1,
         updated_at_unix: updated_at,
     }
 }
@@ -86,13 +86,91 @@ async fn an_older_read_of_a_run_does_not_replace_a_newer_one() {
         .save_github_workflow_run(REPO, 42, &completed)
         .await
         .unwrap();
+    let stored = || async {
+        repositories
+            .recent_github_workflow_runs(REPO, 42, 10)
+            .await
+            .unwrap()
+            .remove(0)
+            .run
+    };
     repositories
         .save_github_workflow_run(REPO, 42, &run(1, "main", 10, 40))
         .await
         .unwrap();
-    let stored = repositories
-        .recent_github_workflow_runs(REPO, 42, 10)
+    assert_eq!(stored().await, completed);
+    // A slower read from the same second, made while the run was still going,
+    // cannot move it back.
+    repositories
+        .save_github_workflow_run(REPO, 42, &run(1, "main", 10, 50))
         .await
         .unwrap();
-    assert_eq!(stored[0].run, completed);
+    assert_eq!(stored().await, completed);
+    // A re-run on GitHub is a later attempt, which starts over.
+    let rerun = GitHubWorkflowRun {
+        run_attempt: 2,
+        ..run(1, "main", 60, 60)
+    };
+    repositories
+        .save_github_workflow_run(REPO, 42, &rerun)
+        .await
+        .unwrap();
+    assert_eq!(stored().await, rerun);
+}
+
+#[tokio::test]
+async fn a_pending_read_is_claimed_when_due_and_ends_answered_or_given_up() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    repositories
+        .queue_github_workflow_run_read(REPO, 42, 7, 100)
+        .await
+        .unwrap();
+    // A repeated delivery keeps the read already waiting.
+    repositories
+        .queue_github_workflow_run_read(REPO, 42, 7, 150)
+        .await
+        .unwrap();
+    assert!(
+        repositories
+            .claim_due_github_workflow_run_reads(99, 400, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let job = repositories
+        .claim_due_github_workflow_run_reads(100, 400, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!((job.github_run_id, job.attempts), (7, 1));
+    // Claimed, it waits for its lease even though it was due.
+    assert!(
+        repositories
+            .claim_due_github_workflow_run_reads(200, 500, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    repositories
+        .finish_github_workflow_run_read(&job, Some(300))
+        .await
+        .unwrap();
+    let again = repositories
+        .claim_due_github_workflow_run_reads(300, 600, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(again.attempts, 2);
+    repositories
+        .finish_github_workflow_run_read(&again, None)
+        .await
+        .unwrap();
+    assert!(
+        repositories
+            .claim_due_github_workflow_run_reads(10_000, 10_100, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }

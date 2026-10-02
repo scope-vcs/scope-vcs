@@ -146,12 +146,16 @@ creating `scope/**` branches, the test fails at once and shows GitHub's
 answer. Otherwise a background pass reads, every 30 seconds, the workflow runs
 GitHub started on `scope/setup-check` for that commit
 (`GET /repos/{owner}/{repo}/actions/runs?branch=...&head_sha=...`) and the
-commit's check runs. Only workflow runs GitHub created after the test began
-count, so testing an unchanged main again ignores the earlier test's runs on
-the same branch. Only check runs filed under those workflow runs' check
-suites count, so runs GitHub started for the same commit on main do not. A
-test belongs to the GitHub repository it pushed to, and settings stop showing
-it once the repository is connected to another one. The
+commit's check runs. Right before pushing, the test asks GitHub which
+workflow runs it already lists on `scope/setup-check` for the commit; those
+are an earlier test's and never count, so testing an unchanged main again
+waits for its own runs. Only check runs filed under the counted workflow
+runs' check suites count, so runs GitHub started for the same commit on main
+do not. The test's push job answers it, so a push of an earlier test that
+finishes late changes nothing. A test belongs to the GitHub repository it
+pushed to: settings stop showing it once the repository is connected to
+another one, and it does not hold up a test of the new one. Deleting the
+branch afterwards retries like any push job. The
 test ends when every workflow run it saw completed, or after 15 minutes, and
 then deletes the branch. The check names it saw are listed, and each can be
 made a required check with one click. A test that ends without any workflow
@@ -250,8 +254,14 @@ Repositories without a link keep their native runs.
 
 Runs are stored in `scope_github_workflow_runs`. A `workflow_run` delivery for
 a connected repository makes Scope read `GET /repos/{owner}/{repo}/actions/runs/{id}`
-and store what GitHub answers; a read never replaces a run GitHub updated
-later. Deliveries for repositories that are not connected are ignored. Each
+and store what GitHub answers. A stored run only moves forward: a later
+attempt (a re-run on GitHub) replaces it, and within an attempt a read never
+moves it back from completed or replaces a newer one, even when GitHub dates
+both reads to the same second. The read is kept in
+`scope_github_workflow_run_reads` before the delivery is acknowledged, so one
+GitHub does not answer is read again every 30 seconds with the push job's
+backoff before it is given up. Deliveries for repositories that are not
+connected are ignored. Each
 stored run sends a `GitHubWorkflowRunsChanged` repository event, which open
 Runs pages use to refresh their list in place.
 

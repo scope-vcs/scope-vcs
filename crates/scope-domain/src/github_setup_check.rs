@@ -44,10 +44,15 @@ pub struct GitHubSetupCheck {
     pub finished_at_unix: Option<u64>,
     /// What GitHub answered when it refused the push.
     pub last_error: Option<String>,
+    /// The push job sending main, once queued.
+    pub push_id: Option<String>,
+    /// The workflow runs GitHub listed on the setup branch for the commit
+    /// right before the push, which are not this test's.
+    pub baseline_run_ids: Option<Vec<u64>>,
 }
 
-/// Starts a test of main. A test still running must end first, so two tests
-/// never push the setup branch at once.
+/// Starts a test of main. A test of this GitHub repository still running
+/// must end first, so two tests never push its setup branch at once.
 pub fn start_github_setup_check(
     access: RepositoryAccess,
     connection: Option<&GitHubConnection>,
@@ -78,7 +83,9 @@ pub fn start_github_setup_check(
             "Push to main before testing the connection.",
         ));
     };
-    if current.is_some_and(GitHubSetupCheck::is_running) {
+    // A test of a repository Scope was connected to before cannot clash
+    // with this one, so only a running test of this repository blocks it.
+    if current.is_some_and(|current| current.is_running() && current.is_of(connection)) {
         return Err(DomainError::conflict(
             "A connection test is already running.",
         ));
@@ -91,6 +98,8 @@ pub fn start_github_setup_check(
         started_at_unix: now_unix,
         finished_at_unix: None,
         last_error: None,
+        push_id: None,
+        baseline_run_ids: None,
     })
 }
 
@@ -107,15 +116,30 @@ impl GitHubSetupCheck {
     }
 
     /// Whether GitHub started the run for this test: on the setup branch, for
-    /// the tested commit, after the test began. Testing an unchanged main
-    /// again pushes the same commit to the same branch, so the earlier test's
-    /// runs match on branch and commit and only their age tells them apart.
-    /// GitHub creates a run only once the push reaches it, which is after the
-    /// test began.
+    /// the tested commit, and not one GitHub already listed there right
+    /// before the test's push. Testing an unchanged main again pushes the same
+    /// commit to the same branch, so the earlier test's runs match on branch
+    /// and commit; the baseline GitHub gave before the push leaves them out.
+    /// Nothing counts until that baseline is known.
     pub fn started(&self, run: &GitHubWorkflowRun) -> bool {
         run.head_oid == self.commit_oid
             && run.scope_branch() == Some(Self::branch())
-            && run.created_at_unix >= self.started_at_unix
+            && self
+                .baseline_run_ids
+                .as_ref()
+                .is_some_and(|baseline| !baseline.contains(&run.github_run_id))
+    }
+
+    /// Records the workflow runs GitHub lists on the setup branch for the
+    /// tested commit right before `push_id` sends it. Only the test's own push
+    /// records them, and only before it ends.
+    pub fn record_baseline(&mut self, push_id: &str, run_ids: Vec<u64>) -> bool {
+        if self.state != GitHubSetupCheckState::Pushing || self.push_id.as_deref() != Some(push_id)
+        {
+            return false;
+        }
+        self.baseline_run_ids = Some(run_ids);
+        true
     }
 
     pub fn is_running(&self) -> bool {
@@ -125,10 +149,12 @@ impl GitHubSetupCheck {
         )
     }
 
-    /// Records how the push of the test's commit ended. A refused push ends
-    /// the test with GitHub's answer.
-    pub fn record_push(&mut self, result: Result<(), &str>, now_unix: u64) {
-        if self.state != GitHubSetupCheckState::Pushing {
+    /// Records how the test's push `push_id` ended. A refused push ends the
+    /// test with GitHub's answer. A push of an earlier test of the same
+    /// commit says nothing about this one.
+    pub fn record_push(&mut self, push_id: &str, result: Result<(), &str>, now_unix: u64) {
+        if self.state != GitHubSetupCheckState::Pushing || self.push_id.as_deref() != Some(push_id)
+        {
             return;
         }
         match result {

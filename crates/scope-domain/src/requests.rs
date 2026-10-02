@@ -28,7 +28,7 @@ pub use checks::{
     GitHubPushStatus, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, RequestCheck,
     RequestCheckEvaluation, RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider,
     RequestCheckResults, RequestChecksOutcome, changes_github_workflows,
-    ensure_approving_reviewed_head, github_push_retry_at, request_checks_message,
+    ensure_approving_reviewed_head, github_push_retry_at, github_retry_at, request_checks_message,
     request_checks_outcome, request_checks_start_immediately, request_head_awaits_evaluation,
 };
 mod revisions;

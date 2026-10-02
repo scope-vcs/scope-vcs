@@ -46,7 +46,7 @@ fn setup_run(id: u64, suite: u64, conclusion: Option<GitHubCheckConclusion>) -> 
         html_url: format!("https://github.com/octo/repo/actions/runs/{id}"),
         check_suite_id: Some(suite),
         run_started_at_unix: Some(20),
-        created_at_unix: 20,
+        run_attempt: 1,
         updated_at_unix: 20 + id,
     }
 }
@@ -89,6 +89,14 @@ async fn a_test_pushes_main_waits_for_its_runs_and_then_deletes_its_branch() {
         .remove(0);
     assert_eq!(push.branch, GitHubBranch::SetupCheck);
     assert_eq!(push.target_oid, Some(main_oid()));
+    assert_eq!(check.push_id.as_deref(), Some(push.id.as_str()));
+    // GitHub listed nothing on the branch before the push.
+    assert!(
+        repositories
+            .record_github_setup_check_baseline(REPO, &push.id, Vec::new())
+            .await
+            .unwrap()
+    );
     requests
         .finish_github_push(&push.id, "claim", GitHubPushOutcome::Succeeded, 13)
         .await
@@ -231,4 +239,59 @@ async fn a_repository_without_a_connection_or_main_cannot_be_tested() {
         store.repositories().github_setup_check(REPO).await.unwrap(),
         None
     );
+}
+
+#[tokio::test]
+async fn an_earlier_tests_push_finishing_late_says_nothing_about_the_next_test() {
+    let store = connected_store_with_main().await;
+    let repositories = store.repositories();
+    let requests = store.requests();
+    repositories
+        .start_github_setup_check(REPO, "user_owner", 10)
+        .await
+        .unwrap();
+    let old_push = requests
+        .claim_due_github_pushes("old", 12, 10_000, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    // The test gives up on its push, and the next test of the same main starts.
+    repositories
+        .observe_github_setup_check(REPO, &main_oid(), 10 + 15 * 60)
+        .await
+        .unwrap()
+        .unwrap();
+    let (next, _) = repositories
+        .start_github_setup_check(REPO, "user_owner", 1_000)
+        .await
+        .unwrap();
+    assert_ne!(next.push_id.as_deref(), Some(old_push.id.as_str()));
+    // The old push may not record a baseline for the next test.
+    assert!(
+        !repositories
+            .record_github_setup_check_baseline(REPO, &old_push.id, Vec::new())
+            .await
+            .unwrap()
+    );
+
+    requests
+        .finish_github_push(
+            &old_push.id,
+            "old",
+            GitHubPushOutcome::Failed {
+                error: "refused".into(),
+                retry_at_unix: None,
+            },
+            1_001,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let read = repositories
+        .github_setup_check(REPO)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(read.check.state, GitHubSetupCheckState::Pushing);
+    assert_eq!(read.check.last_error, None);
 }

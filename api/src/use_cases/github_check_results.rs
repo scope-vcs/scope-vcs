@@ -7,8 +7,11 @@
 //! later read was stored first.
 
 use crate::{
-    error::ApiError, persistence::unix_now, repo_events::RepoChangeReason, state::AppState,
-    use_cases::github_setup_checks,
+    error::ApiError,
+    persistence::unix_now,
+    repo_events::RepoChangeReason,
+    state::AppState,
+    use_cases::{github_setup_checks, github_workflow_runs},
 };
 use scope_domain::{
     github_connection::GitHubConnection,
@@ -269,7 +272,10 @@ impl AppState {
                     let checks = reconcile_github_checks_once(&state, now).await;
                     let setup_checks =
                         github_setup_checks::reconcile_github_setup_checks_once(&state, now).await;
-                    checks.and(setup_checks)
+                    let workflow_runs =
+                        github_workflow_runs::retry_github_workflow_run_reads_once(&state, now)
+                            .await;
+                    checks.and(setup_checks).and(workflow_runs)
                 };
                 if let Err(error) = pass.await {
                     tracing::warn!(
