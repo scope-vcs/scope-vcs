@@ -398,7 +398,7 @@ export SCOPE_API_INTERNAL_URL="http://localhost:8080"
 export SCOPE_API_PUBLIC_URL="${tailnet_api_origin:-$LOCAL_API_ORIGIN}"
 export VITE_SCOPE_WEB_FORCE_SIGNED_OUT="$((1 - SIGNED_IN))"
 ${tailnet_web_host:+export SCOPE_WEB_ALLOWED_HOST="$tailnet_web_host"}
-exec pnpm dev --host 0.0.0.0
+exec pnpm dev --host 0.0.0.0 --port 3200 --strictPort
 EOF
   chmod +x "$runner"
 }
@@ -555,7 +555,7 @@ up() {
     assert_port_free 8084 "media worker health"
   fi
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
-    assert_port_free 3000 "web"
+    assert_port_free 3200 "web"
   fi
   mkdir -p "$STATE_DIR" "$DATA_DIR" "$MEDIA_OBJECT_DIR"
   ensure_media_keys
@@ -576,7 +576,7 @@ up() {
   fi
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
     write_web_runner
-    start_service web "http://localhost:3000" 180
+    start_service web "http://localhost:3200" 180
   fi
   status
   if (( SIGNED_IN )); then
@@ -592,7 +592,7 @@ status() {
   probe "api readyz" "http://localhost:8080/readyz"
   probe "media healthz" "http://localhost:8083/healthz"
   probe "media worker readyz" "http://localhost:8084/readyz"
-  probe "web" "http://localhost:3000" status
+  probe "web" "http://localhost:3200" status
 }
 
 probe() {
