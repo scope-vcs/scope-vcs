@@ -13,6 +13,7 @@ import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
 import { historyEntryResource, historyFeedResource } from '../history/history-resource-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
+import { githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
 
 // Repository summaries include request state that has no repository version.
 export function invalidateRepoSummaryResources(scope: string) {
@@ -40,8 +41,11 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, 
     requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestChecksResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestAutoMergeResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+    githubWorkflowRunsResource.invalidate(scope)
   } else if (event.kind === 'DependenciesChanged') {
     repositoryDependencyResource.invalidate(scope)
+  } else if (event.kind === 'GitHubWorkflowRunsChanged') {
+    githubWorkflowRunsResource.invalidate(scope)
   } else if (typeof event.kind === 'object' && 'RequestTimelineChanged' in event.kind) {
     const timeline = event.kind.RequestTimelineChanged
     requestQueueResource.invalidate(scope)

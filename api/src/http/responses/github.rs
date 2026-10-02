@@ -1,9 +1,12 @@
 use crate::github::GitHubRepository;
-use scope_api_contract::RequestActorSummaryResponse;
-use scope_domain::github_connection::{
-    GitHubConnectionStatus, GitHubDisconnectReason, GitHubRepositoryVisibility,
+use scope_api_contract::{GitHubCheckConclusion, GitHubCheckStatus, RequestActorSummaryResponse};
+use scope_domain::{
+    github_connection::{
+        GitHubConnectionStatus, GitHubDisconnectReason, GitHubRepositoryVisibility,
+    },
+    github_setup_check::{GitHubSetupCheck, GitHubSetupCheckState},
 };
-use scope_postgres::db::GitHubConnectionRead;
+use scope_postgres::db::{GitHubConnectionRead, GitHubSetupCheckRead, GitHubWorkflowRunRead};
 use serde::{Deserialize, Serialize};
 
 /// A repository's GitHub connection as its maintainers see it.
@@ -18,6 +21,70 @@ pub(crate) struct GitHubConnectionResponse {
     /// Whether the viewer may confirm that a public GitHub repository
     /// receives what Scope pushes, private requests included.
     pub(crate) can_confirm_public: bool,
+    /// The latest connection test, while the repository has a link.
+    pub(crate) setup_check: Option<GitHubSetupCheckResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "type-export", ts(rename_all = "snake_case"))]
+pub(crate) enum GitHubSetupCheckStateResponse {
+    Pushing,
+    Waiting,
+    Finished,
+    Failed,
+}
+
+/// A test that pushes main to a branch of its own and waits for workflows.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubSetupCheckResponse {
+    pub(crate) branch: String,
+    pub(crate) commit_oid: String,
+    pub(crate) state: GitHubSetupCheckStateResponse,
+    pub(crate) started_at_unix: u64,
+    pub(crate) finished_at_unix: Option<u64>,
+    /// The check names GitHub reported for the test, which can be required.
+    pub(crate) check_names: Vec<String>,
+    /// GitHub's answer to a refused push, or why no workflow started.
+    pub(crate) message: Option<String>,
+}
+
+/// The Runs page of a repository whose checks run on GitHub.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubWorkflowRunsResponse {
+    /// Whether this server can connect repositories to GitHub at all.
+    pub(crate) configured: bool,
+    /// `None` when the repository is not linked to GitHub; its runs are Scope's own.
+    pub(crate) github: Option<GitHubWorkflowRunListResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubWorkflowRunListResponse {
+    /// The repository's Actions page, which has every run and its logs.
+    pub(crate) actions_url: String,
+    /// The most recent runs, newest first.
+    pub(crate) workflow_runs: Vec<GitHubWorkflowRunResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubWorkflowRunResponse {
+    pub(crate) id: u64,
+    pub(crate) workflow_name: String,
+    pub(crate) branch: Option<String>,
+    pub(crate) head_oid: String,
+    pub(crate) event: String,
+    pub(crate) status: GitHubCheckStatus,
+    pub(crate) conclusion: Option<GitHubCheckConclusion>,
+    pub(crate) html_url: String,
+    pub(crate) run_started_at_unix: Option<u64>,
+    pub(crate) updated_at_unix: u64,
+    /// The Scope request whose branch the run is on.
+    pub(crate) request_id: Option<String>,
 }
 
 /// The whole list of required check names, replacing the stored one.
@@ -119,13 +186,58 @@ pub(crate) struct ConnectGitHubRepositoryRequest {
     pub(crate) acknowledge_public: bool,
 }
 
+pub(crate) fn github_setup_check_response(read: GitHubSetupCheckRead) -> GitHubSetupCheckResponse {
+    let check = read.check;
+    GitHubSetupCheckResponse {
+        branch: GitHubSetupCheck::branch().name(),
+        message: check.message(read.workflows_started),
+        commit_oid: check.commit_oid,
+        state: match check.state {
+            GitHubSetupCheckState::Pushing => GitHubSetupCheckStateResponse::Pushing,
+            GitHubSetupCheckState::Waiting => GitHubSetupCheckStateResponse::Waiting,
+            GitHubSetupCheckState::Finished => GitHubSetupCheckStateResponse::Finished,
+            GitHubSetupCheckState::Failed => GitHubSetupCheckStateResponse::Failed,
+        },
+        started_at_unix: check.started_at_unix,
+        finished_at_unix: check.finished_at_unix,
+        check_names: read.check_names,
+    }
+}
+
+pub(crate) fn github_workflow_run_response(
+    read: GitHubWorkflowRunRead,
+) -> GitHubWorkflowRunResponse {
+    let run = read.run;
+    GitHubWorkflowRunResponse {
+        id: run.github_run_id,
+        workflow_name: run.workflow_name,
+        branch: run.head_branch,
+        head_oid: run.head_oid,
+        event: run.event,
+        status: run.status.into(),
+        conclusion: run.conclusion.map(Into::into),
+        html_url: run.html_url,
+        run_started_at_unix: run.run_started_at_unix,
+        updated_at_unix: run.updated_at_unix,
+        request_id: read.request_id,
+    }
+}
+
 pub(crate) fn github_connection_response(
     configured: bool,
     read: Option<GitHubConnectionRead>,
     required_checks: Vec<String>,
     can_confirm_public: bool,
+    setup_check: Option<GitHubSetupCheckRead>,
 ) -> GitHubConnectionResponse {
-    let connection = read.filter(|_| configured).map(|read| {
+    let read = read.filter(|_| configured);
+    // A test of the GitHub repository Scope was connected to before says
+    // nothing about the one it is connected to now.
+    let setup_check = setup_check.filter(|setup| {
+        read.as_ref()
+            .is_some_and(|read| setup.check.is_of(&read.connection))
+    });
+    let connection = read.map(|read| {
         let connection = read.connection;
         let (public_on_github, public_confirmed) = match connection.visibility {
             GitHubRepositoryVisibility::Private => (false, true),
@@ -164,6 +276,7 @@ pub(crate) fn github_connection_response(
     });
     GitHubConnectionResponse {
         configured,
+        setup_check: setup_check.map(github_setup_check_response),
         connection,
         required_checks,
         can_confirm_public,

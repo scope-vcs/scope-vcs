@@ -23,7 +23,7 @@ use scope_domain::{
         connect_github_repository, disconnect_github_repository,
     },
     repository::RepositoryIncarnation,
-    requests::GitHubPushDestination,
+    requests::{GitHubBranch, GitHubPushDestination},
 };
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait, Value,
@@ -347,7 +347,7 @@ async fn requeue_started_github_evaluations<C: ConnectionTrait>(
         super::github_pushes::queue_github_push(
             conn,
             &connection.repository_id,
-            &request_id,
+            &GitHubBranch::Request(request_id),
             Some(&tested_oid),
             &destination,
             connection.connected_at_unix,

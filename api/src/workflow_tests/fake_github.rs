@@ -77,6 +77,10 @@ pub(super) struct FakeGitHub {
     pub(super) check_run_reads: AtomicUsize,
     /// GitHub answers check-run reads with an error while this is set.
     pub(super) check_runs_unavailable: AtomicBool,
+    /// Workflow runs GitHub Actions reports, as its API lists them.
+    pub(super) workflow_runs: Mutex<Vec<serde_json::Value>>,
+    /// GitHub answers reads of one workflow run with an error while this is set.
+    pub(super) workflow_run_unavailable: AtomicBool,
     /// Holds `<owner>/<name>.git` for every repository pushes reach.
     git_root: tempfile::TempDir,
 }
@@ -106,6 +110,61 @@ pub(super) fn check_run(
         "conclusion": conclusion,
         "details_url": format!("https://github.com/{GITHUB_FULL_NAME}/actions/runs/{id}"),
         "html_url": format!("https://github.com/{GITHUB_FULL_NAME}/runs/{id}"),
+    })
+}
+
+/// A check run a workflow run's job reported, filed under that run's suite.
+pub(super) fn suite_check_run(
+    id: u64,
+    name: &str,
+    commit_oid: &str,
+    conclusion: Option<&str>,
+    check_suite_id: u64,
+) -> serde_json::Value {
+    let mut run = check_run(id, name, commit_oid, conclusion);
+    run["check_suite"] = serde_json::json!({ "id": check_suite_id });
+    run
+}
+
+/// A workflow run GitHub started just now, as its API reports it. Its check
+/// suite id is its own id.
+pub(super) fn workflow_run(
+    id: u64,
+    branch: &str,
+    commit_oid: &str,
+    conclusion: Option<&str>,
+) -> serde_json::Value {
+    workflow_run_started_at(id, branch, commit_oid, conclusion, unix_now())
+}
+
+/// A workflow run GitHub started at `started_at_unix`.
+pub(super) fn workflow_run_started_at(
+    id: u64,
+    branch: &str,
+    commit_oid: &str,
+    conclusion: Option<&str>,
+    started_at_unix: u64,
+) -> serde_json::Value {
+    let time = |unix: u64| {
+        time::OffsetDateTime::from_unix_timestamp(unix as i64)
+            .unwrap()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap()
+    };
+    serde_json::json!({
+        "id": id,
+        "name": "ci",
+        "head_branch": branch,
+        "head_sha": commit_oid,
+        "event": "push",
+        "status": if conclusion.is_some() { "completed" } else { "in_progress" },
+        "conclusion": conclusion,
+        "html_url": format!("https://github.com/{GITHUB_FULL_NAME}/actions/runs/{id}"),
+        "check_suite_id": id,
+        "run_started_at": time(started_at_unix),
+        "run_attempt": 1,
+        // A finished run was updated after it started.
+        "updated_at": time(started_at_unix + if conclusion.is_some() { 30 } else { 0 }),
     })
 }
 
@@ -151,6 +210,8 @@ impl FakeGitHub {
             check_runs: Mutex::default(),
             check_run_reads: AtomicUsize::new(0),
             check_runs_unavailable: AtomicBool::new(false),
+            workflow_runs: Mutex::default(),
+            workflow_run_unavailable: AtomicBool::new(false),
             git_root: tempfile::tempdir().unwrap(),
         });
         let repository = fake.repository_path();
@@ -199,6 +260,27 @@ impl FakeGitHub {
             .status
             .success()
             .then(|| String::from_utf8(output.stdout).unwrap().trim().to_string())
+    }
+
+    /// Replaces the workflow runs GitHub reports.
+    pub(super) fn report_workflow_runs(&self, runs: Vec<serde_json::Value>) {
+        *self.workflow_runs.lock().unwrap() = runs;
+    }
+
+    /// Makes GitHub refuse every push with `message`, the way a branch ruleset does.
+    pub(super) fn refuse_pushes(&self, message: &str) {
+        let hook = self.repository_path().join("hooks/pre-receive");
+        fs::write(&hook, format!("#!/bin/sh\necho '{message}' >&2\nexit 1\n")).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
+    /// Lets GitHub accept pushes again.
+    pub(super) fn accept_pushes(&self) {
+        fs::remove_file(self.repository_path().join("hooks/pre-receive")).unwrap();
     }
 
     pub(super) fn report_check_runs(&self, commit_oid: &str, runs: Vec<serde_json::Value>) {
@@ -337,6 +419,55 @@ impl FakeGitHub {
                         };
                         Json(serde_json::json!({ "total_count": runs.len(), "check_runs": runs }))
                             .into_response()
+                    },
+                ),
+            )
+            .route(
+                "/repos/{owner}/{name}/actions/runs",
+                get(
+                    |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                     AxumPath((owner, name)): AxumPath<(String, String)>,
+                     AxumQuery(query): AxumQuery<HashMap<String, String>>| async move {
+                        assert_eq!(format!("{owner}/{name}"), GITHUB_FULL_NAME);
+                        let runs = if query["page"] == "1" {
+                            fake.workflow_runs
+                                .lock()
+                                .unwrap()
+                                .iter()
+                                .filter(|run| {
+                                    run["head_branch"] == query["branch"].as_str()
+                                        && run["head_sha"] == query["head_sha"].as_str()
+                                })
+                                .cloned()
+                                .collect()
+                        } else {
+                            Vec::new()
+                        };
+                        Json(serde_json::json!({
+                            "total_count": runs.len(), "workflow_runs": runs,
+                        }))
+                    },
+                ),
+            )
+            .route(
+                "/repos/{owner}/{name}/actions/runs/{id}",
+                get(
+                    |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                     AxumPath((owner, name, id)): AxumPath<(String, String, u64)>| async move {
+                        assert_eq!(format!("{owner}/{name}"), GITHUB_FULL_NAME);
+                        if fake.workflow_run_unavailable.load(Ordering::SeqCst) {
+                            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                        }
+                        fake.workflow_runs
+                            .lock()
+                            .unwrap()
+                            .iter()
+                            .find(|run| run["id"] == id)
+                            .cloned()
+                            .map_or_else(
+                                || StatusCode::NOT_FOUND.into_response(),
+                                |run| Json(run).into_response(),
+                            )
                     },
                 ),
             )

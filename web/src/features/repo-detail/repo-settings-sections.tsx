@@ -30,6 +30,8 @@ export function CiSection({ children }: { children: ReactNode }) {
       <SectionRow
         description="Run the GitHub Actions workflows of a connected GitHub repository on requests."
         icon={<CircleCheck className="size-4" />}
+        // The Runs page links here to test the connection.
+        id="ci"
         title="CI"
       >
         {children}

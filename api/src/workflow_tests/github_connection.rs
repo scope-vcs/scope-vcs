@@ -144,7 +144,7 @@ async fn github_is_off_when_the_app_is_not_configured() {
     let body = connection(&state).await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": false, "connection": null, "required_checks": [], "can_confirm_public": true })
+        serde_json::json!({ "configured": false, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null })
     );
     let install = authorize_response(&state, &bearer_header(), serde_json::json!({})).await;
     assert_eq!(install.status(), StatusCode::NOT_FOUND);
@@ -163,7 +163,7 @@ async fn a_maintainer_connects_through_github_setup() {
     let (state, fake) = github_state().await;
     assert_eq!(
         connection(&state).await,
-        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null })
     );
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
 
@@ -593,7 +593,7 @@ async fn a_maintainer_disconnects() {
     .await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null })
     );
     let again = request(
         &state,

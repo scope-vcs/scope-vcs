@@ -38,7 +38,7 @@ const githubConnection = {
 }
 repoSettingsResource.write(settingsScope, {
   collaboration: { members, invites: [] },
-  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], can_confirm_public: true },
+  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], can_confirm_public: true, setup_check: null },
 })
 const loadSettings = () => new Promise<{ collaboration: null; github: null }>(() => {})
 function setGitHub(github: GitHubConnectionResponse) {
@@ -61,6 +61,7 @@ function App() {
         connection: { ...githubConnection, disconnected: { reason: 'app_uninstalled', at_unix: 1_767_312_000 } },
         required_checks: ['ci / test'],
         can_confirm_public: true,
+        setup_check: null,
       })}>GitHub uninstalled elsewhere</button>
     </div>
     <RepoLayoutProvider live={{ repo } as RepoLiveState} subscribe={subscribe}>
@@ -85,7 +86,7 @@ function App() {
         disconnectGitHub={async (params) => {
           calls.push({ disconnectGitHub: params })
           await hold('disconnect-github')
-          const github = { configured: true, connection: null, required_checks: [], can_confirm_public: true }
+          const github = { configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null }
           retainGitHubConnection(settingsScope, github)
           return github
         }}
@@ -107,6 +108,21 @@ function App() {
         startGitHubAuthorization={async (params) => {
           calls.push({ startGitHubAuthorization: params })
           return { authorize_url: '#github-authorize' }
+        }}
+        startGitHubSetupCheck={async (params) => {
+          calls.push({ startGitHubSetupCheck: params })
+          await hold('setup-check')
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const github = {
+            ...current,
+            setup_check: {
+              branch: 'scope/setup-check', commit_oid: 'abcdef1234567890abcdef1234567890abcdef12',
+              state: 'finished' as const, started_at_unix: 1, finished_at_unix: 2,
+              check_names: ['lint', 'test / unit and integration on every supported platform'], message: null,
+            },
+          }
+          retainGitHubConnection(settingsScope, github)
+          return github
         }}
         updateMember={async (input) => {
           calls.push(input)

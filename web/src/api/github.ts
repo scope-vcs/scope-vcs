@@ -1,4 +1,4 @@
-import { createApiClient } from '@/api/client'
+import { createApiClient, type ApiClient } from '@/api/client'
 import type {
   ConnectRepoGitHubInput,
   GitHubSetupInput,
@@ -10,6 +10,7 @@ import type {
   GitHubAuthorizeResponse,
   GitHubConnectionResponse,
   GitHubSetupResponse,
+  GitHubWorkflowRunsResponse,
 } from './types.generated'
 import { repoRoute } from './paths'
 import { ApiRouteTemplates } from './types.generated'
@@ -99,5 +100,26 @@ export async function disconnectRepoGitHubForRequest(
     repoRoute(ApiRouteTemplates.repoGitHub, data),
     apiValidators.GitHubConnectionResponse,
     { auth: 'required' },
+  )
+}
+
+export async function startRepoGitHubSetupCheckForRequest(
+  data: RepoParams,
+): Promise<GitHubConnectionResponse> {
+  return createApiClient().post(
+    repoRoute(ApiRouteTemplates.repoGitHubSetupCheck, data),
+    apiValidators.GitHubConnectionResponse,
+    { auth: 'required' },
+  )
+}
+
+export async function loadRepoGitHubWorkflowRunsForRequest(
+  data: RepoParams,
+  api: ApiClient = createApiClient(),
+): Promise<GitHubWorkflowRunsResponse> {
+  return api.get(
+    repoRoute(ApiRouteTemplates.repoGitHubWorkflowRuns, data),
+    apiValidators.GitHubWorkflowRunsResponse,
+    { auth: 'optional' },
   )
 }

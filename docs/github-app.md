@@ -54,7 +54,12 @@ API at startup.
 
 ## Connecting
 
-1. A maintainer chooses Connect GitHub in repository settings.
+1. A maintainer chooses Connect GitHub in the CI section of repository
+   settings, or on the Runs page of a repository with no runs, no workflows of
+   its own and no link. The page they started from is kept in session
+   storage, and the setup page returns there once the repository is
+   connected, when it is a page of that repository; otherwise it opens the
+   repository's settings.
    `POST /v1/repos/{owner}/{repo}/github/authorize`, sent with the page's
    origin, returns GitHub's OAuth URL for the app with a signed `state` naming
    the Scope repository, the maintainer, and a ten-minute expiry.
@@ -126,7 +131,41 @@ on:
 
 GitHub runs the workflow files in the pushed commit. Workflows that read
 `github.event.pull_request` find it empty on a branch push and need a
-fallback.
+fallback. Once connected, the CI section of repository settings shows
+this trigger.
+
+### Testing the connection
+
+Test connection in the CI section
+(`POST /v1/repos/{owner}/{repo}/github/setup-check`, maintainers only) sends
+the repository's current main to `scope/setup-check` with the same push jobs
+requests use. A repository keeps its latest test in
+`scope_github_setup_checks`, so the result stays across reloads and
+navigation; the connection response (`GET /v1/repos/{owner}/{repo}/github`)
+carries it. A second test waits until the first ends. Main holds private
+files, so it goes only where a private request may: a GitHub repository that
+became public is not tested until a maintainer allows private requests there.
+
+If GitHub refuses the push, for example because a branch ruleset restricts
+creating `scope/**` branches, the test fails at once and shows GitHub's
+answer. Otherwise a background pass reads, every 30 seconds, the workflow runs
+GitHub started on `scope/setup-check` for that commit
+(`GET /repos/{owner}/{repo}/actions/runs?branch=...&head_sha=...`) and the
+commit's check runs. Right before pushing, the test asks GitHub which
+workflow runs it already lists on `scope/setup-check` for the commit; those
+are an earlier test's and never count, so testing an unchanged main again
+waits for its own runs. Only check runs filed under the counted workflow
+runs' check suites count, so runs GitHub started for the same commit on main
+do not. The test's push job answers it, so a push of an earlier test that
+finishes late changes nothing. A test belongs to the GitHub repository it
+pushed to: settings stop showing it once the repository is connected to
+another one, and it does not hold up a test of the new one. Deleting the
+branch afterwards retries like any push job. The
+test ends when every workflow run it saw completed, or after 15 minutes, and
+then deletes the branch. The check names it saw are listed, and each can be
+made a required check with one click. A test that ends without any workflow
+run says: "No workflows started. Check that your workflows include the
+scope/** push trigger."
 
 ### Required checks
 
@@ -201,6 +240,41 @@ is pending. New results refresh open request views and wake auto-merge.
 When the link is disconnected or removed, evaluations that ask GitHub become
 configuration errors: they never pass and never wait forever.
 
+GitHub starts nothing, and reports nothing, for a branch none of whose
+workflows has the push trigger. So when the tested commit has had no check run
+at all for 10 minutes after its push succeeded, the request view (web and
+`scope request checks`) says "No workflows started. Check that your workflows
+include the scope/** push trigger."
+
+## Runs page
+
+A repository with a GitHub link lists GitHub Actions workflow runs on its Runs
+page instead of Scope's own runs:
+`GET /v1/repos/{owner}/{repo}/github/workflow-runs`, readable by repository
+members, returns the 50 most recent with their workflow, branch, commit,
+status and time, and a link to the repository's Actions page for the rest.
+Every run links to GitHub, which keeps the logs; a run on
+`scope/requests/<id>` also links to its request while the request exists.
+Repositories without a link keep their native runs. When such a repository
+has no runs and no workflows of its own, and the server has a GitHub App,
+the Runs page says its runs come from GitHub Actions once GitHub is connected
+and offers maintainers Connect GitHub. The workflow runs response says
+whether the server has a GitHub App (`configured`). A connected repository
+without runs yet links maintainers to Test connection in the CI settings.
+
+Runs are stored in `scope_github_workflow_runs`. A `workflow_run` delivery for
+a connected repository makes Scope read `GET /repos/{owner}/{repo}/actions/runs/{id}`
+and store what GitHub answers. A stored run only moves forward: a later
+attempt (a re-run on GitHub) replaces it, and within an attempt a read never
+moves it back from completed or replaces a newer one, even when GitHub dates
+both reads to the same second. The read is kept in
+`scope_github_workflow_run_reads` before the delivery is acknowledged, so one
+GitHub does not answer is read again every 30 seconds with the push job's
+backoff before it is given up. Deliveries for repositories that are not
+connected are ignored. Each
+stored run sends a `GitHubWorkflowRunsChanged` repository event, which open
+Runs pages use to refresh their list in place.
+
 ## Webhooks
 
 `POST /v1/github/webhooks` checks `X-Hub-Signature-256` over the raw body
@@ -215,8 +289,9 @@ the event is ignored. Connecting and applying an installation event hold the
 same installation lock while they ask GitHub, so a removal that lands during
 a connect is either seen by the connect or finds the new link.
 
-Check deliveries for repositories or commits Scope does not test are
-acknowledged with 204, and a failed read is left to the reconciler.
+Check deliveries for repositories or commits Scope does not watch (no request
+evaluation and no running connection test uses them) are acknowledged with
+204, and a failed read is left to the reconciler.
 
 ## Local development
 

@@ -4,6 +4,8 @@ pub mod content_ref;
 pub mod dependency_analysis;
 pub mod error;
 pub mod github_connection;
+pub mod github_setup_check;
+pub mod github_workflow_runs;
 pub mod history;
 pub mod landing_file;
 pub mod policy;

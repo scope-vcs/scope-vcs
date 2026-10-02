@@ -1,11 +1,14 @@
 import type { RepoParams, RepoRunHistoryInput } from '@/api/types'
+import { GitHubWorkflowRunsPage } from '@/features/runs/github-workflow-runs'
 import { RepositoryRunsPage } from '@/features/runs/repository-runs-page'
 import {
+  loadRepoGitHubWorkflowRuns,
   loadRepoRunHistory,
   loadRepoRunPage,
   loadRepoRunWorkflows,
 } from '@/routes/-run-history-actions'
-import { useCallback } from 'react'
+import { loadRepoSettingsData, startRepoGitHubAuthorization } from '@/routes/-repo-settings-actions'
+import { useCallback, useMemo } from 'react'
 
 type RunPageResources = Awaited<ReturnType<typeof loadRepoRunPage>>
 
@@ -28,9 +31,33 @@ export function RepositoryRunsRoute({
       loadRepoRunWorkflows({ data: input, signal }),
     [],
   )
+  const loadGitHubRuns = useCallback(
+    (data: RepoParams, signal: AbortSignal) => loadRepoGitHubWorkflowRuns({ data, signal }),
+    [],
+  )
+
+  const configured = initialResources?.kind === 'native' && initialResources.githubConfigured
+  const github = useMemo(() => ({
+    configured,
+    loadSettings: loadRepoSettingsData,
+    startAuthorization: startRepoGitHubAuthorization,
+  }), [configured])
+
+  // GitHub keeps its own workflow filters, so every Runs route lists all runs.
+  if (initialResources?.kind === 'github') {
+    return (
+      <GitHubWorkflowRunsPage
+        initialRuns={initialResources.github}
+        key={`${params.owner}/${params.repo}`}
+        loadRuns={loadGitHubRuns}
+        params={params}
+      />
+    )
+  }
 
   return (
     <RepositoryRunsPage
+      github={github}
       initialResources={initialResources}
       key={`${params.owner}/${params.repo}/${workflow ?? 'all'}/${initialResources ? 'member' : 'denied'}`}
       loadHistory={loadHistory}

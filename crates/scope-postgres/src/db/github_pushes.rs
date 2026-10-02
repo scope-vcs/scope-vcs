@@ -1,4 +1,4 @@
-//! Pushes and deletions of request branches on GitHub, run by a leased
+//! Pushes and deletions of Scope's branches on GitHub, run by a leased
 //! background loop. A branch has one push waiting at a time: queueing a new
 //! one drops the older ones that are not running, and a branch is never
 //! pushed by two processes at once, so a slow older push cannot land after a
@@ -11,13 +11,14 @@ use super::{
     integer_columns::{i32_to_u32, i64_to_u64, u64_to_i64},
 };
 use crate::error::PostgresError;
-use scope_domain::requests::{
-    GitHubPush, GitHubPushDestination, GitHubPushState, github_request_ref,
+use scope_domain::{
+    github_setup_check::GitHubSetupCheck,
+    requests::{GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState},
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
 
 const SELECT_PUSH: &str = "id, repo_id, request_id, target_oid, installation_id, \
-    github_repository_id, github_full_name, state, attempts, last_error";
+    github_repository_id, github_full_name, state, attempts, last_error, updated_at_unix";
 
 /// A later job of the same branch than `push`.
 const LATER_JOB: &str = "later.repo_id = push.repo_id AND later.ref = push.ref \
@@ -27,7 +28,7 @@ const LATER_JOB: &str = "later.repo_id = push.repo_id AND later.ref = push.ref \
 struct PushRow {
     id: String,
     repo_id: String,
-    request_id: String,
+    request_id: Option<String>,
     target_oid: Option<String>,
     installation_id: i64,
     github_repository_id: i64,
@@ -35,6 +36,7 @@ struct PushRow {
     state: String,
     attempts: i32,
     last_error: Option<String>,
+    updated_at_unix: i64,
 }
 
 /// How a claimed push ended.
@@ -181,6 +183,8 @@ impl RequestStore {
     }
 
     /// Records how a claimed push ended. Returns `None` when the claim was lost.
+    /// A finished push of the setup branch also answers the connection test
+    /// that is waiting on it, in the same transaction.
     pub async fn finish_github_push(
         &self,
         id: &str,
@@ -189,6 +193,14 @@ impl RequestStore {
         now_unix: u64,
     ) -> Result<Option<GitHubPush>, PostgresError> {
         let now = u64_to_i64(now_unix, "GitHub push time")?;
+        let push_result = match &outcome {
+            GitHubPushOutcome::Succeeded => Some(Ok(())),
+            GitHubPushOutcome::Failed {
+                error,
+                retry_at_unix: None,
+            } => Some(Err(error.clone())),
+            GitHubPushOutcome::Failed { .. } => None,
+        };
         let (state, next_attempt, last_error) = match outcome {
             GitHubPushOutcome::Succeeded => ("succeeded", None, None),
             GitHubPushOutcome::Failed {
@@ -204,7 +216,8 @@ impl RequestStore {
                 retry_at_unix: None,
             } => ("failed", None, Some(error)),
         };
-        PushRow::find_by_statement(Statement::from_sql_and_values(
+        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let Some(push) = PushRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
                 "UPDATE scope_github_pushes
@@ -223,11 +236,29 @@ impl RequestStore {
                 now.into(),
             ],
         ))
-        .one(self.db.as_ref())
+        .one(&tx)
         .await
         .map_err(PostgresError::internal)?
         .map(PushRow::into_domain)
-        .transpose()
+        .transpose()?
+        else {
+            return Ok(None);
+        };
+        if push.branch == GitHubSetupCheck::branch()
+            && push.target_oid.is_some()
+            && let Some(result) = push_result
+        {
+            super::github_setup_checks::record_setup_check_push(
+                &tx,
+                &push.repo_id,
+                &push.id,
+                result.as_ref().map(|_| ()).map_err(String::as_str),
+                now_unix,
+            )
+            .await?;
+        }
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(Some(push))
     }
 
     /// The push queued last for the request's branch.
@@ -253,18 +284,22 @@ impl RequestStore {
     }
 }
 
-/// Queues a push of `target_oid` to the request's branch in `destination`,
-/// or its deletion when `None`, replacing every push of the branch that is
-/// not running.
+/// Queues a push of `target_oid` to the branch in `destination`, or its
+/// deletion when `None`, replacing every push of the branch that is not
+/// running. Returns the job's id.
 pub(super) async fn queue_github_push<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
-    request_id: &str,
+    branch: &GitHubBranch,
     target_oid: Option<&str>,
     destination: &GitHubPushDestination,
     now_unix: u64,
-) -> Result<(), PostgresError> {
-    let git_ref = github_request_ref(request_id);
+) -> Result<String, PostgresError> {
+    let git_ref = branch.git_ref();
+    let request_id = match branch {
+        GitHubBranch::Request(request_id) => Some(request_id.clone()),
+        GitHubBranch::SetupCheck => None,
+    };
     acquire_aggregate_lock(conn, "github-push", &format!("{repo_id}:{git_ref}")).await?;
     let now = u64_to_i64(now_unix, "GitHub push time")?;
     // Taken before older jobs are dropped, so the new job follows every job
@@ -292,13 +327,14 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
     ))
     .await
     .map_err(PostgresError::internal)?;
-    conn.execute_raw(Statement::from_sql_and_values(
+    conn.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_github_pushes (id, repo_id, request_id, ref, sequence,
             installation_id, github_repository_id, github_full_name, target_oid, kind,
             state, attempts, next_attempt_at_unix, created_at_unix, updated_at_unix)
          VALUES ('github_push_' || replace(gen_random_uuid()::text, '-', ''), $1, $2, $3, $4,
-            $5, $6, $7, $8, $9, 'queued', 0, $10, $10, $10)",
+            $5, $6, $7, $8, $9, 'queued', 0, $10, $10, $10)
+         RETURNING id",
         [
             repo_id.into(),
             request_id.into(),
@@ -318,28 +354,46 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
         ],
     ))
     .await
-    .map_err(PostgresError::internal)?;
-    Ok(())
+    .map_err(PostgresError::internal)?
+    .ok_or_else(|| PostgresError::internal_message("GitHub push insert returned no row"))?
+    .try_get("", "id")
+    .map_err(PostgresError::internal)
 }
 
 /// A request that merged, closed or was deleted gives up its GitHub branch,
-/// if Scope ever pushed one. The branch is deleted from the GitHub repository
-/// it was last pushed to.
+/// if Scope ever pushed one.
 pub(super) async fn queue_github_branch_deletion<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
     request_id: &str,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
+    queue_pushed_branch_deletion(
+        conn,
+        repo_id,
+        &GitHubBranch::Request(request_id.to_string()),
+        now_unix,
+    )
+    .await
+}
+
+/// Deletes the branch from the GitHub repository it was last pushed to, if
+/// Scope ever pushed it.
+pub(super) async fn queue_pushed_branch_deletion<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    branch: &GitHubBranch,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
     let Some(pushed) = PushRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         format!(
             "SELECT {SELECT_PUSH} FROM scope_github_pushes
-              WHERE repo_id = $1 AND request_id = $2 AND kind = 'push'
+              WHERE repo_id = $1 AND ref = $2 AND kind = 'push'
               ORDER BY sequence DESC
               LIMIT 1"
         ),
-        [repo_id.into(), request_id.into()],
+        [repo_id.into(), branch.git_ref().into()],
     ))
     .one(conn)
     .await
@@ -348,15 +402,8 @@ pub(super) async fn queue_github_branch_deletion<C: ConnectionTrait>(
         return Ok(());
     };
     let pushed = pushed.into_domain()?;
-    queue_github_push(
-        conn,
-        repo_id,
-        request_id,
-        None,
-        &pushed.destination,
-        now_unix,
-    )
-    .await
+    queue_github_push(conn, repo_id, branch, None, &pushed.destination, now_unix).await?;
+    Ok(())
 }
 
 /// A repository about to be deleted gives up every branch it pushed whose
@@ -366,25 +413,33 @@ pub(super) async fn queue_github_branch_deletions_for_repository<C: ConnectionTr
     repo_id: &str,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
-    let pushed = conn
-        .query_all_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "SELECT request_id FROM (
-                SELECT DISTINCT ON (request_id) request_id, kind
+    let pushed = PushRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "SELECT {SELECT_PUSH} FROM (
+                SELECT DISTINCT ON (ref) *
                   FROM scope_github_pushes
                  WHERE repo_id = $1
-                 ORDER BY request_id, sequence DESC
+                 ORDER BY ref, sequence DESC
              ) latest
-             WHERE kind = 'push'",
-            [repo_id.into()],
-        ))
-        .await
-        .map_err(PostgresError::internal)?;
-    for row in pushed {
-        let request_id: String = row
-            .try_get("", "request_id")
-            .map_err(PostgresError::internal)?;
-        queue_github_branch_deletion(conn, repo_id, &request_id, now_unix).await?;
+             WHERE kind = 'push'"
+        ),
+        [repo_id.into()],
+    ))
+    .all(conn)
+    .await
+    .map_err(PostgresError::internal)?;
+    for push in pushed {
+        let push = push.into_domain()?;
+        queue_github_push(
+            conn,
+            repo_id,
+            &push.branch,
+            None,
+            &push.destination,
+            now_unix,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -399,10 +454,14 @@ fn prefixed(prefix: &str) -> String {
 
 impl PushRow {
     fn into_domain(self) -> Result<GitHubPush, PostgresError> {
+        let branch = match self.request_id {
+            Some(request_id) => GitHubBranch::Request(request_id),
+            None => GitHubBranch::SetupCheck,
+        };
         Ok(GitHubPush {
             id: self.id,
             repo_id: self.repo_id,
-            request_id: self.request_id,
+            branch,
             target_oid: self.target_oid,
             destination: GitHubPushDestination {
                 installation_id: i64_to_u64(self.installation_id, "GitHub installation id")?,
@@ -425,6 +484,7 @@ impl PushRow {
             },
             attempts: i32_to_u32(self.attempts, "GitHub push attempts")?,
             last_error: self.last_error,
+            updated_at_unix: i64_to_u64(self.updated_at_unix, "GitHub push time")?,
         })
     }
 }

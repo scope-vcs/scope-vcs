@@ -215,7 +215,11 @@ required_checks: Array<string>,
  * Whether the viewer may confirm that a public GitHub repository
  * receives what Scope pushes, private requests included.
  */
-can_confirm_public: boolean, };
+can_confirm_public: boolean, 
+/**
+ * The latest connection test, while the repository has a link.
+ */
+setup_check: GitHubSetupCheckResponse | null, };
 
 export type GitHubConnectionDetailsResponse = { github_full_name: string, github_url: string, 
 /**
@@ -268,6 +272,44 @@ export type ConnectGitHubRepositoryRequest = { grant: string, github_repository_
 acknowledge_public: boolean, };
 
 export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
+
+export type GitHubSetupCheckStateResponse = "pushing" | "waiting" | "finished" | "failed";
+
+export type GitHubSetupCheckResponse = { branch: string, commit_oid: string, state: GitHubSetupCheckStateResponse, started_at_unix: number, finished_at_unix: number | null, 
+/**
+ * The check names GitHub reported for the test, which can be required.
+ */
+check_names: Array<string>, 
+/**
+ * GitHub's answer to a refused push, or why no workflow started.
+ */
+message: string | null, };
+
+export type GitHubWorkflowRunsResponse = { 
+/**
+ * Whether this server can connect repositories to GitHub at all.
+ */
+configured: boolean, 
+/**
+ * `None` when the repository is not linked to GitHub; its runs are Scope's own.
+ */
+github: GitHubWorkflowRunListResponse | null, };
+
+export type GitHubWorkflowRunListResponse = { 
+/**
+ * The repository's Actions page, which has every run and its logs.
+ */
+actions_url: string, 
+/**
+ * The most recent runs, newest first.
+ */
+workflow_runs: Array<GitHubWorkflowRunResponse>, };
+
+export type GitHubWorkflowRunResponse = { id: number, workflow_name: string, branch: string | null, head_oid: string, event: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, html_url: string, run_started_at_unix: number | null, updated_at_unix: number, 
+/**
+ * The Scope request whose branch the run is on.
+ */
+request_id: string | null, };
 
 export type HistoryPageRequest = { feed: HistoryFeed | null, audience: ProjectionPreviewAudience | null, before: string | null, };
 
@@ -516,7 +558,7 @@ export type CreateRequestDiscussionReplyRequest = { body_markdown: string, clien
 
 export type MarkRequestDiscussionReadRequest = { through_position: number, };
 
-export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | { "RepositoryChanged": { reason: string, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, audience: RequestAudience, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, audience: RequestAudience, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
+export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | { "RepositoryChanged": { reason: string, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, audience: RequestAudience, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, audience: RequestAudience, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
 
 export type RunChangeKind = "Created" | "StatusChanged" | "LogsAppended";
 
@@ -589,6 +631,8 @@ export const ApiRouteTemplates = {
   repoGitHubAuthorize: "/v1/repos/{owner}/{repo}/github/authorize",
   repoGitHubRequiredChecks: "/v1/repos/{owner}/{repo}/github/required-checks",
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
+  repoGitHubSetupCheck: "/v1/repos/{owner}/{repo}/github/setup-check",
+  repoGitHubWorkflowRuns: "/v1/repos/{owner}/{repo}/github/workflow-runs",
   githubSetup: "/v1/github/setup",
   repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",

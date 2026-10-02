@@ -9,6 +9,7 @@ import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { RunHistoryList } from './run-history-list'
+import { RunsCiEmptyState, type RunsGitHubActions } from './runs-ci-empty-state'
 import { useRunLiveRefresh } from './run-live-refresh'
 import { RunsFilterBar } from './runs-filter-bar'
 import {
@@ -31,6 +32,8 @@ type RunPageResources = {
 }
 
 type RepositoryRunsPageProps = {
+  /** How an empty page offers to connect GitHub. */
+  github: RunsGitHubActions | null
   initialResources: RunPageResources | null
   loadHistory: (
     input: RepoRunHistoryInput,
@@ -51,11 +54,12 @@ export function RepositoryRunsPage(props: RepositoryRunsPageProps) {
     ? repoResourceScope(repo, userId ?? null)
     : null
   const cacheKey = scope ? runHistoryCacheKey(scope, props.workflow) : null
-  return <RepositoryRunsPageContent initialResources={props.initialResources} loadHistory={props.loadHistory} loadWorkflows={props.loadWorkflows} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} scope={scope} />
+  return <RepositoryRunsPageContent github={props.github} initialResources={props.initialResources} loadHistory={props.loadHistory} loadWorkflows={props.loadWorkflows} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} scope={scope} />
 }
 
 function RepositoryRunsPageContent({
   cacheKey,
+  github,
   initialResources,
   loadHistory,
   loadWorkflows,
@@ -165,6 +169,14 @@ function RepositoryRunsPageContent({
           ) : null}
           <div className="pt-7">
             <RunHistoryList
+              empty={github && !workflow ? (
+                <RunsCiEmptyState
+                  github={github}
+                  // Native workflows count only where Scope may run them.
+                  hasWorkflows={nativeRunsAvailable && workflows.workflows.length > 0}
+                  params={params}
+                />
+              ) : undefined}
               loadMore={() => void loadMore()}
               loadingMore={loadingMore}
               params={params}

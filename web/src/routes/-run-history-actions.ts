@@ -1,5 +1,7 @@
 import { createApiClient } from '@/api/client'
+import { loadRepoGitHubWorkflowRunsForRequest } from '@/api/github'
 import { loadOptionalResource } from '@/api/http'
+import { parseRepoParams } from '@/api/repo-params'
 import {
   loadRepoRunDetailForRequest,
   loadRepoRunHistoryForRequest,
@@ -10,10 +12,14 @@ import {
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { createServerFn } from '@tanstack/react-start'
 
+// A repository whose checks run on GitHub lists GitHub's workflow runs; any
+// other lists Scope's own.
 export const loadRepoRunPage = createServerFn({ method: 'GET' })
   .validator(parseRepoRunHistoryInput)
   .handler(({ data }) => loadOptionalResource(async () => {
     const api = createApiClient()
+    const { configured, github } = await loadRepoGitHubWorkflowRunsForRequest(data, api)
+    if (github) return { kind: 'github' as const, github }
     const [history, workflowResource] = await Promise.all([
       loadRepoRunHistoryForRequest(data, api),
       loadRepoRunWorkflowsForRequest(data, api)
@@ -25,6 +31,8 @@ export const loadRepoRunPage = createServerFn({ method: 'GET' })
         })),
     ])
     return {
+      kind: 'native' as const,
+      githubConfigured: configured,
       history,
       workflows: workflowResource.workflows,
       workflowsError: workflowResource.error,
@@ -34,6 +42,10 @@ export const loadRepoRunPage = createServerFn({ method: 'GET' })
 export const loadRepoRunWorkflows = createServerFn({ method: 'GET' })
   .validator(parseRepoRunHistoryInput)
   .handler(({ data }) => loadOptionalResource(() => loadRepoRunWorkflowsForRequest(data)))
+
+export const loadRepoGitHubWorkflowRuns = createServerFn({ method: 'GET' })
+  .validator(parseRepoParams)
+  .handler(({ data }) => loadRepoGitHubWorkflowRunsForRequest(data))
 
 export const loadRepoRunHistory = createServerFn({ method: 'GET' })
   .validator(parseRepoRunHistoryInput)

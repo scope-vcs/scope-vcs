@@ -3,10 +3,14 @@
 //! never stored; installation tokens are cached in memory only.
 
 use super::GitHubApp;
+use super::webhook::is_commit_oid;
 use crate::{error::ApiError, persistence::unix_now};
 use jsonwebtoken::{Algorithm, Header};
 use reqwest::{Method, RequestBuilder, StatusCode};
-use scope_domain::requests::{GitHubCheckConclusion, GitHubCheckRun, GitHubCheckStatus};
+use scope_domain::{
+    github_workflow_runs::GitHubWorkflowRun,
+    requests::{GitHubCheckConclusion, GitHubCheckRun, GitHubCheckStatus},
+};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -127,6 +131,92 @@ struct CheckRun {
     conclusion: Option<String>,
     details_url: Option<String>,
     html_url: Option<String>,
+    check_suite: Option<CheckSuiteReference>,
+}
+
+#[derive(Deserialize)]
+struct CheckSuiteReference {
+    id: u64,
+}
+
+#[derive(Deserialize)]
+struct WorkflowRunsPage {
+    workflow_runs: Vec<WorkflowRun>,
+}
+
+/// Like check runs, status and conclusion stay text until mapped.
+#[derive(Deserialize)]
+struct WorkflowRun {
+    id: u64,
+    name: Option<String>,
+    head_branch: Option<String>,
+    head_sha: String,
+    event: String,
+    status: Option<String>,
+    conclusion: Option<String>,
+    html_url: String,
+    check_suite_id: Option<u64>,
+    run_started_at: Option<String>,
+    #[serde(default = "first_attempt")]
+    run_attempt: u32,
+    updated_at: String,
+}
+
+fn first_attempt() -> u32 {
+    1
+}
+
+impl WorkflowRun {
+    fn into_domain(self) -> Option<GitHubWorkflowRun> {
+        let status: Option<GitHubCheckStatus> = self.status.as_deref().and_then(parse_enum);
+        let conclusion: Option<Option<GitHubCheckConclusion>> = match &self.conclusion {
+            Some(conclusion) => parse_enum(conclusion).map(Some),
+            None => Some(None),
+        };
+        let (Some(status), Some(conclusion), Some(updated_at_unix)) =
+            (status, conclusion, parse_time(&self.updated_at))
+        else {
+            return self.skip();
+        };
+        if (status == GitHubCheckStatus::Completed) != conclusion.is_some()
+            || !is_commit_oid(&self.head_sha)
+        {
+            return self.skip();
+        }
+        Some(GitHubWorkflowRun {
+            github_run_id: self.id,
+            workflow_name: self
+                .name
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or_else(|| "Workflow".to_string()),
+            head_branch: self.head_branch,
+            head_oid: self.head_sha,
+            event: self.event,
+            status,
+            conclusion,
+            html_url: self.html_url,
+            check_suite_id: self.check_suite_id,
+            run_started_at_unix: self.run_started_at.as_deref().and_then(parse_time),
+            run_attempt: self.run_attempt.max(1),
+            updated_at_unix,
+        })
+    }
+
+    fn skip(&self) -> Option<GitHubWorkflowRun> {
+        tracing::warn!(
+            workflow_run_id = self.id,
+            status = ?self.status,
+            conclusion = ?self.conclusion,
+            "skipping a GitHub workflow run Scope cannot read"
+        );
+        None
+    }
+}
+
+fn parse_time(value: &str) -> Option<u64> {
+    OffsetDateTime::parse(value, &Rfc3339)
+        .ok()
+        .and_then(|time| u64::try_from(time.unix_timestamp()).ok())
 }
 
 impl CheckRun {
@@ -151,6 +241,7 @@ impl CheckRun {
             conclusion,
             // GitHub Actions points `details_url` at the job's logs.
             details_url: self.details_url.or(self.html_url),
+            check_suite_id: self.check_suite.map(|suite| suite.id),
         })
     }
 
@@ -327,6 +418,56 @@ impl GitHubApp {
                 .filter_map(|run| run.into_domain(commit_oid))
                 .collect(),
         ))
+    }
+
+    /// One workflow run as GitHub reports it now. `None` when the run, the
+    /// installation or the repository can no longer be reached, or GitHub
+    /// reports the run in a shape Scope cannot read.
+    pub(crate) async fn workflow_run(
+        &self,
+        installation_id: u64,
+        full_name: &str,
+        run_id: u64,
+    ) -> Result<Option<GitHubWorkflowRun>, ApiError> {
+        let Some(token) = self.installation_token(installation_id).await? else {
+            return Ok(None);
+        };
+        let request = self
+            .request(
+                Method::GET,
+                &format!("/repos/{full_name}/actions/runs/{run_id}"),
+            )
+            .bearer_auth(token);
+        Ok(send::<WorkflowRun>(request)
+            .await?
+            .and_then(WorkflowRun::into_domain))
+    }
+
+    /// The workflow runs GitHub started on a branch for a commit. `None` when
+    /// the installation or the repository can no longer be reached.
+    pub(crate) async fn branch_workflow_runs(
+        &self,
+        installation_id: u64,
+        full_name: &str,
+        branch: &str,
+        commit_oid: &str,
+    ) -> Result<Option<Vec<GitHubWorkflowRun>>, ApiError> {
+        let Some(token) = self.installation_token(installation_id).await? else {
+            return Ok(None);
+        };
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("branch", branch)
+            .append_pair("head_sha", commit_oid)
+            .finish();
+        let path = format!("/repos/{full_name}/actions/runs?{query}");
+        Ok(self
+            .pages::<WorkflowRunsPage, _>(&token, &path, |page| page.workflow_runs)
+            .await?
+            .map(|runs| {
+                runs.into_iter()
+                    .filter_map(WorkflowRun::into_domain)
+                    .collect()
+            }))
     }
 
     /// A token that acts as the installation. `None` when the installation

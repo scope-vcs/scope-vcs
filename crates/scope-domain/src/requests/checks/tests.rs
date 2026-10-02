@@ -47,6 +47,7 @@ fn github_run(
         },
         conclusion,
         details_url: Some(format!("https://github.com/owner/repo/runs/{id}")),
+        check_suite_id: Some(id),
     }
 }
 
@@ -461,7 +462,7 @@ fn push(target_oid: &str, state: GitHubPushState, last_error: Option<&str>) -> G
     GitHubPush {
         id: "push_1".into(),
         repo_id: "owner/repo".into(),
-        request_id: "req_1".into(),
+        branch: GitHubBranch::Request("req_1".into()),
         target_oid: Some(target_oid.into()),
         destination: GitHubPushDestination {
             installation_id: 7,
@@ -471,7 +472,53 @@ fn push(target_oid: &str, state: GitHubPushState, last_error: Option<&str>) -> G
         state,
         attempts: 1,
         last_error: last_error.map(str::to_string),
+        updated_at_unix: 100,
     }
+}
+
+#[test]
+fn a_pushed_commit_without_any_run_says_no_workflow_started_after_a_while() {
+    let started = RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci")], 1).unwrap();
+    let results = |runs| RequestCheckResults {
+        github: GitHubCheckResults::Connected(runs),
+        ..native_results(&[])
+    };
+    let pushed = push(HEAD, GitHubPushState::Succeeded, None);
+    let deadline = 100 + GITHUB_WORKFLOWS_START_WITHIN_SECS;
+    let message = |runs, push: Option<&GitHubPush>, now| {
+        request_checks_message(&started, &results(runs), push, now)
+    };
+
+    assert_eq!(message(Vec::new(), Some(&pushed), deadline - 1), None);
+    assert_eq!(
+        message(Vec::new(), Some(&pushed), deadline).as_deref(),
+        Some(NO_GITHUB_WORKFLOWS_STARTED)
+    );
+    // Any run on the tested commit, even under another name, shows workflows start.
+    assert_eq!(
+        message(
+            vec![github_run(HEAD, "lint", 1, None)],
+            Some(&pushed),
+            deadline
+        ),
+        None
+    );
+    // A run on an older commit does not.
+    assert_eq!(
+        message(
+            vec![github_run(OLD_HEAD, "ci", 1, None)],
+            Some(&pushed),
+            deadline
+        )
+        .as_deref(),
+        Some(NO_GITHUB_WORKFLOWS_STARTED)
+    );
+    // Nothing is said until the tested commit reached GitHub.
+    let sending = push(HEAD, GitHubPushState::Queued, None);
+    let older = push(OLD_HEAD, GitHubPushState::Succeeded, None);
+    assert_eq!(message(Vec::new(), Some(&sending), deadline), None);
+    assert_eq!(message(Vec::new(), Some(&older), deadline), None);
+    assert_eq!(message(Vec::new(), None, deadline), None);
 }
 
 #[test]
@@ -497,7 +544,7 @@ fn a_request_withheld_from_a_public_github_repository_cannot_pass_and_says_why()
         RequestChecksOutcome::ConfigurationError
     );
     assert_eq!(
-        request_checks_message(&started, &results).as_deref(),
+        request_checks_message(&started, &results, None, 0).as_deref(),
         Some(PRIVATE_REQUESTS_WITHHELD_MESSAGE)
     );
 }
@@ -602,16 +649,47 @@ fn the_push_status_follows_the_latest_push_of_the_tested_commit() {
 
 #[test]
 fn failed_pushes_back_off_and_then_give_up() {
-    assert_eq!(github_push_retry_at(1, 100), Some(130));
-    assert_eq!(github_push_retry_at(2, 100), Some(220));
-    assert_eq!(github_push_retry_at(3, 100), Some(700));
-    assert_eq!(github_push_retry_at(4, 100), Some(1900));
-    assert_eq!(github_push_retry_at(5, 100), None);
-    assert_eq!(github_push_retry_at(0, 100), None);
+    let retry_at = |attempts| {
+        github_push_retry_at(
+            &GitHubPush {
+                attempts,
+                ..push(HEAD, GitHubPushState::Running, None)
+            },
+            100,
+        )
+    };
+    assert_eq!(retry_at(1), Some(130));
+    assert_eq!(retry_at(2), Some(220));
+    assert_eq!(retry_at(3), Some(700));
+    assert_eq!(retry_at(4), Some(1900));
+    assert_eq!(retry_at(5), None);
+    assert_eq!(retry_at(0), None);
+    // A connection test's push of main reports its first failure, but
+    // deleting the setup branch afterwards retries like any job.
+    let setup = GitHubPush {
+        branch: GitHubBranch::SetupCheck,
+        ..push(HEAD, GitHubPushState::Running, None)
+    };
+    assert_eq!(github_push_retry_at(&setup, 100), None);
+    let setup_deletion = GitHubPush {
+        target_oid: None,
+        ..setup
+    };
+    assert_eq!(github_push_retry_at(&setup_deletion, 100), Some(130));
+}
+
+#[test]
+fn scope_branches_name_their_request_or_the_connection_test() {
+    let request = GitHubBranch::Request("req_1".into());
+    assert_eq!(request.git_ref(), "refs/heads/scope/requests/req_1");
     assert_eq!(
-        github_request_ref("req_1"),
-        "refs/heads/scope/requests/req_1"
+        GitHubBranch::SetupCheck.git_ref(),
+        "refs/heads/scope/setup-check"
     );
+    for branch in [request, GitHubBranch::SetupCheck] {
+        assert_eq!(GitHubBranch::parse(&branch.name()), Some(branch));
+    }
+    assert_eq!(GitHubBranch::parse("main"), None);
 }
 
 #[test]

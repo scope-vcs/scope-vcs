@@ -55,6 +55,7 @@ export function RepoSettingsPage({
   params,
   setGitHubRequiredChecks,
   startGitHubAuthorization,
+  startGitHubSetupCheck,
   updateMember,
   updateMetadata,
   visibilityLog,
@@ -79,6 +80,7 @@ export function RepoSettingsPage({
     input: SetRepoGitHubRequiredChecksInput,
   ) => Promise<GitHubConnectionResponse>
   startGitHubAuthorization: (params: RepoParams) => Promise<GitHubAuthorizeResponse>
+  startGitHubSetupCheck: (params: RepoParams) => Promise<GitHubConnectionResponse>
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
   updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummaryResponse>
   /** Rendered only for readers who can see private files. */
@@ -177,6 +179,7 @@ export function RepoSettingsPage({
             github={github}
             setRequiredChecks={(names) => setGitHubRequiredChecks({ ...params, names })}
             startAuthorization={() => startGitHubAuthorization(params)}
+            startSetupCheck={() => startGitHubSetupCheck(params)}
           />
         )}
 

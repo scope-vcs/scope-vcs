@@ -16,11 +16,12 @@ use scope_postgres::db::RecordRequestChecksCommand;
 use std::sync::atomic::Ordering;
 
 mod native_runs_list;
+mod public_repositories;
 
 const REQUIRED_CHECK: &str = "ci / test";
 
 /// Connects the repository to the fake GitHub with these required checks.
-async fn connect_github(state: &mut AppState, required: &[&str]) -> Arc<FakeGitHub> {
+pub(super) async fn connect_github(state: &mut AppState, required: &[&str]) -> Arc<FakeGitHub> {
     let fake = FakeGitHub::install(state).await;
     let repositories = state.metadata.repositories();
     repositories
@@ -52,16 +53,16 @@ async fn connect_github(state: &mut AppState, required: &[&str]) -> Arc<FakeGitH
 
 /// An open private request the owner pushed in a repository connected to
 /// GitHub. The server stays alive for the caller's later pushes.
-struct OwnerRequest {
-    state: AppState,
-    fake: Arc<FakeGitHub>,
-    request_id: String,
+pub(super) struct OwnerRequest {
+    pub(super) state: AppState,
+    pub(super) fake: Arc<FakeGitHub>,
+    pub(super) request_id: String,
     source: TempGitRepo,
     remote: String,
     _server: TestServer,
 }
 
-async fn owner_request(label: &str, required: &[&str]) -> OwnerRequest {
+pub(super) async fn owner_request(label: &str, required: &[&str]) -> OwnerRequest {
     let (mut state, source, _base_head) =
         super::super::push_intent_completion::published_git_fixture(label).await;
     let fake = connect_github(&mut state, required).await;
@@ -110,11 +111,11 @@ async fn owner_request(label: &str, required: &[&str]) -> OwnerRequest {
 }
 
 impl OwnerRequest {
-    fn head(&self) -> String {
+    pub(super) fn head(&self) -> String {
         git_head_oid(&self.source)
     }
 
-    fn branch(&self) -> String {
+    pub(super) fn branch(&self) -> String {
         format!("scope/requests/{}", self.request_id)
     }
 
@@ -138,7 +139,7 @@ async fn checks(state: &AppState, request_id: &str, bearer: &str) -> serde_json:
     .await
 }
 
-async fn push_pass(state: &AppState, now_unix: u64) -> usize {
+pub(super) async fn push_pass(state: &AppState, now_unix: u64) -> usize {
     github_pushes::push_due_github_branches(state, now_unix)
         .await
         .unwrap()
@@ -373,7 +374,8 @@ async fn a_failed_push_retries_with_backoff_then_gives_up_with_its_last_error() 
     );
     // The next attempt waits out its delay: 30 seconds, then 2, 10 and 30 minutes.
     assert_eq!(push_pass(state, now + 29).await, 0);
-    let mut at = now;
+    // The first attempt ended a moment after `now` by the real clock.
+    let mut at = now + 1;
     for delay in [30, 120, 600, 1800] {
         at += delay;
         assert_eq!(push_pass(state, at).await, 1, "after {delay} seconds");
@@ -893,98 +895,71 @@ async fn an_approval_of_a_head_the_maintainer_did_not_review_is_refused() {
     assert_eq!(push_pass(&state, unix_now()).await, 0);
 }
 
-/// GitHub now lists the connected repository as public.
-fn make_github_repository_public(fake: &FakeGitHub) {
-    let mut public = github_repository(GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME);
-    public["private"] = serde_json::json!(false);
-    *fake.installation_repositories.lock().unwrap() = vec![(INSTALLATION_ID, public)];
-}
-
-async fn github_settings(state: &AppState) -> serde_json::Value {
-    expect_json(
-        api_request(
-            router(state.clone()),
-            "GET",
-            "/v1/repos/owner/repo/github",
-            Some(&bearer_header()),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_private_request_is_not_sent_to_a_repository_that_became_public_until_confirmed() {
-    let request = owner_request("github-checks-became-public", &[REQUIRED_CHECK]).await;
-    let (state, fake) = (&request.state, &request.fake);
-    make_github_repository_public(fake);
-
-    // No delivery said so; the push asks GitHub first and holds the request.
-    assert_eq!(push_pass(state, unix_now()).await, 1);
-    assert_eq!(fake.branch_head(&request.branch()), None);
-    let held = request.checks().await;
-    assert_eq!(held["github_push"]["state"], "failed");
-    assert_eq!(held["mergeability"]["status"], "ChecksConfigurationError");
-    assert_eq!(
-        held["message"],
-        scope_domain::github_connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE
+async fn a_pushed_head_without_any_run_says_no_workflow_started_after_ten_minutes() {
+    let request = owner_request("github-checks-no-runs", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+    // The pass that sends the head began before it; waiting for workflows
+    // counts from when GitHub got the branch, not from then.
+    let now = unix_now();
+    let requests = state.metadata.requests();
+    let push = requests
+        .claim_due_github_pushes("claim", now, now + 600, 1)
+        .await
+        .unwrap()
+        .remove(0);
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+    github_pushes::run_claimed_push(state, &push, "claim", now).await;
+    assert_eq!(fake.branch_head(&request.branch()), Some(head.clone()));
+    let sent = requests
+        .latest_github_push(&request.request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        sent.updated_at_unix > now,
+        "{} > {now}",
+        sent.updated_at_unix
     );
-    assert_eq!(held["private_request_on_public_github"], true);
-    let settings = github_settings(state).await;
-    assert_eq!(settings["connection"]["public_on_github"], true);
-    assert_eq!(settings["connection"]["public_confirmed"], false);
+    assert_eq!(request.checks().await["message"], serde_json::Value::Null);
 
-    // A maintainer who can change file visibility confirms; the request goes.
-    let confirmed = expect_json(
-        api_request(
-            router(state.clone()),
-            "POST",
-            "/v1/repos/owner/repo/github/public-confirmation",
-            Some(&bearer_header()),
-            None,
+    let request_id = request.request_id.as_str();
+    let message_at = |now_unix| async move {
+        let context = crate::repo_access::find_read_access(
+            state,
+            TEST_REPO_OWNER,
+            TEST_REPO_NAME,
+            Some(&test_owner_id()),
         )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
-    assert_eq!(confirmed["connection"]["public_confirmed"], true);
-    assert_eq!(push_pass(state, unix_now()).await, 1);
-    assert_eq!(fake.branch_head(&request.branch()), Some(request.head()));
+        .await
+        .unwrap();
+        let scope_request = state
+            .metadata
+            .requests()
+            .request_by_id(request_id)
+            .await
+            .unwrap()
+            .unwrap();
+        crate::http::request_checks::checks_response(
+            state,
+            &context.record,
+            &scope_request,
+            context.access,
+            None,
+            now_unix,
+        )
+        .await
+        .unwrap()
+        .message
+    };
+    let later = unix_now() + scope_domain::requests::GITHUB_WORKFLOWS_START_WITHIN_SECS;
     assert_eq!(
-        request.checks().await["mergeability"]["status"],
-        "ChecksPending"
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_delivery_saying_the_repository_became_public_holds_private_requests() {
-    let request = owner_request("github-checks-publicized", &[REQUIRED_CHECK]).await;
-    let (state, fake) = (&request.state, &request.fake);
-    // A late delivery is checked against what GitHub says now.
-    let publicized = serde_json::json!({
-        "action": "publicized",
-        "repository": { "id": GITHUB_REPOSITORY_ID, "full_name": GITHUB_FULL_NAME },
-    });
-    let delivery = webhook(state, "repository", publicized.clone(), WEBHOOK_SECRET).await;
-    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
-    assert_eq!(
-        github_settings(state).await["connection"]["public_on_github"],
-        false
+        message_at(later).await.as_deref(),
+        Some(scope_domain::requests::NO_GITHUB_WORKFLOWS_STARTED)
     );
 
-    make_github_repository_public(fake);
-    let delivery = webhook(state, "repository", publicized, WEBHOOK_SECRET).await;
-    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
-    assert_eq!(
-        github_settings(state).await["connection"]["public_confirmed"],
-        false
-    );
-    assert_eq!(
-        request.checks().await["mergeability"]["status"],
-        "ChecksConfigurationError"
-    );
-    assert_eq!(push_pass(state, unix_now()).await, 1);
-    assert_eq!(fake.branch_head(&request.branch()), None);
+    // Any run on the head, even one nobody requires, shows workflows start.
+    fake.report_check_runs(&head, vec![check_run(1, "lint", &head, None)]);
+    deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
+    assert_eq!(message_at(later).await, None);
 }
