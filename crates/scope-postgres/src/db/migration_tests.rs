@@ -18,6 +18,7 @@ mod github_setup_checks_and_workflow_runs;
 mod maintenance_cutover;
 mod native_runs_accounts;
 mod provider_neutral_request_checks;
+mod public_check_commits;
 mod public_request_check_source;
 mod repository_content_version;
 mod repository_invite_emails;
@@ -60,6 +61,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0068_github_connections",
     "m0069_github_request_checks",
     "m0070_github_setup_checks_and_workflow_runs",
+    "m0071_public_check_commits",
 ];
 
 pub(super) async fn isolated_database() -> (

@@ -27,5 +27,6 @@
   "m0067_provider_neutral_request_checks.rs": "ef830d9295c7722397fcd2c58c05a0d9eb2ebe287012f103b54e594d90fc186c",
   "m0068_github_connections.rs": "f0b80a84edc996eadf1eaf7b8c7831d46220a8e5cadbfae3625450efda254509",
   "m0069_github_request_checks.rs": "ceeeb8cbffa917bc0815032efa21e88fea2efcabda59f68bc39dac3c2fb0d119",
-  "m0070_github_setup_checks_and_workflow_runs.rs": "2c51bffa9d7e1c7276602e8712eb6b4f6de9952fc6ae17ad5dd6a5dde764faf0"
+  "m0070_github_setup_checks_and_workflow_runs.rs": "2c51bffa9d7e1c7276602e8712eb6b4f6de9952fc6ae17ad5dd6a5dde764faf0",
+  "m0071_public_check_commits.rs": "ac4889035cdefff882f1dc279d368df615de2e2c4169b4406f08a1509635972f"
 }

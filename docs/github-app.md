@@ -174,8 +174,28 @@ the CI section of repository settings. They are the names GitHub's own branch
 protection uses, such as `ci / test`.
 `PUT /v1/repos/{owner}/{repo}/github/required-checks` replaces the list.
 Every push to a request records an evaluation with one GitHub check per
-required name and the head as the tested commit. Changing the list affects
-heads pushed afterwards.
+required name and a tested commit. Changing the list affects heads pushed
+afterwards.
+
+A private request's tested commit is its head. A public contribution's head is
+public history and lacks the private files, so GitHub tests a check commit
+instead: the contribution merged onto private main with the same
+`git merge-tree --write-tree` routine the merge uses. Its merge base is the
+newest public main commit the head contains, which is current public main once
+the head contains it, as the merge requires. Its parents are private main and
+the head, its author and committer lines are the head's, and its message is
+`Scope check for <request id> at <short head>`, so the same head and private
+main always give the same commit. The evaluation records the private main and
+merge base it used, and the push builds the commit again from them. A
+contribution that conflicts with private code records a configuration error,
+"This contribution conflicts with private code, so its checks cannot run. A
+maintainer must resolve the conflict.", and nothing is pushed.
+
+The check commit is private code. It exists only in temporary private staging
+repositories and on the connected GitHub repository. Request views and the
+checks response name only the head, for maintainers and contributors alike. A
+connected repository that became public receives no check commit until a
+maintainer confirms, the same as a private request.
 
 A request can merge when the latest run of each required name on the tested
 commit passed: success, neutral or skipped. A re-run on GitHub is a newer run

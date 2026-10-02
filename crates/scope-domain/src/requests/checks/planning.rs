@@ -1,5 +1,6 @@
 use super::{
-    NativeRequestCheck, Request, RequestCheck, RequestCheckEvaluation, Run, WorkflowRevision,
+    GitHubCheckTarget, GitHubTestedCommit, NativeRequestCheck, PRIVATE_CODE_CONFLICT_MESSAGE,
+    Request, RequestCheck, RequestCheckEvaluation, Run, WorkflowRevision,
     request_checks_start_immediately,
 };
 use crate::{error::DomainError, runs::availability::NativeRunsAvailability};
@@ -85,23 +86,46 @@ impl RequestCheckPlan {
         Ok(Self::native(evaluation, runs))
     }
 
-    /// Every required check name becomes a check GitHub answers for the head.
-    /// A maintainer's head goes to GitHub at once, even when no check is
+    /// Every required check name becomes a check GitHub answers for the tested
+    /// commit: a private request's head, or a public contribution's check
+    /// commit. A contribution that conflicts with private code has nothing to
+    /// test. A maintainer's head goes to GitHub at once, even when no check is
     /// required, so the repository's workflows still run on it. Anyone else's
     /// head waits for a maintainer, because the pushed branch gets the
     /// repository's secrets; with nothing required it is never sent.
     pub fn evaluate_github(
         request: &Request,
+        tested: GitHubTestedCommit,
         required_check_names: &[String],
         maintainer_pusher: Option<&str>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
+        if tested.target() != GitHubCheckTarget::for_request(request) {
+            return Err(DomainError::invalid_input(
+                "the tested commit does not fit the request's audience",
+            ));
+        }
+        let check_commit = match tested {
+            GitHubTestedCommit::Head => None,
+            GitHubTestedCommit::CheckCommit { oid, base } => Some((oid, base)),
+            GitHubTestedCommit::Conflict => {
+                return Ok(Self::native(
+                    RequestCheckEvaluation::configuration_error(
+                        &request.id,
+                        &request.head_oid,
+                        PRIVATE_CODE_CONFLICT_MESSAGE,
+                        now_unix,
+                    )?,
+                    Vec::new(),
+                ));
+            }
+        };
         let starts = maintainer_pusher.is_some() && request_checks_start_immediately(request, true);
         let checks = required_check_names
             .iter()
             .map(|name| RequestCheck::GitHub { name: name.clone() })
             .collect::<Vec<_>>();
-        let evaluation = if checks.is_empty() {
+        let mut evaluation = if checks.is_empty() {
             RequestCheckEvaluation::no_checks(&request.id, &request.head_oid, now_unix)?
         } else if starts {
             RequestCheckEvaluation::started(&request.id, &request.head_oid, checks, now_unix)?
@@ -113,6 +137,9 @@ impl RequestCheckPlan {
                 now_unix,
             )?
         };
+        if let Some((oid, base)) = check_commit {
+            evaluation.test_check_commit(oid, base)?;
+        }
         Ok(Self {
             evaluation,
             runs: Vec::new(),
@@ -150,6 +177,7 @@ impl RequestCheckPlan {
         })
     }
 
+    /// A plan that sends nothing to GitHub.
     fn native(evaluation: RequestCheckEvaluation, runs: Vec<Run>) -> Self {
         Self {
             evaluation,

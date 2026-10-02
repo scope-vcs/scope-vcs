@@ -2,7 +2,10 @@ use super::*;
 use crate::{
     content::SourceBlob,
     content_ref::ContentRef,
-    requests::{RequestAudience, RequestCheckEvaluationState, fixtures::open_request},
+    requests::{
+        CheckCommitBase, RequestAudience, RequestCheckEvaluationState, check_commit_message,
+        fixtures::open_request,
+    },
     runs::{
         availability::NativeRunsAvailability,
         run::RunState,
@@ -31,6 +34,20 @@ fn request() -> Request {
         size_bytes: 42,
     });
     request
+}
+
+fn private_request() -> Request {
+    Request {
+        audience: RequestAudience::Private,
+        ..request()
+    }
+}
+
+fn check_commit() -> GitHubTestedCommit {
+    GitHubTestedCommit::CheckCommit {
+        oid: "c".repeat(40),
+        base: CheckCommitBase::new("d".repeat(40), "e".repeat(40)).unwrap(),
+    }
 }
 
 fn revision(name: &str) -> WorkflowRevision {
@@ -314,11 +331,17 @@ fn approval_rejects_an_evaluation_from_another_request_or_head() {
 
 #[test]
 fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_at_once() {
-    let request = request();
+    let request = private_request();
     let required = ["ci / test".to_string(), "ci / lint".to_string()];
 
-    let maintainer =
-        RequestCheckPlan::evaluate_github(&request, &required, Some("owner"), 30).unwrap();
+    let maintainer = RequestCheckPlan::evaluate_github(
+        &request,
+        GitHubTestedCommit::Head,
+        &required,
+        Some("owner"),
+        30,
+    )
+    .unwrap();
     assert_eq!(
         maintainer.evaluation.state,
         RequestCheckEvaluationState::Started
@@ -338,7 +361,9 @@ fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_a
     assert!(maintainer.runs.is_empty());
     assert!(maintainer.push_to_github);
 
-    let contributor = RequestCheckPlan::evaluate_github(&request, &required, None, 30).unwrap();
+    let contributor =
+        RequestCheckPlan::evaluate_github(&request, GitHubTestedCommit::Head, &required, None, 30)
+            .unwrap();
     assert_eq!(
         contributor.evaluation.state,
         RequestCheckEvaluationState::AwaitingApproval
@@ -366,14 +391,23 @@ fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_a
 
 #[test]
 fn with_no_required_checks_only_a_maintainers_head_still_runs_the_workflows() {
-    let request = request();
-    let maintainer = RequestCheckPlan::evaluate_github(&request, &[], Some("owner"), 30).unwrap();
+    let request = private_request();
+    let maintainer = RequestCheckPlan::evaluate_github(
+        &request,
+        GitHubTestedCommit::Head,
+        &[],
+        Some("owner"),
+        30,
+    )
+    .unwrap();
     assert_eq!(
         maintainer.evaluation.state,
         RequestCheckEvaluationState::NoChecks
     );
     assert!(maintainer.push_to_github);
-    let contributor = RequestCheckPlan::evaluate_github(&request, &[], None, 30).unwrap();
+    let contributor =
+        RequestCheckPlan::evaluate_github(&request, GitHubTestedCommit::Head, &[], None, 30)
+            .unwrap();
     assert_eq!(
         contributor.evaluation.state,
         RequestCheckEvaluationState::NoChecks
@@ -390,5 +424,130 @@ fn with_no_required_checks_only_a_maintainers_head_still_runs_the_workflows() {
         )
         .unwrap()
         .push_to_github
+    );
+}
+
+#[test]
+fn a_public_contribution_tests_its_check_commit_and_waits_for_approval_like_any_head() {
+    let request = request();
+    let required = ["ci / test".to_string()];
+    let contributor =
+        RequestCheckPlan::evaluate_github(&request, check_commit(), &required, None, 30).unwrap();
+    let evaluation = &contributor.evaluation;
+    assert_eq!(evaluation.head_oid, request.head_oid);
+    assert_eq!(evaluation.tested_oid, "c".repeat(40));
+    assert_eq!(
+        evaluation.check_commit_base,
+        Some(CheckCommitBase::new("d".repeat(40), "e".repeat(40)).unwrap())
+    );
+    assert_eq!(
+        evaluation.state,
+        RequestCheckEvaluationState::AwaitingApproval
+    );
+    assert!(!contributor.push_to_github);
+
+    // Approval sends the check commit it recorded.
+    let approved =
+        RequestCheckPlan::approve(&request, contributor.evaluation, &[], "owner", 40).unwrap();
+    assert_eq!(approved.evaluation.tested_oid, "c".repeat(40));
+    assert!(approved.push_to_github);
+
+    let maintainer =
+        RequestCheckPlan::evaluate_github(&request, check_commit(), &required, Some("owner"), 30)
+            .unwrap();
+    assert_eq!(maintainer.evaluation.tested_oid, "c".repeat(40));
+    assert!(maintainer.push_to_github);
+}
+
+#[test]
+fn a_contribution_that_conflicts_with_private_code_is_a_configuration_error_and_sends_nothing() {
+    let request = request();
+    for maintainer in [None, Some("owner")] {
+        let plan = RequestCheckPlan::evaluate_github(
+            &request,
+            GitHubTestedCommit::Conflict,
+            &["ci / test".to_string()],
+            maintainer,
+            30,
+        )
+        .unwrap();
+        assert_eq!(
+            plan.evaluation.state,
+            RequestCheckEvaluationState::ConfigurationError
+        );
+        assert_eq!(
+            plan.evaluation.message.as_deref(),
+            Some(PRIVATE_CODE_CONFLICT_MESSAGE)
+        );
+        assert_eq!(plan.evaluation.tested_oid, request.head_oid);
+        assert_eq!(plan.evaluation.check_commit_base, None);
+        assert!(!plan.push_to_github);
+    }
+}
+
+#[test]
+fn the_tested_commit_must_fit_the_requests_audience() {
+    for (request, tested) in [
+        (request(), GitHubTestedCommit::Head),
+        (private_request(), check_commit()),
+        (private_request(), GitHubTestedCommit::Conflict),
+    ] {
+        assert_eq!(
+            RequestCheckPlan::evaluate_github(&request, tested, &[], Some("owner"), 30)
+                .unwrap_err()
+                .message,
+            "the tested commit does not fit the request's audience"
+        );
+    }
+    // A check commit is never the head itself.
+    let request = request();
+    let head = GitHubTestedCommit::CheckCommit {
+        oid: request.head_oid.clone(),
+        base: CheckCommitBase::new("d".repeat(40), "e".repeat(40)).unwrap(),
+    };
+    assert!(RequestCheckPlan::evaluate_github(&request, head, &[], Some("owner"), 30).is_err());
+}
+
+#[test]
+fn a_check_commit_carries_private_code_and_a_public_head_does_not() {
+    let required = ["ci / test".to_string()];
+    let request = request();
+    let check_commit =
+        RequestCheckPlan::evaluate_github(&request, check_commit(), &required, None, 30)
+            .unwrap()
+            .evaluation;
+    assert!(check_commit.tests_check_commit());
+    assert_eq!(
+        check_commit.tested_code_audience(RequestAudience::Public),
+        RequestAudience::Private
+    );
+    let public_head =
+        RequestCheckPlan::evaluate(&request, AVAILABLE, Ok(&[revision("test")]), None, 30)
+            .unwrap()
+            .evaluation;
+    assert_eq!(
+        public_head.tested_code_audience(RequestAudience::Public),
+        RequestAudience::Public
+    );
+    let private_head = RequestCheckPlan::evaluate_github(
+        &private_request(),
+        GitHubTestedCommit::Head,
+        &required,
+        None,
+        30,
+    )
+    .unwrap()
+    .evaluation;
+    assert_eq!(
+        private_head.tested_code_audience(RequestAudience::Private),
+        RequestAudience::Private
+    );
+}
+
+#[test]
+fn a_check_commit_message_names_the_request_and_its_short_head() {
+    assert_eq!(
+        check_commit_message("req_1", &"a1".repeat(20)),
+        "Scope check for req_1 at a1a1a1a1a1a1"
     );
 }
