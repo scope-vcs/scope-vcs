@@ -16,6 +16,7 @@ mod github_connections;
 mod github_request_checks;
 mod maintenance_cutover;
 mod provider_neutral_request_checks;
+mod public_check_commits;
 mod public_request_check_source;
 mod repository_content_version;
 mod repository_invite_emails;
@@ -54,6 +55,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0067_provider_neutral_request_checks",
     "m0068_github_connections",
     "m0069_github_request_checks",
+    "m0071_public_check_commits",
 ];
 
 pub(super) async fn isolated_database() -> (

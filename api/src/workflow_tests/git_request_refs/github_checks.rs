@@ -15,6 +15,8 @@ use scope_domain::github_connection::ConnectGitHubRepository;
 use scope_postgres::db::RecordRequestChecksCommand;
 use std::sync::atomic::Ordering;
 
+mod public;
+
 const REQUIRED_CHECK: &str = "ci / test";
 
 /// Connects the repository to the fake GitHub with these required checks.
@@ -333,7 +335,17 @@ async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
     assert_eq!(approved["state"], "started");
     assert_eq!(approved["github_push"]["state"], "sending");
     assert_eq!(push_pass(&state, unix_now()).await, 1);
-    assert_eq!(fake.branch_head(&branch), Some(head));
+    // A public contribution is sent as its check commit, which builds on the head.
+    let tested = state
+        .metadata
+        .requests()
+        .request_check_evaluation(REQUEST_ID, &head)
+        .await
+        .unwrap()
+        .unwrap()
+        .tested_oid;
+    assert_ne!(tested, head);
+    assert_eq!(fake.branch_head(&branch), Some(tested));
 
     // Closing the request deletes its branch.
     expect_json(

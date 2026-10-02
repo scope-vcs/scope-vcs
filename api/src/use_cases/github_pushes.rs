@@ -11,6 +11,7 @@ use crate::{
     auth::tokens::random_token, error::ApiError,
     git::request_refs::with_request_revision_store_repo, github::GitHubApp, persistence::unix_now,
     repo_events::RepoChangeReason, state::AppState,
+    use_cases::public_check_commits::with_check_commit,
 };
 use scope_domain::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
@@ -235,11 +236,19 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         .await
         .map_err(ApiError::from)?
         .ok_or_else(gone)?;
-    let audience = Some(request.audience);
+    let evaluation = requests
+        .request_check_evaluation_testing(&request.id, &target_oid)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(gone)?;
+    // A public contribution's check commit is built on private main, so it
+    // goes only where a private request's head may go.
+    let tested_audience = evaluation.tested_code_audience(request.audience);
+    let audience = Some(tested_audience);
     ensure_current(state, push, claim_token, audience).await?;
     // A webhook may never have said the repository became public, so GitHub
-    // is asked before a private request is sent there.
-    if request.audience == RequestAudience::Private
+    // is asked before private code is sent there.
+    if tested_audience == RequestAudience::Private
         && let Some(connection) = state
             .metadata
             .repositories()
@@ -256,7 +265,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
     let remote = app.push_remote(&destination.github_full_name, &token);
     let git_ref = push.git_ref();
     let revision = requests
-        .request_revision_with_head(&request.id, &target_oid)
+        .request_revision_with_head(&request.id, &evaluation.head_oid)
         .await
         .map_err(ApiError::from)?
         .ok_or_else(gone)?;
@@ -268,14 +277,13 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         .map_err(ApiError::from)?
         .ok_or_else(gone)?
         .incarnation();
-    // The revision store holds the commit with the history it builds on, the
-    // way merge preparation reads a request head. Filling it may take a
-    // while, so the claim and the connection are checked again once the
-    // commit is at hand.
+    // Filling the repository that holds the commit may take a while, so the
+    // claim and the connection are checked again once the commit is at hand.
     let (check_state, check_push, claim_token) =
         (state.clone(), push.clone(), claim_token.to_string());
-    with_request_revision_store_repo(state, &incarnation, &request, &revision, move |repo, _| {
-        Ok(crate::git::blocking::block_on(ensure_current(
+    let expected_oid = target_oid.clone();
+    let push_if_current = move |repo: &std::path::Path| {
+        crate::git::blocking::block_on(ensure_current(
             &check_state,
             &check_push,
             &claim_token,
@@ -285,9 +293,36 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             remote
                 .push(repo, &target_oid, &git_ref)
                 .map_err(PushFailure::Retry)
-        }))
-    })
-    .await?
+        })
+    };
+    match &evaluation.check_commit_base {
+        // A public contribution's check commit is built again from what its
+        // evaluation recorded, in a private repository that holds it.
+        Some(base) => {
+            Box::pin(with_check_commit(
+                state,
+                &incarnation,
+                &request,
+                &revision,
+                base,
+                &expected_oid,
+                push_if_current,
+            ))
+            .await?
+        }
+        // The revision store holds the head with the history it builds on, the
+        // way merge preparation reads a request head.
+        None => {
+            with_request_revision_store_repo(
+                state,
+                &incarnation,
+                &request,
+                &revision,
+                move |repo, _| Ok(push_if_current(repo)),
+            )
+            .await?
+        }
+    }
 }
 
 async fn installation_token(app: &GitHubApp, installation_id: u64) -> Result<String, PushFailure> {

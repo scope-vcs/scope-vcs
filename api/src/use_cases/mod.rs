@@ -6,6 +6,7 @@ pub(crate) mod github_check_results;
 pub(crate) mod github_pushes;
 pub(crate) mod invite_email_delivery;
 pub(crate) mod native_commit_details;
+pub(crate) mod public_check_commits;
 pub(crate) mod repository_collaboration;
 pub(crate) mod repository_workflows;
 pub(crate) mod request_anchor_visibility;
