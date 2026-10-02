@@ -145,6 +145,9 @@ pub(crate) async fn merge_request_inner(
     // The gate is separate from permission: the head's checks must have cleared,
     // on GitHub's word as of now rather than a delivery that may have been lost.
     crate::use_cases::github_check_results::confirm_recent_github_checks(state, &request).await?;
+    // A check commit counts only while it is built on private main as read
+    // here. The merge is fenced to the main loaded above, earlier, so main
+    // moving in between fails the merge rather than landing an untested tree.
     let checks =
         crate::use_cases::request_checks::checks_outcome(state, &repo.record, &request).await?;
     if checks != RequestChecksOutcome::Clear {
@@ -205,6 +208,11 @@ pub(crate) async fn merge_request_inner(
             RepoChangeReason::RequestMerged,
         )
         .await;
+    crate::use_cases::request_checks::renew_stale_check_commits_in_background(
+        state,
+        &command.owner,
+        &command.repo_name,
+    );
     Ok(MergeRequestResult {
         repo: committed_repo,
         access,

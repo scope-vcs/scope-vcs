@@ -432,6 +432,9 @@ async fn complete_main_push(
             &author_id,
         )
         .await;
+        crate::use_cases::request_checks::renew_stale_check_commits_in_background(
+            state, owner, repo_name,
+        );
     }
     best_effort_sync_cache(
         state,
