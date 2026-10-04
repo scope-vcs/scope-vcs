@@ -384,6 +384,24 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(len(self.starts()), 2)
         self.assertEqual(self.starts()[0], self.starts()[1])
 
+    def test_interrupt_reaches_a_run_whose_id_appears_later(self):
+        self.runs = [release()]
+        watcher.poll()
+        info = next(iter(self.saved()["threads"].values()))
+        interrupts = lambda: [call.args[0] for call in self.client.dispatch.call_args_list
+                              if call.args[0]["type"] == "run.interrupt"]
+        past_deadline = "2026-09-23T04:02:00Z"
+        self.agent = {"status": "starting", "activeRunId": None, "updatedAt": NOW}
+        with patch.object(watcher, "stamp", return_value=past_deadline):
+            watcher.poll()
+        self.assertEqual(self.saved()["threads"][info["incident_id"]]["stop_reason"], "deadline_exceeded")
+        self.assertEqual(interrupts(), [])
+        self.agent = {"status": "running", "activeRunId": "run-2", "updatedAt": NOW}
+        with patch.object(watcher, "stamp", return_value=past_deadline):
+            watcher.poll()
+        self.assertEqual(interrupts(), [watcher.interrupt_command(
+            f"{info['incident_id']}-stop-0-run-2", info["thread_id"], "run-2")])
+
     def test_agent_thread_missing_from_shell_escalates(self):
         self.runs = [release()]
         watcher.poll()

@@ -293,6 +293,9 @@ def monitor(client: T3Client, state: dict, info: dict, shell: dict) -> None:
         if running(thread):
             interrupt(client, state, info, thread, info["reason"])
         return
+    if info.get("stopping_at") and running(thread):
+        # A run can be active before T3 reports its ID; retry until the stop reaches it.
+        interrupt(client, state, info, thread, info["stop_reason"])
     if not unresolved(state, info["incident_id"]):
         if not running(thread):
             info["status"] = "verified"
