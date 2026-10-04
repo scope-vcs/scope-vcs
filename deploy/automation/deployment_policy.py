@@ -9,6 +9,7 @@ INPUT_SECONDS = 10 * 60
 RETRY_SECONDS = 2 * 60
 DEADLINE_SECONDS = 4 * 60 * 60
 TERMINAL = {"verified", "no_change", "recovered", "escalated"}
+ACTIVE_RUN = {"preparing", "queued", "starting", "running", "waiting"}
 PRIMARY_PROVIDER = "claudeAgent"
 FALLBACK_PROVIDER = "codex"
 
@@ -45,15 +46,14 @@ def completion(run: dict, jobs: list[dict]) -> str | None:
 
 
 def running(thread: dict) -> bool:
-    return ((thread.get("latestTurn") or {}).get("state") == "running"
-            or (thread.get("session") or {}).get("status") in {"starting", "running"})
+    """Read T3's shell summary of the agent thread."""
+    return thread.get("activeRunId") is not None or thread.get("status") in ACTIVE_RUN
 
 
 def last_activity(thread: dict, fallback: str) -> float:
-    turn = thread.get("latestTurn") or {}
-    dates = [fallback, turn.get("requestedAt"), turn.get("startedAt"), turn.get("completedAt")]
-    dates += [item.get("updatedAt") or item.get("createdAt") for item in thread.get("messages", [])]
-    dates += [item.get("createdAt") for item in thread.get("activities", [])]
+    # T3 advances the thread's updatedAt with each recorded agent item.
+    dates = [fallback, thread.get("updatedAt"), thread.get("latestRunRequestedAt"),
+             thread.get("latestRunStartedAt"), thread.get("latestRunCompletedAt")]
     return max(timestamp(value) for value in dates if value)
 
 
@@ -74,7 +74,7 @@ def supervise(info: dict, thread: dict, now: str) -> tuple[str, str]:
     if deadline_exceeded:
         return ("interrupt" if running(thread) else "escalate"), "deadline_exceeded"
     idle = at - last_activity(thread, info["dispatch_at"])
-    if thread.get("hasPendingApprovals") or thread.get("hasPendingUserInput"):
+    if thread.get("pendingRuntimeRequest"):
         return ("escalate", "approval_required") if idle >= INPUT_SECONDS else ("wait", "")
     if running(thread):
         return ("interrupt", "agent_unavailable") if idle >= IDLE_SECONDS else ("wait", "")
@@ -82,5 +82,5 @@ def supervise(info: dict, thread: dict, now: str) -> tuple[str, str]:
         return "wait", ""
     if info["recoveries"] >= MAX_RECOVERIES:
         return "escalate", "attempts_exhausted"
-    error = (thread.get("latestTurn") or {}).get("state") == "error"
+    error = thread.get("status") == "failed"
     return ("fallback" if info["provider"] == PRIMARY_PROVIDER and (error or info["recoveries"] >= 1) else "resume"), "agent_unavailable"

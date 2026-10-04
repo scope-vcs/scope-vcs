@@ -86,10 +86,10 @@ class StartTests(unittest.TestCase):
         with patch.object(refresh, "T3Client", t3), \
                 patch.object(refresh, "create_worktree", side_effect=lambda path: events.append(str(path))):
             refresh.start("2026-W41", intent)
-        self.assertEqual(events, ["/worktrees/pins", "thread.create", "thread.turn.start"])
+        self.assertEqual(events, ["/worktrees/pins", "thread.create", "message.dispatch"])
         create, turn = (call.args[0] for call in client.dispatch.call_args_list)
         self.assertEqual((create["threadId"], create["worktreePath"]), ("thread", "/worktrees/pins"))
-        self.assertEqual((turn["threadId"], turn["message"]["text"]), ("thread", refresh.PROMPT))
+        self.assertEqual((turn["threadId"], turn["text"]), ("thread", refresh.PROMPT))
         self.assertEqual(turn["modelSelection"]["instanceId"], refresh.PRIMARY_PROVIDER)
 
 
