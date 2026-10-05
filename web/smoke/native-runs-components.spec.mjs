@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { chromium } from 'playwright'
@@ -8,7 +11,10 @@ import tailwindcss from '@tailwindcss/vite'
 
 const require = createRequire(import.meta.url)
 test('seeded native run navigation makes one read per resource on cold load and reopen', async (t) => {
+  const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-native-runs-'))
+  t.after(() => rm(cacheDir, { recursive: true, force: true }))
   const server = await createServer({
+    cacheDir,
     configFile: false, root: fileURLToPath(new URL('./fixtures/native-runs', import.meta.url)),
     plugins: [tailwindcss()], server: { host: '0.0.0.0', port: 0, fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } },
     resolve: { alias: [
