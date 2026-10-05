@@ -8,8 +8,6 @@ use std::{
 
 pub(crate) const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 
-/// Shared by setup, step supervision and finalization. Only cancellation or an
-/// error is reported; ordinary renewals cannot accumulate while work is running.
 pub(crate) struct Heartbeat {
     stop: mpsc::Sender<()>,
     results: mpsc::Receiver<anyhow::Result<bool>>,

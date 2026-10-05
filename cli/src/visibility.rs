@@ -30,27 +30,31 @@ pub struct VisibilityArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum VisibilityCommand {
-    /// Edit local visibility rules in an interactive terminal.
+    #[command(about = "Edit local visibility rules in an interactive terminal")]
     Edit,
-    /// Show local rules and effective visibility for worktree files.
+    #[command(about = "Show local rules and effective visibility for worktree files")]
     Show,
-    /// Explain the effective rule for a repository-relative path.
+    #[command(about = "Explain the effective rule for a repository-relative path")]
     Explain { path: String },
-    /// Validate the local configuration without saving or publishing it.
+    #[command(about = "Validate the local configuration without saving or publishing it")]
     Validate,
-    /// Compare a proposed config with local config, offline, without saving it.
+    #[command(about = "Compare a proposed config with local config, offline, without saving it")]
     Preview {
-        /// Proposed repo config JSON file, compared against the current local config.
-        #[arg(long, value_name = "FILE")]
+        #[arg(
+            long,
+            value_name = "FILE",
+            help = "Proposed repo config JSON file, compared against the current local config"
+        )]
         config: PathBuf,
     },
-    /// List visibility changes on Scope, newest first; requires scope login.
+    #[command(about = "List visibility changes on Scope, newest first; requires scope login")]
     Log {
-        /// Scope remote to use (or select a repository with global --repo).
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Scope remote to use (or select a repository with global --repo)"
+        )]
         remote: Option<String>,
-        /// Continue from the cursor printed by a previous page.
-        #[arg(long)]
+        #[arg(long, help = "Continue from the cursor printed by a previous page")]
         before: Option<String>,
     },
 }
@@ -113,7 +117,6 @@ pub fn run(args: VisibilityArgs) -> Result<()> {
         VisibilityCommand::Validate => {
             let repo = discover_git_repo("scope visibility")?;
             let config = load_config(&repo)?;
-            // Loading uses the domain parser, which validates every section of the config.
             execution::emit(
                 "visibility.validate",
                 &serde_json::json!({
@@ -192,7 +195,6 @@ fn explain(repo: &GitRepo, config: &RepoConfig, input: &str) -> Result<()> {
     let tree = if known {
         tree
     } else {
-        // A prospective file can be explained without creating it in the worktree.
         ReviewTree::from_paths(
             &[normalized.as_str().trim_start_matches('/').to_string()],
             &[],

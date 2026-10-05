@@ -17,7 +17,6 @@ pub(super) fn validate_relative(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Inspect a cache or checkout entry without traversing a symlinked directory.
 pub(super) fn inspect(root: &Path, relative: &Path) -> anyhow::Result<Option<fs::Metadata>> {
     validate_relative(relative)?;
     let mut path = root.to_path_buf();

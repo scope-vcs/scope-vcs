@@ -5,8 +5,6 @@ import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const execFileAsync = promisify(execFile)
-// Dependency edges and real consumers establish boundaries; a filename alone
-// does not prove that a behavior has the right owner.
 const applicationPackages = new Set(['api', 'scope-cache-service', 'scope-repo-router', 'scope-runner-runtime', 'worker'])
 const leafPackages = new Set(['scope-cache-domain', 'scope-domain', 'scope-git-process'])
 const contractDependencies = new Map([

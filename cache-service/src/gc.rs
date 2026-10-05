@@ -31,7 +31,6 @@ async fn reconcile_at(state: &AppState, now: u64) -> anyhow::Result<()> {
     loop {
         let more = reconcile_batch(state, now).await?;
         batches += 1;
-        // Finish each claimed batch before stopping so every deletion gets its acknowledgement.
         if !more || started.elapsed() >= SWEEP_BUDGET {
             tracing::info!(
                 batches,

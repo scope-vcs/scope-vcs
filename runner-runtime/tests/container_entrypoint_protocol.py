@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Minimal runtime-protocol fixture for the container entrypoint regression."""
-
 import argparse
 import hashlib
 import json

@@ -1,7 +1,6 @@
 import { GITHUB_RUN_IMPORT_MAX_COUNT, isRunImportCount } from '../../api/github-inputs'
 import type { GitHubRunImportResponse } from '../../api/types.generated'
 
-/** The count a maintainer typed, or `null` when it is not one a repository can import. */
 export function parseRunImportCount(draft: string): number | null {
   const text = draft.trim()
   if (!/^\d+$/.test(text)) return null
@@ -12,18 +11,12 @@ export function parseRunImportCount(draft: string): number | null {
 export const RUN_IMPORT_COUNT_HINT = `Enter a whole number from 0 to ${GITHUB_RUN_IMPORT_MAX_COUNT}.`
 
 export type GitHubRunImportView = {
-  /** Still reading GitHub, or waiting to try again. */
   inProgress: boolean
-  /**
-   * Waiting to try again after GitHub failed; importing now replaces it. An
-   * attempt already reading GitHub again is left to finish.
-   */
   retrying: boolean
   status: string
   failed: boolean
 }
 
-/** What the settings page says about the latest import, if any. */
 export function githubRunImportView(runImport: GitHubRunImportResponse | null): GitHubRunImportView | null {
   if (!runImport) return null
   const error = runImport.error?.trim().replace(/\.$/, '') ?? null

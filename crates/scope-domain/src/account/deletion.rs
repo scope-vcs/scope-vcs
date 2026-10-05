@@ -1,42 +1,24 @@
-//! Deleting an account. Work the account contributed to other people's
-//! repositories stays and is attributed to a deleted user. The account, its
-//! sign-in identities, its memberships and the repositories it owns go.
-
 use super::UserAccount;
 use crate::repository::{
     Repository,
     collaboration::{CollaborationState, normalize_repository_invite_email},
 };
 
-/// The sign-in provider whose users Scope deletes along with the account.
 pub const CLERK_PROVIDER: &str = "clerk";
 
-/// Longest wait between attempts to delete a Clerk user.
 pub const CLERK_USER_DELETION_MAX_RETRY_SECS: u64 = 6 * 60 * 60;
-/// How long a deleted account's Clerk user stays refused after Clerk confirms
-/// its deletion. Clerk tokens issued before then stay valid until they expire,
-/// five minutes for the `scope_api` template, and must not recreate the account.
 pub const CLERK_USER_DELETION_TOMBSTONE_SECS: u64 = 24 * 60 * 60;
 
-/// Owned repositories that other members still use. Deleting the account
-/// would delete them from under those members, so the owner deletes them
-/// first. Scope has no ownership transfer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SharedRepositories {
     pub repository_ids: Vec<String>,
 }
 
-/// What an allowed deletion takes with it beyond the account row and the
-/// repositories it owns, which leave through repository deletion.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountDeletion {
-    /// Deleted from Clerk once the Scope deletion has committed.
     pub clerk_user_ids: Vec<String>,
 }
 
-/// Decides whether `user` may delete their account. `owned` must hold every
-/// repository the account owns, and `identities` every sign-in identity as
-/// `(provider, subject)`.
 pub fn delete_account<'a>(
     user: &UserAccount,
     owned: &[Repository],
@@ -67,9 +49,6 @@ pub fn delete_account<'a>(
     })
 }
 
-/// Removes a deleted account from a repository it does not own: its
-/// membership, and the invites that name its email or that it accepted.
-/// Returns whether anything changed.
 pub fn forget_deleted_account(repo: &mut CollaborationState, user: &UserAccount) -> bool {
     let email = normalize_repository_invite_email(&user.email);
     let collaboration = &mut repo.collaboration;
@@ -88,8 +67,6 @@ pub fn forget_deleted_account(repo: &mut CollaborationState, user: &UserAccount)
     changed
 }
 
-/// When to try a Clerk user deletion again after `attempts` failures. A Clerk
-/// outage delays the deletion; it is never abandoned.
 pub fn clerk_user_deletion_retry_at(attempts: u32, now_unix: u64) -> u64 {
     let delay = 30u64
         .saturating_mul(1u64 << attempts.min(20))

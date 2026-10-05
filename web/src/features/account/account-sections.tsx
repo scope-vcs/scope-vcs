@@ -4,8 +4,6 @@ import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
 import { KeyRound, Monitor, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-// The account page's fixed sections, shared with its pending state.
-
 export function CliLoginSection({ children }: { children: ReactNode }) {
   return (
     <SectionRow
@@ -30,7 +28,6 @@ export function CliSessionsSection({ children }: { children: ReactNode }) {
   )
 }
 
-/** Disabled until `onDelete` is given, which needs the account's handle. */
 export function AccountDangerZoneSection({ onDelete }: { onDelete?: () => void }) {
   return (
     <SectionRows>

@@ -20,7 +20,6 @@ export function RunsFilterBar({
   onStatusFilterChange: (filter: RunStatusFilter) => void
   params: RepoParams
   selectedWorkflow?: string
-  /** Workflow pages exist only while the repository may run its workflows. */
   showWorkflowFilter: boolean
   statusFilter: RunStatusFilter
   workflows: RepositoryRunWorkflowListResponse['workflows']

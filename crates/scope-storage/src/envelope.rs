@@ -16,7 +16,6 @@ const FRAME_HEADER_BYTES: usize = 4 + 4 + 1;
 const MAX_KEY_ID_BYTES: usize = 1024;
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
-/// Whether `prefix`, the first bytes of a stored object, starts a framed envelope.
 #[cfg(test)]
 pub(crate) fn is_framed(prefix: &[u8]) -> bool {
     prefix.starts_with(&MAGIC)
@@ -30,8 +29,6 @@ const fn magic(version: u32) -> [u8; 8] {
     magic
 }
 
-/// What an envelope's key and authentication are bound to. Each scope derives its own cipher from
-/// the storage key, so an object can only be read back under the identity it was written with.
 #[derive(Clone, Debug)]
 pub(crate) struct EnvelopeScope {
     label: &'static [u8],
@@ -137,7 +134,6 @@ impl EnvelopeWriter {
         Ok(frame)
     }
 
-    /// Seals a frame laid out as header space, plaintext, and tag space, in place.
     fn seal_frame(&mut self, frame: &mut [u8], flags: u8) -> Result<(), GitStorageError> {
         let counter = self.next_counter;
         self.next_counter = self
@@ -164,9 +160,6 @@ impl EnvelopeWriter {
     }
 }
 
-/// Seals `plaintext` as one complete envelope inside its own allocation, so a write never holds
-/// the plaintext and a second copy of the envelope at once. Frames are moved back to front into
-/// their sealed positions, which leaves every not-yet-moved frame intact.
 pub(crate) fn seal(
     key: &EncryptionKey,
     scope: EnvelopeScope,
@@ -393,7 +386,6 @@ mod tests {
 
     #[tokio::test]
     async fn reads_python_recovery_segment() {
-        // Produced by deploy/aws/recovery/tests/test_recovery.py::segment.
         let fixture = hex::decode("53434753454730320000000200076e6e6e6e6e6e6e6e000004007072696d6172790000000000000012003b36a869a52a9b5f9c5f06ab0beec0d365170a7c5807b055345ccc7a7c302189b8df000000010000000001e3030b235680d3a18f50e0d2e52c20f9").unwrap();
         let key = EncryptionKey::new("primary", [b'k'; 32]).unwrap();
         let mut source = fixture.as_slice();
@@ -415,7 +407,6 @@ mod tests {
         assert!(source.is_empty());
     }
 
-    /// Seals one data frame exactly as the segment-only envelope did before objects shared it.
     fn segment_sealed_by_the_original_derivation(
         key: &[u8; 32],
         repository_id: &str,
@@ -485,7 +476,6 @@ mod tests {
             DecryptedFrame::Final
         ));
 
-        // The same bytes do not open as an object, whose key is derived under its own label.
         let mut source = &sealed[..];
         let mut object =
             EnvelopeReader::read_header(&mut source, &key, EnvelopeScope::object("repo"))

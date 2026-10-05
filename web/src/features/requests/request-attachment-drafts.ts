@@ -251,9 +251,7 @@ function knownDraftKeys() {
         const storageKey = sessionStorage.key(index)
         if (storageKey?.startsWith(STORAGE_PREFIX)) keys.add(storageKey.slice(STORAGE_PREFIX.length))
       }
-    } catch {
-      // In-memory scope cleanup still applies when browser storage is unavailable.
-    }
+    } catch {}
   }
   return keys
 }
@@ -265,9 +263,7 @@ function discardDraftKey(key: string) {
   entries.delete(key)
   try {
     sessionStorage.removeItem(`${STORAGE_PREFIX}${key}`)
-  } catch {
-    // The in-memory value and object URLs have already been cleared.
-  }
+  } catch {}
 }
 
 export function requestAttachmentMarkdownReference(attachmentId: string) {
@@ -381,9 +377,7 @@ function persist(key: string, draft: RequestAttachmentDraft) {
       submission: draft.submission,
       text: draft.text,
     }))
-  } catch {
-    // In-memory drafts continue to work when browser storage is unavailable.
-  }
+  } catch {}
 }
 
 function restore(key: string): RequestAttachmentDraft {
@@ -471,7 +465,6 @@ export function finishRequestAttachmentSubmission(id: string, posted: boolean) {
   }
 }
 
-// Row retries and composer retries share both the operation and the draft lock.
 export function runRequestContentSubmission(id: string, send: () => Promise<boolean>) {
   const active = submissions.get(id)
   if (active) return active

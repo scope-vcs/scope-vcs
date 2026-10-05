@@ -1,9 +1,6 @@
 import { createBoundedCache } from '../lib/bounded-cache'
 
-// Minting a Clerk template token is a round trip to api.clerk.com. The API
-// trusts a minted token until its `exp`, so reusing it for the same verified
-// session until shortly before then keeps the same revocation window.
-const reuseMarginMs = 30_000
+const reuseMarginBeforeExpiryMs = 30_000
 const defaultMaxEntries = 1_000
 
 export type ClerkApiTokenOwner = {
@@ -27,8 +24,8 @@ export function createClerkApiTokenCache({
   async function mintAndStore(key: string, mint: () => Promise<string | null>) {
     const token = await mint()
     const expiresAtMs = token ? tokenExpiryMs(token) : undefined
-    if (token && expiresAtMs !== undefined && expiresAtMs - reuseMarginMs > now()) {
-      tokens.set(key, { reuseUntilMs: expiresAtMs - reuseMarginMs, token })
+    if (token && expiresAtMs !== undefined && expiresAtMs - reuseMarginBeforeExpiryMs > now()) {
+      tokens.set(key, { reuseUntilMs: expiresAtMs - reuseMarginBeforeExpiryMs, token })
     }
     return token
   }

@@ -61,14 +61,12 @@ async fn a_test_pushes_main_waits_for_its_runs_and_then_deletes_its_branch() {
         .await
         .unwrap();
     assert_eq!(check.state, GitHubSetupCheckState::Pushing);
-    // A second test waits for the first to end.
     assert!(
         repositories
             .start_github_setup_check(REPO, "user_owner", 11)
             .await
             .is_err()
     );
-    // Only maintainers test.
     assert!(
         repositories
             .start_github_setup_check(REPO, "user_public", 11)
@@ -90,7 +88,6 @@ async fn a_test_pushes_main_waits_for_its_runs_and_then_deletes_its_branch() {
     assert_eq!(push.branch, GitHubBranch::SetupCheck);
     assert_eq!(push.target_oid, Some(main_oid()));
     assert_eq!(check.push_id.as_deref(), Some(push.id.as_str()));
-    // GitHub listed nothing on the branch before the push.
     assert!(
         repositories
             .record_github_setup_check_baseline(REPO, &push.id, Vec::new())
@@ -110,8 +107,6 @@ async fn a_test_pushes_main_waits_for_its_runs_and_then_deletes_its_branch() {
     assert_eq!(waiting.check.state, GitHubSetupCheckState::Waiting);
     assert!(!waiting.workflows_started);
 
-    // Main's own push on GitHub ran `deploy` on the same commit; only the
-    // setup branch's suite counts.
     repositories
         .save_github_workflow_run(REPO, 42, &setup_run(1, 5, None))
         .await
@@ -172,7 +167,6 @@ async fn a_test_pushes_main_waits_for_its_runs_and_then_deletes_its_branch() {
     assert_eq!(deletion.branch, GitHubBranch::SetupCheck);
     assert_eq!(deletion.target_oid, None);
 
-    // A finished test can run again.
     repositories
         .start_github_setup_check(REPO, "user_owner", 50)
         .await
@@ -255,7 +249,6 @@ async fn an_earlier_tests_push_finishing_late_says_nothing_about_the_next_test()
         .await
         .unwrap()
         .remove(0);
-    // The test gives up on its push, and the next test of the same main starts.
     repositories
         .observe_github_setup_check(REPO, &main_oid(), 10 + 15 * 60)
         .await
@@ -266,7 +259,6 @@ async fn an_earlier_tests_push_finishing_late_says_nothing_about_the_next_test()
         .await
         .unwrap();
     assert_ne!(next.push_id.as_deref(), Some(old_push.id.as_str()));
-    // The old push may not record a baseline for the next test.
     assert!(
         !repositories
             .record_github_setup_check_baseline(REPO, &old_push.id, Vec::new())

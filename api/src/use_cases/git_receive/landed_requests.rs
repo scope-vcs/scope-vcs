@@ -1,7 +1,3 @@
-//! Completes open requests whose head a committed main push already carries.
-//!
-//! The push is authoritative by the time this runs, so nothing here can fail it.
-
 use crate::{
     error::ApiError,
     git::command::{git_is_ancestor, run_git_output},
@@ -92,7 +88,6 @@ fn requests_carried_by(
 ) -> Result<Vec<Request>, ApiError> {
     let mut landed = Vec::new();
     for request in candidates {
-        // A head that never reached this repository cannot be part of main.
         let head_commit = format!("{}^{{commit}}", request.head_oid);
         let present = run_git_output(
             Some(repo),

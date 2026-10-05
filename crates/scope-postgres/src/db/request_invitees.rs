@@ -47,8 +47,6 @@ pub struct LeaveRequestCommand {
 }
 
 impl RequestStore {
-    /// Loads policy inputs with at most two queries, independent of request count.
-    /// Permission decisions remain in the request domain policy.
     pub async fn requests_with_invitee_status(
         &self,
         repository_id: &str,

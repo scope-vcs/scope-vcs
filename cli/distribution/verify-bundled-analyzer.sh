@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Extracts a packaged CLI bundle and runs the Rust integration test against its
-# managed analyzer runtime. Extra arguments are passed to cargo test.
 set -euo pipefail
 
 : "${SCOPE_ARTIFACT:?Set SCOPE_ARTIFACT to the packaged bundle archive}"

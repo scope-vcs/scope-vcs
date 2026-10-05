@@ -29,16 +29,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Use only anonymous access or the durable provider pull credential. The runner's
-# publishing login may already have expired when a closed cutover is recovered.
 if [[ -n "${SCOPE_RAILWAY_REGISTRY_USERNAME:-}" ]]; then
   printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" |
     docker_with_config login "${image%%/*}" \
       --username "$SCOPE_RAILWAY_REGISTRY_USERNAME" --password-stdin >/dev/null
 fi
 docker_with_config pull --platform linux/amd64 "$image" >/dev/null
-# Creating a stopped container materializes its filesystem without executing any
-# candidate binary, image entrypoint, or package script. Never start this container.
 docker_with_config create --name "$container_name" --network none \
   --entrypoint /bin/false "$image" >/dev/null
 docker_with_config cp "$container_name:/app/bin/scope-maintenance" "$extraction_root/scope-maintenance"

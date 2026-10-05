@@ -34,8 +34,6 @@ if [[ "$token_path" != "$smoke_dir/exchange-token" ]]; then
   echo "The staging exchange token must be inside SCOPE_GIT_SMOKE_DIR." >&2
   exit 2
 fi
-# The workflow owns this root and removes its credentials in its always() cleanup.
-# Each invocation owns only a fresh checkout directory beneath it.
 private_directory() {
   [[ -d "$1" && ! -L "$1" && -O "$1" && "$(stat -c '%a' "$1")" == 700 ]]
 }
@@ -55,7 +53,6 @@ for directory in "$smoke_dir/config" "$smoke_dir/config/scope" "$smoke_dir/confi
   fi
 done
 export XDG_CONFIG_HOME="$smoke_dir/config"
-# Match cli/src/auth.rs::session_storage_key exactly, including the API origin.
 session_key="$(printf '%s' "$SCOPE_API_URL" | od -An -v -tx1 | tr -d ' \n')"
 session_path="$XDG_CONFIG_HOME/scope/sessions/cli-session-$session_key"
 if [[ -e "$session_path" || -L "$session_path" ]]; then

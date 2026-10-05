@@ -3,8 +3,6 @@ import { test } from 'node:test'
 
 const baseUrl = process.env.SCOPE_WEB_BASE_URL ?? 'http://localhost:3000'
 const serverFunctionUrl = new URL('/_serverFn/invalid', baseUrl)
-// Forwarded headers are client-controlled, so they must not move the origin the server expects.
-// Keep the real port so only a trusted forged hostname could make the origins match.
 const forgedHost = `another.example${serverFunctionUrl.port ? `:${serverFunctionUrl.port}` : ''}`
 const forgedHostOrigin = `${serverFunctionUrl.protocol}//${forgedHost}`
 const forgedProtocol = serverFunctionUrl.protocol === 'https:' ? 'http' : 'https'
@@ -29,7 +27,6 @@ test('server function requests require same-origin browser metadata', async () =
     { Origin: serverFunctionUrl.origin },
     { Referer: new URL('/repositories', baseUrl).href },
   ]) {
-    // The ID is unknown, so an accepted request reaches the stale-build response.
     const response = await fetch(serverFunctionUrl, { headers })
     assert.equal(response.status, 409, JSON.stringify(headers))
     assert.equal(response.headers.get('x-scope-stale-build'), '1', JSON.stringify(headers))

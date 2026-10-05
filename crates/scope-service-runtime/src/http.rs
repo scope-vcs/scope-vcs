@@ -1,5 +1,3 @@
-//! HTTP delivery shared by the Scope services: where a request may be sent and
-//! how a failed one is rendered.
 mod endpoint;
 mod error;
 

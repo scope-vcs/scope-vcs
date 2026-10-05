@@ -1,7 +1,3 @@
-//! Invite emails live beside the repository aggregate. Requests to send are
-//! judged by the domain against the repository; delivery attempts are recorded
-//! here so the sender can retry them.
-
 use super::{
     RepositoryCollaborationMutation, RepositoryStore, acquire_aggregate_lock,
     collaboration_rows::{lock_collaboration_state, save_collaboration_state},
@@ -41,14 +37,12 @@ pub struct RequestRepositoryInviteEmailCommand {
     pub now_unix: u64,
 }
 
-/// A queued email together with the invite and repository it belongs to.
 pub struct RepositoryInviteEmailDelivery {
     pub record: RepoRecord,
     pub invite: RepositoryInvite,
 }
 
 impl RepositoryStore {
-    /// Returns the emailed invite with its new email.
     pub async fn request_repository_invite_email(
         &self,
         command: RequestRepositoryInviteEmailCommand,
@@ -78,7 +72,6 @@ impl RepositoryStore {
             .find(|invite| invite.id == email.invite_id)
             .cloned()
             .ok_or_else(|| PostgresError::internal_message("emailed invite is missing"))?;
-        // The members list shows delivery, so it has to hear about this.
         repo.record.bump_change_version();
         save_collaboration_state(&tx, &before, &repo).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -88,9 +81,6 @@ impl RepositoryStore {
         ))
     }
 
-    /// Claims due emails for one sender. A claim lapses by itself, so an email
-    /// whose sender died is picked up again, and two senders never work on the
-    /// same email in one retry window.
     pub async fn claim_due_repository_invite_emails(
         &self,
         claim_token: &str,
@@ -100,8 +90,6 @@ impl RepositoryStore {
     ) -> Result<Vec<String>, PostgresError> {
         let now = to_i64(now_unix)?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        // Rows that outlived their repository exist only for the owner's
-        // daily allowance. Drop them once they no longer count toward it.
         Entity::delete_many()
             .filter(Column::InviteId.is_null())
             .filter(Column::CreatedAtUnix.lte(to_i64(
@@ -139,10 +127,6 @@ impl RepositoryStore {
         Ok(claimed)
     }
 
-    /// Adds the link this email will carry. The plain link exists only in the
-    /// sender's memory; the invite keeps its hash. Fails when the invite is no
-    /// longer pending, which the sender records as a refused attempt. Returns
-    /// `None` when the caller no longer holds the email's claim.
     pub async fn issue_repository_invite_email_link(
         &self,
         email_id: &str,
@@ -181,9 +165,6 @@ impl RepositoryStore {
         )))
     }
 
-    /// Records one delivery attempt by the sender holding the email's claim,
-    /// and releases that claim. Returns the committed repository version when
-    /// the email settled, so the members list can refresh.
     pub async fn record_repository_invite_email_attempt(
         &self,
         email_id: &str,
@@ -199,8 +180,6 @@ impl RepositoryStore {
         let mut repo = lock_collaboration_state(&tx, &repo_id)
             .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {repo_id} not found")))?;
-        // Another sender took over after this one's claim lapsed. Its result
-        // is the one that counts.
         let Some((row, mut email)) = claimed_email(&tx, email_id, claim_token).await? else {
             return Ok(None);
         };
@@ -241,8 +220,6 @@ impl RepositoryStore {
     }
 }
 
-/// Judges and stores a request to email an invite, inside the caller's
-/// transaction and under its repository lock.
 pub(super) async fn queue_invite_email(
     tx: &DatabaseTransaction,
     repo: &CollaborationState,
@@ -251,8 +228,6 @@ pub(super) async fn queue_invite_email(
     email_id: String,
     now_unix: u64,
 ) -> Result<RepositoryInviteEmail, PostgresError> {
-    // The daily allowance spans the owner's repositories, so the repository
-    // lock alone would let two of them count the same history at once.
     acquire_aggregate_lock(tx, "repository-invite-email-owner", owner_user_id).await?;
     let for_invite = Entity::find()
         .filter(Column::InviteId.eq(invite_id.to_string()))
@@ -308,8 +283,6 @@ pub(super) async fn queue_invite_email(
     Ok(email)
 }
 
-/// The repository an email belongs to, read before taking that repository's
-/// lock. `None` once the email or its invite is gone.
 async fn email_repository_id<C>(conn: &C, email_id: &str) -> Result<Option<String>, PostgresError>
 where
     C: ConnectionTrait,
@@ -329,7 +302,6 @@ where
         .map(|invite| invite.repo_id))
 }
 
-/// The queued email, if `claim_token` still holds it.
 async fn claimed_email(
     tx: &DatabaseTransaction,
     email_id: &str,
@@ -355,7 +327,6 @@ fn to_i64(value: u64) -> Result<i64, PostgresError> {
     i64::try_from(value).map_err(PostgresError::internal)
 }
 
-/// The newest email of each invite.
 pub(super) async fn latest_invite_emails<C>(
     conn: &C,
     invites: &[RepositoryInvite],

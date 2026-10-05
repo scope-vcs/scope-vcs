@@ -7,6 +7,7 @@ const resources = {
   user: null,
 }
 
+const HYDRATION_SETTLE_MS = 1_000
 const noop = () => {}
 let loaded = false
 
@@ -20,9 +21,7 @@ export const signedOutClerk = {
   client: null,
   isSignedIn: false,
   load: async () => {
-    // Clerk starts loading while React is hydrating. Keep the first client
-    // render aligned with the server before publishing the ready state.
-    await new Promise<void>((resolve) => setTimeout(resolve, 1_000))
+    await new Promise<void>((resolve) => setTimeout(resolve, HYDRATION_SETTLE_MS))
     loaded = true
     statusListeners.forEach((listener) => listener('ready'))
   },

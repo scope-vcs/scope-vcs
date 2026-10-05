@@ -72,7 +72,6 @@ impl ScopeRemote {
     }
 }
 
-/// The origin of a remote whose path names a Scope repository, whichever host serves it.
 pub fn scope_path_origin(remote_url: &str) -> Option<String> {
     let remote = Url::parse(remote_url).ok()?;
     let segments = remote.path_segments()?.collect::<Vec<_>>();

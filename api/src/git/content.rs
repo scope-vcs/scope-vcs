@@ -32,7 +32,6 @@ pub(crate) async fn source_content_bytes<C: GitContext>(
     .map_err(|error| ApiError::internal_message(format!("Git blob read task failed: {error}")))?
 }
 
-/// Content stored in the object store. Its recorded size bounds the read.
 async fn stored_content_bytes<C: GitContext>(
     context: &C,
     blob: &SourceBlob,
@@ -40,7 +39,6 @@ async fn stored_content_bytes<C: GitContext>(
     source_blob_bytes(context.object_store().as_ref(), blob, usize::MAX).await
 }
 
-/// Runs on a blocking thread: object-store content is read by waiting on the runtime.
 pub(crate) fn source_content_bytes_from_repo<C: GitContext>(
     context: &C,
     blob: &SourceBlob,
@@ -63,8 +61,6 @@ pub(crate) fn source_content_bytes_from_repo<C: GitContext>(
         ApiError::internal_message("Git blob content requires a materialized source repository")
     })?;
     let started_at = Instant::now();
-    // Persisted metadata already knows the size, so an oversized object fails before
-    // it is buffered instead of after.
     let max_stdout_bytes = usize::try_from(blob.size_bytes)
         .unwrap_or(usize::MAX)
         .saturating_add(1);

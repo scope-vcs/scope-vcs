@@ -107,7 +107,6 @@ fn capacity_rejection_retries_three_times_within_two_minutes() {
                 at,
             )
             .unwrap();
-        // Duplicate completion cannot consume another retry.
         attempt
             .reject_capacity(
                 &run,

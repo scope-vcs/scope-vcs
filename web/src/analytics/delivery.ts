@@ -53,9 +53,7 @@ export class BoundedDelivery {
       for (const payload of payloads) {
         try {
           beacon('/e/e/', new Blob([payload], { type: 'application/json' }))
-        } catch {
-          // A page closing or an unavailable network may lose analytics.
-        }
+        } catch {}
       }
     }
     this.clear()
@@ -104,7 +102,6 @@ export class BoundedDelivery {
         if (response.ok) return
         retry = response.status === 429 || response.status >= 500
       } catch {
-        // Network errors and timeouts are transient until the retry cap.
       } finally {
         clearTimeout(timer)
         if (this.current === controller) this.current = null

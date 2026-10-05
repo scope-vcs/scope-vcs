@@ -131,7 +131,6 @@ function VideoAttachment({
   }
   return (
     <figure className="my-3 min-w-0">
-      {/* Uploaded recordings have no caption asset; revisit when caption upload or transcription is supported. */}
       <video
         aria-label={label || attachment.filename}
         className="max-h-[38rem] w-full rounded-md border border-border bg-black"

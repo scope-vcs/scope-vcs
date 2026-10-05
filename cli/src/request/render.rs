@@ -325,7 +325,6 @@ fn capabilities_label(permissions: &RequestPermissionsResponse) -> String {
     }
 }
 
-/// The checks the request head asks for, and what merging still waits on.
 pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String> {
     let mut lines = vec![
         format!(
@@ -364,7 +363,6 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
                     .to_string(),
             );
         }
-        // The command names this head, so a head pushed since is not approved.
         let command = format!(
             "`scope request checks --approve --head {}`",
             checks.head_oid.as_str()
@@ -378,7 +376,6 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
     lines
 }
 
-/// Where the tested commit is on its way to the GitHub branch its workflows run on.
 fn github_push_line(push: &RequestGitHubPushResponse) -> String {
     let branch = terminal_text(&push.branch);
     let error = push.error.as_deref().map(terminal_text);
@@ -408,8 +405,6 @@ fn evaluation_state_label(state: Option<RequestCheckEvaluationState>) -> &'stati
     }
 }
 
-/// One check with its provider, its state, and where its logs are: a native run
-/// id for `scope run logs`, or the page GitHub links to.
 fn check_line(check: &RequestCheckResponse) -> String {
     match check {
         RequestCheckResponse::Native {

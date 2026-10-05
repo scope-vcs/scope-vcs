@@ -1,5 +1,3 @@
-//! Process lifetime for durable request auto-merge reconciliation.
-
 use crate::{persistence::unix_now, state::AppState, use_cases::request_auto_merge};
 use std::time::Duration;
 use tokio::{sync::watch, task::JoinHandle};
@@ -16,7 +14,6 @@ impl RequestAutoMergeRuntime {
         self.stop.clone()
     }
 
-    /// Finish any merge already being prepared before releasing process resources.
     pub async fn shutdown(self) {
         let _ = self.stop.send(true);
         if let Err(error) = self.task.await {
@@ -34,8 +31,6 @@ impl AppState {
                 if *stopped.borrow() {
                     break;
                 }
-                // Isolate a pass so a panicking adapter cannot silently end reconciliation.
-                // Its claims remain recoverable after their persisted leases expire.
                 let pass_state = state.clone();
                 match tokio::spawn(async move {
                     pass_state.metadata.admin().readiness_check().await?;

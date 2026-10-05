@@ -195,7 +195,6 @@ const UPDATE_DEMO_QUEUE_DRAFT: &str =
 const UPDATE_DEMO_CACHE_NOTE: &str =
     "# Cache note\n\nRecord the tradeoff without changing repository behavior.\n";
 
-/// Builds the seeded catalog and writes every object it refers to.
 pub(crate) async fn catalog(
     object_store: &dyn ObjectStore,
     git_segment_store: &scope_storage::GitSegmentStore,
@@ -216,7 +215,6 @@ fn build_catalog(
     let [contributor, maintainer] = request_discussions::collaborators();
     let mut catalog = scope_postgres::db::CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner.clone());
-    // The demo repositories run their `.scope/runs` workflows on the hosted runner.
     catalog.native_runs_accounts.insert(owner.id.clone());
     catalog
         .users
@@ -541,7 +539,6 @@ fn seed_owner_request(
                 expected_old_head_oid: Some(current_head_oid),
                 new_head_oid: revision.head_oid.clone(),
                 git_snapshot: revision.snapshot,
-                // Seeded revisions extend their request on top of its base.
                 git_facts: RequestRevisionGitFacts {
                     contains_old_head: true,
                     contained_main_oid: None,
@@ -631,8 +628,6 @@ fn blob(object_store: &SeedObjects, content: &str) -> Result<SourceBlob, ApiErro
     Ok(object_store.add(ContentObjectKind::Blob, content.as_bytes().to_vec()))
 }
 
-/// The objects a seeded catalog refers to. Git fixtures build the catalog synchronously, so
-/// objects are collected here and written to the store once the catalog is complete.
 #[derive(Default)]
 pub(crate) struct SeedObjects(std::cell::RefCell<std::collections::BTreeMap<String, Vec<u8>>>);
 

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Installs the cargo-deny release pinned in dev/tool-versions.json after
-# verifying the published Linux x86_64 musl archive against the pinned SHA-256.
 install_dir="${1:-$HOME/.cargo/bin}"
 versions="$(dirname "${BASH_SOURCE[0]}")/tool-versions.json"
 version="$(jq -er '.cargoDeny.version' "$versions")"

@@ -1,7 +1,3 @@
-//! PostgreSQL has no unsigned integer columns, so every unsigned domain value
-//! crosses a signed column boundary. This module owns that rule: one error
-//! message per direction, labelled with the field being converted.
-
 use crate::error::PostgresError;
 
 pub(crate) fn u64_to_i64(value: u64, field: &str) -> Result<i64, PostgresError> {

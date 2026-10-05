@@ -144,7 +144,6 @@ pub fn request_checks(
     )
 }
 
-/// Starts the checks of `expected_head_oid`; the server refuses a newer head.
 pub fn approve_request_checks(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,

@@ -13,10 +13,6 @@ import { AlertTriangle, LoaderCircle, Trash2 } from 'lucide-react'
 import type { FormEvent, ReactNode } from 'react'
 import { useId, useState } from 'react'
 
-/**
- * A permanent deletion in two steps: a warning, then typing `confirmation`
- * to enable the destructive button.
- */
 export function TypedConfirmationDialog({
   confirmLabel,
   confirmation,
@@ -29,12 +25,10 @@ export function TypedConfirmationDialog({
   warning,
 }: {
   confirmLabel: string
-  /** The text the user types to confirm. */
   confirmation: string
   error: ReactNode
   onCancel: () => void
   onConfirm: () => Promise<void>
-  /** Completes "Type <confirmation> to …". */
   purpose: string
   subject: string
   title: string
@@ -61,7 +55,6 @@ export function TypedConfirmationDialog({
     try {
       await onConfirm()
     } catch {
-      // The caller reports the failure through `error`.
     } finally {
       setBusy(false)
     }

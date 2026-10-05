@@ -1,6 +1,3 @@
-//! `scope-maintenance native-runs`: the operator endpoints' commands, run
-//! directly against the database for operators without an API token at hand.
-
 use crate::{
     http::admin::{
         NativeRunsAccountListResponse, NativeRunsAccountResponse, NativeRunsRemovalResponse,
@@ -23,7 +20,6 @@ pub enum NativeRunsCommand {
 }
 
 impl NativeRunsCommand {
-    /// Parses the arguments after `native-runs`.
     pub fn parse(args: &[String]) -> Option<Self> {
         match args {
             [command] if command == "list" => Some(Self::List),
@@ -43,8 +39,6 @@ impl NativeRunsCommand {
     }
 }
 
-/// Runs the command and returns the JSON the matching admin endpoint answers with.
-/// A removal notifies running API processes so open pages refresh.
 pub async fn run_native_runs_command_for_maintenance(
     database_url: String,
     command: NativeRunsCommand,

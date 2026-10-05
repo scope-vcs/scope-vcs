@@ -50,8 +50,6 @@ test('request rows exchange age and actions and restore the selected view across
   }
   await page.goto(new URL(requestsPath, base).href)
   await row.waitFor()
-  // The workspace shares the topbar's rail, so on wide screens the sidebar
-  // starts under the logo instead of at the window edge.
   await page.setViewportSize({ width: 1965, height: 900 })
   const railLeft = (selector) => page.locator(selector).evaluate((node) => node.getBoundingClientRect().left)
   assert.equal(await railLeft('.request-workspace-shell'), await railLeft('.application-topbar > *'))
@@ -122,7 +120,6 @@ test('request rows exchange age and actions and restore the selected view across
   await page.goForward()
   await page.getByText('Discussion content', { exact: true }).waitFor()
 
-  // The active Requests tab still clears the selection, and Back restores it.
   assert.equal(await requestsLink.getAttribute('href'), requestsPath)
   await requestsLink.click()
   await page.getByText('Select a request', { exact: true }).waitFor()
@@ -132,7 +129,6 @@ test('request rows exchange age and actions and restore the selected view across
   await page.goBack()
   await page.getByText('Discussion content', { exact: true }).waitFor()
 
-  // Access and viewer changes on Runs must discard the previous request link.
   for (const [setter, value] of [['setActor', 'Member'], ['setViewer', 'another-viewer']]) {
     await primary.getByRole('link', { name: 'Runs', exact: true }).click()
     await page.evaluate(([name, next]) => window[name](next), [setter, value])
@@ -150,12 +146,9 @@ test('request rows exchange age and actions and restore the selected view across
   await requestsLink.click()
   await page.getByText('Select a request', { exact: true }).waitFor()
 
-  // Collapsed, the sidebar is a rail of avatars centred 27px in. Opening widens
-  // the same list over the page, so the avatars stay exactly where they were.
   const sidebar = page.locator('.request-workspace-sidebar')
   const sidebarWidth = (width) => page.waitForFunction((value) =>
     document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === value, width)
-  // The rail keeps its open layout while it slides shut and closes after.
   const railClosed = () => page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
   const avatars = () => page.locator('.request-workspace-needs-you .request-workspace-row-avatar').evaluateAll((nodes) =>
     nodes.map((node) => node.getBoundingClientRect()).map(({ x, y, width }) => ({ x, y, width })))
@@ -171,10 +164,8 @@ test('request rows exchange age and actions and restore the selected view across
   const railX = (await sidebar.boundingBox()).x
   const closedAvatars = await avatars()
   assert.deepEqual(closedAvatars.map(({ x, width }) => x + width / 2 - railX), [27, 27, 27])
-  // The caret that expands the sidebar sits on the rail where search was.
   const expand = await page.getByRole('button', { name: 'Expand requests sidebar' }).boundingBox()
   assert.equal(expand.x + expand.width / 2 - railX, 27)
-  // An avatar names its request beside the rail, level with the avatar.
   await page.locator('[data-request-id="request-2"] .request-workspace-row-avatar').hover()
   const hint = page.locator('.request-workspace-rail-hint')
   assert.match(await hint.textContent(), /^Request without available actions/)
@@ -194,7 +185,6 @@ test('request rows exchange age and actions and restore the selected view across
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-open.png` })
   }
-  // Slowed down, the closing rail still shows its list over the page.
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('Animation.enable')
   await cdp.send('Animation.setPlaybackRate', { playbackRate: 0.05 })
@@ -205,7 +195,6 @@ test('request rows exchange age and actions and restore the selected view across
   await cdp.send('Animation.setPlaybackRate', { playbackRate: 1 })
   await sidebarWidth(54)
   await railClosed()
-  // The open rail's caret folds it back to the rail instead of pinning it.
   await openRail()
   await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
   await sidebarWidth(54)

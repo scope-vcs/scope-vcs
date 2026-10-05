@@ -1,8 +1,3 @@
-//! Workflow runs GitHub Actions reported for connected repositories. Each
-//! read from GitHub replaces the stored run unless what is stored has come
-//! further, so a slow read cannot move a run backwards. A run a delivery
-//! named but GitHub could not be asked about yet waits as a pending read.
-
 use super::{
     RepositoryStore,
     entities::{decode_enum, encode_enum},
@@ -34,13 +29,11 @@ struct WorkflowRunRow {
     github_updated_at_unix: i64,
 }
 
-/// A workflow run a delivery named that Scope still has to read from GitHub.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubWorkflowRunReadJob {
     pub repo_id: String,
     pub github_repository_id: u64,
     pub github_run_id: u64,
-    /// Attempts so far, this one included.
     pub attempts: u32,
 }
 
@@ -52,27 +45,21 @@ struct ReadJobRow {
     attempts: i32,
 }
 
-/// A listed run, and the request whose branch it ran on while that request
-/// exists in the repository.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubWorkflowRunRead {
     pub run: GitHubWorkflowRun,
     pub request_id: Option<String>,
 }
 
-/// Which listed runs a page holds.
 #[derive(Clone, Copy, Debug)]
 pub struct GitHubWorkflowRunPageQuery<'a> {
     pub repo_id: &'a str,
     pub github_repository_id: u64,
     pub workflow_name: Option<&'a str>,
-    /// The page starts after this run.
     pub after: Option<GitHubWorkflowRunCursor>,
     pub limit: u64,
 }
 
-/// Where a run is in the list: runs list newest first by
-/// [`GitHubWorkflowRun::listed_at_unix`], then by id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GitHubWorkflowRunCursor {
     pub listed_at_unix: u64,
@@ -87,7 +74,6 @@ struct ListedRow {
 }
 
 impl RepositoryStore {
-    /// Stores what the GitHub repository reports for a run of its workflows.
     pub async fn save_github_workflow_run(
         &self,
         repo_id: &str,
@@ -97,7 +83,6 @@ impl RepositoryStore {
         save_workflow_run(self.db.as_ref(), repo_id, github_repository_id, run).await
     }
 
-    /// Keeps a run a delivery named for a later read, unless one is waiting.
     pub async fn queue_github_workflow_run_read(
         &self,
         repo_id: &str,
@@ -124,8 +109,6 @@ impl RepositoryStore {
         Ok(())
     }
 
-    /// Takes pending reads that are due for this process, putting their next
-    /// try at `retry_at_unix` in case it never reports back.
     pub async fn claim_due_github_workflow_run_reads(
         &self,
         now_unix: u64,
@@ -167,8 +150,6 @@ impl RepositoryStore {
         .collect()
     }
 
-    /// Ends a pending read: answered, or given up when `retry_at_unix` is
-    /// `None`. Otherwise it is tried again then.
     pub async fn finish_github_workflow_run_read(
         &self,
         job: &GitHubWorkflowRunReadJob,
@@ -204,8 +185,6 @@ impl RepositoryStore {
         Ok(())
     }
 
-    /// A page of the workflow runs the GitHub repository reported for the
-    /// repository, newest first, of one workflow when `workflow_name` names it.
     pub async fn github_workflow_run_page(
         &self,
         query: GitHubWorkflowRunPageQuery<'_>,
@@ -251,7 +230,6 @@ impl RepositoryStore {
         .into_iter()
         .map(|row| {
             let run = row.run.into_domain()?;
-            // The join finds the request; the domain decides the run is on its branch.
             let request_id = row
                 .request_id
                 .filter(|request_id| run.request_id().as_deref() == Some(request_id));
@@ -260,8 +238,6 @@ impl RepositoryStore {
         .collect()
     }
 
-    /// The names of the workflows whose runs the GitHub repository reported
-    /// for the repository, in name order.
     pub async fn github_workflow_names(
         &self,
         repo_id: &str,
@@ -289,8 +265,6 @@ impl RepositoryStore {
     }
 }
 
-/// Stores a run unless what is stored has come further, or belongs to another
-/// Scope repository than the one its GitHub repository is connected to.
 pub(super) async fn save_workflow_run<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
@@ -315,10 +289,6 @@ pub(super) async fn save_workflow_run<C: ConnectionTrait>(
         u32_to_i32(progress.run_attempt, "GitHub run attempt")?.into(),
         i16::from(progress.stage).into(),
     ];
-    // A run id belongs to one GitHub repository, which may since have been
-    // connected to another Scope repository. It moves only to the Scope
-    // repository that GitHub repository is connected to now, so a late
-    // read for the former one cannot take it back.
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_github_workflow_runs (github_run_id, repo_id,
@@ -353,7 +323,6 @@ pub(super) async fn save_workflow_run<C: ConnectionTrait>(
     Ok(())
 }
 
-/// The runs on one of Scope's branches for one commit.
 pub(super) async fn branch_workflow_runs<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

@@ -15,7 +15,6 @@ export function SectionRows({
   )
 }
 
-/** `id` lets other pages link to the section. */
 export function SectionRow({
   children,
   description,

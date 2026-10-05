@@ -1,14 +1,10 @@
 name: CI
 
-# Scope pushes each request revision to scope/requests/<id>, so the same checks
-# that gate pull requests gate Scope requests.
 on:
   pull_request:
   push:
     branches: ['scope/**']
 
-# A branch push has no pull request number. Its ref keeps each Scope request in
-# its own group.
 concurrency:
   group: scope-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -33,8 +29,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # A new branch has no previous commit, so a branch push compares against
-      # its merge base with main.
       - name: Find comparison base
         id: base
         env:

@@ -1,4 +1,3 @@
-//! Process-wide execution choices, fixed once by the command parser.
 use anyhow::Context;
 use scope_api_contract::CliSuccessEnvelope;
 use serde::Serialize;

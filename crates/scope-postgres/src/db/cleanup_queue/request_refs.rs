@@ -123,8 +123,6 @@ impl CleanupStore {
     ) -> Result<(), PostgresError> {
         let attempts = cleanup.attempts.saturating_add(1).min(i32::MAX as u32);
         let retry_after = 30_u64.saturating_mul(1_u64 << attempts.min(7)).min(3600);
-        // Updating only the immutable job ID cannot revive an already completed
-        // job or replace cleanup for a newer request with the same name.
         entities::request_ref_cleanup_job::Entity::update_many()
             .col_expr(
                 entities::request_ref_cleanup_job::Column::Attempts,

@@ -1,14 +1,12 @@
 use scope_service_runtime::readiness::{ActivityGuard, ReadinessTracker};
 use std::time::Duration;
 
-/// The two loops the media worker runs; readiness needs a recent poll from each.
 #[derive(Clone, Copy, Debug)]
 enum MediaWorkerLoop {
     Processing,
     Cleanup,
 }
 
-/// Startup gates: decoded codecs, then the database schema and object store.
 const CODECS_GATE: usize = 0;
 const DEPENDENCIES_GATE: usize = 1;
 
@@ -42,8 +40,6 @@ impl WorkerHealth {
             .mark_poll(MediaWorkerLoop::Cleanup as usize, now_unix);
     }
 
-    /// Conversions and cleanup sweeps outrun their poll interval; the guard
-    /// keeps the loop fresh for exactly as long as the work runs.
     pub fn processing_activity(&self) -> ActivityGuard<'_> {
         self.0.activity(MediaWorkerLoop::Processing as usize)
     }

@@ -30,7 +30,6 @@ pub(crate) struct ValidatedPublicRequestRange {
     pub(crate) commits: Vec<NativePublicCommit>,
 }
 
-/// Returns the current public main the request was checked against.
 pub(super) async fn ensure_public_request_ref_is_public_safe(
     repo: &Repository,
     state: &AppState,
@@ -92,9 +91,6 @@ pub(crate) async fn validate_public_request_merge_range(
     })
 }
 
-/// The newest public main commit a public contribution's head contains, which
-/// its check commit merges from. Once the head contains current public main,
-/// that is the merge base the merge itself uses.
 pub(crate) async fn public_contribution_base(
     repo: &Repository,
     state: &AppState,

@@ -19,7 +19,6 @@ type RequestDetailsProps = {
   actions: RequestActionController
   onRate: (input: RateRequestInput) => Promise<RequestRatingResponse>
   params: RequestParams
-  /** Where the page is showing details right now. Only that placement mounts. */
   placement: RequestDetailsPlacement
   ratings: RequestRatingsResponse
   request: RequestSummaryResponse
@@ -31,10 +30,6 @@ export function RequestDetailsProvider({ children, value }: { children: ReactNod
   return <RequestDetailsContext value={value}>{children}</RequestDetailsContext>
 }
 
-/**
- * One stateful instance at a time: the rail and the Details drawer both ask
- * for it, and the page decides which one is live from its own width.
- */
 export function RequestDetails({ placement }: { placement: RequestDetailsPlacement }) {
   const context = use(RequestDetailsContext)
   if (!context) throw new Error('Request details context is unavailable')

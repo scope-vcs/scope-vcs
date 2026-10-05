@@ -20,8 +20,6 @@ function tick() {
 }
 
 function subscribe(listener: () => void) {
-  // The snapshot freezes without subscribers. Refresh it when the first
-  // timestamp mounts so client navigation never shows the previous visit.
   if (listeners.size === 0) tick()
   listeners.add(listener)
   timer ??= setInterval(tick, TICK_MS)
@@ -37,10 +35,6 @@ function snapshot() {
   return nowUnix
 }
 
-/**
- * Server renders have no ticking subscription, so refresh at most once a
- * second. Two reads inside one synchronous render return the same value.
- */
 function serverSnapshot() {
   const elapsed = Date.now() - readAtMs
   if (elapsed >= 1_000) {
@@ -50,7 +44,6 @@ function serverSnapshot() {
   return nowUnix
 }
 
-/** One clock for every live timestamp, so the app owns a single timer. */
 export function useUnixClock() {
   return useSyncExternalStore(subscribe, snapshot, serverSnapshot)
 }

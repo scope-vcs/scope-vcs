@@ -16,7 +16,6 @@ ffmpeg -hide_banner -loglevel error -y \
   -c:v gif -loop 0 "$output_dir/fixture.gif"
 heif-enc -q 80 -o "$output_dir/fixture.heic" "$output_dir/fixture.png" >/dev/null
 
-# Insert a standards-compliant little-endian EXIF orientation=6 APP1 segment.
 {
   printf '\377\330'
   printf '\377\341\000\042Exif\000\000II\052\000\010\000\000\000\001\000\022\001\003\000\001\000\000\000\006\000\000\000\000\000\000\000'
@@ -28,7 +27,6 @@ ffmpeg -hide_banner -loglevel error -y \
   -f lavfi -i "sine=frequency=880:sample_rate=48000:duration=1" \
   -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart \
   "$output_dir/fixture.mp4"
-# Exercise decoder and encoder allocations at the maximum playback resolution.
 ffmpeg -hide_banner -loglevel error -y \
   -f lavfi -i "testsrc2=size=1920x1080:rate=30:duration=8" \
   -f lavfi -i "sine=frequency=1000:sample_rate=48000:duration=8" \
@@ -52,7 +50,6 @@ if ! ffmpeg -hide_banner -loglevel error -y \
     "$output_dir/fixture-rotated.mov"
 fi
 
-# Mark a 10-bit HEVC source as BT.2020/PQ so the worker exercises its HDR tone map.
 ffmpeg -hide_banner -loglevel error -y \
   -f lavfi -i "testsrc2=size=320x180:rate=12:duration=1" \
   -vf "format=yuv420p10le" \

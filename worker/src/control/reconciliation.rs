@@ -2,8 +2,6 @@ use crate::execution::CloudExecutionCoordinator;
 use std::future::Future;
 use tokio::task::JoinSet;
 
-/// Each phase owns at most one batch. A slow provider operation cannot prevent
-/// another phase from starting a new batch on the next control poll.
 #[derive(Default)]
 pub(super) struct CloudReconciliation {
     cleanup: PhaseTask,
@@ -28,9 +26,6 @@ impl CloudReconciliation {
     }
 }
 
-/// Dropping the control loop aborts these tasks rather than detaching them.
-/// Attempts and stop claims were persisted before provider I/O; their existing
-/// leases and ambiguous-start reconciliation still own recovery after shutdown.
 #[derive(Default)]
 struct PhaseTask(JoinSet<()>);
 

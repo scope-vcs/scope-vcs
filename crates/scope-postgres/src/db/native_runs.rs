@@ -1,8 +1,3 @@
-//! The operator's list of accounts whose repositories may use native runs.
-//! Run creation and admission share-lock the owner's listing, so removing an
-//! account waits for them and nothing they start can outlive the removal
-//! unseen. Withdrawal then settles what the removed account left waiting.
-
 use super::{NativeRunsStore, entities, integer_columns};
 use crate::error::PostgresError;
 use scope_domain::{
@@ -20,14 +15,12 @@ pub use withdrawal::NativeRunsWithdrawal;
 #[cfg(test)]
 mod tests;
 
-/// A listed account with the handle an operator knows it by.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NativeRunsAccountListing {
     pub account: NativeRunsAccount,
     pub handle: String,
 }
 
-/// A listing just added or renoted, with the repositories it makes available.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NativeRunsAddition {
     pub listing: NativeRunsAccountListing,
@@ -51,7 +44,6 @@ impl NativeRunsStore {
             .collect()
     }
 
-    /// Lists the account, or replaces the note of an account already listed.
     pub async fn add_account(
         &self,
         handle: &str,
@@ -87,10 +79,6 @@ impl NativeRunsStore {
         })
     }
 
-    /// Unlists the account, then settles its repositories: requests waiting on
-    /// native checks become configuration errors and unfinished runs are
-    /// canceled. Removing an account that is not listed settles again, so a
-    /// removal interrupted after unlisting can be finished by repeating it.
     pub async fn remove_account(
         &self,
         handle: &str,
@@ -120,8 +108,6 @@ impl NativeRunsStore {
     }
 }
 
-/// Holds the owner's listing until the transaction ends, so a removal waits for
-/// the runs this transaction creates or admits.
 pub(super) async fn lock_native_runs_availability(
     tx: &DatabaseTransaction,
     repository_id: &str,

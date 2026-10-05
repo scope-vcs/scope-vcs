@@ -1,4 +1,3 @@
-// Prepare a private, reviewable credential bundle. This module performs no network requests.
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,8 +9,6 @@ export const serviceRoles = {
   'media-api': 'scope_media_api', 'media-worker': 'scope_media_worker', maintenance: 'scope_migrator',
 };
 const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
-// Generated passwords are ASCII. PostgreSQL verifier format:
-// https://doxygen.postgresql.org/scram-common_8c_source.html
 export function scramVerifier(password, salt = randomBytes(16)) {
   const salted = pbkdf2Sync(password, salt, 4096, 32, 'sha256');
   const hmac = value => createHmac('sha256', salted).update(value).digest();

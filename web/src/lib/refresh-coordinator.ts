@@ -9,13 +9,6 @@ type RefreshCoordinator<Request> = {
 
 const REFRESH_RETRY_DELAY_MS = 2_000
 
-/**
- * Serialises live refreshes: requests arriving while one is in flight merge
- * into the next, a failed refresh merges its request back and retries after a
- * delay, an optional timeout aborts a hung refresh, and stop cancels all of it.
- * A stale build stops the coordinator, because no retry can succeed.
- * What a request means (reasons, versions) stays with the caller.
- */
 export function createRefreshCoordinator<Request>({
   merge,
   refresh,

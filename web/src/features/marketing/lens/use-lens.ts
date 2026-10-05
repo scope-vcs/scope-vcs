@@ -17,21 +17,11 @@ export interface LensElements {
 
 type Mode = 'rest' | 'follow' | 'drag' | 'pinned'
 
-// Timed against the entrance, so both follow the page's pace.
 const OPEN_DELAY_MS = 950 / PACE
 const HINT_DELAY_MS = 3200 / PACE
 const SETTLED = .05
-/** The lens only closes over a link after the pointer rests on it this long, so
- * sweeping across the page doesn't blink it shut. */
 const CLOSE_OVER_LINK_MS = 120
 
-/**
- * Drives the lens: follows the mouse, rests over the private rows when there's
- * no pointer, floods the page while the mouse is held, closes over links and
- * buttons, drags by its rim on touch, and goes away with the L key. Per-frame
- * work writes straight to the elements and stops once nothing is moving; React
- * state only changes for discrete events.
- */
 export function useLens(elements: LensElements) {
   const frame = useRef<LensFrame>({ x: 0, y: 0, r: 0, rotation: 0 })
   const [ready, setReady] = useState(false)
@@ -163,8 +153,6 @@ export function useLens(elements: LensElements) {
       messageTimer = window.setTimeout(() => setMessage(''), 2600)
       wake()
     }
-    // Touch drags by the rim only, so taps and scrolls inside the lens reach
-    // the page underneath.
     const pinAt = (event: PointerEvent) => {
       const pageBox = page.getBoundingClientRect()
       input.pin = { x: event.clientX - pageBox.left, y: event.clientY - pageBox.top }

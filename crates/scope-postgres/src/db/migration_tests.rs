@@ -112,7 +112,6 @@ async fn representative_business_snapshot(db: &DatabaseConnection) -> String {
                     FROM scope_auth_identities item
                 ),
                 'repositories', (
-                    -- m0064 derives content_version from change_version.
                     SELECT jsonb_agg(to_jsonb(item) - 'content_version' ORDER BY id)
                     FROM scope_repositories item
                 ),

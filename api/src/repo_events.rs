@@ -11,8 +11,6 @@ use std::{
 use tokio::sync::broadcast;
 
 const REPO_CHANGE_CHANNEL_CAPACITY: usize = 128;
-/// Names no repository version, so clients refresh request summaries and
-/// other state that changes without one.
 pub(crate) const REQUEST_SUMMARY_REFRESH_VERSION: u64 = 0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -258,8 +256,6 @@ impl crate::state::AppState {
         self.publish_repo_event(event, "request discussion").await;
     }
 
-    /// Workflow runs have no repository version, so open Runs pages refresh
-    /// on every change GitHub reports.
     pub(crate) async fn publish_github_workflow_runs_change(
         &self,
         incarnation: &RepositoryIncarnation,
@@ -305,8 +301,6 @@ impl crate::state::AppState {
     }
 }
 
-/// Delivers to this process's subscribers and notifies every other process.
-/// Tools outside the API pass a bus of their own, which has no subscribers.
 pub(crate) async fn publish_repo_event(
     bus: &RepoChangeBus,
     metadata: &MetadataStore,

@@ -11,8 +11,6 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const manifest = JSON.parse(read('.github/deployment-services.json'));
 const gates = ['backend', 'cli', 'cli-bundle', 'web', 'contract', 'policy', 'integration', 'ops', 'dependency-analyzer'];
 
-// Capture the commands actually executed, without requiring installed toolchains,
-// credentials, or a running stack. The scripts remain the command inventory.
 function commands(gate, ...args) {
   const dir = mkdtempSync(resolve(tmpdir(), 'scope-gates-'));
   try {
@@ -28,7 +26,6 @@ function commands(gate, ...args) {
 
 test('the backend gate covers the whole workspace and the API feature suites explicitly', () => {
   const backend = commands('backend');
-  // Advisories run before the tests so a vulnerable dependency fails fast.
   assert.ok(backend.includes('cargo deny --locked check advisories'));
   assert.ok(backend.indexOf('cargo deny --locked check advisories') < backend.indexOf('cargo test --workspace --locked'));
   assert.ok(backend.includes('cargo test --workspace --locked'));
@@ -48,7 +45,6 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
   assert.ok(cliCommands.includes('cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml check advisories'));
   assert.ok(cliCommands.includes('cargo test --manifest-path cli/Cargo.toml --locked'));
   assert.ok(cliCommands.includes('cargo clippy --manifest-path cli/Cargo.toml --all-targets --locked -- -D warnings'));
-  // The distribution matrix owns every release build; the CLI gate must not add one.
   assert.ok(!cliCommands.some((command) => command.includes('--release')), cliCommands.join('\n'));
   const bundleCommands = commands('cli-bundle');
   assert.ok(bundleCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service'));
@@ -73,17 +69,11 @@ test('local and GitHub callers use the shared inventory', () => {
   assert.doesNotMatch(read('.github/workflows/scope-web-ci.yml'), /rust-toolchain|rust-cache/);
 });
 
-// Suites that need tools the shared gates do not install, with the workflow
-// that runs them instead.
 const testsOutsideSharedGates = new Map([
-  // Needs cryptography; recovery runs it before each capture.
   ['deploy/aws/recovery/tests/test_recovery.py', '.github/workflows/recovery-execute.yml'],
-  // Builds the release images with Docker; ops only checks its syntax.
   ['deploy/railway/test-runtime-containers.sh', null],
 ]);
 
-// A gate runs a test file directly, or through a unittest discovery that
-// starts at or above its directory and whose pattern matches it.
 function runsTest(command, path) {
   const args = command.split(' ');
   if (args.includes('discover')) {
@@ -111,12 +101,8 @@ test('every deployment, benchmark, and developer tooling test is run by a shared
   }
 });
 
-// Independent jobs run the operations and policy gates on every pull request and
-// release, so their inputs need no component lane. Every other gate input must
-// select the lane whose artifact it shapes.
 const alwaysOnGateInputs = [
   /^deploy\/railway\/(maintenance\.Dockerfile|test-runtime-containers\.sh)$/,
-  // railway-ssh.test.mjs runs the pinned OpenSSH wrapper in the operations gate.
   /^deploy\/railway\/(ssh-bin\/ssh|ssh_known_hosts)$/,
   /^bench\//, /^deploy\/(aws|postgres|automation)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py|install-test-postgres\.sh)$/,
@@ -125,8 +111,6 @@ const alwaysOnGateInputs = [
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 
-// A deployment script is covered by the operations or policy gates when they run
-// it, run its test, or run a script that loads it.
 function scriptsCoveredByAlwaysOnGates() {
   const commandText = ['ops', 'policy'].flatMap((gate) => commands(gate)).join('\n');
   const scripts = readdirSync(resolve(root, '.github/scripts'))
@@ -163,7 +147,6 @@ test('gate inputs select a lane unless the always-on gates own them', () => {
   for (const gate of ['ops', 'policy']) {
     for (const caller of ['ci', 'release']) assert.ok(read(`.github/workflows/${caller}.yml`).includes(`dev/checks/${gate}`), `${caller} must always run ${gate}`);
   }
-  // PostgreSQL cluster tests skip locally but must fail, not skip, in CI.
   for (const caller of ['ci', 'release']) {
     const ops = read(`.github/workflows/${caller}.yml`).split('\n  ops:\n')[1].split(/\n  [\w-]+:\n/)[0];
     assert.match(ops, /SCOPE_REQUIRE_POSTGRES_CLUSTER: '1'\n\s+run: \.\/dev\/checks\/ops\n/, `${caller} ops must require the PostgreSQL cluster tests`);
@@ -196,12 +179,10 @@ test('the CLI is built once per target and the matrix owns the deployed service 
   );
   const checks = jobsSection.slice(jobsSection.indexOf('\n  checks:\n'), jobsSection.indexOf('\n  build:\n'));
   const build = jobsSection.slice(jobsSection.indexOf('\n  build:\n'));
-  // The always-on gate never release-builds; it defers the host bundle to the matrix.
   assert.doesNotMatch(checks, /--release/);
   assert.match(checks, /run: \.\/dev\/checks\/cli\n/);
   assert.match(checks, /if: \$\{\{ !inputs\.validate_targets \}\}\n\s+run: \.\/dev\/checks\/cli-bundle\n/);
   assert.match(checks, /if: inputs\.validate_service_release && !inputs\.validate_targets\n/);
-  // Each matrix leg builds its target once; only the native Linux x64 leg ships the service.
   const serviceGate = "if: inputs.validate_service_release && matrix.target == 'x86_64-unknown-linux-gnu'";
   assert.equal(build.split(serviceGate).length - 1, 2);
   const upload = build.slice(build.indexOf('      - name: Upload service'));
@@ -489,8 +470,6 @@ test('CI runs on pull requests and Scope request branches, and Release dispatch 
   const ciTriggers = ci.split('\nconcurrency:')[0];
   assert.match(ciTriggers, /  pull_request:\n  push:\n    branches: \['scope\/\*\*'\]\n/);
   assert.doesNotMatch(ciTriggers, /schedule:|workflow_dispatch:/);
-  // Concurrent Scope requests must not share a group, and a new branch has no
-  // previous commit to compare against.
   assert.match(ci, /group: scope-ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
   assert.match(ci, /base="\$\(git merge-base origin\/main HEAD\)"/);
   assert.match(ci, /BASE_SHA: \$\{\{ steps\.base\.outputs\.sha \}\}/);

@@ -44,8 +44,6 @@ export function RepositoryRunsRoute({
     startAuthorization: startRepoGitHubAuthorization,
   }), [configured])
 
-  // GitHub's runs are filtered on the page itself, so every Runs route,
-  // a workflow's route included, starts from all of them.
   if (initialResources?.kind === 'github') {
     return (
       <GitHubWorkflowRunsPage

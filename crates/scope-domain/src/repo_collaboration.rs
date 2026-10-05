@@ -8,22 +8,15 @@ use super::{
 use crate::error::DomainError;
 
 pub const REPOSITORY_INVITE_TTL_SECS: u64 = 7 * 24 * 60 * 60;
-/// How long an invite, and the email address it names, is kept after it
-/// stops being pending.
 pub const REPOSITORY_INVITE_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
 
-/// What the person opening an invite link should be shown, and therefore what
-/// they are allowed to do with it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RepositoryInviteLanding {
     Open(RepositoryInviteViewer),
-    /// The viewer already has access, through this invite or another way.
     Member,
     Expired,
     Revoked,
-    /// The viewer accepted this invite and was later removed.
     AccessRemoved,
-    /// Someone else accepted this invite, and the viewer has no access.
     Used,
 }
 
@@ -37,8 +30,6 @@ pub enum RepositoryInviteViewer {
 
 pub enum AcceptRepositoryInviteOutcome {
     Accepted(RepositoryMember),
-    /// A repeat of an acceptance that already succeeded, such as a double
-    /// click or a retry after a lost response.
     AlreadyAccepted(RepositoryMember),
 }
 
@@ -81,8 +72,6 @@ pub fn create_repository_invite(
         invited_email_normalized: normalized,
         permissions: command.permissions,
         invited_by_user_id: command.owner.id.clone(),
-        // The sender issues a link when it emails the invite, and the owner
-        // can copy one. Nothing stores a link that was never handed out.
         link_hashes: Vec::new(),
         created_at_unix: command.now_unix,
         updated_at_unix: command.now_unix,
@@ -97,7 +86,6 @@ pub fn create_repository_invite(
     Ok(invite)
 }
 
-/// Adds one more working link. Earlier links and the expiry stay as they are.
 pub fn issue_repository_invite_link(
     repo: &mut CollaborationState,
     owner_user_id: &str,
@@ -234,9 +222,6 @@ pub fn revoke_repository_invite(
     Ok(invite)
 }
 
-/// Removes every invite that stopped being pending at least
-/// `REPOSITORY_INVITE_RETENTION_SECS` ago. Members are untouched: access lives
-/// in the member list, not in the invite that granted it.
 pub fn prune_ended_repository_invites(
     repo: &mut CollaborationState,
     now_unix: u64,

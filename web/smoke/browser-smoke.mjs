@@ -3,7 +3,6 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
-// deploy-staging.yml, scope-integration-ci.yml, and dev/check set these two.
 export const baseUrl = (process.env.SCOPE_WEB_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '')
 
 const repoId = process.env.SCOPE_SMOKE_REPO ?? 'dev/public-demo'
@@ -15,11 +14,8 @@ if (!owner || !repoName || extra) {
 export { owner }
 export const repo = `${owner}/${repoName}`
 export const repoPath = `/${repo}`
-// Request fixtures are seeded in the smoke owner's update-demo repository.
 export const requestRepoPath = `/${owner}/update-demo`
 export const authEnabled = process.env.SCOPE_SMOKE_AUTH_ENABLED === '1'
-// Set SCOPE_SMOKE_LATENCY_MS (for example 200) to reproduce timing races that
-// only show up under CI load or real network latency.
 const serverFunctionLatencyMs = Number(process.env.SCOPE_SMOKE_LATENCY_MS ?? 0)
 
 export async function withBlankPage(run, pageOptions = {}) {
@@ -28,17 +24,12 @@ export async function withBlankPage(run, pageOptions = {}) {
   const pageErrors = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
   try {
-    // The Vite dev server shows every internal error on every open page,
-    // including a request that another test's closing browser reset. Its
-    // overlay would intercept this page's pointer events.
     await page.addInitScript(() => {
       globalThis.customElements?.define('vite-error-overlay', class extends HTMLElement {
         connectedCallback() { this.remove() }
       })
     })
     if (serverFunctionLatencyMs > 0) {
-      // Throttling applies below request interception, so requests a test's
-      // own route handler continues are delayed too.
       const session = await page.context().newCDPSession(page)
       await session.send('Network.enable')
       await session.send('Network.emulateNetworkConditionsByRule', {
@@ -57,12 +48,8 @@ export async function withBlankPage(run, pageOptions = {}) {
   }
 }
 
-// `prepare` runs before navigation for routes and init scripts that must be
-// in place when the document loads. `run` starts once the page has settled;
-// tests that assert the loading state itself pass `settle: false`.
 export async function withPage(path, run, { prepare, settle = true, ...pageOptions } = {}) {
   await withBlankPage(async (page) => {
-    // A page without JavaScript never hydrates, so it has nothing to settle.
     const settled = settle && pageOptions.javaScriptEnabled !== false ? trackPageSettle(page) : null
     await prepare?.(page)
     const response = await page.goto(new URL(path, `${baseUrl}/`).toString(), {
@@ -76,10 +63,8 @@ export async function withPage(path, run, { prepare, settle = true, ...pageOptio
   }, pageOptions)
 }
 
-// Install before navigation. The returned function waits for the router to
-// hydrate, for repository pages to receive the live-state summary their
-// event stream's catch-up loads, for 200 ms without a server function in
-// flight, and for the router to be idle again.
+const SERVER_FUNCTION_QUIET_MS = 200
+
 export function trackPageSettle(page) {
   const pending = new Set()
   let summaries = 0
@@ -97,13 +82,11 @@ export function trackPageSettle(page) {
   page.on('requestfinished', finish)
   page.on('requestfailed', finish)
   return async () => {
-    // The router resolves its first location once it has hydrated the matches.
     await page.waitForFunction(() => Boolean(globalThis.__TSR_ROUTER__?.state.resolvedLocation))
-    // Only the repository layout opens an event stream.
     const repository = await page.evaluate(() =>
       globalThis.__TSR_ROUTER__.state.matches.some(({ routeId }) => routeId === '/$owner/$repo'))
     const deadline = Date.now() + 30_000
-    while ((repository && !summaries) || pending.size || Date.now() - lastActivity < 200) {
+    while ((repository && !summaries) || pending.size || Date.now() - lastActivity < SERVER_FUNCTION_QUIET_MS) {
       assert(Date.now() < deadline, `page did not settle: ${summaries} live-state summaries, pending ${[...pending].map(serverFunctionName).join(', ')}`)
       await delay(50)
     }
@@ -117,7 +100,6 @@ async function isClientHydrated(locator) {
 
 export async function waitForClientHydration(locator) {
   const deadline = Date.now() + 30_000
-  // Hydration can replace the server-rendered node, so resolve the locator anew.
   while (!await isClientHydrated(locator)) {
     assert(Date.now() < deadline, 'element did not hydrate within 30 seconds')
     await delay(50)

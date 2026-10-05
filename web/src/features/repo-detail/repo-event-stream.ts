@@ -80,8 +80,6 @@ export async function runRepoEventStream({
     if (signal.aborted) return
 
     onInterrupted()
-    // The server revalidates the bearer token used to open the stream. An
-    // expired token needs a new connection, which obtains a fresh Clerk token.
     if (outcome.type === 'stream-error' && !outcome.error.retryable && outcome.error.code !== 'unauthorized') return
 
     if (outcome.type === 'protocol-error') {
@@ -163,9 +161,7 @@ export async function streamRepoEvents(
   } finally {
     try {
       await reader.cancel()
-    } catch {
-      // The fetch abort may have already errored the stream.
-    }
+    } catch {}
     reader.releaseLock()
   }
 }
@@ -248,9 +244,7 @@ function isEventStream(contentType: string | null) {
 async function cancelBody(body: ReadableStream<Uint8Array>) {
   try {
     await body.cancel()
-  } catch {
-    // A transport failure can error the body before it is rejected here.
-  }
+  } catch {}
 }
 
 function normalizeSseLineEndings(buffer: string) {

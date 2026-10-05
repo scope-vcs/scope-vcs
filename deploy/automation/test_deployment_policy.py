@@ -1,4 +1,3 @@
-"""Release supervision must retain unresolved work until verified or escalated."""
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -17,7 +16,6 @@ def info(**changes):
 
 
 def thread(status="completed", **changes):
-    """T3's shell summary of an agent thread whose latest run has this status."""
     active = status in policy.ACTIVE_RUN
     return {"status": status, "activeRunId": "run-1" if active else None,
             "latestRunRequestedAt": at(0), "updatedAt": at(0), **changes}

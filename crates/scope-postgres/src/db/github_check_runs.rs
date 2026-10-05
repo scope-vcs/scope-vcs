@@ -1,10 +1,3 @@
-//! Check runs GitHub reported for commits in a repository, kept per GitHub
-//! repository so a reconnected Scope repository never counts another
-//! repository's runs. GitHub's API is the source: each read replaces what
-//! Scope stored for the commit. Reads are numbered before they ask GitHub,
-//! and a read is stored only when no later read was stored first, so an
-//! answer that arrives late cannot bring back an older result.
-
 use super::{
     RequestStore,
     entities::{decode_enum, encode_enum},
@@ -16,7 +9,6 @@ use sea_orm::{
     ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait, Value,
 };
 
-/// A tested commit in a Scope repository, as one GitHub repository reports it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubCheckCommit {
     pub repo_id: String,
@@ -24,8 +16,6 @@ pub struct GitHubCheckCommit {
     pub commit_oid: String,
 }
 
-/// A started GitHub evaluation of an open request's current head that the
-/// reconciler may read results for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubCheckRefreshCandidate {
     pub commit: GitHubCheckCommit,
@@ -53,7 +43,6 @@ impl GitHubCheckCommit {
 }
 
 impl RequestStore {
-    /// Numbers a read of the commit's check runs before it asks GitHub.
     pub async fn start_github_check_read(
         &self,
         commit: &GitHubCheckCommit,
@@ -80,9 +69,6 @@ impl RequestStore {
         )
     }
 
-    /// Replaces the stored check runs of the commit with what read `read`,
-    /// started at `started_at_unix`, got from GitHub. Returns `false`, storing
-    /// nothing, when a later read was stored first.
     pub async fn apply_github_check_read(
         &self,
         commit: &GitHubCheckCommit,
@@ -133,8 +119,6 @@ impl RequestStore {
                 started_at.into(),
                 optional_u64_to_i64(run.check_suite_id, "GitHub check suite id")?.into(),
             ];
-            // A run id belongs to one GitHub repository, which may since have
-            // been connected to another Scope repository.
             tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_github_check_runs (github_check_run_id, repo_id,
@@ -172,9 +156,6 @@ impl RequestStore {
         Ok(true)
     }
 
-    /// When the stored read of the commit's check runs started. `None` before
-    /// any read was stored, and while a later read is still asking GitHub:
-    /// something changed on GitHub that the stored answer may not show.
     pub async fn settled_github_check_read_started_at(
         &self,
         commit: &GitHubCheckCommit,
@@ -200,8 +181,6 @@ impl RequestStore {
         )
     }
 
-    /// The started GitHub evaluations of open requests' current heads that
-    /// test the commit in the repository.
     pub async fn current_github_evaluations_testing(
         &self,
         repo_id: &str,
@@ -241,9 +220,6 @@ impl RequestStore {
         self.request_check_evaluations(&heads).await
     }
 
-    /// Whether Scope reads GitHub's check runs for `commit_oid`: some request
-    /// in the repository was evaluated against it, or a running connection
-    /// test pushed it.
     pub async fn github_commit_is_watched(
         &self,
         repo_id: &str,
@@ -272,9 +248,6 @@ impl RequestStore {
             .map_err(PostgresError::internal)
     }
 
-    /// Started GitHub evaluations of open requests' current heads in connected
-    /// repositories whose commit is due for a reconciler read at `now_unix`,
-    /// longest due first.
     pub async fn github_check_refresh_candidates(
         &self,
         now_unix: u64,
@@ -330,9 +303,6 @@ impl RequestStore {
         .collect()
     }
 
-    /// Takes the reconciler's next read of the commit for this process and
-    /// puts the one after at `next_read_at_unix`. `false` when the commit is
-    /// not due at `now_unix`, because another process took it.
     pub async fn claim_github_check_refresh(
         &self,
         commit: &GitHubCheckCommit,
@@ -362,7 +332,6 @@ impl RequestStore {
             .is_some())
     }
 
-    /// Moves the reconciler's next read of the commit.
     pub async fn schedule_github_check_refresh(
         &self,
         commit: &GitHubCheckCommit,
@@ -383,9 +352,6 @@ impl RequestStore {
     }
 }
 
-/// The latest run of each check name on each of the commits, as the GitHub
-/// repository reported them. The domain applies the same rule; reading only
-/// the latest keeps re-runs from growing the read.
 pub(super) async fn latest_github_check_runs<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

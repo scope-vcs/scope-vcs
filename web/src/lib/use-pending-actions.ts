@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
 
-// Keep independent rows interactive without allowing duplicate work on one row.
 export function usePendingActions() {
   const active = useRef(new Set<string>())
   const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set())

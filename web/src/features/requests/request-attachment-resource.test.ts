@@ -84,7 +84,6 @@ for (const owner of owners) {
   })
 
   test(`${owner.name}: ${maxOwners}-owner tracking refreshes recency and forgets without cache deletion`, () => {
-    // Populate tracking separately so cache eviction cannot mask its capacity or recency.
     for (let index = 0; index < maxOwners; index++) activate(scope(`repo-${index}`))
     seed(key(scope('repo-0')))
     activate(scope('repo-0', 'viewer', 'Member'))

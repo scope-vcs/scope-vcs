@@ -10,8 +10,6 @@ import { candidateMigrationVersion, renderRuntimeRoleAudit } from './audit-runti
 import { localClusterSkip, pgBin } from './test-cluster.mjs';
 
 const migrationsDir = new URL('../../crates/scope-postgres/src/migrations/', import.meta.url);
-// Raw migration SQL applied on top of the schema baseline so the role inventory
-// below sees the current worker model and every relation a runtime role touches.
 const appliedMigrations = ['m0043_retire_git_manifests.rs', 'm0044_request_attention.rs', 'm0045_dependency_analysis.rs',
   'm0053_request_ref_cleanup.rs', 'm0055_request_checks.rs', 'm0056_request_auto_merge.rs',
   'm0057_repository_invite_links.rs', 'm0058_repository_invite_emails.rs', 'm0063_account_deletion.rs',
@@ -20,8 +18,6 @@ const appliedMigrations = ['m0043_retire_git_manifests.rs', 'm0044_request_atten
   'm0069_github_request_checks.rs', 'm0070_github_setup_checks_and_workflow_runs.rs',
   'm0072_github_run_imports.rs'];
 
-// A migration that creates a table without a reviewed grant fails the runtime
-// cutover. Applying it here makes the inventory comparison catch that first.
 test('every table-creating migration after the baseline is applied to the role inventory', () => {
   const creators = readdirSync(migrationsDir)
     .filter((name) => /^m\d+_.+\.rs$/.test(name) && name > appliedMigrations[0]
@@ -29,7 +25,6 @@ test('every table-creating migration after the baseline is applied to the role i
   assert.deepEqual(creators.filter((name) => !appliedMigrations.includes(name)), []);
 });
 
-// Always creates its own disposable cluster. Never reads a DATABASE_URL or uses a live server.
 test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClusterSkip }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'scope-role-test-'));
   const data = join(dir, 'data');
@@ -50,7 +45,6 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     started = true;
     const baseline = readFileSync(new URL('../../crates/scope-postgres/src/migrations/current_schema.sql', import.meta.url), 'utf8');
     query(baseline);
-    // Apply the raw migration SQL needed by the current worker model and role inventory.
     for (const filename of appliedMigrations) {
       const source = readFileSync(new URL(filename, migrationsDir), 'utf8');
       query(`BEGIN; ${source.match(/r#"([\s\S]*?)"#/)[1]} COMMIT;`);
@@ -60,11 +54,9 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     assert.deepEqual(actual, tables);
     query(renderPolicy());
     query('GRANT SELECT (id) ON scope_cli_sessions TO scope_cache;');
-    query(renderPolicy()); // Repeat bootstrap removes stale column grants too.
+    query(renderPolicy());
     query('SELECT id FROM scope_cli_sessions;', 'scope_cache', false);
     query(renderPolicy({ grantsOnly: true }), 'scope_migrator');
-    // Before the candidate migration is applied, only stable role and ownership
-    // invariants are checked; exact candidate grants become required afterward.
     query(renderRuntimeRoleAudit(), 'scope_migrator');
     query('GRANT SELECT (id) ON scope_cli_sessions TO scope_cache;');
     query(renderRuntimeRoleAudit(), 'scope_migrator');
@@ -85,11 +77,9 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query('ALTER TABLE scope_cli_sessions OWNER TO postgres;');
     auditFails(/not owned by scope_migrator/);
     query('ALTER TABLE scope_cli_sessions OWNER TO scope_migrator;');
-    // Another account holding a protected role could assume its privileges.
     query('GRANT scope_cache TO postgres;');
     auditFails(/held by another account/);
     query('REVOKE scope_cache FROM postgres;');
-    // The ledger must stay read-only even while exact grants are deferred.
     query('GRANT INSERT ON seaql_migrations TO scope_cache;');
     auditFails(/migration-ledger privileges/, renderRuntimeRoleAudit({ exactPolicy: false }));
     query('REVOKE INSERT ON seaql_migrations FROM scope_cache;');
@@ -109,7 +99,6 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     for (const [role, policy] of Object.entries(grants)) {
       assert.equal(query(`SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = '${role}'`).stdout.trim(), 'f');
       assert.equal(query(`SELECT count(*) FROM pg_class WHERE relowner = '${role}'::regrole`).stdout.trim(), '0');
-      // Compare effective permissions, including PUBLIC and inherited grants, for every service/table pair.
       const effective = new Map(tables.map((table) => [table, []]));
       const rows = query(`SELECT t, p FROM unnest(ARRAY[${tables.map((table) => `'${table}'`).join(',')}]) t
         CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) WITH ORDINALITY permissions(p, position)

@@ -229,8 +229,6 @@ async function putPart(transfer, number, bytes) {
   return result
 }
 
-// Media reads are idempotent GET/HEAD requests, so a transient gateway failure
-// in front of a healthy media service is retried a bounded number of times.
 async function mediaFetch(url, options = {}) {
   const method = (options.method ?? 'GET').toUpperCase()
   assert(['GET', 'HEAD'].includes(method), 'media reads must stay idempotent')

@@ -28,8 +28,6 @@ const loadRequestPage = createServerFn({ method: 'GET' })
     }
   })
 
-// The discussion page and the changes screen share this request; each child
-// supplies its own layout and pending shape.
 export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
   loader: ({ params }) => loadRequestPage({ data: requestParamsForRoute(params) }),
   pendingComponent: RequestRoutePending,

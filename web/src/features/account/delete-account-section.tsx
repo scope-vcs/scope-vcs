@@ -32,7 +32,6 @@ export function DeleteAccountSection({
       setError(<SharedRepositories repositories={result.repositories} />)
       return
     }
-    // Hide the deleted account before sign-out completes the viewer change.
     accountSessionResource.clear()
     await clerk.signOut({ redirectUrl: '/' })
   }

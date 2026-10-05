@@ -37,7 +37,6 @@ export async function fetchBackupHealth(token, fetcher = fetch) {
     }),
     signal: AbortSignal.timeout(30000),
   })
-  // Do not print API errors or response bodies, which can contain sensitive metadata.
   if (!response.ok) throw new BackupCheckError(`Railway backup query failed with HTTP ${response.status}`)
   const body = await response.json()
   if (body.errors?.length) throw new BackupCheckError('Railway rejected the backup query; inspect project-token access and schema')

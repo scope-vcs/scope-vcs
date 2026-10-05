@@ -541,7 +541,6 @@ async fn request_response_for_viewer(
         can_close: decision.can_close,
         can_merge: decision.can_merge,
     };
-    // A summary describes the request; only a look at its checks evaluates a head.
     let checks = crate::use_cases::request_checks::recorded_checks_view(state, &request)
         .await?
         .outcome;

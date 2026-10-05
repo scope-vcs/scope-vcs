@@ -17,8 +17,6 @@ import type {
   RepositoryRunStepResponse,
 } from '@/api/types.generated'
 
-/** The selected job: its one-line header, the environment panel when asked
- * for, then its steps in the pane that scrolls. */
 export function RunDetailSteps({
   attempt,
   jobDetail,

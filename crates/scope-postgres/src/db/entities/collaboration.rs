@@ -206,8 +206,6 @@ pub mod repository_invite_email {
             };
             Ok(RepositoryInviteEmail {
                 id: self.id,
-                // Only rows kept for the owner's allowance lose their invite,
-                // and nothing loads those as emails.
                 invite_id: self
                     .invite_id
                     .ok_or_else(|| PostgresError::internal_message("invite email has no invite"))?,

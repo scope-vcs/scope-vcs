@@ -265,7 +265,6 @@ test("production verification binds every live service to durable Railway eviden
 test("production CLI verifies canonical receipts against the checked-in manifest and Railway status", () => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
   const manifest = JSON.parse(readFileSync(new URL("../deployment-services.json", import.meta.url), "utf8"));
-  // Model the provider contract from the actual manifest, independently of the helper's component lists.
   const configPaths = {
     cache: "cache-service/railway.json", "run-worker": "worker/railway.json",
     "git-router": "repo-router/railway.json", "media-api": "media-service/railway.json",

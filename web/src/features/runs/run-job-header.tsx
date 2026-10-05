@@ -13,12 +13,6 @@ import type {
 
 const COPY_CONFIRMATION_MS = 1_500
 
-/**
- * The selected job in one line: its name, an attempt menu only when it was
- * retried, and why it ended only when it ended badly. The right side carries
- * the attempt's duration, the environment control and the open log's wrap and
- * copy controls.
- */
 export function RunJobHeader({
   attempt,
   environmentControl,
@@ -40,8 +34,6 @@ export function RunJobHeader({
   const ending = attempt ? attemptEnding(attempt) : null
   return (
     <div className="flex min-h-12 flex-none flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-border py-2 pl-4 pr-3">
-      {/* The job list already shows the job's overall state; this line
-          describes whichever attempt is on screen. */}
       <RunStatusIcon
         state={attempt?.state ?? job.state}
         terminalReason={attempt?.terminal_reason}
@@ -81,8 +73,6 @@ export function RunJobHeader({
   )
 }
 
-/** Why an attempt ended, when that is worth saying: a terminal reason other
- * than its plain state, or the step it failed at. */
 function attemptEnding(attempt: RepositoryRunAttemptResponse) {
   const reason = attempt.terminal_reason
   const status = runStatus(attempt.state, reason)
@@ -171,9 +161,7 @@ function CopyButton({ text }: { text: string }) {
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
-    } catch {
-      // The browser denied clipboard access; there is nothing to recover.
-    }
+    } catch {}
   }
 
   return (

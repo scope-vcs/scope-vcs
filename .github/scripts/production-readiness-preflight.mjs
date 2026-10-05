@@ -38,8 +38,6 @@ export function productionReadinessAudit({ deployments, manifest, status, baseli
     serviceConfigs: baseline.serviceConfigs,
     services: railwayServicesFromStatus(status, manifest.environments.production.environmentId),
   });
-  // A role-policy change is a release input, not existing production drift.
-  // Retain role/ownership/ledger checks before that new grant policy is applied.
   return renderRuntimeRoleAudit({ exactPolicy: candidateRolePolicy === baseline.rolePolicy });
 }
 

@@ -1,9 +1,3 @@
-//! Writing the check commit GitHub tests for a public contribution: the
-//! contribution merged onto private main with the merge's own tree routine.
-//! Its parents are private main and the head, as a merge commit's are, and it
-//! copies the head's author and committer lines, so the same head and base
-//! always write the same commit.
-
 use crate::{
     error::ApiError,
     git::{
@@ -14,8 +8,6 @@ use crate::{
 use scope_domain::requests::{CheckCommitBase, check_commit_message};
 use std::{path::Path, process::Command};
 
-/// Writes the check commit into `repo`, which must hold private main and the
-/// head. `None` means the contribution conflicts with private main.
 pub(crate) fn write_check_commit(
     repo: &Path,
     request_id: &str,
@@ -54,8 +46,6 @@ pub(crate) fn write_check_commit(
     ))
 }
 
-/// The head's `author` and `committer` header lines, byte for byte, each
-/// ending in a newline.
 fn head_identity(repo: &Path, head_oid: &str) -> Result<Vec<u8>, ApiError> {
     const ACTION: &str = "reading the request head's identity";
     let commit = successful_git_output(

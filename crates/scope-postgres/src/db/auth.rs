@@ -268,9 +268,6 @@ where
     )?)
 }
 
-/// Counts every pending login row of one kind and the subset created inside
-/// the rate-limit window. The domain keeps a separate limit per login kind,
-/// so callers pass the result to that kind's rule.
 pub(super) async fn login_start_counts<E, C>(
     conn: &C,
     created_at: E::Column,

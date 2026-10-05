@@ -25,7 +25,6 @@ pub const MAX_WORKFLOW_TIMEOUT_SECONDS: u64 = 24 * 60 * 60;
 pub struct WorkflowTriggers {
     manual: bool,
     push_main: bool,
-    // Absent when false, so definitions written before request triggers keep their digest.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     request: bool,
 }
@@ -42,7 +41,6 @@ impl WorkflowTriggers {
         })
     }
 
-    /// Runs on every push to an open or draft request; a merge waits for it.
     pub fn request(&self) -> bool {
         self.request
     }
@@ -278,7 +276,6 @@ struct PersistedCompiledWorkflow {
 struct PersistedWorkflowTriggers {
     manual: bool,
     push_main: bool,
-    // Revisions persisted before request triggers existed carry no field.
     #[serde(default)]
     request: bool,
 }
@@ -469,7 +466,6 @@ impl CompiledWorkflow {
             .map(|index| &self.jobs[index])
     }
 
-    /// Returns the job only when this workflow contains exactly one job.
     pub fn only_job(&self) -> Option<&WorkflowJob> {
         if self.jobs.len() == 1 {
             self.jobs.first()

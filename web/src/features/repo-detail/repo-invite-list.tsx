@@ -29,7 +29,6 @@ export function InvitationList({
     permissions: RepositoryMemberPermissions
   }) => Promise<RepositoryInviteResponse>
 }) {
-  // Holds a link only when the clipboard refused it, so it can be copied by hand.
   const [uncopiedLink, setUncopiedLink] = useState<string | null>(null)
 
   async function copyNewLink(inviteId: string) {
@@ -45,7 +44,6 @@ export function InvitationList({
 
   async function sendEmail(invite: RepositoryInviteResponse) {
     await sendInviteEmail(invite.id)
-    // The request only queues the email; the row reports what happens to it.
     toast.success(`Sending the invitation to ${invite.invited_email} again. Earlier links still work.`)
   }
 

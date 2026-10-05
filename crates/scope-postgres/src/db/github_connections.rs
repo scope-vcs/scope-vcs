@@ -1,13 +1,3 @@
-//! GitHub connections, one row per Scope repository. Connecting and
-//! disconnecting re-read the viewer's access in the transaction that writes,
-//! so a maintainer removed meanwhile cannot finish. GitHub's installation
-//! events are judged by the domain for every connected link of the
-//! installation.
-//!
-//! Connecting and applying an installation event hold the same installation
-//! lock while they ask GitHub what is true now, so a revocation is either
-//! seen by the connect or finds the new link when it is applied.
-
 use super::{
     RepositoryStore, acquire_aggregate_lock,
     github_run_imports::{
@@ -41,7 +31,6 @@ const SELECT_CONNECTION: &str = "SELECT connection.repo_id, connection.installat
     FROM scope_github_connections connection
     LEFT JOIN scope_users connected_by ON connected_by.id = connection.connected_by_user_id";
 
-/// A stored link and the handle of the account that made it, while it exists.
 pub struct GitHubConnectionRead {
     pub connection: GitHubConnection,
     pub connected_by_handle: Option<String>,
@@ -75,7 +64,6 @@ impl RepositoryStore {
         .await
     }
 
-    /// The connected link that holds a GitHub repository, if any.
     pub async fn github_connection_for_github_repository(
         &self,
         github_repository_id: u64,
@@ -89,10 +77,6 @@ impl RepositoryStore {
         .map(|read| read.connection))
     }
 
-    /// Stores the link once the domain accepts it and, under the
-    /// installation lock, `still_reachable` confirms with GitHub that the
-    /// installation still reaches the repository. Returns the repository
-    /// incarnation it was stored for, so the caller can announce the change.
     pub async fn connect_github_repository<E: From<PostgresError>>(
         &self,
         command: ConnectGitHubRepository,
@@ -163,8 +147,6 @@ impl RepositoryStore {
             )
         })?;
         requeue_started_github_evaluations(&tx, &connection).await?;
-        // The newly linked repository's recent runs, so its Runs page does
-        // not start empty.
         save_run_import_count(&tx, &connection.repository_id, run_import_count).await?;
         match GitHubRunImport::queue(&connection, run_import_count, connection.connected_at_unix) {
             Some(import) => queue_github_run_import(&tx, &import).await?,
@@ -174,8 +156,6 @@ impl RepositoryStore {
         Ok((connection, context.incarnation()))
     }
 
-    /// Records what GitHub reports about a GitHub repository's visibility on
-    /// the link that holds it. Returns the repository whose link changed.
     pub async fn apply_github_repository_visibility(
         &self,
         github_repository_id: u64,
@@ -204,8 +184,6 @@ impl RepositoryStore {
         Ok(changed)
     }
 
-    /// A maintainer who can change file visibility confirms that a connected
-    /// repository that became public on GitHub may receive private requests.
     pub async fn acknowledge_public_github_repository(
         &self,
         repo_id: &str,
@@ -222,7 +200,6 @@ impl RepositoryStore {
             .map(|read| read.connection);
         let connection = acknowledge_public_github_repository(context.access, current.as_ref())?;
         save_visibility(&tx, &connection).await?;
-        // Private requests withheld meanwhile are sent now.
         requeue_started_github_evaluations(&tx, &connection).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(context.incarnation())
@@ -255,10 +232,6 @@ impl RepositoryStore {
         Ok(context.incarnation())
     }
 
-    /// Applies an installation event to each connected link of the
-    /// installation. Deliveries can be stale, so under the installation lock
-    /// `confirm` asks GitHub what is true now and returns the change to apply,
-    /// if any. Returns the repositories whose link changed.
     pub async fn apply_github_installation_change<E: From<PostgresError>>(
         &self,
         installation_id: u64,
@@ -311,7 +284,6 @@ impl RepositoryStore {
             ))
             .await
             .map_err(PostgresError::internal)?;
-            // A disconnected repository has no import left to run.
             delete_github_run_import(&tx, &connection.repository_id).await?;
             if let Some(record) = load_repo_record(&tx, &connection.repository_id).await? {
                 changed.push(record.incarnation());
@@ -322,11 +294,6 @@ impl RepositoryStore {
     }
 }
 
-/// A new link, or a public one just confirmed, pushes again the commits that
-/// open requests' started GitHub checks test, approved contributor heads
-/// included: a push the old link gave up on, or a commit the newly linked
-/// repository never received, would otherwise leave those checks pending for
-/// good.
 async fn requeue_started_github_evaluations<C: ConnectionTrait>(
     conn: &C,
     connection: &GitHubConnection,
@@ -389,8 +356,6 @@ async fn save_visibility<C: ConnectionTrait>(
     Ok(())
 }
 
-/// Serializes connecting through an installation with that installation's
-/// events.
 async fn acquire_installation_lock<C: ConnectionTrait>(
     conn: &C,
     installation_id: u64,
@@ -398,7 +363,6 @@ async fn acquire_installation_lock<C: ConnectionTrait>(
     acquire_aggregate_lock(conn, "github-installation", &installation_id.to_string()).await
 }
 
-/// The repository's link, as its checks need it.
 pub(super) async fn repository_github_connection<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

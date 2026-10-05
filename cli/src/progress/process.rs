@@ -239,8 +239,6 @@ impl ProcessTree {
             SetInformationJobObject,
         };
 
-        // std::process::Command cannot expose a suspended process's primary thread. Assigning the
-        // trusted Git/Node child immediately after spawn is the narrowest reliable std boundary.
         let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
         if job.is_null() {
             return Err(io::Error::last_os_error());

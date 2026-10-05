@@ -1,14 +1,3 @@
-//! What a request's head owes before it can merge: its evaluated checks.
-//!
-//! Every push evaluates the checks for that revision. A repository answers its
-//! checks with one provider: a repository linked to GitHub asks GitHub for each
-//! required check name, and any other runs Scope's own workflows. Native workflows
-//! come from the accepted main catalog for public requests and from the head for
-//! private ones. GitHub tests a private head as it is and a public contribution
-//! merged onto private main. A maintainer's push starts the checks at once; another
-//! contributor's push records them and waits for a maintainer to approve. The
-//! evaluation for the current head decides whether the request can merge.
-
 use super::{Request, RequestAudience, RequestState, limits::validate_required};
 use crate::{
     error::DomainError,
@@ -42,9 +31,6 @@ pub use tested_commit::{
     check_commit_message,
 };
 
-/// Who answers a repository's request checks, never both. A repository linked
-/// to GitHub keeps asking GitHub after GitHub takes the link away, so its
-/// requests say why they cannot pass instead of quietly switching to native runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestCheckProvider {
     Native,
@@ -64,14 +50,9 @@ impl RequestCheckProvider {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RequestCheckEvaluationState {
-    /// The evaluation selected no check.
     NoChecks,
-    /// The checks are known; a maintainer has not started them.
     AwaitingApproval,
-    /// Every native check has a run. A GitHub check needs nothing recorded here:
-    /// its results arrive for the tested commit once Scope pushes it to GitHub.
     Started,
-    /// The selected workflow definitions could not be used.
     ConfigurationError,
 }
 
@@ -80,7 +61,6 @@ pub enum RequestCheckEvaluationState {
 pub enum RequestCheck {
     #[serde(rename = "native")]
     Native(NativeRequestCheck),
-    /// A check GitHub must report as passed on the tested commit.
     #[serde(rename = "github")]
     GitHub { name: String },
 }
@@ -101,12 +81,10 @@ impl RequestCheck {
     }
 }
 
-/// A workflow Scope runs itself against the request head.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NativeRequestCheck {
     pub workflow_path: String,
     pub workflow_name: String,
-    /// The compiled definition selected for the head, kept so approval starts exactly it.
     pub workflow_revision_digest: String,
     pub run_id: Option<String>,
 }
@@ -121,8 +99,6 @@ impl NativeRequestCheck {
         }
     }
 
-    /// The run that answers this check for the request's current head.
-    /// Its identity is stable, so a repeated evaluation cannot start it twice.
     pub fn run(
         &self,
         request: &Request,
@@ -175,9 +151,7 @@ impl NativeRequestCheck {
 pub struct RequestCheckEvaluation {
     pub request_id: String,
     pub head_oid: String,
-    /// The commit whose results answer the checks. Native runs test the head itself.
     pub tested_oid: String,
-    /// Set when GitHub tests a check commit built from the head instead of the head.
     pub check_commit_base: Option<CheckCommitBase>,
     pub state: RequestCheckEvaluationState,
     pub message: Option<String>,
@@ -263,8 +237,6 @@ impl RequestCheckEvaluation {
         )
     }
 
-    /// A maintainer starts the recorded checks; each native check receives its run
-    /// in order.
     pub fn approve(&mut self, run_ids: Vec<String>, now_unix: u64) -> Result<(), DomainError> {
         self.ensure_awaiting_approval()?;
         if run_ids.len() != self.native_checks().count() {
@@ -291,7 +263,6 @@ impl RequestCheckEvaluation {
         Ok(())
     }
 
-    /// Whether this evaluation holds the request on native runs, recorded or started.
     pub fn uses_native_runs(&self) -> bool {
         matches!(
             self.state,
@@ -308,10 +279,6 @@ impl RequestCheckEvaluation {
         Ok(())
     }
 
-    /// Once a repository loses native runs, a head still waiting on them would
-    /// wait forever. It becomes a configuration error instead; a head whose
-    /// native checks already finished keeps its result, and GitHub checks do not
-    /// wait on native runs. `None` means nothing changes.
     pub fn withdraw_native_runs(
         &self,
         run_states: &[(String, RunState)],
@@ -343,8 +310,6 @@ impl RequestCheckEvaluation {
         Ok(Some(withdrawn))
     }
 
-    /// Whether a maintainer has checks to start: native runs to create, or a
-    /// commit to send to GitHub.
     pub fn awaits_approval(&self) -> bool {
         self.state == RequestCheckEvaluationState::AwaitingApproval
     }
@@ -368,24 +333,17 @@ impl RequestCheckEvaluation {
         self.check_commit_base.is_some()
     }
 
-    /// Whether the tested commit still stands for what merging the head would
-    /// produce. A head always does; a check commit only while private main is
-    /// the one it was built on.
     pub fn check_commit_is_current(&self, private_main_oid: Option<&str>) -> bool {
         self.check_commit_base
             .as_ref()
             .is_none_or(|base| Some(base.private_main_oid.as_str()) == private_main_oid)
     }
 
-    /// Whether started checks test a check commit private main has moved past,
-    /// so a new check commit must be built and sent before they can count.
     pub fn needs_new_check_commit(&self, private_main_oid: Option<&str>) -> bool {
         self.state == RequestCheckEvaluationState::Started
             && !self.check_commit_is_current(private_main_oid)
     }
 
-    /// Whose code the tested commit carries. A public contribution's check
-    /// commit is built on private main, so it is private code wherever it goes.
     pub fn tested_code_audience(&self, request_audience: RequestAudience) -> RequestAudience {
         if self.tests_check_commit() {
             RequestAudience::Private
@@ -394,8 +352,6 @@ impl RequestCheckEvaluation {
         }
     }
 
-    /// GitHub answers the checks for a check commit built from the head. Native
-    /// runs always test the head itself.
     fn test_check_commit(&mut self, oid: String, base: CheckCommitBase) -> Result<(), DomainError> {
         validate_git_oid("request check commit", &oid)?;
         if oid == self.head_oid || self.native_checks().next().is_some() {
@@ -461,13 +417,9 @@ fn ensure_every_check_started(checks: &[RequestCheck]) -> Result<(), DomainError
     Ok(())
 }
 
-/// The outcome the checks impose on merging, from the evaluation for the request's
-/// current head and the results its checks have.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestChecksOutcome {
-    /// The head asks for nothing, or every check it asked for passed.
     Clear,
-    /// No evaluation is recorded for the head, so nothing is known to have passed.
     NotEvaluated,
     AwaitingApproval,
     Pending,
@@ -475,17 +427,11 @@ pub enum RequestChecksOutcome {
     ConfigurationError,
 }
 
-/// The results that answer recorded checks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestCheckResults {
-    /// The states of the native runs the evaluations started.
     pub native_runs: Vec<(String, RunState)>,
     pub github: GitHubCheckResults,
-    /// Private requests whose revisions the connected GitHub repository may
-    /// not receive: it became public and no one confirmed that since.
     pub withheld_from_github: Vec<String>,
-    /// Private main now. A check commit counts only while it is built on it,
-    /// because the merge applies the contribution to private main as it is.
     pub private_main_oid: Option<String>,
 }
 
@@ -495,7 +441,6 @@ impl RequestCheckResults {
     }
 }
 
-/// What one check says on its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CheckVerdict {
     Passed,
@@ -514,7 +459,6 @@ pub fn request_checks_outcome(
     }) else {
         return RequestChecksOutcome::NotEvaluated;
     };
-    // A GitHub check can never pass without a connection, whatever else the head awaits.
     if (evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected)
         || results.withholds(evaluation)
     {
@@ -524,8 +468,6 @@ pub fn request_checks_outcome(
         RequestCheckEvaluationState::NoChecks => RequestChecksOutcome::Clear,
         RequestCheckEvaluationState::AwaitingApproval => RequestChecksOutcome::AwaitingApproval,
         RequestCheckEvaluationState::ConfigurationError => RequestChecksOutcome::ConfigurationError,
-        // Results for a check commit built on an older private main say nothing
-        // about what the merge would produce now; a new check commit must run.
         RequestCheckEvaluationState::Started
             if !evaluation.check_commit_is_current(results.private_main_oid.as_deref()) =>
         {
@@ -551,10 +493,6 @@ pub fn request_checks_outcome(
     }
 }
 
-/// What the request should say about its checks besides their states: the
-/// evaluation's own message, why GitHub checks cannot pass, or that GitHub
-/// started no workflow for the tested commit long after it arrived there.
-/// `push` is the latest push of the request's branch.
 pub fn request_checks_message(
     evaluation: &RequestCheckEvaluation,
     results: &RequestCheckResults,
@@ -597,22 +535,16 @@ fn native_verdict(check: &NativeRequestCheck, runs: &[(String, RunState)]) -> Ch
     match state {
         Some(RunState::Succeeded) => CheckVerdict::Passed,
         Some(state) if !state.is_terminal() => CheckVerdict::Pending,
-        // A missing run can never succeed, so it blocks like a failure.
         Some(_) | None => CheckVerdict::Failed,
     }
 }
 
-/// Whether a look at the request should evaluate its head: nothing is recorded for
-/// it, a push saved it, and the request can still merge.
 pub fn request_head_awaits_evaluation(request: &Request, outcome: RequestChecksOutcome) -> bool {
     outcome == RequestChecksOutcome::NotEvaluated
         && request.git_snapshot.is_some()
         && !request.is_terminal()
 }
 
-/// A maintainer approves the head they reviewed. Approval runs the head's code,
-/// with the repository's secrets on GitHub, so a head pushed after the review
-/// must be reviewed again.
 pub fn ensure_approving_reviewed_head(
     request: &Request,
     reviewed_head_oid: &str,
@@ -625,7 +557,6 @@ pub fn ensure_approving_reviewed_head(
     Ok(())
 }
 
-/// Whether the pusher's request runs start at once or wait for a maintainer.
 pub fn request_checks_start_immediately(request: &Request, actor_is_maintainer: bool) -> bool {
     actor_is_maintainer && request.state() != RequestState::Merged
 }

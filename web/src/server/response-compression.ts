@@ -48,7 +48,6 @@ export function compressResponse(request: Request, response: Response) {
   })
 }
 
-// Do not buffer streams to find their size: that would hold up streamed HTML.
 function knownSmallBody(response: Response) {
   const length = response.headers.get('content-length')
   return length !== null && /^\d+$/.test(length) && Number(length) < 1_024

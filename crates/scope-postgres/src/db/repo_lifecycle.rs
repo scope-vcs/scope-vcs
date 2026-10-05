@@ -167,9 +167,6 @@ impl RepositoryStore {
     }
 }
 
-/// Deletes a repository whose aggregate lock `tx` holds. Its storage and
-/// source blobs are queued for cleanup; nothing outside the database is
-/// touched before the transaction commits.
 pub(super) async fn delete_locked_repository(
     tx: &DatabaseTransaction,
     repo: &Repository,
@@ -256,8 +253,6 @@ pub(super) async fn delete_locked_repository(
     ))
     .await
     .map_err(PostgresError::internal)?;
-    // The request branches on GitHub outlive the repository; their deletions
-    // name the GitHub repository and run after this row is gone.
     super::github_pushes::queue_github_branch_deletions_for_repository(tx, &repo_id, now_unix)
         .await?;
     entities::repository::Entity::delete_by_id(repo_id.clone())

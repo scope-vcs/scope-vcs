@@ -307,8 +307,6 @@ fn cleanup_after_error<S: ExecutionSink, T>(
     if let Err(cleanup_error) = process.terminate_and_wait(grace) {
         eprintln!("runtime failed to clean up step process: {cleanup_error:#}");
     }
-    // Join rather than wait: after OutputNotice::Failed the final notice is
-    // already consumed, and stop() lets the workers exit either way.
     if let Some(capture) = capture {
         capture.stop();
         if let Err(capture_error) = capture.join() {

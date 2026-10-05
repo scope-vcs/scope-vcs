@@ -79,8 +79,6 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
         .unwrap();
     let position = mutation.reply.position;
 
-    // Another writer deletes the draft after the reply commits but before its
-    // response reads the discussion. This must not suppress the committed event.
     requests
         .close_request(
             CloseRequestCommand {

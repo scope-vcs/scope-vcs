@@ -1,10 +1,11 @@
-"""Recovery trust and retention contracts. Run with python3 and PyYAML."""
 import fnmatch
 from pathlib import Path
 import re
 import unittest
 
 import yaml
+
+UNQUOTED_ON_KEY_AS_PARSED = True
 
 
 class Loader(yaml.SafeLoader):
@@ -82,13 +83,12 @@ class RecoveryStorageContracts(unittest.TestCase):
         root = Path(__file__).resolve().parents[3]
         schedule = yaml.safe_load((root / '.github/workflows/recovery.yml').read_text())
         execute = yaml.safe_load((root / '.github/workflows/recovery-execute.yml').read_text())
-        # PyYAML YAML 1.1 represents GitHub's unquoted on key as True.
-        self.assertEqual(schedule[True]['schedule'], [{'cron': '17 7 * * *'}])
+        self.assertEqual(schedule[UNQUOTED_ON_KEY_AS_PARSED]['schedule'], [{'cron': '17 7 * * *'}])
         self.assertFalse(schedule['concurrency']['cancel-in-progress'])
         job = execute['jobs']['capture']
         self.assertEqual(job['if'], "github.ref == 'refs/heads/main'")
         self.assertEqual(job['environment'], 'production')
-        self.assertEqual(execute[True]['workflow_call']['secrets']['SCOPE_RAILWAY_SSH_PRIVATE_KEY'], {'required': True})
+        self.assertEqual(execute[UNQUOTED_ON_KEY_AS_PARSED]['workflow_call']['secrets']['SCOPE_RAILWAY_SSH_PRIVATE_KEY'], {'required': True})
         self.assertEqual(schedule['jobs']['capture']['secrets']['SCOPE_RAILWAY_SSH_PRIVATE_KEY'], '${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}')
         for step in job['steps']:
             if 'uses' in step:

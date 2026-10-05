@@ -2,8 +2,6 @@ import assert from 'node:assert/strict'
 import { assertDocumentPreserved, markDocument, waitForClientHydration } from './browser-smoke.mjs'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
-// An update page opens no diff until a file is chosen, and choosing or closing
-// one stays a client navigation that reuses the loaded entry.
 export async function assertUpdateFileSelectionKeepsDocument(page) {
   await page.getByText('Select a changed file', { exact: true }).waitFor()
   assert.equal(new URL(page.url()).searchParams.has('path'), false)
@@ -18,7 +16,6 @@ export async function assertUpdateFileSelectionKeepsDocument(page) {
   const recordServerFunction = (request) => {
     if (request.url().includes('/_serverFn/')) {
       const name = serverFunctionName(request)
-      // Live repository refresh can run independently of file selection.
       if (name.startsWith('loadHistoryEntry_')) serverFunctions.push(name)
     }
   }

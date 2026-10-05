@@ -91,7 +91,6 @@ pub(super) async fn materialize(
     .await?
 }
 
-/// Streams each object-store file straight to its path.
 async fn write_stored_files(
     objects: &dyn ObjectStore,
     stored: Vec<(PathBuf, SourceBlob)>,
@@ -167,8 +166,6 @@ fn validate_files(files: &[DependencySnapshotFile]) -> anyhow::Result<()> {
     Ok(())
 }
 
-// Resolvers need asset paths, but parsing never needs binary asset contents.
-// Empty placeholders preserve file existence without reading large media blobs.
 fn needs_content(path: &str) -> bool {
     Path::new(path)
         .extension()
@@ -181,8 +178,6 @@ fn needs_content(path: &str) -> bool {
         })
 }
 
-/// Writes placeholders and Git-backed files, and returns the files whose content still has to be
-/// streamed from the object store.
 fn write_files(
     source: &Path,
     bare: &Path,
@@ -230,8 +225,6 @@ struct GitBlobTarget {
     paths: Vec<PathBuf>,
 }
 
-/// Writes every Git-backed source file straight from one `cat-file --batch`
-/// response, so the captured output is the only copy of the source in memory.
 fn write_git_blobs(
     bare: &Path,
     targets: &BTreeMap<String, GitBlobTarget>,
@@ -270,8 +263,6 @@ fn write_git_blobs(
     })
 }
 
-/// Walks a `cat-file --batch` response in the requested order, handing each blob
-/// to `write` without copying it out of the response.
 fn parse_git_blobs<'a>(
     output: &[u8],
     expected: impl IntoIterator<Item = (&'a str, u64)>,

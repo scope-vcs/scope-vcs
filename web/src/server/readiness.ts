@@ -24,9 +24,7 @@ export async function readinessResponse(
     )
     await response.body?.cancel()
     apiReady = response.ok
-  } catch {
-    // Health responses must not expose connection details or upstream errors.
-  }
+  } catch {}
 
   return Response.json(
     {

@@ -2,15 +2,12 @@ import { BoundedDelivery } from './delivery'
 import { createPrivacyBoundary } from './privacy'
 import type { Properties } from './types'
 
-// Identities live in memory only, so analytics stores nothing on the device.
 export class AnalyticsClient {
   private readonly delivery = new BoundedDelivery()
   private readonly sanitize: ReturnType<typeof createPrivacyBoundary>
   private readonly disabled: boolean
   private distinctId: string = crypto.randomUUID()
   private properties: Properties = {}
-  // Whether an event was queued under the current anonymous ID. Without one
-  // there is no anonymous history to merge, so identify switches silently.
   private anonymousEventQueued = false
 
   constructor(private readonly token: string, origin: string) {

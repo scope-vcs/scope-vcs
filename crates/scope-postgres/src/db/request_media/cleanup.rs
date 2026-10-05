@@ -21,9 +21,6 @@ const LATE_WRITE_GRACE_SECONDS: u64 = 60;
 const TOMBSTONE_RECONCILIATION_SECONDS: u64 = 24 * 60 * 60;
 
 impl MediaStore {
-    /// Discovers expired upload/draft media and periodically reopens completed
-    /// tombstones so a storage write that finished after its lease can never
-    /// resurrect bytes permanently.
     pub async fn enqueue_expired_attachment_cleanup(
         &self,
         now_unix: u64,
@@ -208,7 +205,6 @@ impl MediaStore {
                 tx.commit().await.map_err(PostgresError::internal)?;
                 return Ok(MediaLeaseMutation::LeaseLost);
             }
-            // The write grace is checked again while holding the tombstone row.
             if cleanup_available_at(&tx, attachment_id, now_unix).await? > now_unix {
                 tx.commit().await.map_err(PostgresError::internal)?;
                 return Ok(MediaLeaseMutation::LeaseLost);
@@ -416,9 +412,6 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Processing jobs and attachments use one global order everywhere media
-    // lifecycle work overlaps: every job first, then every attachment, with
-    // identifiers sorted inside each class.
     for attachment_id in &attachment_ids {
         lock_processing_job(conn, attachment_id).await?;
     }

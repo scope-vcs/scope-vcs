@@ -337,9 +337,9 @@ pub struct RepoChangeEvent {
     pub kind: RepoChangeKind,
 }
 
+const UNVERSIONED_CHANGE: u64 = 0;
+
 impl RepoChangeEvent {
-    /// Run changes carry no repository change version; version 0 tells
-    /// subscribers to refresh unconditionally.
     pub fn run_changed(
         repo_id: String,
         incarnation_id: String,
@@ -349,7 +349,7 @@ impl RepoChangeEvent {
         Self {
             repo_id,
             incarnation_id,
-            version: 0,
+            version: UNVERSIONED_CHANGE,
             kind: RepoChangeKind::RunChanged { run_id, change },
         }
     }

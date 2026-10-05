@@ -12,7 +12,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/railway-graphql.sh"
 list_token_ids() {
   local response
   response="$(
-    # GraphQL variables are intentionally literal here.
     # shellcheck disable=SC2016
     railway_graphql read \
       'query ProjectTokens($projectId: String!) { projectTokens(projectId: $projectId) { edges { node { id name } } } }' \
@@ -29,9 +28,7 @@ delete_tokens() {
   for attempt in 1 2 3; do
     token_ids="$(list_token_ids)" || return $?
     [[ -n "$token_ids" ]] || return 0
-    # Only this run's exact token name is eligible for reconciliation.
     while IFS= read -r id; do
-      # A lost delete response is reconciled by the next list, never by its body.
       # shellcheck disable=SC2016
       railway_graphql once \
         'mutation ProjectTokenDelete($id: String!) { projectTokenDelete(id: $id) }' \
@@ -51,7 +48,6 @@ case "$action" in
       echo "A Railway project token already uses this staging run name." >&2
       exit 1
     fi
-    # Never repeat creation: an HTTP failure can still have created a token.
     # shellcheck disable=SC2016
     if ! create_response="$(railway_graphql once \
       'mutation ProjectTokenCreate($input: ProjectTokenCreateInput!) { projectTokenCreate(input: $input) }' \

@@ -351,7 +351,6 @@ impl ClerkTokenPolicy {
         }
     }
 
-    /// Whether a web origin is one this server accepts sessions from.
     pub(crate) fn is_authorized_party(&self, origin: &str) -> bool {
         let origin = normalize_claim_value(origin);
         self.authorized_parties

@@ -39,8 +39,6 @@ export function shouldGroupReplies(
   )
 }
 
-// Day boundaries follow the same zone as the label above them: UTC through
-// hydration, then the viewer's own calendar.
 export function sameCalendarDate(
   leftUnix: number,
   rightUnix: number,

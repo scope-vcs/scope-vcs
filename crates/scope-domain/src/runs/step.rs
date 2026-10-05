@@ -21,7 +21,6 @@ pub enum StepState {
 }
 
 impl StepState {
-    /// Declaration order is the persisted order used to build SQL state sets.
     pub const ALL: [Self; 7] = [
         Self::Pending,
         Self::Running,
@@ -32,8 +31,6 @@ impl StepState {
         Self::Skipped,
     ];
 
-    /// The persisted representation; `persisted_shapes` keeps it and the
-    /// serde encoding identical.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
@@ -355,7 +352,6 @@ impl RunAttempt {
         let mut running_count = 0;
         let mut execution_stopped = false;
         for (index, step) in steps.iter().enumerate() {
-            // Step counts are bounded by MAX_WORKFLOW_STEPS at workflow construction.
             if step.attempt_id != self.id || step.step_index != index as u32 {
                 return Err(DomainError::invariant_violation(
                     "run attempt step identity is inconsistent",

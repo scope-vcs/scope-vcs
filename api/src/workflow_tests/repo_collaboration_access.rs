@@ -11,8 +11,6 @@ fn outsider_header() -> String {
     bearer_header_for("user_outsider", "outsider@example.com")
 }
 
-/// Every settings route a non-owner could call. The ids are placeholders: the
-/// access check answers before any mutation looks them up.
 fn collaboration_routes(repo: &str) -> Vec<(&'static str, String, Option<String>)> {
     let invite = serde_json::json!({
         "email": "new@example.com",
@@ -97,7 +95,6 @@ async fn a_non_owner_who_can_see_the_repository_is_forbidden() {
 
 #[tokio::test]
 async fn a_non_owner_who_cannot_see_the_repository_finds_nothing() {
-    // No visible file, so an outsider cannot see the repository at all.
     let hidden = state_with(false, RepoLifecycleState::Ready).await;
     assert_statuses(
         &hidden,

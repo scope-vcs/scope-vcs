@@ -76,8 +76,6 @@ export function createReviewFileDiffRenderer({
     if (oldMetrics.lines + newMetrics.lines > budget.maxInputLines) {
       return { ...base, presentation: { kind: 'omitted', reason: 'lines' } }
     }
-    // Callers fetch and authorize the source before entering this renderer.
-    // Cache only derived presentation; current transport metadata stays outside.
     const key = createHash('sha256')
       .update(JSON.stringify([rendererIdentity, diff.path, oldText, newText]))
       .digest('hex')

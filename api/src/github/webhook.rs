@@ -1,11 +1,3 @@
-//! GitHub webhook deliveries. The signature is checked over the raw body
-//! before anything is parsed. Every event Scope reacts to is named in
-//! `GitHubWebhookEvent::parse`; any other event is acknowledged and dropped.
-//! Deliveries can be late or redelivered, so what one reports is confirmed
-//! with GitHub before it changes a link.
-//! Check deliveries carry no results Scope trusts: they only say which
-//! commit to read from GitHub's API again.
-
 use super::{GitHubApp, InstallationStatus};
 use crate::error::ApiError;
 use hmac::{Hmac, KeyInit, Mac};
@@ -17,8 +9,6 @@ use std::collections::BTreeSet;
 pub(crate) const GITHUB_SIGNATURE_HEADER: &str = "x-hub-signature-256";
 pub(crate) const GITHUB_EVENT_HEADER: &str = "x-github-event";
 
-/// Whether `X-Hub-Signature-256` is the HMAC-SHA256 of the body under the
-/// webhook secret. The comparison is constant time.
 pub(crate) fn signature_matches(secret: &[u8], signature: Option<&str>, body: &[u8]) -> bool {
     let Some(signature) = signature
         .and_then(|value| value.strip_prefix("sha256="))
@@ -37,16 +27,11 @@ pub(crate) enum GitHubWebhookEvent {
         installation_id: u64,
         change: GitHubInstallationChange,
     },
-    /// Something about a commit's checks changed. The delivery only prompts
-    /// Scope to read the commit's check runs again, and for a workflow run
-    /// delivery, that run.
     ChecksChanged {
         github_repository_id: u64,
         commit_oid: String,
         workflow_run_id: Option<u64>,
     },
-    /// A repository was made public or private. Deliveries can arrive out of
-    /// order, so Scope asks GitHub which it is now.
     RepositoryVisibilityChanged {
         github_repository_id: u64,
     },
@@ -91,8 +76,6 @@ impl GitHubWebhookEvent {
                 let change = match payload.action.as_str() {
                     "deleted" => GitHubInstallationChange::Uninstalled,
                     "suspend" => GitHubInstallationChange::Suspended,
-                    // A link disconnected by a suspension is reconnected by a
-                    // maintainer, who can confirm the repository is still there.
                     _ => return Ok(Self::Ignored),
                 };
                 Ok(Self::InstallationChanged {
@@ -121,9 +104,6 @@ impl GitHubWebhookEvent {
     }
 }
 
-/// The part of a reported change GitHub still confirms. An installation that
-/// is gone or suspended now is reported as such whatever the delivery said;
-/// an active one confirms only repositories it no longer reaches.
 pub(crate) async fn confirmed_installation_change(
     app: &GitHubApp,
     installation_id: u64,
@@ -176,8 +156,6 @@ struct RepositoryPayload {
     repository: Option<Repository>,
 }
 
-/// `check_run`, `check_suite` and `workflow_run` deliveries each name their
-/// subject under their own key.
 #[derive(Deserialize)]
 struct ChecksPayload {
     repository: Option<Repository>,

@@ -37,7 +37,6 @@ export async function readCutover(id, request) {
     if (!match || !phases.has(match[1])) throw new Error("Unknown cutover journal status");
     return { phase: match[1], at: status.created_at };
   });
-  // The deployment itself is the durable closure intent if cancellation preceded the first status.
   return { ...payload, id: String(id), phase: events[0]?.phase ?? "prepared", events };
 }
 

@@ -1,4 +1,3 @@
-//! Read-only checkout status and setup diagnostics.
 use crate::api::ApiSession;
 use crate::{api, context, execution, git_repo::GitRepo};
 use serde::Serialize;

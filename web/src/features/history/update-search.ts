@@ -16,7 +16,6 @@ export function parseUpdateSearch(search: Record<string, unknown>): UpdateSearch
   }
 }
 
-// The reader's broadest audience is the API default, so links omit it.
 export function updateAudienceSearch(
   audience: ProjectionPreviewAudience,
   defaultAudience: ProjectionPreviewAudience,

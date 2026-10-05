@@ -103,8 +103,6 @@ impl Drop for TestSchemaLease {
                     database_url,
                     schema_name,
                 } => {
-                    // A failure here is not lost: the next test process sweeps
-                    // what this one leaves behind.
                     let dropped = async {
                         let db = Database::connect(database_url).await?;
                         let dropped = db
@@ -240,8 +238,6 @@ impl CleanupStore {
         .await
     }
 
-    /// Makes every queued source blob cleanup due now, so a test can drain
-    /// work that production would hold for `SOURCE_BLOB_DELETE_GRACE_SECONDS`.
     pub async fn expire_source_blob_cleanup_grace_for_tests(&self) -> Result<(), PostgresError> {
         use sea_orm::{ColumnTrait, QueryFilter};
         entities::source_blob_cleanup_job::Entity::update_many()
@@ -312,8 +308,6 @@ impl RepositoryStore {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         ensure_repository_users_for_tests(&tx, &repo).await?;
         acquire_aggregate_lock(&tx, "repository", &repo.record.id).await?;
-        // Raw fixture replacement bypasses domain mutations and may change content
-        // without advancing its version. Discard its derived representation.
         tx.execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "DELETE FROM scope_repository_history_views WHERE repo_id = $1",
@@ -426,7 +420,6 @@ impl RequestStore {
         insert_request_row(self.db.as_ref(), &request).await
     }
 
-    /// Leaves the request as a push whose evaluation failed would: every head unevaluated.
     pub async fn forget_request_check_evaluations_for_tests(
         &self,
         request_id: &str,
@@ -440,7 +433,6 @@ impl RequestStore {
         Ok(())
     }
 
-    /// Makes every stored read of the repository's GitHub checks `seconds` older.
     pub async fn age_github_check_reads_for_tests(
         &self,
         repo_id: &str,

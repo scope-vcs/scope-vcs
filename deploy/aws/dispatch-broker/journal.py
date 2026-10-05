@@ -1,13 +1,10 @@
-"""DynamoDB serializes an attempt across Lambda invocations and retains tombstones."""
-
 from decimal import Decimal
 
 from protocol import Pending
 
 
-# The deployed Lambda is forcibly terminated at 120 seconds. A stale lock cannot
-# be taken over while its previous invocation could still issue AWS mutations.
-LOCK_SECONDS = 180
+LAMBDA_HARD_TIMEOUT_SECONDS = 120
+LOCK_SECONDS = LAMBDA_HARD_TIMEOUT_SECONDS + 60
 
 
 class Journal:
@@ -54,7 +51,6 @@ def error_code(error):
 
 
 def integers(value):
-    # DynamoDB's document API returns Decimal even for ECS's integer count.
     if isinstance(value, Decimal):
         return int(value)
     if isinstance(value, list):

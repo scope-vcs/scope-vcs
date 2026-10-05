@@ -5,8 +5,6 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait,
 use sqlx::{Connection as _, PgConnection};
 use std::future::Future;
 
-/// Session-scoped advisory locks held on a dedicated connection. Dropping the
-/// fence closes that session, which releases every lock it holds.
 pub struct ContentRefFence {
     connection: PgConnection,
     keys: Vec<i64>,
@@ -31,8 +29,6 @@ impl ContentRefFence {
 }
 
 impl RepositoryStore {
-    /// Serializes filesystem deletion and repository creation for one stable owner/name path.
-    /// The session lock spans external I/O without holding a metadata transaction open.
     pub async fn with_repo_storage_lock<R, F, Fut, E>(&self, repo_id: &str, op: F) -> Result<R, E>
     where
         F: FnOnce() -> Fut,

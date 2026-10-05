@@ -10,8 +10,6 @@ use scope_domain::repository::{
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{fs, path::Path, sync::Arc};
 
-/// Pins the requested commit and keeps its shared object database alive.
-/// Callers must resolve authorization before asking the engine for a revision.
 pub(crate) struct GitRevision {
     repository: GitRepoHandle,
     head_oid: String,
@@ -35,8 +33,6 @@ impl RepositoryEngine {
 }
 
 impl GitRevision {
-    /// Creates a private, temporary ref view. Keep this handle alive until Git
-    /// exits. Public projections must still copy only their authorized objects.
     pub(crate) fn create_view(&self, path: &Path) -> Result<(), ApiError> {
         run_git(
             None,

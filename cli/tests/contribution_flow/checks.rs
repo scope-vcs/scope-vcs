@@ -1,10 +1,6 @@
 use super::*;
 
-// The seeded stack has no job runner. Exercise the real approval/merge gates and
-// revision transitions without manufacturing successful check results.
 pub(super) fn exercise(contributor: &Actor, maintainer: &Actor, suffix: &str) {
-    // Workflow policy belongs to maintainers. Public requests may change code,
-    // but cannot introduce their own maintainer-controlled check configuration.
     fs::create_dir_all(maintainer.repo.join(".scope/runs")).unwrap();
     fs::write(
         maintainer.repo.join(".scope/runs/request.yml"),

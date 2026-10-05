@@ -24,8 +24,6 @@ fn owner() -> UserAccount {
     }
 }
 
-/// A ready repository with one public file whose projections and history
-/// views are built.
 async fn fixture() -> (MetadataStore, Repository) {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();

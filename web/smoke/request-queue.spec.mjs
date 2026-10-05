@@ -77,7 +77,6 @@ test('requests sidebar resizes, collapses, and pins again by dragging or keyboar
     await sidebar.getByRole('link', { name: /Add bounded retry timing/ }).waitFor()
     await waitForClientHydration(separator)
     const width = () => sidebar.evaluate((element) => element.getBoundingClientRect().width)
-    // Collapsing and pinning slide the column, so widths settle after a moment.
     const settles = (min, max = min) => page.waitForFunction(([low, high]) => {
       const { width } = document.querySelector('.request-workspace-sidebar').getBoundingClientRect()
       return width >= low && width <= high

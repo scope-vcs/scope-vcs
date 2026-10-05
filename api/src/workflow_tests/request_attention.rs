@@ -40,8 +40,6 @@ async fn maintainer_attention_actions_preserve_claims_and_reject_stale_versions(
     assert_eq!(settled["claimer"]["id"], test_owner_id());
     let aside = queue_item(&app, "set_aside", "req_attention_actions", Some(&bearer)).await;
     assert_eq!(aside["attention"]["can_restore"], true);
-    // The queue carries the revision the mutation answered with, so a client
-    // can tell that a loaded queue already reflects its change.
     assert_eq!(settled["attention"]["revision"], 2);
     assert_eq!(
         aside["attention"]["revision"],
@@ -63,8 +61,6 @@ async fn maintainer_attention_actions_preserve_claims_and_reject_stale_versions(
     assert_eq!(aside["claimer"]["id"], test_owner_id());
     assert_eq!(aside["attention"]["can_release"], true);
 
-    // The owner authored this request, so releasing the claim returns it to
-    // their own active work rather than to the shared unclaimed queue.
     let released = attention.apply("release", version, None).await;
     assert_eq!(released["attention"]["reason"], "authored");
     assert_eq!(released["attention"]["can_release"], false);

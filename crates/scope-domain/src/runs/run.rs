@@ -19,7 +19,6 @@ pub enum RunState {
 }
 
 impl RunState {
-    /// Declaration order is the persisted order used to build SQL state sets.
     pub const ALL: [Self; 7] = [
         Self::Queued,
         Self::Dispatching,
@@ -30,8 +29,6 @@ impl RunState {
         Self::Lost,
     ];
 
-    /// The persisted representation; `persisted_shapes` keeps it and the
-    /// serde encoding identical.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Queued => "queued",
@@ -97,8 +94,6 @@ impl Run {
         )
     }
 
-    /// A queued run as recorded. The requester is `None` for runs nobody
-    /// requested and once the requester deleted their account.
     #[allow(clippy::too_many_arguments)]
     fn queued(
         id: impl Into<String>,

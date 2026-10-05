@@ -6,9 +6,7 @@ import path from 'node:path'
 import { nitro } from 'nitro/vite'
 import { defineConfig, loadEnv, searchForWorkspaceRoot, type Plugin } from 'vite'
 
-// Legal documents are authored once in the repository's legal/ directory.
 const legalDirectory = path.resolve(import.meta.dirname, '../legal')
-// Read by scripts/check-client-bundle.mjs; kept outside .output/public so it is not served.
 const clientChunkGraphPath = path.resolve(import.meta.dirname, '.output/client-chunk-graph.json')
 
 export default defineConfig(({ mode }) => {

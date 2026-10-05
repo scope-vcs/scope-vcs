@@ -11,8 +11,6 @@ use std::{
     process::Command,
 };
 
-/// Retains Git's index between commits. Only changed blobs are loaded and
-/// written; unchanged entries and their object identities remain in the index.
 pub(super) struct ProjectionIndex {
     repo: PathBuf,
     path: PathBuf,

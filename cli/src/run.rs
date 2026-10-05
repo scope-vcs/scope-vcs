@@ -22,8 +22,11 @@ mod stream;
 
 #[derive(Debug, Parser)]
 pub struct RunArgs {
-    /// Scope remote to use (or select a repository with global --repo).
-    #[arg(long, global = true)]
+    #[arg(
+        long,
+        global = true,
+        help = "Scope remote to use (or select a repository with global --repo)"
+    )]
     pub remote: Option<String>,
     #[command(subcommand)]
     pub command: RunCommand,
@@ -31,18 +34,19 @@ pub struct RunArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum RunCommand {
-    /// Start a workflow using the exact local commit; uncommitted edits are excluded.
+    #[command(
+        about = "Start a workflow using the exact local commit; uncommitted edits are excluded"
+    )]
     Start {
         workflow: String,
-        /// Return the queued run without watching it.
-        #[arg(long)]
+        #[arg(long, help = "Return the queued run without watching it")]
         no_watch: bool,
         #[arg(long, default_value_t = DEFAULT_WATCH_TIMEOUT_SECS, value_parser = clap::value_parser!(u64).range(1..))]
         timeout: u64,
     },
-    /// List workflows defined on the repository's current main.
+    #[command(about = "List workflows defined on the repository's current main")]
     Workflows,
-    /// List recent runs, with an optional workflow filter and continuation cursor.
+    #[command(about = "List recent runs, with an optional workflow filter and continuation cursor")]
     List {
         #[arg(long)]
         workflow: Option<String>,
@@ -51,27 +55,27 @@ pub enum RunCommand {
         #[arg(long)]
         after: Option<String>,
     },
-    /// Show a run's jobs, attempts, and execution environment.
+    #[command(about = "Show a run's jobs, attempts, and execution environment")]
     Show { run_id: String },
-    /// Follow logs and status; reconnect up to five consecutive times. Ctrl-C stops watching only.
+    #[command(
+        about = "Follow logs and status; reconnect up to five consecutive times. Ctrl-C stops watching only"
+    )]
     Watch {
         run_id: String,
-        /// Maximum seconds to watch, including reconnects.
-        #[arg(long, default_value_t = DEFAULT_WATCH_TIMEOUT_SECS, value_parser = clap::value_parser!(u64).range(1..))]
+        #[arg(long, default_value_t = DEFAULT_WATCH_TIMEOUT_SECS, value_parser = clap::value_parser!(u64).range(1..), help = "Maximum seconds to watch, including reconnects")]
         timeout: u64,
-        /// Resume after this log position.
-        #[arg(long, default_value_t = 0)]
+        #[arg(long, default_value_t = 0, help = "Resume after this log position")]
         after: u64,
     },
-    /// Retrieve stored logs; optionally restrict output to one job.
+    #[command(about = "Retrieve stored logs; optionally restrict output to one job")]
     Logs {
         run_id: String,
         #[arg(long)]
         job: Option<String>,
     },
-    /// Request cancellation of a run.
+    #[command(about = "Request cancellation of a run")]
     Cancel { run_id: String },
-    /// Retry a run and follow its result.
+    #[command(about = "Retry a run and follow its result")]
     Retry {
         run_id: String,
         #[arg(long)]
@@ -327,7 +331,6 @@ fn is_terminal_state(state: RunState) -> bool {
     )
 }
 
-/// Wait for a run without writing stdout, for aggregate command receipts.
 pub fn wait_completion(run_id: &str, remote: Option<&str>) -> anyhow::Result<RunResponse> {
     stream::completion(
         &Connection::resolve(remote)?,

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Collect licenses from checksum-verified archives named by Scope's lockfiles."""
 
 import argparse
 import base64
@@ -159,7 +158,6 @@ def supplement(entries):
             start = text.index(spec["start"])
             text = text[start:]
             entry["documents"].append(dict(path=spec["path"] + " (license section)", sha256=digest(raw), text=text.strip()))
-    # Parent documents are resolved after local supplements, for native package siblings.
     for key, addition in configuration.items():
         if addition.get("from_package"):
             parent = by_key[addition["from_package"]]
@@ -178,14 +176,12 @@ def supplement(entries):
 
 
 def validate_selections(selections):
-    """Keep every selected alternative within the declared combinations of terms."""
     for declared, selected in selections.items():
         if not license_choices(selected) <= license_choices(declared):
             raise ValueError(f"Selected license is not a declared alternative: {declared} -> {selected}")
 
 
 def license_choices(expression):
-    """Expand AND/OR expressions into alternatives, keeping WITH exceptions attached."""
     tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9.+-]*|[()/]", expression)
     if "".join(tokens) != re.sub(r"\s+", "", expression):
         raise ValueError(f"Invalid license expression: {expression}")
@@ -226,7 +222,6 @@ def license_choices(expression):
 
     def alternatives():
         choices = conjunction()
-        # Published crate manifests in this inventory also use slash for alternatives.
         while take("OR") or take("/"):
             choices |= conjunction()
         return choices
@@ -257,7 +252,6 @@ def document_text(document):
 
 
 def shared_terms(texts):
-    """Share repeated terms only when all words and punctuation are identical."""
     matches = [match.group() for text in texts.values() for match in SHARED_TERMS.finditer(text)]
     counts = Counter(" ".join(text.split()) for text in matches)
     terms = {}
@@ -314,14 +308,13 @@ def render(entries, ecosystem):
 
 
 def render_inventory(metadata, packages):
-    """Keep one dependency per line so changes remain reviewable without JSON padding."""
     header = json.dumps(metadata, indent=2, ensure_ascii=False).removesuffix("\n}")
     records = ",\n".join("    " + json.dumps(entry, ensure_ascii=False) for entry in packages)
     return header + ',\n  "packages": [\n' + records + "\n  ]\n}\n"
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Collect licenses from checksum-verified archives named by Scope's lockfiles.")
     parser.add_argument("--check", action="store_true", help="Fail if committed artifacts differ.")
     args = parser.parse_args()
     check_first_party()
@@ -358,7 +351,6 @@ def main():
 
 
 def check():
-    """Check freshness offline using only Python's standard library."""
     inventory = json.loads((ROOT / "legal/dependency-inventory.json").read_text(encoding="utf-8"))
     stale = []
     for path, expected in {**inventory["lockfiles"], **inventory["artifacts"]}.items():

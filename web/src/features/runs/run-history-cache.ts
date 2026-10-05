@@ -59,7 +59,6 @@ export async function refreshRunHistory({ key, input, loadHistory }: HistoryRequ
       await runHistoryResource.load(key, 'refresh', load)
       return
     }
-    // A live change during pagination must reconcile the newly loaded depth.
     await runHistoryResource.ensure(key, snapshot.version!, load)
     return refreshRunHistory({ key, input, loadHistory })
   }

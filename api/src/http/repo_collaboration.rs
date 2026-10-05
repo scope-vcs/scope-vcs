@@ -86,8 +86,6 @@ pub(crate) async fn create_repository_invite(
     Ok(Json(response))
 }
 
-/// Emails a pending invite again. The email carries a new link; earlier links
-/// and the expiry stay as they are.
 pub(crate) async fn create_repository_invite_email(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -236,7 +234,6 @@ pub(crate) async fn delete_repository_invite(
                 )
                 .await?;
             Ok(map_committed_mutation(mutation, |invite| {
-                // A revoked invite shows no delivery state.
                 repository_invite_response(&invite, None, now)
             }))
         },
@@ -353,8 +350,6 @@ where
     Fut: std::future::Future<Output = Result<RepositoryCollaborationMutation<T>, ApiError>>,
 {
     let user = require_scope_user(state, headers).await?;
-    // The mutation checks ownership itself; this read first answers 404 to a
-    // non-owner who cannot see the repository.
     find_read_access(state, owner, repo_name, Some(&user.id))
         .await?
         .ensure_owner()?;

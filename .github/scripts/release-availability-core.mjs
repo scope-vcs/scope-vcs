@@ -80,8 +80,6 @@ export async function probeTarget(target, { fetchImpl = fetch, timeoutMs }) {
   const timeout = setTimeout(() => controller.abort(new Error("request timed out")), timeoutMs);
   try {
     const response = await fetchImpl(target.url, {
-      // Browser navigation is covered separately. An HTML Accept header triggers
-      // Clerk's development-browser handshake instead of this finite page read.
       headers: { accept: target.name === "public-homepage" ? "*/*" : "application/json" },
       redirect: "error",
       signal: controller.signal,
@@ -163,8 +161,6 @@ export class AvailabilityEvidence {
     const maintenanceFailures = failures.filter(({ phase }) => phase === "maintenance");
     const violations = [];
     const warnings = [];
-    // Regular releases measure the activation, but only gate on recovery observation.
-    // Dedicated transition tests omit this marker and retain strict availability checks.
     const gatingFailures = this.config.release.observationStartFile
       ? failures.filter(({ startedAt, at }) => this.observationStartedAt && (startedAt ?? at) >= this.observationStartedAt)
       : failures;

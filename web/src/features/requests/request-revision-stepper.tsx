@@ -12,7 +12,6 @@ type Revision = RequestRevisionListResponse['revisions'][number]
 
 const STEP_CLASS = 'flex items-center gap-1 rounded-md border border-border px-2.5 py-1'
 
-/** Older and Newer step one push; the menu jumps to any revision the API returned. */
 export function RequestRevisionStepper({
   params,
   revisions,

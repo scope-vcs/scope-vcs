@@ -7,10 +7,10 @@ import { RequestConfirmDialog } from './request-confirm-dialog'
 import type { RequestActionController } from './use-request-actions'
 
 const ITEM_CLASS = 'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-3.5'
-// Matches the panel's w-40, plus a small margin from the viewport edge.
-const MENU_CLEARANCE_PX = 168
+const MENU_WIDTH_PX = 160
+const VIEWPORT_EDGE_MARGIN_PX = 8
+const MENU_CLEARANCE_PX = MENU_WIDTH_PX + VIEWPORT_EDGE_MARGIN_PX
 
-/** The request's rare actions, kept out of the header's main action row. */
 export function RequestMoreMenu({
   actions,
   disabled,
@@ -22,7 +22,6 @@ export function RequestMoreMenu({
   disabled: boolean
   onViewActivity: () => void
   request: RequestSummaryResponse
-  /** The trigger, where focus returns after the dialogs this menu opens. */
   triggerRef: RefObject<HTMLButtonElement | null>
 }) {
   const [closing, setClosing] = useState(false)
@@ -72,8 +71,6 @@ export function RequestMoreMenu({
           <Button
             aria-label="More request actions"
             onClick={(event) => {
-              // Wrapped header actions can leave the trigger anywhere in the row.
-              // Open under its right edge unless that would run off the left side.
               const { right } = event.currentTarget.getBoundingClientRect()
               setAlign(right < MENU_CLEARANCE_PX ? 'start' : 'end')
               onClick()

@@ -1,7 +1,7 @@
 use crate::{
     execution::CloudExecutionCoordinator,
     health::{WorkerHealth, WorkerLoop},
-    settings::{BATCH_SIZE, POLL_INTERVAL, WorkerSettings},
+    settings::{CONTROL_POLL_BATCH_SIZE, POLL_INTERVAL, WorkerSettings},
 };
 use scope_postgres::db::MetadataStore;
 use scope_product_analytics::ProductAnalytics;
@@ -34,7 +34,7 @@ pub(crate) async fn run(
         }
         let summary = match metadata
             .jobs()
-            .run_ready_outbox_jobs(&settings.worker_id, BATCH_SIZE, &|| {
+            .run_ready_outbox_jobs(&settings.worker_id, CONTROL_POLL_BATCH_SIZE, &|| {
                 super::unix_now().map_err(|error| error.to_string())
             })
             .await
@@ -70,7 +70,7 @@ pub(crate) async fn run(
             cloud_reconciliation.poll(execution);
         }
         health.mark_poll_succeeded(WorkerLoop::Control, super::unix_now()?);
-        if summary.claimed >= BATCH_SIZE {
+        if summary.claimed >= CONTROL_POLL_BATCH_SIZE {
             continue;
         }
         if super::wait_or_shutdown(POLL_INTERVAL).await {

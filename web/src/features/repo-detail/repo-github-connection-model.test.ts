@@ -15,7 +15,6 @@ const connection: GitHubConnectionDetailsResponse = {
 
 test('the CI section describes each connection state', () => {
   assert.deepEqual(githubConnectionView({ configured: false, connection: null, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'unconfigured' })
-  // A stored link is not offered when the server can no longer use it.
   assert.deepEqual(githubConnectionView({ configured: false, connection, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'unconfigured' })
   assert.deepEqual(githubConnectionView({ configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'not_connected' })
   assert.deepEqual(githubConnectionView({ configured: true, connection, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), {

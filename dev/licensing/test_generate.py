@@ -1,5 +1,3 @@
-"""Checks for the failures that should stop a licensing update or release."""
-
 import base64
 import contextlib
 import io

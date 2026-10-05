@@ -41,7 +41,7 @@ async function waitForService(url, child) {
     try {
       const response = await fetch(`${url}/readyz`);
       if (response.ok) return;
-    } catch { /* The service may still be binding its listener. */ }
+    } catch {}
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error('installer service did not become ready');
@@ -59,7 +59,6 @@ test('native installer installs the managed analyzer and preserves the bundle on
   const binaryBytes = await readFile(binary);
   const artifactBytes = await readFile(artifact);
   const checksum = createHash('sha256').update(artifactBytes).digest('hex');
-  // Readiness requires the complete release manifest. Only the native artifact executes.
   for (const item of configuration.targets) {
     await writeFile(join(artifacts, item.artifact), artifactBytes);
     await writeFile(join(artifacts, `${item.artifact}.sha256`), `${checksum}  ${item.artifact}\n`);
@@ -94,8 +93,6 @@ test('native installer installs the managed analyzer and preserves the bundle on
   if (!windows) env.PATH = `${installDir}${delimiter}${process.env.PATH}`;
   async function install({ processOnly = false, competing = false } = {}) {
     if (!windows) return execute('sh', [script], { env, timeout: 60_000 });
-    // Verify the installer changes the current PowerShell PATH, then restore the
-    // runner's persisted user PATH even when installation fails.
     return execute('pwsh', ['-NoProfile', '-Command', `
       $ErrorActionPreference = 'Stop'
       $previousUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -160,7 +157,6 @@ test('native installer installs the managed analyzer and preserves the bundle on
     await install({ competing: true });
   }
 
-  // An existing installation must be replaced rather than skipped.
   await writeFile(destination, 'old installed version');
   await install();
   assert.equal(createHash('sha256').update(await readFile(destination)).digest('hex'), installedChecksum);

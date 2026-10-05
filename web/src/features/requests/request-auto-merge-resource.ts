@@ -1,7 +1,6 @@
 import type { RequestAutoMergeResponse } from '../../api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 
-// One durable intent view per request, retained across detail-page mounts.
 export const requestAutoMergeResource = createCachedResource<RequestAutoMergeResponse>({
   maxEntries: 16,
   maxWeight: 256 * 1024,

@@ -4,7 +4,6 @@ import type { RepositoryHtmlMode } from './repository-html-renderer'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
-// Tooltip triggers also set data-state, so selection styles follow aria-checked.
 const modeItemClassName =
   'h-6 w-[26px] rounded-sm p-0 aria-checked:bg-foreground/20 aria-checked:text-foreground aria-checked:hover:bg-foreground/20 dark:aria-checked:hover:bg-foreground/20'
 

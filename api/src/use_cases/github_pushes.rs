@@ -1,13 +1,3 @@
-//! Sends Scope's branches to GitHub: pushes the commit a request's checks
-//! test, and deletes the branch once the request merges or closes, and pushes
-//! main for a connection test and deletes it once the test ends. Pushes are
-//! claimed with a lease, so one a dying process left half done is taken up by
-//! another. Right before git runs, a push checks that its claim still holds
-//! and that no newer push of its branch was queued, so an old commit never
-//! lands after a newer one. A push that cannot work until someone changes
-//! something, such as a disconnected repository, gives up at once instead of
-//! retrying.
-
 use crate::{
     auth::tokens::random_token, error::ApiError,
     git::request_refs::with_request_revision_store_repo, github::GitHubApp, persistence::unix_now,
@@ -24,15 +14,11 @@ use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 const BATCH_SIZE: usize = 4;
-/// Comfortably longer than reading a revision and pushing it may take, so a
-/// live pusher is never raced.
 const LEASE_SECS: u64 = 45 * 60;
 
 enum PushFailure {
     Retry(String),
     GiveUp(String),
-    /// The claim lapsed or a newer push replaced this one: nothing is sent
-    /// and nothing is recorded.
     Stale,
 }
 
@@ -42,9 +28,6 @@ impl From<ApiError> for PushFailure {
     }
 }
 
-/// Runs the pushes this process can claim, one at a time. Each is leased
-/// right before it runs, so no lease runs out while earlier pushes take their
-/// time. Returns how many it claimed.
 pub(crate) async fn push_due_github_branches(
     state: &AppState,
     now_unix: u64,
@@ -72,7 +55,6 @@ pub(crate) async fn push_due_github_branches(
     Ok(claimed)
 }
 
-/// Sends one claimed push and records how it ended while the claim holds.
 pub(crate) async fn run_claimed_push(
     state: &AppState,
     push: &GitHubPush,
@@ -80,8 +62,6 @@ pub(crate) async fn run_claimed_push(
     now_unix: u64,
 ) {
     let sent = send(state, push, claim_token).await;
-    // A push can take minutes, and when it ended is when GitHub got the
-    // branch, which is what waiting for workflows counts from.
     let now_unix = unix_now().map_or(now_unix, |finished| finished.max(now_unix));
     let outcome = match sent {
         Ok(()) => GitHubPushOutcome::Succeeded,
@@ -111,7 +91,6 @@ pub(crate) async fn run_claimed_push(
         .await
     {
         Ok(Some(_)) => publish_push_change(state, &push.repo_id).await,
-        // Another process took the push over after this claim lapsed.
         Ok(None) => {}
         Err(error) => tracing::warn!(
             push_id = push.id,
@@ -121,12 +100,6 @@ pub(crate) async fn run_claimed_push(
     }
 }
 
-/// Asked right before git runs. A push whose claim lapsed sends nothing, and
-/// one a newer push of its branch replaces is dropped unsent. A commit is
-/// pushed only while the repository is still connected the way it was when
-/// the push was queued, and a private request's commit only while that
-/// repository may receive private requests. A deletion runs wherever the
-/// branch was pushed, even once the Scope repository is gone.
 async fn ensure_current(
     state: &AppState,
     push: &GitHubPush,
@@ -181,8 +154,6 @@ fn ensure_may_receive(
     Ok(())
 }
 
-/// Asks GitHub whether the connected repository is public now and records
-/// what it says. Returns the link as it stands after.
 pub(crate) async fn refresh_github_visibility(
     state: &AppState,
     connection: &GitHubConnection,
@@ -237,7 +208,6 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
     };
     let requests = state.metadata.requests();
     let gone = || PushFailure::GiveUp("Scope no longer has this revision.".to_string());
-    // A request's branch carries the commit its evaluation tests.
     let tested = match &push.branch {
         GitHubBranch::Request(request_id) => {
             let request = requests
@@ -254,8 +224,6 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         }
         GitHubBranch::SetupCheck => None,
     };
-    // Main holds private files, and a public contribution's check commit is
-    // built on it, so both go only where a private request may.
     let audience = Some(
         tested
             .as_ref()
@@ -264,8 +232,6 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             }),
     );
     ensure_current(state, push, claim_token, audience).await?;
-    // A webhook may never have said the repository became public, so GitHub
-    // is asked before private content is sent there.
     if audience == Some(RequestAudience::Private)
         && let Some(connection) = state
             .metadata
@@ -290,8 +256,6 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         .map_err(ApiError::from)?
         .ok_or_else(gone)?
         .incarnation();
-    // Reading the commit may take a while, so the claim and the connection
-    // are checked again once it is at hand.
     let (check_state, check_push, claim_token) =
         (state.clone(), push.clone(), claim_token.to_string());
     let expected_oid = target_oid.clone();
@@ -309,7 +273,6 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         })
     };
     let Some((request, evaluation)) = tested else {
-        // Main's own store holds the commit, as it was when the test started.
         let (Some(head), spans) = state
             .metadata
             .repositories()
@@ -332,8 +295,6 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         .map_err(ApiError::from)?
         .ok_or_else(gone)?;
     match &evaluation.check_commit_base {
-        // A public contribution's check commit is built again from what its
-        // evaluation recorded, in a private repository that holds it.
         Some(base) => {
             Box::pin(with_check_commit(
                 state,
@@ -346,8 +307,6 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             ))
             .await?
         }
-        // The revision store holds the head with the history it builds on, the
-        // way merge preparation reads a request head.
         None => {
             with_request_revision_store_repo(
                 state,
@@ -361,10 +320,6 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
     }
 }
 
-/// Asks GitHub, right before the connection test's push, which workflow runs
-/// it already lists on the setup branch for the commit: they are an earlier
-/// test's, and only runs GitHub starts after are this test's. A push that is
-/// no longer its test's sends nothing.
 async fn record_setup_check_baseline(
     state: &AppState,
     app: &GitHubApp,

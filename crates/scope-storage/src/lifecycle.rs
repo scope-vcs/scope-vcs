@@ -8,8 +8,6 @@ use tokio::fs;
 pub(crate) const REMOTE_CLEANUP_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl GitSegmentStore {
-    /// Removes abandoned staging and hydration work while preserving verified
-    /// packs retained across process restarts.
     pub async fn cleanup_temporary(&self) -> Result<(), GitStorageError> {
         for path in [
             self.config.local_root.join("staging"),
@@ -28,8 +26,6 @@ impl GitSegmentStore {
         self.verified_cache.usage()
     }
 
-    /// Evicts least-recently-used verified packs until retained bytes fit the
-    /// target. Active pack leases and their sibling indexes remain available.
     pub fn evict_verified_cache(
         &self,
         target_bytes: u64,
@@ -54,8 +50,6 @@ impl GitSegmentStore {
         }
     }
 
-    /// Bounds rollback work independently of any process deadline. Callers may
-    /// mark durable metadata deleted only after this returns success.
     pub async fn cleanup_remote_bounded(&self, object_key: &str) -> Result<(), GitStorageError> {
         tokio::time::timeout(REMOTE_CLEANUP_TIMEOUT, self.cleanup_remote(object_key))
             .await

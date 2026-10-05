@@ -181,10 +181,6 @@ pub(crate) fn authorize_first_push_token_for_repo(
     Ok(())
 }
 
-/// Authorizes a repository's Git push token and returns the owning user id.
-///
-/// The token is checked before its owner so a stale token never learns whether the
-/// repository changed hands.
 pub(crate) fn authorize_git_push_token_for_repo(
     repo: &Repository,
     secret: &str,

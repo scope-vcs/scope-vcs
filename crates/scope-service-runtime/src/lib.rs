@@ -1,4 +1,3 @@
-//! Delivery infrastructure shared by the HTTP services and background workers.
 mod bootstrap;
 pub mod http;
 pub mod readiness;

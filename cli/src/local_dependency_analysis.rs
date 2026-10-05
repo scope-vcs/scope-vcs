@@ -1,4 +1,3 @@
-//! Commit-scoped local import analysis. Visibility remains a domain evaluation.
 mod cache;
 mod snapshot;
 
@@ -21,7 +20,6 @@ use std::{
 const ANALYZER_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 
-/// Owns background analysis and its subprocesses for one open review.
 pub struct AnalysisJob {
     receiver: Receiver<Result<StoredDependencyAnalysis, String>>,
     cancellation: CancellationToken,
@@ -84,7 +82,6 @@ fn analyze_cached(
 ) -> anyhow::Result<StoredDependencyAnalysis> {
     snapshot::validate_commit(commit)?;
     cancellation.check()?;
-    // An unavailable cache never makes the actual check unavailable.
     let cache_path = cache::path(repo, commit, cancellation).ok();
     if let Some(analysis) = cache_path
         .as_deref()
@@ -117,7 +114,6 @@ fn analyze_snapshot(
         bail!("Dependency analyzer is not installed with this CLI; reinstall Scope");
     }
     let mut command = Command::new(node);
-    // Repository code and the caller's NODE_OPTIONS must not change execution.
     command.env_clear();
     for key in ["SystemRoot", "WINDIR", "TEMP", "TMP", "TMPDIR"] {
         if let Some(value) = std::env::var_os(key) {
@@ -147,7 +143,6 @@ fn analyze_snapshot(
 }
 
 fn runtime_directory() -> anyhow::Result<PathBuf> {
-    // Explicit development override uses the same managed bundle layout.
     if let Some(path) = std::env::var_os("SCOPE_CLI_RUNTIME_DIR") {
         return PathBuf::from(path)
             .canonicalize()

@@ -251,8 +251,6 @@ test("skipped components remain selected across a later backend-only change", ()
     "git-router": [],
     "media-api": [],
     api: [],
-    // Web last succeeded before commit A. Its component-specific range still includes A's
-    // web change when commit B changes only the cache service after A's web job was skipped.
     web: ["web/src/routes/+page.svelte", "cache-service/src/main.rs"],
     "cli-downloads": [],
   });

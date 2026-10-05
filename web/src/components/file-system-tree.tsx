@@ -31,7 +31,6 @@ const TREE_ROW_CLASS =
   'grid min-h-9 items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm'
 const PENDING_TREE_ROWS: TextSkeletonLength[] = ['medium', 'long', 'short', 'long', 'medium', 'long']
 
-/** The compact tree before its files arrive: same columns, header and legend. */
 export function FileSystemTreeSkeleton({ metaColumnLabel }: { metaColumnLabel: ReactNode }) {
   return (
     <div>
@@ -68,7 +67,6 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
   selectedFilePath = null,
 }: {
   compactVisibility?: boolean
-  /** Start with every folder open, for short lists such as a change set. */
   expandFolders?: boolean
   files: TFile[]
   getFileMeta?: (file: TFile) => ReactNode

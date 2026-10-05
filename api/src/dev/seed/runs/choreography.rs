@@ -57,8 +57,6 @@ pub(super) async fn enqueue(
     Ok(enqueued.run.id)
 }
 
-/// Dispatches an attempt for `job_key` and drives it through the given step plan. A plan whose
-/// last step has no outcome leaves the attempt (and therefore the run) running.
 pub(super) async fn run_job(
     runs: &RunStore,
     run_id: &str,

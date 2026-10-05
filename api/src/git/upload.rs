@@ -48,8 +48,6 @@ use read_view_identity::GitReadViewIdentity;
 use read_view_seed::seed_request_refs_from_read_views;
 static GIT_READ_VIEW_CACHE_ATTEMPT: AtomicU64 = AtomicU64::new(1);
 
-/// Resolves the repository, the caller's access and (when authenticated) the viewer for a
-/// Git read over the given remote mode, refusing unpublished repositories.
 pub(crate) async fn authorized_git_read(
     state: &AppState,
     headers: &HeaderMap,
@@ -222,8 +220,6 @@ async fn git_read_view_repo(
     )
     .cache_key();
     let cache_root = state.repository_engine.cache_root().to_path_buf();
-    // The incarnation prefix lets a build find this repository's earlier read views and copy
-    // unchanged request refs from them instead of downloading every snapshot again.
     let read_view_prefix = repository_storage_key(incarnation);
     let read_view_name = format!("read-view-{read_view_prefix}-{cache_key}");
     let repo_path = cache_root.join(format!("{read_view_name}.git"));

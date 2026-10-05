@@ -30,7 +30,6 @@ pub struct AuthenticatedSession {
     pub user: UserResponse,
 }
 
-/// The transport and credentials for one authenticated CLI operation.
 #[derive(Clone, Copy)]
 pub struct ApiSession<'a> {
     pub(crate) client: &'a Client,

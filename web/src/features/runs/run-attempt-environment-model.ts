@@ -4,8 +4,6 @@ import type {
   RepositoryRunCacheResponse,
 } from '@/api/types.generated'
 
-/** Worth a marker on the collapsed Environment control: a cache started
- * cold or its facts never arrived. */
 export function cachesNeedAttention(caches: readonly RepositoryRunCacheResponse[]) {
   return caches.some((cache) =>
     !cache.observation || cache.observation.preparation.kind === 'cold')
@@ -29,7 +27,6 @@ export function cacheStateClass(cache: RepositoryRunCacheResponse) {
   }
 }
 
-/** Why a cold cache was cold, for its hover text. */
 export function cacheStateDetail(cache: RepositoryRunCacheResponse) {
   const preparation = cache.observation?.preparation
   if (!preparation) return 'Cache facts were not reported for this attempt.'

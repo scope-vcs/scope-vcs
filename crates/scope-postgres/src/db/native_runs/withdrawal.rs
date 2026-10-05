@@ -1,8 +1,3 @@
-//! Settles the repositories of an account that lost native runs. Each request
-//! and run settles in its own transaction, taking the same locks in the same
-//! order as the operations it competes with, and is skipped if the owner was
-//! listed again in the meantime.
-
 use super::{availability, owned_repositories};
 use crate::{
     db::{
@@ -25,13 +20,10 @@ use sea_orm::{
     Statement, TransactionTrait,
 };
 
-/// What removing an account changed, for the caller to publish.
 #[derive(Clone, Debug, Default)]
 pub struct NativeRunsWithdrawal {
     pub user_id: String,
-    /// Whether this removal unlisted the account; `false` when it was not listed.
     pub removed: bool,
-    /// The account's repositories, whose availability changed.
     pub repositories: Vec<RepositoryIncarnation>,
     pub withdrawn_evaluations: Vec<RequestCheckEvaluation>,
     pub canceled_runs: Vec<Run>,
@@ -48,8 +40,6 @@ pub(super) async fn settle(
         removed,
         ..Default::default()
     };
-    // Withdraw evaluations while their runs are still unfinished; once
-    // canceled, those runs would read as failures rather than a wait.
     for request_id in waiting_request_ids(db, user_id).await? {
         if let Some(evaluation) = withdraw_evaluation(db, &request_id, now_unix).await? {
             withdrawal.withdrawn_evaluations.push(evaluation);
@@ -163,8 +153,6 @@ async fn withdraw_evaluation(
     Ok(Some(withdrawn))
 }
 
-/// Cancels like a maintainer would: queued and blocked jobs end at once and a
-/// running attempt is told to stop at its next heartbeat.
 async fn cancel_run(
     db: &DatabaseConnection,
     run_id: &str,

@@ -35,8 +35,6 @@ pub struct RepositoryInvite {
     pub invited_email_normalized: String,
     pub permissions: RepositoryMemberPermissions,
     pub invited_by_user_id: String,
-    /// Every link issued for this invite. All of them work until the invite
-    /// stops being pending.
     pub link_hashes: Vec<String>,
     pub created_at_unix: u64,
     pub updated_at_unix: u64,
@@ -47,8 +45,6 @@ pub struct RepositoryInvite {
 }
 
 impl RepositoryInvite {
-    /// The state is never stored, so the members list, the landing page, and
-    /// acceptance cannot disagree about whether an invite has expired.
     pub fn state(&self, now_unix: u64) -> RepositoryInviteState {
         if self.revoked_at_unix.is_some() {
             RepositoryInviteState::Revoked
@@ -61,8 +57,6 @@ impl RepositoryInvite {
         }
     }
 
-    /// When the invite stopped, or will stop, being pending. Follows the same
-    /// order as `state`.
     pub fn ended_at_unix(&self) -> u64 {
         self.revoked_at_unix
             .or(self.accepted_at_unix)
@@ -74,8 +68,6 @@ pub fn normalize_repository_invite_email(email: &str) -> String {
     email.trim().to_ascii_lowercase()
 }
 
-/// The people a repository works with besides its owner: its members, and
-/// everyone invited to become one.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositoryCollaboration {
     pub members: Vec<RepositoryMember>,
@@ -88,9 +80,6 @@ impl RepositoryCollaboration {
     }
 }
 
-/// Everything collaboration rules read and change: the repository record,
-/// which names the owner, lifecycle and change version, and its
-/// collaboration. Holds none of the repository's history.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CollaborationState {
     pub record: RepoRecord,

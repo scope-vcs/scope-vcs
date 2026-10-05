@@ -8,8 +8,6 @@ use scope_domain::runs::{job::reconcile_run, run::Run};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait};
 
 impl RunStore {
-    /// Settle queued capacity retries whose two-minute window has elapsed.
-    /// Dispatch calls this before admission; each row is rechecked under the run locks.
     pub async fn expire_capacity_retries(
         &self,
         now_unix: u64,

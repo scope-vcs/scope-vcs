@@ -71,12 +71,10 @@ export function RepoSettingsPage({
   sendInviteEmail: (input: RepoInviteInput) => Promise<RepositoryInviteResponse>
   deleteMember: (input: DeleteRepoMemberInput) => Promise<RepositoryMemberResponse>
   collaboration: RepositoryCollaborationResponse | null
-  /** The member list is still loading; the rest of the page does not need it. */
   collaborationLoading: boolean
   deleteRepo: (params: RepoParams) => Promise<DeleteRepoResponse>
   confirmPublicGitHub: (params: RepoParams) => Promise<GitHubConnectionResponse>
   disconnectGitHub: (params: RepoParams) => Promise<GitHubConnectionResponse>
-  /** `null` while it loads, and for viewers who cannot manage it. */
   github: GitHubConnectionResponse | null
   params: RepoParams
   setGitHubRequiredChecks: (
@@ -90,7 +88,6 @@ export function RepoSettingsPage({
   startGitHubSetupCheck: (params: RepoParams) => Promise<GitHubConnectionResponse>
   updateMember: (input: UpdateRepoMemberInput) => Promise<RepositoryMemberResponse>
   updateMetadata: (input: UpdateRepoMetadataInput) => Promise<RepoSummaryResponse>
-  /** Rendered only for readers who can see private files. */
   visibilityLog?: ReactNode
 }) {
   const navigate = useNavigate()

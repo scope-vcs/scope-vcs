@@ -46,8 +46,6 @@ async fn public_check_source_migration_invalidates_only_unfinished_public_empty_
             ('waiting', 'awaiting-approval'), ('invalid', 'configuration-error'),
             ('finished', 'no-checks')
           ) AS fixture(name, state);
-        -- Old heads must also lose the invalid evidence, in case a later push
-        -- returns to that head. Completed requests retain their history.
         INSERT INTO scope_request_check_evaluations
           SELECT request_id, repeat('c', 40), state, message, checks, 2, 2
           FROM scope_request_check_evaluations WHERE request_id = 'empty';

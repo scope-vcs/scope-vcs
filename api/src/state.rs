@@ -22,7 +22,6 @@ pub struct AppState {
     pub(crate) auto_merge_wakeup: Arc<tokio::sync::Notify>,
     pub(crate) clerk_user_deletion_wakeup: Arc<tokio::sync::Notify>,
     pub(crate) clerk_users: crate::clerk_users::ClerkUsers,
-    /// `None` when the Scope GitHub App is not configured.
     pub(crate) github: Option<Arc<crate::github::GitHubApp>>,
     pub(crate) github_push_wakeup: Arc<tokio::sync::Notify>,
     pub(crate) github_run_import_wakeup: Arc<tokio::sync::Notify>,
@@ -154,9 +153,6 @@ impl AppState {
     }
 }
 
-/// Routes API error diagnostics into the test's captured output. Internal
-/// errors reach clients as an opaque reference, so without this a failing
-/// test shows a 500 and nothing else.
 #[cfg(test)]
 fn install_test_tracing() {
     static INSTALL: std::sync::Once = std::sync::Once::new();

@@ -55,7 +55,6 @@ printf '%s\\n' "$MARKER_TIMESTAMP"
     }));
     try {
       await waitForFile(ready);
-      // Pause the real clock command at the same boundary that failed in production.
       await readMaintenanceMarkers(parsed, new AvailabilityEvidence(parsed));
       const visible = await readFile(marker, "utf8").catch((error) => {
         if (error.code === "ENOENT") return null;

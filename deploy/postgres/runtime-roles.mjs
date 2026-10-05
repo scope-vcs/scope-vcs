@@ -1,6 +1,5 @@
 import { pathToFileURL } from 'node:url';
 
-// Explicit inventory: migrations must update this policy before runtime cutover.
 const names = (value) => value.trim().split(/\s+/).map((name) => `scope_${name}`);
 export const cacheTables = names(`cache_deletion_queue cache_objects cache_orphan_uploads
   cache_references cache_uploads`);
@@ -21,7 +20,6 @@ const repositoryTables = names(`file_changes git_compaction_jobs git_heads git_s
   github_run_imports`);
 const runTables = names(`run_attempt_cache_setups run_attempt_caches run_attempt_steps run_attempts
   runs run_jobs run_logs`);
-// Operators list accounts through the API; run creation and admission share-lock a listing.
 const nativeRunsTables = names('native_runs_accounts');
 const collaborationTables = names(`request_discussion_read_states request_discussion_replies
   request_discussions request_events request_invitees request_ratings request_revisions requests
@@ -40,8 +38,6 @@ function policy(write, read = [], lock = []) {
     ['seaql_migrations', ['SELECT']],
   ]);
 }
-// API owns repository/collaboration changes and media upload admission. It has no cache-store access.
-// Worker also performs outbox delivery, compaction, dependency analysis and content cleanup.
 export const grants = {
   scope_api: policy([...repositoryTables, ...runTables, ...nativeRunsTables, ...collaborationTables,
     ...authTables, ...mediaTables]),
@@ -53,14 +49,11 @@ export const grants = {
     repository_git_push_tokens repository_invites
     repository_invite_links repository_landing_files repository_members repository_workflow_catalogs repository_workflow_files
     visibility_change_sets visibility_changes requests request_revisions users request_check_evaluations`)),
-    // Rebuilding a view deletes its entries through the foreign key cascade; no direct entry DELETE is needed.
     scope_repository_history_views: ['SELECT', 'INSERT', 'DELETE'],
     scope_repository_history_entries: ['SELECT', 'INSERT'],
-    // Terminal check runs stop auto-merge and persist its request activity and event.
     scope_requests: ['SELECT', 'UPDATE'],
     scope_request_auto_merge_intents: ['SELECT', 'UPDATE'],
     scope_request_events: ['SELECT', 'INSERT'],
-    // Push-triggered runs and admission share-lock the owner's listing, which requires UPDATE.
     scope_native_runs_accounts: ['SELECT', 'UPDATE'] },
   scope_cache: policy(cacheTables, names('runs run_jobs run_attempts')),
   scope_media_api: { ...policy(names('request_media_upload_parts request_media_abandoned_objects'),
@@ -72,7 +65,6 @@ export const grants = {
 const literal = (value) => `'${value.replaceAll("'", "''")}'`;
 const identifier = (value) => `"${value.replaceAll('"', '""')}"`;
 
-// Rendering is deliberately separate from execution. Pipe through private maintenance psql only.
 export function renderPolicy({ grantsOnly = false } = {}) {
   const roles = Object.keys(grants);
   const allRoles = ['scope_migrator', ...roles];

@@ -32,7 +32,6 @@ remove_pending_evidence() {
 }
 if [[ -n "$deployment_evidence_path" ]]; then
   pending_evidence_path="${deployment_evidence_path}.pending.$$"
-  # A killed earlier invocation whose PID was reused can leave stale fragments.
   remove_pending_evidence
 fi
 
@@ -63,12 +62,9 @@ if [[ ! -x "$maintenance_binary" ]]; then
   exit 1
 fi
 
-# Ordinary Railway CLI commands use the project token. Keep the workspace token isolated
-# and expose it only to control-plane mutations sent through `railway api`.
 railway_api_token="$RAILWAY_API_TOKEN"
 unset RAILWAY_API_TOKEN
 
-# One release policy owns operation limits. The CLI validates the same bounds.
 policy_manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
 web_service="$(jq -er .services.web.id "$policy_manifest")"
 
@@ -203,8 +199,6 @@ close_writer() {
   [[ "${!flag}" == "0" ]] || return 0
   id="$(deployment_id "$service")" || return 1
   if [[ "$public" == 1 && -n "$gates_directory" ]]; then
-    # A failed gate request can have succeeded at Railway. Identify the current
-    # deployment before stopping anything, so cleanup never kills a serving gate.
     state="$(railway deployment list "${railway_scope[@]}" --service "$service" --limit 100 --json |
       jq -er --arg id "$id" --arg image "$(jq -er .components.api.image "$prepared_release_path")" '
         [.[] | select(.id == $id)] | if length != 1 then error("missing current deployment") else .[0] end
@@ -227,14 +221,11 @@ close_writer() {
 quiesce_writers() {
   local failed=0
   enter_public_gates || failed=1
-  # Even a failed public gate must not prevent cleanup of other writers after a
-  # partial activation. Each stop checks the exact current deployment identity.
   close_writer "$api_service" api_closed 1 || failed=1
   close_writer "$worker_service" worker_closed 0 || failed=1
   close_writer "$cache_service" cache_closed 0 || failed=1
   close_writer "$media_service" media_closed 1 || failed=1
   close_writer "$media_worker_service" media_worker_closed 0 || failed=1
-  # Provider replica counts can be stale; the database fence proves writer closure.
   wait_for_writer_fence || failed=1
   return "$failed"
 }
@@ -399,8 +390,6 @@ deploy_and_reopen() {
   cutover_phase backfills
   backfill_repository_snapshots
   predecessor_teardown_dir="$(mktemp -d)"
-  # Activation can create a live replacement before its response fails. Mark it potentially open
-  # first so the failure handler stops whichever deployment the provider currently reports.
   cutover_phase activating-cache
   cache_closed=0
   cutover_phase activating-media
@@ -428,8 +417,6 @@ deploy_and_reopen() {
   wait_for_service_health "$web_service" "$web_deployment_id" "$(railway_config_path web)"
   node .github/scripts/railway-predecessor-teardown.mjs wait "$predecessor_teardown_dir"
   mark_maintenance_end
-  # Every database writer forms one cutover. Publish their evidence only after all writers are healthy
-  # so the durable ledger cannot claim a deployment that the failure trap subsequently closes.
   promote_pending_evidence
 }
 
@@ -603,8 +590,6 @@ else
   media_worker_closed=1
 fi
 
-# Preparation may take minutes. Read the plan again immediately before recording closure intent.
-# Refuse a changed ledger so a new invocation can prepare against the actual database state.
 fresh_plan="$(maintenance_read plan)"
 if ! plans_have_same_ledger "$plan_json" "$fresh_plan"; then
   echo "Migration plan changed during release preparation; refusing writer closure." >&2

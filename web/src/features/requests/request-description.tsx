@@ -4,10 +4,6 @@ import { useRef, useState } from 'react'
 import { RequestAttachmentEditor } from './request-attachment-editor'
 import { RequestDiscussionMarkdown } from './request-discussion-markdown'
 
-/**
- * Edits in place: the rendered text becomes the editor at the same height,
- * with its actions below it. The edit control sits at the text's top right.
- */
 export function RequestDescription({
   canEdit,
   description,

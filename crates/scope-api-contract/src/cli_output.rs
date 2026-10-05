@@ -20,7 +20,6 @@ impl<T> CliSuccessEnvelope<T> {
     }
 }
 
-/// CLI errors preserve the API error shape and can describe completed local/remote effects.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CliFailureEnvelope {
     #[serde(flatten)]

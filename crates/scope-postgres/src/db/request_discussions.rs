@@ -569,8 +569,6 @@ impl RequestStore {
                 command.now_unix,
             )
             .await?;
-            // The original transaction already applied reply attention. A retry
-            // must preserve any later wake-up or explicit attention action.
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(CreateRequestDiscussionReplyMutation {
                 created: false,

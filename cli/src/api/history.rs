@@ -3,7 +3,6 @@ use crate::api::ApiSession;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-/// One page of the repository's visibility history feed, newest first.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct VisibilityHistoryPage {
     pub audience: HistoryAudience,
@@ -18,7 +17,6 @@ pub enum HistoryAudience {
     Public,
 }
 
-/// Author and time are withheld in the public audience.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HistoryEntrySummary {
     pub occurred_at_unix: Option<i64>,

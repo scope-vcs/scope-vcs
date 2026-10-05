@@ -174,7 +174,6 @@ pub(super) fn push_request_branch(
         &branch,
         &request_head_oid,
     )?;
-    // A failed push changed nothing, so its error needs no recovery receipt.
     push_request_head(
         &context.target,
         api.token,

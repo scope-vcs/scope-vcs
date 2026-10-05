@@ -15,7 +15,6 @@ use sea_orm::{EntityTrait, TransactionTrait};
 mod tests;
 
 impl RunStore {
-    /// Rechecks membership after upload and commits the source, revision and jobs together.
     pub async fn enqueue_uploaded_manual_run(
         &self,
         request: &ManualRunRequest,
@@ -39,8 +38,6 @@ impl RunStore {
         Ok(enqueued)
     }
 
-    /// Pins a known source and its workflow while repository mutation is excluded.
-    /// A missing exact source leaves no run behind, allowing the caller to upload it.
     pub async fn enqueue_known_manual_run(
         &self,
         request: &ManualRunRequest,

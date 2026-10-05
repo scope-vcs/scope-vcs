@@ -12,9 +12,6 @@ export interface NoteProgress {
   justFound: boolean
 }
 
-/** Counts the notes the lens has settled over. A note counts once it's on
- * screen and inside the lens; `onAllFound` fires once, the first time every note
- * laid out at this width has been found. */
 export function useNoteFinder(page: RefObject<HTMLDivElement | null>, lens: RefObject<LensFrame>, onAllFound: () => void): NoteProgress {
   const [progress, setProgress] = useState<NoteProgress>({ found: 0, total: 0, moreBelow: false, justFound: false })
 

@@ -111,8 +111,6 @@ pub(crate) async fn ensure_ready_receive_pack_staging_repo(
         if let Some(parent) = repo_root.parent() {
             ensure_private_dir(parent)?;
         }
-        // Local cloning hardlinks/copies objects, so the staging repository does
-        // not retain alternates into a cache that can be evicted after this lease.
         run_git(
             None,
             &[

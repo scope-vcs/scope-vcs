@@ -1,6 +1,3 @@
-//! Deletes invites, and the email address each one names, once they have been
-//! over for the domain's retention period.
-
 use super::{
     RepositoryCollaborationMutation, RepositoryStore,
     collaboration_rows::{lock_collaboration_state, save_collaboration_state},
@@ -16,8 +13,6 @@ use sea_orm::{
 };
 
 impl RepositoryStore {
-    /// Repositories holding at least one invite that retention would remove.
-    /// The domain makes the final decision under the repository lock.
     pub async fn repositories_with_prunable_invites(
         &self,
         now_unix: u64,
@@ -31,7 +26,6 @@ impl RepositoryStore {
             .select_only()
             .column(entities::repository_invite::Column::RepoId)
             .distinct()
-            // Mirrors `RepositoryInvite::ended_at_unix`.
             .filter(Expr::cust_with_values(
                 "COALESCE(revoked_at_unix, accepted_at_unix, expires_at_unix) <= $1",
                 [cutoff],
@@ -44,8 +38,6 @@ impl RepositoryStore {
             .map_err(PostgresError::internal)
     }
 
-    /// Removes the repository's ended invites with their links and email
-    /// delivery records. Returns how many invites went, or `None` when none did.
     pub async fn prune_ended_repository_invites(
         &self,
         repo_id: &str,
@@ -60,8 +52,6 @@ impl RepositoryStore {
         if pruned.is_empty() {
             return Ok(None);
         }
-        // Deleting an invite only clears its emails' invite_id, so they go
-        // first. All of them predate the owner's daily email allowance window.
         entities::repository_invite_email::Entity::delete_many()
             .filter(
                 entities::repository_invite_email::Column::InviteId
@@ -70,7 +60,6 @@ impl RepositoryStore {
             .exec(&tx)
             .await
             .map_err(PostgresError::internal)?;
-        // Deleting the invites cascades to their links.
         save_collaboration_state(&tx, &before, &repo).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(Some(RepositoryCollaborationMutation::committed(

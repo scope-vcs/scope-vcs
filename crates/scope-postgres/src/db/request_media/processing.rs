@@ -634,10 +634,6 @@ where
         .await
         .map_err(PostgresError::internal)?
     else {
-        // Attachments carry no foreign key to their request or repository, and
-        // leased processing only checks the tombstone before taking the row
-        // lock, so a deletion that committed in between leaves nothing to
-        // notify about.
         return Ok(());
     };
     let incarnation_id = row

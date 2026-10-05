@@ -14,11 +14,6 @@ use std::{
     time::SystemTime,
 };
 
-/// Copies request refs whose metadata head already exists in an earlier read view of the same
-/// repository incarnation, so only requests that actually changed need their snapshot bundle from
-/// the object store. A ref is fetched by name from a view that holds the exact head, and only
-/// counts as attached once the target repo shows that head, so an earlier view can never supply
-/// stale or foreign objects. Returns the names of the requests attached this way.
 pub(super) fn seed_request_refs_from_read_views(
     engine: &Arc<RepositoryEngine>,
     read_view_prefix: &str,
@@ -38,7 +33,6 @@ pub(super) fn seed_request_refs_from_read_views(
         if remaining.is_empty() {
             break;
         }
-        // The lease keeps the reaper from evicting the view mid-fetch.
         let Ok(view) = engine.lease_derived(candidate) else {
             continue;
         };
@@ -93,8 +87,6 @@ pub(super) fn seed_request_refs_from_read_views(
     Ok(seeded)
 }
 
-/// Materialized read views for the incarnation, newest first. The view under construction is a
-/// `.tmp` directory and is never listed.
 fn earlier_read_views(cache_root: &Path, read_view_prefix: &str) -> Result<Vec<PathBuf>, ApiError> {
     let directory_prefix = format!("read-view-{read_view_prefix}-");
     let mut views = Vec::new();

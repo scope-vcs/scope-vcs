@@ -16,7 +16,6 @@ cp deploy/railway/install-git.sh "$workspace/context/install-git.sh"
 git_version="$(jq -er '.git.version' dev/tool-versions.json)"
 git_source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
 bash .github/scripts/extract-railway-maintenance.sh "$workspace/source.json" "$workspace/context/bin/scope-maintenance"
-# The running image, extracted bytes and operator's source identity must agree.
 image="$(jq -er '.components.api.image' "$workspace/source.json")"
 [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == "$CURRENT_API_SOURCE_SHA" ]]
 repository="ghcr.io/${GITHUB_REPOSITORY,,}/$(jq -er '.railway.releaseImagePrefix' "$manifest")-maintenance"

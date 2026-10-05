@@ -200,8 +200,6 @@ impl GitSegmentStore {
             Ok(outcome) => outcome,
             Err(error) => {
                 cleanup_ingest(&self.backend, &object_key, None).await;
-                // A destination can observe only channel closure after its peer fails.
-                // Report the peer's cause instead of that secondary symptom.
                 return Err(match remote {
                     Err(remote_error) if matches!(error, GitStorageError::IncompleteIngest) => {
                         remote_error

@@ -11,7 +11,6 @@ impl RunStore {
         now_unix: u64,
     ) -> Result<DispatchAuthorization, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        // This context locks the job before reading cancellation, matching cancellation's lock order.
         let (run, job, attempt) =
             super::run_attempt_persistence::locked_heartbeat_context(&tx, attempt_id).await?;
         let authorization = dispatch_authorization::authorize_start(

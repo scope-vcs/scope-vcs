@@ -17,8 +17,6 @@ export function snapshotKey(value) {
   return Buffer.from(value, 'hex');
 }
 
-// Metadata is authenticated with the dump: its environment, ledger and restore
-// policy cannot be changed independently of the encrypted database snapshot.
 export async function transformSnapshot(action, inputPath, outputPath, metadataPath, keyValue) {
   const key = snapshotKey(keyValue);
   if (!['encrypt', 'decrypt'].includes(action)) throw new Error('Unknown baseline encryption action.');
@@ -52,8 +50,6 @@ export async function transformSnapshot(action, inputPath, outputPath, metadataP
       const decipher = createDecipheriv('aes-256-gcm', key, header.subarray(version.length));
       decipher.setAAD(Buffer.concat([header, metadata]));
       decipher.setAuthTag(tag);
-      // Unauthenticated plaintext stays in a private temporary file. Only a
-      // complete, authenticated result is published for pg_restore to consume.
       await pipeline(
         createReadStream(inputPath, { start: headerLength, end: size - tagLength - 1 }),
         decipher,

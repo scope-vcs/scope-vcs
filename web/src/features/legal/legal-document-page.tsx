@@ -4,7 +4,6 @@ import { markdownComponents } from '@/components/markdown-components'
 import { PageContent } from '@/components/page-header'
 import { SafeMarkdown } from '@/components/safe-markdown'
 
-/** Renders a policy authored in the repository's legal/ directory. */
 export function LegalDocumentPage({ source }: { source: string }) {
   return (
     <AppShell header={() => <ApplicationTopbar />}>

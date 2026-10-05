@@ -7,7 +7,6 @@ fn request_push_replaces_amended_history_unless_someone_else_pushed() {
     let base = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
     let bare = TempDir::new("request-push-rewrite-bare");
     run_git(bare.path(), ["init", "--bare"]);
-    // Scope advertises a new request's branch at the base the request started from.
     run_git(
         dir.path(),
         [
@@ -113,7 +112,6 @@ fn request_push_replaces_amended_history_unless_someone_else_pushed() {
     assert!(error["recovery"].is_null(), "{error}");
     assert_eq!(request_head(), someone_else);
 
-    // A fetch moves the tracking ref, but this branch never included that work.
     run_git(
         dir.path(),
         [
@@ -126,7 +124,6 @@ fn request_push_replaces_amended_history_unless_someone_else_pushed() {
     assert_eq!(push().status.code(), Some(5));
     assert_eq!(request_head(), someone_else);
 
-    // Once the branch builds on that work, its own rewrite can replace it.
     run_git(dir.path(), ["reset", "--quiet", "--hard", &someone_else]);
     fs::write(dir.path().join("fix.txt"), "rebased\n").unwrap();
     run_git(dir.path(), ["add", "fix.txt"]);
@@ -168,7 +165,6 @@ fn request_push_without_a_seen_head_only_builds_on_the_current_head() {
             "main:refs/heads/fix-one",
         ],
     );
-    // Someone else pushes to the request before this checkout ever fetches it.
     let other = TempDir::new("request-push-unseen-other");
     run_git(
         other.path(),

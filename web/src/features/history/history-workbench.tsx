@@ -14,7 +14,6 @@ import type {
 import { History } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-/** One revision's commits: a header, the commit picker when there is a choice, then files and diff. */
 export function HistoryWorkbench({
   commitContext,
   commitState,

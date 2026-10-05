@@ -107,7 +107,6 @@ async fn stored_checks_become_native_checks_that_test_their_head() {
         ]
     );
 
-    // Every stored check names a known provider, and native checks test the head.
     for (checks, tested_oid) in [
         (r#"[{"workflow_path":"/.scope/runs/test.yml"}]"#, "b"),
         (r#"[{"provider":"gitlab","name":"test"}]"#, "b"),

@@ -267,8 +267,6 @@ fn projected_files_for_audience(
     audience: ProjectionViewKey,
 ) -> Vec<ProjectionViewFileContent> {
     let principal = match audience {
-        // Current visibility is binary: private readers all see the same file
-        // tree. If policy becomes per-user, this audience key must split too.
         ProjectionViewKey::Private => Principal {
             id: repo.record.owner_user_id.clone(),
             kind: PrincipalKind::User,

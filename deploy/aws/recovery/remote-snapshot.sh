@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Executed only inside the explicit production maintenance service over Railway SSH.
 set -euo pipefail
 umask 077
 : "${DATABASE_URL:?Private maintenance database URL is required}"

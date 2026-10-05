@@ -5,10 +5,6 @@ import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { Plus, X } from 'lucide-react'
 import { useState } from 'react'
 
-/**
- * The check names GitHub must pass before a request merges. Adding or
- * removing a name saves the whole list.
- */
 export function RepoRequiredChecks({
   names,
   save,

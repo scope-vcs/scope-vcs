@@ -1,4 +1,3 @@
-"""Adapters use temporary credentials and preserve interrupted repair work."""
 import contextlib
 import json
 import os
@@ -206,7 +205,6 @@ class WorktreeTests(unittest.TestCase):
         revision = runtime.create_worktree(self.target)
         (self.target / "tracked").write_text("unfinished repair\n")
         (self.target / "notes").write_text("recovery context\n")
-        # Main can advance while the same repair is resumed.
         (self.checkout / "tracked").write_text("new main\n")
         self.git(self.checkout, "commit", "-am", "advance main")
         self.assertNotEqual(self.git(self.checkout, "rev-parse", "HEAD"), revision)

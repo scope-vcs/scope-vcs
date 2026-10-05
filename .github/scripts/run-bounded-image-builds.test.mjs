@@ -12,7 +12,6 @@ function run(components, delayWait = false) {
   const builder = join(directory, 'builder.sh');
   const events = join(directory, 'events.log');
   const delayedRunner = join(directory, 'delayed-runner.sh');
-  // Pause the parent at the wait boundary while both builder processes exit.
   writeFileSync(delayedRunner, readFileSync(runner, 'utf8').replace(
     'wait_for_one() {', 'wait_for_one() {\n  sleep 0.3'));
   writeFileSync(builder, `#!/usr/bin/env bash

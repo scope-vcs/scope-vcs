@@ -73,8 +73,6 @@ const rateRequest = createServerFn({ method: 'POST' })
   .validator(parseRateRequestInput)
   .handler(({ data }) => rateRequestForRequest(data))
 
-// The request page: header, checks, description and details around the
-// discussion. The changes screen is a sibling with its own layout.
 export const Route = createFileRoute('/$owner/$repo/requests/$requestId/_discussion')({
   pendingComponent: RequestDetailPagePending,
   component: RequestDiscussionLayout,
@@ -103,9 +101,6 @@ function RequestDiscussionLayout() {
     try {
       result = await runRequestAction({ data: { ...requestParams, ...command } })
     } catch (error) {
-      // A refused action usually means this page is stale, such as a merge of
-      // a head that has since moved. Wait for the current request before another
-      // action can capture its head; background invalidation resolves too early.
       await router.invalidate({ sync: true }).catch(() => {})
       throw error
     }
@@ -129,7 +124,6 @@ function RequestDiscussionLayout() {
     return rating
   }, [router])
 
-  // The parent route renders the unavailable page for these.
   if (!page.detail || !page.ratings) return null
 
   return (
@@ -157,7 +151,6 @@ function RequestDiscussionLayout() {
         try {
           return await updateDescription({ data })
         } catch (error) {
-          // Reload the server description so the preserved draft has an explicit recovery path.
           await router.invalidate().catch(() => {})
           throw error
         }

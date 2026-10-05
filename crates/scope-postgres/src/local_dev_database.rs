@@ -1,5 +1,3 @@
-//! The destructive local seed owns a dedicated loopback database and its public schema.
-
 use sqlx::postgres::PgConnectOptions;
 use std::{fmt, net::IpAddr};
 
@@ -36,8 +34,6 @@ impl LocalDevDatabase {
                 "DATABASE_URL schema aliases are unsupported; use a dedicated Scope local/dev database"
             );
         }
-        // SQLx logs the key and value of ignored parameters. Reject them before
-        // parsing so a misspelled credential option cannot leak through tracing.
         if url.query_pairs().any(|(key, _)| {
             !matches!(
                 key.as_ref(),
@@ -63,8 +59,6 @@ impl LocalDevDatabase {
             anyhow::bail!("DATABASE_URL contains an unsupported local connection parameter");
         }
 
-        // SQLx applies query overrides and environment defaults. Validate those exact
-        // options, then use them directly for the seed connection.
         let options: PgConnectOptions = url.as_str().parse()?;
         let host = options.get_host().trim_matches(['[', ']']);
         let loopback = host.eq_ignore_ascii_case("localhost")
@@ -83,8 +77,6 @@ impl LocalDevDatabase {
                 "DATABASE_URL and PGOPTIONS must not override local seed options; local seeding uses the public schema"
             );
         }
-        // Pin the schema even when the database role has a custom search_path.
-        // The URL is retained for maintenance and dedicated listener connections.
         url.query_pairs_mut()
             .append_pair("options[search_path]", "public");
         Ok(Self {

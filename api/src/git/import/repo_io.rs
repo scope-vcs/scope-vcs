@@ -317,7 +317,6 @@ pub(crate) fn validate_pushed_commit_range(
     base_oid: Option<&str>,
     head_oid: &str,
 ) -> Result<(), ApiError> {
-    // Every newly reachable tree, including imported history, needs the file/path safety checks.
     validate_pushed_tree(staging_repo, head_oid)?;
     let mut args = vec!["rev-list", "--reverse", head_oid];
     let excluded_base = base_oid.map(|oid| format!("^{oid}"));
@@ -517,8 +516,6 @@ pub(crate) async fn git_push_from_repo(
     })
 }
 
-/// Bundles `refname`. With a `base_oid` the bundle leaves out history reachable from that base,
-/// so it carries only the request's own commits and whoever fetches it supplies the base first.
 pub(crate) fn git_snapshot_from_ref(
     repo: &FsPath,
     refname: &str,
@@ -528,7 +525,6 @@ pub(crate) fn git_snapshot_from_ref(
     let head_oid = head_oid.trim();
     let bundle_path = repo.join(format!("scope-snapshot-{}.bundle", random_bundle_id()?));
     let bundle = bundle_path.to_string_lossy().to_string();
-    // Git refuses an empty bundle, so a ref still at its base keeps its full history.
     let exclude_base = base_oid
         .filter(|base_oid| *base_oid != head_oid)
         .map(|base_oid| format!("^{base_oid}"));

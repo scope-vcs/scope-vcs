@@ -25,7 +25,6 @@ pub struct RequestDiscussion {
     pub request_id: String,
     pub opened_position: u64,
     pub last_activity_position: u64,
-    /// `None` once the author deleted their account.
     pub author_user_id: Option<String>,
     pub body_markdown: String,
     pub anchor: Option<RequestDiscussionAnchor>,
@@ -41,7 +40,6 @@ pub struct RequestDiscussionReply {
     pub id: String,
     pub discussion_id: String,
     pub position: u64,
-    /// `None` once the author deleted their account.
     pub author_user_id: Option<String>,
     pub body_markdown: String,
     pub reply_to_reply_id: Option<String>,

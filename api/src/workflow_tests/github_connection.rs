@@ -30,13 +30,10 @@ async fn request(
     .await
 }
 
-/// Starts the flow in settings and returns the state GitHub's OAuth screen
-/// would send back.
 async fn setup_state(state: &AppState, bearer: &str) -> String {
     authorize(state, bearer, serde_json::json!({})).await["state"].clone()
 }
 
-/// The query of the GitHub OAuth URL the authorize call returned.
 async fn authorize(
     state: &AppState,
     bearer: &str,
@@ -180,7 +177,6 @@ async fn a_maintainer_connects_through_github_setup() {
     .await;
     assert_eq!(body["owner_handle"], "owner");
     assert_eq!(body["repo_name"], "repo");
-    // The setup page starts from the repository's import count.
     assert_eq!(body["run_import_count"], 50);
     assert!(
         body["install_url"]
@@ -213,10 +209,8 @@ async fn a_maintainer_connects_through_github_setup() {
         connected["connection"]["disconnected"],
         serde_json::Value::Null
     );
-    // Connecting queued an import of the repository's recent runs.
     assert_eq!(connected["run_import"]["state"], "queued");
     assert_eq!(connected["run_import"]["run_count"], 50);
-    // The owner sees the same link; only the owner may confirm a public repository.
     let owner_view = connection(&state).await;
     assert_eq!(owner_view["connection"], connected["connection"]);
     assert_eq!(connected["can_confirm_public"], false);
@@ -228,7 +222,6 @@ async fn a_maintainer_connects_through_github_setup() {
         }
     );
 
-    // Connecting the same repository again reuses the cached installation token.
     expect_json(
         connect(&state, &member, grant, GITHUB_REPOSITORY_ID).await,
         StatusCode::OK,
@@ -245,8 +238,6 @@ async fn setup_offers_only_repositories_the_github_user_can_push() {
     let refused = setup(&state, &bearer_header(), &setup_state, "stolen-code").await;
     assert_eq!(refused.status(), StatusCode::FORBIDDEN);
 
-    // A second installation the user can push through, and a repository the
-    // first installation reaches that this user can only read.
     fake.user_installations.lock().unwrap().push(8);
     fake.user_repositories.lock().unwrap().extend([
         (
@@ -273,7 +264,6 @@ async fn setup_offers_only_repositories_the_github_user_can_push() {
     assert_eq!(offered, ["octo/checks", "other/pushable"]);
     let grant = body["grant"].as_str().unwrap();
 
-    // The installation reaches it, but this GitHub user cannot push it.
     let read_only = connect(&state, &bearer_header(), grant, 43).await;
     assert_eq!(read_only.status(), StatusCode::FORBIDDEN);
     assert_eq!(
@@ -285,7 +275,6 @@ async fn setup_offers_only_repositories_the_github_user_can_push() {
         serde_json::Value::Null
     );
 
-    // Each granted repository connects through its own installation.
     expect_json(
         connect(&state, &bearer_header(), grant, 44).await,
         StatusCode::OK,
@@ -350,7 +339,6 @@ async fn non_maintainers_cannot_start_or_finish_a_connection() {
         assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {uri}");
     }
 
-    // A member removed after setup cannot use the grant they were given.
     let member = add_member(&state).await;
     let setup_state = setup_state(&state, &member).await;
     let body = expect_json(
@@ -387,10 +375,8 @@ async fn only_repositories_the_user_and_installation_reach_can_connect() {
         .push((INSTALLATION_ID, user_repository(43, "octo/elsewhere", true)));
     let grant = grant(&state).await;
 
-    // Shown to the user, but no longer reachable by the installation.
     let response = connect(&state, &bearer_header(), &grant, 43).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    // Reachable by the installation, but never shown to this GitHub user.
     fake.installation_repositories
         .lock()
         .unwrap()
@@ -480,7 +466,6 @@ async fn a_public_github_repository_connects_only_with_a_confirmation_from_who_m
         }
     };
 
-    // A member who cannot change file visibility may not, even confirming.
     let member = add_member(&state).await;
     let setup_state = setup_state(&state, &member).await;
     let member_grant = expect_json(
@@ -494,7 +479,6 @@ async fn a_public_github_repository_connects_only_with_a_confirmation_from_who_m
     let refused = connect_public(member, member_grant, true).await;
     assert_eq!(refused.status(), StatusCode::FORBIDDEN);
 
-    // The owner must confirm that everything pushed there becomes public.
     let grant = grant(&state).await;
     let unconfirmed = connect_public(bearer_header(), grant.clone(), false).await;
     assert_eq!(
@@ -623,7 +607,6 @@ async fn webhooks_disconnect_links_github_confirms_are_gone() {
     let grant = grant(&state).await;
     let installation = serde_json::json!({ "id": INSTALLATION_ID });
 
-    // A delivery that is not signed with the webhook secret changes nothing.
     expect_json(
         connect(&state, &bearer_header(), &grant, GITHUB_REPOSITORY_ID).await,
         StatusCode::OK,
@@ -685,7 +668,6 @@ async fn webhooks_disconnect_links_github_confirms_are_gone() {
             StatusCode::OK,
         )
         .await;
-        // GitHub has taken the repository away by the time the event arrives.
         match take_away {
             Some(installation_state) => {
                 fake.installation_states
@@ -719,9 +701,6 @@ async fn a_stale_delivery_leaves_a_link_github_still_allows() {
     )
     .await;
     let installation = serde_json::json!({ "id": INSTALLATION_ID });
-    // Access was restored and the link reconnected before these old
-    // deliveries were retried. GitHub reports the installation active and the
-    // repository reachable, so none of them disconnects the link.
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
     for (event, body) in [
         (
@@ -756,8 +735,6 @@ async fn a_stale_delivery_leaves_a_link_github_still_allows() {
 async fn connect_sees_access_revoked_before_it_stores_the_link() {
     let (state, fake) = github_state().await;
     let grant = grant(&state).await;
-    // The first listing confirms the repository; GitHub removes it before
-    // the check made under the installation lock.
     *fake.revoke_at_listing.lock().unwrap() = Some(2);
     let response = connect(&state, &bearer_header(), &grant, GITHUB_REPOSITORY_ID).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);

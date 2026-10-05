@@ -1,4 +1,3 @@
-/// Use the same commit abbreviation throughout human command output.
 pub(crate) fn short_oid(oid: &str) -> &str {
     oid.get(..7).unwrap_or(oid)
 }

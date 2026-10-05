@@ -1,11 +1,3 @@
-//! Pushes and deletions of Scope's branches on GitHub, run by a leased
-//! background loop. A branch has one push waiting at a time: queueing a new
-//! one drops the older ones that are not running, and a branch is never
-//! pushed by two processes at once, so a slow older push cannot land after a
-//! newer one. A branch's jobs are ordered by a sequence that only grows, and
-//! every job names the GitHub repository it goes to, so deletions outlive
-//! the Scope repository that queued them.
-
 use super::{
     RequestStore, acquire_aggregate_lock,
     integer_columns::{i32_to_u32, i64_to_u64, u64_to_i64},
@@ -20,7 +12,6 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Tran
 const SELECT_PUSH: &str = "id, repo_id, request_id, target_oid, installation_id, \
     github_repository_id, github_full_name, state, attempts, last_error, updated_at_unix";
 
-/// A later job of the same branch than `push`.
 const LATER_JOB: &str = "later.repo_id = push.repo_id AND later.ref = push.ref \
     AND later.sequence > push.sequence";
 
@@ -39,34 +30,23 @@ struct PushRow {
     updated_at_unix: i64,
 }
 
-/// How a claimed push ended.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubPushOutcome {
     Succeeded,
-    /// Tried again at `retry_at_unix`, or given up when it is `None`.
     Failed {
         error: String,
         retry_at_unix: Option<u64>,
     },
 }
 
-/// Whether a claimed push may still run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GitHubPushStanding {
-    /// The claim holds and no later push of the branch was queued.
     Current,
-    /// The claim holds, but a later push of the branch replaces this one.
     Superseded,
-    /// The lease ran out, another process took the push over, or it already
-    /// ended.
     Lost,
 }
 
 impl RequestStore {
-    /// Whether the push held by `claim_token` may still run. Asked right
-    /// before pushing, so a push whose lease ran out while it waited, or
-    /// whose branch was queued for a newer commit, sends nothing. The lease
-    /// is judged by the database's clock, which every process shares.
     pub async fn github_push_standing(
         &self,
         id: &str,
@@ -102,7 +82,6 @@ impl RequestStore {
         )
     }
 
-    /// Removes a claimed push a later push of its branch replaces.
     pub async fn drop_superseded_github_push(
         &self,
         id: &str,
@@ -123,7 +102,6 @@ impl RequestStore {
         Ok(())
     }
 
-    /// Claims pushes that are due, or whose last claim lapsed, for `claim_token`.
     pub async fn claim_due_github_pushes(
         &self,
         claim_token: &str,
@@ -182,9 +160,6 @@ impl RequestStore {
         .collect()
     }
 
-    /// Records how a claimed push ended. Returns `None` when the claim was lost.
-    /// A finished push of the setup branch also answers the connection test
-    /// that is waiting on it, in the same transaction.
     pub async fn finish_github_push(
         &self,
         id: &str,
@@ -261,7 +236,6 @@ impl RequestStore {
         Ok(Some(push))
     }
 
-    /// The push queued last for the request's branch.
     pub async fn latest_github_push(
         &self,
         request_id: &str,
@@ -284,9 +258,6 @@ impl RequestStore {
     }
 }
 
-/// Queues a push of `target_oid` to the branch in `destination`, or its
-/// deletion when `None`, replacing every push of the branch that is not
-/// running. Returns the job's id.
 pub(super) async fn queue_github_push<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
@@ -302,8 +273,6 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
     };
     acquire_aggregate_lock(conn, "github-push", &format!("{repo_id}:{git_ref}")).await?;
     let now = u64_to_i64(now_unix, "GitHub push time")?;
-    // Taken before older jobs are dropped, so the new job follows every job
-    // the branch ever had while the lock is held.
     let sequence = conn
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -360,8 +329,6 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
     .map_err(PostgresError::internal)
 }
 
-/// A request that merged, closed or was deleted gives up its GitHub branch,
-/// if Scope ever pushed one.
 pub(super) async fn queue_github_branch_deletion<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
@@ -377,8 +344,6 @@ pub(super) async fn queue_github_branch_deletion<C: ConnectionTrait>(
     .await
 }
 
-/// Deletes the branch from the GitHub repository it was last pushed to, if
-/// Scope ever pushed it.
 pub(super) async fn queue_pushed_branch_deletion<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
@@ -406,8 +371,6 @@ pub(super) async fn queue_pushed_branch_deletion<C: ConnectionTrait>(
     Ok(())
 }
 
-/// A repository about to be deleted gives up every branch it pushed whose
-/// last job is not already its deletion. The jobs outlive the repository.
 pub(super) async fn queue_github_branch_deletions_for_repository<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

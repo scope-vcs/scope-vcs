@@ -18,8 +18,6 @@ export function RequestSnoozeMenu({
   const id = useId()
   const trigger = useRef<HTMLButtonElement>(null)
   const menu = useRef<HTMLDivElement>(null)
-  // The moment the menu opened; null while closed and on the server, so the
-  // landing times never render into markup the browser has to reconcile.
   const [openedAt, setOpenedAt] = useState<Date | null>(null)
 
   useEffect(() => {
@@ -85,7 +83,6 @@ export function RequestSnoozeMenu({
             key={option.value}
             onClick={() => {
               if (!openedAt) return
-              // Same reference moment as the label, so what was shown is what lands.
               const until = requestSnoozeUntil(option.value, openedAt)
               menu.current?.hidePopover()
               onSnooze(until)

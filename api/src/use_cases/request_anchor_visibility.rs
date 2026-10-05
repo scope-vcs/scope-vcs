@@ -1,9 +1,3 @@
-//! Owns one rule: which commits referenced by discussion anchors a viewer may
-//! see. A viewer who cannot read private files only sees an anchored commit
-//! when every change in that commit is readable by them, so an anchor can never
-//! leak the existence of a private path. Inspection failures are fail-closed:
-//! the anchor's commit context is redacted and the failure is logged.
-
 use crate::{
     error::ApiError,
     git::request_refs::with_request_revision_store_repo,
@@ -22,8 +16,6 @@ use scope_domain::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Returns the `(revision_id, commit_oid)` pairs the viewer may see for the
-/// given anchors.
 pub(crate) async fn visible_commits<'a>(
     state: &AppState,
     repo: &RepositoryAccessContext,

@@ -1,6 +1,3 @@
-//! Workflow files carried by the seeded demo repository. They exist as real files on main
-//! so the runs workflow filter is populated the same way it is for a genuine repository.
-
 pub(super) const PUBLIC_DEMO_CHECKS_WORKFLOW: &str = r#"name: Checks
 on:
   manual: true

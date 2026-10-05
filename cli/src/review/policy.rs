@@ -16,7 +16,6 @@ pub fn toggle_node_visibility(
 
 pub fn tree_visibilities(config: &RepoConfig, tree: &ReviewTree) -> Vec<ReviewVisibility> {
     let mut visibilities = vec![ReviewVisibility::Mixed; tree.nodes().len()];
-    // Nodes are inserted after their parents, so every child summary is ready.
     for node in tree.nodes().iter().rev() {
         let children = if node.kind == ReviewNodeKind::File {
             &[][..]

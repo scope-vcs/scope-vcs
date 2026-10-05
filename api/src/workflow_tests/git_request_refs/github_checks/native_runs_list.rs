@@ -1,12 +1,9 @@
-//! GitHub-linked repositories and the native runs list.
-
 use super::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_repository_linked_to_github_runs_github_checks_whatever_the_native_runs_list_says() {
     let request = owner_request("github-checks-unlisted-owner", &[REQUIRED_CHECK]).await;
     let state = &request.state;
-    // Losing native runs leaves GitHub checks alone.
     state
         .metadata
         .native_runs()

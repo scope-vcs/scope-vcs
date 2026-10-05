@@ -435,8 +435,6 @@ async fn startup_cleanup_preserves_verified_packs_and_eviction_respects_their_le
     drop(retained);
     drop(restarted);
 
-    // A same-length corrupt retained file must be repaired from the durable
-    // copy after restart, and its old index must not survive the replacement.
     tokio::fs::write(&pack_path, vec![0; staged.segment.plaintext_bytes as usize])
         .await
         .unwrap();

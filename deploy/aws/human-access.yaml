@@ -7,8 +7,6 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       UserName: scope-operator
-      # The account owner enables console access in IAM and chooses the password.
-      # No password, login profile, access key or MFA seed is stored in this template.
       Policies:
         - PolicyName: enroll-mfa-and-assume-audit
           PolicyDocument:

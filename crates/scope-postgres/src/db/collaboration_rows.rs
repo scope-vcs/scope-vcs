@@ -1,7 +1,3 @@
-//! Rows for a repository's members, invites and invite links, and the
-//! focused load and save that collaboration changes use in place of the whole
-//! repository. None of it reads or writes history, pack spans or projections.
-
 use super::{acquire_aggregate_lock, entities, repository_access::load_repo_record};
 use crate::error::PostgresError;
 use scope_domain::repository::collaboration::{
@@ -13,8 +9,6 @@ use sea_orm::{
 };
 use std::collections::BTreeMap;
 
-/// Takes the repository lock and loads what collaboration rules need. `None`
-/// when the repository does not exist.
 pub(super) async fn lock_collaboration_state(
     tx: &DatabaseTransaction,
     repo_id: &str,
@@ -40,8 +34,6 @@ where
     }))
 }
 
-/// Saves a collaboration change made under the repository lock: the member,
-/// invite and link rows that differ, and the new change version.
 pub(super) async fn save_collaboration_state<C>(
     conn: &C,
     before: &CollaborationState,
@@ -93,7 +85,6 @@ where
     Ok(())
 }
 
-/// Members and invites, with each invite's link hashes.
 pub(super) async fn load_repository_collaboration<C>(
     conn: &C,
     repo_id: &str,
@@ -247,15 +238,12 @@ where
         if *old == invite {
             continue;
         }
-        // Update in place. Deleting the row would cascade to the invite's
-        // emails, which live outside the repository aggregate.
         entities::repository_invite::Model::from_domain(invite)?
             .into_active_model()
             .reset_all()
             .update(conn)
             .await
             .map_err(PostgresError::internal)?;
-        // Links are only ever added.
         let new_links = invite
             .link_hashes
             .iter()

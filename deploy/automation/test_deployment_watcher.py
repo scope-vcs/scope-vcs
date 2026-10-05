@@ -28,7 +28,6 @@ class WatcherTests(unittest.TestCase):
         self.root = Path(self.directory.name)
         self.client = MagicMock()
         self.projects = [{"id": watcher.PROJECT_ID, "workspaceRoot": str(watcher.CHECKOUT)}]
-        # Every created agent thread reports this shell summary.
         self.agent = {"status": "running", "activeRunId": "run-1", "updatedAt": NOW, "pendingRuntimeRequest": None}
         self.client.shell.side_effect = self.shell
         self.t3 = MagicMock()

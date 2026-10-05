@@ -64,14 +64,11 @@ export function useCachedResource<T extends object>({
   }
 }
 
-// A resource with a failed refresh can retain a valid cached value. Retry that
-// error too when the browser can read again.
 export function useRetryOnReconnect(
   { error, retry }: Pick<CachedResource<object>, 'error' | 'retry'>,
 ) {
   useEffect(() => {
     if (error === null) return
-    // focus and online often arrive together; one retry per failure is enough.
     let retried = false
     const onReconnect = () => {
       if (retried) return

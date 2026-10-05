@@ -10,13 +10,11 @@ import {
   apiFetch, apiUrl, cliActor, closeSession, collaborators, devSessionToken, provisionClerkUsers, signIn, signInThroughForm,
 } from './actors.mjs'
 
-// A per-run identifier, so a retry cannot pass on an earlier run's requests.
 const runId = `${Date.now().toString(36)}-${process.pid}`
 const repoPath = '/dev/update-demo'
 const requestApi = (id) => `/v1/repos${repoPath}/requests/${id}`
 let browser, workspace
-// Finished requests the narrow-screen pass revisits.
-const requests = {}
+const finishedRequests = {}
 const cli = {}
 const web = {}
 
@@ -36,18 +34,10 @@ before(async () => {
   browser = await chromium.launch({ headless: true })
   for (const [role, collaborator] of Object.entries(collaborators)) {
     web[role] = await signIn(browser, collaborator)
-    // A cold Vite dev server takes most of a minute to compile and hydrate the
-    // first request page; warm it so the journey's own waits stay short.
-    await openRequest(web[role].page, 'req_demo_ready')
-    await web[role].page.waitForFunction(() => {
-      const start = [...document.querySelectorAll('button')].find((button) => button.textContent.startsWith('Start a discussion'))
-      return start && Object.keys(start).some((key) => key.startsWith('__reactProps$'))
-    }, null, { timeout: 120_000 })
+    await warmColdDevServer(web[role].page)
   }
 })
 
-// Screenshots and accessibility snapshots only: traces would record session
-// cookies and tokens.
 afterEach(async (t) => {
   if (t.passed) return
   const failures = join('.tmp/journey', t.name.replace(/\W+/g, '-'))
@@ -77,18 +67,24 @@ async function submitRequest(name, path, content) {
   return { id: started.request.id, head: pushed.request.head_oid }
 }
 
+async function warmColdDevServer(page) {
+  await openRequest(page, 'req_demo_ready')
+  await page.waitForFunction(() => {
+    const start = [...document.querySelectorAll('button')].find((button) => button.textContent.startsWith('Start a discussion'))
+    return start && Object.keys(start).some((key) => key.startsWith('__reactProps$'))
+  }, null, { timeout: 120_000 })
+}
+
 function openRequest(page, id) {
   return page.goto(`${baseUrl}${repoPath}/requests/${id}`)
 }
 
-// Server-rendered controls ignore clicks until React hydrates them.
-async function click(locator) {
+async function clickAfterHydration(locator) {
   await waitForClientHydration(locator)
   await locator.click()
 }
 
-// The request header's lifecycle badge.
-function state(page, label) {
+function waitForLifecycleBadge(page, label) {
   return page.locator('.request-detail-pane').getByText(label, { exact: true }).filter({ visible: true }).waitFor()
 }
 
@@ -97,7 +93,6 @@ async function syncMain(actor) {
   await actor.scope('pull')
 }
 
-// Holds the page's live updates so it keeps what it loaded.
 function holdLiveUpdates(page) {
   return page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
 }
@@ -110,18 +105,18 @@ test('a CLI contribution is discussed and merged in the browser', async () => {
   const path = `journey-${runId}.txt`
   const name = `journey-${runId}`
   const { id, head } = await submitRequest(name, path, 'contributed from the CLI\n')
-  requests.merged = id
+  finishedRequests.merged = id
   const { maintainer, contributor } = web
 
   await maintainer.page.goto(`${baseUrl}${repoPath}/requests`)
   const search = maintainer.page.getByRole('searchbox', { name: 'Search requests' })
   await waitForClientHydration(search)
   await search.fill(name)
-  await click(maintainer.page.getByRole('link', { name: new RegExp(`^${name} `) }))
+  await clickAfterHydration(maintainer.page.getByRole('link', { name: new RegExp(`^${name} `) }))
   await maintainer.page.waitForURL(`**${repoPath}/requests/${id}`)
 
   const question = `Why this file? (${runId})`
-  await click(maintainer.page.getByRole('button', { name: /^Start a discussion/ }))
+  await clickAfterHydration(maintainer.page.getByRole('button', { name: /^Start a discussion/ }))
   await maintainer.page.getByRole('textbox', { name: 'Start a new discussion' }).fill(question)
   await maintainer.page.getByRole('button', { name: 'Start discussion' }).click()
   await thread(maintainer.page, question).getByText(collaborators.maintainer.handle).waitFor()
@@ -129,7 +124,7 @@ test('a CLI contribution is discussed and merged in the browser', async () => {
   const answer = `It exercises the journey. (${runId})`
   await openRequest(contributor.page, id)
   const contributorThread = thread(contributor.page, question)
-  await click(contributorThread.getByRole('button', { name: 'Reply' }))
+  await clickAfterHydration(contributorThread.getByRole('button', { name: 'Reply' }))
   await contributorThread.getByRole('textbox', { name: 'Reply' }).fill(answer)
   await contributorThread.getByRole('button', { name: 'Reply', exact: true }).last().click()
   await thread(contributor.page, answer).getByText(collaborators.contributor.handle).first().waitFor()
@@ -140,9 +135,9 @@ test('a CLI contribution is discussed and merged in the browser', async () => {
     .getByRole('link', { name: new RegExp(`latest .* ${head.slice(0, 12)}$`) }).click()
   await maintainer.page.getByText(path).first().waitFor()
   await maintainer.page.goBack()
-  await click(maintainer.page.getByRole('button', { name: 'Merge', exact: true }))
+  await clickAfterHydration(maintainer.page.getByRole('button', { name: 'Merge', exact: true }))
   await maintainer.page.getByRole('button', { name: 'Merge request' }).click()
-  await state(maintainer.page, 'Merged')
+  await waitForLifecycleBadge(maintainer.page, 'Merged')
 
   const { request } = await apiFetch(cli.maintainer.token, requestApi(id))
   assert.equal(request.state, 'Merged')
@@ -164,18 +159,16 @@ test('a CLI contribution is discussed and merged in the browser', async () => {
   assert.equal(existsSync(join(cli.contributor.repo, 'internal/notes.md')), false)
 })
 
-// Runs before the checks case: once main requires checks, the page offers no merge.
 test('a merge of a head that moved is refused and the page shows the new head', async () => {
   const name = `journey-stale-${runId}`
   const { id, head } = await submitRequest(name, `${name}.txt`, 'first revision\n')
   const { page } = web.maintainer
   await openRequest(page, id)
   const merge = page.getByRole('button', { name: 'Merge', exact: true })
-  await click(merge)
+  await clickAfterHydration(merge)
   const dialog = page.getByRole('alertdialog')
   await dialog.getByText(`${head.slice(0, 12)} → main`).waitFor()
 
-  // A live refresh may reach the page now; the open dialog keeps the head it showed.
   await writeFile(join(cli.contributor.repo, `${name}.txt`), 'second revision\n')
   await cli.contributor.commit('Revise while the maintainer reviews')
   const { request: { head_oid: newHead } } = await cli.contributor.scope('request', 'push')
@@ -212,7 +205,7 @@ jobs:
 
   const name = `journey-checks-${runId}`
   const { id } = await submitRequest(name, `${name}.txt`, 'needs checks\n')
-  requests.closed = id
+  finishedRequests.closed = id
   const { maintainer, contributor } = web
 
   await openRequest(contributor.page, id)
@@ -220,9 +213,9 @@ jobs:
   assert.equal(await contributor.page.getByRole('button', { name: 'Approve checks' }).count(), 0)
 
   await openRequest(maintainer.page, id)
-  await click(maintainer.page.getByRole('button', { name: 'Approve checks' }))
+  await clickAfterHydration(maintainer.page.getByRole('button', { name: 'Approve checks' }))
   await maintainer.page.getByRole('region', { name: 'Checks' }).getByRole('link', { name: 'queued' }).waitFor()
-  await state(maintainer.page, 'Checks running')
+  await waitForLifecycleBadge(maintainer.page, 'Checks running')
   assert.equal(await maintainer.page.getByRole('button', { name: 'Merge', exact: true, disabled: false }).count(), 0)
   const checks = await apiFetch(maintainerCli.token, `${requestApi(id)}/checks`)
   assert.equal(checks.state, 'started')
@@ -231,7 +224,7 @@ jobs:
   await maintainer.page.getByRole('button', { name: 'More request actions' }).click()
   await maintainer.page.getByRole('button', { name: 'Close request' }).click()
   await maintainer.page.getByRole('alertdialog').getByRole('button', { name: 'Close request' }).click()
-  await state(maintainer.page, 'Closed')
+  await waitForLifecycleBadge(maintainer.page, 'Closed')
   const { request } = await apiFetch(maintainerCli.token, requestApi(id))
   assert.equal(request.state, 'Closed')
 })
@@ -248,7 +241,6 @@ test('review controls and completion states fit a narrow screen', async () => {
   const context = await browser.newContext({ storageState: await web.maintainer.context.storageState(), viewport })
   const page = await context.newPage()
   await openRequest(page, id)
-  // Merge is disabled or offered as auto-merge while checks await approval.
   for (const control of [
     page.getByRole('button', { name: 'Approve checks' }),
     page.getByRole('button', { name: /^Merge/ }).first(),
@@ -261,19 +253,17 @@ test('review controls and completion states fit a narrow screen', async () => {
     )
   }
   await assertNoHorizontalOverflow(page)
-  for (const [label, requestId] of [['Merged', requests.merged], ['Closed', requests.closed]]) {
+  for (const [label, requestId] of [['Merged', finishedRequests.merged], ['Closed', finishedRequests.closed]]) {
     await openRequest(page, requestId)
-    await state(page, label)
+    await waitForLifecycleBadge(page, label)
     await assertNoHorizontalOverflow(page)
   }
   await context.close()
 })
 
-// Runs last: it removes the seeded maintainer from dev/update-demo.
 test('a revoked maintainer cannot approve checks from an open page', async () => {
   const { id } = await submitRequest(`journey-revoked-${runId}`, `journey-revoked-${runId}.txt`, 'revoked\n')
   const { page } = web.maintainer
-  // The page keeps its pre-revocation controls.
   await holdLiveUpdates(page)
   await openRequest(page, id)
   const approve = page.getByRole('button', { name: 'Approve checks' })
@@ -282,7 +272,6 @@ test('a revoked maintainer cannot approve checks from an open page', async () =>
   const owner = await devSessionToken('dev')
   const revoked = await fetch(`${apiUrl}/v1/repos${repoPath}/members/scope_usr_dev_maintainer`, {
     method: 'DELETE',
-    // CLI sessions must declare the CLI protocol for mutations.
     headers: { authorization: `Bearer ${owner}`, 'x-scope-cli-protocol': '1' },
   })
   assert.equal(revoked.ok, true, `member removal returned ${revoked.status}`)

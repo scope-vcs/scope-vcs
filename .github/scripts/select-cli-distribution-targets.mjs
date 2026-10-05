@@ -3,8 +3,6 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-// Pull requests verify the native cargo targets on Blacksmith runners. The full
-// matrix, including GitHub-hosted macOS Intel and Windows ARM64, runs on release.
 const PULL_REQUEST_TARGETS = new Set([
   "x86_64-unknown-linux-gnu",
   "aarch64-apple-darwin",

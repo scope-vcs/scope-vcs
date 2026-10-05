@@ -7,18 +7,15 @@ trap 'rm -rf "$test_dir"' EXIT
 mkdir -p "$test_dir/bin" "$test_dir/api"
 cat > "$test_dir/bin/sleep" <<'FAKE'
 #!/usr/bin/env bash
-# Provider polling is state-driven in this fixture; elapsed wall time adds no coverage.
 exit 0
 FAKE
 chmod +x "$test_dir/bin/sleep"
-# Source uploads (run_direct_deploy below) prove their revision through this marker.
 printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$test_dir/api/.scope-deployment-sha"
 
 cat > "$test_dir/services.json" <<'JSON'
 {"railway":{"projectId":"11111111-1111-4111-8111-111111111111","maintenanceServiceId":"33333333-3333-4333-8333-333333333333"},"environments":{"production":{"environmentId":"22222222-2222-4222-8222-222222222222"},"staging":{"environmentId":"44444444-4444-4444-8444-444444444444"}},"releasePolicy":{"maintenanceEnabled":true,"writerDrainTimeoutSeconds":120,"migrationLockTimeoutSeconds":120,"migrationStatementTimeoutSeconds":3600},"services":{"api":{"id":"scope-api","deployment":{"runtimeConfig":"api/railway.json","verifyTransitionConfig":true}},"run-worker":{"id":"scope-worker","deployment":{"runtimeConfig":"worker/railway.json","verifyTransitionConfig":true}},"cache":{"id":"scope-cache-service","deployment":{"runtimeConfig":"cache-service/railway.json","verifyTransitionConfig":true}},"git-router":{"id":"scope-repo-router","deployment":{"runtimeConfig":"repo-router/railway.json","verifyTransitionConfig":true}},"media-api":{"id":"scope-media","deployment":{"runtimeConfig":"media-service/railway.json","verifyTransitionConfig":true}},"media-worker":{"id":"scope-media-worker","deployment":{"runtimeConfig":"media-worker/railway.json","verifyTransitionConfig":true}},"web":{"id":"scope-web","deployment":{"runtimeConfig":"web/railway.json","verifyTransitionConfig":true}}}}
 JSON
 
-# Persist the real journal API requests in fake remote storage across runner invocations.
 cat > "$test_dir/github-fetch.cjs" <<'FAKE'
 const fs = require("node:fs");
 const original = global.fetch;
@@ -140,8 +137,6 @@ chmod +x "$test_dir/maintenance"
 
 source "$root/.github/scripts/backend-cutover-test-provider.sh"
 
-# Scenarios vary the fake provider and maintenance tool through FAKE_* and
-# SCOPE_DEPLOY_* variables; everything else keeps the ordinary-release default.
 run_cutover() {
   local name="$1"
   local fail_apply="${FAKE_FAIL_APPLY:-0}" initial_exact="${FAKE_INITIAL_EXACT:-0}"
@@ -904,18 +899,15 @@ if (evidence.component !== "api" || evidence.sourceSha !== "aaaaaaaaaaaaaaaaaaaa
     evidence.provider !== "railway" || evidence.evidenceId !== "new-scope-api") process.exit(1);
 '
 
-# A healthy old service is not proof that Railway deployed the requested source revision.
 set +e
 run_direct_deploy
 skipped_result=$?
 set -e
 [[ "$skipped_result" != "0" ]]
 
-# Exact durable identity plus current health makes an identical deployment idempotent.
 run_direct_deploy aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "$direct_evidence"
 [[ "$(wc -l < "$direct_evidence")" == "1" ]]
 
-# Historical identity must not carry a deployment whose live service has crashed.
 touch "$direct_state/crashed-scope-api"
 set +e
 run_direct_deploy aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

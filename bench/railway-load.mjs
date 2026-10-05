@@ -21,7 +21,6 @@ import {
   writeChangedFiles, writeChunkedRandomPayload, writeLandingFile, writeSeedPayload,
 } from './write-shape.mjs';
 
-// Black-box benchmark: no production-only hooks and never a production target.
 const activeCommands = new Set();
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main();

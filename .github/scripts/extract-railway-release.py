@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Extract compiled release data without trusting archive paths or file types."""
 
 import os
 import json
@@ -72,8 +71,6 @@ def extract_release(kind, archive, destination):
         entries = []
         paths = set()
         regular_files = set()
-        # Validate all entries first. A malicious late entry cannot leave an
-        # earlier credential link or executable behind for the publishing step.
         for member in release:
             if not (member.isfile() or member.isdir()) or member.issparse():
                 raise ValueError(f'Archive links and special files are forbidden: {member.name!r}')

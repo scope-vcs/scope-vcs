@@ -70,8 +70,6 @@ pub(super) fn checkout_request(
             }),
         ).into()
     };
-    // Record identity before creating a branch so any later failure can be retried
-    // without mistaking the partially configured branch for an unrelated branch.
     store_request_metadata(git_repo, &branch, &context, &detail.request)
         .map_err(|error| recovery("save_local_metadata", error))?;
     switch_request_branch(git_repo, &branch, &fetched, exists)
@@ -266,8 +264,6 @@ pub(super) fn request_checks(
     let (context, request_id) =
         load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
     let target = api_target(&context, &request_id);
-    // Approval answers with the refreshed evaluation, so one call reports both.
-    // It names a head, and the server refuses a newer one.
     let checks = if args.approve {
         let head = match args.head {
             Some(head) => head,

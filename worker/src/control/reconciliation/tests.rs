@@ -50,7 +50,6 @@ async fn ambiguous_cleanup_does_not_block_new_dispatch_or_cancellation_batches()
         assert_eq!(provider.count("stop"), round + 1);
         assert_eq!(phases.cleanup.0.len(), 1);
     }
-    // Repeated control polls do not create duplicate cleanup work.
     for _ in 0..100 {
         phases
             .cleanup

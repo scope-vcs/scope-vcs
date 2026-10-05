@@ -47,7 +47,6 @@ fn connection() -> GitHubConnection {
     .unwrap()
 }
 
-/// A test whose push job is `push_1`, as the store queues it.
 fn started() -> GitHubSetupCheck {
     started_at(NOW)
 }
@@ -60,8 +59,6 @@ fn started_at(now: u64) -> GitHubSetupCheck {
     }
 }
 
-/// The test's push reached GitHub, which listed `baseline` on the setup
-/// branch right before it.
 fn pushed(mut check: GitHubSetupCheck, baseline: Vec<u64>, now: u64) -> GitHubSetupCheck {
     assert!(check.record_baseline("push_1", baseline));
     check.record_push("push_1", Ok(()), now);
@@ -141,7 +138,6 @@ fn a_maintainer_tests_main_of_a_connected_repository_one_test_at_a_time() {
         );
     }
 
-    // A finished test can be run again.
     let mut finished = check.clone();
     finished.record_push("push_1", Err("refused"), NOW + 1);
     assert!(
@@ -155,8 +151,6 @@ fn a_maintainer_tests_main_of_a_connected_repository_one_test_at_a_time() {
         .is_ok()
     );
 
-    // A test still running for the repository Scope was connected to before
-    // does not hold up one of the repository connected now.
     let mut reconnected = connection();
     reconnected.github_repository_id = 43;
     let fresh = start_github_setup_check(
@@ -173,7 +167,6 @@ fn a_maintainer_tests_main_of_a_connected_repository_one_test_at_a_time() {
 #[test]
 fn a_refused_push_ends_the_test_with_what_github_answered() {
     let mut check = started();
-    // A push of an earlier test of the same commit says nothing about this one.
     check.record_push("push_0", Err("refused earlier"), NOW + 4);
     assert_eq!(check.state, GitHubSetupCheckState::Pushing);
 
@@ -188,7 +181,6 @@ fn a_refused_push_ends_the_test_with_what_github_answered() {
         check.message(false).as_deref(),
         Some("GitHub refused the push: rule violations")
     );
-    // A late success for the same push changes nothing.
     check.record_push("push_1", Ok(()), NOW + 6);
     assert_eq!(check.state, GitHubSetupCheckState::Failed);
 }
@@ -197,12 +189,10 @@ fn a_refused_push_ends_the_test_with_what_github_answered() {
 fn the_test_ends_once_every_run_on_the_setup_branch_completed() {
     let check = started();
     let oid = main_oid();
-    // Nothing counts before GitHub's baseline is known.
     assert!(!check.started(&run(5, "scope/setup-check", &oid, None)));
     let mut check = pushed(check, Vec::new(), NOW + 1);
     assert_eq!(check.state, GitHubSetupCheckState::Waiting);
 
-    // Runs on other branches or commits, such as main's own push, do not count.
     let elsewhere = [
         run(1, "main", &oid, Some(GitHubCheckConclusion::Success)),
         run(
@@ -227,7 +217,6 @@ fn the_test_ends_once_every_run_on_the_setup_branch_completed() {
     ));
     assert_eq!(check.state, GitHubSetupCheckState::Finished);
     assert_eq!(check.finished_at_unix, Some(NOW + 20));
-    // A failing workflow still started, which is all the test asks.
     assert_eq!(check.message(true), None);
 }
 
@@ -243,8 +232,6 @@ fn testing_unchanged_main_again_ignores_the_runs_github_listed_before_its_push()
     let mut earlier = pushed(started(), Vec::new(), NOW + 1);
     assert!(earlier.observe(std::slice::from_ref(&earlier_run), NOW + 20));
 
-    // The same main goes to the same branch again, in the same second even;
-    // GitHub still lists the earlier test's completed run there.
     let again = start_github_setup_check(
         owner(),
         Some(&connection()),
@@ -283,7 +270,6 @@ fn only_the_tests_own_push_records_the_baseline() {
     assert_eq!(check.baseline_run_ids, None);
     assert!(check.record_baseline("push_1", vec![1]));
     check.record_push("push_1", Ok(()), NOW + 1);
-    // Once the push landed, the baseline is settled.
     assert!(!check.record_baseline("push_1", vec![1, 2]));
     assert_eq!(check.baseline_run_ids, Some(vec![1]));
 }
@@ -308,7 +294,6 @@ fn a_test_without_runs_stops_waiting_and_says_to_add_the_trigger() {
         check.message(false).as_deref(),
         Some(NO_GITHUB_WORKFLOWS_STARTED)
     );
-    // A finished test stays finished.
     assert!(!check.observe(&[], timeout + 60));
 
     let mut stuck = started_at(NOW);

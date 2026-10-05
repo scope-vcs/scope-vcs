@@ -13,8 +13,6 @@ const REPO_ID: &str = "workflow-owner/repo";
 const HEAD_OID: &str = "1111111111111111111111111111111111111111";
 const BLOB_OID: &str = "2222222222222222222222222222222222222222";
 
-/// The baseline schema predates content versions, so tests at the baseline
-/// omit that column.
 async fn insert_repository(db: &DatabaseConnection, with_content_version: bool) {
     let (column, value) = if with_content_version {
         (", content_version", ", 7")

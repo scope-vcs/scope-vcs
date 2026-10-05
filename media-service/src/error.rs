@@ -2,14 +2,10 @@ use scope_media_storage::{MediaStorageError, MediaStorageErrorKind};
 use scope_postgres::error::{PostgresError, PostgresErrorKind};
 use scope_service_runtime::http::ServiceError;
 
-/// The gateway never confirms which attachments exist: every unreachable
-/// object, whatever the reason, reads the same to a caller.
 pub(crate) fn media_not_found() -> ServiceError {
     ServiceError::not_found("media object not found")
 }
 
-/// The gateway never confirms which attachments exist: a metadata miss reads
-/// the same as any other unreachable object.
 pub(crate) fn media_metadata_error(error: PostgresError) -> ServiceError {
     if error.kind == PostgresErrorKind::NotFound {
         media_not_found()

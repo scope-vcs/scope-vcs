@@ -22,7 +22,6 @@ const PENDING_DIFF_LINES: {
   { id: 'ninth', length: 'long' },
 ]
 
-/** The diff body while a file diff loads. Every diff view shares this one. */
 export function DiffSkeleton() {
   return (
     <div className="py-3 font-mono">
@@ -42,10 +41,6 @@ export function DiffSkeleton() {
   )
 }
 
-/**
- * ReviewFileDiffDrawer before its file is known: the same header row and body,
- * without importing the drawer and its renderers into a pending state.
- */
 export function DiffDrawerSkeleton() {
   return (
     <div className="h-full min-h-[340px] bg-background">

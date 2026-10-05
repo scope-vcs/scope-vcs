@@ -73,9 +73,6 @@ pub(super) async fn locked_heartbeat_context(
         .map_err(PostgresError::internal)?
         .ok_or_else(|| PostgresError::not_found("run attempt not found"))?;
     let job = locked_job(tx, &target.run_id, &target.job_key).await?;
-    // Cancellation takes the job lock before mutating the parent. Reading the parent only after
-    // acquiring that job lock observes any cancellation that committed while heartbeat waited,
-    // while keeping ordinary runner traffic free of an aggregate-wide parent lock.
     let run = entities::run::Entity::find_by_id(target.run_id.clone())
         .one(tx)
         .await

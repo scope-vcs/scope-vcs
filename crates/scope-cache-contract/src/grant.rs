@@ -1,11 +1,6 @@
 use scope_cache_domain::{CacheDigest, RepositoryId};
 use serde::{Deserialize, Serialize};
 
-/// Claims carried by a signed cache grant.
-///
-/// Token format, signing algorithm, key rotation, and verification are owned by
-/// the service adapter. Keeping them out of the contract prevents wire DTOs from
-/// becoming an authorization implementation.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SignedCacheGrantClaims {
     pub attempt_id: String,
