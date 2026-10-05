@@ -68,18 +68,29 @@ async fn cancellation_stops_a_remote_restore_and_reaps_index_pack() {
         .await
         .expect("index-pack must be waiting on the remote read")
         .unwrap();
-    let process = fs::read_dir("/proc")
-        .unwrap()
-        .filter_map(Result::ok)
-        .find(|entry| {
-            let Ok(command) = fs::read(entry.path().join("cmdline")) else {
-                return false;
-            };
-            let arguments = command.split(|byte| *byte == 0).collect::<Vec<_>>();
-            arguments.contains(&b"index-pack".as_slice())
-                && arguments.contains(&repo.as_os_str().as_encoded_bytes())
-        })
-        .expect("the real Git child must have started");
+    // `spawn` returns once the vforked child commits to exec, before the kernel
+    // publishes Git's argv, so its cmdline can still be empty or the test binary's.
+    let process = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let process = fs::read_dir("/proc")
+                .unwrap()
+                .filter_map(Result::ok)
+                .find(|entry| {
+                    let Ok(command) = fs::read(entry.path().join("cmdline")) else {
+                        return false;
+                    };
+                    let arguments = command.split(|byte| *byte == 0).collect::<Vec<_>>();
+                    arguments.contains(&b"index-pack".as_slice())
+                        && arguments.contains(&repo.as_os_str().as_encoded_bytes())
+                });
+            if let Some(process) = process {
+                return process;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the real Git child must have started");
     cancellation.cancel();
     let error = tokio::time::timeout(Duration::from_secs(5), task)
         .await
