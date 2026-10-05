@@ -19,6 +19,7 @@ import { CliSessionList } from '@/features/account/cli-session-list'
 import {
   cliSessionsIdentity,
   cliSessionsResource,
+  cliSessionsRevocationGeneration,
   retainRevokedCliSession,
 } from '@/features/account/cli-sessions-resource'
 import { DeleteAccountSection } from '@/features/account/delete-account-section'
@@ -61,7 +62,10 @@ const revokeCliSession = createServerFn({ method: 'POST' })
 
 export const Route = createFileRoute('/account')({
   beforeLoad: () => requireAccountAuth(),
-  loader: () => loadCliSessions(),
+  loader: async () => {
+    const revocationGeneration = cliSessionsRevocationGeneration()
+    return { ...await loadCliSessions(), revocationGeneration }
+  },
   pendingComponent: AccountPagePending,
   component: AccountRoute,
 })
@@ -70,19 +74,22 @@ function AccountRoute() {
   const loaded = Route.useLoaderData()
   const { userId } = useAuth()
   const identity = userId == null ? null : cliSessionsIdentity(userId)
+  const loadedSessions = loaded.viewerId === userId &&
+    loaded.revocationGeneration === cliSessionsRevocationGeneration() ? loaded.sessions : null
   const sessionsResource = useCachedResource({
     fallbackError: 'CLI sessions are unavailable.',
     identity,
-    initialValue: loaded.viewerId === userId ? loaded.sessions : null,
+    initialValue: loadedSessions,
     load: loadSessionsForResource,
     resource: cliSessionsResource,
   })
   useEffect(() => {
-    if (loaded.viewerId !== userId || !identity) return
-    cliSessionsResource.write(identity, loaded.sessions)
-  }, [identity, loaded, userId])
+    if (!identity || !loadedSessions ||
+      loaded.revocationGeneration !== cliSessionsRevocationGeneration()) return
+    cliSessionsResource.write(identity, loadedSessions)
+  }, [identity, loaded.revocationGeneration, loadedSessions])
   const sessions = sessionsResource.value?.sessions ??
-    (loaded.viewerId === userId ? loaded.sessions.sessions : [])
+    (loadedSessions?.sessions ?? [])
   const [grant, setGrant] = useState<CliExchangeGrantResponse | null>(null)
   const { pending, run } = usePendingActions()
   const [error, setError] = useState<string | null>(null)

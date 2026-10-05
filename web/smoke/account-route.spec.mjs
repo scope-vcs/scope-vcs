@@ -52,9 +52,20 @@ test('account route shows revalidated CLI sessions while mounted', async (t) => 
   await page.getByRole('button', { name: 'Revoke Second CLI' }).click()
   await page.getByText('Revocation denied').waitFor()
   assert.equal(await page.getByRole('button', { name: 'Revoke Second CLI' }).count(), 1)
-  await page.evaluate(() => { window.failRevoke = false })
+  await page.evaluate(() => {
+    window.failRevoke = false
+    window.startDelayedAccountLoad()
+  })
   await page.getByRole('button', { name: 'Revoke Second CLI' }).click()
   await page.getByRole('button', { name: 'Revoke Second CLI' }).waitFor({ state: 'detached' })
+  await page.evaluate(async () => {
+    window.deliverAccountResponse()
+    await window.delayedAccountLoad
+    // Flush the loader publication effect before checking the rendered list.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  })
+  assert.equal(await page.getByRole('button', { name: 'Revoke Second CLI' }).count(), 0,
+    'a loader response captured before revocation must not restore the revoked session')
   await page.evaluate(() => window.leaveAccount())
   await page.getByText('Other page').waitFor()
   await page.evaluate(() => window.returnAccount())
