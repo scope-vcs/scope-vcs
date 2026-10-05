@@ -172,10 +172,11 @@ jobs:
           SHA: ${{ github.sha }}
           PULL_REQUEST: ${{ needs.pull-request.outputs.number }}
         run: |
+          [[ "$PULL_REQUEST" =~ ^[0-9]+$ ]]
           echo "Pull request #$PULL_REQUEST tests $SHA"
           while :; do
             run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA" \
-              --jq "[.workflow_runs[] | select(.head_repository.full_name == \"$REPOSITORY\")][0] // empty
+              --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $PULL_REQUEST))][0] // empty
                 | \"\\(.html_url) \\(.status) \\(.conclusion)\"")" || run=""
             read -r url status conclusion <<< "$run"
             if [[ "$status" == completed ]]; then
