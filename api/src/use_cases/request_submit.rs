@@ -1,5 +1,6 @@
 use crate::{
-    error::ApiError, operation_analytics::ObservedOperation, persistence::unix_now, state::AppState,
+    error::ApiError, operation_analytics::ObservedOperation, persistence::unix_now,
+    repo_events::RepoChangeReason, state::AppState,
 };
 use scope_domain::{
     repository::access::RepositoryAccessContext,
@@ -32,6 +33,9 @@ pub(crate) async fn submit_request(
             request.audience,
             request_actor_role(repo.access),
         ));
+    state
+        .publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestSubmitted)
+        .await;
     Ok(mutation)
 }
 

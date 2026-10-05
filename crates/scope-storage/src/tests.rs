@@ -348,7 +348,7 @@ async fn cleanup_remote_aborts_only_the_exact_key_then_deletes_its_object() {
 
     fixture
         .store
-        .cleanup_remote(&staged.object_key)
+        .cleanup_remote_bounded(&staged.object_key)
         .await
         .unwrap();
 
@@ -356,6 +356,35 @@ async fn cleanup_remote_aborts_only_the_exact_key_then_deletes_its_object() {
     assert_eq!(fixture.backend.pending_for(&staged.object_key), 0);
     assert_eq!(fixture.backend.pending_for(&neighbor_key), 1);
     fixture.backend.abort(neighbor).await.unwrap();
+}
+
+#[tokio::test]
+async fn remote_cleanup_deletes_objects_completed_while_abort_is_in_flight() {
+    let fixture = Fixture::new(4, 8, 1);
+    let reservation = fixture.store.reserve(REPOSITORY_ID).unwrap();
+    let upload = fixture
+        .backend
+        .begin(&reservation.object_key)
+        .await
+        .unwrap();
+    let part = fixture
+        .backend
+        .upload_part(&upload, 1, Bytes::from_static(b"finishing pack"))
+        .await
+        .unwrap();
+    fixture.backend.block_cleanup.store(true, Ordering::SeqCst);
+    let store = fixture.store.clone();
+    let key = reservation.object_key.clone();
+    let cleanup = tokio::spawn(async move { store.cleanup_remote_bounded(&key).await });
+    fixture.backend.cleanup_started.notified().await;
+
+    fixture.backend.complete(upload, vec![part]).await.unwrap();
+    fixture.backend.cleanup_gate.add_permits(1);
+    cleanup.await.unwrap().unwrap();
+    assert!(
+        fixture.backend.object(&reservation.object_key).is_none(),
+        "successful cleanup must delete bytes materialized during abort"
+    );
 }
 
 #[tokio::test]

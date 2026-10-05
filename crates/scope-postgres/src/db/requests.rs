@@ -10,7 +10,7 @@ use super::{
     request_auto_merge::{
         automatic_event_id, lock_active_intent_for_request, persist_existing_auto_merge_mutation,
     },
-    request_invitees::delete_request_invitees,
+    request_lifecycle_effects::persist_lifecycle_mutation,
     request_media::{replace_bindings_for_markdown, tombstone_request_attachments},
     request_revision_rows::{insert_revision, revisions_for_request_ids},
     request_rows::{
@@ -306,16 +306,7 @@ impl RequestStore {
                 .await?;
             }
             CloseRequestMutation::Closed { request, event } => {
-                save_request_row(&tx, request).await?;
-                delete_request_invitees(&tx, &request.id).await?;
-                insert_request_event_row(&tx, event).await?;
-                super::github_pushes::queue_github_branch_deletion(
-                    &tx,
-                    &request.repo_id,
-                    &request.id,
-                    now_unix,
-                )
-                .await?;
+                persist_lifecycle_mutation(&tx, request, std::slice::from_ref(event)).await?;
                 if let Some(stored) = active_auto_merge {
                     let stopped = stop_request_auto_merge(
                         request,

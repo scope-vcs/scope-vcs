@@ -71,6 +71,7 @@ mod request_discussion_rows;
 mod request_discussions;
 mod request_invitees;
 mod request_lifecycle_commands;
+mod request_lifecycle_effects;
 mod request_media;
 mod request_merge;
 mod request_queue;

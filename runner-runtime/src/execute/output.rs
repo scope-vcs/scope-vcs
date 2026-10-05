@@ -424,7 +424,7 @@ fn decode_lossy(bytes: &[u8]) -> String {
     replace_nul(&String::from_utf8_lossy(bytes))
 }
 
-pub(crate) fn replace_nul(text: &str) -> String {
+fn replace_nul(text: &str) -> String {
     text.replace('\0', "\u{FFFD}")
 }
 

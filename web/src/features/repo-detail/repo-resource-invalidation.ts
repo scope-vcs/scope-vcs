@@ -1,3 +1,7 @@
+import { invalidateRunHistoryScope } from '../runs/run-history-cache'
+import { runDetailResource } from '../runs/run-detail-resource'
+import { runLogCacheKey } from '../runs/run-log-cache'
+import { runResourceNeedsRecovery } from '../runs/run-resource'
 import { requestQueueResource } from '../requests/request-queue-cache'
 import { requestChangesResource } from '../requests/request-changes-resource'
 import { requestChecksResource } from '../requests/request-checks-resource'
@@ -20,6 +24,18 @@ export function invalidateRepoSummaryResources(scope: string) {
 }
 
 export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, summaryPending = false) {
+  const changed = event && typeof event.kind === 'object' && 'RunChanged' in event.kind ? event.kind.RunChanged : null
+  const repositoryChanged = event && typeof event.kind === 'object' && 'RepositoryChanged' in event.kind
+  const recovery = !event || event.kind === 'Connected'
+  const prefix = `${JSON.stringify([scope]).slice(0, -1)},`
+  if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed && changed.change !== 'LogsAppended') {
+    invalidateRunHistoryScope(scope, recovery)
+  }
+  if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed?.change === 'StatusChanged') {
+    runDetailResource.invalidateMatching((key) => key.startsWith(prefix) &&
+      (!changed || key === runLogCacheKey(scope, changed.run_id)) &&
+      (!recovery || runResourceNeedsRecovery(runDetailResource, key)))
+  }
   if (!event || event.kind === 'Connected' || event.kind === 'Lagged' || typeof event.kind === 'object' && 'RepositoryChanged' in event.kind) {
     if (!summaryPending) requestQueueResource.invalidate(scope)
     repoSettingsResource.invalidate(scope)

@@ -37,25 +37,28 @@ impl GitSegmentStore {
         self.backend.delete(object_key).await.map_err(Into::into)
     }
 
-    pub async fn cleanup_remote(&self, object_key: &str) -> Result<(), GitStorageError> {
-        let abort = self.backend.abort_incomplete(object_key).await;
-        let delete = self.backend.delete(object_key).await;
-        match (abort, delete) {
+    pub async fn cleanup_remote_bounded(&self, object_key: &str) -> Result<(), GitStorageError> {
+        let bounded = |result: Result<Result<(), BackendError>, tokio::time::error::Elapsed>| {
+            result
+                .map_err(|_| GitStorageError::RemoteCleanupTimedOut {
+                    timeout_ms: REMOTE_CLEANUP_TIMEOUT.as_millis(),
+                })?
+                .map_err(GitStorageError::from)
+        };
+        let abort = tokio::time::timeout(
+            REMOTE_CLEANUP_TIMEOUT,
+            self.backend.abort_incomplete(object_key),
+        )
+        .await;
+        let delete =
+            tokio::time::timeout(REMOTE_CLEANUP_TIMEOUT, self.backend.delete(object_key)).await;
+        match (bounded(abort), bounded(delete)) {
             (Ok(()), Ok(())) => Ok(()),
-            (Err(abort), Ok(())) => Err(GitStorageError::Backend(abort)),
-            (Ok(()), Err(delete)) => Err(GitStorageError::Backend(delete)),
+            (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
             (Err(abort), Err(delete)) => Err(GitStorageError::Backend(BackendError::new(format!(
                 "aborting incomplete uploads failed: {abort}; deleting object failed: {delete}"
             )))),
         }
-    }
-
-    pub async fn cleanup_remote_bounded(&self, object_key: &str) -> Result<(), GitStorageError> {
-        tokio::time::timeout(REMOTE_CLEANUP_TIMEOUT, self.cleanup_remote(object_key))
-            .await
-            .map_err(|_| GitStorageError::RemoteCleanupTimedOut {
-                timeout_ms: REMOTE_CLEANUP_TIMEOUT.as_millis(),
-            })?
     }
 
     pub async fn delete_local(&self, staged: &StagedGitSegment) -> Result<(), GitStorageError> {

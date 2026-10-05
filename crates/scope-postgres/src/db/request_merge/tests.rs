@@ -2,7 +2,10 @@ use crate::db::{
     AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand,
     ClaimDueRequestAutoMergesCommand, ExpectedRequestAutoMerge, MergeRequestContentCommand,
     RecordRequestChecksCommand,
-    requests::tests::{postgres_store, start_public_request},
+    requests::tests::{
+        postgres_store, start_public_request,
+        terminal_effects::{assert_terminal_effects, seed_terminal_effects},
+    },
 };
 use scope_domain::{
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
@@ -68,6 +71,7 @@ async fn locked_merge_derives_maintainer_authorization_before_content_persistenc
 async fn locked_merge_allows_owner_and_persists_content_and_request_once() {
     let store = merge_store().await;
     let prepared = merge_preparation(&store).await;
+    seed_terminal_effects(&store).await;
 
     let mutation = store
         .requests()
@@ -88,6 +92,7 @@ async fn locked_merge_allows_owner_and_persists_content_and_request_once() {
         .unwrap();
     assert_eq!(repo.git_head.unwrap().head_oid, MERGED_HEAD);
     assert_eq!(repo.graph.commits.len(), 2);
+    assert_terminal_effects(&store, "event_merged_user_owner").await;
 }
 
 #[tokio::test]

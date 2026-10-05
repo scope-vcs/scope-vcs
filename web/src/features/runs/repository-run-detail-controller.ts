@@ -144,16 +144,16 @@ export function useRepositoryRunDetailController({
   const refreshFromRunEvents = useCallback<RunRefresh>(async (
     reasons,
   ) => {
-    const refreshMetadata = reasons.has('Recovery') ||
+    const refreshMetadata = reasons.has('Recovery') || reasons.has('Manual') || reasons.has('Lagged') ||
       reasons.has('StatusChanged')
-    if (refreshMetadata) await refreshDetail()
+    if (refreshMetadata) await refreshRunDetail(key, loadDetail, reasons.has('StatusChanged'), reasons.size === 1 && reasons.has('Recovery'))
     const selection = selectionRef.current
     if (selection && (refreshMetadata || reasons.has('LogsAppended'))) {
       if (!await refreshLogsAfterInFlight(selection)) {
         throw new Error('Selected run logs could not refresh.')
       }
     }
-  }, [refreshDetail, refreshLogsAfterInFlight])
+  }, [key, loadDetail, refreshLogsAfterInFlight])
 
   const refreshRun = useRunLiveRefresh({
     acceptedChanges: DETAIL_CHANGES,

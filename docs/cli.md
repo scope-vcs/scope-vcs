@@ -268,13 +268,16 @@ starting a new workflow would create another run.
 
 `cli/distribution/targets.json` owns the six release targets and their artifact
 names. It also sets `max_artifact_bytes`, and packaging fails when any target's
-archive exceeds that cap. Pull requests execute native Linux x64, macOS Apple Silicon, and Windows
-x64 lanes. Releases also execute macOS Intel. Linux ARM64 and Windows ARM64 are
+archive exceeds that cap. Pull requests execute native Linux x64 and Windows x64
+lanes. Releases also execute macOS Apple Silicon and macOS Intel. Linux ARM64 and Windows ARM64 are
 build-only lanes and are labeled accordingly. Native lanes exercise the version
 and license commands plus installation through the real download service. They
 also run existing tests for credential-key isolation by API URL, Git credential
 request handling with an injected token reader, and browser callback validation.
 The Unix-only exchange-file permissions test runs on Linux and macOS.
+Pull requests skip the native lanes when their CLI changes are limited to
+`crates/scope-domain/` and `crates/scope-api-contract/`. The Linux CLI checks
+still build and test the CLI against those crates, and releases run every lane.
 
 The installer check uses a temporary directory containing spaces. It verifies
 first installation, replacement of an old binary, command discovery on `PATH`,

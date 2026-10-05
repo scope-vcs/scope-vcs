@@ -440,6 +440,45 @@ pub(crate) fn valid_setup_failure_message(message: &str) -> bool {
         && !message.contains('\0')
 }
 
+pub fn normalize_setup_failure_message(message: &str) -> String {
+    let mut message = message.replace('\0', "\u{FFFD}");
+    message.truncate(message.floor_char_boundary(MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES));
+    if message.trim().is_empty() {
+        "setup failed".to_owned()
+    } else {
+        message
+    }
+}
+
+#[cfg(test)]
+mod setup_failure_message_tests {
+    use super::{
+        MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES, normalize_setup_failure_message,
+        valid_setup_failure_message,
+    };
+
+    #[test]
+    fn normalization_produces_valid_messages_for_multibyte_and_blank_input() {
+        for (input, expected) in [
+            ("é".repeat(2048), "é".repeat(1024)),
+            ("界".repeat(2048), "界".repeat(682)),
+            ("\0".repeat(2048), "\u{FFFD}".repeat(682)),
+            ("setup\0failed".to_owned(), "setup\u{FFFD}failed".to_owned()),
+            (" \t\n".to_owned(), "setup failed".to_owned()),
+            (String::new(), "setup failed".to_owned()),
+            (
+                format!("{}error", " ".repeat(2048)),
+                "setup failed".to_owned(),
+            ),
+        ] {
+            let message = normalize_setup_failure_message(&input);
+            assert_eq!(message, expected);
+            assert!(valid_setup_failure_message(&message));
+            assert!(message.len() <= MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES);
+        }
+    }
+}
+
 fn step_matches_conclusion(step: Option<&RunAttemptStep>, conclusion: StepConclusion) -> bool {
     match (step, conclusion) {
         (Some(step), StepConclusion::Succeeded) => {
