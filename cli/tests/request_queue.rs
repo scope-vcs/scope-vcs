@@ -24,7 +24,7 @@ const LOADED_VERSION: u64 = 4;
 #[test]
 fn list_shows_the_queue_grouped_and_searches_on_the_server() {
     let dir = TempDir::new("request-queue-list");
-    let server = QueueServer::start(false);
+    let server = QueueServer::start(None);
 
     let value = success(
         server
@@ -95,7 +95,7 @@ fn list_shows_the_queue_grouped_and_searches_on_the_server() {
 #[test]
 fn snooze_sends_the_loaded_activity_version_and_a_future_time() {
     let dir = TempDir::new("request-queue-snooze");
-    let server = QueueServer::start(false);
+    let server = QueueServer::start(None);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -122,7 +122,7 @@ fn snooze_sends_the_loaded_activity_version_and_a_future_time() {
 #[test]
 fn a_stale_attention_change_shows_the_activity_that_moved_it() {
     let dir = TempDir::new("request-queue-stale");
-    let server = QueueServer::start(true);
+    let server = QueueServer::start(Some(Moved::Revision));
 
     let output = server
         .command(dir.path())
@@ -157,9 +157,58 @@ fn a_stale_attention_change_shows_the_activity_that_moved_it() {
     );
 }
 
+#[test]
+fn a_request_closed_after_loading_reports_the_refusal_without_retry_advice() {
+    let dir = TempDir::new("request-queue-closed");
+    let server = QueueServer::start(Some(Moved::Closed));
+
+    let output = server
+        .command(dir.path())
+        .args([
+            "--repo",
+            "owner/repo",
+            "request",
+            "settle",
+            "--request",
+            "req_one",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("attention actions require an open request"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("Run the command again"), "{stderr}");
+}
+
 fn success(output: std::process::Output) -> Value {
     assert_success(&output, "run request queue command");
     serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[derive(Clone, Copy)]
+enum Moved {
+    Revision,
+    Closed,
+}
+
+impl Moved {
+    fn state(self) -> &'static str {
+        match self {
+            Self::Revision => "Open",
+            Self::Closed => "Closed",
+        }
+    }
+
+    fn refusal(self) -> &'static str {
+        match self {
+            Self::Revision => "request has newer activity; refresh before changing attention",
+            Self::Closed => "attention actions require an open request",
+        }
+    }
 }
 
 struct QueueServer {
@@ -169,9 +218,9 @@ struct QueueServer {
 }
 
 impl QueueServer {
-    /// With `stale`, the server refuses attention changes because a revision
-    /// landed after the CLI loaded the request.
-    fn start(stale: bool) -> Self {
+    /// With `moved`, the request changes after the CLI loads it, so the server
+    /// refuses the attention change.
+    fn start(moved: Option<Moved>) -> Self {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let attention = Arc::new(Mutex::new(Value::Null));
         let detail_loads = Arc::new(AtomicUsize::new(0));
@@ -209,12 +258,13 @@ impl QueueServer {
                 "/v1/repos/owner/repo/requests/req_one",
                 get(move || {
                     let loads = detail_loads.fetch_add(1, Ordering::SeqCst);
-                    let version = if stale && loads > 0 {
-                        LOADED_VERSION + 1
-                    } else {
-                        LOADED_VERSION
+                    let detail = match moved {
+                        Some(moved) if loads > 0 => {
+                            request_detail(LOADED_VERSION + 1, moved.state())
+                        }
+                        _ => request_detail(LOADED_VERSION, "Open"),
                     };
-                    async move { Json(json!({"request": request_detail(version)})) }
+                    async move { Json(json!({"request": detail})) }
                 }),
             )
             .route(
@@ -222,17 +272,16 @@ impl QueueServer {
                 put(move |Json(body): Json<Value>| {
                     *attention_sent.lock().unwrap() = body;
                     async move {
-                        if stale {
-                            let refusal = ErrorResponse::new(
-                                ErrorCode::Conflict,
-                                "request has newer activity; refresh before changing attention",
-                            );
-                            (
-                                StatusCode::CONFLICT,
-                                Json(serde_json::to_value(refusal).unwrap()),
-                            )
-                        } else {
-                            (StatusCode::OK, Json(attention_mutation()))
+                        match moved {
+                            Some(moved) => {
+                                let refusal =
+                                    ErrorResponse::new(ErrorCode::Conflict, moved.refusal());
+                                (
+                                    StatusCode::CONFLICT,
+                                    Json(serde_json::to_value(refusal).unwrap()),
+                                )
+                            }
+                            None => (StatusCode::OK, Json(attention_mutation())),
                         }
                     }
                 }),
@@ -329,6 +378,6 @@ fn attention_mutation() -> Value {
     json!({"attention": attention, "claimer": null})
 }
 
-fn request_detail(activity_version: u64) -> Value {
-    json!({"id":"req_one","name":"fix-one","title":"Fix one","description_markdown":"","author_user_id":"usr_author","author_role":"Public","audience":"Public","base_main_oid":OID,"head_oid":OID,"state":"Open","activity_version":activity_version,"submitted_at_unix":1,"closed_at_unix":null,"closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,"updated_at_unix":2,"invitees":[],"permissions":{"can_view_activity":true,"can_open_discussion":true,"can_reply_to_discussion":true,"can_wait_after_reply":false,"can_edit_identity":false,"can_pull_branch":true,"can_push_branch":false,"can_submit":false,"can_manage_invitees":false,"can_leave_request":false,"can_close":true,"can_merge":true},"mergeability":{"status":"Ready","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
+fn request_detail(activity_version: u64, state: &str) -> Value {
+    json!({"id":"req_one","name":"fix-one","title":"Fix one","description_markdown":"","author_user_id":"usr_author","author_role":"Public","audience":"Public","base_main_oid":OID,"head_oid":OID,"state":state,"activity_version":activity_version,"submitted_at_unix":1,"closed_at_unix":null,"closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,"updated_at_unix":2,"invitees":[],"permissions":{"can_view_activity":true,"can_open_discussion":true,"can_reply_to_discussion":true,"can_wait_after_reply":false,"can_edit_identity":false,"can_pull_branch":true,"can_push_branch":false,"can_submit":false,"can_manage_invitees":false,"can_leave_request":false,"can_close":true,"can_merge":true},"mergeability":{"status":"Ready","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
 }

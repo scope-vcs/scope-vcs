@@ -10,7 +10,7 @@ use crate::api::{
 use crate::display::terminal_text;
 use crate::error::CliError;
 use args::SnoozeFor;
-use chrono::{DateTime, Datelike, Days, Local, NaiveTime, TimeZone};
+use chrono::{DateTime, Datelike, Days, Local, NaiveDateTime, NaiveTime, TimeDelta, TimeZone};
 use serde::Serialize;
 
 pub(super) const QUEUE_SECTION_LIMIT: u32 = 30;
@@ -114,17 +114,20 @@ fn local_time_label(unix: u64) -> String {
         .unwrap_or_else(|| unix.to_string())
 }
 
-/// When a snooze preset lands, computed like the web snooze menu: an hour from
-/// now, or 09:00 local time tomorrow or next Monday.
+/// When a snooze preset lands, computed like the web snooze menu's local clock
+/// setters: an hour later on the wall clock, or 09:00 tomorrow or next Monday.
+/// A repeated local time resolves to its first occurrence, as JavaScript does.
 fn snooze_until<Tz: TimeZone>(preset: SnoozeFor, now: DateTime<Tz>) -> anyhow::Result<u64> {
+    let zone = now.timezone();
+    let local = |time: NaiveDateTime| zone.from_local_datetime(&time).earliest();
     let at_nine = |days: u64| {
         let date = now.date_naive().checked_add_days(Days::new(days))?;
-        now.timezone()
-            .from_local_datetime(&date.and_time(NaiveTime::from_hms_opt(9, 0, 0)?))
-            .earliest()
+        local(date.and_time(NaiveTime::from_hms_opt(9, 0, 0)?))
     };
     let until = match preset {
-        SnoozeFor::Hour => Some(now.clone() + chrono::TimeDelta::hours(1)),
+        // A wall-clock hour skipped by a clock change moves forward, as in the web.
+        SnoozeFor::Hour => local(now.naive_local() + TimeDelta::hours(1))
+            .or_else(|| Some(now.clone() + TimeDelta::hours(1))),
         SnoozeFor::Tomorrow => at_nine(1),
         SnoozeFor::NextWeek => match (8 - now.weekday().num_days_from_sunday()) % 7 {
             0 => at_nine(7),
@@ -359,7 +362,8 @@ fn explain_stale_attention(
         return error;
     };
     let current_version = current.request.activity_version;
-    if current_version <= sent_version {
+    // A request that is no longer open cannot take the change on a retry.
+    if current.request.state != crate::api::RequestState::Open || current_version <= sent_version {
         return error;
     }
     let Ok(activity) = full_request_activity(api, target, sent_version, current_version) else {
@@ -381,7 +385,7 @@ fn explain_stale_attention(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::FixedOffset;
+    use chrono::{FixedOffset, LocalResult, NaiveDate};
 
     fn at(rfc3339: &str) -> DateTime<FixedOffset> {
         DateTime::parse_from_rfc3339(rfc3339).unwrap()
@@ -457,6 +461,70 @@ mod tests {
         assert_eq!(
             claimed,
             "   <1m  fix-refs (req_one) — Fix refs · Reviewing: @dana"
+        );
+    }
+
+    /// America/Chicago on 2026-11-01: 01:00–02:00 happens twice, first in CDT.
+    #[derive(Clone, Copy)]
+    struct FallBack;
+
+    impl FallBack {
+        fn offsets() -> (FixedOffset, FixedOffset) {
+            (
+                FixedOffset::west_opt(5 * 3600).unwrap(),
+                FixedOffset::west_opt(6 * 3600).unwrap(),
+            )
+        }
+
+        fn local(hour: u32) -> NaiveDateTime {
+            NaiveDate::from_ymd_opt(2026, 11, 1)
+                .unwrap()
+                .and_hms_opt(hour, 0, 0)
+                .unwrap()
+        }
+    }
+
+    impl TimeZone for FallBack {
+        type Offset = FixedOffset;
+
+        fn from_offset(_: &FixedOffset) -> Self {
+            FallBack
+        }
+
+        fn offset_from_local_date(&self, _: &NaiveDate) -> LocalResult<FixedOffset> {
+            unreachable!("snooze math uses local datetimes")
+        }
+
+        fn offset_from_local_datetime(&self, local: &NaiveDateTime) -> LocalResult<FixedOffset> {
+            let (cdt, cst) = Self::offsets();
+            if *local < Self::local(1) {
+                LocalResult::Single(cdt)
+            } else if *local < Self::local(2) {
+                LocalResult::Ambiguous(cdt, cst)
+            } else {
+                LocalResult::Single(cst)
+            }
+        }
+
+        fn offset_from_utc_date(&self, _: &NaiveDate) -> FixedOffset {
+            unreachable!("snooze math uses UTC datetimes")
+        }
+
+        fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> FixedOffset {
+            let (cdt, cst) = Self::offsets();
+            if *utc < Self::local(7) { cdt } else { cst }
+        }
+    }
+
+    #[test]
+    fn hour_snooze_follows_the_wall_clock_across_a_repeated_hour() {
+        let first_one_thirty = FallBack
+            .from_local_datetime(&(FallBack::local(1) + TimeDelta::minutes(30)))
+            .earliest()
+            .unwrap();
+        assert_eq!(
+            snooze_until(SnoozeFor::Hour, first_one_thirty).unwrap(),
+            unix("2026-11-01T02:30:00-06:00")
         );
     }
 
