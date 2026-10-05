@@ -14,7 +14,7 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { loadRunPageSnapshot, runPageSnapshot, runHistoryCacheKey, runHistoryResource, type RetainedRunHistory, type RunPageHandoff } from './run-history-cache'
-import { useRunResource } from './run-resource'
+import { ensureRunResource, useRunResource } from './run-resource'
 import { RunsPagePending } from './runs-page-pending'
 import { RunsPageError } from './runs-page-error'
 
@@ -42,11 +42,6 @@ function RunRouteContent({
       loadRepoRunHistory({ data: input, signal }),
     [],
   )
-  const loadWorkflows = useCallback(
-    (input: RepoParams, signal?: AbortSignal) =>
-      loadRepoRunWorkflows({ data: input, signal }),
-    [],
-  )
   const loadGitHubRuns = useCallback(
     (data: RepoGitHubWorkflowRunsInput, signal: AbortSignal) =>
       loadRepoGitHubWorkflowRuns({ data, signal }),
@@ -66,6 +61,18 @@ function RunRouteContent({
       loadPage,
     })
   }, [identity, owner, repo, workflow, loadHistory, loadPage])
+  const loadWorkflows = useCallback(async (input: RepoParams, signal?: AbortSignal) => {
+    const snapshot = identity ? runHistoryResource.getSnapshot(identity) : null
+    if (identity && (snapshot?.stale || snapshot?.pending && snapshot.version !== 'more')) {
+      // The page read includes the catalog. Its existing catalog owner can
+      // share that read while repository events refresh both resources.
+      const current = await ensureRunResource(runHistoryResource, identity, load, 'refresh')
+      if (current.page?.kind !== 'native') return null
+      if (current.page.workflowsError) throw new Error(current.page.workflowsError)
+      return current.page.workflows
+    }
+    return loadRepoRunWorkflows({ data: input, signal })
+  }, [identity, load])
   const resource = useRunResource({ identity, initialValue, load, resource: runHistoryResource, refreshVersion: 'refresh' })
   const page = resource.value?.page
   const configured = page?.kind === 'native' && page.githubConfigured

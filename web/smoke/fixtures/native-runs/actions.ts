@@ -1,6 +1,7 @@
 import type { RepositoryRunDetailResponse, RepositoryRunSummaryResponse } from '@/api/types.generated'
 
-const now = Math.floor(Date.now() / 1000)
+const handoff = typeof window === 'undefined' ? null : window.__nativeRunHandoff
+export const now = handoff?.now ?? Math.floor(Date.now() / 1000)
 export const run: RepositoryRunSummaryResponse = {
   id: 'run-1', workflow_name: 'tests', git_oid: 'abcdef123456', trigger: 'manual', state: 'running',
   cancellation_requested: false, created_at_unix: now - 60, updated_at_unix: now,
@@ -14,14 +15,14 @@ export const detail: RepositoryRunDetailResponse = { run, jobs: [{
 }] }
 export const workflows = { workflows: [], native_runs_available: true }
 export const initialPage = { kind: 'native' as const, githubConfigured: false, history, workflows, workflowsError: null }
-export const seeded = !new URLSearchParams(location.search).has('client')
-export const loads = { history: seeded ? 1 : 0, detail: seeded ? 1 : 0, workflows: seeded ? 1 : 0, logs: 0 }
+export const seeded = typeof location === 'undefined' || !new URLSearchParams(location.search).has('client')
+export const loads = { ...(handoff?.loads ?? { history: seeded ? 1 : 0, detail: seeded ? 1 : 0, workflows: seeded ? 1 : 0, logs: 0 }) }
 let hold = false
 let permitted = true
 let nextDetail = detail
 const releases: Array<() => void> = []
 async function wait() { if (hold) await new Promise<void>((resolve) => releases.push(resolve)) }
-Object.assign(window, {
+if (typeof window !== 'undefined') Object.assign(window, {
   loads,
   holdLoads: () => { hold = true },
   releaseLoads: () => { hold = false; releases.splice(0).forEach((resolve) => resolve()) },
