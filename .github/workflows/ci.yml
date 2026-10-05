@@ -30,15 +30,19 @@ jobs:
     outputs:
       number: ${{ steps.find.outputs.number }}
     steps:
-      - name: Find an open pull request whose head is this commit
+      # Only a pull request from this repository into main validates the
+      # commit as this run would: a fork's run has no secrets, and another base
+      # selects components against a different comparison.
+      - name: Find an open pull request into main whose head is this commit
         id: find
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
-          number="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" \
-            --jq "[.[] | select(.state == \"open\" and .head.sha == \"$SHA\")][0].number // empty")"
+          number="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" --jq "[.[] | select(
+            .state == \"open\" and .head.sha == \"$SHA\" and
+            .head.repo.full_name == \"$REPOSITORY\" and .base.ref == \"main\")][0].number // empty")"
           echo "number=$number" >> "$GITHUB_OUTPUT"
 
   # Validation runs unless a pull request already tests this commit. A failed
@@ -170,8 +174,9 @@ jobs:
         run: |
           echo "Pull request #$PULL_REQUEST tests $SHA"
           while :; do
-            run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA&per_page=1" \
-              --jq '.workflow_runs[0] // empty | "\(.html_url) \(.status) \(.conclusion)"')" || run=""
+            run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA" \
+              --jq "[.workflow_runs[] | select(.head_repository.full_name == \"$REPOSITORY\")][0] // empty
+                | \"\\(.html_url) \\(.status) \\(.conclusion)\"")" || run=""
             read -r url status conclusion <<< "$run"
             if [[ "$status" == completed ]]; then
               echo "$url: $conclusion"
