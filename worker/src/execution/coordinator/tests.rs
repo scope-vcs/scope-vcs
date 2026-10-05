@@ -144,7 +144,8 @@ async fn attempt_analytics_correlates_admission_and_completion_without_replaying
 
     let conclusion = || AttemptConclusion::SetupFailed {
         exit_code: 69,
-        message: "provider rejected dispatch".into(),
+        message: scope_domain::runs::step::SetupFailureMessage::new("provider rejected dispatch")
+            .unwrap(),
     };
     let completed = metadata
         .runs()

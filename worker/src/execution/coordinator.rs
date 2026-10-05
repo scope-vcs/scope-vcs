@@ -4,7 +4,7 @@ use crate::settings::{CONTROL_POLL_BATCH_SIZE, CloudExecutionSettings};
 use anyhow::Context as _;
 use scope_domain::runs::{
     exit_code::SetupFailure,
-    step::{AttemptConclusion, normalize_setup_failure_message},
+    step::{AttemptConclusion, SetupFailureMessage},
 };
 use scope_postgres::db::MetadataStore;
 use scope_product_analytics::ProductAnalytics;
@@ -128,7 +128,7 @@ impl CloudExecutionCoordinator {
             }
             Err(StartError::Rejected { reason, error }) => {
                 let now_unix = crate::unix_now()?.max(now_unix);
-                let message = normalize_setup_failure_message(&format!(
+                let message = SetupFailureMessage::normalized(&format!(
                     "provider rejected dispatch: {error}"
                 ));
                 let mutation = match reason {

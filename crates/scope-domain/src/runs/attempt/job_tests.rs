@@ -6,7 +6,7 @@ use crate::{
         job::{create_run_jobs, reconcile_run, request_run_cancellation},
         run::RunState,
         source::{RunSource, RunTrigger},
-        step::StepConclusion,
+        step::{SetupFailureMessage, StepConclusion},
         workflow::{
             definition::{
                 CompiledWorkflow, ContainerSpec, WorkflowJob, WorkflowJobId, WorkflowStep,
@@ -103,7 +103,7 @@ fn capacity_rejection_retries_three_times_within_two_minutes() {
                 &mut job,
                 &mut steps,
                 &"b".repeat(64),
-                "provider full",
+                &SetupFailureMessage::new("provider full").unwrap(),
                 at,
             )
             .unwrap();
@@ -113,7 +113,7 @@ fn capacity_rejection_retries_three_times_within_two_minutes() {
                 &mut job,
                 &mut steps,
                 &"b".repeat(64),
-                "provider full",
+                &SetupFailureMessage::new("provider full").unwrap(),
                 at,
             )
             .unwrap();
@@ -169,7 +169,7 @@ fn capacity_retry_expires_and_cancellation_prevents_rejection() {
             &mut job,
             &mut steps,
             &"b".repeat(64),
-            "provider full",
+            &SetupFailureMessage::new("provider full").unwrap(),
             12,
         )
         .unwrap();
@@ -189,7 +189,7 @@ fn capacity_retry_expires_and_cancellation_prevents_rejection() {
                 &mut canceled_job,
                 &mut canceled_steps,
                 &"b".repeat(64),
-                "provider full",
+                &SetupFailureMessage::new("provider full").unwrap(),
                 12
             )
             .is_err()
@@ -203,7 +203,7 @@ fn capacity_retry_expires_and_cancellation_prevents_rejection() {
             &mut job,
             &mut steps,
             &"b".repeat(64),
-            "provider full",
+            &SetupFailureMessage::new("provider full").unwrap(),
             12,
         )
         .unwrap();
@@ -225,7 +225,7 @@ fn capacity_rejection_stops_when_next_delay_exceeds_window() {
             &mut job,
             &mut steps,
             &"b".repeat(64),
-            "provider full",
+            &SetupFailureMessage::new("provider full").unwrap(),
             12,
         )
         .unwrap();
@@ -248,7 +248,7 @@ fn capacity_rejection_stops_when_next_delay_exceeds_window() {
             &mut job,
             &mut second_steps,
             &"c".repeat(64),
-            "provider full",
+            &SetupFailureMessage::new("provider full").unwrap(),
             103,
         )
         .unwrap();
@@ -490,25 +490,4 @@ fn cancellation_wins_over_pre_start_attempt_exhaustion() {
     assert_eq!(job.state, RunJobState::Canceled);
     assert_eq!(run.state, RunState::Canceled);
     assert!(!crate::runs::job::can_retry_run(&run, &[job]));
-}
-
-#[test]
-fn runtime_setup_failure_message_cannot_contain_nul() {
-    let (_, run, mut job, mut attempt, mut steps) = dispatched_attempt();
-    let error = attempt
-        .complete(
-            &run,
-            &mut job,
-            &mut steps,
-            &"b".repeat(64),
-            AttemptConclusion::SetupFailed {
-                exit_code: 1,
-                message: "setup\0failed".into(),
-            },
-            false,
-            12,
-        )
-        .unwrap_err();
-    assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
-    assert_eq!(attempt.state, AttemptState::Dispatching);
 }

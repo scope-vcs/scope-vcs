@@ -4,9 +4,7 @@ use crate::{
     runs::{
         job::{RunJob, RunJobState},
         run::Run,
-        step::{
-            AttemptTerminalReason, RunAttemptStep, skip_pending_steps, valid_setup_failure_message,
-        },
+        step::{AttemptTerminalReason, RunAttemptStep, SetupFailureMessage, skip_pending_steps},
     },
 };
 
@@ -18,7 +16,7 @@ impl RunAttempt {
         job: &mut RunJob,
         steps: &mut [RunAttemptStep],
         token_hash: &str,
-        message: &str,
+        message: &SetupFailureMessage,
         now_unix: u64,
     ) -> Result<(), DomainError> {
         if self.state.is_terminal() {
@@ -42,18 +40,13 @@ impl RunAttempt {
                 "capacity rejection requires an active uncanceled dispatch",
             ));
         }
-        if !valid_setup_failure_message(message) {
-            return Err(DomainError::invalid_input(
-                "capacity rejection message is required, must not exceed 2048 bytes, and cannot contain NUL characters",
-            ));
-        }
         self.validate_execution(steps)?;
         self.ensure_time_not_before_heartbeat(now_unix)?;
         job.ensure_time_not_before_update(now_unix)?;
         skip_pending_steps(steps, now_unix);
         self.state = AttemptState::Failed;
         self.terminal_reason = Some(AttemptTerminalReason::ProviderCapacityRejected {
-            message: message.to_string(),
+            message: message.clone(),
         });
         self.completed_at_unix = Some(now_unix);
         job.record_capacity_rejection(now_unix)

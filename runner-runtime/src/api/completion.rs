@@ -6,7 +6,7 @@ use scope_api_contract::{
 };
 use scope_domain::runs::{
     exit_code::SetupFailure,
-    step::{StepConclusion, normalize_setup_failure_message},
+    step::{SetupFailureMessage, StepConclusion},
 };
 
 impl RuntimeClient {
@@ -43,7 +43,7 @@ impl RuntimeClient {
     }
 
     pub fn complete_setup_failure(&self, message: &str) -> anyhow::Result<()> {
-        let message = normalize_setup_failure_message(message);
+        let message = SetupFailureMessage::normalized(message).into_string();
         self.complete(
             AttemptConclusionRequest::SetupFailed {
                 exit_code: SetupFailure::RuntimeSetup.exit_code(),
