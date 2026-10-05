@@ -60,7 +60,6 @@ test('request checks lead with what is left, fold the rest, and only link Scope 
     await checks.getByRole('button', { name: 'Show all 12' }).click()
     await checks.getByRole('listitem').filter({ hasText: /^Server validation$/ }).waitFor()
     assert.equal(await checks.getByRole('listitem').count(), 14)
-    // A live refresh keeps the full list open.
     await page.evaluate(() => window.refresh())
     await checks.getByText('2 of 8 left', { exact: true }).waitFor()
     assert.equal(await checks.getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded'), 'true')
@@ -68,7 +67,6 @@ test('request checks lead with what is left, fold the rest, and only link Scope 
     await checks.getByRole('button', { name: 'Show less' }).click()
     await page.setViewportSize({ width: 390, height: 844 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    // On a phone a listed check keeps its job name whole and its workflow in view.
     const job = checks.getByText('Integration validation', { exact: true })
     assert.equal(await job.evaluate((element) => element.scrollWidth <= element.clientWidth), true)
     assert.equal(await checks.getByText(/^Validate selected components/).first().isVisible(), true)

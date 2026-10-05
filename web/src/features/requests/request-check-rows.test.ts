@@ -104,7 +104,6 @@ test('the summary leads with what is left and lists only checks that need someon
 
   assert.equal(requestChecksSummary(checks([])).lead, null)
 
-  // A canceled native run blocks merging, so it is a failure, not a skip.
   const canceled = requestChecksSummary(checks([
     { provider: 'native', workflow_path: '/a.yml', workflow_name: 'a', run_id: 'run_a', run_state: 'succeeded' },
     { provider: 'native', workflow_path: '/b.yml', workflow_name: 'b', run_id: 'run_b', run_state: 'canceled' },
@@ -143,7 +142,6 @@ test('the full list nests checks under each workflow heading once', () => {
       line.kind === 'group' ? `${line.depth} # ${line.name}` : `${line.depth} ${line.row.leaf}`),
     ['0 lint', '0 # validate', '1 cli', '1 # server', '2 api', '2 web'],
   )
-  // Workflows differing only in case keep their checks together.
   const cased = requestChecksSummary(checks([
     github('A / a', null),
     github('a / b', null),

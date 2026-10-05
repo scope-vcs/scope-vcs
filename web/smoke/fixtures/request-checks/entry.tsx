@@ -12,7 +12,6 @@ const github = (name: string, status: GitHubCheck['status'], conclusion: GitHubC
 })
 const V = 'Validate selected components'
 const S = `${V} / Server validation`
-/** The checks of a GitHub-checked request part way through, as a maintainer reported them. */
 const running = {
   request_id: 'req_1', head_oid: 'a'.repeat(40), state: 'started', message: null, can_approve: false,
   changes_github_workflows: false, private_request_on_public_github: true,
@@ -32,7 +31,6 @@ const running = {
     github(`${S} / Web validation`, 'completed', 'skipped'),
   ],
 } as unknown as RequestChecksResponse
-/** A repository on Scope's own runner, whose checks have runs to open. */
 const native = {
   ...running, private_request_on_public_github: false, github_push: null,
   checks: [
@@ -46,7 +44,6 @@ function Request() {
   const [checks, setChecks] = useState(running)
   Object.assign(window, {
     showNative: () => setChecks(native),
-    /** A live refresh: the same checks, the first one now finished. */
     refresh: () => setChecks((current) => ({
       ...current,
       checks: current.checks.map((check, index) => index ? check : github('Check operations', 'completed', 'success')),

@@ -42,7 +42,6 @@ const MERGEABILITY = {
   { label: string; tone: BadgeVariant }
 >
 
-// What the evaluation itself says, when it is not simply the checks and their states.
 const CHECK_EVALUATION_NOTES = {
   'no-checks': 'This head asks for no checks.',
   'awaiting-approval': 'These checks wait for a maintainer to start them.',
@@ -83,7 +82,6 @@ export function requestCheckEvaluationNote(checks: RequestChecksResponse) {
   if (checks.state === null) {
     return 'The checks for this commit have not been worked out yet.'
   }
-  // Why the checks cannot pass, such as a GitHub connection that is gone.
   if (checks.message) return checks.message
   if (checks.state === 'configuration-error') {
     return 'This head’s workflow configuration is invalid.'
@@ -91,14 +89,12 @@ export function requestCheckEvaluationNote(checks: RequestChecksResponse) {
   return CHECK_EVALUATION_NOTES[checks.state]
 }
 
-/** Shown to a maintainer before approving GitHub checks for workflow changes. */
 export function requestChecksWorkflowWarning(checks: RequestChecksResponse) {
   return checks.can_approve && checks.changes_github_workflows
     ? 'This request changes GitHub workflow files. Approving runs them with your repository’s secrets.'
     : null
 }
 
-/** A private request whose checks run in a public repository is public there. */
 export function requestPublicChecksNote(checks: RequestChecksResponse) {
   return checks.private_request_on_public_github
     ? 'Checks run publicly, so this private request’s changes are public.'
@@ -145,7 +141,6 @@ export function requestEventBody(event: RequestEventResponse) {
     const { head_oid, main_oid } = payload.AutoMergeFulfilled
     return `${shortOid(head_oid)} → ${shortOid(main_oid)}`
   }
-  // Exhaustive: a new payload variant from Rust lands here as a type error.
   payload satisfies never
   return null
 }

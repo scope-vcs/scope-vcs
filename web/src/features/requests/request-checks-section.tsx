@@ -16,10 +16,6 @@ import { CHECKS_SECTION_CLASS, RequestChecksPending } from './request-checks-pen
 const ROW_CLASS = 'group -mx-1.5 flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-[13px]'
 const INDENT_PX = 14
 
-/**
- * What the request head owes before it can merge: a summary, the checks that
- * still need someone, and every check behind a disclosure.
- */
 export function RequestChecksSection({
   checks,
   error,
@@ -31,7 +27,6 @@ export function RequestChecksSection({
 }) {
   const [expanded, setExpanded] = useState(false)
   const listId = useId()
-  // Checks always arrive or fail, so their row is reserved while they load.
   if (!checks && !error) return <RequestChecksPending />
   const note = checks ? requestCheckEvaluationNote(checks) : null
   const warning = checks ? requestChecksWorkflowWarning(checks) : null
@@ -124,7 +119,6 @@ export function RequestChecksSection({
   )
 }
 
-/** A check, linked to the Scope run that has its logs when there is one. */
 function CheckRow({
   depth = 0,
   params,
@@ -141,7 +135,6 @@ function CheckRow({
     <>
       <RunStatusIcon state={row.state} />
       <span className={cn('flex min-w-0 flex-1', row.tone === 'inert' && 'text-muted-foreground')} title={row.name}>
-        {/* The workflow gives way to the job's own name when space runs out. */}
         {parent ? (
           <>
             <span className="min-w-0 truncate text-muted-foreground">{parent}</span>

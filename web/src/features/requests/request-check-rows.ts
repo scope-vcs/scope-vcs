@@ -2,31 +2,22 @@ import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.ge
 import { githubRunResult } from '../runs/github-run-status'
 import { type RunTone, runStatus } from '../runs/run-status'
 
-/** One check as the request page lists it, with the Scope run that has its logs. */
 export type RequestCheckRow = {
   key: string
   name: string
-  /** The job's own name, without the workflows it is nested in. */
   leaf: string
-  /** The workflows and jobs that contain it, outermost first. */
   parents: string[]
-  /** A state in the runs vocabulary, so checks share the run status icons. */
   state: string
   tone: RunTone
   label: string
   runId: string | null
 }
 
-/** What the checks section leads with, then the checks that still need someone. */
 export type RequestChecksSummary = {
-  /** `state` is in the runs vocabulary, so the lead shares the run status icons. */
   lead: { state: 'failed' | 'running' | 'succeeded'; text: string } | null
   counts: string | null
-  /** Why the checks could not start, or why the last attempt to start them failed. */
   startError: { text: string; failed: boolean } | null
-  /** Failed, then running, then waiting checks. */
   attention: RequestCheckRow[]
-  /** Every check, ordered so that jobs sit under the workflows they belong to. */
   all: RequestCheckRow[]
 }
 
@@ -37,8 +28,6 @@ function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
     return row(
       `native:${check.workflow_path}`,
       check.workflow_name,
-      // A recorded check without a run is waiting, not passing, and a
-      // canceled run blocks merging like a failed one.
       check.run_state === 'canceled' ? 'failed' : check.run_state ?? 'pending',
       check.run_state ? runStatus(check.run_state).label : 'not started',
       check.run_id,
@@ -89,15 +78,10 @@ export function requestChecksSummary(checks: RequestChecksResponse): RequestChec
   return { lead, counts: counts.length ? counts.join(' · ') : null, startError, attention, all }
 }
 
-/** One line of the full checks list: a workflow heading, or a check under it. */
 export type RequestCheckTreeLine =
   | { kind: 'group'; key: string; name: string; depth: number }
   | { kind: 'check'; row: RequestCheckRow; depth: number }
 
-/**
- * Nests checks under the workflows they belong to. A heading is emitted once
- * for each workflow the previous check was not already inside.
- */
 export function requestCheckTree(rows: RequestCheckRow[]): RequestCheckTreeLine[] {
   const lines: RequestCheckTreeLine[] = []
   let open: string[] = []
@@ -116,11 +100,6 @@ export function requestCheckTree(rows: RequestCheckRow[]): RequestCheckTreeLine[
   return lines
 }
 
-/**
- * Orders checks by their workflow path, one name at a time, so the checks of
- * a workflow stay together even beside a workflow whose name differs only in
- * case or accents.
- */
 function byWorkflowPath(a: RequestCheckRow, b: RequestCheckRow) {
   const left = [...a.parents, a.leaf]
   const right = [...b.parents, b.leaf]
