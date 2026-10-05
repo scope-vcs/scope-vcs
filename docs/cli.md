@@ -275,6 +275,9 @@ and license commands plus installation through the real download service. They
 also run existing tests for credential-key isolation by API URL, Git credential
 request handling with an injected token reader, and browser callback validation.
 The Unix-only exchange-file permissions test runs on Linux and macOS.
+Pull requests skip the native lanes when their CLI changes are limited to
+`crates/scope-domain/` and `crates/scope-api-contract/`. The Linux CLI checks
+still build and test the CLI against those crates, and releases run every lane.
 
 The installer check uses a temporary directory containing spaces. It verifies
 first installation, replacement of an old binary, command discovery on `PATH`,

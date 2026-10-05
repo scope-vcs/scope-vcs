@@ -72,7 +72,6 @@ jobs:
       api: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['api'] || false) || steps.plan.outputs.api }}
       web: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['web'] || false) || steps.plan.outputs.web }}
       cli: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['cli-downloads'] || false) || steps.plan.outputs.cli }}
-      cli_distribution: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['cli-distribution'] || false) || steps.plan.outputs.cli_distribution }}
     steps:
       - name: Require main for releases
         run: test "$GITHUB_REF" = refs/heads/main
@@ -194,7 +193,6 @@ jobs:
       backend: ${{ needs.plan.outputs.backend_selected }}
       web: ${{ needs.plan.outputs.web }}
       cli: ${{ needs.plan.outputs.cli }}
-      cli_distribution: ${{ needs.plan.outputs.cli_distribution }}
       release_sha: ${{ needs.plan.outputs.release_sha }}
       release: true
       validate_server: false
