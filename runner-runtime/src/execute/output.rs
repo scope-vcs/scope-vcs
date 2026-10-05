@@ -425,7 +425,7 @@ fn decode_lossy(bytes: &[u8]) -> String {
 }
 
 /// Scope rejects run text containing NUL, so the runtime replaces it with U+FFFD.
-pub(crate) fn replace_nul(text: &str) -> String {
+fn replace_nul(text: &str) -> String {
     text.replace('\0', "\u{FFFD}")
 }
 
