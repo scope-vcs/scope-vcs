@@ -15,7 +15,7 @@ import {
   loadRequestDiscussionsForRequest,
 } from '@/features/requests/request-discussion-api'
 import { loadDiscussionReferencePage, selectedDiscussionReferenceQuery } from '@/features/requests/request-changes-discussion-references'
-import { requestChangesSelectionIdentity, requestChangesResource } from '@/features/requests/request-changes-resource'
+import { requestChangesSelectionIdentity, retainPinnedRequestChanges } from '@/features/requests/request-changes-resource'
 import { useRequestChangesResource } from '@/features/requests/use-request-changes-resource'
 import {
   RequestChangesWorkbench,
@@ -153,15 +153,7 @@ function RequestChangesRoute() {
   )
   useEffect(() => {
     if (!pin || !scope || !revisions) return
-    const pinnedIdentity = requestChangesSelectionIdentity(
-      scope,
-      requestId,
-      pin.revision,
-      pin.commit,
-    )
-    if (requestChangesResource.getSnapshot(pinnedIdentity).version === null) {
-      requestChangesResource.write(pinnedIdentity, revisions)
-    }
+    retainPinnedRequestChanges(scope, requestId, pin, revisions)
     void navigate({
       params,
       replace: true,

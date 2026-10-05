@@ -11,3 +11,13 @@ function requestChangesIdentity(scope: string, requestId: string) {
 export function requestChangesSelectionIdentity(scope: string, requestId: string, revision?: string, commit?: string) {
   return `${requestChangesIdentity(scope, requestId)}\0${revision ?? ''}\0${commit ?? ''}`
 }
+
+export function retainPinnedRequestChanges(
+  scope: string,
+  requestId: string,
+  pin: { revision?: string; commit?: string },
+  revisions: RequestRevisionListResponse,
+) {
+  const identity = requestChangesSelectionIdentity(scope, requestId, pin.revision, pin.commit)
+  requestChangesResource.seed(identity, revisions)
+}

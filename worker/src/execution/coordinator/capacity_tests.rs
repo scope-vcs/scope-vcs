@@ -34,8 +34,12 @@ async fn multibyte_capacity_rejection_records_retry() {
     else {
         panic!("expected a recorded capacity rejection");
     };
-    assert!(message.starts_with("provider rejected dispatch: é"));
-    assert!(message.len() <= MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES);
+    assert!(
+        message
+            .as_str()
+            .starts_with("provider rejected dispatch: é")
+    );
+    assert!(message.as_str().len() <= MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES);
 }
 
 fn coordinator(metadata: MetadataStore, provider: &FakeEcs) -> CloudExecutionCoordinator {

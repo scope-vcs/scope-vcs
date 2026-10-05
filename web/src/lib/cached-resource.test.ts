@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import test, { mock } from 'node:test'
 import { createCachedResource } from './cached-resource'
 import { resetViewerState } from './viewer-state'
 
@@ -48,12 +48,13 @@ test('returning while the previous request is pending also joins that request', 
   const first = store.ensure('repo', '1', () => response.promise)
   leave()
   const leaveReturn = store.subscribe('repo', () => {})
-  const returning = store.ensure('repo', '1', async () => {
-    assert.fail('a revisit must not start a second request')
-  })
+  const unexpectedLoad = mock.fn(async () => value('unexpected'))
+  const returning = store.ensure('repo', '1', unexpectedLoad)
   assert.equal(returning, first)
   response.resolve(value('complete'))
   await returning
+  assert.equal(unexpectedLoad.mock.callCount(), 0)
+  assert.deepEqual(store.peek('repo'), value('complete'))
   assert.equal(store.getSnapshot('repo').pending, false)
   leaveReturn()
 })
@@ -125,9 +126,9 @@ test('a refresh error retains the successful result and explicit retry recovers'
   assert.deepEqual(store.getSnapshot('repo').value, value('retained'))
   assert.equal(store.getSnapshot('repo').error, failure)
   assert.equal(store.getSnapshot('repo').pending, false)
-  await store.ensure('repo', '2', async () => {
-    assert.fail('an error must not cause an automatic retry loop')
-  })
+  const unexpectedRetry = mock.fn(async () => { throw new Error('unexpected retry') })
+  await store.ensure('repo', '2', unexpectedRetry)
+  assert.equal(unexpectedRetry.mock.callCount(), 0)
   store.invalidate('repo')
   await store.ensure('repo', '2', async () => value('recovered'))
   assert.deepEqual(store.getSnapshot('repo').value, value('recovered'))
@@ -267,7 +268,10 @@ test('oversized results remain readable while mounted without exceeding retained
   assert.deepEqual(await store.load('large', '1', async () => value('oversized')), value('oversized'))
   assert.deepEqual(store.getSnapshot('large').value, value('oversized'))
   assert.equal(store.stats().entries, 0)
-  await store.ensure('large', '1', async () => assert.fail('active data must remain usable'))
+  const unexpectedLoad = mock.fn(async () => { throw new Error('unexpected read') })
+  await store.ensure('large', '1', unexpectedLoad)
+  assert.equal(unexpectedLoad.mock.callCount(), 0)
+  assert.deepEqual(store.getSnapshot('large').value, value('oversized'))
   leave()
   assert.equal(store.getSnapshot('large').value, null)
 })

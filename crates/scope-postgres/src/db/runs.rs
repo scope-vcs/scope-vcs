@@ -120,7 +120,7 @@ impl RunStore {
         &self,
         attempt_id: &str,
         token_hash: &str,
-        message: &str,
+        message: &scope_domain::runs::step::SetupFailureMessage,
         now_unix: u64,
     ) -> Result<AttemptMutation, PostgresError> {
         let mut transitioned = false;

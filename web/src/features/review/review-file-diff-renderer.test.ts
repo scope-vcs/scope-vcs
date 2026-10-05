@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import test from 'node:test'
+import test, { mock } from 'node:test'
 import { Worker } from 'node:worker_threads'
 import type { ReviewFileDiffResponse } from '../../api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
@@ -67,9 +67,8 @@ test('rejects input and line amplification before worker admission', async () =>
 })
 
 test('bounds mixed content without returning raw transport fields', async () => {
-  const render = createReviewFileDiffRenderer({
-    isolatedRender: async () => assert.fail('mixed content must not enter Pierre'),
-  })
+  const isolatedRender = mock.fn(async () => ({ kind: 'empty' as const }))
+  const render = createReviewFileDiffRenderer({ isolatedRender })
   const source = '😀'.repeat(REVIEW_FILE_DIFF_RENDER_BUDGET.maxMixedTextBytes)
   const result = await render({
     kind: 'Modified',
@@ -80,6 +79,7 @@ test('bounds mixed content without returning raw transport fields', async () => 
     path: '/fixture.dat',
   })
 
+  assert.equal(isolatedRender.mock.callCount(), 0)
   assert.equal(result.presentation.kind, 'mixed')
   assert.equal('old_content' in result, false)
   assert.equal('new_content' in result, false)
@@ -138,8 +138,9 @@ test('terminates a CPU-bound worker at the deadline', async () => {
 })
 
 test('does not publish transient busy or deadline failures to a cache', async () => {
+  const isolatedRender = mock.fn(async () => ({ kind: 'empty' as const }))
   const busyRender = createReviewFileDiffRenderer({
-    isolatedRender: async () => assert.fail('busy render must not start'),
+    isolatedRender,
     state: { active: REVIEW_FILE_DIFF_RENDER_BUDGET.maxConcurrentRenders },
   })
   const deadlineRender = createReviewFileDiffRenderer({
@@ -149,6 +150,7 @@ test('does not publish transient busy or deadline failures to a cache', async ()
   })
 
   await assertTransientNotPublished(() => busyRender(textDiff('a', 'b')), 'busy')
+  assert.equal(isolatedRender.mock.callCount(), 0)
   await assertTransientNotPublished(
     () => deadlineRender(textDiff('a', 'b')),
     'deadline',

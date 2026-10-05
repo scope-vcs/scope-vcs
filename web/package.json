@@ -14,7 +14,7 @@
     "check:api-contract": "node scripts/check-api-contract.mjs",
     "check:client-bundle": "node scripts/check-client-bundle.mjs",
     "check:diff-worker-bundle": "node scripts/check-review-diff-worker-bundle.mjs",
-    "check:resource-boundary": "node --test scripts/resource-boundary.test.mjs && node scripts/check-resource-boundary.mjs",
+    "check:resource-boundary": "node --test scripts/resource-boundary.test.mjs scripts/callback-assertions.test.mjs && node scripts/check-resource-boundary.mjs",
     "generate:api-contract": "node scripts/generate-api-contract.mjs",
     "test": "node scripts/prepare-test-output.mjs && tsc -p tsconfig.test.json && TZ=UTC node --test \".test-output/**/*.test.js\"",
     "test:smoke": "node --test \"smoke/**/*.spec.mjs\"",

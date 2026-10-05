@@ -4,9 +4,48 @@ use super::{
     run::Run,
 };
 use crate::error::DomainError;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 
 pub const MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES: usize = 2 * 1024;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct SetupFailureMessage(String);
+
+impl SetupFailureMessage {
+    pub fn new(message: &str) -> Result<Self, DomainError> {
+        if !valid_setup_failure_message(message) {
+            return Err(DomainError::invalid_input(
+                "setup failure message is required, must not exceed 2048 bytes, and cannot contain NUL characters",
+            ));
+        }
+        Ok(Self(message.to_owned()))
+    }
+
+    pub fn normalized(message: &str) -> Self {
+        let mut message = message.replace('\0', "\u{FFFD}");
+        message.truncate(message.floor_char_boundary(MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES));
+        if message.trim().is_empty() {
+            message = "setup failed".to_owned();
+        }
+        Self(message)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for SetupFailureMessage {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let message = String::deserialize(deserializer)?;
+        Self::new(&message).map_err(D::Error::custom)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -54,7 +93,10 @@ impl StepState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AttemptConclusion {
     Succeeded,
-    SetupFailed { exit_code: i32, message: String },
+    SetupFailed {
+        exit_code: i32,
+        message: SetupFailureMessage,
+    },
     TimedOut,
     Canceled,
 }
@@ -68,13 +110,27 @@ pub enum StepConclusion {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum AttemptTerminalReason {
-    StepFailed { step_index: u32, exit_code: i32 },
-    TimedOut { step_index: Option<u32> },
-    Canceled { step_index: Option<u32> },
-    ExecutionLost { step_index: Option<u32> },
+    StepFailed {
+        step_index: u32,
+        exit_code: i32,
+    },
+    TimedOut {
+        step_index: Option<u32>,
+    },
+    Canceled {
+        step_index: Option<u32>,
+    },
+    ExecutionLost {
+        step_index: Option<u32>,
+    },
     DispatchAttemptsExhausted,
-    RuntimeSetupFailed { exit_code: i32, message: String },
-    ProviderCapacityRejected { message: String },
+    RuntimeSetupFailed {
+        exit_code: i32,
+        message: SetupFailureMessage,
+    },
+    ProviderCapacityRejected {
+        message: SetupFailureMessage,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -397,22 +453,17 @@ impl RunAttempt {
             ) => terminal_step_matches(steps, *step_index, StepState::Failed, Some(*exit_code)),
             (
                 AttemptState::Failed,
-                Some(AttemptTerminalReason::RuntimeSetupFailed { exit_code, message }),
-            ) => {
-                *exit_code != 0
-                    && valid_setup_failure_message(message)
-                    && steps.iter().all(|step| step.state == StepState::Skipped)
-            }
+                Some(AttemptTerminalReason::RuntimeSetupFailed { exit_code, .. }),
+            ) => *exit_code != 0 && steps.iter().all(|step| step.state == StepState::Skipped),
             (AttemptState::Failed, Some(AttemptTerminalReason::TimedOut { step_index }))
             | (AttemptState::Canceled, Some(AttemptTerminalReason::Canceled { step_index })) => {
                 interrupted_step_matches(steps, *step_index, StepState::Canceled)
             }
             (
                 AttemptState::Failed,
-                Some(AttemptTerminalReason::ProviderCapacityRejected { message }),
+                Some(AttemptTerminalReason::ProviderCapacityRejected { .. }),
             ) => {
                 self.started_at_unix.is_none()
-                    && valid_setup_failure_message(message)
                     && steps.iter().all(|step| step.state == StepState::Skipped)
             }
             (AttemptState::Lost, Some(AttemptTerminalReason::ExecutionLost { step_index })) => {
@@ -434,27 +485,16 @@ impl RunAttempt {
     }
 }
 
-pub(crate) fn valid_setup_failure_message(message: &str) -> bool {
+fn valid_setup_failure_message(message: &str) -> bool {
     !message.trim().is_empty()
         && message.len() <= MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES
         && !message.contains('\0')
 }
 
-pub fn normalize_setup_failure_message(message: &str) -> String {
-    let mut message = message.replace('\0', "\u{FFFD}");
-    message.truncate(message.floor_char_boundary(MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES));
-    if message.trim().is_empty() {
-        "setup failed".to_owned()
-    } else {
-        message
-    }
-}
-
 #[cfg(test)]
 mod setup_failure_message_tests {
     use super::{
-        MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES, normalize_setup_failure_message,
-        valid_setup_failure_message,
+        MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES, SetupFailureMessage, valid_setup_failure_message,
     };
 
     #[test]
@@ -471,11 +511,28 @@ mod setup_failure_message_tests {
                 "setup failed".to_owned(),
             ),
         ] {
-            let message = normalize_setup_failure_message(&input);
-            assert_eq!(message, expected);
-            assert!(valid_setup_failure_message(&message));
-            assert!(message.len() <= MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES);
+            let message = SetupFailureMessage::normalized(&input);
+            assert_eq!(message.as_str(), expected);
+            assert!(valid_setup_failure_message(message.as_str()));
+            assert!(message.as_str().len() <= MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES);
         }
+    }
+
+    #[test]
+    fn invalid_messages_cannot_be_constructed_or_restored() {
+        for message in ["setup\0failed", "", &"é".repeat(1025)] {
+            assert!(SetupFailureMessage::new(message).is_err());
+            let encoded = serde_json::to_string(message).unwrap();
+            assert!(serde_json::from_str::<SetupFailureMessage>(&encoded).is_err());
+        }
+
+        let message = SetupFailureMessage::new("setup failed").unwrap();
+        let encoded = serde_json::to_string(&message).unwrap();
+        assert_eq!(encoded, "\"setup failed\"");
+        assert_eq!(
+            serde_json::from_str::<SetupFailureMessage>(&encoded).unwrap(),
+            message
+        );
     }
 }
 

@@ -8,6 +8,7 @@ use scope_domain::{
     runs::{
         run::Run,
         source::{RunSource, RunTrigger},
+        step::SetupFailureMessage,
         workflow::{
             definition::{
                 CompiledWorkflow, ContainerSpec, WorkflowJob, WorkflowJobId, WorkflowStep,
@@ -282,7 +283,10 @@ async fn rejected_start_releases_capacity_and_completes_absent_task_cleanup() {
         &token_hash,
         scope_domain::runs::step::AttemptConclusion::SetupFailed {
             exit_code: 69,
-            message: "provider rejected dispatch".into(),
+            message: scope_domain::runs::step::SetupFailureMessage::new(
+                "provider rejected dispatch",
+            )
+            .unwrap(),
         },
         false,
         12,
@@ -321,7 +325,12 @@ async fn capacity_retry_budget_and_due_time_survive_store_reopening() {
         panic!("expected initial admission");
     };
     let rejected = runs
-        .reject_capacity_attempt(&first.attempt.id, &token, "provider full", 12)
+        .reject_capacity_attempt(
+            &first.attempt.id,
+            &token,
+            &SetupFailureMessage::new("provider full").unwrap(),
+            12,
+        )
         .await
         .unwrap();
     assert!(rejected.transitioned);
@@ -338,7 +347,12 @@ async fn capacity_retry_budget_and_due_time_survive_store_reopening() {
     assert!(
         !store
             .runs()
-            .reject_capacity_attempt(&first.attempt.id, &token, "provider full", 12)
+            .reject_capacity_attempt(
+                &first.attempt.id,
+                &token,
+                &SetupFailureMessage::new("provider full").unwrap(),
+                12
+            )
             .await
             .unwrap()
             .transitioned
@@ -384,7 +398,12 @@ async fn capacity_retry_budget_and_due_time_survive_store_reopening() {
     assert!(
         !store
             .runs()
-            .reject_capacity_attempt(&first.attempt.id, &token, "provider full", 15)
+            .reject_capacity_attempt(
+                &first.attempt.id,
+                &token,
+                &SetupFailureMessage::new("provider full").unwrap(),
+                15
+            )
             .await
             .unwrap()
             .transitioned
@@ -417,7 +436,7 @@ async fn expired_capacity_window_and_cancellation_settle_queued_retry() {
         runs.reject_capacity_attempt(
             &claim.attempt.id,
             &claim.attempt.token_hash,
-            "provider full",
+            &SetupFailureMessage::new("provider full").unwrap(),
             12,
         )
         .await

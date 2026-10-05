@@ -33,6 +33,22 @@ test('the backend gate covers the whole workspace and the API feature suites exp
   assert.ok(backend.includes('cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests'));
 });
 
+test('the backend gate bounds PostgreSQL test concurrency on larger hosts', () => {
+  const dir = mkdtempSync(resolve(tmpdir(), 'scope-test-concurrency-'));
+  try {
+    const receipt = resolve(dir, 'threads');
+    writeFileSync(resolve(dir, 'cargo'), '#!/bin/sh\nif [ "$1" = test ]; then printf "%s\\n" "$RUST_TEST_THREADS" >> "$SCOPE_TEST_THREAD_RECEIPT"; fi\n', { mode: 0o755 });
+    execFileSync('/bin/bash', [resolve(root, 'dev/checks/backend')], {
+      env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, RUST_TEST_THREADS: '128', SCOPE_TEST_THREAD_RECEIPT: receipt },
+    });
+    const threads = readFileSync(receipt, 'utf8').trim().split('\n');
+    assert.ok(threads.length > 0);
+    for (const count of threads) assert.equal(count, '4');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('web gate includes resource, Hooks, convention and advisory checks; backend owns the contract; CLI and integration retain their coverage', () => {
   assert.deepEqual(commands('web'), [
     'pnpm test', 'pnpm check', 'pnpm build',

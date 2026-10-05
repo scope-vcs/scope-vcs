@@ -315,7 +315,16 @@ pub(crate) async fn complete(
     let conclusion = match input.conclusion {
         AttemptConclusionRequest::Succeeded => AttemptConclusion::Succeeded,
         AttemptConclusionRequest::SetupFailed { exit_code, message } => {
-            AttemptConclusion::SetupFailed { exit_code, message }
+            AttemptConclusion::SetupFailed {
+                exit_code,
+                message: scope_domain::runs::step::SetupFailureMessage::new(&message).map_err(
+                    |_| {
+                        scope_domain::error::DomainError::invalid_input(
+                            "runtime setup failure message is required, must not exceed 2048 bytes, and cannot contain NUL characters",
+                        )
+                    },
+                )?,
+            }
         }
         AttemptConclusionRequest::TimedOut => AttemptConclusion::TimedOut,
         AttemptConclusionRequest::Canceled => AttemptConclusion::Canceled,

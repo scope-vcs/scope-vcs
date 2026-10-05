@@ -210,11 +210,14 @@ fn terminal_reason(reason: AttemptTerminalReason) -> RepositoryRunTerminalReason
             RepositoryRunTerminalReason::RuntimeSetupFailed {
                 exit_code: scope_domain::runs::exit_code::SetupFailure::ProviderRejected
                     .exit_code(),
-                message,
+                message: message.into_string(),
             }
         }
         AttemptTerminalReason::RuntimeSetupFailed { exit_code, message } => {
-            RepositoryRunTerminalReason::RuntimeSetupFailed { exit_code, message }
+            RepositoryRunTerminalReason::RuntimeSetupFailed {
+                exit_code,
+                message: message.into_string(),
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict'
-import { afterEach, test } from 'node:test'
+import { afterEach, mock, test } from 'node:test'
 import { HttpError, InvalidApiResponseError } from '../../api/http'
 import type { RepoLiveState } from '../../api/types'
 import { STALE_BUILD_HEADER, StaleBuildError } from '../../lib/stale-build'
@@ -50,6 +50,7 @@ test('background reload remains pending through transport and API outages', asyn
 
 test('initial navigation fails normally and nonretryable access errors stop refresh', async () => {
   let calls = 0
+  const wait = mock.fn(async () => { throw new Error('unexpected retry') })
   for (const [refresh, error] of [
     [false, new TypeError('offline')],
     [true, new HttpError(403, { code: 'forbidden', message: 'Access denied', retryable: false })],
@@ -60,10 +61,11 @@ test('initial navigation fails normally and nonretryable access errors stop refr
       signal: new AbortController().signal,
       refresh,
       load: async () => { calls += 1; throw error },
-      wait: async () => { assert.fail('terminal errors must not retry') },
+      wait,
     }), (actual) => actual === error)
   }
   assert.equal(calls, 4)
+  assert.equal(wait.mock.callCount(), 0)
 })
 
 test('leaving the route cancels its delayed recovery without another request', async () => {
@@ -105,14 +107,16 @@ test('a stale build stops server-function requests and keeps refreshed route dat
   await assert.rejects(loadRepoRouteState({ load: stale, refresh: false, signal: new AbortController().signal }), StaleBuildError)
   const controller = new AbortController()
   let loads = 0
+  const wait = mock.fn(async () => { throw new Error('unexpected retry') })
   const refreshing = loadRepoRouteState({
     load: () => { loads += 1; return stale() }, refresh: true, signal: controller.signal,
-    wait: () => assert.fail('a stale build must not retry'),
+    wait,
   })
   await new Promise((resolve) => setImmediate(resolve))
   controller.abort()
   await assert.rejects(refreshing, { name: 'AbortError' })
   assert.equal(loads, 1)
+  assert.equal(wait.mock.callCount(), 0)
 })
 
 test('successful network reads retain distinct identities even when the summary is unchanged', async () => {
