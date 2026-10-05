@@ -221,7 +221,7 @@ jobs:
     needs: plan
     if: >-
       needs.plan.outputs.recover_cutover_id == '' &&
-      (needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true')
+      (needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true' || inputs.replace_redeployed_component != '')
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     environment: production
