@@ -20,7 +20,6 @@ const REMOTE_URL: &str = "https://scope.example/git/adam/sample";
 fn init_configures_an_unborn_repository_for_its_first_push() {
     let dir = TempDir::new("unborn");
     run_git(dir.path(), ["-c", "init.defaultBranch=main", "init"]);
-    fs::create_dir(dir.path().join(".codex")).unwrap();
     let server = InitServer::start();
 
     let output = server
@@ -35,18 +34,11 @@ fn init_configures_an_unborn_repository_for_its_first_push() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stdout.contains(
-            "Create your first commit including the generated Scope files, then run: scope push"
-        ),
+        stdout.contains("Create your first commit, then run: scope push"),
         "{stdout}"
     );
     assert!(!stderr.contains("No such remote"), "{stderr}");
-    assert!(dir.path().join(".scope/RULES.md").is_file());
-    assert!(
-        fs::read_to_string(dir.path().join("AGENTS.md"))
-            .unwrap()
-            .contains("Read and follow `.scope/RULES.md`")
-    );
+    assert!(!dir.path().join(".scope").exists());
     assert!(dir.path().join(".git/scope/repo.json").is_file());
     assert_eq!(
         git_stdout(dir.path(), ["remote", "get-url", "scope"]),

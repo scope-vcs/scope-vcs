@@ -1,7 +1,7 @@
 use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
-    policy::{Policy, ScopePath, Visibility, VisibilityRule},
+    policy::{ScopePath, Visibility, VisibilityRule},
     projection::{
         FileChange, LogicalCommit, ProjectionMaterialization, ProjectionViewKey, SourceGraph,
         project_graph,
@@ -158,11 +158,6 @@ fn published_test_repo(default_visibility: Visibility) -> Repository {
     };
     let mut repo = Repository::new(&owner, "repo", default_visibility, "repoi_test").unwrap();
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
-    let rules_path = path("/.scope/RULES.md");
-    repo.live_files.insert(rules_path.clone(), blob(""));
-    repo.policy
-        .add_rule(VisibilityRule::public(rules_path))
-        .unwrap();
     repo
 }
 

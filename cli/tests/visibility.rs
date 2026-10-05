@@ -56,7 +56,6 @@ fn show_explain_and_validate_agree_with_domain_and_preserve_local_state() {
         ("/README.md", "private", "inherited default"),
         ("/docs/guide.md", "public", "inherited /docs/**"),
         ("/docs/private/key", "private", "inherited /docs/private/**"),
-        ("/.scope/RULES.md", "public", "forced public"),
         ("/.scope/runs/check.yml", "private", "forced private"),
     ] {
         let shown = paths.iter().find(|entry| entry["path"] == path).unwrap();

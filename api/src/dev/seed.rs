@@ -180,7 +180,6 @@ const PUBLIC_DEMO_APP: &str =
 const PUBLIC_DEMO_PLAN: &str =
     "# Internal Plan\n\nPrivate content stays out of public projections.\n";
 const UPDATE_DEMO_INITIAL_README: &str = "# Update Demo\n\nThis repository has a clean published baseline.\n\n[Read the release guide](docs/release.md).\n";
-const UPDATE_DEMO_RULES: &str = "";
 const UPDATE_DEMO_RELEASE_GUIDE: &str =
     "# Release flow\n\nDocument the release before publishing the next version.\n";
 const UPDATE_DEMO_INTERNAL_NOTES: &str =
@@ -346,7 +345,6 @@ fn update_demo(
 ) -> Result<(Repository, SeedRequestGallery, GitSegmentUpload), ApiError> {
     let mut repo = repo(owner, "update-demo", Visibility::Public)?;
     let initial_readme = blob(object_store, UPDATE_DEMO_INITIAL_README)?;
-    let rules = blob(object_store, UPDATE_DEMO_RULES)?;
     let internal_notes = blob(object_store, UPDATE_DEMO_INTERNAL_NOTES)?;
     let internal_path = ScopePath::parse("/internal/notes.md").map_err(ApiError::internal)?;
     repo.policy
@@ -359,7 +357,6 @@ fn update_demo(
         "Seed update demo",
         vec![
             add_change("/README.md", initial_readme.clone(), Visibility::Public)?,
-            add_change("/.scope/RULES.md", rules, Visibility::Public)?,
             add_change(internal_path.as_str(), internal_notes, Visibility::Private)?,
         ],
     ));
@@ -378,7 +375,6 @@ fn update_demo(
     let initial = SeedGitCommit {
         files: &[
             ("README.md", UPDATE_DEMO_INITIAL_README),
-            (".scope/RULES.md", UPDATE_DEMO_RULES),
             ("internal/notes.md", UPDATE_DEMO_INTERNAL_NOTES),
         ],
         message: "Seed update demo",

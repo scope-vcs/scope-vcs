@@ -6,6 +6,8 @@ use crate::{policy::ScopePath, runs::workflow::identity::WorkflowPath};
 
 pub const REPO_CONTROL_ROOT: &str = "/.scope";
 pub const REPO_CONTROL_PREFIX: &str = "/.scope/";
+/// Scope no longer requires or creates this file. It stays a public control path because
+/// existing public history, including preserved request commits, was projected with it.
 pub const REPO_RULES_PATH: &str = "/.scope/RULES.md";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
