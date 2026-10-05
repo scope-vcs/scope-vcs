@@ -42,9 +42,10 @@ const MERGEABILITY = {
   { label: string; tone: BadgeVariant }
 >
 
+// What the evaluation itself says, when it is not simply the checks and their states.
 const CHECK_EVALUATION_NOTES = {
   'no-checks': 'This head asks for no checks.',
-  'awaiting-approval': null,
+  'awaiting-approval': 'These checks wait for a maintainer to start them.',
   'started': null,
   'configuration-error': null,
 } as const satisfies Record<RequestCheckEvaluationState, string | null>
@@ -82,54 +83,29 @@ export function requestCheckEvaluationNote(checks: RequestChecksResponse) {
   if (checks.state === null) {
     return 'The checks for this commit have not been worked out yet.'
   }
+  // Why the checks cannot pass, such as a GitHub connection that is gone.
   if (checks.message) return checks.message
   if (checks.state === 'configuration-error') {
     return 'This head’s workflow configuration is invalid.'
   }
-  if (checks.state === 'awaiting-approval') {
-    return checks.github_push
-      ? 'These checks wait for a maintainer. Approving sends this revision to GitHub Actions.'
-      : 'These checks wait for a maintainer to start them.'
-  }
   return CHECK_EVALUATION_NOTES[checks.state]
 }
 
+/** Shown to a maintainer before approving GitHub checks for workflow changes. */
 export function requestChecksWorkflowWarning(checks: RequestChecksResponse) {
   return checks.can_approve && checks.changes_github_workflows
     ? 'This request changes GitHub workflow files. Approving runs them with your repository’s secrets.'
     : null
 }
 
-export function requestPublicGitHubNote(checks: RequestChecksResponse) {
+/** A private request whose checks run in a public repository is public there. */
+export function requestPublicChecksNote(checks: RequestChecksResponse) {
   return checks.private_request_on_public_github
-    ? 'This private request’s checks run in a public GitHub repository, so its changes are public on GitHub.'
+    ? {
+        label: 'Checks run publicly',
+        detail: 'This private request’s checks run in a public repository, so its changes are public.',
+      }
     : null
-}
-
-export function requestGitHubPushNote(
-  push: RequestChecksResponse['github_push'],
-): { text: string; failed: boolean } | null {
-  if (!push) return null
-  switch (push.state) {
-    case 'awaiting_approval':
-      return null
-    case 'sending':
-      return {
-        text: push.error
-          ? `Sending to GitHub again. The last attempt failed: ${push.error}`
-          : 'Sending this revision to GitHub.',
-        failed: false,
-      }
-    case 'sent':
-      return { text: `Sent to GitHub as ${push.branch}.`, failed: false }
-    case 'failed':
-      return {
-        text: push.error
-          ? `Sending to GitHub failed: ${push.error}`
-          : 'Sending to GitHub failed.',
-        failed: true,
-      }
-  }
 }
 
 export function requestEventBody(event: RequestEventResponse) {
@@ -172,6 +148,7 @@ export function requestEventBody(event: RequestEventResponse) {
     const { head_oid, main_oid } = payload.AutoMergeFulfilled
     return `${shortOid(head_oid)} → ${shortOid(main_oid)}`
   }
+  // Exhaustive: a new payload variant from Rust lands here as a type error.
   payload satisfies never
   return null
 }

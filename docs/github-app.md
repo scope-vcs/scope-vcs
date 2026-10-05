@@ -218,8 +218,14 @@ maintainer confirms, the same as a private request.
 A request can merge when the latest run of each required name on the tested
 commit passed: success, neutral or skipped. A re-run on GitHub is a newer run
 and decides. A name with no run yet is pending, and the request view lists it
-as having no run. Runs on any other commit never count, so a rebase or amend
+as waiting. Runs on any other commit never count, so a rebase or amend
 needs its own green runs. Merge and auto-merge both wait for this.
+
+The request view leads with a count of what is left, failed and passed, and
+lists only failed, running and waiting checks. "Show all" lists every check,
+nested under the workflows its name gives, such as `ci / test / unit`. A
+private request checked in a public GitHub repository is tagged "Checks run
+publicly".
 
 ### Pushing revisions
 
@@ -249,9 +255,9 @@ still holds and that no newer push of its branch was queued; otherwise it
 sends and records nothing. A commit is pushed only while the repository is
 still connected to the GitHub repository and installation the push was
 queued for. A failed push is tried again after 30
-seconds, then 2, 10 and 30 minutes, and then gives up. The request view shows
-whether the revision is waiting for approval, being sent, sent, or failed,
-and shows maintainers the last error. A push to a repository whose link is
+seconds, then 2, 10 and 30 minutes, and then gives up. While the revision is
+being sent, the request view says its checks are starting, and if sending
+fails, that they couldn't start. Maintainers also see the last error. A push to a repository whose link is
 gone gives up at once.
 
 ### Reading results
