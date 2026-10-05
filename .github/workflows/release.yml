@@ -36,6 +36,10 @@ on:
         description: Failed main Release run whose live web activation needs a replacement
         type: string
         default: ""
+      replace_redeployed_component:
+        description: Railway component redeployed outside Release that this release replaces
+        type: string
+        default: ""
 
 concurrency:
   group: scope-release
@@ -97,6 +101,15 @@ jobs:
           [[ "$FAILED_WEB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           test "$REQUESTED_SCOPE" = web
           test -z "$SOURCE_RUN_ID"
+          test -z "$RECOVER_CUTOVER_ID"
+
+      - name: Require an exact redeployed service replacement request
+        if: inputs.replace_redeployed_component != ''
+        env:
+          FAILED_WEB_RUN_ID: ${{ inputs.replace_failed_web_run_id }}
+          RECOVER_CUTOVER_ID: ${{ steps.release.outputs.recover_cutover_id }}
+        run: |
+          test -z "$FAILED_WEB_RUN_ID"
           test -z "$RECOVER_CUTOVER_ID"
 
       - name: Retain selected immutable release
@@ -212,6 +225,8 @@ jobs:
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     environment: production
+    outputs:
+      deployments: ${{ steps.verify.outputs.deployments }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -220,11 +235,18 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
       - name: Verify current production before preparing a cutover
+        id: verify
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
           SCOPE_REPLACE_FAILED_WEB_RUN_ID: ${{ inputs.replace_failed_web_run_id }}
+          SCOPE_REPLACE_REDEPLOYED_COMPONENT: ${{ inputs.replace_redeployed_component }}
+          SCOPE_RELEASE_COMPONENTS: >-
+            {"cache":${{ needs.plan.outputs.cache }},"run-worker":${{ needs.plan.outputs.worker }},
+            "media-worker":${{ needs.plan.outputs.media_worker }},"git-router":${{ needs.plan.outputs.router }},
+            "media-api":${{ needs.plan.outputs.media }},"api":${{ needs.plan.outputs.api }},
+            "web":${{ needs.plan.outputs.web }},"cli-downloads":${{ needs.plan.outputs.cli }}}
           SCOPE_REQUESTED_SCOPE: ${{ inputs.scope }}
         run: bash .github/scripts/production-readiness-preflight.sh
 
@@ -360,7 +382,7 @@ jobs:
       deploy_router: ${{ needs.plan.outputs.router == 'true' }}
       deploy_media: ${{ needs.plan.outputs.media == 'true' }}
       deploy_api: ${{ needs.plan.outputs.api == 'true' }}
-      successful_deployments: ${{ needs.plan.outputs.deployed_components || '{}' }}
+      successful_deployments: ${{ needs.readiness-preflight.outputs.deployments || needs.plan.outputs.deployed_components || '{}' }}
       recover_cutover_id: ${{ needs.plan.outputs.recover_cutover_id || '' }}
     secrets: inherit
 

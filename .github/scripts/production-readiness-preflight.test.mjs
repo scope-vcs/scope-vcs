@@ -9,7 +9,7 @@ import { deployedReadinessBaseline, productionReadinessAudit } from './productio
 
 const root = resolve(import.meta.dirname, '../..');
 
-test('preflight consumes receipt JSON even inside an Actions step with GITHUB_OUTPUT', (t) => {
+test('preflight outputs only the verified receipt baseline inside an Actions step', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'production-readiness-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = join(dir, 'bin');
@@ -53,8 +53,9 @@ esac
       HEALTH_TRACE: join(dir, 'health.json'), SQL_TRACE: join(dir, 'audit.sql') },
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(readFileSync(output, 'utf8'), 'untouched\n');
   assert(existsSync(join(dir, 'health.json')));
+  const verified = JSON.parse(readFileSync(join(dir, 'health.json'), 'utf8'));
+  assert.equal(readFileSync(output, 'utf8'), `untouched\ndeployments=${JSON.stringify(verified)}\n`);
   assert.match(readFileSync(join(dir, 'audit.sql'), 'utf8'), /BEGIN READ ONLY;/);
   assert.match(result.stdout, /database roles are ready/);
 });
