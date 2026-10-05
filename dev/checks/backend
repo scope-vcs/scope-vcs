@@ -2,6 +2,8 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
+export RUST_TEST_THREADS=4
+
 cargo fmt --all --check
 cargo deny --locked check advisories
 cargo test --workspace --locked

@@ -37,3 +37,30 @@ Checks on this repository's Scope requests come from its GitHub Actions
 workflows on `scope/requests/<id>`. Do not start Scope runs.
 
 Main on Scope only ever receives commits already on GitHub's main.
+
+## Rule enforcement
+
+When an operator corrects a repeat, repair the owning architecture or type in
+that change, then add a check if the wrong code can still be written. Update
+this table for remaining rules. Remove instructions made unnecessary by an
+unrepresentable state. Evidence and proof for this audit are in
+[docs/agent-corrections.md](docs/agent-corrections.md).
+
+| Rule requiring contributor judgment | Enforcement or explicit limit |
+| --- | --- |
+| Keep domain policy and required effects in their owners. | Crate dependencies: `dev/checks/policy` and `check-rust-boundaries.mjs`. Lifecycle and refresh behavior: Rust domain/store/use-case tests. Placement of new policy still requires review. |
+| Reuse frontend resource owners; keep retained data scoped and refreshed. | `createCachedResource` owns retention and viewer resets. `pnpm check:resource-boundary` rejects effect-owned reads and direct route publication; resource behavior tests cover races. |
+| Assert callback behavior outside the code that can catch its failures. | `pnpm check:resource-boundary` checks test sources with `callback-assertions.mjs`; use `mock.fn()` and assert `mock.callCount()` after awaiting work. |
+| Audit large files and separate responsibilities. | `dev/checks/policy` runs `check-source-size.mjs`: ownership audit at 700 lines, hard cap at 1,000. |
+| Preserve generated contracts and digest-locked migrations. | `dev/checks/contract` and `check-migration-immutability.mjs`. |
+| Avoid ordinary code comments. | No local enforcement yet; separate PR #525 adds it. The exceptions above remain the intended policy. |
+| Avoid compatibility layers in pre-alpha; maintainer means owner or member. | Domain authorization tests cover access. Compatibility and terminology choices still require review. |
+| Do not edit root README without explicit authorization; involve the operator in new behavior. | Operator context and review; no source-only check can establish authorization. |
+| Record failed checks before retrying without a repair. | Release-flake issue workflow; no local retry interceptor. |
+| Mirror GitHub delivery to Scope, keep Scope main downstream, and do not start Scope runs. | `dogfood-scope` skill and contribution workflow; not enforced by compilation. |
+| Keep releases separate from pushes and merges. | GitHub release workflows. |
+| Review with the configured timeout and verify before committing. | Autoreview and shared `dev/checks` commands; review invocation remains an agent responsibility. |
+
+The new checks have no suppression syntax and this change adds no exceptions.
+A future exception must be attached to the offending line with its reason,
+expiry date, and a named human's approval; do not add a blanket allowlist.
