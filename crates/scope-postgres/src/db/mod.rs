@@ -166,7 +166,7 @@ pub use request_attention::{ApplyRequestAttentionCommand, RequestAttentionResult
 pub use request_auto_merge::{
     AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand,
     ClaimDueRequestAutoMergesCommand, ClaimedRequestAutoMerge, ReleaseRequestAutoMergeClaimCommand,
-    RequestAutoMergeCheckState, StopClaimedRequestAutoMergeCommand,
+    StopClaimedRequestAutoMergeCommand,
 };
 pub use request_check_commits::RebuildCheckCommitCommand;
 pub use request_checks::{

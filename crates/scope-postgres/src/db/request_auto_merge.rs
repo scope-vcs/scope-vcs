@@ -163,13 +163,6 @@ impl RequestStore {
             .transpose()
     }
 
-    pub async fn request_auto_merge_check_state(
-        &self,
-        intent: &RequestAutoMergeIntent,
-    ) -> Result<RequestAutoMergeCheckState, PostgresError> {
-        request_auto_merge_check_state(self.db.as_ref(), intent).await
-    }
-
     pub async fn claim_due_request_auto_merges(
         &self,
         command: ClaimDueRequestAutoMergesCommand,
