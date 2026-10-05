@@ -2,26 +2,6 @@ use super::*;
 use serde_json::json;
 
 #[test]
-fn list_renders_open_state_and_wait() {
-    let request: RequestListItemResponse = serde_json::from_value(json!({
-        "id": "req_one", "name": "fix-refs", "title": "Fix refs",
-        "author_role": "Public", "audience": "Public", "head_oid": oid('b'),
-        "state": "Open", "submitted_at_unix": 10, "updated_at_unix": 20,
-        "mergeability": {
-            "status": "NotMaintainer",
-            "current_main_oid": oid('a'),
-            "request_head_oid": oid('b'),
-            "reason": "repo maintainer required"
-        }
-    }))
-    .unwrap();
-
-    let rendered = request_list_line(&request, 70);
-    assert!(rendered.contains("open"), "{rendered}");
-    assert!(rendered.contains("1m"), "{rendered}");
-}
-
-#[test]
 fn detail_uses_server_capabilities_and_renders_invitees_and_submission() {
     let mut request = summary();
     request.state = RequestState::Open;

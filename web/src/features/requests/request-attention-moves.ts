@@ -31,10 +31,10 @@ export function movedRow(move: RequestAttentionMove): {
   }
   const attention =
     command.action === 'restore'
-      ? { state: 'active', reason: 'restored', snoozed_until_unix: null, can_set_aside: true, can_restore: false } as const
+      ? { group: 'needs_you', state: 'active', reason: 'restored', snoozed_until_unix: null, can_set_aside: true, can_restore: false } as const
       : command.action === 'snooze'
-        ? { state: 'snoozed', reason: 'snoozed', snoozed_until_unix: command.until_unix, can_set_aside: false, can_restore: true } as const
-        : { state: 'settled', reason: 'settled', snoozed_until_unix: null, can_set_aside: false, can_restore: true } as const
+        ? { group: 'set_aside', state: 'snoozed', reason: 'snoozed', snoozed_until_unix: command.until_unix, can_set_aside: false, can_restore: true } as const
+        : { group: 'set_aside', state: 'settled', reason: 'settled', snoozed_until_unix: null, can_set_aside: false, can_restore: true } as const
   return {
     section,
     item: { ...item, attention: { ...item.attention, ...attention }, attention_at_unix: atUnix },

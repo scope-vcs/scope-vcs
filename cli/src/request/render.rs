@@ -4,8 +4,8 @@ use crate::api::{
     RequestCheckResponse, RequestChecksResponse, RequestCloseResponse,
     RequestDiscussionMutationResponse, RequestDiscussionReplyMutationResponse, RequestEventPayload,
     RequestGitHubPushResponse, RequestGitHubPushState, RequestInviteeMutationResponse,
-    RequestListItemResponse, RequestMergeabilityResponse, RequestMergeabilityStatus,
-    RequestMutationResponse, RequestPermissionsResponse, RequestState, RequestSummaryResponse,
+    RequestMergeabilityResponse, RequestMergeabilityStatus, RequestMutationResponse,
+    RequestPermissionsResponse, RequestState, RequestSummaryResponse,
 };
 use crate::display::{short_oid, terminal_text};
 
@@ -138,21 +138,7 @@ pub(super) fn request_line(request: &RequestSummaryResponse) -> String {
     })
 }
 
-pub(super) fn request_list_line(request: &RequestListItemResponse, now_unix: u64) -> String {
-    format!(
-        "{:>5}  {}",
-        wait_label(request.submitted_at_unix, now_unix),
-        format_request_line(RequestLine {
-            name: &request.name,
-            id: &request.id,
-            state: request.state,
-            title: &request.title,
-            head_oid: &request.head_oid,
-        })
-    )
-}
-
-fn wait_label(submitted_at_unix: Option<u64>, now_unix: u64) -> String {
+pub(super) fn wait_label(submitted_at_unix: Option<u64>, now_unix: u64) -> String {
     let Some(submitted_at_unix) = submitted_at_unix else {
         return "-".to_string();
     };

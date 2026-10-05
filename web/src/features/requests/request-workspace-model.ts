@@ -6,8 +6,8 @@ import {
 } from '../../lib/date-format'
 import type {
   RequestAttentionReason,
+  RequestQueueGroup,
   RequestQueueItemResponse,
-  RequestQueueSection,
 } from '../../api/types.generated'
 
 const REASONS: Record<RequestAttentionReason, string> = {
@@ -37,7 +37,7 @@ export function requestAttentionLabel(item: RequestQueueItemResponse, hydrated: 
   return reason
 }
 
-export type RequestAttentionGroup = 'needs_you' | 'waiting' | 'unclaimed' | 'set_aside' | 'done'
+export type RequestAttentionGroup = RequestQueueGroup
 
 export const REQUEST_ATTENTION_GROUP_ORDER = [
   'needs_you',
@@ -53,24 +53,6 @@ export const REQUEST_ATTENTION_GROUP_LABELS: Record<RequestAttentionGroup, strin
   unclaimed: 'Unclaimed',
   set_aside: 'Set aside',
   done: 'Done',
-}
-
-const NEEDS_YOU: ReadonlySet<RequestAttentionReason> = new Set([
-  'invited',
-  'claimed',
-  'new_activity',
-  'restored',
-  'snooze_expired',
-])
-
-export function requestAttentionGroup(
-  section: RequestQueueSection,
-  reason: RequestAttentionReason,
-  maintainer: boolean,
-): RequestAttentionGroup {
-  if (section !== 'active') return section
-  if (reason === 'authored') return maintainer ? 'needs_you' : 'waiting'
-  return NEEDS_YOU.has(reason) ? 'needs_you' : 'waiting'
 }
 
 export function requestHasNewActivity(item: RequestQueueItemResponse) {

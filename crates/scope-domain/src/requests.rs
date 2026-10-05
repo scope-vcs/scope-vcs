@@ -79,10 +79,10 @@ mod queue;
 pub use queue::{
     ApplyRequestAttentionInput, REQUEST_QUEUE_RULES, RequestAttention, RequestAttentionAction,
     RequestAttentionMutation, RequestAttentionReason, RequestAttentionState, RequestClaim,
-    RequestQueueClassification, RequestQueueFacts, RequestQueuePredicate,
+    RequestQueueClassification, RequestQueueFacts, RequestQueueGroup, RequestQueuePredicate,
     RequestQueuePredicateAtom, RequestQueueRule, RequestQueueSection,
     apply_request_attention_action, classify_request_queue_item, reactivate_request_attention,
-    request_queue_visibility_predicate,
+    request_queue_group, request_queue_visibility_predicate,
 };
 mod ratings;
 pub use ratings::{

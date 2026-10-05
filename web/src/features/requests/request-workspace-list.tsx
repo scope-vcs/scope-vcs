@@ -13,7 +13,6 @@ import { RequestDiscussionActorAvatar } from './request-discussion-byline'
 import { RequestSnoozeMenu } from './request-snooze-menu'
 import {
   requestAgeLabel,
-  requestAttentionGroup,
   requestAttentionHeat,
   requestAttentionLabel,
   requestHasNewActivity,
@@ -30,7 +29,6 @@ export type RequestWorkspaceListProps = {
   onRetry: () => void
   onLoadMore: () => void
   onAction: (item: RequestQueueItemResponse, command: RequestAttentionCommand) => void
-  maintainer: boolean
   params: RepoParams
   pendingId: string | null
   selectedId?: string
@@ -108,13 +106,12 @@ export function RequestWorkspaceListSkeleton({ rail = false }: { rail?: boolean 
 function RequestWorkspaceRow({
   item,
   section,
-  maintainer,
   onAction,
   params,
   pendingId,
   selectedId,
   rail,
-}: Pick<RequestWorkspaceListProps, 'maintainer' | 'onAction' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
+}: Pick<RequestWorkspaceListProps, 'onAction' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
   item: RequestQueueItemResponse
   section: RequestQueueSection
 }) {
@@ -123,8 +120,7 @@ function RequestWorkspaceRow({
   const nowUnix = useUnixClock()
   const selected = selectedId === request.id
   const pending = pendingId === request.id
-  const group = requestAttentionGroup(section, attention.reason, maintainer)
-  const hot = group === 'needs_you'
+  const hot = attention.group === 'needs_you'
   const unread = requestHasNewActivity(item)
   const canSetAside = section === 'active' && attention.can_set_aside
   const actions = [
@@ -147,7 +143,7 @@ function RequestWorkspaceRow({
   return (
     <article
       className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
-      data-group={group}
+      data-group={attention.group}
       data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
       data-rail={rail ? '' : undefined}
       data-request-id={request.id}

@@ -1,50 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { RequestAttentionReason } from '../../api/types.generated'
 import {
   requestAgeLabel,
-  requestAttentionGroup,
   requestAttentionHeat,
   requestSnoozeLandingLabel,
   requestSnoozeUntil,
 } from './request-workspace-model'
-
-const ACTIVE_REASONS: Record<RequestAttentionReason, 'needs_you' | 'waiting'> = {
-  invited: 'needs_you',
-  claimed: 'needs_you',
-  new_activity: 'needs_you',
-  restored: 'needs_you',
-  snooze_expired: 'needs_you',
-  authored: 'waiting',
-  waiting: 'waiting',
-  open: 'waiting',
-  claimed_elsewhere: 'waiting',
-  unclaimed: 'waiting',
-  snoozed: 'waiting',
-  settled: 'waiting',
-  closed: 'waiting',
-  merged: 'waiting',
-}
-
-test('every active reason lands in needs-you or waiting', () => {
-  for (const [reason, group] of Object.entries(ACTIVE_REASONS)) {
-    assert.equal(requestAttentionGroup('active', reason as RequestAttentionReason, false), group, reason)
-  }
-})
-
-test('a maintainer’s own request needs them, a contributor’s waits', () => {
-  assert.equal(requestAttentionGroup('active', 'authored', true), 'needs_you')
-  assert.equal(requestAttentionGroup('active', 'authored', false), 'waiting')
-  assert.equal(requestAttentionGroup('active', 'waiting', true), 'waiting')
-  assert.equal(requestAttentionGroup('active', 'invited', true), 'needs_you')
-})
-
-test('storage sections outside active map straight to their group', () => {
-  assert.equal(requestAttentionGroup('unclaimed', 'unclaimed', true), 'unclaimed')
-  assert.equal(requestAttentionGroup('set_aside', 'snoozed', true), 'set_aside')
-  assert.equal(requestAttentionGroup('set_aside', 'settled', true), 'set_aside')
-  assert.equal(requestAttentionGroup('done', 'merged', true), 'done')
-})
 
 test('row age reads as a compact unit', () => {
   const now = 1_800_000_000

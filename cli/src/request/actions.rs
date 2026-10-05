@@ -322,7 +322,7 @@ fn events_through_version(
         .collect()
 }
 
-fn full_request_activity(
+pub(super) fn full_request_activity(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
     after_position: u64,
@@ -383,97 +383,6 @@ pub(super) fn show_one_request(
         }),
         human_lines,
     ))
-}
-
-pub(super) fn list_request_status(
-    git_repo: Option<&GitRepo>,
-    api: ApiSession<'_>,
-    args: args::RequestListArgs,
-) -> anyhow::Result<RequestCommandOutcome> {
-    let context = load_context(git_repo, api, args.remote.as_deref())?;
-    let mut requests = load_request_list(api, &context)?;
-    requests.retain(|request| {
-        args.state.is_none_or(|state| request.state == state.into())
-            && args
-                .audience
-                .is_none_or(|audience| request.audience == audience.into())
-            && args.search.as_ref().is_none_or(|search| {
-                let search = search.to_lowercase();
-                request.name.to_lowercase().contains(&search)
-                    || request.title.to_lowercase().contains(&search)
-            })
-    });
-    requests.truncate(args.limit as usize);
-    let mut human_lines = repo_access_lines(&context.repo);
-    human_lines.extend(request_list_lines(&requests)?);
-    Ok(RequestCommandOutcome::new(
-        "request.list",
-        RequestCommandResult::List(ListResult {
-            repo: context.repo,
-            requests,
-        }),
-        human_lines,
-    ))
-}
-
-pub(super) fn load_request_list(
-    api: ApiSession<'_>,
-    context: &local::RequestContext,
-) -> anyhow::Result<Vec<crate::api::RequestListItemResponse>> {
-    let mut requests = Vec::new();
-    let mut cursor = None;
-    loop {
-        let page = list_requests(
-            api,
-            &context.target.owner,
-            &context.target.repo,
-            cursor.as_deref(),
-        )?;
-        requests.extend(page.requests);
-        let Some(next) = page.next_cursor else { break };
-        cursor = Some(next);
-    }
-    requests.sort_by(|left, right| {
-        let rank = |state| match state {
-            crate::api::RequestState::Open => 0,
-            crate::api::RequestState::Draft => 1,
-            crate::api::RequestState::Closed => 2,
-            crate::api::RequestState::Merged => 3,
-        };
-        let state_order = rank(left.state).cmp(&rank(right.state));
-        if state_order != std::cmp::Ordering::Equal {
-            return state_order;
-        }
-        if left.state == crate::api::RequestState::Open {
-            return left
-                .submitted_at_unix
-                .cmp(&right.submitted_at_unix)
-                .then_with(|| left.id.cmp(&right.id));
-        }
-        left.updated_at_unix
-            .cmp(&right.updated_at_unix)
-            .then_with(|| left.id.cmp(&right.id))
-    });
-    Ok(requests)
-}
-
-pub(super) fn request_list_lines(
-    requests: &[crate::api::RequestListItemResponse],
-) -> anyhow::Result<Vec<String>> {
-    if requests.is_empty() {
-        return Ok(vec!["No visible requests.".to_string()]);
-    }
-    let now_unix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system clock is before Unix epoch")?
-        .as_secs();
-    let mut lines = vec![" WAIT  STATE      REQUEST".to_string()];
-    lines.extend(
-        requests
-            .iter()
-            .map(|request| request_list_line(request, now_unix)),
-    );
-    Ok(lines)
 }
 
 #[cfg(test)]

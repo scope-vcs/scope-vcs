@@ -34,29 +34,6 @@ fn request_reads_work_outside_a_checkout_with_explicit_repository() {
             "--repo",
             "owner/repo",
             "request",
-            "list",
-            "--state",
-            "open",
-            "--audience",
-            "public",
-            "--search",
-            "fix",
-            "--limit",
-            "1",
-        ])
-        .output()
-        .unwrap();
-    let value = success(output);
-    assert_eq!(value["command"], "request.list");
-    assert_eq!(value["result"]["requests"].as_array().unwrap().len(), 1);
-    assert_eq!(value["result"]["requests"][0]["name"], "fix-one");
-    let output = server
-        .command(dir.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
             "show",
             "--request",
             "req_one",

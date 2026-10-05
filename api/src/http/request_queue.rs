@@ -23,7 +23,7 @@ use scope_api_contract::{
 };
 use scope_domain::requests::{
     REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, RequestQueueClassification,
-    RequestQueueSection,
+    RequestQueueSection, request_queue_group,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -144,7 +144,11 @@ pub(crate) async fn request_queue(
                         .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated),
                 )?,
                 author,
-                attention: attention_response(row.attention, activity_version),
+                attention: attention_response(
+                    row.attention,
+                    activity_version,
+                    access.is_maintainer(),
+                ),
                 claimer,
             })
         })
@@ -163,7 +167,7 @@ pub(crate) async fn apply_attention(
     Json(input): Json<RequestAttentionActionRequest>,
 ) -> Result<Json<RequestAttentionMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let (repo, _, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+    let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     let (action, expected_activity_version) = match input {
         RequestAttentionActionRequest::Claim {
             expected_activity_version,
@@ -235,7 +239,11 @@ pub(crate) async fn apply_attention(
         None
     };
     Ok(Json(RequestAttentionMutationResponse {
-        attention: attention_response(result.attention, result.activity_version),
+        attention: attention_response(
+            result.attention,
+            result.activity_version,
+            access.is_maintainer(),
+        ),
         claimer,
     }))
 }
@@ -243,8 +251,10 @@ pub(crate) async fn apply_attention(
 pub(crate) fn attention_response(
     value: RequestQueueClassification,
     activity_version: u64,
+    viewer_is_maintainer: bool,
 ) -> RequestAttentionResponse {
     RequestAttentionResponse {
+        group: request_queue_group(value.section, value.reason, viewer_is_maintainer).into(),
         state: value.state.into(),
         reason: value.reason.into(),
         activity_version,

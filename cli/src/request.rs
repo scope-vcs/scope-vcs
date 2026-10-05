@@ -5,8 +5,8 @@ use crate::{
         RequestTarget, StartRequestParams, add_request_invitee, authorize_request_auto_merge,
         cancel_request_auto_merge, close_request as api_close_request, create_request_discussion,
         create_request_discussion_reply, edit_request_identity, get_request, get_request_activity,
-        get_request_auto_merge, leave_request, list_requests, merge_request, rate_request,
-        remove_request_invitee, reopen_and_reply_to_request_discussion, resolve_request_discussion,
+        get_request_auto_merge, leave_request, merge_request, rate_request, remove_request_invitee,
+        reopen_and_reply_to_request_discussion, resolve_request_discussion,
         start_request as api_start_request, submit_request as api_submit_request,
     },
     git_repo::{
@@ -34,6 +34,7 @@ use discussion::{DiscussionMutation, discussion_mutation};
 mod inspect;
 mod local;
 mod outcome;
+mod queue;
 mod recovery;
 mod render;
 #[cfg(test)]
@@ -56,13 +57,13 @@ use local::{
     update_request_remote_ref,
 };
 use outcome::*;
+use queue::{AttentionCommand, change_attention, list_request_queue, queue_outcome};
 use render::audience_label;
 use render::{
     auto_merge_receipt_lines, auto_merge_status_lines, close_receipt, discussion_reopened_receipt,
     discussion_replied_receipt, discussion_resolved_receipt, discussion_started_receipt,
     invitee_added_receipt, invitee_removed_receipt, leave_receipt, repo_access_lines,
-    request_activity_lines_for_response, request_detail_lines, request_list_line,
-    request_mutation_receipt_lines,
+    request_activity_lines_for_response, request_detail_lines, request_mutation_receipt_lines,
 };
 use text::discussion_body;
 
@@ -136,7 +137,28 @@ pub fn run_request_command(
         }
         RequestCommand::Discussion(args) => run_request_discussion_command(git_repo, api, args),
         RequestCommand::Show(args) => show_one_request(git_repo, api, args),
-        RequestCommand::List(args) => list_request_status(git_repo, api, args),
+        RequestCommand::List(args) => list_request_queue(git_repo, api, args),
+        RequestCommand::Claim(target) => {
+            change_attention(git_repo, api, target, AttentionCommand::Claim)
+        }
+        RequestCommand::Release(target) => {
+            change_attention(git_repo, api, target, AttentionCommand::Release)
+        }
+        RequestCommand::Wait(target) => {
+            change_attention(git_repo, api, target, AttentionCommand::Wait)
+        }
+        RequestCommand::Settle(target) => {
+            change_attention(git_repo, api, target, AttentionCommand::Settle)
+        }
+        RequestCommand::Snooze(args) => change_attention(
+            git_repo,
+            api,
+            args.target,
+            AttentionCommand::Snooze(args.until),
+        ),
+        RequestCommand::Restore(target) => {
+            change_attention(git_repo, api, target, AttentionCommand::Restore)
+        }
         RequestCommand::Checkout(args) => {
             inspect::checkout_request(git_repo.expect("prepared local command"), api, args)
         }
@@ -176,16 +198,14 @@ fn show_request_status(
         ));
     }
 
-    let requests = load_request_list(api, &context)?;
-    human_lines.extend(request_list_lines(&requests)?);
-    Ok(RequestCommandOutcome::new(
+    queue_outcome(
         "request.status",
-        RequestCommandResult::List(ListResult {
-            repo: context.repo,
-            requests,
-        }),
-        human_lines,
-    ))
+        api,
+        context,
+        None,
+        None,
+        queue::QUEUE_SECTION_LIMIT,
+    )
 }
 
 fn run_request_discussion_command(

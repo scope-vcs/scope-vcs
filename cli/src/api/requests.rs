@@ -53,6 +53,50 @@ pub fn list_requests(
     execute(request, format!("list requests for {owner}/{repo}"))
 }
 
+#[derive(serde::Serialize)]
+pub struct QueuePageQuery<'a> {
+    pub section: RequestQueueSection,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<&'a str>,
+    pub limit: u32,
+}
+
+pub fn request_queue_page(
+    api: ApiSession<'_>,
+    owner: &str,
+    repo: &str,
+    query: QueuePageQuery<'_>,
+) -> anyhow::Result<RequestQueuePageResponse> {
+    execute(
+        api.request(
+            reqwest::Method::GET,
+            routes::repo_request_queue(owner, repo),
+        )
+        .query(&query),
+        format!("load the request queue for {owner}/{repo}"),
+    )
+}
+
+pub fn apply_request_attention(
+    api: ApiSession<'_>,
+    target: RequestTarget<'_>,
+    action: &RequestAttentionActionRequest,
+) -> anyhow::Result<RequestAttentionMutationResponse> {
+    execute(
+        api.request(
+            reqwest::Method::PUT,
+            routes::repo_request_attention(target.owner, target.repo, target.request_id),
+        )
+        .json(action),
+        format!(
+            "change attention for request {} in {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
+    )
+}
+
 pub fn get_request(
     api: ApiSession<'_>,
     owner: &str,
