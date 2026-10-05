@@ -20,6 +20,7 @@ use scope_domain::{
         RequestEventPayload as DomainRequestEventPayload,
         RequestIdentityAuditFact as DomainRequestIdentityAuditFact,
         RequestMergeabilityStatus as DomainRequestMergeabilityStatus,
+        RequestQueueGroup as DomainRequestQueueGroup,
         RequestQueueSection as DomainRequestQueueSection, RequestState as DomainRequestState,
     },
 };
@@ -163,6 +164,11 @@ wire_enum!(
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
     RequestQueueSection => DomainRequestQueueSection { Active, Unclaimed, SetAside, Done }
+);
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    RequestQueueGroup => DomainRequestQueueGroup { NeedsYou, Waiting, Unclaimed, SetAside, Done }
 );
 wire_enum!(
     #[serde(rename_all = "snake_case")]

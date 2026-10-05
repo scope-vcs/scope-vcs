@@ -11,7 +11,7 @@ function row(id: string, overrides: Partial<RequestQueueItemResponse['attention'
     author: { handle: 'dev' },
     claimer: null,
     attention: {
-      state: 'active', reason: 'authored', activity_version: 3, through_activity_version: 3, revision: 4,
+      group: 'waiting', state: 'active', reason: 'authored', activity_version: 3, through_activity_version: 3, revision: 4,
       snoozed_until_unix: null, can_claim: false, can_set_aside: true, can_restore: false, can_release: false,
       ...overrides,
     },
@@ -41,6 +41,7 @@ test('a settled row leaves active at once and heads set aside', () => {
   assert.deepEqual(ids(shown.set_aside.requests), ['a', 'c'])
   const moved = shown.set_aside.requests[0].attention
   assert.equal(moved.reason, 'settled')
+  assert.equal(moved.group, 'set_aside')
   assert.equal(moved.can_restore, true)
   assert.equal(moved.can_set_aside, false)
   assert.deepEqual(ids(loaded.active.requests), ['a', 'b'], 'loaded pages stay untouched')
@@ -50,15 +51,17 @@ test('a snoozed row carries its wake time', () => {
   const moved = movedRow({ item: row('a'), command: { action: 'snooze', until_unix: 900 }, atUnix: 500, confirmed: null })
   assert.equal(moved.section, 'set_aside')
   assert.equal(moved.item.attention.reason, 'snoozed')
+  assert.equal(moved.item.attention.group, 'set_aside')
   assert.equal(moved.item.attention.snoozed_until_unix, 900)
 })
 
 test('a restored row returns to active and can be set aside again', () => {
-  const a = row('a', { state: 'settled', reason: 'settled', can_set_aside: false, can_restore: true })
+  const a = row('a', { group: 'set_aside', state: 'settled', reason: 'settled', can_set_aside: false, can_restore: true })
   const shown = applyAttentionMoves(pages({ set_aside: [a] }), [{ item: a, command: { action: 'restore' }, atUnix: 500, confirmed: null }])
   assert.deepEqual(ids(shown.set_aside.requests), [])
   assert.deepEqual(ids(shown.active.requests), ['a'])
   assert.equal(shown.active.requests[0].attention.can_set_aside, true)
+  assert.equal(shown.active.requests[0].attention.group, 'needs_you')
 })
 
 test('a move holds even when a stale refresh still lists the row in its old section', () => {

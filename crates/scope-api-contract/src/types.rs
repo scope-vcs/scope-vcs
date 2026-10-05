@@ -2,7 +2,7 @@ use crate::{
     FileChangeKind, FirstPushTokenStatus, GitOid, RepoConfig, RepoLifecycleState, RepositoryActor,
     RequestActorRole, RequestAttentionReason, RequestAttentionState, RequestAudience,
     RequestDiscussionStatus, RequestEventKind, RequestEventPayload, RequestMergeabilityStatus,
-    RequestState, SessionIdentity, Visibility,
+    RequestQueueGroup, RequestState, SessionIdentity, Visibility,
 };
 use serde::{Deserialize, Serialize};
 
@@ -239,6 +239,8 @@ pub struct RequestQueueItemResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestAttentionResponse {
+    /// The group this row shows in for its viewer.
+    pub group: RequestQueueGroup,
     pub state: RequestAttentionState,
     pub reason: RequestAttentionReason,
     pub activity_version: u64,

@@ -53,32 +53,29 @@ pub fn list_requests(
     execute(request, format!("list requests for {owner}/{repo}"))
 }
 
+/// One page of a request queue section; the server caps `limit` at its page size.
+#[derive(serde::Serialize)]
+pub struct QueuePageQuery<'a> {
+    pub section: RequestQueueSection,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<&'a str>,
+    pub limit: u32,
+}
+
 pub fn request_queue_page(
     api: ApiSession<'_>,
     owner: &str,
     repo: &str,
-    section: RequestQueueSection,
-    search: Option<&str>,
-    cursor: Option<&str>,
+    query: QueuePageQuery<'_>,
 ) -> anyhow::Result<RequestQueuePageResponse> {
-    #[derive(serde::Serialize)]
-    struct Query<'a> {
-        section: RequestQueueSection,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        search: Option<&'a str>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        cursor: Option<&'a str>,
-    }
     execute(
         api.request(
             reqwest::Method::GET,
             routes::repo_request_queue(owner, repo),
         )
-        .query(&Query {
-            section,
-            search,
-            cursor,
-        }),
+        .query(&query),
         format!("load the request queue for {owner}/{repo}"),
     )
 }

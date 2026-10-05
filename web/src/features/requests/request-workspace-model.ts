@@ -6,8 +6,8 @@ import {
 } from '../../lib/date-format'
 import type {
   RequestAttentionReason,
+  RequestQueueGroup,
   RequestQueueItemResponse,
-  RequestQueueSection,
 } from '../../api/types.generated'
 
 const REASONS: Record<RequestAttentionReason, string> = {
@@ -37,12 +37,8 @@ export function requestAttentionLabel(item: RequestQueueItemResponse, hydrated: 
   return reason
 }
 
-/**
- * Why a row is in the viewer's inbox. The API sorts rows into storage
- * sections; this is the single owner of how those sections and attention
- * reasons become the groups a reader scans.
- */
-export type RequestAttentionGroup = 'needs_you' | 'waiting' | 'unclaimed' | 'set_aside' | 'done'
+/** The groups a reader scans. The API places every row in one, for its viewer. */
+export type RequestAttentionGroup = RequestQueueGroup
 
 export const REQUEST_ATTENTION_GROUP_ORDER = [
   'needs_you',
@@ -58,28 +54,6 @@ export const REQUEST_ATTENTION_GROUP_LABELS: Record<RequestAttentionGroup, strin
   unclaimed: 'Unclaimed',
   set_aside: 'Set aside',
   done: 'Done',
-}
-
-const NEEDS_YOU: ReadonlySet<RequestAttentionReason> = new Set([
-  'invited',
-  'claimed',
-  'new_activity',
-  'restored',
-  'snooze_expired',
-])
-
-/**
- * A maintainer's own request needs them, since merging or closing it is theirs
- * to do. A contributor's own request waits on a maintainer.
- */
-export function requestAttentionGroup(
-  section: RequestQueueSection,
-  reason: RequestAttentionReason,
-  maintainer: boolean,
-): RequestAttentionGroup {
-  if (section !== 'active') return section
-  if (reason === 'authored') return maintainer ? 'needs_you' : 'waiting'
-  return NEEDS_YOU.has(reason) ? 'needs_you' : 'waiting'
 }
 
 /** A row with unseen activity reads like unread mail. */

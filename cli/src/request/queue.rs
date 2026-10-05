@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::api::{
-    RepositoryActor, RequestAttentionActionRequest, RequestAttentionReason,
+    QueuePageQuery, RequestAttentionActionRequest, RequestAttentionReason, RequestQueueGroup,
     RequestQueueItemResponse, RequestQueueSection, apply_request_attention, request_queue_page,
 };
 use crate::display::terminal_text;
@@ -18,66 +18,29 @@ pub(super) const QUEUE_SECTION_LIMIT: u32 = 30;
 const DEFAULT_SECTIONS: [RequestQueueSection; 2] =
     [RequestQueueSection::Active, RequestQueueSection::Unclaimed];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum QueueGroup {
-    NeedsYou,
-    Waiting,
-    Unclaimed,
-    SetAside,
-    Done,
-}
-
-const GROUP_ORDER: [QueueGroup; 5] = [
-    QueueGroup::NeedsYou,
-    QueueGroup::Waiting,
-    QueueGroup::Unclaimed,
-    QueueGroup::SetAside,
-    QueueGroup::Done,
+const GROUP_ORDER: [RequestQueueGroup; 5] = [
+    RequestQueueGroup::NeedsYou,
+    RequestQueueGroup::Waiting,
+    RequestQueueGroup::Unclaimed,
+    RequestQueueGroup::SetAside,
+    RequestQueueGroup::Done,
 ];
 
-impl QueueGroup {
-    fn label(self) -> &'static str {
-        match self {
-            Self::NeedsYou => "Needs you",
-            Self::Waiting => "Waiting on others",
-            Self::Unclaimed => "Unclaimed",
-            Self::SetAside => "Set aside",
-            Self::Done => "Done",
-        }
+fn group_label(group: RequestQueueGroup) -> &'static str {
+    match group {
+        RequestQueueGroup::NeedsYou => "Needs you",
+        RequestQueueGroup::Waiting => "Waiting on others",
+        RequestQueueGroup::Unclaimed => "Unclaimed",
+        RequestQueueGroup::SetAside => "Set aside",
+        RequestQueueGroup::Done => "Done",
     }
 }
 
 #[derive(Serialize)]
 pub(super) struct QueueRow {
     section: RequestQueueSection,
-    group: QueueGroup,
     #[serde(flatten)]
     item: RequestQueueItemResponse,
-}
-
-/// A maintainer's own request needs them, since merging or closing it is
-/// theirs to do. A contributor's own request waits on a maintainer.
-fn queue_group(
-    section: RequestQueueSection,
-    reason: RequestAttentionReason,
-    maintainer: bool,
-) -> QueueGroup {
-    use RequestAttentionReason as Reason;
-    match section {
-        RequestQueueSection::Unclaimed => QueueGroup::Unclaimed,
-        RequestQueueSection::SetAside => QueueGroup::SetAside,
-        RequestQueueSection::Done => QueueGroup::Done,
-        RequestQueueSection::Active => match reason {
-            Reason::Authored if maintainer => QueueGroup::NeedsYou,
-            Reason::Invited
-            | Reason::Claimed
-            | Reason::NewActivity
-            | Reason::Restored
-            | Reason::SnoozeExpired => QueueGroup::NeedsYou,
-            _ => QueueGroup::Waiting,
-        },
-    }
 }
 
 fn reason_label(item: &RequestQueueItemResponse) -> String {
@@ -152,30 +115,29 @@ fn load_queue(
     search: Option<&str>,
     limit: u32,
 ) -> anyhow::Result<Vec<QueueRow>> {
-    let maintainer = matches!(
-        context.repo.access.actor,
-        RepositoryActor::Owner | RepositoryActor::Member
-    );
     let mut rows = Vec::new();
     for &section in sections {
-        let mut remaining = limit as usize;
+        let mut remaining = limit;
         let mut cursor = None;
         while remaining > 0 {
             let page = request_queue_page(
                 api,
                 &context.target.owner,
                 &context.target.repo,
-                section,
-                search,
-                cursor.as_deref(),
+                QueuePageQuery {
+                    section,
+                    search,
+                    cursor: cursor.as_deref(),
+                    limit: remaining,
+                },
             )?;
-            let taken = page.requests.len().min(remaining);
-            remaining -= taken;
-            rows.extend(page.requests.into_iter().take(taken).map(|item| QueueRow {
-                section,
-                group: queue_group(section, item.attention.reason, maintainer),
-                item,
-            }));
+            let returned = u32::try_from(page.requests.len()).unwrap_or(u32::MAX);
+            remaining = remaining.saturating_sub(returned);
+            rows.extend(
+                page.requests
+                    .into_iter()
+                    .map(|item| QueueRow { section, item }),
+            );
             let Some(next) = page.next_cursor else { break };
             cursor = Some(next);
         }
@@ -186,11 +148,14 @@ fn load_queue(
 fn queue_lines(rows: &[QueueRow], default_sections: bool, now_unix: u64) -> Vec<String> {
     let mut lines = Vec::new();
     for group in GROUP_ORDER {
-        let mut members = rows.iter().filter(|row| row.group == group).peekable();
+        let mut members = rows
+            .iter()
+            .filter(|row| row.item.attention.group == group)
+            .peekable();
         if members.peek().is_none() {
             continue;
         }
-        lines.push(group.label().to_string());
+        lines.push(group_label(group).to_string());
         lines.extend(members.map(|row| queue_row_line(row, now_unix)));
     }
     if lines.is_empty() {
@@ -431,7 +396,7 @@ mod tests {
                 },
                 "author": null,
                 "attention": {
-                    "state": "active", "reason": reason, "activity_version": 3,
+                    "group": "needs_you", "state": "active", "reason": reason, "activity_version": 3,
                     "through_activity_version": 2, "snoozed_until_unix": null, "revision": 1,
                     "can_claim": false, "can_set_aside": true, "can_restore": false,
                     "can_release": false
@@ -442,7 +407,6 @@ mod tests {
         };
         let row = |item| QueueRow {
             section: RequestQueueSection::Active,
-            group: QueueGroup::NeedsYou,
             item,
         };
 
@@ -526,59 +490,5 @@ mod tests {
             snooze_until(SnoozeFor::Hour, first_one_thirty).unwrap(),
             unix("2026-11-01T02:30:00-06:00")
         );
-    }
-
-    #[test]
-    fn groups_follow_the_web_sidebar() {
-        use RequestAttentionReason as Reason;
-        use RequestQueueSection as Section;
-        for (section, reason, maintainer, expected) in [
-            (
-                Section::Active,
-                Reason::Authored,
-                true,
-                QueueGroup::NeedsYou,
-            ),
-            (
-                Section::Active,
-                Reason::Authored,
-                false,
-                QueueGroup::Waiting,
-            ),
-            (
-                Section::Active,
-                Reason::NewActivity,
-                true,
-                QueueGroup::NeedsYou,
-            ),
-            (
-                Section::Active,
-                Reason::SnoozeExpired,
-                true,
-                QueueGroup::NeedsYou,
-            ),
-            (
-                Section::Active,
-                Reason::ClaimedElsewhere,
-                true,
-                QueueGroup::Waiting,
-            ),
-            (Section::Active, Reason::Open, false, QueueGroup::Waiting),
-            (
-                Section::Unclaimed,
-                Reason::Unclaimed,
-                true,
-                QueueGroup::Unclaimed,
-            ),
-            (
-                Section::SetAside,
-                Reason::Snoozed,
-                true,
-                QueueGroup::SetAside,
-            ),
-            (Section::Done, Reason::Merged, true, QueueGroup::Done),
-        ] {
-            assert_eq!(queue_group(section, reason, maintainer), expected);
-        }
     }
 }

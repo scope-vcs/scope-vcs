@@ -38,14 +38,14 @@ fn list_shows_the_queue_grouped_and_searches_on_the_server() {
     let rows = value["result"]["requests"].as_array().unwrap();
     assert_eq!(rows.len(), 2, "{value}");
     assert_eq!(rows[0]["section"], "active");
-    assert_eq!(rows[0]["group"], "needs_you");
+    assert_eq!(rows[0]["attention"]["group"], "needs_you");
     assert_eq!(rows[0]["request"]["name"], "fix-fresh");
-    assert_eq!(rows[1]["group"], "unclaimed");
+    assert_eq!(rows[1]["attention"]["group"], "unclaimed");
     assert_eq!(
         server.seen(),
         [
-            "GET /v1/repos/owner/repo/requests/queue?section=active&search=fix",
-            "GET /v1/repos/owner/repo/requests/queue?section=unclaimed&search=fix",
+            "GET /v1/repos/owner/repo/requests/queue?section=active&search=fix&limit=1",
+            "GET /v1/repos/owner/repo/requests/queue?section=unclaimed&search=fix&limit=1",
         ]
     );
 
@@ -78,12 +78,13 @@ fn list_shows_the_queue_grouped_and_searches_on_the_server() {
             .output()
             .unwrap(),
     );
-    assert_eq!(value["result"]["requests"][0]["group"], "set_aside");
-    assert!(
-        server
-            .seen()
-            .contains(&"GET /v1/repos/owner/repo/requests/queue?section=set_aside".to_string())
+    assert_eq!(
+        value["result"]["requests"][0]["attention"]["group"],
+        "set_aside"
     );
+    assert!(server.seen().contains(
+        &"GET /v1/repos/owner/repo/requests/queue?section=set_aside&limit=30".to_string()
+    ));
 
     scope_failure(
         dir.path(),
@@ -249,7 +250,11 @@ impl QueueServer {
                         let seen = queue_seen.clone();
                         async move {
                             seen.lock().unwrap().push(format!("GET {uri}"));
-                            Json(queue_page(&query["section"], query.contains_key("cursor")))
+                            Json(queue_page(
+                                &query["section"],
+                                query["limit"].parse().unwrap(),
+                                query.contains_key("cursor"),
+                            ))
                         }
                     },
                 ),
@@ -326,29 +331,43 @@ impl QueueServer {
 }
 
 /// Every section has a second, empty page, so paging stops only at `--limit`
-/// or when the server runs out.
-fn queue_page(section: &str, next_page: bool) -> Value {
+/// or when the server runs out. Like the server, a page holds at most `limit` rows.
+fn queue_page(section: &str, limit: usize, next_page: bool) -> Value {
     if next_page {
         return json!({"requests": [], "next_cursor": null, "next_attention_at_unix": null});
     }
     let items = match section {
         "active" => vec![
-            queue_item("req_fresh", "fix-fresh", "new_activity", None),
+            queue_item("req_fresh", "fix-fresh", "needs_you", "new_activity", None),
             queue_item(
                 "req_claimed",
                 "fix-claimed",
+                "waiting",
                 "claimed_elsewhere",
                 Some("dana"),
             ),
         ],
-        "unclaimed" => vec![queue_item("req_open", "fix-open", "unclaimed", None)],
-        "set_aside" => vec![queue_item("req_waiting", "fix-waiting", "waiting", None)],
+        "unclaimed" => vec![queue_item(
+            "req_open",
+            "fix-open",
+            "unclaimed",
+            "unclaimed",
+            None,
+        )],
+        "set_aside" => vec![queue_item(
+            "req_waiting",
+            "fix-waiting",
+            "set_aside",
+            "waiting",
+            None,
+        )],
         _ => Vec::new(),
     };
+    let items: Vec<Value> = items.into_iter().take(limit).collect();
     json!({"requests": items, "next_cursor": "next", "next_attention_at_unix": null})
 }
 
-fn queue_item(id: &str, name: &str, reason: &str, claimer: Option<&str>) -> Value {
+fn queue_item(id: &str, name: &str, group: &str, reason: &str, claimer: Option<&str>) -> Value {
     json!({
         "attention_at_unix": 1,
         "request": {
@@ -358,21 +377,21 @@ fn queue_item(id: &str, name: &str, reason: &str, claimer: Option<&str>) -> Valu
             "mergeability": {"status": "Ready", "current_main_oid": OID, "request_head_oid": OID, "reason": null}
         },
         "author": {"id": "usr_author", "handle": "author"},
-        "attention": attention(reason),
+        "attention": attention(group, reason),
         "claimer": claimer.map(|handle| json!({"id": format!("usr_{handle}"), "handle": handle}))
     })
 }
 
-fn attention(reason: &str) -> Value {
+fn attention(group: &str, reason: &str) -> Value {
     json!({
-        "state": "active", "reason": reason, "activity_version": LOADED_VERSION,
+        "group": group, "state": "active", "reason": reason, "activity_version": LOADED_VERSION,
         "through_activity_version": LOADED_VERSION, "snoozed_until_unix": null, "revision": 1,
         "can_claim": true, "can_set_aside": true, "can_restore": false, "can_release": false
     })
 }
 
 fn attention_mutation() -> Value {
-    let mut attention = attention("snoozed");
+    let mut attention = attention("set_aside", "snoozed");
     attention["state"] = json!("snoozed");
     attention["snoozed_until_unix"] = json!(4_000_000_000_u64);
     json!({"attention": attention, "claimer": null})

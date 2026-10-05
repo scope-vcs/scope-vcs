@@ -31,7 +31,6 @@ import {
   REQUEST_ATTENTION_GROUP_LABELS,
   REQUEST_ATTENTION_GROUP_ORDER,
   requestAgeLabel,
-  requestAttentionGroup,
   requestAttentionLabel,
   type RequestAttentionGroup,
 } from './request-workspace-model'
@@ -191,12 +190,11 @@ export function RequestWorkspaceSidebar({
   }
 
   const searching = query.trim().length > 0
-  const knownMaintainer = maintainer ?? false
-  const common = { loading, skeleton, error, maintainer: knownMaintainer, onRetry, onAction, params, pendingId, selectedId }
+  const common = { loading, skeleton, error, onRetry, onAction, params, pendingId, selectedId }
   const rows = (section: RequestQueueSection): QueueRow[] =>
     pages?.[section].requests.map((item) => ({ item, section })) ?? []
   const allRows = REQUEST_QUEUE_SECTION_ORDER.flatMap(rows)
-  const grouped = groupRows(allRows, knownMaintainer)
+  const grouped = groupRows(allRows)
   useRequestKeyboard({
     focus,
     onAction,
@@ -416,12 +414,12 @@ export function RequestWorkspaceSidebar({
   )
 }
 
-function groupRows(rows: QueueRow[], maintainer: boolean) {
+function groupRows(rows: QueueRow[]) {
   const grouped = Object.fromEntries(
     REQUEST_ATTENTION_GROUP_ORDER.map((group) => [group, [] as QueueRow[]]),
   ) as Record<RequestAttentionGroup, QueueRow[]>
   for (const row of rows) {
-    grouped[requestAttentionGroup(row.section, row.item.attention.reason, maintainer)].push(row)
+    grouped[row.item.attention.group].push(row)
   }
   return grouped
 }

@@ -407,11 +407,17 @@ export type ProjectionPreviewSummaryResponse = { visible_files: number, hidden_f
 
 export type RequestQueueSection = "active" | "unclaimed" | "set_aside" | "done";
 
+export type RequestQueueGroup = "needs_you" | "waiting" | "unclaimed" | "set_aside" | "done";
+
 export type RequestAttentionState = "active" | "waiting" | "snoozed" | "settled";
 
 export type RequestAttentionReason = "authored" | "invited" | "claimed" | "unclaimed" | "claimed_elsewhere" | "new_activity" | "restored" | "snooze_expired" | "waiting" | "snoozed" | "settled" | "open" | "closed" | "merged";
 
-export type RequestAttentionResponse = { state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null, 
+export type RequestAttentionResponse = { 
+/**
+ * The group this row shows in for its viewer.
+ */
+group: RequestQueueGroup, state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null, 
 /**
  * Counts the writes to the viewer's attention record; zero without one.
  */

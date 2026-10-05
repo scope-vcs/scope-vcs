@@ -17,6 +17,42 @@ pub enum RequestQueueSection {
     Done,
 }
 
+/// How a queue row reads to its viewer: the groups every client shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestQueueGroup {
+    NeedsYou,
+    Waiting,
+    Unclaimed,
+    SetAside,
+    Done,
+}
+
+/// Active rows split by whether the viewer is the one to act. A maintainer's
+/// own request needs them, since merging or closing it is theirs to do; a
+/// contributor's own request waits on a maintainer.
+pub fn request_queue_group(
+    section: RequestQueueSection,
+    reason: RequestAttentionReason,
+    viewer_is_maintainer: bool,
+) -> RequestQueueGroup {
+    use RequestAttentionReason as Reason;
+    match section {
+        RequestQueueSection::Unclaimed => RequestQueueGroup::Unclaimed,
+        RequestQueueSection::SetAside => RequestQueueGroup::SetAside,
+        RequestQueueSection::Done => RequestQueueGroup::Done,
+        RequestQueueSection::Active => match reason {
+            Reason::Authored if viewer_is_maintainer => RequestQueueGroup::NeedsYou,
+            Reason::Invited
+            | Reason::Claimed
+            | Reason::NewActivity
+            | Reason::Restored
+            | Reason::SnoozeExpired => RequestQueueGroup::NeedsYou,
+            _ => RequestQueueGroup::Waiting,
+        },
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RequestAttentionState {
@@ -395,6 +431,49 @@ mod tests {
     use super::*;
     use crate::error::DomainErrorKind;
     use crate::requests::{RequestActorRole, RequestAudience};
+
+    #[test]
+    fn groups_split_active_rows_by_who_acts_next() {
+        use RequestAttentionReason as Reason;
+        use RequestQueueGroup::{NeedsYou, Waiting};
+        for (reason, expected) in [
+            (Reason::Invited, NeedsYou),
+            (Reason::Claimed, NeedsYou),
+            (Reason::NewActivity, NeedsYou),
+            (Reason::Restored, NeedsYou),
+            (Reason::SnoozeExpired, NeedsYou),
+            (Reason::Authored, Waiting),
+            (Reason::Waiting, Waiting),
+            (Reason::Open, Waiting),
+            (Reason::ClaimedElsewhere, Waiting),
+            (Reason::Unclaimed, Waiting),
+            (Reason::Snoozed, Waiting),
+            (Reason::Settled, Waiting),
+            (Reason::Closed, Waiting),
+            (Reason::Merged, Waiting),
+        ] {
+            assert_eq!(
+                request_queue_group(RequestQueueSection::Active, reason, false),
+                expected,
+                "{reason:?}"
+            );
+        }
+        // A maintainer's own request is theirs to merge or close.
+        assert_eq!(
+            request_queue_group(RequestQueueSection::Active, Reason::Authored, true),
+            NeedsYou
+        );
+        for (section, expected) in [
+            (RequestQueueSection::Unclaimed, RequestQueueGroup::Unclaimed),
+            (RequestQueueSection::SetAside, RequestQueueGroup::SetAside),
+            (RequestQueueSection::Done, RequestQueueGroup::Done),
+        ] {
+            assert_eq!(
+                request_queue_group(section, Reason::Settled, true),
+                expected
+            );
+        }
+    }
 
     #[test]
     fn personal_set_aside_precedes_retained_claim_and_other_activity_reactivates() {
