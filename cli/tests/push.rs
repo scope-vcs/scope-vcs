@@ -9,6 +9,7 @@ use std::{
     fs::File,
     io::Read,
     os::fd::FromRawFd,
+    process::{Child, Command, ExitStatus},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -93,6 +94,32 @@ fn push_requires_review_tty_before_remote_lookup() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn json_push_rejects_review_even_with_a_terminal() {
+    let dir = configured_repo("review-json-tty");
+    let mut command = scope_command(dir.path());
+    command.args(["--json", "push", "--main"]);
+    let (terminal_output, mut child) = spawn_in_terminal(command);
+    let status = wait_for_exit(
+        &mut child,
+        Duration::from_secs(5),
+        "scope --json push --main waited for terminal input",
+    );
+    assert_eq!(status.code(), Some(2));
+    let transcript = String::from_utf8(read_terminal(terminal_output)).unwrap();
+    let value: serde_json::Value =
+        serde_json::from_str(transcript.trim_end().lines().last().unwrap()).unwrap();
+    assert_eq!(value["code"], "bad_request");
+    assert!(
+        value["message"]
+            .as_str()
+            .unwrap()
+            .contains("scope push review requires an interactive terminal"),
+        "{transcript}"
+    );
+}
+
 fn configured_repo(label: &str) -> TempDir {
     let dir = TempDir::new(label);
     create_repo_with_head(dir.path());
@@ -172,16 +199,9 @@ fn ctrl_c_during_delayed_login_validation_exits_before_publish() {
     let remote = format!("{}/git/permissioned/owner/repo", server.api_url);
     run_git(dir.path(), ["remote", "add", "scope", &remote]);
 
-    let (mut terminal_output, terminal) = test_terminal();
     let mut command = server.command(dir.path());
-    command
-        .args(["push", "--main", "--no-review"])
-        .stdin(terminal.try_clone().unwrap())
-        .stdout(terminal.try_clone().unwrap())
-        .stderr(terminal.try_clone().unwrap());
-    let mut child = command.spawn().unwrap();
-    drop(command);
-    drop(terminal);
+    command.args(["push", "--main", "--no-review"]);
+    let (terminal_output, mut child) = spawn_in_terminal(command);
     let request_deadline = Instant::now() + Duration::from_secs(2);
     while !request_started.load(Ordering::Acquire) && Instant::now() < request_deadline {
         std::thread::sleep(Duration::from_millis(10));
@@ -191,28 +211,15 @@ fn ctrl_c_during_delayed_login_validation_exits_before_publish() {
     let cancelled_at = Instant::now();
     // SAFETY: child.id() names the live CLI subprocess created above.
     assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGINT) }, 0);
-    let exit_deadline = Instant::now() + Duration::from_secs(2);
-    while child.try_wait().unwrap().is_none() && Instant::now() < exit_deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    if child.try_wait().unwrap().is_none() {
-        let _ = child.kill();
-        panic!("scope push did not cancel promptly during delayed HTTP");
-    }
-    let status = child.wait().unwrap();
+    let status = wait_for_exit(
+        &mut child,
+        Duration::from_secs(2),
+        "scope push did not cancel promptly during delayed HTTP",
+    );
     assert_eq!(status.code(), Some(130), "{status:?}");
     assert!(cancelled_at.elapsed() < Duration::from_secs(2));
     assert_eq!(publish_requests.load(Ordering::Acquire), 0);
-    let mut transcript = Vec::new();
-    let mut buffer = [0_u8; 4096];
-    loop {
-        match terminal_output.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(count) => transcript.extend_from_slice(&buffer[..count]),
-            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
-            Err(error) => panic!("read test terminal: {error}"),
-        }
-    }
+    let transcript = read_terminal(terminal_output);
     assert!(
         transcript
             .windows("Verifying login…".len())
@@ -223,8 +230,10 @@ fn ctrl_c_during_delayed_login_validation_exits_before_publish() {
     assert!(transcript.ends_with(b"\r\x1b[2K"), "{transcript:?}");
 }
 
+/// Runs `command` with a pseudo-terminal as stdin, stdout and stderr, returning
+/// the terminal's reading side. The child holds the only open terminal handles.
 #[cfg(unix)]
-fn test_terminal() -> (File, File) {
+fn spawn_in_terminal(mut command: Command) -> (File, Child) {
     let mut master_fd = 0;
     let mut slave_fd = 0;
     let terminal_size = libc::winsize {
@@ -249,7 +258,41 @@ fn test_terminal() -> (File, File) {
     // SAFETY: openpty returned two new, valid, owned descriptors.
     let terminal_output = unsafe { File::from_raw_fd(master_fd) };
     let terminal = unsafe { File::from_raw_fd(slave_fd) };
-    (terminal_output, terminal)
+    command
+        .stdin(terminal.try_clone().unwrap())
+        .stdout(terminal.try_clone().unwrap())
+        .stderr(terminal);
+    let child = command.spawn().unwrap();
+    (terminal_output, child)
+}
+
+#[cfg(unix)]
+fn wait_for_exit(child: &mut Child, within: Duration, stuck: &str) -> ExitStatus {
+    let deadline = Instant::now() + within;
+    while child.try_wait().unwrap().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    if child.try_wait().unwrap().is_none() {
+        let _ = child.kill();
+        panic!("{stuck}");
+    }
+    child.wait().unwrap()
+}
+
+/// Reads everything the child wrote; EIO marks the terminal closing on exit.
+#[cfg(unix)]
+fn read_terminal(mut terminal_output: File) -> Vec<u8> {
+    let mut transcript = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    loop {
+        match terminal_output.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => transcript.extend_from_slice(&buffer[..count]),
+            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+            Err(error) => panic!("read test terminal: {error}"),
+        }
+    }
+    transcript
 }
 
 #[cfg(target_os = "linux")]
@@ -278,18 +321,12 @@ fn browser_login_instructions_remain_readable_and_cancellable() {
     let remote = format!("{}/git/permissioned/owner/repo", server.api_url);
     run_git(dir.path(), ["remote", "add", "scope", &remote]);
     let config = TempDir::new("push-browser-no-session");
-    let (mut output, terminal) = test_terminal();
     let mut command = server.command(dir.path());
     command
         .args(["push", "--main"])
         .env("XDG_CONFIG_HOME", config.path())
-        .env("BROWSER", "/bin/true")
-        .stdin(terminal.try_clone().unwrap())
-        .stdout(terminal.try_clone().unwrap())
-        .stderr(terminal.try_clone().unwrap());
-    let mut child = command.spawn().unwrap();
-    drop(command);
-    drop(terminal);
+        .env("BROWSER", "/bin/true");
+    let (output, mut child) = spawn_in_terminal(command);
     let deadline = Instant::now() + Duration::from_secs(3);
     while !login_started.load(Ordering::Acquire) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
@@ -298,25 +335,13 @@ fn browser_login_instructions_remain_readable_and_cancellable() {
     std::thread::sleep(Duration::from_millis(700));
     // SAFETY: child.id() is the live CLI subprocess created by this test.
     assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGINT) }, 0);
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while child.try_wait().unwrap().is_none() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    if child.try_wait().unwrap().is_none() {
-        let _ = child.kill();
-        panic!("browser login pause prevented Ctrl+C cancellation");
-    }
-    assert_eq!(child.wait().unwrap().code(), Some(130));
-    let mut transcript = Vec::new();
-    let mut buffer = [0; 4096];
-    loop {
-        match output.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(count) => transcript.extend_from_slice(&buffer[..count]),
-            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
-            Err(error) => panic!("read terminal: {error}"),
-        }
-    }
+    let status = wait_for_exit(
+        &mut child,
+        Duration::from_secs(2),
+        "browser login pause prevented Ctrl+C cancellation",
+    );
+    assert_eq!(status.code(), Some(130));
+    let transcript = read_terminal(output);
     let text = String::from_utf8_lossy(&transcript);
     let instructions = text
         .split("Opening browser to sign in:")
