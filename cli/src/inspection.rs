@@ -269,11 +269,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                     report.main_push_target =
                         push_remote.as_ref().map(|remote| format!("{remote}/main"));
                     if let Some(local) = &mut report.local {
-                        compare_scope_ref(
-                            local,
-                            repo,
-                            push_remote.as_deref().unwrap_or(&target.remote),
-                        );
+                        compare_scope_ref(local, repo, &target);
                     }
                     check_fetch_auth(&mut report, repo, &target);
                 }

@@ -1,31 +1,21 @@
 use super::{LocalState, VisibilityState};
 use crate::{
     git_repo::{self, GitRepo},
-    repo_config,
+    git_transport::ScopeRemote,
+    repo_config, request,
 };
 use anyhow::Context;
 use std::process::Command;
 
-pub(super) fn compare_scope_ref(local: &mut LocalState, repo: &GitRepo, remote: &str) {
-    if remote.is_empty() {
+pub(super) fn compare_scope_ref(local: &mut LocalState, repo: &GitRepo, target: &ScopeRemote) {
+    if target.remote.is_empty() {
         return;
     }
-    let tracked_request = local.branch.as_deref().and_then(|branch| {
-        let request_id = git_repo::branch_config_value(repo, branch, "scopeRequestId")
-            .ok()
-            .flatten()?;
-        let tracked_remote = git_repo::branch_config_value(repo, branch, "remote")
-            .ok()
-            .flatten()?;
-        let merge = git_repo::branch_config_value(repo, branch, "merge")
-            .ok()
-            .flatten()?;
-        (!request_id.is_empty() && tracked_remote == remote)
-            .then(|| merge.strip_prefix("refs/heads/").map(str::to_string))
-            .flatten()
-    });
-    let branch = tracked_request.as_deref().unwrap_or("main");
-    let reference = format!("refs/remotes/{remote}/{branch}");
+    let reference = local
+        .branch
+        .as_deref()
+        .and_then(|branch| request::resolve_request_comparison_ref(repo, branch, target))
+        .unwrap_or_else(|| format!("refs/remotes/{}/main", target.remote));
     local.unpushed_commits = git_text(
         repo,
         &["rev-list", "--count", &format!("{reference}..HEAD")],

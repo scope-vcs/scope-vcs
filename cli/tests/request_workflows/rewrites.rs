@@ -1,6 +1,142 @@
 use super::*;
 
 #[test]
+fn adopted_branch_compares_with_scope_request_despite_external_upstream() {
+    let dir = TempDir::new("adopted-request-comparison");
+    create_repo_with_head(dir.path());
+    let base = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+    let bare = TempDir::new("adopted-request-comparison-bare");
+    run_git(bare.path(), ["init", "--bare"]);
+    run_git(
+        dir.path(),
+        [
+            "push",
+            bare.path().to_str().unwrap(),
+            "main",
+            "main:refs/heads/fix-one",
+        ],
+    );
+    run_git(dir.path(), ["switch", "--quiet", "-c", "work"]);
+    run_git(
+        dir.path(),
+        [
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/owner/repo.git",
+        ],
+    );
+    run_git(
+        dir.path(),
+        ["update-ref", "refs/remotes/origin/main", &base],
+    );
+    run_git(
+        dir.path(),
+        ["branch", "--set-upstream-to=origin/main", "work"],
+    );
+    fs::write(dir.path().join("fix.txt"), "first\n").unwrap();
+    run_git(dir.path(), ["add", "fix.txt"]);
+    commit_all(dir.path(), "First request commit");
+
+    let mut detail = request();
+    detail["base_main_oid"] = base.clone().into();
+    detail["head_oid"] = base.clone().into();
+    detail["mergeability"]["current_main_oid"] = base.clone().into();
+    detail["mergeability"]["request_head_oid"] = base.into();
+    let server = FixtureServer::with_request(detail);
+    let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
+    success(
+        transport
+            .command(&server, dir.path())
+            .args(["--json", "request", "start", "fix-one", "--current-branch"])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(
+        git_stdout(dir.path(), ["rev-parse", "--abbrev-ref", "@{upstream}"]),
+        "origin/main"
+    );
+
+    let status = || {
+        success(
+            transport
+                .command(&server, dir.path())
+                .args(["--json", "status", "--offline"])
+                .output()
+                .unwrap(),
+        )
+    };
+    let pushed = status();
+    assert_eq!(
+        pushed["result"]["local"]["comparison_ref"],
+        "refs/remotes/scope/fix-one"
+    );
+    assert_eq!(pushed["result"]["local"]["unpushed_commits"], 0);
+    assert_eq!(
+        git_stdout(
+            dir.path(),
+            ["rev-list", "--count", "refs/remotes/scope/main..HEAD"]
+        ),
+        "1"
+    );
+
+    fs::write(dir.path().join("fix.txt"), "second\n").unwrap();
+    run_git(dir.path(), ["add", "fix.txt"]);
+    commit_all(dir.path(), "Second request commit");
+    let local = status();
+    assert_eq!(
+        local["result"]["local"]["comparison_ref"],
+        "refs/remotes/scope/fix-one"
+    );
+    assert_eq!(local["result"]["local"]["unpushed_commits"], 1);
+
+    run_git(
+        dir.path(),
+        ["update-ref", "-d", "refs/remotes/scope/fix-one"],
+    );
+    let missing_ref = status();
+    assert_eq!(
+        missing_ref["result"]["local"]["comparison_ref"],
+        "refs/remotes/scope/fix-one"
+    );
+    assert!(missing_ref["result"]["local"]["unpushed_commits"].is_null());
+
+    run_git(dir.path(), ["switch", "--quiet", "main"]);
+    let unattached = status();
+    assert_eq!(
+        unattached["result"]["local"]["comparison_ref"],
+        "refs/remotes/scope/main"
+    );
+    assert_eq!(unattached["result"]["local"]["unpushed_commits"], 0);
+
+    run_git(dir.path(), ["switch", "--quiet", "-c", "normal-request"]);
+    for (key, value) in [
+        ("scopeRequestId", "req_one"),
+        ("scopeRequestOwner", "owner"),
+        ("scopeRequestRepo", "repo"),
+        ("scopeRequestRemote", "scope"),
+        ("scopeRequestName", "fix-one"),
+        ("remote", "scope"),
+        ("merge", "refs/heads/fix-one"),
+    ] {
+        run_git(
+            dir.path(),
+            ["config", &format!("branch.normal-request.{key}"), value],
+        );
+    }
+    run_git(
+        dir.path(),
+        ["update-ref", "refs/remotes/scope/fix-one", "HEAD"],
+    );
+    let normal = status();
+    assert_eq!(
+        normal["result"]["local"]["comparison_ref"],
+        "refs/remotes/scope/fix-one"
+    );
+    assert_eq!(normal["result"]["local"]["unpushed_commits"], 0);
+}
+
+#[test]
 fn request_push_replaces_amended_history_unless_someone_else_pushed() {
     let dir = TempDir::new("request-push-rewrite");
     create_repo_with_head(dir.path());
