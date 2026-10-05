@@ -2,6 +2,7 @@ use super::*;
 
 mod close;
 mod helpers;
+mod mutation_refresh;
 mod publication;
 mod queue;
 mod ratings;
