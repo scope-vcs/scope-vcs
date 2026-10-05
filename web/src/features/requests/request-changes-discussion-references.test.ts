@@ -120,7 +120,12 @@ test('loading more appends the next page under the loaded snapshot', async () =>
   const page = requestDiscussionReferenceResource.peek(identity)
   assert.deepEqual(page?.discussions.map(({ id }) => id), ['first', 'second'])
   assert.equal(page?.next_cursor, null)
-  await loadMoreRequestDiscussionReferences(identity, async () => assert.fail('no cursor remains'))
+  await loadMoreRequestDiscussionReferences(identity, async (cursor) => {
+    cursors.push(cursor)
+    return discussionPage(['unexpected'], null, 3)
+  })
+  assert.deepEqual(cursors, ['cursor-1'])
+  assert.equal(requestDiscussionReferenceResource.peek(identity), page)
 })
 
 test('a failed load-more keeps the loaded page and surfaces the error', async () => {

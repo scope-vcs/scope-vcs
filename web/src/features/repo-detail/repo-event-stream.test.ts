@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict'
-import { afterEach, test } from 'node:test'
+import { afterEach, mock, test } from 'node:test'
 import type { RepoChangeEvent } from '@/api/types.generated'
 import {
   parseRepoStreamMessage,
@@ -86,6 +86,7 @@ test('reconnect delay doubles with jitter and caps at 30 seconds', () => {
 })
 
 test('stream connection errors use the generated public error contract', async () => {
+  const onEvent = mock.fn()
   const connection = {
     clerk_token_template: 'scope_api',
     event_stream_url: 'https://api.scope.test/v1/repos/owner/repo/events',
@@ -102,7 +103,7 @@ test('stream connection errors use the generated public error contract', async (
     await streamRepoEvents(
       connection,
       async () => null,
-      () => assert.fail('no event expected'),
+      onEvent,
       new AbortController().signal,
     ),
     {
@@ -122,11 +123,12 @@ test('stream connection errors use the generated public error contract', async (
   const invalid = await streamRepoEvents(
     connection,
     async () => null,
-    () => assert.fail('no event expected'),
+    onEvent,
     new AbortController().signal,
   )
   assert.equal(invalid.type, 'protocol-error')
   assert.equal(invalid.type === 'protocol-error' ? invalid.failureClass : '', 'schema')
+  assert.equal(onEvent.mock.callCount(), 0)
 })
 
 test('stream decoding handles split CRLF frames before a public stream error', async () => {
@@ -162,6 +164,7 @@ test('stream decoding handles split CRLF frames before a public stream error', a
 })
 
 test('protocol failures cancel response bodies before reconnecting', async () => {
+  const onEvent = mock.fn()
   const encoder = new TextEncoder()
   let malformedBodyCanceled = false
   globalThis.fetch = async () => new Response(new ReadableStream({
@@ -179,7 +182,7 @@ test('protocol failures cancel response bodies before reconnecting', async () =>
       event_stream_url: 'https://api.scope.test/v1/repos/owner/repo/events',
     },
     async () => null,
-    () => assert.fail('no event expected'),
+    onEvent,
     new AbortController().signal,
   )
 
@@ -203,7 +206,7 @@ test('protocol failures cancel response bodies before reconnecting', async () =>
       event_stream_url: 'https://api.scope.test/v1/repos/owner/repo/events',
     },
     async () => null,
-    () => assert.fail('no event expected'),
+    onEvent,
     new AbortController().signal,
   )
 
@@ -212,9 +215,11 @@ test('protocol failures cancel response bodies before reconnecting', async () =>
     failureClass: 'content-type',
   })
   assert.equal(wrongTypeBodyCanceled, true)
+  assert.equal(onEvent.mock.callCount(), 0)
 })
 
 test('stream recovery follows retryable, protocol, and terminal outcomes', async () => {
+  const onEvent = mock.fn()
   const outcomes: RepoStreamEnd[] = [
     { type: 'protocol-error', failureClass: 'schema', issuePath: '/kind' },
     {
@@ -232,7 +237,7 @@ test('stream recovery follows retryable, protocol, and terminal outcomes', async
   await runRepoEventStream({
     connect: async () => outcomes.shift()!,
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
-    onEvent: () => assert.fail('no event expected'),
+    onEvent,
     onInterrupted: () => { interruptions += 1 },
     random: () => 0,
     signal: new AbortController().signal,
@@ -244,6 +249,7 @@ test('stream recovery follows retryable, protocol, and terminal outcomes', async
   assert.deepEqual(diagnostics, [
     { type: 'protocol-error', failureClass: 'schema', issuePath: '/kind' },
   ])
+  assert.equal(onEvent.mock.callCount(), 0)
 })
 
 test('an expired stream token reconnects with a fresh token', async () => {
@@ -308,17 +314,22 @@ test('third transport failure records once and a healthy event resets the run', 
   assert.deepEqual(waits, [2_000, 4_000, 8_000, 2_000, 4_000])
 })
 
-test('an aborted stream stops without refresh, retry, or diagnostics', async () => {
-  const controller = new AbortController()
-  controller.abort()
-  let calls = 0
-  await runRepoEventStream({
-    connect: async () => { calls += 1; return { type: 'transport' } },
-    onDiagnostic: () => { calls += 1 },
-    onEvent: () => { calls += 1 },
-    onInterrupted: () => { calls += 1 },
-    signal: controller.signal,
-    wait: async () => { calls += 1 },
-  })
-  assert.equal(calls, 0)
+test('an active stream connects and reports interruption while an aborted stream does neither', async () => {
+  for (const aborted of [false, true]) {
+    const controller = new AbortController()
+    if (aborted) controller.abort()
+    const calls: string[] = []
+    await runRepoEventStream({
+      connect: async () => {
+        calls.push('connect')
+        return { type: 'stream-error', error: { code: 'forbidden', message: 'access revoked', retryable: false } }
+      },
+      onDiagnostic: () => { calls.push('diagnostic') },
+      onEvent: () => { calls.push('event') },
+      onInterrupted: () => { calls.push('interrupted') },
+      signal: controller.signal,
+      wait: async () => { calls.push('wait') },
+    })
+    assert.deepEqual(calls, aborted ? [] : ['connect', 'interrupted'])
+  }
 })
