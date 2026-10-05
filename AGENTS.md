@@ -53,7 +53,7 @@ unrepresentable state. Evidence and proof for this audit are in
 | Assert callback behavior outside the code that can catch its failures. | `pnpm check:resource-boundary` checks test sources with `callback-assertions.mjs`; use `mock.fn()` and assert `mock.callCount()` after awaiting work. |
 | Audit large files and separate responsibilities. | `dev/checks/policy` runs `check-source-size.mjs`: ownership audit at 700 lines, hard cap at 1,000. |
 | Preserve generated contracts and digest-locked migrations. | `dev/checks/contract` and `check-migration-immutability.mjs`. |
-| Avoid ordinary code comments. | No local enforcement yet; separate PR #525 adds it. The exceptions above remain the intended policy. |
+| Avoid ordinary code comments. | `dev/checks/policy` runs `check-comments.mjs` and its regression tests, added by merged PR #525. The exceptions above remain the intended policy. |
 | Avoid compatibility layers in pre-alpha; maintainer means owner or member. | Domain authorization tests cover access. Compatibility and terminology choices still require review. |
 | Do not edit root README without explicit authorization; involve the operator in new behavior. | Operator context and review; no source-only check can establish authorization. |
 | Record failed checks before retrying without a repair. | Release-flake issue workflow; no local retry interceptor. |

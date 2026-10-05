@@ -11,7 +11,7 @@ not an exhaustive count of every bug. A review and its repair count once.
 | Frontend data owned by individual callers | 7 | Close the remaining route publication bypass with private ownership and a boundary check. |
 | Tests that do not observe their claimed failure | 5 | Repair swallowed callback assertions and reject the pattern. |
 | Required mutation effects left to individual callers | 3 | Existing lifecycle and use-case owners already centralize the evidenced effects; retain their behavior tests. |
-| Comments reintroduced after removal | 3 | Existing [PR #525](https://github.com/scope-vcs/scope-vcs/pull/525) owns the check; it is not included in this branch. |
+| Comments reintroduced after removal | 3 | Merged [PR #525](https://github.com/scope-vcs/scope-vcs/pull/525) adds the shared policy check. |
 | Setup failure text normalized inconsistently | 2 | Make validated text a domain type. |
 | Host-dependent test concurrency exhausts PostgreSQL | 2 | Bound concurrency in the shared backend runner. |
 
@@ -147,10 +147,17 @@ Those repairs are already on the baseline. This audit does not claim that
 all future side effects can be inferred or that every refresh path was audited.
 
 Comment removal required `74946610`, `73e56b91`, and `fdcb64de`; the latter two
-removed comments arriving through merges. PR #525 is separate ongoing work,
-not an enforcement mechanism present in this checkout. Neither the June auth
-revert `26b78b76` nor bounded-I/O revert `e46a012e` alone establishes another
-repeated class.
+removed comments arriving through merges. PR #525 subsequently merged the
+comment scanner and its regression tests into the shared policy gate. Neither
+the June auth revert `26b78b76` nor bounded-I/O revert `e46a012e` alone establishes
+another repeated class.
+
+The follow-up review checked the four subsequent merges: #507 changes CLI
+request comparison, #521 recovers auto-merge checks, #526 moves landed-request
+completion into the main-push transaction, and #525 enforces the comment rule.
+They share no changed files with this patch and merge cleanly. The combined
+tree passes the policy gate, including the new comment scanner, and
+`cargo check --workspace --all-targets --locked`.
 
 ## Shared commands
 
