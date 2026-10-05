@@ -7,7 +7,7 @@ from pathlib import Path
 import uuid
 
 from deployment_policy import PRIMARY_PROVIDER
-from deployment_runtime import REPOSITORY, T3Client, create_worktree, save_json, thread_create_command, turn_start_command
+from deployment_runtime import REPOSITORY, T3Client, create_worktree, message_command, save_json, thread_create_command
 from deployment_scheduler import ZONE
 from heartbeat import ensure_issue
 
@@ -56,11 +56,8 @@ def start(week: str, intent: dict) -> None:
     create_worktree(Path(intent["worktree"]))
     with T3Client() as client:
         client.dispatch(thread_create_command(
-            intent["thread_id"], f"Scope image pins · {week}", intent["worktree"],
-            PRIMARY_PROVIDER, intent["created_at"]))
-        client.dispatch(turn_start_command(
-            intent["thread_id"] + "-turn", intent["thread_id"], PROMPT,
-            PRIMARY_PROVIDER, intent["created_at"]))
+            intent["thread_id"], f"Scope image pins · {week}", intent["worktree"], PRIMARY_PROVIDER))
+        client.dispatch(message_command(intent["thread_id"] + "-turn", intent["thread_id"], PROMPT, PRIMARY_PROVIDER))
 
 
 def alert_not_started(week: str) -> str:

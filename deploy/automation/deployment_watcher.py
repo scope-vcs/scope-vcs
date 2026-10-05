@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 from deployment_policy import FALLBACK_PROVIDER, MAX_RECOVERIES, PRIMARY_PROVIDER, TERMINAL, completion, running, stamp, supervise, timestamp, trusted_run
-from deployment_runtime import CHECKOUT, PROJECT_ID, REPOSITORY, T3Client, create_worktree, github, jobs, save_json, thread_create_command, turn_start_command
+from deployment_runtime import CHECKOUT, PROJECT_ID, REPOSITORY, T3Client, create_worktree, github, interrupt_command, jobs, message_command, save_json, thread_create_command
 import deployment_scheduler
 import image_pin_refresh
 from heartbeat import alert, heartbeat
@@ -232,10 +232,10 @@ def queue_turn(state: dict, info: dict) -> None:
     releases = "\n".join(f"https://github.com/{REPOSITORY}/actions/runs/{r['run_id']} (attempt {r['attempt']})" for r in records)
     info["dispatch_at"] = stamp()
     command_id = f"{info['incident_id']}-supervisor-{info['generation']}"
-    info["pending_command"] = turn_start_command(
+    info["pending_command"] = message_command(
         command_id, info["thread_id"],
         PROMPT.format(releases=releases, receipt=receipt_path(info), inbox=inbox_path(info)),
-        info["provider"], info["dispatch_at"])
+        info["provider"])
     info["owns_agent"] = True
     # Persist the exact command before dispatch, so uncertain responses retry idempotently.
     persist(state)
@@ -247,7 +247,7 @@ def dispatch_pending(client: T3Client, state: dict, info: dict) -> None:
         persist(state)
     client.dispatch(thread_create_command(
         info["thread_id"], "Scope deployment · " + info["incident_id"].removeprefix("scope-release-"),
-        info["worktree"], info["provider"], info["created_at"]))
+        info["worktree"], info["provider"]))
     client.dispatch(info["pending_command"])
     info.pop("pending_command")
     info.pop("stopping_at", None)
@@ -268,13 +268,15 @@ def escalate(state: dict, info: dict, reason: str) -> None:
     persist(state)
 
 
-def interrupt(client: T3Client, state: dict, info: dict, reason: str) -> None:
+def interrupt(client: T3Client, state: dict, info: dict, thread: dict, reason: str) -> None:
     info.setdefault("stopping_at", stamp())
     info["stop_reason"] = reason
     persist(state)
-    client.dispatch({"type": "thread.turn.interrupt",
-                     "commandId": f"{info['incident_id']}-stop-{info['generation']}",
-                     "threadId": info["thread_id"], "createdAt": info["stopping_at"]})
+    run_id = thread.get("activeRunId")
+    if run_id:
+        # Repeating the same command each poll is idempotent; a later run gets its own.
+        client.dispatch(interrupt_command(f"{info['incident_id']}-stop-{info['generation']}-{run_id}",
+                                          info["thread_id"], run_id))
 
 
 def monitor(client: T3Client, state: dict, info: dict, shell: dict) -> None:
@@ -283,24 +285,27 @@ def monitor(client: T3Client, state: dict, info: dict, shell: dict) -> None:
         # Retry the identical command to establish ownership, then observe its stop.
         dispatch_pending(client, state, info)
         return
-    thread = client.thread(info["thread_id"])
+    # T3 omits deleted threads from its shell; supervision treats that as a removed agent.
+    thread = shell or {"deletedAt": stamp()}
     info["owns_agent"] = running(thread)
-    thread.update({key: shell.get(key, False) for key in ("hasPendingApprovals", "hasPendingUserInput")})
     persist(state)
     if info["status"] == "escalated":
         if running(thread):
-            interrupt(client, state, info, info["reason"])
+            interrupt(client, state, info, thread, info["reason"])
         return
+    if info.get("stopping_at") and running(thread):
+        # A run can be active before T3 reports its ID; retry until the stop reaches it.
+        interrupt(client, state, info, thread, info["stop_reason"])
     if not unresolved(state, info["incident_id"]):
         if not running(thread):
             info["status"] = "verified"
             persist(state)
         elif supervise(info, thread, stamp())[0] in {"interrupt", "escalate"}:
-            interrupt(client, state, info, "agent_unavailable")
+            interrupt(client, state, info, thread, "agent_unavailable")
         return
     if info.get("reported_blocker"):
         if running(thread):
-            interrupt(client, state, info, info["reported_blocker"])
+            interrupt(client, state, info, thread, info["reported_blocker"])
         escalate(state, info, info["reported_blocker"])
         return
     action, reason = supervise(info, thread, stamp())
@@ -308,11 +313,11 @@ def monitor(client: T3Client, state: dict, info: dict, shell: dict) -> None:
         return
     if action == "escalate":
         if running(thread):
-            interrupt(client, state, info, reason)
+            interrupt(client, state, info, thread, reason)
         escalate(state, info, reason)
         return
     if action == "interrupt":
-        interrupt(client, state, info, reason)
+        interrupt(client, state, info, thread, reason)
         return
     if info["recoveries"] >= MAX_RECOVERIES:
         escalate(state, info, "attempts_exhausted")
@@ -383,11 +388,11 @@ def poll(*, initialize: bool = False, dry_run: bool = False) -> dict:
     active = [t for t in state["threads"].values() if t["status"] == "monitoring" or t.get("owns_agent")]
     if active:
         with T3Client() as client:
-            snapshot = client.request("/api/orchestration/shell")
+            snapshot = client.shell()
             if not any(p["id"] == PROJECT_ID and p["workspaceRoot"] == str(CHECKOUT)
                        and not p.get("deletedAt") for p in snapshot["projects"]):
                 raise RuntimeError("Scope T3 project does not match the configured checkout")
-            shells = {t["id"]: t for t in snapshot["threads"]}
+            shells = {t["id"]: t for t in snapshot["threads"] + snapshot["archivedThreads"]}
             for info in active:
                 monitor(client, state, info, shells.get(info["thread_id"], {}))
     state["last_poll_at"] = stamp()

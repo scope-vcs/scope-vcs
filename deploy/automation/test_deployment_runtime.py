@@ -2,6 +2,7 @@
 import contextlib
 import json
 import os
+import socket
 import stat
 import subprocess
 import tempfile
@@ -100,7 +101,7 @@ class T3Tests(unittest.TestCase):
                 pass
 
             def do_GET(self):
-                received.append((self.path, self.headers.get("Authorization")))
+                received.append((self.path, self.headers.get("Authorization"), self.headers.get(runtime.PROTOCOL_HEADER)))
                 if self.path == "/start":
                     self.send_response(302)
                     self.send_header("Location", "/redirected")
@@ -119,10 +120,65 @@ class T3Tests(unittest.TestCase):
                 client.session = {"token": "test-secret"}
                 with self.assertRaises((RuntimeError, urllib.error.HTTPError)):
                     client.request("/start")
-                self.assertEqual(received, [("/start", "Bearer test-secret")])
+                self.assertEqual(received, [("/start", "Bearer test-secret", "2")])
             finally:
                 server.shutdown()
                 server_thread.join(timeout=3)
+
+    def test_commands_use_the_rpc_socket_and_errors_report_only_their_kind(self):
+        received = {}
+
+        def frame(text):
+            payload = text.encode()
+            return bytes([0x81, len(payload)]) + payload if len(payload) < 126 else \
+                bytes([0x81, 126]) + len(payload).to_bytes(2, "big") + payload
+
+        def read_frame(connection):
+            first, second = connection.recv(2)
+            size = second & 0x7F
+            if size == 126:
+                size = int.from_bytes(connection.recv(2), "big")
+            mask = connection.recv(4)
+            data = b""
+            while len(data) < size:
+                data += connection.recv(size - len(data))
+            return json.loads(bytes(byte ^ mask[index % 4] for index, byte in enumerate(data)))
+
+        def serve(listener):
+            connection, _ = listener.accept()
+            with connection:
+                head = b""
+                while b"\r\n\r\n" not in head:
+                    head += connection.recv(4096)
+                received["upgrade"] = head.decode()
+                connection.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+                first = read_frame(connection)
+                received["request"] = first
+                connection.sendall(frame(json.dumps({"_tag": "Exit", "requestId": first["id"],
+                                                     "exit": {"_tag": "Success", "value": {"sequence": 7}}})))
+                second = read_frame(connection)
+                connection.sendall(frame(json.dumps({"_tag": "Exit", "requestId": second["id"], "exit": {
+                    "_tag": "Failure", "cause": [{"_tag": "Fail", "error": {
+                        "_tag": "OrchestrationV2DispatchCommandError", "message": "secret thread content"}}]}})))
+
+        with socket.create_server(("127.0.0.1", 0)) as listener:
+            server = threading.Thread(target=serve, args=(listener,), daemon=True)
+            server.start()
+            client = runtime.T3Client()
+            client.origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
+            client.session = {"token": "test-secret"}
+            client.rpc, client.request_id = None, 0
+            command = runtime.interrupt_command("stop-1", "thread-1", "run-1")
+            self.assertEqual(client.dispatch(command), {"sequence": 7})
+            with self.assertRaises(RuntimeError) as failure:
+                client.dispatch(command)
+            client.rpc.close()
+            server.join(timeout=3)
+        self.assertEqual(str(failure.exception), "T3 rejected run.interrupt: OrchestrationV2DispatchCommandError")
+        self.assertIn("GET /ws?orchestrationProtocol=2 HTTP/1.1", received["upgrade"])
+        self.assertIn("Authorization: Bearer test-secret", received["upgrade"])
+        self.assertEqual(received["request"], {"_tag": "Request", "id": "1", "tag": "orchestration.dispatchCommand",
+                                               "payload": command, "headers": []})
 
 
 class WorktreeTests(unittest.TestCase):

@@ -16,8 +16,11 @@ def info(**changes):
     return {"created_at": at(0), "dispatch_at": at(0), "provider": policy.PRIMARY_PROVIDER, "recoveries": 0, **changes}
 
 
-def thread(state="completed", **changes):
-    return {"latestTurn": {"state": state, "requestedAt": at(0)}, **changes}
+def thread(status="completed", **changes):
+    """T3's shell summary of an agent thread whose latest run has this status."""
+    active = status in policy.ACTIVE_RUN
+    return {"status": status, "activeRunId": "run-1" if active else None,
+            "latestRunRequestedAt": at(0), "updatedAt": at(0), **changes}
 
 
 def run(**changes):
@@ -75,15 +78,15 @@ class CompletionTests(unittest.TestCase):
 class SupervisionTests(unittest.TestCase):
     def test_fresh_active_turn_waits_and_recent_activity_resets_idle_timer(self):
         self.assertEqual(policy.supervise(info(), thread("running"), at(600)), ("wait", ""))
-        for changes in ({"messages": [{"createdAt": at(1190)}]},
-                        {"messages": [{"createdAt": at(0), "updatedAt": at(1190)}]},
-                        {"activities": [{"createdAt": at(1190)}]}):
+        for changes in ({"updatedAt": at(1190)}, {"latestRunStartedAt": at(1190)}):
             self.assertEqual(policy.supervise(info(), thread("running", **changes), at(1250)), ("wait", ""))
 
-    def test_session_starting_is_active_even_before_turn_arrives(self):
-        for state in ("starting", "running"):
-            self.assertTrue(policy.running({"session": {"status": state}}))
-        self.assertFalse(policy.running({"session": None, "latestTurn": None}))
+    def test_preparing_and_waiting_runs_are_active(self):
+        for status in ("preparing", "queued", "starting", "running", "waiting"):
+            self.assertTrue(policy.running({"status": status, "activeRunId": None}))
+        self.assertTrue(policy.running({"status": "completed", "activeRunId": "run-2"}))
+        for status in ("idle", "completed", "interrupted", "failed", "cancelled"):
+            self.assertFalse(policy.running(thread(status)))
 
     def test_finished_agent_is_resumed_after_grace_period_not_marked_done(self):
         self.assertEqual(policy.supervise(info(), thread(), at(119)), ("wait", ""))
@@ -91,8 +94,8 @@ class SupervisionTests(unittest.TestCase):
         self.assertEqual(policy.supervise(info(recoveries=1), thread(), at(120)), ("fallback", "agent_unavailable"))
 
     def test_errors_fallback_and_fallback_provider_errors_resume(self):
-        self.assertEqual(policy.supervise(info(), thread("error"), at(120)), ("fallback", "agent_unavailable"))
-        self.assertEqual(policy.supervise(info(provider=policy.FALLBACK_PROVIDER), thread("error"), at(120)), ("resume", "agent_unavailable"))
+        self.assertEqual(policy.supervise(info(), thread("failed"), at(120)), ("fallback", "agent_unavailable"))
+        self.assertEqual(policy.supervise(info(provider=policy.FALLBACK_PROVIDER), thread("failed"), at(120)), ("resume", "agent_unavailable"))
 
     def test_recovery_attempts_are_bounded_for_both_providers(self):
         for provider in ("codex", "claudeAgent"):
@@ -113,9 +116,10 @@ class SupervisionTests(unittest.TestCase):
                              ("escalate", "attempts_exhausted"))
 
     def test_pending_input_and_approval_wait_then_escalate(self):
-        for flag in ("hasPendingApprovals", "hasPendingUserInput"):
-            self.assertEqual(policy.supervise(info(), thread("running", **{flag: True}), at(599)), ("wait", ""))
-            self.assertEqual(policy.supervise(info(), thread("running", **{flag: True}), at(600)), ("escalate", "approval_required"))
+        for kind in ("command", "user_input"):
+            request = {"pendingRuntimeRequest": {"id": "request-1", "kind": kind, "createdAt": at(0)}}
+            self.assertEqual(policy.supervise(info(), thread("waiting", **request), at(599)), ("wait", ""))
+            self.assertEqual(policy.supervise(info(), thread("waiting", **request), at(600)), ("escalate", "approval_required"))
 
     def test_deadline_interrupts_active_agent_and_escalates_idle_agent(self):
         self.assertEqual(policy.supervise(info(), thread("running"), at(policy.DEADLINE_SECONDS)), ("interrupt", "deadline_exceeded"))
