@@ -17,10 +17,9 @@ import { AccountPagePending } from '@/features/account/account-page-pending'
 import { CliLoginSection, CliSessionsSection } from '@/features/account/account-sections'
 import { CliSessionList } from '@/features/account/cli-session-list'
 import {
-  cliSessionsIdentity,
-  cliSessionsResource,
-  cliSessionsRevocationGeneration,
+  loadCliSessionsHandoff,
   retainRevokedCliSession,
+  useCliSessionsResource,
 } from '@/features/account/cli-sessions-resource'
 import { DeleteAccountSection } from '@/features/account/delete-account-section'
 import { useAuth, UserButton } from '@clerk/tanstack-react-start'
@@ -28,11 +27,10 @@ import { AbsoluteTimestamp } from '@/components/timestamp'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { LoaderCircle, Plus } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import type { CliExchangeGrantResponse } from '@/api/types.generated'
 import { usePendingActions } from '@/lib/use-pending-actions'
-import { useCachedResource } from '@/lib/use-cached-resource'
 
 const requireAccountAuth = createServerFn({ method: 'GET' }).handler(async () => {
   const { auth } = await import('@clerk/tanstack-react-start/server')
@@ -62,10 +60,7 @@ const revokeCliSession = createServerFn({ method: 'POST' })
 
 export const Route = createFileRoute('/account')({
   beforeLoad: () => requireAccountAuth(),
-  loader: async () => {
-    const revocationGeneration = cliSessionsRevocationGeneration()
-    return { ...await loadCliSessions(), revocationGeneration }
-  },
+  loader: () => loadCliSessionsHandoff(loadCliSessions),
   pendingComponent: AccountPagePending,
   component: AccountRoute,
 })
@@ -73,23 +68,11 @@ export const Route = createFileRoute('/account')({
 function AccountRoute() {
   const loaded = Route.useLoaderData()
   const { userId } = useAuth()
-  const identity = userId == null ? null : cliSessionsIdentity(userId)
-  const loadedSessions = loaded.viewerId === userId &&
-    loaded.revocationGeneration === cliSessionsRevocationGeneration() ? loaded.sessions : null
-  const sessionsResource = useCachedResource({
-    fallbackError: 'CLI sessions are unavailable.',
-    identity,
-    initialValue: loadedSessions,
+  const { sessions } = useCliSessionsResource({
+    viewerId: userId ?? null,
+    handoff: loaded,
     load: loadSessionsForResource,
-    resource: cliSessionsResource,
   })
-  useEffect(() => {
-    if (!identity || !loadedSessions ||
-      loaded.revocationGeneration !== cliSessionsRevocationGeneration()) return
-    cliSessionsResource.write(identity, loadedSessions)
-  }, [identity, loaded.revocationGeneration, loadedSessions])
-  const sessions = sessionsResource.value?.sessions ??
-    (loadedSessions?.sessions ?? [])
   const [grant, setGrant] = useState<CliExchangeGrantResponse | null>(null)
   const { pending, run } = usePendingActions()
   const [error, setError] = useState<string | null>(null)
@@ -111,7 +94,7 @@ function AccountRoute() {
       setError(null)
       try {
         await revokeCliSession({ data: { sessionId } })
-        if (identity) retainRevokedCliSession(identity, sessionId)
+        if (userId) retainRevokedCliSession(userId, sessionId)
         toast.success('CLI session revoked')
       } catch (error) {
         setError(error instanceof Error ? error.message : 'Could not revoke CLI session')
