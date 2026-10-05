@@ -24,12 +24,12 @@ test("releases build every configured target with the pinned Node runtime", () =
     && /^[a-f0-9]{64}$/.test(node_sha256)));
 });
 
-test("pull requests build only the native targets on Blacksmith runners", () => {
+test("pull requests build only the Linux and Windows x64 targets on Blacksmith runners", () => {
   const plan = selectCliDistributionTargets(configuration, "pull-request");
 
   assert.deepEqual(
     plan.include.map(({ target }) => target),
-    ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"],
+    ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"],
   );
   assert.ok(plan.include.every(({ smoke }) => smoke));
   assert.ok(plan.include.every(({ runner }) => runner.startsWith("blacksmith-")));
