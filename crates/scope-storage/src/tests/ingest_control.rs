@@ -135,6 +135,7 @@ async fn limit_cleanup_is_bounded_when_the_remote_backend_stalls() {
         GitStorageError::PlaintextLimitExceeded { max_bytes: 4 }
     ));
     assert!(started.elapsed() < Duration::from_secs(2));
+    assert_eq!(fixture.backend.deletes.load(Ordering::SeqCst), 1);
     assert!(all_files(&fixture.local_root).await.is_empty());
 }
 
@@ -197,5 +198,62 @@ impl Read for TrackedReader {
         self.offset += read;
         self.consumed.fetch_add(read, Ordering::SeqCst);
         Ok(read)
+    }
+}
+
+#[tokio::test]
+async fn ingest_rollback_attempts_delete_and_reports_secondary_failures() {
+    use tracing::instrument::WithSubscriber;
+    #[derive(Clone)]
+    struct Log(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+    impl std::io::Write for Log {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    for (abort, delete, stalled, expected) in [
+        (true, false, false, "abort failed"),
+        (false, true, false, "delete failed"),
+        (false, false, true, "exceeded 1000 ms"),
+    ] {
+        let fixture = Fixture::new(8, 64, 1);
+        fixture.backend.fail_abort.store(abort, Ordering::SeqCst);
+        fixture.backend.fail_delete.store(delete, Ordering::SeqCst);
+        fixture
+            .backend
+            .block_delete
+            .store(stalled, Ordering::SeqCst);
+        let log = Log(Arc::new(Mutex::new(Vec::new())));
+        let writer = log.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        let error = fixture
+            .store
+            .ingest(REPOSITORY_ID, &b"five!"[..], 4)
+            .with_subscriber(subscriber)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            GitStorageError::PlaintextLimitExceeded { max_bytes: 4 }
+        ));
+        assert_eq!(
+            fixture.backend.deletes.load(Ordering::SeqCst),
+            1,
+            "delete must be attempted even when abort fails"
+        );
+        let output = String::from_utf8(log.0.lock().unwrap().clone()).unwrap();
+        assert!(
+            output.contains(expected),
+            "cleanup failure must be reported: {output}"
+        );
+        assert!(all_files(&fixture.local_root).await.is_empty());
     }
 }

@@ -41,27 +41,34 @@ impl GitSegmentStore {
         self.backend.delete(object_key).await.map_err(Into::into)
     }
 
-    pub async fn cleanup_remote(&self, object_key: &str) -> Result<(), GitStorageError> {
-        let abort = self.backend.abort_incomplete(object_key).await;
-        let delete = self.backend.delete(object_key).await;
-        match (abort, delete) {
+    /// Bounds rollback work independently of any process deadline. Both operations
+    /// are attempted, even if one fails or stalls. Callers may mark durable metadata
+    /// deleted only after this returns success.
+    pub async fn cleanup_remote_bounded(&self, object_key: &str) -> Result<(), GitStorageError> {
+        let bounded = |result: Result<Result<(), BackendError>, tokio::time::error::Elapsed>| {
+            result
+                .map_err(|_| GitStorageError::RemoteCleanupTimedOut {
+                    timeout_ms: REMOTE_CLEANUP_TIMEOUT.as_millis(),
+                })?
+                .map_err(GitStorageError::from)
+        };
+        // Abort before deleting: an in-flight completion may materialize the
+        // object while abort waits. Each call has its own bound so deletion still
+        // runs after an abort failure or timeout.
+        let abort = tokio::time::timeout(
+            REMOTE_CLEANUP_TIMEOUT,
+            self.backend.abort_incomplete(object_key),
+        )
+        .await;
+        let delete =
+            tokio::time::timeout(REMOTE_CLEANUP_TIMEOUT, self.backend.delete(object_key)).await;
+        match (bounded(abort), bounded(delete)) {
             (Ok(()), Ok(())) => Ok(()),
-            (Err(abort), Ok(())) => Err(GitStorageError::Backend(abort)),
-            (Ok(()), Err(delete)) => Err(GitStorageError::Backend(delete)),
+            (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
             (Err(abort), Err(delete)) => Err(GitStorageError::Backend(BackendError::new(format!(
                 "aborting incomplete uploads failed: {abort}; deleting object failed: {delete}"
             )))),
         }
-    }
-
-    /// Bounds rollback work independently of any process deadline. Callers may
-    /// mark durable metadata deleted only after this returns success.
-    pub async fn cleanup_remote_bounded(&self, object_key: &str) -> Result<(), GitStorageError> {
-        tokio::time::timeout(REMOTE_CLEANUP_TIMEOUT, self.cleanup_remote(object_key))
-            .await
-            .map_err(|_| GitStorageError::RemoteCleanupTimedOut {
-                timeout_ms: REMOTE_CLEANUP_TIMEOUT.as_millis(),
-            })?
     }
 
     pub async fn delete_local(&self, staged: &StagedGitSegment) -> Result<(), GitStorageError> {
