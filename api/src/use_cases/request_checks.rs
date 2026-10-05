@@ -1,6 +1,6 @@
 //! What a request's checks say about merging it, and the evaluation every push
 //! to a request head records. A head whose evaluation failed holds the merge and
-//! is evaluated again when someone looks at the request. A repository linked to
+//! is evaluated again when a command or reconciler needs it. A repository linked to
 //! GitHub needs only its required check names and, for a public contribution,
 //! the check commit GitHub tests; any other reads the workflows at the head.
 

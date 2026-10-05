@@ -12,10 +12,10 @@ use crate::{
     },
 };
 use scope_domain::{
-    repository::RepositoryIncarnation,
+    repository::{RepoRecord, RepositoryIncarnation},
     requests::{
         Request, RequestAutoMergeIntent, RequestAutoMergeReadiness, RequestAutoMergeStopReason,
-        RequestRevision, request_auto_merge_readiness,
+        RequestRevision, RequestState, request_auto_merge_readiness,
     },
 };
 use scope_postgres::db::{AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand};
@@ -154,14 +154,18 @@ async fn reconcile_claim(
     claim: &scope_postgres::db::ClaimedRequestAutoMerge,
     now_unix: u64,
 ) -> Result<(), ApiError> {
-    let checks = state
-        .metadata
-        .requests()
-        .request_auto_merge_check_state(&claim.intent)
-        .await?;
+    let Some((repo, request)) = authorized_request(state, claim, now_unix).await? else {
+        return Ok(());
+    };
+    let checks = request_checks::checks_view(state, &repo, &request).await?;
+    // Evaluation can read a saved revision and create runs. A push, access
+    // change, or cancellation during that work must not reach merge preparation.
+    if authorized_request(state, claim, now_unix).await?.is_none() {
+        return Ok(());
+    }
     match request_auto_merge_readiness(
-        &claim.intent.request_id,
-        &claim.intent.head_oid,
+        &request.id,
+        &request.head_oid,
         checks.evaluation.as_ref(),
         &checks.results,
     ) {
@@ -224,6 +228,69 @@ async fn reconcile_claim(
             }
         }
     }
+}
+
+async fn authorized_request(
+    state: &AppState,
+    claim: &scope_postgres::db::ClaimedRequestAutoMerge,
+    now_unix: u64,
+) -> Result<Option<(RepoRecord, Request)>, ApiError> {
+    let store = state.metadata.requests();
+    if !store
+        .request_auto_merge_intent(&claim.intent.request_id)
+        .await?
+        .is_some_and(|intent| intent.id == claim.intent.id && intent.is_active())
+    {
+        return Ok(None);
+    }
+    let access = state
+        .metadata
+        .repositories()
+        .repository_read_access(&claim.owner, &claim.name, Some(&claim.intent.actor_user_id))
+        .await?;
+    let Some(access) = access.filter(|access| access.access.is_maintainer()) else {
+        stop(
+            state,
+            claim,
+            RequestAutoMergeStopReason::AccessRevoked,
+            now_unix,
+        )
+        .await?;
+        return Ok(None);
+    };
+    let request = store
+        .request_by_id(&claim.intent.request_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("request not found"))?;
+    if request.state() != RequestState::Open {
+        stop(
+            state,
+            claim,
+            RequestAutoMergeStopReason::RequestClosed,
+            now_unix,
+        )
+        .await?;
+        return Ok(None);
+    }
+    let revision = store.latest_request_revision(&request.id).await?;
+    if request.repo_id != claim.intent.repo_id
+        || access.record.incarnation_id != claim.intent.repository_incarnation_id
+        || request.head_oid != claim.intent.head_oid
+        || !revision.is_some_and(|revision| {
+            revision.id == claim.intent.revision_id
+                && revision.new_head_oid == claim.intent.head_oid
+        })
+    {
+        stop(
+            state,
+            claim,
+            RequestAutoMergeStopReason::RequestChanged,
+            now_unix,
+        )
+        .await?;
+        return Ok(None);
+    }
+    Ok(Some((access.record, request)))
 }
 
 async fn release(
