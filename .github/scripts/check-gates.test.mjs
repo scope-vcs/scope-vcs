@@ -273,7 +273,7 @@ function releaseJobs() {
     .map(([, name, body]) => [name, { if: body.match(/^    if: >-\n((?:      .*\n)+)/m)?.[1].trim() }]));
 }
 
-function releasePath(selected, { reuse = false, resumeStaging = false, failure = '', cancelled = false, ref = 'refs/heads/main', backendActivatesWeb = false } = {}) {
+function releasePath(selected, { reuse = false, resumeStaging = false, failure = '', cancelled = false, ref = 'refs/heads/main', backendActivatesWeb = false, replaceRedeployedComponent = '' } = {}) {
   const jobs = releaseJobs();
   const outputs = Object.fromEntries(['runner_image', 'cache', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
     .map((key) => [key, String(selected.includes(key))]));
@@ -285,7 +285,8 @@ function releasePath(selected, { reuse = false, resumeStaging = false, failure =
   const needs = { plan: { result: 'success', outputs }, ...Object.fromEntries(['policy', 'ops', 'validation', 'server-validation'].map(key => [key, { result: key === failure ? 'failure' : 'success' }])) };
   for (const key of ['readiness-preflight', 'smoke-tools', 'release-preparation', 'production-preflight', 'staging', 'backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) {
     const expression = jobs[key].if.replace(/needs\.([\w-]+)/g, 'needs["$1"]');
-    const enabled = Function('needs', 'github', 'cancelled', `return (${expression});`)(needs, { ref }, () => cancelled);
+    const enabled = Function('needs', 'github', 'cancelled', 'inputs', `return (${expression});`)(needs, { ref }, () => cancelled,
+      { replace_redeployed_component: replaceRedeployedComponent });
     needs[key] = { result: enabled ? key === failure ? 'failure' : 'success' : 'skipped',
       outputs: key === 'backend-deploy' ? { web_activated: String(enabled && key !== failure && backendActivatesWeb) } : {} };
   }
@@ -307,6 +308,12 @@ test('release paths stage applications once and leave no-op and distribution-onl
   const runner = releasePath(['runner_image']);
   assert.equal(runner.staging.result, 'skipped');
   assert.equal(runner['production-health-gate'].result, 'success');
+  for (const selected of [[], ['cli'], ['runner_image']]) {
+    const replacement = releasePath(selected, { replaceRedeployedComponent: 'api', failure: 'readiness-preflight' });
+    assert.equal(replacement['readiness-preflight'].result, 'failure', 'explicit replacements must reach preflight');
+    assert.equal(replacement['production-health-gate'].result, 'skipped');
+    assert.equal(replacement['cli-deploy'].result, 'skipped');
+  }
 });
 
 test('failed preflight, staging or activation cannot publish a successful release', () => {
