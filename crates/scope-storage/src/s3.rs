@@ -325,8 +325,6 @@ impl ObjectBackend for S3Backend {
     }
 }
 
-/// Only an explicit `NoSuchKey` means the object is absent. Any other failure, including a 404
-/// for a missing bucket or one without an error code, stays an outage the caller may retry.
 fn is_missing_object(error: &GetObjectSdkError) -> bool {
     let SdkError::ServiceError(error) = error else {
         return false;

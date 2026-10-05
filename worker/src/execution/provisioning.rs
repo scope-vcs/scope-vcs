@@ -2,7 +2,6 @@ use anyhow::Context as _;
 use std::future::Future;
 use tokio::task::JoinSet;
 
-// Bound AWS setup traffic separately from the number of running jobs.
 const MAX_PROVIDER_STARTS: usize = 4;
 
 pub(super) struct Provisioning {
@@ -18,7 +17,6 @@ impl Provisioning {
         }
     }
 
-    // Wait before reserving another attempt, so a lease never sits in a local queue.
     pub(super) async fn wait_for_slot(&mut self) -> anyhow::Result<()> {
         if self.tasks.len() >= self.limit {
             self.tasks

@@ -1,4 +1,3 @@
-//! Database-independent responses while a release owns the writer fence.
 use axum::{
     Router,
     http::{HeaderMap, StatusCode, header},

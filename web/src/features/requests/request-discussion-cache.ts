@@ -41,7 +41,6 @@ export function openRequestDiscussion(
 
   const read = () => requestDiscussionResource.peek(key) ?? session
   const update = (patch: Partial<DiscussionSession>) => {
-    // A late operation must not resurrect an evicted or replaced session.
     if (requestDiscussionResource.peek(key)?.sync !== sync) return
     requestDiscussionResource.write(key, { ...read(), ...patch })
   }
@@ -79,7 +78,6 @@ export function openRequestDiscussion(
       if (incoming.snapshot_version > read().collection.snapshotVersion) {
         await sync.refresh(() => Promise.resolve(incoming))
       } else {
-        // A reopened first page or focused row must not discard loaded older pages.
         updateCollection((current) => mergeRefreshedDiscussionPage(current, incoming, false))
       }
       await sync.catchUp()

@@ -2,8 +2,6 @@ use crate::{MediaStorage, MediaStorageError};
 use scope_storage::{FileBackend, ObjectBackend, S3Backend, S3Settings};
 use std::{path::PathBuf, sync::Arc};
 
-/// Shared by the media HTTP service and processing worker. Process concurrency
-/// limits stay with each caller; storage identity and encryption must agree.
 pub struct MediaStorageSettings {
     backend: Backend,
     encryption_key: [u8; 32],

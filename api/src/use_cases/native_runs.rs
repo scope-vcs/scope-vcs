@@ -1,8 +1,3 @@
-//! Operators decide which accounts may use Scope's hosted runner. Removing an
-//! account settles its repositories in storage. Every addition and removal
-//! publishes a repository event for each repository the account owns, so open
-//! Runs, request, and checks pages refresh their availability and results.
-
 use crate::{
     error::ApiError,
     persistence::unix_now,
@@ -58,8 +53,6 @@ pub(crate) async fn remove_account(
     Ok(withdrawal)
 }
 
-/// Availability has no repository version, so the event names none and every
-/// open view of the repository refreshes, including withdrawn request checks.
 async fn publish_availability_changes(
     metadata: &MetadataStore,
     bus: &RepoChangeBus,

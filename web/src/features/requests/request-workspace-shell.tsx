@@ -29,8 +29,6 @@ export function RequestWorkspaceShell({
   const [width, setWidth] = useState(FILE_PANE_MAX_WIDTH)
   const sidebarId = useId()
 
-  // The sidebar and detail column share the app rail so the request lines up
-  // with the topbar instead of centering in whatever the sidebar leaves over.
   return (
     <WorkbenchPane>
       <div

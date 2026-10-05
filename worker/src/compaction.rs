@@ -448,8 +448,6 @@ fn log_compaction_attempt(
     );
 }
 
-/// Records the upload as abandoned, then discards its bytes. Remote bytes are
-/// only touched when the row transition allows it and the caller asks for it.
 async fn abandon_upload(
     metadata: &MetadataStore,
     segment_store: &GitSegmentStore,
@@ -474,9 +472,6 @@ async fn abandon_upload(
     .await
 }
 
-/// Deletes a segment upload's remote (when `remote`) and local bytes, marking
-/// the row deleted once both are gone. The first failure is reported after the
-/// remaining steps still ran.
 async fn discard_upload(
     metadata: &MetadataStore,
     segment_store: &GitSegmentStore,

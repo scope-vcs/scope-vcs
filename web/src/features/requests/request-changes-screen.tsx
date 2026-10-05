@@ -4,11 +4,6 @@ import { ArrowLeft } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { RequestRevisionStepper } from './request-revision-stepper'
 
-/**
- * The changes screen replaces the request page rather than sitting under it:
- * a way back to the discussion, the request it belongs to, and the revision.
- * The loading state draws the same row without a stepper.
- */
 export function RequestChangesScreen({
   children,
   params,

@@ -27,10 +27,8 @@ pub(super) struct SourceSnapshot {
 struct SourceEntry {
     digest: String,
     modified: SystemTime,
-    // Kernel change time detects edits even if a step restores bytes and mtime.
-    // It is local to this checkout and must not be carried across cache restores.
     #[serde(skip)]
-    changed: (i64, i64),
+    kernel_change_time: (i64, i64),
 }
 
 impl SourceSnapshot {
@@ -80,15 +78,13 @@ impl SourceSnapshot {
         Ok(())
     }
 
-    /// Inputs edited by the job cannot certify the outputs' original inputs.
-    /// Omitting them makes a later checkout treat those paths as changed.
     pub(super) fn for_save(&self) -> anyhow::Result<Self> {
         let mut entries = BTreeMap::new();
         for (path, original) in &self.entries {
             if let Some(current) = fingerprint(&self.root, path)?
                 && current.digest == original.digest
                 && current.modified == original.modified
-                && current.changed == original.changed
+                && current.kernel_change_time == original.kernel_change_time
             {
                 entries.insert(path.clone(), original.clone());
             }
@@ -150,7 +146,7 @@ impl SourceSnapshot {
             current.modified = modified;
             let metadata = files::inspect(&self.root, path)?
                 .context("source disappeared after restoring its timestamp")?;
-            current.changed = (metadata.ctime(), metadata.ctime_nsec());
+            current.kernel_change_time = (metadata.ctime(), metadata.ctime_nsec());
         }
         Ok(())
     }
@@ -186,6 +182,6 @@ fn fingerprint(root: &Path, relative: &Path) -> anyhow::Result<Option<SourceEntr
     Ok(Some(SourceEntry {
         digest: hex::encode(digest.finalize()),
         modified: metadata.modified()?,
-        changed: (metadata.ctime(), metadata.ctime_nsec()),
+        kernel_change_time: (metadata.ctime(), metadata.ctime_nsec()),
     }))
 }

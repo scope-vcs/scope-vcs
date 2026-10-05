@@ -1,4 +1,3 @@
-"""Release completion and agent recovery rules, independent of T3 and GitHub I/O."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -35,30 +34,27 @@ def completion(run: dict, jobs: list[dict]) -> str | None:
     by_name = {job["name"]: job.get("conclusion") for job in jobs}
     if by_name.get("Verify and record release") == "success":
         return "verified"
-    # A successful run with no selected deployable components has no live revision to verify.
-    # Require explicit skipped jobs so missing/incomplete API data never counts as success.
-    if (by_name.get("Plan selected components") == "success"
-            and by_name.get("Validate selected components / Production validation gate") == "success"
-            and all(by_name.get(name) == "skipped" for name in (
-                "Verify and record release", "Backend deploy", "Web deploy", "CLI deploy"))):
+    nothing_deployable_selected = (
+        by_name.get("Plan selected components") == "success"
+        and by_name.get("Validate selected components / Production validation gate") == "success"
+        and all(by_name.get(name) == "skipped" for name in (
+            "Verify and record release", "Backend deploy", "Web deploy", "CLI deploy")))
+    if nothing_deployable_selected:
         return "no_change"
     return None
 
 
 def running(thread: dict) -> bool:
-    """Read T3's shell summary of the agent thread."""
     return thread.get("activeRunId") is not None or thread.get("status") in ACTIVE_RUN
 
 
 def last_activity(thread: dict, fallback: str) -> float:
-    # T3 advances the thread's updatedAt with each recorded agent item.
     dates = [fallback, thread.get("updatedAt"), thread.get("latestRunRequestedAt"),
              thread.get("latestRunStartedAt"), thread.get("latestRunCompletedAt")]
     return max(timestamp(value) for value in dates if value)
 
 
 def supervise(info: dict, thread: dict, now: str) -> tuple[str, str]:
-    """Decide wait/resume/fallback/interrupt/escalate; the caller persists effects."""
     at = timestamp(now)
     if thread.get("archivedAt") or thread.get("deletedAt"):
         return "escalate", "agent_unavailable"

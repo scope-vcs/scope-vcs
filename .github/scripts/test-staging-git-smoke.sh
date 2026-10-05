@@ -154,7 +154,6 @@ assert.equal(process.env.SCOPE_MEDIA_SMOKE_TOKEN, 'scope_private_session_value')
 writeFileSync(value('--receipt'), '{"passed":true,"request_deleted":true}\n')
 appendFileSync(process.env.TRACE_PATH, 'media-smoke\n')
 EOF
-# The later workflow invocation reuses the same session after the exchange is consumed.
 reuse_dir="$smoke_dir"
 reuse_token="$token_path"
 printf 'photo' > "$test_root/photo.png"
@@ -234,7 +233,6 @@ for failure in stale leak permissioned marker; do
   test -z "$(find "$case_dir" -maxdepth 1 -name 'invocation.*' -print)"
 done
 
-# Execute the workflow's actual final cleanup, which owns session removal.
 python3 - "$repo_root/.github/workflows/deploy-staging.yml" "$test_root/owner-cleanup.sh" <<'PYTHON'
 import pathlib, sys, textwrap
 workflow = pathlib.Path(sys.argv[1]).read_text()
@@ -245,7 +243,6 @@ PYTHON
 RUNNER_TEMP="$test_root" SCOPE_GIT_SMOKE_DIR="$smoke_dir" bash "$test_root/owner-cleanup.sh"
 test ! -e "$smoke_dir"
 
-# Unsafe or unrelated credentials must fail before network access or ambient login.
 api_origin='https://api-staging.example.test'
 session_key="$(printf '%s' "$api_origin" | od -An -v -tx1 | tr -d ' \n')"
 ambient_config="$test_root/ambient-config"

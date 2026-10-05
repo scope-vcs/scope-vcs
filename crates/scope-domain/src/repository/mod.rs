@@ -75,12 +75,7 @@ pub struct RepoRecord {
     pub description: Option<String>,
     pub website_url: Option<String>,
     pub lifecycle_state: RepoLifecycleState,
-    /// Advances on every change a viewer or client should hear about.
     pub change_version: u64,
-    /// Advances only when a projection input changes: the commit graph,
-    /// visibility history, live files, policy, repo config, or Git head.
-    /// Projections, history views, and dependency analysis are keyed on it,
-    /// so collaboration and metadata changes leave them current.
     pub content_version: u64,
 }
 
@@ -159,19 +154,15 @@ impl Repository {
         self.live_files.contains_key(path)
     }
 
-    /// Records a change that leaves every projection input as it was.
     pub fn bump_change_version(&mut self) {
         self.record.bump_change_version();
     }
 
-    /// Records a change to a projection input.
     pub fn bump_content_version(&mut self) {
         self.bump_change_version();
         self.record.content_version = self.record.content_version.saturating_add(1);
     }
 
-    /// Whether both states have the same projection inputs. Any difference
-    /// must come with a content version bump.
     pub fn content_matches(&self, other: &Repository) -> bool {
         self.graph == other.graph
             && self.visibility_change_sets == other.visibility_change_sets

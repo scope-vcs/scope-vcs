@@ -13,11 +13,6 @@ import './marketing-landing-page.css'
 
 const INSTALL_HIGHLIGHT_MS = 2400
 
-/**
- * The signed-out landing page. It renders its content twice: the public copy
- * people read and click, and a private copy in the opposite theme that only
- * shows through the lens following the cursor.
- */
 export function MarketingLandingPage({
   cliInstallCommands,
   initialCliPlatform,

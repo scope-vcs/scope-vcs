@@ -1,7 +1,5 @@
 use crate::error::{ApiError, ErrorKind};
 
-/// Why a merge attempt did not commit. Callers can retry transient failures without
-/// mistaking every conflict-shaped API error for a Git content conflict.
 pub(crate) enum RequestMergeFailure {
     Other(ApiError),
     MergeConflict(ApiError),
@@ -10,8 +8,6 @@ pub(crate) enum RequestMergeFailure {
 
 impl RequestMergeFailure {
     pub(super) fn public_range(error: ApiError) -> Self {
-        // These conflicts require a new request push. Retrying the authorized
-        // revision cannot repair its ancestry or public path restrictions.
         if error.kind == ErrorKind::Conflict {
             Self::MergeConflict(error)
         } else {

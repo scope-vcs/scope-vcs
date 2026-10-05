@@ -1,7 +1,6 @@
 use scope_service_runtime::readiness::ReadinessTracker;
 use std::time::Duration;
 
-/// The four loops every worker runs; readiness needs a recent poll from each.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum WorkerLoop {
     Control,
@@ -10,8 +9,6 @@ pub(crate) enum WorkerLoop {
     Dependencies,
 }
 
-/// The one startup gate: no loop can do useful work before the schema it
-/// expects is present.
 const SCHEMA_GATE: usize = 0;
 
 #[derive(Clone)]
@@ -34,8 +31,6 @@ impl WorkerHealth {
         self.0.mark_poll(worker_loop as usize, now_unix);
     }
 
-    /// A successful durable lease claim/renewal proves the bounded operation is
-    /// being supervised even when it has not reached the next idle poll yet.
     pub(crate) fn mark_work_progress(
         &self,
         worker_loop: WorkerLoop,

@@ -7,7 +7,6 @@ import {
   formatUnixDateUtc,
 } from '@/lib/date-format'
 
-/** Relative time with the reader's absolute local time on hover. */
 export function RelativeTimestamp({
   className,
   value,
@@ -35,9 +34,6 @@ export function RelativeTimestamp({
   )
 }
 
-/**
- * Absolute time that switches from deterministic UTC to browser local.
- */
 export function AbsoluteTimestamp({
   className,
   prefix = '',

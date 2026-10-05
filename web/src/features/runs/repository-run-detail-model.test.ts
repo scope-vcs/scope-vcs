@@ -283,8 +283,6 @@ describe('step log pagination', () => {
 })
 
 describe('attempt ordering', () => {
-  // The run detail response returns attempts newest first, so anything that
-  // relies on array position picks the wrong attempt.
   const newestFirst = [
     { id: 'a2', number: 2, steps: [] },
     { id: 'a1', number: 1, steps: [] },
@@ -303,9 +301,6 @@ describe('attempt ordering', () => {
 })
 
 describe('run detail navigation', () => {
-  // Reconciliation derives the open job from `selection`, so any handler that
-  // moves the reader without clearing a stale selection gets undone by the
-  // next poll.
   const opened = {
     attemptOverrides: {} as Record<string, string>,
     manualSelection: false,

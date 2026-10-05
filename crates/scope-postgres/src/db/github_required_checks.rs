@@ -1,7 +1,3 @@
-//! The check names GitHub must pass before a repository's requests merge.
-//! Setting them re-reads the viewer's access in the writing transaction, so a
-//! maintainer removed meanwhile cannot change them.
-
 use super::{
     RepositoryStore, acquire_aggregate_lock, locks::acquire_shared_repository_lock,
     repository_access::repository_access,
@@ -20,9 +16,6 @@ impl RepositoryStore {
         required_check_names(self.db.as_ref(), repo_id).await
     }
 
-    /// Replaces the repository's required check names once the domain accepts
-    /// them. Returns the stored names and the repository incarnation they were
-    /// stored for, so the caller can announce the change.
     pub async fn set_github_required_checks(
         &self,
         repo_id: &str,

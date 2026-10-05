@@ -13,7 +13,6 @@ export function runDisplayState(run: {
     : run.state
 }
 
-/** Elapsed seconds rendered for scanning: `44s`, `3m 04s`, `1h 12m`. */
 export function formatDuration(seconds: number) {
   const safe = Math.max(0, Math.round(seconds))
   if (safe < 60) return `${safe}s`
@@ -31,10 +30,6 @@ export function formatDuration(seconds: number) {
     : `${hours}h ${String(remaining).padStart(2, '0')}m`
 }
 
-/**
- * How long a span took, or how long it has been running. Returns null when the
- * span has not started, so callers render a placeholder instead of a fake zero.
- */
 export function elapsedDuration(
   start: number | null,
   end: number | null,
@@ -44,7 +39,6 @@ export function elapsedDuration(
   return formatDuration((end ?? nowUnix) - start)
 }
 
-/** How a run started, in the words a reader would use. */
 export function runTriggerLabel(trigger: RepositoryRunTrigger) {
   switch (trigger) {
     case 'push-main':

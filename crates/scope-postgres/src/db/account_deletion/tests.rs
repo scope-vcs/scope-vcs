@@ -37,9 +37,6 @@ async fn query_json(store: &MetadataStore, sql: &str) -> Value {
     row.try_get::<Value>("", "value").unwrap()
 }
 
-// The leaver joined owner/shared through an invite and contributed as a
-// member: authored, closed, merged, rated, invited, reviewed, requested a run
-// and authorized an auto-merge. They also own a solo repository.
 const CONTRIBUTIONS: &str = r#"
     INSERT INTO scope_auth_identities VALUES ('clerk', 'user_clerk_leaver', 'leaver');
     INSERT INTO scope_cli_sessions (id, token_hash, user_id, label, created_at_unix, expires_at_unix)
@@ -125,7 +122,6 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
         deleted.changed_repositories[0].change_version,
         shared_version + 1
     );
-    // The shared repository is already announced as changed.
     assert!(deleted.contributed_repositories.is_empty());
     let survivors = query_json(
         &store,
@@ -176,7 +172,6 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
         })
     );
 
-    // The survivors still read as domain facts.
     let merged = store
         .requests()
         .request_for_tests("merged")
@@ -205,8 +200,6 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
     .await;
     assert_eq!(leftover_email, json!([]));
 
-    // Signing back in would create an account the pending Clerk deletion
-    // then strands.
     let refused = store
         .auth()
         .resolve_clerk_user(
@@ -232,7 +225,6 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
         repository(&owner, "linked", Visibility::Private),
         repository(&leaver, "solo", Visibility::Private),
     ]);
-    // A former member connected owner/linked to GitHub; settings show who.
     store
         .db
         .execute_unprepared(
@@ -243,8 +235,6 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
         )
         .await
         .unwrap();
-    // Without membership, the leaver submitted one public request and left
-    // another as a draft, which nobody else could delete once they are gone.
     store
         .db
         .execute_unprepared(
@@ -338,7 +328,6 @@ async fn a_failed_clerk_deletion_waits_and_is_claimed_again() {
             .unwrap(),
         ["user_clerk"]
     );
-    // A second worker does not take a claimed deletion.
     assert!(
         auth.claim_due_clerk_user_deletions("second", 11, 131, 5)
             .await
@@ -360,7 +349,6 @@ async fn a_failed_clerk_deletion_waits_and_is_claimed_again() {
             .unwrap(),
         ["user_clerk"]
     );
-    // The first worker's lapsed claim no longer settles the deletion.
     auth.complete_clerk_user_deletion("user_clerk", "first", 43)
         .await
         .unwrap();
@@ -369,8 +357,6 @@ async fn a_failed_clerk_deletion_waits_and_is_claimed_again() {
         .unwrap();
     let completed = "SELECT jsonb_agg(completed_at_unix) FROM scope_clerk_user_deletions";
     assert_eq!(query_json(&store, completed).await, json!([43]));
-    // A completed deletion is never claimed again, and stays until tokens
-    // issued before it have expired.
     assert!(
         auth.claim_due_clerk_user_deletions("third", 10_000, 10_120, 5)
             .await

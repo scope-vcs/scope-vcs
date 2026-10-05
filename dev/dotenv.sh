@@ -1,5 +1,3 @@
-# Sourced by dev/check and dev/scope-dev. Reads one KEY=VALUE entry from a
-# dotenv file, trimming whitespace and one layer of matching quotes.
 read_dotenv_value() {
   local path="$1"
   local key="$2"

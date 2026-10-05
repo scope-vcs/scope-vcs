@@ -10,8 +10,6 @@ const pathCount = {
   private: `${repoPanel.shared.length + repoPanel.kept.length} paths`,
 }
 
-/** The repository's top level. Shared paths show in both views; kept paths are
- * laid out in both but only visible through the lens. */
 export function RepoPanel(): ReactElement {
   const view = useLandingView()
   return (

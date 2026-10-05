@@ -1,7 +1,3 @@
-//! Rules for emailing a repository invite. Delivery is tracked apart from the
-//! invite itself: an invite can be pending while its email is still queued,
-//! sent, or failed.
-
 use super::{
     repo_collaboration::ensure_can_manage_members,
     repository::collaboration::{CollaborationState, RepositoryInviteState},
@@ -12,16 +8,12 @@ pub const INVITE_EMAIL_MIN_INTERVAL_SECS: u64 = 60;
 pub const INVITE_EMAIL_MAX_PER_INVITE: usize = 5;
 pub const INVITE_EMAIL_MAX_PER_OWNER_PER_DAY: usize = 20;
 pub const INVITE_EMAIL_OWNER_WINDOW_SECS: u64 = 24 * 60 * 60;
-/// Attempts at one email before it is reported as failed.
 pub const INVITE_EMAIL_MAX_ATTEMPTS: u32 = 6;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RepositoryInviteEmailState {
-    /// Waiting for the sender, including between retries.
     Queued,
-    /// The provider accepted it. This says nothing about the inbox.
     Sent,
-    /// The provider refused it or the retries ran out.
     Failed,
 }
 
@@ -37,19 +29,13 @@ pub struct RepositoryInviteEmail {
 }
 
 impl RepositoryInviteEmail {
-    /// A failed email reached nobody, so it does not use up a send.
     fn counts_as_send(&self) -> bool {
         self.state != RepositoryInviteEmailState::Failed
     }
 }
 
-/// What the sender's history says about this request, read in the same
-/// transaction that stores the new email.
 pub struct InviteEmailHistory<'a> {
-    /// Every email already requested for this invite.
     pub for_invite: &'a [RepositoryInviteEmail],
-    /// When the owner's counted emails inside the daily window were requested,
-    /// across all of their repositories.
     pub owner_recent_sends_unix: &'a [u64],
 }
 
@@ -139,18 +125,13 @@ pub fn request_repository_invite_email(
     })
 }
 
-/// What one delivery attempt found.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InviteEmailAttempt {
     Accepted,
-    /// Worth trying again: the provider was unreachable, busy, or throttling.
     Retryable(String),
-    /// Trying again cannot help, such as a refused address.
     Refused(String),
 }
 
-/// Applies an attempt. Returns when to try again, or `None` once the email
-/// has settled as sent or failed.
 pub fn record_invite_email_attempt(
     email: &mut RepositoryInviteEmail,
     attempt: &InviteEmailAttempt,

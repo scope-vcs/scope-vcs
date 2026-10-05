@@ -170,12 +170,8 @@ impl CacheStore {
     {
         let db = self.db.clone();
         let claim = claim.clone();
-        // Keep cleanup alive if its caller is cancelled, so the transaction is not
-        // dropped while storage may still be deleting the object.
         tokio::spawn(async move {
             let tx = db.begin().await.map_err(PostgresError::internal)?;
-            // The row lock and generation check fence out stale workers and prevent
-            // a new valid upload from reusing this object key during deletion.
             let current = tx
                 .query_one_raw(statement(
                     "SELECT upload_id FROM scope_cache_uploads
@@ -386,8 +382,6 @@ pub(super) async fn expire_repository_references(
     Ok(())
 }
 
-/// Removes one expired reference row (already locked by the caller) and queues
-/// its object for deletion once nothing else references it.
 async fn expire_reference_row(
     tx: &DatabaseTransaction,
     repository_id: &str,
@@ -427,8 +421,6 @@ async fn expire_reference_row(
     .await
 }
 
-/// Both cache retry tables constrain `last_error` to 1..=8192 characters, so a
-/// failure text is truncated and an empty one is replaced before it is stored.
 fn bounded_job_error(error: &str) -> String {
     let bounded = error.chars().take(8192).collect::<String>();
     if bounded.is_empty() {

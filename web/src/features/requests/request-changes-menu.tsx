@@ -19,16 +19,11 @@ import { actorHandle } from './request-actor'
 type RequestRouteParams = { owner: string; repo: string; requestId: string }
 
 type ActivitySource = {
-  /** Null when the viewer cannot read request activity. */
   identity: string | null
   load: (signal: AbortSignal) => Promise<RequestActivityPage>
   version: string
 }
 
-/**
- * Changes opens a searchable list of the request's pushes, like the History
- * menu on the Code page. Each one opens the changes screen at that revision.
- */
 export function RequestChangesMenu({ activity, params }: { activity: ActivitySource; params: RequestRouteParams }) {
   if (!activity.identity) {
     return (
@@ -79,7 +74,6 @@ function RequestChangesMenuPanel({
   const pushes = useMemo(() => requestRevisionPushes(resource.value?.events ?? []), [resource.value])
   const matches = useMemo(() => searchRequestRevisionPushes(pushes, query), [pushes, query])
   const latestId = pushes[0]?.id
-  // Activity holds only the latest events, so older revisions stay reachable from the changes screen.
   const partial = resource.status === 'loaded' &&
     (pushes.length === 0 || resource.value.events.length >= REQUEST_ACTIVITY_PAGE_SIZE)
 

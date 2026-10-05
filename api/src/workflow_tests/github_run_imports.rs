@@ -1,6 +1,3 @@
-//! Importing a connected repository's recent workflow runs from GitHub, the
-//! count maintainers choose, and the Runs page's workflow filter and pages.
-
 use super::fake_github::{
     FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, INSTALLATION_ID, WEBHOOK_SECRET, webhook,
     workflow_run_started_at,
@@ -52,8 +49,6 @@ async fn connect(state: &AppState, github_repository_id: u64, full_name: &str, r
         .unwrap();
 }
 
-/// `count` runs GitHub started a second apart, the newest with the highest
-/// id, alternating between the `ci` and `lint` workflows.
 fn history(first_id: u64, count: u64) -> Vec<serde_json::Value> {
     let started = unix_now() - 10_000;
     (first_id..first_id + count)
@@ -128,13 +123,11 @@ async fn connecting_imports_recent_runs_page_by_page_and_the_runs_page_pages_thr
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
 
     assert_eq!(import_pass(&state, unix_now()).await, 1);
-    // 120 of GitHub's newest runs take two pages of 100; the import stops there.
     assert_eq!(fake.run_list_reads.load(Ordering::SeqCst), 2);
     let import = &connection(&state).await["run_import"];
     assert_eq!(import["state"], "succeeded");
     assert_eq!(import["imported_count"], 120);
     assert_eq!(import["error"], serde_json::Value::Null);
-    // Open Runs pages see each page arrive, and settings see the import end.
     let kinds = std::iter::from_fn(|| events.try_recv().ok())
         .map(|event| event.kind)
         .collect::<Vec<_>>();
@@ -146,7 +139,6 @@ async fn connecting_imports_recent_runs_page_by_page_and_the_runs_page_pages_thr
         2
     );
 
-    // The Runs page lists 50 at a time, newest first.
     let first = runs_page(&state, "").await;
     assert_eq!(ids(&first), (201..=250).rev().collect::<Vec<_>>());
     assert_eq!(first["workflows"], serde_json::json!(["ci", "lint"]));
@@ -161,7 +153,6 @@ async fn connecting_imports_recent_runs_page_by_page_and_the_runs_page_pages_thr
     assert_eq!(ids(&third), (131..=150).rev().collect::<Vec<_>>());
     assert_eq!(third["next_cursor"], serde_json::Value::Null);
 
-    // One workflow's runs page the same way.
     let lint = runs_page(&state, "?workflow=lint").await;
     assert_eq!(ids(&lint), (151..=249).rev().step_by(2).collect::<Vec<_>>());
     let lint_rest = runs_page(
@@ -191,7 +182,6 @@ async fn connecting_imports_recent_runs_page_by_page_and_the_runs_page_pages_thr
 async fn a_repository_that_imports_nothing_reads_nothing_from_github() {
     let (state, fake) = github_state().await;
     fake.report_workflow_runs(history(1, 10));
-    // A repository nobody configured imports 50.
     assert_eq!(connection(&state).await["run_import_count"], 50);
     connect(&state, GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME, 0).await;
 
@@ -201,7 +191,6 @@ async fn a_repository_that_imports_nothing_reads_nothing_from_github() {
     assert_eq!(settings["run_import_count"], 0);
     assert_eq!(settings["run_import"], serde_json::Value::Null);
     assert_eq!(ids(&runs_page(&state, "").await), Vec::<u64>::new());
-    // Importing now needs a count first.
     let refused = github(&state, "POST", "/run-import", &bearer_header(), None).await;
     assert_eq!(refused.status(), StatusCode::CONFLICT);
 }
@@ -215,8 +204,6 @@ async fn an_import_and_github_reports_never_move_a_run_backwards() {
     let completed = workflow_run_started_at(7, "main", &head, Some("success"), started);
     connect(&state, GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME, 50).await;
 
-    // GitHub reports the run completed before the import reads its list,
-    // which still shows it running.
     fake.report_workflow_runs(vec![completed.clone()]);
     deliver(&state, &completed).await;
     fake.report_workflow_runs(vec![running.clone()]);
@@ -226,8 +213,6 @@ async fn an_import_and_github_reports_never_move_a_run_backwards() {
         "completed"
     );
 
-    // The other way round: an import stores the run running, GitHub reports
-    // it completed, and a later import that reads it running changes nothing.
     expect_json(
         github(&state, "POST", "/run-import", &bearer_header(), None).await,
         StatusCode::OK,
@@ -280,8 +265,6 @@ async fn reconnecting_to_another_github_repository_imports_and_lists_only_its_ru
     assert_eq!(ids(&runs_page(&state, "").await), [5, 4, 3, 2, 1]);
 
     connect(&state, OTHER_REPOSITORY_ID, OTHER_FULL_NAME, 50).await;
-    // The new link's import is queued; the old repository's runs are gone
-    // from the page at once.
     let settings = connection(&state).await;
     assert_eq!(settings["run_import"]["state"], "queued");
     assert_eq!(ids(&runs_page(&state, "").await), Vec::<u64>::new());
@@ -309,7 +292,6 @@ async fn a_failed_import_shows_what_github_answered_and_is_tried_again() {
     let error = failed["error"].as_str().unwrap();
     assert!(error.contains("502 Bad Gateway"), "{error}");
     assert!(error.contains("Server Error"), "{error}");
-    // It waits for its next try.
     assert_eq!(import_pass(&state, now).await, 0);
 
     fake.run_list_unavailable.store(false, Ordering::SeqCst);
@@ -369,7 +351,6 @@ async fn only_maintainers_change_the_count_within_its_bounds_and_import_again() 
     )
     .await;
     assert_eq!(changed["run_import_count"], 25);
-    // The finished import still shows until the maintainer imports again.
     assert_eq!(changed["run_import"]["run_count"], 10);
     let started = expect_json(
         github(&state, "POST", "/run-import", &bearer_header(), None).await,

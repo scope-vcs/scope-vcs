@@ -3,10 +3,9 @@ import type { CSSProperties, ReactNode } from 'react'
 import { actorHandle, type RecordedActor } from './request-actor'
 import { RelativeTimestamp } from '@/components/timestamp'
 
-/**
- * Author, time, and state for one discussion or reply. Threads and replies
- * share it so the two never drift apart again.
- */
+const ACTOR_HUE_COUNT = 12
+const ACTOR_HUE_STEP_DEGREES = 360 / ACTOR_HUE_COUNT
+
 export function RequestDiscussionByline({
   author,
   children,
@@ -34,10 +33,6 @@ export function RequestDiscussionByline({
   )
 }
 
-/**
- * Initials on a colour picked from the handle, so the same person reads the
- * same everywhere and different people read apart at a glance.
- */
 export function RequestDiscussionActorAvatar({
   handle,
   small = false,
@@ -61,9 +56,8 @@ export function RequestDiscussionActorAvatar({
   )
 }
 
-/** One of twelve hues 30 degrees apart, stable for a handle. */
 function actorHue(handle: string) {
   let hash = 0
   for (const char of handle) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return (hash % 12) * 30
+  return (hash % ACTOR_HUE_COUNT) * ACTOR_HUE_STEP_DEGREES
 }

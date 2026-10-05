@@ -74,7 +74,6 @@ async fn connecting_queues_an_import_of_the_linked_repository_and_disconnecting_
         (import.github_repository_id, import.run_count, import.state),
         (42, 120, GitHubRunImportState::Queued)
     );
-    // The count chosen while connecting is the repository's count.
     assert_eq!(
         repositories.github_run_import_count(REPO).await.unwrap(),
         120
@@ -85,7 +84,6 @@ async fn connecting_queues_an_import_of_the_linked_repository_and_disconnecting_
         .await
         .unwrap();
     assert_eq!(repositories.github_run_import(REPO).await.unwrap(), None);
-    // Connecting another GitHub repository imports that one's runs.
     connect(&store, 43, 120).await;
     assert_eq!(
         repositories
@@ -96,7 +94,6 @@ async fn connecting_queues_an_import_of_the_linked_repository_and_disconnecting_
             .github_repository_id,
         43
     );
-    // A repository that imports nothing queues nothing.
     repositories
         .disconnect_github_repository(REPO, OWNER)
         .await
@@ -111,7 +108,6 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
     let store = postgres_store();
     let repositories = store.repositories();
     connect(&store, 42, 50).await;
-    // Leases are judged by the database's clock.
     let t = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -131,7 +127,6 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
             .await
             .unwrap()
     );
-    // Claimed, it waits for its lease.
     assert!(
         repositories
             .claim_due_github_run_imports("claim_2", t + 50, t + 150, 5)
@@ -171,7 +166,6 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
         .await
         .unwrap();
     assert_eq!(again[0].attempts, 2);
-    // The earlier claim records nothing.
     assert!(
         !repositories
             .finish_github_run_import(
@@ -205,7 +199,6 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
         (GitHubRunImportState::Succeeded, 50, None, Some(t + 210))
     );
 
-    // Given up, it keeps GitHub's answer.
     repositories
         .start_github_run_import(REPO, OWNER, t + 300)
         .await
@@ -266,7 +259,6 @@ async fn importing_again_waits_for_a_working_import_but_replaces_one_waiting_to_
         )
         .await
         .unwrap();
-    // A changed count applies to the next import.
     repositories
         .set_github_run_import_count(REPO, OWNER, 300)
         .await
@@ -279,7 +271,6 @@ async fn importing_again_waits_for_a_working_import_but_replaces_one_waiting_to_
         (import.run_count, import.attempts, import.last_error),
         (300, 0, None)
     );
-    // Due at once, not at the replaced import's retry time.
     assert_eq!(
         repositories
             .claim_due_github_run_imports("claim_2", 40, 100, 5)
@@ -379,8 +370,6 @@ async fn a_page_is_stored_only_while_its_claim_holds_and_the_repository_stays_co
     );
     assert_eq!(listed(&store, REPO).await, [1]);
 
-    // GitHub took the repository away: the import is gone with the link, and
-    // a page it read meanwhile stores nothing.
     repositories
         .apply_github_installation_change(7, t, async || {
             Ok::<_, PostgresError>(Some(GitHubInstallationChange::Uninstalled))
@@ -396,7 +385,6 @@ async fn a_page_is_stored_only_while_its_claim_holds_and_the_repository_stays_co
     );
     assert_eq!(listed(&store, REPO).await, [1]);
 
-    // Reconnecting queues a new import; the old claim still stores nothing.
     connect(&store, 42, 50).await;
     assert!(
         !repositories

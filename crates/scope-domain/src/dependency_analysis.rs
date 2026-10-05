@@ -17,7 +17,6 @@ pub struct AnalyzerOutput {
     pub gaps: Vec<DependencyGap>,
 }
 
-// The vocabulary the analyzer emits for how one file references another.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DependencyEdgeKind {
@@ -71,8 +70,6 @@ pub struct DependencyReport {
 }
 
 impl DependencyReport {
-    /// The analyzer saw only source files it cannot read and reported nothing
-    /// else, so the check has nothing to say about this repository yet.
     pub fn is_unsupported(&self) -> bool {
         self.analyzed_file_count == 0
             && !self.unsupported_files.is_empty()

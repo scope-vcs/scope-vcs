@@ -26,7 +26,6 @@ async fn a_github_repository_is_connected_once_and_links_follow_their_owners() {
         github_repository_id,github_full_name,connected_at_unix,status)
         VALUES ('owner/two',7,42,'octo/one',10,'Connected')";
     assert!(db.execute_unprepared(second_link).await.is_err());
-    // A disconnected link no longer holds the GitHub repository.
     db.execute_unprepared(
         "UPDATE scope_github_connections
          SET status = 'Disconnected', disconnect_reason = 'AppUninstalled',
@@ -35,7 +34,6 @@ async fn a_github_repository_is_connected_once_and_links_follow_their_owners() {
     .await
     .unwrap();
     db.execute_unprepared(second_link).await.unwrap();
-    // A disconnected link must say why.
     assert!(
         db.execute_unprepared(
             "UPDATE scope_github_connections SET status = 'Disconnected' WHERE repo_id = 'owner/two'"

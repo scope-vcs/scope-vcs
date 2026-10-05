@@ -85,9 +85,6 @@ impl GitDerivedCacheCoordinator {
                 completed: false,
             };
             let is_ready = is_ready.clone();
-            // The build owns its leadership in a detached task. Dropping the
-            // requesting HTTP future therefore cannot release the cache key
-            // while spawn_blocking Git work is still mutating that cache.
             let built = tokio::spawn(async move {
                 let built = if is_ready() {
                     Ok(Ok(()))

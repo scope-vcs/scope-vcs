@@ -1,5 +1,3 @@
-//! The accepted main workflow catalog and its source identity.
-
 use crate::{error::ApiError, state::AppState};
 use scope_domain::runs::{
     catalog::RepositoryWorkflowCatalog, workflow::revision::WorkflowRevision,

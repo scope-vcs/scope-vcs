@@ -2,7 +2,6 @@ import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import { displayRouteFilePath } from '../../lib/route-file'
 import type { RepoFileContentResponse } from '@/api/types.generated'
 
-// Only the audience's visible root files can become the repository introduction.
 export function repositoryLandingPath(files: ReadonlyArray<{ path: string }>) {
   for (const candidate of ['README.html', 'README.md']) {
     const file = files.find((file) => displayRouteFilePath(file.path) === candidate)
@@ -19,8 +18,6 @@ export type RepoFileLoadResult =
 
 type RepoCodeResource<T> = { value: T; error: null } | { value: null; error: string }
 
-// Deferred route data settles independently, so a slow tree cannot hold up the
-// addressed file. Errors stay with their existing pane instead of the route.
 export async function settleRepoCodeResource<T>(load: Promise<T>): Promise<RepoCodeResource<T>> {
   try {
     return { value: await load, error: null }

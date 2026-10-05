@@ -13,7 +13,6 @@ pub(crate) struct ApiError {
     public_message: String,
     operator_diagnostic: Option<String>,
     code: ErrorCode,
-    /// Boxed so the error stays small on every `Result` path.
     fields: Box<ErrorFields>,
     instruction: Option<String>,
 }
@@ -56,7 +55,6 @@ impl ApiError {
         )
     }
 
-    /// A service Scope depends on failed. The public message says which one.
     pub(crate) fn upstream_unavailable(
         public_message: impl Into<String>,
         diagnostic: impl Into<String>,

@@ -21,8 +21,6 @@ curl --fail --location --silent --show-error --retry 3 \
 echo "$archive_sha256  $work_dir/trivy.tar.gz" | sha256sum --check --strict
 tar --extract --gzip --file "$work_dir/trivy.tar.gz" --directory "$work_dir" trivy
 
-# Scan all OS and language findings with current vendor data. Repository-local
-# Trivy config/ignore files must not silently weaken the promotion policy.
 "$work_dir/trivy" image --config /dev/null --ignorefile /dev/null \
   --image-src "$image_source" --platform linux/amd64 \
   --scanners vuln --pkg-types os,library --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \

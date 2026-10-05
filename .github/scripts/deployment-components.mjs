@@ -5,8 +5,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const sourceRoot = fileURLToPath(new URL('../../', import.meta.url));
 const manifest = JSON.parse(readFileSync(new URL('../deployment-services.json', import.meta.url), 'utf8'));
 
-// These are source-owned deployment facts. Target manifests may override service
-// IDs and environment settings, but preparation and activation use this contract.
 export const RAILWAY_COMPONENTS = Object.keys(manifest.services);
 export const BACKEND_COMPONENTS = RAILWAY_COMPONENTS.filter(component => deploymentComponent(component).backend);
 export const APPLICATION_COMPONENTS = RAILWAY_COMPONENTS.filter(component => component !== 'cli-downloads');
@@ -24,8 +22,6 @@ export function loadComponentConfig(component, root = sourceRoot) {
   return JSON.parse(readFileSync(resolve(root, deploymentComponent(component).runtimeConfig), 'utf8'));
 }
 
-// Every binary the backend release job builds, with its size cap. The API
-// artifact also carries the maintenance binary that ships in its image.
 export function backendBinaryCaps(source = manifest) {
   return Object.entries(source.services)
     .filter(([, { deployment }]) => deployment.backend && deployment.artifact.kind === 'binary')

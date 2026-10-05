@@ -243,7 +243,6 @@ fn real_cargo_cache_reuses_unchanged_checkout_and_rebuilds_changed_inputs() {
             "build-env" => Some(("SCOPE_CACHE_PROBE_ENV", "changed")),
             _ => unreachable!(),
         };
-        // Deliberately stale mtimes cannot disguise changed file contents.
         for path in [
             "src/main.rs",
             "dep/src/lib.rs",
@@ -280,7 +279,6 @@ fn inputs_changed_during_the_job_are_not_certified_as_unchanged() {
         fixture.replace("input.txt", "one", "two");
         assert!(!fixture.build(None));
         assert_eq!(fixture.output(), "1:two:A");
-        // Even reverting the contents after compiling must not bless the binary.
         fixture.replace("input.txt", "two", "one");
         if restore_timestamp {
             set_modified(

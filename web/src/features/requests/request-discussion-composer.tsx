@@ -3,10 +3,6 @@ import { Clock3, MessageSquarePlus, Reply, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 import { RequestAttachmentEditor } from './request-attachment-editor'
 
-/**
- * Sits at the end of the list, where a new discussion lands. Collapsed it is a
- * single line; activating it opens the full composer.
- */
 export function RequestDiscussionComposer({
   onSubmit,
 }: {

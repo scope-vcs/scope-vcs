@@ -58,8 +58,6 @@ async fn existing_invites_keep_their_link_and_their_state() {
         })
         .collect::<Vec<_>>();
 
-    // The stored state is gone, so the timestamps alone must still say
-    // accepted, expired, pending, and revoked.
     assert_eq!(
         rows,
         [

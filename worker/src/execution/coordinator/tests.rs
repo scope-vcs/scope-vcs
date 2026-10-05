@@ -203,7 +203,6 @@ async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_resta
     let now = crate::unix_now().unwrap();
     let mut dispatch = tokio::task::JoinSet::new();
     dispatch.spawn(async move { coordinator.dispatch_available(now).await });
-    // Actual coordinator admissions commit before concurrent broker start calls.
     provider.wait_for("start", 3).await;
     let mut bootstrap_hashes = provider
         .bootstrap_tokens()
@@ -231,7 +230,6 @@ async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_resta
         3
     );
     dispatch.shutdown().await;
-    // AWS may finish those requests even though this worker lost the response.
     provider.starts.add_permits(3);
     let expired_at = now + DISPATCH_LEASE.as_secs() + 1;
     let expired = metadata
@@ -294,7 +292,6 @@ async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_resta
             .unwrap()
             .is_empty()
     );
-    // A second restart cannot lose the unknown outcome or prematurely free its fence.
     let reclaimed = metadata
         .runs()
         .claim_terminal_cloud_task_stops(expired_at + 901, 10)
@@ -350,7 +347,6 @@ async fn competing_workers_reserve_capacity_before_concurrent_provider_starts() 
         ),
         "held provider requests already own all three database capacity reservations"
     );
-    // Let every unexpected start finish as well, so an over-admission fails the count.
     provider.starts.add_permits(12);
     let dispatched = tokio::time::timeout(Duration::from_secs(5), async {
         let mut dispatched = 0;

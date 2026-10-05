@@ -45,7 +45,6 @@ test('an import says how far it came and what GitHub answered', () => {
       status: 'Import failed: GitHub answered 502 Bad Gateway: Server Error. Retrying.',
     },
   )
-  // The retry already reading GitHub cannot be replaced.
   assert.equal(
     githubRunImportView(runImport({ state: 'running', error: 'GitHub answered 502 Bad Gateway' }))?.retrying,
     false,

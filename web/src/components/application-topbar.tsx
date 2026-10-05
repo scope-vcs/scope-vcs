@@ -12,7 +12,6 @@ export type TopbarItem = {
   node: ReactNode
 }
 
-/** Compact repository facts rendered beside the repo name. */
 type TopbarFact = {
   id: string
   label: ReactNode
@@ -58,11 +57,6 @@ export function ApplicationTopbar({
           </span>
         ) : null}
 
-        {/*
-          A single Primary nav for both breakpoints. Below `md` the row wraps
-          and this takes its own full-bleed line; from `md` up it sits inline.
-          Two navs would duplicate the landmark.
-        */}
         {items.length > 0 && (
           <nav
             aria-label="Primary"

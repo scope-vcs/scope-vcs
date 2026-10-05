@@ -88,9 +88,7 @@ function observeDelivery(
     } else {
       console.info('[analytics-proxy] delivery', observation)
     }
-  } catch {
-    // Delivery reporting must not alter the proxy response.
-  }
+  } catch {}
 }
 
 function captureHeaders(headers: Headers) {

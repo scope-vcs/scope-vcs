@@ -7,7 +7,6 @@ import type { RequestDiscussionReply, RequestDiscussionView } from '@/features/r
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
-// Each reply the thread sends. The first reaches the server, but the browser sees a failure.
 const calls: CreateReplyInput[] = []
 Object.assign(window, { calls })
 

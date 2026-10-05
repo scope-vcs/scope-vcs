@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Provider doubles shared by the backend cutover regression scenarios.
 cat > "$test_dir/bin/railway" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -311,8 +310,6 @@ if [[ "$1" == "up" ]]; then
       [[ -f "$FAKE_RAILWAY_STATE/started-${counterpart}" ]] || exit 74
     fi
   fi
-  # Router readiness resolves the API private address; stopped API replicas
-  # provide no DNS target for a newly starting router.
   if [[ "$service" == "scope-repo-router" ]] \
     && [[ "$("$0" service list | jq -r '.[] | select(.id == "scope-api") | .replicas.running')" == "0" ]]; then
     echo "Git router readiness failed: API private DNS has no running target." >&2
@@ -337,7 +334,6 @@ if [[ "$1" == "up" ]]; then
   fi
   touch "$FAKE_RAILWAY_STATE/up-${service}"
   rm -f "$FAKE_RAILWAY_STATE/stopped-${service}" "$FAKE_RAILWAY_STATE/gate-${service}"
-  # Model a provider mutation that succeeds even though its response is lost.
   [[ "${FAKE_LOST_UP_RESPONSE_SERVICE:-}" != "$service" ]] || exit 75
   printf '{"deploymentId":"new-%s"}\n' "$service"
   exit 0
@@ -348,7 +344,6 @@ exit 2
 FAKE
 chmod +x "$test_dir/bin/railway"
 
-# Migrations refresh service grants through the same private connection.
 cat > "$test_dir/bin/psql" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -405,8 +400,6 @@ fi
 FAKE
 chmod +x "$test_dir/bin/curl"
 
-# Gate provider behavior is covered by railway-maintenance-gate.test.mjs. The
-# orchestration fixture uses readable non-UUID IDs, so model only its CLI boundary.
 real_node="$(command -v node)"
 printf '#!/usr/bin/env bash\nif [[ "${1:-}" == */railway-maintenance-gate.mjs ]]; then\n  exec %q "$(dirname "$0")/gate-node.cjs" "$@"\nfi\nexec %q "$@"\n' "$real_node" "$real_node" > "$test_dir/bin/node"
 cat > "$test_dir/bin/gate-node.cjs" <<'FAKE'

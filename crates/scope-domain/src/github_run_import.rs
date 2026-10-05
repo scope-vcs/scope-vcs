@@ -1,54 +1,32 @@
-//! Importing a connected repository's recent workflow run history from
-//! GitHub. Runs otherwise only arrive as GitHub reports them, so a repository
-//! that just connected would list none. Connecting queues an import of the
-//! GitHub repository's most recent runs, as many as the repository's import
-//! count says, and maintainers can import again with the current count. A
-//! repository keeps only its latest import, so its result outlasts the page
-//! that started it. An import stores runs the way GitHub's reports do, so
-//! neither can move a run backwards.
-
 use crate::{
     error::DomainError, github_connection::GitHubConnection, repository::access::RepositoryAccess,
 };
 
-/// How many runs a repository imports until a maintainer changes it.
 pub const GITHUB_RUN_IMPORT_DEFAULT_COUNT: u32 = 50;
 pub const GITHUB_RUN_IMPORT_MAX_COUNT: u32 = 1000;
-/// GitHub's answer is kept this long, so a long error body cannot crowd the
-/// settings page.
 const GITHUB_RUN_IMPORT_ERROR_MAX_CHARS: usize = 500;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GitHubRunImportState {
-    /// Waiting for its first attempt, or for the next after one failed.
     Queued,
     Running,
     Succeeded,
-    /// Every attempt failed.
     Failed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubRunImport {
     pub repository_id: String,
-    /// The GitHub repository whose runs it reads.
     pub github_repository_id: u64,
-    /// The most runs it reads, newest first.
     pub run_count: u32,
     pub state: GitHubRunImportState,
-    /// Attempts so far.
     pub attempts: u32,
-    /// How many runs the attempt that succeeded stored.
     pub imported_count: u32,
-    /// What GitHub answered when the latest attempt failed. A queued import
-    /// with an error is waiting to try again.
     pub last_error: Option<String>,
     pub queued_at_unix: u64,
     pub finished_at_unix: Option<u64>,
 }
 
-/// A maintainer sets how many of GitHub's most recent runs the repository
-/// imports. 0 imports none.
 pub fn set_github_run_import_count(
     access: RepositoryAccess,
     count: u32,
@@ -70,10 +48,6 @@ pub fn validate_github_run_import_count(count: u32) -> Result<u32, DomainError> 
     Ok(count)
 }
 
-/// A maintainer imports the connected repository's recent runs again with
-/// the repository's current count. An import waiting to retry is replaced;
-/// one waiting for its first attempt, or reading GitHub, retry or not, is left
-/// to finish.
 pub fn start_github_run_import(
     access: RepositoryAccess,
     connection: Option<&GitHubConnection>,
@@ -102,8 +76,6 @@ pub fn start_github_run_import(
 }
 
 impl GitHubRunImport {
-    /// The import connecting queues, or `None` when the repository imports
-    /// no runs.
     pub fn queue(connection: &GitHubConnection, run_count: u32, now_unix: u64) -> Option<Self> {
         (run_count > 0).then(|| Self {
             repository_id: connection.repository_id.clone(),
@@ -118,13 +90,10 @@ impl GitHubRunImport {
         })
     }
 
-    /// Whether the import reads the GitHub repository the link now names.
     pub fn is_of(&self, connection: &GitHubConnection) -> bool {
         self.github_repository_id == connection.github_repository_id
     }
 
-    /// Whether a failed attempt waits for the next one, which nothing reads
-    /// GitHub for meanwhile.
     pub fn is_waiting_to_retry(&self) -> bool {
         self.state == GitHubRunImportState::Queued && self.last_error.is_some()
     }
@@ -136,13 +105,11 @@ impl GitHubRunImport {
         )
     }
 
-    /// How many more runs to read once `read` were read.
     pub fn remaining(&self, read: u32) -> u32 {
         self.run_count.saturating_sub(read)
     }
 }
 
-/// What a failed attempt keeps of GitHub's answer.
 pub fn github_run_import_error(message: &str) -> String {
     let message = message.trim();
     if message.chars().count() <= GITHUB_RUN_IMPORT_ERROR_MAX_CHARS {

@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Release-builds the CLI for the host, packages the distribution bundle with its
-# managed analyzer runtime, and runs the packaged-analyzer and installer checks.
-# The GitHub distribution matrix runs the same steps per target, so its callers
-# run this only when the matrix is not selected.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 

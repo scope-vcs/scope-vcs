@@ -1,4 +1,3 @@
-"""Policy contracts for account security controls. Run with python3 and PyYAML."""
 import fnmatch
 import json
 import os

@@ -23,8 +23,6 @@ fn validate_repository_workflow_catalogs(
 ) -> anyhow::Result<usize> {
     let mut validated = 0;
     for catalog in catalogs {
-        // Capture-time rejections already describe repository-owned configuration errors.
-        // A captured catalog that the new binary cannot parse is a release incompatibility.
         if catalog.configuration_error().is_some() {
             continue;
         }

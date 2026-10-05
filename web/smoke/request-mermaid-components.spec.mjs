@@ -11,11 +11,8 @@ import { build, preview } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 
 const require = createRequire(import.meta.url)
-// RAIL: past 1,000 ms a user loses focus on the task.
 const MAX_COLD_DIAGRAM_MS = 1000
-// Measured 212 KiB plus headroom; one diagram-bearing request stays under the initial route budget.
 const MAX_LAZY_DIAGRAM_GZIP_BYTES = 256 * 1024
-// INP "good" boundary; above the 78 ms maximum of 15 CI runs plus 20 percent.
 const MAX_COLD_DIAGRAM_LONG_TASK_MS = 200
 
 test('request diagrams load on demand and reuse rendered output across navigation', { timeout: 180_000 }, async (t) => {

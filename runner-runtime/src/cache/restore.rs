@@ -68,8 +68,6 @@ pub(crate) fn prepare_caches(
     let mut prepared = Vec::new();
     let mut reports = Vec::new();
     let mut restored_archives = Vec::new();
-    // Source-free dependency caches can remain exact across commits. They must
-    // not decide whether a checkout matches cached compiler inputs.
     let mut sources = definition
         .caches()
         .iter()

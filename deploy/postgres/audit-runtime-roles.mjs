@@ -10,9 +10,6 @@ export const candidateMigrationVersion = Object.keys(migrationSources)
   .filter(name => /^m\d+_.+\.rs$/.test(name)).sort().at(-1)?.slice(0, -3);
 if (!candidateMigrationVersion) throw new Error('Cannot establish candidate migration version for role audit');
 
-// Run as scope_migrator through the private maintenance connection. Pending
-// migrations can change grants, so compare exact grants only after the candidate
-// ledger version is present. Ownership and role safety always remain required.
 export function renderRuntimeRoleAudit({ exactPolicy = true } = {}) {
   const policy = sqlString(JSON.stringify(grants));
   const expectedTables = tables.map(sqlString).join(', ');
@@ -88,8 +85,6 @@ BEGIN
       OR has_schema_privilege(role_name, 'public', 'CREATE') THEN
       RAISE EXCEPTION 'Production database/schema privileges differ for %', role_name;
     END IF;
-    -- The ledger stays read-only in every mode: a writable ledger lets a runtime
-    -- role forge the candidate version that unlocks the exact comparison.
     IF NOT has_table_privilege(role_name, 'public.seaql_migrations', 'SELECT')
       OR has_any_column_privilege(role_name, 'public.seaql_migrations', 'INSERT')
       OR has_any_column_privilege(role_name, 'public.seaql_migrations', 'UPDATE')

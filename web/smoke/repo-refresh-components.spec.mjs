@@ -39,21 +39,17 @@ test('accepted summaries and reconnects reconcile the retained request queue wit
   await page.getByRole('listitem').filter({ hasText: 'new-request' }).waitFor()
   assert.equal(await page.evaluate(() => window.fixture.server.connections), 1)
 
-  // Reuse the same loaded queue on a child-page round trip.
   const beforeNavigation = await page.evaluate(() => window.fixture.server.queueReads)
   await page.getByRole('button', { name: 'Navigate' }).click()
   await page.getByRole('button', { name: 'Navigate' }).click()
   await page.getByRole('listitem').filter({ hasText: 'new-request' }).waitFor()
   assert.equal(await page.evaluate(() => window.fixture.server.queueReads), beforeNavigation)
 
-  // Neither count nor repository version changes, but membership does.
   await page.evaluate(async () => { window.fixture.submit(['replacement']); await window.fixture.refresh() })
   await page.getByRole('listitem').filter({ hasText: 'replacement' }).waitFor()
   assert.equal(await page.getByText('new-request', { exact: true }).count(), 0)
   assert.equal(await page.evaluate(() => window.fixture.server.connections), 1)
 
-  // Periodic reconciliation refreshes the four sections once, after the
-  // summary is accepted, without an earlier refresh being canceled/repeated.
   const beforeLag = await page.evaluate(() => window.fixture.server.queueReads)
   await page.evaluate(() => { window.fixture.submit(['after-lag']); window.fixture.lag() })
   await page.getByRole('listitem').filter({ hasText: 'after-lag' }).waitFor()
@@ -66,7 +62,6 @@ test('accepted summaries and reconnects reconcile the retained request queue wit
 
   await page.evaluate(() => window.fixture.interrupt())
   await page.waitForFunction(() => window.fixture.server.streams.size === 0)
-  // Change committed during the reconnect delay, after the interruption refresh.
   await page.evaluate(() => window.fixture.submit(['during-disconnect']))
   await page.getByRole('listitem').filter({ hasText: 'during-disconnect' }).waitFor()
   assert.equal(await page.evaluate(() => window.fixture.server.connections), 2)

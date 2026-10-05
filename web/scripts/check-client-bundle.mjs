@@ -5,10 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
 import { filesBelow, sumBytes } from './bundle-budget.mjs'
 
-// Lighthouse's example script budget, under the 307 KiB JavaScript budget in
-// "The Performance Inequality Gap, 2026" (infrequently.org). Measured 265 KiB.
 const MAX_INITIAL_GZIP_BYTES = 300 * 1024
-// Roughly one second of transfer on a 4 Mbps link.
 const MAX_CHUNK_GZIP_BYTES = 512 * 1024
 
 const publicDirectory = fileURLToPath(new URL('../.output/public', import.meta.url))

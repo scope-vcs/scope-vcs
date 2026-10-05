@@ -1,6 +1,3 @@
-//! Deletes the Clerk users of deleted accounts. The Scope deletion has already
-//! committed; a Clerk failure only delays this step.
-
 use crate::{
     auth::tokens::random_token,
     clerk_users::{CLERK_REQUEST_TIMEOUT, ClerkUserDeletion},
@@ -13,14 +10,10 @@ use std::time::Duration;
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 const BATCH_SIZE: u64 = 5;
 
-/// Outlasts a whole batch of sequential Clerk calls, so a live worker's later
-/// claims never lapse to another worker.
 const CLAIM_LEASE_SECS: u64 = BATCH_SIZE * CLERK_REQUEST_TIMEOUT.as_secs() + 60;
 
 type Clock<'a> = &'a (dyn Fn() -> Result<u64, ApiError> + Sync);
 
-/// Attempts every due deletion this process can claim. Returns how many it
-/// claimed.
 pub(crate) async fn delete_due_clerk_users(
     state: &AppState,
     current_time: Clock<'_>,

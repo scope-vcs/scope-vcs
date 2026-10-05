@@ -128,8 +128,6 @@ impl RuntimeBudgets {
 
     pub(crate) fn default_git_command_timeout() -> Duration {
         static DEFAULT_GIT_COMMAND_TIMEOUT: OnceLock<Duration> = OnceLock::new();
-        // Runtime env is boot-time config. Tests that need per-case values should
-        // use RuntimeBudgets::from_config instead of mutating env after this cache initializes.
         *DEFAULT_GIT_COMMAND_TIMEOUT.get_or_init(|| {
             RuntimeBudgetConfig::from_env()
                 .map(|config| config.git_command_timeout)
@@ -256,7 +254,6 @@ mod tests {
     };
     use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-    /// Records the limit each read passes down to the store it wraps.
     struct RecordingReadStore {
         inner: EncryptedObjectStore,
         limit: AtomicU64,

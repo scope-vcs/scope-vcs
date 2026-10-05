@@ -1,5 +1,3 @@
-//! Shared repository-content persistence for transactions with additional domain effects.
-
 use super::{
     GeneratedIdSource,
     dependency_analysis::enqueue_dependency_analysis_target,
@@ -88,9 +86,6 @@ pub(super) struct RepositoryContentSnapshots {
     pub(super) workflow_catalog: RepositoryWorkflowCatalog,
 }
 
-/// One span covers the whole persistence step, so a subscriber that records
-/// span timing sees its duration; the calling transaction logs lock, body and
-/// commit timings itself.
 #[tracing::instrument(level = "debug", skip_all, fields(repository_id = %repo_row.id))]
 async fn accept_and_persist_content_update(
     tx: &DatabaseTransaction,

@@ -30,8 +30,6 @@ const connectRepoGitHub = createServerFn({ method: 'POST' })
   .handler(({ data }) => connectRepoGitHubForRequest(data))
 
 
-// The app's Callback URL (after OAuth) and Setup URL (after installing) are
-// both this path. Installation ids GitHub adds to the URL are never read.
 export const Route = createFileRoute('/github/setup')({
   validateSearch: (search: Record<string, unknown>): GitHubSetupSearch => ({
     code: text(search.code),
@@ -50,7 +48,6 @@ function GitHubSetupRoute() {
       connect={(data) => connectRepoGitHub({ data })}
       onConnected={async (setup) => {
         invalidateRepoSettings(`${setup.owner_handle}/${setup.repo_name}`)
-        // Back to the page connecting started from, such as the Runs page.
         await navigate({
           href: githubReturnPath(
             readAndClearSessionValue(GITHUB_RETURN_PATH_KEY),

@@ -18,8 +18,6 @@ export function ensureRunResource<T extends object & RunResourceValue>(resource:
   return resource.load(key, needsRead ? refreshVersion ?? snapshot.version ?? '0' : snapshot.version ?? '0', load)
 }
 
-// SSR hands off data only for the same viewer/access identity. Client navigation
-// and reopening subscribe to this owner before deciding whether it needs a read.
 export function useRunResource<T extends object & RunResourceValue>({ identity, initialValue, load, resource, refreshVersion }: {
   identity: string | null
   initialValue: T | null

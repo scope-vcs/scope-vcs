@@ -584,7 +584,6 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
             .unwrap()
     );
 
-    // A visibility rewrite changes an earlier delta, so no previous prefix is valid.
     projection.commits[0].changes.remove(1);
     assert!(
         cached_projection_prefix(&engine, &incarnation, &projection)

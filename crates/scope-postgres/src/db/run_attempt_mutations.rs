@@ -80,8 +80,6 @@ impl RunStore {
     ) -> Result<DispatchClaim, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let guard_run_id = super::run_attempt_persistence::attempt_run_id(&tx, attempt_id).await?;
-        // Auto-merge finalization takes request -> intent -> run state. Every run writer that
-        // can settle a request check follows the same request-before-run order.
         let active_auto_merge =
             super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &guard_run_id).await?;
         let mut jobs = super::run_attempt_persistence::locked_jobs(&tx, &guard_run_id).await?;

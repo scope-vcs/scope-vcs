@@ -378,7 +378,6 @@ async fn remote_cleanup_deletes_objects_completed_while_abort_is_in_flight() {
     let cleanup = tokio::spawn(async move { store.cleanup_remote_bounded(&key).await });
     fixture.backend.cleanup_started.notified().await;
 
-    // A dispatched multipart completion can finish while the abort request waits.
     fixture.backend.complete(upload, vec![part]).await.unwrap();
     fixture.backend.cleanup_gate.add_permits(1);
     cleanup.await.unwrap().unwrap();
@@ -465,8 +464,6 @@ async fn startup_cleanup_preserves_verified_packs_and_eviction_respects_their_le
     drop(retained);
     drop(restarted);
 
-    // A same-length corrupt retained file must be repaired from the durable
-    // copy after restart, and its old index must not survive the replacement.
     tokio::fs::write(&pack_path, vec![0; staged.segment.plaintext_bytes as usize])
         .await
         .unwrap();

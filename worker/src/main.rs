@@ -11,7 +11,10 @@ mod settings;
 
 use crate::{
     health::WorkerHealth,
-    settings::{BATCH_SIZE, GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings, non_empty_env},
+    settings::{
+        CONTROL_POLL_BATCH_SIZE, GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings,
+        non_empty_env,
+    },
 };
 use scope_postgres::db::{GeneratedIdKind, MetadataStore};
 use scope_storage::{
@@ -48,7 +51,7 @@ async fn run() -> anyhow::Result<()> {
     tracing::info!(
         worker_id = %settings.worker_id,
         health_port = settings.health_port,
-        batch_size = BATCH_SIZE,
+        batch_size = CONTROL_POLL_BATCH_SIZE,
         poll_interval_ms = POLL_INTERVAL.as_millis(),
         git_compaction_timeout_secs = GIT_COMPACTION_TIMEOUT.as_secs(),
         git_object_max_bytes = settings.git_storage_limits.max_object_bytes(),
@@ -190,7 +193,6 @@ fn duration_ms(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
-/// `prefix` followed by `bytes` random bytes in lowercase hex.
 fn random_hex(prefix: &str, bytes: usize) -> anyhow::Result<String> {
     let mut random = vec![0_u8; bytes];
     getrandom::fill(&mut random).map_err(|error| anyhow::anyhow!(error.to_string()))?;
@@ -208,8 +210,6 @@ fn generate_persistence_id(kind: GeneratedIdKind) -> Result<String, String> {
     random_hex(prefix, 16).map_err(|error| error.to_string())
 }
 
-/// The object backend selected by `SCOPE_OBJECT_STORE`; the blob store and the Git segment
-/// store share it.
 fn object_backend_from_env(data_dir: &Path) -> anyhow::Result<Arc<dyn ObjectBackend>> {
     Ok(match non_empty_env(SCOPE_OBJECT_STORE_ENV).as_deref() {
         Some("filesystem") => Arc::new(FileBackend::new(

@@ -5,13 +5,8 @@ use crate::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PrepareUploadDecision {
-    /// No upload is needed. Persist this reference to refresh its TTL or relink it.
-    UseObject {
-        reference: CacheReference,
-    },
-    Upload {
-        lease: UploadLease,
-    },
+    UseObject { reference: CacheReference },
+    Upload { lease: UploadLease },
 }
 
 #[derive(Clone, Debug)]
@@ -68,10 +63,6 @@ pub fn prepare_upload(
     })
 }
 
-/// Refresh a successful restore without changing its immutable object mapping.
-///
-/// The access timestamp and policy-owned TTL advance together and can be
-/// persisted as one atomic update.
 pub fn access_reference(
     reference: &CacheReference,
     now_unix: u64,
@@ -135,12 +126,6 @@ pub enum EvictionDecision {
     RemoveReference { deletion: DeletionCandidate },
 }
 
-/// Decide whether a selected logical reference should be removed.
-///
-/// When a repository is over budget, the persistence adapter selects the least
-/// recently used reference and passes it here. This function decides removal and
-/// the deletion grace period; `claim_deletions` in the Postgres cache service
-/// deletes the object once it is past the grace period and unreferenced.
 pub fn decide_reference_eviction(
     reference: &CacheReference,
     repository_storage_bytes: u64,

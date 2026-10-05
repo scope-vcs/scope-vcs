@@ -5,7 +5,6 @@ use scope_product_analytics::{
 use scope_service_runtime::http::ErrorKind;
 use std::{future::Future, time::Instant};
 
-/// A user-facing operation whose failures are reported to product analytics.
 pub(crate) struct ObservedOperation<'a> {
     pub(crate) actor_user_id: &'a str,
     pub(crate) operation: ProductOperation,
@@ -15,8 +14,6 @@ pub(crate) struct ObservedOperation<'a> {
 }
 
 impl ObservedOperation<'_> {
-    /// Runs the operation and records a failure event when it errors. Timing starts here so
-    /// every tracked operation measures duration the same way.
     pub(crate) async fn run<T>(
         self,
         state: &AppState,

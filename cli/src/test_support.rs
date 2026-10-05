@@ -60,7 +60,6 @@ impl Drop for TempDir {
     }
 }
 
-/// Capture one bounded HTTP request, including its declared body, before replying.
 pub(crate) fn read_http_request(stream: &mut std::net::TcpStream) -> std::io::Result<String> {
     use std::io::{BufRead, Read};
     const MAX_HEADERS: usize = 64 * 1024;

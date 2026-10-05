@@ -14,9 +14,6 @@ use crate::{
     },
 };
 
-/// Read history from the original Git objects, checking the persisted identity
-/// before using their metadata. Safety-validated changed_paths has a different
-/// baseline from the first-parent diff used to display a merge commit.
 pub(crate) fn inspect_native_public_commit(
     repo: &Path,
     native: &NativePublicCommit,
@@ -39,9 +36,6 @@ pub(crate) fn inspect_native_public_commit(
             truncated_git_stderr(&output.stderr).trim()
         )));
     }
-    // Git's author/email placeholders do not emit NUL separators. Keep the
-    // final message field intact, validate identity bytes strictly, and decode
-    // display text lossily.
     let fields = output
         .stdout
         .splitn(6, |byte| *byte == 0)

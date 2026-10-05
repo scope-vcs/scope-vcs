@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the release Dockerfiles with small executable fixtures. This checks the
-# actual image user and filesystem permissions without production credentials.
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 context="$(mktemp -d)"
 image_prefix="scope-runtime-permissions-$$"
@@ -48,7 +46,6 @@ cp "$repo_root/legal/third-party-dependency-analyzer.txt" "$context/dependency-a
 cp "$repo_root/deploy/railway/install-git.sh" "$context/install-git.sh"
 git_version="$(jq -er '.git.version' "$repo_root/dev/tool-versions.json")"
 git_source_sha256="$(jq -er '.git.sourceSha256' "$repo_root/dev/tool-versions.json")"
-# The dependency stage must supply node_modules from the reviewed lockfile.
 rm -rf "$context/dependency-analyzer/node_modules"
 
 docker build -f "$repo_root/deploy/railway/prebuilt.Dockerfile" \

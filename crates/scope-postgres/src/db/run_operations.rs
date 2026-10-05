@@ -82,7 +82,6 @@ where
         .is_some())
 }
 
-/// Every persisted run owns at least one job row; a run without jobs is corrupt.
 pub(super) fn require_run_jobs(
     jobs: &mut BTreeMap<String, Vec<RunJob>>,
     run_id: &str,

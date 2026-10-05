@@ -173,10 +173,6 @@ async fn stream_run_events(
         let run = &snapshot.run;
         let terminal = run.state.is_terminal();
         if terminal && !terminal_observed {
-            // Log append and attempt completion are separate transactions. Seeing the terminal
-            // state makes completion a stable watermark because terminal attempts reject later
-            // logs; read once more before closing so a log committed between the two queries
-            // above cannot be omitted.
             terminal_observed = true;
             continue;
         }

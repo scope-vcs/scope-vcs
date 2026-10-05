@@ -22,7 +22,6 @@ async fn a_reader_reconciles_a_committed_request_change_without_its_notification
     let writer = test_state_with_repo();
     cache_test_jwks(&writer);
     let reader = AppState {
-        // A second API instance whose LISTEN connection did not receive the write.
         repo_events: Default::default(),
         ..writer.clone()
     };

@@ -56,8 +56,6 @@ def decrypt(source, identity, destination, max_bytes=MAX_BYTES + 1024**3):
                     while chunk := incoming.read(1024**2):
                         outgoing.write(chunk)
                 target.chmod(0o600)
-        # Read through age's authenticated end, including tar padding, before
-        # trusting any extracted bytes or starting database recovery.
         while process.stdout.read(1024**2):
             pass
         process.stdout.close()

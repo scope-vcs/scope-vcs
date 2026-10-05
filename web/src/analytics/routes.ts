@@ -13,9 +13,6 @@ const tracked = (name: string, path: string): AnalyticsRouteDecision => ({
   route: { name, path },
 })
 
-// Requiring every generated route ID here turns a new page into a deliberate
-// analytics decision. Layout routes are excluded because their leaf page owns
-// the pageview.
 const routeDecisions = {
   '__root__': excluded,
   '/': tracked('home', '/'),

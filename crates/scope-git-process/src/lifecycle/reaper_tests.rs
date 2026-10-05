@@ -4,8 +4,6 @@ use std::{
     process::Stdio,
 };
 
-// Signal handlers and waitpid(-1) are process-wide. Run each scenario in its
-// own test process so it cannot handle signals or reap children for other tests.
 fn isolated(name: &str, exit_code: i32, scenario: impl FnOnce()) {
     let test_name = format!("lifecycle::reaper_tests::{name}");
     if std::env::var("SCOPE_REAPER_TEST").as_deref() == Ok(test_name.as_str()) {
@@ -38,8 +36,6 @@ fn isolated(name: &str, exit_code: i32, scenario: impl FnOnce()) {
 
 fn service_waiting_for_term() -> ChildGuard {
     let mut command = Command::new("sh");
-    // Start the fallback before announcing readiness. A foreground sleep started
-    // afterward could miss the group signal and delay the shell's TERM trap.
     command
         .args([
             "-c",

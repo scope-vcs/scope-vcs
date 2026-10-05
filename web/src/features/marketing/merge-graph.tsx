@@ -2,8 +2,6 @@ import { cn } from '@/lib/utils'
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 import { useLandingView } from './landing-view'
 
-/** The logo's two lanes. The public copy shows only the public lane; the lens
- * reveals `main` and the merge back into it. Draws itself once scrolled to. */
 export function MergeGraph(): ReactElement {
   const view = useLandingView()
   const ref = useRef<SVGSVGElement>(null)

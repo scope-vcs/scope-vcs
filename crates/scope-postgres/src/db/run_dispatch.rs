@@ -72,9 +72,6 @@ impl RunStore {
         .await
     }
 
-    /// Claims runner-stop work for the attempts selected by `candidates_sql`,
-    /// which may bind `$3` as the claim cutoff; `$1` is the limit and `$2` the
-    /// claim time.
     async fn claim_cloud_task_stops(
         &self,
         candidates_sql: &str,

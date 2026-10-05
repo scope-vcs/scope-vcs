@@ -79,7 +79,6 @@ pub struct PendingOrphanCacheUpload {
     pub attempts: u32,
 }
 
-/// A fenced claim on an expired upload. Only the current generation may delete its object.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CacheUploadCleanupClaim {
     pub upload_id: String,

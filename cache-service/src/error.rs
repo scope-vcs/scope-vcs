@@ -1,8 +1,6 @@
 use scope_cache_domain::CacheDomainError;
 use scope_service_runtime::http::{ErrorKind, ServiceError};
 
-/// Cache domain rejections are caller-visible: the runner sent an unusable
-/// digest or lease, or the repository is over its cache budget.
 pub(crate) fn cache_domain_error(error: CacheDomainError) -> ServiceError {
     let kind = match error {
         CacheDomainError::RepositoryBudgetExceeded { .. } => ErrorKind::TooManyRequests,

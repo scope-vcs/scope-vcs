@@ -27,7 +27,6 @@ pub(super) fn path(
     anyhow::ensure!(common.is_absolute(), "Git common directory is not absolute");
     let identity = format!("{commit}\0{DEPENDENCY_ANALYZER_VERSION}");
     let key = hex::encode(Sha256::digest(identity.as_bytes()));
-    // Common Git storage is the repository identity and is shared by worktrees.
     Ok(common
         .join("scope/dependency-analysis")
         .join(format!("{key}.json")))

@@ -1,6 +1,4 @@
 #![warn(unreachable_pub)]
-//! Scope's one object storage crate. Every stored object, Git segment or not, goes through the
-//! same backends and the same framed, authenticated envelope.
 mod backend;
 mod cache;
 pub mod config;
@@ -196,8 +194,6 @@ pub fn segment_object_key(repository_id: &str, segment_id: &str) -> String {
     )
 }
 
-/// The storage namespace a repository maps to, shared by local staging and the
-/// remote object key.
 fn repository_namespace(repository_id: &str) -> String {
     let mut repository_hash = hex::encode(Sha256::digest(repository_id.as_bytes()));
     repository_hash.truncate(32);
@@ -231,7 +227,6 @@ fn digest_identity<const N: usize>(parts: [&[u8]; N]) -> String {
     hex::encode(digest.finalize())
 }
 
-/// Segment and multipart upload ids are 16 random bytes, lowercase hex encoded.
 fn is_hex_id_32(id: &str) -> bool {
     id.len() == 32
         && id
@@ -245,7 +240,6 @@ fn random_hex_id() -> Result<String, getrandom::Error> {
     Ok(hex::encode(bytes))
 }
 
-/// Durably records a rename or unlink in its containing directory.
 async fn sync_directory(directory: PathBuf) -> std::io::Result<()> {
     tokio::task::spawn_blocking(move || std::fs::File::open(directory)?.sync_all())
         .await

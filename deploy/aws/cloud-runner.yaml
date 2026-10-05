@@ -202,9 +202,6 @@ Resources:
         - Key: Component
           Value: checks-image
 
-  # The logical ID, role name, policy name and tags predate the runner base
-  # image. Changing them would replace security-owned GitHub trust, so only the
-  # trust conditions and the repository grant changed. See OPERATIONS.md.
   ChecksImagePublisherRole:
     Type: AWS::IAM::Role
     Properties:

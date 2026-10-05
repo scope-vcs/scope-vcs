@@ -15,10 +15,6 @@ import { UserButton, useAuth } from '@clerk/tanstack-react-start'
 import { Link, useLocation, useRouter } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
-/**
- * Repository chrome. While the repository loads, `repo` is null and the shell
- * shows the sections every visitor has, so the topbar keeps its size and tabs.
- */
 export function RepoShell({
   children,
   params,

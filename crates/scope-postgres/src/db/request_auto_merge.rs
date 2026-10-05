@@ -1,5 +1,3 @@
-//! Durable request auto-merge authorization and reconciliation leases.
-
 use super::{
     GeneratedIdKind, GeneratedIdSource, RequestStore, acquire_aggregate_lock, entities,
     generated_ids::generate_id,

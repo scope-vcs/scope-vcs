@@ -1,5 +1,3 @@
-//! Durable request authorization and reconciliation through the existing merge path.
-
 use crate::{
     error::{ApiError, ErrorKind},
     persistence::unix_now,
@@ -117,7 +115,6 @@ const CLAIM_SECONDS: u64 = 10 * 60;
 const BATCH_SIZE: u64 = 8;
 const CHECK_AGAIN_SECONDS: u64 = 5;
 
-/// A bounded pass. The persisted lease and final transaction fence every attempt.
 pub(crate) async fn reconcile_once(state: &AppState, now_unix: u64) -> Result<usize, ApiError> {
     let claims = state
         .metadata
@@ -136,7 +133,6 @@ pub(crate) async fn reconcile_once(state: &AppState, now_unix: u64) -> Result<us
         if let Err(error) = reconcile_claim(state, &claim, now_unix).await {
             tracing::warn!(intent_id = %claim.intent.id, error = %error.operator_diagnostic(),
                 "request auto-merge attempt failed; retrying");
-            // A failed release leaves an expiring lease, so the next process can recover it.
             if let Err(release_error) =
                 release(state, &claim, now_unix, Some(error.into_public_message())).await
             {
@@ -205,8 +201,6 @@ async fn reconcile_claim(
                 (RequestMergeFailure::MergeConflict(_), _) => {
                     Some(RequestAutoMergeStopReason::MergeConflict)
                 }
-                // A concurrent write can invalidate prepared content. The next pass
-                // rechecks readiness and prepares against the new repository frontier.
                 _ => None,
             };
             if let Some(reason) = stop_reason {

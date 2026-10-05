@@ -89,7 +89,6 @@ test('proxy failures are retryable while access responses retain their status', 
   assert.equal(isRetryableRepoLoadError(new InvalidApiResponseError('GET', '/repo', 403, 'text/html', 'content-type')), false)
 })
 
-// The stale-build flag lasts for the page, so no later test in this file can use the transport.
 test('a stale build stops server-function requests and keeps refreshed route data', async () => {
   let requests = 0
   globalThis.fetch = async () => { requests += 1; return new Response('conflict', { status: 409 }) }

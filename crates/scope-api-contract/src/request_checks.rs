@@ -1,5 +1,3 @@
-//! The checks a request head asks for and the answer they give to merging.
-
 use crate::{
     GitOid, RequestCheckEvaluationState, RequestMergeabilityResponse, RunState, wire::wire_enum,
 };

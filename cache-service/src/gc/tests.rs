@@ -50,8 +50,6 @@ impl Fixture {
                     peak.fetch_max(current, Ordering::SeqCst);
                     tokio::time::sleep(Duration::from_millis(5)).await;
                     active.fetch_sub(1, Ordering::SeqCst);
-                    // A non-retryable failure, so each reconcile sends exactly one request per
-                    // object and the counts below measure only the claim-expiry retry.
                     if fail.load(Ordering::SeqCst) {
                         axum::http::StatusCode::FORBIDDEN
                     } else {
@@ -221,7 +219,6 @@ async fn object_deletions_drain_batches_without_shortening_reference_grace() {
             .unwrap(),
         201
     );
-    // This additional reference only becomes expired during the sweep, retaining its grace period.
     fixture.upload(202, old, true).await;
     reconcile(&fixture.state).await.unwrap();
     assert_eq!(fixture.requests.load(Ordering::SeqCst), 201);

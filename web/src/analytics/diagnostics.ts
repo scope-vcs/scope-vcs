@@ -170,9 +170,7 @@ function startWebVitals() {
     onCLS(reportWebVital)
     onINP(reportWebVital)
     onLCP(reportWebVital)
-  }).catch(() => {
-    // Diagnostics are best effort and cannot affect the application.
-  })
+  }).catch(() => {})
 }
 
 function reportWebVital(metric: Metric) {

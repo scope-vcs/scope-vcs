@@ -27,7 +27,6 @@ pub struct Request {
     pub id: String,
     pub repo_id: String,
     pub name: String,
-    /// `None` once the author deleted their account.
     pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
     pub audience: RequestAudience,
@@ -39,10 +38,8 @@ pub struct Request {
     pub activity_version: u64,
     pub submitted_at_unix: Option<u64>,
     pub closed_at_unix: Option<u64>,
-    /// Set while the request is closed, unless the closer deleted their account.
     pub closed_by_user_id: Option<String>,
     pub merged_at_unix: Option<u64>,
-    /// Set while the request is merged, unless the merger deleted their account.
     pub merged_by_user_id: Option<String>,
     pub merged_head_oid: Option<String>,
     pub merged_main_oid: Option<String>,
@@ -51,7 +48,6 @@ pub struct Request {
 }
 
 impl RequestState {
-    /// The lifecycle state implied by which transition timestamps are set.
     pub fn from_timestamps(
         merged_at_unix: Option<u64>,
         closed_at_unix: Option<u64>,
@@ -78,7 +74,6 @@ impl Request {
         )
     }
 
-    /// Whether `user_id` authored the request. A deleted author matches nobody.
     pub fn is_author(&self, user_id: &str) -> bool {
         self.author_user_id.as_deref() == Some(user_id)
     }
@@ -100,7 +95,6 @@ impl Request {
 pub struct RequestInvitee {
     pub request_id: String,
     pub user_id: String,
-    /// `None` once the inviter deleted their account.
     pub invited_by_user_id: Option<String>,
     pub created_at_unix: u64,
 }
@@ -187,7 +181,6 @@ pub enum RequestEventPayload {
 pub struct RequestEvent {
     pub id: String,
     pub request_id: String,
-    /// `None` once the actor deleted their account.
     pub actor_user_id: Option<String>,
     pub kind: RequestEventKind,
     pub position: u64,

@@ -9,8 +9,6 @@ pub(super) fn create_bundle(
 ) -> anyhow::Result<Vec<u8>> {
     let temp = BundleTemp::new(request_id)?;
     let bundle_path = temp.path.join("source.bundle");
-    // A private Git directory gives the captured commit a stable HEAD without
-    // changing refs in the user's checkout, including during concurrent commits.
     let git_dir = temp.path.join("git");
     let init = Command::new("git")
         .args(["init", "--bare", "--quiet"])

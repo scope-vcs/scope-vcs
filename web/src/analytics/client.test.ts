@@ -60,7 +60,6 @@ test('identify without anonymous events switches identity without $identify', as
     client.capture('unexpected_event')
     applyAnalyticsIdentityTransition(client, 'scope_usr_one', context)
     client.capture('$pageview', homePageView())
-    // Replacing a signed-in user resets first, leaving no anonymous events to merge.
     applyAnalyticsIdentityTransition(client, 'scope_usr_two', context)
     client.capture('$pageview', homePageView())
     await until(() => captured.length >= 2)

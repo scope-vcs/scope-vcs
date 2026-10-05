@@ -49,7 +49,6 @@ pub fn cli_session_summary_from_model(
     })
 }
 
-// Session activity is approximate to one minute; successful reads do not write on every request.
 const CLI_SESSION_ACTIVITY_INTERVAL_SECONDS: u64 = 60;
 
 pub(super) async fn record_cli_session_use<C: ConnectionTrait>(

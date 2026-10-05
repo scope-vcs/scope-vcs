@@ -1,5 +1,3 @@
-//! PostgreSQL transaction for one-way request submission.
-
 use super::{
     RequestStore, SubmitRequestCommand,
     request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},

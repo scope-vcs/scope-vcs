@@ -5,19 +5,13 @@ import type {
 } from '../../api/types.generated'
 import { REQUEST_QUEUE_SECTION_ORDER, type RequestQueuePages } from './request-list-model'
 
-/** The attention commands the browser applies before the server answers. */
 export type RequestInstantCommand =
   { action: 'restore' | 'settle' } | { action: 'snooze'; until_unix: number }
 
-/**
- * A row the viewer moved that the loaded queue does not show yet. The queue
- * cache stays server truth; moves sit on top of it until a refresh lands.
- */
 export type RequestAttentionMove = {
   item: RequestQueueItemResponse
   command: RequestInstantCommand
   atUnix: number
-  /** The server's answer, once it has one. */
   confirmed: RequestAttentionMutationResponse | null
 }
 
@@ -25,15 +19,12 @@ export function isInstantCommand(command: { action: string }): command is Reques
   return command.action === 'settle' || command.action === 'snooze' || command.action === 'restore'
 }
 
-/** Where a moved row shows while the queue catches up. */
 export function movedRow(move: RequestAttentionMove): {
   item: RequestQueueItemResponse
   section: RequestQueueSection
 } {
   const { item, command, confirmed } = move
   const section = command.action === 'restore' ? 'active' : 'set_aside'
-  // The API orders a row by the later of its last update and its attention
-  // change, so a move never pulls the row's time backwards.
   const atUnix = Math.max(item.attention_at_unix, move.atUnix)
   if (confirmed) {
     return { section, item: { ...item, ...confirmed, attention_at_unix: atUnix } }
@@ -50,17 +41,10 @@ export function movedRow(move: RequestAttentionMove): {
   }
 }
 
-/** The order the API serves a section in: newest attention first, then id. */
 function byQueueOrder(a: RequestQueueItemResponse, b: RequestQueueItemResponse) {
   return b.attention_at_unix - a.attention_at_unix || (a.request.id < b.request.id ? -1 : 1)
 }
 
-/**
- * Whether the loaded queue already reflects a move. Every write to the viewer's
- * attention record advances its revision, so the row the queue serves either
- * predates the move's answer or includes it. A row the queue no longer loads
- * has nowhere stale to show.
- */
 export function queueReflectsMove(pages: RequestQueuePages, move: RequestAttentionMove) {
   if (!move.confirmed) return false
   const loaded = REQUEST_QUEUE_SECTION_ORDER.flatMap((section) => pages[section].requests).find(
@@ -69,7 +53,6 @@ export function queueReflectsMove(pages: RequestQueuePages, move: RequestAttenti
   return !loaded || loaded.attention.revision >= move.confirmed.attention.revision
 }
 
-/** The queue as the viewer should see it: loaded pages with their moves applied. */
 export function applyAttentionMoves(
   pages: RequestQueuePages,
   allMoves: readonly RequestAttentionMove[],

@@ -135,7 +135,6 @@ fn test_state_with_repo() -> AppState {
     state
 }
 
-/// Lists the test repository's owner for Scope's hosted runner.
 async fn allow_native_runs(state: &AppState) {
     state
         .metadata
@@ -198,8 +197,6 @@ async fn response_json(response: Response) -> serde_json::Value {
     serde_json::from_slice(&body).unwrap()
 }
 
-/// Asserts the status and parses the JSON body. On mismatch the panic carries
-/// the response body, so a server error names its cause in the test log.
 async fn expect_json(response: Response, expected: StatusCode) -> serde_json::Value {
     let status = response.status();
     let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
@@ -672,8 +669,6 @@ async fn apply_first_push_from_staging_repo(
     persist_test_update(state, update).await.unwrap();
 }
 
-/// Test state stores objects in memory, so a write finishes on its first poll and fixtures can
-/// stay synchronous.
 fn immediate<T>(future: impl std::future::Future<Output = T>) -> T {
     future
         .now_or_never()

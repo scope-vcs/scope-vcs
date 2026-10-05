@@ -9,8 +9,6 @@ function requireMatch(condition, message) {
   if (!condition) throw new Error(`Redeployed service replacement: ${message}`);
 }
 
-// A Railway redeploy outside Release restarts the receipted image under a new
-// deployment ID. It becomes the baseline only for a release that replaces it.
 export function verifyRedeployedReplacement({ component, selected, receipt, history, liveDeploymentId }) {
   requireMatch(RAILWAY_COMPONENTS.includes(component), `${component || 'component'} is not a Railway service`);
   requireMatch(selected?.[component] === true, `this release does not replace ${component}`);

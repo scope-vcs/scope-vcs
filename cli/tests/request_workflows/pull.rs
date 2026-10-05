@@ -26,8 +26,6 @@ fn pull_fast_forwards_a_checked_out_request_alias_and_preserves_divergence() {
     let permissioned = format!("{}/git/permissioned/owner/repo", server.server.api_url);
     run_git(dir.path(), ["remote", "add", "scope", &permissioned]);
 
-    // Translate only transport invocations. Repository discovery still sees the
-    // real Scope URL, while Git fetch reads an actual bare repository.
     let shim = TempDir::new("pull-git-transport");
     let shim_path = shim.path().join("git");
     fs::write(&shim_path, r#"#!/bin/bash

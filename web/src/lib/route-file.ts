@@ -2,7 +2,6 @@ export function displayRouteFilePath(path: string) {
   return path.replace(/^\/+/, '')
 }
 
-/** The last segment of a repository path, without any leading slashes. */
 export function routeFileName(path: string) {
   return displayRouteFilePath(path).split('/').at(-1) ?? ''
 }

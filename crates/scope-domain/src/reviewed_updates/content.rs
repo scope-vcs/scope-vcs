@@ -404,14 +404,9 @@ fn accept_content_update(
     })
 }
 
-/// Which rule assigns the visibility of a file written by a reviewed update.
-/// Deleted files always take the policy's current visibility for their path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WrittenFileVisibility {
-    /// The push carries a new repo config: every written file follows it.
     FromConfig,
-    /// The repo config is unchanged: existing files keep their policy visibility
-    /// and only newly added files read the config.
     ExistingFromPolicy,
 }
 

@@ -8,8 +8,6 @@ async fn destination_failure_before_fanout_preserves_the_backend_error() {
     let (mut source, reader) = tokio::io::duplex(32);
     let store = fixture.store.clone();
     let ingest = tokio::spawn(async move { store.ingest(REPOSITORY_ID, reader, u64::MAX).await });
-    // On this single-thread runtime the backend task returns and closes its
-    // receiver before this wakeup can resume the source producer.
     tokio::time::timeout(
         Duration::from_secs(2),
         fixture.backend.begin_failed.notified(),

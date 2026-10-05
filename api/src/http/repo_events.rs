@@ -81,8 +81,6 @@ pub(crate) async fn repo_events(
                             stream_state.finished = true;
                             return Some((sse_error_event(error), stream_state));
                         }
-                        // NOTIFY is only a fast path. Reconcile from committed data even
-                        // when a writer was cancelled after commit or LISTEN missed it.
                         stream_state.resync_event()
                     }
                     event = stream_state.receiver.next() => match event? {

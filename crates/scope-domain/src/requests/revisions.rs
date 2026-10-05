@@ -7,21 +7,16 @@ pub struct RequestRevision {
     pub id: String,
     pub request_id: String,
     pub position: u64,
-    /// `None` once the actor deleted their account.
     pub actor_user_id: Option<String>,
     pub old_head_oid: String,
     pub new_head_oid: String,
-    /// The request base once this revision was recorded.
     pub base_main_oid: String,
-    /// The new head does not contain the old head, as after a rebase or amend.
     pub rewrote_history: bool,
     pub git_snapshot: SourceBlob,
     pub created_at_unix: u64,
 }
 
 impl RequestRevision {
-    /// The commit whose history this revision's own commits follow. A push that rewrote
-    /// history may have dropped the old head, so its commits are listed after the base.
     pub fn commits_after_oid(&self) -> &str {
         if self.rewrote_history {
             &self.base_main_oid

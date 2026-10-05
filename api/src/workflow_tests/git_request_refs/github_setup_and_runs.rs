@@ -1,7 +1,3 @@
-//! A maintainer's connection test, which pushes main to a branch of its own
-//! and waits for the workflows GitHub starts there, and the GitHub workflow
-//! runs a connected repository's Runs page lists.
-
 use super::super::fake_github::{
     FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, WEBHOOK_SECRET, suite_check_run, webhook,
     workflow_run, workflow_run_started_at,
@@ -77,8 +73,6 @@ async fn a_connection_test_pushes_main_lists_the_checks_it_saw_and_deletes_its_b
     assert_eq!(fake.branch_head(SETUP_BRANCH), Some(main.clone()));
     assert_eq!(setup_check(&state).await["state"], "waiting");
 
-    // GitHub's own push to main ran `deploy` on the same commit; only the
-    // setup branch's runs are candidates.
     let running = workflow_run(11, SETUP_BRANCH, &main, None);
     fake.report_workflow_runs(vec![
         running.clone(),
@@ -111,7 +105,6 @@ async fn a_connection_test_pushes_main_lists_the_checks_it_saw_and_deletes_its_b
             suite_check_run(2, "lint", &main, Some("success"), 11),
         ],
     );
-    // No delivery arrives; the test reads GitHub itself.
     assert_eq!(
         reconcile_github_setup_checks_once(&state, unix_now())
             .await
@@ -125,7 +118,6 @@ async fn a_connection_test_pushes_main_lists_the_checks_it_saw_and_deletes_its_b
     assert_eq!(push_pass(&state, unix_now()).await, 1);
     assert_eq!(fake.branch_head(SETUP_BRANCH), None);
 
-    // A candidate becomes required with the existing editor.
     let required = expect_json(
         api_request(
             router(state.clone()),
@@ -142,9 +134,6 @@ async fn a_connection_test_pushes_main_lists_the_checks_it_saw_and_deletes_its_b
     assert_eq!(required["setup_check"]["state"], "finished");
 }
 
-/// Runs one connection test of main until GitHub reports `run_id` on the
-/// setup branch completed with a `test` check. Returns when GitHub started
-/// the run.
 async fn finished_test(state: &AppState, fake: &FakeGitHub, main: &str, run_id: u64) -> u64 {
     github_request(state, "POST", "/setup-check", &bearer_header()).await;
     push_pass(state, unix_now()).await;
@@ -181,8 +170,6 @@ async fn testing_unchanged_main_again_waits_for_its_own_runs() {
     let (state, fake, main) = connected_repository("github-setup-again").await;
     let earlier_run_started_at = finished_test(&state, &fake, &main, 11).await;
 
-    // The same main goes to the same branch, within the same second even,
-    // where GitHub still lists the earlier test's completed run.
     github_request(&state, "POST", "/setup-check", &bearer_header()).await;
     assert_eq!(push_pass(&state, unix_now()).await, 1);
     assert_eq!(fake.branch_head(SETUP_BRANCH), Some(main.clone()));
@@ -197,7 +184,6 @@ async fn testing_unchanged_main_again_waits_for_its_own_runs() {
     assert_eq!(waiting["check_names"], serde_json::json!([]));
     assert_eq!(fake.branch_head(SETUP_BRANCH), Some(main.clone()));
 
-    // This push's own run, with checks of its own, ends it.
     fake.report_workflow_runs(vec![
         workflow_run_started_at(
             11,
@@ -238,7 +224,6 @@ async fn a_test_of_another_github_repository_is_not_shown_after_reconnecting() {
     assert_eq!(connection["setup_check"], serde_json::Value::Null);
 }
 
-/// Connects the repository to another GitHub repository of the installation.
 async fn reconnect_to_another_repository(state: &AppState) {
     let repositories = state.metadata.repositories();
     repositories
@@ -279,7 +264,6 @@ async fn a_refused_setup_push_reports_what_github_answered() {
         message.contains("Cannot create ref due to creations being restricted."),
         "{message}"
     );
-    // A failed test can run again at once.
     github_request(&state, "POST", "/setup-check", &bearer_header()).await;
 }
 
@@ -289,7 +273,6 @@ async fn a_test_without_workflows_says_to_add_the_trigger_once_it_stops_waiting(
     github_request(&state, "POST", "/setup-check", &bearer_header()).await;
     let started_at = unix_now();
     push_pass(&state, started_at).await;
-    // A second test waits for this one.
     let busy = api_request(
         router(state.clone()),
         "POST",
@@ -337,14 +320,12 @@ async fn only_maintainers_test_the_connection() {
 async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
     let request = owner_request("github-workflow-runs", &[]).await;
     let (state, fake, head) = (&request.state, &request.fake, request.head());
-    // Both runs started at once, so the newer id lists first.
     let started = unix_now();
     let on_request = workflow_run_started_at(21, &request.branch(), &head, None, started);
     let on_main = workflow_run_started_at(22, "main", &"b".repeat(40), Some("failure"), started);
     fake.report_workflow_runs(vec![on_request.clone(), on_main.clone()]);
     deliver_workflow_run(state, &on_request).await;
     deliver_workflow_run(state, &on_main).await;
-    // Deliveries for repositories Scope does not connect are ignored.
     let unknown = webhook(
         state,
         "workflow_run",
@@ -377,7 +358,6 @@ async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
     assert_eq!(runs[1]["branch"], request.branch());
     assert_eq!(runs[0]["conclusion"], "failure");
 
-    // An update reaches the stored run.
     let completed = workflow_run_started_at(21, &request.branch(), &head, Some("success"), started);
     fake.report_workflow_runs(vec![completed.clone(), on_main]);
     deliver_workflow_run(state, &completed).await;
@@ -392,7 +372,6 @@ async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
 async fn a_repository_without_github_keeps_its_native_runs() {
     let (mut state, _source, _main) =
         super::super::push_intent_completion::published_git_fixture("github-runs-native").await;
-    // The page says whether this server could connect GitHub at all.
     let listed = github_request(&state, "GET", "/workflow-runs", &bearer_header()).await;
     assert_eq!(
         listed,
@@ -419,7 +398,6 @@ async fn deleting_the_setup_branch_is_tried_again_when_github_refuses() {
     fake.refuse_pushes("deleting branches is restricted");
     assert_eq!(push_pass(&state, timeout).await, 1);
     assert_eq!(fake.branch_head(SETUP_BRANCH), Some(main));
-    // Only the test's own push of main gives up at once.
     fake.accept_pushes();
     assert_eq!(push_pass(&state, timeout + 31).await, 1);
     assert_eq!(fake.branch_head(SETUP_BRANCH), None);
@@ -445,7 +423,6 @@ async fn a_workflow_run_github_could_not_be_asked_about_is_read_again() {
     let listed = github_request(state, "GET", "/workflow-runs", &bearer_header()).await;
     assert_eq!(listed["github"]["workflow_runs"], serde_json::json!([]));
 
-    // Still unavailable, the read waits for its next try.
     assert_eq!(
         retry_github_workflow_run_reads_once(state, unix_now())
             .await
@@ -461,7 +438,6 @@ async fn a_workflow_run_github_could_not_be_asked_about_is_read_again() {
     );
     let listed = github_request(state, "GET", "/workflow-runs", &bearer_header()).await;
     assert_eq!(listed["github"]["workflow_runs"][0]["id"], 31);
-    // Once answered, nothing is left to read.
     assert_eq!(
         retry_github_workflow_run_reads_once(state, unix_now() + 10_000)
             .await

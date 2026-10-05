@@ -39,8 +39,6 @@ pub(super) async fn assert_empty_schema<C: ConnectionTrait>(db: &C) -> Result<()
     Ok(())
 }
 
-/// Build the expected schema on this server so catalog formatting is independent
-/// of PostgreSQL versions. Only metadata is created in the comparison schema.
 pub(super) async fn assert_baseline_schema<C: ConnectionTrait>(db: &C) -> Result<(), DbErr> {
     let actual = schema_inventory(db).await?;
     let state = db.query_one_raw(Statement::from_string(
@@ -52,8 +50,6 @@ pub(super) async fn assert_baseline_schema<C: ConnectionTrait>(db: &C) -> Result
     let comparison_schema = state.try_get::<String>("", "comparison_schema")?;
     db.execute_unprepared(&format!("CREATE SCHEMA {comparison_schema}"))
         .await?;
-    // Keep shared dependencies equally visible in both inventories. Otherwise
-    // pg_get_indexdef qualifies public.gin_trgm_ops only in the comparison.
     let comparison_search_path = format!("{}, {search_path}", quote_identifier(&comparison_schema));
     set_search_path(db, &comparison_search_path).await?;
     db.execute_unprepared(SCHEMA).await?;
@@ -99,15 +95,10 @@ pub(super) async fn schema_inventory<C: ConnectionTrait>(db: &C) -> Result<Value
         .ok_or_else(|| DbErr::Custom("PostgreSQL did not report schema inventory".into()))?
         .try_get::<Value>("", "inventory")?;
     inventory["expressions"] = normalized_expressions(db, &schema).await?;
-    // pg_get_* emits schema qualifiers when required by the active search path.
-    // The two inventories use different schema names but identical definitions.
     serde_json::from_str(&inventory.to_string().replace(&format!("{schema}."), ""))
         .map_err(|error| DbErr::Custom(format!("invalid schema inventory: {error}")))
 }
 
-/// PostgreSQL can rewrite equivalent casts and nested ANDs when a dumped CHECK
-/// is parsed again. Parse both inventories once through temporary views, using
-/// this server's parser, instead of weakening comparisons with text rewrites.
 async fn normalized_expressions<C: ConnectionTrait>(db: &C, schema: &str) -> Result<Value, DbErr> {
     let rows = db
         .query_all_raw(Statement::from_string(

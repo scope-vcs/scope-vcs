@@ -91,7 +91,6 @@ impl BackendDiscovery {
 
     pub(crate) async fn backends(&self) -> anyhow::Result<DiscoveredBackends> {
         loop {
-            // Register before inspecting the state so discovery cannot miss refresh completion.
             let refreshed = self.state.refreshed.notified();
             tokio::pin!(refreshed);
             refreshed.as_mut().enable();
@@ -149,7 +148,6 @@ impl BackendDiscovery {
                 Ok(result) => result.and_then(normalize_resolved),
                 Err(_) => Err(anyhow::anyhow!("DNS resolution timed out")),
             };
-            // No strong state reference survives the DNS await. Dropping discovery aborts this task.
             let Some(state) = state.upgrade() else { return; };
             {
                 let mut cached = state.cached.lock().expect("discovery lock");

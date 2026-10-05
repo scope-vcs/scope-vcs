@@ -2,11 +2,9 @@ use sha2::{Digest, Sha256};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum HistoryFeed {
-    /// Pushes and merges; standalone visibility changes are excluded.
     #[default]
     Updates,
     All,
-    /// Every action that changed visibility, including pushes that carried a change.
     Visibility,
 }
 

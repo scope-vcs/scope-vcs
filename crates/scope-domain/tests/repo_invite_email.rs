@@ -6,8 +6,9 @@ use scope_domain::{
     },
     repo_invite_email::{
         INVITE_EMAIL_MAX_ATTEMPTS, INVITE_EMAIL_MAX_PER_INVITE, INVITE_EMAIL_MAX_PER_OWNER_PER_DAY,
-        InviteEmailAttempt, InviteEmailHistory, RepositoryInviteEmail, RepositoryInviteEmailState,
-        RequestInviteEmailCommand, record_invite_email_attempt, request_repository_invite_email,
+        INVITE_EMAIL_OWNER_WINDOW_SECS, InviteEmailAttempt, InviteEmailHistory,
+        RepositoryInviteEmail, RepositoryInviteEmailState, RequestInviteEmailCommand,
+        record_invite_email_attempt, request_repository_invite_email,
     },
     repository::{RepoLifecycleState, Repository, collaboration::CollaborationState},
 };
@@ -135,13 +136,20 @@ fn failed_emails_do_not_use_up_the_invite_or_the_owner_allowance() {
 #[test]
 fn the_owner_daily_allowance_says_when_it_frees_up() {
     let repo = repo_with_invite();
+    let oldest_send_age_hours = 1;
     let full = (0..INVITE_EMAIL_MAX_PER_OWNER_PER_DAY as u64)
-        .map(|n| NOW - 3_600 + n)
+        .map(|n| NOW - oldest_send_age_hours * 3_600 + n)
         .collect::<Vec<_>>();
+    let minutes_until_oldest_send_expires =
+        INVITE_EMAIL_OWNER_WINDOW_SECS / 60 - oldest_send_age_hours * 60;
 
     let refused = request(&repo, OWNER_ID, &[], &full, NOW).unwrap_err();
-    // The oldest send was an hour ago, so its slot frees in 23 hours.
-    assert!(refused.contains("try again in 1380 minutes"), "{refused}");
+    assert!(
+        refused.contains(&format!(
+            "try again in {minutes_until_oldest_send_expires} minutes"
+        )),
+        "{refused}"
+    );
     request(&repo, OWNER_ID, &[], &full[1..], NOW).unwrap();
 }
 
@@ -158,7 +166,6 @@ fn attempts_back_off_until_they_settle() {
         previous_delay = retry_at - NOW;
         assert_eq!(queued.state, RepositoryInviteEmailState::Queued);
     }
-    // The last allowed attempt settles the email as failed.
     assert_eq!(record_invite_email_attempt(&mut queued, &outage, NOW), None);
     assert_eq!(queued.state, RepositoryInviteEmailState::Failed);
 

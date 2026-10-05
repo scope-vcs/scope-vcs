@@ -1,5 +1,3 @@
-//! Store handles that scope metadata access to one workflow area.
-
 use super::connection::connect_postgres_store;
 #[cfg(feature = "local-dev")]
 use super::connection::connect_postgres_store_with_options;

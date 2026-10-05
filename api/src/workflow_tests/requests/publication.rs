@@ -21,7 +21,6 @@ async fn public_request_reads_and_start_use_current_head_before_projection_rebui
     let first = clone_test_repo(&source, "request-publication-first", true);
     apply_first_push_from_staging_repo(&state, &first, config.clone()).await;
 
-    // Fixture creation drains existing jobs; all requests must precede the push under test.
     create_public_request(
         &state,
         "req_publication_public",
@@ -73,7 +72,6 @@ async fn public_request_reads_and_start_use_current_head_before_projection_rebui
         .unwrap();
     assert_ne!(expected_public_head, accepted.head_oid);
 
-    // No worker/outbox runs after publication. Reads must use the current audience's head.
     let app = router(state);
     for uri in [
         "/v1/repos/owner/repo/requests",

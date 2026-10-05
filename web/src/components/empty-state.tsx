@@ -1,10 +1,6 @@
 import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
 
-/**
- * The one empty-state treatment. `inline` is for empty regions inside a
- * populated page (a rail section, a list slot); the default fills a pane.
- */
 export function EmptyState({
   action,
   className,
@@ -51,10 +47,6 @@ export function EmptyState({
   )
 }
 
-/**
- * Centered status for a workbench pane: idle prompts, errors and retries.
- * Replaces the per-feature copies that each picked their own min-height.
- */
 export function PanelState({
   busy,
   children,

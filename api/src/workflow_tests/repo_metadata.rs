@@ -146,7 +146,6 @@ async fn metadata_editing_requires_membership_but_no_member_capabilities() {
     .await;
     assert_eq!(invite.status(), StatusCode::OK);
     let invite = response_json(invite).await;
-    // Creating an invite returns no link, so copy one the way an owner would.
     let link = api_request(
         router(state.clone()),
         "POST",

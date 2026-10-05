@@ -116,7 +116,6 @@ impl CacheIdentity {
         self.platform
     }
 
-    /// Stable, storage-agnostic key for translating this semantic identity.
     pub fn compatibility_group_digest(&self) -> String {
         self.digest_with_inputs("compatibility", &self.compatibility_inputs_digest)
     }

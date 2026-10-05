@@ -164,7 +164,6 @@ test('imported releases extract smoke tools and initialize private credentials',
   for (const name of ['Extract candidate commands', 'Initialize smoke credentials directory']) {
     assert.doesNotMatch(workflowStep(name), /\n        if:/);
   }
-  // The archive exercised above must be the one the preparation workflow builds and uploads.
   const preparation = readFileSync(new URL('../workflows/prepare-smoke-tools.yml', import.meta.url), 'utf8');
   const artifact = 'name: staging-commands-${{ inputs.source_sha }}';
   assert.ok(preparation.includes(artifact) && workflowStep('Download prepared candidate artifacts').includes(artifact));

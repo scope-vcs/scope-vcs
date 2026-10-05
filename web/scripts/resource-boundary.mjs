@@ -1,6 +1,5 @@
 import { parse } from '@babel/parser'
 
-// Rendering code consumes resource owners; effects must not start server reads.
 const isApiModule = (module) => /(?:^|\/)api\//.test(module)
 const isRouteModule = (module) => /(?:^|\/)routes\//.test(module)
 const LOADER = /^load[A-Z]/
@@ -32,7 +31,6 @@ export function resourceBoundaryViolations(filename, source) {
   const file = parse(source, { sourceType: 'unambiguous', plugins: ['typescript', 'jsx'] })
   const effectNames = new Set()
   const readNames = new Set(['fetch'])
-  // Namespace alias -> member filter; null means every member call reads the server.
   const readNamespaces = new Map()
   const functions = new Map()
 

@@ -19,7 +19,6 @@ pub(super) struct ProjectedAction {
 #[derive(Default)]
 pub(super) struct ProjectionHistory {
     pub actions: HashMap<String, ProjectedAction>,
-    /// An entry with no diff still records a boundary affecting an already visible path.
     pub visibility: HashMap<String, Option<HistoryEntryFile>>,
 }
 
@@ -30,12 +29,11 @@ impl ProjectionHistory {
         for commit in projection.commits {
             if let Some(set_id) = commit.visibility_change_set_id {
                 for change in commit.changes {
-                    // A deletion with no visible predecessor must not disclose a
-                    // private path just because its source event exists.
-                    let visible = tree.contains_key(&change.path) || change.new_content.is_some();
+                    let touches_visible_path =
+                        tree.contains_key(&change.path) || change.new_content.is_some();
                     let id = visibility_change_id(&set_id, &change.path);
                     let file = apply_change(&mut tree, change);
-                    if visible {
+                    if touches_visible_path {
                         result.visibility.insert(id, file);
                     }
                 }

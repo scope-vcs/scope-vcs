@@ -22,8 +22,6 @@ use std::{
 static REVISION_BUILD_ATTEMPT: AtomicU64 = AtomicU64::new(1);
 const READY_FILE: &str = "scope-request-revision-ready";
 
-/// Callers authorize the request before opening its immutable revision. The
-/// cache contains source objects, never permission decisions or rendered data.
 pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -35,8 +33,6 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     with_revision_repo(state, incarnation, request, revision, base_repo, action).await
 }
 
-/// The private replica a thin private request snapshot is based on. Public snapshots carry their
-/// full history and need no base.
 async fn request_base_repo(
     state: AppState,
     incarnation: RepositoryIncarnation,
@@ -60,7 +56,6 @@ async fn request_base_repo(
         .map(Some)
 }
 
-/// `base_repo` only runs when the revision is not cached yet.
 async fn with_revision_repo<T, Base>(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -95,7 +90,6 @@ where
             &path,
             move || ready_path.is_file(),
             move || async move {
-                // Resolved before taking a permit, since it may materialize a repository itself.
                 let base_repo = base_repo.await?;
                 let permit = state_for_build.runtime_budgets.try_git_materialization()?;
                 tokio::task::spawn_blocking(move || {
@@ -205,8 +199,6 @@ mod tests {
     use scope_domain::requests::{RequestActorRole, RequestAudience};
     use std::sync::{Arc, atomic::AtomicUsize};
 
-    /// A thin revision snapshot on top of the fixture's first commit. The `source` repo under
-    /// `root` holds that base.
     fn fixture(root: &Path) -> (RequestRevision, Vec<u8>) {
         let source = root.join("source");
         run_git(

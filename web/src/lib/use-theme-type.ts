@@ -5,8 +5,6 @@ export type ThemeType = 'dark' | 'light'
 const THEME_STORAGE_KEY = 'scope-theme'
 const THEME_CHANGE_EVENT = 'scope-theme-change'
 
-/** Single source of truth for the active theme. The inline boot script in
- * `__root.tsx` sets the class before hydration; this reads it back. */
 export function useThemeType(): ThemeType {
   return useSyncExternalStore(subscribe, readBrowserTheme, readServerTheme)
 }
@@ -23,9 +21,7 @@ function applyTheme(theme: ThemeType) {
 
   try {
     localStorage.setItem(THEME_STORAGE_KEY, theme)
-  } catch {
-    // ignore persistence failures (private mode, disabled storage)
-  }
+  } catch {}
 
   window.dispatchEvent(new Event(THEME_CHANGE_EVENT))
 }

@@ -114,7 +114,6 @@ test('staging deploys and records the candidate checkout when the workflow revis
   for (const name of ['railway-artifact.mjs', 'railway-retry.mjs']) {
     copyFileSync(new URL(`./${name}`, import.meta.url), join(scripts, name))
   }
-  // The artifact module imports the provider reader but this test never calls it.
   writeFileSync(join(scripts, 'railway-read.mjs'), 'export function readRailway() {}\n' + readFileSync(join(scripts, 'railway-read.mjs'), 'utf8'))
   const result = spawnSync('bash', [join(scripts, 'deploy-staging-railway.sh'), 'finish', 'web'], {
     cwd: root,
@@ -230,8 +229,6 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   for (const name of ['ssh-bin/ssh', 'ssh_known_hosts']) {
     copyFileSync(new URL(`../../deploy/railway/${name}`, import.meta.url), join(root, 'deploy/railway', name))
   }
-  // The lower deployment boundary models Railway readiness and immutable receipts.
-  // It rejects the real failure: a Git router cannot resolve its stopped API backend.
   writeFileSync(join(root, 'provider.mjs'), `
     import assert from 'node:assert/strict';
     import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';

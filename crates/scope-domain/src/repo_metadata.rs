@@ -3,7 +3,6 @@ use crate::{error::DomainError, repo_actions::ensure_repo_member, repository::Re
 pub const MAX_REPOSITORY_DESCRIPTION_CHARS: usize = 160;
 pub const MAX_REPOSITORY_WEBSITE_URL_CHARS: usize = 2048;
 
-/// Changes public project context. Every maintainer can edit it, regardless of push permissions.
 pub fn update_repo_metadata(
     repo: &mut Repository,
     user_id: &str,

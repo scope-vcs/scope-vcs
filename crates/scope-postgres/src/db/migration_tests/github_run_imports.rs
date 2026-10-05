@@ -24,12 +24,8 @@ async fn run_import_counts_stay_in_bounds_and_imports_keep_a_consistent_state() 
     for invalid in [
         "UPDATE scope_github_run_import_counts SET run_count = 1001",
         "UPDATE scope_github_run_import_counts SET run_count = -1",
-        // An import reads at least one run.
         "UPDATE scope_github_run_imports SET run_count = 0",
-        // A running import holds a lease and a claim.
         "UPDATE scope_github_run_imports SET state = 'running'",
-        // A finished import says when; a failed one says why, a successful one
-        // carries no error, and it never stores more runs than it reads.
         "UPDATE scope_github_run_imports SET state = 'failed'",
         "UPDATE scope_github_run_imports SET state = 'succeeded', finished_at_unix = 20",
         "UPDATE scope_github_run_imports

@@ -20,10 +20,6 @@ const startRepoGitHubAuthorizationFn = createServerFn({ method: 'POST' })
   .validator(parseRepoGitHubAuthorizeInput)
   .handler(({ data }) => startRepoGitHubAuthorizationForRequest(data))
 
-/**
- * The settings page's server data. The Runs page reads the GitHub connection
- * from the same cached resource, so both show the same state.
- */
 export async function loadRepoSettingsData(params: RepoParams, signal: AbortSignal): Promise<RepoSettingsData> {
   const data = { owner: params.owner, repo: params.repo }
   const [collaboration, github] = await Promise.all([
@@ -33,7 +29,6 @@ export async function loadRepoSettingsData(params: RepoParams, signal: AbortSign
   return { collaboration, github }
 }
 
-/** GitHub's authorization screen for connecting the repository from this origin. */
 export function startRepoGitHubAuthorization(params: RepoParams) {
   return startRepoGitHubAuthorizationFn({
     data: { owner: params.owner, repo: params.repo, web_origin: currentWebOrigin() },

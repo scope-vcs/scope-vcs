@@ -13,7 +13,6 @@ import type { HistoryEntrySummaryResponse } from '@/api/types.generated'
 import type { useHistoryFeed } from './history-feed'
 import type { UpdateSearch } from './update-search'
 
-/** A history feed's loading, error, empty and loaded states. */
 export function HistoryFeedList({
   empty,
   history: { loadOlder, loadOlderError, loadingOlder, resource },

@@ -1,5 +1,3 @@
-"""Build a deterministic Lambda ZIP using the AWS-managed Python SDK."""
-
 import hashlib
 import sys
 import zipfile

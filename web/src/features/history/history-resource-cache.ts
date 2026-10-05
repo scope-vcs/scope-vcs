@@ -13,8 +13,6 @@ const MAX_ENTRY_BYTES = 4 * 1024 * 1024
 const MAX_DIFF_ENTRIES = 20
 const MAX_DIFF_BYTES = 32 * 1024 * 1024
 
-// One owner for every history list, so the dropdown and Settings share loaded
-// pages and reopening either shows them without a refetch.
 export const historyFeedResource = createCachedResource<LoadedHistory>({
   maxEntries: 16,
   maxWeight: 2 * 1024 * 1024,
@@ -49,8 +47,6 @@ type HistoryFileIdentity = {
   newOid: string | null
 }
 
-// Entry URLs stay stable across reprojection, so an entry is keyed by viewer
-// scope and audience and refreshed through the repository change version.
 export function historyEntryCacheKey(identity: {
   scope: string
   audience: ProjectionPreviewAudience
@@ -70,7 +66,6 @@ export function historyDiffCacheKey(identity: HistoryScope & HistoryFileIdentity
   ].join('\0')
 }
 
-// Blob ids pin the diff content, so a changed entry never reuses a stale diff.
 export function historyEntryDiffCacheKey(identity: HistoryFileIdentity & {
   scope: string
   audience: ProjectionPreviewAudience

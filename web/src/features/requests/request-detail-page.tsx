@@ -79,7 +79,6 @@ export function RequestUnavailablePage({ params }: { params: RepoParams }) {
 }
 
 type RequestDetailPageProps = {
-  /** Approves the checks of the head the viewer was shown. */
   approveChecks: (expectedHeadOid: string) => Promise<RequestChecksResponse>
   authorizeAutoMerge: (input: Pick<
     AuthorizeRequestAutoMergeInput,
@@ -168,7 +167,6 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   const detailsButton = useRef<HTMLButtonElement>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const rail = useDetailPaneRail(paneRef)
-  // The rail takes over the drawer's content; narrowing again must not reopen it.
   if (rail && detailsOpen) setDetailsOpen(false)
   const [lifecycleBar, setLifecycleBar] = useState<HTMLDivElement | null>(null)
   const actionClearance = useElementHeight(lifecycleBar)

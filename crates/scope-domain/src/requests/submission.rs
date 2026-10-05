@@ -1,5 +1,3 @@
-//! One-way request submission and terminal merge behavior.
-
 use super::{
     Request, RequestEvent, RequestEventKind, RequestEventPayload, RequestState, validate_required,
 };
@@ -119,7 +117,6 @@ pub fn merge_request(
     })
 }
 
-/// A main push completes a request when main carries its head and the request added commits of its own.
 pub fn lands_with_main(request: &Request) -> bool {
     request.state() == RequestState::Open && request.head_oid != request.base_main_oid
 }

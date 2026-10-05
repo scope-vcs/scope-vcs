@@ -566,8 +566,6 @@ fn producer_finishes_while_upload_is_blocked_and_spooled_logs_survive_exit_grace
         thread::sleep(Duration::from_millis(5));
     }
     let producer_finished = workspace.path().join("producer-finished").exists();
-    // Test supervisor grace is 25ms. A finished command must not lose buffered logs
-    // simply because its uploader remains slower than that grace period.
     thread::sleep(Duration::from_millis(100));
     release_sender.send(()).unwrap();
     let outcome = run.join().unwrap().unwrap();

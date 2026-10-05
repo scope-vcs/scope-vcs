@@ -1,16 +1,3 @@
-//! Imports a connected repository's recent workflow runs from GitHub, so its
-//! Runs page does not wait for GitHub to report each run again. Connecting
-//! queues the import and a maintainer can queue another; a leased background
-//! pass reads GitHub's list of runs, newest first, page by page until it has
-//! as many as the import asked for or GitHub has no more. Runs are stored the
-//! way GitHub's reports store them, so an import never moves a run back and a
-//! later report still moves it forward. A failed attempt is tried again after
-//! the usual delays and keeps GitHub's answer for the settings page. Each page
-//! is stored in one transaction with a check that the import's claim still
-//! holds and the repository is still connected to the GitHub repository it
-//! reads, so one replaced by a newer import, a disconnect or a reconnect stores
-//! nothing more.
-
 use crate::{
     auth::tokens::random_token, error::ApiError, persistence::unix_now,
     repo_events::RepoChangeReason, state::AppState, use_cases::github_workflow_runs,
@@ -21,15 +8,11 @@ use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
 const BATCH_SIZE: usize = 2;
-/// Comfortably longer than reading ten pages from GitHub takes, so a live
-/// import is never raced.
 const LEASE_SECS: u64 = 10 * 60;
 
 enum ImportFailure {
     Retry(String),
     GiveUp(String),
-    /// The claim lapsed or a newer import replaced this one: nothing more
-    /// is stored and nothing is recorded.
     Stale,
 }
 
@@ -39,8 +22,6 @@ impl From<ApiError> for ImportFailure {
     }
 }
 
-/// Runs the imports this process can claim, one at a time. Returns how many
-/// it claimed.
 pub(crate) async fn import_due_github_runs(
     state: &AppState,
     now_unix: u64,
@@ -70,8 +51,6 @@ pub(crate) async fn import_due_github_runs(
     Ok(claimed)
 }
 
-/// Imports one claimed import's runs and records how it ended while the claim
-/// holds.
 async fn run_claimed_import(
     state: &AppState,
     import: &GitHubRunImport,
@@ -105,7 +84,6 @@ async fn run_claimed_import(
         .finish_github_run_import(&import.repository_id, claim_token, outcome, now_unix)
         .await
     {
-        // Maintainers' open settings show how the import ended.
         Ok(true) => match repositories.repository_record(&import.repository_id).await {
             Ok(Some(record)) => {
                 state
@@ -122,7 +100,6 @@ async fn run_claimed_import(
                 "could not announce a GitHub run import"
             ),
         },
-        // Another process took the import over, or a newer one replaced it.
         Ok(false) => {}
         Err(error) => tracing::warn!(
             repo_id = import.repository_id,
@@ -132,8 +109,6 @@ async fn run_claimed_import(
     }
 }
 
-/// Reads GitHub's most recent runs until the import has as many as it asked
-/// for or GitHub lists no more. Returns how many it stored.
 async fn import_runs(
     state: &AppState,
     import: &GitHubRunImport,
@@ -162,7 +137,6 @@ async fn import_runs(
                 page,
             )
             .await
-            // The maintainer sees what GitHub answered.
             .map_err(|error| ImportFailure::Retry(error.into_operator_diagnostic()))?
         else {
             return Err(ImportFailure::GiveUp(
@@ -179,7 +153,6 @@ async fn import_runs(
             return Err(ImportFailure::Stale);
         }
         if !runs.is_empty() {
-            // Open Runs pages show a long import's runs as they arrive.
             github_workflow_runs::publish(state, &connection).await?;
         }
         imported += u32::try_from(runs.len()).unwrap_or(u32::MAX);

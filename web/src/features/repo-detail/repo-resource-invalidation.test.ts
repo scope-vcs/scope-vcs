@@ -107,7 +107,6 @@ test('GitHub workflow runs refresh only the retained GitHub run lists', () => {
   const other = githubWorkflowRunsIdentity('viewer-b', null)
   for (const identity of [all, lint, other]) githubWorkflowRunsResource.write(identity, runs)
   invalidateRepoResources('viewer-a', event('GitHubWorkflowRunsChanged'))
-  // Every filter of the scope refreshes, keeping what it lists meanwhile.
   assert.equal(githubWorkflowRunsResource.getSnapshot(all).stale, true)
   assert.equal(githubWorkflowRunsResource.getSnapshot(lint).stale, true)
   assert.equal(githubWorkflowRunsResource.peek(all), runs)
@@ -115,7 +114,6 @@ test('GitHub workflow runs refresh only the retained GitHub run lists', () => {
   assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, false)
   assert.equal(repositoryActivityResource.getSnapshot('viewer-a').stale, false)
 
-  // A connection change can switch the page between GitHub and Scope runs.
   githubWorkflowRunsResource.write(all, runs)
   invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'github-connection-changed' } }))
   assert.equal(githubWorkflowRunsResource.getSnapshot(all).stale, true)

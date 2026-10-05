@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Every build writes its own fragment; the merge happens only after all builds
-# and their private-registry pull checks have succeeded.
 source_sha="${SCOPE_DEPLOYMENT_SOURCE_SHA:?A source revision is required}"
 [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'A full source revision is required.' >&2; exit 2; }
 declare -a components=() fragments=()
@@ -51,8 +49,6 @@ fi
 export SCOPE_IMAGE_DEPENDENCY_EPOCH="$(date -u +%G-W%V)"
 if [[ "${PREPARE_BACKEND:-0}" == 1 ]]; then
   [[ -d .railway-prepared/api ]] || { echo 'Backend preparation requires the API image context.' >&2; exit 2; }
-  # Resolve the pinned Git build once before API and worker package in parallel.
-  # This cache tag lives in the already private API image package.
   export SCOPE_GIT_BUILD_CACHE_REF="$(node .github/scripts/railway-artifact.mjs image-repository api):git-buildcache"
   git_version="$(jq -er '.git.version' dev/tool-versions.json)"
   git_source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"

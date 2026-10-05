@@ -43,8 +43,6 @@ export function createRequestMermaidResourceManager({
     maxWeight,
     weightOf: (value) => retainedWeights.get(value) ?? value.svg.length * 2,
   })
-  // Waiting views register interest without allocating pending cache entries or
-  // render promises. The resource owns the one active attempt and its result.
   const demands = new Map<string, Demand>()
   let running = false
   const scopeTracker = createRequestAttachmentScopeTracker({
@@ -54,7 +52,6 @@ export function createRequestMermaidResourceManager({
 
   function nextDemand() {
     let nearby: [string, Demand] | undefined
-    // Map insertion order gives FIFO within each visibility priority.
     for (const entry of demands) {
       const [identity, demand] = entry
       const snapshot = resource.getSnapshot(identity)
@@ -72,8 +69,6 @@ export function createRequestMermaidResourceManager({
     if (!next) return
     const [identity, demand] = next
     running = true
-    // Retain this bit until the last view leaves, so cache eviction alone does
-    // not continuously rerender completed diagrams. Explicit retry clears it.
     demand.attempted = true
     demand.retryPriority = null
     void run(identity, demand.input)
@@ -88,8 +83,6 @@ export function createRequestMermaidResourceManager({
         return result
       })
     } finally {
-      // Keep the renderer occupied through the yield, including after a reset:
-      // an already-started Mermaid render cannot be interrupted safely.
       await yieldToBrowser().catch(() => {})
       running = false
       pump()
@@ -98,7 +91,7 @@ export function createRequestMermaidResourceManager({
 
   function acquire(input: RequestMermaidInput, priority: RequestMermaidPriority) {
     const identity = requestMermaidIdentity(input)
-    resource.read(identity) // Reopening promotes the retained result in the LRU.
+    resource.read(identity)
     const demand: Demand = demands.get(identity) ?? {
       input,
       leases: new Map(),
@@ -111,7 +104,6 @@ export function createRequestMermaidResourceManager({
     pump()
 
     return () => {
-      // A release from before a reset must not remove a new view's demand.
       if (demands.get(identity) !== demand || !demand.leases.delete(lease)) return
       if (demand.leases.size === 0) demands.delete(identity)
       pump()

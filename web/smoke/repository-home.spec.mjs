@@ -98,7 +98,6 @@ test('README details preserve inspection without exposing repeated navigator met
   }, { viewport })
 })
 
-// Client-side navigation from the already-open home page.
 async function navigateFromHome(page, path) {
   await waitForClientHydration(page.getByRole('button', { name: 'Switch to light mode' }))
   const url = new URL(path, baseUrl)

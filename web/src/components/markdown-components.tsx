@@ -7,7 +7,6 @@ type MarkdownScale = 'compact' | 'document'
 
 type MarkdownComponents = NonNullable<ComponentProps<typeof Markdown>['components']>
 
-/** Spacing and type scale per rendering context; the element structure is shared. */
 const SCALE_CLASSES = {
   compact: {
     a: 'decoration-border-strong hover:decoration-foreground',
@@ -122,7 +121,6 @@ const MARKDOWN_COMPONENTS = {
   document: buildMarkdownComponents('document'),
 }
 
-/** The one set of markdown element overrides, at the spacing of the surface. */
 export function markdownComponents(scale: MarkdownScale) {
   return MARKDOWN_COMPONENTS[scale]
 }

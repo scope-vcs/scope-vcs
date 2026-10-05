@@ -46,8 +46,6 @@ pub(crate) use revision::with_request_revision_store_repo;
 use snapshot::bundle_prerequisites;
 use snapshot::{download_snapshot, fetch_bundle_into, fetch_snapshot_into};
 
-/// Push rules shared by the request pre-receive hooks and the Rust validators, so the
-/// message a contributor sees is the same whichever layer rejects the push.
 pub(crate) const REQUEST_REF_DELETE_ERROR: &str = "Scope does not accept request branch deletes";
 pub(crate) const REQUEST_REF_SINGLE_UPDATE_ERROR: &str =
     "Scope accepts exactly one request ref update";
@@ -167,10 +165,6 @@ pub(crate) fn create_request_receive_pack_staging_repo(
     Ok(repo_root)
 }
 
-/// Adds every already-authorized request snapshot to a disposable upload-pack repository.
-/// The caller chooses the visible requests; this function never reaches into the private main
-/// repository or advertises any other durable request-store refs. `target_repo` must already hold
-/// private main, which thin private request snapshots are based on.
 pub(crate) fn attach_visible_request_refs(
     state: &AppState,
     requests: &[Request],
@@ -189,8 +183,6 @@ pub(crate) fn attach_visible_request_refs(
                 "attaching request ref to Git read view",
             )?;
         } else {
-            // A newly started request initially points at its selected main base and therefore
-            // needs no snapshot object transfer.
             if !request_ref_oid_is_commit(target_repo, &request.head_oid)?
                 && let Some(public_base_repo) = public_base_repo
             {
@@ -397,8 +389,6 @@ struct PreparedRequestRef {
     snapshot_bytes: Vec<u8>,
 }
 
-/// Main tips a request push is read against: accepted Git main, which thin private
-/// snapshots are based on, and the main view of the request's audience.
 struct RequestMainTips<'a> {
     accepted: Option<&'a str>,
     audience: Option<&'a str>,
@@ -471,8 +461,6 @@ fn ensure_request_ref_oid_is_commit(repo: &FsPath, oid: &str) -> Result<(), ApiE
     Err(ApiError::bad_request(REQUEST_REF_COMMIT_ERROR))
 }
 
-/// `staging_repo` was seeded with the request's base, so it supplies the base a thin snapshot
-/// needs when the store repo is empty.
 fn ensure_request_ref_available_in_store_locked(
     state: &AppState,
     store_repo: &FsPath,

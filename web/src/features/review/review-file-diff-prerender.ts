@@ -9,8 +9,6 @@ const host = globalThis as unknown as Record<
   ReturnType<typeof createReviewFileDiffRenderer> | undefined
 >
 
-// Nitro can include this module in multiple server chunks. Share admission,
-// workers and the bounded presentation cache within the process.
 export const renderReviewFileDiff = host[rendererKey] ??= createReviewFileDiffRenderer({
   isolatedRender: createReviewFileDiffWorkerPool(() => new Worker(
     import.meta.env.PROD

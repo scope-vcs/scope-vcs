@@ -1,8 +1,3 @@
-//! Encrypted, verified storage for every object that is not a Git segment: source blobs, request
-//! snapshot bundles, run source bundles, and media chunks. Objects use the same framed envelope
-//! as Git segments, so a reader verifies each frame as it arrives and can stream the plaintext to
-//! disk instead of holding the whole object in memory.
-
 mod error;
 mod source_blobs;
 
@@ -25,11 +20,8 @@ const OBJECT_FRAME_BYTES: usize = 1024 * 1024;
 
 #[async_trait]
 pub trait ObjectStore: Send + Sync {
-    /// Stores `bytes` under `key`, replacing any existing object.
     async fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), ObjectStoreError>;
 
-    /// Streams the object into `output` and returns its size. Fails with `PayloadTooLarge` as soon
-    /// as more than `max_bytes` arrive, so a caller never writes past its own limit.
     async fn read_to(
         &self,
         key: &str,
@@ -44,8 +36,6 @@ pub trait ObjectStore: Send + Sync {
     }
 }
 
-/// Reads a whole object into memory. Only for objects the caller must hold at once; stream
-/// anything that ends up on disk with [`ObjectStore::read_to`].
 pub async fn read_bounded(
     store: &dyn ObjectStore,
     key: &str,

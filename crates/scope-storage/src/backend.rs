@@ -45,7 +45,6 @@ pub trait ObjectBackend: Send + Sync + 'static {
 
     async fn abort_incomplete(&self, key: &str) -> Result<(), BackendError>;
 
-    /// Fails with [`crate::BackendErrorKind::NotFound`] when no object has the key.
     async fn read(&self, key: &str) -> Result<RemoteReader, BackendError>;
 
     async fn delete(&self, key: &str) -> Result<(), BackendError>;

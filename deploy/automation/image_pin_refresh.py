@@ -1,4 +1,3 @@
-"""Weekly agent turn that refreshes the pinned packages in the release images."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -11,7 +10,7 @@ from deployment_runtime import REPOSITORY, T3Client, create_worktree, message_co
 from deployment_scheduler import ZONE
 from heartbeat import ensure_issue
 
-HOUR = 9  # Monday, America/Chicago
+MONDAY_HOUR = 9
 START_GRACE = timedelta(minutes=10)
 STATE_PATH = Path.home() / ".local/state/scope-deployment-watcher/image-pin-refresh.json"
 
@@ -49,7 +48,7 @@ def current_week(now: datetime) -> tuple[str, datetime]:
     local = now.astimezone(ZONE)
     monday = local.date() - timedelta(days=local.weekday())
     year, week, _ = local.isocalendar()
-    return f"{year}-W{week:02d}", datetime(monday.year, monday.month, monday.day, HOUR, tzinfo=ZONE)
+    return f"{year}-W{week:02d}", datetime(monday.year, monday.month, monday.day, MONDAY_HOUR, tzinfo=ZONE)
 
 
 def start(week: str, intent: dict) -> None:
@@ -71,7 +70,6 @@ def alert_not_started(week: str) -> str:
 
 def poll(release_open: bool, now: datetime | None = None) -> None:
     if release_open:
-        # A release repair may be editing the same Dockerfiles; start after it closes.
         return
     now = now or datetime.now(timezone.utc)
     week, due = current_week(now)
@@ -84,7 +82,6 @@ def poll(release_open: bool, now: datetime | None = None) -> None:
         intent = {"created_at": timestamp(now), "thread_id": str(uuid.uuid5(uuid.NAMESPACE_URL, name)),
                   "worktree": str(Path.home() / ".codex/worktrees" / name / "scope-vcs")}
         state["weeks"][week] = intent
-        # Persist the intent first, so a lost response retries the same thread and commands.
         save_json(STATE_PATH, state)
     if "started_at" in intent:
         return
@@ -92,8 +89,6 @@ def poll(release_open: bool, now: datetime | None = None) -> None:
         start(week, intent)
         intent["started_at"] = timestamp(now)
     except Exception:
-        # Release supervision and its heartbeat continue. The next poll retries the
-        # start; one that stays stuck is reported once, and a failed report is retried.
         created = datetime.fromisoformat(intent["created_at"].replace("Z", "+00:00"))
         if now - created < START_GRACE or "alert_url" in intent:
             return

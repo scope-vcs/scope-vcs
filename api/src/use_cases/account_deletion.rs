@@ -1,6 +1,3 @@
-//! Deletes the signed-in account, then tells live views, the storage cleanup
-//! and the Clerk deletion worker what changed.
-
 use crate::{
     error::ApiError, persistence::unix_now, repo_events::RepoChangeReason, state::AppState,
     use_cases::content_cleanup::best_effort_drain_pending_repo_storage_deletions,

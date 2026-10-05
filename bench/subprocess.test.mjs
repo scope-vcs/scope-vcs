@@ -8,7 +8,6 @@ import { execute } from './subprocess.mjs';
 
 async function running(pid) {
   try { return !(await readFile(`/proc/${pid}/stat`, 'utf8')).split(') ')[1].startsWith('Z '); }
-  // ENOENT: the entry is gone. ESRCH: the process was reaped between opening and reading it.
   catch (error) { if (error.code === 'ENOENT' || error.code === 'ESRCH') return false; throw error; }
 }
 

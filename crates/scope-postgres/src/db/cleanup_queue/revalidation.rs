@@ -11,8 +11,6 @@ use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Transactio
 use std::collections::BTreeSet;
 
 impl CleanupStore {
-    /// Revalidates one claimed object immediately before physical deletion.
-    /// Callers must hold that object's content-ref fence through this check and deletion.
     pub async fn source_blob_cleanup_decision(
         &self,
         batch: &SourceBlobCleanupBatch,

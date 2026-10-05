@@ -18,8 +18,6 @@ const columnTitle = 'max-w-[12ch] text-[clamp(32px,3.6vw,48px)] leading-[1.04] f
 const columnNote = 'absolute left-0 top-[calc(100%+24px)] max-w-[34ch]'
 const rise = (delay: number) => ({ '--rise-delay': `${delay}ms` }) as CSSProperties
 
-/** The whole page, once per view. Only the public view carries ids, headings
- * and accessible names; the private view is decoration under the lens. */
 export function LandingContent({
   commands,
   initialPlatform,
@@ -75,7 +73,6 @@ export function LandingContent({
             <ScrollCue target="merge" />
           </section>
 
-          {/* The second screen: two columns, headline above figure. */}
           <section className="relative grid grid-cols-2 items-start gap-x-20 gap-y-24 pt-8 pb-40 max-[901px]:grid-cols-1 max-[901px]:pt-10 max-[901px]:pb-40">
             <div className={column} id={isPublic ? 'merge' : undefined}>
               <Heading className={columnTitle} level={2}><Swap text={mergeTitle} /></Heading>
@@ -116,10 +113,6 @@ export function LandingContent({
   )
 }
 
-/** Lights up the install command, since the command is what the button
- * offers. The page only scrolls when the command isn't already fully on
- * screen, so a visible command never moves. The URL stays put too: the router
- * scrolls to any hash it sees. */
 function callInstall(event: MouseEvent<HTMLAnchorElement>, onInstallCall: () => void) {
   const install = document.getElementById('install')
   const command = install?.querySelector('.install-command')

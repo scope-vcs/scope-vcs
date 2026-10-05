@@ -5,6 +5,7 @@ use sha2::{Digest as _, Sha256};
 use std::{fs, io::Read, os::unix::ffi::OsStrExt as _, path::Path};
 
 pub(super) const MAX_CACHE_KEY_FILE_BYTES: u64 = 8 * 1024 * 1024;
+const CACHE_INPUTS_DOMAIN: &[u8] = b"scope-cache-inputs-v2";
 pub(super) fn digest_inputs(
     inputs: &CacheKeyInputs,
     environment: &std::collections::BTreeMap<String, String>,
@@ -20,9 +21,7 @@ pub(super) fn digest_inputs_at(
     git_oid: &str,
 ) -> anyhow::Result<String> {
     let mut digest = Sha256::new();
-    // Domain-separate cache input digests from every other SHA-256 use of the
-    // same bytes; the suffix changes whenever the digested layout changes.
-    digest.update(b"scope-cache-inputs-v2");
+    digest.update(CACHE_INPUTS_DOMAIN);
     let workspace = fs::canonicalize(root).context("resolve cache input workspace")?;
     let workspace_bytes = workspace.as_os_str().as_bytes();
     digest.update((workspace_bytes.len() as u64).to_be_bytes());

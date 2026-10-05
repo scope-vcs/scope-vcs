@@ -1,4 +1,3 @@
-//! Environment configuration for object storage.
 use crate::{S3Settings, objects::ObjectStoreError};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
@@ -147,7 +146,6 @@ mod tests {
                 (Some("yes"), true),
                 (Some("YES"), true),
             ] {
-                // A child process isolates environment mutation from parallel tests.
                 let mut child = std::process::Command::new(std::env::current_exe().unwrap());
                 child
                     .args([

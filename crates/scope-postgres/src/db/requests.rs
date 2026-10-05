@@ -325,9 +325,6 @@ impl RequestStore {
     }
 }
 
-/// Deletes a draft the domain decided to delete. Its refs, GitHub branch,
-/// attachments and orphaned objects are queued for cleanup in the same
-/// transaction.
 pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
     tx: &C,
     incarnation: &RepositoryIncarnation,

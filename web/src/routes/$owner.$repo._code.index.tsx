@@ -87,8 +87,6 @@ export const Route = createFileRoute('/$owner/$repo/_code/')({
       : null
     const initialContent = settleRepoCodeResource(content)
     const initialFile = file ? settleRepoCodeResource(file) : null
-    // Client loads already belong to the cache. Only SSR promises need a
-    // handoff; retaining a client promise here would replay it on explicit retry.
     return {
       content: initialContent,
       file: initialFile,
@@ -125,8 +123,6 @@ function RepoIndexRoute() {
     resource: repoContentResource,
   })
   const content = contentResource.value
-  // A new version can remove file visibility. Revalidate the landing path from
-  // the current tree instead of retaining the previous version's README.
   const selectedPath = search.file ?? (content ? repositoryLandingPath(content.files) : null)
   const { fileIdentity: selectedFileIdentity } = repoCodeCacheKeys(repo, scope, selectedPath)
   const loadSelectedFile = useMemo(() => repoCodeResourceLoader(

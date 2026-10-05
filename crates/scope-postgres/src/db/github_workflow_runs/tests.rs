@@ -69,7 +69,6 @@ async fn runs_list_newest_first_and_link_their_request_while_it_exists() {
             .unwrap()
             .is_empty()
     );
-    // A repository reconnected to another GitHub repository lists only its runs.
     assert!(
         repositories
             .github_workflow_run_page(page(REPO, 43, 10))
@@ -83,7 +82,6 @@ async fn runs_list_newest_first_and_link_their_request_while_it_exists() {
 async fn pages_continue_after_their_last_run_and_keep_to_one_workflow() {
     let store = postgres_store();
     let repositories = store.repositories();
-    // Runs 4 and 5 started in the same second, so the newer id lists first.
     for (id, workflow, started_at) in [
         (1, "ci", 10),
         (2, "lint", 20),
@@ -137,7 +135,6 @@ async fn pages_continue_after_their_last_run_and_keep_to_one_workflow() {
         .await
         .unwrap();
     assert_eq!(ids(&ci), [4, 3, 1]);
-    // Only the connected GitHub repository's workflows are named.
     assert_eq!(
         repositories.github_workflow_names(REPO, 42).await.unwrap(),
         ["ci", "lint"]
@@ -170,14 +167,11 @@ async fn an_older_read_of_a_run_does_not_replace_a_newer_one() {
         .await
         .unwrap();
     assert_eq!(stored().await, completed);
-    // A slower read from the same second, made while the run was still going,
-    // cannot move it back.
     repositories
         .save_github_workflow_run(REPO, 42, &run(1, "main", 10, 50))
         .await
         .unwrap();
     assert_eq!(stored().await, completed);
-    // A re-run on GitHub is a later attempt, which starts over.
     let rerun = GitHubWorkflowRun {
         run_attempt: 2,
         ..run(1, "main", 60, 60)
@@ -197,7 +191,6 @@ async fn a_pending_read_is_claimed_when_due_and_ends_answered_or_given_up() {
         .queue_github_workflow_run_read(REPO, 42, 7, 100)
         .await
         .unwrap();
-    // A repeated delivery keeps the read already waiting.
     repositories
         .queue_github_workflow_run_read(REPO, 42, 7, 150)
         .await
@@ -215,7 +208,6 @@ async fn a_pending_read_is_claimed_when_due_and_ends_answered_or_given_up() {
         .unwrap()
         .remove(0);
     assert_eq!((job.github_run_id, job.attempts), (7, 1));
-    // Claimed, it waits for its lease even though it was due.
     assert!(
         repositories
             .claim_due_github_workflow_run_reads(200, 500, 10)
@@ -255,7 +247,6 @@ async fn a_run_stays_with_the_scope_repository_its_github_repository_is_connecte
         .save_github_workflow_run(REPO, 42, &saved)
         .await
         .unwrap();
-    // The GitHub repository is connected to another Scope repository now.
     store
         .db
         .execute_unprepared(
@@ -282,8 +273,6 @@ async fn a_run_stays_with_the_scope_repository_its_github_repository_is_connecte
         .await
         .unwrap();
     assert_eq!(listed(&repositories, "owner/other").await, [1]);
-    // A late read for the former Scope repository, even of the same progress,
-    // does not take the run back.
     repositories
         .save_github_workflow_run(REPO, 42, &saved)
         .await

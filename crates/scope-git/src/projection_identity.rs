@@ -36,11 +36,6 @@ pub enum ProjectionIdentityError {
     PreservedHistoryNotDescendant,
 }
 
-/// Calculates the real Git commit identity produced by Scope's deterministic
-/// projection materializer without reading blob bytes or invoking Git.
-///
-/// An empty domain projection has no canonical head. Filesystem adapters may
-/// still create an implementation-only empty commit when serving a clone.
 pub fn projection_head_oid(
     projection: &Projection,
 ) -> Result<Option<String>, ProjectionIdentityError> {

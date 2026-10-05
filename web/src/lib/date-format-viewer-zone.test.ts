@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-// Formatters are built when the module loads, so the viewer's zone is chosen
-// before date-format is imported.
 process.env.TZ = 'America/New_York'
 
 test('hydrated dates render in the viewer zone the UTC render fell back from', async () => {

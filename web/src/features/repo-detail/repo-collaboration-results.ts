@@ -9,8 +9,6 @@ export type CollaborationResult =
   | { type: 'memberRemoved'; member: RepositoryMemberResponse }
   | { type: 'inviteUpdated'; invite: RepositoryInviteResponse }
 
-// Apply authoritative write responses to the current cached snapshot before its
-// background refresh, so the next edit cannot reuse the old permission values.
 export function applyCollaborationResult(
   current: RepositoryCollaborationResponse | null,
   result: CollaborationResult,

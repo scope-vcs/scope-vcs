@@ -176,7 +176,6 @@ mod tests {
             "initial",
         ]);
         let checkout = dir.path().join("checkout");
-        // Git accepts a local path, while Scope credential setup requires a URL.
         let error = clone_and_configure(
             "https://scope.example",
             dir.path().to_str().unwrap(),

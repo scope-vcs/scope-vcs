@@ -223,7 +223,6 @@ async fn operators_list_and_remove_native_runs_accounts() {
     assert_eq!(added["handle"], TEST_REPO_OWNER);
     assert_eq!(added["user_id"], test_owner_id());
     assert_eq!(added["note"], "design partner");
-    // Open Runs pages learn that the owner's repositories may now run workflows.
     assert_eq!(
         serde_json::to_value(events.try_recv().unwrap().kind).unwrap(),
         availability_changed

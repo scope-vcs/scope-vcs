@@ -5,7 +5,6 @@ use scope_domain::{
 };
 use std::{collections::BTreeMap, time::Instant};
 
-/// Read immutable native objects only after the caller selects audience-authorized refs.
 pub(crate) async fn native_commit_details(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -14,7 +13,6 @@ pub(crate) async fn native_commit_details(
     if commits.is_empty() {
         return Ok(BTreeMap::new());
     }
-    // Materialization and every per-commit subprocess share one request budget.
     let deadline = Instant::now() + state.runtime_budgets.git_command_timeout();
     let (head, spans) = state
         .metadata

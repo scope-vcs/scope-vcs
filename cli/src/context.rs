@@ -1,4 +1,3 @@
-//! Resolve repository and endpoint identity for every CLI delivery path.
 use crate::{
     error::CliError,
     git_repo::{
@@ -70,7 +69,6 @@ fn discover_at(cwd: &std::path::Path) -> anyhow::Result<Option<GitRepo>> {
         anyhow::bail!("inspect Git repository failed: {}", error.trim());
     }
     let root = String::from_utf8(output.stdout).context("Git repository path is not UTF-8")?;
-    // Git terminates its output with a newline; spaces are part of the path.
     let root = root.trim_end_matches(['\r', '\n']);
     if root.is_empty() {
         return Err(CliError::usage("Git repository root is empty").into());
@@ -179,7 +177,6 @@ fn resolve(
     if let Some(remote) = remote_arg {
         return load(remote, push);
     }
-    // Explicit repository selection bypasses implicit branch context.
     if selected.is_none()
         && let Ok(branch) = current_branch(repo)
     {

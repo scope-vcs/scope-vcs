@@ -1,6 +1,3 @@
-//! Where a request push stands in history: against its recorded base, its old head,
-//! and the tip of its main view.
-
 use crate::{
     error::ApiError,
     git::command::{git_is_ancestor, run_git_output},
@@ -8,9 +5,6 @@ use crate::{
 use scope_domain::requests::{RequestAudience, RequestRevisionGitFacts};
 use std::path::Path as FsPath;
 
-/// A private request may omit its base only when that commit is in accepted Git main.
-/// Requests started from the pre-Git projection keep full snapshots even after
-/// an unrelated Git main is pushed. Public snapshots always keep full history.
 pub(super) fn thin_snapshot_base<'a>(
     audience: RequestAudience,
     base_oid: &'a str,
@@ -48,8 +42,6 @@ pub(super) fn ensure_request_ref_descends_from_base(
     ))
 }
 
-/// Reads where a new head stands against the old head and against `main_oid`, the tip of
-/// the request's main view. A push may rebase or amend, so the old head need not be kept.
 pub(super) fn request_revision_git_facts(
     repo: &FsPath,
     base_oid: &str,

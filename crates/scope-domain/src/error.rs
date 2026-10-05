@@ -1,6 +1,5 @@
 use std::fmt;
 
-/// A failure produced by domain behavior, independent of any delivery mechanism.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DomainErrorKind {
     InvalidInput,

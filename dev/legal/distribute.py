@@ -1,5 +1,3 @@
-"""Copy legal sources to the locations where GitHub and the web server publish them."""
-
 import argparse
 import re
 from datetime import datetime, timezone
@@ -13,7 +11,7 @@ COPIES = {
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Copy legal sources to the locations where GitHub and the web server publish them.")
     parser.add_argument("--check", action="store_true", help="Fail if a published copy differs from its source.")
     args = parser.parse_args()
     expires = re.search(r"^Expires: (\S+)$", (ROOT / "legal/security.txt").read_text(encoding="utf-8"), re.M)

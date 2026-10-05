@@ -89,8 +89,6 @@ impl RequestStore {
     }
 }
 
-// Membership removal holds the repository lock used by attention mutations, so
-// a removed maintainer cannot retain or concurrently create a request claim.
 pub(super) async fn remove_member_attention<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

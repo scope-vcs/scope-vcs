@@ -82,8 +82,6 @@ async fn index_predicates(db: &DatabaseConnection) -> Vec<String> {
 #[tokio::test]
 async fn m0048_rejects_a_second_dispatching_attempt_for_one_job() {
     let (_target, db, _lease) = isolated_database().await;
-    // Apply the main migration prefix before the cleanup migrations.
-    // The indexes still name the impossible 'leased' state.
     migrations::Migrator::up(db.as_ref(), Some(4))
         .await
         .unwrap();
@@ -91,7 +89,6 @@ async fn m0048_rejects_a_second_dispatching_attempt_for_one_job() {
     db.execute_unprepared(&dispatching_attempt_sql("attempt-1", 1, 'a', true))
         .await
         .unwrap();
-    // The bug: nothing stopped a second in-flight attempt for the same job.
     db.execute_unprepared(&dispatching_attempt_sql("attempt-2", 2, 'b', true))
         .await
         .unwrap();
@@ -119,7 +116,6 @@ async fn m0048_rejects_a_second_dispatching_attempt_for_one_job() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("idx_scope_run_attempts_active"), "{error}");
-    // A terminal attempt leaves the partial index, so a retry may dispatch again.
     db.execute_unprepared(
         "UPDATE scope_run_attempts
          SET state = 'failed', completed_at_unix = 2, last_heartbeat_at_unix = 2,

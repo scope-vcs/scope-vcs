@@ -105,16 +105,12 @@ async function assertShellBeforeFileReady({ content, path, requestPath }) {
         releaseFileRequest()
         await content(page).waitFor()
         await settled()
-        assert.equal(fileRequests, 2) // Initial file and connection catch-up.
+        assert.equal(fileRequests, 2, 'initial file read plus connection catch-up')
       },
       {
-        // The initial file request is held, so the page cannot settle before
-        // the shell is measured; it settles once the request is released.
         settle: false,
         prepare: async (page) => {
           settled = trackPageSettle(page)
-          // Ensure the initial file read precedes Connected so this startup
-          // test has a deterministic catch-up budget while the file is held.
           await page.route('**/events', async route => {
             await fileRequestStarted
             await route.continue()

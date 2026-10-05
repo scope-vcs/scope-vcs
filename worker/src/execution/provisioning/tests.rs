@@ -30,7 +30,6 @@ async fn provider_bursts_overlap_within_the_start_bound() {
             .await
             .is_err()
     );
-    // One completed start opens a slot without waiting for the three slow starts.
     provider.starts.add_permits(1);
     tokio::time::timeout(Duration::from_secs(2), starts.wait_for_slot())
         .await

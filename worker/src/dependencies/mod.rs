@@ -2,7 +2,7 @@ mod snapshot;
 
 use crate::{
     health::{WorkerHealth, WorkerLoop},
-    settings::{BATCH_SIZE, POLL_INTERVAL, WorkerSettings},
+    settings::{CONTROL_POLL_BATCH_SIZE, POLL_INTERVAL, WorkerSettings},
 };
 use scope_api_contract::{RepoChangeEvent, RepoChangeKind, RepoChangeNotification};
 use scope_domain::dependency_analysis::{AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION};
@@ -22,9 +22,6 @@ const HEARTBEAT: Duration = Duration::from_secs(5);
 const ANALYZER_TIMEOUT: Duration = Duration::from_secs(120);
 const ANALYSIS_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
-// Pushes and policy changes enqueue their own analysis. The backfill scan only
-// catches repositories that predate the feature or an analyzer upgrade, so it
-// runs on an interval rather than on every poll.
 const BACKFILL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PollOutcome {
@@ -137,9 +134,13 @@ async fn process_next(
     if backfill.is_due(started) {
         let enqueued = metadata
             .jobs()
-            .enqueue_dependency_analysis_backfill(DEPENDENCY_ANALYZER_VERSION, now, BATCH_SIZE)
+            .enqueue_dependency_analysis_backfill(
+                DEPENDENCY_ANALYZER_VERSION,
+                now,
+                CONTROL_POLL_BATCH_SIZE,
+            )
             .await?;
-        backfill.record(started, enqueued, BATCH_SIZE);
+        backfill.record(started, enqueued, CONTROL_POLL_BATCH_SIZE);
     }
     let Some(claim) = metadata
         .jobs()

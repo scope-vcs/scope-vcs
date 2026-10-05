@@ -70,12 +70,9 @@ export async function deployMaintenanceRuntime({ manifest, environment, receipt,
     input: { source: { image: receipt.image }, rootDirectory: '/', railwayConfigFile: null, buildCommand: null, startCommand, healthcheckPath: '/readyz', healthcheckTimeout: 60, preDeployCommand: [], registryCredentials: credentials },
   });
   if (updated.serviceInstanceUpdate !== true) throw new Error('Railway did not confirm maintenance runtime configuration.');
-  // Setting repo:null alongside image clears Railway's source selection. Select
-  // only the image, then verify the stored source before starting any deployment.
   const configured = request(railway, 'query MaintenanceRuntimeSource($environmentId:String!){environment(id:$environmentId){projectId config(decryptVariables:false)}}', { environmentId: target.environmentId }).environment;
   const source = configured?.config?.services?.[target.serviceId]?.source;
   if (configured?.projectId !== target.projectId || source?.image !== receipt.image || source?.repo) throw new Error('Railway did not retain the pinned maintenance image source.');
-  // Never retry this non-idempotent mutation after an uncertain response.
   const deployed = request(railway, 'mutation MaintenanceRuntimeDeploy($serviceId:String!,$environmentId:String!){serviceInstanceDeployV2(serviceId:$serviceId,environmentId:$environmentId)}', { serviceId: target.serviceId, environmentId: target.environmentId });
   const deploymentId = deployed.serviceInstanceDeployV2;
   if (typeof deploymentId !== 'string' || !deploymentId) throw new Error('Railway did not return an exact maintenance runtime deployment ID.');

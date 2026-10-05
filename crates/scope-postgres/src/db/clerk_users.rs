@@ -44,9 +44,6 @@ impl AuthStore {
     }
 }
 
-/// Loads the Scope user already linked to this external identity, refuses
-/// the identity when its verified email belongs to a different user, and
-/// refreshes the in-memory snapshot from the identity. Nothing is persisted.
 async fn existing_identity_user<C>(
     conn: &C,
     identity: &ExternalIdentity,

@@ -12,13 +12,9 @@ const CLOUD_RUN_MAX_CONCURRENCY_ENV: &str = "SCOPE_CLOUD_RUN_MAX_CONCURRENCY";
 const DISPATCH_BROKER_FUNCTION_ARN_ENV: &str = "SCOPE_DISPATCH_BROKER_FUNCTION_ARN";
 const DEFAULT_HEALTH_PORT: u16 = 8081;
 
-/// Outbox jobs claimed per control poll.
-pub(crate) const BATCH_SIZE: usize = 10;
-/// Idle wait between polls for every worker loop.
+pub(crate) const CONTROL_POLL_BATCH_SIZE: usize = 10;
 pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(1_000);
-/// Bound on one compaction's external git work.
 pub(crate) const GIT_COMPACTION_TIMEOUT: Duration = Duration::from_secs(120);
-/// Cloud run attempts one worker admits concurrently.
 const CLOUD_RUN_MAX_CONCURRENCY: usize = 20;
 
 #[derive(Clone)]
@@ -82,8 +78,6 @@ impl WorkerSettings {
     }
 }
 
-/// Cloud execution runs exactly when a dispatch broker is configured.
-/// `SCOPE_CLOUD_RUN_MAX_CONCURRENCY=0` pauses admission while cleanup continues.
 fn cloud_execution_from_env() -> anyhow::Result<Option<CloudExecutionSettings>> {
     let Some(dispatch_broker_function_arn) = non_empty_env(DISPATCH_BROKER_FUNCTION_ARN_ENV) else {
         return Ok(None);

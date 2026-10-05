@@ -1,5 +1,3 @@
-//! Atomic repository content merge plus request completion.
-
 use super::{
     CompleteLandedRequestCommand, GeneratedIdSource, MergeRequestContentCommand, RequestStore,
     acquire_aggregate_lock,
@@ -271,8 +269,6 @@ impl RequestStore {
 mod tests;
 
 impl RequestStore {
-    /// Records the merge of a request whose head a committed main push already carries.
-    /// Returns `None` when the request moved or settled since the push was inspected.
     pub async fn complete_landed_request(
         &self,
         command: CompleteLandedRequestCommand,

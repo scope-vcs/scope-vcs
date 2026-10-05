@@ -24,8 +24,6 @@ SCOPE_DEPLOYMENT_MANIFEST_JSON="$(jq -c . "$manifest")" \
   SCOPE_RAILWAY_SERVICES_JSON="$(node "$scripts/railway-read.mjs" service list "${scope[@]}" --json)" \
   node "$scripts/verify-staging-target.mjs" >/dev/null
 
-# Upload the candidate tool over SSH and mint the grant inside Railway's private network.
-# The remote helper validates Railway's injected identity before touching metadata.
 seed_sha="$(sha256sum "$seed_binary" | cut -d ' ' -f1)"
 remote='
 set -eu
@@ -47,7 +45,6 @@ export SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH="$directory/exchange-token"
 "$directory/seed" --grant-only >/dev/null
 cat "$SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH"
 '
-# Never overwrite an existing credential, and remove partial output on SSH failure.
 set -o noclobber
 exec 3> "$SCOPE_SMOKE_SEED_EXCHANGE_TOKEN_PATH"
 if ! railway_private_command "$environment_id" sh -c "$remote" scope-smoke-seed \

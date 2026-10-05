@@ -5,7 +5,6 @@ import { EmptyState } from '@/components/empty-state'
 import { Link } from '@tanstack/react-router'
 import { GitBranch } from 'lucide-react'
 
-/** Owners with no repositories get `FirstRepositoryWalkthrough` instead. */
 export function RepoList({
   isOwner,
   repositories,
@@ -59,8 +58,6 @@ function RepoListRow({ isOwner, repo }: { isOwner: boolean; repo: RepoSummaryRes
         ) : null}
       </div>
 
-      {/* The whole row already links to the repo, so only surface an action
-          when it says something the row does not (e.g. "Clean up"). */}
       <div className="relative z-10 flex shrink-0 items-center">
         <RepoPrimaryActionButton
           includeOpen={false}

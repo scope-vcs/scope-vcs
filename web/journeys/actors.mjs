@@ -11,11 +11,10 @@ const run = promisify(execFile)
 export const apiUrl = required('SCOPE_API_URL').replace(/\/$/, '')
 const scopeCli = required('SCOPE_CLI')
 const clerkApi = 'https://api.clerk.com/v1'
-// Must match the web's default Clerk API token template.
-const tokenTemplate = 'scope_api'
+const webDefaultTokenTemplate = 'scope_api'
+const COLD_DEV_SERVER_TIMEOUT_MS = 120_000
+const CLERK_TEST_EMAIL_VERIFICATION_CODE = '424242'
 
-// The seeded collaborators on dev/update-demo. Scope links a Clerk session to
-// an existing user by verified email, so these Clerk users become those users.
 export const collaborators = {
   contributor: { handle: 'river-contributor', email: 'river.contributor+clerk_test@example.com' },
   maintainer: { handle: 'maya-maintainer', email: 'maya.maintainer+clerk_test@example.com' },
@@ -27,10 +26,6 @@ function required(name) {
   return value
 }
 
-/**
- * Creates or reuses the Clerk development users behind the seeded
- * collaborators. Loads web/.env.local and fetches a Clerk testing token.
- */
 export async function provisionClerkUsers() {
   process.loadEnvFile('.env.local')
   const secretKey = process.env.CLERK_SECRET_KEY
@@ -51,15 +46,14 @@ export async function provisionClerkUsers() {
   }
 
   const templates = await backend('/jwt_templates')
-  const template = templates.find(({ name }) => name === tokenTemplate)
+  const template = templates.find(({ name }) => name === webDefaultTokenTemplate)
   if (!template || !('email' in template.claims) || !('email_verified' in template.claims)) {
-    throw new Error(`setup: the Clerk instance needs a ${tokenTemplate} JWT template with email and email_verified claims`)
+    throw new Error(`setup: the Clerk instance needs a ${webDefaultTokenTemplate} JWT template with email and email_verified claims`)
   }
 
   for (const { email } of Object.values(collaborators)) {
     const existing = await backend(`/users?email_address=${encodeURIComponent(email)}`)
     if (existing.length > 0) continue
-    // Backend-created email addresses are verified.
     await backend('/users', {
       method: 'POST',
       body: JSON.stringify({
@@ -80,7 +74,6 @@ async function newSession(browser, contextOptions) {
   return { context, page, pageErrors }
 }
 
-// Clerk's testing-token route logs a warning for each request a closing context cancels.
 export async function closeSession({ context }) {
   await context.unrouteAll({ behavior: 'ignoreErrors' })
   await context.close()
@@ -88,19 +81,15 @@ export async function closeSession({ context }) {
 
 async function expectSignedIn(page, { handle, email }) {
   await page.waitForFunction(() => window.Clerk?.user)
-  const token = await page.evaluate((template) => window.Clerk.session.getToken({ template }), tokenTemplate)
+  const token = await page.evaluate((template) => window.Clerk.session.getToken({ template }), webDefaultTokenTemplate)
   const session = await apiFetch(token, '/v1/session')
   assert.equal(session.user?.handle, handle, `${email} did not resolve to ${handle}`)
 }
 
-/** Signs a collaborator into its own browser context through Clerk. */
 export async function signIn(browser, collaborator) {
   const session = await newSession(browser)
-  // A cold Vite dev server can take most of a minute to serve Clerk, beyond
-  // the sign-in helper's own wait.
-  await session.page.goto(`${baseUrl}/`, { timeout: 120_000 })
-  await session.page.waitForFunction(() => window.Clerk?.loaded, null, { timeout: 120_000 })
-  // The helper's error omits Clerk's response, so record failed Clerk calls.
+  await session.page.goto(`${baseUrl}/`, { timeout: COLD_DEV_SERVER_TIMEOUT_MS })
+  await session.page.waitForFunction(() => window.Clerk?.loaded, null, { timeout: COLD_DEV_SERVER_TIMEOUT_MS })
   const failures = []
   session.page.on('response', (response) => {
     if (response.url().includes('clerk') && response.status() >= 400) {
@@ -116,18 +105,15 @@ export async function signIn(browser, collaborator) {
   return session
 }
 
-/** Signs in through the real sign-in form with Clerk's fixed test code. */
 export async function signInThroughForm(browser, collaborator, contextOptions) {
   const session = await newSession(browser, contextOptions)
   const { page } = session
   await page.goto(`${baseUrl}/sign-in`)
   await page.getByRole('textbox', { name: 'Email address', exact: true }).fill(collaborator.email)
-  // The code field renders before Clerk has sent the code, and an early code is refused.
   const codeSent = page.waitForResponse((response) => response.url().includes('/prepare_first_factor') && response.ok())
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await codeSent
-  // +clerk_test addresses accept this code and never receive mail.
-  await page.getByRole('textbox', { name: 'Enter verification code' }).fill('424242')
+  await page.getByRole('textbox', { name: 'Enter verification code' }).fill(CLERK_TEST_EMAIL_VERIFICATION_CODE)
   await expectSignedIn(page, collaborator)
   return session
 }
@@ -138,23 +124,17 @@ export async function apiFetch(token, path) {
   return response.json()
 }
 
-/** A CLI session from the local-only dev endpoint. */
 export async function devSessionToken(handle) {
   const response = await fetch(`${apiUrl}/v1/dev/cli-session/${handle}`, { method: 'POST' })
   assert.equal(response.status, 200, `setup: dev CLI session for ${handle} returned ${response.status}`)
   return (await response.json()).session_token
 }
 
-/**
- * A collaborator driving the real CLI with a session from the local-only dev
- * endpoint, as cli/tests/contribution_flow.rs does.
- */
 export async function cliActor(workspace, { handle }) {
   const token = await devSessionToken(handle)
   const config = join(workspace, handle, 'config')
   const sessions = join(config, 'scope/sessions')
   await mkdir(sessions, { recursive: true })
-  // Named like scope_cli::auth::session_storage_key.
   await writeFile(join(sessions, `cli-session-${Buffer.from(apiUrl).toString('hex')}`), token)
   const repo = join(workspace, handle, 'repo')
   const env = {

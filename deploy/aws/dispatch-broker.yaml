@@ -4,7 +4,6 @@ Description: Validated Scope runner dispatch with durable attempt reconciliation
 Parameters:
   Environment:
     Type: String
-    # The runtime permissions boundary currently covers production resources only.
     AllowedValues: [production]
   CodeBucket:
     Type: String
@@ -61,7 +60,6 @@ Resources:
       Tags:
         - Key: Project
           Value: scope-vcs
-      # No TTL: a deleted terminal record would make an old start replayable.
 
   BrokerLogGroup:
     Type: AWS::Logs::LogGroup
@@ -115,8 +113,6 @@ Resources:
               - Sid: CleanupDefinitions
                 Effect: Allow
                 Action: ecs:DeregisterTaskDefinition
-                # ECS does not support resource scoping for deregistration. This
-                # authority belongs only to the broker, never the worker.
                 Resource: "*"
               - Sid: RunAttempt
                 Effect: Allow
@@ -175,8 +171,6 @@ Resources:
       Role: !GetAtt BrokerRole.Arn
       Timeout: 120
       MemorySize: 256
-      # This account must retain its Lambda pool as unreserved capacity.
-      # Per-attempt journal locks and the hard timeout serialize mutations.
       Code:
         S3Bucket: !Ref CodeBucket
         S3Key: !Ref CodeKey

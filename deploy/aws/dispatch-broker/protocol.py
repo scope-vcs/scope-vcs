@@ -1,5 +1,3 @@
-"""The caller supplies attempt identity, never AWS execution instructions."""
-
 import hashlib
 import json
 import re

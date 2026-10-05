@@ -82,7 +82,6 @@ pub(crate) async fn put_upload_part(
         })
         .ok_or_else(media_not_found)?;
 
-    // Acquire before reading the body so queued uploads cannot each retain an 8 MiB part.
     let (_permit, bytes) = buffer_upload_body(
         state.upload_slots.clone(),
         request.into_body(),
@@ -163,8 +162,6 @@ pub(crate) async fn put_upload_part(
                 "media part write lease was lost; retry the part",
             ));
         }
-        // The reservation remains durable on an ambiguous database error. Deleting here could
-        // remove an object whose Stored transition committed before the connection failed.
         Err(error) => return Err(error),
     }
     Ok(Json(reserved.receipt.into()))
@@ -258,8 +255,6 @@ async fn serve_media(
         Some(id) => RequestMediaObjectTarget::Derivative(id),
         None => RequestMediaObjectTarget::Original,
     };
-    // This second lookup is intentional: it is the live, target-specific policy check for
-    // this request and cannot be replaced by the signed grant's earlier authorization.
     let manifest = state
         .metadata
         .media()

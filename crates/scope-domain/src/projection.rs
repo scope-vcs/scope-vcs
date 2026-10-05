@@ -16,14 +16,11 @@ pub struct NativePublicCommit {
     pub changed_paths: Vec<ScopePath>,
 }
 
-/// Facts read from the immutable Git object after checking its recorded identity.
-/// These are read models; the native Git object remains their source of truth.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NativePublicCommitDetails {
     pub author: String,
     pub message: String,
     pub occurred_at_unix: i64,
-    /// Exact changes against the first Git parent, including inherited public files.
     pub changes: Vec<FileChange>,
 }
 
@@ -56,7 +53,6 @@ pub struct FileChange {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogicalCommit {
-    /// Source Git head committer time, when captured at import.
     pub occurred_at_unix: Option<i64>,
     pub id: String,
     pub origin: LogicalCommitOrigin,
@@ -82,8 +78,6 @@ pub struct ProjectedChange {
 pub struct ProjectedCommit {
     pub projected_id: String,
     pub logical_commit_id: String,
-    /// The visibility action that emitted this boundary; absent for content commits.
-    /// This provenance does not participate in Git commit identity.
     pub visibility_change_set_id: Option<String>,
     pub parent_projected_id: Option<String>,
     pub author: Option<String>,

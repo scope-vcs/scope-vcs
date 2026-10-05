@@ -1,5 +1,3 @@
-//! Persistence shared by request submission and terminal transitions.
-
 use super::request_rows::{insert_request_event_row, request_event_by_id, save_request_row};
 use crate::error::PostgresError;
 use scope_domain::requests::{Request, RequestEvent};

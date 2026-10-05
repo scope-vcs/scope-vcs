@@ -11,9 +11,6 @@ import { RequestWorkspaceSidebar } from './request-workspace-sidebar'
 
 const ignore = () => {}
 
-// The real sidebar with no queue yet. Whether a signed-in viewer maintains
-// the repository arrives with it, so their sidebar cannot pick its groups yet.
-// Signed-out viewers never maintain one and get the reader's groups at once.
 export function RequestsPagePending({ children }: { children?: ReactNode }) {
   const { isSignedIn } = useAuth()
   const params = useParams({ from: '/$owner/$repo' })

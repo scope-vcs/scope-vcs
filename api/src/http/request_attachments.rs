@@ -19,8 +19,6 @@ use scope_postgres::db::{
 type RequestPath = (String, String, String);
 type AttachmentPath = (String, String, String, String);
 
-// The path is checked independently of the attachment lookup, so an authorized
-// attachment cannot be addressed through a different repository URL.
 async fn request_viewer(
     state: &AppState,
     headers: &HeaderMap,

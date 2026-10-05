@@ -4,8 +4,6 @@ use sha1::{Digest, Sha1};
 
 const SEMANTICS_VERSION: &str = "named-request-read-view-v4";
 
-/// Identity of the permitted materialization, after request policy filtering.
-/// Principal and request lifecycle facts belong to authorization, not this cache.
 pub(super) struct GitReadViewIdentity<'a> {
     incarnation: &'a RepositoryIncarnation,
     primary_head: &'a [u8],

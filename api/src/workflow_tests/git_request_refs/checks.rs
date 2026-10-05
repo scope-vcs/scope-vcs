@@ -32,8 +32,6 @@ async fn submit(app: axum::Router, request_id: &str, bearer: &str) {
     assert_eq!(submitted.status(), StatusCode::OK);
 }
 
-/// An open private request the owner pushed, carrying the given workflow files
-/// at its head. The server stays alive for the caller's later requests.
 async fn owner_request_push(
     label: &str,
     workflows: &[(&str, String)],
@@ -219,7 +217,6 @@ async fn a_head_whose_workflows_never_ask_for_requests_owes_no_checks() {
     assert_eq!(checks["mergeability"]["reason"], serde_json::Value::Null);
 }
 
-/// What a push leaves behind when evaluating its head failed: nothing.
 async fn forget_evaluations(state: &AppState, request_id: &str) {
     state
         .metadata
@@ -277,7 +274,6 @@ async fn a_head_whose_evaluation_failed_is_held_until_someone_looks() {
     insert_member_user(&state).await;
     let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
 
-    // A list describes the hold without evaluating anything.
     assert_eq!(
         listed_status(&state, &request_id).await,
         "ChecksNotEvaluated"
@@ -291,7 +287,6 @@ async fn a_head_whose_evaluation_failed_is_held_until_someone_looks() {
     assert_eq!(looked["state"], "started");
     assert_eq!(looked["mergeability"]["status"], "ChecksPending");
     let run_id = looked["checks"][0]["run_id"].as_str().unwrap().to_string();
-    // The evaluation belongs to the push, so the run is the pusher's, not the viewer's.
     let run = state.metadata.runs().run(&run_id).await.unwrap().unwrap();
     assert_eq!(run.requested_by_user_id.as_deref(), Some(&*test_owner_id()));
 
@@ -325,7 +320,6 @@ async fn merging_an_unevaluated_head_evaluates_it_instead() {
     assert_eq!(listed_status(&state, &request_id).await, "ChecksPending");
 }
 
-/// Seed an awaiting evaluation to exercise the approval transaction in isolation.
 async fn record_awaiting_approval(state: &AppState, request_id: &str) {
     allow_native_runs(state).await;
     forget_evaluations(state, request_id).await;

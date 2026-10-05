@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { assertDeploymentImage } from './railway-artifact.mjs';
-// Temporary maintenance serving uses the release's API image, never a separate service.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -59,7 +58,6 @@ export function enterGate(gate, { railway, persist, deployments }) {
   }
   if (gate.phase === 'deploying') throw new Error('Maintenance deployment outcome is unknown; reconcile its exact deployment ID before retrying.');
   update(gate, { source: { image: gate.image }, rootDirectory: '/', railwayConfigFile: null, buildCommand: null, startCommand: command, healthcheckPath: '/readyz', healthcheckTimeout: 60, preDeployCommand: [] }, railway);
-  // Persist uncertainty before the non-idempotent deployment mutation.
   gate = { ...gate, phase: 'deploying' };
   persist(gate);
   const result = data(railway, 'mutation MaintenanceGateDeploy($serviceId:String!,$environmentId:String!){serviceInstanceDeployV2(serviceId:$serviceId,environmentId:$environmentId)}', { serviceId: gate.serviceId, environmentId: gate.environmentId });
@@ -73,8 +71,6 @@ export function recloseGate(gate, options) {
   if (!gate.previous) throw new Error('Original maintenance snapshot is required for recovery.');
   const inventory = options.deployments(gate);
   if (gate.phase === 'deploying' && !gate.deploymentId) {
-    // Reconcile the persisted attempt before considering a replacement. An empty
-    // inventory is not evidence that an accepted deployment never happened.
     gate = enterGate(gate, { ...options, deployments: () => inventory });
   }
   const stopped = value => ['REMOVED', 'FAILED', 'CRASHED'].includes(value.status) || value.deploymentStopped === true;

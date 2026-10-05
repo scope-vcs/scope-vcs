@@ -1,7 +1,3 @@
-//! Request checks in a repository connected to GitHub: the tested commit is
-//! pushed to a branch GitHub runs workflows on, and GitHub's check runs for
-//! that commit decide the merge.
-
 use super::super::fake_github::{
     FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, INSTALLATION_ID, InstallationState,
     WEBHOOK_SECRET, check_run, github_repository, webhook,
@@ -21,7 +17,6 @@ mod public_repositories;
 
 const REQUIRED_CHECK: &str = "ci / test";
 
-/// Connects the repository to the fake GitHub with these required checks.
 pub(super) async fn connect_github(state: &mut AppState, required: &[&str]) -> Arc<FakeGitHub> {
     let fake = FakeGitHub::install(state).await;
     let repositories = state.metadata.repositories();
@@ -53,8 +48,6 @@ pub(super) async fn connect_github(state: &mut AppState, required: &[&str]) -> A
     fake
 }
 
-/// An open private request the owner pushed in a repository connected to
-/// GitHub. The server stays alive for the caller's later pushes.
 pub(super) struct OwnerRequest {
     pub(super) state: AppState,
     pub(super) fake: Arc<FakeGitHub>,
@@ -147,7 +140,6 @@ pub(super) async fn push_pass(state: &AppState, now_unix: u64) -> usize {
         .unwrap()
 }
 
-/// GitHub says a check run on the commit changed.
 async fn deliver_check_run(state: &AppState, repository_id: u64, commit_oid: &str) {
     let delivery = webhook(
         state,
@@ -197,7 +189,6 @@ async fn a_maintainers_push_reaches_github_and_github_results_decide_the_merge()
     assert_eq!(fake.branch_head(&request.branch()), Some(head.clone()));
     assert_eq!(request.checks().await["github_push"]["state"], "sent");
 
-    // A delivery only prompts a read; what GitHub's API lists is stored.
     fake.report_check_runs(&head, vec![check_run(1, REQUIRED_CHECK, &head, None)]);
     deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
     assert_eq!(fake.check_run_reads.load(Ordering::SeqCst), 1);
@@ -226,7 +217,6 @@ async fn a_maintainers_push_reaches_github_and_github_results_decide_the_merge()
         "a check did not succeed"
     );
 
-    // Re-running the check on GitHub adds a newer run, which decides.
     fake.report_check_runs(
         &head,
         vec![
@@ -238,7 +228,6 @@ async fn a_maintainers_push_reaches_github_and_github_results_decide_the_merge()
     assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
     expect_json(merge(state, &request.request_id).await, StatusCode::OK).await;
 
-    // Merging deletes the branch Scope pushed.
     assert_eq!(push_pass(state, unix_now()).await, 1);
     assert_eq!(fake.branch_head(&request.branch()), None);
 }
@@ -338,12 +327,10 @@ async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
     assert_eq!(approved["state"], "started");
     assert_eq!(approved["github_push"]["state"], "sending");
     assert_eq!(push_pass(&state, unix_now()).await, 1);
-    // A public contribution is sent as its check commit, which builds on the head.
     let tested = public::tested_commit(&state, &head).await;
     assert_ne!(tested, head);
     assert_eq!(fake.branch_head(&branch), Some(tested));
 
-    // Closing the request deletes its branch.
     expect_json(
         api_request(
             router(state.clone()),
@@ -377,9 +364,7 @@ async fn a_failed_push_retries_with_backoff_then_gives_up_with_its_last_error() 
             .starts_with("GitHub refused the push"),
         "{retrying}"
     );
-    // The next attempt waits out its delay: 30 seconds, then 2, 10 and 30 minutes.
     assert_eq!(push_pass(state, now + 29).await, 0);
-    // The first attempt ended a moment after `now` by the real clock.
     let mut at = now + 1;
     for delay in [30, 120, 600, 1800] {
         at += delay;
@@ -483,7 +468,6 @@ async fn the_reconciler_reads_results_a_delivery_never_announced() {
         1
     );
     assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
-    // Settled checks wait ten minutes for their next read, not two.
     assert_eq!(
         github_check_results::reconcile_github_checks_once(state, now + 120)
             .await
@@ -492,7 +476,6 @@ async fn the_reconciler_reads_results_a_delivery_never_announced() {
     );
     assert_eq!(fake.check_run_reads.load(Ordering::SeqCst), 1);
 
-    // A re-run failed and its delivery was lost; the slower read still sees it.
     fake.report_check_runs(
         &head,
         vec![
@@ -524,7 +507,6 @@ async fn a_merge_reads_stale_green_checks_again_and_refuses_when_github_cannot_a
     deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
     assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
 
-    // The stored green is old, and GitHub cannot be asked: the merge waits.
     state
         .metadata
         .requests()
@@ -539,7 +521,6 @@ async fn a_merge_reads_stale_green_checks_again_and_refuses_when_github_cannot_a
         "Scope could not confirm this request's checks with GitHub. Try again."
     );
 
-    // A re-run failed without a delivery; the merge reads it and refuses.
     fake.check_runs_unavailable.store(false, Ordering::SeqCst);
     fake.report_check_runs(
         &head,
@@ -611,7 +592,6 @@ async fn a_push_whose_claim_lapsed_neither_pushes_nor_records() {
         .await
         .unwrap()
         .remove(0);
-    // The first claim lapsed while its process stalled, and another took over.
     requests
         .claim_due_github_pushes("second_claim", now + 10, now + 100, 1)
         .await
@@ -691,7 +671,6 @@ async fn deliveries_about_unknown_repositories_or_commits_are_acknowledged() {
     assert_eq!(request.fake.check_run_reads.load(Ordering::SeqCst), 0);
 }
 
-/// Reconnects the repository to the fake GitHub repository.
 async fn reconnect(state: &AppState) {
     state
         .metadata
@@ -725,7 +704,6 @@ async fn a_push_gives_up_when_the_connection_changes_and_reconnecting_sends_it_a
         .await
         .unwrap()
         .remove(0);
-    // The maintainer disconnects while the push is on its way.
     state
         .metadata
         .repositories()
@@ -736,7 +714,6 @@ async fn a_push_gives_up_when_the_connection_changes_and_reconnecting_sends_it_a
     assert_eq!(fake.branch_head(&request.branch()), None);
     assert_eq!(request.checks().await["github_push"]["state"], "failed");
 
-    // Reconnecting sends the tested commit again.
     reconnect(state).await;
     assert_eq!(request.checks().await["github_push"]["state"], "sending");
     assert_eq!(push_pass(state, unix_now()).await, 1);
@@ -774,8 +751,6 @@ async fn a_merge_waits_for_a_read_still_asking_github() {
     deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
     assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
 
-    // A delivery started a newer read that has not answered yet; the green
-    // answer is seconds old but no longer settled.
     let commit = scope_postgres::db::GitHubCheckCommit {
         repo_id: TEST_REPO_ID.to_string(),
         github_repository_id: GITHUB_REPOSITORY_ID,
@@ -808,7 +783,6 @@ async fn a_merge_waits_for_a_read_still_asking_github() {
 async fn a_commit_is_read_every_two_minutes_while_any_request_testing_it_is_pending() {
     let request = owner_request("github-checks-shared-commit", &[REQUIRED_CHECK]).await;
     let (state, fake, head) = (&request.state, &request.fake, request.head());
-    // A second open request tests the same commit and also requires lint.
     let requests = state.metadata.requests();
     let mut other = requests
         .request_for_tests(&request.request_id)
@@ -856,7 +830,6 @@ async fn a_commit_is_read_every_two_minutes_while_any_request_testing_it_is_pend
         1
     );
     assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
-    // The first request settled, but the second still waits on lint.
     assert_eq!(
         github_check_results::reconcile_github_checks_once(state, now + 120)
             .await
@@ -906,8 +879,6 @@ async fn an_approval_of_a_head_the_maintainer_did_not_review_is_refused() {
 async fn a_pushed_head_without_any_run_says_no_workflow_started_after_ten_minutes() {
     let request = owner_request("github-checks-no-runs", &[REQUIRED_CHECK]).await;
     let (state, fake, head) = (&request.state, &request.fake, request.head());
-    // The pass that sends the head began before it; waiting for workflows
-    // counts from when GitHub got the branch, not from then.
     let now = unix_now();
     let requests = state.metadata.requests();
     let push = requests
@@ -965,7 +936,6 @@ async fn a_pushed_head_without_any_run_says_no_workflow_started_after_ten_minute
         Some(scope_domain::requests::NO_GITHUB_WORKFLOWS_STARTED)
     );
 
-    // Any run on the head, even one nobody requires, shows workflows start.
     fake.report_check_runs(&head, vec![check_run(1, "lint", &head, None)]);
     deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
     assert_eq!(message_at(later).await, None);

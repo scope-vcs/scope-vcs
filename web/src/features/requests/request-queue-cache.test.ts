@@ -60,7 +60,6 @@ test('a late page cannot replace a newer search or a cleared viewer scope', asyn
   requestQueueResource.clear()
   for (const complete of completions) complete(page(['obsolete']))
   await late
-  // Clearing detaches all outstanding attempts; no late result can recreate rows.
   assert.equal(requestQueueResource.peek('race'), null)
 })
 

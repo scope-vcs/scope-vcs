@@ -12,7 +12,6 @@ import { RepoGitHubSetupCheck } from './repo-github-setup-check'
 import { RepoRequiredChecks } from './repo-required-checks'
 import { CiSection } from './repo-settings-sections'
 
-/** `github` is `null` until it loads. */
 export function RepoCiSection({
   confirmPublic,
   disconnect,
@@ -39,7 +38,6 @@ export function RepoCiSection({
     setError(null)
     setPending('connect')
     try {
-      // Pending lasts until GitHub's authorization screen replaces this page.
       await openGitHubAuthorization(startAuthorization)
     } catch (cause) {
       setPending(null)
@@ -183,7 +181,6 @@ export function RepoCiSection({
             connected={view.kind === 'connected'}
             github={github}
             importNow={startRunImport}
-            // A saved count starts a fresh draft.
             key={github.run_import_count}
             saveCount={setRunImportCount}
           />

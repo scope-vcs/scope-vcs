@@ -60,8 +60,6 @@ export function buildRunJobGraph(
   }
 
   for (const job of jobs) layerFor(job.job.key)
-  // layerFor has now visited every job and every `needs` key and thrown for any
-  // absent from byKey, so lookups below cannot miss and layers are all cached.
   const needsOf = (key: string) => byKey.get(key)!.job.needs
   const layerCount = Math.max(0, ...layers.values()) + 1
   const keysByLayer = Array.from({ length: layerCount }, () => [] as string[])
@@ -190,11 +188,6 @@ function stableLane(key: string) {
   return hash % MAX_LONG_EDGE_LANES
 }
 
-/**
- * Jobs in dependency order, so the flat job strip reads the way the work
- * actually runs instead of alphabetically. Falls back to the given order when
- * the graph cannot be laid out, because a broken graph must not blank the page.
- */
 export function orderJobsByDependency<Job extends JobGraphInput>(
   jobs: readonly Job[],
 ): readonly Job[] {

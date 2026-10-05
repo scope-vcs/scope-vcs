@@ -95,8 +95,6 @@ export async function resolveGroup({ allFiles, configPath, internalPackageNames,
         }
         continue;
       }
-      // Resolver preserves bundler resource queries in its result. The edge
-      // still points at the source file that the query transforms.
       const resolvedFile = target.split("?")[0];
       if (isOutside(root, resolvedFile)) {
         if (unclaimedBare) continue;

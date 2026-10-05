@@ -14,8 +14,6 @@ export function preparedRelease({ components = backendComponents, services = {},
   };
 }
 
-// A successful preparation from a failed release is sufficient for recovery.
-// Replay tests add the separate validation and staging evidence they require.
 export function releaseFixture({ mainSha = 'd'.repeat(40), ...options } = {}) {
   const prepared = preparedRelease(options);
   const runId = prepared.preparationRunId;

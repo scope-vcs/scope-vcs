@@ -72,7 +72,6 @@ where
     Ok(())
 }
 
-/// Writes the rows that differ between two states of one repository.
 pub(super) async fn save_repository_rows<C>(
     conn: &C,
     before: &Repository,
@@ -154,7 +153,6 @@ where
     .await
 }
 
-/// Queues the rebuilds that follow a change to a repository's content.
 pub(super) async fn queue_content_rebuilds<C>(
     conn: &C,
     repo: &Repository,
@@ -320,8 +318,6 @@ where
     if repo_ids.is_empty() {
         return Ok(facts);
     }
-    // Every query below filters on `repo_ids`, so each returned row keys an
-    // entry seeded above.
 
     let first_push_tokens = entities::repository_first_push_token::Entity::find()
         .filter(entities::repository_first_push_token::Column::RepoId.is_in(repo_ids.to_vec()))

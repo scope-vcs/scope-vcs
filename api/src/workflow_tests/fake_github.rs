@@ -1,6 +1,3 @@
-//! A GitHub that answers the REST calls the Scope GitHub App makes, and a
-//! local bare repository per GitHub repository to receive its pushes.
-
 use super::*;
 use crate::github::{GitHubApp, config::GitHubAppConfig};
 use axum::{
@@ -56,39 +53,21 @@ devYjVgcWWz1N5F0wHsGA68ppkppNUQeDKoG05CHMCChPdD8onOqyFdw/mPPgXGi
 fAFIvg2Ihs8lJFryn8Z/kFk=
 -----END PRIVATE KEY-----"#;
 
-/// What the fake GitHub reports. Every list but a repository's whole run list
-/// is one page, and every repository is listed with the installation that
-/// reaches it.
 pub(super) struct FakeGitHub {
-    /// Installations the GitHub user's token can see.
     pub(super) user_installations: Mutex<Vec<u64>>,
-    /// Repositories the user can see through each installation, with the
-    /// user's permissions on them.
     pub(super) user_repositories: Mutex<Vec<(u64, serde_json::Value)>>,
-    /// Repositories each installation itself can reach.
     pub(super) installation_repositories: Mutex<Vec<(u64, serde_json::Value)>>,
-    /// Installations GitHub now reports as suspended or gone; others are active.
     pub(super) installation_states: Mutex<BTreeMap<u64, InstallationState>>,
     pub(super) token_mints: AtomicUsize,
     installation_listings: AtomicUsize,
-    /// The installation stops reaching every repository from this listing on.
     pub(super) revoke_at_listing: Mutex<Option<usize>>,
-    /// Check runs reported for each commit, as GitHub's API lists them.
     pub(super) check_runs: Mutex<HashMap<String, Vec<serde_json::Value>>>,
     pub(super) check_run_reads: AtomicUsize,
-    /// GitHub answers check-run reads with an error while this is set.
     pub(super) check_runs_unavailable: AtomicBool,
-    /// Workflow runs GitHub Actions reports for each repository, by full
-    /// name, as its API lists them.
     workflow_runs: Mutex<HashMap<String, Vec<serde_json::Value>>>,
-    /// GitHub answers reads of one workflow run with an error while this is set.
     pub(super) workflow_run_unavailable: AtomicBool,
-    /// Pages of a repository's whole run list read so far.
     pub(super) run_list_reads: AtomicUsize,
-    /// GitHub answers reads of a repository's whole run list with an error
-    /// while this is set.
     pub(super) run_list_unavailable: AtomicBool,
-    /// Holds `<owner>/<name>.git` for every repository pushes reach.
     git_root: tempfile::TempDir,
 }
 
@@ -102,7 +81,6 @@ pub(super) fn github_repository(id: u64, full_name: &str) -> serde_json::Value {
     serde_json::json!({ "id": id, "full_name": full_name, "private": true, "owner": {} })
 }
 
-/// A check run as GitHub's API lists it for a commit.
 pub(super) fn check_run(
     id: u64,
     name: &str,
@@ -120,7 +98,6 @@ pub(super) fn check_run(
     })
 }
 
-/// A check run a workflow run's job reported, filed under that run's suite.
 pub(super) fn suite_check_run(
     id: u64,
     name: &str,
@@ -133,8 +110,6 @@ pub(super) fn suite_check_run(
     run
 }
 
-/// A workflow run GitHub started just now, as its API reports it. Its check
-/// suite id is its own id.
 pub(super) fn workflow_run(
     id: u64,
     branch: &str,
@@ -144,7 +119,6 @@ pub(super) fn workflow_run(
     workflow_run_started_at(id, branch, commit_oid, conclusion, unix_now())
 }
 
-/// A workflow run GitHub started at `started_at_unix`.
 pub(super) fn workflow_run_started_at(
     id: u64,
     branch: &str,
@@ -170,12 +144,10 @@ pub(super) fn workflow_run_started_at(
         "check_suite_id": id,
         "run_started_at": time(started_at_unix),
         "run_attempt": 1,
-        // A finished run was updated after it started.
         "updated_at": time(started_at_unix + if conclusion.is_some() { 30 } else { 0 }),
     })
 }
 
-/// The repository as a user token lists it, with that user's permissions.
 pub(super) fn user_repository(id: u64, full_name: &str, push: bool) -> serde_json::Value {
     let mut repository = github_repository(id, full_name);
     repository["permissions"] =
@@ -198,7 +170,6 @@ pub(super) fn listed(
 }
 
 impl FakeGitHub {
-    /// Serves a fake GitHub and points the state's GitHub App at it.
     pub(super) async fn install(state: &mut AppState) -> Arc<Self> {
         let fake = Arc::new(Self {
             user_installations: Mutex::new(vec![INSTALLATION_ID]),
@@ -247,12 +218,10 @@ impl FakeGitHub {
         fake
     }
 
-    /// The bare repository pushes to the connected GitHub repository reach.
     pub(super) fn repository_path(&self) -> PathBuf {
         self.git_root.path().join(format!("{GITHUB_FULL_NAME}.git"))
     }
 
-    /// Where the branch points on GitHub, if it exists.
     pub(super) fn branch_head(&self, branch: &str) -> Option<String> {
         let output = run_git_output(
             Some(&self.repository_path()),
@@ -271,12 +240,10 @@ impl FakeGitHub {
             .then(|| String::from_utf8(output.stdout).unwrap().trim().to_string())
     }
 
-    /// Replaces the workflow runs GitHub reports for the connected repository.
     pub(super) fn report_workflow_runs(&self, runs: Vec<serde_json::Value>) {
         self.report_repository_workflow_runs(GITHUB_FULL_NAME, runs);
     }
 
-    /// Replaces the workflow runs GitHub reports for a repository.
     pub(super) fn report_repository_workflow_runs(
         &self,
         full_name: &str,
@@ -297,7 +264,6 @@ impl FakeGitHub {
             .unwrap_or_default()
     }
 
-    /// Makes GitHub refuse every push with `message`, the way a branch ruleset does.
     pub(super) fn refuse_pushes(&self, message: &str) {
         let hook = self.repository_path().join("hooks/pre-receive");
         fs::write(&hook, format!("#!/bin/sh\necho '{message}' >&2\nexit 1\n")).unwrap();
@@ -308,7 +274,6 @@ impl FakeGitHub {
         }
     }
 
-    /// Lets GitHub accept pushes again.
     pub(super) fn accept_pushes(&self) {
         fs::remove_file(self.repository_path().join("hooks/pre-receive")).unwrap();
     }
@@ -394,7 +359,6 @@ impl FakeGitHub {
                     |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                      AxumPath(id): AxumPath<u64>,
                      headers: AxumHeaderMap| async move {
-                        // An app JWT: three dot-separated parts.
                         assert_eq!(bearer(&headers).split('.').count(), 3);
                         fake.token_mints.fetch_add(1, Ordering::SeqCst);
                         Json(serde_json::json!({
@@ -462,7 +426,6 @@ impl FakeGitHub {
                         let page = query["page"].parse::<usize>().unwrap();
                         let per_page = query["per_page"].parse::<usize>().unwrap();
                         let runs = if query.contains_key("branch") {
-                            // One branch's runs for a commit fit on one page.
                             runs.into_iter()
                                 .filter(|run| {
                                     page == 1
@@ -479,7 +442,6 @@ impl FakeGitHub {
                                 )
                                     .into_response();
                             }
-                            // The whole list is newest first, which here is the highest id.
                             let mut runs = runs;
                             runs.sort_by_key(|run| std::cmp::Reverse(run["id"].as_u64()));
                             runs.into_iter()

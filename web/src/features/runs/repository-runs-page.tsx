@@ -32,7 +32,6 @@ type RunPageResources = {
 }
 
 type RepositoryRunsPageProps = {
-  /** How an empty page offers to connect GitHub. */
   github: RunsGitHubActions | null
   initialResources: RunPageResources | null
   loadPage: RunPageLoader
@@ -174,7 +173,6 @@ function RepositoryRunsPageContent({
               empty={github && !workflow ? (
                 <RunsCiEmptyState
                   github={github}
-                  // Native workflows count only where Scope may run them.
                   hasWorkflows={nativeRunsAvailable && workflows.workflows.length > 0}
                   params={params}
                 />

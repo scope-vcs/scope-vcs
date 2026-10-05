@@ -8,7 +8,6 @@ use axum::{
 };
 use scope_api_contract::{ErrorCode, ErrorResponse};
 
-/// Public text for failures whose cause belongs in the operator log only.
 pub const INTERNAL_MESSAGE: &str = "Scope hit an internal error.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,7 +58,6 @@ impl ErrorKind {
         }
     }
 
-    /// Clients may repeat the request once the service recovers.
     const fn retryable(self) -> bool {
         matches!(
             self,
@@ -68,17 +66,11 @@ impl ErrorKind {
     }
 }
 
-/// A failed service request rendered as the API's `ErrorResponse` contract.
-///
-/// The kind owns the status; the contract owns the body. Services translate
-/// their own domain failures into a kind and never pick a status themselves.
 #[derive(Clone, Debug)]
 pub struct ServiceError {
     kind: ErrorKind,
     code: ErrorCode,
     message: String,
-    /// Protocol headers a status cannot carry on its own, such as the object
-    /// size that makes an unsatisfiable range answerable.
     headers: Vec<(HeaderName, HeaderValue)>,
 }
 
@@ -92,14 +84,12 @@ impl ServiceError {
         }
     }
 
-    /// Internal failures keep their diagnostic in the log and return opaque text.
     pub fn internal(diagnostic: impl Into<String>) -> Self {
         let diagnostic = diagnostic.into();
         tracing::error!(%diagnostic, "service request failed");
         Self::new(ErrorKind::Internal, INTERNAL_MESSAGE)
     }
 
-    /// RFC 9110 requires the representation size so the client can re-ask.
     pub fn range_not_satisfiable(size_bytes: u64) -> Self {
         let mut error = Self::new(
             ErrorKind::RangeNotSatisfiable,
@@ -124,7 +114,6 @@ impl ServiceError {
         self.kind.status()
     }
 
-    /// Replaces the kind's default code when a failure has a code of its own.
     pub fn with_code(mut self, code: ErrorCode) -> Self {
         self.code = code;
         self
@@ -212,7 +201,6 @@ mod tests {
         (status, serde_json::from_slice(&bytes).unwrap())
     }
 
-    /// Pins the bytes on the wire: optional contract fields stay absent.
     #[tokio::test]
     async fn renders_the_contract_body_for_a_caller_visible_failure() {
         let response = ServiceError::conflict("cache upload lease is stale").into_response();

@@ -84,7 +84,6 @@ test('seeded native run navigation makes one read per resource on cold load and 
   assert.deepEqual(await page.evaluate(() => ({ history: window.loads.history, detail: window.loads.detail })), { history: 1, detail: 1 })
   await page.evaluate(() => window.emitChange('Lagged'))
   await page.waitForFunction(() => window.loads.detail === 2)
-  // The live event owner refreshes native metadata while retaining the view.
   await page.evaluate(() => { window.holdLoads(); window.completeRun(); window.emitChange({ RunChanged: { run_id: 'run-1', change: 'StatusChanged' } }) })
   await page.waitForFunction(() => window.loads.detail === 3)
   assert.equal(await page.getByRole('heading', { name: /Runs.*tests/ }).count(), 1)
@@ -121,21 +120,18 @@ test('seeded native run navigation makes one read per resource on cold load and 
   await page.getByRole('link', { name: 'Detail', exact: true }).click()
   await page.getByText('retained build output', { exact: false }).waitFor()
   assert.equal(await page.evaluate(() => window.loads.detail), completedReads)
-  // A different access identity gets no old SSR handoff or retained detail/logs.
   await page.evaluate(() => { window.holdLoads(); window.setPermitted(false); window.setActor('Public') })
   await page.getByText('Loading run details', { exact: true }).waitFor()
   assert.equal(await page.getByText('retained build output', { exact: false }).count(), 0)
   assert.equal(await page.getByRole('heading', { name: /Runs.*tests/ }).count(), 0)
   await page.evaluate(() => window.releaseLoads())
   await page.getByText('Run denied', { exact: true }).waitFor()
-  // A new viewer also cannot reuse the old scope's metadata or log handoff.
   await page.evaluate(() => { window.holdLoads(); window.setViewer('other') })
   await page.getByText('Loading run details', { exact: true }).waitFor()
   assert.equal(await page.getByText('retained build output', { exact: false }).count(), 0)
   await page.evaluate(() => window.releaseLoads())
   await page.getByText('Run denied', { exact: true }).waitFor()
 
-  // Unseeded client navigation reads each resource once; cancellation refreshes detail.
   const cold = await browser.newPage()
   cold.on('pageerror', (error) => errors.push(error.message))
   await cold.goto(new URL('/owner/repo/runs?client=true', server.resolvedUrls.local[0]).href)

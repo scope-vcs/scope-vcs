@@ -68,7 +68,6 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Install reviewed Git for staging smoke
-        # The same installer took 47s in release 36013327331; allow download/compile headroom.
         timeout-minutes: 5
         run: |
           version="$(jq -er '.git.version' dev/tool-versions.json)"
@@ -158,7 +157,6 @@ jobs:
           unset RAILWAY_TOKEN
           bash .github/scripts/stop-staging-writers.sh
 
-      # Candidate code is introduced only after privileged account-token work is complete.
       - name: Checkout exact candidate revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -298,8 +296,6 @@ jobs:
           SCOPE_STAGING_EVIDENCE_PATH: ${{ github.workspace }}/staging-deployments.json
         run: node .github/scripts/rehearse-release.mjs
 
-      # These read existing fixtures after migration/restore. No candidate catalog reset
-      # is allowed to replace the data whose survival this release must demonstrate.
       - name: Read exact staging web server manifest
         env:
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
@@ -416,8 +412,6 @@ jobs:
           railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
           npm install -g "@railway/cli@$railway_cli_version"
 
-      # A failed migration or partial rollout may be incompatible with the old writers.
-      # Keep staging fail-closed for diagnosis instead of automatically reviving them.
       - name: Keep staging writers fenced after unsuccessful deployment
         if: needs.prove.outputs.writers_fenced == 'true' && needs.prove.result != 'success' && needs.prove.result != 'skipped' && steps.target.outcome == 'success'
         shell: bash

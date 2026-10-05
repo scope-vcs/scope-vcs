@@ -84,7 +84,6 @@ pub fn run(name: Option<String>) -> anyhow::Result<()> {
     };
 
     let config_path = repo_config_path(&git_repo.root)?;
-    // Scope rejects a main push without file changes, so an empty HEAD tree cannot publish yet.
     let head_has_files = has_head
         && !git_text_in_repo(&git_repo.root, &["ls-tree", "--name-only", "HEAD"])?.is_empty();
     let next_step = if head_has_files {

@@ -1,6 +1,3 @@
-//! GitHub checks for public contributions test the contribution merged onto
-//! private main, which holds files the public view lacks.
-
 use super::{public_repositories::make_github_repository_public, *};
 use crate::use_cases::public_check_commits::public_tested_commit;
 use scope_domain::{
@@ -11,8 +8,6 @@ use scope_domain::{
 const PRIVATE_FILE: &str = "secret.txt";
 const PRIVATE_CONTENT: &str = "private code\n";
 
-/// A repository whose `secret.txt` is private, connected to GitHub, with the
-/// public user's request started on public main.
 async fn private_file_repository(label: &str) -> (AppState, Arc<FakeGitHub>, TempGitRepo) {
     let mut state = test_state_with_repo();
     cache_test_jwks(&state);
@@ -63,7 +58,6 @@ async fn approve(state: &AppState, head: &str) -> Response {
     .await
 }
 
-/// The owner pushes a change to private main from the original checkout.
 async fn push_main_change(
     state: &AppState,
     owner_source: &FsPath,
@@ -85,7 +79,6 @@ async fn push_main_change(
     drain_outbox(state, "github-public-main-change").await;
 }
 
-/// The public user's request with `path` changed, submitted and approved.
 async fn approved_contribution(
     state: &AppState,
     label: &str,
@@ -145,7 +138,6 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
     submit_public_request(&state).await;
     let branch = format!("scope/requests/{REQUEST_ID}");
 
-    // Nothing leaves Scope before a maintainer approves.
     assert_eq!(push_pass(&state, unix_now()).await, 0);
     let evaluation = state
         .metadata
@@ -162,8 +154,6 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
     assert_eq!(push_pass(&state, unix_now()).await, 1);
     assert_eq!(fake.branch_head(&branch), Some(tested.clone()));
 
-    // The pushed commit holds the private file and the contribution, merged
-    // onto private main with the head as its second parent.
     let github = fake.repository_path();
     assert_eq!(file_at(&github, &tested, PRIVATE_FILE), PRIVATE_CONTENT);
     assert_eq!(file_at(&github, &tested, "request.txt"), "contribution\n");
@@ -178,7 +168,6 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
         [base.private_main_oid.as_str(), head.as_str()]
     );
 
-    // Building it again from the same head and private main gives the same commit.
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
@@ -200,7 +189,6 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
         }
     );
 
-    // GitHub's results for the check commit decide the merge.
     fake.report_check_runs(
         &tested,
         vec![check_run(1, REQUIRED_CHECK, &tested, Some("success"))],
@@ -211,7 +199,6 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
     assert_eq!(maintainer_view["mergeability"]["status"], "Ready");
     assert_eq!(maintainer_view["checks"][0]["conclusion"], "success");
 
-    // Only the head is named to the contributor; the private commit is not.
     let public = bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL);
     let contributor_view = checks(&state, REQUEST_ID, &public).await;
     assert_eq!(contributor_view["head_oid"], head);
@@ -246,8 +233,6 @@ async fn a_contribution_that_conflicts_with_private_code_reports_it_and_pushes_n
     )
     .await;
 
-    // Main changes the line the contribution changes after the contributor
-    // cloned it.
     push_main_change(
         &state,
         &owner_source,
@@ -311,8 +296,6 @@ async fn a_check_commit_is_private_code_and_waits_for_a_public_repository_to_be_
     make_github_repository_public(&fake);
     let branch = format!("scope/requests/{REQUEST_ID}");
 
-    // The push asks GitHub first and holds the check commit, as it would a
-    // private request's head.
     assert_eq!(push_pass(&state, unix_now()).await, 1);
     assert_eq!(fake.branch_head(&branch), None);
     let held = checks(
@@ -328,7 +311,6 @@ async fn a_check_commit_is_private_code_and_waits_for_a_public_repository_to_be_
         scope_domain::github_connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE
     );
 
-    // Once a maintainer confirms the repository may be public, it goes.
     let confirmed = api_request(
         router(state.clone()),
         "POST",
@@ -374,7 +356,6 @@ async fn green_checks_on_an_older_private_main_do_not_clear_the_merge() {
         "Ready"
     );
 
-    // Private main moves on without touching anything the contribution changed.
     push_main_change(
         &state,
         &owner_source,
@@ -384,8 +365,6 @@ async fn green_checks_on_an_older_private_main_do_not_clear_the_merge() {
     )
     .await;
 
-    // The merge refuses the green run on the old check commit and a check
-    // commit on the new private main goes to GitHub instead.
     let refused = merge(&state, REQUEST_ID).await;
     assert_eq!(refused.status(), StatusCode::CONFLICT);
     let renewed = tested_oid(&state, &head).await;
@@ -403,7 +382,6 @@ async fn green_checks_on_an_older_private_main_do_not_clear_the_merge() {
     );
     assert_eq!(file_at(&github, &renewed, "request.txt"), "contribution\n");
 
-    // Results on the new check commit decide.
     fake.report_check_runs(
         &renewed,
         vec![check_run(2, REQUIRED_CHECK, &renewed, Some("failure"))],
@@ -476,7 +454,6 @@ async fn a_contribution_that_new_private_main_conflicts_with_reports_it() {
     );
 }
 
-/// The commit the request's evaluation for `head` tests.
 pub(super) async fn tested_commit(state: &AppState, head: &str) -> String {
     state
         .metadata

@@ -595,7 +595,6 @@ fn cached_projection_prefix(
 ) -> Result<Option<ProjectionPrefix>, ApiError> {
     let keys = projection_cache_keys(Some(incarnation), projection);
     for count in (1..projection.commits.len()).rev() {
-        // A preserved native range must be revalidated as a whole.
         if matches!(
             projection.commits[count - 1].materialization,
             ProjectionMaterialization::PreserveGitCommit { .. }

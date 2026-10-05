@@ -20,7 +20,6 @@ pub(super) fn run_response(run: &Run, logs_truncated: bool) -> RunResponse {
     }
 }
 
-/// A retry queues the run again, so it is offered only while native runs are available.
 pub(super) fn repository_run_summary(
     run: &Run,
     jobs: &[RunJob],

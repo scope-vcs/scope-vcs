@@ -78,8 +78,6 @@ if (!serviceId || third || !projectId || !environmentId || !component || !source
   throw new Error("Digest-pinned Railway image deployment requires service, project, environment, component, source SHA, evidence path, API token, and reviewed GHCR digest");
 }
 
-// Railway keeps these settings on the service instance, so the image alone
-// would activate against whatever an earlier release left behind.
 const settings = runtimeDeploySettings(component, loadComponentConfig(component));
 if (process.env.SCOPE_PREDECESSOR_TEARDOWN_DIR) {
   const status = readRailway([
@@ -141,7 +139,6 @@ appendFileSync(evidencePath, `${JSON.stringify({
 
 if (process.env.SCOPE_RELEASE_DEPLOYMENTS_FILE) {
   const deploymentsPath = process.env.SCOPE_RELEASE_DEPLOYMENTS_FILE;
-  // Concurrent activations share this file; serialize the read-modify-write.
   execFileSync("flock", ["-x", `${deploymentsPath}.lock`, process.execPath, "-e", `
     const { readFileSync, renameSync, writeFileSync } = require("node:fs");
     const [path, component, id] = process.argv.slice(1);

@@ -18,7 +18,6 @@ import type {
 const ENVIRONMENT_ROW_CLASS =
   'grid grid-cols-[7rem_6rem_minmax(0,1fr)] items-baseline gap-3 py-1.5 sm:grid-cols-[9rem_7rem_6rem_minmax(0,1fr)]'
 
-/** The collapsed Environment control. A dot flags a cold or unreported cache. */
 export function RunEnvironmentToggle({
   caches,
   expanded,
@@ -50,8 +49,6 @@ export function RunEnvironmentToggle({
   )
 }
 
-/** Caches and image for one attempt: what each cache restored, its size and
- * how long it took. */
 export function RunEnvironmentPanel({
   caches,
   cacheSetup,

@@ -8,7 +8,6 @@ import type {
 } from './types'
 import { parseRepoParams } from './repo-params'
 
-/** The most recent runs a repository can import from GitHub. */
 export const GITHUB_RUN_IMPORT_MAX_COUNT = 1000
 
 const SETUP_INCOMPLETE = 'GitHub did not send everything needed to finish connecting. Start again from repository settings.'
@@ -37,7 +36,6 @@ export function parseConnectRepoGitHubInput(input: unknown): ConnectRepoGitHubIn
     ...params,
     grant: requiredText(data.grant, SETUP_INCOMPLETE),
     github_repository_id: positiveId(data.github_repository_id, 'Choose a GitHub repository.'),
-    // Only an explicit yes confirms that a public repository makes pushes public.
     acknowledge_public: data.acknowledge_public === true,
     run_import_count: runImportCount(data.run_import_count),
   }
@@ -58,7 +56,6 @@ export function parseRepoGitHubWorkflowRunsInput(input: unknown): RepoGitHubWork
   }
 }
 
-/** Whether `value` is a count of recent runs a repository can import. */
 export function isRunImportCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value)
     && value >= 0 && value <= GITHUB_RUN_IMPORT_MAX_COUNT
