@@ -2,7 +2,10 @@ use super::ecs::{EcsClient, RejectionReason, StartError, StopOutcome};
 use super::provisioning::Provisioning;
 use crate::settings::{BATCH_SIZE, CloudExecutionSettings};
 use anyhow::Context as _;
-use scope_domain::runs::{exit_code::SetupFailure, step::AttemptConclusion};
+use scope_domain::runs::{
+    exit_code::SetupFailure,
+    step::{AttemptConclusion, normalize_setup_failure_message},
+};
 use scope_postgres::db::MetadataStore;
 use scope_product_analytics::ProductAnalytics;
 use sha2::{Digest as _, Sha256};
@@ -127,10 +130,9 @@ impl CloudExecutionCoordinator {
             }
             Err(StartError::Rejected { reason, error }) => {
                 let now_unix = crate::unix_now()?.max(now_unix);
-                let message = format!("provider rejected dispatch: {error}")
-                    .chars()
-                    .take(2048)
-                    .collect::<String>();
+                let message = normalize_setup_failure_message(&format!(
+                    "provider rejected dispatch: {error}"
+                ));
                 // Only the broker's confirmed capacity rejection can request another attempt.
                 // Quota and permanent failures require an operator/configuration change.
                 let mutation = match reason {

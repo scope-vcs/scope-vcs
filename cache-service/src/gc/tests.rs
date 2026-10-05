@@ -19,6 +19,7 @@ struct Fixture {
     requests: Arc<AtomicUsize>,
     peak: Arc<AtomicUsize>,
     fail: Arc<AtomicBool>,
+    hang: Arc<AtomicBool>,
     server: tokio::task::JoinHandle<()>,
 }
 
@@ -28,20 +29,26 @@ impl Fixture {
         let active = Arc::new(AtomicUsize::new(0));
         let peak = Arc::new(AtomicUsize::new(0));
         let fail = Arc::new(AtomicBool::new(false));
+        let hang = Arc::new(AtomicBool::new(false));
         let app = axum::Router::new().fallback(axum::routing::delete({
             let requests = requests.clone();
             let peak = peak.clone();
             let fail = fail.clone();
+            let hang = hang.clone();
             move || {
                 let requests = requests.clone();
                 let active = active.clone();
                 let peak = peak.clone();
                 let fail = fail.clone();
+                let hang = hang.clone();
                 async move {
+                    requests.fetch_add(1, Ordering::SeqCst);
+                    if hang.load(Ordering::SeqCst) {
+                        std::future::pending::<()>().await;
+                    }
                     let current = active.fetch_add(1, Ordering::SeqCst) + 1;
                     peak.fetch_max(current, Ordering::SeqCst);
                     tokio::time::sleep(Duration::from_millis(5)).await;
-                    requests.fetch_add(1, Ordering::SeqCst);
                     active.fetch_sub(1, Ordering::SeqCst);
                     // A non-retryable failure, so each reconcile sends exactly one request per
                     // object and the counts below measure only the claim-expiry retry.
@@ -100,6 +107,7 @@ impl Fixture {
             requests,
             peak,
             fail,
+            hang,
             server,
         }
     }
@@ -242,4 +250,32 @@ async fn object_deletions_drain_batches_without_shortening_reference_grace() {
             .len(),
         1
     );
+}
+
+#[tokio::test]
+async fn hung_upload_delete_is_bounded_and_retried_after_claim_expiry() {
+    let fixture = Fixture::new().await;
+    fixture.upload(1, fixture.now - 3600, false).await;
+    fixture.hang.store(true, Ordering::SeqCst);
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        reconcile_at(&fixture.state, fixture.now),
+    )
+    .await
+    .expect("hung upload cleanup must release its transaction within the timeout")
+    .unwrap();
+    assert_eq!(fixture.requests.load(Ordering::SeqCst), 1);
+    fixture.hang.store(false, Ordering::SeqCst);
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        reconcile_at(&fixture.state, fixture.now + RETRY_SECONDS),
+    )
+    .await
+    .expect("the next pass must reclaim the row lock and retry")
+    .unwrap();
+    assert_eq!(fixture.requests.load(Ordering::SeqCst), 2);
+    reconcile_at(&fixture.state, fixture.now + RETRY_SECONDS * 2)
+        .await
+        .unwrap();
+    assert_eq!(fixture.requests.load(Ordering::SeqCst), 2);
 }

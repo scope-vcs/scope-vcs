@@ -1,5 +1,8 @@
 mod attention;
 mod discussion_commands;
+pub(crate) mod terminal_effects;
+
+use terminal_effects::{assert_terminal_effects, seed_terminal_effects};
 
 use super::super::MetadataStore;
 use super::super::{
@@ -662,6 +665,7 @@ async fn close_open_request_persists_exact_closer() {
     request.submitted_at_unix = Some(3);
     request.updated_at_unix = 3;
     save_request_row(store.db.as_ref(), &request).await.unwrap();
+    seed_terminal_effects(&store).await;
 
     let mutation = store
         .requests()
@@ -687,6 +691,7 @@ async fn close_open_request_persists_exact_closer() {
     assert_eq!(stored.state(), RequestState::Closed);
     assert_eq!(stored.closed_at_unix, Some(4));
     assert_eq!(stored.closed_by_user_id.as_deref(), Some("user_public"));
+    assert_terminal_effects(&store, "event_closed").await;
 }
 
 pub(crate) fn postgres_store() -> MetadataStore {
@@ -712,12 +717,19 @@ fn catalog_with_repo() -> crate::db::CatalogFixture {
         email: "public@example.com".to_string(),
         email_verified: true,
     };
+    let guest = UserAccount {
+        id: "user_guest".to_string(),
+        handle: "guest".to_string(),
+        email: "guest@example.com".to_string(),
+        email_verified: true,
+    };
     let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_test").unwrap();
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
 
     let mut catalog = crate::db::CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner);
     catalog.users.insert(public_user.id.clone(), public_user);
+    catalog.users.insert(guest.id.clone(), guest);
     catalog.repositories.insert(repo.record.id.clone(), repo);
     catalog
 }

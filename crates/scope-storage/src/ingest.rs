@@ -4,7 +4,6 @@ use super::{
     random_hex_id, segment_object_key, sync_directory,
 };
 use crate::envelope::{EnvelopeScope, EnvelopeWriter};
-use crate::lifecycle::REMOTE_CLEANUP_TIMEOUT;
 use bytes::Bytes;
 use scope_domain::repository::git::GitSegmentRef;
 use scope_git_process::ProcessCancellation;
@@ -193,13 +192,13 @@ impl GitSegmentStore {
         let remote = remote.unwrap_or_else(|error| Err(GitStorageError::Task(error.to_string())));
 
         if let Some(error) = input_error {
-            cleanup_ingest(&self.backend, &object_key, local.ok()).await;
+            cleanup_ingest(self, &object_key, local.ok()).await;
             return Err(error);
         }
         let local = match local {
             Ok(outcome) => outcome,
             Err(error) => {
-                cleanup_ingest(&self.backend, &object_key, None).await;
+                cleanup_ingest(self, &object_key, None).await;
                 // A destination can observe only channel closure after its peer fails.
                 // Report the peer's cause instead of that secondary symptom.
                 return Err(match remote {
@@ -213,7 +212,7 @@ impl GitSegmentStore {
         let remote = match remote {
             Ok(outcome) => outcome,
             Err(error) => {
-                cleanup_ingest(&self.backend, &object_key, Some(local)).await;
+                cleanup_ingest(self, &object_key, Some(local)).await;
                 return Err(error);
             }
         };
@@ -620,19 +619,13 @@ impl PackUpload {
     }
 }
 
-async fn cleanup_ingest(
-    backend: &Arc<dyn ObjectBackend>,
-    object_key: &str,
-    local: Option<LocalOutcome>,
-) {
+async fn cleanup_ingest(store: &GitSegmentStore, object_key: &str, local: Option<LocalOutcome>) {
     if let Some(local) = local {
         let _ = fs::remove_file(local.path).await;
     }
-    let cleanup = async {
-        backend.abort_incomplete(object_key).await?;
-        backend.delete(object_key).await
-    };
-    let _ = tokio::time::timeout(REMOTE_CLEANUP_TIMEOUT, cleanup).await;
+    if let Err(error) = store.cleanup_remote_bounded(object_key).await {
+        tracing::warn!(object_key, %error, "Git segment ingest rollback failed; durable recovery will retry");
+    }
 }
 
 async fn remote_with_cancellation<T>(
