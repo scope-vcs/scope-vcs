@@ -96,7 +96,7 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
     let request_id = string_at(&started, "/result/request/id");
     assert_eq!(string_at(&started, "/result/request/state"), "Draft");
 
-    let maintainer_drafts = maintainer.json(["request", "list"]);
+    let maintainer_drafts = maintainer.json(["request", "list", "--search", request_name.as_str()]);
     assert_command(&maintainer_drafts, "request.list");
     assert_request_absent(&maintainer_drafts, &request_id);
 
@@ -118,7 +118,7 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         string_at(&submitted, "/result/response/request/state"),
         "Open"
     );
-    let maintainer_open = maintainer.json(["request", "list"]);
+    let maintainer_open = maintainer.json(["request", "list", "--search", request_name.as_str()]);
     assert_request_state(&maintainer_open, &request_id, "Open");
     let checkout = maintainer.json(["request", "checkout", "--request", request_id.as_str()]);
     assert_command(&checkout, "request.checkout");
@@ -624,7 +624,9 @@ fn assert_command(document: &Value, expected: &str) {
 fn assert_request_absent(document: &Value, request_id: &str) {
     let requests = document["result"]["requests"].as_array().unwrap();
     assert!(
-        requests.iter().all(|request| request["id"] != request_id),
+        requests
+            .iter()
+            .all(|row| row["request"]["id"] != request_id),
         "maintainer saw contributor draft {request_id}"
     );
 }
@@ -634,9 +636,9 @@ fn assert_request_state(document: &Value, request_id: &str, state: &str) {
         .as_array()
         .unwrap()
         .iter()
-        .find(|request| request["id"] == request_id)
+        .find(|row| row["request"]["id"] == request_id)
         .unwrap_or_else(|| panic!("request {request_id} was not visible"));
-    assert_eq!(request["state"], state);
+    assert_eq!(request["request"]["state"], state);
 }
 
 fn string_at(document: &Value, pointer: &str) -> String {

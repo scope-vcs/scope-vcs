@@ -99,7 +99,7 @@ Maintainers can inspect requests and their checks from any directory by naming
 the repository explicitly. Checkout requires a local Git repository:
 
 ```sh
-scope --repo owner/repository request list --state open --limit 20
+scope --repo owner/repository request list
 scope --repo owner/repository request show --request fix-parser
 scope --repo owner/repository request diff --request fix-parser
 scope --repo owner/repository request checks --request fix-parser
@@ -136,9 +136,29 @@ ends that authorization. Cancel an active authorization with
 used together. Existing request targeting and `--json` output work for both
 operations.
 
+`scope request list` is your attention queue, grouped the way the web sidebar
+groups it: Needs you, Waiting on others, and Unclaimed. Use
+`--section set-aside` or `--section done` for requests you set aside or that
+have closed or merged. `--search TEXT` matches titles and descriptions on the server,
+and `--limit` caps each section. Maintainers move an open request through the
+queue:
+
+```sh
+scope request claim --request fix-parser    # become its reviewer
+scope request release --request fix-parser  # stop reviewing it
+scope request wait --request fix-parser     # set aside until someone replies
+scope request settle --request fix-parser   # set aside until new activity
+scope request snooze --request fix-parser --for tomorrow
+scope request restore --request fix-parser  # back to Needs you
+```
+
+Snooze takes `hour`, `tomorrow`, or `next-week`; the last two land at 09:00
+local time, next week on Monday. If the request changes between loading it and
+the change, the command fails, prints the new activity, and asks you to run it
+again.
+
 Request targets accept a name or a `req_` ID. Inside a request checkout, commands
-can infer the current request. List also supports `--audience public|private`
-and `--search TEXT`. Diff prints text hunks for server-visible files in the server-selected review revision. Use
+can infer the current request. Diff prints text hunks for server-visible files in the server-selected review revision. Use
 `--revision ID`, then `--commit OID`, then `--path FILE` to inspect a specific file's
 old and new contents in a commit. Incomplete or truncated server results are
 explicitly labeled. Checkout requires a clean tree. An existing local branch must
@@ -186,7 +206,7 @@ explicitly before running authenticated automation. `scope login --headless`
 provides the browser handoff for a machine without a local browser.
 
 ```sh
-scope --json --non-interactive --repo owner/repository request list --state open
+scope --json --non-interactive --repo owner/repository request list --section active
 scope --json --non-interactive push --main --no-review
 scope --json --non-interactive run start checks --no-watch
 scope --json --non-interactive run watch RUN_ID --timeout 600

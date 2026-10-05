@@ -1,7 +1,7 @@
 use crate::api::{
-    LeaveRequestResponse, RepoSummaryResponse, RequestActivityPageResponse, RequestCloseResponse,
-    RequestDiscussionReplyResponse, RequestDiscussionSummaryResponse,
-    RequestInviteeMutationResponse, RequestListItemResponse, RequestMutationResponse,
+    LeaveRequestResponse, RepoSummaryResponse, RequestActivityPageResponse,
+    RequestAttentionMutationResponse, RequestCloseResponse, RequestDiscussionReplyResponse,
+    RequestDiscussionSummaryResponse, RequestInviteeMutationResponse, RequestMutationResponse,
     RequestRatingResponse, RequestSummaryResponse,
 };
 use serde::Serialize;
@@ -47,6 +47,7 @@ pub(super) enum RequestCommandResult {
     Discussion(DiscussionResult),
     DiscussionReply(DiscussionReplyResult),
     Rating(TargetResponse<RequestRatingResponse>),
+    Attention(TargetResponse<RequestAttentionMutationResponse>),
 }
 
 #[derive(Serialize)]
@@ -71,7 +72,7 @@ pub(super) struct DetailResult {
 #[derive(Serialize)]
 pub(super) struct ListResult {
     pub(super) repo: RepoSummaryResponse,
-    pub(super) requests: Vec<RequestListItemResponse>,
+    pub(super) requests: Vec<super::queue::QueueRow>,
 }
 
 #[derive(Serialize)]

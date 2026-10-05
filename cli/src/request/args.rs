@@ -1,5 +1,5 @@
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
-use scope_api_contract::RequestAudience;
+use scope_api_contract::{RequestAudience, RequestQueueSection};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -34,8 +34,20 @@ pub(super) enum RequestCommand {
     Discussion(RequestDiscussionArgs),
     #[command(about = "Show one request")]
     Show(RequestTargetArgs),
-    #[command(about = "List visible requests")]
+    #[command(about = "Show the requests that need your attention")]
     List(RequestListArgs),
+    #[command(about = "Become the reviewer of a request (maintainers)")]
+    Claim(RequestTargetArgs),
+    #[command(about = "Give up your claim on a request")]
+    Release(RequestTargetArgs),
+    #[command(about = "Set a request aside while you wait for a reply")]
+    Wait(RequestTargetArgs),
+    #[command(about = "Set a request aside as settled until new activity")]
+    Settle(RequestTargetArgs),
+    #[command(about = "Set a request aside until a later time")]
+    Snooze(RequestSnoozeArgs),
+    #[command(about = "Return a set-aside or snoozed request to your queue")]
+    Restore(RequestTargetArgs),
     #[command(about = "Show the current request or repository request status")]
     Status(RequestTargetArgs),
     #[command(about = "Fetch a request and safely switch to its local branch")]
@@ -268,14 +280,28 @@ pub(super) struct RequestDiscussionReopenArgs {
 pub(super) struct RequestListArgs {
     #[arg(long, help = "Scope Git remote for the target repository")]
     pub(super) remote: Option<String>,
-    #[arg(long, value_enum, help = "Filter by request state")]
-    pub(super) state: Option<RequestStateArg>,
-    #[arg(long, value_enum, help = "Filter by audience")]
-    pub(super) audience: Option<RequestAudienceArg>,
-    #[arg(long, help = "Match request names or titles")]
+    #[arg(
+        long,
+        value_enum,
+        help = "Show one queue section (defaults to active and unclaimed)"
+    )]
+    pub(super) section: Option<RequestQueueSectionArg>,
+    #[arg(long, help = "Match request titles or descriptions")]
     pub(super) search: Option<String>,
-    #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..), help = "Maximum matching requests to show")]
+    #[arg(long, default_value_t = super::queue::QUEUE_SECTION_LIMIT, value_parser = clap::value_parser!(u32).range(1..), help = "Maximum requests to show per section")]
     pub(super) limit: u32,
+}
+
+#[derive(Parser)]
+pub(super) struct RequestSnoozeArgs {
+    #[command(flatten)]
+    pub(super) target: RequestTargetArgs,
+    #[arg(
+        long = "for",
+        value_enum,
+        help = "When the request returns, in local time"
+    )]
+    pub(super) until: SnoozeFor,
 }
 
 #[derive(Parser)]
@@ -327,22 +353,32 @@ pub(super) struct RequestDiffArgs {
 }
 
 #[derive(Clone, Copy, ValueEnum)]
-pub(super) enum RequestStateArg {
-    Draft,
-    Open,
-    Closed,
-    Merged,
+pub(super) enum RequestQueueSectionArg {
+    Active,
+    Unclaimed,
+    SetAside,
+    Done,
 }
 
-impl From<RequestStateArg> for scope_api_contract::RequestState {
-    fn from(state: RequestStateArg) -> Self {
-        match state {
-            RequestStateArg::Draft => Self::Draft,
-            RequestStateArg::Open => Self::Open,
-            RequestStateArg::Closed => Self::Closed,
-            RequestStateArg::Merged => Self::Merged,
+impl From<RequestQueueSectionArg> for RequestQueueSection {
+    fn from(section: RequestQueueSectionArg) -> Self {
+        match section {
+            RequestQueueSectionArg::Active => Self::Active,
+            RequestQueueSectionArg::Unclaimed => Self::Unclaimed,
+            RequestQueueSectionArg::SetAside => Self::SetAside,
+            RequestQueueSectionArg::Done => Self::Done,
         }
     }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub(super) enum SnoozeFor {
+    #[value(help = "One hour from now")]
+    Hour,
+    #[value(help = "09:00 tomorrow")]
+    Tomorrow,
+    #[value(help = "09:00 next Monday")]
+    NextWeek,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
