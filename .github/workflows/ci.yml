@@ -1,7 +1,9 @@
 name: CI
 
 # Scope pushes each request revision to scope/requests/<id>, so the same checks
-# that gate pull requests gate Scope requests.
+# that gate pull requests gate Scope requests. A revision that an open pull
+# request already tests is not validated twice: its run reports the pull
+# request's result.
 on:
   pull_request:
   push:
@@ -17,8 +19,34 @@ permissions:
   contents: read
 
 jobs:
+  pull-request:
+    name: Find pull request at this commit
+    if: ${{ github.event_name == 'push' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      number: ${{ steps.find.outputs.number }}
+    steps:
+      - name: Find an open pull request whose head is this commit
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          number="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" \
+            --jq "[.[] | select(.state == \"open\" and .head.sha == \"$SHA\")][0].number // empty")"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+  # Validation runs unless a pull request already tests this commit. A failed
+  # lookup leaves no number, so the revision is validated here.
   plan:
     name: Plan selected components
+    needs: pull-request
+    if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     outputs:
@@ -65,6 +93,8 @@ jobs:
 
   policy:
     name: Check repository policy
+    needs: pull-request
+    if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
@@ -80,6 +110,8 @@ jobs:
 
   ops:
     name: Check operations
+    needs: pull-request
+    if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
@@ -101,6 +133,7 @@ jobs:
   validation:
     name: Validate selected components
     needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
     permissions:
       contents: read
       deployments: write
@@ -118,12 +151,38 @@ jobs:
 
   required-pr-checks:
     name: Required PR checks
-    needs: [plan, policy, ops, validation]
+    needs: [pull-request, plan, policy, ops, validation]
     if: ${{ always() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 5
+    timeout-minutes: 150
+    permissions:
+      actions: read
     steps:
+      # A skipped check counts as passing, so this run reports the pull
+      # request's result for the commit instead of skipping.
+      - name: Report the pull request's result
+        if: ${{ needs.pull-request.outputs.number != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          PULL_REQUEST: ${{ needs.pull-request.outputs.number }}
+        run: |
+          echo "Pull request #$PULL_REQUEST tests $SHA"
+          while :; do
+            run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA&per_page=1" \
+              --jq '.workflow_runs[0] // empty | "\(.html_url) \(.status) \(.conclusion)"')" || run=""
+            read -r url status conclusion <<< "$run"
+            if [[ "$status" == completed ]]; then
+              echo "$url: $conclusion"
+              test "$conclusion" = success
+              exit
+            fi
+            sleep 30
+          done
+
       - name: Require successful planning and validation
+        if: ${{ needs.pull-request.outputs.number == '' }}
         env:
           POLICY_RESULT: ${{ needs.policy.result }}
           OPS_RESULT: ${{ needs.ops.result }}

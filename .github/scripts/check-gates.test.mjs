@@ -503,17 +503,21 @@ test('CI runs on pull requests and Scope request branches, and Release dispatch 
   for (const caller of [ci, release]) assert.match(caller, /uses: \.\/\.github\/workflows\/validate.yml/);
 });
 
-function gateScript(job) {
-  const script = job.match(/        run: \|\n((?:          .*\n)+)/)?.[1];
-  assert.ok(script, 'gate must execute its assertion');
+function stepScript(job, name) {
+  const step = job.slice(job.indexOf(`      - name: ${name}\n`));
+  const script = step.match(/        run: \|\n((?:          .*\n)+)/)?.[1];
+  assert.ok(script, `${name} must execute its assertion`);
   return script.replace(/^          /gm, '');
 }
+
+const gateScript = (job) => stepScript(job, 'Require successful planning and validation');
+const validationGateScript = (job) => stepScript(job, 'Require selected validations to succeed');
 
 test('required PR check runs after failures and rejects every unsuccessful prerequisite', () => {
   const ci = read('.github/workflows/ci.yml');
   const job = ci.slice(ci.indexOf('\n  required-pr-checks:\n'));
   assert.match(job, /name: Required PR checks\n/);
-  assert.match(job, /needs: \[plan, policy, ops, validation\]\n/);
+  assert.match(job, /needs: \[pull-request, plan, policy, ops, validation\]\n/);
   assert.match(job, /if: \$\{\{ always\(\) \}\}\n/);
   assert.match(job, /PLAN_RESULT: \$\{\{ needs.plan.result \}\}/);
   assert.match(job, /VALIDATION_RESULT: \$\{\{ needs.validation.result \}\}/);
@@ -538,6 +542,41 @@ test('required PR gate rejects failed policy and operations even when validation
       });
       assert.notEqual(result.status, 0, `${key}: ${failure}`);
     }
+  }
+});
+
+test("a Scope request revision that an open pull request tests reports that pull request's result", () => {
+  const ci = read('.github/workflows/ci.yml');
+  const jobs = ci.slice(ci.indexOf('\njobs:\n'));
+  assert.match(jobs, /  pull-request:\n(?:    .*\n)*?    if: \$\{\{ github\.event_name == 'push' \}\}\n/);
+  // Every validating job is skipped when the pull request already tests the commit.
+  for (const name of ['plan', 'policy', 'ops']) {
+    assert.match(jobs, new RegExp(`  ${name}:\\n(?:    .*\\n)*?    needs: pull-request\\n    if: \\$\\{\\{ !cancelled\\(\\) && needs\\.pull-request\\.outputs\\.number == '' \\}\\}\\n`));
+  }
+  assert.match(jobs, /  validation:\n(?:    .*\n)*?    if: \$\{\{ !cancelled\(\) && needs\.plan\.result == 'success' \}\}\n/);
+  const gate = ci.slice(ci.indexOf('\n  required-pr-checks:\n'));
+  assert.match(gate, /- name: Report the pull request's result\n        if: \$\{\{ needs\.pull-request\.outputs\.number != '' \}\}\n/);
+  assert.match(gate, /- name: Require successful planning and validation\n        if: \$\{\{ needs\.pull-request\.outputs\.number == '' \}\}\n/);
+  const script = stepScript(gate, "Report the pull request's result");
+  // gh answers each poll with the next line; an empty line is no run yet and
+  // a failing call is a transient error. Both keep waiting.
+  const report = (answers) => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'scope-ci-report-'));
+    try {
+      writeFileSync(resolve(dir, 'answers'), answers.join('\n') + '\n');
+      writeFileSync(resolve(dir, 'gh'), `#!/bin/bash\nn=$(cat "${dir}/count" 2>/dev/null || echo 0); echo $((n + 1)) > "${dir}/count"\nline=$(sed -n "$((n + 1))p" "${dir}/answers")\n[[ "$line" == error ]] && exit 1\necho "$line"\n`, { mode: 0o755 });
+      writeFileSync(resolve(dir, 'sleep'), '#!/bin/sh\n', { mode: 0o755 });
+      return spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
+        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, REPOSITORY: 'o/r', SHA: 'a'.repeat(40), PULL_REQUEST: '7' },
+        encoding: 'utf8',
+      }).status;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  assert.equal(report(['', 'error', 'u in_progress null', 'u completed success']), 0);
+  for (const conclusion of ['failure', 'cancelled', 'timed_out', 'skipped']) {
+    assert.notEqual(report([`u completed ${conclusion}`]), 0, conclusion);
   }
 });
 
@@ -575,7 +614,7 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
     assert.equal(evaluate(inputs, skipped), true, `reused selection ${mask}`);
   }
   for (const value of ['true', 'false', '']) {
-    const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', gateScript(job)], {
+    const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', validationGateScript(job)], {
       env: { ...process.env, VALIDATIONS_PASSED: value }, encoding: 'utf8',
     });
     assert.equal(result.status === 0, value === 'true', `assertion ${value}`);
