@@ -408,8 +408,6 @@ export async function seedRepository(config, cleanup, runRoot, label, bytes, his
   });
   try {
     for (const args of [['init'], ['symbolic-ref', 'HEAD', 'refs/heads/main'], ['config', 'user.email', 'loadtest@scope.local'], ['config', 'user.name', 'Scope Load Test']]) await checkedGit(config, args, fixture.dir);
-    await mkdir(join(fixture.dir, '.scope'), { recursive: true });
-    await writeFile(join(fixture.dir, '.scope', 'RULES.md'), '');
     await writeSeedPayload(fixture.dir, bytes);
     await writeFile(join(fixture.dir, 'load-update.txt'), 'seed\n');
     if (fixture.landingFileBytes > 0) await writeLandingFile(fixture.dir, fixture.landingFileBytes, 0);

@@ -249,14 +249,6 @@ fn temp_git_repo(label: &str) -> TempGitRepo {
         "init test repo",
     )
     .unwrap();
-    fs::create_dir_all(repo.join(".scope")).unwrap();
-    fs::write(repo.join(".scope/RULES.md"), []).unwrap();
-    run_git(
-        Some(&repo),
-        &["add", ".scope/RULES.md"],
-        "stage canonical repo rules",
-    )
-    .unwrap();
     TempGitRepo(repo)
 }
 
@@ -717,8 +709,6 @@ fn repo_with_readme(state: &AppState) -> Repository {
     let mut repo = test_repo(&test_owner_id());
     let path = ScopePath::parse("/README.md").unwrap();
     let content = source_blob(state, "hello");
-    let rules_path = ScopePath::parse("/.scope/RULES.md").unwrap();
-    let rules_content = source_blob(state, "");
     repo.graph.commits.push(LogicalCommit {
         occurred_at_unix: None,
         id: "rv1".to_string(),
@@ -727,23 +717,14 @@ fn repo_with_readme(state: &AppState) -> Repository {
         },
         author_id: repo.record.owner_user_id.clone(),
         message: "initial".to_string(),
-        changes: vec![
-            FileChange {
-                visibility: Visibility::Public,
-                path: path.clone(),
-                old_content: None,
-                new_content: Some(content.clone()),
-            },
-            FileChange {
-                visibility: Visibility::Public,
-                path: rules_path.clone(),
-                old_content: None,
-                new_content: Some(rules_content.clone()),
-            },
-        ],
+        changes: vec![FileChange {
+            visibility: Visibility::Public,
+            path: path.clone(),
+            old_content: None,
+            new_content: Some(content.clone()),
+        }],
     });
     repo.live_files.insert(path, content);
-    repo.live_files.insert(rules_path, rules_content);
     repo
 }
 

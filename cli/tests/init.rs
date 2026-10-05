@@ -20,7 +20,6 @@ const REMOTE_URL: &str = "https://scope.example/git/adam/sample";
 fn init_configures_an_unborn_repository_for_its_first_push() {
     let dir = TempDir::new("unborn");
     run_git(dir.path(), ["-c", "init.defaultBranch=main", "init"]);
-    fs::create_dir(dir.path().join(".codex")).unwrap();
     let server = InitServer::start();
 
     let output = server
@@ -35,18 +34,11 @@ fn init_configures_an_unborn_repository_for_its_first_push() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stdout.contains(
-            "Create your first commit including the generated Scope files, then run: scope push"
-        ),
+        stdout.contains("Commit at least one file, then run: scope push"),
         "{stdout}"
     );
     assert!(!stderr.contains("No such remote"), "{stderr}");
-    assert!(dir.path().join(".scope/RULES.md").is_file());
-    assert!(
-        fs::read_to_string(dir.path().join("AGENTS.md"))
-            .unwrap()
-            .contains("Read and follow `.scope/RULES.md`")
-    );
+    assert!(!dir.path().join(".scope").exists());
     assert!(dir.path().join(".git/scope/repo.json").is_file());
     assert_eq!(
         git_stdout(dir.path(), ["remote", "get-url", "scope"]),
@@ -81,11 +73,46 @@ fn init_keeps_the_existing_committed_repository_flow() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stdout.contains("Run: scope push"), "{stdout}");
-    assert!(!stdout.contains("Create your first commit"), "{stdout}");
+    assert!(!stdout.contains("Commit at least one file"), "{stdout}");
     assert!(!stderr.contains("No such remote"), "{stderr}");
     assert_eq!(
         git_stdout(dir.path(), ["remote", "get-url", "scope"]),
         REMOTE_URL
+    );
+}
+
+#[test]
+fn init_asks_for_a_file_when_head_has_an_empty_tree() {
+    let dir = TempDir::new("empty-tree");
+    run_git(dir.path(), ["-c", "init.defaultBranch=main", "init"]);
+    run_git(
+        dir.path(),
+        [
+            "-c",
+            "user.name=Scope Test",
+            "-c",
+            "user.email=scope-test@example.test",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "empty",
+        ],
+    );
+    let server = InitServer::start();
+
+    let output = server
+        .server
+        .command(dir.path())
+        .args(["init", "--name", "sample"])
+        .output()
+        .unwrap();
+    server.finish();
+
+    assert_success(&output, "scope init with an empty HEAD tree");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Commit at least one file, then run: scope push"),
+        "{stdout}"
     );
 }
 

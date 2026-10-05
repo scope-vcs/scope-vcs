@@ -25,7 +25,6 @@ use {
         policy::{Policy, ScopePath},
         repo_actions::reviewed_update_domain_error,
         repo_config::RepoConfig,
-        repo_control::REPO_RULES_PATH,
         repository::git::GitHead,
         repository::updates::RequestMergeOrigin,
         reviewed_updates::content::{
@@ -108,14 +107,11 @@ async fn accept_and_persist_content_update(
     } = snapshots;
     let repo_id = repo_row.id.clone();
     let repo_incarnation_id = repo_row.incarnation_id.clone();
-    let mut changed_paths = update
+    let changed_paths = update
         .changes
         .iter()
         .map(|change| change.path.as_str().to_string())
         .collect::<Vec<_>>();
-    if !changed_paths.iter().any(|path| path == REPO_RULES_PATH) {
-        changed_paths.push(REPO_RULES_PATH.to_string());
-    }
     let live_files = entities::live_file::Entity::find()
         .filter(entities::live_file::Column::RepoId.eq(&repo_id))
         .filter(entities::live_file::Column::Path.is_in(changed_paths))

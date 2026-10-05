@@ -28,8 +28,8 @@ scope status
 scope doctor
 ```
 
-For an existing Git repository, run `scope init --name repository`, inspect and
-commit the generated rules files, then publish explicitly to main:
+For an existing Git repository, run `scope init --name repository`, choose which
+files are public, then publish explicitly to main:
 
 ```sh
 scope visibility edit

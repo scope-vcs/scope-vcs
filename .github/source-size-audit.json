@@ -17,11 +17,6 @@
       "reason": "Restore and upload handlers share grant authorization, lease timing, signed-transfer behavior, and focused endpoint tests."
     },
     {
-      "path": "cli/src/agent_context.rs",
-      "owner": "repository agent context",
-      "reason": "Agent-file discovery, trusted-rule synchronization, push validation, and adapter fixtures define one CLI behavior."
-    },
-    {
       "path": "cli/src/api/requests.rs",
       "owner": "CLI request API client",
       "reason": "Typed request and discussion calls share URL construction, authenticated execution, decoding, and client tests."

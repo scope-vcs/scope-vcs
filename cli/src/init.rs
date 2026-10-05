@@ -1,10 +1,10 @@
 use crate::api::ApiSession;
 use crate::git_repo::git_output_in_repo as git_output;
 use crate::{
-    agent_context::sync_repo_rules,
     api::{RepoInitResponse, api_url, create_repo, display_user, http_client},
     git_repo::{
-        discover_git_repo, git_repo_has_head, install_scope_fetch_auth, warn_if_dirty_working_tree,
+        discover_git_repo, git_repo_has_head, git_text_in_repo, install_scope_fetch_auth,
+        warn_if_dirty_working_tree,
     },
     login::session_from_cache_or_browser,
     repo_config::{
@@ -38,7 +38,6 @@ pub fn run(name: Option<String>) -> anyhow::Result<()> {
             );
         }
     };
-    let rules_sync = sync_repo_rules(&git_repo.root)?;
     if has_head {
         warn_if_dirty_working_tree(&git_repo)?;
     }
@@ -85,12 +84,13 @@ pub fn run(name: Option<String>) -> anyhow::Result<()> {
     };
 
     let config_path = repo_config_path(&git_repo.root)?;
-    let next_step = if !has_head {
-        "Create your first commit including the generated Scope files, then run: scope push --main"
-    } else if rules_sync.changed_paths.is_empty() {
+    // Scope rejects a main push without file changes, so an empty HEAD tree cannot publish yet.
+    let head_has_files = has_head
+        && !git_text_in_repo(&git_repo.root, &["ls-tree", "--name-only", "HEAD"])?.is_empty();
+    let next_step = if head_has_files {
         "Run: scope push --main"
     } else {
-        "Commit the generated rules files, then run: scope push --main"
+        "Commit at least one file, then run: scope push --main"
     };
     let mut lines = vec![
         format!(
@@ -108,16 +108,10 @@ pub fn run(name: Option<String>) -> anyhow::Result<()> {
             config_path.display()
         ),
     ];
-    lines.extend(
-        rules_sync
-            .changed_paths
-            .iter()
-            .map(|path| format!("Updated {}", path.display())),
-    );
     lines.push(next_step.to_owned());
     emit(
         "init",
-        &json!({"repository": format!("{}/{}", created.repo.owner_handle, created.repo.name), "remote": created.init.remote_name, "remote_url": created.init.git_remote_url, "config_path": config_path, "config_created": config_created, "changed_paths": rules_sync.changed_paths, "next_step": next_step}),
+        &json!({"repository": format!("{}/{}", created.repo.owner_handle, created.repo.name), "remote": created.init.remote_name, "remote_url": created.init.git_remote_url, "config_path": config_path, "config_created": config_created, "next_step": next_step}),
         lines,
     )
 }

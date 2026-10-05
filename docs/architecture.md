@@ -329,8 +329,8 @@ their own timeouts. The policy gate runs the check.
   request media resources, backup, and restore.
 - `bench/README.md` documents local Git and deployed-system benchmarks;
   `dev/checks/README.md` documents the check entrypoints.
-- `.scope/RULES.md`, `AGENTS.md`, and `CLAUDE.md` are contribution and agent
-  governance, not product architecture references.
+- `AGENTS.md` and `CLAUDE.md` are contribution and agent governance, not product
+  architecture references.
 
 Executable help is authoritative for command surfaces: `./dev/scope-dev --help`,
 `./dev/check --help`, and `scope-maintenance --help`.

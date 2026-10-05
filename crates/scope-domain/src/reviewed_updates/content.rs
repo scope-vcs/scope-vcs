@@ -9,7 +9,7 @@ use crate::{
     policy::{Policy, ScopePath, Visibility, VisibilityRule},
     projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repo_config::RepoConfig,
-    repo_control::{REPO_RULES_PATH, is_public_request_protected_path},
+    repo_control::is_public_request_protected_path,
     repository::{
         RepoLifecycleState, Repository,
         access::{MainPushMode, RepositoryAccess, RepositoryActor},
@@ -18,10 +18,7 @@ use crate::{
     },
     visibility_changes::{VisibilityChange, VisibilityChangeSet, visibility_change_set_id},
 };
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::LazyLock,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug)]
 pub struct ReviewedContentChange {
@@ -127,7 +124,6 @@ pub fn apply_reviewed_update_to_repo(
         return apply_content_only_update(repo, update);
     }
     let old_tree = repo.live_files.clone();
-    ensure_rules_remain_present(&old_tree, &update.changes)?;
     let mut file_changes = build_file_changes(
         &old_tree,
         &repo.policy,
@@ -351,8 +347,6 @@ fn accept_content_update(
             "repo config changed since review; rerun scope push --main",
         ));
     }
-    ensure_rules_remain_present(&state.live_files, &update.changes)?;
-
     let file_changes = build_file_changes(
         &state.live_files,
         &state.policy,
@@ -478,31 +472,6 @@ fn validate_git_push_transition(
         ));
     }
     Ok(())
-}
-
-static REPO_RULES_SCOPE_PATH: LazyLock<ScopePath> = LazyLock::new(|| {
-    ScopePath::parse(REPO_RULES_PATH).expect("canonical repo rules path is valid")
-});
-
-fn ensure_rules_remain_present(
-    live_tree: &BTreeMap<ScopePath, SourceBlob>,
-    changes: &[ReviewedContentChange],
-) -> ReviewedUpdateResult<()> {
-    let rules_path = &*REPO_RULES_SCOPE_PATH;
-    let resulting_presence = changes
-        .iter()
-        .rev()
-        .find(|change| &change.path == rules_path)
-        .map_or(live_tree.contains_key(rules_path), |change| {
-            change.content.is_some()
-        });
-    if resulting_presence {
-        Ok(())
-    } else {
-        Err(ReviewedUpdateError::BadRequest(
-            "repository must contain .scope/RULES.md",
-        ))
-    }
 }
 
 fn validate_commit_origin(

@@ -1,8 +1,8 @@
 use super::*;
 
 #[test]
-fn content_push_requires_rules_in_the_resulting_tree() {
-    let repo = published_repo_with_public_file("initial", "/README.md", "hello");
+fn content_push_can_delete_former_rules_file() {
+    let repo = published_repo_with_public_file("initial", "/.scope/RULES.md", "");
     let config = repo.repo_config.clone();
     let state = ContentPushState {
         change_version: repo.record.change_version,
@@ -13,55 +13,20 @@ fn content_push_requires_rules_in_the_resulting_tree() {
         git_head: repo.git_head.clone(),
     };
 
-    let deletion = accept_content_push(
+    let accepted = accept_content_push(
         state,
         reviewed_update(
             "3333333333333333333333333333333333333333",
             "delete rules",
             vec![reviewed_change("/.scope/RULES.md", None)],
             Some(config.clone()),
-            config.clone(),
-        ),
-    )
-    .unwrap_err();
-    assert!(
-        matches!(deletion, ReviewedUpdateError::BadRequest(message) if message.contains("RULES.md"))
-    );
-
-    let missing_state = ContentPushState {
-        change_version: 1,
-        content_version: 1,
-        policy: Policy::new(Visibility::Public),
-        repo_config: config.clone(),
-        live_files: Default::default(),
-        git_head: None,
-    };
-    let missing = accept_content_push(
-        missing_state.clone(),
-        reviewed_update(
-            "4444444444444444444444444444444444444444",
-            "missing rules",
-            vec![reviewed_change("/README.md", Some("hello"))],
-            Some(config.clone()),
-            config.clone(),
-        ),
-    )
-    .unwrap_err();
-    assert!(
-        matches!(missing, ReviewedUpdateError::BadRequest(message) if message.contains("RULES.md"))
-    );
-
-    accept_content_push(
-        missing_state,
-        reviewed_update(
-            "5555555555555555555555555555555555555555",
-            "add rules",
-            vec![reviewed_change("/.scope/RULES.md", Some(""))],
-            Some(config.clone()),
             config,
         ),
     )
     .unwrap();
+
+    assert_eq!(accepted.logical_commit.changes.len(), 1);
+    assert_eq!(accepted.logical_commit.changes[0].new_content, None);
 }
 
 #[test]
@@ -111,7 +76,7 @@ fn request_merge_accepts_unchanged_tree_without_weakening_push_rules() {
 }
 
 #[test]
-fn public_projection_always_includes_canonical_rules_changes() {
+fn public_projection_keeps_historical_rules_changes() {
     let graph = graph(vec![commit(
         "rv1",
         "add rules",

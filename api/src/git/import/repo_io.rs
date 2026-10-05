@@ -308,17 +308,7 @@ pub(crate) fn git_changed_tree_entries_until(
 }
 
 pub(crate) fn validate_pushed_tree(staging_repo: &FsPath, head_oid: &str) -> Result<(), ApiError> {
-    let entries = git_tree_entries(staging_repo, head_oid)?;
-    // The server owns the canonical rules invariant. Agent-specific adapters depend on
-    // repo-local tool signals and remain a `scope push --main` preflight concern.
-    if !entries
-        .iter()
-        .any(|entry| entry.path.as_str() == ".scope/RULES.md")
-    {
-        return Err(ApiError::bad_request(
-            "pushed main tree must contain .scope/RULES.md",
-        ));
-    }
+    git_tree_entries(staging_repo, head_oid)?;
     Ok(())
 }
 
@@ -327,8 +317,7 @@ pub(crate) fn validate_pushed_commit_range(
     base_oid: Option<&str>,
     head_oid: &str,
 ) -> Result<(), ApiError> {
-    // Rules describe the resulting repository. Imported history may predate Scope,
-    // but every newly reachable tree still needs the file/path safety checks.
+    // Every newly reachable tree, including imported history, needs the file/path safety checks.
     validate_pushed_tree(staging_repo, head_oid)?;
     let mut args = vec!["rev-list", "--reverse", head_oid];
     let excluded_base = base_oid.map(|oid| format!("^{oid}"));

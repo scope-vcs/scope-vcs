@@ -1,6 +1,4 @@
-/.scope/*
-!/.scope/
-!/.scope/RULES.md
+/.scope/
 target/
 node_modules/
 .turbo/

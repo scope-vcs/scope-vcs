@@ -4,7 +4,6 @@ use scope_cli::{
     api::{api_url, http_client},
     error::CliError,
     git_credential::run_git_credential,
-    git_repo::discover_git_repo,
     login::session_from_cache_or_browser,
     request::{RequestArgs, prepare_request_command, run_request_command},
     run::RunArgs,
@@ -45,8 +44,6 @@ enum CommandKind {
     Pull(PullArgs),
     /// Edit, inspect, explain, and preview file visibility
     Visibility(VisibilityArgs),
-    /// Manage repository contribution rules for coding agents
-    Rules(RulesArgs),
     /// Create, inspect, discuss, and merge named requests
     Request(RequestArgs),
     /// Clone a Scope repository and configure Git authentication
@@ -105,16 +102,6 @@ struct PullArgs {
 struct CloneArgs {
     repository: String,
     destination: Option<PathBuf>,
-}
-#[derive(Parser)]
-struct RulesArgs {
-    #[command(subcommand)]
-    command: RulesCommand,
-}
-#[derive(Subcommand)]
-enum RulesCommand {
-    /// Create rules and synchronize detected agent files
-    Sync,
 }
 #[derive(Parser)]
 struct LoginArgs {
@@ -197,7 +184,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             | CommandKind::Push(_)
             | CommandKind::Pull(_)
             | CommandKind::Visibility(_)
-            | CommandKind::Rules(_)
             | CommandKind::Request(_)
             | CommandKind::Clone(_)
             | CommandKind::Run(_)
@@ -220,7 +206,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
         CommandKind::Pull(args) => scope_cli::pull::run(args.remote.as_deref()),
         CommandKind::Visibility(args) => scope_cli::visibility::run(args),
-        CommandKind::Rules(args) => run_rules(args.command),
         CommandKind::Request(args) => run_request(args),
         CommandKind::Clone(args) => {
             scope_cli::clone::clone_repo(&args.repository, args.destination.as_deref())
@@ -247,28 +232,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             }
             clap_complete::generate(shell, &mut Cli::command(), "scope", &mut std::io::stdout());
             Ok(())
-        }
-    }
-}
-fn run_rules(command: RulesCommand) -> anyhow::Result<()> {
-    let repo = discover_git_repo("scope rules")?;
-    match command {
-        RulesCommand::Sync => {
-            let result = scope_cli::agent_context::sync_repo_rules(&repo.root)?;
-            let lines = if result.changed_paths.is_empty() {
-                vec!["Scope rules context is already in sync.".to_string()]
-            } else {
-                result
-                    .changed_paths
-                    .iter()
-                    .map(|p| format!("Updated {}", p.display()))
-                    .collect()
-            };
-            scope_cli::execution::emit(
-                "rules.sync",
-                &serde_json::json!({"changed_paths":result.changed_paths}),
-                lines,
-            )
         }
     }
 }

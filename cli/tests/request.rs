@@ -85,21 +85,6 @@ fn malformed_explicit_repository_fails_before_authentication() {
 }
 
 #[test]
-fn global_json_supports_local_rule_sync_results() {
-    let dir = TempDir::new("json-command-scope");
-    create_repo_with_head(dir.path());
-    let output = scope_command(dir.path())
-        .args(["--json", "rules", "sync"])
-        .output()
-        .unwrap();
-    assert_success(&output, "rules sync JSON");
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["command"], "rules.sync");
-    assert!(value["result"]["changed_paths"].is_array());
-    assert!(output.stderr.is_empty());
-}
-
-#[test]
 fn json_mode_preserves_successful_help_and_version_control_flow() {
     let dir = TempDir::new("json-help");
     create_repo_with_head(dir.path());
