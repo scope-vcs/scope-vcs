@@ -56,7 +56,6 @@ pub(crate) async fn authorize(
         input.expected_head_oid.as_str().to_string(),
     )
     .await?;
-    crate::use_cases::request_checks::readable_checks_view(&state, &repo.record, &request).await?;
     response(&state, &request, access).await.map(Json)
 }
 

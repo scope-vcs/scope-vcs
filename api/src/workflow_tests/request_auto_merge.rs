@@ -338,7 +338,7 @@ async fn native_open_request(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn authorization_is_bound_to_the_exact_revision_and_only_the_current_intent_cancels() {
     let (state, revision_id) = open_owner_request(AUTO_REQUEST_ID).await;
-    let app = router(state);
+    let app = router(state.clone());
     let bearer = bearer_header();
 
     let initial = auto_merge_json(app.clone(), "GET", AUTO_REQUEST_ID, None, StatusCode::OK).await;
@@ -396,6 +396,7 @@ async fn authorization_is_bound_to_the_exact_revision_and_only_the_current_inten
     .await;
     assert_eq!(canceled["intent"]["status"], "Cancelled");
     assert_eq!(canceled["can_cancel"], false);
+    assert_eq!(reconcile(&state, unix_now()).await, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -639,32 +640,7 @@ async fn manual_merge_fulfills_an_active_authorization() {
     assert_eq!(fulfilled["intent"]["head_oid"], request_head);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn authorizing_evaluates_a_head_whose_push_could_not() {
-    let (state, _source, _remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-unevaluated", RequestAudience::Private).await;
-    state
-        .metadata
-        .requests()
-        .forget_request_check_evaluations_for_tests(&request_id)
-        .await
-        .unwrap();
-
-    let (_, authorized) =
-        current_authorization(router(state.clone()), &request_id, &request_head).await;
-
-    assert_eq!(authorized["intent"]["status"], "Active");
-    assert_eq!(authorized["waiting_reason"], serde_json::Value::Null);
-    assert!(
-        state
-            .metadata
-            .requests()
-            .request_check_evaluation(&request_id, &request_head)
-            .await
-            .unwrap()
-            .is_some()
-    );
-}
+mod reconciliation;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn successful_reconciliation_merges_the_authorized_head_once() {
