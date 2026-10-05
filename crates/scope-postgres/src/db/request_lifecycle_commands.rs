@@ -26,16 +26,6 @@ pub struct EditRequestIdentityCommand {
 }
 
 #[derive(Clone, Debug)]
-pub struct CompleteLandedRequestCommand {
-    pub request_id: String,
-    pub actor_user_id: String,
-    pub merged_event_id: String,
-    pub landed_head_oid: String,
-    pub main_oid: String,
-    pub now_unix: u64,
-}
-
-#[derive(Clone, Debug)]
 pub struct ExpectedRequestAutoMerge {
     pub intent_id: String,
     pub revision_id: String,

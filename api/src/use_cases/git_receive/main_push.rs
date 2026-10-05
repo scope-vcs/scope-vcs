@@ -13,8 +13,9 @@ use scope_domain::{
     reviewed_updates::content::{ReviewedUpdateAuthorization, authorize_reviewed_update},
     runs::trigger::PushTriggerInput,
 };
-use scope_postgres::db::RepositoryGitWriteLease;
-use scope_postgres::db::RepositoryMutation;
+use scope_postgres::db::{
+    LandedRequestCandidate, LandedRequestCompletion, RepositoryGitWriteLease, RepositoryMutation,
+};
 use scope_storage::StagedGitSegment;
 use std::{path::Path, time::Instant};
 
@@ -23,6 +24,7 @@ use super::ReceivePackAccess;
 pub(crate) struct PersistedGitPush {
     pub(crate) incarnation: RepositoryIncarnation,
     pub(crate) head: GitHead,
+    pub(crate) completed_landed_requests: usize,
     pub(crate) staged_segment: StagedGitSegment,
     pub(crate) write_lease: RepositoryGitWriteLease,
 }
@@ -110,6 +112,7 @@ pub(crate) async fn persist_main_push(
     prepared: PreparedReceivePackUpdate,
     author_id: &str,
     incarnation: &RepositoryIncarnation,
+    landed_request_candidates: Vec<LandedRequestCandidate>,
 ) -> Result<PersistedGitPush, ApiError> {
     let PreparedReceivePackUpdate {
         update,
@@ -150,6 +153,7 @@ pub(crate) async fn persist_main_push(
                     workflow_catalog: workflow_catalog.clone(),
                     push_trigger_input: push_trigger_input.clone(),
                     landing_file_mutation: update.landing_file_mutation.clone(),
+                    landed_request_candidates: landed_request_candidates.clone(),
                     now_unix,
                 },
                 &crate::persistence_ids::generate_persistence_id,
@@ -166,7 +170,8 @@ pub(crate) async fn persist_main_push(
         tracing::info!("committed focused content-only push transaction");
         return Ok(PersistedGitPush {
             incarnation: incarnation.clone(),
-            head: git_head,
+            head: git_head.result,
+            completed_landed_requests: git_head.completed_landed_requests,
             staged_segment,
             write_lease,
         });
@@ -221,12 +226,17 @@ pub(crate) async fn persist_main_push(
                         committed_git_head.change_version,
                     )
                     .map_err(DomainError::invariant_violation)?;
-                Ok(RepositoryMutation::with_push_trigger_input(
+                let mut mutation = RepositoryMutation::with_push_trigger_input(
                     committed_git_head,
                     push_trigger_input,
                     landing_file_mutation,
                     workflow_catalog,
-                ))
+                );
+                mutation.landed_requests = Some(LandedRequestCompletion {
+                    actor_user_id: author_id,
+                    candidates: landed_request_candidates,
+                });
+                Ok(mutation)
             },
         )
         .await;
@@ -243,13 +253,14 @@ pub(crate) async fn persist_main_push(
     );
     Ok(PersistedGitPush {
         incarnation: incarnation.clone(),
-        head: git_head,
+        head: git_head.result,
+        completed_landed_requests: git_head.completed_landed_requests,
         staged_segment,
         write_lease,
     })
 }
 
-async fn cleanup_failed_persist(
+pub(super) async fn cleanup_failed_persist(
     state: &AppState,
     repository_id: &str,
     staged_segment: &StagedGitSegment,

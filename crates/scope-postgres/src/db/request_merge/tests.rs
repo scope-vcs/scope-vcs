@@ -1,3 +1,5 @@
+mod landed;
+
 use crate::db::{
     AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand,
     ClaimDueRequestAutoMergesCommand, ExpectedRequestAutoMerge, MergeRequestContentCommand,
@@ -234,6 +236,7 @@ async fn stale_manual_preparation_does_not_stop_a_current_auto_merge_intent() {
     assert_eq!(repo.graph.commits.len(), 1);
 }
 
+#[derive(Clone)]
 struct MergePreparation {
     expected_git_frontier: scope_domain::repository::git::GitFrontier,
     expected_repo_change_version: u64,

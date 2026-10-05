@@ -1,10 +1,11 @@
 use super::{
-    CompleteLandedRequestCommand, GeneratedIdSource, MergeRequestContentCommand, RequestStore,
+    GeneratedIdKind, GeneratedIdSource, MergeRequestContentCommand, RequestStore,
     acquire_aggregate_lock,
     content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_request_merge},
     entities,
+    generated_ids::generate_id,
     repository_access::repository_access,
-    request_access::{ensure_user_exists, lock_request_repository},
+    request_access::ensure_user_exists,
     request_auto_merge::{
         StoredIntent, automatic_event_id, lock_active_intent_for_request,
         persist_existing_auto_merge_mutation, request_auto_merge_check_state,
@@ -13,7 +14,9 @@ use super::{
     request_revision_rows::latest_revision_for_request,
     request_rows::request_by_id,
 };
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect, TransactionTrait};
+use sea_orm::{
+    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect, TransactionTrait,
+};
 use {
     crate::error::PostgresError,
     scope_domain::{
@@ -268,44 +271,73 @@ impl RequestStore {
 #[cfg(test)]
 mod tests;
 
-impl RequestStore {
-    pub async fn complete_landed_request(
-        &self,
-        command: CompleteLandedRequestCommand,
-    ) -> Result<Option<RequestLifecycleMutation>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let (repo, request) =
-            lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
-        let active_auto_merge = lock_active_intent_for_request(&tx, &request.id).await?;
-        if !lands_with_main(&request) || request.head_oid != command.landed_head_oid {
-            return Ok(None);
-        }
-        let mut mutation = merge_request(
+#[derive(Clone, Debug)]
+pub struct LandedRequestCandidate {
+    pub request_id: String,
+    pub head_oid: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct LandedRequestCompletion {
+    pub actor_user_id: String,
+    pub candidates: Vec<LandedRequestCandidate>,
+}
+
+pub(super) async fn complete_landed_requests(
+    tx: &DatabaseTransaction,
+    repo_id: &str,
+    main_oid: &str,
+    completion: LandedRequestCompletion,
+    now_unix: u64,
+    generated_ids: &dyn GeneratedIdSource,
+) -> Result<usize, PostgresError> {
+    if completion.candidates.is_empty() {
+        return Ok(0);
+    }
+    let repo = repository_access(tx, repo_id, Some(&completion.actor_user_id))
+        .await?
+        .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+    if !repo.access.is_maintainer() {
+        return Ok(0);
+    }
+    let mut completed = 0;
+    for candidate in completion.candidates {
+        acquire_aggregate_lock(tx, "request", &candidate.request_id).await?;
+        let Some(request) = request_by_id(tx, &candidate.request_id)
+            .await?
+            .filter(|request| {
+                request.repo_id == repo_id
+                    && lands_with_main(request)
+                    && request.head_oid == candidate.head_oid
+            })
+        else {
+            continue;
+        };
+        let active_auto_merge = lock_active_intent_for_request(tx, &request.id).await?;
+        let mutation = merge_request(
             &request,
             MergeRequestInput {
-                request_id: command.request_id,
-                actor_user_id: command.actor_user_id,
+                request_id: candidate.request_id,
+                actor_user_id: completion.actor_user_id.clone(),
                 actor_is_maintainer: repo.access.is_maintainer(),
-                merged_head_oid: command.landed_head_oid,
-                merged_main_oid: command.main_oid.clone(),
-                merged_event_id: command.merged_event_id,
-                now_unix: command.now_unix,
+                merged_head_oid: candidate.head_oid,
+                merged_main_oid: main_oid.to_string(),
+                merged_event_id: generate_id(generated_ids, GeneratedIdKind::RequestMergedEvent)?,
+                now_unix,
             },
         )?;
-        persist_lifecycle_mutation(&tx, &mutation.request, &mutation.events).await?;
+        persist_lifecycle_mutation(tx, &mutation.request, &mutation.events).await?;
         if let Some(stored) = active_auto_merge {
             let fulfilled = fulfill_request_auto_merge(
                 &mutation.request,
                 &stored.intent,
-                command.main_oid,
+                main_oid.to_string(),
                 automatic_event_id("fulfilled", &stored.intent.id),
-                command.now_unix,
+                now_unix,
             )?;
-            persist_existing_auto_merge_mutation(&tx, stored.model, &fulfilled).await?;
-            mutation.request = fulfilled.request;
-            mutation.events.push(fulfilled.event);
+            persist_existing_auto_merge_mutation(tx, stored.model, &fulfilled).await?;
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(Some(mutation))
+        completed += 1;
     }
+    Ok(completed)
 }

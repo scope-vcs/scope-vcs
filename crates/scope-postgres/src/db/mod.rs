@@ -159,7 +159,7 @@ pub use repo_collaboration::{
 };
 pub use repo_invite_emails::{RepositoryInviteEmailDelivery, RequestRepositoryInviteEmailCommand};
 pub use repo_lifecycle::{CreateRepositoryCommand, RepositoryCreationError};
-pub use repo_mutation::{RepositoryMutation, RepositoryMutationError};
+pub use repo_mutation::{RepositoryMutation, RepositoryMutationError, RepositoryMutationResult};
 pub use repo_reads::{RepoLiveFileWithLandingContent, RepoSummaryRead};
 use repository_rows::repository_from_model;
 pub use request_attention::{ApplyRequestAttentionCommand, RequestAttentionResult};
@@ -184,8 +184,8 @@ pub use request_invitees::{
     AddRequestInviteeCommand, LeaveRequestCommand, RemoveRequestInviteeCommand, RequestInviteeRead,
 };
 pub use request_lifecycle_commands::{
-    CloseRequestCommand, CompleteLandedRequestCommand, EditRequestIdentityCommand,
-    ExpectedRequestAutoMerge, MergeRequestContentCommand, SubmitRequestCommand,
+    CloseRequestCommand, EditRequestIdentityCommand, ExpectedRequestAutoMerge,
+    MergeRequestContentCommand, SubmitRequestCommand,
 };
 pub use request_media::{
     CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,
@@ -196,6 +196,7 @@ pub use request_media::{
     StoredRequestAttachmentPart, ValidateRequestAttachmentSourceCommand,
     ValidatedRequestAttachmentSource,
 };
+pub use request_merge::{LandedRequestCandidate, LandedRequestCompletion};
 pub use request_queue::{
     RequestQueueCursor, RequestQueuePage, RequestQueuePageQuery, RequestQueueRow,
 };

@@ -292,7 +292,8 @@ pub(crate) async fn create_push_intent(
                     Ok(RepositoryMutation::new(changed))
                 },
             )
-            .await?;
+            .await?
+            .result;
         if changed {
             let repo = state
                 .metadata

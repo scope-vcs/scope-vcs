@@ -1,9 +1,13 @@
 use super::{
     GeneratedIdSource, RepositoryStore, acquire_aggregate_lock,
-    cleanup_queue::queue::queue_pending_source_blob_deletion_rows, entities,
+    cleanup_queue::queue::queue_pending_source_blob_deletion_rows,
+    entities,
     landing_files::apply_repository_landing_file_mutation,
-    push_triggers::enqueue_push_main_trigger_evaluation, repository_from_model,
-    repository_rows::save_repository_delta, workflow_catalogs::apply_repository_workflow_catalog,
+    push_triggers::enqueue_push_main_trigger_evaluation,
+    repository_from_model,
+    repository_rows::save_repository_delta,
+    request_merge::{LandedRequestCompletion, complete_landed_requests},
+    workflow_catalogs::apply_repository_workflow_catalog,
 };
 use sea_orm::{EntityTrait, TransactionTrait};
 use std::fmt;
@@ -44,12 +48,18 @@ impl From<PostgresError> for RepositoryMutationError {
     }
 }
 
+pub struct RepositoryMutationResult<R> {
+    pub result: R,
+    pub completed_landed_requests: usize,
+}
+
 pub struct RepositoryMutation<R> {
     pub result: R,
     pub orphan_objects: Vec<SourceBlob>,
     pub push_trigger_input: Option<scope_domain::runs::trigger::PushTriggerInput>,
     pub landing_file_mutation: RepositoryLandingFileMutation,
     pub workflow_catalog: Option<RepositoryWorkflowCatalog>,
+    pub landed_requests: Option<LandedRequestCompletion>,
 }
 
 impl<R> RepositoryMutation<R> {
@@ -60,6 +70,7 @@ impl<R> RepositoryMutation<R> {
             push_trigger_input: None,
             landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
             workflow_catalog: None,
+            landed_requests: None,
         }
     }
 
@@ -75,6 +86,7 @@ impl<R> RepositoryMutation<R> {
             push_trigger_input: Some(push_trigger_input),
             landing_file_mutation,
             workflow_catalog: Some(workflow_catalog),
+            landed_requests: None,
         }
     }
 }
@@ -87,7 +99,7 @@ impl RepositoryStore {
         now_unix: u64,
         generated_ids: &dyn GeneratedIdSource,
         op: F,
-    ) -> Result<R, RepositoryMutationError>
+    ) -> Result<RepositoryMutationResult<R>, RepositoryMutationError>
     where
         F: FnOnce(&mut Repository) -> Result<RepositoryMutation<R>, DomainError>,
     {
@@ -139,6 +151,22 @@ impl RepositoryStore {
             )
             .await?;
         }
+        let completed_landed_requests = if let Some(completion) = mutation.landed_requests {
+            let head = repo.git_head.as_ref().ok_or_else(|| {
+                PostgresError::internal_message("landed requests require an accepted Git head")
+            })?;
+            complete_landed_requests(
+                &tx,
+                &repo.record.id,
+                &head.head_oid,
+                completion,
+                now_unix,
+                generated_ids,
+            )
+            .await?
+        } else {
+            0
+        };
         queue_pending_source_blob_deletion_rows(
             &tx,
             mutation.orphan_objects,
@@ -147,6 +175,9 @@ impl RepositoryStore {
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(mutation.result)
+        Ok(RepositoryMutationResult {
+            result: mutation.result,
+            completed_landed_requests,
+        })
     }
 }

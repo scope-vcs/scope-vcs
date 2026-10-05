@@ -1,7 +1,8 @@
 use super::{
-    GeneratedIdSource, RepositoryStore, acquire_aggregate_lock,
+    GeneratedIdSource, RepositoryMutationResult, RepositoryStore, acquire_aggregate_lock,
     content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_content_push},
     entities,
+    request_merge::{LandedRequestCandidate, LandedRequestCompletion, complete_landed_requests},
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use {
@@ -28,6 +29,7 @@ pub struct ApplyContentOnlyPushCommand {
     pub landing_file_mutation: RepositoryLandingFileMutation,
     pub workflow_catalog: RepositoryWorkflowCatalog,
     pub push_trigger_input: scope_domain::runs::trigger::PushTriggerInput,
+    pub landed_request_candidates: Vec<LandedRequestCandidate>,
     pub now_unix: u64,
 }
 
@@ -36,7 +38,10 @@ impl RepositoryStore {
         &self,
         command: ApplyContentOnlyPushCommand,
         generated_ids: &dyn GeneratedIdSource,
-    ) -> Result<Option<scope_domain::repository::git::GitHead>, PostgresError> {
+    ) -> Result<
+        Option<RepositoryMutationResult<scope_domain::repository::git::GitHead>>,
+        PostgresError,
+    > {
         let ApplyContentOnlyPushCommand {
             incarnation,
             owner,
@@ -47,6 +52,7 @@ impl RepositoryStore {
             landing_file_mutation,
             workflow_catalog,
             push_trigger_input,
+            landed_request_candidates,
             now_unix,
         } = command;
         let repo_id = scope_domain::repository::repo_id(&owner, &name);
@@ -116,7 +122,22 @@ impl RepositoryStore {
             generated_ids,
         )
         .await?;
+        let completed_landed_requests = complete_landed_requests(
+            &tx,
+            &repo_id,
+            &git_head.head_oid,
+            LandedRequestCompletion {
+                actor_user_id: author_id,
+                candidates: landed_request_candidates,
+            },
+            now_unix,
+            generated_ids,
+        )
+        .await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(Some(git_head))
+        Ok(Some(RepositoryMutationResult {
+            result: git_head,
+            completed_landed_requests,
+        }))
     }
 }
