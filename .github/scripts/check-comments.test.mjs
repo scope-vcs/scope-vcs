@@ -15,6 +15,8 @@ test('selects comment syntax by file type and skips exempt files', () => {
   assert.equal(commentSyntax('web/src/routeTree.gen.ts'), null)
   assert.equal(commentSyntax('web/src/api/types.generated.ts'), null)
   assert.equal(commentSyntax('crates/scope-postgres/src/migrations/m0046_drop.rs'), null)
+  assert.equal(commentSyntax('crates/scope-postgres/src/migrations/mod.rs'), 'slash')
+  assert.equal(commentSyntax('README.html'), 'html')
   assert.equal(commentSyntax('legal/upstream/notice.sh'), null)
 })
 
@@ -68,6 +70,7 @@ test('allows doc comments only on API contract items', () => {
   assert.deepEqual(lines(findComments('api/src/http/responses.rs', contract)), [11])
   const importOnly = 'use schemars::JsonSchema;\n/// Internal helper.\nfn helper() {}'
   assert.deepEqual(lines(findComments('api/src/use_cases/run.rs', importOnly)), [2])
+  assert.deepEqual(findComments('crates/scope-api-contract/src/git_oid.rs', '/// A Git object id.\npub struct GitOid(String);'), [])
 })
 
 test('does not mistake shell globs or dereferences for comments', () => {
@@ -87,4 +90,15 @@ test('reports hash comments but allows shebangs and tool directives', () => {
     'echo done # trailing labels are out of scope',
   ].join('\n')
   assert.deepEqual(lines(findComments('dev/script.sh', source)), [3])
+})
+
+test('reports HTML comments except legal notices', () => {
+  const page = [
+    '<!DOCTYPE html>',
+    '<!-- Embeds a font (Copyright 2019 IBM Corp.) under the',
+    '     SIL Open Font License 1.1. -->',
+    '<!-- layout note -->',
+    '<html></html>',
+  ].join('\n')
+  assert.deepEqual(lines(findComments('README.html', page)), [4])
 })

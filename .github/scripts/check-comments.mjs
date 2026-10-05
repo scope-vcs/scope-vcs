@@ -8,7 +8,11 @@ const execFileAsync = promisify(execFile)
 
 const slashExtensions = new Set(['.cjs', '.css', '.js', '.jsx', '.mjs', '.rs', '.ts', '.tsx'])
 const hashExtensions = new Set(['.bash', '.py', '.sh', '.toml', '.yaml', '.yml'])
-const exemptPrefixes = ['crates/scope-postgres/src/migrations/', 'legal/']
+const exemptPrefixes = ['legal/']
+const migrationDir = 'crates/scope-postgres/src/migrations/'
+const contractCrate = 'crates/scope-api-contract/'
+const htmlExtensions = new Set(['.htm', '.html'])
+const legalNotice = /\b(copyright|licen[cs]e)\b/i
 const generatedSuffixes = ['.gen.ts', '.generated.ts']
 
 const slashDirectives = [
@@ -30,9 +34,11 @@ export function commentSyntax(file, firstLine = '') {
   const normalized = file.replaceAll('\\', '/')
   const basename = path.posix.basename(normalized)
   if (exemptPrefixes.some((prefix) => normalized.startsWith(prefix))) return null
+  if (normalized.startsWith(migrationDir) && /^m\d+_.*\.rs$/.test(basename)) return null
   if (generatedSuffixes.some((suffix) => basename.endsWith(suffix))) return null
   const extension = path.posix.extname(basename)
   if (slashExtensions.has(extension)) return 'slash'
+  if (htmlExtensions.has(extension)) return 'html'
   if (hashExtensions.has(extension) || basename.startsWith('Dockerfile')) return 'hash'
   if (extension === '' && firstLine.startsWith('#!')) return 'hash'
   return null
@@ -79,11 +85,26 @@ export function rustContractDocLines(lines) {
   return allowed
 }
 
+function htmlComments(file, lines) {
+  const found = []
+  lines.forEach((line, index) => {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('<!--')) return
+    const closing = lines.findIndex((candidate, candidateIndex) =>
+      candidateIndex >= index && candidate.includes('-->'))
+    const block = lines.slice(index, closing === -1 ? lines.length : closing + 1).join('\n')
+    if (!legalNotice.test(block)) found.push({ file, line: index + 1, text: trimmed })
+  })
+  return found
+}
+
 export function findComments(file, contents) {
   const lines = contents.split('\n')
   const syntax = commentSyntax(file, lines[0])
   if (!syntax) return []
+  const contractCrateFile = file.replaceAll('\\', '/').startsWith(contractCrate)
   const contractDocLines = file.endsWith('.rs') ? rustContractDocLines(lines) : new Set()
+  if (syntax === 'html') return htmlComments(file, lines)
   const found = []
   let continuingSafety = false
   lines.forEach((line, index) => {
@@ -105,7 +126,7 @@ export function findComments(file, contents) {
     }
     if (continuingSafety && trimmed.startsWith('//') && !trimmed.startsWith('///')) return
     continuingSafety = false
-    if (contractDocLines.has(index)) return
+    if (contractDocLines.has(index) || (contractCrateFile && isDocLine(trimmed))) return
     if (slashDirectives.some((directive) => directive.test(trimmed))) return
     found.push({ file, line: index + 1, text: trimmed })
   })
