@@ -418,6 +418,9 @@ async fn retention_committing_first_makes_authorization_reject_missing_evidence(
             ))
             .await
     });
+    // Row-lock waiters keep their queue order, but a locker arriving after the guard
+    // commits can take the lock before the woken retention task does.
+    wait_for_blocked_transaction_count(&store, guard_pid, 2).await;
     guard.commit().await.unwrap();
 
     assert_eq!(retention_task.await.unwrap().unwrap(), 1);
