@@ -9,9 +9,6 @@ const preparationJobName = "Prepare Railway artifacts / prepare";
 const preparationStepName = "Prepare immutable release images";
 const shaPattern = /^[0-9a-f]{40}$/;
 
-// The production workflow and authorized operators own journal writes and these GHCR
-// packages. This gate rejects PR/candidate preparation; it is not a signature over a
-// journal written by an actor who already has those production publishing privileges.
 export async function validateRecoveryPreparation(prepared, request, repository, manifest = deploymentManifest,
   requiredComponents = BACKEND_COMPONENTS) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository ?? "")) {
@@ -46,8 +43,6 @@ export async function validateRecoveryPreparation(prepared, request, repository,
     throw new Error("Recovery preparation must come from this repository's production workflow on main at the exact source SHA");
   }
 
-  // Resolve the branch before comparing immutable SHAs so a tag named main cannot
-  // satisfy ancestry. No dependency on Actions artifact/log retention is needed.
   const main = await request("/branches/main");
   const mainSha = main.commit?.sha;
   if (main.name !== "main" || !shaPattern.test(mainSha ?? "")) {
@@ -60,8 +55,6 @@ export async function validateRecoveryPreparation(prepared, request, repository,
     throw new Error("Recovery source SHA is not in trusted main history");
   }
 
-  // A cutover can kill or fail the overall run after preparation completed. A rerun
-  // of failed jobs can also omit preparation, so retain successful earlier attempts.
   for (let page = 1; ; page += 1) {
     const result = await request(`/actions/runs/${preparationRunId}/jobs?filter=all&per_page=100&page=${page}`);
     if (!Array.isArray(result.jobs)) throw new Error("Cannot read original preparation jobs");

@@ -25,7 +25,6 @@ test('one evaluation loads once and is reused by later mounts of the same reques
 
   assert.equal(calls, 1)
   assert.equal(requestChecksResource.peek(identity)?.state, 'started')
-  // Another viewer, access scope or request never reads this entry.
   for (const other of [
     requestChecksIdentity('other-access', 'request'),
     requestChecksIdentity('viewer-access', 'other-request'),
@@ -73,7 +72,6 @@ for (const kind of [
     assert.equal(runState(requestChecksResource.peek(identity)), 'running')
     assert.equal(requestChecksResource.getSnapshot(other).stale, false)
 
-    // A failed refresh keeps showing the rows it still has.
     const refresh = requestChecksResource.ensure(identity, '2', async () => {
       throw new Error('temporary outage')
     })

@@ -58,7 +58,6 @@ pub mod auth_identity {
 
     impl ActiveModelBehavior for ActiveModel {}
 }
-/// A Clerk user whose Scope account was deleted, waiting to be deleted from Clerk.
 pub mod clerk_user_deletion {
     use super::*;
 

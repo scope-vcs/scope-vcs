@@ -56,7 +56,6 @@ impl StorageRuntime {
         )
     }
 
-    /// `object_backend` holds only content objects, so tests can count them apart from segments.
     #[cfg(test)]
     pub(crate) fn for_tests(object_backend: Arc<dyn ObjectBackend>) -> Self {
         use scope_storage::{GitSegmentStoreConfig, MemoryBackend};

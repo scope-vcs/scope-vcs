@@ -119,8 +119,6 @@ async fn old_draft_cleanup_preserves_a_same_name_replacement_even_at_the_same_he
     let response = close_draft(&state, REQUEST_ID).await;
     assert_eq!(response.status(), StatusCode::OK);
     replacement.id = "req_replacement".to_string();
-    // Reusing the same Git head is deliberate: an expected-OID check alone
-    // cannot distinguish this replacement from the deleted draft.
     state
         .metadata
         .requests()

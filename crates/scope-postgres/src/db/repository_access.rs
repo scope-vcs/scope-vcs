@@ -45,9 +45,6 @@ impl RepositoryStore {
         Ok(Some(context))
     }
 
-    /// Decides whether the viewer may read the repository and, when they may,
-    /// returns the still-open snapshot that decision was made in, so the caller
-    /// reads its data from the same repository incarnation.
     pub(super) async fn begin_read_access_snapshot(
         &self,
         repo_id: &str,
@@ -103,7 +100,6 @@ impl RepositoryStore {
         Ok(context)
     }
 
-    /// The repository's record by id, for background work that only knows the id.
     pub async fn repository_record(
         &self,
         repo_id: &str,
@@ -197,8 +193,6 @@ impl RepositoryStore {
                 tx.commit().await.map_err(PostgresError::internal)?;
                 return Ok(Some(head.head_oid));
             }
-            // History owns the current audience's head independently of the
-            // asynchronously rebuilt projection file cache.
             let metadata = super::history_reads::history_view_metadata(
                 &tx,
                 &context.record.id,
@@ -254,7 +248,6 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
     Ok(Some(RepositoryAccessContext { record, access }))
 }
 
-/// The repository row without its configuration or policy.
 pub(super) async fn load_repo_record<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

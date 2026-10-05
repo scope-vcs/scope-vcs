@@ -19,7 +19,6 @@ async fn json_request(
     (status, response_json(response).await)
 }
 
-/// Creates an invite through the API and returns its id and a copied link token.
 async fn create_invite(state: &AppState) -> (String, String) {
     let (status, body) = json_request(
         state,
@@ -33,7 +32,6 @@ async fn create_invite(state: &AppState) -> (String, String) {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    // Creating an invite queues its email and hands back no link.
     assert_eq!(body["email"]["state"], "queued");
     assert!(body.get("invite_url").is_none());
     let invite_id = body["id"].as_str().unwrap().to_string();
@@ -145,8 +143,6 @@ async fn acceptance_grants_member_access_and_can_be_repeated_safely() {
         Some(serde_json::Value::String("member".into()))
     );
 
-    // A double click or a retry after a lost response succeeds again without
-    // adding a second membership or a second analytics event.
     let (status, repeated) = accept(&state, &token, &invitee_header()).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(repeated["member"], body["member"]);
@@ -156,7 +152,6 @@ async fn acceptance_grants_member_access_and_can_be_repeated_safely() {
         landing(&state, &token, Some(&invitee_header())).await["status"],
         "member"
     );
-    // A used link tells anyone else only that it was used.
     assert_eq!(
         landing(&state, &token, Some(&stranger)).await,
         serde_json::json!({ "status": "used" })
@@ -181,16 +176,12 @@ async fn every_issued_link_works_until_the_invite_is_revoked() {
     assert_ne!(first, second);
     let first_landing = landing(&state, &first, None).await;
     assert_eq!(first_landing["status"], "open");
-    // A new link does not extend the invite.
     assert_eq!(landing(&state, &second, None).await, first_landing);
 
-    // Only the owner can issue links. The repository is private, so anyone
-    // else is told it does not exist.
     let (status, _) =
         json_request(&state, "POST", &links_path, Some(&invitee_header()), None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
-    // A second invite for the same email is refused while one is pending.
     let (status, _) = json_request(
         &state,
         "POST",
@@ -277,7 +268,6 @@ async fn an_expired_invite_reads_as_expired_everywhere_and_can_be_replaced() {
     .await;
     assert_eq!(members["invites"][0]["state"], "Expired");
 
-    // The expired invite does not block a new one, and its link stays dead.
     let (_, fresh) = create_invite(&state).await;
     assert_eq!(landing(&state, &fresh, None).await["status"], "open");
     assert_eq!(landing(&state, token, None).await["status"], "expired");
@@ -328,7 +318,6 @@ async fn deliver_at(state: &AppState, now: u64) -> Result<usize, crate::error::A
     deliver_due_invite_emails(state, &move || Ok(now)).await
 }
 
-/// The link inside a recorded email's text body.
 fn emailed_token(text: &str) -> String {
     let link = text
         .split_whitespace()
@@ -354,17 +343,14 @@ async fn a_new_invite_is_emailed_with_a_link_that_was_never_stored() {
     assert_eq!(to, INVITED_EMAIL);
     assert_eq!(reply_to, TEST_OWNER_EMAIL);
     assert!(text.contains("owner/repo"));
-    // The members list hears about the link and then about the delivery.
     assert!(events.recv().await.unwrap().version < events.recv().await.unwrap().version);
     assert_eq!(invite_email_state(&state).await, "sent");
 
-    // The emailed link is its own link, and the copied one still works.
     let emailed = emailed_token(text);
     assert_ne!(emailed, copied);
     for token in [&emailed, &copied] {
         assert_eq!(landing(&state, token, None).await["status"], "open");
     }
-    // Only hashes are stored: the plain token appears in no invite row.
     let collaboration = state
         .metadata
         .repositories()
@@ -386,7 +372,6 @@ async fn a_new_invite_is_emailed_with_a_link_that_was_never_stored() {
             .all(|hash| !hash.contains(&emailed))
     );
 
-    // Nothing is due any more, and a second email inside a minute is refused.
     assert_eq!(deliver_at(&state, unix_now()).await.unwrap(), 0);
     let (status, body) = json_request(
         &state,
@@ -416,17 +401,14 @@ async fn an_outage_is_retried_and_a_refusal_leaves_a_retryable_invite() {
     ]);
     let now = unix_now();
 
-    // The outage keeps the email queued, and it is not due again straight away.
     assert_eq!(deliver_at(&state, now).await.unwrap(), 1);
     assert_eq!(invite_email_state(&state).await, "queued");
     assert_eq!(deliver_at(&state, now).await.unwrap(), 0);
 
-    // The refusal settles it as failed without sending anything.
     assert_eq!(deliver_at(&state, now + 3_600).await.unwrap(), 1);
     assert_eq!(invite_email_state(&state).await, "failed");
     assert!(mailer(&state).sent.lock().unwrap().is_empty());
 
-    // The same invite can be emailed again: no second invite is needed.
     let retried = state
         .metadata
         .repositories()
@@ -476,7 +458,6 @@ async fn one_sender_holds_an_email_until_its_claim_lapses() {
     let repositories = state.metadata.repositories();
     let now = unix_now();
 
-    // A second API process finds nothing while the first holds the claim.
     let first = repositories
         .claim_due_repository_invite_emails("claim_first", now, now + 120, 20)
         .await
@@ -484,8 +465,6 @@ async fn one_sender_holds_an_email_until_its_claim_lapses() {
     assert_eq!(first.len(), 1);
     assert_eq!(deliver_at(&state, now).await.unwrap(), 0);
 
-    // The first process dies. Once its claim lapses another takes over, and
-    // whatever the first one reports afterwards is ignored.
     assert_eq!(deliver_at(&state, now + 121).await.unwrap(), 1);
     assert_eq!(invite_email_state(&state).await, "sent");
     let late = repositories
@@ -535,7 +514,6 @@ async fn an_owner_out_of_daily_emails_still_gets_an_invite_to_copy() {
     assert!(body["email"].is_null());
     let token = copy_link(&state, body["id"].as_str().unwrap()).await;
     assert_eq!(landing(&state, &token, None).await["status"], "open");
-    // Asking for the email says why it cannot go out yet.
     let (status, refused) = json_request(
         &state,
         "POST",

@@ -18,8 +18,6 @@ use std::collections::BTreeSet;
 
 pub struct RepositoryHistoryQuery<'a> {
     pub incarnation: &'a RepositoryIncarnation,
-    /// The repository version the viewer's audience was authorized at. Any
-    /// later change, including to membership, makes the read retry.
     pub change_version: u64,
     pub audience: ProjectionViewKey,
     pub feed: HistoryFeed,
@@ -36,9 +34,7 @@ pub struct RepositoryHistoryBoundary {
 
 pub struct RepositoryHistoryPage {
     pub view: HistoryView,
-    /// Adjacent all-activity entries, read only for a single-entry lookup.
     pub neighbors: Option<RepositoryHistoryNeighbors>,
-    /// Current Git revision of this audience's projection, read at the same frontier.
     pub head_oid: Option<String>,
     pub next_boundary: Option<RepositoryHistoryBoundary>,
     pub available: bool,
@@ -86,8 +82,6 @@ pub(super) async fn history_view_metadata<C: ConnectionTrait>(
     .transpose()
 }
 
-/// Rebuilds the disposable history representation at one authoritative repository frontier.
-/// Callers hold the repository guard; the view and its entries become visible atomically.
 pub(super) async fn save_repository_history_views<C: ConnectionTrait>(
     conn: &C,
     repo: &Repository,
@@ -172,8 +166,6 @@ pub(super) async fn save_repository_history_view<C: ConnectionTrait>(
 }
 
 impl RepositoryStore {
-    /// Concurrent cache misses recheck after acquiring the repository guard, so one build
-    /// supplies every reader. A content change invalidates the cache by advancing content_version.
     pub async fn ensure_history_view(
         &self,
         incarnation: &RepositoryIncarnation,
@@ -268,7 +260,6 @@ impl RepositoryStore {
                 None => None,
             };
             let limit = limit.clamp(1, 50) as i64;
-            // Separate predicates retain index bounds even after PostgreSQL chooses a generic plan.
             let mut values = vec![incarnation.repository_id().into(), audience.as_str().into()];
             let feed_predicate = match feed {
                 HistoryFeed::Updates => " AND payload->>'kind' != 'VisibilityChange'",

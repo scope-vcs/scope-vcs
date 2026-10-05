@@ -18,8 +18,6 @@ export type ChangedFilesProps = {
   selectedFilePath: string | null
 }
 
-// Keep navigation state in the detail panel so loading and error surfaces do
-// not discard it while the changed-file content is temporarily hidden.
 export function useChangedFileNavigation(onCloseDiff: () => void, initiallyOpen = false) {
   const [open, setOpen] = useState(initiallyOpen)
   const ref = useRef<HTMLDivElement>(null)
@@ -40,8 +38,6 @@ export function ChangedFilesWorkbench({
   navigation: ReturnType<typeof useChangedFileNavigation>
   navigationLabel: string
   selectedVisibilityId?: string | null
-  // Commit details retain their empty file navigator and bounded preview pane.
-  // Entries with only visibility changes instead render just the selected diff.
   emptyFilesMessage?: string
   emptyPreviewMessage?: string
   expandFolders?: boolean

@@ -10,8 +10,6 @@ type InitialChanges = {
   discussionReferences: RequestChangesDiscussionReferences
 }
 
-// Loader data is a hydration seed for its original viewer and access scope.
-// The resource owns subsequent reads, refreshes and retained navigation data.
 export function useRequestChangesResource({
   access, identity, initial, load, viewerId,
 }: {

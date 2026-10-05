@@ -15,16 +15,12 @@ import { APPLICATION_COMPONENTS, BACKEND_COMPONENTS, backendSelected } from "./d
 const components = APPLICATION_COMPONENTS;
 const validationJobName = "Validate selected components / Production validation gate";
 
-// A resumed smoke run replaces the candidate's browser and Git smoke checks with
-// the trusted revision's copies, so corrected smoke inputs are what it executes.
 const smokeInput = (filename) => filename === "dev/media-smoke.mjs"
   || filename.startsWith("web/smoke/")
   || filename === "web/scripts/update-smoke-server-functions.mjs"
   || /^\.github\/scripts\/[^/]*smoke/.test(filename);
 
 export function assertReusableStagingSource(comparison, { allowSmokeChanges = false } = {}) {
-  // GitHub Compare returns at most 300 changed files. A truncated comparison
-  // cannot prove that staging rules and schema stayed unchanged.
   if (!Array.isArray(comparison?.files) || comparison.files.length >= 300) {
     throw new Error("Cannot establish unchanged staging inputs for source reuse");
   }
@@ -71,7 +67,6 @@ export async function validatePreparedDeployment(
     throw new Error("Prepared deployment requires a nonempty set of application components");
   }
   const backend = backendSelected(Object.fromEntries(selected.map(component => [component, true])));
-  // Backend activation needs the API maintenance tool and the complete backend image set.
   if (backend) validatePreparedRelease(prepared, { components: BACKEND_COMPONENTS });
 
   const responses = new Map();
@@ -97,8 +92,6 @@ export async function validatePreparedDeployment(
           && job.head_sha === proof.sourceSha
           && job.status === "completed") {
         if (job.name === validationJobName && job.conclusion === 'success') validated = true;
-        // Only the latest staging attempt speaks for the run; an earlier success
-        // followed by a failed rerun is not a passed staging.
         if (job.name === 'Deploy staging / Deploy and smoke staging'
             && (!staging || job.run_attempt > staging.run_attempt)) staging = job;
       }

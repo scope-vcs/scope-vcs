@@ -12,8 +12,6 @@ pub(super) fn storage_limit() -> u64 {
     RequestAttachmentLimits::default().max_repository_storage_bytes
 }
 
-// A completed deletion releases its reservation permanently. Reconciliation may
-// reopen the cleanup job, but it must never reserve these bytes again.
 pub(super) async fn media_usage<C: ConnectionTrait>(
     conn: &C,
     repository_id: &str,

@@ -18,7 +18,6 @@ const PENDING_SOURCE_LINES: { id: string; length: LineSkeletonLength }[] = [
   { id: 'ninth', length: 'short' },
 ]
 
-// Mirrors RepositoryFileNavigator: find-file search, then the file tree.
 export function FileNavigatorSkeleton() {
   return (
     <div>
@@ -43,7 +42,6 @@ export function SourceCodeSkeleton() {
   )
 }
 
-/** The tab strip before the landing file's tab opens. */
 export function SourceTabStripSkeleton() {
   return (
     <div className="flex min-h-10 items-center border-b border-border px-3">

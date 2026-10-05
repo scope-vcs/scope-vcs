@@ -1,5 +1,3 @@
-"""Daily GitHub entrypoint: scoped Railway SSH collection and OIDC-only AWS publication."""
-
 import io
 import json
 import os
@@ -31,8 +29,6 @@ class Railway:
     def run(self, service, arguments, incoming=None, output=None):
         if not UUID.fullmatch(service):
             raise Incomplete("recovery requires an explicit service ID")
-        # Remote identity checks precede every operation. All shell operands are
-        # quoted and runtime secrets are never interpolated into command text.
         guard = f'test "$RAILWAY_PROJECT_ID" = {shlex.quote(self.project)} && test "$RAILWAY_ENVIRONMENT_ID" = {shlex.quote(self.environment)} && test "$RAILWAY_SERVICE_ID" = {shlex.quote(service)} || exit 2; exec '
         command = guard + shlex.join(arguments)
         environment = dict(os.environ, RAILWAY_CALLER="skill:use-railway@1.4.0", RAILWAY_AGENT_SESSION="scope-recovery-" + os.environ.get("GITHUB_RUN_ID", "local"))
@@ -118,8 +114,6 @@ def main():
         values.update(railway.collect(manifest["services"]["media-api"]["id"], media_names))
         if os.environ.get("SCOPE_RECOVERY_INCLUDE_CACHE", "").lower() == "true":
             values.update(railway.collect(manifest["services"]["cache"]["id"], {PREFIXES["cache"] + "_" + suffix for suffix in SUFFIXES}))
-        # Values remain in this process and mode-0600 scratch. Never write them to
-        # GITHUB_ENV, step outputs, console logs, or uploaded workflow artifacts.
         write_json(root / "keys.json", {name: values.pop(name) for name in KEYS})
         os.environ.update(values)
         os.environ["SCOPE_RECOVERY_KEYS_FILE"] = str(root / "keys.json")

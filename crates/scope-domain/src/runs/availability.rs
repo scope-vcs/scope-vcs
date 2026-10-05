@@ -1,13 +1,8 @@
-//! Who may use Scope's hosted runner. A repository may create and run native
-//! runs only while an operator lists its owning account.
-
 use super::validation::required;
 use crate::error::DomainError;
 
-/// Shown wherever a repository's native runs are refused or withdrawn.
 pub const NATIVE_RUNS_UNAVAILABLE: &str = "Scope runs are not available for this repository.";
 
-/// The longest note an operator may keep with a listed account.
 pub const MAX_NATIVE_RUNS_NOTE_CHARS: usize = 500;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -17,7 +12,6 @@ pub enum NativeRunsAvailability {
 }
 
 impl NativeRunsAvailability {
-    /// `owner_listed` is whether the repository's owning account is on the list.
     pub fn for_owner(owner_listed: bool) -> Self {
         if owner_listed {
             Self::Available
@@ -30,7 +24,6 @@ impl NativeRunsAvailability {
         self == Self::Available
     }
 
-    /// Creating, retrying, or admitting a native run requires an available repository.
     pub fn require(self) -> Result<(), DomainError> {
         if self.is_available() {
             Ok(())
@@ -40,7 +33,6 @@ impl NativeRunsAvailability {
     }
 }
 
-/// An account an operator listed for native runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NativeRunsAccount {
     pub user_id: String,

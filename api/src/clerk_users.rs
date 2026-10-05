@@ -1,27 +1,19 @@
-//! Deletes Clerk users through Clerk's Backend API.
-
 use crate::config::{CLERK_SECRET_KEY_ENV, non_empty_env};
 use std::{sync::Arc, time::Duration};
 
-/// The longest one Clerk Backend API call may take.
 pub(crate) const CLERK_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 const CLERK_USERS_URL: &str = "https://api.clerk.com/v1/users";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ClerkUserDeletion {
-    /// Clerk no longer has the user, whether this attempt removed it or an
-    /// earlier one did.
     Deleted,
-    /// Try again later. Deletion is never abandoned.
     Retry(String),
 }
 
 #[derive(Clone)]
 pub(crate) enum ClerkUsers {
     Api(Arc<ClerkBackendApi>),
-    /// No secret key is configured. Deletions stay queued and are retried,
-    /// so they complete once a key is set.
     Unconfigured,
     #[cfg(test)]
     Scripted(Arc<ScriptedClerkUsers>),
@@ -89,7 +81,6 @@ fn classify_clerk_response(status: u16) -> ClerkUserDeletion {
     }
 }
 
-/// Answers with scripted outcomes, oldest first, then deletes.
 #[cfg(test)]
 #[derive(Default)]
 pub(crate) struct ScriptedClerkUsers {

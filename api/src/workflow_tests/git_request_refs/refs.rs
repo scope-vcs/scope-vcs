@@ -719,7 +719,6 @@ async fn request_ref_push_rejects_history_unrelated_to_recorded_base() {
     )
     .unwrap();
     commit_all(&source, "unrelated request change");
-    // Force past Git's own fast-forward check so Scope's base rule decides.
     let output = run_git_output(
         Some(&source),
         &[

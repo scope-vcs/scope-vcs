@@ -25,7 +25,6 @@ export function useHistoryFeed({
   const identity = isLoaded
     ? [repoResourceScope(repo, userId ?? null), audience, feed].join('\0')
     : null
-  // A new content version restarts from the first page; older cursors expire with it.
   const version = String(repo.content_version)
   const { owner, repo: repoName } = params
   const load = useCallback(

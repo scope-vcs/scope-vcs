@@ -358,7 +358,6 @@ fn start_audience(
     Ok(audience)
 }
 
-/// Read the request associated with the current branch without changing local state.
 pub fn inspect_current_request(
     git_repo: &GitRepo,
     api: ApiSession<'_>,

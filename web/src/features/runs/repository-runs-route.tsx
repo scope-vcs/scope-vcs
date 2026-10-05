@@ -64,8 +64,6 @@ function RunRouteContent({
   const loadWorkflows = useCallback(async (input: RepoParams, signal?: AbortSignal) => {
     const snapshot = identity ? runHistoryResource.getSnapshot(identity) : null
     if (identity && (snapshot?.stale || snapshot?.pending && snapshot.version !== 'more')) {
-      // The page read includes the catalog. Its existing catalog owner can
-      // share that read while repository events refresh both resources.
       const current = await ensureRunResource(runHistoryResource, identity, load, 'refresh')
       if (current.page?.kind !== 'native') return null
       if (current.page.workflowsError) throw new Error(current.page.workflowsError)
@@ -84,8 +82,6 @@ function RunRouteContent({
 
   if (!resource.value) return resource.error ? <RunsPageError error={resource.error} /> : <RunsPagePending />
 
-  // GitHub's runs are filtered on the page itself, so every Runs route,
-  // a workflow's route included, starts from all of them.
   if (page?.kind === 'github') {
     return (
       <GitHubWorkflowRunsPage

@@ -30,7 +30,6 @@ async fn owners_of_repositories_with_runs_or_recorded_checks_stay_listed() {
         ) SELECT owner || '-request', owner || '/repo', 'checks', owner, 'Owner', 'Private',
                  repeat('a', 40), repeat('c', 40), 'Checks', '', 1, 1, 1
           FROM (VALUES ('quiet-owner'), ('waiting-owner')) AS fixture(owner);
-        -- Checks recorded before the allowlist still wait for approval, with no run yet.
         INSERT INTO scope_request_check_evaluations (
             request_id, head_oid, state, message, checks, created_at_unix, updated_at_unix
         ) VALUES

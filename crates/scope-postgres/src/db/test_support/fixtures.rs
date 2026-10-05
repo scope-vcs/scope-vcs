@@ -40,7 +40,6 @@ pub fn store_with_repositories(
     })
 }
 
-/// Repositories whose owners are listed for native runs.
 pub fn store_with_native_run_repositories(
     repositories: impl IntoIterator<Item = Repository>,
 ) -> MetadataStore {

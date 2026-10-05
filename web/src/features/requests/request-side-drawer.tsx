@@ -3,7 +3,6 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { useId, type ReactNode, type RefObject } from 'react'
 
-/** A right-hand panel over the request page, opened without a Radix trigger. */
 export function RequestSideDrawer({
   children,
   description,
@@ -20,7 +19,6 @@ export function RequestSideDrawer({
   icon: ReactNode
   onOpenChange: (open: boolean) => void
   open: boolean
-  /** Where focus goes on close. */
   returnFocus: RefObject<HTMLElement | null>
   title: string
 }) {

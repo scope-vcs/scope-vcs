@@ -10,8 +10,6 @@ export const requestQueueResource = createCachedResource<RequestQueueViewState>(
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
-// A refresh refills the visible depth of each section. Navigation and incoming
-// activity therefore keep already-loaded rows, including searched pages.
 export async function refreshRequestQueue(key: string, load: LoadRequestQueuePage, signal: AbortSignal): Promise<RequestQueueViewState> {
   const previous = requestQueueResource.peek(key)
   const query = previous?.requestedQuery ?? ''
@@ -34,8 +32,6 @@ export async function searchRequestQueue(key: string, query: string, load: LoadR
   const snapshot = requestQueueResource.getSnapshot(key)
   if (snapshot.value?.query === normalized && snapshot.value.requestedQuery === normalized && !snapshot.error) return
   const emptyPage = { requests: [], next_cursor: null, next_attention_at_unix: null }
-  // Keep requested and displayed queries together in the resource. A repository
-  // invalidation can cancel a fetch, but it must not discard the search intent.
   requestQueueResource.write(key, {
     pages: snapshot.value?.pages ?? { active: emptyPage, unclaimed: emptyPage, set_aside: emptyPage, done: emptyPage },
     query: snapshot.value?.query ?? '',

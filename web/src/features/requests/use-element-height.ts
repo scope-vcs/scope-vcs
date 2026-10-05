@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 
-/** The element's border-box height, kept current as it resizes; 0 without one. */
 export function useElementHeight(element: HTMLElement | null) {
   const [height, setHeight] = useState(0)
   useEffect(() => {

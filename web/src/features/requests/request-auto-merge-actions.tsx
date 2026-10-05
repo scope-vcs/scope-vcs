@@ -40,8 +40,6 @@ export function RequestAutoMergeActions({
   const revisionId = status?.revision_id ?? null
   const active = intent?.status === 'Active'
   const pending = autoMerge.pending !== null
-  // Checks and auto-merge status refresh separately. Once the request can merge
-  // directly, an offer that has not caught up yet would duplicate Merge.
   const canOffer = status?.can_enable === true && !canMergeRequest(request)
 
   function openDialog(next: Exclude<Dialog, null>) {
@@ -59,7 +57,6 @@ export function RequestAutoMergeActions({
 
   return (
     <>
-      {/* Ended authorizations stay in the activity history, not the header. */}
       {active ? (
         <span
           aria-live="polite"

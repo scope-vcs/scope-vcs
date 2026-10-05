@@ -1,5 +1,3 @@
-// Each route owns its server template, optional Rust builder, and optional web name.
-// The exported group order is the generated TypeScript declaration order.
 macro_rules! define_route {
     ($constant:ident, $path:literal $(, $builder:ident($($arg:ident: $ty:ty),* $(,)?))?) => {
         pub const $constant: &str = $path;

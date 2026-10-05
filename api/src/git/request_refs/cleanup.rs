@@ -8,8 +8,6 @@ use crate::{
 };
 use scope_domain::{repository::RepositoryIncarnation, requests::canonical_request_ref};
 
-/// Cleans only the deleted request's local ref. The update lock spans the
-/// metadata check and conditional Git deletion, fencing replacement requests.
 pub(crate) async fn cleanup_deleted_request_ref(
     state: &AppState,
     incarnation: &RepositoryIncarnation,

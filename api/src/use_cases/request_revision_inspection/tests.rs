@@ -78,8 +78,6 @@ fn mixed_visibility_records_hidden_paths_without_hiding_readable_changes() {
         assert_eq!(public.path, "public//file.txt");
         assert_eq!(public.visibility, Visibility::Public);
     }
-    // Visibility is decided before status validation, so an unsupported status
-    // on a hidden path is not an error.
     let hidden = inspect_request_changes(
         &[&changes[..], b":100644 100644 old new R100\0renamed.txt\0"].concat(),
         &Policy::new(Visibility::Private),
@@ -120,7 +118,6 @@ fn malformed_records_keep_their_error_categories_and_diagnostics() {
         assert_eq!(error.public_message(), expected.public_message());
         assert_eq!(error.operator_diagnostic(), expected.operator_diagnostic());
     }
-    // A hidden change does not stop validation of the records after it.
     let error = inspect_request_changes(
         b":100644 100644 old new A\0private.txt\0malformed\0",
         &Policy::new(Visibility::Private),

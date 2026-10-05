@@ -43,11 +43,9 @@ impl<T> RepositoryCollaborationMutation<T> {
     }
 }
 
-/// What the owner's members list shows.
 pub struct RepositoryCollaborationRead {
     pub collaboration: RepositoryCollaboration,
     pub users: BTreeMap<String, UserAccount>,
-    /// The newest email of each invite, by invite id.
     pub invite_emails: BTreeMap<String, RepositoryInviteEmail>,
 }
 
@@ -81,9 +79,6 @@ pub struct UpdateRepositoryMemberPermissionsCommand {
 }
 
 impl RepositoryStore {
-    /// The members and invites an owner manages, read in the same snapshot
-    /// that authorized the viewer. `None` when the viewer cannot see the
-    /// repository; a forbidden error when they can but do not own it.
     pub async fn repository_collaboration(
         &self,
         owner: &str,
@@ -155,9 +150,6 @@ impl RepositoryStore {
             },
         )?;
         save_collaboration_state(&tx, &before, &repo).await?;
-        // The invite and its first email commit together, so an invite is
-        // never saved with a forgotten email. An owner who has used up the
-        // daily email allowance still gets the invite, and can copy a link.
         let email = match queue_invite_email(
             &tx,
             &repo,
@@ -264,8 +256,6 @@ impl RepositoryStore {
         ))
     }
 
-    /// `None` when no invite owns the link, which the landing page reports as
-    /// a link that does not work rather than as an error.
     pub async fn repository_invite_by_link_hash(
         &self,
         link_hash: &str,
@@ -285,7 +275,6 @@ impl RepositoryStore {
         Ok(invite.map(|invite| (repo, invite)))
     }
 
-    /// Returns the repository as the accepting user now sees it.
     pub async fn accept_repository_invite(
         &self,
         link_hash: &str,
@@ -296,8 +285,6 @@ impl RepositoryStore {
         let repo_id = repo_id_for_invite_link(&tx, link_hash)
             .await?
             .ok_or_else(|| PostgresError::not_found("repository invite not found"))?;
-        // The repository lock orders acceptance against revocation, member
-        // removal, and a second acceptance of the same invite.
         let mut repo = lock_collaboration_state(&tx, &repo_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("repository invite not found"))?;

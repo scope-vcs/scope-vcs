@@ -1,10 +1,3 @@
-//! The check commits GitHub tests for public contributions. A check commit is
-//! built in a private staging repository that sees private history through
-//! alternates and holds a copy of the contribution's head. It is written only
-//! there, built again from the evaluation's recorded base when it is pushed,
-//! and never enters the request revision store, the private replica or any
-//! public projection.
-
 use crate::{
     error::ApiError,
     git::{
@@ -31,8 +24,6 @@ use std::{
 
 const CHECK_HEAD_REF: &str = "refs/scope/internal/check-head";
 
-/// What GitHub tests for a public contribution's head: the head merged onto
-/// current private main, or the conflict that prevents it.
 pub(crate) async fn public_tested_commit(
     state: &AppState,
     repo: &Repository,
@@ -64,9 +55,6 @@ pub(crate) async fn public_tested_commit(
     built
 }
 
-/// Builds the check commit `base` describes again and runs `action` in a
-/// repository that holds it. A commit that comes out different from
-/// `expected_oid` is never handed over.
 pub(crate) async fn with_check_commit<T: Send + 'static>(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -97,12 +85,9 @@ pub(crate) async fn with_check_commit<T: Send + 'static>(
     result
 }
 
-/// A temporary bare repository with private history behind an alternate and the
-/// contribution's head fetched from its revision.
 struct CheckStaging {
     path: PathBuf,
     private_main_oid: String,
-    /// Keeps the private replica the alternate points at from being evicted.
     private: GitRepoHandle,
 }
 

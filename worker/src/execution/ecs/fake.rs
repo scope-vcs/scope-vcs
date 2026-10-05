@@ -1,4 +1,3 @@
-//! An HTTP provider fixture exercising the production AWS client and retry paths.
 use super::*;
 use axum::{
     Json, Router,

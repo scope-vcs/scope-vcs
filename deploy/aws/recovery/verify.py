@@ -1,10 +1,3 @@
-"""Independent recovery verification of persisted object envelopes and plaintext hashes.
-
-Format: the framed envelope in scope-storage/src/envelope.rs, version 2, used by Git segments and
-every other encrypted object. Unknown formats fail closed instead of silently claiming a usable
-backup.
-"""
-
 import base64
 import hashlib
 import hmac
@@ -18,11 +11,6 @@ OBJECT_LABEL = b"scope-object-v2\0"
 
 
 def framed_digest(path, key, label, parts, key_id, sinks=()):
-    """Decrypts a framed envelope, returning the plaintext SHA-256 and size.
-
-    `parts` are the identity the envelope is bound to: repository and segment IDs for a segment,
-    the object key for anything else. Each sink also receives the plaintext.
-    """
     from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
     derived = hmac.new(key, label + b"".join(struct.pack(">Q", len(part)) + part for part in parts), hashlib.sha256).digest()
     cipher = ChaCha20Poly1305(derived)

@@ -52,7 +52,6 @@ export async function refreshRunHistory({ key, input, loadHistory, loadPage }: H
       await runHistoryResource.load(key, 'refresh', load)
       return
     }
-    // A live change during pagination must reconcile the newly loaded depth.
     await runHistoryResource.ensure(key, snapshot.version!, load)
     return refreshRunHistory({ key, input, loadHistory, loadPage })
   }
@@ -108,7 +107,6 @@ export function invalidateRunHistoryScope(scope: string, recovery = false) {
     if (!key.startsWith(prefix) || recovery && !runResourceNeedsRecovery(runHistoryResource, key)) return false
     const snapshot = runHistoryResource.getSnapshot(key)
     if (!snapshot.pending || snapshot.version !== 'more') return true
-    // Let the older page join retained history before reconciling its full depth.
     if (!pendingPaginationInvalidations.has(snapshot)) {
       pendingPaginationInvalidations.add(snapshot)
       const unsubscribe = runHistoryResource.subscribe(key, () => {

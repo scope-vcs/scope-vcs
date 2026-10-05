@@ -37,7 +37,6 @@ pub(super) fn extract_archive(
 ) -> anyhow::Result<RestoredArchive> {
     let file = fs::File::open(archive)?;
     let mut decoder = zstd::Decoder::new(file).context("open compressed cache")?;
-    // Frame runtime metadata before the tar stream so every payload name remains valid.
     let mut length = [0_u8; 8];
     decoder.read_exact(&mut length)?;
     let length = u64::from_be_bytes(length);
@@ -80,8 +79,6 @@ pub(super) fn extract_archive(
         (None, None) => {}
         _ => bail!("cache source metadata does not match this workspace"),
     }
-    // A clock-skewed cache could otherwise make newly generated build inputs
-    // appear older than their cached outputs.
     if newest_output > SystemTime::now() {
         bail!("cache contains future output timestamps");
     }

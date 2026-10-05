@@ -369,7 +369,6 @@ fn unwinding_after_spawn_kills_and_reaps_the_owned_process() {
         panic!("injected runner setup panic");
     });
     assert!(result.is_err());
-    // A killed but unreaped child still has a PID and is waitable.
     assert_process_reaped(pid);
 }
 

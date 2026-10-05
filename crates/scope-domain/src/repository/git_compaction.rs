@@ -3,17 +3,12 @@ use super::git::{
     validate_git_pack_span_run,
 };
 
-/// A compaction decision selected from a fully valid Git pack layout.
-///
-/// The selected run always contains exactly two adjacent equal-tier spans.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitCompactionPlan {
     selected_spans: [GitPackSpan; 2],
 }
 
 impl GitCompactionPlan {
-    /// Validates the complete layout before selecting its oldest adjacent
-    /// equal-tier pair.
     pub fn select(
         spans: &[GitPackSpan],
         max_source_bytes: u64,

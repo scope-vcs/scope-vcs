@@ -9,8 +9,6 @@ import { RunDuration } from './run-duration'
 import { RunStatusIcon } from './run-status-icon'
 import type { RepositoryRunJobDetailResponse } from '@/api/types.generated'
 
-/** Jobs laid out by what they wait on. Each node carries only what the job
- * list does: status, name and duration; the arrows say the rest. */
 export function RunJobGraph({
   jobs,
   onSelectJob,

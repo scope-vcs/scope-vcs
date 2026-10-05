@@ -17,8 +17,6 @@ export function accountSessionIdentity(viewerId: string) {
   return `account-session\0${viewerId}`
 }
 
-// The resource owns the read; this only adds the bounded retry a transient
-// failure needs before the snapshot is published as failed.
 export async function loadAccountSessionValue(
   load: AccountSessionLoader,
   signal: AbortSignal,

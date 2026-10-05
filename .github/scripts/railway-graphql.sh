@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Retry only reads. Mutations require operation-specific reconciliation.
 railway_graphql() {
   local mode="$1" query="$2" variables="$3"
   local request response attempt attempts=1 status
@@ -16,7 +15,6 @@ railway_graphql() {
       printf '%s\n' "$response"
       return 0
     fi
-    # Never emit provider response bodies: token and registry requests contain secrets.
     if ((attempt < attempts)); then
       echo "Railway read failed; retrying ($attempt/$attempts)." >&2
       sleep 2

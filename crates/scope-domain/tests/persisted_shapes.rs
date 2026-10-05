@@ -138,8 +138,6 @@ fn compiled_workflow_persisted_json_and_revision_digest_are_stable() {
     );
 }
 
-/// `as_str` is what SQL predicates and schema constraints are built from, so it
-/// must stay the single persisted spelling of every run state variant.
 #[test]
 fn run_state_names_match_their_persisted_encoding() {
     fn assert_persisted_names<T: Serialize + Copy>(variants: &[T], names: &[&str]) {

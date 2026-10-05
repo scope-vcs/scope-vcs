@@ -74,8 +74,6 @@ fn commit_in(path: &FsPath, message: &str, parent: &str) -> String {
     String::from_utf8(oid).unwrap().trim().to_string()
 }
 
-/// Advances the request branch `refs/heads/<request>` in `source` by one commit and stores
-/// its snapshot bundle, the way a request push does.
 async fn advance_request_snapshot(
     state: &AppState,
     source: &FsPath,
@@ -249,7 +247,6 @@ async fn unchanged_request_refs_are_copied_from_earlier_read_views() {
     .unwrap();
     assert_eq!(ref_head(first.as_ref(), "refs/heads/alpha"), topic_head);
 
-    // Once the snapshot is gone from the object store, only the first read view can supply alpha.
     state
         .object_store
         .delete(&scope_storage::object_key(&snapshot))

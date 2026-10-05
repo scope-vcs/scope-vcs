@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Own Linux local-dev sessions by boot/start identity and signal through pidfds."""
 import json
 import os
 from pathlib import Path
@@ -57,7 +56,6 @@ def session_handles(owner):
                 fd = os.pidfd_open(identity["pid"])
             except ProcessLookupError:
                 continue
-            # Opening the descriptor must not accidentally select a reused PID.
             if process_identity(identity["pid"]) != identity:
                 os.close(fd)
             else:

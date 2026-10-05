@@ -6,8 +6,7 @@ import { useId, useState } from 'react'
 import type { RequestActionController } from './use-request-actions'
 import type { RequestSummaryResponse } from '@/api/types.generated'
 
-// Mirrors REQUEST_ACTIVE_INVITEE_LIMIT in crates/scope-domain/src/requests/invitees.rs.
-const REQUEST_INVITEE_LIMIT = 30
+const REQUEST_ACTIVE_INVITEE_LIMIT = 30
 
 export function RequestInvitees({
   actions,
@@ -20,7 +19,7 @@ export function RequestInvitees({
   const [handle, setHandle] = useState('')
   const [removingHandle, setRemovingHandle] = useState<string | null>(null)
   const normalizedHandle = handle.trim().replace(/^@/, '')
-  const atCapacity = request.invitees.length >= REQUEST_INVITEE_LIMIT
+  const atCapacity = request.invitees.length >= REQUEST_ACTIVE_INVITEE_LIMIT
   const adding = actions.pending === 'add_invitee'
 
   async function addInvitee(event: FormEvent<HTMLFormElement>) {
@@ -44,7 +43,7 @@ export function RequestInvitees({
           invitees
         </h2>
         <span className="float-right font-mono text-xs text-muted-foreground">
-          {request.invitees.length} / {REQUEST_INVITEE_LIMIT}
+          {request.invitees.length} / {REQUEST_ACTIVE_INVITEE_LIMIT}
         </span>
       </summary>
 
@@ -106,7 +105,7 @@ export function RequestInvitees({
             </Button>
           </div>
           {atCapacity ? (
-            <p className="text-xs text-muted-foreground">The {REQUEST_INVITEE_LIMIT}-invitee limit has been reached.</p>
+            <p className="text-xs text-muted-foreground">The {REQUEST_ACTIVE_INVITEE_LIMIT}-invitee limit has been reached.</p>
           ) : null}
         </form>
       ) : null}

@@ -45,8 +45,6 @@ impl RunStore {
             .unwrap_or(0);
         let sequence = i64::try_from(chunk.sequence)
             .map_err(|_| PostgresError::invalid_input("run log sequence is too large"))?;
-        // The attempt lock serializes appends. Normal appends only need the indexed last
-        // sequence; load existing content solely when validating an idempotent retry.
         if sequence <= last_sequence
             && let Some(existing) = entities::run_log::Entity::find()
                 .filter(entities::run_log::Column::AttemptId.eq(&chunk.attempt_id))
@@ -97,8 +95,6 @@ impl RunStore {
             ));
         }
 
-        // A run cursor spans parallel jobs. Allocate its positions in commit order,
-        // after the attempt locks, without locking sibling jobs or the parent row.
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT pg_advisory_xact_lock(hashtextextended(

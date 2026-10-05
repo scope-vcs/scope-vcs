@@ -219,8 +219,6 @@ struct QueueServer {
 }
 
 impl QueueServer {
-    /// With `moved`, the request changes after the CLI loads it, so the server
-    /// refuses the attention change.
     fn start(moved: Option<Moved>) -> Self {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let attention = Arc::new(Mutex::new(Value::Null));
@@ -330,8 +328,6 @@ impl QueueServer {
     }
 }
 
-/// Every section has a second, empty page, so paging stops only at `--limit`
-/// or when the server runs out. Like the server, a page holds at most `limit` rows.
 fn queue_page(section: &str, limit: usize, next_page: bool) -> Value {
     if next_page {
         return json!({"requests": [], "next_cursor": null, "next_attention_at_unix": null});

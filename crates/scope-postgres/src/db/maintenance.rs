@@ -1,5 +1,3 @@
-//! Out-of-band schema maintenance entry points.
-
 use super::{AdminStore, ExclusiveWriterFence, workflow_catalogs};
 use crate::error::PostgresError;
 use crate::migrations::{MigrationLimits, MigrationPlan};

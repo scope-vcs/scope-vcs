@@ -61,7 +61,6 @@ test('account route shows revalidated CLI sessions while mounted', async (t) => 
   await page.evaluate(async () => {
     window.deliverAccountResponse()
     await window.delayedAccountLoad
-    // Flush the loader publication effect before checking the rendered list.
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   })
   assert.equal(await page.getByRole('button', { name: 'Revoke Second CLI' }).count(), 0,

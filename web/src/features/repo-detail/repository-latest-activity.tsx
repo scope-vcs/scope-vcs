@@ -72,7 +72,6 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
   )
 }
 
-// Wraps like the loaded row: the message takes its own line on narrow screens.
 export function RepositoryLatestActivityPending({ onRetry }: { onRetry?: () => void }) {
   return (
     <PendingSurface label="Loading latest repository change" onRetry={onRetry}>

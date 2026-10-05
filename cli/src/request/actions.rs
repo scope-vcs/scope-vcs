@@ -209,7 +209,6 @@ pub(super) fn merge_request_command(
         &format!("Merge request {} into main", before.request.name),
         args.yes,
     )?;
-    // The API refuses the merge if the head moved after this load.
     let response = merge_request(
         api,
         api_target(&context, &request_id),

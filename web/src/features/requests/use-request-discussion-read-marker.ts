@@ -1,10 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { RequestDiscussion, RequestDiscussionView } from './request-discussion-types'
 
-/**
- * Marks a thread read once its content has actually been on screen. The marker
- * sits after the thread body, so seeing it means everything above it was seen.
- */
 export function useRequestDiscussionReadMarker({
   collapsed,
   contentFullyExposed,

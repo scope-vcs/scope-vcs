@@ -4,10 +4,6 @@ export type WorkspaceTabItem = {
   title?: string
 }
 
-/**
- * Open tabs plus the single preview slot. A previewed tab is replaced by the
- * next previewed file instead of accumulating, matching editor conventions.
- */
 type WorkspaceTabState = {
   openIds: string[]
   previewId: string | null
@@ -71,7 +67,6 @@ export function closeWorkspaceTab(
   }
 }
 
-/** Drops tabs whose file left the projection. Never re-adds anything. */
 export function pruneWorkspaceTabs(
   state: WorkspaceTabState,
   availableIds: ReadonlySet<string>,
@@ -87,10 +82,6 @@ export function pruneWorkspaceTabs(
   }
 }
 
-/**
- * Labels tabs by filename, extending colliding labels one parent segment at a
- * time until they are unique. Full paths never fit inside a tab.
- */
 export function workspaceTabVisibleLabels(tabs: readonly WorkspaceTabItem[]) {
   const collisions = new Map<string, WorkspaceTabItem[]>()
   for (const tab of tabs) {

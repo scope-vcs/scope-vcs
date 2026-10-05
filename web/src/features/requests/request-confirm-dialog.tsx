@@ -29,7 +29,6 @@ export function RequestConfirmDialog({
   onOpenChange: (open: boolean) => void
   open: boolean
   pending: boolean
-  /** Where focus goes on close when no Radix trigger opened the dialog. */
   returnFocus?: RefObject<HTMLElement | null>
   title: string
 }) {

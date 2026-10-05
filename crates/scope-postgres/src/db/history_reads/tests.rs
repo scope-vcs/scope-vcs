@@ -70,7 +70,6 @@ fn fixture(commits: usize) -> (MetadataStore, Repository) {
 #[tokio::test]
 async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm() {
     let (store, repo) = fixture(1000);
-    // Seed helpers may build read models. Force an actual cold miss at this frontier.
     store
         .db
         .execute_unprepared("DELETE FROM scope_repository_history_views")
@@ -182,8 +181,6 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
     use scope_domain::visibility_changes::{VisibilityChange, VisibilityChangeSet};
 
     let (store, mut repo) = fixture(5);
-    // The projection boundary precedes another commit, but history groups the
-    // visibility effect under the latest push that caused it.
     repo.visibility_change_sets.push(
         VisibilityChangeSet::new(
             "vchg_split".into(),
@@ -215,8 +212,6 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
     );
     assert_eq!(expected.entries[0].visibility_changes.len(), 1);
 
-    // Repository writes enqueue projection rebuilds: their history persistence must
-    // persist one action, as must a subsequent cold history read.
     store
         .repositories()
         .replace_repository_for_tests(repo.clone())
@@ -389,8 +384,6 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
         .await
         .unwrap()
         .unwrap();
-    // A membership change advances only change_version; reads authorized
-    // before it must still retry.
     store.db.execute_unprepared("UPDATE scope_repositories SET change_version=change_version+1 WHERE id='owner/history'").await.unwrap();
     assert!(
         store
@@ -651,6 +644,5 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
         .await
         .unwrap();
     assert_eq!(detail.view.entries[0].source_id, "visibility_59");
-    // The database enforces the domain's one-row-per-action invariant.
     assert!(store.db.execute_unprepared("INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload) SELECT repo_id, audience, position + 10000, source_id, payload FROM scope_repository_history_entries LIMIT 1").await.is_err());
 }

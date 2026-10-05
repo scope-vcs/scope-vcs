@@ -84,8 +84,6 @@ function AnalyticsRuntime({
   const resolvedIdentityKey = identity?.identityKey ?? null
   const resolvedScopeUserId = identity?.scopeUserId ?? null
 
-  // The resource resolves the identity; this only applies it and releases the
-  // events that had to wait for an attributable viewer.
   useEffect(() => {
     if (resolvedIdentityKey === null) return
 
@@ -156,7 +154,5 @@ function captureCurrentPage(
 function safely(action: () => void) {
   try {
     action()
-  } catch {
-    // Analytics is best effort and cannot affect application behavior.
-  }
+  } catch {}
 }

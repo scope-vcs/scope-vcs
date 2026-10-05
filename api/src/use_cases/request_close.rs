@@ -50,8 +50,6 @@ pub(crate) async fn close_request(
             request_actor_role(repo.access),
             outcome,
         ));
-    // Draft ref cleanup is queued atomically with database deletion. A local
-    // Git failure cannot turn this committed close into an HTTP failure.
     state
         .publish_request_summary_refresh(&repo.incarnation(), reason)
         .await;

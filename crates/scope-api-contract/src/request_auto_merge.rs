@@ -1,5 +1,3 @@
-//! API shapes for authorizing and inspecting unattended request merging.
-
 use crate::{GitOid, RequestActorSummaryResponse, wire_enum};
 use scope_domain::requests::{
     RequestAutoMergeIntentStatus as DomainRequestAutoMergeIntentStatus,

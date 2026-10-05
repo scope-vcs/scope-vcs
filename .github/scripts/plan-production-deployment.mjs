@@ -39,9 +39,6 @@ export function classifyChanges(manifest, paths, requestedScope = "changed") {
   return selection;
 }
 
-// Every database writer and coupled application artifact must share a revision
-// when the deployed API's migration inventory changes. Distribution-only releases
-// remain independent, and an unchanged migration baseline preserves narrow scopes.
 export function includeMigrationParticipants(selection, apiChanges) {
   if (!backendSelected(selection)) return selection;
   if (Array.isArray(apiChanges) && !apiChanges.some((path) => path.startsWith("crates/scope-postgres/src/migrations/"))) return selection;

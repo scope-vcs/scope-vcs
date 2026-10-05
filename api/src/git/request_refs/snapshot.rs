@@ -5,8 +5,6 @@ use scope_storage::{ObjectStore, write_source_blob_to};
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path as FsPath};
 
-/// Downloads a request snapshot bundle and fetches `request_ref` from it into `repo`. The bundle
-/// lands in a temp file beside the repo and is removed whether or not the fetch succeeds.
 pub(super) fn fetch_snapshot_into(
     state: &AppState,
     repo: &FsPath,
@@ -25,8 +23,6 @@ pub(super) fn fetch_snapshot_into(
     result
 }
 
-/// Streams a verified snapshot bundle to `path` without holding it in memory. Runs on a blocking
-/// thread. On failure `path` may hold a partial bundle, which the caller removes.
 pub(super) fn download_snapshot(
     objects: &dyn ObjectStore,
     snapshot: &SourceBlob,
@@ -41,8 +37,6 @@ pub(super) fn download_snapshot(
     })
 }
 
-/// Fetches `request_ref` from a snapshot bundle file into `repo`, first supplying the request's
-/// base from `base_repo` when `repo` lacks it.
 pub(super) fn fetch_bundle_into(
     repo: &FsPath,
     request_ref: &str,
@@ -60,8 +54,6 @@ pub(super) fn fetch_bundle_into(
     )
 }
 
-/// A snapshot bundle leaves out the history of the request's base. Fetches any base commit
-/// `repo` is missing, with its history, from `base_repo`.
 fn supply_bundle_base(
     repo: &FsPath,
     bundle: &FsPath,
@@ -93,7 +85,6 @@ fn supply_bundle_base(
     run_git(Some(repo), &args, "fetching request snapshot base")
 }
 
-/// The commits a bundle requires but does not contain, read from its header.
 pub(super) fn bundle_prerequisites(bundle: &FsPath) -> Result<Vec<String>, ApiError> {
     use std::io::BufRead;
     let mut reader = std::io::BufReader::new(fs::File::open(bundle).map_err(ApiError::internal)?);

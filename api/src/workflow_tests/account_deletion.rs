@@ -73,8 +73,6 @@ async fn deleting_the_account_ends_its_sessions_and_then_its_clerk_user() {
         assert_eq!(session.status(), StatusCode::UNAUTHORIZED);
     }
 
-    // Clerk is down for the first attempt; the Scope deletion stands and
-    // the Clerk step waits for its retry.
     let clerk = scripted_clerk(&state);
     clerk
         .scripted
@@ -96,8 +94,6 @@ async fn deleting_the_account_ends_its_sessions_and_then_its_clerk_user() {
         *clerk.attempts.lock().unwrap(),
         [TEST_CLERK_USER_ID, TEST_CLERK_USER_ID]
     );
-    // A token issued before the deletion outlives it and must not recreate
-    // the account once Clerk has confirmed.
     let session = request(&app, "GET", "/v1/session", &bearer_header()).await;
     assert_eq!(session.status(), StatusCode::UNAUTHORIZED);
 }

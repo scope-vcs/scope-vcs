@@ -14,7 +14,6 @@ const deploymentOrder = ['git-router', 'cache', 'run-worker', 'media-api', 'medi
 export function previousDeploymentsRemoved(previous, deployments) {
   return previous.every(({ serviceId, deploymentId }) => {
     const deployment = deployments[serviceId]?.find(({ id }) => id === deploymentId);
-    // Missing history is not evidence that the old container was torn down.
     return deployment?.status === 'REMOVED';
   });
 }
@@ -27,7 +26,6 @@ function processTask(command, args, env = process.env) {
       ? accept()
       : reject(new Error(`${command} failed: ${signal ?? code}`)));
   });
-  // Background browser errors remain observable when the deployment finishes.
   done.catch(() => {});
   return { child, done };
 }

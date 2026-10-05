@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Durable cutover intent is persisted before each irreversible phase.
 cutover_id="${SCOPE_RELEASE_CUTOVER_ID:-}"
 prepared_release_path="${SCOPE_PREPARED_RELEASE_PATH:?SCOPE_PREPARED_RELEASE_PATH is required}"
 source_sha="${SCOPE_DEPLOYMENT_SOURCE_SHA:-${GITHUB_SHA:?GITHUB_SHA is required}}"
@@ -68,8 +67,6 @@ recover_cutover() {
   recover_maintenance_gates "$record"
   successful_deployments="$(jq -c .previous <<< "$record")"
   plan_json="$(jq -c .baseline <<< "$record")"
-  # A runner may disappear between any provider mutation and its response. Stop every current
-  # writer again, including a partially activated release, before interpreting the ledger.
   cutover_committed=1
   cutover_phase reclosing
   quiesce_writers
@@ -89,7 +86,6 @@ apply_cutover() {
   cutover_phase pre-migration
   maintenance validate-workflow-catalogs
   local external_effects_started="$cutover_committed"
-  # Persist applying before invoking the transaction. SIGKILL must never erase its uncertainty.
   cutover_phase applying
   cutover_committed=1
   if ! maintenance apply; then

@@ -45,7 +45,6 @@ pub struct AttemptMutation {
 }
 
 impl AttemptMutation {
-    /// The claim after a real state change, or `None` when the mutation was an idempotent replay.
     pub fn transition(&self) -> Option<&DispatchClaim> {
         self.transitioned.then_some(&self.claim)
     }
@@ -324,8 +323,6 @@ async fn authorize_run_control(
     actor_user_id: &str,
     repository_id: &str,
 ) -> Result<(), PostgresError> {
-    // Membership and lifecycle writers take this same guard. Acquire it before
-    // job/run locks, and read access only after any preceding revocation commits.
     super::acquire_aggregate_lock(tx, "repository", repository_id).await?;
     let access =
         super::repository_access::repository_access(tx, repository_id, Some(actor_user_id))
@@ -347,8 +344,6 @@ pub struct EnqueueRunResult {
     pub inserted: bool,
 }
 
-/// Every native run is created here, so this is where an unlisted owner's
-/// repository is refused.
 pub(super) async fn enqueue_run_in_transaction(
     tx: &DatabaseTransaction,
     run: Run,

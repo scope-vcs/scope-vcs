@@ -13,8 +13,6 @@ import { observeRequestMermaid } from './request-mermaid-visibility'
 export function RequestMermaidBlock({ source }: { source: string }) {
   const { isLoaded, userId } = useAuth()
   const { viewerId } = useRequestAttachments()
-  // Route data may still belong to the previous viewer while Clerk changes.
-  // Unmount its observer/lease rather than rerendering discarded private data.
   if (isLoaded && (userId ?? 'anonymous') !== viewerId) return null
   return <RequestMermaidImage source={source} />
 }
@@ -40,7 +38,6 @@ function RequestMermaidImage({ source }: { source: string }) {
   const read = useCallback(() => requestMermaidResource.getSnapshot(identity), [identity])
   const snapshot = useSyncExternalStore(subscribe, read, requestMermaidResource.getServerSnapshot)
 
-  // A theme refresh can keep its prior picture. Source/access changes cannot.
   const previous = requestMermaidResource.getSnapshot(requestMermaidIdentity({ ...input, theme: theme === 'dark' ? 'light' : 'dark' }))
   const result = snapshot.value ?? previous.value
   const showImage = useCallback((element: HTMLImageElement | null) => {

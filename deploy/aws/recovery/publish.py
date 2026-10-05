@@ -1,5 +1,3 @@
-"""Append-only publication. Never read, overwrite, or delete recovery object versions."""
-
 import base64
 import hashlib
 from pathlib import Path

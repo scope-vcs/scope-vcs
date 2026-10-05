@@ -653,7 +653,6 @@ async fn authorizing_evaluates_a_head_whose_push_could_not() {
     let (_, authorized) =
         current_authorization(router(state.clone()), &request_id, &request_head).await;
 
-    // Nobody looks at a request left to merge by itself, so authorizing is the look.
     assert_eq!(authorized["intent"]["status"], "Active");
     assert_eq!(authorized["waiting_reason"], serde_json::Value::Null);
     assert!(
@@ -785,7 +784,6 @@ async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_r
         "snapshot should require its base instead of carrying main: {header}"
     );
 
-    // An empty request-ref store repo takes the base from the push's staging repo.
     fs::remove_dir_all(crate::git::storage::request_ref_store_repo_path(
         &state,
         &test_repo_incarnation(),
@@ -807,7 +805,6 @@ async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_r
         .unwrap();
     assert_eq!(request.head_oid, git_head_oid(&source));
 
-    // A revision view starts empty and takes the base from the private replica.
     let cache_root = state.repository_engine.cache_root().to_path_buf();
     for entry in fs::read_dir(&cache_root).unwrap() {
         let path = entry.unwrap().path();

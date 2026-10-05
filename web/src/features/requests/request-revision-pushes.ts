@@ -4,16 +4,13 @@ import { actorHandle } from './request-actor'
 export type RequestRevisionPush = {
   actor: RequestEventResponse['actor']
   createdAtUnix: number
-  /** Also the revision id: a push creates the revision it names. */
   id: string
   newHeadOid: string
   note: string | null
   oldHeadOid: string
-  /** The revision number shown for it everywhere. */
   position: number
 }
 
-/** Revision pushes from request activity, newest first. */
 export function requestRevisionPushes(events: readonly RequestEventResponse[]): RequestRevisionPush[] {
   return events
     .flatMap((event) => {
@@ -32,7 +29,6 @@ export function requestRevisionPushes(events: readonly RequestEventResponse[]): 
     .sort((left, right) => right.position - left.position)
 }
 
-/** Matches every word against the revision number, pusher, note and heads. */
 export function searchRequestRevisionPushes(pushes: readonly RequestRevisionPush[], query: string) {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)
   if (!words.length) return pushes

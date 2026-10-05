@@ -83,8 +83,6 @@ impl GitSegmentStore {
         })?;
         let hydration_started = Instant::now();
         let plaintext_bytes = segment.plaintext_bytes;
-        // A prior flight may have finished between our first miss
-        // and registration. Recheck after becoming the leader.
         if let Some(pack) = self
             .lease_verified_pack(&path, segment, local_timings(started, plaintext_bytes))
             .await?
@@ -307,9 +305,6 @@ impl GitSegmentStore {
     }
 }
 
-/// Owns a hydration flight for the leader task. Dropping without `complete`
-/// (a panic while hydrating) fails the flight so waiters do not hang, and
-/// the flight is always unregistered exactly once.
 struct HydrationFlight {
     cache: Arc<VerifiedPackCache>,
     path: PathBuf,
@@ -327,7 +322,6 @@ impl HydrationFlight {
 
 impl Drop for HydrationFlight {
     fn drop(&mut self) {
-        // No-op when `complete` already stored the real result.
         self.flight.complete(Err(GitStorageError::Task(
             "verified Git pack hydration task failed".into(),
         )));

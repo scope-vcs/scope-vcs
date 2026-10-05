@@ -1,50 +1,37 @@
-//! Workflow runs GitHub Actions reports for a repository linked to GitHub.
-//! They are what the repository's Runs page lists in place of Scope's own
-//! runs. GitHub keeps their logs; Scope keeps enough to list them, link to
-//! them, and tie a run on a request's branch to that request.
-
 use crate::requests::{GitHubBranch, GitHubCheckConclusion, GitHubCheckStatus};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubWorkflowRun {
     pub github_run_id: u64,
     pub workflow_name: String,
-    /// `None` for runs GitHub started without a branch, such as on a tag.
     pub head_branch: Option<String>,
     pub head_oid: String,
-    /// What started the run, as GitHub names it: `push`, `pull_request`, ...
     pub event: String,
     pub status: GitHubCheckStatus,
     pub conclusion: Option<GitHubCheckConclusion>,
     pub html_url: String,
-    /// The check suite holding the run's jobs as check runs.
     pub check_suite_id: Option<u64>,
     pub run_started_at_unix: Option<u64>,
-    /// Which attempt the run is on; re-running it on GitHub starts the next.
     pub run_attempt: u32,
-    /// When GitHub last changed the run, to the second.
     pub updated_at_unix: u64,
 }
 
-/// How far a run has come, to order two reads of it. GitHub dates a run to
-/// the second, so two reads can carry the same time; within an attempt a run
-/// only moves from waiting to running to completed. A later attempt, which a
-/// re-run on GitHub starts, comes after every state of an earlier one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct GitHubWorkflowRunProgress {
     pub run_attempt: u32,
-    /// 0 waiting, 1 running, 2 completed.
     pub stage: u8,
     pub updated_at_unix: u64,
 }
 
+const STAGE_WAITING: u8 = 0;
+const STAGE_RUNNING: u8 = 1;
+const STAGE_COMPLETED: u8 = 2;
+
 impl GitHubWorkflowRun {
-    /// The Scope branch the run is on, if Scope pushed it.
     pub fn scope_branch(&self) -> Option<GitHubBranch> {
         self.head_branch.as_deref().and_then(GitHubBranch::parse)
     }
 
-    /// The request whose branch the run is on.
     pub fn request_id(&self) -> Option<String> {
         match self.scope_branch()? {
             GitHubBranch::Request(request_id) => Some(request_id),
@@ -52,8 +39,6 @@ impl GitHubWorkflowRun {
         }
     }
 
-    /// When the run started, or when GitHub last changed it before it
-    /// started. Runs list newest first by it.
     pub fn listed_at_unix(&self) -> u64 {
         self.run_started_at_unix.unwrap_or(self.updated_at_unix)
     }
@@ -62,18 +47,16 @@ impl GitHubWorkflowRun {
         self.status == GitHubCheckStatus::Completed
     }
 
-    /// A stored run is replaced only by a read whose progress is not behind,
-    /// so a slow read cannot move a completed run back to running.
     pub fn progress(&self) -> GitHubWorkflowRunProgress {
         GitHubWorkflowRunProgress {
             run_attempt: self.run_attempt,
             stage: match self.status {
-                GitHubCheckStatus::Completed => 2,
-                GitHubCheckStatus::InProgress => 1,
+                GitHubCheckStatus::Completed => STAGE_COMPLETED,
+                GitHubCheckStatus::InProgress => STAGE_RUNNING,
                 GitHubCheckStatus::Queued
                 | GitHubCheckStatus::Waiting
                 | GitHubCheckStatus::Requested
-                | GitHubCheckStatus::Pending => 0,
+                | GitHubCheckStatus::Pending => STAGE_WAITING,
             },
             updated_at_unix: self.updated_at_unix,
         }
@@ -131,16 +114,12 @@ mod tests {
             conclusion: Some(GitHubCheckConclusion::Success),
             ..running.clone()
         };
-        // Read in the same second, completed still comes after running, even
-        // when the running read arrives last.
         assert!(completed.progress() > running.progress());
-        // A newer time within the same attempt cannot undo completion.
         let later_running = GitHubWorkflowRun {
             updated_at_unix: 11,
             ..running.clone()
         };
         assert!(later_running.progress() < completed.progress());
-        // A re-run on GitHub is a later attempt.
         let rerun = GitHubWorkflowRun {
             run_attempt: 2,
             status: GitHubCheckStatus::Queued,

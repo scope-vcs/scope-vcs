@@ -4,10 +4,6 @@ import { CopyableCodeBlock } from '@/components/copyable-code-block'
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
-/**
- * The owner's empty state: how to get a first repository onto Scope from the
- * terminal. Visitors see the plain empty state in `RepoList` instead.
- */
 export function FirstRepositoryWalkthrough({
   cliInstallCommands,
   initialCliPlatform,

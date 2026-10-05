@@ -122,7 +122,6 @@ where
         tx.commit().await.map_err(PostgresError::internal)?;
         return Ok(Vec::new());
     }
-    // The listing is held until commit, so a removal waits for these runs.
     let native_runs = lock_native_runs_availability(&tx, &job.repo_id).await?;
     let revisions = if !native_runs.is_available() {
         Vec::new()

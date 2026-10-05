@@ -1,4 +1,3 @@
-"""Run the reference query against live media and durable cleanup tombstones."""
 import base64
 import re
 import sqlite3
@@ -15,8 +14,6 @@ from verify import verify
 
 class ReferenceTests(unittest.TestCase):
     def query(self):
-        # This query uses portable joins/EXISTS/UNION. Only PostgreSQL's explicit
-        # result type casts are removed for the dependency-free SQLite fixture.
         sql = Path(__file__).resolve().parents[1].joinpath('references.sql').read_text()
         sql = re.sub(r'::(?:jsonb|text|bigint|integer)\b', '', sql)
         with sqlite3.connect(':memory:') as database:

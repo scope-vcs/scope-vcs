@@ -67,11 +67,9 @@ export function RequestAttachmentEditor({
 }: {
   autoFocus?: boolean
   enterSubmits?: boolean
-  /** A failure the caller reports, such as a rejected save. */
   error?: string | null
   initialText?: string
   label: string
-  /** Starting height, so an editor that replaces rendered text keeps its size. */
   minHeight?: number
   onCancel: () => void
   onCancelQuote?: () => void
@@ -362,7 +360,6 @@ function EditorActions({
   limitsReady: boolean
   onAttach: () => void
   onCancel: () => void
-  /** Present where a kept draft can be swapped for the saved text. */
   onDiscardDraft?: () => void
   pending: boolean
   pendingAction: 'primary' | 'secondary' | null
@@ -513,12 +510,10 @@ function DraftAttachmentRow({
   )
 }
 
-/** Grows the textarea with its text, so it never scrolls inside itself. */
 function useFitToContent(ref: RefObject<HTMLTextAreaElement | null>, text: string) {
   useLayoutEffect(() => {
     if (ref.current) fitToContent(ref.current)
   }, [ref, text])
-  // Rewrapped text changes the needed height without changing the text.
   useEffect(() => {
     const textarea = ref.current
     if (!textarea) return
@@ -546,7 +541,6 @@ function editorStatus({
 }: {
   enterSubmits: boolean
   hasFailedTransfer: boolean
-  /** The attachment limit, when the draft exceeds it. */
   overLimitBy: number | null
   transferPending: boolean
 }) {

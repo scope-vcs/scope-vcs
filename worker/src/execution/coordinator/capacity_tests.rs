@@ -64,7 +64,6 @@ async fn capacity_rejection_retries_after_restart_and_stops_after_three_extra_at
         metadata.runs().run("run-0").await.unwrap().unwrap().state,
         RunState::Queued
     );
-    // The broker already confirmed absence; no cleanup request is necessary.
     assert!(
         metadata
             .runs()

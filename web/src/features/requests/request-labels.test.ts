@@ -39,7 +39,6 @@ test('the approval note says where approving sends the checks', () => {
     ),
     'These checks wait for a maintainer. Approving sends this revision to GitHub Actions.',
   )
-  // Why the checks cannot pass comes first.
   const disconnected = 'This repository is no longer connected to GitHub.'
   assert.equal(
     requestCheckEvaluationNote({ ...awaiting(null), message: disconnected }),

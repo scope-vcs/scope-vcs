@@ -85,7 +85,6 @@ test('a refresh reads as many pages again as were loaded, from the top', async (
   assert.equal(reloaded.list.next_cursor, 'b')
   assert.equal(reloaded.pages, 2)
   assert.deepEqual(requested, [undefined, 'a'])
-  // A shorter list than before keeps only the pages it has.
   const shorter = await reloadGitHubWorkflowRunPages(5, async (after) => (after ? page([1], null) : page([2], 'x')))
   assert.deepEqual([ids(shorter.list), shorter.pages], [[2, 1], 2])
   await assert.rejects(reloadGitHubWorkflowRunPages(3, async () => page([1], 'loop')), /repeated cursor/)

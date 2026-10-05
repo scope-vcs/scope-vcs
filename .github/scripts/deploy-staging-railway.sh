@@ -4,7 +4,6 @@ set -euo pipefail
 manifest_path="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
 maintenance_binary="${SCOPE_MAINTENANCE_BINARY:-./target/release/scope-maintenance}"
 evidence_path="${SCOPE_STAGING_EVIDENCE_PATH:-staging-deployments.json}"
-# The candidate checkout owns deployment identity even when the workflow runs from main.
 SCOPE_DEPLOYMENT_SOURCE_SHA="$(git rev-parse --verify HEAD)"
 export SCOPE_DEPLOYMENT_SOURCE_SHA
 
@@ -115,7 +114,6 @@ assert_staging_topology() {
     node .github/scripts/verify-staging-target.mjs >/dev/null
 }
 
-# Application artifacts are imported from the release owner. Never build or reset data here.
 : "${SCOPE_PREPARED_RELEASE_PATH:?Prepared release manifest is required}"
 node --input-type=module - "$SCOPE_PREPARED_RELEASE_PATH" "$manifest_path" "$maintenance_binary" <<'NODE'
 import { readFileSync } from 'node:fs';
@@ -134,13 +132,10 @@ if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
       bash .github/scripts/railway-private-maintenance.sh "$staging_environment_id" "$1"
   }
   if [[ "${SCOPE_STAGING_RESUME:-0}" == 1 ]]; then
-    # Resume was bound to the original successful deployment and image digests
-    # before reaching this script. Never migrate or restore its retained data.
     run_maintenance plan | jq -e '.exact == true and .pending == []' >/dev/null
   else
     run_maintenance plan >/dev/null
     run_maintenance validate-workflow-catalogs
-    # Apply the candidate schema without running physical cleanup commands here.
     run_maintenance apply
     run_maintenance backfill-workflow-catalogs
   fi
@@ -151,8 +146,6 @@ evidence_dir="$(mktemp -d)"
 predecessor_teardown_dir="$(mktemp -d)"
 trap 'rm -rf "$evidence_dir" "$predecessor_teardown_dir"' EXIT
 export SCOPE_PREDECESSOR_TEARDOWN_DIR="$predecessor_teardown_dir"
-# The router's readiness requires API replica discovery. Staging starts with
-# writers stopped, so restore the API before activating its router.
 activate_staging() {
   local component="$1" service image
   jq -e --arg component "$component" '.components[$component]' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null || return 0

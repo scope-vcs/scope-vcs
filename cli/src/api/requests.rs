@@ -53,7 +53,6 @@ pub fn list_requests(
     execute(request, format!("list requests for {owner}/{repo}"))
 }
 
-/// One page of a request queue section; the server caps `limit` at its page size.
 #[derive(serde::Serialize)]
 pub struct QueuePageQuery<'a> {
     pub section: RequestQueueSection,
@@ -189,7 +188,6 @@ pub fn request_checks(
     )
 }
 
-/// Starts the checks of `expected_head_oid`; the server refuses a newer head.
 pub fn approve_request_checks(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,

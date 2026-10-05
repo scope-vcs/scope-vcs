@@ -1,7 +1,3 @@
-//! The request attention queue: which requests need the viewer, and the
-//! commands that move one request within it. Groups and labels mirror the web
-//! sidebar (`web/src/features/requests/request-workspace-model.ts`).
-
 use super::*;
 use crate::api::{
     QueuePageQuery, RequestAttentionActionRequest, RequestAttentionReason, RequestQueueGroup,
@@ -77,9 +73,6 @@ fn local_time_label(unix: u64) -> String {
         .unwrap_or_else(|| unix.to_string())
 }
 
-/// When a snooze preset lands, computed like the web snooze menu's local clock
-/// setters: an hour later on the wall clock, or 09:00 tomorrow or next Monday.
-/// A repeated local time resolves to its first occurrence, as JavaScript does.
 fn snooze_until<Tz: TimeZone>(preset: SnoozeFor, now: DateTime<Tz>) -> anyhow::Result<u64> {
     let zone = now.timezone();
     let local = |time: NaiveDateTime| zone.from_local_datetime(&time).earliest();
@@ -88,7 +81,6 @@ fn snooze_until<Tz: TimeZone>(preset: SnoozeFor, now: DateTime<Tz>) -> anyhow::R
         local(date.and_time(NaiveTime::from_hms_opt(9, 0, 0)?))
     };
     let until = match preset {
-        // A wall-clock hour skipped by a clock change moves forward, as in the web.
         SnoozeFor::Hour => local(now.naive_local() + TimeDelta::hours(1))
             .or_else(|| Some(now.clone() + TimeDelta::hours(1))),
         SnoozeFor::Tomorrow => at_nine(1),
@@ -188,7 +180,6 @@ fn queue_row_line(row: &QueueRow, now_unix: u64) -> String {
     )
 }
 
-/// The queue as `request list` and the repository-wide `request status` show it.
 pub(super) fn queue_outcome(
     command: &'static str,
     api: ApiSession<'_>,
@@ -250,8 +241,6 @@ impl AttentionCommand {
     }
 }
 
-/// Sends the request's current activity version, so the server only refuses
-/// the change when activity lands between this read and the write.
 pub(super) fn change_attention(
     git_repo: Option<&GitRepo>,
     api: ApiSession<'_>,
@@ -308,8 +297,6 @@ pub(super) fn change_attention(
     ))
 }
 
-/// A conflict after the version moved means someone acted on the request
-/// since it was loaded; show what happened instead of only the refusal.
 fn explain_stale_attention(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
@@ -327,8 +314,9 @@ fn explain_stale_attention(
         return error;
     };
     let current_version = current.request.activity_version;
-    // A request that is no longer open cannot take the change on a retry.
-    if current.request.state != crate::api::RequestState::Open || current_version <= sent_version {
+    let moved_while_open =
+        current.request.state == crate::api::RequestState::Open && current_version > sent_version;
+    if !moved_while_open {
         return error;
     }
     let Ok(activity) = full_request_activity(api, target, sent_version, current_version) else {
@@ -362,7 +350,6 @@ mod tests {
 
     #[test]
     fn snooze_presets_land_like_the_web_menu() {
-        // 2026-10-05 is a Monday.
         let monday = at("2026-10-05T14:30:00-07:00");
         for (preset, expected) in [
             (SnoozeFor::Hour, "2026-10-05T15:30:00-07:00"),
@@ -428,11 +415,10 @@ mod tests {
         );
     }
 
-    /// America/Chicago on 2026-11-01: 01:00–02:00 happens twice, first in CDT.
     #[derive(Clone, Copy)]
-    struct FallBack;
+    struct ChicagoFallBackDay;
 
-    impl FallBack {
+    impl ChicagoFallBackDay {
         fn offsets() -> (FixedOffset, FixedOffset) {
             (
                 FixedOffset::west_opt(5 * 3600).unwrap(),
@@ -448,11 +434,11 @@ mod tests {
         }
     }
 
-    impl TimeZone for FallBack {
+    impl TimeZone for ChicagoFallBackDay {
         type Offset = FixedOffset;
 
         fn from_offset(_: &FixedOffset) -> Self {
-            FallBack
+            ChicagoFallBackDay
         }
 
         fn offset_from_local_date(&self, _: &NaiveDate) -> LocalResult<FixedOffset> {
@@ -482,8 +468,8 @@ mod tests {
 
     #[test]
     fn hour_snooze_follows_the_wall_clock_across_a_repeated_hour() {
-        let first_one_thirty = FallBack
-            .from_local_datetime(&(FallBack::local(1) + TimeDelta::minutes(30)))
+        let first_one_thirty = ChicagoFallBackDay
+            .from_local_datetime(&(ChicagoFallBackDay::local(1) + TimeDelta::minutes(30)))
             .earliest()
             .unwrap();
         assert_eq!(

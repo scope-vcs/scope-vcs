@@ -126,8 +126,6 @@ export async function inventorySnapshot(inputRoot) {
   };
 }
 
-// Package names declared inside the snapshot identify workspace packages whose
-// imports must resolve within the repository rather than from a registry.
 export async function internalPackageNames(root, allFiles) {
   const names = new Set();
   for (const path of allFiles) {

@@ -1,6 +1,5 @@
 import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 
-// Only the URL opens a diff; an update page starts on its file list.
 export function historyFileSelection(
   search: { path?: string; visibility_change?: string },
   detail: Pick<HistoryEntryDetailResponse, 'files' | 'visibility_changes'> | null,

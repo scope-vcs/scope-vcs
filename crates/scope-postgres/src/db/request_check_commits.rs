@@ -1,8 +1,3 @@
-//! Keeping public contributions' check commits on current private main. A check
-//! commit stands for what merging the head would produce only while private
-//! main is the one it was built on, so once main moves the started checks are
-//! moved onto a check commit built again, in one transaction with its push.
-
 use super::{
     RequestStore, entities,
     request_checks::{evaluation_for_head, queue_tested_commit_push, save_evaluation},
@@ -15,20 +10,16 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, Statement, Transact
 
 use super::request_checks::RequestChecksMutation;
 
-/// A check commit built again for a request head on current private main.
 #[derive(Clone, Debug)]
 pub struct RebuildCheckCommitCommand {
     pub request_id: String,
     pub head_oid: String,
-    /// The check commit the rebuild replaces. Someone else's rebuild since
-    /// leaves the evaluation as they left it.
     pub replaced_tested_oid: String,
     pub tested: GitHubTestedCommit,
     pub now_unix: u64,
 }
 
 impl RequestStore {
-    /// `None` when the head or its check commit changed since the rebuild began.
     pub async fn rebuild_request_check_commit(
         &self,
         command: RebuildCheckCommitCommand,
@@ -88,8 +79,6 @@ impl RequestStore {
         }))
     }
 
-    /// Open requests in the repository whose started checks test a check
-    /// commit built on a private main that is no longer current.
     pub async fn requests_needing_new_check_commit(
         &self,
         repo_id: &str,
@@ -134,7 +123,6 @@ impl RequestStore {
     }
 }
 
-/// The repository's private main, which a check commit must be built on to count.
 pub(super) async fn private_main_oid<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

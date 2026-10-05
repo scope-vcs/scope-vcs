@@ -41,16 +41,12 @@ where
     .map_err(PostgresError::internal)
 }
 
-/// Whether a leased operation also serialises against the repository's
-/// media storage budget (needed when it adds bytes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum BudgetLock {
     Skip,
     Acquire,
 }
 
-/// Validates the worker's lease and locks the attachment it covers; `None`
-/// means the lease is no longer live.
 pub(super) async fn lock_lease_attachment<C>(
     conn: &C,
     attachment_id: &str,
@@ -199,8 +195,6 @@ where
     Ok(())
 }
 
-/// The five nullable media-metadata columns, in table order: image width and
-/// height, then video width, height, and duration.
 fn media_metadata_columns(attachment: &RequestAttachment) -> Result<[Value; 5], PostgresError> {
     let image = attachment.image.as_ref();
     let video = attachment.video.as_ref();

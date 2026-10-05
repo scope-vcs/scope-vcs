@@ -58,7 +58,6 @@ async fn fixture() -> MetadataStore {
 #[tokio::test]
 async fn parallel_job_appends_publish_positions_in_commit_order() {
     let store = fixture().await;
-    // Pause A after identity allocation, keeping its insertion uncommitted.
     store
         .db
         .execute_unprepared(
@@ -109,8 +108,6 @@ async fn parallel_job_appends_publish_positions_in_commit_order() {
             )
             .await
     });
-    // B must wait for A before allocating its position. Without the per-run lock
-    // it commits now and a reader advances beyond A's still-invisible position.
     wait_for_transaction_waiter(&store, first_pid).await;
     assert!(
         store

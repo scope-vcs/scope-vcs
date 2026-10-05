@@ -1,6 +1,5 @@
 #!/bin/sh
 set -eu
 
-# Reproduce hosts whose reported CPU count exceeds the container allocation.
-# Automatic decoder threads used to exhaust the worker's address-space limit.
-exec ffmpeg -cpucount 192 "$@"
+reported_cpu_count=192
+exec ffmpeg -cpucount "$reported_cpu_count" "$@"

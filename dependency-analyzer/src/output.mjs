@@ -1,6 +1,5 @@
 import { ANALYZER_VERSION } from "./constants.mjs";
 
-// Includes the newline and matches the worker's stdout budget.
 export const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 export function serializeOutput(result) {

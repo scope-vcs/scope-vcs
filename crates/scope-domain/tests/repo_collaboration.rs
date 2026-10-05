@@ -73,7 +73,6 @@ fn repo_with_invite() -> CollaborationState {
     repo
 }
 
-/// Everything an invite operation may change.
 fn collaboration(repo: &CollaborationState) -> (Vec<RepositoryInvite>, Vec<RepositoryMember>, u64) {
     (
         repo.collaboration.invitations.clone(),
@@ -165,7 +164,6 @@ fn a_repeated_acceptance_returns_the_same_membership_without_changing_anything()
     assert_eq!(collaboration(&repo), accepted);
     assert_eq!(landing(&repo, Some(&invitee()), CREATED_AT + 9), Member);
     assert_eq!(landing(&repo, Some(&owner()), CREATED_AT + 9), Member);
-    // Anyone without access learns only that the link was used.
     assert_eq!(landing(&repo, None, CREATED_AT + 9), Used);
     let other = user("user_other", "other@example.com");
     assert_eq!(landing(&repo, Some(&other), CREATED_AT + 9), Used);
@@ -228,7 +226,6 @@ fn revoking_stops_every_link_and_wins_over_a_later_acceptance() {
     for link in [FIRST_LINK, "sha256:second"] {
         assert!(accept_error(&mut repo, &invitee(), link, CREATED_AT + 2).contains("revoked"));
     }
-    // An invite that is no longer pending cannot be revoked or linked again.
     assert!(revoke_repository_invite(&mut repo, OWNER_ID, &invite_id(), CREATED_AT + 3).is_err());
     assert!(
         issue_repository_invite_link(
@@ -262,7 +259,6 @@ fn expiry_follows_the_clock_and_frees_the_email_for_a_new_invite() {
     );
     assert_eq!(landing(&repo, Some(&invitee()), EXPIRES_AT), Expired);
     assert!(accept_error(&mut repo, &invitee(), FIRST_LINK, EXPIRES_AT).contains("expired"));
-    // Expiry is read from the clock, so noticing it writes nothing.
     assert_eq!(collaboration(&repo), stored);
 
     invite(&mut repo, "sha256:renewed", EXPIRES_AT).unwrap();
@@ -277,7 +273,6 @@ fn an_invite_is_pruned_once_it_has_been_over_for_the_retention_period() {
     accept_repository_invite(&mut repo, &invitee(), FIRST_LINK, accepted_at).unwrap();
     let kept = collaboration(&repo);
 
-    // Acceptance, not expiry, ended this invite.
     let pruned_at = accepted_at + REPOSITORY_INVITE_RETENTION_SECS;
     assert!(prune_ended_repository_invites(&mut repo, pruned_at - 1).is_empty());
     assert_eq!(collaboration(&repo), kept);

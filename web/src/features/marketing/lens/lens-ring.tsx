@@ -2,9 +2,6 @@ import { cn } from '@/lib/utils'
 import type { ReactElement } from 'react'
 import type { LensElements } from './use-lens'
 
-/** The focus ring around the lens. Its size, ticks and position are written by
- * `useLens` every frame; React only sets the label, which sits inside the lens
- * and so takes the private view's theme. */
 export function LensRing({ elements, highlight, inverseTheme, label, showLabel }: { elements: LensElements; highlight: boolean; inverseTheme: string; label: string; showLabel: boolean }): ReactElement {
   return (
     <div aria-hidden className="lens-ring pointer-events-none absolute left-0 top-0 z-[5] size-0 opacity-0" ref={elements.ring}>

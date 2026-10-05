@@ -34,12 +34,6 @@ import { RUN_ROW_CLASS, RUN_ROW_TIMESTAMP_CLASS } from './run-row-layout'
 const LINK_CLASS = 'underline-offset-2 hover:text-foreground hover:underline'
 const SELECT_CLASS = 'h-8 max-w-44 rounded-md border border-input bg-secondary px-2 text-sm text-foreground shadow-[var(--shadow-card)] outline-none transition-colors focus-visible:border-ring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
-/**
- * The Runs page of a repository whose checks run on GitHub. It lists the
- * workflow runs GitHub reported, a page at a time and optionally of one
- * workflow, and links each to GitHub, which keeps the logs. Repository events
- * refresh the loaded pages in place.
- */
 export function GitHubWorkflowRunsPage({
   initialRuns,
   loadRuns,
@@ -52,7 +46,6 @@ export function GitHubWorkflowRunsPage({
   const { isLoaded, userId } = useAuth()
   const { repo } = useRepoLayout()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
-  // GitHub names workflows freely, so the filter is page state, not a route.
   const [workflow, setWorkflow] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const identity = scope ? githubWorkflowRunsIdentity(scope, workflow) : null
@@ -69,7 +62,6 @@ export function GitHubWorkflowRunsPage({
     (identity ? githubWorkflowRunsResource.peek(identity)?.pages : undefined) ?? 1,
     (after) => loadPage(signal, after),
   ), [identity, loadPage])
-  // Only the list of every workflow came with the page.
   const initialValue = useMemo(
     () => (workflow === null ? { list: initialRuns, pages: 1 } : null),
     [initialRuns, workflow],
@@ -142,7 +134,6 @@ export function GitHubWorkflowRunsPage({
             ) : rows.length === 0 ? (
               workflow === null ? (
                 <EmptyState
-                  // The connection test shows whether workflows start on Scope's branches.
                   action={repo.access.actor !== 'Public' ? (
                     <Button asChild size="sm" variant="secondary">
                       <Link hash="ci" params={params} to="/$owner/$repo/settings">
@@ -190,7 +181,6 @@ export function GitHubWorkflowRunsPage({
   )
 }
 
-/** Stands in for a filter's runs until they first load. */
 function GitHubWorkflowRunsSkeleton() {
   return (
     <ul aria-busy="true" aria-label="Loading runs" className="divide-y divide-border">

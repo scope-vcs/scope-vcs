@@ -3,8 +3,6 @@ import { ChevronDown } from 'lucide-react'
 import { useEffect, useState, type ReactElement } from 'react'
 import { useLandingView } from './landing-view'
 
-/** A chevron at the foot of the hero that dissolves once the next section is on
- * screen and comes back at the top. */
 export function ScrollCue({ target }: { target: string }): ReactElement {
   const view = useLandingView()
   const [gone, setGone] = useState(false)

@@ -30,7 +30,6 @@ const initialRuns: GitHubWorkflowRunListResponse = {
   workflows: ['ci', 'lint', 'Release images and publish the container manifests for every platform'],
   next_cursor: 'page-2',
 }
-/** The page after the first. */
 const olderRuns = [run(4, {}), run(5, { workflow_name: 'lint' })]
 let nextRuns = initialRuns
 const resolvers: (() => void)[] = []
@@ -53,7 +52,6 @@ Object.assign(window, {
 })
 const subscribe = () => () => {}
 
-/** Each load waits for `finishLoad`; `loads` names the filter and cursor it asked for. */
 async function loadRuns({ after, workflow }: RepoGitHubWorkflowRunsInput) {
   loads.push(`${workflow ?? 'all'}${after ? ` after ${after}` : ''}`)
   await new Promise<void>((resolve) => resolvers.push(resolve))
@@ -86,10 +84,6 @@ function Repository() {
   </RepoLayoutProvider>
 }
 
-/**
- * A repository with no runs, no workflows of its own and no GitHub link, on a
- * server with GitHub unless `?configured=false`.
- */
 function EmptyRuns() {
   const { owner, repo } = useParams({ strict: false })
   const configured = new URLSearchParams(location.search).get('configured') !== 'false'
@@ -102,7 +96,6 @@ function EmptyRuns() {
   </main>
 }
 
-/** A connected repository GitHub reported no runs for yet. */
 function ConnectedNoRuns() {
   const { owner, repo } = useParams({ strict: false })
   const none = { actions_url: 'https://github.com/octo/demo/actions', workflow_runs: [], workflows: [], next_cursor: null }

@@ -61,8 +61,6 @@ pub async fn put_content_object(
     Ok(blob)
 }
 
-/// Reads a blob into memory and checks it against its recorded size and digest. Fails before any
-/// I/O when the recorded size is over `max_bytes`.
 pub async fn source_blob_bytes(
     store: &dyn ObjectStore,
     blob: &SourceBlob,
@@ -80,8 +78,6 @@ pub async fn source_blob_bytes(
     Ok(bytes)
 }
 
-/// Streams a blob into `output`, checking its recorded size and digest on the way. When this
-/// fails, `output` may hold a partial or unverified prefix that the caller must discard.
 pub async fn write_source_blob_to(
     store: &dyn ObjectStore,
     blob: &SourceBlob,
@@ -122,7 +118,6 @@ pub async fn delete_source_blobs<'a>(
     Ok(())
 }
 
-/// Hashes exactly the bytes its inner writer accepts.
 struct VerifyingWriter<'a> {
     inner: &'a mut (dyn AsyncWrite + Send + Unpin),
     digest: Sha256,

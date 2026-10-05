@@ -14,8 +14,6 @@ import {
 const SOURCE_SHA = "a".repeat(40);
 const PREVIOUS_SHA = "b".repeat(40);
 
-// node:test runs this file in its own process, so the GitHub credentials the
-// request helper requires can be pinned once for every test below.
 process.env.GITHUB_TOKEN = "test-token";
 process.env.GITHUB_REPOSITORY = "scope-vcs/scope-vcs";
 

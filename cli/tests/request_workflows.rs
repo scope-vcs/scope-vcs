@@ -584,8 +584,6 @@ impl FixtureServer {
     }
 }
 
-/// Adds a `scope` remote for the fixture server and runs the CLI with a Git shim that
-/// sends that remote's transport to a local bare repository.
 #[cfg(unix)]
 struct BareRepoTransport {
     shim: TempDir,

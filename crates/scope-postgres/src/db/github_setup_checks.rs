@@ -1,9 +1,3 @@
-//! A repository's latest GitHub connection test. Starting one re-reads the
-//! viewer's access, the connection and main in the writing transaction and
-//! queues the push of main there too, so a test never starts without its push.
-//! Its push, and what GitHub then runs, move it forward under a row lock, and
-//! a test that ends queues the deletion of its branch in the same transaction.
-
 use super::{
     RepositoryStore, acquire_aggregate_lock, entities,
     github_connections::repository_github_connection,
@@ -39,20 +33,14 @@ struct SetupCheckRow {
     baseline_run_ids: Option<serde_json::Value>,
 }
 
-/// A test and what GitHub ran for it on the setup branch.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubSetupCheckRead {
     pub check: GitHubSetupCheck,
-    /// Whether any workflow ran on the setup branch for the tested commit.
     pub workflows_started: bool,
-    /// The check names those workflow runs reported, in name order.
     pub check_names: Vec<String>,
 }
 
 impl RepositoryStore {
-    /// Starts a test of main for a maintainer and queues main's push to the
-    /// setup branch. Returns the test and the repository incarnation it
-    /// belongs to, so the caller can announce it.
     pub async fn start_github_setup_check(
         &self,
         repo_id: &str,
@@ -79,7 +67,6 @@ impl RepositoryStore {
             main_oid.as_deref(),
             now_unix,
         )?;
-        // The domain only starts a test of a connected repository.
         let connection = connection.ok_or_else(|| {
             PostgresError::internal_message("a setup check started without a connection")
         })?;
@@ -101,9 +88,6 @@ impl RepositoryStore {
         Ok((check, context.incarnation()))
     }
 
-    /// Records the workflow runs GitHub listed on the setup branch right
-    /// before `push_id` sends main. Returns `false` when the push is no longer
-    /// the test's, which then must not send anything.
     pub async fn record_github_setup_check_baseline(
         &self,
         repo_id: &str,
@@ -140,9 +124,6 @@ impl RepositoryStore {
         .into_iter()
         .filter(|run| check.started(run))
         .collect::<Vec<_>>();
-        // Each workflow run files its jobs under its own check suite, so only
-        // check runs of the runs this test started count: not ones main's own
-        // push on GitHub started for the same commit, nor an earlier test's.
         let suites = runs
             .iter()
             .filter_map(|run| run.check_suite_id)
@@ -176,7 +157,6 @@ impl RepositoryStore {
         }))
     }
 
-    /// Tests still pushing or waiting for workflows, oldest first.
     pub async fn running_github_setup_checks(
         &self,
         limit: u64,
@@ -199,9 +179,6 @@ impl RepositoryStore {
         .collect()
     }
 
-    /// Moves the repository's test of `commit_oid` forward with the workflow
-    /// runs stored for the setup branch. Returns the test when it ended, after
-    /// queueing the deletion of its branch.
     pub async fn observe_github_setup_check(
         &self,
         repo_id: &str,
@@ -233,7 +210,6 @@ impl RepositoryStore {
     }
 }
 
-/// Answers the repository's test with how its push `push_id` ended.
 pub(super) async fn record_setup_check_push<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
@@ -248,8 +224,6 @@ pub(super) async fn record_setup_check_push<C: ConnectionTrait>(
     save_check(conn, &check).await
 }
 
-/// Whether a running test of the repository waits on `commit_oid`, so its
-/// check runs are worth reading.
 pub(super) async fn setup_check_watches<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

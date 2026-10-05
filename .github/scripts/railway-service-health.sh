@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Shared Railway service health polling for deployment scripts. Source this file.
-# Requires RAILWAY_PROJECT_ID and SCOPE_RAILWAY_ENVIRONMENT_ID in the environment.
 
 railway_service_health_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Prints the checked-in Railway config path for a manifest component.
 railway_config_path() {
   local component="$1" manifest path
   manifest="${SCOPE_DEPLOYMENT_MANIFEST:-$railway_service_health_scripts/../deployment-services.json}"
@@ -19,7 +16,6 @@ railway_config_path() {
   printf '%s\n' "$path"
 }
 
-# service_is_healthy SERVICE [EXPECTED_DEPLOYMENT_ID] [EXPECTED_CONFIG_PATH]
 service_is_healthy() {
   local service="$1" expected_deployment_id="${2:-}" expected_config="${3:-}" services_json
   services_json="$(
@@ -36,7 +32,6 @@ service_is_healthy() {
     node "$railway_service_health_scripts/railway-service-health.mjs" >/dev/null
 }
 
-# wait_for_service_health SERVICE [EXPECTED_DEPLOYMENT_ID] [EXPECTED_CONFIG_PATH]
 wait_for_service_health() {
   local service="$1" expected_deployment_id="${2:-}" expected_config="${3:-}"
   local timeout="${SCOPE_SERVICE_HEALTH_TIMEOUT_SECONDS:-600}"

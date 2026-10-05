@@ -47,11 +47,6 @@ export function runCanChange(state: RunState): boolean {
   }
 }
 
-/**
- * Cold-load selection so a failed run opens on its failure with zero clicks.
- * Failures without a failed step still open their job so setup errors and
- * terminal attempt state are visible without pretending another step failed.
- */
 export function selectInitialView(
   jobs: readonly JobLike[],
 ): InitialRunView {
@@ -104,10 +99,6 @@ export function selectInitialView(
   return { selectedJobKey: null, selection: null }
 }
 
-/**
- * Which attempt a job's steps come from: the selected step's attempt, else an
- * explicit switcher choice, else the most recent attempt.
- */
 export function attemptForJob<Attempt extends AttemptLike>(
   jobDetail: { attempts: readonly Attempt[]; job: { key: string } },
   attemptOverrides: Readonly<Record<string, string>>,
@@ -139,10 +130,6 @@ export function reconcileAttemptOverrides(
   return next
 }
 
-/**
- * The graph only says something the ordered job list doesn't when some job
- * waits on another.
- */
 export function jobsHaveDependencies(jobs: readonly JobLike[]) {
   return jobs.some(({ job }) => job.needs.length > 0)
 }
@@ -157,7 +144,6 @@ export function mergeStepLogPage<T extends StepLogLike>(
   const merged = mergeStepLogs(after === undefined ? [] : previous.logs, page.logs)
   return {
     logs: merged.logs,
-    // Forward pages can have earlier rows already present in the retained window.
     hasEarlier: merged.truncated || (after === undefined ? page.has_earlier : previous.hasEarlier),
   }
 }
@@ -167,8 +153,6 @@ export function mergeStepLogs<T extends StepLogLike>(
   incoming: readonly T[],
 ) {
   const lastPosition = previous.at(-1)?.position ?? 0
-  // Pages and retained output are already ordered; reconnect overlap only needs
-  // filtering against the last retained position, not a full map and sort.
   const ordered = [...previous, ...incoming.filter((log) => log.position > lastPosition)]
   let retainedBytes = 0
   let firstRetained = ordered.length
@@ -197,11 +181,6 @@ export function latestAttempt<Attempt extends { number: number }>(
   )
 }
 
-/**
- * What the reader is currently looking at. `selectedJobKey` and `selection`
- * must always agree, because refresh reconciliation derives the open job from
- * the selection; letting them drift snaps the page back after every poll.
- */
 type RunSelectionState = {
   attemptOverrides: Readonly<Record<string, string>>
   manualSelection: boolean
@@ -209,7 +188,6 @@ type RunSelectionState = {
   selection: StepSelection | null
 }
 
-/** Showing a job. The job list always has one open, so this never closes it. */
 export function selectJob<State extends RunSelectionState>(
   current: State,
   jobKey: string,
@@ -224,7 +202,6 @@ export function selectJob<State extends RunSelectionState>(
   }
 }
 
-/** Switching which attempt of a job is on screen. */
 export function selectAttempt<State extends RunSelectionState>(
   current: State,
   jobKey: string,
@@ -238,7 +215,6 @@ export function selectAttempt<State extends RunSelectionState>(
   }
 }
 
-/** Opening a step's output, or closing the one already open. */
 export function selectStep<State extends RunSelectionState>(
   current: State,
   selection: StepSelection,

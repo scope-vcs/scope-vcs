@@ -5,21 +5,14 @@ use super::{
 };
 use crate::{error::DomainError, runs::availability::NativeRunsAvailability};
 
-/// The evaluation, runs and GitHub push to persist together.
 #[derive(Clone, Debug)]
 pub struct RequestCheckPlan {
     pub evaluation: RequestCheckEvaluation,
     pub runs: Vec<Run>,
-    /// Whether the tested commit goes to GitHub now, where the repository's
-    /// workflows run with its secrets.
     pub push_to_github: bool,
 }
 
 impl RequestCheckPlan {
-    /// `maintainer_pusher` is the maintainer whose push starts the runs at
-    /// once. Anyone else's push, including one by a since-deleted account,
-    /// waits for a maintainer's approval. A repository without native runs
-    /// asks for no checks, whatever its workflow files say.
     pub fn evaluate(
         request: &Request,
         native_runs: NativeRunsAvailability,
@@ -86,13 +79,6 @@ impl RequestCheckPlan {
         Ok(Self::native(evaluation, runs))
     }
 
-    /// Every required check name becomes a check GitHub answers for the tested
-    /// commit: a private request's head, or a public contribution's check
-    /// commit. A contribution that conflicts with private code has nothing to
-    /// test. A maintainer's head goes to GitHub at once, even when no check is
-    /// required, so the repository's workflows still run on it. Anyone else's
-    /// head waits for a maintainer, because the pushed branch gets the
-    /// repository's secrets; with nothing required it is never sent.
     pub fn evaluate_github(
         request: &Request,
         tested: GitHubTestedCommit,
@@ -147,11 +133,6 @@ impl RequestCheckPlan {
         })
     }
 
-    /// Moves started checks onto a check commit built again on current private
-    /// main. The head is the one a maintainer already approved, and private
-    /// main is trusted, so the new commit goes to GitHub at once; results for
-    /// the old commit stop counting because they belong to another commit. A
-    /// contribution that now conflicts with private code has nothing to test.
     pub fn rebuild_check_commit(
         request: &Request,
         mut evaluation: RequestCheckEvaluation,
@@ -201,8 +182,6 @@ impl RequestCheckPlan {
         })
     }
 
-    /// Approval may start recorded checks even after the request has closed,
-    /// but a request that can no longer merge sends nothing to GitHub.
     pub fn approve(
         request: &Request,
         mut evaluation: RequestCheckEvaluation,
@@ -231,7 +210,6 @@ impl RequestCheckPlan {
         })
     }
 
-    /// A plan that sends nothing to GitHub.
     fn native(evaluation: RequestCheckEvaluation, runs: Vec<Run>) -> Self {
         Self {
             evaluation,
@@ -241,7 +219,6 @@ impl RequestCheckPlan {
     }
 }
 
-/// The native checks receive their runs in order, one per revision.
 fn plan_runs<'a>(
     request: &Request,
     checks: impl IntoIterator<Item = &'a NativeRequestCheck>,

@@ -5,8 +5,6 @@ import type { LoadDiscussionsInput } from './request-discussion-api'
 import { requestChangeSelection, requestRevisionCommitId } from './request-changes-model'
 import type { RequestDiscussionPage } from './request-discussion-types'
 
-// Only the selected commit is loaded. One page stays within the whole-load
-// ceilings of four requests, 400 references, 512 KiB, two seconds and two workers.
 const DISCUSSION_REFERENCE_LIMITS = { items: 100, bytes: 512 * 1024, milliseconds: 2_000 }
 
 type LoadReferencePage = (
@@ -55,8 +53,6 @@ export function selectedDiscussionReferenceQuery(
   return discussionReferenceQuery(params, revision, commit)
 }
 
-// The route loader supplies the first page. A newer loader snapshot replaces
-// whatever an earlier visit accumulated; an older one keeps the loaded pages.
 export function openRequestDiscussionReferences(identity: string, page: RequestDiscussionPage) {
   const cached = requestDiscussionReferenceResource.peek(identity)
   if (cached && cached.snapshot_version >= page.snapshot_version) return cached

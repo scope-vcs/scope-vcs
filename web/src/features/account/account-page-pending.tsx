@@ -11,7 +11,6 @@ import {
   CliSessionsSection,
 } from './account-sections'
 
-// Only the session list is data; the rest of the page is drawn as loaded.
 export function AccountPagePending() {
   return (
     <ApplicationPendingShell actions={<UserButton />} contextLabel="Account" label="Loading account">

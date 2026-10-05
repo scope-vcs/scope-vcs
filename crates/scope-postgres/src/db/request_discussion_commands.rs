@@ -1,5 +1,3 @@
-//! Actor identity and mutation intent. Locked persistence facts supply domain capabilities.
-
 use scope_domain::requests::RequestDiscussionAnchor;
 
 #[derive(Clone, Debug)]

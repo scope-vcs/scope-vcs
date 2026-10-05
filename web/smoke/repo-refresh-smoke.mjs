@@ -1,8 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { serverFunctionName } from './server-functions-smoke.mjs'
 
-// Hold the first client reconciliation response after the server has produced
-// it. This exercises the gap between an open event stream and settled data.
 export async function delayInitialRepositoryReconciliation(page, milliseconds) {
   let delayed = false
   await page.route('**/_serverFn/**', async (route) => {

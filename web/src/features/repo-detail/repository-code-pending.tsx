@@ -10,9 +10,6 @@ import {
 } from './repository-code-skeletons'
 import { RepositoryLatestActivityPending } from './repository-latest-activity'
 
-// Mirrors RepositoryCodeView before its files arrive, without importing it:
-// pending components load with the route tree, and the view's renderers
-// would put the whole code page in the first download.
 export function RepositoryCodePending() {
   const [navigationOpen, setNavigationOpen] = useState(false)
   return (

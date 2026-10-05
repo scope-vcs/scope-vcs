@@ -41,9 +41,6 @@ use std::collections::BTreeMap;
 const RUNTIME_VERSION: &str = "scope-dev-seed/1";
 const DEFAULT_LEASE_SECONDS: u64 = 6 * 60 * 60;
 
-/// Offsets (seconds before "now") for filler runs on the single-job "lint" workflow. These
-/// cover short relative times (minutes, hours) plus a spread of days so the runs list exercises
-/// every relative-time bucket and pagination past the first page.
 const FILLER_LINT_OFFSETS_SECONDS: [u64; 12] = [
     60 * 12,
     60 * 90,
@@ -59,8 +56,6 @@ const FILLER_LINT_OFFSETS_SECONDS: [u64; 12] = [
     86_400 * 48,
 ];
 
-/// Offsets for filler runs on the multi-job "checks" workflow, spread further into the past so
-/// the workflow filter and pagination both have plenty of history to page through.
 const FILLER_CHECKS_OFFSETS_SECONDS: [u64; 8] = [
     3600 * 4,
     86_400 * 2,
@@ -72,9 +67,6 @@ const FILLER_CHECKS_OFFSETS_SECONDS: [u64; 8] = [
     86_400 * 65,
 ];
 
-/// Seeds a gallery of runs against the `<owner>/public-demo` repository so the runs list and run
-/// detail pages can be exercised in a browser. Local-dev only: every state, both workflows, both
-/// trigger kinds, an attempt retry, a timed-out attempt, and enough history to page through.
 pub(crate) async fn seed_run_gallery(
     metadata: &MetadataStore,
     owner_handle: &str,
@@ -85,8 +77,6 @@ pub(crate) async fn seed_run_gallery(
     let checks = checks_workflow_revision(&repo_id)?;
     let lint = lint_workflow_revision(&repo_id)?;
 
-    // Run history is ordered by creation sequence, so the gallery has to be
-    // written oldest first for the list to read chronologically.
     let mut planned = vec![
         (20, SeededRun::Running),
         (7 * 60, SeededRun::FailedChain),

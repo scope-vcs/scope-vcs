@@ -8,8 +8,6 @@ const serverBundle = process.env.SCOPE_SMOKE_SERVER_MANIFEST
   ? pathToFileURL(resolve(process.env.SCOPE_SMOKE_SERVER_MANIFEST))
   : new URL('../.output/server/_ssr/ssr.mjs', import.meta.url)
 
-// The emitted TanStack manifest owns production IDs. Staging supplies the
-// deployed web build's manifest through SCOPE_SMOKE_SERVER_MANIFEST.
 export function builtServerFunctions() {
   if (!existsSync(serverBundle)) return new Map()
   const source = parse(readFileSync(serverBundle, 'utf8'), { sourceType: 'module' })

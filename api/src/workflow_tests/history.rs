@@ -393,7 +393,6 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
             1
         );
 
-        // The visibility feed keeps the push that carried the change and drops rv1.
         let visibility = api_request(
             router(state.clone()),
             "GET",

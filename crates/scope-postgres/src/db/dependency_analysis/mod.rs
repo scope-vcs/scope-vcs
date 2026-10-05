@@ -35,7 +35,6 @@ pub struct DependencySnapshotFile {
 pub struct DependencyAnalysisClaim {
     pub incarnation: RepositoryIncarnation,
     pub content_version: u64,
-    /// The repository version when the claim was taken, for the change event.
     pub change_version: u64,
     pub git_head: GitHead,
     pub git_pack_spans: Vec<GitPackSpan>,

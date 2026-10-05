@@ -11,8 +11,6 @@ pub enum PublicRequestPathError {
     PrivatePath,
 }
 
-/// Repository facts shared by every path/commit in one public request validation.
-/// Current public paths may be edited even if they were private in older history.
 pub struct PublicRequestPaths<'a> {
     repository: &'a Repository,
     public_visible_paths: &'a BTreeSet<String>,

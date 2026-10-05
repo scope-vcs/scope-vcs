@@ -3,9 +3,6 @@ import { Button } from '@/components/ui/button'
 import { CircleCheck, MailPlus, Trash2, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-// The fixed parts of each settings section. The loaded page and its pending
-// state both render these, so their titles, copy and controls cannot drift.
-
 export function RepositoryDetailsSection({ children }: { children: ReactNode }) {
   return (
     <SectionRows className="mt-0 border-b border-border">
@@ -30,7 +27,6 @@ export function CiSection({ children }: { children: ReactNode }) {
       <SectionRow
         description="Run the GitHub Actions workflows of a connected GitHub repository on requests."
         icon={<CircleCheck className="size-4" />}
-        // The Runs page links here to test the connection.
         id="ci"
         title="CI"
       >
@@ -40,7 +36,6 @@ export function CiSection({ children }: { children: ReactNode }) {
   )
 }
 
-/** A control without `onDelete` is drawn disabled while the page loads. */
 export function DangerZoneSection({ onDelete }: { onDelete?: () => void }) {
   return (
     <SectionRows>
@@ -64,7 +59,6 @@ export function DangerZoneSection({ onDelete }: { onDelete?: () => void }) {
   )
 }
 
-/** The owner row and invite control come first; member and invite lists follow. */
 export function AccessSection({
   canInvite,
   children,

@@ -1,7 +1,3 @@
-//! The GitHub REST calls Scope makes, as the app, as one installation of it,
-//! or as a GitHub user during setup. User tokens are used for one setup and
-//! never stored; installation tokens are cached in memory only.
-
 use super::GitHubApp;
 use super::webhook::is_commit_oid;
 use crate::{error::ApiError, persistence::unix_now};
@@ -16,15 +12,9 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const PAGE_SIZE: usize = 100;
-/// Repository lists stop here. An installation that reaches more than this
-/// shows the first ones; the rest cannot be picked.
-const MAX_PAGES: usize = 10;
-/// GitHub rejects app tokens issued in its future, so they start a minute
-/// back to allow for clock drift. Ten minutes is GitHub's limit.
+const MAX_LIST_PAGES: usize = 10;
 const APP_JWT_BACKDATE_SECS: u64 = 60;
 const APP_JWT_LIFETIME_SECS: u64 = 9 * 60;
-/// Installation tokens last an hour. A cached one is replaced this long
-/// before it expires, so no request starts with a token about to lapse.
 const INSTALLATION_TOKEN_MARGIN_SECS: u64 = 5 * 60;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -32,7 +22,6 @@ pub(crate) struct GitHubRepository {
     pub(crate) id: u64,
     pub(crate) full_name: String,
     pub(crate) private: bool,
-    /// What the GitHub user may do, on lists read with a user token.
     #[serde(default)]
     permissions: Option<RepositoryPermissions>,
 }
@@ -48,8 +37,6 @@ struct RepositoryPermissions {
 }
 
 impl GitHubRepository {
-    /// Read access is not enough: connecting lets Scope push the repository
-    /// and run its workflows with its secrets.
     fn user_can_push(&self) -> bool {
         self.permissions.is_some_and(|permissions| {
             permissions.push || permissions.maintain || permissions.admin
@@ -57,7 +44,6 @@ impl GitHubRepository {
     }
 }
 
-/// A repository the GitHub user can push, and the installation that reaches it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PushableRepository {
     pub(crate) installation_id: u64,
@@ -103,7 +89,6 @@ struct InstallationDetail {
     suspended_at: Option<String>,
 }
 
-/// What GitHub says about an installation now.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum InstallationStatus {
     Active,
@@ -121,8 +106,6 @@ struct CheckRunsPage {
     check_runs: Vec<CheckRun>,
 }
 
-/// Status and conclusion stay text until mapped, so a value GitHub adds later
-/// drops one run instead of failing the whole read.
 #[derive(Deserialize)]
 struct CheckRun {
     id: u64,
@@ -144,7 +127,6 @@ struct WorkflowRunsPage {
     workflow_runs: Vec<WorkflowRun>,
 }
 
-/// Like check runs, status and conclusion stay text until mapped.
 #[derive(Deserialize)]
 struct WorkflowRun {
     id: u64,
@@ -162,15 +144,11 @@ struct WorkflowRun {
     updated_at: String,
 }
 
-/// One page of a repository's workflow runs, newest first.
 pub(crate) struct WorkflowRunListPage {
-    /// The runs Scope can read; GitHub's others are skipped.
     pub(crate) runs: Vec<GitHubWorkflowRun>,
-    /// Whether GitHub lists more runs after this page.
     pub(crate) more: bool,
 }
 
-/// What GitHub says when it refuses a request.
 #[derive(Deserialize)]
 struct ErrorBody {
     message: String,
@@ -240,7 +218,6 @@ impl CheckRun {
             Some(conclusion) => parse_enum(conclusion).map(Some),
             None => Some(None),
         };
-        // Only a completed run has a conclusion.
         let (Some(status), Some(conclusion)) = (status, conclusion) else {
             return self.skip();
         };
@@ -253,7 +230,6 @@ impl CheckRun {
             github_check_run_id: self.id,
             status,
             conclusion,
-            // GitHub Actions points `details_url` at the job's logs.
             details_url: self.details_url.or(self.html_url),
             check_suite_id: self.check_suite.map(|suite| suite.id),
         })
@@ -275,8 +251,6 @@ fn parse_enum<T: DeserializeOwned>(value: &str) -> Option<T> {
 }
 
 impl GitHubApp {
-    /// Exchanges the code GitHub sent back from its install screen for a
-    /// token that acts as the GitHub user who installed or configured the app.
     pub(crate) async fn exchange_user_code(&self, code: &str) -> Result<String, ApiError> {
         let response = self
             .http
@@ -311,9 +285,6 @@ impl GitHubApp {
         }
     }
 
-    /// Every repository the GitHub user can push through an installation of
-    /// the app they can access. A user token from the app only sees that
-    /// app's installations.
     pub(crate) async fn user_pushable_repositories(
         &self,
         user_token: &str,
@@ -347,7 +318,6 @@ impl GitHubApp {
         Ok(pushable)
     }
 
-    /// The repository, when the installation can still reach it.
     pub(crate) async fn installation_repository(
         &self,
         installation_id: u64,
@@ -360,8 +330,6 @@ impl GitHubApp {
             .find(|repository| repository.id == repository_id))
     }
 
-    /// Every repository the installation reaches now. Empty when the
-    /// installation no longer exists.
     pub(crate) async fn installation_repositories(
         &self,
         installation_id: u64,
@@ -377,9 +345,6 @@ impl GitHubApp {
             .unwrap_or_default())
     }
 
-    /// Asks GitHub, as the app, whether the installation exists and is
-    /// suspended. A cached token for an installation that is not active is
-    /// dropped.
     pub(crate) async fn installation_status(
         &self,
         installation_id: u64,
@@ -406,8 +371,6 @@ impl GitHubApp {
         Ok(status)
     }
 
-    /// Every check run GitHub reports for a commit, re-runs included. `None`
-    /// when the installation or the repository can no longer be reached.
     pub(crate) async fn commit_check_runs(
         &self,
         installation_id: u64,
@@ -434,9 +397,6 @@ impl GitHubApp {
         ))
     }
 
-    /// One workflow run as GitHub reports it now. `None` when the run, the
-    /// installation or the repository can no longer be reached, or GitHub
-    /// reports the run in a shape Scope cannot read.
     pub(crate) async fn workflow_run(
         &self,
         installation_id: u64,
@@ -457,8 +417,6 @@ impl GitHubApp {
             .and_then(WorkflowRun::into_domain))
     }
 
-    /// The workflow runs GitHub started on a branch for a commit. `None` when
-    /// the installation or the repository can no longer be reached.
     pub(crate) async fn branch_workflow_runs(
         &self,
         installation_id: u64,
@@ -484,9 +442,6 @@ impl GitHubApp {
             }))
     }
 
-    /// Page `page` of the workflow runs GitHub has for the repository,
-    /// newest first. `None` when the installation or the repository can no
-    /// longer be reached.
     pub(crate) async fn recent_workflow_runs(
         &self,
         installation_id: u64,
@@ -515,8 +470,6 @@ impl GitHubApp {
         }))
     }
 
-    /// A token that acts as the installation. `None` when the installation
-    /// no longer exists.
     pub(crate) async fn installation_token(
         &self,
         installation_id: u64,
@@ -576,7 +529,6 @@ impl GitHubApp {
         .map_err(ApiError::internal)
     }
 
-    /// Every item of a paginated list. `None` when GitHub answers 404.
     async fn pages<P: DeserializeOwned, T>(
         &self,
         token: &str,
@@ -585,7 +537,7 @@ impl GitHubApp {
     ) -> Result<Option<Vec<T>>, ApiError> {
         let mut all = Vec::new();
         let separator = if path.contains('?') { '&' } else { '?' };
-        for page in 1..=MAX_PAGES {
+        for page in 1..=MAX_LIST_PAGES {
             let request = self
                 .request(
                     Method::GET,
@@ -613,7 +565,6 @@ impl GitHubApp {
     }
 }
 
-/// The decoded body, or `None` when GitHub answers 404.
 async fn send<T: DeserializeOwned>(request: RequestBuilder) -> Result<Option<T>, ApiError> {
     let response = request
         .send()
@@ -626,7 +577,6 @@ async fn send<T: DeserializeOwned>(request: RequestBuilder) -> Result<Option<T>,
     if !status.is_success() {
         let url = response.url().path().to_string();
         let body = response.text().await.unwrap_or_default();
-        // GitHub explains a refusal in its body's message.
         let detail = serde_json::from_str::<ErrorBody>(&body)
             .map(|body| body.message)
             .unwrap_or(body);

@@ -1,8 +1,5 @@
-//! Connected GitHub repositories that are public, or become public.
-
 use super::*;
 
-/// GitHub now lists the connected repository as public.
 pub(super) fn make_github_repository_public(fake: &FakeGitHub) {
     let mut public = github_repository(GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME);
     public["private"] = serde_json::json!(false);
@@ -30,7 +27,6 @@ async fn a_private_request_is_not_sent_to_a_repository_that_became_public_until_
     let (state, fake) = (&request.state, &request.fake);
     make_github_repository_public(fake);
 
-    // No delivery said so; the push asks GitHub first and holds the request.
     assert_eq!(push_pass(state, unix_now()).await, 1);
     assert_eq!(fake.branch_head(&request.branch()), None);
     let held = request.checks().await;
@@ -45,7 +41,6 @@ async fn a_private_request_is_not_sent_to_a_repository_that_became_public_until_
     assert_eq!(settings["connection"]["public_on_github"], true);
     assert_eq!(settings["connection"]["public_confirmed"], false);
 
-    // A maintainer who can change file visibility confirms; the request goes.
     let confirmed = expect_json(
         api_request(
             router(state.clone()),
@@ -71,7 +66,6 @@ async fn a_private_request_is_not_sent_to_a_repository_that_became_public_until_
 async fn a_delivery_saying_the_repository_became_public_holds_private_requests() {
     let request = owner_request("github-checks-publicized", &[REQUIRED_CHECK]).await;
     let (state, fake) = (&request.state, &request.fake);
-    // A late delivery is checked against what GitHub says now.
     let publicized = serde_json::json!({
         "action": "publicized",
         "repository": { "id": GITHUB_REPOSITORY_ID, "full_name": GITHUB_FULL_NAME },

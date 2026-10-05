@@ -1,4 +1,3 @@
-"""Private collection rejects ambiguous identities and unrequested environment data."""
 import importlib.util
 import subprocess
 import unittest

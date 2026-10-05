@@ -1,5 +1,3 @@
-// Try suffixes at the file probe, after aliases and extension substitution.
-// This preserves extension priority and applies equally to directory indexes.
 export function moduleSuffixPlugin(suffixes) {
   return {
     apply(resolver) {
@@ -10,7 +8,6 @@ export function moduleSuffixPlugin(suffixes) {
           if (!extension) return callback();
           let index = 0;
           const next = () => {
-            // A null result stops the unsuffixed file probe when "" is absent.
             if (index === suffixes.length) return callback(null, null);
             const suffix = suffixes[index++];
             const path = request.path.slice(0, -extension.length) + suffix + extension;

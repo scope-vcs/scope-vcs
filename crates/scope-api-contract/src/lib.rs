@@ -1,8 +1,3 @@
-//! Delivery contracts shared by the API and its Rust clients.
-//!
-//! Durable policy stays in `scope-domain`; this crate owns only serialized shapes
-//! and route construction.
-
 pub mod attachments;
 mod error;
 mod git_oid;

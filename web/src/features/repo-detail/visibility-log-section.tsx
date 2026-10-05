@@ -4,7 +4,6 @@ import { HistoryFeedList } from '@/features/history/history-entry-list'
 import { useHistoryFeed } from '@/features/history/history-feed'
 import { Eye } from 'lucide-react'
 
-// Visibility changes are not Git history, so this is their maintainer record.
 export function VisibilityLogSection({ params }: { params: RepoParams }) {
   const history = useHistoryFeed({ audience: 'private', feed: 'visibility', params })
   return (

@@ -33,7 +33,6 @@ export function RequestLifecycleActions({
   viewerId: string
 }) {
   const [dialog, setDialog] = useState<Dialog>(null)
-  // The head the merge dialog shows, kept so a live refresh cannot retarget it.
   const [mergeHead, setMergeHead] = useState(request.head_oid)
   const [autoMergeDialogOpen, setAutoMergeDialogOpen] = useState(false)
   const busy = actions.pending !== null || autoMerge.pending !== null
@@ -100,7 +99,6 @@ export function RequestLifecycleActions({
         confirmLabel="Merge request"
         onConfirm={async () => {
           const merged = await actions.run({ action: 'merge', expected_head_oid: mergeHead })
-          // Close on refusal so the error shows, and reopening names the current head.
           if (!merged) setDialog(null)
           return merged
         }}

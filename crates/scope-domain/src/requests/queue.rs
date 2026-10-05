@@ -17,7 +17,6 @@ pub enum RequestQueueSection {
     Done,
 }
 
-/// How a queue row reads to its viewer: the groups every client shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RequestQueueGroup {
@@ -28,9 +27,6 @@ pub enum RequestQueueGroup {
     Done,
 }
 
-/// Active rows split by whether the viewer is the one to act. A maintainer's
-/// own request needs them, since merging or closing it is theirs to do; a
-/// contributor's own request waits on a maintainer.
 pub fn request_queue_group(
     section: RequestQueueSection,
     reason: RequestAttentionReason,
@@ -90,13 +86,10 @@ pub struct RequestAttention {
     pub through_activity_version: u64,
     pub snoozed_until_unix: Option<u64>,
     pub updated_at_unix: u64,
-    /// Counts the writes to this viewer's record, so a client can tell whether
-    /// a queue it loaded already reflects a change it made.
     pub revision: u64,
 }
 
 impl RequestAttention {
-    /// The revision the next write for this viewer carries.
     pub fn next_revision(existing: Option<&Self>) -> u64 {
         existing.map_or(1, |attention| attention.revision + 1)
     }
@@ -132,8 +125,6 @@ pub struct ApplyRequestAttentionInput<'a> {
     pub now_unix: u64,
 }
 
-// `attention` is `None` when the action removes the actor's attention record,
-// which returns the request to the shared unclaimed queue.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestAttentionMutation {
     pub attention: Option<RequestAttention>,
@@ -144,7 +135,6 @@ pub struct RequestAttentionMutation {
 pub struct RequestQueueFacts<'a> {
     pub request_state: RequestState,
     pub request_activity_version: u64,
-    /// `None` once the author deleted their account.
     pub request_author_user_id: Option<&'a str>,
     pub viewer_user_id: Option<&'a str>,
     pub viewer_is_maintainer: bool,
@@ -161,7 +151,6 @@ pub struct RequestQueueClassification {
     pub reason: RequestAttentionReason,
     pub through_activity_version: u64,
     pub snoozed_until_unix: Option<u64>,
-    /// Zero while the viewer has no attention record.
     pub revision: u64,
     pub can_claim: bool,
     pub can_set_aside: bool,
@@ -458,7 +447,6 @@ mod tests {
                 "{reason:?}"
             );
         }
-        // A maintainer's own request is theirs to merge or close.
         assert_eq!(
             request_queue_group(RequestQueueSection::Active, Reason::Authored, true),
             NeedsYou

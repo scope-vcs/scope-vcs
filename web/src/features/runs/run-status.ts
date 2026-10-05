@@ -1,10 +1,5 @@
 import type { RepositoryRunTerminalReason } from '@/api/types.generated'
 
-/**
- * The single status vocabulary for runs, jobs, attempts and steps. Every runs
- * surface reads labels and tones from here so a running run can never be
- * rendered the same way as one that already passed.
- */
 export type RunTone = 'running' | 'success' | 'danger' | 'waiting' | 'inert'
 
 type RunStatus = {
@@ -63,8 +58,6 @@ const DURATION_JOINERS: Record<RunTone, string> = {
   waiting: 'for',
 }
 
-/** The words that lead a run's duration: "Running for", "Failed after",
- * "Succeeded in". */
 export function runDurationLead(state: string) {
   const { label, tone } = runStatus(state)
   return `${label.charAt(0).toUpperCase()}${label.slice(1)} ${DURATION_JOINERS[tone]}`

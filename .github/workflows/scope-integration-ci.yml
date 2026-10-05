@@ -100,9 +100,7 @@ jobs:
         with:
           version: 11.1.0
 
-      # The pnpm store only exists after the web install, so a CLI-only run
-      # must not ask setup-node to cache it or its post step fails the job.
-      - name: Install Node
+      - name: Install Node and cache pnpm only when the web lane installs it
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
@@ -134,7 +132,6 @@ jobs:
             'SCOPE_DEV_USER_EMAIL=smoke@example.test' \
             'SCOPE_DEV_USER_HANDLE=dev' > .env.local
 
-      # Browser smoke requires a matching Clerk development key pair.
       - name: Configure Clerk for browser smoke
         if: inputs.run_web
         env:
@@ -198,8 +195,6 @@ jobs:
           SCOPE_WEB_BASE_URL: http://localhost:3000
         run: ../dev/checks/integration web
 
-      # Recent successful integration jobs topped out at 384 seconds. The
-      # local build and HTTPS check add about 22 seconds, within the 20-minute cap.
       - name: Check compiled web through HTTPS proxy
         if: inputs.run_web && steps.projections.outcome == 'success'
         working-directory: web
@@ -228,8 +223,6 @@ jobs:
         if: always()
         run: ./dev/scope-dev down
 
-  # The web lane above forces the signed-out app, so signed-in coverage needs its
-  # own stack. The job fails when Clerk setup or the journey cannot run.
   journey:
     name: Signed-in contribution journey
     if: >-
@@ -238,8 +231,6 @@ jobs:
       (github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor != 'dependabot[bot]'))
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    # The same cap as the integration job. The first run took 161 seconds, 18 of
-    # them in the journey itself.
     timeout-minutes: 20
     services:
       postgres:
@@ -274,7 +265,6 @@ jobs:
         with:
           toolchain: 1.98.1
 
-      # The integration job saves this cache; it builds the same stack and CLI.
       - name: Restore Rust dependencies
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -319,8 +309,6 @@ jobs:
             'SCOPE_DEV_USER_EMAIL=smoke@example.test' \
             'SCOPE_DEV_USER_HANDLE=dev' > .env.local
 
-      # The journey creates or reuses the seeded collaborators' Clerk users with
-      # the secret key, then signs them in with Clerk testing tokens.
       - name: Configure Clerk for signed-in web
         env:
           CLERK_DEVELOPMENT_PUBLISHABLE_KEY: ${{ secrets.CLERK_DEVELOPMENT_PUBLISHABLE_KEY }}
@@ -363,8 +351,7 @@ jobs:
           SCOPE_WEB_BASE_URL: http://localhost:3000
         run: ./dev/checks/integration journey
 
-      # Screenshots and accessibility snapshots only; they hold no session tokens.
-      - name: Upload journey failure evidence
+      - name: Upload journey screenshots and accessibility snapshots
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

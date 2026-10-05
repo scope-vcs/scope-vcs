@@ -13,7 +13,7 @@ MAX_OBJECTS = 100000
 
 
 class Incomplete(Exception):
-    """An incomplete set is never uploaded or reported as recoverable."""
+    pass
 
 
 def required(name):

@@ -1,4 +1,3 @@
-/// Handles reserved for Scope's top-level application and marketing routes.
 pub const RESERVED_HANDLES: &[&str] = &[
     "account",
     "api",

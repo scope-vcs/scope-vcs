@@ -1,5 +1,3 @@
-//! Sends repository invite emails through Resend.
-
 use crate::config::non_empty_env;
 use scope_domain::repo_invite_email::InviteEmailAttempt;
 use std::{sync::Arc, time::Duration};
@@ -10,7 +8,6 @@ const DEFAULT_FROM: &str = "Scope <invites@scopevcs.com>";
 const RESEND_EMAILS_URL: &str = "https://api.resend.com/emails";
 
 pub(crate) struct InviteEmailMessage {
-    /// Stable per email, so a repeated attempt cannot send a second copy.
     pub(crate) idempotency_key: String,
     pub(crate) to: String,
     pub(crate) reply_to: String,
@@ -27,9 +24,6 @@ pub(crate) struct InviteEmailOutcome {
 #[derive(Clone)]
 pub(crate) enum InviteMailer {
     Resend(Arc<ResendMailer>),
-    /// No API key is configured. Emails fail at once so the owner sees
-    /// "Delivery failed" and copies a link, instead of waiting on a queue
-    /// nobody drains.
     Unconfigured,
     #[cfg(test)]
     Recording(Arc<RecordingMailer>),
@@ -124,8 +118,6 @@ fn classify_resend_response(status: u16, body: &serde_json::Value) -> InviteEmai
             attempt: InviteEmailAttempt::Accepted,
             provider_message_id: body["id"].as_str().map(str::to_string),
         },
-        // An earlier attempt with this key already handed Resend the email.
-        // This attempt carried a newer link, so its payload differs.
         409 if error_name == "invalid_idempotent_request" => outcome(InviteEmailAttempt::Accepted),
         408 | 409 | 425 | 429 | 500..=599 => outcome(InviteEmailAttempt::Retryable(detail())),
         _ => outcome(InviteEmailAttempt::Refused(detail())),
@@ -136,7 +128,6 @@ fn classify_resend_response(status: u16, body: &serde_json::Value) -> InviteEmai
 #[derive(Default)]
 pub(crate) struct RecordingMailer {
     pub(crate) sent: std::sync::Mutex<Vec<(String, String, String)>>,
-    /// Outcomes to hand back before accepting, oldest first.
     pub(crate) scripted: std::sync::Mutex<std::collections::VecDeque<InviteEmailAttempt>>,
 }
 

@@ -12,10 +12,6 @@ const BOLD_UNDERSCORE = /(?<![\w])__(\S(?:[\s\S]*?\S)?)__(?![\w])/g
 const ITALIC_UNDERSCORE = /(?<![\w])_(\S(?:[\s\S]*?\S)?)_(?![\w])/g
 const WHITESPACE = /\s+/g
 
-/**
- * First meaningful line of a discussion body, rendered as plain text so
- * collapsed threads and quote chips never show raw markdown syntax.
- */
 export function compactDiscussionSummary(body: string | null) {
   if (!body) return 'Update'
   for (const line of body.split('\n')) {

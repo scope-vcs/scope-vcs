@@ -11,11 +11,6 @@ export type RowActions = {
   run: (action: () => Promise<unknown>) => void
 }
 
-/**
- * A list whose rows can run one async action at a time and be removed after a
- * confirmation. Owns the shared pending, error, and confirm-target state so
- * member and invite rows cannot drift in how they report a failed call.
- */
 export function RemovableRowList<Item>({
   confirm,
   fallbackError,

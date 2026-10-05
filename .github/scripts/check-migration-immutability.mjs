@@ -7,8 +7,6 @@ const directory = 'crates/scope-postgres/src/migrations';
 const lockPath = `${directory}/sources.lock.json`;
 export const migrationDigest = (contents) => createHash('sha256').update(contents).digest('hex');
 const isDefinition = (name) => /^m\d+_.*\.rs$/.test(name) || name === 'current_schema.sql';
-// Lock entries retired on purpose. Every other name in the base lock must keep
-// its digest, whatever the current classifier says.
 export const retiredLockEntries = new Set(['baseline_ledger.txt']);
 
 export function checkMigrationSources(sources, locked, previous = {}) {
@@ -30,15 +28,14 @@ export function checkMigrationSources(sources, locked, previous = {}) {
 }
 
 function previousLock() {
-  // PR checks compare the lock itself against the target branch, so changing
-  // both a historical migration and its checksum cannot conceal the edit.
   const event = process.env.GITHUB_EVENT_PATH
     ? JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')) : {};
   const base = event.pull_request?.base?.sha;
   if (!base) return {};
   if (!/^[a-f0-9]{40}$/.test(base)) throw new Error('Invalid pull request base SHA');
   const entry = execFileSync('git', ['ls-tree', base, '--', lockPath], { encoding: 'utf8' });
-  if (!entry.trim()) return {}; // Initial adoption of the migration lock.
+  const isInitialLockAdoption = !entry.trim();
+  if (isInitialLockAdoption) return {};
   return JSON.parse(execFileSync('git', ['show', `${base}:${lockPath}`], { encoding: 'utf8' }));
 }
 

@@ -6,7 +6,6 @@ import { LoaderCircle, TerminalSquare } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { RunRow } from './run-row'
 
-/** A repository's Runs page before any of its workflows ran. */
 export function NoRunsEmptyState({ selectedWorkflowName }: { selectedWorkflowName?: string }) {
   return (
     <EmptyState
@@ -17,7 +16,6 @@ export function NoRunsEmptyState({ selectedWorkflowName }: { selectedWorkflowNam
   )
 }
 
-/** `empty` replaces the usual state for a repository without runs. */
 export function RunHistoryList({
   empty,
   loadMore,

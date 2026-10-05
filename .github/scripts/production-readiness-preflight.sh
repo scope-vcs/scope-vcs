@@ -5,8 +5,6 @@ manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
 project="$(jq -er '.railway.projectId' "$manifest")"
 environment="$(jq -er '.environments.production.environmentId' "$manifest")"
 
-# This owner writes only step outputs when GITHUB_OUTPUT is present. Here its
-# JSON is an input to health verification, not an Actions output.
 deployments="$(env -u GITHUB_OUTPUT node .github/scripts/production-deployment-progress.mjs read | jq -ec .deployments)"
 services="$(node .github/scripts/railway-read.mjs status \
   --project "$project" --environment "$environment" --json)"
@@ -31,7 +29,6 @@ SCOPE_DEPLOYMENT_MANIFEST_JSON="$(jq -c . "$manifest")" \
   railway_private_read "$environment" sh -ceu \
     'exec psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1' >/dev/null
 
-# Activation restores and journals against the same verified baseline.
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   printf 'deployments=%s\n' "$deployments" >> "$GITHUB_OUTPUT"
 fi

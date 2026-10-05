@@ -1,5 +1,3 @@
-//! Readiness for background workers: a worker is ready when every startup gate
-//! has opened and every supervised loop has a heartbeat that is not stale.
 use axum::{Router, extract::State, http::StatusCode, routing::get};
 use std::{
     sync::{
@@ -9,15 +7,9 @@ use std::{
     time::Duration,
 };
 
-/// Four poll intervals before a loop is called stale, never under fifteen
-/// seconds: an orchestrator should restart a wedged worker, not a slow one.
 const STALE_POLL_INTERVALS: u32 = 4;
 const MINIMUM_STALE_AFTER: Duration = Duration::from_secs(15);
 
-/// Tracks `GATES` startup conditions and `LOOPS` supervised loops.
-///
-/// Workers name their own gates and loops and pass them as indices; this owns
-/// when a heartbeat expires and how readiness is served.
 #[derive(Clone, Debug)]
 pub struct ReadinessTracker<const GATES: usize, const LOOPS: usize> {
     state: Arc<TrackerState<GATES, LOOPS>>,
@@ -26,10 +18,7 @@ pub struct ReadinessTracker<const GATES: usize, const LOOPS: usize> {
 #[derive(Debug)]
 struct TrackerState<const GATES: usize, const LOOPS: usize> {
     gates_open: [AtomicBool; GATES],
-    /// Unix second through which a loop counts as alive; zero means it has
-    /// never reported.
     valid_until_unix: [AtomicU64; LOOPS],
-    /// Set while a loop is inside a bounded unit of work that outlives a poll.
     active: [AtomicBool; LOOPS],
     stale_after_secs: u64,
 }
@@ -57,7 +46,6 @@ impl<const GATES: usize, const LOOPS: usize> ReadinessTracker<GATES, LOOPS> {
         self.state.gates_open[gate].store(false, Ordering::Release);
     }
 
-    /// A completed poll proves the loop is running and resets its staleness.
     pub fn mark_poll(&self, supervised_loop: usize, now_unix: u64) {
         self.state.valid_until_unix[supervised_loop].store(
             now_unix.saturating_add(self.state.stale_after_secs),
@@ -65,8 +53,6 @@ impl<const GATES: usize, const LOOPS: usize> ReadinessTracker<GATES, LOOPS> {
         );
     }
 
-    /// A durable lease claim or renewal proves a bounded operation is still
-    /// supervised even though it has not reached the next idle poll.
     pub fn mark_progress(&self, supervised_loop: usize, now_unix: u64, valid_for: Duration) {
         self.state.valid_until_unix[supervised_loop].fetch_max(
             now_unix.saturating_add(valid_for.as_secs()),
@@ -74,13 +60,10 @@ impl<const GATES: usize, const LOOPS: usize> ReadinessTracker<GATES, LOOPS> {
         );
     }
 
-    /// Holds a loop fresh for work whose duration is not known in advance; the
-    /// guard clears the flag even when the work unwinds.
     pub fn activity(&self, supervised_loop: usize) -> ActivityGuard<'_> {
         ActivityGuard::start(&self.state.active[supervised_loop])
     }
 
-    /// The answer `/readyz` gives at `now_unix`.
     pub fn status_at(&self, now_unix: u64) -> StatusCode {
         if self.is_ready_at(now_unix) {
             StatusCode::OK
@@ -97,7 +80,6 @@ impl<const GATES: usize, const LOOPS: usize> ReadinessTracker<GATES, LOOPS> {
             && (0..LOOPS).all(|index| self.loop_is_alive(index, now_unix))
     }
 
-    /// Serves `/readyz` until shutdown; a stale or ungated worker answers 503.
     pub async fn serve(self, port: u16, label: &'static str) -> anyhow::Result<()> {
         let app = Router::new().route("/readyz", get(readyz)).with_state(self);
         crate::serve(port, app, label).await
@@ -178,7 +160,6 @@ mod tests {
         assert_eq!(tracker.status_at(100), STALE);
         tracker.open_gate(1);
 
-        // One silent loop is enough to fail readiness.
         tracker.mark_poll(0, 110);
         assert_eq!(tracker.status_at(116), STALE);
     }

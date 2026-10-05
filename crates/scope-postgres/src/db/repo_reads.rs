@@ -484,9 +484,6 @@ fn access_for_row(
     ))
 }
 
-/// Applies the domain readability rule; the public-surface probe is only
-/// evaluated for public viewers of a ready repository, since it hydrates the
-/// projection when no cached view exists.
 async fn viewer_can_read<C>(
     conn: &C,
     row: &RepoReadRow,

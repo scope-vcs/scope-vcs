@@ -3,7 +3,6 @@ use crate::{error::ApiError, runtime_budgets::RuntimePermit, state::AppState};
 use std::{future::Future, sync::Arc};
 
 pub(crate) struct RunSourceOperation {
-    // Drop the repository before returning capacity to the next operation.
     repository: TemporarySourceDirectory,
     _permit: RuntimePermit,
     #[cfg(test)]
@@ -29,9 +28,6 @@ pub(super) fn repository(owner: &RunSourceOperation) -> std::path::PathBuf {
 pub(super) async fn supervise<T: Send + 'static>(
     work: impl Future<Output = Result<T, ApiError>> + Send + 'static,
 ) -> Result<T, ApiError> {
-    // A disconnected request drops only the join handle. The operation finishes
-    // under the existing storage and Git limits. Runtime shutdown drops this
-    // supervisor, preventing any subsequent phase from starting.
     tokio::spawn(work).await.map_err(|error| {
         ApiError::internal_message(format!("run source materialization task failed: {error}"))
     })?
@@ -45,8 +41,6 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    // The child retains the operation even if shutdown or a panic drops its
-    // async supervisor.
     let owner = owner.clone();
     tokio::task::spawn_blocking(move || {
         let _owner = owner;

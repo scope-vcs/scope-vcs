@@ -6,10 +6,6 @@ import {
   pruneWorkspaceTabs,
 } from './workspace-tab-model'
 
-/**
- * Open tabs are view state: the route owns which file is being read, this owns
- * which files are within reach. Nothing here outlives the page.
- */
 export function useWorkspaceTabs({
   activeId,
 }: {
@@ -19,9 +15,6 @@ export function useWorkspaceTabs({
     activeId ? openWorkspaceTab(emptyWorkspaceTabState, activeId, false) : emptyWorkspaceTabState,
   )
 
-  // A file reached without opening a tab — a deep link or browser history entry
-  // — becomes the preview tab. Closing never routes to a closed file, so this
-  // cannot resurrect one.
   useLayoutEffect(() => {
     if (!activeId) return
     setState((current) => openWorkspaceTab(current, activeId, false))

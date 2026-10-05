@@ -25,7 +25,6 @@ export function DetailsValue({ label, value }: { label: string; value: ReactNode
   )
 }
 
-/** RequestDetails before the request loads: its fixed sections and labels. */
 export function RequestDetailsSkeleton() {
   return (
     <div className="@container min-w-0">

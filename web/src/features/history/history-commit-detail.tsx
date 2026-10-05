@@ -12,7 +12,6 @@ type CommitDetailPanelProps = ChangedFilesProps & {
 
 export function CommitDetailPanel(props: CommitDetailPanelProps) {
   const { commitContext, commitState, onCloseDiff, selectedFilePath } = props
-  // With nothing selected the file list is the content, so small screens start with it open.
   const navigation = useChangedFileNavigation(onCloseDiff, selectedFilePath === null)
 
   if (commitState.status === 'failed') {

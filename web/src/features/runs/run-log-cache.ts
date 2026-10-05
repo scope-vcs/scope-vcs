@@ -101,8 +101,6 @@ function withBoundedLogStates(
   return next
 }
 
-// Different selected steps can load concurrently; requests belong to this run
-// owner and survive navigation together with the observable log snapshot.
 const inFlight = new Map<string, Promise<boolean>>()
 onViewerChange(() => inFlight.clear())
 export type RunLogMode = 'refresh' | 'earlier' | 'latest' | 'retry'
@@ -126,7 +124,6 @@ export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = '
   const after = mode === 'retry' ? current.failedPage?.after
     : mode === 'refresh' && current.initialized ? current.nextAfter : undefined
   writeRunLogCache(key, target, { ...current, error: null, loading: true })
-  // A request started while running can still omit the final output.
   const completedVersion = completedRunLogVersion(detail)
   const request = Promise.resolve().then(() => loadLogs({
     ...params, after, before, attempt_id: target.attemptId, step_index: target.stepIndex,

@@ -93,7 +93,6 @@ fn a_github_repository_serves_one_scope_repository_at_a_time() {
         "octo/repo-42 is already connected to another Scope repository."
     );
 
-    // Once the other link is gone from GitHub's side, the repository is free.
     let mut uninstalled = elsewhere.clone();
     assert!(uninstalled.apply_installation_change(7, &GitHubInstallationChange::Uninstalled, NOW));
     connect_github_repository(owner(), None, Some(&uninstalled), command("owner/repo", 42))
@@ -107,7 +106,6 @@ fn a_connected_repository_must_disconnect_before_linking_another() {
         .unwrap_err();
     assert_eq!(error.kind, DomainErrorKind::Conflict);
 
-    // Connecting the same repository again refreshes the link.
     let mut moved = command("owner/repo", 42);
     moved.installation_id = 8;
     let refreshed =
@@ -177,7 +175,6 @@ fn installation_changes_disconnect_only_affected_links() {
                 at_unix: NOW + 5
             }
         );
-        // A second delivery of the same event changes nothing.
         assert!(!link.apply_installation_change(7, &change, NOW + 6));
     }
 
@@ -243,14 +240,12 @@ fn only_a_maintainer_who_can_change_file_visibility_connects_a_public_repository
         acknowledge_public,
         ..command("owner/repo", 42)
     };
-    // Without confirming, even the owner is refused.
     assert_eq!(
         connect_github_repository(owner(), None, None, public(false))
             .unwrap_err()
             .kind,
         DomainErrorKind::Conflict
     );
-    // A member who cannot change file visibility is refused even when confirming.
     assert_eq!(
         connect_github_repository(member(), None, None, public(true))
             .unwrap_err()
@@ -265,7 +260,6 @@ fn only_a_maintainer_who_can_change_file_visibility_connects_a_public_repository
         );
         assert!(link.may_receive_private_requests());
     }
-    // A private repository needs no confirmation.
     assert_eq!(
         connect_github_repository(member(), None, None, command("owner/repo", 42))
             .unwrap()
@@ -297,7 +291,6 @@ fn a_repository_that_becomes_public_receives_no_private_request_until_confirmed(
     let confirmed = acknowledge_public_github_repository(publisher(), Some(&link)).unwrap();
     assert!(confirmed.may_receive_private_requests());
 
-    // Going private and public again asks again.
     let mut link = confirmed;
     assert!(link.apply_visibility(true));
     assert!(link.apply_visibility(false));

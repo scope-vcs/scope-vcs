@@ -77,7 +77,6 @@ async fn run_with_snapshot(
     let mut exchange_token_file = create_exchange_token_file(&target.exchange_token_path)?;
     let seed_user = seed_user_account(target.seed_user.clone());
     let metadata = connect.await?;
-    // Imported releases keep the existing catalog while obtaining a fresh smoke login.
     if !grant_only {
         let storage = StorageRuntime::from_env(StorageSource::S3).await?;
         let fixture = catalog(

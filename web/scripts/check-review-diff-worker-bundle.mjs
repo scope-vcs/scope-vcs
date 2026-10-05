@@ -109,9 +109,7 @@ function runWorker(workerData) {
       clearTimeout(deadline)
       try {
         await worker.terminate()
-      } catch {
-        // Preserve the smoke-test outcome if Node reports a termination failure.
-      }
+      } catch {}
       if (error) reject(error)
       else resolve(result)
     }

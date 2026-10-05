@@ -25,7 +25,6 @@ async fn cancellation_stops_a_remote_restore_and_reaps_index_pack() {
         let mut request = [0_u8; 1];
         stream.read_exact(&mut request).await.unwrap();
         let _ = started.send(());
-        // Keep the remote read pending while the real index-pack waits for input.
         let _ = tokio::io::copy(&mut stream, &mut tokio::io::sink()).await;
     });
     let store = GitSegmentStore::new(
@@ -68,8 +67,6 @@ async fn cancellation_stops_a_remote_restore_and_reaps_index_pack() {
         .await
         .expect("index-pack must be waiting on the remote read")
         .unwrap();
-    // `spawn` returns once the vforked child commits to exec, before the kernel
-    // publishes Git's argv, so its cmdline can still be empty or the test binary's.
     let process = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let process = fs::read_dir("/proc")

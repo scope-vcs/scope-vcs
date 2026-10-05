@@ -311,7 +311,6 @@ async fn seeded_readme_is_readable_without_startup_backfill_or_git_materializati
         .admin()
         .seed_catalog_for_tests(catalog)
         .unwrap();
-    // The HTTP read must use the persisted snapshot, even with no source objects available.
     let mut state = state;
     state.object_store = Arc::new(EncryptedObjectStore::new(
         Arc::new(MemoryBackend::default()),

@@ -4,7 +4,6 @@ import { Switch } from '@/components/ui/switch'
 import { Eye } from 'lucide-react'
 import { permissionLabels } from './repo-member-permission-model'
 
-/** What a member can do: private read is always on, push is the one toggle. */
 export function MemberAccessSummary({
   permissions,
 }: {

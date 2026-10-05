@@ -1,5 +1,3 @@
-// These queries use event identities, never mutable person profiles. A request
-// can be submitted and merged by different people without breaking its funnel.
 export function buildProductReports({ excludedUserIds = [], excludedRepositoryIds = [] } = {}) {
   const exclusions = [
     exclusion('distinct_id', excludedUserIds, /^scope_usr_[A-Za-z0-9_-]+$/),

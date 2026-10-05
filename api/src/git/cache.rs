@@ -194,8 +194,6 @@ impl RepositoryGitCache {
     }
 }
 
-// Only the rename needs to exclude new leases. Recursive deletion happens at
-// a detached path so a slow disk never holds the registry for unrelated repos.
 fn evict_unleased(
     path: &Path,
     remove: impl FnOnce(&Path) -> Result<(), ApiError>,

@@ -1,16 +1,10 @@
 name: CI
 
-# Scope pushes each request revision to scope/requests/<id>, so the same checks
-# that gate pull requests gate Scope requests. A revision that an open pull
-# request already tests is not validated twice: its run reports the pull
-# request's result.
 on:
   pull_request:
   push:
     branches: ['scope/**']
 
-# A branch push has no pull request number. Its ref keeps each Scope request in
-# its own group.
 concurrency:
   group: scope-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -38,21 +32,13 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
-          # Only a person's pull request from this repository into main runs
-          # what this run would: a fork's run has no secrets, another base
-          # selects components against a different comparison, and Dependabot's
-          # runs skip the CLI distribution matrix.
           number="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" --jq "[.[] | select(
             .state == \"open\" and .head.sha == \"$SHA\" and .base.ref == \"main\" and
             .head.repo.full_name == \"$REPOSITORY\" and .user.login != \"dependabot[bot]\")][0].number // empty")"
-          # A pull request run tests the head merged with main, which has the
-          # head's tree only while the head contains main.
           if [[ -n "$number" ]]; then
             behind="$(gh api "repos/$REPOSITORY/compare/main...$SHA" --jq .behind_by)"
             [[ "$behind" == 0 ]] || number=""
           fi
-          # GitHub starts no run for a pull request with conflicts, so only a
-          # run that already exists is waited for.
           if [[ -n "$number" ]]; then
             run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA" \
               --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $number))][0].id // empty")"
@@ -60,8 +46,6 @@ jobs:
           fi
           echo "number=$number" >> "$GITHUB_OUTPUT"
 
-  # Validation runs unless a pull request already tests this commit. A failed
-  # lookup leaves no number, so the revision is validated here.
   plan:
     name: Plan selected components
     needs: pull-request
@@ -80,8 +64,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # A new branch has no previous commit, so a branch push compares against
-      # its merge base with main.
       - name: Find comparison base
         id: base
         env:
@@ -177,8 +159,6 @@ jobs:
     permissions:
       actions: read
     steps:
-      # A skipped check counts as passing, so this run reports the pull
-      # request's result for the commit instead of skipping.
       - name: Report the pull request's result
         if: ${{ needs.pull-request.outputs.number != '' }}
         env:

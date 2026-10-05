@@ -600,8 +600,6 @@ where
     if !writable {
         return Ok(None);
     }
-    // The tombstone check is ordered after the row lock so it closes the race
-    // with a concurrent deletion.
     let attachment = lock_attachment(conn, attachment_id).await?;
     if attachment.request_id != request.id
         || attachment.uploader_user_id != uploader_user_id

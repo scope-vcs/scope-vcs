@@ -22,7 +22,6 @@ pub struct RepositoryAccess {
     pub can_delete_repo: bool,
 }
 
-/// The repository identity and permissions required for one viewer's metadata operations.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RepositoryAccessContext {
     pub record: RepoRecord,
@@ -61,8 +60,6 @@ impl RepositoryAccessContext {
     }
 }
 
-/// Whether a viewer with `access` may read the repository at all. Public
-/// viewers additionally need the public projection to expose at least one file.
 pub fn can_read_repository(
     lifecycle_state: RepoLifecycleState,
     access: RepositoryAccess,
@@ -107,9 +104,6 @@ impl RepositoryAccess {
         matches!(self.actor, RepositoryActor::Owner | RepositoryActor::Member)
     }
 
-    /// A repository version a viewer may see. Private-only mutations advance
-    /// the versions too, so public viewers get 0 rather than a signal of
-    /// activity they cannot read.
     pub fn visible_version(self, version: u64) -> u64 {
         if self.actor == RepositoryActor::Public {
             0

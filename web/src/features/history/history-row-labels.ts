@@ -33,7 +33,6 @@ export function historyCommitTitle(commit: Pick<CommitSummary, 'message'>) {
 export function historyEntryLabels(entry: HistoryEntrySummaryResponse) {
   return {
     count: historyEntryCountLabel(entry),
-    // Pushes are the common case; only other kinds carry a label.
     kind: entry.kind === 'push' ? null : historyEntryKindLabel(entry.kind),
     title: historyCommitTitle(entry),
   }

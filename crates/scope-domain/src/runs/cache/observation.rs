@@ -66,8 +66,6 @@ impl AttemptCacheSetupObservation {
     }
 }
 
-/// Measured cache preparation phases. Only [`Self::new`] constructs one, so a
-/// timing value is valid wherever it appears.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AttemptCachePreparationTiming {
     key_ms: u64,
@@ -155,10 +153,6 @@ impl AttemptCachePreparationTiming {
     }
 }
 
-/// Durable facts observed by a runner for one cache during one attempt.
-///
-/// The workflow namespace is supplied by the claimed attempt, not by the runner
-/// report, so a report cannot move a cache observation across jobs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AttemptCacheObservation {
     pub attempt_id: String,
@@ -240,7 +234,6 @@ impl AttemptCacheObservation {
         Ok(observation)
     }
 
-    /// Exact retries are idempotent; a different terminal report is a conflict.
     pub fn finalize(
         &mut self,
         state: CacheFinalState,
@@ -281,8 +274,6 @@ impl AttemptCacheObservation {
 }
 
 impl AttemptCachePreparationTiming {
-    /// Builds a timing from measured phases, deriving the total once so no
-    /// reporter has to restate the sum rule.
     pub fn measured(
         key_ms: u64,
         metadata_ms: u64,

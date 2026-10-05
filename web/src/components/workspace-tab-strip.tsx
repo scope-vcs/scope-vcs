@@ -135,15 +135,10 @@ export function WorkspaceTabStrip({
                 title={`${accessibleLabel} (Delete closes tab)`}
                 type="button"
               >
-                {/* Buttons reset font-style, so the preview marker lives on the
-                    label. The slanted last glyph needs room inside the clip. */}
                 <span className={cn('truncate', tab.id === previewId && 'italic pr-0.5')}>
                   {visibleLabels.get(tab.id) ?? tab.label}
                 </span>
               </button>
-              {/* A tablist may only own tabs, so the pointer close control is
-                  hidden from assistive tech. Keyboard users press Delete on the
-                  focused tab; the accessible control below closes the active tab. */}
               <button
                 aria-hidden
                 className={cn(
@@ -167,8 +162,6 @@ export function WorkspaceTabStrip({
           )
         })}
       </div>
-      {/* Assistive tech that cannot press Delete, such as touch screen readers,
-          closes the active tab through this control outside the tablist. */}
       {activeTab && (
         <button
           className="sr-only shrink-0 self-center rounded px-2 py-1 font-mono text-xs text-muted-foreground focus-visible:not-sr-only focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
@@ -225,8 +218,6 @@ function OverflowMenu({
     triggerRef.current?.focus()
   }
 
-  // A disclosure rather than an ARIA menu: the buttons below sit next in tab
-  // order, so they need no roving focus of their own.
   return (
     <div className="relative flex shrink-0 items-center" ref={rootRef}>
       <button
@@ -263,11 +254,6 @@ function OverflowMenu({
   )
 }
 
-/**
- * Keeps the active tab in view and reports the tabs scrolled out of it, so the
- * overflow menu can reach them. The strip is re-measured on resize because file
- * metadata appearing beside the tabs narrows it after the active tab changes.
- */
 function useStripOverflow({
   activeId,
   tabListRef,

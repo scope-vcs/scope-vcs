@@ -747,7 +747,6 @@ mod tests {
             assert_eq!(failure.code, RequestAttachmentFailureCode::CorruptMedia);
             assert!(!failure.retryable);
         }
-        // An inaccessible storage hierarchy is an I/O failure, not absent media.
         std::fs::write(root.path().join("objects"), b"not a directory").unwrap();
         let failure = storage_failure(&read_error(&file_backend).await);
         assert_eq!(

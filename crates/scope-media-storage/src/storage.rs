@@ -15,7 +15,6 @@ use tokio::{
 use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 
 pub const MAX_CHUNK_BYTES: usize = 8 * 1024 * 1024;
-/// Media chunks are sealed under their own key id, separate from source objects.
 pub(crate) const MEDIA_KEY_ID: &str = "media";
 
 pub type MediaByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, MediaStorageError>> + Send>>;
@@ -27,8 +26,6 @@ pub struct MediaStorage {
 }
 
 impl MediaStorage {
-    /// Wraps the backend in Scope's authenticated object encryption. Production media callers
-    /// cannot construct a storage instance without supplying the media-only encryption key.
     pub fn encrypted(
         backend: Arc<dyn ObjectBackend>,
         encryption_key: [u8; 32],
@@ -52,8 +49,6 @@ impl MediaStorage {
         Ok(self.store.readiness_check().await?)
     }
 
-    /// Plans an immutable object key and digest before I/O. Durable workflows must inventory the
-    /// returned key in Postgres before calling [`Self::write_part`].
     pub fn plan_part(
         &self,
         attempt: &WriteAttempt,
@@ -245,8 +240,6 @@ impl MediaStorage {
     }
 }
 
-/// Orders staged parts and assigns plaintext offsets. `MediaObject::validate`
-/// owns every rule about part numbering, sizes, digests and keys.
 fn chunks_in_part_order(mut parts: Vec<StagedMediaPart>) -> Vec<MediaChunk> {
     parts.sort_by_key(|part| part.part_number);
     let mut offset = 0_u64;

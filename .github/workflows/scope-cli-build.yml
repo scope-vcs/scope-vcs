@@ -46,8 +46,6 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
-      # The distribution matrix builds, packages, and uploads the service
-      # artifact, so a service release cannot skip the matrix.
       - name: Require the distribution matrix for a service release
         if: inputs.validate_service_release && !inputs.validate_targets
         run: |
@@ -87,9 +85,6 @@ jobs:
       - name: Check CLI
         run: ./dev/checks/cli
 
-      # The distribution matrix release-builds, packages, and smoke-tests every
-      # selected target, including native Linux x64. Only cover the host here
-      # when the matrix does not run.
       - name: Check host bundle and installer
         if: ${{ !inputs.validate_targets }}
         run: ./dev/checks/cli-bundle
@@ -167,7 +162,6 @@ jobs:
       - name: Build scope
         shell: bash
         run: |
-          # Cross mounts the current directory; include the root license files.
           if [ "${{ matrix.builder }}" = "cross" ]; then
             cross build --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --bin scope
           else
@@ -223,7 +217,6 @@ jobs:
         working-directory: cli
         shell: bash
         run: |
-          # Check the final binary after every Cargo invocation that can rebuild it.
           : "${SCOPE_BUILD_SHA:?Release build SHA is required}"
           grep -aFq "$SCOPE_BUILD_SHA" "${{ matrix.binary }}" || {
             echo "Release binary is missing build $SCOPE_BUILD_SHA" >&2
@@ -271,8 +264,6 @@ jobs:
           path: cli/dist/${{ matrix.artifact }}
           if-no-files-found: error
 
-      # The CLI download service runs on Linux x64; publish-cli.yml extracts this
-      # archive straight into the image's bin directory.
       - name: Pack service
         if: inputs.validate_service_release && matrix.target == 'x86_64-unknown-linux-gnu'
         shell: bash

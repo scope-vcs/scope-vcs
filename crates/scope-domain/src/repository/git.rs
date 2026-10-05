@@ -9,7 +9,6 @@ pub struct GitHead {
     pub frontier: GitFrontier,
 }
 
-/// Identity of a logical Git frontier, independent of pack layout and non-Git edits.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct GitFrontier(String);
@@ -26,15 +25,13 @@ impl GitFrontier {
 
 impl GitHead {
     pub fn new(head_oid: String, push_sequence: u64, change_version: u64) -> Self {
-        // This canonical encoding is also the signed push-intent and runtime
-        // source identity contract. Its bytes need no object-store artifact.
         #[derive(Serialize)]
-        struct Identity<'a> {
+        struct CanonicalFrontierIdentity<'a> {
             version: u8,
             head_oid: &'a str,
             push_sequence: u64,
         }
-        let bytes = serde_json::to_vec(&Identity {
+        let bytes = serde_json::to_vec(&CanonicalFrontierIdentity {
             version: 2,
             head_oid: &head_oid,
             push_sequence,

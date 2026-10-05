@@ -12,8 +12,6 @@ use sea_orm::{
     TransactionTrait, sea_query::OnConflict,
 };
 
-/// A source blob stays restorable for this long after it is queued, so a push
-/// that is still referencing it through an in-flight transaction cannot lose it.
 pub(crate) const SOURCE_BLOB_DELETE_GRACE_SECONDS: u64 = 600;
 
 impl CleanupStore {

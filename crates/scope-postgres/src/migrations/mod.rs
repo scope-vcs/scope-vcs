@@ -41,8 +41,6 @@ const MIGRATION_TABLE: &str = "seaql_migrations";
 
 pub struct Migrator;
 
-/// Serialized as `{"name": ...}`: the deployment scripts read the plan with
-/// `jq '.pending[].name'`, so the object shape is part of their contract.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PendingMigration {
     pub name: String,
@@ -201,7 +199,6 @@ fn migration_registry() -> Vec<RegisteredMigration> {
     ]
 }
 
-/// Per-statement limits for the migration transaction, independent of outage reporting.
 #[derive(Clone, Copy, Debug)]
 pub struct MigrationLimits {
     pub lock_timeout_seconds: u32,
@@ -230,9 +227,6 @@ pub async fn apply_in_maintenance(
     tx.commit().await
 }
 
-/// Compare the recorded ledger with the actual schema while writers remain
-/// online. Comparison metadata is transactional; neither the migration ledger
-/// nor user data changes.
 pub async fn preflight(
     db: &DatabaseConnection,
     limits: MigrationLimits,
@@ -250,7 +244,6 @@ pub async fn preflight(
         Ok(plan)
     }
     .await;
-    // Explicit rollback also cleans up failed comparisons before returning.
     tx.rollback().await?;
     result
 }

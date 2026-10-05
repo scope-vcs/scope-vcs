@@ -115,9 +115,6 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
     let active = true
     function resolveReplyHash() {
       const hash = window.location.hash
-      // A render can observe a new hash before its hashchange event arrives.
-      // Only a changed hash starts a navigation, so the late event cannot move
-      // a reader who has since scrolled or collapsed the thread.
       if (observedReplyHashRef.current !== hash) {
         observedReplyHashRef.current = hash
         attemptedReplyHashRef.current = null
@@ -334,7 +331,6 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                     onClick={() => void loadOlderWithoutJump()}
                     type="button"
                   >
-                    {/* Left-aligned, so the spinner follows the label and the label stays put. */}
                     {`${olderReplyCount} earlier ${olderReplyCount === 1 ? 'reply' : 'replies'}`}
                     {loadingReplies ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
                   </button>

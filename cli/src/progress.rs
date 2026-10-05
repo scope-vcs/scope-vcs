@@ -15,6 +15,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 pub mod process;
 pub use process::run_cancellable;
 
+const CANCELLATION_CLEANUP_GRACE: Duration = Duration::from_millis(250);
+
 static ACTIVE_CANCELLATION: Mutex<Option<Weak<AtomicBool>>> = Mutex::new(None);
 static CTRL_C_HANDLER: OnceLock<Result<(), String>> = OnceLock::new();
 
@@ -141,10 +143,7 @@ impl PreparationProgress {
                         continue;
                     }
 
-                    // Managed children poll more frequently than this grace period and kill their
-                    // process group before returning. Blocking in-process work such as reqwest has
-                    // no cancellation API, so Ctrl+C terminates the CLI after that cleanup window.
-                    let deadline = Instant::now() + Duration::from_millis(250);
+                    let deadline = Instant::now() + CANCELLATION_CLEANUP_GRACE;
                     while !stopped.load(Ordering::Acquire) && Instant::now() < deadline {
                         thread::sleep(Duration::from_millis(10));
                     }
@@ -209,8 +208,6 @@ impl PreparationProgress {
             .render_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        // Clearing under the render lock keeps an in-flight frame from redrawing
-        // over the output that follows the pause.
         if self.rendered {
             clear_status();
         }

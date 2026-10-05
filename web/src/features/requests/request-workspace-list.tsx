@@ -23,7 +23,6 @@ export type RequestWorkspaceListProps = {
   items: { item: RequestQueueItemResponse; section: RequestQueueSection }[]
   emptyLabel: string
   loading: boolean
-  /** First load only; a background refresh never swaps rows for placeholders. */
   skeleton: boolean
   error: string | null
   hasMore: boolean
@@ -33,7 +32,6 @@ export type RequestWorkspaceListProps = {
   params: RepoParams
   pendingId: string | null
   selectedId?: string
-  /** Rows the collapsed rail keeps, drawn with a larger avatar centred on it. */
   rail?: boolean
 }
 
@@ -87,7 +85,6 @@ export function RequestWorkspaceList({
   )
 }
 
-// Built on the row's own classes so dividers, padding and line heights match.
 export function RequestWorkspaceListSkeleton({ rail = false }: { rail?: boolean }) {
   return (
     <div className="request-workspace-rows">

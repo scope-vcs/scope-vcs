@@ -4,7 +4,6 @@ set -euo pipefail
 builder="${1:?usage: run-bounded-image-builds.sh <builder-script> <components...>}"
 shift
 (($# > 0)) || { echo 'At least one image component is required.' >&2; exit 2; }
-# Two BuildKit solves fit the four-vCPU runner without unbounded Git/apt work.
 readonly max_parallel_builds=2
 declare -A active=()
 failed=0
@@ -22,8 +21,6 @@ record_completion() {
 
 wait_for_one() {
   local count=${#active[@]} pid status
-  # Explicit PID waits retain exited children's statuses. Poll this tiny pool
-  # because wait -n may overlook an already-exited child and block on its sibling.
   while ((${#active[@]} == count)); do
     for pid in "${!active[@]}"; do
       kill -0 "$pid" 2>/dev/null && continue

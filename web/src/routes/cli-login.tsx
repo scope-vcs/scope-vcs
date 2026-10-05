@@ -274,7 +274,6 @@ function CliLoginAction({
   onAuthorize?: () => void
 }) {
   if (!isLoaded) {
-    // Too small for a loading note; the button's place is held until Clerk loads.
     return <BlockSkeleton className="h-8 w-24" />
   }
 

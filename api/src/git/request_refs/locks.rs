@@ -15,9 +15,6 @@ use std::{
 const LOCK_TIMEOUT: Duration = Duration::from_secs(10);
 const LOCK_RETRY: Duration = Duration::from_millis(10);
 
-// The file stays at a stable path. Removing it would let a new opener lock a
-// different inode while an existing holder still owns the original lock.
-// Closing the file releases the advisory lock, including after process death.
 pub(crate) struct GitLockFile {
     _file: File,
 }

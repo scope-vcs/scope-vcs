@@ -41,10 +41,6 @@ pub(crate) struct MaterializedRunSource {
 
 enum RunSourceBody {
     Buffered(Vec<u8>),
-    /// Streams the cached bundle from disk. The cache lease lives as long as the
-    /// stream, so eviction sees the download until its last byte. The object-store
-    /// permit does not: the stream reads a local file, so holding it would let
-    /// slow clients starve real object-store operations.
     Cached {
         file: tokio::fs::File,
         length: u64,
@@ -85,7 +81,6 @@ pub(crate) async fn materialize_run_source_bundle(
 ) -> Result<MaterializedRunSource, ApiError> {
     let source = &run.source;
     if let Some(bundle) = source.ephemeral_bundle() {
-        // The read checks the bundle against its recorded digest.
         let bytes = source_blob_bytes(state.object_store.as_ref(), bundle, max_bytes).await?;
         return Ok(MaterializedRunSource {
             sha256: bundle.sha256.clone(),
@@ -224,7 +219,6 @@ where
             move || build(build_path),
         )
         .await?;
-    // The permit covers opening the cache entry, not the client's download.
     let _permit = state
         .runtime_budgets
         .try_object_store("run source cache read")?;
@@ -674,9 +668,6 @@ fn git_blob(bare: &Path, git_oid: &str, path: &str) -> Result<Option<Vec<u8>>, A
     Ok(Some(output.stdout))
 }
 
-/// Runs an inspection command against caller-supplied bundle content. Timeouts and
-/// oversized output are the bundle's fault, so they surface as bad requests; a non-zero
-/// exit yields `None` for the caller to interpret.
 fn run_git_inspection(
     command: &mut Command,
     operation: &str,

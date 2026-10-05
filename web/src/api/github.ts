@@ -29,11 +29,6 @@ export async function loadRepoGitHubConnectionForRequest(
   )
 }
 
-/**
- * The origin of the page connecting GitHub, so GitHub can return to the same
- * address, such as a development stack reached over a tailnet. The API
- * accepts it only when it is an allowed Scope web origin.
- */
 export function currentWebOrigin() {
   return typeof window === 'undefined' ? null : window.location.origin
 }
@@ -89,7 +84,6 @@ export async function setRepoGitHubRequiredChecksForRequest(
   )
 }
 
-/** Allows private requests to go to a connected repository that became public. */
 export async function confirmRepoGitHubPublicForRequest(
   data: RepoParams,
 ): Promise<GitHubConnectionResponse> {
@@ -120,7 +114,6 @@ export async function startRepoGitHubSetupCheckForRequest(
   )
 }
 
-/** How many recent workflow runs the repository imports from GitHub. */
 export async function setRepoGitHubRunImportCountForRequest(
   data: SetRepoGitHubRunImportCountInput,
 ): Promise<GitHubConnectionResponse> {
@@ -131,7 +124,6 @@ export async function setRepoGitHubRunImportCountForRequest(
   )
 }
 
-/** Imports the connected repository's recent runs again with its current count. */
 export async function startRepoGitHubRunImportForRequest(
   data: RepoParams,
 ): Promise<GitHubConnectionResponse> {

@@ -26,7 +26,6 @@ use sea_orm::{
 };
 use std::time::Duration;
 
-/// Every table whose rows grow with a repository's history or pushes.
 const HISTORY_TABLES: &str = "scope_logical_commits, scope_file_changes, scope_live_files, \
     scope_visibility_change_sets, scope_visibility_changes, scope_git_segments, \
     scope_git_segment_uploads";
@@ -72,7 +71,6 @@ async fn fixture() -> MetadataStore {
             }],
         });
     }
-    // A head makes every save that could queue dependency analysis do so.
     repo.git_head = Some(GitHead::new(format!("{:040x}", 20), 1, 1));
     repo.collaboration.members.push(RepositoryMember {
         repo_id: repo.record.id.clone(),
@@ -141,7 +139,6 @@ async fn collaboration_reads_no_history_or_pack_spans() {
     .unwrap();
     assert!(owner_check.ensure_owner().is_ok());
 
-    // The lock does hold back a full load, so the reads above really avoided it.
     assert!(
         tokio::time::timeout(
             Duration::from_millis(200),
@@ -188,8 +185,6 @@ async fn lock_history(store: &MetadataStore) -> sea_orm::DatabaseTransaction {
     held
 }
 
-/// Runs one operation while another connection holds every history and pack
-/// table, so it finishes only if it never reads them.
 macro_rules! without_history {
     ($store:expr, $name:literal, $op:expr) => {{
         let held = lock_history(&$store).await;
@@ -210,8 +205,6 @@ async fn change_version(store: &MetadataStore) -> u64 {
         .change_version as u64
 }
 
-/// The repository versions of queued projection rebuilds and of the
-/// dependency analysis target. Collaboration changes neither.
 async fn derived_work(store: &MetadataStore) -> (Vec<i64>, Option<i64>) {
     let mut projection = entities::outbox_job::Entity::find()
         .filter(entities::outbox_job::Column::RepoId.eq(REPO_ID))

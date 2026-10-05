@@ -28,10 +28,6 @@ export function githubConnectionView(github: GitHubConnectionResponse): GitHubCo
   }
 }
 
-/**
- * What a public GitHub repository means for the connection. `unconfirmed`
- * means it became public after connecting, so private requests are held.
- */
 export type GitHubVisibilityView =
   | { kind: 'public' }
   | { kind: 'unconfirmed'; canConfirm: boolean }

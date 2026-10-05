@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Public serving configuration is captured in the cutover journal before any replacement.
 gates_directory=""
 
 maintenance_gate() {
@@ -38,8 +37,6 @@ enter_public_gates() {
   [[ -n "$gates_directory" ]] || return 0
   local component failed=0
   mark_maintenance_start
-  # Gate activation can remove old deployment IDs. Recovery must now finish the pinned
-  # release forward, even if its schema transaction has not started yet.
   cutover_committed=1
   for component in web git-router media-api api; do
     if ! maintenance_gate reclose "$gates_directory/$component.json"; then

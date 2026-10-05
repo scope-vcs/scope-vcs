@@ -18,6 +18,7 @@ use inspection::{
 const IMAGE_MAX_EDGE: u32 = 2_048;
 const VIDEO_MAX_WIDTH: u32 = 1_920;
 const VIDEO_MAX_HEIGHT: u32 = 1_080;
+const PROCESS_COUNT_BACKSTOP: u64 = 4_096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InputFormat {
@@ -231,7 +232,6 @@ impl CodecPipeline {
         }
     }
 
-    /// Keep decoder isolation and input thread limits identical for each transcode.
     fn transcode_input(&self, source: &Path, strict: bool) -> Vec<OsString> {
         let mut args = self.bounded_ffmpeg_prefix();
         if strict {
@@ -734,7 +734,6 @@ impl CodecPipeline {
             "-filter_threads",
         ]);
         args.push(self.limits.process_threads.to_string().into());
-        // Input and output thread limits are separate FFmpeg options.
         args.push("-threads".into());
         args.push(self.limits.process_threads.to_string().into());
         args
@@ -748,11 +747,7 @@ impl CodecPipeline {
             captured_output_bytes: self.limits.max_process_output_bytes,
             cpu_seconds: self.limits.process_timeout.as_secs().saturating_add(1),
             open_files: 64,
-            // RLIMIT_NPROC is charged to every thread owned by the container UID.
-            // The worker launches one bounded child at a time and also constrains
-            // FFmpeg's codec/filter threads, so this remains a backstop rather
-            // than a normal concurrency control.
-            processes: 4_096,
+            processes: PROCESS_COUNT_BACKSTOP,
         }
     }
 }

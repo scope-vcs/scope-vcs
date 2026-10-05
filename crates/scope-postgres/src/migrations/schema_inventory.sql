@@ -36,8 +36,6 @@ SELECT jsonb_build_object(
         LEFT JOIN pg_collation col ON col.oid = a.attcollation
     ), '[]'::jsonb),
     'constraints', COALESCE((
-        -- PostgreSQL 18 retains generated NOT NULL names after column/table
-        -- renames. Compare their column definition and flags, leaving names intact.
         SELECT jsonb_agg(jsonb_build_array(
             r.relname,
             CASE WHEN c.contype = 'n' THEN pg_get_constraintdef(c.oid, false) ELSE c.conname END,

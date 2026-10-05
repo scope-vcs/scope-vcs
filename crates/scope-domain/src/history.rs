@@ -37,19 +37,15 @@ pub struct HistoryView {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HistoryEntry {
-    /// Git head committer time or visibility operation time, when recorded.
     pub occurred_at_unix: Option<i64>,
     pub id: String,
     pub source_id: String,
-    /// Previous audience-visible action in all activity, not a Git diff base.
     pub parent_id: Option<String>,
     pub kind: HistoryEntryKind,
     pub author: Option<String>,
     pub message: String,
-    /// Content changes caused by this action. Visibility previews are owned by their transitions.
     pub files: Vec<HistoryEntryFile>,
     pub visibility_changes: Vec<HistoryEntryVisibilityChange>,
-    /// Audience-authorized native objects whose details are read from Git.
     pub native_commits: Vec<NativePublicCommit>,
 }
 
@@ -71,12 +67,10 @@ pub struct HistoryEntryFile {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HistoryEntryVisibilityChange {
-    /// Stable within the source action, including multiple transitions for the same path.
     pub id: String,
     pub path: ScopePath,
     pub old_visibility: Visibility,
     pub new_visibility: Visibility,
-    /// Audience-safe diff at this exact visibility boundary, independent of action ordering.
     pub file: Option<HistoryEntryFile>,
 }
 
@@ -121,9 +115,6 @@ pub fn history_view_from_projection(
         }
     }
 
-    // Projection order is for materializing Git trees. The graph and standalone
-    // action anchors determine history order, even when a projection fragment was
-    // emitted much earlier than the action that caused it.
     let mut entries = Vec::new();
     append_visibility_actions(
         &mut entries,
@@ -206,8 +197,6 @@ fn action_metadata(
     {
         (Some(logical.author_id.clone()), logical.message.clone())
     } else {
-        // A public boundary can reveal files from an otherwise private push. Only
-        // the content projection may authorize disclosing that push's metadata.
         projected
             .map(|action| (action.author.clone(), action.message.clone()))
             .unwrap_or_else(|| (None, "Projected public update".into()))

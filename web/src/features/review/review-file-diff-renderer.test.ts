@@ -249,6 +249,8 @@ function workerInput(
   }
 }
 
+const COLD_MODULE_COMPILATION_DEADLINE_MS = 30_000
+
 async function runSourceWorker(input: ReviewFileDiffWorkerInput) {
   const workerPath = resolve(
     process.cwd(),
@@ -256,9 +258,7 @@ async function runSourceWorker(input: ReviewFileDiffWorkerInput) {
   )
   const worker = new Worker(pathToFileURL(workerPath))
   try {
-    // These fixtures test output bounds. Allow cold TypeScript module compilation
-    // alongside the other suites; pool tests verify both deadlines independently.
-    return await runReviewFileDiffWorker(worker, input, 10_000, undefined, 30_000)
+    return await runReviewFileDiffWorker(worker, input, 10_000, undefined, COLD_MODULE_COMPILATION_DEADLINE_MS)
   } finally {
     await worker.terminate()
   }

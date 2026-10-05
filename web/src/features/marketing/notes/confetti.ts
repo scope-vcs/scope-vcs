@@ -1,8 +1,3 @@
-/**
- * Confetti for finding every note: two cannons fire from the left and right
- * edges toward the middle of the screen. Draws on a throwaway canvas that
- * removes itself when done or when the returned stop function runs.
- */
 const FRAMES = 260
 const FADE_FRAMES = 45
 const PIECES = 260
@@ -76,8 +71,6 @@ export function fireConfetti(): () => void {
   }
 }
 
-/** A piece fired from low on one side edge, angled up and in, fast enough to
- * carry it to about the middle of the screen before it falls. */
 function cannonPiece(index: number, width: number, height: number, colors: string[]): Piece {
   const fromLeft = index % 2 === 0
   const angle = (18 + Math.random() * 40) * Math.PI / 180

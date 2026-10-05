@@ -10,7 +10,6 @@ function buildCliInstallCommands(): CliInstallCommands {
   }
 }
 
-/** Install commands plus the platform to preselect for the current request. */
 export async function loadCliInstallStateForRequest(): Promise<CliInstallState> {
   const { getRequestHeader } = await import('@tanstack/react-start/server')
   const platformHeader = getRequestHeader('sec-ch-ua-platform')

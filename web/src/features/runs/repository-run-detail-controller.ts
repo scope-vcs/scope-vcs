@@ -42,7 +42,6 @@ export type { StepLogState } from './run-log-cache'
 const DETAIL_CHANGES = ['StatusChanged', 'LogsAppended'] as const
 const RUN_ERROR_FALLBACK = 'Run operation failed.'
 
-/** The selected step's output plus the actions the log view can take on it. */
 export type StepLogs = {
   earlier: () => void
   latest: () => void
@@ -210,14 +209,9 @@ export function useRepositoryRunDetailController({
     }))
     try {
       await refreshDetail(true)
-    } catch {
-      // The detail loader owns metadata errors. Keep controls disabled until a
-      // post-mutation refresh reaches the required generation.
-    }
+    } catch {}
   }, [key, refreshDetail])
 
-  // Navigation rules live in the model so `selection` and `selectedJobKey`
-  // cannot drift apart here.
   function showJob(jobDetail: RepositoryRunJobDetailResponse) {
     updateView((current) => selectJob(current, jobDetail.job.key))
   }

@@ -4,7 +4,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/railway-private-command.sh"
 environment="${1:?Maintenance environment is required}"
 command="${2:?Maintenance command is required}"
 [[ "$#" == 2 ]]
-# Only commands that read the database may repeat after an SSH transport failure.
 case "$command" in
   preflight|plan|verify|validate-workflow-catalogs) private_command=railway_private_read ;;
   fence|drain-writers|apply|backfill-workflow-catalogs) private_command=railway_private_command ;;
@@ -30,8 +29,6 @@ statement="$(jq -er '.releasePolicy.migrationStatementTimeoutSeconds | select(ty
   export SCOPE_MIGRATION_STATEMENT_TIMEOUT_SECONDS="$4"
   "$directory/scope-maintenance" "$2"
 ' scope-maintenance "$digest" "$command" "$lock" "$statement" < "$binary"
-# New tables default to no runtime access. Apply the reviewed service grants
-# before the cutover can reopen writers, including after a staging schema restore.
 if [[ "$command" == apply ]]; then
   node deploy/postgres/runtime-roles.mjs --grants-only | \
     railway_private_command "$environment" sh -ceu 'exec psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1' >/dev/null

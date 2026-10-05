@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Require an explicit timeout on every GitHub Actions job.
-
-GitHub's default is 360 minutes, so a hung Postgres or Playwright process
-burns six hours of a paid runner. Jobs that call a reusable workflow cannot
-declare a timeout; their called jobs carry their own.
-"""
 
 import pathlib
 import sys
@@ -15,7 +9,6 @@ WORKFLOWS = pathlib.Path(".github/workflows")
 
 
 def missing_timeouts(workflows):
-    """Return "path: job" for each job that runs steps without timeout-minutes."""
     missing = []
     for path, text in sorted(workflows.items()):
         document = yaml.safe_load(text) or {}
@@ -29,7 +22,6 @@ def missing_timeouts(workflows):
 
 
 def workflow_files():
-    """GitHub Actions loads both .yml and .yaml files from the workflows directory."""
     return sorted([*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")])
 
 

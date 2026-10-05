@@ -96,7 +96,6 @@ async fn completed_cleanup_never_reserves_bytes_again_during_reconciliation() {
         .await
         .unwrap();
         assert_eq!(usage.request_source_bytes, 4);
-        // The live photo reserves four source bytes and four derivative bytes.
         assert_eq!(usage.repository_bytes, 8);
         super::super::processing_support::ensure_derivative_budget(
             fixture.store.db.as_ref(),

@@ -1,5 +1,3 @@
-//! JSON column encoding shared by entity mappers.
-
 use crate::error::PostgresError;
 use serde::{Serialize, de::DeserializeOwned};
 

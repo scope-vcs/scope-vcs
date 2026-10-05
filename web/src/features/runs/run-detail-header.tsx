@@ -12,9 +12,6 @@ import { RunDuration } from './run-duration'
 import { RUN_TONE_TEXT_CLASS, RunStatusIcon } from './run-status-icon'
 import { runDurationLead, runStatus } from './run-status'
 
-/** Two quiet lines: where you are, then how the run went ("Running for 12m
- * 41s", its trigger and commit). One action sits beside them: Cancel while
- * the run can still change, Run again once it has finished. */
 export function RunDetailHeader({
   detail,
   metadataError,

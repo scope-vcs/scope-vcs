@@ -1,7 +1,3 @@
-//! The Scope GitHub App's registration. Every value is required together:
-//! with none set the GitHub connection is off, and a partial set is a
-//! startup error rather than a feature that fails later.
-
 use crate::config::non_empty_env;
 
 pub(crate) const SCOPE_GITHUB_APP_ID_ENV: &str = "SCOPE_GITHUB_APP_ID";
@@ -24,7 +20,6 @@ const GITHUB_APP_ENV: [&str; 6] = [
 pub(crate) struct GitHubAppConfig {
     pub(crate) app_id: u64,
     pub(crate) slug: String,
-    /// PEM, as GitHub issues it.
     pub(crate) private_key: String,
     pub(crate) client_id: String,
     pub(crate) client_secret: String,
@@ -87,7 +82,6 @@ impl GitHubAppConfig {
     }
 }
 
-/// Hosts that store variables on one line keep the PEM's line breaks as `\n`.
 fn pem_with_newlines(value: String) -> String {
     if value.contains('\n') {
         value

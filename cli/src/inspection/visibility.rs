@@ -1,4 +1,3 @@
-//! Local visibility diagnostics for status and doctor.
 use super::{DiagnosticState, Report, local::local_visibility, record};
 use crate::{git_repo::GitRepo, repo_config};
 use repo_config::WorktreeRepoConfigPresence;

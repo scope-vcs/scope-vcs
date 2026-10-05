@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// Fails when a built backend binary exceeds its cap in the deployment manifest,
-// or when the built binaries and the capped binaries differ.
 import { appendFileSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { backendBinaryCaps } from './deployment-components.mjs';

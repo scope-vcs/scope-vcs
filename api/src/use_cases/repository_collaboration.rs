@@ -17,7 +17,6 @@ pub(crate) async fn accept_repository_invite(
         .repositories()
         .accept_repository_invite(token_hash, user.clone(), now_unix)
         .await?;
-    // A repeated acceptance changes nothing, so it is not a second event.
     if matches!(outcome, AcceptRepositoryInviteOutcome::Accepted(_)) {
         state
             .product_analytics

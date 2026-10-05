@@ -62,7 +62,6 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
   }
   await page.setViewportSize({ width: 1280, height: 900 })
 
-  // A run on a request branch links to its request; coming back shows the list at once.
   await rows.first().getByRole('link', { name: 'scope/requests/req_1', exact: true }).click()
   await page.getByRole('heading', { name: 'Request req_1' }).waitFor()
   await page.getByRole('link', { name: 'Back to runs' }).click()
@@ -70,7 +69,6 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
   assert.equal(await rows.count(), 3)
   assert.deepEqual(await page.evaluate(() => window.loads), [])
 
-  // Older runs load below the list; the list stays while they load.
   const older = page.getByRole('button', { name: 'Load older runs' })
   await older.click()
   await page.waitForFunction(() => window.loads.length === 1)
@@ -80,7 +78,6 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
   await page.getByText('Showing 5', { exact: true }).waitFor()
   assert.equal(await older.count(), 0)
 
-  // One workflow's runs load on their own and keep the filter in view.
   const filter = page.getByRole('combobox', { name: 'Filter by workflow' })
   await filter.selectOption('lint')
   await page.getByRole('list', { name: 'Loading runs' }).waitFor()
@@ -99,12 +96,10 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
     }
   }
   await page.setViewportSize({ width: 1280, height: 900 })
-  // Every workflow's runs come back at once, both pages of them.
   await filter.selectOption('')
   await page.getByText('Showing 5', { exact: true }).waitFor()
   assert.deepEqual(await page.evaluate(() => window.loads), ['all after page-2', 'lint'])
 
-  // A change GitHub reported refreshes the loaded pages without blanking them.
   await page.evaluate(() => window.clearLoads())
   await page.evaluate(() => window.setNextRuns({
     actions_url: 'https://github.com/octo/demo/actions',
@@ -123,8 +118,6 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
   await page.getByRole('link', { name: 'lint', exact: true }).waitFor()
   assert.equal(await rows.count(), 1)
 
-  // Without workflows or a GitHub link, the page says where runs come from
-  // and lets a maintainer connect GitHub through the settings' flow.
   const sentence = page.getByText('Runs come from this project’s GitHub Actions workflows once GitHub is connected.')
   const connect = page.getByRole('button', { name: 'Connect GitHub', exact: true })
   await page.goto(new URL('/octo/demo/runs-empty', base).href)
@@ -145,24 +138,20 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
   await connect.click()
   await page.waitForFunction(() => location.hash === '#github-authorize')
   assert.deepEqual(await page.evaluate(() => window.authorizeCalls), [{ owner: 'octo', repo: 'demo' }])
-  // The setup flow returns to the page connecting started from.
   assert.equal(
     await page.evaluate(() => sessionStorage.getItem('scope.github-setup.return-path')),
     '/octo/demo/runs-empty',
   )
 
-  // Someone who is not a maintainer reads the sentence without the button.
   await page.evaluate(() => window.setActor('Public'))
   await sentence.waitFor()
   assert.equal(await connect.count(), 0)
 
-  // A server without GitHub promises nothing.
   await page.goto(new URL('/octo/demo/runs-empty?configured=false', base).href)
   await page.getByText('Push to main with a matching trigger', { exact: false }).waitFor()
   assert.equal(await sentence.count(), 0)
   assert.equal(await connect.count(), 0)
 
-  // A connected repository without runs points maintainers to its connection test.
   await page.goto(new URL('/octo/demo/runs-connected', base).href)
   const test = page.getByRole('link', { name: 'Test connection', exact: true })
   await test.waitFor()

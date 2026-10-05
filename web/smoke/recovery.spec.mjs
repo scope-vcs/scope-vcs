@@ -13,8 +13,6 @@ import {
 import { serverFunctionName } from './server-functions-smoke.mjs'
 import { changesBackLink } from './request-changes-smoke.mjs'
 
-// A held event stream never sends Connected, so the page never loads the
-// live-state summary that settles a repository page.
 const holdEventStream = (page) => page.route('**/v1/repos/*/*/events', () => new Promise(() => {}))
 
 test(`sign-in keeps Scope navigation when authentication is ${authEnabled ? 'enabled' : 'disabled'}`, async () => {
@@ -138,7 +136,6 @@ test('a stale build shows one reload notice instead of retrying', async () => {
     assert.equal(await notice.count(), 1)
     const requested = names.length
     assert.ok(requested > 0)
-    // Refresh retries run every two seconds, so a quiet interval shows they stopped.
     await page.waitForTimeout(5_000)
     assert.equal(names.length, requested)
   }, { prepare: holdEventStream, settle: false })

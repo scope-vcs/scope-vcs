@@ -133,7 +133,6 @@ impl ObjectBackend for MemoryBackend {
 
 #[cfg(any(test, feature = "test-support"))]
 impl MemoryBackend {
-    /// The stored bytes, exactly as a backend reader would return them.
     pub fn object(&self, key: &str) -> Option<Bytes> {
         self.state
             .lock()
@@ -143,7 +142,6 @@ impl MemoryBackend {
             .cloned()
     }
 
-    /// Whether any stored object contains `needle`, to prove plaintext never reached storage.
     pub fn contains_bytes(&self, needle: &[u8]) -> bool {
         self.state
             .lock()
