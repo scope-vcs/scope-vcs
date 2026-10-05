@@ -61,7 +61,11 @@ pub fn run_push_review(
 }
 
 pub fn ensure_review_terminal_available(command_name: &str) -> anyhow::Result<()> {
-    if crate::execution::interactive() && io::stdin().is_terminal() && io::stdout().is_terminal() {
+    if !crate::execution::json()
+        && crate::execution::interactive()
+        && io::stdin().is_terminal()
+        && io::stdout().is_terminal()
+    {
         return Ok(());
     }
 
