@@ -3,7 +3,8 @@ use crate::git_repo::git_output_in_repo as git_output;
 use crate::{
     api::{RepoInitResponse, api_url, create_repo, display_user, http_client},
     git_repo::{
-        discover_git_repo, git_repo_has_head, install_scope_fetch_auth, warn_if_dirty_working_tree,
+        discover_git_repo, git_repo_has_head, git_text_in_repo, install_scope_fetch_auth,
+        warn_if_dirty_working_tree,
     },
     login::session_from_cache_or_browser,
     repo_config::{
@@ -83,10 +84,13 @@ pub fn run(name: Option<String>) -> anyhow::Result<()> {
     };
 
     let config_path = repo_config_path(&git_repo.root)?;
-    let next_step = if has_head {
+    // Scope rejects a main push without file changes, so an empty HEAD tree cannot publish yet.
+    let head_has_files = has_head
+        && !git_text_in_repo(&git_repo.root, &["ls-tree", "--name-only", "HEAD"])?.is_empty();
+    let next_step = if head_has_files {
         "Run: scope push --main"
     } else {
-        "Create your first commit, then run: scope push --main"
+        "Commit at least one file, then run: scope push --main"
     };
     let mut lines = vec![
         format!(
