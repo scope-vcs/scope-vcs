@@ -1,6 +1,8 @@
 use super::*;
 use scope_cache_domain::EvictionDecision;
 
+const UPLOAD_DELETE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
 impl CacheStore {
     pub async fn claim_orphan_uploads(
         &self,
@@ -168,8 +170,12 @@ impl CacheStore {
     {
         let db = self.db.clone();
         let claim = claim.clone();
+        // Keep cleanup alive if its caller is cancelled, so the transaction is not
+        // dropped while storage may still be deleting the object.
         tokio::spawn(async move {
             let tx = db.begin().await.map_err(PostgresError::internal)?;
+            // The row lock and generation check fence out stale workers and prevent
+            // a new valid upload from reusing this object key during deletion.
             let current = tx
                 .query_one_raw(statement(
                     "SELECT upload_id FROM scope_cache_uploads
@@ -182,7 +188,16 @@ impl CacheStore {
             if current.is_none() {
                 return Ok(());
             }
-            delete().await?;
+            match tokio::time::timeout(UPLOAD_DELETE_TIMEOUT, delete()).await {
+                Ok(result) => result?,
+                Err(_) => {
+                    tx.rollback().await.map_err(PostgresError::internal)?;
+                    return Err(PostgresError::internal_message(format!(
+                        "cache upload deletion exceeded {} ms; cleanup will be retried",
+                        UPLOAD_DELETE_TIMEOUT.as_millis()
+                    )));
+                }
+            }
             tx.execute_raw(statement(
                 "DELETE FROM scope_cache_uploads WHERE upload_id = $1",
                 vec![claim.upload_id.into()],
