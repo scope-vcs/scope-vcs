@@ -89,6 +89,54 @@ fn status_counts_unpublished_scope_commits_even_when_github_is_up_to_date() {
 }
 
 #[test]
+fn status_compares_unattached_work_with_the_selected_push_remote() {
+    let dir = TempDir::new("status-selected-push-remote");
+    create_repo_with_head(dir.path());
+    run_git(
+        dir.path(),
+        [
+            "remote",
+            "add",
+            "scope",
+            "http://127.0.0.1:9/git/public/owner/repo",
+        ],
+    );
+    run_git(
+        dir.path(),
+        [
+            "remote",
+            "add",
+            "writable",
+            "http://127.0.0.1:9/git/permissioned/owner/repo",
+        ],
+    );
+    run_git(
+        dir.path(),
+        ["update-ref", "refs/remotes/scope/main", "HEAD"],
+    );
+    fs::write(dir.path().join("new.txt"), "unpublished\n").unwrap();
+    run_git(dir.path(), ["add", "new.txt"]);
+    commit_all(dir.path(), "Unpublished work");
+    run_git(
+        dir.path(),
+        ["update-ref", "refs/remotes/writable/main", "HEAD"],
+    );
+
+    let output = scope_command(dir.path())
+        .args(["--json", "status", "--offline"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["result"]["main_push_target"], "writable/main");
+    assert_eq!(
+        value["result"]["local"]["comparison_ref"],
+        "refs/remotes/writable/main"
+    );
+    assert_eq!(value["result"]["local"]["unpushed_commits"], 0);
+}
+
+#[test]
 fn status_does_not_advertise_main_push_for_public_only_remote() {
     let dir = TempDir::new("status-public-destination");
     create_repo_with_head(dir.path());

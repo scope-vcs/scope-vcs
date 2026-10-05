@@ -16,6 +16,7 @@ use scope_api_contract::{ErrorCode, ErrorResponse, RequestAudience};
 
 const REQUEST_REMOTE_KEY: &str = "scopeRequestRemote";
 const REQUEST_ID_KEY: &str = "scopeRequestId";
+const REQUEST_NAME_KEY: &str = "scopeRequestName";
 const REQUEST_OWNER_KEY: &str = "scopeRequestOwner";
 const REQUEST_REPO_KEY: &str = "scopeRequestRepo";
 const REQUEST_AUDIENCE_KEY: &str = "scopeRequestAudience";
@@ -184,9 +185,9 @@ pub(super) fn maybe_request_id_for_context(
             Ok(branch) => branch,
             Err(_) => return Ok(None),
         };
-        if let Some(request_id) = branch_config_value(git_repo, &branch, REQUEST_ID_KEY)? {
-            validate_stored_request_target(git_repo, &branch, context)?;
-            return Ok(Some(request_id));
+        if let Some(attachment) = request_attachment(git_repo, &branch)? {
+            validate_stored_request_target(&attachment, context)?;
+            return Ok(Some(attachment.id));
         }
         let tracking_remote = branch_config_value(git_repo, &branch, "remote")?;
         let merge_ref = branch_config_value(git_repo, &branch, "merge")?;
@@ -236,14 +237,69 @@ fn inferred_request_name(
     branch
 }
 
-fn validate_stored_request_target(
+struct RequestAttachment {
+    id: String,
+    owner: Option<String>,
+    repo: Option<String>,
+    remote: Option<String>,
+    name: Option<String>,
+}
+
+fn request_attachment(
     git_repo: &GitRepo,
     branch: &str,
+) -> anyhow::Result<Option<RequestAttachment>> {
+    let Some(id) = branch_config_value(git_repo, branch, REQUEST_ID_KEY)? else {
+        return Ok(None);
+    };
+    Ok(Some(RequestAttachment {
+        id,
+        owner: branch_config_value(git_repo, branch, REQUEST_OWNER_KEY)?,
+        repo: branch_config_value(git_repo, branch, REQUEST_REPO_KEY)?,
+        remote: branch_config_value(git_repo, branch, REQUEST_REMOTE_KEY)?,
+        name: branch_config_value(git_repo, branch, REQUEST_NAME_KEY)?,
+    }))
+}
+
+pub(crate) enum RequestComparison {
+    Main,
+    Request(String),
+    Unavailable(String),
+}
+
+pub(crate) fn resolve_request_comparison_ref(
+    git_repo: &GitRepo,
+    branch: &str,
+    target: &ScopeRemote,
+    resolved_request: Option<&RequestSummaryResponse>,
+) -> RequestComparison {
+    let Some(attachment) = request_attachment(git_repo, branch).ok().flatten() else {
+        return RequestComparison::Main;
+    };
+    if attachment.id.is_empty()
+        || attachment.owner.as_deref() != Some(target.owner.as_str())
+        || attachment.repo.as_deref() != Some(target.repo.as_str())
+        || attachment.remote.as_deref() != Some(target.remote.as_str())
+    {
+        return RequestComparison::Main;
+    }
+    let name = resolved_request
+        .filter(|request| request.id == attachment.id)
+        .map(|request| request.name.as_str())
+        .or(attachment.name.as_deref());
+    match name {
+        Some(name) if !name.is_empty() => {
+            RequestComparison::Request(request_remote_ref(&target.remote, name))
+        }
+        _ => RequestComparison::Unavailable(attachment.id),
+    }
+}
+
+fn validate_stored_request_target(
+    attachment: &RequestAttachment,
     context: &RequestContext,
 ) -> anyhow::Result<()> {
-    let stored_owner = branch_config_value(git_repo, branch, REQUEST_OWNER_KEY)?;
-    let stored_repo = branch_config_value(git_repo, branch, REQUEST_REPO_KEY)?;
-    match (stored_owner.as_deref(), stored_repo.as_deref()) {
+    match (attachment.owner.as_deref(), attachment.repo.as_deref()) {
         (Some(owner), Some(repo))
             if owner == context.target.owner && repo == context.target.repo =>
         {
@@ -271,6 +327,7 @@ pub(super) fn store_request_metadata(
     set_branch_config_value(git_repo, branch, REQUEST_REPO_KEY, &context.target.repo)?;
     set_branch_config_value(git_repo, branch, REQUEST_REMOTE_KEY, &context.target.remote)?;
     set_branch_config_value(git_repo, branch, REQUEST_ID_KEY, &request.id)?;
+    set_branch_config_value(git_repo, branch, REQUEST_NAME_KEY, &request.name)?;
     set_branch_config_value(
         git_repo,
         branch,
