@@ -253,6 +253,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
             None,
         );
     }
+    let mut comparison_main_remote = None;
     let target = if valid_endpoint {
         match context::resolve_repository(checkout.as_ref(), remote) {
             Ok(target) => {
@@ -266,11 +267,10 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                 );
                 if let Some(repo) = &checkout {
                     let push_remote = context::select_remote(repo, &endpoint, remote, true).ok();
+                    comparison_main_remote =
+                        Some(push_remote.clone().unwrap_or_else(|| target.remote.clone()));
                     report.main_push_target =
                         push_remote.as_ref().map(|remote| format!("{remote}/main"));
-                    if let Some(local) = &mut report.local {
-                        compare_scope_ref(local, repo, &target);
-                    }
                     check_fetch_auth(&mut report, repo, &target);
                 }
                 Some(target)
@@ -294,6 +294,29 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
     } else if valid_endpoint {
         inspect_remote(&mut report, checkout.as_ref(), target.as_ref());
     }
+    let mut request_comparison_unavailable = false;
+    if let (Some(repo), Some(target), Some(main_remote), Some(local)) = (
+        checkout.as_ref(),
+        target.as_ref(),
+        comparison_main_remote.as_deref(),
+        report.local.as_mut(),
+    ) && let Some(request_id) =
+        compare_scope_ref(local, repo, target, main_remote, report.request.as_ref())
+    {
+        request_comparison_unavailable = true;
+        let branch = local.branch.clone().unwrap_or_else(|| "BRANCH".into());
+        let reattach = format!("scope request checkout --request {request_id} --branch {branch}");
+        record(
+            &mut report,
+            "request comparison",
+            DiagnosticState::Unavailable,
+            format!("Request {request_id} has no saved comparison ref"),
+            Some(format!("Re-attach with {reattach}")),
+        );
+        report
+            .next_actions
+            .push(format!("Re-attach with {reattach}"));
+    }
     if let Some(request) = &report.request {
         report.next_actions.push(
             if request.permissions.can_push_branch {
@@ -303,10 +326,11 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
             }
             .into(),
         );
-    } else if report
-        .local
-        .as_ref()
-        .is_some_and(|local| local.head_oid.is_some())
+    } else if !request_comparison_unavailable
+        && report
+            .local
+            .as_ref()
+            .is_some_and(|local| local.head_oid.is_some())
         && report.target.is_some()
     {
         report.next_actions.push(if report.main_push_target.is_some() {

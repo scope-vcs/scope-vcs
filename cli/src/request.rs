@@ -33,7 +33,7 @@ mod discussion;
 use discussion::{DiscussionMutation, discussion_mutation};
 mod inspect;
 mod local;
-pub(crate) use local::resolve_request_comparison_ref;
+pub(crate) use local::{RequestComparison, resolve_request_comparison_ref};
 mod outcome;
 mod recovery;
 mod render;

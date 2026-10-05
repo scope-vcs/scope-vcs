@@ -1,5 +1,6 @@
 use super::{LocalState, VisibilityState};
 use crate::{
+    api::RequestSummaryResponse,
     git_repo::{self, GitRepo},
     git_transport::ScopeRemote,
     repo_config, request,
@@ -7,21 +8,39 @@ use crate::{
 use anyhow::Context;
 use std::process::Command;
 
-pub(super) fn compare_scope_ref(local: &mut LocalState, repo: &GitRepo, target: &ScopeRemote) {
+pub(super) fn compare_scope_ref(
+    local: &mut LocalState,
+    repo: &GitRepo,
+    target: &ScopeRemote,
+    main_remote: &str,
+    resolved_request: Option<&RequestSummaryResponse>,
+) -> Option<String> {
     if target.remote.is_empty() {
-        return;
+        return None;
     }
-    let reference = local
+    let comparison = local
         .branch
         .as_deref()
-        .and_then(|branch| request::resolve_request_comparison_ref(repo, branch, target))
-        .unwrap_or_else(|| format!("refs/remotes/{}/main", target.remote));
+        .map(|branch| {
+            request::resolve_request_comparison_ref(repo, branch, target, resolved_request)
+        })
+        .unwrap_or(request::RequestComparison::Main);
+    let reference = match comparison {
+        request::RequestComparison::Main => format!("refs/remotes/{main_remote}/main"),
+        request::RequestComparison::Request(reference) => reference,
+        request::RequestComparison::Unavailable(request_id) => {
+            local.comparison_ref = None;
+            local.unpushed_commits = None;
+            return Some(request_id);
+        }
+    };
     local.unpushed_commits = git_text(
         repo,
         &["rev-list", "--count", &format!("{reference}..HEAD")],
     )
     .and_then(|count| count.parse().ok());
     local.comparison_ref = Some(reference);
+    None
 }
 
 pub(super) fn local_state(repo: &GitRepo) -> anyhow::Result<LocalState> {

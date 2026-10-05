@@ -267,21 +267,38 @@ fn request_attachment(
     }))
 }
 
+pub(crate) enum RequestComparison {
+    Main,
+    Request(String),
+    Unavailable(String),
+}
+
 pub(crate) fn resolve_request_comparison_ref(
     git_repo: &GitRepo,
     branch: &str,
     target: &ScopeRemote,
-) -> Option<String> {
-    let attachment = request_attachment(git_repo, branch).ok()??;
+    resolved_request: Option<&RequestSummaryResponse>,
+) -> RequestComparison {
+    let Some(attachment) = request_attachment(git_repo, branch).ok().flatten() else {
+        return RequestComparison::Main;
+    };
     if attachment.id.is_empty()
         || attachment.owner.as_deref() != Some(target.owner.as_str())
         || attachment.repo.as_deref() != Some(target.repo.as_str())
         || attachment.remote.as_deref() != Some(target.remote.as_str())
     {
-        return None;
+        return RequestComparison::Main;
     }
-    let name = attachment.name.filter(|name| !name.is_empty())?;
-    Some(request_remote_ref(&target.remote, &name))
+    let name = resolved_request
+        .filter(|request| request.id == attachment.id)
+        .map(|request| request.name.as_str())
+        .or(attachment.name.as_deref());
+    match name {
+        Some(name) if !name.is_empty() => {
+            RequestComparison::Request(request_remote_ref(&target.remote, name))
+        }
+        _ => RequestComparison::Unavailable(attachment.id),
+    }
 }
 
 fn validate_stored_request_target(

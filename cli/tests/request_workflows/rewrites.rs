@@ -80,6 +80,48 @@ fn adopted_branch_compares_with_scope_request_despite_external_upstream() {
         "1"
     );
 
+    run_git(
+        dir.path(),
+        ["config", "--unset", "branch.work.scopeRequestName"],
+    );
+    let legacy_offline = status();
+    assert!(legacy_offline["result"]["local"]["comparison_ref"].is_null());
+    assert!(legacy_offline["result"]["local"]["unpushed_commits"].is_null());
+    assert!(
+        legacy_offline["result"]["diagnostics"]
+            .to_string()
+            .contains("scope request checkout --request req_one")
+    );
+    assert!(
+        !legacy_offline["result"]["next_actions"]
+            .to_string()
+            .contains("Start a contribution")
+    );
+    let legacy_online = success(
+        transport
+            .command(&server, dir.path())
+            .args(["--json", "status"])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(
+        legacy_online["result"]["local"]["comparison_ref"],
+        "refs/remotes/scope/fix-one"
+    );
+    assert_eq!(legacy_online["result"]["local"]["unpushed_commits"], 0);
+    assert!(
+        !Command::new("git")
+            .current_dir(dir.path())
+            .args(["config", "--get", "branch.work.scopeRequestName"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    run_git(
+        dir.path(),
+        ["config", "branch.work.scopeRequestName", "fix-one"],
+    );
+
     fs::write(dir.path().join("fix.txt"), "second\n").unwrap();
     run_git(dir.path(), ["add", "fix.txt"]);
     commit_all(dir.path(), "Second request commit");
