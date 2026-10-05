@@ -16,7 +16,7 @@ import {
 const RECONCILIATION_INTERVAL_MS = 30_000
 const REFRESH_TIMEOUT_MS = 15_000
 
-export type RunRefreshReason = RunChangeKind | 'Recovery'
+export type RunRefreshReason = RunChangeKind | 'Recovery' | 'Manual' | 'Lagged'
 export type RunRefresh = (
   reasons: ReadonlySet<RunRefreshReason>,
   signal: AbortSignal,
@@ -65,7 +65,6 @@ export function useRunLiveRefresh({
   useEffect(() => {
     if (!mutable) return
     const reconcile = () => coordinator.requestRefresh('Recovery')
-    reconcile()
     const onFocus = () => {
       if (document.visibilityState === 'visible') reconcile()
     }
@@ -85,7 +84,7 @@ export function useRunLiveRefresh({
   }, [coordinator, mutable])
 
   return useCallback(
-    () => coordinator.requestRefresh('Recovery'),
+    () => coordinator.requestRefresh('Manual'),
     [coordinator],
   )
 }
@@ -119,7 +118,7 @@ export function createRunRefreshCoordinator({
     onEvent(event) {
       if (event.repo_id !== repoId) return
       if (event.kind === 'Connected' || event.kind === 'Lagged') {
-        requestRefresh('Recovery')
+        requestRefresh(event.kind === 'Lagged' ? 'Lagged' : 'Recovery')
         return
       }
       if (

@@ -12,11 +12,16 @@ import { RunDetailJobs } from './run-detail-jobs'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
+import { loadRunDetailSnapshot, runDetailResource, type RunDetailSnapshot } from './run-detail-resource'
+import { useRunResource } from './run-resource'
+import { RunDetailPagePending } from './run-detail-pending'
+import { useCallback, useMemo } from 'react'
 import { runLogCacheKey } from './run-log-cache'
 
 type RunDetailPageProps = {
   cancelRun: () => Promise<void>
-  initialDetail: RepositoryRunDetailResponse
+  initialDetail: RepositoryRunDetailResponse | null
+  initialScope: string | null
   loadDetail: (signal?: AbortSignal) => Promise<RepositoryRunDetailResponse>
   loadLogs: (
     input: RunStepLogsInput,
@@ -32,7 +37,22 @@ export function RepositoryRunDetailPage(props: RunDetailPageProps) {
   const cacheKey = isLoaded
     ? runLogCacheKey(repoResourceScope(repo, userId ?? null), props.params.run_id)
     : null
-  return <RunDetailView key={cacheKey ?? 'auth-pending'} cacheKey={cacheKey} {...props} />
+  const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
+  return <RunDetailResourceView key={cacheKey ?? 'auth-pending'} cacheKey={cacheKey} scope={scope} {...props} />
+}
+
+function RunDetailResourceView({ cacheKey, scope, ...props }: RunDetailPageProps & { cacheKey: string | null; scope: string | null }) {
+  const initialValue = useMemo<RunDetailSnapshot | null>(() => props.initialDetail && props.initialScope === scope ? {
+    detail: props.initialDetail, generation: 0, updatedAt: Date.now(),
+  } : null, [props.initialDetail, props.initialScope, scope])
+  const { loadDetail } = props
+  const load = useCallback(async (signal: AbortSignal): Promise<RunDetailSnapshot> => {
+    if (!cacheKey) throw new Error('Run detail scope is unavailable.')
+    return loadRunDetailSnapshot(cacheKey, loadDetail, signal)
+  }, [cacheKey, loadDetail])
+  const resource = useRunResource({ identity: cacheKey, initialValue, load, resource: runDetailResource })
+  if (!resource.value) return resource.error ? <RunDetailPageError error={resource.error} /> : <RunDetailPagePending />
+  return <RunDetailView {...props} cacheKey={cacheKey} initialDetail={resource.value.detail} />
 }
 
 function RunDetailView({
@@ -43,7 +63,7 @@ function RunDetailView({
   loadLogs,
   params,
   retryRun,
-}: RunDetailPageProps & { cacheKey: string | null }) {
+}: Omit<RunDetailPageProps, 'initialDetail'> & { cacheKey: string | null; initialDetail: RepositoryRunDetailResponse }) {
   const {
     actionError,
     attemptOverrides,
