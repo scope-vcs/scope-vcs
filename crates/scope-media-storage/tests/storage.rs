@@ -133,7 +133,6 @@ async fn store_work_never_exceeds_configured_slots() {
     assert_eq!(tracker.high_water.load(Ordering::SeqCst), 2);
 }
 
-/// Records how many puts overlap, delegating storage to memory.
 #[derive(Default)]
 struct TrackingBackend {
     inner: MemoryBackend,

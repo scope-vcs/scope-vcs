@@ -40,7 +40,6 @@ else
   test -x "$context_root/bin/$binary"
 fi
 if [[ "$component" == cli-downloads ]]; then
-  # The service resolves ./dist from the image's /app working directory.
   while IFS= read -r artifact; do
     test -s "$context_root/dist/$artifact"
     (cd "$context_root/dist" && sha256sum --check "$artifact.sha256")
@@ -59,9 +58,6 @@ printf '%s\n' "$source_sha" > "$context_root/.scope-deployment-sha"
 cp deploy/railway/install-git.sh "$context_root/install-git.sh"
 git_version="$(jq -er '.git.version' dev/tool-versions.json)"
 git_source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
-# Retain dependency layers across source-only releases, but refresh moving apt
-# repositories once per UTC week. Base digests, Dockerfiles, package inputs,
-# and the pinned Git source still invalidate their own BuildKit cache keys.
 dependency_epoch="${SCOPE_IMAGE_DEPENDENCY_EPOCH:-$(date -u +%G-W%V)}"
 cache_ref="$image_repository:buildcache"
 cache_args=(--cache-from "type=registry,ref=$cache_ref" \
@@ -82,8 +78,6 @@ digest="$(jq -er '."containerimage.digest"' "$metadata")"
 [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Build did not publish an immutable image digest.' >&2; exit 1; }
 image="$image_repository@$digest"
 
-# Verify that Railway can pull after the workflow token expires. A clean Docker
-# config prevents accidental validation with the short-lived publishing token.
 printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" |
   DOCKER_CONFIG="$pull_config" docker login "${image_repository%%/*}" \
     --username "$SCOPE_RAILWAY_REGISTRY_USERNAME" --password-stdin >/dev/null

@@ -21,8 +21,6 @@ test('preflight outputs only the verified receipt baseline inside an Actions ste
     if (!String(url).startsWith('https://api.github.com/repos/test/repo/deployments?')) throw Error('Unexpected request');
     return new Response('[]', {status:200});
   };\n`);
-  // Run the real receipt reader and role SQL generator. Only remote health and
-  // provider transport are replaced; this catches the owner's Actions/stdout contract.
   writeFileSync(join(bin, 'node'), `#!${process.execPath}
 const {spawnSync} = require('node:child_process');
 const {writeFileSync} = require('node:fs');

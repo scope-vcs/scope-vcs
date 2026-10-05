@@ -1,5 +1,3 @@
-"""Capture online without application downtime; fail on incomplete or changing state."""
-
 import datetime
 import json
 import os
@@ -18,7 +16,6 @@ from verify import verify
 
 
 def capture(clients, url, escrow, recipient, destination, source_sha, max_bytes=MAX_BYTES, max_objects=MAX_OBJECTS, snapshot_provider=None):
-    # A fresh DB snapshot is required for each retry. Application writes continue.
     with tempfile.TemporaryDirectory(prefix="scope-recovery-") as scratch:
         root = Path(scratch)
         before = inventory(clients, max_bytes, max_objects)
@@ -42,8 +39,6 @@ def capture(clients, url, escrow, recipient, destination, source_sha, max_bytes=
 
 
 def failure_reason(error):
-    # Exceptions from providers can embed credentials or private object keys. Incomplete messages
-    # are fixed strings in this tool, so only they are printed; anything else is named by type.
     return str(error) if isinstance(error, Incomplete) else type(error).__name__
 
 

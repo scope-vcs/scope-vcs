@@ -45,7 +45,6 @@ pub(crate) async fn create_manual_run(
     let user = require_scope_user(&state, &headers).await?;
     let repo = require_repo_member(&state, &user.id, &owner, &repo_name).await?;
     let request = manual_run_request(repo.record.id, user.id, query)?;
-    // `Vec::from` reuses the collected allocation; `to_vec` would copy the bundle.
     let bundle = Vec::from(
         to_bytes(body, MAX_MANUAL_BUNDLE_BYTES)
             .await

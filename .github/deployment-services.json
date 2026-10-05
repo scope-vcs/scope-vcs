@@ -500,8 +500,6 @@
       "prefixes": [
         "cli/distribution/",
         "cli/src/",
-        "crates/scope-api-contract/",
-        "crates/scope-domain/",
         "dependency-analyzer/"
       ]
     }

@@ -146,14 +146,12 @@ export type RepoGitHubAuthorizeInput = RepoParams & GitHubAuthorizeRequest
 
 export type ConnectRepoGitHubInput = RepoParams & ConnectGitHubRepositoryRequest
 
-/** Approval names the head the maintainer reviewed; a newer head is refused. */
 export type ApproveRequestChecksInput = RequestParams & ApproveRequestChecksRequest
 
 export type SetRepoGitHubRequiredChecksInput = RepoParams & SetGitHubRequiredChecksRequest
 
 export type SetRepoGitHubRunImportCountInput = RepoParams & SetGitHubRunImportCountRequest
 
-/** A page of the GitHub runs list, of one workflow when `workflow` names it. */
 export type RepoGitHubWorkflowRunsInput = RepoParams & {
   workflow?: string
   after?: string

@@ -120,15 +120,12 @@ export function assertDeploymentImage(image, deployment) {
   return deployment;
 }
 
-// The checked-in runtime config owns these settings for every activation path;
-// Railway otherwise keeps whatever an earlier release left on the instance.
 export function runtimeDeploySettings(component, config) {
   const deploy = config?.deploy;
   if (!deploy?.healthcheckPath || !Number.isInteger(deploy.healthcheckTimeout)) {
     throw new Error(`Checked-in readiness configuration is missing for ${component}.`);
   }
   const settings = { healthcheckPath: deploy.healthcheckPath, healthcheckTimeout: deploy.healthcheckTimeout };
-  // Replica topology belongs to the target environment, not the artifact.
   for (const field of ['overlapSeconds', 'drainingSeconds', 'restartPolicyMaxRetries']) {
     if (deploy[field] === undefined) continue;
     const value = deploy[field];
@@ -175,8 +172,6 @@ export function configureStagingRegistry(manifest, credentials, railway = runRai
     return id;
   });
   if (new Set(serviceIds).size !== serviceIds.length) throw new Error('Staging registry service IDs must be distinct.');
-  // Configure only provider-held pull credentials. Candidate activation receives
-  // the staging token and retains these credentials without ever reading them.
   for (const serviceId of serviceIds) {
     retryRailway(() => {
       const result = railway('mutation ConfigureRegistry($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}', {
@@ -209,7 +204,6 @@ export function activateArtifact(release, component, environmentId, { config, se
 }
 
 function runRailway(query, variables) {
-  // Variables go through stdin to keep private registry credentials out of process arguments.
   const args = ['api', query, '--variables', '@-'];
   if (query.startsWith('query ')) return readRailway(args, { input: JSON.stringify(variables) });
   const result = JSON.parse(execFileSync('railway', args, {

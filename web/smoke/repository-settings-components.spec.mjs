@@ -99,7 +99,6 @@ test('repository components retain drafts, previews and pending actions across r
       { setGitHubRequiredChecks: ['lint'] },
     ])
 
-    // The trigger to add, and a test whose checks become required in one click.
     await checks.getByText("branches: ['scope/**']", { exact: false }).waitFor()
     const testConnection = checks.getByRole('button', { name: 'Test connection', exact: true })
     await testConnection.click()
@@ -126,7 +125,6 @@ test('repository components retain drafts, previews and pending actions across r
     }
     await page.setViewportSize({ width: 1280, height: 900 })
 
-    // How many recent runs to import, and the latest import from the settings data.
     const recentRuns = checks.getByRole('spinbutton', { name: 'Recent runs to import' })
     const save = checks.getByRole('button', { name: 'Save', exact: true })
     const importNow = checks.getByRole('button', { name: 'Import now', exact: true })
@@ -148,8 +146,6 @@ test('repository components retain drafts, previews and pending actions across r
       const github = window.fixtureGitHub()
       window.setFixtureGitHub({ ...github, run_import: { ...github.run_import, ...runImport } })
     }, runImport)
-    // A failed attempt shows what GitHub answered while it waits to retry,
-    // and importing now replaces it.
     await imported({ error: 'GitHub answered 502 Bad Gateway for /repos/octo/demo/actions/runs: Server Error' })
     await checks.getByText('Import failed: GitHub answered 502 Bad Gateway for /repos/octo/demo/actions/runs: Server Error. Retrying.', { exact: true }).waitFor()
     assert.equal(await importNow.isDisabled(), false)

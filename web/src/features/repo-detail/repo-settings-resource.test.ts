@@ -43,7 +43,6 @@ test('a retained snapshot refreshes once when its earliest pending invite expire
   t.mock.timers.tick(1)
   assert.equal(repoSettingsResource.getSnapshot('expiry-scope').stale, true)
 
-  // A client clock ahead of the server would get the same pending invite back.
   assert.equal(refreshWhenNextInviteExpires('expiry-scope', collaboration), undefined)
 })
 
@@ -73,6 +72,5 @@ test('a GitHub connection change keeps the rest of the settings and refreshes ev
   invalidateRepoSettings('owner/repo')
   assert.equal(repoSettingsResource.getSnapshot(scope('owner/repo', 'b')).stale, true)
   assert.equal(repoSettingsResource.getSnapshot(scope('owner/other', 'a')).stale, false)
-  // Stale snapshots stay visible until their refresh answers.
   assert.deepEqual(repoSettingsResource.peek(scope('owner/repo', 'b'))?.collaboration, collaboration)
 })

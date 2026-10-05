@@ -12,8 +12,6 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use std::time::{Duration, SystemTime};
 use url::Url;
 
-/// Signs time-limited URLs that let a client read or write an object directly, without the
-/// object ever passing through a Scope service.
 #[derive(Clone)]
 pub struct S3Presigner {
     endpoint: String,
@@ -146,7 +144,6 @@ impl S3Presigner {
         expires_in: Option<Duration>,
         now: SystemTime,
     ) -> Result<PresignedRequest, ObjectStoreError> {
-        // S3 signs the encoded object path as sent, without normalization or a second encoding.
         let mut settings = SigningSettings::default();
         settings.percent_encoding_mode = PercentEncodingMode::Single;
         settings.uri_path_normalization_mode = UriPathNormalizationMode::Disabled;
@@ -340,7 +337,6 @@ mod tests {
             .iter()
             .find(|(name, _)| name == "authorization")
             .unwrap();
-        // Fixed vectors calculated independently from the SigV4 canonical request and HMAC steps.
         assert!(authorization.1.ends_with(
             "Signature=bfe226c6525f3f73884f949f113f4e110e00d5aa240f9b7744e82b32b8dcbba0"
         ));

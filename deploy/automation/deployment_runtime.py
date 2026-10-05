@@ -1,4 +1,3 @@
-"""GitHub and local T3 adapters for release supervision."""
 from __future__ import annotations
 
 import base64
@@ -27,20 +26,18 @@ SELECTIONS = {
 }
 
 
-# T3 records automation-issued commands as server-originated system actions.
-ACTOR = {"createdBy": "system", "creationSource": "server"}
+SERVER_SYSTEM_ACTOR = {"createdBy": "system", "creationSource": "server"}
 
 
 def thread_create_command(thread_id: str, title: str, worktree: str, provider: str) -> dict:
-    return {"type": "thread.create", **ACTOR, "commandId": thread_id + "-create", "threadId": thread_id,
+    return {"type": "thread.create", **SERVER_SYSTEM_ACTOR, "commandId": thread_id + "-create", "threadId": thread_id,
             "projectId": PROJECT_ID, "title": title, "modelSelection": SELECTIONS[provider],
             "runtimeMode": "full-access", "interactionMode": "default", "branch": None,
             "worktreePath": worktree}
 
 
 def message_command(command_id: str, thread_id: str, text: str, provider: str) -> dict:
-    # Queue behind any run still active, so a resumed agent never overlaps a stopping one.
-    return {"type": "message.dispatch", **ACTOR, "commandId": command_id, "threadId": thread_id,
+    return {"type": "message.dispatch", **SERVER_SYSTEM_ACTOR, "commandId": command_id, "threadId": thread_id,
             "messageId": command_id + "-prompt", "text": text, "attachments": [],
             "modelSelection": SELECTIONS[provider], "dispatchMode": {"type": "queue_after_active"}}
 
@@ -85,13 +82,10 @@ def jobs(run: dict) -> list[dict]:
 
 class RejectRedirects(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, response, code, message, headers, new_url):
-        # A redirect must never carry the local session token to another server.
         return None
 
 
 class WebSocket:
-    """Minimal RFC 6455 text client; T3 accepts commands only over its RPC socket."""
-
     def __init__(self, origin: str, path: str, headers: dict[str, str]):
         url = urllib.parse.urlparse(origin)
         self.socket = socket.create_connection((url.hostname, url.port), timeout=45)
@@ -107,7 +101,6 @@ class WebSocket:
         status = head.split(b"\r\n", 1)[0].split()
         if len(status) < 2 or status[1] != b"101":
             self.socket.close()
-            # Authentication diagnostics must not enter alerts.
             raise RuntimeError(f"T3 socket upgrade failed with HTTP {status[1].decode() if len(status) > 1 else '?'}")
 
     def receive_bytes(self) -> bytes:
@@ -194,14 +187,12 @@ class T3Client:
             with urllib.request.build_opener(RejectRedirects()).open(request, timeout=45) as response:
                 return json.load(response)
         except urllib.error.HTTPError as error:
-            # Provider responses and authentication diagnostics must not enter alerts.
             raise RuntimeError(f"T3 request failed with HTTP {error.code}") from None
 
     def shell(self) -> dict:
         return self.request("/api/orchestration/shell")
 
     def dispatch(self, command: dict) -> dict:
-        """Run one command; T3 replays a repeated command ID instead of applying it twice."""
         if self.rpc is None:
             self.rpc = WebSocket(self.origin, f"/ws?orchestrationProtocol={PROTOCOL_VERSION}",
                                  {"Authorization": "Bearer " + self.session["token"]})
@@ -219,7 +210,6 @@ class T3Client:
                     return exit["value"]
                 causes = exit.get("cause") or [{}]
                 error = (causes[0].get("error") or {}).get("_tag") or causes[0].get("_tag", "unknown")
-                # Only the error kind is reported; T3 messages can quote thread content.
                 raise RuntimeError(f"T3 rejected {command['type']}: {error}")
 
 
@@ -230,7 +220,6 @@ def create_worktree(target: Path) -> str:
         if result.returncode:
             raise RuntimeError("Release worktree operation failed")
         return result.stdout.strip()
-    # Existing work is never reset, including after a lost dispatch response.
     if target.exists():
         root = subprocess.check_output(["git", "-C", str(target), "rev-parse", "--show-toplevel"], text=True).strip()
         common = subprocess.check_output(["git", "-C", str(target), "rev-parse", "--path-format=absolute", "--git-common-dir"], text=True).strip()

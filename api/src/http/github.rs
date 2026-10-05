@@ -1,16 +1,3 @@
-//! Connecting a repository to GitHub, and GitHub's webhook deliveries.
-//!
-//! Connecting uses GitHub's OAuth web flow, which always returns its code
-//! with the signed state Scope sent. The setup call proves who is connecting:
-//! the state names the Scope user and repository that started the flow, and
-//! the GitHub user's own token shows which repositories that person can push
-//! through installations of the app. The connect call then checks the chosen
-//! repository against that proof and against the installation itself before
-//! the link is stored. Installing the app is a separate step on GitHub; no
-//! installation id from a redirect is ever used. Maintainers also name the
-//! checks GitHub must pass, test the connection and import GitHub's recent
-//! workflow runs here, and members read the workflow runs GitHub reported.
-
 use super::responses::{
     ConnectGitHubRepositoryRequest, GitHubAuthorizeRequest, GitHubAuthorizeResponse,
     GitHubConnectionParts, GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse,
@@ -55,12 +42,10 @@ use scope_domain::{
 use scope_postgres::db::{GitHubWorkflowRunCursor, GitHubWorkflowRunPageQuery};
 use serde::Deserialize;
 
-/// The Runs page lists GitHub's runs this many at a time.
 const WORKFLOW_RUN_PAGE_SIZE: usize = 50;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct GitHubWorkflowRunsQuery {
-    /// Lists only this workflow's runs.
     workflow: Option<String>,
     after: Option<String>,
 }
@@ -75,7 +60,6 @@ pub(crate) async fn get_github_connection(
     connection_response(&state, &context).await.map(Json)
 }
 
-/// Where to send the maintainer to authorize the app on GitHub.
 pub(crate) async fn start_github_authorization(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -164,7 +148,6 @@ pub(crate) async fn connect_github_repository(
             "This GitHub setup was for another repository or account. Start again from repository settings.",
         ));
     }
-    // Only repositories the GitHub user could push were granted.
     let Some(installation_id) = grant.installation_for(input.github_repository_id) else {
         return Err(ApiError::forbidden(
             "Your GitHub account cannot push that repository through the Scope GitHub App.",
@@ -188,15 +171,12 @@ pub(crate) async fn connect_github_repository(
                 installation_id,
                 github_repository_id: repository_id,
                 github_full_name: repository.full_name,
-                // What GitHub reports now, not what setup listed.
                 github_private: repository.private,
                 acknowledge_public: input.acknowledge_public,
                 run_import_count: input.run_import_count,
                 user_id: user.id,
                 now_unix: unix_now()?,
             },
-            // Asked again under the installation lock, so a removal that
-            // GitHub reported meanwhile is seen here or finds the new link.
             async || {
                 Ok::<_, ApiError>(
                     app.installation_status(installation_id).await? == InstallationStatus::Active
@@ -209,8 +189,6 @@ pub(crate) async fn connect_github_repository(
         )
         .await?;
     publish_connection_change(&state, &incarnation).await;
-    // Connecting queued the commits open requests' GitHub checks test, and
-    // the import of the repository's recent runs.
     state.github_push_wakeup.notify_one();
     state.github_run_import_wakeup.notify_one();
     connection_response(&state, &context).await.map(Json)
@@ -232,8 +210,6 @@ pub(crate) async fn disconnect_github_repository(
     connection_response(&state, &context).await.map(Json)
 }
 
-/// A maintainer replaces the check names GitHub must pass. Heads already
-/// evaluated keep the checks they were evaluated with.
 pub(crate) async fn set_github_required_checks(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -251,8 +227,6 @@ pub(crate) async fn set_github_required_checks(
     connection_response(&state, &context).await.map(Json)
 }
 
-/// A maintainer who can change file visibility confirms that the connected
-/// GitHub repository, which became public, may receive private requests.
 pub(crate) async fn confirm_public_github_repository(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -266,13 +240,10 @@ pub(crate) async fn confirm_public_github_repository(
         .acknowledge_public_github_repository(&context.record.id, &user.id)
         .await?;
     publish_connection_change(&state, &incarnation).await;
-    // Private requests waiting on the confirmation can be sent now.
     state.github_push_wakeup.notify_one();
     connection_response(&state, &context).await.map(Json)
 }
 
-/// A maintainer tests the connection: main goes to the setup branch and the
-/// test waits for the workflows GitHub starts there.
 pub(crate) async fn start_github_setup_check(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -291,8 +262,6 @@ pub(crate) async fn start_github_setup_check(
     connection_response(&state, &context).await.map(Json)
 }
 
-/// A maintainer sets how many of GitHub's most recent workflow runs the
-/// repository imports. It applies to the next import.
 pub(crate) async fn set_github_run_import_count(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -310,8 +279,6 @@ pub(crate) async fn set_github_run_import_count(
     connection_response(&state, &context).await.map(Json)
 }
 
-/// A maintainer imports the connected repository's recent runs again with
-/// its current count.
 pub(crate) async fn start_github_run_import(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -330,8 +297,6 @@ pub(crate) async fn start_github_run_import(
     connection_response(&state, &context).await.map(Json)
 }
 
-/// What a repository's Runs page lists when its checks run on GitHub, a page
-/// at a time. Members read it like Scope's own runs.
 pub(crate) async fn get_github_workflow_runs(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -341,8 +306,6 @@ pub(crate) async fn get_github_workflow_runs(
     let user = require_scope_user(&state, &headers).await?;
     let context = require_repo_member(&state, &user.id, &owner, &repo).await?;
     let repositories = state.metadata.repositories();
-    // A repository whose checks run on GitHub lists GitHub's runs, even once
-    // GitHub took the link away.
     let connection = repositories
         .github_connection(&context.record.id)
         .await?
@@ -357,8 +320,6 @@ pub(crate) async fn get_github_workflow_runs(
             github: None,
         }));
     };
-    // Names are stored as GitHub reports them, so the chosen one is matched
-    // exactly.
     let workflow_name = query.workflow.as_deref().filter(|name| !name.is_empty());
     let after = query
         .after
@@ -410,8 +371,6 @@ fn parse_workflow_run_cursor(value: &str) -> Result<GitHubWorkflowRunCursor, Api
         .ok_or_else(|| ApiError::bad_request("invalid workflow run cursor"))
 }
 
-/// Deliveries are verified before anything in them is read, and a rejected
-/// one changes nothing.
 pub(crate) async fn receive_github_webhook(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -444,15 +403,11 @@ pub(crate) async fn receive_github_webhook(
                 publish_connection_change(&state, &incarnation).await;
             }
         }
-        // GitHub does not resend a delivery Scope fails, so a failed read is
-        // left to the reconciler instead of failing the delivery.
         GitHubWebhookEvent::ChecksChanged {
             github_repository_id,
             commit_oid,
             workflow_run_id,
         } => {
-            // The run is kept for a later read before the delivery is
-            // acknowledged, so a read GitHub does not answer now is not lost.
             if let Some(run_id) = workflow_run_id {
                 github_workflow_runs::refresh_workflow_run_for_delivery(
                     &state,
@@ -477,8 +432,6 @@ pub(crate) async fn receive_github_webhook(
                 );
             }
         }
-        // GitHub reports a visibility change; a repository that became public
-        // receives no private request until a maintainer confirms.
         GitHubWebhookEvent::RepositoryVisibilityChanged {
             github_repository_id,
         } => {
@@ -502,9 +455,6 @@ pub(crate) async fn receive_github_webhook(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Where GitHub sends the maintainer back. GitHub itself only accepts the
-/// app's registered callback URLs; this keeps Scope from naming an origin it
-/// does not serve.
 fn callback_origin(state: &AppState, web_origin: Option<&str>) -> Result<String, ApiError> {
     let public = || public_app_origin("connect GitHub");
     let Some(web_origin) = web_origin else {
@@ -530,8 +480,6 @@ fn callback_origin(state: &AppState, web_origin: Option<&str>) -> Result<String,
     })
 }
 
-/// Only maintainers see or change the connection. Readers who are not get
-/// the same answer as for any maintainer-only setting.
 async fn maintainer_access(
     state: &AppState,
     owner: &str,
@@ -577,8 +525,6 @@ async fn connection_response(
     ))
 }
 
-/// The connection has no repository version of its own, so maintainers'
-/// open settings refresh on an unversioned change.
 async fn publish_connection_change(state: &AppState, incarnation: &RepositoryIncarnation) {
     state
         .publish_request_summary_refresh(incarnation, RepoChangeReason::GitHubConnectionChanged)

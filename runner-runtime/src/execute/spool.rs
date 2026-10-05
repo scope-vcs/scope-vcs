@@ -14,8 +14,6 @@ use std::{
 pub(super) const LOG_SPOOL_BYTES: u64 = 64 * 1024 * 1024;
 const HEADER_BYTES: usize = 5;
 
-/// One bounded circular file shared by stdout and stderr. Readers wait only when the
-/// spool is full; the uploader owns sequencing and releases space as it drains records.
 pub(super) struct LogSpool {
     state: Mutex<State>,
     changed: Condvar,
@@ -108,8 +106,6 @@ impl LogSpool {
         true
     }
 
-    /// The API has confirmed truncation. Keep draining pipes without writing output
-    /// that cannot be retained, including waking readers blocked on a full spool.
     pub(super) fn discard_output(&self) {
         let mut state = self.state.lock().expect("log spool mutex poisoned");
         state.discarding = true;
@@ -237,7 +233,6 @@ mod tests {
             &stop
         ));
         spool.discard_output();
-        // A read-only file proves future output never reaches the disk writer.
         spool.state.lock().unwrap().file = File::open("/dev/null").unwrap();
         assert!(spool.send(
             ReaderEvent::Chunk {

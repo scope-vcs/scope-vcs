@@ -6,7 +6,7 @@ use crate::{policy::ScopePath, runs::workflow::identity::WorkflowPath};
 
 pub const REPO_CONTROL_ROOT: &str = "/.scope";
 pub const REPO_CONTROL_PREFIX: &str = "/.scope/";
-pub const REPO_RULES_PATH: &str = "/.scope/RULES.md";
+pub const LEGACY_REPO_RULES_PATH: &str = "/.scope/RULES.md";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RepoControlPath {
@@ -37,7 +37,7 @@ pub fn is_repo_control_path(path: &ScopePath) -> bool {
 }
 
 pub fn is_repo_rules_path(path: &ScopePath) -> bool {
-    path.as_str() == REPO_RULES_PATH
+    path.as_str() == LEGACY_REPO_RULES_PATH
 }
 
 pub fn is_public_request_protected_path(path: &ScopePath) -> bool {
@@ -92,7 +92,7 @@ mod tests {
     fn classifier_separates_supported_from_forbidden_control_paths() {
         assert_eq!(classify_repo_control_path(&path("/README.md")), None);
         assert_eq!(
-            classify_repo_control_path(&path(REPO_RULES_PATH)),
+            classify_repo_control_path(&path(LEGACY_REPO_RULES_PATH)),
             Some(RepoControlPath::Rules)
         );
         assert!(matches!(
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn rules_are_control_but_not_private_control() {
-        let rules = path(REPO_RULES_PATH);
+        let rules = path(LEGACY_REPO_RULES_PATH);
         assert!(is_repo_control_path(&rules));
         assert!(!is_private_control_path(&rules));
     }

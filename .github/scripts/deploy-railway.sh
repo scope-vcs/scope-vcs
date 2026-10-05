@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Prepared activations (SCOPE_PREPARED_RELEASE_PATH) deploy an immutable image and
-# take no upload root; source uploads require the directory to send to Railway.
 service_name="${1:?usage: deploy-railway.sh <service-name> [upload-root]}"
 upload_root="${2:-}"
 
@@ -128,7 +126,6 @@ record_deployment_evidence() {
     return 1
   fi
 
-  # The JavaScript template literal is evaluated by Node.
   # shellcheck disable=SC2016
   EVIDENCE_PATH="$deployment_evidence_path" \
     COMPONENT="$deployment_component" \
@@ -270,7 +267,6 @@ else
     :
   else
     upload_status=$?
-    # Report only a provider status code. Upload errors may contain signed URLs.
     upload_http_status="$(printf '%s' "$deploy_output" | node -e '
       let body = "";
       process.stdin.on("data", chunk => body += chunk);
@@ -318,7 +314,6 @@ if [[ "$defer_service_health" == "0" ]]; then
   fi
 fi
 if [[ -n "${SCOPE_RELEASE_DEPLOYMENTS_FILE:-}" ]]; then
-  # Concurrent activations share this file; serialize the read-modify-write.
   (
     flock -x 9
     jq --arg component "$deployment_component" --arg id "$deployment_id" \

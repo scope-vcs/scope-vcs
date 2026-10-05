@@ -1,5 +1,3 @@
-//! Stop decisions for newly recorded failed check evidence.
-
 use super::{
     Request, RequestAutoMergeIntent, RequestAutoMergeMutation, RequestAutoMergeStopReason,
     RequestCheckEvaluation, stop_request_auto_merge,
@@ -10,7 +8,6 @@ use crate::{
     runs::run::{Run, RunState},
 };
 
-/// Only configuration evidence for the authorized head can stop its intent.
 pub fn stop_request_auto_merge_for_check_evaluation(
     request: &Request,
     intent: &RequestAutoMergeIntent,
@@ -36,8 +33,6 @@ pub fn stop_request_auto_merge_for_check_evaluation(
     .map(Some)
 }
 
-/// The caller must establish that this run belongs to the active intent's checks
-/// while holding the request and intent locks.
 pub fn stop_request_auto_merge_for_check_run(
     request: &Request,
     intent: &RequestAutoMergeIntent,

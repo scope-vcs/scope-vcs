@@ -12,7 +12,6 @@ export function killCommandTree(child) {
   }
 }
 
-// Own the group until close, including input failures and descendants holding pipes.
 export function execute(program, args, options = {}) {
   return new Promise((resolveCommand) => {
     const child = spawn(program, args, {

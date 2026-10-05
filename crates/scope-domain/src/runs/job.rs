@@ -28,7 +28,6 @@ pub enum RunJobState {
 }
 
 impl RunJobState {
-    /// Declaration order is the persisted order used to build SQL state sets.
     pub const ALL: [Self; 9] = [
         Self::Blocked,
         Self::Queued,
@@ -41,8 +40,6 @@ impl RunJobState {
         Self::Lost,
     ];
 
-    /// The persisted representation; `persisted_shapes` keeps it and the
-    /// serde encoding identical.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Blocked => "blocked",
@@ -392,8 +389,6 @@ pub fn reconcile_run(
             "persisted run jobs do not match their workflow",
         ));
     }
-    // The compiled workflow's serial order is deterministic and topological. Processing it once
-    // therefore reaches a fixed point even when a failure skips several dependency levels.
     for definition in revision.definition().serial_jobs() {
         let index = *job_indexes.get(definition.id()).ok_or_else(|| {
             DomainError::invariant_violation("persisted run job is missing from its workflow")

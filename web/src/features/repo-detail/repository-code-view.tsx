@@ -70,13 +70,10 @@ export function RepositoryCodeView({
   const visiblePaths = tree
     ? tree.files.map((file) => displayRouteFilePath(file.path))
     : workspaceTabs.state.openIds
-  // An explicit URL keeps its tab and file error even when the tree omits it.
   const availablePaths = selectedPath && !visiblePaths.includes(selectedPath)
     ? [...visiblePaths, selectedPath]
     : visiblePaths
 
-  // Closing the last tab keeps the route pointing at the file it was showing:
-  // an empty workspace is this session's state, not something worth sharing.
   function selectFile(path: string, pinned: boolean) {
     workspaceTabs.open(displayRouteFilePath(path), pinned)
     onSelectFilePath(path)
@@ -229,7 +226,6 @@ function SourcePane({
 
   return (
     <div className="min-w-0">
-      {/* Until the files arrive no tab is chosen, but the landing file's opens next. */}
       {loading && !selectedPath ? <SourceTabStripSkeleton /> : (
         <RepositoryTabStrip
           availablePaths={availablePaths}

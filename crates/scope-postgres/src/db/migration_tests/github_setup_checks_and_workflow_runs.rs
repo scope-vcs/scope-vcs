@@ -36,30 +36,24 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
     .unwrap();
 
     for invalid in [
-        // A push without a request is only ever the setup branch.
         format!(
             "INSERT INTO scope_github_pushes ({PUSH_COLUMNS})
                 VALUES ('push_2','owner/one',NULL,'refs/heads/main',1,7,42,'octo/one',
                         repeat('a',40),'push','queued',0,10,10,10)"
         ),
-        // A request's push still names its own branch.
         format!(
             "INSERT INTO scope_github_pushes ({PUSH_COLUMNS})
                 VALUES ('push_2','owner/one','req_1','refs/heads/scope/setup-check',2,7,42,
                         'octo/one',repeat('a',40),'push','queued',0,10,10,10)"
         ),
-        // A setup push still names where it goes.
         "UPDATE scope_github_pushes SET github_repository_id = 0".to_string(),
-        // A finished test says when, and only a failed one carries an error.
         "UPDATE scope_github_setup_checks SET state = 'finished'".to_string(),
         "UPDATE scope_github_setup_checks SET state = 'failed', finished_at_unix = 20".to_string(),
         "UPDATE scope_github_setup_checks SET last_error = 'refused'".to_string(),
-        // A completed run has a conclusion; an unfinished one does not.
         "UPDATE scope_github_workflow_runs SET status = 'in_progress'".to_string(),
         "UPDATE scope_github_workflow_runs SET conclusion = NULL".to_string(),
         "UPDATE scope_github_workflow_runs SET status = 'unknown'".to_string(),
         "UPDATE scope_github_workflow_runs SET github_repository_id = 0".to_string(),
-        // A completed run is at its last stage.
         "UPDATE scope_github_workflow_runs SET stage = 1".to_string(),
         "UPDATE scope_github_workflow_runs SET run_attempt = 0".to_string(),
     ] {
@@ -70,7 +64,6 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
         .await
         .unwrap();
     for (table, kept) in [
-        // A deleted repository's branches still have to leave GitHub.
         ("scope_github_pushes", 1),
         ("scope_github_setup_checks", 0),
         ("scope_github_workflow_runs", 0),

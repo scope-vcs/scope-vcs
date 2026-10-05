@@ -253,13 +253,11 @@ fn repository_landing_file_mutation(
         .map_err(ApiError::from)
 }
 
-/// The workflow definitions a head carries, or why they cannot be used.
 pub(crate) enum ReadWorkflowFiles {
     Files(Vec<RepositoryWorkflowFile>),
     Rejected(String),
 }
 
-/// The only reader of `.scope/runs` at a head, so its limits live in one place.
 pub(crate) fn read_repository_workflow_files(
     staging_repo: &FsPath,
     head_oid: &str,

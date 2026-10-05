@@ -10,8 +10,6 @@ import { createServer } from 'vite'
 
 const require = createRequire(import.meta.url)
 
-// The server keeps a reply the browser saw fail and answers a repeated
-// client_reply_id with that stored reply, so a changed quote needs a new id.
 test('a reply resent with a different quote is a new attempt', async (t) => {
   const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-request-reply-'))
   t.after(() => rm(cacheDir, { recursive: true, force: true }))

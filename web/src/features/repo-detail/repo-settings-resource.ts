@@ -3,7 +3,6 @@ import { createCachedResource } from '../../lib/cached-resource'
 import { onViewerChange } from '../../lib/viewer-state'
 import { applyCollaborationResult, type CollaborationResult } from './repo-collaboration-results'
 
-/** The settings page's server data. `null` parts are not visible to the viewer. */
 export type RepoSettingsData = {
   collaboration: RepositoryCollaborationResponse | null
   github: GitHubConnectionResponse | null
@@ -25,7 +24,6 @@ export function retainCollaborationResult(scope: string, result: CollaborationRe
   repoSettingsResource.invalidate(scope)
 }
 
-/** Keeps the connection a mutation returned, then confirms it with a refresh. */
 export function retainGitHubConnection(scope: string, github: GitHubConnectionResponse) {
   const current = repoSettingsResource.peek(scope)
   if (!current) return
@@ -33,10 +31,6 @@ export function retainGitHubConnection(scope: string, github: GitHubConnectionRe
   repoSettingsResource.invalidate(scope)
 }
 
-/**
- * The GitHub setup page connects a repository without knowing the viewer's
- * settings scope. Every retained snapshot of that repository is refreshed.
- */
 export function invalidateRepoSettings(repoId: string) {
   repoSettingsResource.invalidateMatching((identity) => {
     try {
@@ -51,11 +45,6 @@ export function invalidateRepoSettings(repoId: string) {
 const refreshedForExpiry = new Map<string, number>()
 onViewerChange(() => refreshedForExpiry.clear())
 
-/**
- * An invite expires by the clock: the server writes nothing, so no repository
- * event refreshes this snapshot. Refresh it when the earliest pending invite
- * passes its deadline, once per deadline so a fast client clock cannot loop.
- */
 export function refreshWhenNextInviteExpires(
   scope: string,
   collaboration: RepositoryCollaborationResponse | null,

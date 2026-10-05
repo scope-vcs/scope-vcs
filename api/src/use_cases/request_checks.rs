@@ -1,9 +1,3 @@
-//! What a request's checks say about merging it, and the evaluation every push
-//! to a request head records. A head whose evaluation failed holds the merge and
-//! is evaluated again when a command or reconciler needs it. A repository linked to
-//! GitHub needs only its required check names and, for a public contribution,
-//! the check commit GitHub tests; any other reads the workflows at the head.
-
 use crate::{
     error::ApiError,
     git::{
@@ -33,30 +27,20 @@ use scope_postgres::db::{
 };
 use std::{collections::HashMap, future::Future, path::Path};
 
-/// The request-triggered workflows at a head, or the configuration error that
-/// rejects them.
 type NativeRevisions = Result<Vec<WorkflowRevision>, String>;
 
-/// The evaluation recorded for a request's current head, the results its checks
-/// have, and what the two together mean for merging.
 pub(crate) struct RequestChecksView {
     pub(crate) evaluation: Option<RequestCheckEvaluation>,
     pub(crate) results: RequestCheckResults,
     pub(crate) outcome: RequestChecksOutcome,
 }
 
-/// The view for a command acting on one request. A head with no evaluation is
-/// evaluated now, from its saved revision, so a failed evaluation cannot hold the
-/// merge for longer than it takes to act. A failure to evaluate is the command's
-/// failure: the caller hears the real reason, not a claim about missing checks.
 pub(crate) async fn checks_view(
     state: &AppState,
     repo: &RepoRecord,
     request: &Request,
 ) -> Result<RequestChecksView, ApiError> {
     let view = recorded_checks_view(state, request).await?;
-    // Checks on a check commit private main has moved past cannot clear the
-    // merge, which applies the contribution to private main as it is now.
     if let Some(evaluation) = view.evaluation.as_ref().filter(|evaluation| {
         !request.is_terminal()
             && evaluation.needs_new_check_commit(view.results.private_main_oid.as_deref())
@@ -83,8 +67,6 @@ pub(crate) async fn checks_view(
     }
 }
 
-/// The view for someone reading a request's checks. Evaluating the head is still
-/// attempted, but a read describes what is recorded even when that attempt fails.
 pub(crate) async fn readable_checks_view(
     state: &AppState,
     repo: &RepoRecord,
@@ -134,10 +116,6 @@ pub(crate) async fn checks_outcome(
     Ok(checks_view(state, repo, request).await?.outcome)
 }
 
-/// Evaluates the head from the revision its push saved. The pusher decides whether
-/// runs start or wait for approval, never the person who happens to be looking.
-/// `None` means the saved revision is not the request's head, which a push in
-/// flight will evaluate itself.
 async fn evaluate_saved_head(
     state: &AppState,
     repo: &RepoRecord,
@@ -152,8 +130,6 @@ async fn evaluate_saved_head(
     else {
         return Ok(None);
     };
-    // A pusher whose account was deleted is no maintainer: its head waits for
-    // approval like any contributor's.
     let maintainer_pusher = match revision.actor_user_id.as_deref() {
         Some(pusher) => state
             .metadata
@@ -182,11 +158,8 @@ async fn evaluate_saved_head(
     };
     let check_commit = async {
         let repo = find_repo(state, &repo.owner_handle, &repo.name).await?;
-        // Boxed: building a check commit is a large future.
         Box::pin(public_tested_commit(state, &repo, request, &revision)).await
     };
-    // Boxed so the commands that look at a request, such as a merge, keep a
-    // small future of their own.
     Box::pin(evaluate_request_checks(
         state,
         request,
@@ -198,7 +171,6 @@ async fn evaluate_saved_head(
     .map(Some)
 }
 
-/// Whether the repository's owner is listed for native runs.
 async fn native_runs_availability(
     state: &AppState,
     request: &Request,
@@ -210,8 +182,6 @@ async fn native_runs_availability(
         .await?)
 }
 
-/// The outcome for every listed request in one repository, keyed by request id,
-/// loaded for the whole list at once.
 pub(crate) async fn checks_outcomes(
     state: &AppState,
     repo_id: &str,
@@ -245,7 +215,6 @@ pub(crate) async fn checks_outcomes(
         .collect())
 }
 
-/// The push is already committed when this runs, so nothing here can fail it.
 pub(crate) async fn best_effort_evaluate_request_checks(
     state: &AppState,
     repo: &Repository,
@@ -269,7 +238,6 @@ pub(crate) async fn best_effort_evaluate_request_checks(
             }
         })
     };
-    // Boxed: building a check commit is a large future.
     let check_commit = Box::pin(public_tested_commit(state, repo, request, revision));
     let maintainer_pusher = actor_is_maintainer.then_some(actor_user_id);
     let evaluated = evaluate_request_checks(
@@ -288,9 +256,6 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     }
 }
 
-/// Moves the head's started checks onto a check commit built again on current
-/// private main, and sends it. `None` when someone else already did, or the head
-/// moved on.
 async fn renew_check_commit(
     state: &AppState,
     repo: &Repository,
@@ -321,10 +286,6 @@ async fn renew_check_commit(
     Ok(mutation)
 }
 
-/// Private main moved, so every open public contribution with started checks
-/// needs a check commit built on it. Runs in the background: the change that
-/// moved main is already committed, and the merge gate renews a request's check
-/// commit itself before it can count.
 pub(crate) fn renew_stale_check_commits_in_background(state: &AppState, owner: &str, name: &str) {
     let (state, owner, name) = (state.clone(), owner.to_string(), name.to_string());
     tokio::spawn(async move {
@@ -367,9 +328,6 @@ pub(crate) fn renew_stale_check_commits_in_background(state: &AppState, owner: &
     });
 }
 
-/// Whether the request changes GitHub workflow files between its base and its
-/// head. Approving its GitHub checks would run them with the repository's
-/// secrets, so a head Scope cannot read counts as changing them.
 pub(crate) async fn changes_github_workflow_files(
     state: &AppState,
     repo: &RepoRecord,
@@ -437,9 +395,6 @@ fn warn_evaluation_failed(request: &Request, error: &ApiError) {
     );
 }
 
-/// Evaluates the head with the repository's check provider. Workflow files
-/// are only read when the repository runs its checks natively, and a check
-/// commit is only built when GitHub tests a public contribution.
 async fn evaluate_request_checks(
     state: &AppState,
     request: &Request,
@@ -474,8 +429,6 @@ async fn evaluate_request_checks(
             )
         }
         RequestCheckProvider::Native => {
-            // An unlisted owner's workflow files are ordinary files, so they
-            // are not read.
             let native_runs = native_runs_availability(state, request).await?;
             let revisions = if native_runs.is_available() {
                 native_revisions.await?
@@ -506,10 +459,6 @@ async fn evaluate_request_checks(
     .await
 }
 
-/// Public request trees cannot carry maintainer-owned workflow definitions.
-/// Select the verified accepted-main catalog without placing its files in the
-/// public request bundle. A parse failure is a recorded configuration error;
-/// a missing or stale catalog prevents an evaluation from being recorded.
 async fn public_request_workflow_revisions(
     state: &AppState,
     request: &Request,

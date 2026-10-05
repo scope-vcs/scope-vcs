@@ -1,5 +1,4 @@
 minimumReleaseAge: 10080
-# Exact versions only. See "Release-age exceptions" in supply-chain-policy.md.
 minimumReleaseAgeExclude:
   - '@tanstack/react-router@1.170.41'
   - '@tanstack/react-start@1.168.60'
@@ -16,12 +15,10 @@ minimumReleaseAgeExclude:
   - '@tanstack/start-storage-context@1.167.36'
   - '@tanstack/store@0.11.2'
 trustPolicy: no-downgrade
-# pnpm compares trust across semver majors, which incorrectly flags semver 6.
 trustPolicyExclude:
   - semver@6.3.1
 blockExoticSubdeps: true
 overrides:
-  # Chevrotain 11 pins a vulnerable lodash-es patch; the replacement stays in major 4.
   lodash-es: 4.18.1
 supportedArchitectures:
   os:

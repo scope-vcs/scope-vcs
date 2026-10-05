@@ -72,7 +72,6 @@ pub(super) fn materialize(
         cancellation.check()?;
         let path = directory.path().join(&file.path);
         fs::create_dir_all(path.parent().context("Snapshot path has no parent")?)?;
-        // Asset paths participate in resolution without reading their contents.
         let bytes = if needs_content(&file.path) {
             blobs
                 .get(&file.oid)

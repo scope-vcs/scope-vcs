@@ -29,7 +29,6 @@ pub struct PrepareRequestAttachmentInput {
     pub request_is_open: bool,
     pub target_attachment_count: usize,
     pub request_source_bytes: u64,
-    /// Source and derivative bytes already reserved or stored in the repository.
     pub repository_reserved_bytes: u64,
     pub now_unix: u64,
 }
@@ -484,7 +483,6 @@ pub fn can_view_request_attachment(
         })
 }
 
-/// A newly granted lease needs a token and an expiry after the grant time.
 pub fn validate_lease_grant(
     lease_token: &str,
     now_unix: u64,

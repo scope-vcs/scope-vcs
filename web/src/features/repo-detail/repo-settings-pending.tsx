@@ -11,8 +11,6 @@ import {
   RepositoryDetailsSection,
 } from './repo-settings-sections'
 
-// Settings as its owner sees it, which is who reaches this page most. Only
-// the saved field values are unknown; the sections themselves are fixed.
 export function RepoSettingsPending() {
   const { owner } = useParams({ from: '/$owner/$repo' })
   return (

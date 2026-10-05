@@ -1,7 +1,5 @@
 use scope_api_contract::*;
 
-/// Each body fails to compile if a public payload field leaks a domain type
-/// instead of the owned wire type named here.
 #[test]
 #[allow(dead_code)]
 fn public_payload_fields_are_owned_wire_types() {

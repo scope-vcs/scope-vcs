@@ -1,6 +1,5 @@
 import type { GitHubSetupCheckResponse } from '../../api/types.generated'
 
-/** The trigger each workflow needs to run on Scope's branches. */
 export const GITHUB_TRIGGER_SNIPPET = `on:
   push:
     branches: ['scope/**']`
@@ -8,12 +7,10 @@ export const GITHUB_TRIGGER_SNIPPET = `on:
 export type GitHubSetupCheckView = {
   running: boolean
   status: string
-  /** GitHub's answer to a refused push, or why no workflow started. */
   problem: string | null
   candidates: { name: string; required: boolean }[]
 }
 
-/** What the settings page says about the latest connection test, if any. */
 export function githubSetupCheckView(
   check: GitHubSetupCheckResponse | null,
   requiredChecks: string[],

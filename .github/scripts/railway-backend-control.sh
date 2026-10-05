@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Railway target validation, topology, health, and deployment control.
 
 validate_production_target() {
   local status_json services_json environment_config_json
   status_json="$(railway status "${railway_scope[@]}" --json)"
   services_json="$(railway service list "${railway_scope[@]}" --json)"
   environment_config_json="$(railway environment config --environment "$environment" --json)"
-  # The JavaScript template literals are evaluated by Node.
   # shellcheck disable=SC2016
   RAILWAY_STATUS_JSON="$status_json" \
     RAILWAY_SERVICES_JSON="$services_json" \
@@ -338,7 +336,6 @@ railway_inventory_read() {
 }
 
 service_has_deployment_history() {
-  # Print 0/1 on a successful inventory read; exit status reports errors only.
   local deployments_json
   deployments_json="$(railway_inventory_read deployment list "${railway_scope[@]}" --service "$1" --limit 1 --json)" || return $?
   DEPLOYMENTS_JSON="$deployments_json" node -e '

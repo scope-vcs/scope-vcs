@@ -40,7 +40,6 @@ import './request-workspace-sidebar.css'
 
 type QueueRow = { item: RequestQueueItemResponse; section: RequestQueueSection }
 
-/** Needs-you avatars the closed rail shows before the rest fold into its count. */
 const RAIL_AVATARS = 6
 
 const EMPTY_LABELS: Record<RequestAttentionGroup, string> = {
@@ -51,13 +50,6 @@ const EMPTY_LABELS: Record<RequestAttentionGroup, string> = {
   done: 'No closed or merged requests.',
 }
 
-/**
- * The requests sidebar in one of three states. Pinned is the resizable
- * sidebar. Closed is a 54px rail showing the avatars of what needs the viewer.
- * Open is that rail widened over the page until the viewer picks a request,
- * clicks away or presses Escape. All three draw the same list, so the rail's
- * avatars stay put as it opens and nothing appears twice.
- */
 export function RequestWorkspaceSidebar({
   pages,
   collapsed,
@@ -89,15 +81,12 @@ export function RequestWorkspaceSidebar({
   query: string
   onSearch: (query: string) => void
   actionError: string | null
-  /** Null while the repository loads: which groups apply is not known yet. */
   maintainer: boolean | null
   onLoadMore: (section: RequestQueueSection) => void
   params: RepoParams
 }) {
   const aside = useRef<HTMLElement>(null)
   const [open, setOpen] = useState(false)
-  // Closing keeps the open layout while the rail slides shut, since the
-  // closed rail hides the list and clips everything past 54px at once.
   const [closing, setClosing] = useState(false)
   const [hint, setHint] = useState<{ id: string; left: number; top: number; now: number } | null>(null)
   const state = collapsed ? (open ? 'open' : 'closed') : 'pinned'
@@ -110,7 +99,6 @@ export function RequestWorkspaceSidebar({
     setClosing(false)
     onCollapsedChange(!collapsed)
   }, [collapsed, onCollapsedChange])
-  // Focus mode keeps the narrow rail, not the rail opened over the page.
   const toggleFocus = useCallback(() => {
     setOpen(false)
     setClosing(false)
@@ -119,11 +107,9 @@ export function RequestWorkspaceSidebar({
   const close = useCallback(() => {
     setClosing(true)
     if (query) onSearch('')
-    // Focus left inside would sit in a search box or row the rail now hides.
     if (document.activeElement instanceof HTMLElement && aside.current?.contains(document.activeElement))
       document.activeElement.blur()
   }, [onSearch, query])
-  // The open rail collapses back to the closed rail, not to the pinned sidebar.
   const toggle = state === 'open' ? close : togglePinned
   useEffect(() => {
     if (!closing) return
@@ -131,7 +117,6 @@ export function RequestWorkspaceSidebar({
     const slides = aside.current?.getAnimations().filter(
       (animation) => animation instanceof CSSTransition && animation.transitionProperty === 'width',
     )
-    // No slide under reduced motion or on narrow screens, so it closes at once.
     Promise.all(slides?.map((slide) => slide.finished) ?? []).then(
       () => {
         if (!current) return
@@ -149,9 +134,6 @@ export function RequestWorkspaceSidebar({
     function outside(event: PointerEvent) {
       if (!aside.current?.contains(event.target as Node)) close()
     }
-    // Escape belongs to the open rail unless a menu or dialog is up: closing
-    // clears the search too, and the key must not reach focus mode or the
-    // search box, which refocuses itself.
     function escape(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
       if (document.querySelector(':popover-open, [role="dialog"], [role="alertdialog"]')) return
@@ -166,17 +148,12 @@ export function RequestWorkspaceSidebar({
       document.removeEventListener('keydown', escape, true)
     }
   }, [close, closing, state])
-  // Avatars and buttons on the closed rail do their own thing; anywhere else
-  // on it, even while it slides shut, opens the rail. Picking a request from
-  // the open rail closes it.
   function click(event: MouseEvent) {
     const target = event.target as Element
     setHint(null)
     if ((state === 'closed' || closing) && !target.closest('a, button')) openRail()
     else if (state === 'open' && target.closest('a')) close()
   }
-  // The closed rail shows only avatars, so hovering or focusing one names its
-  // request beside the rail.
   function showHint(event: ReactPointerEvent | FocusEvent) {
     const row = (event.target as Element).closest<HTMLElement>('.request-workspace-row[data-rail]')
     const avatar = row?.querySelector('.request-workspace-row-avatar')
@@ -207,21 +184,14 @@ export function RequestWorkspaceSidebar({
   })
   const nextSection = REQUEST_QUEUE_SECTION_ORDER.find((section) => pages?.[section].next_cursor)
   const activeHasMore = Boolean(pages?.active.next_cursor)
-  // Active rows page, so loaded lengths are floors until the last page is in.
-  // Until the first page arrives there is no count to show.
   const activeCount = (value: number) => pages ? `${value}${activeHasMore ? '+' : ''}` : null
   const needsYou = grouped.needs_you
-  // The open request keeps a slot on the rail when it is not one of the
-  // viewer's, and leaves its group so it is never listed twice.
   const current = searching
     ? undefined
     : allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
   const moved = (items: QueueRow[]) => Number(current !== undefined && items.includes(current))
   const waiting = grouped.waiting.filter((row) => row !== current)
   const waitingCount = activeCount(grouped.waiting.length - moved(grouped.waiting))
-  // A reader's open requests are their whole queue, so they stay listed.
-  // Unclaimed and Set aside only ever hold maintainer placements, so readers
-  // see just their work and the finished history.
   const disclosures = [
     ...(maintainer
       ? [
@@ -244,7 +214,6 @@ export function RequestWorkspaceSidebar({
       }),
     ),
   ]
-  // The cap never hides the open request's avatar.
   const railed = needsYou.filter(
     (row, index) => index < RAIL_AVATARS || row.item.request.id === selectedId,
   ).length
@@ -263,7 +232,6 @@ export function RequestWorkspaceSidebar({
       onPointerOver={showHint}
       ref={aside}
     >
-      {/* On the body: the page's size container would otherwise place and clip it. */}
       {hint &&
         hinted &&
         createPortal(
@@ -291,8 +259,6 @@ export function RequestWorkspaceSidebar({
             status={loading && searching ? 'Searching requests' : undefined}
             value={query}
           />
-          {/* The closed rail shows the caret in place of the search box, and it
-              pins the sidebar. Pinned or open, it collapses to the rail. */}
           <Button
             aria-label={state === 'closed' ? 'Expand requests sidebar' : 'Collapse requests sidebar'}
             className="request-workspace-sidebar-toggle text-muted-foreground"
@@ -322,14 +288,11 @@ export function RequestWorkspaceSidebar({
               }}
             />
           ) : maintainer === null ? (
-            // Drawn as the first group, which leads with rail rows for anyone
-            // with requests that need them, so the closed rail keeps its shape.
             <section className="request-workspace-needs-you">
               <h2 aria-hidden="true" className="request-workspace-group-label">
                 <span>
                   <TextSkeleton length="short" size="meta" />
                 </span>
-                {/* Centred when the closed rail stretches the count across it. */}
                 <span>
                   <TextSkeleton className="mx-auto" length="tiny" size="meta" />
                 </span>

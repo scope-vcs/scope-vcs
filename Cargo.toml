@@ -30,8 +30,6 @@ edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/adamblumoff/scope-vcs"
 
-# scope-domain and scope-api-contract keep self-contained manifests because the
-# standalone CLI release stages those two crates outside this workspace.
 [workspace.dependencies]
 anyhow = "1.0.104"
 async-trait = "0.1.89"

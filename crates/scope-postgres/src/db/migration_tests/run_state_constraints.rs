@@ -2,13 +2,6 @@ use super::*;
 use scope_domain::runs::{attempt::AttemptState, job::RunJobState, run::RunState, step::StepState};
 use std::collections::BTreeSet;
 
-/// The states a CHECK definition admits for the `state` column, and every
-/// other state it mentions in an invariant. PostgreSQL prints the allowlist
-/// and any `= ANY` implication as `(state)::text = ANY ((ARRAY[...])::text[])`;
-/// other invariants use `<> ALL (ARRAY[...])` or a scalar
-/// `(state)::text <> 'pending'::text`. The allowlist is the `= ANY` set that
-/// contains every other state the definition mentions, so an invariant left
-/// behind for a retired state fails the parity check instead of hiding in it.
 struct ConstraintStates {
     allowed: BTreeSet<String>,
     referenced: BTreeSet<String>,
@@ -86,8 +79,6 @@ async fn constraint_definition(db: &DatabaseConnection, name: &str) -> String {
     .unwrap()
 }
 
-/// The schema and the domain must enumerate the same run states: a new enum
-/// variant needs a migration, and a migrated state needs a variant.
 #[tokio::test]
 async fn run_state_check_constraints_allow_exactly_the_domain_states() {
     let (_target, db, _lease) = isolated_database().await;

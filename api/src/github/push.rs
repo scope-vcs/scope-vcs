@@ -1,8 +1,3 @@
-//! Pushing a request's tested commit to its GitHub branch, and deleting the
-//! branch. The installation token reaches git as an HTTP header through git's
-//! environment, never in argv or the URL, so it shows in no process list and
-//! in none of git's error output.
-
 use super::GitHubApp;
 use crate::{
     error::ApiError,
@@ -12,10 +7,8 @@ use base64::Engine;
 use scope_git_process::ProcessLimits;
 use std::{path::Path, process::Command, time::Duration};
 
-/// Long enough to send a large repository's history the first time.
 const PUSH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
-/// One GitHub repository, as the app pushes it.
 pub(crate) struct GitHubPushRemote {
     url: String,
     authorization: String,
@@ -37,13 +30,10 @@ impl GitHubApp {
 }
 
 impl GitHubPushRemote {
-    /// Points `git_ref` at `oid` from `repo`, replacing whatever it held. The
-    /// error is what GitHub answered.
     pub(crate) fn push(&self, repo: &Path, oid: &str, git_ref: &str) -> Result<(), String> {
         self.run(repo, &format!("{oid}:{git_ref}"))
     }
 
-    /// Deletes `git_ref`. A branch that is already gone counts as deleted.
     pub(crate) fn delete(&self, git_ref: &str) -> Result<(), String> {
         let scratch = tempfile::tempdir()
             .map_err(|error| format!("could not prepare the branch deletion: {error}"))?;
@@ -72,7 +62,6 @@ impl GitHubPushRemote {
             .env("GIT_CONFIG_COUNT", "2")
             .env("GIT_CONFIG_KEY_0", "http.extraHeader")
             .env("GIT_CONFIG_VALUE_0", &self.authorization)
-            // No credential helper may answer for, or store, this token.
             .env("GIT_CONFIG_KEY_1", "credential.helper")
             .env("GIT_CONFIG_VALUE_1", "");
         let output = git_process_output(&mut command, None, ProcessLimits::new(PUSH_TIMEOUT))
@@ -80,7 +69,6 @@ impl GitHubPushRemote {
         if output.status.success() {
             return Ok(());
         }
-        // `--porcelain` reports a rejected ref on stdout; transport errors go to stderr.
         let stdout = String::from_utf8_lossy(&output.stdout);
         let rejected = stdout
             .lines()

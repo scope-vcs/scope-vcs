@@ -66,7 +66,6 @@ async fn recording_configuration_error_stops_matching_active_intent_immediately(
 
 #[tokio::test]
 async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
-    // A configuration error has nothing to stop when no authorization exists.
     let store = postgres_store();
     open_request_with_revision(&store).await;
     let requests = store.requests();
@@ -93,7 +92,6 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
             .is_none()
     );
 
-    // A result computed for another head cannot stop the authorized head.
     let store = postgres_store();
     let revision = open_request_with_revision(&store).await;
     let requests = store.requests();
@@ -124,7 +122,6 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
     assert_eq!(active.status, RequestAutoMergeIntentStatus::Active);
     assert_eq!(active.reason, None);
 
-    // The first evaluation stands; a later conflicting result is only a replay.
     let store = postgres_store();
     let revision = open_request_with_revision(&store).await;
     let requests = store.requests();
@@ -194,7 +191,6 @@ async fn latest_same_second_intent_and_expired_claims_remain_fenced() {
         .unwrap();
     assert_eq!(first_claim.attempt, 1);
 
-    // The expired token cannot stop the intent after another executor reclaims it.
     let reclaimed = requests
         .claim_due_request_auto_merges(
             ClaimDueRequestAutoMergesCommand {
@@ -247,8 +243,6 @@ async fn latest_same_second_intent_and_expired_claims_remain_fenced() {
             .unwrap()
     );
 
-    // Re-enabling at the exact cancellation timestamp still reads the new intent by
-    // request activity position, independent of random ids or timestamp resolution.
     requests
         .authorize_request_auto_merge(authorize("intent_two", "enabled_two", &revision, 12))
         .await
@@ -317,8 +311,6 @@ async fn lease_bookkeeping_does_not_advance_the_domain_transition_clock() {
         7
     );
 
-    // This command captured its timestamp before waiting for the later lease write.
-    // Lease bookkeeping must not make the valid domain transition appear to predate it.
     let cancelled = requests
         .cancel_request_auto_merge(CancelRequestAutoMergeCommand {
             request_id: "req_1".into(),
@@ -418,8 +410,6 @@ async fn retention_committing_first_makes_authorization_reject_missing_evidence(
             ))
             .await
     });
-    // Row-lock waiters keep their queue order, but a locker arriving after the guard
-    // commits can take the lock before the woken retention task does.
     wait_for_blocked_transaction_count(&store, guard_pid, 2).await;
     guard.commit().await.unwrap();
 

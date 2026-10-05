@@ -1,5 +1,3 @@
-//! Sends queued repository invite emails and records what happened.
-
 use crate::{
     auth::tokens::{generate_repository_invite_token, random_token},
     error::ApiError,
@@ -20,13 +18,10 @@ use std::time::Duration;
 const POLL_INTERVAL: Duration = Duration::from_secs(15);
 const BATCH_SIZE: u64 = 20;
 
-/// How long one sender may hold an email. Longer than a send can take, so a
-/// live sender is never raced, and short enough that a dead one is replaced.
 const CLAIM_LEASE_SECS: u64 = 120;
 
 type Clock<'a> = &'a (dyn Fn() -> Result<u64, ApiError> + Sync);
 
-/// Sends every due email this process can claim. Returns how many it claimed.
 pub(crate) async fn deliver_due_invite_emails(
     state: &AppState,
     current_time: Clock<'_>,
@@ -57,11 +52,8 @@ async fn deliver_invite_email(
     claim_token: &str,
     current_time: Clock<'_>,
 ) -> Result<(), ApiError> {
-    // Anything that goes wrong once the email is claimed counts as an attempt,
-    // so a persistent fault runs out of retries instead of looping forever.
     let outcome = match send_invite_email(state, email_id, claim_token, current_time).await {
         Ok(Some(outcome)) => outcome,
-        // Another sender holds the email now.
         Ok(None) => return Ok(()),
         Err(error) => InviteEmailOutcome {
             attempt: InviteEmailAttempt::Retryable(error.into_operator_diagnostic()),
@@ -92,10 +84,7 @@ async fn send_invite_email(
     current_time: Clock<'_>,
 ) -> Result<Option<InviteEmailOutcome>, ApiError> {
     let repositories = state.metadata.repositories();
-    // Read the clock per email: a slow batch must not send an invite that
-    // expired while earlier emails were going out.
     let now = current_time()?;
-    // The link is created here and never stored; the invite keeps its hash.
     let (secret, link_hash) = generate_repository_invite_token()?;
     let issued = match repositories
         .issue_repository_invite_email_link(email_id, claim_token, link_hash, now)
@@ -103,7 +92,6 @@ async fn send_invite_email(
     {
         Ok(Some(issued)) => issued,
         Ok(None) => return Ok(None),
-        // The invite was revoked, accepted, or expired while this was queued.
         Err(error) if error.kind == PostgresErrorKind::Conflict => {
             return Ok(Some(InviteEmailOutcome {
                 attempt: InviteEmailAttempt::Refused(error.message),
@@ -146,7 +134,6 @@ fn invite_email_message(
     };
     let access =
         format!("You'll be able to read private files and take part in maintainer reviews.{push}");
-    // A resend keeps the original expiry, so say how long is actually left.
     let expiry = match invite.expires_at_unix.saturating_sub(now) / (24 * 60 * 60) {
         0 => "in less than a day".to_string(),
         1 => "in 1 day".to_string(),

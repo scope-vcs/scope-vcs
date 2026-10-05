@@ -1,9 +1,3 @@
-//! Clerk users of deleted accounts, waiting to be deleted from Clerk. Rows are
-//! written by account deletion and marked completed once Clerk confirms. A
-//! failed attempt waits and tries again, so a Clerk outage only delays the
-//! step. Completed rows keep refusing the Clerk user until tokens issued before
-//! the deletion have expired, then they are purged.
-
 use super::{AuthStore, entities};
 use crate::error::PostgresError;
 use entities::clerk_user_deletion::{ActiveModel, Column, Entity};
@@ -19,8 +13,6 @@ use sea_orm::{
 };
 
 impl AuthStore {
-    /// Claims due deletions for one worker. A claim lapses by itself, so a
-    /// deletion whose worker died is picked up again.
     pub async fn claim_due_clerk_user_deletions(
         &self,
         claim_token: &str,
@@ -57,8 +49,6 @@ impl AuthStore {
         Ok(claimed)
     }
 
-    /// Clerk no longer has the user. Ignored when the claim has lapsed and
-    /// another worker holds the deletion.
     pub async fn complete_clerk_user_deletion(
         &self,
         clerk_user_id: &str,
@@ -77,8 +67,6 @@ impl AuthStore {
         Ok(())
     }
 
-    /// Forgets completed deletions once no token issued before them can
-    /// still be valid.
     pub async fn purge_completed_clerk_user_deletions(
         &self,
         now_unix: u64,
@@ -94,7 +82,6 @@ impl AuthStore {
         Ok(())
     }
 
-    /// Records a failed attempt and schedules the next one.
     pub async fn retry_clerk_user_deletion(
         &self,
         clerk_user_id: &str,
@@ -126,9 +113,6 @@ impl AuthStore {
     }
 }
 
-/// Whether the Clerk user belongs to a deleted account. Until its Clerk
-/// deletion finishes, a new account would be deleted along with the Clerk user;
-/// afterwards, a token issued before the deletion must not recreate it.
 pub(super) async fn clerk_user_deletion_recorded<C: ConnectionTrait>(
     conn: &C,
     clerk_user_id: &str,

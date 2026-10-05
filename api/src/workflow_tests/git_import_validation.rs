@@ -18,6 +18,8 @@ fn add_shared_large_files(repo: &FsPath) {
 #[test]
 fn pushed_tree_rejects_case_insensitive_dot_git_from_a_raw_tree_object() {
     let repo = temp_git_repo("reserved-dot-git-test");
+    fs::write(repo.join("README.md"), "hello").unwrap();
+    run_git(Some(&repo), &["add", "README.md"], "stage readme").unwrap();
     commit_all(&repo, "initial");
     let mut root_entries = git_stdout_text(&repo, &["ls-tree", "HEAD"], "read root tree")
         .unwrap()
@@ -72,6 +74,8 @@ fn pushed_tree_rejects_case_insensitive_dot_git_from_a_raw_tree_object() {
 async fn receive_pack_rejects_nested_windows_device_path_before_durable_side_effects() {
     let state = test_state_with_repo();
     let repo = temp_git_repo("reserved-windows-device-test");
+    fs::write(repo.join("README.md"), "hello").unwrap();
+    run_git(Some(&repo), &["add", "README.md"], "stage readme").unwrap();
     commit_all(&repo, "initial");
     let parent = git_stdout_text(&repo, &["rev-parse", "HEAD"], "read parent commit")
         .unwrap()
@@ -154,6 +158,8 @@ async fn receive_pack_rejects_nested_windows_device_path_before_durable_side_eff
 async fn receive_pack_rejects_windows_device_path_removed_before_the_new_head() {
     let state = test_state_with_repo();
     let repo = temp_git_repo("intermediate-windows-device-test");
+    fs::write(repo.join("README.md"), "hello").unwrap();
+    run_git(Some(&repo), &["add", "README.md"], "stage readme").unwrap();
     commit_all(&repo, "initial");
     fs::write(repo.join("CON.txt"), "transient").unwrap();
     run_git(Some(&repo), &["add", "CON.txt"], "stage reserved path").unwrap();
@@ -298,43 +304,6 @@ fn pushed_tree_rejects_paths_scope_would_normalize_or_git_cannot_serve() {
         let error = validate_pushed_file_path(path).unwrap_err();
         assert_eq!(error.status(), StatusCode::BAD_REQUEST);
     }
-}
-
-#[test]
-fn pushed_tree_requires_canonical_repo_rules() {
-    let repo = temp_git_repo("missing-rules-test");
-    fs::remove_file(repo.join(".scope/RULES.md")).unwrap();
-    run_git(
-        Some(&repo),
-        &["rm", "--cached", ".scope/RULES.md"],
-        "unstage rules",
-    )
-    .unwrap();
-    fs::write(repo.join("README.md"), "hello").unwrap();
-    run_git(Some(&repo), &["add", "README.md"], "add readme").unwrap();
-    run_git(
-        Some(&repo),
-        &[
-            "-c",
-            "user.name=Scope Test",
-            "-c",
-            "user.email=scope-test@example.test",
-            "commit",
-            "-m",
-            "missing rules",
-        ],
-        "commit without rules",
-    )
-    .unwrap();
-
-    let error = validate_pushed_tree(&repo, "HEAD").unwrap_err();
-
-    assert_eq!(error.status(), StatusCode::BAD_REQUEST);
-    assert!(
-        error
-            .public_message()
-            .contains("must contain .scope/RULES.md")
-    );
 }
 
 fn git_object_from_stdin(repo: &FsPath, args: &[&str], stdin: &[u8]) -> String {

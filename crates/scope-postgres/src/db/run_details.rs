@@ -37,7 +37,6 @@ impl RunStore {
             .map(entities::run::Model::try_into_domain)
             .transpose()?
         else {
-            // Early exits drop the read snapshot; only a complete read commits.
             return Ok(None);
         };
         let workflow_revision = super::runs::workflow_revision_for_run(&tx, &run).await?;

@@ -36,7 +36,6 @@ pub(crate) async fn create_manual_run(
     state: &AppState,
     command: ManualRunCommand,
 ) -> Result<InspectedRun, ApiError> {
-    // Enqueuing refuses an unlisted owner too; refusing first skips the upload.
     state
         .metadata
         .native_runs()

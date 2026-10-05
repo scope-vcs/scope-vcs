@@ -4,6 +4,7 @@ use std::time::Duration;
 
 const GIT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const MAX_GIT_STDOUT_BYTES: usize = 16 * 1024 * 1024;
+const GIT_STALE_LEASE_STATUS: &str = "(stale info)";
 
 pub fn push_head_with_bearer(
     destination: &str,
@@ -28,7 +29,6 @@ pub fn push_head_with_bearer(
     )
 }
 
-/// Git refused a leased push because the remote ref no longer held the expected commit.
 #[derive(Debug)]
 pub struct StaleRefLease;
 
@@ -40,8 +40,6 @@ impl std::fmt::Display for StaleRefLease {
 
 impl std::error::Error for StaleRefLease {}
 
-/// Replaces `refname` with `commit_oid` only while it still holds `expected_oid`, so a
-/// rebased or amended head can replace history nobody else has updated since.
 pub fn push_head_to_ref_with_bearer(
     destination: &str,
     commit_oid: &str,
@@ -60,8 +58,8 @@ pub fn push_head_to_ref_with_bearer(
     let output = git_command(plan, None)
         .output()
         .context("run authenticated Scope request branch push")?;
-    // Git prints push status reasons such as "stale info" untranslated.
-    if !output.status.success() && String::from_utf8_lossy(&output.stderr).contains("(stale info)")
+    if !output.status.success()
+        && String::from_utf8_lossy(&output.stderr).contains(GIT_STALE_LEASE_STATUS)
     {
         return Err(StaleRefLease.into());
     }
@@ -136,7 +134,6 @@ pub fn fetch_scope_remote_with_bearer_cancellable(
     finish_git_plan_output(output, "refresh Scope Git remote before push review failed")
 }
 
-/// The lease alone permits a non-fast-forward update. A `+` refspec would override it.
 pub fn git_push_ref_auth_plan(
     destination: &str,
     commit_oid: &str,

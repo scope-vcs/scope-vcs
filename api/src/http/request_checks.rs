@@ -66,7 +66,6 @@ pub(crate) async fn approve_request_checks(
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     let (request, _) =
         visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
-    // Approving is a look too: a head nobody evaluated is evaluated before approval.
     request_checks::checks_view(&state, &repo.record, &request).await?;
     let mutation = state
         .metadata
@@ -92,7 +91,6 @@ pub(crate) async fn approve_request_checks(
     .map(Json)
 }
 
-/// What the viewer sees of the request head's checks at `now_unix`.
 pub(crate) async fn checks_response(
     state: &AppState,
     repo: &RepoRecord,
@@ -166,8 +164,6 @@ pub(crate) async fn checks_response(
     })
 }
 
-/// What GitHub answered can name private repositories and paths, so only
-/// maintainers read it.
 fn github_push_response(
     request_id: &str,
     status: GitHubPushStatus,

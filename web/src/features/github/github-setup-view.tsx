@@ -34,18 +34,11 @@ type SetupActions = {
   completeSetup: (input: GitHubSetupInput) => Promise<GitHubSetupResponse>
   connect: (input: ConnectRepoGitHubInput) => Promise<GitHubConnectionResponse>
   onConnected: (setup: GitHubSetupResponse) => Promise<void>
-  /** Remembers the repository being connected while the app is installed. */
   rememberPendingTarget: (target: RepoParams) => void
   startAuthorization: (target: RepoParams) => Promise<GitHubAuthorizeResponse>
-  /** Reads and forgets the repository remembered before installing. */
   takePendingTarget: () => RepoParams | null
 }
 
-/**
- * Finishes connecting after GitHub's OAuth screen, and resumes it after the
- * maintainer installs the app. GitHub's code can be used once, so the page
- * sends it a single time, after the signed-in maintainer is known.
- */
 export function GitHubSetupView({ search, ...actions }: SetupActions & { search: GitHubSetupSearch }) {
   return (
     <AppShell header={() => <ApplicationTopbar contextLabel="GitHub" />}>
@@ -59,7 +52,6 @@ export function GitHubSetupView({ search, ...actions }: SetupActions & { search:
 function GitHubSetup({ actions, search }: { actions: SetupActions; search: GitHubSetupSearch }) {
   const { isLoaded, isSignedIn } = useAuth()
   const [state, setState] = useState<SetupState>({ kind: 'starting' })
-  // Set once the code or pending repository is used, so neither is used twice.
   const started = useRef(false)
 
   function authorize(target: RepoParams, setup: GitHubSetupResponse | null) {
@@ -196,13 +188,11 @@ function GitHubSetup({ actions, search }: { actions: SetupActions; search: GitHu
   )
 }
 
-/** Sends the maintainer to GitHub's OAuth screen for the repository. */
 async function startAuthorization(actions: SetupActions, target: RepoParams) {
   const { authorize_url } = await actions.startAuthorization(target)
   window.location.assign(authorize_url)
 }
 
-/** What the maintainer chose before connecting. */
 type RepositoryConnection = {
   githubRepositoryId: number
   acknowledgePublic: boolean
@@ -316,11 +306,6 @@ function RepositoryChoice({
   )
 }
 
-/**
- * The app may not be installed on the repository yet. Installing happens on
- * GitHub; its Setup URL brings the maintainer back here, and the remembered
- * repository restarts authorization so the list includes the new install.
- */
 function InstallPrompt({
   empty,
   onCheckAgain,

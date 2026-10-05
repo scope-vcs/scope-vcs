@@ -36,8 +36,6 @@ struct SeedRevisionDiscussion {
     body: &'static str,
 }
 
-// Clerk test addresses: web/journeys signs in as these users, and Clerk never
-// delivers mail to them.
 pub(super) fn collaborators() -> [UserAccount; 2] {
     [
         user(

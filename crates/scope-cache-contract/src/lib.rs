@@ -1,8 +1,3 @@
-//! HTTP wire shapes shared by the cache service and its runners.
-//!
-//! Authorization/signing implementations live outside this crate. This crate
-//! only defines the claims that a signer protects and the cache endpoint DTOs.
-
 mod cache;
 mod grant;
 

@@ -1,9 +1,5 @@
 # syntax=docker/dockerfile:1.7
 
-# The runner base image holds only what the native runner needs inside a job
-# container: the runtime at /scope/bin/scope-runner-runtime, Git, and a shell.
-# Workflows that need toolchains build their own image from this one.
-
 FROM debian:bookworm-slim@sha256:5ae3c39ebd15e229dcedd5cee596b2497182493d41ff162e824ba13fc1b2b867 AS git-builder
 ARG GIT_VERSION
 ARG GIT_SOURCE_SHA256
@@ -31,9 +27,6 @@ ARG GIT_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Git needs these libraries at run time. The snapshot keeps upgrades
-# reproducible. Plain HTTP is used because this base has no CA certificates yet;
-# apt still verifies the signed package indexes.
 RUN sed -i \
         -e "s|http://deb.debian.org/debian-security|http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}|" \
         -e "s|http://deb.debian.org/debian|http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}|" \

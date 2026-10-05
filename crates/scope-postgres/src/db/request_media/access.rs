@@ -109,8 +109,6 @@ impl MediaStore {
             && let Some(manifest) = manifest.as_mut()
             && let Some(detected_media_type) = authorized.detected_media_type
         {
-            // The declared type is retained in the immutable upload manifest. Once the
-            // worker validates the source, serving uses the detected type.
             manifest.media_type = detected_media_type;
         }
         Ok(manifest)
@@ -152,7 +150,6 @@ where
         &request,
         RequestViewer::new(repo.access, viewer_user_id, is_invitee),
     );
-    // Upload ownership never outlives current access to the request itself.
     if !policy.exact_visible {
         return Ok(None);
     }

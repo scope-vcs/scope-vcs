@@ -162,8 +162,6 @@ async fn current_catalog_reads_head_and_files_from_one_snapshot_during_a_push() 
             .current_repository_workflow_catalog(REPO_ID)
             .await
     });
-    // Wait until the reader has read repository identity and is blocked on the head.
-    // Updating both sources now must not change the reader's established snapshot.
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let waiting = writer

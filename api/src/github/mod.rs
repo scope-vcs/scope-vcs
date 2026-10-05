@@ -1,7 +1,3 @@
-//! The Scope GitHub App: its configuration, the credentials it acts with,
-//! the GitHub REST calls and pushes Scope makes, and the proofs and
-//! deliveries that cross GitHub's install screen and webhooks.
-
 mod client;
 pub(crate) mod config;
 pub(crate) mod push;
@@ -34,8 +30,6 @@ pub(crate) struct GitHubApp {
 }
 
 impl GitHubApp {
-    /// `None` when the app is not configured, which turns the GitHub
-    /// connection off.
     pub(crate) fn from_env() -> anyhow::Result<Option<Self>> {
         let Some(config) = GitHubAppConfig::from_env()? else {
             tracing::info!("the Scope GitHub App is not configured; GitHub connections are off");
@@ -44,8 +38,6 @@ impl GitHubApp {
         Self::new(config, GITHUB_API_URL, GITHUB_WEB_URL, GITHUB_WEB_URL).map(Some)
     }
 
-    /// The URLs are GitHub's own outside tests. `git_url` is where
-    /// repositories are pushed, as `<git_url>/<owner>/<name>.git`.
     pub(crate) fn new(
         config: GitHubAppConfig,
         api_url: &str,
@@ -82,8 +74,6 @@ impl GitHubApp {
         &self.setup_tokens
     }
 
-    /// GitHub's OAuth screen for the app. GitHub sends the user back to
-    /// `redirect_uri`, the app's Callback URL, with a code and `state`.
     pub(crate) fn authorize_url(&self, state: &str, redirect_uri: &str) -> String {
         let mut url = reqwest::Url::parse(&format!("{}/login/oauth/authorize", self.web_url))
             .expect("GitHub authorize URL must be valid");
@@ -94,7 +84,6 @@ impl GitHubApp {
         url.into()
     }
 
-    /// GitHub's screen for installing the app on more repositories.
     pub(crate) fn install_url(&self) -> String {
         format!("{}/apps/{}/installations/new", self.web_url, self.slug)
     }

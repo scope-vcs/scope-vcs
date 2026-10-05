@@ -5,6 +5,9 @@ import {
   parseRunStepLogsInput,
   retryRepoRunForRequest,
 } from '@/api/runs'
+import { auth } from '@clerk/tanstack-react-start/server'
+import type { RepoLiveState } from '@/api/types'
+import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import type { RunActionInput, RunStepLogsInput } from '@/api/types'
 import {
   RepositoryRunDetailPage,
@@ -29,9 +32,12 @@ const retryRepoRun = createServerFn({ method: 'POST' })
   .handler(({ data }) => retryRepoRunForRequest(data))
 
 export const Route = createFileRoute('/$owner/$repo/runs/$runId')({
-  loader: ({ params }) => loadRepoRunDetail({
-    data: runInput(params),
-  }),
+  loader: async ({ params, parentMatchPromise }) => {
+    if (typeof window !== 'undefined') return null
+    const live = (await parentMatchPromise).loaderData as RepoLiveState
+    const { userId } = await auth()
+    return { scope: repoResourceScope(live.repo, userId), detail: await loadRepoRunDetail({ data: runInput(params) }) }
+  },
   errorComponent: RunDetailPageError,
   pendingComponent: RunDetailPagePending,
   component: RepositoryRunDetailRoute,
@@ -65,7 +71,8 @@ function RepositoryRunDetailRoute() {
   return (
     <RepositoryRunDetailPage
       cancelRun={cancelRun}
-      initialDetail={initialDetail}
+      initialDetail={initialDetail?.detail ?? null}
+      initialScope={initialDetail?.scope ?? null}
       key={input.run_id}
       loadDetail={loadDetail}
       loadLogs={loadLogs}

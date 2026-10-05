@@ -12,12 +12,6 @@ import {
   parseRunImportCount,
 } from './repo-github-run-import-model'
 
-/**
- * How many of GitHub's most recent workflow runs the repository imports, and
- * its latest import. The import's state comes from the settings data, so it
- * outlasts this page. Callers remount it when the saved count changes, which
- * resets the draft.
- */
 export function RepoGitHubRunImport({
   connected,
   github,

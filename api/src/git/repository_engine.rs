@@ -38,10 +38,6 @@ const MATERIALIZATION_PATH_HIT: u8 = 0;
 const MATERIALIZATION_PATH_CATCH_UP: u8 = 1;
 const MATERIALIZATION_PATH_RESTORE: u8 = 2;
 
-/// Owns this API process's disposable Git replicas and coordinates mutations of
-/// each replica through one repository-scoped stream. Durable publication is
-/// still ordered by the Postgres repository aggregate, and compaction remains a
-/// worker concern; local promotion receives only an already-committed frontier.
 pub(crate) struct RepositoryEngine {
     cache: Arc<RepositoryGitCache>,
     materializations: Arc<GitDerivedCacheCoordinator>,
@@ -75,9 +71,6 @@ impl RepositoryEngine {
         Self::new(root, max_bytes, Arc::new(packs))
     }
 
-    /// One byte budget covers raw verified packs and all indexed/derived views.
-    /// Prefer keeping usable repositories; active leases may temporarily exceed
-    /// the budget until readers finish and the next prune runs.
     fn prune(&self) -> Result<(), ApiError> {
         let repo_bytes = self.cache.usage_bytes()?;
         self.packs
@@ -114,8 +107,6 @@ impl RepositoryEngine {
         self.cache.lease_derived(path)
     }
 
-    /// Coalesces immutable derived views by their content-derived key. These
-    /// views do not participate in the repository replica's mutation stream.
     pub(crate) async fn materialize_derived<IsReady, Build, BuildFuture>(
         self: &Arc<Self>,
         incarnation: &RepositoryIncarnation,
@@ -167,8 +158,6 @@ impl RepositoryEngine {
         result
     }
 
-    /// Opens the local replica at or beyond the requested durable frontier,
-    /// serializing any repair or catch-up with post-push replica updates.
     pub(crate) async fn materialize_repository<C: GitContext>(
         self: &Arc<Self>,
         context: &C,
@@ -204,8 +193,6 @@ impl RepositoryEngine {
         let cache_root_for_build = cache_root.to_path_buf();
         let built_for_build = built.clone();
         let materialization_path_for_build = materialization_path.clone();
-        // The detached build must retain its own lease if the requesting
-        // future drops the handle returned above while Git is still working.
         let build_repo_lease = self.cache.lease(incarnation)?;
         let result = self.coordinate_repository(incarnation, is_ready, move || async move {
             let _build_repo_lease = build_repo_lease;
@@ -239,8 +226,6 @@ impl RepositoryEngine {
                         head_for_build.push_sequence,
                     )
                 }
-                // Replicas are monotonic. A reader with an older database
-                // frontier may safely use the newer local object set.
                 Some(applied) if applied >= head_for_build.push_sequence
                     && repository_cache_is_ready(&repo_path_for_build) =>
                 {
@@ -343,9 +328,6 @@ impl RepositoryEngine {
         expected_head: &str,
         push_sequence: u64,
     ) -> Result<(), ApiError> {
-        // Post-commit synchronization mutates the same disposable replica as
-        // readers. Keep it leased so the periodic cache reaper cannot remove it
-        // while Git is replacing refs or pack files.
         let repository_id = incarnation.repository_id();
         let repo = self.cache.lease(incarnation)?;
         let target = repo.as_ref().to_path_buf();
@@ -378,8 +360,6 @@ impl RepositoryEngine {
                     "advancing repository Git cache from accepted segment",
                 )?;
             } else if push_sequence > 1 {
-                // Later segments exclude objects reachable from the previous head.
-                // A reader can rebuild the absent cache from the durable pack layout.
                 return Err(ApiError::internal_message(
                     "incremental Git segment cannot seed a missing repository cache",
                 ));
@@ -541,7 +521,6 @@ fn materialization_outcome(cache_hit: bool, built: bool) -> &'static str {
     }
 }
 
-/// Names how a build brought the replica up to date; `None` when nothing was built.
 fn build_path_name(path: u8) -> Option<&'static str> {
     match path {
         MATERIALIZATION_PATH_CATCH_UP => Some("catch_up"),

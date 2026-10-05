@@ -1,14 +1,10 @@
 name: CI
 
-# Scope pushes each request revision to scope/requests/<id>, so the same checks
-# that gate pull requests gate Scope requests.
 on:
   pull_request:
   push:
     branches: ['scope/**']
 
-# A branch push has no pull request number. Its ref keeps each Scope request in
-# its own group.
 concurrency:
   group: scope-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -17,8 +13,43 @@ permissions:
   contents: read
 
 jobs:
+  pull-request:
+    name: Find pull request at this commit
+    if: ${{ github.event_name == 'push' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      number: ${{ steps.find.outputs.number }}
+    steps:
+      - name: Find a pull request run that tests this commit
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          number="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" --jq "[.[] | select(
+            .state == \"open\" and .head.sha == \"$SHA\" and .base.ref == \"main\" and
+            .head.repo.full_name == \"$REPOSITORY\" and .user.login != \"dependabot[bot]\")][0].number // empty")"
+          if [[ -n "$number" ]]; then
+            behind="$(gh api "repos/$REPOSITORY/compare/main...$SHA" --jq .behind_by)"
+            [[ "$behind" == 0 ]] || number=""
+          fi
+          if [[ -n "$number" ]]; then
+            run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA" \
+              --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $number))][0].id // empty")"
+            [[ -n "$run" ]] || number=""
+          fi
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
   plan:
     name: Plan selected components
+    needs: pull-request
+    if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     outputs:
@@ -33,8 +64,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # A new branch has no previous commit, so a branch push compares against
-      # its merge base with main.
       - name: Find comparison base
         id: base
         env:
@@ -65,6 +94,8 @@ jobs:
 
   policy:
     name: Check repository policy
+    needs: pull-request
+    if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
@@ -80,6 +111,8 @@ jobs:
 
   ops:
     name: Check operations
+    needs: pull-request
+    if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
@@ -101,6 +134,7 @@ jobs:
   validation:
     name: Validate selected components
     needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
     permissions:
       contents: read
       deployments: write
@@ -118,12 +152,38 @@ jobs:
 
   required-pr-checks:
     name: Required PR checks
-    needs: [plan, policy, ops, validation]
+    needs: [pull-request, plan, policy, ops, validation]
     if: ${{ always() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 5
+    timeout-minutes: 150
+    permissions:
+      actions: read
     steps:
+      - name: Report the pull request's result
+        if: ${{ needs.pull-request.outputs.number != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          PULL_REQUEST: ${{ needs.pull-request.outputs.number }}
+        run: |
+          [[ "$PULL_REQUEST" =~ ^[0-9]+$ ]]
+          echo "Pull request #$PULL_REQUEST tests $SHA"
+          while :; do
+            run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA" \
+              --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $PULL_REQUEST))][0] // empty
+                | \"\\(.html_url) \\(.status) \\(.conclusion)\"")" || run=""
+            read -r url status conclusion <<< "$run"
+            if [[ "$status" == completed ]]; then
+              echo "$url: $conclusion"
+              test "$conclusion" = success
+              exit
+            fi
+            sleep 30
+          done
+
       - name: Require successful planning and validation
+        if: ${{ needs.pull-request.outputs.number == '' }}
         env:
           POLICY_RESULT: ${{ needs.policy.result }}
           OPS_RESULT: ${{ needs.ops.result }}

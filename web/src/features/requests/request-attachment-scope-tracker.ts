@@ -17,7 +17,6 @@ export function createRequestAttachmentScopeTracker({
       if (previous && previous !== accessScope) removePreviousScope(previous)
       activeAccessScopes.delete(owner)
       activeAccessScopes.set(owner, accessScope)
-      // Forgetting an owner bounds tracking state without deleting its cached data.
       if (activeAccessScopes.size > maxOwners) {
         const oldest = activeAccessScopes.keys().next().value
         if (oldest) activeAccessScopes.delete(oldest)

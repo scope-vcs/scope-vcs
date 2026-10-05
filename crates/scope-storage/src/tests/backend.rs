@@ -13,6 +13,12 @@ pub(super) struct TestObjectBackend {
     pub(super) active_parts: AtomicUsize,
     pub(super) peak_parts: AtomicUsize,
     pub(super) block_cleanup: AtomicBool,
+    pub(super) cleanup_started: Notify,
+    pub(super) cleanup_gate: Semaphore,
+    pub(super) fail_abort: AtomicBool,
+    pub(super) fail_delete: AtomicBool,
+    pub(super) block_delete: AtomicBool,
+    pub(super) deletes: AtomicUsize,
     pub(super) part_started: Notify,
     pub(super) part_gate: Semaphore,
 }
@@ -32,6 +38,12 @@ impl Default for TestObjectBackend {
             active_parts: AtomicUsize::new(0),
             peak_parts: AtomicUsize::new(0),
             block_cleanup: AtomicBool::new(false),
+            cleanup_started: Notify::new(),
+            cleanup_gate: Semaphore::new(0),
+            fail_abort: AtomicBool::new(false),
+            fail_delete: AtomicBool::new(false),
+            block_delete: AtomicBool::new(false),
+            deletes: AtomicUsize::new(0),
             part_started: Notify::new(),
             part_gate: Semaphore::new(0),
         }
@@ -200,8 +212,12 @@ impl ObjectBackend for TestObjectBackend {
     }
 
     async fn abort_incomplete(&self, key: &str) -> Result<(), BackendError> {
+        if self.fail_abort.load(Ordering::SeqCst) {
+            return Err(BackendError::new("abort failed"));
+        }
+        self.cleanup_started.notify_one();
         if self.block_cleanup.load(Ordering::SeqCst) {
-            std::future::pending::<()>().await;
+            self.cleanup_gate.acquire().await.unwrap().forget();
         }
         let mut state = self.state.lock().unwrap();
         let aborted = state
@@ -236,6 +252,13 @@ impl ObjectBackend for TestObjectBackend {
     }
 
     async fn delete(&self, key: &str) -> Result<(), BackendError> {
+        self.deletes.fetch_add(1, Ordering::SeqCst);
+        if self.block_delete.load(Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
+        if self.fail_delete.load(Ordering::SeqCst) {
+            return Err(BackendError::new("delete failed"));
+        }
         self.state.lock().unwrap().objects.remove(key);
         Ok(())
     }

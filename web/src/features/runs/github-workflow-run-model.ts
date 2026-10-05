@@ -1,16 +1,11 @@
 import type { GitHubWorkflowRunListResponse, GitHubWorkflowRunResponse } from '@/api/types.generated'
 import { githubRunResult } from './github-run-status'
 
-/** A Runs page's GitHub runs: every page loaded so far, merged. */
 export type GitHubWorkflowRunPages = {
   list: GitHubWorkflowRunListResponse
   pages: number
 }
 
-/**
- * The list with `next` after it. A run that moved up a page while the list
- * was read appears once, where it was first listed.
- */
 export function mergeNextPage(
   list: GitHubWorkflowRunListResponse,
   next: GitHubWorkflowRunListResponse,
@@ -22,10 +17,6 @@ export function mergeNextPage(
   }
 }
 
-/**
- * Reads the first `pages` pages again from the top, so new runs push older
- * ones down without the list losing its depth.
- */
 export async function reloadGitHubWorkflowRunPages(
   pages: number,
   loadPage: (after?: string) => Promise<GitHubWorkflowRunListResponse>,
@@ -42,27 +33,22 @@ export async function reloadGitHubWorkflowRunPages(
   return { list, pages: loaded }
 }
 
-/** The workflows the filter offers, keeping the chosen one listed. */
 export function githubWorkflowFilterOptions(workflows: string[], selected: string | null) {
   return selected === null || workflows.includes(selected)
     ? workflows
     : [...workflows, selected].sort()
 }
 
-/** One GitHub workflow run as the Runs page lists it. */
 export type GitHubWorkflowRunRow = {
   key: string
   name: string
-  /** A state in the runs vocabulary, for the shared status icon. */
   state: string
   label: string
   branch: string | null
-  /** What started the run, as GitHub names it, such as `push`. */
   event: string
   commit: string
   href: string
   requestId: string | null
-  /** When the run started, or when GitHub last changed it before it started. */
   at: number
 }
 

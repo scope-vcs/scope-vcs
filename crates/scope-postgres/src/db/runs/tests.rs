@@ -209,7 +209,6 @@ async fn run_control_waits_for_revocation_and_rejects_without_mutating() {
 async fn run_control_that_wins_repository_lock_completes_before_real_revocation() {
     for command in [Command::Cancel, Command::Retry] {
         let store = fixture(command).await;
-        // Hold jobs so the command pauses after acquiring its repository guard.
         let job_guard = store.db.begin().await.unwrap();
         locked_jobs(&job_guard, RUN).await.unwrap();
         let guard_pid = backend_pid(&job_guard).await;

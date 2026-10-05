@@ -14,9 +14,6 @@ export type RequestChecksController = {
   error: string | null
 }
 
-// The resource owns the evaluation; approval answers with the refreshed one, so
-// the result is written back instead of triggering another read. Approval names
-// the head the viewer was shown, so a head pushed since is refused, not run.
 export function useRequestChecks({
   approve,
   identity,

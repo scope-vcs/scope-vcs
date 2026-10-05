@@ -1,5 +1,3 @@
-//! Git process execution and output decoding for API callers.
-
 use crate::{error::ApiError, runtime_budgets::RuntimeBudgets};
 use scope_git_process::{
     ProcessLimits, STDERR_DIAGNOSTIC_BYTES, run as run_process, truncated_stderr,
@@ -10,8 +8,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Runs a prepared command and maps process-level failures (spawn, I/O, timeout, stdout
-/// budget) onto API errors. A non-zero exit is returned to the caller as a normal `Output`.
 pub(crate) fn git_process_output(
     command: &mut Command,
     stdin: Option<Vec<u8>>,
@@ -26,8 +22,6 @@ pub(crate) fn git_process_output(
     })
 }
 
-/// Runs a prepared command and returns stdout, treating any non-zero exit as an
-/// infrastructure failure described by the (bounded) stderr.
 pub(crate) fn git_command_output_with_timeout(
     command: &mut Command,
     stdin: Option<Vec<u8>>,
@@ -66,9 +60,6 @@ fn git_repo_command(repo: Option<&FsPath>, args: &[&str]) -> Command {
     command
 }
 
-/// Runs `git <args>` (optionally inside `repo`) and returns the raw output. Only process
-/// failures are errors; callers that need a successful exit use `run_git` or
-/// `git_stdout_text`.
 pub(crate) fn run_git_output(
     repo: Option<&FsPath>,
     args: &[&str],
@@ -113,8 +104,6 @@ pub(crate) fn run_git_output_until(
     })
 }
 
-/// Like `run_git_output`, but rejects stdout larger than `max_stdout_bytes` with a
-/// payload-too-large error naming the action.
 pub(crate) fn run_git_output_bounded(
     repo: Option<&FsPath>,
     args: &[&str],
@@ -135,7 +124,6 @@ pub(crate) fn run_git_output_bounded(
     })
 }
 
-/// Turns a non-zero exit into an infrastructure error carrying the action and stderr.
 pub(crate) fn successful_git_output(output: Output, action: &str) -> Result<Output, ApiError> {
     if output.status.success() {
         return Ok(output);
@@ -150,7 +138,6 @@ pub(crate) fn run_git(repo: Option<&FsPath>, args: &[&str], action: &str) -> Res
     successful_git_output(run_git_output(repo, args, action)?, action).map(drop)
 }
 
-/// Runs `git <args>` inside `repo` and returns its stdout as text, untrimmed.
 pub(crate) fn git_stdout_text(
     repo: &FsPath,
     args: &[&str],
@@ -160,9 +147,6 @@ pub(crate) fn git_stdout_text(
     String::from_utf8(output.stdout).map_err(ApiError::bad_request)
 }
 
-/// `git merge-base --is-ancestor`: exit 0 means ancestor, exit 1 means not an ancestor,
-/// anything else (unknown object, corrupt repository) is an infrastructure error and
-/// never a user-facing "not an ancestor" answer.
 pub(crate) fn git_is_ancestor(
     repo: &FsPath,
     ancestor: &str,
@@ -184,7 +168,6 @@ pub(crate) fn git_is_ancestor(
     }
 }
 
-/// Lists `(refname, object id)` pairs under the given prefixes (all refs when empty).
 pub(crate) fn git_ref_listing(
     repo: &FsPath,
     prefixes: &[&str],

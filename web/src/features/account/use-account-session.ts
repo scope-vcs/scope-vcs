@@ -11,8 +11,6 @@ const load = (signal: AbortSignal) => loadAccountSessionValue(
   signal,
 )
 
-// The shared account session resource owns the read, the retained value and the
-// reconnect retry; viewers subscribe to it instead of fetching for themselves.
 export function useAccountSession(viewerId: string | null) {
   const session = useCachedResource({
     fallbackError: 'Your account session is unavailable.',

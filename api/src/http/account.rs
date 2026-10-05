@@ -64,8 +64,6 @@ pub(crate) async fn get_account_session(
     }))
 }
 
-/// Deletes the signed-in account. Only a browser session may do this; CLI
-/// tokens cannot.
 pub(crate) async fn delete_account(
     State(state): State<AppState>,
     headers: HeaderMap,

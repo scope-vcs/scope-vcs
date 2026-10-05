@@ -1,5 +1,3 @@
-//! Atomic repository content merge plus request completion.
-
 use super::{
     CompleteLandedRequestCommand, GeneratedIdSource, MergeRequestContentCommand, RequestStore,
     acquire_aggregate_lock,
@@ -11,9 +9,9 @@ use super::{
         StoredIntent, automatic_event_id, lock_active_intent_for_request,
         persist_existing_auto_merge_mutation, request_auto_merge_check_state,
     },
+    request_lifecycle_effects::persist_lifecycle_mutation,
     request_revision_rows::latest_revision_for_request,
     request_rows::request_by_id,
-    request_submission_transactions::persist_lifecycle_mutation,
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect, TransactionTrait};
 use {
@@ -233,7 +231,8 @@ impl RequestStore {
         )
         .await?;
 
-        persist_lifecycle_mutation(&tx, &request_mutation).await?;
+        persist_lifecycle_mutation(&tx, &request_mutation.request, &request_mutation.events)
+            .await?;
         let request_mutation = if let Some(locked) = locked_auto_merge {
             let fulfilled_event_id = expected_auto_merge
                 .as_ref()
@@ -270,8 +269,6 @@ impl RequestStore {
 mod tests;
 
 impl RequestStore {
-    /// Records the merge of a request whose head a committed main push already carries.
-    /// Returns `None` when the request moved or settled since the push was inspected.
     pub async fn complete_landed_request(
         &self,
         command: CompleteLandedRequestCommand,
@@ -295,7 +292,7 @@ impl RequestStore {
                 now_unix: command.now_unix,
             },
         )?;
-        persist_lifecycle_mutation(&tx, &mutation).await?;
+        persist_lifecycle_mutation(&tx, &mutation.request, &mutation.events).await?;
         if let Some(stored) = active_auto_merge {
             let fulfilled = fulfill_request_auto_merge(
                 &mutation.request,

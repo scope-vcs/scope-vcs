@@ -37,7 +37,6 @@ if [[ "$command_name" == plan ]]; then
     *) echo 'the broker must already be bootstrapped and ready for update' >&2; exit 1 ;;
   esac
   parameters=()
-  # Preserve secret and topology values without reading or accepting replacements.
   for key in Environment ApiUrl DispatchAuthorityToken ClusterArn SubnetIds SecurityGroupId ExecutionRoleArn RunnerLogGroup RegistryCredentialsSecretArn RegistryCredentialsHost; do
     parameters+=("ParameterKey=$key,UsePreviousValue=true")
   done
@@ -68,7 +67,6 @@ else
     echo 'broker apply uses only the reviewed change set; omit code inputs' >&2; exit 2;
   }
 fi
-# Print resource changes only. Parameter values and templates can contain secrets.
 aws_command cloudformation describe-change-set --stack-name "$stack_name" --change-set-name "$change_set_arn" \
   --query 'Changes[].ResourceChange.[Action,LogicalResourceId,ResourceType,Replacement]' --output table
 if [[ "$command_name" == plan ]]; then

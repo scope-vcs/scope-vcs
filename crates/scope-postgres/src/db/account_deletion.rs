@@ -1,9 +1,3 @@
-//! Deletes an account in one transaction. The domain decides what goes.
-//! Owned repositories leave through repository deletion, which queues their
-//! storage cleanup; other repositories lose the account the way they lose a
-//! removed member; Clerk users are queued for deletion after the commit.
-//! Authored work elsewhere survives through `ON DELETE SET NULL`.
-
 use super::{
     AuthStore, GeneratedIdSource, acquire_aggregate_lock,
     auth::load_user_by_id,
@@ -34,7 +28,6 @@ use std::collections::BTreeSet;
 
 #[derive(Debug)]
 pub enum AccountDeletionError {
-    /// The account owns repositories other members use.
     SharedRepositories(SharedRepositories),
     Persistence(PostgresError),
 }
@@ -45,8 +38,6 @@ impl From<PostgresError> for AccountDeletionError {
     }
 }
 
-/// A repository whose live views change with the deletion, and the version
-/// that announces the change.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountDeletionChange {
     pub incarnation: RepositoryIncarnation,
@@ -56,14 +47,10 @@ pub struct AccountDeletionChange {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DeletedAccount {
     pub deleted_repositories: Vec<AccountDeletionChange>,
-    /// Repositories that lost the account's membership or invites.
     pub changed_repositories: Vec<AccountDeletionChange>,
-    /// Other repositories whose requests, discussions, runs or GitHub
-    /// connection now show a deleted user, or lost the account's drafts.
     pub contributed_repositories: Vec<RepositoryIncarnation>,
 }
 
-/// Every repository holding work the account did, besides membership.
 const CONTRIBUTED_REPOSITORIES_SQL: &str = r#"
     SELECT repo_id FROM scope_requests
         WHERE $1 IN (author_user_id, closed_by_user_id, merged_by_user_id)
@@ -103,9 +90,6 @@ impl AuthStore {
             .all(&tx)
             .await
             .map_err(PostgresError::internal)?;
-        // Sign-in takes the identity lock, then the email lock; taking them in
-        // the same order cannot deadlock. A concurrent sign-in waits, then
-        // finds the recorded Clerk deletion and is refused.
         for identity in &identities {
             let key = format!("{}:{}", identity.provider, identity.subject);
             acquire_aggregate_lock(&tx, "auth-identity", &key).await?;
@@ -151,8 +135,6 @@ impl AuthStore {
                 .map_err(PostgresError::internal)?,
         );
 
-        // The account's drafts elsewhere could never be deleted once their
-        // author is gone, so they go with the account.
         let drafts = entities::request::Entity::find()
             .select_only()
             .column(entities::request::Column::Id)
@@ -165,7 +147,6 @@ impl AuthStore {
             .map_err(PostgresError::internal)?;
         repository_ids.extend(drafts.iter().map(|(_, repo_id)| repo_id.clone()));
 
-        // Sorted, so two deletions sharing repositories cannot deadlock.
         let mut owned = Vec::new();
         let mut others = Vec::new();
         for repo_id in repository_ids {
@@ -174,7 +155,6 @@ impl AuthStore {
                 continue;
             };
             if record.owner_user_id == user_id {
-                // An owned repository leaves whole, with its storage.
                 let row = entities::repository::Entity::find_by_id(repo_id)
                     .one(&tx)
                     .await
@@ -182,7 +162,6 @@ impl AuthStore {
                     .ok_or_else(|| PostgresError::internal_message("locked repository vanished"))?;
                 owned.push(repository_from_model(&tx, row).await?);
             } else {
-                // Any other loses at most the account's membership and invites.
                 others.push(CollaborationState {
                     collaboration: load_repository_collaboration(&tx, &repo_id).await?,
                     record,
@@ -230,7 +209,6 @@ impl AuthStore {
             .map_err(PostgresError::internal)?;
         for (request_id, repo_id) in drafts {
             let Some(repo) = others.iter().find(|repo| repo.record.id == repo_id) else {
-                // Drafts in owned repositories leave with the repository.
                 continue;
             };
             delete_draft(
@@ -329,7 +307,6 @@ impl AuthStore {
             .exec(&tx)
             .await
             .map_err(PostgresError::internal)?;
-        // Sign-in lock rows are keyed by the email and sign-in identities.
         entities::metadata_lock::Entity::delete_many()
             .filter(entities::metadata_lock::Column::Key.is_in(
                 std::iter::once(format!("auth-email:{}", user.email)).chain(identities.iter().map(
@@ -344,8 +321,6 @@ impl AuthStore {
     }
 }
 
-/// Deletes one of the account's drafts in a repository it does not own, the
-/// way its author closing it would.
 async fn delete_draft(
     tx: &DatabaseTransaction,
     incarnation: &RepositoryIncarnation,
@@ -368,7 +343,6 @@ async fn delete_draft(
             request_id: request_id.to_string(),
             actor_user_id: user_id.to_string(),
             actor_is_maintainer: false,
-            // Deleting a draft records no event.
             event_id: format!("event_request_closed_{request_id}"),
             now_unix,
         },

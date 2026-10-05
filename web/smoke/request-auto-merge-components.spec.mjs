@@ -77,7 +77,6 @@ test('auto-merge confirms one revision and stays usable on desktop and mobile', 
     await cancelDialog.getByText('aaaaaaaaaaaa → main', { exact: true }).waitFor()
     await cancelDialog.getByRole('button', { name: 'Cancel auto-merge' }).click()
     await page.getByRole('button', { name: 'Merge when checks pass' }).waitFor()
-    // An ended authorization leaves the header; its record lives in the activity history.
     assert.equal(await page.getByText(/Authorized by/).count(), 0)
     assert.deepEqual(await page.evaluate(() => window.calls[1]), {
       expected_intent_id: 'intent-1',

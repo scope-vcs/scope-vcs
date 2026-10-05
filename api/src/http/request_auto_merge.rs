@@ -1,5 +1,3 @@
-//! HTTP authorization and response projection for request auto-merge.
-
 use super::{
     requests::{repo_metadata_and_access, visible_request},
     responses::{git_oid_response, request_actor_summary_response},
@@ -58,7 +56,6 @@ pub(crate) async fn authorize(
         input.expected_head_oid.as_str().to_string(),
     )
     .await?;
-    // The reconciler evaluates an unevaluated head from the saved intent.
     response(&state, &request, access).await.map(Json)
 }
 

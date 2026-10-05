@@ -113,8 +113,6 @@ async fn restore_git_pack_spans_inner<C: GitContext>(
     Ok(())
 }
 
-/// Point the default branch at `head_oid`, then verify the object graph
-/// reachable from it is complete.
 pub(crate) async fn advance_head_and_verify(
     repository_id: &str,
     repo_root: &Path,
@@ -148,8 +146,6 @@ pub(crate) async fn advance_head_and_verify(
     .await
 }
 
-/// Fetch at most four packs ahead, then install them in layout order. The
-/// repository engine serializes hydration for each incarnation.
 pub(crate) async fn hydrate_git_pack_spans<C: GitContext>(
     context: &C,
     repo_root: &Path,
@@ -239,8 +235,6 @@ pub(super) fn install_verified_git_pack(
                 truncated_git_stderr(&output.stderr).trim()
             )));
         }
-        // index-pack replaces the output inode, so sync its completed file,
-        // not the original empty NamedTempFile descriptor.
         fs::File::open(temporary.path())
             .and_then(|file| file.sync_all())
             .map_err(ApiError::internal)?;
@@ -251,8 +245,6 @@ pub(super) fn install_verified_git_pack(
             .and_then(|directory| directory.sync_all())
             .map_err(ApiError::internal)?;
     }
-    // Git names each pack after the SHA-1 trailer. The storage layer has already
-    // authenticated the complete immutable pack against its durable metadata.
     let mut file = fs::File::open(pack).map_err(ApiError::internal)?;
     file.seek(SeekFrom::End(-20)).map_err(ApiError::internal)?;
     let mut trailer = [0_u8; 20];

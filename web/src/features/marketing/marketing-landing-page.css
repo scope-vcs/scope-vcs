@@ -1,15 +1,8 @@
-/* The landing page is two copies of the same content: the public layer, and a
- * private layer in the opposite theme that shows through the lens. */
-
 .landing {
   --landing-ease: cubic-bezier(.16, 1, .3, 1);
-  /* Scales every duration and stagger on the page; the lens's own motion is
-   * paced by PACE in lens/lens-motion.ts. Confetti keeps its own timing. */
   --landing-pace: .8;
 }
 
-/* The logo image is black; each layer tints it for its own theme. The private
- * layer can be light inside dark mode, so this can't use the `dark:` variant. */
 :root,
 .light {
   --landing-logo-filter: brightness(0);
@@ -26,7 +19,6 @@
 .landing-layer {
   background: var(--background);
   color: var(--foreground);
-  /* Private content glows faintly under the lens. */
   --landing-aura: color-mix(in srgb, var(--warning) 55%, transparent);
 }
 
@@ -43,7 +35,6 @@
   visibility: hidden;
 }
 
-/* Notes: private asides laid out in empty space. */
 .landing-note {
   font: 400 12px/1.55 var(--font-mono);
   color: var(--muted-foreground);
@@ -57,7 +48,6 @@
   filter: drop-shadow(0 0 3px var(--landing-aura)) drop-shadow(0 0 8px var(--landing-aura));
 }
 
-/* Entrance: one sequence on load. */
 .landing-rise {
   animation: landing-rise calc(.9s * var(--landing-pace)) var(--landing-ease) calc(var(--rise-delay, 0ms) * var(--landing-pace)) both;
 }
@@ -67,7 +57,6 @@
   to { opacity: 1; transform: none; }
 }
 
-/* Lane graph draws itself once scrolled to. */
 .merge-graph path {
   fill: none;
   stroke-width: 6;
@@ -90,7 +79,6 @@
 .merge-graph.is-drawn text { opacity: 1; }
 .landing-private .merge-graph .is-kept { filter: drop-shadow(0 0 4px var(--landing-aura)) drop-shadow(0 0 12px var(--landing-aura)); }
 
-/* Scroll chevron: rolls on hover, dissolves once the next section shows. */
 .landing-cue > span {
   transition: opacity calc(.7s * var(--landing-pace)) var(--landing-ease), filter calc(.7s * var(--landing-pace)) var(--landing-ease), transform calc(.7s * var(--landing-pace)) var(--landing-ease);
 }
@@ -113,7 +101,6 @@
   transform: scale(1.7) translateY(4px);
 }
 
-/* Install Scope lights up the command it points at, then lets it settle. */
 .landing-terminal {
   transition: box-shadow calc(.6s * var(--landing-pace)) var(--landing-ease);
 }
@@ -130,7 +117,6 @@
   color: #fff;
 }
 
-/* Lens ring, label and cursor. */
 .lens-ring path { stroke-width: 1; }
 .lens-ring circle { stroke-width: 1; }
 
@@ -185,7 +171,6 @@
 
 .lens-cursor.is-down i { transform: scale(.7); }
 
-/* The native cursor stays until the lens has mounted and can replace it. */
 @media (pointer: fine) {
   .landing.lens-ready.lens-on,
   .landing.lens-ready.lens-on * {
@@ -218,8 +203,6 @@
   translate: 0 0;
 }
 
-/* The app's reduced-motion rule shortens durations; drop the stagger delays too
- * so nothing waits to appear. */
 @media (prefers-reduced-motion: reduce) {
   .landing-rise,
   .merge-graph :is(circle, text) {

@@ -24,7 +24,6 @@ pub enum RunSource {
     },
     RequestGitSnapshot {
         object: SourceBlob,
-        /// A Git-backed private request snapshot may omit history reachable from this commit.
         base_oid: String,
     },
     AcceptedGitHead {

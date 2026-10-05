@@ -38,7 +38,6 @@ export type UpdateDescriptionInput = RequestParams & {
   expected_description_markdown: string
 }
 
-// The activity drawer reads this to tell a full page from a complete history.
 export const REQUEST_ACTIVITY_PAGE_SIZE = 50
 
 export type RequestDiscussionRepliesPage = {

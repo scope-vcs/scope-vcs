@@ -129,7 +129,6 @@ async fn operators_list_accounts_by_handle() {
     assert_eq!(renoted.account.note, None);
     assert_eq!(native_runs.accounts().await.unwrap(), [renoted]);
 
-    // Every owned repository changes availability, even with nothing to settle.
     let removal = native_runs.remove_account(OWNER_HANDLE, 10).await.unwrap();
     assert!(removal.removed);
     assert_eq!(owned(&removal.repositories), ["native-owner/native-repo"]);
@@ -191,7 +190,6 @@ async fn an_unlisted_owner_creates_no_runs_and_admits_none() {
         .iter()
         .map(|run| (run.id.as_str(), run.state, run.cancellation_requested))
         .collect::<Vec<_>>();
-    // The admitted run stops at its next heartbeat; the queued one ends at once.
     assert_eq!(
         canceled,
         [
@@ -295,7 +293,6 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
         .unwrap();
     assert_eq!(settled.state, RequestCheckEvaluationState::NoChecks);
 
-    // A head evaluated before the removal cannot record a wait after it.
     let refused = store
         .requests()
         .record_request_checks(RecordRequestChecksCommand {

@@ -1,5 +1,3 @@
-"""The broker constructs every privileged AWS input from trusted configuration."""
-
 import re
 
 from journal import error_code
@@ -57,8 +55,6 @@ class Provider:
         except Exception as error:
             if error_code(error) != "ResourceExistsException":
                 raise
-            # Only the broker owns this deterministic name. The durable token
-            # hash is checked before this call; an existing value is never replaced.
             result = self.secrets.describe_secret(SecretId=name)
         container = {
             "name": "scope-runner", "image": record["image"], "essential": True,
@@ -119,8 +115,6 @@ class Provider:
         raise Pending("ECS launch requires reconciliation")
 
     def find(self, attempt):
-        # startedBy must be the only ListTasks filter. It selects this attempt's
-        # tasks in the fixed cluster, never an ARN supplied by the caller.
         result = []
         token = None
         while True:
@@ -149,8 +143,6 @@ class Provider:
         if len(tasks) == 1 and tasks[0].get("taskArn") == task and tasks[0].get("lastStatus") == "STOPPED":
             return "stopped"
         if not tasks and failures and all(item.get("reason", "").upper() == "MISSING" for item in failures):
-            # A just-launched task can be temporarily invisible even when ECS
-            # already returned its ARN. The lifecycle applies a consistency grace.
             return "missing"
         if failures:
             raise Pending("ECS task status requires reconciliation")

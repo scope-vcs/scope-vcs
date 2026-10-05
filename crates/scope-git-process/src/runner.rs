@@ -12,8 +12,6 @@ use std::{
 };
 use tokio::sync::watch;
 
-/// Lets a streaming stdout consumer stop its downstream work when the process
-/// runner reaches its deadline.
 #[derive(Clone, Debug)]
 pub struct ProcessCancellation {
     cancelled: watch::Sender<bool>,
@@ -140,11 +138,6 @@ pub fn run(
     run_inner(command, input, limits, action, None)
 }
 
-/// Runs a child with the same limits as [`run`] and permits external cancellation.
-///
-/// A cancellation requested before this call returns without spawning the child.
-/// Cancellation after spawn kills and reaps the complete process group before
-/// returning.
 pub fn run_cancellable(
     command: &mut Command,
     input: Option<Vec<u8>>,
@@ -171,10 +164,6 @@ fn run_inner(
     wait_for_output(child, stdin_writer, limits, action, cancellation)
 }
 
-/// Runs a child while copying a caller-owned reader into stdin incrementally.
-///
-/// This preserves the same timeout, bounded-output, and process-tree cleanup
-/// behavior as [`run`] without requiring the complete input in memory.
 pub fn run_with_stdin_reader<R>(
     command: &mut Command,
     input: R,
@@ -189,16 +178,6 @@ where
     wait_for_output(child, stdin_writer, limits, action, None)
 }
 
-/// Runs a child while a caller-owned consumer drains stdout incrementally.
-///
-/// The consumer executes on a dedicated thread so this function can retain the
-/// existing timeout and process-group cleanup guarantees. Unlike [`run`], this
-/// path never collects stdout into a `Vec` owned by the process runner.
-///
-/// The runner signals the supplied [`ProcessCancellation`] before killing a
-/// timed-out process group. The consumer must stop all work it owns and return
-/// after cancellation. The runner joins the consumer thread and never detaches
-/// it.
 pub fn run_with_stdout<T, E, F>(
     command: &mut Command,
     input: Option<Vec<u8>>,
@@ -335,8 +314,6 @@ impl From<Option<Vec<u8>>> for StdinSource {
 
 type StdinWriter = thread::JoinHandle<std::io::Result<()>>;
 
-/// Spawns the child in its own process group with piped stdout and stderr,
-/// feeding stdin from a dedicated thread when there is input to write.
 fn spawn_with_stdin(
     command: &mut Command,
     stdin: StdinSource,

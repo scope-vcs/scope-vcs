@@ -273,7 +273,6 @@ pub(crate) fn github_workflow_run_response(
     }
 }
 
-/// What a maintainer's settings read about the repository's GitHub link.
 pub(crate) struct GitHubConnectionParts {
     pub(crate) read: Option<GitHubConnectionRead>,
     pub(crate) required_checks: Vec<String>,
@@ -296,8 +295,6 @@ pub(crate) fn github_connection_response(
         run_import,
     } = parts;
     let read = read.filter(|_| configured);
-    // A test or an import of the GitHub repository Scope was connected to
-    // before says nothing about the one it is connected to now.
     let setup_check = setup_check.filter(|setup| {
         read.as_ref()
             .is_some_and(|read| setup.check.is_of(&read.connection))

@@ -31,8 +31,6 @@ impl RunStore {
                 "lost".to_string(),
             ]))
             .filter(entities::run::Column::CompletedAtUnix.lte(cutoff))
-            // Active auto-merge decisions retain the exact run evidence they were authorized
-            // against. Terminal intents release it to the ordinary age policy.
             .filter(active_auto_merge_evidence_is_absent())
             .order_by_asc(entities::run::Column::CompletedAtUnix)
             .order_by_asc(entities::run::Column::Id)
@@ -46,9 +44,6 @@ impl RunStore {
             return Ok(0);
         }
 
-        // Every writer that attaches a run to request-check evidence holds the request
-        // lock, then this retention lock, before touching runs. Taking those locks in the
-        // same order lets authorization fence deletion with request -> run locking.
         let mut request_ids = Vec::new();
         for run_id in &candidate_ids {
             if let Some(request_id) = request_id_for_check_run(&tx, run_id).await? {
@@ -72,8 +67,6 @@ impl RunStore {
                 .map_err(PostgresError::internal)?;
         }
 
-        // Re-evaluate after every candidate run is locked. Authorization either committed
-        // first and is visible here, or waits for deletion and then rejects missing evidence.
         let models = entities::run::Entity::find()
             .filter(entities::run::Column::Id.is_in(candidate_ids))
             .filter(entities::run::Column::State.is_in([
@@ -185,7 +178,6 @@ pub(super) async fn delete_run_source_references<C: ConnectionTrait>(
     Ok(())
 }
 
-/// A workflow revision dies with the last run that references it.
 pub(super) async fn delete_orphaned_workflow_revisions<C: ConnectionTrait>(
     conn: &C,
     digests: BTreeSet<String>,

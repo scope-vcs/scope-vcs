@@ -10,7 +10,6 @@ type RailProps = {
   tabIndex?: number
 }
 
-/** The app-wide width boundary. Keep its maximum width owned here. */
 function AppRail({
   as: Component = 'div',
   children,
@@ -29,7 +28,6 @@ function AppRail({
   )
 }
 
-/** The app rail with standard responsive page gutters. */
 export function PageRail({
   as,
   children,
@@ -49,10 +47,6 @@ export function PageRail({
   )
 }
 
-/**
- * Padded reading column for list and prose routes. Shares the app rail width
- * with the topbar so page content lines up with the logo and nav.
- */
 export function PageContent({
   children,
   className,
@@ -70,10 +64,6 @@ export function PageContent({
   )
 }
 
-/**
- * Same rail as `PageContent` but unpadded, for split-pane workbenches whose
- * panels manage their own edges (code, history, runs, requests, diffs).
- */
 export function WorkbenchPane({
   children,
   className,
@@ -88,10 +78,6 @@ export function WorkbenchPane({
   )
 }
 
-/**
- * The single page-title treatment. Repo section routes deliberately do not use
- * this — their nav tab already names the view — and reach for `WorkbenchBar`.
- */
 export function PageHeader({
   actions,
   badges,
@@ -132,10 +118,6 @@ export function PageHeader({
   )
 }
 
-/**
- * Thin utility bar for repo section routes: a semantic page title for screen
- * readers, a plain-language summary on the left, and controls on the right.
- */
 export function WorkbenchBar({
   actions,
   className,

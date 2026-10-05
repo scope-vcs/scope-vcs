@@ -23,7 +23,6 @@ export function HistoryMenu({
   params: RepoParams
 }) {
   const defaultAudience = defaultHistoryAudience(canReadPrivateFiles)
-  // Held outside the panel so a reopened menu keeps the reader's last filter.
   const [feed, setFeed] = useState<HistoryFeed>('all')
   const [audience, setAudience] = useState<ProjectionPreviewAudience>(defaultAudience)
 

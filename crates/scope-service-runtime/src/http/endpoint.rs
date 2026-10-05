@@ -1,7 +1,5 @@
 use url::{Host, Url};
 
-/// A service base URL: HTTPS, or HTTP to an actual loopback host. Credentials,
-/// query parameters and fragments never belong in deployment endpoints.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ServiceEndpoint(Url);
 
@@ -45,7 +43,6 @@ impl ServiceEndpoint {
         Ok(endpoint)
     }
 
-    /// Canonical base URL for callers that append a route beginning with '/'.
     pub fn as_str(&self) -> &str {
         self.0.as_str().trim_end_matches('/')
     }

@@ -29,11 +29,9 @@ async fn only_an_evaluation_that_tests_a_check_commit_names_what_it_merges() {
     .unwrap();
 
     for invalid in [
-        // A check commit names both commits it merges.
         "UPDATE scope_request_check_evaluations SET check_public_base_oid = NULL",
         "UPDATE scope_request_check_evaluations
             SET check_private_main_oid = NULL, check_public_base_oid = NULL",
-        // The head is never tested as a check commit.
         "UPDATE scope_request_check_evaluations SET tested_oid = head_oid",
         "UPDATE scope_request_check_evaluations SET check_private_main_oid = 'short'",
     ] {

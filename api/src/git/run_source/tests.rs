@@ -167,7 +167,6 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
         indexed_at
     );
     drop(retained);
-    // Advance the shared replica before bundling the earlier accepted revision.
     fs::write(repository.path().join("README.md"), "newer content").unwrap();
     run_git(
         Some(repository.path()),
@@ -225,7 +224,6 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
         hex::encode(Sha256::digest(&materialized_bytes))
     );
 
-    // Warm reads require neither Git admission nor the original remote pack.
     state
         .git_segment_store
         .cleanup_local("owner/repo", &pushed.stored.pack_span.segment.segment_id)
@@ -382,7 +380,6 @@ async fn cancelled_revision_and_bundle_requests_keep_repository_and_capacity_unt
         mpsc,
     };
 
-    // Pause revision setup or bundle creation after shared hydration completes.
     for phase in [1, 2] {
         for outcome in ["success", "failure", "panic"] {
             let state = AppState::test_state();
@@ -432,7 +429,6 @@ async fn cancelled_revision_and_bundle_requests_keep_repository_and_capacity_unt
                     }
                 }),
             );
-            // Observe the path without keeping the operation resources alive.
             let path = operation::repository(&owner);
             *repo_path.lock().unwrap() = path.clone();
             let operation_state = state.clone();

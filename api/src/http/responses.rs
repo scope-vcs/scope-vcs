@@ -43,8 +43,6 @@ pub(crate) fn request_actor_summary_response(
     })
 }
 
-/// The author or actor recorded on durable work: `None` once that account
-/// was deleted.
 pub(crate) fn recorded_actor_response(
     user_id: Option<&str>,
     users: &BTreeMap<String, UserAccount>,
@@ -312,8 +310,6 @@ pub(crate) fn repo_summary_for_user(
     )
 }
 
-/// The summary a maintainer sees. Maintainers read private files once they
-/// can read the repository at all, so its policy never hides the summary.
 pub(crate) fn repo_summary_for_access(
     record: &RepoRecord,
     access: RepositoryAccess,
@@ -563,8 +559,6 @@ fn history_entry_summary_response(
     })
 }
 
-/// The handle of a history entry's author. History keeps the IDs of authors
-/// whose accounts were deleted, and those have no handle left to show.
 fn history_author_handle(
     author: Option<&str>,
     users: &BTreeMap<String, UserAccount>,

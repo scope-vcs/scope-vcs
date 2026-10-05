@@ -102,7 +102,6 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
   const entryResource = useCachedResource({
     fallbackError: 'This update is unavailable.',
     identity: entryIdentity,
-    // The loader already read this entry for this viewer; seed rather than refetch.
     initialValue: scope === initialEntryScope && initialEntry.source_id === entryId ? initialEntry : null,
     load: loadEntry,
     resource: historyEntryResource,

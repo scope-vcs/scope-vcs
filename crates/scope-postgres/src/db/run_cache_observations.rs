@@ -75,9 +75,6 @@ impl RunStore {
                 PostgresError::internal_message("run attempt job definition is missing")
             })?;
 
-        // authenticated_attempt holds the attempt row lock until this transaction
-        // commits, so concurrent exact retries serialize before checking this table.
-
         for report in reports {
             job_definition
                 .caches()

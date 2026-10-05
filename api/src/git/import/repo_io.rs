@@ -308,17 +308,7 @@ pub(crate) fn git_changed_tree_entries_until(
 }
 
 pub(crate) fn validate_pushed_tree(staging_repo: &FsPath, head_oid: &str) -> Result<(), ApiError> {
-    let entries = git_tree_entries(staging_repo, head_oid)?;
-    // The server owns the canonical rules invariant. Agent-specific adapters depend on
-    // repo-local tool signals and remain a `scope push --main` preflight concern.
-    if !entries
-        .iter()
-        .any(|entry| entry.path.as_str() == ".scope/RULES.md")
-    {
-        return Err(ApiError::bad_request(
-            "pushed main tree must contain .scope/RULES.md",
-        ));
-    }
+    git_tree_entries(staging_repo, head_oid)?;
     Ok(())
 }
 
@@ -327,8 +317,6 @@ pub(crate) fn validate_pushed_commit_range(
     base_oid: Option<&str>,
     head_oid: &str,
 ) -> Result<(), ApiError> {
-    // Rules describe the resulting repository. Imported history may predate Scope,
-    // but every newly reachable tree still needs the file/path safety checks.
     validate_pushed_tree(staging_repo, head_oid)?;
     let mut args = vec!["rev-list", "--reverse", head_oid];
     let excluded_base = base_oid.map(|oid| format!("^{oid}"));
@@ -528,8 +516,6 @@ pub(crate) async fn git_push_from_repo(
     })
 }
 
-/// Bundles `refname`. With a `base_oid` the bundle leaves out history reachable from that base,
-/// so it carries only the request's own commits and whoever fetches it supplies the base first.
 pub(crate) fn git_snapshot_from_ref(
     repo: &FsPath,
     refname: &str,
@@ -539,7 +525,6 @@ pub(crate) fn git_snapshot_from_ref(
     let head_oid = head_oid.trim();
     let bundle_path = repo.join(format!("scope-snapshot-{}.bundle", random_bundle_id()?));
     let bundle = bundle_path.to_string_lossy().to_string();
-    // Git refuses an empty bundle, so a ref still at its base keeps its full history.
     let exclude_base = base_oid
         .filter(|base_oid| *base_oid != head_oid)
         .map(|base_oid| format!("^{base_oid}"));

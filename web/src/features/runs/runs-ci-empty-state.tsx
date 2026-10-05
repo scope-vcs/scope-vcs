@@ -14,21 +14,12 @@ import { type RepoSettingsData, repoSettingsResource } from '../repo-detail/repo
 import { NoRunsEmptyState } from './run-history-list'
 import { RUNS_COME_FROM_GITHUB, runsCiOffer } from './runs-ci-offer-model'
 
-/** How the Runs page reaches GitHub; the route supplies the server calls. */
 export type RunsGitHubActions = {
-  /** Whether this server can connect repositories to GitHub. */
   configured: boolean
-  /** The settings resource's loader, which holds the GitHub connection. */
   loadSettings: (params: RepoParams, signal: AbortSignal) => Promise<RepoSettingsData>
   startAuthorization: (params: RepoParams) => Promise<GitHubAuthorizeResponse>
 }
 
-/**
- * The Runs page of a repository that has no runs yet. Without workflows of
- * its own or a GitHub link, it says runs come from GitHub Actions and lets a
- * maintainer connect GitHub right here, through the same flow as the CI
- * settings, reading the connection from the settings' cached resource.
- */
 export function RunsCiEmptyState({
   github,
   hasWorkflows,
@@ -68,7 +59,6 @@ export function RunsCiEmptyState({
     setError(null)
     setPending(true)
     try {
-      // Pending lasts until GitHub's authorization screen replaces this page.
       await openGitHubAuthorization(() => startAuthorization({ owner, repo: repoName }))
     } catch (cause) {
       setPending(false)

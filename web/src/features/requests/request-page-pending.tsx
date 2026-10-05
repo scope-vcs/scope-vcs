@@ -30,8 +30,6 @@ const PENDING_CHANGES: { id: string; length: TextSkeletonLength }[] = [
   { id: 'fourth', length: 'medium' },
 ]
 
-// Mirrors RequestDetailPage: the same header, checks row, description, and
-// details rail when the pane is wide enough for one.
 export function RequestDetailPagePending() {
   const { isSignedIn } = useAuth()
   const paneRef = useRef<HTMLDivElement>(null)
@@ -43,16 +41,10 @@ export function RequestDetailPagePending() {
           <TextSkeleton length="xlong" size="heading" />
           <div className="request-detail-header-secondary mt-4">
             <div className="request-detail-header-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs leading-5">
-              {/* Mergeability badge, branch, then author: the same pieces as
-                  the loaded row, so they wrap the same way. */}
               <BlockSkeleton className="h-5 w-40 rounded-md" />
-              {/* The branch row is as tall as its copy button. */}
               <TextSkeleton className="h-6 py-1.5" length="long" size="meta" />
               <TextSkeleton className="h-5 py-1" length="medium" size="meta" />
             </div>
-            {/* Everyone gets Changes, and Details when there is no rail.
-                Signed-in viewers also get the one lifecycle action, which
-                moves to a bottom bar on narrow panes, and the More menu. */}
             <div className="request-detail-header-actions flex min-w-0 items-center justify-end gap-2">
               <BlockSkeleton className="h-8 w-[6.5rem]" />
               {rail ? null : <BlockSkeleton className="h-8 w-24" />}
@@ -72,7 +64,6 @@ export function RequestDetailPagePending() {
         <div className={cn(rail && 'grid grid-cols-[minmax(0,1fr)_300px]')}>
           <div className="request-detail-document pt-4">
             <section className="min-w-0 border-b border-border px-5 pb-5 lg:px-7">
-              {/* Descriptions are set at leading-6. */}
               <TextSkeleton className="h-6 py-1" length="xlong" />
             </section>
             <div className="min-w-0">

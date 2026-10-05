@@ -160,7 +160,6 @@ impl Policy {
             if *visibility != Visibility::Public {
                 continue;
             }
-            // Check proper path ancestors, including root, rather than every rule.
             for (separator, _) in path.as_str().match_indices('/') {
                 let ancestor = if separator == 0 {
                     "/"

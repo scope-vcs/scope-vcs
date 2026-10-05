@@ -43,7 +43,6 @@ where
         .transpose()
 }
 
-/// The latest revision that moved the request to `head_oid`.
 pub async fn latest_revision_with_head<C>(
     conn: &C,
     request_id: &str,
@@ -84,7 +83,6 @@ where
         .collect()
 }
 
-/// Revision display positions keyed by revision id, without loading git snapshot metadata.
 pub async fn revision_positions_for_request<C>(
     conn: &C,
     request_id: &str,

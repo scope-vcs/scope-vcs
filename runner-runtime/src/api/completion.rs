@@ -1,5 +1,4 @@
 use super::{RuntimeClient, ensure_success};
-use crate::execute::replace_nul;
 use anyhow::Context as _;
 use scope_api_contract::{
     AttemptConclusionRequest, AttemptStatusResponse, CompleteAttemptRequest,
@@ -7,7 +6,7 @@ use scope_api_contract::{
 };
 use scope_domain::runs::{
     exit_code::SetupFailure,
-    step::{MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES, StepConclusion},
+    step::{StepConclusion, normalize_setup_failure_message},
 };
 
 impl RuntimeClient {
@@ -44,8 +43,7 @@ impl RuntimeClient {
     }
 
     pub fn complete_setup_failure(&self, message: &str) -> anyhow::Result<()> {
-        let mut message = replace_nul(message);
-        message.truncate(message.floor_char_boundary(MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES));
+        let message = normalize_setup_failure_message(message);
         self.complete(
             AttemptConclusionRequest::SetupFailed {
                 exit_code: SetupFailure::RuntimeSetup.exit_code(),

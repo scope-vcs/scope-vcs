@@ -15,11 +15,6 @@ const ALIGN_CLASS = {
   start: 'left-0 right-auto',
 } as const
 
-/**
- * A click-toggled panel anchored under its trigger. One dismissal contract for
- * every popup in the app: a pointer outside, Escape (focus returns to the
- * trigger), or keyboard focus leaving the panel all close it.
- */
 export function Popover({
   align = 'end',
   className,
@@ -27,7 +22,6 @@ export function Popover({
   panel,
   trigger,
 }: {
-  /** `auto` opens under the trigger's left edge and flips to its right edge when that would overflow. */
   align?: keyof typeof ALIGN_CLASS | 'auto'
   className?: string
   label: string
@@ -61,7 +55,6 @@ export function Popover({
     }
   }, [open])
 
-  // Measured before paint from the trigger, so the answer doesn't depend on the current edge.
   useLayoutEffect(() => {
     if (!open || align !== 'auto' || !panelRef.current || !triggerRef.current) return
     const left = triggerRef.current.getBoundingClientRect().left
@@ -76,8 +69,6 @@ export function Popover({
     <div
       className="relative"
       onBlur={(event) => {
-        // A null relatedTarget is a pointer on non-focusable content, which the
-        // document listener already handles; only a real focus move closes here.
         const next = event.relatedTarget
         if (open && next instanceof Node && !rootRef.current?.contains(next)) close()
       }}

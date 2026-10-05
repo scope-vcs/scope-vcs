@@ -4,10 +4,6 @@ import { CopyableCodeBlock } from '@/components/copyable-code-block'
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
-/**
- * The owner's empty state: how to get a first repository onto Scope from the
- * terminal. Visitors see the plain empty state in `RepoList` instead.
- */
 export function FirstRepositoryWalkthrough({
   cliInstallCommands,
   initialCliPlatform,
@@ -37,7 +33,7 @@ export function FirstRepositoryWalkthrough({
           <CopyableCodeBlock copyLabel="Copy init command" value="scope init" />
         </WalkthroughStep>
         <WalkthroughStep
-          description="Commit your project together with the generated Scope files, then publish. Once the push lands, reload this page to see the repository."
+          description="Commit your project, then publish. Once the push lands, reload this page to see the repository."
           number={3}
           title="Push your first version"
         >

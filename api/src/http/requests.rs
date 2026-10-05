@@ -7,8 +7,9 @@ use crate::{
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
+        request_identity, request_invitee,
         request_merge::{self, MergeRequestCommand, MergeRequestResult},
-        request_submit,
+        request_start, request_submit,
     },
 };
 use axum::{
@@ -35,7 +36,6 @@ use scope_domain::{
     },
 };
 use scope_postgres::db::EditRequestIdentityCommand;
-use scope_product_analytics::ProductEvent;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -151,16 +151,10 @@ pub(crate) async fn submit_request(
         visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let mutation = request_submit::submit_request(&state, &repo, &request, &user.id).await?;
-    lifecycle_response(
-        &state,
-        &repo,
-        access,
-        &user.id,
-        mutation.request,
-        current_main_oid,
-        RepoChangeReason::RequestSubmitted,
-    )
-    .await
+    let viewer = request_viewer(&state, &mutation.request.id, access, Some(&user.id)).await?;
+    let request =
+        request_response_for_viewer(&state, mutation.request, viewer, current_main_oid).await?;
+    Ok(Json(RequestMutationResponse { request }))
 }
 
 pub(crate) async fn merge_request(
@@ -200,23 +194,6 @@ async fn merge_response(
     .await?;
     let request =
         request_response_for_viewer(state, result.request, viewer, current_main_oid).await?;
-    Ok(Json(RequestMutationResponse { request }))
-}
-
-async fn lifecycle_response(
-    state: &AppState,
-    repo: &RepositoryAccessContext,
-    access: RepositoryAccess,
-    viewer_user_id: &str,
-    request: Request,
-    current_main_oid: Option<String>,
-    refresh_reason: RepoChangeReason,
-) -> Result<Json<RequestMutationResponse>, ApiError> {
-    let viewer = request_viewer(state, &request.id, access, Some(viewer_user_id)).await?;
-    let request = request_response_for_viewer(state, request, viewer, current_main_oid).await?;
-    state
-        .publish_request_summary_refresh(&repo.incarnation(), refresh_reason)
-        .await;
     Ok(Json(RequestMutationResponse { request }))
 }
 
@@ -286,10 +263,10 @@ pub(crate) async fn start_request(
         .ok_or_else(|| ApiError::conflict("repo has no main branch to base a request on"))?;
     let request_id = crate::persistence_ids::generate_prefixed_id("req")?;
     let now_unix = unix_now()?;
-    let mutation = state
-        .metadata
-        .requests()
-        .start_request(StartRequestInput {
+    let mutation = request_start::start_request(
+        &state,
+        &repo,
+        StartRequestInput {
             id: request_id.clone(),
             repo_id: repo.record.id.clone(),
             name: input.name,
@@ -300,24 +277,13 @@ pub(crate) async fn start_request(
             base_main_oid,
             event_id: crate::persistence_ids::generate_prefixed_id("event_request_started")?,
             now_unix,
-        })
-        .await?;
-    state
-        .product_analytics
-        .capture(ProductEvent::request_started(
-            &user.id,
-            &repo.record.incarnation_id,
-            &mutation.request.id,
-            audience,
-            request_actor_role(access),
-        ));
+        },
+    )
+    .await?;
     let current_main_oid = committed_main_oid_for_access(&repo, access)?;
     let viewer = request_viewer(&state, &mutation.request.id, access, Some(&user.id)).await?;
     let request =
         request_response_for_viewer(&state, mutation.request, viewer, current_main_oid).await?;
-    state
-        .publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestStarted)
-        .await;
     Ok(Json(RequestMutationResponse { request }))
 }
 
@@ -332,10 +298,10 @@ pub(crate) async fn edit_request_identity(
     let (request, _) =
         visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    let mutation = state
-        .metadata
-        .requests()
-        .edit_request_identity(EditRequestIdentityCommand {
+    let mutation = request_identity::edit_request_identity(
+        &state,
+        &repo,
+        EditRequestIdentityCommand {
             request_id: request.id,
             actor_user_id: user.id.clone(),
             event_id: crate::persistence_ids::generate_prefixed_id(
@@ -345,17 +311,12 @@ pub(crate) async fn edit_request_identity(
             description_markdown: input.description_markdown,
             expected_description_markdown: input.expected_description_markdown,
             now_unix: unix_now()?,
-        })
-        .await?;
+        },
+    )
+    .await?;
     let viewer = request_viewer(&state, &mutation.request.id, access, Some(&user.id)).await?;
     let request =
         request_response_for_viewer(&state, mutation.request, viewer, current_main_oid).await?;
-    state
-        .publish_request_summary_refresh(
-            &repo.incarnation(),
-            RepoChangeReason::RequestIdentityEdited,
-        )
-        .await;
     Ok(Json(RequestMutationResponse { request }))
 }
 
@@ -369,16 +330,17 @@ pub(crate) async fn add_request_invitee(
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    let invitee = state
-        .metadata
-        .requests()
-        .add_request_invitee(scope_postgres::db::AddRequestInviteeCommand {
+    let invitee = request_invitee::add_request_invitee(
+        &state,
+        &repo,
+        scope_postgres::db::AddRequestInviteeCommand {
             request_id: request_id.clone(),
             actor_user_id: user.id.clone(),
             target_handle: input.handle,
             now_unix: unix_now()?,
-        })
-        .await?;
+        },
+    )
+    .await?;
     invitee_mutation_response(
         &state,
         &repo,
@@ -386,7 +348,6 @@ pub(crate) async fn add_request_invitee(
         request_id,
         invitee,
         current_main_oid,
-        RepoChangeReason::RequestInviteeAdded,
     )
     .await
 }
@@ -401,15 +362,16 @@ pub(crate) async fn remove_request_invitee(
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    let invitee = state
-        .metadata
-        .requests()
-        .remove_request_invitee(scope_postgres::db::RemoveRequestInviteeCommand {
+    let invitee = request_invitee::remove_request_invitee(
+        &state,
+        &repo,
+        scope_postgres::db::RemoveRequestInviteeCommand {
             request_id: request_id.clone(),
             actor_user_id: user.id.clone(),
             target_handle: input.handle,
-        })
-        .await?;
+        },
+    )
+    .await?;
     invitee_mutation_response(
         &state,
         &repo,
@@ -417,7 +379,6 @@ pub(crate) async fn remove_request_invitee(
         request_id,
         invitee,
         current_main_oid,
-        RepoChangeReason::RequestInviteeRemoved,
     )
     .await
 }
@@ -452,7 +413,6 @@ async fn invitee_mutation_response(
     request_id: String,
     invitee: scope_postgres::db::RequestInviteeRead,
     current_main_oid: Option<String>,
-    refresh_reason: RepoChangeReason,
 ) -> Result<Json<RequestInviteeMutationResponse>, ApiError> {
     let request = state
         .metadata
@@ -463,9 +423,6 @@ async fn invitee_mutation_response(
     let viewer = request_viewer(state, &request.id, repo.access, Some(viewer_user_id)).await?;
     let request = request_response_for_viewer(state, request, viewer, current_main_oid).await?;
     let invitee = request_invitee_response(invitee);
-    state
-        .publish_request_summary_refresh(&repo.incarnation(), refresh_reason)
-        .await;
     Ok(Json(RequestInviteeMutationResponse { request, invitee }))
 }
 
@@ -541,7 +498,6 @@ async fn request_response_for_viewer(
         can_close: decision.can_close,
         can_merge: decision.can_merge,
     };
-    // A summary describes the request; only a look at its checks evaluates a head.
     let checks = crate::use_cases::request_checks::recorded_checks_view(state, &request)
         .await?
         .outcome;

@@ -21,9 +21,8 @@ const offer = (patch: Partial<Parameters<typeof runsCiOffer>[0]> = {}) => runsCi
   ...patch,
 })
 
-test('a maintainer of a repository without runs or GitHub is offered to connect it', () => {
+test('a maintainer of a repository without runs or GitHub is offered to connect it, without the button until the connection loads', () => {
   assert.deepEqual(offer(), { kind: 'connect', canConnect: true })
-  // Until the connection loads, the sentence shows without the button.
   assert.deepEqual(offer({ github: null }), { kind: 'connect', canConnect: false })
 })
 

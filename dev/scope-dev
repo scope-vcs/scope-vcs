@@ -181,12 +181,10 @@ local_database_url() {
   printf '%s\n' "$value"
 }
 
-# An origin another device uses to reach a local service, or empty.
 get_tailnet_origin() {
   local name="$1" value
   value="$(read_dotenv_value "$ROOT/.env.local" "$name")"
   value="${value%/}"
-  # The media gateway only trusts https origins beyond localhost.
   if [[ -n "$value" && ! "$value" =~ ^https://[^/]+$ ]]; then
     echo "$name must be an https origin such as https://host.example.ts.net:8443, got $value" >&2
     exit 1
@@ -279,7 +277,6 @@ write_api_runner() {
   fi
 
   write_runner_preamble "$runner" "$ROOT"
-  # The runner holds the database URL and GitHub App secrets.
   chmod 700 "$runner"
   cat >> "$runner" <<EOF
 export SCOPE_ENV="local"

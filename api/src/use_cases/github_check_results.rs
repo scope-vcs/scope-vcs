@@ -1,11 +1,3 @@
-//! Reads what GitHub reports for the commits request checks and connection
-//! tests watch. A webhook
-//! delivery prompts a read of the commit it names, a reconciler reads open
-//! requests' commits in case a delivery never came, and a merge reads them
-//! again when what Scope stored is not recent. Either way GitHub's API is the
-//! source: each read replaces what Scope stored for the commit, unless a
-//! later read was stored first.
-
 use crate::{
     error::ApiError,
     persistence::unix_now,
@@ -23,17 +15,11 @@ use scope_postgres::db::GitHubCheckCommit;
 use std::{collections::BTreeSet, time::Duration};
 
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
-/// How long a commit goes without a reconciler read while its checks are
-/// pending, and once they have settled.
 const PENDING_REFRESH_SECS: u64 = 2 * 60;
 const SETTLED_REFRESH_SECS: u64 = 10 * 60;
 const RECONCILE_BATCH_SIZE: u64 = 20;
-/// A merge trusts stored results this recent; older ones are read again,
-/// because a re-run that failed may not have been delivered.
 const MERGE_FRESHNESS_SECS: u64 = 60;
 
-/// A delivery said a commit's checks changed. Repositories and commits Scope
-/// does not watch are acknowledged and ignored.
 pub(crate) async fn refresh_checks_for_delivery(
     state: &AppState,
     github_repository_id: u64,
@@ -58,9 +44,6 @@ pub(crate) async fn refresh_checks_for_delivery(
     refresh_commit_checks(state, &connection, commit_oid).await
 }
 
-/// Reads the request head's GitHub checks again before a merge relies on
-/// them, unless what Scope stored was read within the last minute. A read
-/// that fails holds the merge: an error here is retryable.
 pub(crate) async fn confirm_recent_github_checks(
     state: &AppState,
     request: &Request,
@@ -76,12 +59,9 @@ pub(crate) async fn confirm_recent_github_checks(
     else {
         return Ok(());
     };
-    // A link that is gone already makes the checks a configuration error.
     let Some(connection) = connected(state, &request.repo_id).await? else {
         return Ok(());
     };
-    // A read still asking GitHub means something changed there, so the stored
-    // answer is not trusted however recent it is.
     let read_at = state
         .metadata
         .requests()
@@ -119,9 +99,6 @@ async fn connected(state: &AppState, repo_id: &str) -> Result<Option<GitHubConne
         .filter(GitHubConnection::is_connected))
 }
 
-/// Replaces the stored check runs of a commit with what GitHub reports, then
-/// tells open views and auto-merge to look again. The read is numbered
-/// before GitHub is asked, so a slower, older read cannot replace it.
 pub(crate) async fn refresh_commit_checks(
     state: &AppState,
     connection: &GitHubConnection,
@@ -170,15 +147,10 @@ pub(crate) async fn refresh_commit_checks(
             )
             .await;
     }
-    // A passing check can complete an auto-merge, and a failing one stops it.
     state.auto_merge_wakeup.notify_one();
     Ok(())
 }
 
-/// One bounded pass over started GitHub checks of open requests. A commit is
-/// read every two minutes while its checks are pending and every ten once
-/// they settle, so a failing re-run whose delivery was lost is still seen.
-/// Returns how many commits were read.
 pub(crate) async fn reconcile_github_checks_once(
     state: &AppState,
     now_unix: u64,
@@ -234,8 +206,6 @@ pub(crate) async fn reconcile_github_checks_once(
     Ok(refreshed)
 }
 
-/// Whether any open request testing the commit still waits on its checks.
-/// Requests can share a commit and require different checks.
 async fn any_checks_pending(
     state: &AppState,
     commit: &GitHubCheckCommit,
@@ -268,7 +238,6 @@ impl AppState {
                 let pass = async {
                     state.metadata.admin().readiness_check().await?;
                     let now = unix_now()?;
-                    // Neither pass waits on the other's failure.
                     let checks = reconcile_github_checks_once(&state, now).await;
                     let setup_checks =
                         github_setup_checks::reconcile_github_setup_checks_once(&state, now).await;

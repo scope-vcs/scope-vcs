@@ -30,7 +30,6 @@ async function withLanding(run, pageOptions = {}) {
   })
 }
 
-/** Waits until the lens radius, in page pixels, is inside the given bounds. */
 async function waitForRadius(page, { above = -Infinity, below = Infinity }) {
   await page.waitForFunction(({ selector, above, below }) => {
     const layer = document.querySelector(selector)
@@ -150,7 +149,6 @@ test('without JavaScript the landing page keeps the native cursor', async () => 
 
 test('on touch screens only the lens rim catches touches', async () => {
   await withLanding(async (page) => {
-    // Playwright's click() moves an emulated mouse onto the theme toggle, where the lens closes.
     await page.mouse.move(200, 700)
     await waitForRadius(page, { above: 100 })
     const hits = await page.locator(privateLayer).evaluate((layer) => {

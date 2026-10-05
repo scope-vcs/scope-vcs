@@ -20,7 +20,7 @@ import {
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
-import { initializeRunHistory, loadMoreRunHistory, refreshRunHistory, runHistoryCacheKey, runHistoryResource } from './run-history-cache'
+import { initializeRunHistory, loadMoreRunHistory, refreshRunHistory, runHistoryCacheKey, runHistoryResource, type RunPageLoader } from './run-history-cache'
 import { runWorkflowsResource } from './run-workflows-resource'
 
 const HISTORY_CHANGES = ['Created', 'StatusChanged'] as const
@@ -32,9 +32,9 @@ type RunPageResources = {
 }
 
 type RepositoryRunsPageProps = {
-  /** How an empty page offers to connect GitHub. */
   github: RunsGitHubActions | null
   initialResources: RunPageResources | null
+  loadPage: RunPageLoader
   loadHistory: (
     input: RepoRunHistoryInput,
     signal?: AbortSignal,
@@ -54,13 +54,14 @@ export function RepositoryRunsPage(props: RepositoryRunsPageProps) {
     ? repoResourceScope(repo, userId ?? null)
     : null
   const cacheKey = scope ? runHistoryCacheKey(scope, props.workflow) : null
-  return <RepositoryRunsPageContent github={props.github} initialResources={props.initialResources} loadHistory={props.loadHistory} loadWorkflows={props.loadWorkflows} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} scope={scope} />
+  return <RepositoryRunsPageContent github={props.github} initialResources={props.initialResources} loadPage={props.loadPage} loadHistory={props.loadHistory} loadWorkflows={props.loadWorkflows} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} scope={scope} />
 }
 
 function RepositoryRunsPageContent({
   cacheKey,
   github,
   initialResources,
+  loadPage,
   loadHistory,
   loadWorkflows,
   params,
@@ -94,9 +95,9 @@ function RepositoryRunsPageContent({
   const refreshRuns = useRunLiveRefresh({
     acceptedChanges: HISTORY_CHANGES,
     mutable: history !== null,
-    refresh: useCallback(async () => {
-      await refreshRunHistory({ key, input, loadHistory })
-    }, [key, input, loadHistory]),
+    refresh: useCallback(async (reasons) => {
+      await refreshRunHistory({ key, input, loadHistory, loadPage }, reasons.size === 1 && reasons.has('Recovery'))
+    }, [key, input, loadHistory, loadPage]),
   })
   const loadMore = () => loadMoreRunHistory({ key, input, loadHistory })
   const filteredRuns = useMemo(() => history
@@ -172,7 +173,6 @@ function RepositoryRunsPageContent({
               empty={github && !workflow ? (
                 <RunsCiEmptyState
                   github={github}
-                  // Native workflows count only where Scope may run them.
                   hasWorkflows={nativeRunsAvailable && workflows.workflows.length > 0}
                   params={params}
                 />

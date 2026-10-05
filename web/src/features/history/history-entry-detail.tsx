@@ -22,7 +22,6 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
   selectedVisibilityId: string | null
 }) {
   const { resource, onCloseDiff, onRetryDetail, onSelectVisibility, selectedFilePath, selectedVisibilityId } = props
-  // With nothing selected the file list is the content, so small screens start with it open.
   const navigation = useChangedFileNavigation(onCloseDiff, selectedFilePath === null)
   if (resource.status === 'loading') {
     return (

@@ -7,13 +7,6 @@ import type { RepositoryRunStepResponse } from '@/api/types.generated'
 
 const FOLLOW_THRESHOLD_PX = 32
 
-/**
- * A single step's output, led by the command that produced it. The output
- * grows at full length inside whatever scrolls the page, so "following" means
- * keeping the end of this output in view. While a running step's end is out of
- * view, a button counts the lines that arrived since. Callers key this by step
- * so selecting a different step starts following again from a clean state.
- */
 export function RunLogView({
   id,
   logs,
@@ -28,8 +21,6 @@ export function RunLogView({
   const logState = logs.state
   const text = logState.logs.map((log) => log.text).join('')
   const [following, setFollowing] = useState(true)
-  // The log position the output had reached when the reader scrolled away.
-  // Positions stay stable while the cached window drops its oldest chunks.
   const [pausedAt, setPausedAt] = useState<number | null>(null)
   const lastPosition = logState.logs.at(-1)?.position ?? -1
   const lastPositionRef = useRef(lastPosition)
@@ -54,8 +45,6 @@ export function RunLogView({
     return () => observer.disconnect()
   }, [])
 
-  // Layout effects so the scroll lands before paint, and before the observer
-  // reports the end of the output as out of view.
   useLayoutEffect(() => {
     if (!logState.viewingEarlier) return
     sectionRef.current?.scrollIntoView({ block: 'start' })
@@ -111,8 +100,6 @@ export function RunLogView({
       </pre>
       <div aria-hidden="true" ref={endRef} />
       {logState.viewingEarlier || newLines > 0 ? (
-        // A zero-height sticky row whose button grows upward from its bottom
-        // edge, so it floats over the output without adding to its length.
         <div className="sticky bottom-4 z-10 flex h-0 items-end justify-center">
           <Button
             className="rounded-full font-sans shadow-[var(--shadow-pop)]"

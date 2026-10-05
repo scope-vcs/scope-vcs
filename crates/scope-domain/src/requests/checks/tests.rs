@@ -98,7 +98,6 @@ fn approval_starts_only_native_runs_and_github_checks_need_none() {
     let github_only =
         RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci / test")], 1).unwrap();
     assert_eq!(github_only.tested_oid, HEAD);
-    // Approving GitHub checks starts no run: it sends the tested commit to GitHub.
     let mut awaiting_github =
         RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![github("ci / test")], 1)
             .unwrap();
@@ -235,12 +234,10 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
     let success = Some(GitHubCheckConclusion::Success);
     let failure = Some(GitHubCheckConclusion::Failure);
 
-    // A required name with no run is pending, not failed.
     assert_eq!(
         outcome(vec![github_run(HEAD, "test", 1, success)]),
         RequestChecksOutcome::Pending
     );
-    // A green re-run replaces the failed run before it.
     assert_eq!(
         outcome(vec![
             github_run(HEAD, "test", 1, failure),
@@ -249,7 +246,6 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
         ]),
         RequestChecksOutcome::Clear
     );
-    // The run GitHub created last decides, in whatever order the runs arrive.
     assert_eq!(
         outcome(vec![
             github_run(HEAD, "test", 5, failure),
@@ -258,7 +254,6 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
         ]),
         RequestChecksOutcome::Failed
     );
-    // A run still in progress keeps the name pending even after an older pass.
     assert_eq!(
         outcome(vec![
             github_run(HEAD, "test", 1, success),
@@ -267,7 +262,6 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
         ]),
         RequestChecksOutcome::Pending
     );
-    // A green run on another commit does not count for the tested one.
     assert_eq!(
         outcome(vec![
             github_run(OLD_HEAD, "test", 1, success),
@@ -290,7 +284,6 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
         ),
         RequestChecksOutcome::ConfigurationError
     );
-    // A head still awaiting native approval cannot pass its GitHub checks either.
     let awaiting = RequestCheckEvaluation::awaiting_approval(
         "req_1",
         HEAD,
@@ -423,7 +416,6 @@ fn withdrawing_native_runs_ends_only_a_wait() {
     let none = RequestCheckEvaluation::no_checks("req_1", HEAD, 5).unwrap();
     assert_eq!(none.withdraw_native_runs(&[], 9).unwrap(), None);
 
-    // GitHub checks never wait on native runs.
     for github_only in [
         RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![github("test")], 5).unwrap(),
         RequestCheckEvaluation::started("req_1", HEAD, vec![github("test")], 5).unwrap(),
@@ -500,7 +492,6 @@ fn a_pushed_commit_without_any_run_says_no_workflow_started_after_a_while() {
         message(Vec::new(), Some(&pushed), deadline).as_deref(),
         Some(NO_GITHUB_WORKFLOWS_STARTED)
     );
-    // Any run on the tested commit, even under another name, shows workflows start.
     assert_eq!(
         message(
             vec![github_run(HEAD, "lint", 1, None)],
@@ -509,7 +500,6 @@ fn a_pushed_commit_without_any_run_says_no_workflow_started_after_a_while() {
         ),
         None
     );
-    // A run on an older commit does not.
     assert_eq!(
         message(
             vec![github_run(OLD_HEAD, "ci", 1, None)],
@@ -519,7 +509,6 @@ fn a_pushed_commit_without_any_run_says_no_workflow_started_after_a_while() {
         .as_deref(),
         Some(NO_GITHUB_WORKFLOWS_STARTED)
     );
-    // Nothing is said until the tested commit reached GitHub.
     let sending = push(HEAD, GitHubPushState::Queued, None);
     let older = push(OLD_HEAD, GitHubPushState::Succeeded, None);
     assert_eq!(message(Vec::new(), Some(&sending), deadline), None);
@@ -614,7 +603,6 @@ fn the_push_status_follows_the_latest_push_of_the_tested_commit() {
         Some(GitHubPushStatus::AwaitingApproval)
     );
     let started = RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci")], 1).unwrap();
-    // A push of an older head says nothing about this one.
     assert_eq!(
         GitHubPushStatus::for_evaluation(
             &started,
@@ -647,7 +635,6 @@ fn the_push_status_follows_the_latest_push_of_the_tested_commit() {
             error: "refused".into()
         })
     );
-    // A native evaluation awaiting approval sends nothing to GitHub.
     let native =
         RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![check("checks", None)], 1)
             .unwrap();
@@ -671,8 +658,6 @@ fn failed_pushes_back_off_and_then_give_up() {
     assert_eq!(retry_at(4), Some(1900));
     assert_eq!(retry_at(5), None);
     assert_eq!(retry_at(0), None);
-    // A connection test's push of main reports its first failure, but
-    // deleting the setup branch afterwards retries like any job.
     let setup = GitHubPush {
         branch: GitHubBranch::SetupCheck,
         ..push(HEAD, GitHubPushState::Running, None)
@@ -737,11 +722,8 @@ fn a_check_commit_counts_only_while_private_main_is_the_one_it_was_built_on() {
     };
     assert_eq!(outcome(&"d".repeat(40)), RequestChecksOutcome::Clear);
     assert!(!evaluation.needs_new_check_commit(Some(&"d".repeat(40))));
-    // A green run on a check commit built on an older private main says nothing
-    // about what the merge would produce now.
     assert_eq!(outcome(&"f".repeat(40)), RequestChecksOutcome::Pending);
     assert!(evaluation.needs_new_check_commit(Some(&"f".repeat(40))));
-    // A head tested as it is never goes stale.
     let head =
         RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci / test")], 10).unwrap();
     assert!(!head.needs_new_check_commit(Some(&"f".repeat(40))));

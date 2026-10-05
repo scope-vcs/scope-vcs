@@ -1,16 +1,9 @@
-//! Moves maintainers' connection tests forward. Each pass reads, for every
-//! test waiting on GitHub, the workflow runs on the setup branch and the check
-//! runs of the tested commit, then lets the domain decide whether the test
-//! ended. A test that ended queues the deletion of its branch, and open
-//! settings pages refresh to show the result.
-
 use super::{github_check_results::refresh_commit_checks, github_workflow_runs};
 use crate::{error::ApiError, repo_events::RepoChangeReason, state::AppState};
 use scope_domain::github_setup_check::{GitHubSetupCheck, GitHubSetupCheckState};
 
 const BATCH_SIZE: u64 = 20;
 
-/// One pass over running tests. Returns how many ended.
 pub(crate) async fn reconcile_github_setup_checks_once(
     state: &AppState,
     now_unix: u64,
@@ -64,8 +57,6 @@ async fn read_from_github(state: &AppState, check: &GitHubSetupCheck) -> Result<
     refresh_commit_checks(state, &connection, &check.commit_oid).await
 }
 
-/// The test shows in the connection's settings, which have no repository
-/// version of their own.
 pub(crate) async fn publish_setup_check_change(
     state: &AppState,
     repo_id: &str,

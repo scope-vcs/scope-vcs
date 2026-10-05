@@ -16,12 +16,6 @@ static PENDING_REAPER_SIGNAL: AtomicI32 = AtomicI32::new(0);
 #[cfg(unix)]
 const REAPER_IDLE_POLL: Duration = Duration::from_millis(25);
 
-/// When the service itself is PID 1, respawn it behind a minimal init process.
-///
-/// Railway can override image entrypoints, so relying on an external init is
-/// not sufficient. The parent created here owns only the service process and
-/// adopted descendants; the service remains free to wait on its direct Git
-/// children without a competing global `waitpid` loop.
 pub fn install_pid1_reaper_if_needed() -> std::io::Result<()> {
     use std::os::unix::process::CommandExt;
 
@@ -68,8 +62,6 @@ fn reap_service_process(service_pid: u32) -> std::io::Result<()> {
     loop {
         forward_pending_signal(service_pid);
         let Some((reaped, status)) = reap_exited_child()? else {
-            // A signal can arrive after the pending check. Never block in
-            // waitpid here: the next poll must forward an already-handled signal.
             thread::sleep(REAPER_IDLE_POLL);
             continue;
         };
@@ -77,8 +69,6 @@ fn reap_service_process(service_pid: u32) -> std::io::Result<()> {
             continue;
         }
 
-        // The service has stopped. Kill anything still in its process group,
-        // reap every adopted descendant, then preserve the service exit code.
         // SAFETY: the negative pid targets only the service process group.
         unsafe {
             libc::kill(-service_pid, libc::SIGKILL);
@@ -111,9 +101,7 @@ fn drain_adopted_descendants() {
             let Ok(process_id) = i32::try_from(process_id) else {
                 continue;
             };
-            // Adopted Git commands lead their own process groups, while a
-            // non-leader descendant still needs a direct kill. Both calls are
-            // intentionally best-effort during container shutdown.
+            // SAFETY: both pids name descendants this reaper adopted, as a group leader or a direct child.
             unsafe {
                 libc::kill(-process_id, libc::SIGKILL);
                 libc::kill(process_id, libc::SIGKILL);
@@ -276,8 +264,6 @@ pub(crate) fn terminate_and_reap(child: &mut Child) {
     let _ = child.wait();
 }
 
-/// Owns a spawned process until it has exited or has been killed and reaped.
-/// This also covers unwinding while setting up or joining its I/O threads.
 pub(crate) struct ChildGuard {
     child: Child,
     armed: bool,

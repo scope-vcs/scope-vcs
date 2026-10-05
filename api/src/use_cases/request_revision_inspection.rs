@@ -68,8 +68,6 @@ pub(crate) fn inspect_request_paths(
     Ok((paths, hidden))
 }
 
-/// Reads the first-parent changes of `commit_oid` and reports the paths this
-/// viewer may read plus whether any change was hidden from them.
 pub(crate) fn request_commit_visible_paths(
     raw_repo: &FsPath,
     policy: &Policy,
@@ -109,9 +107,6 @@ fn visit_request_changes(
             hidden = true;
             continue;
         }
-        // Visibility wins over status: a change this viewer may not read is skipped
-        // before its status is validated, so an unsupported status on a hidden path
-        // never surfaces as an error.
         visit(path, scope_path, request_change_kind(status)?, &columns);
     }
     Ok(hidden)
@@ -133,8 +128,6 @@ fn git_mode(mode: &str) -> Option<String> {
     (mode != "000000").then(|| mode.to_string())
 }
 
-/// A revision's commits follow `commits_after_oid`, never the old head of a push that
-/// rewrote history: the revision's repository only holds the new head's history.
 pub(crate) fn commit_belongs_to_revision(
     raw_repo: &FsPath,
     revision: &RequestRevision,
@@ -172,8 +165,6 @@ fn git_commit_exists(raw_repo: &FsPath, commit_oid: &str) -> Result<bool, ApiErr
     }
 }
 
-/// Reads a commit's raw changes against its first parent, or against the empty
-/// tree for a root commit.
 pub(crate) fn request_commit_changes(
     raw_repo: &FsPath,
     commit_oid: &str,

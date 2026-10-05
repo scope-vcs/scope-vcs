@@ -6,8 +6,6 @@ import { resetViewerState } from '@/lib/viewer-state'
 
 let activeViewer: string | null = null
 
-// Caches are keyed by viewer, but a viewer change still discards everything
-// the previous viewer loaded so nothing of theirs lingers in memory.
 export function ViewerSessionBoundary() {
   const { isLoaded, userId } = useAuth()
   const router = useRouter()
@@ -18,7 +16,6 @@ export function ViewerSessionBoundary() {
     const firstSignedInViewer = activeViewer === null && userId !== null
     if (viewerChanged) {
       resetViewerState()
-      // Drafts persist in session storage, so they keep their own viewer lifecycle.
       activateRequestAttachmentDraftViewer(viewerId)
     }
     activeViewer = viewerId
@@ -31,13 +28,10 @@ export function ViewerSessionBoundary() {
       pending = true
       void router.invalidate({ sync: true }).then(() => {
         if (!active) return
-        // Router invalidation resolves after committing loader errors too.
         if (router.state.matches.some((match) => match.status === 'error' || match.status === 'notFound')) return
         window.removeEventListener('focus', retry)
         window.removeEventListener('online', retry)
-      }).catch(() => {
-        // Retain the listeners so an interrupted refresh can run again.
-      }).finally(() => { pending = false })
+      }).catch(() => {}).finally(() => { pending = false })
     }
     window.addEventListener('focus', retry)
     window.addEventListener('online', retry)

@@ -1,9 +1,3 @@
-//! Metadata persistence entry point.
-//!
-//! Table row shapes live in `entities/*`, while ordered schema transitions live
-//! in `migrations/*`. Runtime behavior stays in the focused DB modules that own
-//! the workflow being persisted.
-
 mod account_deletion;
 mod auth;
 mod cache_service;
@@ -77,6 +71,7 @@ mod request_discussion_rows;
 mod request_discussions;
 mod request_invitees;
 mod request_lifecycle_commands;
+mod request_lifecycle_effects;
 mod request_media;
 mod request_merge;
 mod request_queue;

@@ -12,7 +12,6 @@ def utc(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-# 2026-10-05 is a Monday; 09:00 in Chicago is 14:00 UTC.
 BEFORE_DUE = utc("2026-10-05T13:59:00Z")
 DUE = utc("2026-10-05T14:00:00Z")
 

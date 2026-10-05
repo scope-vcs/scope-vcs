@@ -1,4 +1,3 @@
-//! Read-only checkout status and setup diagnostics.
 use crate::api::ApiSession;
 use crate::{api, context, execution, git_repo::GitRepo};
 use serde::Serialize;
@@ -234,16 +233,6 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
             ),
         }
         inspect_visibility(&mut report, repo);
-        if let Some(head) = report
-            .local
-            .as_ref()
-            .and_then(|local| local.head_oid.clone())
-        {
-            match crate::agent_context::ensure_repo_rules_ready_for_push(&repo.root, &head) {
-                Ok(()) => record(&mut report, "rules", DiagnosticState::Ok, "Contribution rules and agent files are synchronized in the worktree and committed HEAD".into(), None),
-                Err(error) => record(&mut report, "rules", DiagnosticState::Problem, error.to_string(), Some("Run scope rules sync, then commit the generated files".into())),
-            }
-        }
     } else {
         record(
             &mut report,

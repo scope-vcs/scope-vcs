@@ -6,7 +6,6 @@ use super::{
 };
 use crate::{content::SourceBlob, error::DomainError};
 
-/// Existing identities and public drafts for the requested repository and author.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StartRequestFacts {
     pub request_id_exists: bool,
@@ -65,15 +64,10 @@ pub struct RecordRequestRevisionInput {
     pub now_unix: u64,
 }
 
-/// What Git says about a new request head. The caller reads these facts from the
-/// request's main view: private main for a private request, public main for a public one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestRevisionGitFacts {
-    /// The new head contains the old head.
     pub contains_old_head: bool,
-    /// The newest main commit the new head contains, when main could be read.
     pub contained_main_oid: Option<String>,
-    /// `contained_main_oid` descends from the request's recorded base.
     pub contained_main_descends_from_base: bool,
 }
 
@@ -251,9 +245,6 @@ pub fn record_request_revision(
     })
 }
 
-/// A revision moves the request base forward to the newest main commit its head contains,
-/// so main's own changes stop counting as request changes. The base never moves onto
-/// history that does not descend from it.
 pub fn request_base_after_revision<'a>(
     request: &'a Request,
     facts: &'a RequestRevisionGitFacts,

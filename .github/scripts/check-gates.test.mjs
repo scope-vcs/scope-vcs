@@ -11,8 +11,6 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const manifest = JSON.parse(read('.github/deployment-services.json'));
 const gates = ['backend', 'cli', 'cli-bundle', 'web', 'contract', 'policy', 'integration', 'ops', 'dependency-analyzer'];
 
-// Capture the commands actually executed, without requiring installed toolchains,
-// credentials, or a running stack. The scripts remain the command inventory.
 function commands(gate, ...args) {
   const dir = mkdtempSync(resolve(tmpdir(), 'scope-gates-'));
   try {
@@ -28,7 +26,6 @@ function commands(gate, ...args) {
 
 test('the backend gate covers the whole workspace and the API feature suites explicitly', () => {
   const backend = commands('backend');
-  // Advisories run before the tests so a vulnerable dependency fails fast.
   assert.ok(backend.includes('cargo deny --locked check advisories'));
   assert.ok(backend.indexOf('cargo deny --locked check advisories') < backend.indexOf('cargo test --workspace --locked'));
   assert.ok(backend.includes('cargo test --workspace --locked'));
@@ -48,7 +45,6 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
   assert.ok(cliCommands.includes('cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml check advisories'));
   assert.ok(cliCommands.includes('cargo test --manifest-path cli/Cargo.toml --locked'));
   assert.ok(cliCommands.includes('cargo clippy --manifest-path cli/Cargo.toml --all-targets --locked -- -D warnings'));
-  // The distribution matrix owns every release build; the CLI gate must not add one.
   assert.ok(!cliCommands.some((command) => command.includes('--release')), cliCommands.join('\n'));
   const bundleCommands = commands('cli-bundle');
   assert.ok(bundleCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope --bin scope-cli-service'));
@@ -73,17 +69,11 @@ test('local and GitHub callers use the shared inventory', () => {
   assert.doesNotMatch(read('.github/workflows/scope-web-ci.yml'), /rust-toolchain|rust-cache/);
 });
 
-// Suites that need tools the shared gates do not install, with the workflow
-// that runs them instead.
 const testsOutsideSharedGates = new Map([
-  // Needs cryptography; recovery runs it before each capture.
   ['deploy/aws/recovery/tests/test_recovery.py', '.github/workflows/recovery-execute.yml'],
-  // Builds the release images with Docker; ops only checks its syntax.
   ['deploy/railway/test-runtime-containers.sh', null],
 ]);
 
-// A gate runs a test file directly, or through a unittest discovery that
-// starts at or above its directory and whose pattern matches it.
 function runsTest(command, path) {
   const args = command.split(' ');
   if (args.includes('discover')) {
@@ -111,12 +101,8 @@ test('every deployment, benchmark, and developer tooling test is run by a shared
   }
 });
 
-// Independent jobs run the operations and policy gates on every pull request and
-// release, so their inputs need no component lane. Every other gate input must
-// select the lane whose artifact it shapes.
 const alwaysOnGateInputs = [
   /^deploy\/railway\/(maintenance\.Dockerfile|test-runtime-containers\.sh)$/,
-  // railway-ssh.test.mjs runs the pinned OpenSSH wrapper in the operations gate.
   /^deploy\/railway\/(ssh-bin\/ssh|ssh_known_hosts)$/,
   /^bench\//, /^deploy\/(aws|postgres|automation)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py|install-test-postgres\.sh)$/,
@@ -125,8 +111,6 @@ const alwaysOnGateInputs = [
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 
-// A deployment script is covered by the operations or policy gates when they run
-// it, run its test, or run a script that loads it.
 function scriptsCoveredByAlwaysOnGates() {
   const commandText = ['ops', 'policy'].flatMap((gate) => commands(gate)).join('\n');
   const scripts = readdirSync(resolve(root, '.github/scripts'))
@@ -163,7 +147,6 @@ test('gate inputs select a lane unless the always-on gates own them', () => {
   for (const gate of ['ops', 'policy']) {
     for (const caller of ['ci', 'release']) assert.ok(read(`.github/workflows/${caller}.yml`).includes(`dev/checks/${gate}`), `${caller} must always run ${gate}`);
   }
-  // PostgreSQL cluster tests skip locally but must fail, not skip, in CI.
   for (const caller of ['ci', 'release']) {
     const ops = read(`.github/workflows/${caller}.yml`).split('\n  ops:\n')[1].split(/\n  [\w-]+:\n/)[0];
     assert.match(ops, /SCOPE_REQUIRE_POSTGRES_CLUSTER: '1'\n\s+run: \.\/dev\/checks\/ops\n/, `${caller} ops must require the PostgreSQL cluster tests`);
@@ -196,12 +179,10 @@ test('the CLI is built once per target and the matrix owns the deployed service 
   );
   const checks = jobsSection.slice(jobsSection.indexOf('\n  checks:\n'), jobsSection.indexOf('\n  build:\n'));
   const build = jobsSection.slice(jobsSection.indexOf('\n  build:\n'));
-  // The always-on gate never release-builds; it defers the host bundle to the matrix.
   assert.doesNotMatch(checks, /--release/);
   assert.match(checks, /run: \.\/dev\/checks\/cli\n/);
   assert.match(checks, /if: \$\{\{ !inputs\.validate_targets \}\}\n\s+run: \.\/dev\/checks\/cli-bundle\n/);
   assert.match(checks, /if: inputs\.validate_service_release && !inputs\.validate_targets\n/);
-  // Each matrix leg builds its target once; only the native Linux x64 leg ships the service.
   const serviceGate = "if: inputs.validate_service_release && matrix.target == 'x86_64-unknown-linux-gnu'";
   assert.equal(build.split(serviceGate).length - 1, 2);
   const upload = build.slice(build.indexOf('      - name: Upload service'));
@@ -489,8 +470,6 @@ test('CI runs on pull requests and Scope request branches, and Release dispatch 
   const ciTriggers = ci.split('\nconcurrency:')[0];
   assert.match(ciTriggers, /  pull_request:\n  push:\n    branches: \['scope\/\*\*'\]\n/);
   assert.doesNotMatch(ciTriggers, /schedule:|workflow_dispatch:/);
-  // Concurrent Scope requests must not share a group, and a new branch has no
-  // previous commit to compare against.
   assert.match(ci, /group: scope-ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
   assert.match(ci, /base="\$\(git merge-base origin\/main HEAD\)"/);
   assert.match(ci, /BASE_SHA: \$\{\{ steps\.base\.outputs\.sha \}\}/);
@@ -503,17 +482,21 @@ test('CI runs on pull requests and Scope request branches, and Release dispatch 
   for (const caller of [ci, release]) assert.match(caller, /uses: \.\/\.github\/workflows\/validate.yml/);
 });
 
-function gateScript(job) {
-  const script = job.match(/        run: \|\n((?:          .*\n)+)/)?.[1];
-  assert.ok(script, 'gate must execute its assertion');
+function stepScript(job, name) {
+  const step = job.slice(job.indexOf(`      - name: ${name}\n`));
+  const script = step.match(/        run: \|\n((?:          .*\n)+)/)?.[1];
+  assert.ok(script, `${name} must execute its assertion`);
   return script.replace(/^          /gm, '');
 }
+
+const gateScript = (job) => stepScript(job, 'Require successful planning and validation');
+const validationGateScript = (job) => stepScript(job, 'Require selected validations to succeed');
 
 test('required PR check runs after failures and rejects every unsuccessful prerequisite', () => {
   const ci = read('.github/workflows/ci.yml');
   const job = ci.slice(ci.indexOf('\n  required-pr-checks:\n'));
   assert.match(job, /name: Required PR checks\n/);
-  assert.match(job, /needs: \[plan, policy, ops, validation\]\n/);
+  assert.match(job, /needs: \[pull-request, plan, policy, ops, validation\]\n/);
   assert.match(job, /if: \$\{\{ always\(\) \}\}\n/);
   assert.match(job, /PLAN_RESULT: \$\{\{ needs.plan.result \}\}/);
   assert.match(job, /VALIDATION_RESULT: \$\{\{ needs.validation.result \}\}/);
@@ -539,6 +522,62 @@ test('required PR gate rejects failed policy and operations even when validation
       assert.notEqual(result.status, 0, `${key}: ${failure}`);
     }
   }
+});
+
+test("a Scope request revision that an open pull request tests reports that pull request's result", () => {
+  const ci = read('.github/workflows/ci.yml');
+  const jobs = ci.slice(ci.indexOf('\njobs:\n'));
+  assert.match(jobs, /  pull-request:\n(?:    .*\n)*?    if: \$\{\{ github\.event_name == 'push' \}\}\n/);
+  for (const name of ['plan', 'policy', 'ops']) {
+    assert.match(jobs, new RegExp(`  ${name}:\\n(?:    .*\\n)*?    needs: pull-request\\n    if: \\$\\{\\{ !cancelled\\(\\) && needs\\.pull-request\\.outputs\\.number == '' \\}\\}\\n`));
+  }
+  assert.match(jobs, /  validation:\n(?:    .*\n)*?    if: \$\{\{ !cancelled\(\) && needs\.plan\.result == 'success' \}\}\n/);
+  const gate = ci.slice(ci.indexOf('\n  required-pr-checks:\n'));
+  assert.match(gate, /- name: Report the pull request's result\n        if: \$\{\{ needs\.pull-request\.outputs\.number != '' \}\}\n/);
+  assert.match(gate, /- name: Require successful planning and validation\n        if: \$\{\{ needs\.pull-request\.outputs\.number == '' \}\}\n/);
+  const script = stepScript(gate, "Report the pull request's result");
+  const report = (answers) => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'scope-ci-report-'));
+    try {
+      writeFileSync(resolve(dir, 'answers'), answers.join('\n') + '\n');
+      writeFileSync(resolve(dir, 'gh'), `#!/bin/bash\nn=$(cat "${dir}/count" 2>/dev/null || echo 0); echo $((n + 1)) > "${dir}/count"\nline=$(sed -n "$((n + 1))p" "${dir}/answers")\n[[ "$line" == error ]] && exit 1\necho "$line"\n`, { mode: 0o755 });
+      writeFileSync(resolve(dir, 'sleep'), '#!/bin/sh\n', { mode: 0o755 });
+      return spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
+        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, REPOSITORY: 'o/r', SHA: 'a'.repeat(40), PULL_REQUEST: '7' },
+        encoding: 'utf8',
+      }).status;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  assert.equal(report(['', 'error', 'u in_progress null', 'u completed success']), 0);
+  for (const conclusion of ['failure', 'cancelled', 'timed_out', 'skipped']) {
+    assert.notEqual(report([`u completed ${conclusion}`]), 0, conclusion);
+  }
+});
+
+test('a Scope request revision reuses a pull request run only when that run tests the same tree', () => {
+  const ci = read('.github/workflows/ci.yml');
+  const script = stepScript(ci.slice(ci.indexOf('\n  pull-request:\n')), 'Find a pull request run that tests this commit');
+  const find = ({ pulls = '7', behind = '0', runs = '123' }) => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'scope-ci-find-'));
+    try {
+      writeFileSync(resolve(dir, 'gh'), `#!/bin/bash\ncase "$2" in\n  */pulls) echo "${pulls}" ;;\n  */compare/*) echo "${behind}" ;;\n  */runs*) echo "${runs}" ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
+      const output = resolve(dir, 'output');
+      const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
+        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, REPOSITORY: 'o/r', SHA: 'a'.repeat(40), GITHUB_OUTPUT: output },
+        encoding: 'utf8',
+      });
+      assert.equal(result.status, 0, result.stderr);
+      return readFileSync(output, 'utf8');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  assert.equal(find({}), 'number=7\n');
+  assert.equal(find({ pulls: '' }), 'number=\n');
+  assert.equal(find({ behind: '2' }), 'number=\n', 'a head behind main was tested merged with code it lacks');
+  assert.equal(find({ runs: '' }), 'number=\n', 'a pull request with conflicts never gets a run to wait for');
 });
 
 test('validation gate allows unselected jobs and reused artifacts but fails selected jobs and cancellation', () => {
@@ -575,7 +614,7 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
     assert.equal(evaluate(inputs, skipped), true, `reused selection ${mask}`);
   }
   for (const value of ['true', 'false', '']) {
-    const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', gateScript(job)], {
+    const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', validationGateScript(job)], {
       env: { ...process.env, VALIDATIONS_PASSED: value }, encoding: 'utf8',
     });
     assert.equal(result.status === 0, value === 'true', `assertion ${value}`);

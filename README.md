@@ -4,11 +4,10 @@ Scope is a pre-alpha source-control platform built around permissioned repositor
 projections. Maintainers keep one repository, choose which files are public, and
 share only that public projection with outside contributors.
 
-Each repository carries trusted `.scope/RULES.md` guidance. Contributor changes
-cannot modify protected `.scope` paths. Contribution requests move through a
-small Draft, Open, Closed, and Merged lifecycle: drafts stay private to their
-participants, and submission places work in the maintainer queue without making
-the request immutable.
+Contributor changes cannot modify protected `.scope` paths or agent instruction
+files. Contribution requests move through a small Draft, Open, Closed, and Merged
+lifecycle: drafts stay private to their participants, and submission places work
+in the maintainer queue without making the request immutable.
 
 Scope does not use staking, credits, or automated qualification to rank or admit
 requests. Verified participants can rate one another after a request closes or

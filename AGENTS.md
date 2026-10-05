@@ -10,6 +10,8 @@ Keep core concepts, rules, transitions, invariants, and required side effects in
 
 Frontend server data must reuse existing resource and cache owners, survive navigation and reopening within the same viewer and access scope, and refresh from relevant changes without blanking valid data. Check reuse and invalidation rather than introducing component-owned fetch lifecycles.
 
+Do not write comments. Code is the foundation: express intent through names, types, structure, and tests. When code cannot carry the context, fix the underlying issue instead of explaining it. The only exceptions are machine-read text: `///` docs on API contract types (they generate the TypeScript contract), `// SAFETY:` on `unsafe` blocks, tool directives, generated files, and digest-locked migrations.
+
 Around 1,000 lines, audit a file's responsibilities and modularize unless there is a good reason to keep it together.
 
 Proceed with behavior-preserving refactors. Involve the user before choosing behavior beyond the agreed request; do not reopen behavior already authorized.
@@ -20,9 +22,18 @@ Do not re-run a failed check to pass it without a repair until the failure is re
 
 Set autoreview's timeout to 15 minutes with `--engine-timeout-seconds 900`. Do independent work while it runs.
 
-<!-- scope:rules:start -->
 ## Scope contribution rules
 
-Read and follow `.scope/RULES.md` before
-making or submitting changes.
-<!-- scope:rules:end -->
+This repository dogfoods Scope. GitHub remains the source of truth for merges,
+CI gating, deploys, and releases.
+
+Maintainers mirror every branch they push to GitHub, every PR they open, and
+every merge to main to their `scope` remote, following the dogfood-scope skill
+from their personal agent skills. The skill is not part of this repository, and
+contributors without it or without a `scope` remote have nothing to mirror. A
+Scope failure never blocks GitHub delivery; it is noted in the PR description.
+
+Checks on this repository's Scope requests come from its GitHub Actions
+workflows on `scope/requests/<id>`. Do not start Scope runs.
+
+Main on Scope only ever receives commits already on GitHub's main.

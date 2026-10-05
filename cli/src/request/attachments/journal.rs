@@ -263,8 +263,6 @@ fn save_journal(path: &Path, journal: &mut ReceiptJournal) -> anyhow::Result<()>
 }
 
 fn replace_journal_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
-    // std::fs::rename replaces an existing file on Windows as well as Unix.
-    // Never unlink the durable journal before the replacement succeeds.
     fs::rename(temp_path, path).context("replace Scope attachment receipt journal")
 }
 

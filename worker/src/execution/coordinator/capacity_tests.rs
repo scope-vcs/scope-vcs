@@ -1,8 +1,42 @@
 use super::tests::queued_runs;
 use super::*;
 use crate::execution::fake::FakeEcs;
-use scope_domain::runs::run::RunState;
+use scope_domain::runs::{
+    run::RunState,
+    step::{AttemptTerminalReason, MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES},
+};
 use serde_json::json;
+
+#[tokio::test]
+async fn multibyte_capacity_rejection_records_retry() {
+    let metadata = queued_runs(1).await;
+    let provider = FakeEcs::new().await;
+    provider.reply(
+        axum::http::StatusCode::OK,
+        json!({"status":"rejected","reason":"capacity","message":"é".repeat(2048)}),
+        false,
+    );
+    let execution = coordinator(metadata.clone(), &provider);
+    let now = crate::unix_now().unwrap();
+
+    assert_eq!(execution.dispatch_available(now).await.unwrap(), 1);
+    assert_eq!(
+        metadata.runs().run("run-0").await.unwrap().unwrap().state,
+        RunState::Queued
+    );
+    let jobs = metadata.runs().run_jobs("run-0").await.unwrap();
+    let retry = jobs[0].capacity_retry.as_ref().unwrap();
+    assert_eq!(retry.rejections, 1);
+    assert!(retry.next_attempt_at_unix.unwrap() > now);
+    let detail = metadata.runs().run_detail("run-0").await.unwrap().unwrap();
+    let Some(AttemptTerminalReason::ProviderCapacityRejected { message }) =
+        &detail.attempts[0].attempt.terminal_reason
+    else {
+        panic!("expected a recorded capacity rejection");
+    };
+    assert!(message.starts_with("provider rejected dispatch: é"));
+    assert!(message.len() <= MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES);
+}
 
 fn coordinator(metadata: MetadataStore, provider: &FakeEcs) -> CloudExecutionCoordinator {
     CloudExecutionCoordinator {
@@ -30,7 +64,6 @@ async fn capacity_rejection_retries_after_restart_and_stops_after_three_extra_at
         metadata.runs().run("run-0").await.unwrap().unwrap().state,
         RunState::Queued
     );
-    // The broker already confirmed absence; no cleanup request is necessary.
     assert!(
         metadata
             .runs()
@@ -65,10 +98,14 @@ async fn capacity_rejection_retries_after_restart_and_stops_after_three_extra_at
 }
 
 #[tokio::test]
-async fn quota_and_uncertain_launches_do_not_enter_capacity_retries() {
+async fn permanent_quota_and_uncertain_launches_do_not_enter_capacity_retries() {
     for (reply, expected) in [
         (
             json!({"status":"rejected","reason":"quota","message":"quota exceeded"}),
+            RunState::Failed,
+        ),
+        (
+            json!({"status":"rejected","reason":"permanent","message":"invalid configuration"}),
             RunState::Failed,
         ),
         (

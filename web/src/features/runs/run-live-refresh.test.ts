@@ -58,7 +58,7 @@ test('connected and lagged events request recovery refreshes', async () => {
     version: 0,
   })
   await tick()
-  assert.deepEqual(received, [['Recovery'], ['Recovery']])
+  assert.deepEqual(received, [['Recovery'], ['Lagged']])
 })
 
 test('times out a hung refresh and retries without overlapping requests', async () => {

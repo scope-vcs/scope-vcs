@@ -25,8 +25,6 @@ pub(super) async fn lock_admission(tx: &DatabaseTransaction) -> Result<(), Postg
 }
 
 impl RunStore {
-    /// Count, select, transition, and persist under one global admission lock.
-    /// Only jobs of repositories whose owner is listed for native runs are admitted.
     #[allow(clippy::too_many_arguments)]
     pub async fn admit_next_job(
         &self,
@@ -102,8 +100,6 @@ impl RunStore {
         let job_key = row
             .try_get::<String>("", "job_key")
             .map_err(PostgresError::internal)?;
-        // A removal of the owner's listing waits for this admission, or this
-        // admission sees the removal and leaves the job to be canceled.
         let repository_id = row
             .try_get::<String>("", "repo_id")
             .map_err(PostgresError::internal)?;
@@ -113,7 +109,6 @@ impl RunStore {
         {
             return Ok(DispatchAdmission::Contended);
         }
-        // Match cancellation/completion lock order: all jobs, then run, then attempt.
         let jobs = locked_jobs(&tx, &run_id).await?;
         let run = locked_run(&tx, &run_id).await?;
         let job = jobs

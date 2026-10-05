@@ -94,8 +94,6 @@ async fn collaboration_publication_keeps_the_committed_invite_result_and_version
         .unwrap();
     assert_eq!(invite.change_version, initial_version + 1);
     let committed_version = invite.change_version;
-    // A later committed mutation must not overwrite this operation's version
-    // while its response is still waiting for notification publication.
     let revoked = state
         .metadata
         .repositories()

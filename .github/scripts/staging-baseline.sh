@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
-# This snapshot contains staging fixture metadata only, not an object-store backup.
-# Restored fixtures must pass candidate backfills, browser reads, and Git clone before
-# staging succeeds. Never accept a production database URL.
 : "${SCOPE_PRODUCTION_MIGRATION_PLAN:?Production migration plan is required}"
 : "${SCOPE_STAGING_BASELINE_DIR:?Staging baseline directory is required}"
 : "${SCOPE_MAINTENANCE_BINARY:?Pinned maintenance binary is required}"
@@ -20,11 +17,9 @@ SCOPE_DEPLOYMENT_MANIFEST_JSON="$(cat "$manifest")" \
   SCOPE_RAILWAY_STATUS_JSON="$(node .github/scripts/railway-read.mjs status "${scope[@]}" --json)" \
   SCOPE_RAILWAY_SERVICES_JSON="$(node .github/scripts/railway-read.mjs service list "${scope[@]}" --json)" \
   node .github/scripts/verify-staging-target.mjs >/dev/null
-# Verify that metadata writers have relinquished the database fence before snapshot/restore.
 maintenance fence >/dev/null
 mkdir -p "$SCOPE_STAGING_BASELINE_DIR"
 chmod 0700 "$SCOPE_STAGING_BASELINE_DIR"
-# Clear plaintext and extracted artifacts even if authentication or restoration fails.
 cleanup() {
   rm -f "$SCOPE_STAGING_BASELINE_DIR/database.dump"
   rm -rf "$SCOPE_STAGING_BASELINE_DIR/restore" "$SCOPE_STAGING_BASELINE_DIR/restore.zip"
@@ -34,7 +29,6 @@ trap 'exit 1' HUP INT TERM
 key="$(node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN")"
 if ! (maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" &&
   node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN" "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" >/dev/null); then
-  # Retained artifacts contain authenticated ciphertext, captured with writers stopped.
   : "${SCOPE_STAGING_BASELINE_KEY:?Staging baseline encryption key is required to restore a snapshot}"
   : "${GITHUB_REPOSITORY:?}"
   artifact_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?name=staging-baseline-$key&per_page=100" \
@@ -55,7 +49,6 @@ if ! (maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" &&
     "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump.enc" \
     "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump" \
     "$SCOPE_STAGING_BASELINE_DIR/restore/baseline.json"
-  # Recreate the staging schema in one transaction so candidate-only tables cannot survive.
   pg_restore --no-owner --no-privileges --exit-on-error \
     --file="$SCOPE_STAGING_BASELINE_DIR/restore/database.sql" "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump"
   { printf '%s\n' 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'; cat "$SCOPE_STAGING_BASELINE_DIR/restore/database.sql"; } | \
@@ -63,12 +56,8 @@ if ! (maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" &&
   maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json"
   node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN" "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" >/dev/null
 fi
-# A matching ledger does not prove matching schema. Reject drift before retaining
-# or migrating this staging baseline, including snapshots restored above.
 maintenance preflight >/dev/null
-# Require representative preexisting data; candidate seeding would invalidate the upgrade test.
 [[ "$(railway_private_read "$environment" sh -c 'exec psql "$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "$1"' scope-baseline 'SELECT count(*) > 0 FROM scope_repositories' < /dev/null)" == t ]]
-# No schema change needs no new baseline dump. Reconciliation above still runs.
 if jq -e '.pending | length == 0' "$SCOPE_PRODUCTION_MIGRATION_PLAN" >/dev/null; then
   exit 0
 fi

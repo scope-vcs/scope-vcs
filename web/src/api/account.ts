@@ -4,7 +4,6 @@ import { ApiRouteTemplates } from './types.generated'
 
 export type DeleteAccountResult =
   | { status: 'deleted' }
-  /** Repository ids, as `owner/name`, that other members still use. */
   | { status: 'blocked'; repositories: string[] }
 
 export async function deleteAccountForRequest(): Promise<DeleteAccountResult> {

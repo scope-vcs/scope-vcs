@@ -9,7 +9,6 @@ import { requestMergeabilityLabel, requestMergeabilityTone } from './request-lab
 import { useRequestWorkspace } from './request-workspace-context'
 import { actorHandle } from './request-actor'
 
-/** Title with pane-responsive metadata and request actions. */
 export function RequestDetailHeader({
   actions,
   request,

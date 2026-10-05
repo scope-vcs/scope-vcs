@@ -14,9 +14,6 @@ import { orderJobsByDependency } from './run-job-graph-model'
 import { RunStatusIcon } from './run-status-icon'
 import type { RepositoryRunJobDetailResponse } from '@/api/types.generated'
 
-/** The run's working area: the job list beside the selected job's steps. At
- * desktop widths the steps pane is the page's only scroller, so a long log
- * never nests one scrollbar inside another. */
 export function RunDetailJobs({
   attemptOverrides,
   jobs,
@@ -44,13 +41,10 @@ export function RunDetailJobs({
   const orderedJobs = useMemo(() => orderJobsByDependency(jobs), [jobs])
   const graphShown = jobsHaveDependencies(jobs) && showGraph
   const jobListRef = useRef<HTMLDivElement>(null)
-  // The graph stands in for the job pane, so picking a job anywhere closes it.
   function pickJob(job: RepositoryRunJobDetailResponse) {
     onSelectJob(job)
     if (showGraph) onToggleGraph()
   }
-  // The picked node unmounts with the graph; hand focus to the same job in
-  // the list so keyboard navigation keeps its place.
   function pickJobFromGraph(job: RepositoryRunJobDetailResponse) {
     pickJob(job)
     requestAnimationFrame(() => {
@@ -93,14 +87,10 @@ export function RunDetailJobs({
           />
         ) : null}
         {selectedJob ? (
-          // Hidden rather than unmounted under the graph, so hiding the graph
-          // returns to the same scroll position, panel and wrap setting.
           <div
             className={graphShown ? 'hidden' : 'flex flex-col lg:min-h-0 lg:flex-1'}
             id={runJobPanelId(selectedJob.job.key)}
           >
-            {/* Keyed by job so a newly picked job starts fresh: scrolled to
-                its top, with the environment panel closed. */}
             <RunDetailSteps
               key={selectedJob.job.key}
               attempt={attemptForJob(selectedJob, attemptOverrides, selection)}

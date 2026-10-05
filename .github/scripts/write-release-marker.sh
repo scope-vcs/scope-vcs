@@ -8,7 +8,6 @@ if [[ ! "$timestamp" =~ ^[1-9][0-9]*$ ]]; then
   exit 1
 fi
 
-# Readers must see either the previous complete marker or the new complete marker.
 temporary="$(mktemp "${marker}.XXXXXX")"
 trap 'rm -f -- "$temporary"' EXIT
 printf '%s\n' "$timestamp" > "$temporary"

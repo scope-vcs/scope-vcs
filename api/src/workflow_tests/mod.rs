@@ -135,7 +135,6 @@ fn test_state_with_repo() -> AppState {
     state
 }
 
-/// Lists the test repository's owner for Scope's hosted runner.
 async fn allow_native_runs(state: &AppState) {
     state
         .metadata
@@ -198,8 +197,6 @@ async fn response_json(response: Response) -> serde_json::Value {
     serde_json::from_slice(&body).unwrap()
 }
 
-/// Asserts the status and parses the JSON body. On mismatch the panic carries
-/// the response body, so a server error names its cause in the test log.
 async fn expect_json(response: Response, expected: StatusCode) -> serde_json::Value {
     let status = response.status();
     let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
@@ -247,14 +244,6 @@ fn temp_git_repo(label: &str) -> TempGitRepo {
         None,
         &["init", "-b", "main", repo.to_str().unwrap()],
         "init test repo",
-    )
-    .unwrap();
-    fs::create_dir_all(repo.join(".scope")).unwrap();
-    fs::write(repo.join(".scope/RULES.md"), []).unwrap();
-    run_git(
-        Some(&repo),
-        &["add", ".scope/RULES.md"],
-        "stage canonical repo rules",
     )
     .unwrap();
     TempGitRepo(repo)
@@ -680,8 +669,6 @@ async fn apply_first_push_from_staging_repo(
     persist_test_update(state, update).await.unwrap();
 }
 
-/// Test state stores objects in memory, so a write finishes on its first poll and fixtures can
-/// stay synchronous.
 fn immediate<T>(future: impl std::future::Future<Output = T>) -> T {
     future
         .now_or_never()
@@ -717,8 +704,6 @@ fn repo_with_readme(state: &AppState) -> Repository {
     let mut repo = test_repo(&test_owner_id());
     let path = ScopePath::parse("/README.md").unwrap();
     let content = source_blob(state, "hello");
-    let rules_path = ScopePath::parse("/.scope/RULES.md").unwrap();
-    let rules_content = source_blob(state, "");
     repo.graph.commits.push(LogicalCommit {
         occurred_at_unix: None,
         id: "rv1".to_string(),
@@ -727,23 +712,14 @@ fn repo_with_readme(state: &AppState) -> Repository {
         },
         author_id: repo.record.owner_user_id.clone(),
         message: "initial".to_string(),
-        changes: vec![
-            FileChange {
-                visibility: Visibility::Public,
-                path: path.clone(),
-                old_content: None,
-                new_content: Some(content.clone()),
-            },
-            FileChange {
-                visibility: Visibility::Public,
-                path: rules_path.clone(),
-                old_content: None,
-                new_content: Some(rules_content.clone()),
-            },
-        ],
+        changes: vec![FileChange {
+            visibility: Visibility::Public,
+            path: path.clone(),
+            old_content: None,
+            new_content: Some(content.clone()),
+        }],
     });
     repo.live_files.insert(path, content);
-    repo.live_files.insert(rules_path, rules_content);
     repo
 }
 

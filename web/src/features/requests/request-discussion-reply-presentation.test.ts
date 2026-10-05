@@ -40,8 +40,6 @@ test('a hydrated viewer gets boundaries on their own calendar day', () => {
   const previousZone = process.env.TZ
   process.env.TZ = 'America/New_York'
   try {
-    // 1970-01-01T04:00Z and 1970-01-01T05:00Z share a UTC day but straddle
-    // midnight in New York.
     assert.equal(sameCalendarDate(14_400, 18_000, true), false)
     assert.equal(sameCalendarDate(14_400, 18_000, false), true)
   } finally {

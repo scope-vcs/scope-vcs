@@ -103,7 +103,6 @@ impl From<UploadLeaseId> for String {
     }
 }
 
-/// One immutable, repository-scoped, content-addressed object.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CacheObject {
     repository_id: RepositoryId,
@@ -145,7 +144,6 @@ impl CacheObject {
     }
 }
 
-/// The replaceable logical identity pointing to an immutable cache object.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CacheReference {
     repository_id: RepositoryId,
@@ -237,7 +235,6 @@ impl CacheReference {
     }
 }
 
-/// Exclusive permission to upload one exact object for one logical identity.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UploadLease {
     id: UploadLeaseId,

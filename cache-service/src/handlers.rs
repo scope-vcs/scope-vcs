@@ -487,7 +487,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
-        // The gateway answers with the API's error contract, not a bespoke shape.
         let rejected = to_bytes(rejected.into_body(), 16 * 1024).await.unwrap();
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(&rejected).unwrap(),

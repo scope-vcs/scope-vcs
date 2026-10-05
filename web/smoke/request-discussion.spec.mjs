@@ -111,8 +111,6 @@ test('reply disclosure preserves scroll and remains reversible', async () => {
       })
       window.location.hash = `#${hash}`
     })
-    // The router marks its location resolved before onRendered restores scroll.
-    // Wait for that event before measuring whether collapsing a reply moves it.
     await page.waitForFunction(() => window.__scopeDiscussionHashRendered &&
       document.activeElement?.id === 'reply-discussion_reply_demo_jitter')
     await hideJitterReplies.evaluate((element) => {
@@ -122,9 +120,6 @@ test('reply disclosure preserves scroll and remains reversible', async () => {
       (element) => element.scrollTop,
     )
     assert(deepScrollPosition > 0)
-    // A render can resolve the reply before the browser delivers hashchange.
-    // That late event belongs to the same navigation and must not move the
-    // reader back to the reply.
     await page.evaluate(() => {
       window.dispatchEvent(new HashChangeEvent('hashchange'))
     })
@@ -162,7 +157,6 @@ test('a live refresh in flight leaves the reader where they scrolled', async () 
       await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
       assert.equal(await mainContent.evaluate((element) => element.scrollTop), scrollTop)
     }, {
-      // The reader scrolls while the connection catch-up is still loading.
       settle: false,
       prepare: (page) => page.route('**/_serverFn/**', async (route) => {
         if (!isSummary(route.request())) return route.fallback()

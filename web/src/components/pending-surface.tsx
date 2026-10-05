@@ -16,14 +16,10 @@ const DEFAULT_ROWS: { id: string; length: TextSkeletonLength }[] = [
   { id: 'quaternary', length: 'long' },
 ]
 
-// A surface inside another surface leaves the announcement and the slow note
-// to the outer one, so a page announces its loading once.
 const NestedSurface = createContext(false)
 
 const SLOW_AFTER_MS = 8_000
 
-// Router fallbacks for one navigation share its start, so when a parent's
-// fallback hands off to a child's, the child does not restart the eight seconds.
 let navigationPending: { key: string; since: number } | null = null
 
 function navigationSince(router: NonNullable<ReturnType<typeof useRouter>>) {
@@ -33,13 +29,6 @@ function navigationSince(router: NonNullable<ReturnType<typeof useRouter>>) {
   return navigationPending.since
 }
 
-/**
- * One policy for every loading state. A surface the router shows in place of a
- * page appears at once, because the router has already waited before showing
- * it. A surface a loaded page draws for its own data waits the same 150ms, so
- * fast loads never flash. After eight seconds a note appears over the
- * surface's top corner without moving anything.
- */
 export function PendingSurface({
   children,
   className,
@@ -49,7 +38,6 @@ export function PendingSurface({
   children?: ReactNode
   className?: string
   label?: string
-  /** Retries this surface's own load. Router fallbacks retry the navigation. */
   onRetry?: () => void
 }) {
   const nested = use(NestedSurface)
@@ -58,7 +46,6 @@ export function PendingSurface({
   const [since] = useState(() => routeFallback && router ? navigationSince(router) : Date.now())
   const [slow, restartSlow] = useSlow(!nested, since)
   const retryLoad = onRetry ?? (routeFallback && router ? () => void router.invalidate() : undefined)
-  // A retry starts a fresh attempt, which gets its own eight seconds.
   const retry = retryLoad && (() => {
     restartSlow()
     retryLoad()
@@ -129,7 +116,6 @@ export function ApplicationPendingShell({
   contextLabel,
   label,
 }: {
-  /** The loaded page's topbar controls, when they are known before its data. */
   actions?: ReactNode
   children?: ReactNode
   contextLabel?: string

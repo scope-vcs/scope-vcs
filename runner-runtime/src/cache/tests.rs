@@ -260,7 +260,6 @@ fn exact_hit_skips_archive_hash_and_upload() {
         sources: None,
     };
 
-    // The client cannot reach any service, so an upload attempt would be Skipped.
     assert!(matches!(
         save_cache(&RuntimeClient::disconnected_for_cache_tests(), &cache),
         CacheFinalizationOutcome::Ready

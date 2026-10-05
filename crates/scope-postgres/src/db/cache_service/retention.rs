@@ -1,6 +1,8 @@
 use super::*;
 use scope_cache_domain::EvictionDecision;
 
+const UPLOAD_DELETE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
 impl CacheStore {
     pub async fn claim_orphan_uploads(
         &self,
@@ -182,7 +184,16 @@ impl CacheStore {
             if current.is_none() {
                 return Ok(());
             }
-            delete().await?;
+            match tokio::time::timeout(UPLOAD_DELETE_TIMEOUT, delete()).await {
+                Ok(result) => result?,
+                Err(_) => {
+                    tx.rollback().await.map_err(PostgresError::internal)?;
+                    return Err(PostgresError::internal_message(format!(
+                        "cache upload deletion exceeded {} ms; cleanup will be retried",
+                        UPLOAD_DELETE_TIMEOUT.as_millis()
+                    )));
+                }
+            }
             tx.execute_raw(statement(
                 "DELETE FROM scope_cache_uploads WHERE upload_id = $1",
                 vec![claim.upload_id.into()],
@@ -371,8 +382,6 @@ pub(super) async fn expire_repository_references(
     Ok(())
 }
 
-/// Removes one expired reference row (already locked by the caller) and queues
-/// its object for deletion once nothing else references it.
 async fn expire_reference_row(
     tx: &DatabaseTransaction,
     repository_id: &str,
@@ -412,8 +421,6 @@ async fn expire_reference_row(
     .await
 }
 
-/// Both cache retry tables constrain `last_error` to 1..=8192 characters, so a
-/// failure text is truncated and an empty one is replaced before it is stored.
 fn bounded_job_error(error: &str) -> String {
     let bounded = error.chars().take(8192).collect::<String>();
     if bounded.is_empty() {

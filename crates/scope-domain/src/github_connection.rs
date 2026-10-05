@@ -1,17 +1,3 @@
-//! A Scope repository's link to the GitHub repository whose workflows check
-//! its requests. A Scope repository has at most one link, and a GitHub
-//! repository is connected to at most one Scope repository at a time. The
-//! link only lasts while the Scope GitHub App can reach the repository: when
-//! GitHub reports otherwise, the link is kept as disconnected with a reason, so
-//! maintainers see why checks stopped instead of an empty section. Maintainers
-//! also name the checks GitHub must pass for a request to merge.
-//!
-//! Everything Scope pushes to a public GitHub repository is public, private
-//! requests and private files included. Only a maintainer who can change file
-//! visibility may connect one, and only by confirming that. A connected
-//! repository that later becomes public receives no private request until
-//! such a maintainer confirms again.
-
 use crate::{
     error::DomainError, github_run_import::validate_github_run_import_count,
     repository::access::RepositoryAccess,
@@ -24,18 +10,13 @@ pub struct GitHubConnection {
     pub repository_id: String,
     pub installation_id: u64,
     pub github_repository_id: u64,
-    /// `owner/name` on GitHub when the link was made.
     pub github_full_name: String,
-    /// `None` once the account that connected it was deleted.
     pub connected_by: Option<String>,
     pub connected_at_unix: u64,
     pub status: GitHubConnectionStatus,
     pub visibility: GitHubRepositoryVisibility,
 }
 
-/// Whether the GitHub repository is public, and if so whether a maintainer
-/// who can change file visibility confirmed that what Scope pushes there,
-/// private requests included, becomes public.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GitHubRepositoryVisibility {
     Private,
@@ -58,20 +39,13 @@ pub enum GitHubConnectionStatus {
     },
 }
 
-/// Why GitHub stopped letting Scope use a connected repository.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GitHubDisconnectReason {
-    /// The Scope GitHub App was uninstalled from the GitHub account.
     AppUninstalled,
-    /// The GitHub account suspended the app's installation.
     InstallationSuspended,
-    /// The repository was removed from the installation's repositories.
     RepositoryRemoved,
 }
 
-/// What GitHub confirms about an installation of the Scope GitHub App.
-/// Webhook deliveries can be late or repeated, so callers confirm a reported
-/// change with GitHub before applying it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubInstallationChange {
     Uninstalled,
@@ -84,13 +58,8 @@ pub struct ConnectGitHubRepository {
     pub installation_id: u64,
     pub github_repository_id: u64,
     pub github_full_name: String,
-    /// What GitHub reports now.
     pub github_private: bool,
-    /// The maintainer confirmed that a public repository makes what Scope
-    /// pushes there public.
     pub acknowledge_public: bool,
-    /// How many of GitHub's most recent workflow runs to import, which
-    /// becomes the repository's import count.
     pub run_import_count: u32,
     pub user_id: String,
     pub now_unix: u64,
@@ -101,7 +70,6 @@ impl GitHubConnection {
         self.status == GitHubConnectionStatus::Connected
     }
 
-    /// Whether private requests' revisions may go to the GitHub repository.
     pub fn may_receive_private_requests(&self) -> bool {
         self.visibility
             != GitHubRepositoryVisibility::Public {
@@ -109,9 +77,6 @@ impl GitHubConnection {
             }
     }
 
-    /// Records what GitHub reports about the repository's visibility. A
-    /// repository that becomes public needs a new confirmation. Returns
-    /// whether the link changed.
     pub fn apply_visibility(&mut self, github_private: bool) -> bool {
         let visibility = match (github_private, self.visibility) {
             (true, _) => GitHubRepositoryVisibility::Private,
@@ -125,8 +90,6 @@ impl GitHubConnection {
         changed
     }
 
-    /// Disconnects the link when the change takes its repository away from
-    /// Scope. Returns whether the link changed.
     pub fn apply_installation_change(
         &mut self,
         installation_id: u64,
@@ -154,11 +117,6 @@ impl GitHubConnection {
     }
 }
 
-/// Links a Scope repository to a GitHub repository the caller has shown the
-/// Scope GitHub App can reach. `current` is the repository's existing link;
-/// `github_repository_link` is any connected link that already holds the
-/// GitHub repository. Connecting the same GitHub repository again refreshes
-/// the link, which is how a disconnected link is reconnected.
 pub fn connect_github_repository(
     access: RepositoryAccess,
     current: Option<&GitHubConnection>,
@@ -216,8 +174,6 @@ pub fn connect_github_repository(
     })
 }
 
-/// A maintainer who can change file visibility confirms that a connected
-/// repository that became public on GitHub may receive private requests.
 pub fn acknowledge_public_github_repository(
     access: RepositoryAccess,
     current: Option<&GitHubConnection>,
@@ -240,8 +196,6 @@ pub fn acknowledge_public_github_repository(
     })
 }
 
-/// Whether the viewer may let a public GitHub repository receive what Scope
-/// pushes, which makes private requests and private files public.
 pub fn can_publish_to_github(access: RepositoryAccess) -> bool {
     access.is_maintainer() && access.can_change_file_visibility
 }
@@ -256,7 +210,6 @@ fn ensure_can_publish(access: RepositoryAccess) -> Result<(), DomainError> {
     }
 }
 
-/// A maintainer removes the link. Nothing of it is kept.
 pub fn disconnect_github_repository(
     access: RepositoryAccess,
     current: Option<&GitHubConnection>,
@@ -273,9 +226,6 @@ pub fn disconnect_github_repository(
 pub const GITHUB_REQUIRED_CHECKS_LIMIT: usize = 50;
 const GITHUB_CHECK_NAME_MAX_CHARS: usize = 255;
 
-/// A maintainer names the checks GitHub must pass before a request merges,
-/// the way GitHub's own branch protection names them. Names are trimmed and
-/// kept in the order given; a repeated name counts once.
 pub fn set_github_required_checks(
     access: RepositoryAccess,
     names: Vec<String>,
@@ -304,8 +254,6 @@ pub fn set_github_required_checks(
     Ok(required)
 }
 
-/// Starting a connection is gated like finishing one, so a viewer who could
-/// never connect is not sent through GitHub's install screen first.
 pub fn ensure_can_manage_github_connection(access: RepositoryAccess) -> Result<(), DomainError> {
     ensure_maintainer(access)
 }

@@ -15,11 +15,6 @@ import {
 import type { RequestQueuePages } from './request-list-model'
 import { requestQueueResource } from './request-queue-cache'
 
-/**
- * Settle, snooze and restore move the row in the browser at once and tell the
- * server afterwards. Claim and release wait for the server, since they change
- * who owns the review.
- */
 export function useRequestAttentionActions(
   identity: string | null,
   params: RepoParams,
@@ -34,8 +29,6 @@ export function useRequestAttentionActions(
   const [error, setError] = useState<string | null>(null)
   const [moves, setMoves] = useState<RequestAttentionMove[]>([])
 
-  // A move is already ignored once the loaded queue reflects it; this only
-  // stops finished moves from piling up.
   useEffect(() => {
     if (!loadedPages || !moves.some((move) => queueReflectsMove(loadedPages, move))) return
     setMoves((current) => current.filter((move) => !queueReflectsMove(loadedPages, move)))
@@ -84,8 +77,6 @@ export function useRequestAttentionActions(
       void open(movedOnTo.id)
     }
     const confirmed = await mutate(requestId, command, item.attention.activity_version)
-    // A refused move puts the row back where the server still has it, and the
-    // viewer back on it unless they have gone somewhere else since.
     if (!confirmed && movedOnTo && selectedRef.current === movedOnTo.id) void open(requestId)
     setMoves((current) =>
       confirmed
@@ -98,7 +89,6 @@ export function useRequestAttentionActions(
     if (isInstantCommand(command)) return moveNow(item, command)
     if (!identity || inFlight.current) return
     const requestId = item.request.id
-    // Claim and release can remove the record a move is waiting on.
     setMoves((current) => current.filter((move) => move.item.request.id !== requestId))
     inFlight.current = true
     setPendingId(requestId)

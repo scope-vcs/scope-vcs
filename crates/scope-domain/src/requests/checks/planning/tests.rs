@@ -370,7 +370,6 @@ fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_a
     );
     assert!(!contributor.push_to_github);
 
-    // Approval sends the head, unless the request can no longer merge.
     let approved =
         RequestCheckPlan::approve(&request, contributor.evaluation.clone(), &[], "owner", 40)
             .unwrap();
@@ -413,7 +412,6 @@ fn with_no_required_checks_only_a_maintainers_head_still_runs_the_workflows() {
         RequestCheckEvaluationState::NoChecks
     );
     assert!(!contributor.push_to_github);
-    // Native evaluations never push.
     assert!(
         !RequestCheckPlan::evaluate(
             &request,
@@ -446,7 +444,6 @@ fn a_public_contribution_tests_its_check_commit_and_waits_for_approval_like_any_
     );
     assert!(!contributor.push_to_github);
 
-    // Approval sends the check commit it recorded.
     let approved =
         RequestCheckPlan::approve(&request, contributor.evaluation, &[], "owner", 40).unwrap();
     assert_eq!(approved.evaluation.tested_oid, "c".repeat(40));
@@ -499,7 +496,6 @@ fn the_tested_commit_must_fit_the_requests_audience() {
             "the tested commit does not fit the request's audience"
         );
     }
-    // A check commit is never the head itself.
     let request = request();
     let head = GitHubTestedCommit::CheckCommit {
         oid: request.head_oid.clone(),
@@ -581,7 +577,6 @@ fn started_checks_move_to_a_check_commit_on_new_private_main_and_send_it_at_once
     assert_eq!(renewed.evaluation.updated_at_unix, 40);
     assert!(renewed.push_to_github);
 
-    // New private main can conflict where the old one did not.
     let conflict = RequestCheckPlan::rebuild_check_commit(
         &request,
         started.clone(),
@@ -601,7 +596,6 @@ fn started_checks_move_to_a_check_commit_on_new_private_main_and_send_it_at_once
     assert_eq!(conflict.evaluation.created_at_unix, 30);
     assert!(!conflict.push_to_github);
 
-    // Only started checks on a check commit for the current head are moved.
     let waiting = RequestCheckPlan::evaluate_github(&request, check_commit(), &required, None, 30)
         .unwrap()
         .evaluation;

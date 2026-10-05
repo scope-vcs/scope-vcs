@@ -4,8 +4,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Each task has its own filesystem. A stable path lets build caches reuse
-/// fingerprints that contain absolute source paths across attempts.
 pub const WORK_ROOT: &str = "/scope/work";
 
 pub struct RuntimeSettings {
@@ -34,8 +32,6 @@ impl RuntimeSettings {
     }
 }
 
-/// Creates the attempt's work directory under `work_root`, refusing to reuse
-/// one left behind by an earlier attempt.
 pub fn prepare_work_directory(work_root: &Path) -> anyhow::Result<PathBuf> {
     let root = work_root.join("job");
     std::fs::create_dir_all(work_root).context("create runtime work root")?;

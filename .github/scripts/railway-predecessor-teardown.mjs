@@ -47,7 +47,6 @@ export function recordPredecessors(directory, component, service, ids) {
       || !Array.isArray(ids) || ids.some((id) => typeof id !== 'string' || !idPattern.test(id))) {
     throw new Error('Invalid predecessor snapshot');
   }
-  // One component owns one file. The snapshot is written before any provider mutation.
   writeFileSync(join(directory, `${component}.json`), `${JSON.stringify({ component, service, ids: [...new Set(ids)] })}\n`, { flag: 'wx' });
 }
 

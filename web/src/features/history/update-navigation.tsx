@@ -5,7 +5,6 @@ import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { UpdateSearch } from './update-search'
 
-// The loading state draws the same row with both neighbors disabled.
 export function UpdateNavigation({
   newer,
   older,

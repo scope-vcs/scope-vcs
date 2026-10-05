@@ -8,11 +8,6 @@ import {
   withPage,
 } from './browser-smoke.mjs'
 
-// Every loading step should already have the loaded page's shape: the same
-// topbar, the same content edge, and dividers where the page will draw them.
-// Each client navigation holds every server call, measures, then releases the
-// held calls one batch at a time until the page settles.
-
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900 },
   mobile: { width: 390, height: 844 },
@@ -20,12 +15,8 @@ const VIEWPORTS = {
 const DIVIDER_TOLERANCE_PX = 4
 const DIVIDER_MATCH_RATIO = 0.8
 const EDGE_TOLERANCE_PX = 2
-// Only maintainers see these, and access arrives with the repository data.
-const ACCESS_SECTIONS = ['Runs', 'Settings']
+const MAINTAINER_ONLY_SECTIONS = ['Runs', 'Settings']
 
-// Signed-in pages run only when a Playwright storage state for a repository
-// owner is provided, because the smoke suite itself browses signed out. The
-// other pages always browse signed out so local runs measure what CI does.
 const storageState = process.env.SCOPE_SMOKE_STORAGE_STATE
 
 const SCENARIOS = [
@@ -39,17 +30,12 @@ const SCENARIOS = [
   ...storageState ? [
     { name: 'runs', from: repoPath, to: `${repoPath}/runs`, signedIn: true },
     { name: 'run detail', from: `${repoPath}/runs`, to: firstRunLink, signedIn: true },
-    // Switching to settings shows the real page at once; entering it pends.
     { name: 'settings', from: `/${owner}`, to: `${repoPath}/settings`, signedIn: true },
     { name: 'account', from: `/${owner}`, to: '/account', signedIn: true },
     { name: 'request detail', from: `${requestRepoPath}/requests`, to: firstRequestLink, signedIn: true },
   ] : [],
 ]
 
-// Checks that fail today. Each fix removes its entry, and the test fails if an
-// entry starts passing, so this list only shrinks. What remains depends on the
-// seeded data, not on the skeletons' shape: on phones the update skeleton's file
-// tree is as long as a typical change set's, and the seeded update has two files.
 const KNOWN_FAILURES = new Set([
   'mobile update from code: dividers',
   'mobile update from profile: dividers',
@@ -98,23 +84,18 @@ async function captureNavigation(page, target) {
     else void route.continue()
   })
   await page.evaluate((next) => { void globalThis.__TSR_ROUTER__.navigate({ href: next }) }, href)
-  // Slow servers can take a while to issue the first call; releasing before it
-  // arrives would skip the loading sequence this test is here to measure.
   for (let waited = 0; held.length === 0 && waited < 10_000; waited += 100) {
     await page.waitForTimeout(100)
   }
 
   const pending = []
   for (let step = 0; step < 8; step += 1) {
-    // Past the router's pending delay and the skeleton fade-in.
     await page.waitForTimeout(700)
     const layout = await page.evaluate(measureLayout)
     if (layout.skeletons > 0) pending.push(layout)
     if (held.length === 0) break
     const batch = held
     held = []
-    // Some calls start only after an earlier one answers, so each step waits
-    // for the released responses before looking for the next calls.
     await Promise.all(batch.map(release))
   }
   holding = false
@@ -125,7 +106,6 @@ async function captureNavigation(page, target) {
     undefined,
     { timeout: 30_000 },
   )
-  // The loaded page can still be swapping in; measure once it shows content.
   let loaded
   for (let waited = 0; waited < 10_000; waited += 200) {
     await page.waitForTimeout(200)
@@ -135,8 +115,6 @@ async function captureNavigation(page, target) {
   return { pending, loaded }
 }
 
-// Answers a held call with its real response. A call the page abandoned while
-// it was held (the previous page's loads, for example) has nothing to answer.
 async function release(route) {
   try {
     await route.fulfill({ response: await route.fetch({ timeout: 15_000 }) })
@@ -147,7 +125,6 @@ async function waitForIdle(page) {
   await page.waitForFunction(() => globalThis.__TSR_ROUTER__?.state.status === 'idle')
 }
 
-/** Returns the reason each check fails, or null when it passes. */
 function compareSteps({ pending, loaded }) {
   const failures = { topbar: null, 'content edge': null, dividers: null }
   for (const [index, step] of pending.entries()) {
@@ -157,7 +134,7 @@ function compareSteps({ pending, loaded }) {
     } else {
       const extra = step.topbar.sections.filter((label) => !loaded.topbar.sections.includes(label))
       const missing = loaded.topbar.sections.filter((label) =>
-        !step.topbar.sections.includes(label) && !ACCESS_SECTIONS.includes(label))
+        !step.topbar.sections.includes(label) && !MAINTAINER_ONLY_SECTIONS.includes(label))
       if (extra.length) failures.topbar ??= `${at} shows sections the page lacks: ${extra.join(', ')}`
       if (missing.length) failures.topbar ??= `${at} is missing sections: ${missing.join(', ')}`
     }
@@ -166,7 +143,6 @@ function compareSteps({ pending, loaded }) {
     }
     const expected = loaded.dividers
     const matched = expected.filter((y) => near(step.dividers, y)).length
-    // Placeholder rows past the end of a short loaded list are not phantoms.
     const drawn = step.dividers.filter((y) => y <= Math.max(0, ...loaded.dividers) + DIVIDER_TOLERANCE_PX)
     const kept = drawn.filter((y) => near(loaded.dividers, y)).length
     if (
@@ -183,8 +159,6 @@ function near(values, y) {
   return values.some((value) => Math.abs(value - y) <= DIVIDER_TOLERANCE_PX)
 }
 
-// Runs in the page. Hidden trees (the page React suspends behind a pending
-// state) have no layout box, so every query filters to visible elements.
 function measureLayout() {
   const visible = (element) => {
     const rect = element.getBoundingClientRect()
@@ -201,12 +175,9 @@ function measureLayout() {
   const dividers = new Set()
   const mainRect = main?.getBoundingClientRect()
   for (const element of main?.querySelectorAll('*') ?? []) {
-    // Spinning icons grow their box as they rotate, so they cannot mark an edge.
     if (!visible(element) || element.closest('.sr-only, .animate-spin')) continue
     const rect = element.getBoundingClientRect()
     if (rect.bottom < mainRect.top || rect.top > innerHeight) continue
-    // Content is text where it is drawn, or a box that stands for content:
-    // skeletons, icons, images and inputs.
     if (element.matches('[data-slot="skeleton"], svg, img, input, textarea, select')) {
       left = Math.min(left, rect.left)
     }
@@ -217,8 +188,6 @@ function measureLayout() {
       left = Math.min(left, range.getBoundingClientRect().left)
     }
     if (rect.width < mainRect.width * 0.25) continue
-    // A divider is a lone top or bottom edge. Boxed inputs and panels have
-    // side borders too and are not dividers.
     const style = getComputedStyle(element)
     const edge = (side) => parseFloat(style[`border${side}Width`]) > 0 && style[`border${side}Style`] !== 'none'
     if (edge('Left') || edge('Right')) continue

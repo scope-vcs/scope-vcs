@@ -419,7 +419,6 @@ fn exercise_worktree_setup(actor: &Actor) {
             linked.to_str().unwrap(),
         ],
     );
-    // Simulate the GitHub-tracking branch used for ordinary mirrored development.
     run_git(
         &linked,
         [
@@ -533,7 +532,6 @@ impl Actor {
             command_args.extend(args);
             let output = self.run(command_args);
             if output.status.success() {
-                // Progress and Git diagnostics belong on stderr; stdout is one finite envelope.
                 return serde_json::from_slice(&output.stdout)
                     .expect("successful command must emit JSON");
             }

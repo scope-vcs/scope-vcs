@@ -1,5 +1,3 @@
-// Environment variable readers shared by the bench entrypoints.
-
 export function required(name, env = process.env) {
   const value = env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);

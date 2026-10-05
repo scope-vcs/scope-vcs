@@ -8,11 +8,6 @@ const platformOptions = [
   { copyName: 'Windows', label: 'Windows', value: 'windows' },
 ] as const
 
-/**
- * Platform picker plus the matching install command. Owns the selected
- * platform unless the caller passes `platform` to share it between copies;
- * callers style the code block for their surface.
- */
 export function CliInstallCommand({
   codeBlockClassName,
   commands,

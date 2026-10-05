@@ -16,7 +16,6 @@ fn destination() -> GitHubPushDestination {
     }
 }
 
-/// Leases are judged by the database's clock, so claims use real times.
 fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -61,8 +60,6 @@ async fn a_branch_is_pushed_by_one_claim_at_a_time_and_the_newest_push_wins() {
     assert_eq!(pushed.state, GitHubPushState::Running);
     assert_eq!(pushed.attempts, 1);
 
-    // A newer revision waits while the older push is running, and replaces
-    // nothing that is running.
     queue(db, "req_1", Some('b'), t + 1).await;
     assert!(
         requests
@@ -77,7 +74,6 @@ async fn a_branch_is_pushed_by_one_claim_at_a_time_and_the_newest_push_wins() {
         .unwrap()
         .unwrap();
     assert_eq!(finished.state, GitHubPushState::Succeeded);
-    // A lost claim records nothing.
     assert!(
         requests
             .finish_github_push(&pushed.id, "claim_1", GitHubPushOutcome::Succeeded, t + 2)
@@ -175,7 +171,6 @@ async fn a_failed_push_waits_for_its_retry_and_a_lapsed_claim_is_taken_again() {
         .unwrap();
     assert_eq!(again[0].attempts, 2);
 
-    // The claim lapses; another process takes the push over.
     let recovered = requests
         .claim_due_github_pushes("claim_3", 50, 200, 1)
         .await
@@ -234,7 +229,6 @@ async fn only_a_branch_scope_pushed_is_deleted_from_where_it_was_pushed() {
     assert_eq!(deletion.target_oid, None);
     assert_eq!(deletion.destination, destination());
     assert_eq!(deletion.state, GitHubPushState::Queued);
-    // The deletion replaced the push that never ran.
     assert_eq!(
         store
             .requests()
@@ -256,7 +250,6 @@ async fn a_lapsed_or_replaced_claim_may_not_push_or_record() {
     let db = store.db.as_ref();
     let t = now();
 
-    // The lease ran out by the database's clock, though no one took over.
     queue(db, "req_1", Some('a'), t - 300).await;
     let lapsed = requests
         .claim_due_github_pushes("claim_1", t - 300, t - 100, 1)
@@ -271,7 +264,6 @@ async fn a_lapsed_or_replaced_claim_may_not_push_or_record() {
         GitHubPushStanding::Lost
     );
 
-    // Another process takes it over; the first claim can record nothing.
     let push = requests
         .claim_due_github_pushes("claim_2", t, t + 100, 1)
         .await
@@ -293,7 +285,6 @@ async fn a_lapsed_or_replaced_claim_may_not_push_or_record() {
             .is_none()
     );
 
-    // A newer revision of the branch replaces the push the live claim holds.
     queue(db, "req_1", Some('b'), t + 1).await;
     assert_eq!(
         requests

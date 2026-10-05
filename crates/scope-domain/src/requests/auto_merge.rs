@@ -1,9 +1,3 @@
-//! Durable authorization to merge one exact request revision after its checks pass.
-//!
-//! Auto-merge is deliberately stricter than an attended merge: the absence of a
-//! check evaluation means "wait", and every authorization is fenced by both the
-//! revision identity and head oid so an A -> B -> A push cannot revive it.
-
 use super::{
     Request, RequestCheckEvaluation, RequestCheckResults, RequestChecksOutcome, RequestEvent,
     RequestEventKind, RequestEventPayload, RequestRevision, RequestState, advance_request_activity,
@@ -143,7 +137,6 @@ impl RequestAutoMergeReadiness {
     }
 }
 
-/// Determines whether unattended merging may continue for the authorized head.
 pub fn request_auto_merge_readiness(
     request_id: &str,
     head_oid: &str,
@@ -201,8 +194,6 @@ pub struct RequestAutoMergeMutation {
     pub event: RequestEvent,
 }
 
-/// Offers auto-merge only while the checks are still undecided. Clear checks merge
-/// directly, and failed checks would stop the authorization at once.
 pub fn request_auto_merge_can_enable(
     request: &Request,
     revision: Option<&RequestRevision>,

@@ -46,7 +46,6 @@ fn push_creates_missing_config_before_remote_lookup() {
         "no Scope Git remote found; pass --remote <name> or run scope init",
     );
     assert!(repo_config_path(dir.path()).unwrap().is_file());
-    assert!(dir.path().join(".scope/RULES.md").is_file());
     assert!(!stderr.contains("Working tree has uncommitted changes."));
 }
 
@@ -230,8 +229,6 @@ fn ctrl_c_during_delayed_login_validation_exits_before_publish() {
     assert!(transcript.ends_with(b"\r\x1b[2K"), "{transcript:?}");
 }
 
-/// Runs `command` with a pseudo-terminal as stdin, stdout and stderr, returning
-/// the terminal's reading side. The child holds the only open terminal handles.
 #[cfg(unix)]
 fn spawn_in_terminal(mut command: Command) -> (File, Child) {
     let mut master_fd = 0;
@@ -279,7 +276,6 @@ fn wait_for_exit(child: &mut Child, within: Duration, stuck: &str) -> ExitStatus
     child.wait().unwrap()
 }
 
-/// Reads everything the child wrote; EIO marks the terminal closing on exit.
 #[cfg(unix)]
 fn read_terminal(mut terminal_output: File) -> Vec<u8> {
     let mut transcript = Vec::new();
@@ -331,7 +327,6 @@ fn browser_login_instructions_remain_readable_and_cancellable() {
     while !login_started.load(Ordering::Acquire) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }
-    // Leave enough time for multiple animation frames while browser login waits.
     std::thread::sleep(Duration::from_millis(700));
     // SAFETY: child.id() is the live CLI subprocess created by this test.
     assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGINT) }, 0);

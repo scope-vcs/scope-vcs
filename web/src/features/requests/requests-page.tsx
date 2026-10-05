@@ -56,8 +56,6 @@ function RequestWorkspaceContent({
   const [collapsed, setCollapsed] = useState(readRequestWorkspaceCollapsed)
   const [focus, setFocus] = useState(false)
   const [draft, setDraft] = useState<string | null>(null)
-  // Focus mode hides the app chrome, which lives above this page, so the
-  // page announces it on the document and leaves when it unmounts.
   useEffect(() => {
     document.documentElement.toggleAttribute('data-focus', focus)
     return () => document.documentElement.removeAttribute('data-focus')
@@ -99,7 +97,6 @@ function RequestWorkspaceContent({
     setCollapsed(value)
     saveRequestWorkspaceCollapsed(value)
     if (!value) setFocus(false)
-    // The rail draws the queue, so collapsing drops any search.
     else if (query) search('')
   }
 
@@ -116,8 +113,6 @@ function RequestWorkspaceContent({
           focus={focus}
           error={queue.error ? 'Could not load requests. Try again.' : null}
           loading={queue.refreshing}
-          // Placeholders stand in only while there is nothing true to show:
-          // the first load, or a search whose results have not arrived.
           skeleton={!queue.value || (queue.refreshing && queue.value.query !== queue.value.requestedQuery)}
           maintainer={maintainer}
           onAction={(item, command) => void act(item, command)}

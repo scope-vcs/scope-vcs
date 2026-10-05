@@ -37,8 +37,6 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     )?;
 
     let result = (|| -> anyhow::Result<()> {
-        // Persist the permissioned URL and credential helper so plain `git fetch` and
-        // `git pull` have exactly the same view after this command returns.
         run_git_in_repo(
             &repo,
             &["remote", "set-url", &remote, &target.permissioned_url],

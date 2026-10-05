@@ -14,7 +14,6 @@ import { CHECKS_SECTION_CLASS, RequestChecksPending } from './request-checks-pen
 const LOGS_LINK_CLASS =
   'font-mono text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline'
 
-/** What the request head owes before it can merge: one row per check. */
 export function RequestChecksSection({
   checks,
   error,
@@ -24,7 +23,6 @@ export function RequestChecksSection({
   error: string | null
   params: RepoParams
 }) {
-  // Checks always arrive or fail, so their row is reserved while they load.
   if (!checks && !error) return <RequestChecksPending />
   const note = checks ? requestCheckEvaluationNote(checks) : null
   const warning = checks ? requestChecksWorkflowWarning(checks) : null

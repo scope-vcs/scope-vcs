@@ -7,9 +7,6 @@ use std::{
 };
 
 const TEMPLATE_SCHEMA: &str = "scope_test_template";
-/// A `DROP DATABASE` cannot finish before a full checkpoint does. While migration
-/// tests are creating hundreds of relation files, a checkpoint has been measured
-/// at up to 48 seconds, so a shorter wait abandons drops that were about to succeed.
 const EXIT_CLEANUP_TIMEOUT: Duration = Duration::from_secs(90);
 
 type ProcessDatabases = Mutex<HashMap<String, HashSet<String>>>;
@@ -156,8 +153,6 @@ async fn create_database(
 
 fn register_process_database(admin_url: &str, database_name: &str) -> anyhow::Result<()> {
     match EXIT_HOOK.get_or_init(|| {
-        // The callback drains only names registered by this process. It runs on
-        // normal process exit while the dedicated test runtime is still alive.
         let result = unsafe { libc::atexit(cleanup_process_databases_at_exit) };
         (result == 0).then_some(()).ok_or(result)
     }) {
@@ -191,8 +186,6 @@ fn unregister_process_database(admin_url: &str, database_name: &str) {
 }
 
 extern "C" fn cleanup_process_databases_at_exit() {
-    // Panics cannot cross an FFI callback. Cleanup failures are reported by the
-    // individual drop operation and must never abort an otherwise successful test run.
     let _ = std::panic::catch_unwind(cleanup_process_databases);
 }
 
@@ -235,7 +228,6 @@ fn cleanup_process_databases() {
         );
         return;
     }
-    // This process's own state is gone, so nothing here competes with it.
     run_test_future(async move {
         let deadline = tokio::time::Instant::now() + stale_cleanup::SWEEP_BUDGET;
         for admin_url in servers {
@@ -283,8 +275,6 @@ pub(super) async fn drop_database(admin_url: &str, database_name: &str) {
 }
 
 async fn try_drop_database(admin_url: &str, database_name: &str) -> anyhow::Result<()> {
-    // Keep slow drops from consuming every server connection while later tests
-    // are already opening their database pools.
     static CLEANUPS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
     let _permit = CLEANUPS
         .acquire()
@@ -380,8 +370,6 @@ mod tests {
             }
         });
 
-        // Once every live store is gone, this target receives a fresh database
-        // even if asynchronous cleanup of its prior database is still running.
         let fresh = connect_postgres_test_store(&target).unwrap();
         run_test_future(async move {
             let count = fresh
@@ -404,8 +392,6 @@ mod tests {
         if std::env::var_os(EXIT_CLEANUP_CHILD).is_some() {
             let store =
                 connect_postgres_test_store(&TestDatabaseTarget::required().unwrap()).unwrap();
-            // Leave both the live clone and its template for the exit owner. A
-            // force drop must close the clone's still-open pool.
             std::mem::forget(store);
             return;
         }

@@ -34,8 +34,6 @@ pub enum GitStorageError {
     Task(String),
 }
 
-/// Whether a backend operation failed because the object is absent or because storage could not
-/// answer. Only the first is a fact about the object.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackendErrorKind {
     NotFound,

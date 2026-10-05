@@ -7,8 +7,6 @@ import { validatePreparedDeployment } from './release-selection.mjs';
 import { githubRequest } from './production-deployment-progress.mjs';
 import { readRailway } from './railway-read.mjs';
 
-// An interrupted smoke run can resume only the images whose complete staging
-// deployment was recorded by the original, validated release on main.
 export function validateStagingResumeEvidence(prepared, evidence, manifest) {
   const environment = manifest.environments.staging.environmentId;
   assert.notEqual(environment, manifest.environments.production.environmentId);
@@ -43,13 +41,9 @@ export function validateStagingResumeDeployments(prepared, evidence, manifest, h
     const scoped = { ...prepared, components: {
       ...prepared.components, [component]: { ...prepared.components[component], serviceId },
     } };
-    // Cleanup removes writers after smoke failure. REMOVED preserves immutable
-    // image evidence; the original GitHub step and receipt establish success.
     for (const deployment of [original, history[0]]) {
       assert(['SUCCESS', 'REMOVED'].includes(deployment.status),
         `Staging ${component} has an unfinished or unsuccessful deployment`);
-      // The CLI omits these IDs from scoped lists; reject contradictions when
-      // present, and always obtain each history with explicit service/env IDs.
       if (deployment.serviceId) assert.equal(deployment.serviceId, serviceId,
         'Staging deployment targets another service');
       if (deployment.environmentId) assert.equal(deployment.environmentId, manifest.environments.staging.environmentId,

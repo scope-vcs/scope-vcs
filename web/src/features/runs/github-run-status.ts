@@ -1,6 +1,5 @@
 import type { GitHubCheckConclusion, GitHubCheckStatus } from '@/api/types.generated'
 
-/** A GitHub run in the runs vocabulary, so it shares the run status icons. */
 export type GitHubRunResult = { state: string; label: string }
 
 const GITHUB_STATUS: Record<GitHubCheckStatus, GitHubRunResult> = {
@@ -24,7 +23,6 @@ const GITHUB_CONCLUSION: Record<GitHubCheckConclusion, GitHubRunResult> = {
   startup_failure: { state: 'failed', label: 'startup failure' },
 }
 
-/** A completed run is described by its conclusion; any other by its status. */
 export function githubRunResult(
   status: GitHubCheckStatus,
   conclusion: GitHubCheckConclusion | null,

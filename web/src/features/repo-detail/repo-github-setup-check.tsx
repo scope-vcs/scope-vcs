@@ -6,12 +6,6 @@ import { Check, FlaskConical, LoaderCircle, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { GITHUB_TRIGGER_SNIPPET, githubSetupCheckView } from './repo-github-setup-check-model'
 
-/**
- * How a maintainer makes workflows run on Scope requests: the trigger to add,
- * and a test that pushes main and lists the checks GitHub ran, each of which
- * can be required with one click. The test's result comes from the settings
- * data, so it outlasts this page.
- */
 export function RepoGitHubSetupCheck({
   github,
   requireCheck,

@@ -37,11 +37,6 @@ export function requestAttentionLabel(item: RequestQueueItemResponse, hydrated: 
   return reason
 }
 
-/**
- * Why a row is in the viewer's inbox. The API sorts rows into storage
- * sections; this is the single owner of how those sections and attention
- * reasons become the groups a reader scans.
- */
 export type RequestAttentionGroup = 'needs_you' | 'waiting' | 'unclaimed' | 'set_aside' | 'done'
 
 export const REQUEST_ATTENTION_GROUP_ORDER = [
@@ -68,10 +63,6 @@ const NEEDS_YOU: ReadonlySet<RequestAttentionReason> = new Set([
   'snooze_expired',
 ])
 
-/**
- * A maintainer's own request needs them, since merging or closing it is theirs
- * to do. A contributor's own request waits on a maintainer.
- */
 export function requestAttentionGroup(
   section: RequestQueueSection,
   reason: RequestAttentionReason,
@@ -82,7 +73,6 @@ export function requestAttentionGroup(
   return NEEDS_YOU.has(reason) ? 'needs_you' : 'waiting'
 }
 
-/** A row with unseen activity reads like unread mail. */
 export function requestHasNewActivity(item: RequestQueueItemResponse) {
   return item.attention.reason === 'new_activity'
 }
@@ -92,10 +82,6 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 const WEEK = 7 * DAY
 
-/**
- * How long a row has waited for the viewer, in four steps the sidebar can
- * tint: under a day, under three, under a week, longer.
- */
 export function requestAttentionHeat(attentionAtUnix: number, nowUnix: number): 0 | 1 | 2 | 3 {
   const age = nowUnix - attentionAtUnix
   if (age < DAY) return 0
@@ -104,7 +90,6 @@ export function requestAttentionHeat(attentionAtUnix: number, nowUnix: number): 
   return 3
 }
 
-/** Compact age for a row: "now", "4h", "2d", "3w", then a short date. */
 export function requestAgeLabel(attentionAtUnix: number, nowUnix: number, hydrated: boolean) {
   const age = Math.max(0, nowUnix - attentionAtUnix)
   if (age < MINUTE) return 'now'
@@ -135,11 +120,6 @@ export function requestSnoozeUntil(value: RequestSnoozeOption, now = new Date())
   return Math.floor(until.getTime() / 1000)
 }
 
-/**
- * When a snooze choice lands, worded for the menu: the hour option is still
- * today so only the clock matters, the rest name the day they return on. The
- * menu only asks once it is open in the browser, so this is always local time.
- */
 export function requestSnoozeLandingLabel(value: RequestSnoozeOption, now: Date): string {
   const until = requestSnoozeUntil(value, now)
   return value === 'hour' ? formatUnixClockTime(until, true) : formatUnixWeekdayTime(until, true)

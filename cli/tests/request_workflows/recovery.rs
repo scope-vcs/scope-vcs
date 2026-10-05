@@ -8,7 +8,6 @@ fn request_start_metadata_failure_can_retry_push_without_creating_another_reques
     let head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
     let bare = TempDir::new("request-recovery-bare");
     run_git(bare.path(), ["init", "--bare"]);
-    // Scope advertises a new request's branch at the base the request started from.
     run_git(
         dir.path(),
         [

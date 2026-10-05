@@ -1,4 +1,3 @@
-"""Supervise Scope releases from admission through verified production completion."""
 from __future__ import annotations
 
 import argparse
@@ -75,7 +74,6 @@ def recent_runs(state: dict) -> list[dict]:
 
 def update_runs(state: dict, listed: list[dict]) -> dict[str, dict]:
     current = {str(run["id"]): run for run in listed if trusted_run(run)}
-    # Older unfinished releases and retries must not disappear outside the newest page.
     for key, record in state["runs"].items():
         if record["status"] not in TERMINAL and key not in current:
             current[key] = github(f"actions/runs/{key}")
@@ -94,8 +92,6 @@ def update_runs(state: dict, listed: list[dict]) -> dict[str, dict]:
             record.update(attempt=run["run_attempt"], status="waiting",
                           attempt_started_at=run.get("run_started_at") or run["created_at"])
             record.pop("thread_id", None)
-            # A retried correction no longer proves the releases it recovered, even
-            # after their investigation closed; reopen them alongside the retry.
             for recovered in state["runs"].values():
                 if recovered["status"] == "recovered" and recovered.get("corrected_by") == run["id"]:
                     recovered["status"] = "waiting"
@@ -186,7 +182,6 @@ def read_corrections(state: dict, info: dict) -> str:
             run = runs[correction]
             if ((run.get("run_started_at") or run["created_at"])
                     < previous.get("attempt_started_at", previous["created_at"])):
-                # A previous repair cannot close a newly retried release.
                 break
             chain.append(correction)
         else:
@@ -214,7 +209,6 @@ def read_corrections(state: dict, info: dict) -> str:
 
 def new_incident(state: dict, record: dict) -> dict:
     incident_id = f"scope-release-{record['run_id']}-{record['attempt']}"
-    # A release reopened after its investigation closed must not reuse that thread.
     suffix = 2
     while incident_id in state["threads"]:
         incident_id = f"scope-release-{record['run_id']}-{record['attempt']}-{suffix}"
@@ -237,7 +231,6 @@ def queue_turn(state: dict, info: dict) -> None:
         PROMPT.format(releases=releases, receipt=receipt_path(info), inbox=inbox_path(info)),
         info["provider"])
     info["owns_agent"] = True
-    # Persist the exact command before dispatch, so uncertain responses retry idempotently.
     persist(state)
 
 
@@ -259,7 +252,6 @@ def escalate(state: dict, info: dict, reason: str) -> None:
     records = unresolved(state, info["incident_id"])
     if not records:
         return
-    # alert() deduplicates by run, including a retry after a lost HTTP response.
     info["alert_url"] = alert(records[0]["run_id"], reason, recoveries=info["recoveries"],
                               thread_id=info["thread_id"], provider=info["provider"])
     info.update(status="escalated", reason=reason)
@@ -274,18 +266,14 @@ def interrupt(client: T3Client, state: dict, info: dict, thread: dict, reason: s
     persist(state)
     run_id = thread.get("activeRunId")
     if run_id:
-        # Repeating the same command each poll is idempotent; a later run gets its own.
         client.dispatch(interrupt_command(f"{info['incident_id']}-stop-{info['generation']}-{run_id}",
                                           info["thread_id"], run_id))
 
 
 def monitor(client: T3Client, state: dict, info: dict, shell: dict) -> None:
     if info.get("pending_command"):
-        # Dispatch may already have been accepted before its response was lost.
-        # Retry the identical command to establish ownership, then observe its stop.
         dispatch_pending(client, state, info)
         return
-    # T3 omits deleted threads from its shell; supervision treats that as a removed agent.
     thread = shell or {"deletedAt": stamp()}
     info["owns_agent"] = running(thread)
     persist(state)
@@ -294,7 +282,6 @@ def monitor(client: T3Client, state: dict, info: dict, shell: dict) -> None:
             interrupt(client, state, info, thread, info["reason"])
         return
     if info.get("stopping_at") and running(thread):
-        # A run can be active before T3 reports its ID; retry until the stop reaches it.
         interrupt(client, state, info, thread, info["stop_reason"])
     if not unresolved(state, info["incident_id"]):
         if not running(thread):
@@ -325,7 +312,6 @@ def monitor(client: T3Client, state: dict, info: dict, shell: dict) -> None:
     info["recoveries"] += 1
     info["generation"] += 1
     if action == "fallback":
-        # The policy waits for interruption to complete before another provider touches the worktree.
         info["provider"] = FALLBACK_PROVIDER
         info["thread_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, info["incident_id"] + "-" + FALLBACK_PROVIDER))
     queue_turn(state, info)
@@ -351,30 +337,23 @@ def poll(*, initialize: bool = False, dry_run: bool = False) -> dict:
     try:
         deployment_scheduler.poll()
     except Exception as error:
-        # Keep supervising existing releases, but withhold the heartbeat so the
-        # external observer reports a broken daily dispatch owner.
         scheduler_error = error
     update_runs(state, listed)
-    # Read registrations before assigning newly discovered corrective releases.
     for info in list(state["threads"].values()):
         if info["status"] == "monitoring":
             try:
                 info["reported_blocker"] = read_corrections(state, info)
                 info.pop("receipt_error_at", None)
             except ValueError:
-                # A partial write must not disable supervision of every other release.
                 info.setdefault("receipt_error_at", stamp())
                 if timestamp(stamp()) - timestamp(info["receipt_error_at"]) >= 120:
                     info["reported_blocker"] = "verification_failed"
     for record in list(state["runs"].values()):
         if record["status"] != "waiting":
             continue
-        # Serialize repairs while a release investigation is open. Its receipt is still
-        # required to prove which failures a subsequent deployment actually corrected.
         info = next((t for t in state["threads"].values()
                      if t["status"] == "monitoring" or t.get("owns_agent")), None)
         if info and info["status"] == "escalated":
-            # Never overlap a replacement with an agent whose interruption is unconfirmed.
             continue
         if info is None:
             info = new_incident(state, record)

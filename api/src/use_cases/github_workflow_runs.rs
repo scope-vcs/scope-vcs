@@ -1,10 +1,3 @@
-//! Reads the workflow runs GitHub Actions reports for connected repositories,
-//! which their Runs pages list. A `workflow_run` delivery names the run to read
-//! again; GitHub's API answers what it is now, so a late or repeated delivery
-//! cannot leave an older state behind. The read is kept as pending before
-//! GitHub is asked, so one that fails is tried again by a background pass
-//! instead of being lost with the delivery.
-
 use crate::{error::ApiError, state::AppState};
 use scope_domain::{
     github_connection::GitHubConnection,
@@ -13,12 +6,8 @@ use scope_domain::{
 use scope_postgres::db::GitHubWorkflowRunReadJob;
 
 const READ_BATCH_SIZE: u64 = 20;
-/// When a claimed read is tried again if its process never reports back.
 const READ_LEASE_SECS: u64 = 5 * 60;
 
-/// A delivery said a workflow run changed. Repositories that are not
-/// connected are acknowledged and ignored. Fails only when the read could not
-/// be kept for later; a read GitHub does not answer now is tried again.
 pub(crate) async fn refresh_workflow_run_for_delivery(
     state: &AppState,
     github_repository_id: u64,
@@ -63,10 +52,6 @@ pub(crate) async fn refresh_workflow_run_for_delivery(
     }
 }
 
-/// One pass over pending reads that are due. Each is read again, dropped
-/// once its repository is no longer connected to the GitHub repository that
-/// reported it, and given up after the usual retries. Returns how many were
-/// answered.
 pub(crate) async fn retry_github_workflow_run_reads_once(
     state: &AppState,
     now_unix: u64,
@@ -118,8 +103,6 @@ pub(crate) async fn retry_github_workflow_run_reads_once(
     Ok(answered)
 }
 
-/// Stores what GitHub reports for the run now. A run GitHub no longer has is
-/// an answer too.
 async fn read_workflow_run(
     state: &AppState,
     connection: &GitHubConnection,
@@ -147,9 +130,6 @@ async fn read_workflow_run(
     publish(state, connection).await
 }
 
-/// Reads every workflow run GitHub started on one of Scope's branches for a
-/// commit. A connection test reads them itself, so it does not depend on
-/// deliveries arriving.
 pub(crate) async fn refresh_branch_workflow_runs(
     state: &AppState,
     connection: &GitHubConnection,
@@ -183,7 +163,6 @@ pub(crate) async fn refresh_branch_workflow_runs(
     Ok(())
 }
 
-/// Tells the repository's open Runs pages that its GitHub runs changed.
 pub(crate) async fn publish(
     state: &AppState,
     connection: &GitHubConnection,

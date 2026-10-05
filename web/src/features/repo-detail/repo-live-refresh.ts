@@ -11,7 +11,6 @@ import { runRepoEventStream, streamRepoEvents } from './repo-event-stream'
 import { repoResourceScope } from './repo-resource-scope'
 import { invalidateRepoResources, invalidateRepoSummaryResources } from './repo-resource-invalidation'
 
-/** A forced refresh ignores versions; a versioned one is dropped once applied. */
 type RepoRefreshRequest = { force: boolean; version: number | null }
 type RepoChangeListener = (event: RepoChangeEvent) => void
 export type SubscribeToRepoChanges = (
@@ -45,8 +44,6 @@ export function useRepoLiveRefresh(
   }, [])
 
   useEffect(() => () => {
-    // Once we leave this repository/access scope, its disconnected interval
-    // needs reconciliation on return, including public views without versions.
     if (scope) invalidateRepoResources(scope)
   }, [scope])
 
@@ -69,15 +66,12 @@ export function useRepoLiveRefresh(
       for (const listener of listenersRef.current) {
         try {
           listener(event)
-        } catch {
-          // A broken page subscriber must not tear down the shared stream.
-        }
+        } catch {}
       }
     }
     const onEvent = (event: RepoChangeEvent) => {
       const summaryPending = coordinator.onEvent(event)
       if (event.repo_id === repoId) {
-        // Connected also covers changes committed after an interruption refresh.
         invalidateRepoResources(scope, event, summaryPending)
       }
       notifyListeners(event)
@@ -157,7 +151,6 @@ export function createRepoRefreshCoordinator({
     onEvent(event) {
       if (
         event.repo_id !== repoId ||
-        // GitHub workflow runs change no summary; their own list refreshes.
         event.kind === 'GitHubWorkflowRunsChanged' ||
         typeof event.kind === 'object' &&
           ('RequestTimelineChanged' in event.kind || 'RunChanged' in event.kind)
@@ -179,8 +172,6 @@ export function createRepoRefreshCoordinator({
       const unchangedVersion = lastSummaryVersion === version
       lastSummaryId = refreshId
       lastSummaryVersion = version
-      // The queue cache already reloads on a version change. Only summaries
-      // without that change need explicit invalidation of the retained queue.
       if (unchangedVersion) onSummaryRefresh()
     },
     onStreamInterrupted: () => requestRefresh(null),

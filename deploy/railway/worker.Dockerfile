@@ -10,8 +10,6 @@ RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
 FROM node:24.21.0-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS analyzer-dependencies
 WORKDIR /app/dependency-analyzer
 COPY dependency-analyzer/package.json dependency-analyzer/package-lock.json ./
-# Install the reviewed lockfile before copying application source. Lifecycle
-# scripts stay disabled so release preparation never executes repository code.
 RUN npm ci --ignore-scripts --omit=dev \
     && npm cache clean --force
 
@@ -35,8 +33,6 @@ COPY dependency-analyzer/third-party-dependency-analyzer.txt ./
 
 WORKDIR /app
 COPY bin /app/bin
-# Repository restoration and dependency snapshots live below .scope. The
-# worker can write there and in its home, but cannot replace its executable.
 RUN useradd --uid 65532 --user-group --create-home --shell /usr/sbin/nologin scope \
     && mkdir -p /app/.scope /home/scope/.cache \
     && chown 65532:65532 /app/.scope /home/scope/.cache

@@ -3,7 +3,6 @@ import { UserButton } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
 import { KeyRound } from 'lucide-react'
 
-/** Account controls in the profile topbar, shared with its pending state. */
 export function OwnerProfileTopbarActions({ handle, signedIn }: { handle: string; signedIn: boolean }) {
   if (!signedIn) {
     return (

@@ -52,7 +52,6 @@ use std::{
 
 struct TemporaryRepository(PathBuf);
 
-/// Body encodings accepted on Git smart-HTTP requests.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GitRequestEncoding {
     Identity,
@@ -290,9 +289,6 @@ async fn receive_pack_request(
         Ok(encoding) => encoding,
         Err(error) => return git_error_response(error),
     };
-    // Git streams pushes as chunked identity bodies and only gzips upload-pack
-    // requests. Refusing gzip keeps every push on the streaming path instead of
-    // buffering a compressed body and its decoded copy.
     if encoding == GitRequestEncoding::Gzip {
         return git_error_response(ApiError::bad_request(
             "gzip-encoded git receive-pack bodies are unsupported",
@@ -489,8 +485,6 @@ async fn handle_git_receive_pack_body(
             message = error.operator_diagnostic(),
             "git receive-pack failed"
         );
-        // Git has negotiated the response framing. Replace its provisional success
-        // with a fatal protocol error, since HTTP errors hide the reason from Git.
         let prefix = if matches!(cgi.body.get(4), Some(1..=3)) {
             "\u{3}"
         } else {

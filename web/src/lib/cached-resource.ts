@@ -21,9 +21,6 @@ const emptySnapshot: ResourceSnapshot<never> = {
 
 export type CachedResourceStore<T extends object> = ReturnType<typeof createCachedResource<T>>
 
-// Requests belong to the resource, so leaving a page does not discard work
-// another visit or subscriber can reuse. Retained data belongs to the current
-// viewer unless the owner declares it app-wide.
 export function createCachedResource<T extends object>({ retainAcrossViewers = false, ...options }: BoundedCacheOptions<T> & {
   retainAcrossViewers?: boolean
 }) {
@@ -38,8 +35,6 @@ export function createCachedResource<T extends object>({ retainAcrossViewers = f
   const getSnapshot = (identity: string): ResourceSnapshot<T> => visible.get(identity) ?? entries.peek(identity) ?? emptySnapshot
   const publish = (identity: string, snapshot: ResourceSnapshot<T>) => {
     entries.set(identity, snapshot)
-    // Oversized results may be rendered by an active view without retaining
-    // them in the navigation cache after its last subscriber leaves.
     if (listeners.has(identity)) visible.set(identity, snapshot)
     for (const listener of listeners.get(identity) ?? []) listener()
   }

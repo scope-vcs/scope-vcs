@@ -130,7 +130,6 @@ fn separated_visibility_and_content_fragments_are_one_action_with_exact_diff_bas
     assert_eq!(boundary.old_content, Some(blob("first public")));
     assert_eq!(boundary.new_content, None);
     assert_eq!(boundary.kind, FileChangeKind::Deleted);
-    // Grouping for display must never replay this deletion after the intervening update.
     assert_eq!(public.entries[1].files[0].old_content, None);
     assert_eq!(
         public.entries[1].files[0].new_content,

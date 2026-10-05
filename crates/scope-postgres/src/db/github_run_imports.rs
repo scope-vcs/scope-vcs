@@ -1,11 +1,3 @@
-//! How many of GitHub's recent workflow runs each repository imports, and its
-//! latest import. Changing the count and starting an import re-read the
-//! viewer's access in the writing transaction. Imports run in a leased
-//! background pass: a claim that lapses is taken up again, and an import
-//! queued meanwhile replaces the row, so the old claim can no longer store
-//! runs or record anything. Disconnecting, by a maintainer or because GitHub
-//! took the repository away, deletes the import.
-
 use super::{
     RepositoryStore, acquire_aggregate_lock,
     github_connections::repository_github_connection,
@@ -41,13 +33,11 @@ struct ImportRow {
     finished_at_unix: Option<i64>,
 }
 
-/// How a claimed import ended.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubRunImportOutcome {
     Succeeded {
         imported: u32,
     },
-    /// Tried again at `retry_at_unix`, or given up when it is `None`.
     Failed {
         error: String,
         retry_at_unix: Option<u64>,
@@ -59,9 +49,6 @@ impl RepositoryStore {
         run_import_count(self.db.as_ref(), repo_id).await
     }
 
-    /// Stores how many recent runs the repository imports once the domain
-    /// accepts it. Returns the count and the repository incarnation it was
-    /// stored for, so the caller can announce the change.
     pub async fn set_github_run_import_count(
         &self,
         repo_id: &str,
@@ -80,9 +67,6 @@ impl RepositoryStore {
         Ok((count, context.incarnation()))
     }
 
-    /// Queues an import of the connected repository's recent runs with the
-    /// repository's count, for a maintainer. Returns the import and the
-    /// repository incarnation it belongs to, so the caller can announce it.
     pub async fn start_github_run_import(
         &self,
         repo_id: &str,
@@ -111,7 +95,6 @@ impl RepositoryStore {
         Ok((import, context.incarnation()))
     }
 
-    /// The repository's latest import, of whichever GitHub repository it read.
     pub async fn github_run_import(
         &self,
         repo_id: &str,
@@ -119,8 +102,6 @@ impl RepositoryStore {
         load_import(self.db.as_ref(), repo_id).await
     }
 
-    /// Claims imports that are due, or whose last claim lapsed, for
-    /// `claim_token` until `lease_until_unix`.
     pub async fn claim_due_github_run_imports(
         &self,
         claim_token: &str,
@@ -165,12 +146,6 @@ impl RepositoryStore {
         .collect()
     }
 
-    /// Stores a page of runs the import held by `claim_token` read, while
-    /// that claim holds and the repository is still connected to the GitHub
-    /// repository the import reads. The import row and the link are locked
-    /// while the runs are written, so a newer import, a disconnect or a
-    /// reconnect either waits for the page or makes it store nothing. Returns
-    /// `false` when the page was not stored; the import should then stop.
     pub async fn store_github_run_import_page(
         &self,
         repo_id: &str,
@@ -178,7 +153,6 @@ impl RepositoryStore {
         runs: &[GitHubWorkflowRun],
     ) -> Result<bool, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        // The lease is judged by the database's clock, which every process shares.
         let Some(row) = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -211,8 +185,6 @@ impl RepositoryStore {
         Ok(true)
     }
 
-    /// Records how a claimed import ended. Returns `false` when the claim was
-    /// lost, which records nothing.
     pub async fn finish_github_run_import(
         &self,
         repo_id: &str,
@@ -314,8 +286,6 @@ pub(super) async fn save_run_import_count<C: ConnectionTrait>(
     Ok(())
 }
 
-/// Makes `import` the repository's latest import, due now. Whatever import
-/// it replaces loses its claim.
 pub(super) async fn queue_github_run_import<C: ConnectionTrait>(
     conn: &C,
     import: &GitHubRunImport,
@@ -353,8 +323,6 @@ pub(super) async fn queue_github_run_import<C: ConnectionTrait>(
     Ok(())
 }
 
-/// Forgets the repository's import, so a disconnected repository has none
-/// left to run.
 pub(super) async fn delete_github_run_import<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,

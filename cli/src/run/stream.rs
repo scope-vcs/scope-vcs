@@ -41,8 +41,6 @@ pub(super) fn completion(
                 resume_command(connection, run_id, cursor)
             )));
         }
-        // A quiet SSE connection can remain healthy through server keep-alives.
-        // Only the overall watch deadline should time it out.
         let client = run_client(remaining)?;
         let api = ApiSession::new(&client, &connection.api_url, &connection.token);
         let mut terminal = None;

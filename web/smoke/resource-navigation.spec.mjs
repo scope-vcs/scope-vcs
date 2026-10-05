@@ -20,7 +20,7 @@ test('latest repository activity survives child navigation without another reque
     await activity.waitFor()
     const original = await activity.innerText()
     const firstRequests = requests
-    assert.equal(firstRequests, 2) // Initial read and connection catch-up.
+    assert.equal(firstRequests, 2, 'initial read plus connection catch-up')
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 844 })
       await page.getByRole('link', { name: 'Requests', exact: true }).first().click()
@@ -61,8 +61,6 @@ test('repository events received off-page refresh retained activity without blan
   let release
   const held = new Promise((resolve) => { release = resolve })
   const prepare = async (page) => {
-    // This test owns the event stream, so the page settles only after the
-    // test emits Connected.
     settled = trackPageSettle(page)
     await page.addInitScript(() => {
       const originalFetch = window.fetch.bind(window)
@@ -113,8 +111,6 @@ test('repository events received off-page refresh retained activity without blan
         window.__scopeEmitRepositoryEvent({ repo_id: repo.id, incarnation_id: 'browser-test', version: 1, kind })
       }, kind)
       await page.waitForFunction(() => globalThis.__TSR_ROUTER__?.state.status === 'idle' && window.__scopeRepositoryStreamCount() > 0)
-      // A real stream starts with Connected. Let its catch-up finish before
-      // holding the later repository change, including any cancelled reads.
       await emitEvent('Connected')
       await settled()
       const activity = page.getByLabel('Latest repository change', { exact: true })

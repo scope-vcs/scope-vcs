@@ -131,7 +131,6 @@ async fn concurrent_admission_obeys_global_capacity() {
 async fn final_dispatch_expiry_is_terminal_and_healthy_job_progresses() {
     let store = fixture(2).await;
     let runs = store.runs();
-    // The final pre-start expiry must become terminal without another admission pass.
     runs.db
         .execute_unprepared(
             "UPDATE scope_run_jobs SET last_attempt_number = 99 WHERE run_id = 'run-000'",
@@ -237,7 +236,6 @@ async fn uncertain_start_reserves_capacity_until_expiry_and_retains_cleanup_work
     else {
         panic!("expected admission");
     };
-    // An ambiguous provider response leaves the reservation active.
     assert!(matches!(
         runs.admit_next_job(1, "next", &"c".repeat(64), "runtime", 11, 20)
             .await
@@ -345,7 +343,6 @@ async fn capacity_retry_budget_and_due_time_survive_store_reopening() {
             .unwrap()
             .transitioned
     );
-    // The terminal attempt continues to reserve real provider capacity until absence is confirmed.
     assert!(matches!(
         store
             .runs()

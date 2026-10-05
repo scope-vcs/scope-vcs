@@ -12,7 +12,6 @@ pub struct UserAccount {
     pub email_verified: bool,
 }
 
-/// The authenticated account facts exposed to a signed-in session.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExternalIdentity {
     pub provider: String,

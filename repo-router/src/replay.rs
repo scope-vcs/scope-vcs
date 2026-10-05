@@ -5,8 +5,6 @@ use axum::{
 use std::time::Duration;
 use tokio::sync::{Semaphore, SemaphorePermit};
 
-/// Each admitted request reserves its full maximum buffer until forwarding ends.
-/// This bounds aggregate replay memory as well as partially received bodies.
 pub(crate) struct ReplayBuffer {
     slots: Semaphore,
     max_bytes: usize,

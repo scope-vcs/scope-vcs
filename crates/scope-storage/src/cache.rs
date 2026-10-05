@@ -168,7 +168,6 @@ impl VerifiedPackCache {
             remove_file_if_exists(source)?;
         } else {
             fs::rename(source, path).map_err(GitStorageError::Local)?;
-            // Ingest or remote hydration already authenticated this source.
             let modified = source_metadata.modified().map_err(GitStorageError::Local)?;
             state.entry_mut(path).verified_at = Some(modified);
         }
@@ -215,7 +214,6 @@ impl VerifiedPackCache {
         let mut state = self.lock_state();
         let mut entries = cache_entries(&self.root, &state)?;
         entries.sort_by_key(|entry| entry.last_used);
-        // Only unleased entries are evicted, so leased_bytes stays exact.
         let mut usage = usage_for_entries(&entries, &state)?;
         for entry in entries {
             if usage.retained_bytes <= target_bytes {
@@ -249,8 +247,6 @@ impl VerifiedPackCache {
     }
 }
 
-// Cache state is a set of counters and timestamps that stay consistent across
-// a panic in another holder, so recover the guard rather than failing.
 fn lock_recovering<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
@@ -258,8 +254,6 @@ fn lock_recovering<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl VerifiedPackFlight {
-    /// Records the outcome and wakes waiters. The first outcome wins; later
-    /// calls are ignored so a panic guard cannot overwrite a real result.
     pub(crate) fn complete(
         &self,
         result: Result<(GitSegmentRestoreTimings, VerifiedPackPin), GitStorageError>,
@@ -293,7 +287,6 @@ impl VerifiedPackFlight {
 impl Drop for VerifiedPackPin {
     fn drop(&mut self) {
         let mut state = self.cache.lock_state();
-        // A leased entry is never removed, so it is always present here.
         if let Some(entry) = state.entries.get_mut(&self.path) {
             entry.leases = entry.leases.saturating_sub(1);
             entry.last_used = SystemTime::now();
@@ -380,9 +373,6 @@ fn usage_for_entries(
     Ok(usage)
 }
 
-// Retained files are rechecked once per process, and again if their modification
-// time changes. Published immutable files can otherwise be leased without I/O
-// proportional to pack size. Callers run this filesystem work off the executor.
 fn validate_existing(
     state: &mut CacheState,
     path: &Path,

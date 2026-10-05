@@ -50,7 +50,6 @@ pub(crate) struct MergeRequestCommand {
     pub(crate) repo_name: String,
     pub(crate) request_id: String,
     pub(crate) actor_user_id: String,
-    /// The head the caller reviewed, when it names one.
     pub(crate) expected_head_oid: Option<String>,
     pub(crate) expected_auto_merge: Option<ExpectedRequestAutoMerge>,
 }
@@ -90,7 +89,6 @@ pub(crate) async fn merge_request(
         operation: ProductOperation::Merge,
         source: EventSource::Api,
         repository_id: None,
-        // The URL value is untrusted and the request lookup may have failed.
         request_id: None,
     }
     .run(state, async {
@@ -142,12 +140,7 @@ pub(crate) async fn merge_request_inner(
             ApiError::conflict("request has a new revision; review it before merging").into(),
         );
     }
-    // The gate is separate from permission: the head's checks must have cleared,
-    // on GitHub's word as of now rather than a delivery that may have been lost.
     crate::use_cases::github_check_results::confirm_recent_github_checks(state, &request).await?;
-    // A check commit counts only while it is built on private main as read
-    // here. The merge is fenced to the main loaded above, earlier, so main
-    // moving in between fails the merge rather than landing an untested tree.
     let checks =
         crate::use_cases::request_checks::checks_outcome(state, &repo.record, &request).await?;
     if checks != RequestChecksOutcome::Clear {

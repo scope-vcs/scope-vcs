@@ -2,7 +2,6 @@ import { pathToFileURL } from 'node:url'
 import { buildProductReports } from './reports.mjs'
 
 export async function syncProductReports(request, reports) {
-  // Validate every query before making any dashboard/insight changes.
   for (const report of reports) {
     const validation = await request('query/', { method: 'POST', body: {
       query: report.query.source, name: `Validate ${report.name}`, refresh: 'blocking',
@@ -62,7 +61,6 @@ export function posthogRequest({ apiKey, projectId, host = 'https://us.posthog.c
   const base = `${host}/api/projects/${projectId}/`
   return async (path, { method = 'GET', body } = {}) => {
     const url = new URL(path, base)
-    // Pagination cannot forward credentials to a different host or project.
     if (!url.href.startsWith(base) || url.username || url.password) throw new Error('Unexpected PostHog API URL')
     const response = await fetchImpl(url, {
       method, redirect: 'error', signal: AbortSignal.timeout(60_000),

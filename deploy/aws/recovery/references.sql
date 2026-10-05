@@ -1,5 +1,3 @@
--- Run inside the same exported read-only snapshot as pg_dump. Content references
--- are the existing ownership index; GitBlob content lives in the segment ledger.
 SELECT 'content' AS kind, 'objects' AS bucket, object_key::jsonb AS content_ref,
        NULL::text AS key, NULL::text AS sha256, NULL::text AS repo_id,
        NULL::text AS segment_id, NULL::bigint AS plaintext_bytes,
@@ -16,8 +14,6 @@ SELECT 'media', 'media', NULL, chunk.object_key, chunk.sha256, NULL, NULL,
        manifest.sha256, manifest.size_bytes
 FROM scope_request_media_manifest_chunks chunk
 JOIN scope_request_media_manifests manifest ON manifest.id = chunk.manifest_id
--- Cleanup jobs are durable tombstones: domain readers stop exposing the media
--- as soon as a job exists, while its manifest/part metadata remains after deletion.
 WHERE NOT EXISTS (
     SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
     WHERE cleanup.attachment_id = manifest.attachment_id

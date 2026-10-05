@@ -108,8 +108,6 @@ export function railwayServiceIsStopped(services, serviceId) {
   const matches = services.filter(({ id }) => id === serviceId);
   if (matches.length !== 1) throw new Error(`Railway service ${serviceId} must have exactly one state entry`);
   const service = matches[0];
-  // Railway removes the deployment snapshot after shutdown, including its replica
-  // counts. Require the explicit empty snapshot; absent fields remain errors.
   if (service.status === null && service.deploymentId === null
       && service.latestDeployment === null && service.replicas === null) return true;
   const replicas = railwayReplicaCounts(service);

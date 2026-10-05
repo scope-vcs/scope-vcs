@@ -136,7 +136,6 @@ async fn merge_route_persists_git_content_once() {
         .graph
         .commits
         .len();
-    // A caller that reviewed another head is refused; the request stays open.
     let stale = app
         .clone()
         .oneshot(

@@ -1,5 +1,3 @@
-"""Decrypt and verify a recovery set, optionally restoring only an empty local drill DB."""
-
 import argparse
 import json
 import os

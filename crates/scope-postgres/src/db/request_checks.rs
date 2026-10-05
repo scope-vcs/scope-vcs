@@ -1,7 +1,3 @@
-//! The checks recorded for request heads, and the transactions that start them.
-//! Starting GitHub checks queues the push of the tested commit in the same
-//! transaction, so an evaluation is never started without its push.
-
 use super::{
     RequestStore,
     entities::{self, encode_enum},
@@ -28,8 +24,6 @@ use sea_orm::{
     QueryFilter, TransactionTrait, sea_query::OnConflict,
 };
 
-/// A head's evaluation together with the runs it starts now, the revisions it
-/// may start later, and whether its tested commit goes to GitHub now.
 #[derive(Clone, Debug)]
 pub struct RecordRequestChecksCommand {
     pub evaluation: RequestCheckEvaluation,
@@ -42,7 +36,6 @@ pub struct RecordRequestChecksCommand {
 pub struct ApproveRequestChecksCommand {
     pub request_id: String,
     pub actor_user_id: String,
-    /// The head the maintainer reviewed; a newer head is refused.
     pub reviewed_head_oid: String,
     pub now_unix: u64,
 }
@@ -50,9 +43,7 @@ pub struct ApproveRequestChecksCommand {
 #[derive(Clone, Debug)]
 pub struct RequestChecksMutation {
     pub evaluation: RequestCheckEvaluation,
-    /// Runs this transaction created; a repeated evaluation creates none.
     pub created_runs: Vec<Run>,
-    /// Whether this transaction queued a push to GitHub.
     pub queued_github_push: bool,
 }
 
@@ -69,8 +60,6 @@ impl RequestStore {
             &command.evaluation.request_id,
         )
         .await?;
-        // Evaluating reads the head outside this lock, so the request may have been
-        // closed or merged since. A request that can no longer merge starts nothing.
         let request = super::request_rows::request_by_id(&tx, &command.evaluation.request_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
@@ -79,8 +68,6 @@ impl RequestStore {
                 "request can no longer merge, so its checks are not evaluated",
             ));
         }
-        // The first evaluation of a head stands. A later one, from someone looking at
-        // a request while its push was still evaluating, must not undo an approval.
         if let Some(evaluation) = evaluation_for_head(
             &tx,
             &command.evaluation.request_id,
@@ -94,8 +81,6 @@ impl RequestStore {
                 queued_github_push: false,
             });
         }
-        // Evaluating read the owner's listing outside this transaction. Checks
-        // that wait on native runs are recorded only while it still holds.
         if command.evaluation.uses_native_runs() {
             lock_native_runs_availability(&tx, &request.repo_id)
                 .await?
@@ -124,7 +109,6 @@ impl RequestStore {
         })
     }
 
-    /// A maintainer starts the checks recorded for the request's current head.
     pub async fn approve_request_checks(
         &self,
         command: ApproveRequestChecksCommand,
@@ -186,7 +170,6 @@ impl RequestStore {
         })
     }
 
-    /// The revision the request's most recent push saved.
     pub async fn latest_request_revision(
         &self,
         request_id: &str,
@@ -195,7 +178,6 @@ impl RequestStore {
             .await
     }
 
-    /// The revision whose push saved `head_oid`, which holds that commit.
     pub async fn request_revision_with_head(
         &self,
         request_id: &str,
@@ -217,8 +199,6 @@ impl RequestStore {
         evaluation_for_head(self.db.as_ref(), request_id, head_oid).await
     }
 
-    /// The evaluation whose checks GitHub answers for `tested_oid`: the head
-    /// itself, or the check commit built from it.
     pub async fn request_check_evaluation_testing(
         &self,
         request_id: &str,
@@ -234,7 +214,6 @@ impl RequestStore {
             .transpose()
     }
 
-    /// The results that answer the checks of evaluations in one repository.
     pub async fn request_check_results(
         &self,
         repo_id: &str,
@@ -243,7 +222,6 @@ impl RequestStore {
         request_check_results(self.db.as_ref(), repo_id, evaluations).await
     }
 
-    /// The evaluation for each `(request id, head oid)` pair that has one.
     pub async fn request_check_evaluations(
         &self,
         heads: &[(String, String)],
@@ -290,7 +268,6 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
         run_ids.extend(evaluation.run_ids().map(str::to_string));
         if evaluation.asks_github() {
             tested_oids.push(evaluation.tested_oid.clone());
-            // A check commit is private code whatever the request's audience.
             if evaluation.tests_check_commit() {
                 check_commit_request_ids.push(evaluation.request_id.clone());
             } else {
@@ -310,9 +287,6 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
             .map(|row| Ok((row.id.clone(), row.try_into_domain()?.state)))
             .collect::<Result<_, PostgresError>>()?
     };
-    // GitHub's results only count while GitHub still lets Scope use the
-    // repository, and only those of the GitHub repository connected now; a
-    // link that is gone or disconnected can never pass a check.
     let connection = if tested_oids.is_empty() {
         None
     } else {
@@ -320,8 +294,6 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
             .await?
             .filter(|connection| connection.is_connected())
     };
-    // A repository that became public on GitHub gets no private code until a
-    // maintainer confirms; those requests' checks cannot pass meanwhile.
     let withheld_from_github = match &connection {
         Some(connection) if !connection.may_receive_private_requests() => {
             let mut withheld = private_request_ids(conn, &github_request_ids).await?;
@@ -395,7 +367,6 @@ async fn start_runs(
     Ok(created)
 }
 
-/// A head whose checks can no longer pass stops the request's auto-merge.
 pub(super) async fn stop_auto_merge_for_evaluation(
     tx: &DatabaseTransaction,
     active_auto_merge: Option<super::request_auto_merge::StoredIntent>,
@@ -416,9 +387,6 @@ pub(super) async fn stop_auto_merge_for_evaluation(
     Ok(())
 }
 
-/// Queues the push of the tested commit to the GitHub repository linked now.
-/// Returns `false` when no link is left to push to; the evaluation then
-/// cannot pass, which the request shows.
 pub(super) async fn queue_tested_commit_push(
     tx: &DatabaseTransaction,
     request: &Request,

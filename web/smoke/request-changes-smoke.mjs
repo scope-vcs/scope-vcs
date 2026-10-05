@@ -14,8 +14,6 @@ const backgroundServerFunctions = new Set([
   'loadAttachmentLimits_createServerFn_handler',
 ])
 
-// The discussion and the changes screen replace each other inside the
-// requests workspace, which stays mounted.
 export function captureRequestShell(page) {
   return captureNodes(page, ['[aria-label="Requests workspace"]'])
 }

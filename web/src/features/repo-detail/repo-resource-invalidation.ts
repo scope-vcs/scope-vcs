@@ -1,3 +1,7 @@
+import { invalidateRunHistoryScope } from '../runs/run-history-cache'
+import { runDetailResource } from '../runs/run-detail-resource'
+import { runLogCacheKey } from '../runs/run-log-cache'
+import { runResourceNeedsRecovery } from '../runs/run-resource'
 import { requestQueueResource } from '../requests/request-queue-cache'
 import { requestChangesResource } from '../requests/request-changes-resource'
 import { requestChecksResource } from '../requests/request-checks-resource'
@@ -15,28 +19,35 @@ import { historyEntryResource, historyFeedResource } from '../history/history-re
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { invalidateGitHubWorkflowRuns } from '../runs/github-workflow-runs-resource'
 
-// Repository summaries include request state that has no repository version.
 export function invalidateRepoSummaryResources(scope: string) {
   requestQueueResource.invalidate(scope)
 }
 
 export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, summaryPending = false) {
+  const changed = event && typeof event.kind === 'object' && 'RunChanged' in event.kind ? event.kind.RunChanged : null
+  const repositoryChanged = event && typeof event.kind === 'object' && 'RepositoryChanged' in event.kind
+  const recovery = !event || event.kind === 'Connected'
+  const prefix = `${JSON.stringify([scope]).slice(0, -1)},`
+  if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed && changed.change !== 'LogsAppended') {
+    invalidateRunHistoryScope(scope, recovery)
+  }
+  if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed?.change === 'StatusChanged') {
+    runDetailResource.invalidateMatching((key) => key.startsWith(prefix) &&
+      (!changed || key === runLogCacheKey(scope, changed.run_id)) &&
+      (!recovery || runResourceNeedsRecovery(runDetailResource, key)))
+  }
   if (!event || event.kind === 'Connected' || event.kind === 'Lagged' || typeof event.kind === 'object' && 'RepositoryChanged' in event.kind) {
-    // A pending summary reconciles the queue on acceptance. Invalidating here
-    // as well would cancel and restart that same four-section refresh.
     if (!summaryPending) requestQueueResource.invalidate(scope)
     repoSettingsResource.invalidate(scope)
     requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     repoContentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     repoFileResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-    // History shows author accounts, which change without a new content version.
     historyFeedResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     historyEntryResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestAttachmentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     repositoryActivityResource.invalidate(scope)
     repositoryDependencyResource.invalidate(scope)
-    // Workflows follow main, and availability follows the owner's allowlisting.
     runWorkflowsResource.invalidate(scope)
     requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestChecksResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
@@ -55,8 +66,6 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, 
     requestAutoMergeResource.invalidate(requestAutoMergeIdentity(scope, timeline.request_id))
     requestAttachmentResource.invalidate(requestAttachmentResourceIdentity(scope, timeline.request_id))
   } else if (typeof event.kind === 'object' && 'RunChanged' in event.kind) {
-    // A run status change can stop an active auto-merge intent and append
-    // request activity. Without a request id, refresh those views in scope.
     if (event.kind.RunChanged.change === 'StatusChanged') {
       requestQueueResource.invalidate(scope)
       requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))

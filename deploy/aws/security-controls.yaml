@@ -150,7 +150,6 @@ Resources:
         detail-type: ['AWS API Call via CloudTrail', 'AWS Console Sign In via CloudTrail']
         detail:
           eventSource: [signin.amazonaws.com]
-          # Authorization is interactive; CreateOAuth2Token also covers recurring refreshes.
           eventName: [ConsoleLogin, AuthorizeOAuth2Access]
           userIdentity:
             type: [Root]
@@ -192,7 +191,6 @@ Resources:
     Type: AWS::Logs::MetricFilter
     Properties:
       LogGroupName: !Ref IamMutationLogGroup
-      # The EventBridge rule admits only IAM writes to this log group.
       FilterPattern: '{ $.detail.eventSource = "iam.amazonaws.com" }'
       MetricTransformations:
         - MetricNamespace: Scope/Security/IAM
@@ -215,7 +213,6 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertTopic]
-      # Return to OK silently after a quiet period; notify only the next change burst.
   GuardDutyFindingRule:
     Type: AWS::Events::Rule
     Properties:

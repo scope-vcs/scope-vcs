@@ -14,9 +14,6 @@ export function isRetryableRepoLoadError(error: unknown) {
   return error instanceof RepoRouteUnavailable || error instanceof TypeError
 }
 
-// Server-function transport failures happen before the API's error envelope
-// reaches the browser. Keep their status rather than treating them as access errors.
-// A call-site fetch replaces the global one, so it keeps stale-build detection.
 export const fetchRepoRouteState: typeof fetch = async (input, init) => {
   const response = await fetchServerFunction(input, init)
   if (response.status >= 500) {
@@ -43,20 +40,14 @@ export async function loadRepoRouteState({
       const result = await load()
       if ('live' in result) {
         signal.throwIfAborted()
-        // A successful read can change requests without advancing the repository
-        // version. Cached navigation keeps this identity; another read replaces it.
         return { ...result.live, refreshId: crypto.randomUUID() }
       }
       throw new RepoRouteUnavailable(result.unavailable)
     } catch (error) {
       if (!refresh) throw error
-      // Retrying cannot fix a stale build. Leave the background reload pending so
-      // the loaded route keeps its data until the user reloads or navigates.
       if (error instanceof StaleBuildError) return await waitForAbort(signal)
       if (!isRetryableRepoLoadError(error)) throw error
       signal.throwIfAborted()
-      // The router owns the current data and this attempt. Keeping a background
-      // reload pending leaves the stream owner mounted until recovery or navigation.
       await wait(signal)
     }
   }

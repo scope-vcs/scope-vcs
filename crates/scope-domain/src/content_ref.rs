@@ -1,10 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 
-/// Stable semantic identity for stored content.
-///
-/// Variants describe how content participates in the Git/content model; adapters
-/// remain responsible for turning this identity into a physical storage location.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ContentRef {
     BlobSha256(String),
@@ -35,7 +31,6 @@ impl ContentRef {
     }
 }
 
-/// The SHA-1 identity Git assigns to a loose object of `kind` with `payload`.
 pub fn git_object_oid(kind: &str, payload: &[u8]) -> String {
     let mut hasher = Sha1::new();
     hasher.update(format!("{kind} {}\0", payload.len()).as_bytes());

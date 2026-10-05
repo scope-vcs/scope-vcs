@@ -42,7 +42,6 @@ export type { StepLogState } from './run-log-cache'
 const DETAIL_CHANGES = ['StatusChanged', 'LogsAppended'] as const
 const RUN_ERROR_FALLBACK = 'Run operation failed.'
 
-/** The selected step's output plus the actions the log view can take on it. */
 export type StepLogs = {
   earlier: () => void
   latest: () => void
@@ -145,16 +144,16 @@ export function useRepositoryRunDetailController({
   const refreshFromRunEvents = useCallback<RunRefresh>(async (
     reasons,
   ) => {
-    const refreshMetadata = reasons.has('Recovery') ||
+    const refreshMetadata = reasons.has('Recovery') || reasons.has('Manual') || reasons.has('Lagged') ||
       reasons.has('StatusChanged')
-    if (refreshMetadata) await refreshDetail()
+    if (refreshMetadata) await refreshRunDetail(key, loadDetail, reasons.has('StatusChanged'), reasons.size === 1 && reasons.has('Recovery'))
     const selection = selectionRef.current
     if (selection && (refreshMetadata || reasons.has('LogsAppended'))) {
       if (!await refreshLogsAfterInFlight(selection)) {
         throw new Error('Selected run logs could not refresh.')
       }
     }
-  }, [refreshDetail, refreshLogsAfterInFlight])
+  }, [key, loadDetail, refreshLogsAfterInFlight])
 
   const refreshRun = useRunLiveRefresh({
     acceptedChanges: DETAIL_CHANGES,
@@ -210,14 +209,9 @@ export function useRepositoryRunDetailController({
     }))
     try {
       await refreshDetail(true)
-    } catch {
-      // The detail loader owns metadata errors. Keep controls disabled until a
-      // post-mutation refresh reaches the required generation.
-    }
+    } catch {}
   }, [key, refreshDetail])
 
-  // Navigation rules live in the model so `selection` and `selectedJobKey`
-  // cannot drift apart here.
   function showJob(jobDetail: RepositoryRunJobDetailResponse) {
     updateView((current) => selectJob(current, jobDetail.job.key))
   }

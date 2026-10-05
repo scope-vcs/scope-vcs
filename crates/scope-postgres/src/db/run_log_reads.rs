@@ -103,8 +103,6 @@ impl RunStore {
             .map_err(|_| PostgresError::invalid_input("run log cursor is too large"))?;
         let limit = i64::try_from(limit.clamp(1, 128))
             .map_err(|_| PostgresError::invalid_input("run log limit is too large"))?;
-        // Bound row work before computing the byte window. Only the retained chunks cross
-        // the database connection, including for a tail read of a long completed step.
         let logs = entities::run_log::Model::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(

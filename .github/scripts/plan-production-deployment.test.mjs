@@ -144,9 +144,9 @@ test("changes select the required deployment lanes", () => {
       },
     ],
     [
-      "shared workspace changes preserve the previous conservative scope",
+      "shared domain changes select every lane but leave native CLI checks to the Linux CLI checks",
       ["crates/scope-domain/src/lib.rs"],
-      allLanes,
+      { ...allLanes, "cli-distribution": false },
     ],
     [
       "orchestration workflow changes exercise every lane",
@@ -251,8 +251,6 @@ test("skipped components remain selected across a later backend-only change", ()
     "git-router": [],
     "media-api": [],
     api: [],
-    // Web last succeeded before commit A. Its component-specific range still includes A's
-    // web change when commit B changes only the cache service after A's web job was skipped.
     web: ["web/src/routes/+page.svelte", "cache-service/src/main.rs"],
     "cli-downloads": [],
   });
@@ -292,7 +290,7 @@ test("CLI deployment progress selects distribution builds only for binary inputs
     "media-api": [],
     api: [],
     web: [],
-    "cli-downloads": ["crates/scope-api-contract/src/lib.rs"],
+    "cli-downloads": ["cli/src/main.rs"],
   });
 
   assert.deepEqual(broadOnly, deploymentSelection({ "cli-downloads": true }));

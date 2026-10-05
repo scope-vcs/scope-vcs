@@ -35,8 +35,6 @@ const WEEKDAY_TIME_OPTIONS = {
   weekday: 'short',
 } satisfies Intl.DateTimeFormatOptions
 
-// Server and hydration render UTC so both sides agree; the browser switches to
-// the viewer's zone once it owns the markup.
 function zonedFormatters(options: Intl.DateTimeFormatOptions) {
   return {
     local: new Intl.DateTimeFormat('en-US', options),
@@ -70,32 +68,26 @@ export function formatUnixDateUtc(unixSeconds: number | null) {
   return formatUnixDateWith(REQUEST_DATE.utc, unixSeconds)
 }
 
-/** Compact "Mar 4" for dense lists. */
 export function formatUnixMonthDay(unixSeconds: number, hydrated: boolean) {
   return formatZoned(MONTH_DAY, unixSeconds, hydrated)
 }
 
-/** Day heading for grouped streams, as in "March 4, 2026". */
 export function formatUnixDayLabel(unixSeconds: number, hydrated: boolean) {
   return formatZoned(DAY_LABEL, unixSeconds, hydrated)
 }
 
-/** Wording for a snooze that has not expired yet. */
 export function formatUnixSnoozeUntil(unixSeconds: number, hydrated: boolean) {
   return formatZoned(SNOOZE_UNTIL, unixSeconds, hydrated)
 }
 
-/** Just the clock, "4:12 PM", for a moment the reader knows is today. */
 export function formatUnixClockTime(unixSeconds: number, hydrated: boolean) {
   return formatZoned(CLOCK_TIME, unixSeconds, hydrated)
 }
 
-/** "Mon 9:00 AM" for a moment within the coming week. */
 export function formatUnixWeekdayTime(unixSeconds: number, hydrated: boolean) {
   return formatZoned(WEEKDAY_TIME, unixSeconds, hydrated)
 }
 
-/** The calendar day a timestamp falls on, in the zone the viewer is reading. */
 export function unixCalendarDay(unixSeconds: number, hydrated: boolean) {
   const date = new Date(unixSeconds * 1_000)
   return hydrated
@@ -122,11 +114,6 @@ function formatUnixDateWith(
   return formatter.format(new Date(unixSeconds * 1000))
 }
 
-/**
- * Relative wording for message streams, where every entry repeating the same
- * absolute timestamp reads as noise. Falls back to the absolute date once the
- * event is far enough away that "47 days ago" stops being useful.
- */
 export function formatRelativeUnix(
   unixSeconds: number | null,
   nowUnix: number = Date.now() / 1_000,

@@ -1,5 +1,3 @@
-"""Bounded, conditional object capture. Source credentials never enter recovery archives."""
-
 import hashlib
 import os
 from pathlib import Path

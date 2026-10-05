@@ -12,8 +12,6 @@ import {
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { createServerFn } from '@tanstack/react-start'
 
-// A repository whose checks run on GitHub lists GitHub's workflow runs; any
-// other lists Scope's own.
 export const loadRepoRunPage = createServerFn({ method: 'GET' })
   .validator(parseRepoRunHistoryInput)
   .handler(({ data }) => loadOptionalResource(async () => {
@@ -29,7 +27,6 @@ export const loadRepoRunPage = createServerFn({ method: 'GET' })
         .then((workflows) => ({ error: null, workflows }))
         .catch((error: unknown) => ({
           error: resourceErrorMessage(error, 'Workflow catalog unavailable.'),
-          // Unknown availability keeps the controls; enqueuing still enforces it.
           workflows: { workflows: [], native_runs_available: true },
         })),
     ])

@@ -54,7 +54,6 @@ impl FileBackend {
 
 #[async_trait]
 impl ObjectBackend for FileBackend {
-    /// Replaces any existing object, like an S3 put.
     async fn put(&self, key: &str, bytes: Bytes) -> Result<(), BackendError> {
         let final_path = self.object_path(key)?;
         let parent = final_path
@@ -261,8 +260,6 @@ impl ObjectBackend for FileBackend {
         }
     }
 
-    /// Proves the objects directory exists or can be created, which fails when the path is a
-    /// file or its parent is not writable.
     async fn readiness_check(&self) -> Result<(), BackendError> {
         fs::create_dir_all(self.root.join("objects")).await?;
         Ok(())

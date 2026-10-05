@@ -132,7 +132,6 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
         commit_oids(changes["revisions"].as_array().unwrap().last().unwrap()),
         [amended_head.as_str()]
     );
-    // The amend removed the anchored commit; the discussion keeps its revision and commit.
     let discussion = get_json(
         &app,
         &format!("{route}/timeline?discussion={discussion_id}"),
@@ -276,8 +275,6 @@ fn rewrite_history(repo: &FsPath, args: &[&str]) {
     run_git(Some(repo), &command, "rewrite request history").unwrap();
 }
 
-/// Pushes a rewritten head the way `scope request push` does: without `+`, leased on the
-/// head it replaces.
 fn lease_push(repo: &FsPath, remote: &str, request_ref: &str, expected_head: &str) {
     let output = run_git_output(
         Some(repo),

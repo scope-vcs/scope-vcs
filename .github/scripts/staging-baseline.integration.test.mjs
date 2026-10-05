@@ -62,16 +62,12 @@ else console.log('true');
     maintenanceSha256: createHash('sha256').update(readFileSync(binary)).digest('hex') }));
   const plan = { metadataRestoreSafe: true, applied: ['m0001_initial'], pending: [{ name: 'm0002_metadata' }], exact: false };
   writeFileSync(join(root, 'production.json'), JSON.stringify(plan));
-  // Like staging, put the matching PostgreSQL clients first; a distribution
-  // wrapper may choose an older pg_dump that refuses this server.
   const env = { ...process.env, PATH: `${join(root, 'bin')}:${pgBin}:${process.env.PATH}`, RAILWAY_TOKEN: 'test', RAILWAY_API_TOKEN: '',
     TEST_GH_TRACE: join(root, 'gh-trace'), TEST_DATABASE: database, TEST_ARCHIVE: join(root, 'snapshot.zip'), GITHUB_REPOSITORY: 'scope-vcs/scope-vcs',
     GITHUB_OUTPUT: join(root, 'output'), SCOPE_DEPLOYMENT_MANIFEST: join(root, 'manifest.json'),
     SCOPE_RAILWAY_MAINTENANCE_SERVICE_ID: '11111111-1111-1111-1111-111111111111', SCOPE_MAINTENANCE_BINARY: binary, SCOPE_PREPARED_RELEASE_PATH: join(root, 'prepared.json'),
     SCOPE_PRODUCTION_MIGRATION_PLAN: join(root, 'production.json'), SCOPE_STAGING_BASELINE_DIR: join(root, 'baseline') };
   const run = () => spawnSync('bash', ['.github/scripts/staging-baseline.sh'], { env, encoding: 'utf8', timeout: 60_000 });
-  // This repository is public. Matching ledgers with no migrations neither read
-  // archive metadata nor require an encryption secret or publish an artifact.
   delete env.SCOPE_STAGING_BASELINE_KEY;
   writeFileSync(join(root, 'production.json'), JSON.stringify({ ...plan, pending: [], exact: true }));
   let result = run();
@@ -127,8 +123,6 @@ else console.log('true');
   assert.match(sql('SELECT version FROM seaql_migrations'), /m0002_metadata/);
   assert.equal(sql("SELECT count(*) FROM information_schema.tables WHERE table_name='candidate_only'"), '1');
   assert.equal(existsSync(join(env.SCOPE_STAGING_BASELINE_DIR, 'restore')), false);
-  // Authentication succeeds, but malformed archive contents still cannot leak
-  // the temporary plaintext or change the database when pg_restore fails.
   const invalidDump = join(root, 'invalid.dump');
   writeFileSync(invalidDump, 'not a PostgreSQL archive');
   command(process.execPath, ['.github/scripts/staging-baseline-crypto.mjs', 'encrypt', invalidDump,

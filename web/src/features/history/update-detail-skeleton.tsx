@@ -4,8 +4,6 @@ import { FileWorkbench } from '@/components/file-workbench'
 import { TextSkeleton } from '@/components/ui/skeleton'
 import { useState } from 'react'
 
-// Mirrors HistoryEntryDetailPanel: the update header, then its changed files
-// beside an empty preview, because no diff opens until a file is chosen.
 export function UpdateDetailSkeleton() {
   const [navigationOpen, setNavigationOpen] = useState(true)
   return (

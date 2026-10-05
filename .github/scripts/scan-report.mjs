@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-// Keep unfixed findings in the report. Promotion blocks fixes we can apply now.
 export function actionableFindings(report) {
   if (report?.SchemaVersion !== 2 || report?.Metadata?.OS?.Family !== 'debian'
       || !Array.isArray(report.Results)

@@ -9,7 +9,6 @@ const FAILURE = "Railway read failed after 3 attempts";
 
 function singleQuery(query) {
   if (!/^query\s/.test(query)) return false;
-  // Ignore quoted values and comments while checking document boundaries.
   const document = query.replace(/"""(?:\\[\s\S]|[^\\])*?"""|"(?:\\.|[^"\\])*"|#[^\r\n]*/g, '""');
   if (/\b(?:mutation|subscription)\b/.test(document)) return false;
   const delimiters = [];
@@ -63,7 +62,6 @@ export function readRailway(args, {
       if (args[0] === "api" && result?.errors?.length) throw new Error(FAILURE);
       return result;
     } catch {
-      // Failed commands and partial responses may contain secret variables.
       if (attempt === ATTEMPTS) throw new Error(FAILURE);
       report(`Railway read failed; retrying (${attempt}/${ATTEMPTS})`);
       pause(2_000);

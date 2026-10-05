@@ -7,7 +7,6 @@ repository.workspace = true
 
 [features]
 default = []
-# Every non-production consumer that seeds or inspects state enables `seeding`.
 seeding = []
 local-dev = ["seeding"]
 smoke-seed = ["seeding"]

@@ -1,4 +1,3 @@
-/* Static license files are served by the web server, outside the client route tree. */
 import { ApplicationTopbar } from '@/components/application-topbar'
 import { AppShell } from '@/components/app-shell'
 import { PageContent, PageHeader } from '@/components/page-header'

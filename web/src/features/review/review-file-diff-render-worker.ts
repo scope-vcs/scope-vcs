@@ -85,6 +85,4 @@ port.on('message', (input: ReviewFileDiffWorkerInput) => {
   )
 })
 
-// Module loading has its own bounded startup budget. The work deadline begins
-// once this handler can receive input, including any first-render highlighting.
 port.postMessage({ kind: 'ready' })

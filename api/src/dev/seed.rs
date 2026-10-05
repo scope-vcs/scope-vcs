@@ -180,7 +180,6 @@ const PUBLIC_DEMO_APP: &str =
 const PUBLIC_DEMO_PLAN: &str =
     "# Internal Plan\n\nPrivate content stays out of public projections.\n";
 const UPDATE_DEMO_INITIAL_README: &str = "# Update Demo\n\nThis repository has a clean published baseline.\n\n[Read the release guide](docs/release.md).\n";
-const UPDATE_DEMO_RULES: &str = "";
 const UPDATE_DEMO_RELEASE_GUIDE: &str =
     "# Release flow\n\nDocument the release before publishing the next version.\n";
 const UPDATE_DEMO_INTERNAL_NOTES: &str =
@@ -196,7 +195,6 @@ const UPDATE_DEMO_QUEUE_DRAFT: &str =
 const UPDATE_DEMO_CACHE_NOTE: &str =
     "# Cache note\n\nRecord the tradeoff without changing repository behavior.\n";
 
-/// Builds the seeded catalog and writes every object it refers to.
 pub(crate) async fn catalog(
     object_store: &dyn ObjectStore,
     git_segment_store: &scope_storage::GitSegmentStore,
@@ -217,7 +215,6 @@ fn build_catalog(
     let [contributor, maintainer] = request_discussions::collaborators();
     let mut catalog = scope_postgres::db::CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner.clone());
-    // The demo repositories run their `.scope/runs` workflows on the hosted runner.
     catalog.native_runs_accounts.insert(owner.id.clone());
     catalog
         .users
@@ -346,7 +343,6 @@ fn update_demo(
 ) -> Result<(Repository, SeedRequestGallery, GitSegmentUpload), ApiError> {
     let mut repo = repo(owner, "update-demo", Visibility::Public)?;
     let initial_readme = blob(object_store, UPDATE_DEMO_INITIAL_README)?;
-    let rules = blob(object_store, UPDATE_DEMO_RULES)?;
     let internal_notes = blob(object_store, UPDATE_DEMO_INTERNAL_NOTES)?;
     let internal_path = ScopePath::parse("/internal/notes.md").map_err(ApiError::internal)?;
     repo.policy
@@ -359,7 +355,6 @@ fn update_demo(
         "Seed update demo",
         vec![
             add_change("/README.md", initial_readme.clone(), Visibility::Public)?,
-            add_change("/.scope/RULES.md", rules, Visibility::Public)?,
             add_change(internal_path.as_str(), internal_notes, Visibility::Private)?,
         ],
     ));
@@ -378,7 +373,6 @@ fn update_demo(
     let initial = SeedGitCommit {
         files: &[
             ("README.md", UPDATE_DEMO_INITIAL_README),
-            (".scope/RULES.md", UPDATE_DEMO_RULES),
             ("internal/notes.md", UPDATE_DEMO_INTERNAL_NOTES),
         ],
         message: "Seed update demo",
@@ -545,7 +539,6 @@ fn seed_owner_request(
                 expected_old_head_oid: Some(current_head_oid),
                 new_head_oid: revision.head_oid.clone(),
                 git_snapshot: revision.snapshot,
-                // Seeded revisions extend their request on top of its base.
                 git_facts: RequestRevisionGitFacts {
                     contains_old_head: true,
                     contained_main_oid: None,
@@ -635,8 +628,6 @@ fn blob(object_store: &SeedObjects, content: &str) -> Result<SourceBlob, ApiErro
     Ok(object_store.add(ContentObjectKind::Blob, content.as_bytes().to_vec()))
 }
 
-/// The objects a seeded catalog refers to. Git fixtures build the catalog synchronously, so
-/// objects are collected here and written to the store once the catalog is complete.
 #[derive(Default)]
 pub(crate) struct SeedObjects(std::cell::RefCell<std::collections::BTreeMap<String, Vec<u8>>>);
 

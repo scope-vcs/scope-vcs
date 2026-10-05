@@ -1,4 +1,3 @@
-"""Durable Chicago-date ownership for the daily Release workflow dispatch."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
@@ -22,11 +21,10 @@ def local_date(now: datetime) -> date:
 
 
 def scheduled_at(day: date) -> datetime:
-    # A nonexistent spring-forward wall time resolves to the first real local
-    # minute afterward. The fall-back 02:08 wall time occurs only once.
     wall = datetime(day.year, day.month, day.day, HOUR, MINUTE, tzinfo=ZONE)
     instant = wall.astimezone(timezone.utc)
-    if instant.astimezone(ZONE).hour != HOUR:
+    skipped_by_spring_forward = instant.astimezone(ZONE).hour != HOUR
+    if skipped_by_spring_forward:
         return instant.astimezone(ZONE).replace(hour=3, minute=0).astimezone(timezone.utc)
     return instant
 
@@ -51,8 +49,6 @@ def dispatch(day: str) -> None:
     except (OSError, subprocess.SubprocessError):
         raise RuntimeError("Daily release dispatch response was uncertain") from None
     if result.returncode:
-        # A failed client response is ambiguous: GitHub may have accepted the
-        # request. The persisted intent must not be dispatched again blindly.
         raise RuntimeError("Daily release dispatch response was uncertain")
 
 
@@ -128,7 +124,6 @@ def poll(now: datetime | None = None) -> dict:
         try:
             dispatch(day)
         except RuntimeError:
-            # Keep watching for an accepted run and alert at the deadline.
             pass
         else:
             intent["status"] = "accepted"

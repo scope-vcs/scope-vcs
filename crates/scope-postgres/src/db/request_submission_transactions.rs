@@ -1,9 +1,7 @@
-//! PostgreSQL transaction for one-way request submission.
-
 use super::{
     RequestStore, SubmitRequestCommand,
     request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
-    request_rows::{insert_request_event_row, request_event_by_id, save_request_row},
+    request_lifecycle_effects::persist_lifecycle_mutation,
 };
 use sea_orm::{DatabaseTransaction, TransactionTrait};
 use {
@@ -38,7 +36,7 @@ impl RequestStore {
                 now_unix: command.now_unix,
             },
         )?;
-        persist_lifecycle_mutation(&tx, &mutation).await?;
+        persist_lifecycle_mutation(&tx, &mutation.request, &mutation.events).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(mutation)
     }
@@ -52,30 +50,4 @@ async fn lock_submission_context(
     let (repo, request) = lock_request_repository(tx, request_id, actor_user_id).await?;
     ensure_user_exists(tx, actor_user_id).await?;
     Ok((repo, request))
-}
-
-pub(super) async fn persist_lifecycle_mutation(
-    tx: &DatabaseTransaction,
-    mutation: &RequestLifecycleMutation,
-) -> Result<(), PostgresError> {
-    for event in &mutation.events {
-        if request_event_by_id(tx, &event.id).await?.is_some() {
-            return Err(PostgresError::conflict("request event already exists"));
-        }
-    }
-    save_request_row(tx, &mutation.request).await?;
-    if mutation.request.is_terminal() {
-        super::request_invitees::delete_request_invitees(tx, &mutation.request.id).await?;
-        super::github_pushes::queue_github_branch_deletion(
-            tx,
-            &mutation.request.repo_id,
-            &mutation.request.id,
-            mutation.request.updated_at_unix,
-        )
-        .await?;
-    }
-    for event in &mutation.events {
-        insert_request_event_row(tx, event).await?;
-    }
-    Ok(())
 }

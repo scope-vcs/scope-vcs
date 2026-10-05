@@ -69,8 +69,6 @@ pub(super) fn refresh_main_projection(
 
 const STALE_REQUEST_PUSH_ERROR: &str = "Someone else updated this request. Fetch it and try again.";
 
-/// Pushes `request_head_oid`, which may rebase or amend the request, only while Scope
-/// still holds `expected_head_oid`, the request head this checkout last saw.
 pub(super) fn push_request_head(
     target: &ScopeRemote,
     session_token: &str,
@@ -100,10 +98,6 @@ pub(super) fn push_request_head(
     })
 }
 
-/// The request head a push may replace: the one this checkout last fetched, kept in its
-/// remote-tracking ref, or the head Scope reports when there is none. Like Git's
-/// `--force-if-includes`, a push may replace that head only after this branch has
-/// included it, so a fetch alone never authorizes discarding someone else's commits.
 pub(super) fn last_seen_request_head(
     git_repo: &GitRepo,
     target: &ScopeRemote,
@@ -285,7 +279,6 @@ pub(super) fn store_request_metadata(
     )
 }
 
-/// The current branch, when a new request can take it and its commits as they are.
 pub(super) fn adoptable_current_branch(
     git_repo: &GitRepo,
     base_oid: &str,
@@ -321,7 +314,6 @@ pub(super) fn track_request_branch_ref(
     request_head_oid: &str,
 ) -> anyhow::Result<()> {
     update_request_remote_ref(git_repo, target, request_name, request_head_oid)?;
-    // A branch attached with --current-branch may track another host; its request keys identify it.
     if branch_config_value(git_repo, branch, "remote")?
         .is_some_and(|remote| remote != target.remote)
     {

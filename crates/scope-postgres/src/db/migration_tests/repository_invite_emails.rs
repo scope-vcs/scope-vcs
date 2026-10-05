@@ -41,7 +41,6 @@ async fn deleting_a_repository_keeps_its_emails_for_the_owner_allowance() {
         row.try_get::<String>("", "requested_by_user_id").unwrap(),
         "owner"
     );
-    // Only a queued email may be claimed.
     assert!(
         db.execute_unprepared(
             "UPDATE scope_repository_invite_emails

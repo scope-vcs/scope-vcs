@@ -75,8 +75,6 @@ impl EcsClient {
     pub(crate) async fn new(settings: CloudExecutionSettings) -> Self {
         let config = aws_config::defaults(BehaviorVersion::latest())
             .region(Region::new(settings.aws_region.clone()))
-            // The broker has a 120-second Lambda timeout. A lost response remains
-            // owned by lease recovery, so this client must not retry dispatch.
             .timeout_config(
                 TimeoutConfig::builder()
                     .operation_timeout(Duration::from_secs(150))

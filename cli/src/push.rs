@@ -1,6 +1,5 @@
 use crate::api::ApiSession;
 use crate::{
-    agent_context::ensure_repo_rules_ready_for_push,
     api::{
         CreatePushIntentParams, PushTriggerEvaluationResponse, RepoLifecycleState, api_url,
         create_push_intent, get_push_trigger_evaluation, get_repo_config, http_client,
@@ -41,7 +40,6 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     let mut progress = PreparationProgress::start("Checking repository…")?;
     let git_repo = ensure_git_repo_ready("scope push")?;
     let reviewed_head_oid = head_oid(&git_repo)?;
-    ensure_repo_rules_ready_for_push(&git_repo.root, &reviewed_head_oid)?;
     let config_created = ensure_scope_repo_config_exists(&git_repo.root)?;
     let config_path = repo_config_path(&git_repo.root)?;
     let mut config = load_worktree_scope_repo_config(&git_repo.root)?;

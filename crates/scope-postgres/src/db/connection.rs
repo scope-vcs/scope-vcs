@@ -1,5 +1,3 @@
-//! Metadata connection setup and the advisory writer fence that guards it.
-
 use super::MetadataStore;
 use crate::error::PostgresError;
 use sea_orm::{
@@ -23,7 +21,6 @@ pub(super) async fn connect_postgres_store_with_options(
     let database_url = Arc::<str>::from(database_url);
     let db = connect_writer_database(&database_url, connection_options).await?;
     if let Err(error) = crate::migrations::assert_exact_state(&db).await {
-        // A rejected startup must release its writer fence before maintenance retries.
         db.close().await?;
         return Err(error.into());
     }
@@ -44,7 +41,6 @@ pub async fn verify_writer_fence_available(database_url: String) -> anyhow::Resu
 
 pub async fn terminate_metadata_writer_sessions(database_url: String) -> anyhow::Result<u64> {
     let mut connection = PgConnection::connect(&database_url).await?;
-    // Only the fixed fence key is interpolated; database names remain SQL values.
     let terminated: Vec<bool> = sqlx::query_scalar(AssertSqlSafe(format!(
         "WITH fence AS (
             SELECT hashtextextended(

@@ -41,11 +41,6 @@ export function InvitePage({
   )
 }
 
-/**
- * The server can render before Clerk has refreshed an idle session, and then
- * answers as if nobody were signed in. Once the browser knows better, load the
- * landing again, a single time, so it describes the actual viewer.
- */
 function useSignedInLanding(invite: RepositoryInviteLandingResponse) {
   const { isLoaded, isSignedIn } = useAuth()
   const router = useRouter()
@@ -230,7 +225,6 @@ function InviteViewerActions({
       })
     } catch (error) {
       setAcceptError(error instanceof Error ? error.message : 'Invite could not be accepted.')
-      // The invite may have been revoked or used meanwhile; show what it is now.
       await router.invalidate()
     } finally {
       setPending(false)

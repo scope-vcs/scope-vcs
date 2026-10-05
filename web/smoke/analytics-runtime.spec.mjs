@@ -154,7 +154,6 @@ async function waitFor(condition) {
   }
 }
 
-// PostHog intentionally excludes automation. Model a real visitor without changing product settings.
 function normalVisitor() {
   Object.defineProperty(navigator, 'webdriver', { get: () => false })
   Object.defineProperty(navigator, 'userAgentData', { get: () => undefined })

@@ -11,8 +11,6 @@ use super::{RepositoryStore, content_fences};
 use crate::error::PostgresError;
 use sqlx::PgConnection;
 
-/// A session-scoped advisory lock on a dedicated connection. Dropping the
-/// lease closes that session, which releases the lock.
 pub struct RepositoryGitWriteLease {
     connection: PgConnection,
     key: i64,

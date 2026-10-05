@@ -1,5 +1,3 @@
-"""Capture metadata and required object references without blocking application writes."""
-
 import os
 import subprocess
 from pathlib import Path

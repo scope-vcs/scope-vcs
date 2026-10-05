@@ -38,8 +38,6 @@ pub(crate) async fn apply_run_retention(state: &AppState, now_unix: u64) -> anyh
     Ok(pruned)
 }
 
-/// Deletes invites that have been over for the retention period, in up to one
-/// batch of repositories. Returns how many invites went.
 pub(crate) async fn apply_invite_retention(
     state: &AppState,
     now_unix: u64,
@@ -56,7 +54,6 @@ pub(crate) async fn apply_invite_retention(
             .await
             .map_err(|error| anyhow::anyhow!(error.message))?;
         if let Some(mutation) = mutation {
-            // The members list shows ended invites, so it has to hear about this.
             pruned +=
                 publish_committed_mutation(state, mutation, RepoChangeReason::InviteUpdated).await;
         }

@@ -65,8 +65,6 @@ fn text_content(content: &Option<ReviewFileContentResponse>) -> Option<&str> {
     }
 }
 
-// One hunk spanning the changed lines keeps rendering linear even for large files.
-// File/revision selection and visibility always come from the API.
 fn text_hunk(old: &str, new: &str) -> Vec<String> {
     let old = old.split_inclusive('\n').collect::<Vec<_>>();
     let new = new.split_inclusive('\n').collect::<Vec<_>>();

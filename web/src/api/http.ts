@@ -23,9 +23,6 @@ export class HttpError extends Error {
   }
 }
 
-// The viewer cannot see the resource: signed out, forbidden, or hidden behind
-// a 404 so its existence is not disclosed. Route loaders turn this into null
-// data and render their unavailable state instead of an error page.
 const ACCESS_DENIED_STATUSES = new Set([401, 403, 404])
 
 function isAccessDeniedError(error: unknown) {
@@ -298,9 +295,7 @@ async function readBoundedResponse(response: Response, limit: number): Promise<s
   } finally {
     try {
       await reader.cancel()
-    } catch {
-      // Cancellation of an already failed body must not replace its read error.
-    }
+    } catch {}
     reader.releaseLock()
   }
 }

@@ -160,7 +160,6 @@ async fn failed_transform_rolls_back_schema_data_and_ledger() {
     .await
     .unwrap();
 
-    // Production migration execution wraps installation and every transform in one transaction.
     let tx = db.begin().await.unwrap();
     let error = FailingTransformMigrator::up(&tx, None).await.unwrap_err();
     tx.rollback().await.unwrap();

@@ -271,8 +271,6 @@ async fn private_request_full_projection_snapshot_survives_later_git_main() {
                 .mutate_repository_for_tests("owner/repo", move |repo| {
                     repo.bump_content_version();
                     repo.git_head = Some(head);
-                    // The complete request snapshot must not read unrelated
-                    // accepted Git history, even when that history cannot load.
                     repo.git_pack_spans = Vec::new();
                 })
                 .await

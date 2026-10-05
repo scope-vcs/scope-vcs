@@ -376,10 +376,6 @@ struct RetainedRetry {
     next_run_at: i64,
 }
 
-/// Retry accounting shared by both cleanup queues. A retained row that carries
-/// an error counts as a failed attempt and backs off; a row retained without
-/// one (a repository that is still live) keeps its attempt count and is due
-/// again immediately.
 fn retained_retry(attempts: i32, failed: bool, now: i64) -> Result<RetainedRetry, PostgresError> {
     if !failed {
         return Ok(RetainedRetry {

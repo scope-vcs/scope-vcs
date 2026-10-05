@@ -27,34 +27,28 @@ async fn github_pushes_name_their_branch_and_only_running_pushes_hold_a_lease() 
     .unwrap();
 
     for invalid in [
-        // Untrimmed and empty check names.
         "INSERT INTO scope_github_required_checks VALUES ('owner/one',' ci ',1)".to_string(),
         "INSERT INTO scope_github_required_checks VALUES ('owner/one','',1)".to_string(),
-        // The ref must be the request's own branch.
         format!(
             "{PUSH_COLUMNS} VALUES ('push_2','owner/one','req_1','refs/heads/main',2,7,42,
                 'octo/one',repeat('a',40),'push','queued',0,10,10,10)"
         ),
-        // A deletion has no target, and a push needs one.
         format!(
             "{PUSH_COLUMNS} VALUES ('push_2','owner/one','req_1',
                 'refs/heads/scope/requests/req_1',2,7,42,'octo/one',repeat('a',40),'delete',
                 'queued',0,10,10,10)"
         ),
-        // A branch's jobs never share a place in its order.
         format!(
             "{PUSH_COLUMNS} VALUES ('push_2','owner/one','req_1',
                 'refs/heads/scope/requests/req_1',1,7,42,'octo/one',NULL,'delete',
                 'queued',0,10,10,10)"
         ),
-        // A running push holds a lease and a claim; a failed one says why.
         "UPDATE scope_github_pushes SET state = 'running'".to_string(),
         "UPDATE scope_github_pushes SET state = 'failed'".to_string(),
     ] {
         assert!(db.execute_unprepared(&invalid).await.is_err(), "{invalid}");
     }
 
-    // Branch cleanup outlives the repository; everything else goes with it.
     db.execute_unprepared("DELETE FROM scope_repositories WHERE id = 'owner/one'")
         .await
         .unwrap();

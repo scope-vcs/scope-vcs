@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Watcher heartbeat and deduplicated GitHub alerts, using the existing gh login."""
 
 import argparse
 from datetime import datetime, timezone
@@ -11,7 +10,7 @@ import subprocess
 
 REPO = "scope-vcs/scope-vcs"
 VARIABLE = "SCOPE_DEPLOYMENT_WATCHER_HEARTBEAT"
-ASSIGNEE = "adamblumoff"
+REPOSITORY_MAINTAINER = "adamblumoff"
 OUTAGE = "<!-- scope-deployment-watch:heartbeat -->"
 
 
@@ -20,13 +19,11 @@ def gh(*args):
         ["gh", *args], capture_output=True, text=True, timeout=45, check=False
     )
     if result.returncode:
-        # Provider output can contain credentials or private prompt content.
         raise RuntimeError("GitHub heartbeat/alert request failed")
     return result.stdout.strip()
 
 
 def heartbeat(repo=REPO):
-    """Call only after an entire watcher poll, including supervision, succeeds."""
     now = datetime.now(timezone.utc).isoformat()
     gh("variable", "set", VARIABLE, "--repo", repo, "--body", now)
     return now
@@ -41,14 +38,11 @@ def ensure_issue(repo, marker, title, body, state="open"):
     existing = next((issue for issue in issues(repo, state) if marker in issue["body"]), None)
     if existing:
         return existing["url"]
-    # Keep the confirmed repository maintainer explicit. Workflow tokens identify
-    # github-actions[bot], which cannot receive assigned-issue notifications.
     return gh("issue", "create", "--repo", repo, "--title", title,
-              "--body", f"{body}\n\n{marker}", "--assignee", ASSIGNEE)
+              "--body", f"{body}\n\n{marker}", "--assignee", REPOSITORY_MAINTAINER)
 
 
 def alert(release_id, reason, repo=REPO, *, recoveries=0, thread_id="", provider=""):
-    """Escalate once per release; raw agent/provider errors are never published."""
     release_id = str(release_id)
     if not re.fullmatch(r"[0-9]+", release_id):
         raise ValueError("Release ID must be numeric")
@@ -59,7 +53,6 @@ def alert(release_id, reason, repo=REPO, *, recoveries=0, thread_id="", provider
     if provider not in {"", "codex", "claudeAgent"}:
         raise ValueError("Unexpected deployment agent provider")
     marker = f"<!-- scope-deployment-watch:release:{release_id} -->"
-    # The watcher supplies a controlled reason code, not a provider exception.
     reasons = {
         "attempts_exhausted": "The deployment agent exhausted its recovery attempts.",
         "deadline_exceeded": "The deployment exceeded its recovery time limit.",
@@ -78,7 +71,6 @@ def alert(release_id, reason, repo=REPO, *, recoveries=0, thread_id="", provider
 
 
 def check(value, repo=REPO, max_age=1200, now=None):
-    """External observer: raise an assigned issue once and close it on recovery."""
     now = now or datetime.now(timezone.utc)
     try:
         timestamp = datetime.fromisoformat(value)
@@ -108,7 +100,7 @@ def check(value, repo=REPO, max_age=1200, now=None):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Watcher heartbeat and deduplicated GitHub alerts, using the existing gh login.")
     parser.add_argument("command", choices=["check", "publish"])
     parser.add_argument("--repo", default=REPO)
     args = parser.parse_args()

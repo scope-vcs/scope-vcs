@@ -1,5 +1,3 @@
-//! Actor identity and mutation intent. Locked persistence facts supply domain capabilities.
-
 #[derive(Clone, Debug)]
 pub struct SubmitRequestCommand {
     pub request_id: String,
@@ -27,7 +25,6 @@ pub struct EditRequestIdentityCommand {
     pub now_unix: u64,
 }
 
-/// A request whose head a committed main push already carries.
 #[derive(Clone, Debug)]
 pub struct CompleteLandedRequestCommand {
     pub request_id: String,
@@ -54,7 +51,6 @@ pub struct MergeRequestContentCommand {
     pub request_id: String,
     pub actor_user_id: String,
     pub merged_event_id: String,
-    /// The repository state the merge was prepared against; any drift is a conflict.
     pub expected_git_frontier: scope_domain::repository::git::GitFrontier,
     pub expected_repo_change_version: u64,
     pub expected_request_head_oid: String,

@@ -39,8 +39,6 @@ async fn reconciliation_evaluates_a_saved_intent_after_restart_without_a_viewer(
             .is_none()
     );
 
-    // The next process only has the saved intent; no request read or HTTP call
-    // participates in this pass.
     let restarted = state.clone();
     assert_eq!(reconcile(&restarted, unix_now()).await, 1);
     assert!(
@@ -198,8 +196,6 @@ async fn reconciliation_stops_when_the_authorizing_member_loses_access() {
     .await
     .unwrap();
 
-    // Simulate a missed revocation notification. Reconciliation must still
-    // validate the actor's current access before evaluating checks.
     state
         .metadata
         .repositories()

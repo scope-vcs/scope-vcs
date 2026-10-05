@@ -53,7 +53,6 @@ async fn reads_the_latest_run_of_each_name_on_the_requested_commits() {
             },
         ]
     );
-    // Another GitHub repository's runs on the same commit never answer.
     assert_eq!(
         latest_github_check_runs(store.db.as_ref(), "owner/repo", 43, &["a".repeat(40)])
             .await
@@ -111,7 +110,6 @@ async fn a_read_that_answers_late_cannot_replace_a_later_one() {
         None
     );
 
-    // The older read saw the run pass; the newer one saw its re-run fail.
     let older = requests.start_github_check_read(&commit).await.unwrap();
     let newer = requests.start_github_check_read(&commit).await.unwrap();
     assert!(newer > older);
@@ -149,7 +147,6 @@ async fn a_read_that_answers_late_cannot_replace_a_later_one() {
         Some(20)
     );
 
-    // While a later read is still asking GitHub, the stored one is not settled.
     let pending = requests.start_github_check_read(&commit).await.unwrap();
     assert_eq!(
         requests

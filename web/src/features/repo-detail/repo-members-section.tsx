@@ -18,7 +18,6 @@ import { visibleInvitations } from './repo-invite-model'
 import { AccessSection } from './repo-settings-sections'
 import { AlwaysOnPrivateRead, PermissionEditor } from './repo-member-permissions'
 
-/** One list for everyone with access or an invitation to it. */
 export function RepositoryMembersSection({
   collaboration,
   createInvite,

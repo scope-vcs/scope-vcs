@@ -1,4 +1,3 @@
-// Observe delivered bytes without replacing the application's fetch or reader.
 export async function observeEventStreams(page, suffix, starts, ends) {
   const session = await page.context().newCDPSession(page);
   const requests = new Map();
@@ -27,7 +26,6 @@ export async function observeEventStreams(page, suffix, starts, ends) {
     state.accepted = true;
     try {
       const { bufferedData } = await session.send('Network.streamResourceContent', { requestId });
-      // Events can arrive while the command is pending. Preserve their order.
       receive(state, bufferedData);
       for (const data of state.pending ?? []) receive(state, data);
       state.pending = null;

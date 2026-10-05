@@ -96,8 +96,6 @@ impl ProductAnalytics {
         ));
     }
 
-    /// Records the terminal outcome of an attempt. Callers pass only attempts that just
-    /// transitioned; a non-terminal attempt here means the caller's transition check is wrong.
     pub fn capture_workflow_attempt_completed(
         &self,
         repository_id: &str,

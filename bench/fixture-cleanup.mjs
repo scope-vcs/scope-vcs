@@ -1,6 +1,5 @@
 import { rm } from 'node:fs/promises';
 
-// Register allocations before the next fallible setup step, including retry attempts.
 export class FixtureCleanup {
   #repositories = [];
   #directories = [];

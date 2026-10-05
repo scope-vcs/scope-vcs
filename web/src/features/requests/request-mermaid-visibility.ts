@@ -2,8 +2,6 @@ type Priority = 0 | 1 | null
 type Registration = { near: boolean; visible: boolean; notify: (priority: Priority) => void }
 const groups = new Map<Element | null, ReturnType<typeof createObservers>>()
 
-// A viewport root margin cannot extend past a nested scrolling ancestor.
-// Share two observers per scroll container, including discussion drawers.
 export function observeRequestMermaid(element: Element, notify: Registration['notify']) {
   const root = scrollRoot(element)
   let group = groups.get(root)

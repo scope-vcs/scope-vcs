@@ -1,8 +1,11 @@
 use super::ecs::{EcsClient, RejectionReason, StartError, StopOutcome};
 use super::provisioning::Provisioning;
-use crate::settings::{BATCH_SIZE, CloudExecutionSettings};
+use crate::settings::{CONTROL_POLL_BATCH_SIZE, CloudExecutionSettings};
 use anyhow::Context as _;
-use scope_domain::runs::{exit_code::SetupFailure, step::AttemptConclusion};
+use scope_domain::runs::{
+    exit_code::SetupFailure,
+    step::{AttemptConclusion, normalize_setup_failure_message},
+};
 use scope_postgres::db::MetadataStore;
 use scope_product_analytics::ProductAnalytics;
 use sha2::{Digest as _, Sha256};
@@ -39,7 +42,7 @@ impl CloudExecutionCoordinator {
         for run in self
             .metadata
             .runs()
-            .expire_capacity_retries(now_unix, BATCH_SIZE as u64)
+            .expire_capacity_retries(now_unix, CONTROL_POLL_BATCH_SIZE as u64)
             .await
             .map_err(db_error)?
         {
@@ -58,7 +61,6 @@ impl CloudExecutionCoordinator {
         let mut starts = Provisioning::new(self.settings.max_concurrency);
         let dispatch_result: anyhow::Result<usize> = async {
             let mut dispatched = 0;
-            // Bound each coordinator tick, including exhausted-job repairs and contention.
             for _ in 0..self.settings.max_concurrency.max(1) {
                 starts.wait_for_slot().await?;
                 let attempt_id = crate::random_hex("attempt_", 16)?;
@@ -100,7 +102,6 @@ impl CloudExecutionCoordinator {
             Ok(dispatched)
         }
         .await;
-        // A failed admission or launch must not cancel other already-reserved starts.
         let provision_result = starts.finish().await;
         let dispatched = dispatch_result?;
         provision_result?;
@@ -127,12 +128,9 @@ impl CloudExecutionCoordinator {
             }
             Err(StartError::Rejected { reason, error }) => {
                 let now_unix = crate::unix_now()?.max(now_unix);
-                let message = format!("provider rejected dispatch: {error}")
-                    .chars()
-                    .take(2048)
-                    .collect::<String>();
-                // Only the broker's confirmed capacity rejection can request another attempt.
-                // Quota and permanent failures require an operator/configuration change.
+                let message = normalize_setup_failure_message(&format!(
+                    "provider rejected dispatch: {error}"
+                ));
                 let mutation = match reason {
                     RejectionReason::Capacity => {
                         self.metadata
@@ -196,7 +194,7 @@ impl CloudExecutionCoordinator {
             .runs()
             .claim_cloud_attempt_aborts(
                 now_unix,
-                self.settings.max_concurrency.max(BATCH_SIZE) as u64,
+                self.settings.max_concurrency.max(CONTROL_POLL_BATCH_SIZE) as u64,
             )
             .await
             .map_err(db_error)?;
@@ -225,7 +223,7 @@ impl CloudExecutionCoordinator {
             .runs()
             .claim_terminal_cloud_task_stops(
                 now_unix,
-                self.settings.max_concurrency.max(BATCH_SIZE) as u64,
+                self.settings.max_concurrency.max(CONTROL_POLL_BATCH_SIZE) as u64,
             )
             .await
             .map_err(db_error)?;

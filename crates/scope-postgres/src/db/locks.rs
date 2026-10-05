@@ -18,8 +18,6 @@ where
     acquire_aggregate_lock_with_mode(conn, namespace, id, LockType::Update).await
 }
 
-/// Request-local writes share the repository guard. Repository policy, membership and
-/// lifecycle mutations take its exclusive form before changing authorization facts.
 pub(super) async fn acquire_shared_repository_lock<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
@@ -68,7 +66,6 @@ async fn acquire_aggregate_lock_with_mode<C: ConnectionTrait>(
     Ok(())
 }
 
-/// Observe a waiter blocked by this transaction. The deadline detects hangs, not ordering.
 #[cfg(test)]
 pub(super) async fn wait_for_transaction_waiter(
     store: &super::MetadataStore,
@@ -91,8 +88,6 @@ pub(super) async fn wait_for_transaction_waiter(
     .expect("expected a waiter blocked by the held transaction")
 }
 
-/// Observe the exact schema-scoped advisory lock, so unrelated database work cannot
-/// satisfy a test's waiting barrier. The deadline detects hangs, not ordering.
 #[cfg(test)]
 pub(super) async fn wait_for_advisory_waiter(
     store: &super::MetadataStore,
@@ -141,8 +136,6 @@ mod tests {
         let store =
             MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap())
                 .unwrap();
-        // Existing keys ensure contention reaches SELECT FOR UPDATE instead of
-        // blocking on insertion of an uncommitted unique key.
         let seeded = store.db.begin().await.unwrap();
         for id in ["owner/one", "owner/two"] {
             acquire_aggregate_lock(&seeded, "repository", id)

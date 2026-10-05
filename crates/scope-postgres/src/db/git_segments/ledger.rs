@@ -197,9 +197,6 @@ where
     require_one_transition(transitioned, segment_id, to)
 }
 
-/// Moves one upload to `to` when `from_predicate` holds and reports how many
-/// rows changed. `mark_git_segment_upload_ready` is the one transition that
-/// also writes the segment digest and sizes, so it keeps its own statement.
 async fn transition_rows<C>(
     conn: &C,
     segment_id: &str,

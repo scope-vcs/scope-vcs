@@ -90,7 +90,6 @@ async fn cleanup_next_job(
         {
             Ok(Ok(())) => {}
             Err(HeartbeatError::LeaseLost) => {
-                // Finish the in-flight delete before abandoning this lease.
                 let _ = deletion.await;
                 return Ok(CleanupOutcome::LeaseLost);
             }

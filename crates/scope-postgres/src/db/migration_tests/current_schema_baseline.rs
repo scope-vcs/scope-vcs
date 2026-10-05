@@ -2,8 +2,6 @@ use super::*;
 
 const BASELINE: &str = "m0042_current_schema_baseline";
 
-/// A database that stopped at the baseline: the current schema plus the single
-/// baseline ledger entry, with representative business rows and sequence state.
 async fn baseline_database(db: &DatabaseConnection) {
     migrations::Migrator::up(db, Some(1)).await.unwrap();
     db.execute_unprepared(
@@ -41,8 +39,6 @@ async fn sequence_state(db: &DatabaseConnection) -> (i64, bool) {
 
 #[tokio::test]
 async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
-    // The pre-baseline chain and any unknown entry are equally unrecognizable:
-    // this binary only advances a database whose ledger is a prefix of its own.
     for ledger in [
         vec!["m0001_initial_schema", "m0042_request_media"],
         vec![BASELINE, "m9999_unknown"],
@@ -236,8 +232,6 @@ async fn the_visible_public_search_path_survives_the_baseline_schema_check() {
     let mut options = sea_orm::ConnectOptions::new(target.schema_database_url());
     options.max_connections(1);
     let visible_public = sea_orm::Database::connect(options).await.unwrap();
-    // Deployment uses public, while isolated tests normally hide it. PostgreSQL
-    // omits the public qualifier on gin_trgm_ops only when public is visible.
     visible_public
         .execute_unprepared(
             "SELECT set_config('search_path', current_setting('search_path') || ', public', false)",

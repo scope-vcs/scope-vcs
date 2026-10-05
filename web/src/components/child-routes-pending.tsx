@@ -3,11 +3,6 @@ import type { ComponentType, ReactNode } from 'react'
 
 type PendingComponent = ComponentType<{ children?: ReactNode }>
 
-/**
- * While a route pends, the routes below it are already matched. This renders
- * each one's pending state, nested the way the routes nest, so a skeleton shows
- * the shape of the page it leads to however the visitor arrived.
- */
 export function ChildRoutesPending({ below, fallback = null }: { below: string; fallback?: ReactNode }) {
   const router = useRouter()
   const routeIds = useMatches({ select: (matches) => matches.map((match) => match.routeId) })

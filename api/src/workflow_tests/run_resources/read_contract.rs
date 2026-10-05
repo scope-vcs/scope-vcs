@@ -250,7 +250,6 @@ async fn all_run_resource_reads_ignore_locked_history_and_invitations() {
         .lock_repository_history_and_invites_for_tests()
         .await
         .unwrap();
-    // Detect blocked table reads, not endpoint latency under parallel test load.
     let read_timeout = Duration::from_secs(10);
     for auth in &auths {
         let workflows = tokio::time::timeout(

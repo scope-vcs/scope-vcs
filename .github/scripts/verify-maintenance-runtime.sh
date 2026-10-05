@@ -9,7 +9,6 @@ environment="$(jq -er --arg name "$name" '.environments[$name].environmentId' "$
 digest="$(jq -er '.maintenanceSha256 | select(test("^[a-f0-9]{64}$"))' "$receipt")"
 railway_private_read "$environment" sh -ceu '
   printf "%s  /app/bin/scope-maintenance\n" "$1" | sha256sum --check --status
-  # Railway SSH runs an administrator shell; inspect the running service instead.
   test "$(awk "/^Uid:/ {print \$3}" /proc/1/status)" = 65532
   case "$DATABASE_URL" in
     *".railway.internal:"*|*".railway.internal/"*) ;;

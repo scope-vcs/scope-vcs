@@ -1,17 +1,9 @@
-//! Signed, expiring proofs for the connect flow. GitHub's OAuth screen passes
-//! the setup state back with its code, so the state names who started the
-//! flow and for which Scope repository. The connect grant then carries the
-//! repositories the signed-in GitHub account was shown to push and the
-//! installation that reaches each, so the user token is never stored and no
-//! installation id from a URL is trusted.
-
 use crate::error::ApiError;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::Sha256;
 
-/// Long enough for GitHub's authorization screen and a repository choice.
 pub(crate) const GITHUB_SETUP_TTL_SECS: u64 = 10 * 60;
 const SETUP_STATE_KIND: &str = "scope.github-setup";
 const CONNECT_GRANT_KIND: &str = "scope.github-connect";
@@ -20,7 +12,6 @@ const INVALID_SETUP: &str =
     "This GitHub setup expired or is not valid. Start again from repository settings.";
 type HmacSha256 = Hmac<Sha256>;
 
-/// Who started connecting which Scope repository.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct SetupState {
     kind: String,
@@ -30,7 +21,6 @@ pub(crate) struct SetupState {
     expires_at_unix: u64,
 }
 
-/// The repositories one signed-in GitHub account can push through the app.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct ConnectGrant {
     kind: String,
@@ -48,7 +38,6 @@ pub(crate) struct GrantedRepository {
 }
 
 impl ConnectGrant {
-    /// The installation that reaches the repository, when the grant covers it.
     pub(crate) fn installation_for(&self, repository_id: u64) -> Option<u64> {
         self.repositories
             .iter()
@@ -62,8 +51,6 @@ pub(crate) struct SetupTokenSigner {
 }
 
 impl SetupTokenSigner {
-    /// The key is derived from the app's client secret, so rotating that
-    /// secret also ends flows already in progress.
     pub(crate) fn from_client_secret(client_secret: &str) -> Self {
         let mut mac = HmacSha256::new_from_slice(client_secret.as_bytes())
             .expect("HMAC accepts keys of any length");
