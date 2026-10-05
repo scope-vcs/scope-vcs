@@ -46,14 +46,14 @@ test('request checks lead with what is left, fold the rest, and only link Scope 
 
     await checks.getByText('3 of 8 left', { exact: true }).waitFor()
     await checks.getByText('· 5 passed · 4 skipped', { exact: true }).waitFor()
-    await checks.getByText('Checks run publicly', { exact: true }).waitFor()
+    await checks.getByText('Checks run publicly, so this private request’s changes are public.', { exact: true }).waitFor()
     assert.equal(await checks.getByText(/GitHub|scope\/requests/).count(), 0)
     assert.deepEqual(
       await checks.getByRole('listitem').evaluateAll((items) => items.map((item) => item.textContent)),
       [
         'Check operationsin progress',
-        'Validate selected components / CLI validationwaiting',
-        'Validate selected components / Integration validationwaiting',
+        'Validate selected components\u00a0/\u00a0CLI validationwaiting',
+        'Validate selected components\u00a0/\u00a0Integration validationwaiting',
       ],
     )
 
@@ -65,8 +65,14 @@ test('request checks lead with what is left, fold the rest, and only link Scope 
     await checks.getByText('2 of 8 left', { exact: true }).waitFor()
     assert.equal(await checks.getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded'), 'true')
 
+    await checks.getByRole('button', { name: 'Show less' }).click()
     await page.setViewportSize({ width: 390, height: 844 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    // On a phone a listed check keeps its job name whole and its workflow in view.
+    const job = checks.getByText('Integration validation', { exact: true })
+    assert.equal(await job.evaluate((element) => element.scrollWidth <= element.clientWidth), true)
+    assert.equal(await checks.getByText(/^Validate selected components/).first().isVisible(), true)
+    await checks.getByRole('button', { name: 'Show all 12' }).click()
 
     await page.evaluate(() => window.showNative())
     await checks.getByText('1 failed', { exact: true }).waitFor()

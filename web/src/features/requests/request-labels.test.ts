@@ -57,10 +57,10 @@ test('a private request checked in a public repository says it is public', () =>
   const checks = (private_request_on_public_github: boolean) =>
     ({ private_request_on_public_github }) as RequestChecksResponse
   assert.equal(requestPublicChecksNote(checks(false)), null)
-  assert.deepEqual(requestPublicChecksNote(checks(true)), {
-    label: 'Checks run publicly',
-    detail: 'This private request’s checks run in a public repository, so its changes are public.',
-  })
+  assert.equal(
+    requestPublicChecksNote(checks(true)),
+    'Checks run publicly, so this private request’s changes are public.',
+  )
 })
 
 test('activity describes submission', () => {

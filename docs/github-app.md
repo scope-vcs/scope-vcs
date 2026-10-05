@@ -224,8 +224,8 @@ needs its own green runs. Merge and auto-merge both wait for this.
 The request view leads with a count of what is left, failed and passed, and
 lists only failed, running and waiting checks. "Show all" lists every check,
 nested under the workflows its name gives, such as `ci / test / unit`. A
-private request checked in a public GitHub repository is tagged "Checks run
-publicly".
+private request checked in a public GitHub repository says "Checks run
+publicly, so this private request's changes are public."
 
 ### Pushing revisions
 

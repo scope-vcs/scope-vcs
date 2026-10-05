@@ -37,8 +37,9 @@ function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
     return row(
       `native:${check.workflow_path}`,
       check.workflow_name,
-      // A recorded check without a run is waiting, not passing.
-      check.run_state ?? 'pending',
+      // A recorded check without a run is waiting, not passing, and a
+      // canceled run blocks merging like a failed one.
+      check.run_state === 'canceled' ? 'failed' : check.run_state ?? 'pending',
       check.run_state ? runStatus(check.run_state).label : 'not started',
       check.run_id,
     )
@@ -52,7 +53,7 @@ function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
 export function requestChecksSummary(checks: RequestChecksResponse): RequestChecksSummary {
   const all = checks.checks
     .map(requestCheckRow)
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .sort(byWorkflowPath)
   const attention = all
     .filter((check) => check.tone in ATTENTION_ORDER)
     .sort((a, b) => ATTENTION_ORDER[a.tone]! - ATTENTION_ORDER[b.tone]!)
@@ -113,6 +114,21 @@ export function requestCheckTree(rows: RequestCheckRow[]): RequestCheckTreeLine[
     lines.push({ kind: 'check', row, depth: row.parents.length })
   }
   return lines
+}
+
+/**
+ * Orders checks by their workflow path, one name at a time, so the checks of
+ * a workflow stay together even beside a workflow whose name differs only in
+ * case or accents.
+ */
+function byWorkflowPath(a: RequestCheckRow, b: RequestCheckRow) {
+  const left = [...a.parents, a.leaf]
+  const right = [...b.parents, b.leaf]
+  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+    const [x, y] = [left[index]!, right[index]!]
+    if (x !== y) return x.localeCompare(y) || (x < y ? -1 : 1)
+  }
+  return left.length - right.length
 }
 
 function row(

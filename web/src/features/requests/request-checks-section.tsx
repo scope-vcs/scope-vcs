@@ -78,13 +78,9 @@ export function RequestChecksSection({
         </p>
       ) : null}
       {publicNote ? (
-        <p
-          className="mt-1.5 flex w-fit items-center gap-1.5 text-xs text-warning-strong"
-          title={publicNote.detail}
-        >
-          <Globe aria-hidden="true" className="size-3.5 shrink-0" />
-          <span>{publicNote.label}</span>
-          <span className="sr-only">. {publicNote.detail}</span>
+        <p className="mt-1.5 flex items-start gap-1.5 text-xs text-warning-strong">
+          <Globe aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+          {publicNote}
         </p>
       ) : null}
       {summary && (expanded ? summary.all.length : summary.attention.length) ? (
@@ -144,9 +140,15 @@ function CheckRow({
   const content = (
     <>
       <RunStatusIcon state={row.state} />
-      <span className={cn('min-w-0 flex-1 truncate', row.tone === 'inert' && 'text-muted-foreground')}>
-        {parent ? <span className="text-muted-foreground max-[520px]:hidden">{parent} / </span> : null}
-        {row.leaf}
+      <span className={cn('flex min-w-0 flex-1', row.tone === 'inert' && 'text-muted-foreground')} title={row.name}>
+        {/* The workflow gives way to the job's own name when space runs out. */}
+        {parent ? (
+          <>
+            <span className="min-w-0 truncate text-muted-foreground">{parent}</span>
+            <span className="shrink-0 text-muted-foreground">{'\u00a0/\u00a0'}</span>
+          </>
+        ) : null}
+        <span className="max-w-full shrink-0 truncate">{row.leaf}</span>
       </span>
       {row.tone === 'success' || row.tone === 'inert' ? null : (
         <span
@@ -174,7 +176,6 @@ function CheckRow({
       className={cn(ROW_CLASS, 'hover:bg-accent focus-visible:bg-accent')}
       params={{ ...params, runId: row.runId }}
       style={style}
-      title={row.name}
       to="/$owner/$repo/runs/$runId"
     >
       {content}

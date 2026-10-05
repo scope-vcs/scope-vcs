@@ -101,10 +101,7 @@ export function requestChecksWorkflowWarning(checks: RequestChecksResponse) {
 /** A private request whose checks run in a public repository is public there. */
 export function requestPublicChecksNote(checks: RequestChecksResponse) {
   return checks.private_request_on_public_github
-    ? {
-        label: 'Checks run publicly',
-        detail: 'This private request’s checks run in a public repository, so its changes are public.',
-      }
+    ? 'Checks run publicly, so this private request’s changes are public.'
     : null
 }
 
