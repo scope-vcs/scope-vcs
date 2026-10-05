@@ -36,8 +36,11 @@ After creating it:
 ## Configure the API
 
 Set all six variables on the `scope-api` service in Railway's production
-environment, then redeploy it. Setting only some of them stops the API at
-startup.
+environment with `railway variables --set ... --skip-deploys`, then dispatch the
+Release workflow with `scope=api` to roll them out. Do not redeploy from
+Railway: a deployment outside Release blocks later releases until one replaces
+it (see [Deployment pipeline](deployment-pipeline.md)). Setting only some of the
+variables stops the API at startup.
 
 - [ ] `SCOPE_GITHUB_APP_ID`
 - [ ] `SCOPE_GITHUB_APP_SLUG`

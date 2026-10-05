@@ -88,6 +88,17 @@ receipt. The failed deployment is never recorded as successful; the replacement
 must pass staging and the ordinary production observation gate. This option
 cannot be combined with `source_run_id` or an interrupted cutover.
 
+Change Railway variables with `--skip-deploys` and roll them out through
+Release. A redeploy from Railway replaces the receipted deployment ID, so
+preflight stops every later release. To recover, release with
+`replace_redeployed_component` set to that component; the release must deploy
+it. Preflight accepts the live deployment only if the receipted deployment was
+superseded and every later deployment is a Railway redeploy of the receipted
+image digest. Health, configuration, replica, and database checks still apply,
+and activation restores against the same verified baseline. The redeploy is
+never recorded as a release receipt. This option cannot be combined with
+`replace_failed_web_run_id` or an interrupted cutover.
+
 ## Dispatch and supervision
 
 The deployment watcher is the sole daily scheduler; GitHub cron is removed.
