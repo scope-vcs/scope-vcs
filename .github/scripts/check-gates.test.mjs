@@ -580,6 +580,33 @@ test("a Scope request revision that an open pull request tests reports that pull
   }
 });
 
+test('a Scope request revision reuses a pull request run only when that run tests the same tree', () => {
+  const ci = read('.github/workflows/ci.yml');
+  const script = stepScript(ci.slice(ci.indexOf('\n  pull-request:\n')), 'Find a pull request run that tests this commit');
+  // gh answers each API path with what its --jq filter would print.
+  const find = ({ pulls = '7', behind = '0', runs = '123' }) => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'scope-ci-find-'));
+    try {
+      writeFileSync(resolve(dir, 'gh'), `#!/bin/bash\ncase "$2" in\n  */pulls) echo "${pulls}" ;;\n  */compare/*) echo "${behind}" ;;\n  */runs*) echo "${runs}" ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
+      const output = resolve(dir, 'output');
+      const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
+        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, REPOSITORY: 'o/r', SHA: 'a'.repeat(40), GITHUB_OUTPUT: output },
+        encoding: 'utf8',
+      });
+      assert.equal(result.status, 0, result.stderr);
+      return readFileSync(output, 'utf8');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  assert.equal(find({}), 'number=7\n');
+  assert.equal(find({ pulls: '' }), 'number=\n');
+  // A head behind main was tested merged with code it lacks.
+  assert.equal(find({ behind: '2' }), 'number=\n');
+  // A pull request with conflicts never gets a run to wait for.
+  assert.equal(find({ runs: '' }), 'number=\n');
+});
+
 test('validation gate allows unselected jobs and reused artifacts but fails selected jobs and cancellation', () => {
   const workflow = read('.github/workflows/validate.yml');
   const job = workflow.slice(workflow.indexOf('\n  production-validation-gate:\n'));

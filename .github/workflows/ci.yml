@@ -25,24 +25,39 @@ jobs:
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
+      actions: read
       contents: read
       pull-requests: read
     outputs:
       number: ${{ steps.find.outputs.number }}
     steps:
-      # Only a pull request from this repository into main validates the
-      # commit as this run would: a fork's run has no secrets, and another base
-      # selects components against a different comparison.
-      - name: Find an open pull request into main whose head is this commit
+      - name: Find a pull request run that tests this commit
         id: find
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
+          # Only a person's pull request from this repository into main runs
+          # what this run would: a fork's run has no secrets, another base
+          # selects components against a different comparison, and Dependabot's
+          # runs skip the CLI distribution matrix.
           number="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" --jq "[.[] | select(
-            .state == \"open\" and .head.sha == \"$SHA\" and
-            .head.repo.full_name == \"$REPOSITORY\" and .base.ref == \"main\")][0].number // empty")"
+            .state == \"open\" and .head.sha == \"$SHA\" and .base.ref == \"main\" and
+            .head.repo.full_name == \"$REPOSITORY\" and .user.login != \"dependabot[bot]\")][0].number // empty")"
+          # A pull request run tests the head merged with main, which has the
+          # head's tree only while the head contains main.
+          if [[ -n "$number" ]]; then
+            behind="$(gh api "repos/$REPOSITORY/compare/main...$SHA" --jq .behind_by)"
+            [[ "$behind" == 0 ]] || number=""
+          fi
+          # GitHub starts no run for a pull request with conflicts, so only a
+          # run that already exists is waited for.
+          if [[ -n "$number" ]]; then
+            run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA" \
+              --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $number))][0].id // empty")"
+            [[ -n "$run" ]] || number=""
+          fi
           echo "number=$number" >> "$GITHUB_OUTPUT"
 
   # Validation runs unless a pull request already tests this commit. A failed
