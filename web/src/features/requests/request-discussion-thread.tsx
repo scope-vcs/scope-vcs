@@ -105,6 +105,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
     discussion,
     onMarkRead,
   })
+  const observedReplyHashRef = useRef<string | null>(null)
   const attemptedReplyHashRef = useRef<string | null>(null)
   const handledReplyHashRef = useRef<string | null>(null)
   const disclosureRef = useRef<HTMLButtonElement>(null)
@@ -114,6 +115,14 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
     let active = true
     function resolveReplyHash() {
       const hash = window.location.hash
+      // A render can observe a new hash before its hashchange event arrives.
+      // Only a changed hash starts a navigation, so the late event cannot move
+      // a reader who has since scrolled or collapsed the thread.
+      if (observedReplyHashRef.current !== hash) {
+        observedReplyHashRef.current = hash
+        attemptedReplyHashRef.current = null
+        handledReplyHashRef.current = null
+      }
       const replyTarget = replyTargetFromFragment(hash)
       if (!replyTarget || replyTarget.discussionId !== discussion.id) return
       if (handledReplyHashRef.current === hash) return
@@ -140,16 +149,10 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
     }
 
     resolveReplyHash()
-    function handleHashChange() {
-      attemptedReplyHashRef.current = null
-      handledReplyHashRef.current = null
-      resolveReplyHash()
-    }
-
-    window.addEventListener('hashchange', handleHashChange)
+    window.addEventListener('hashchange', resolveReplyHash)
     return () => {
       active = false
-      window.removeEventListener('hashchange', handleHashChange)
+      window.removeEventListener('hashchange', resolveReplyHash)
     }
   }, [availableReplies, collapsed, discussion.id, loadReplyTarget, onExpandedChange])
 

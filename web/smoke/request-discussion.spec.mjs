@@ -122,6 +122,12 @@ test('reply disclosure preserves scroll and remains reversible', async () => {
       (element) => element.scrollTop,
     )
     assert(deepScrollPosition > 0)
+    // A render can resolve the reply before the browser delivers hashchange.
+    // That late event belongs to the same navigation and must not move the
+    // reader back to the reply.
+    await page.evaluate(() => {
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
     await hideJitterReplies.click()
     await assertReplyRegion(
       page,
