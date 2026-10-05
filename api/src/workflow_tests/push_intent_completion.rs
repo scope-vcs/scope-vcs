@@ -208,6 +208,7 @@ async fn incremental_git_pack_layout_restores_after_cache_loss() {
         update,
         &test_owner_id(),
         &test_repo_incarnation(),
+        Vec::new(),
     )
     .await
     .unwrap();
@@ -278,6 +279,7 @@ async fn content_push_rejects_stale_reviewed_config() {
         update,
         &test_owner_id(),
         &test_repo_incarnation(),
+        Vec::new(),
     )
     .await
     .unwrap_err();
@@ -330,6 +332,7 @@ async fn reviewed_push_cannot_cross_repository_recreation() {
         update,
         &test_owner_id(),
         &test_repo_incarnation(),
+        Vec::new(),
     )
     .await
     .unwrap_err();

@@ -1,49 +1,18 @@
 use crate::{
     error::ApiError,
     git::command::{git_is_ancestor, run_git_output},
-    repo_events::RepoChangeReason,
     state::AppState,
 };
-use scope_domain::{
-    repository::RepositoryIncarnation,
-    requests::{Request, lands_with_main},
-};
-use scope_postgres::db::CompleteLandedRequestCommand;
+use scope_domain::requests::{Request, lands_with_main};
+use scope_postgres::db::LandedRequestCandidate;
 use std::path::Path;
 
-pub(super) async fn best_effort_complete_landed_requests(
-    state: &AppState,
-    repository_id: &str,
-    incarnation: &RepositoryIncarnation,
-    staging_repo: &Path,
-    main_oid: &str,
-    actor_user_id: &str,
-) {
-    match complete_landed_requests(state, repository_id, staging_repo, main_oid, actor_user_id)
-        .await
-    {
-        Ok(0) => {}
-        Ok(_) => {
-            state
-                .publish_request_summary_refresh(incarnation, RepoChangeReason::RequestMerged)
-                .await;
-        }
-        Err(error) => tracing::warn!(
-            repository_id,
-            main_oid,
-            error = %error.operator_diagnostic(),
-            "completing requests carried by the main push failed"
-        ),
-    }
-}
-
-async fn complete_landed_requests(
+pub(super) async fn landed_request_candidates(
     state: &AppState,
     repository_id: &str,
     staging_repo: &Path,
     main_oid: &str,
-    actor_user_id: &str,
-) -> Result<usize, ApiError> {
+) -> Result<Vec<LandedRequestCandidate>, ApiError> {
     let candidates = state
         .metadata
         .requests()
@@ -53,39 +22,18 @@ async fn complete_landed_requests(
         .filter(lands_with_main)
         .collect::<Vec<_>>();
     if candidates.is_empty() {
-        return Ok(0);
+        return Ok(Vec::new());
     }
-    let landed = {
-        let path = staging_repo.to_path_buf();
-        let main_oid = main_oid.to_string();
-        crate::git::blocking::run(move || requests_carried_by(&path, &main_oid, candidates)).await?
-    };
-    let mut completed = 0;
-    for request in landed {
-        let mutation = state
-            .metadata
-            .requests()
-            .complete_landed_request(CompleteLandedRequestCommand {
-                request_id: request.id.clone(),
-                actor_user_id: actor_user_id.to_string(),
-                merged_event_id: crate::persistence_ids::generate_prefixed_id(
-                    "event_request_merged",
-                )?,
-                landed_head_oid: request.head_oid,
-                main_oid: main_oid.to_string(),
-                now_unix: crate::persistence::unix_now()?,
-            })
-            .await?;
-        completed += usize::from(mutation.is_some());
-    }
-    Ok(completed)
+    let path = staging_repo.to_path_buf();
+    let main_oid = main_oid.to_string();
+    crate::git::blocking::run(move || requests_carried_by(&path, &main_oid, candidates)).await
 }
 
 fn requests_carried_by(
     repo: &Path,
     main_oid: &str,
     candidates: Vec<Request>,
-) -> Result<Vec<Request>, ApiError> {
+) -> Result<Vec<LandedRequestCandidate>, ApiError> {
     let mut landed = Vec::new();
     for request in candidates {
         let head_commit = format!("{}^{{commit}}", request.head_oid);
@@ -104,7 +52,10 @@ fn requests_carried_by(
                 "checking whether main carries a request head",
             )?
         {
-            landed.push(request);
+            landed.push(LandedRequestCandidate {
+                request_id: request.id,
+                head_oid: request.head_oid,
+            });
         }
     }
     Ok(landed)

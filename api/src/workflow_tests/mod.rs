@@ -538,6 +538,7 @@ async fn persist_and_promote_test_update(
         prepared,
         actor_id,
         &test_repo_incarnation(),
+        Vec::new(),
     )
     .await?;
     let head = persisted.head;

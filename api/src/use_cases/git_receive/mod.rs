@@ -384,9 +384,40 @@ async fn complete_main_push(
     let import_started_at = Instant::now();
     let (prepared, change_count): (PreparedReceivePackUpdate, usize) =
         main_push::prepare_main_push(state, owner, repo_name, staging_repo, &access).await?;
-    let persisted =
-        main_push::persist_main_push(state, owner, repo_name, prepared, &author_id, &incarnation)
-            .await?;
+    let landed_request_candidates = if first_push {
+        Vec::new()
+    } else {
+        match landed_requests::landed_request_candidates(
+            state,
+            incarnation.repository_id(),
+            staging_repo,
+            &prepared.head_oid,
+        )
+        .await
+        {
+            Ok(candidates) => candidates,
+            Err(error) => {
+                main_push::cleanup_failed_persist(
+                    state,
+                    incarnation.repository_id(),
+                    &prepared.staged_segment,
+                    prepared.write_lease,
+                )
+                .await;
+                return Err(error);
+            }
+        }
+    };
+    let persisted = main_push::persist_main_push(
+        state,
+        owner,
+        repo_name,
+        prepared,
+        &author_id,
+        &incarnation,
+        landed_request_candidates,
+    )
+    .await?;
     let committed_incarnation = persisted.incarnation.clone();
     let committed_git_head = persisted.head;
     let event = if first_push {
@@ -422,16 +453,15 @@ async fn complete_main_push(
         first_push,
         "git receive-pack main update persisted"
     );
+    if persisted.completed_landed_requests > 0 {
+        state
+            .publish_request_summary_refresh(
+                &committed_incarnation,
+                RepoChangeReason::RequestMerged,
+            )
+            .await;
+    }
     if !first_push {
-        landed_requests::best_effort_complete_landed_requests(
-            state,
-            &scope_domain::repository::repo_id(owner, repo_name),
-            &committed_incarnation,
-            staging_repo,
-            &committed_git_head.head_oid,
-            &author_id,
-        )
-        .await;
         crate::use_cases::request_checks::renew_stale_check_commits_in_background(
             state, owner, repo_name,
         );
