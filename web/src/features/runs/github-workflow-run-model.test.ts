@@ -25,7 +25,7 @@ function run(overrides: Partial<GitHubWorkflowRunResponse> = {}): GitHubWorkflow
   }
 }
 
-test('a running run on a request branch links GitHub and its request', () => {
+test('a running run on a request branch names its run page and request', () => {
   assert.deepEqual(githubWorkflowRunRow(run()), {
     key: '21',
     name: 'ci',
@@ -34,7 +34,6 @@ test('a running run on a request branch links GitHub and its request', () => {
     branch: 'scope/requests/req_1',
     event: 'push',
     commit: 'aaaaaaa',
-    href: 'https://github.com/octo/repo/actions/runs/21',
     requestId: 'req_1',
     at: 100,
   })

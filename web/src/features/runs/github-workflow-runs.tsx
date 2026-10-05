@@ -200,14 +200,13 @@ function GitHubWorkflowRunItem({ params, row }: { params: RepoParams; row: GitHu
     <li className={cn(RUN_ROW_CLASS, row.state === 'running' && 'bg-info-soft/40')}>
       <RunStatusIcon state={row.state} />
       <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2">
-        <a
+        <Link
           className={cn('truncate text-sm font-medium', LINK_CLASS)}
-          href={row.href}
-          rel="noopener noreferrer"
-          target="_blank"
+          params={{ ...params, runId: row.key }}
+          to="/$owner/$repo/runs/$runId"
         >
           {row.name}
-        </a>
+        </Link>
         <span className="truncate font-mono text-xs text-muted-foreground">
           #{row.commit}
           {row.branch ? (

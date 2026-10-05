@@ -55,21 +55,35 @@ export function RunJobHeader({
         ) : null}
         {environmentControl}
         {logText !== null ? (
-          <>
-            <Button
-              aria-pressed={wrap}
-              onClick={onToggleWrap}
-              size="icon-xs"
-              title={wrap ? 'Disable line wrap' : 'Wrap long lines'}
-              variant="ghost"
-            >
-              <WrapText />
-            </Button>
-            <CopyButton text={logText} />
-          </>
+          <RunLogControls onToggleWrap={onToggleWrap} text={logText} wrap={wrap} />
         ) : null}
       </span>
     </div>
+  )
+}
+
+export function RunLogControls({
+  onToggleWrap,
+  text,
+  wrap,
+}: {
+  onToggleWrap: () => void
+  text: string
+  wrap: boolean
+}) {
+  return (
+    <>
+      <Button
+        aria-pressed={wrap}
+        onClick={onToggleWrap}
+        size="icon-xs"
+        title={wrap ? 'Disable line wrap' : 'Wrap long lines'}
+        variant="ghost"
+      >
+        <WrapText />
+      </Button>
+      <CopyButton text={text} />
+    </>
   )
 }
 

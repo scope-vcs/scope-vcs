@@ -6,6 +6,7 @@ use scope_domain::{
     },
     github_run_import::{GitHubRunImport, GitHubRunImportState},
     github_setup_check::{GitHubSetupCheck, GitHubSetupCheckState},
+    github_workflow_jobs::GitHubWorkflowJob,
 };
 use scope_postgres::db::{GitHubConnectionRead, GitHubSetupCheckRead, GitHubWorkflowRunRead};
 use serde::{Deserialize, Serialize};
@@ -122,6 +123,53 @@ pub(crate) struct GitHubWorkflowRunResponse {
     pub(crate) updated_at_unix: u64,
     /// The Scope request whose branch the run is on.
     pub(crate) request_id: Option<String>,
+}
+
+/// A GitHub Actions workflow run on Scope's run page, with the jobs of its
+/// latest attempt as GitHub last reported them.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubWorkflowRunDetailResponse {
+    pub(crate) run: GitHubWorkflowRunResponse,
+    /// In the order GitHub created them.
+    pub(crate) jobs: Vec<GitHubWorkflowJobResponse>,
+    /// Set when Scope has no jobs for the run because GitHub could not be read.
+    pub(crate) jobs_unavailable: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubWorkflowJobResponse {
+    pub(crate) id: u64,
+    pub(crate) name: String,
+    pub(crate) status: GitHubCheckStatus,
+    pub(crate) conclusion: Option<GitHubCheckConclusion>,
+    pub(crate) started_at_unix: Option<u64>,
+    pub(crate) completed_at_unix: Option<u64>,
+    /// The job on GitHub, which keeps its whole log.
+    pub(crate) html_url: String,
+    pub(crate) steps: Vec<GitHubWorkflowStepResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubWorkflowStepResponse {
+    pub(crate) number: u32,
+    pub(crate) name: String,
+    pub(crate) status: GitHubCheckStatus,
+    pub(crate) conclusion: Option<GitHubCheckConclusion>,
+    pub(crate) started_at_unix: Option<u64>,
+    pub(crate) completed_at_unix: Option<u64>,
+}
+
+/// A finished job's log. GitHub offers it only once the job completes.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubWorkflowJobLogResponse {
+    /// `None` when GitHub no longer keeps the log.
+    pub(crate) text: Option<String>,
+    /// Whether `text` is only the end of a longer log.
+    pub(crate) truncated: bool,
 }
 
 /// How many of GitHub's most recent workflow runs the repository imports.
@@ -270,6 +318,30 @@ pub(crate) fn github_workflow_run_response(
         run_started_at_unix: run.run_started_at_unix,
         updated_at_unix: run.updated_at_unix,
         request_id: read.request_id,
+    }
+}
+
+pub(crate) fn github_workflow_job_response(job: GitHubWorkflowJob) -> GitHubWorkflowJobResponse {
+    GitHubWorkflowJobResponse {
+        id: job.github_job_id,
+        name: job.name,
+        status: job.status.into(),
+        conclusion: job.conclusion.map(Into::into),
+        started_at_unix: job.started_at_unix,
+        completed_at_unix: job.completed_at_unix,
+        html_url: job.html_url,
+        steps: job
+            .steps
+            .into_iter()
+            .map(|step| GitHubWorkflowStepResponse {
+                number: step.number,
+                name: step.name,
+                status: step.status.into(),
+                conclusion: step.conclusion.map(Into::into),
+                started_at_unix: step.started_at_unix,
+                completed_at_unix: step.completed_at_unix,
+            })
+            .collect(),
     }
 }
 

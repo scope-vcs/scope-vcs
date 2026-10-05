@@ -2,7 +2,9 @@ import type {
   ConnectRepoGitHubInput,
   GitHubSetupInput,
   RepoGitHubAuthorizeInput,
+  RepoGitHubWorkflowJobLogInput,
   RepoGitHubWorkflowRunsInput,
+  RunActionInput,
   SetRepoGitHubRequiredChecksInput,
   SetRepoGitHubRunImportCountInput,
 } from './types'
@@ -54,6 +56,21 @@ export function parseRepoGitHubWorkflowRunsInput(input: unknown): RepoGitHubWork
     workflow: optionalText(data.workflow, 'Choose a workflow.'),
     after: optionalText(data.after, 'Runs could not continue from there.'),
   }
+}
+
+export function parseRepoGitHubWorkflowRunInput(input: unknown): RunActionInput {
+  const params = parseRepoParams(input)
+  return { ...params, run_id: githubId((input as Partial<RunActionInput>).run_id, 'run_id') }
+}
+
+export function parseRepoGitHubWorkflowJobLogInput(input: unknown): RepoGitHubWorkflowJobLogInput {
+  const run = parseRepoGitHubWorkflowRunInput(input)
+  return { ...run, job_id: githubId((input as Partial<RepoGitHubWorkflowJobLogInput>).job_id, 'job_id') }
+}
+
+function githubId(value: unknown, label: string) {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) throw new Error(`${label} must be a GitHub id`)
+  return value
 }
 
 export function isRunImportCount(value: unknown): value is number {

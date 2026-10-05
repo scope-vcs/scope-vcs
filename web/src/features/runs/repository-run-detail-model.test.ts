@@ -153,6 +153,32 @@ describe('repository run detail model', () => {
     }
   })
 
+  it('opens a linked job on its failed, running or last step', () => {
+    const jobs = [
+      job({
+        attempts: [{ id: 'a1', number: 1, steps: [{ index: 0, state: 'failed' }] }],
+        key: 'backend',
+        state: 'failed',
+      }),
+      job({
+        attempts: [{
+          id: 'a2',
+          number: 1,
+          steps: [{ index: 0, state: 'succeeded' }, { index: 1, state: 'running' }, { index: 2, state: 'queued' }],
+        }],
+        key: 'web',
+        state: 'running',
+      }),
+      job({ key: 'deploy', state: 'blocked' }),
+    ]
+    assert.deepEqual(selectInitialView(jobs, 'web'), {
+      selectedJobKey: 'web',
+      selection: { attemptId: 'a2', jobKey: 'web', stepIndex: 1 },
+    })
+    assert.deepEqual(selectInitialView(jobs, 'deploy'), { selectedJobKey: 'deploy', selection: null })
+    assert.equal(selectInitialView(jobs, 'gone').selectedJobKey, 'backend')
+  })
+
   it('selects nothing when there are no steps to show', () => {
     assert.deepEqual(selectInitialView([]), {
       selectedJobKey: null,
