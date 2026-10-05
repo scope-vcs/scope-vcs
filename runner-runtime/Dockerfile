@@ -26,7 +26,7 @@ RUN cargo build --locked --release -p scope-runner-runtime
 
 FROM --platform=linux/amd64 debian:bookworm-slim@sha256:5ae3c39ebd15e229dcedd5cee596b2497182493d41ff162e824ba13fc1b2b867
 
-ARG DEBIAN_SNAPSHOT=20261002T020501Z
+ARG DEBIAN_SNAPSHOT=20261004T203145Z
 ARG GIT_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
