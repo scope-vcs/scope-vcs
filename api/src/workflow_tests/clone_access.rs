@@ -208,3 +208,43 @@ async fn permissioned_public_git_read_view_physically_excludes_private_objects()
     .unwrap();
     assert!(!private_object.status.success());
 }
+
+#[tokio::test]
+async fn warm_public_clone_reads_no_repository_history() {
+    let state = test_state_with_readme().await;
+    let anonymous = HeaderMap::new();
+    let cold = git_upload_pack_repo_for_request(
+        &state,
+        &anonymous,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        GitRemoteMode::Public,
+    )
+    .await
+    .unwrap();
+    let cold_path = cold.as_ref().to_path_buf();
+    drop(cold);
+
+    let held = state
+        .metadata
+        .admin()
+        .lock_repository_history_for_tests()
+        .await
+        .unwrap();
+    let warm = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        git_upload_pack_repo_for_request(
+            &state,
+            &anonymous,
+            TEST_REPO_OWNER,
+            TEST_REPO_NAME,
+            GitRemoteMode::Public,
+        ),
+    )
+    .await
+    .expect("a warm public clone must not wait on history tables")
+    .unwrap();
+    held.rollback().await.unwrap();
+
+    assert_eq!(warm.as_ref(), cold_path.as_path());
+}

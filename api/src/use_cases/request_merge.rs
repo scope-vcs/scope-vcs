@@ -361,6 +361,7 @@ async fn prepare_request_merge_for_execution(
             RequestAudience::Public => {
                 let validated = validate_public_request_merge_range(
                     &RepositoryGit::of_repository(repo),
+                    &repo.repo_config,
                     state,
                     &staging_repo,
                     &request.head_oid,

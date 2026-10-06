@@ -7,7 +7,7 @@ use scope_domain::{
     content::SourceBlob,
     content_ref::ContentRef,
     policy::{ScopePath, Visibility},
-    projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
+    projection::{FileChange, LogicalCommit, LogicalCommitOrigin, ProjectionViewKey},
     repository::{
         RepoLifecycleState, Repository, RepositoryIncarnation,
         access::RepositoryActor,
@@ -351,4 +351,40 @@ async fn content_version(store: &MetadataStore) -> u64 {
         .unwrap()
         .unwrap()
         .content_version
+}
+
+#[tokio::test]
+async fn view_head_reads_the_history_view_without_history() {
+    let store = fixture().await;
+    let version = content_version(&store).await;
+    let expected = store
+        .repositories()
+        .repository_projection_source(&incarnation(), version)
+        .await
+        .unwrap()
+        .project(ProjectionViewKey::Public);
+    let expected = scope_git::projection_head_oid(&expected).unwrap();
+    let held = lock(
+        &store,
+        &format!("{PROJECTION_HISTORY_TABLES}, scope_live_files"),
+    )
+    .await;
+
+    let head = within_lock(store.repositories().repository_view_head(
+        &incarnation(),
+        version,
+        ProjectionViewKey::Public,
+    ))
+    .await
+    .unwrap();
+    held.rollback().await.unwrap();
+
+    assert!(head.is_some());
+    assert_eq!(head, expected);
+    let stale = store
+        .repositories()
+        .repository_view_head(&incarnation(), version + 1, ProjectionViewKey::Public)
+        .await
+        .unwrap_err();
+    assert_eq!(stale.kind, PostgresErrorKind::Conflict);
 }

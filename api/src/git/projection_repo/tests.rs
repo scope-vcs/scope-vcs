@@ -520,12 +520,12 @@ fn projection_cache_key_uses_labels_and_logical_history() {
     second.commits[0].parent_projected_id = Some("pv_private_parent_0".into());
 
     assert_eq!(
-        projection_cache_keys(None, &first, &[Visibility::Public]),
-        projection_cache_keys(None, &second, &[Visibility::Public])
+        projection_cache_keys(None, &first, &[Visibility::Public]).unwrap(),
+        projection_cache_keys(None, &second, &[Visibility::Public]).unwrap()
     );
     assert_ne!(
-        projection_cache_key(None, &first),
-        projection_cache_key(None, &second)
+        projection_cache_key(None, &first).unwrap(),
+        projection_cache_key(None, &second).unwrap()
     );
 }
 

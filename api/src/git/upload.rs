@@ -9,7 +9,7 @@ use crate::{
             record_git_exit, truncated_git_stderr,
         },
         git_read_scope_user,
-        projection_repo::projection_bare_repo_for_state,
+        repository_git::RepositoryGit,
         request_refs::attach_visible_request_refs,
         storage::repository_storage_key,
     },
@@ -26,13 +26,13 @@ use axum::{
 };
 use scope_domain::{
     projection::ProjectionViewKey,
-    repository::access::{RepositoryAccessContext, RepositoryActor},
+    repository::access::RepositoryActor,
     repository::{RepoLifecycleState, RepositoryIncarnation},
     requests::{Request, RequestViewer, request_policy},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
-use scope_postgres::db::{GitReadSource, RepositoryProjectionSource};
+use scope_postgres::db::GitReadSource;
 use std::{
     collections::BTreeSet,
     fs,
@@ -100,42 +100,25 @@ pub(crate) async fn git_upload_pack_repo_for_request(
 ) -> Result<GitRepoHandle, ApiError> {
     let (source, viewer_user_id) =
         authorized_git_read(state, headers, owner, repo_name, mode).await?;
-    let GitReadSource {
-        context,
-        git_head,
-        git_pack_spans,
-        ..
-    } = source;
-    let incarnation = context.incarnation();
-    let access = context.access;
+    let repo_id = source.context.record.id.clone();
+    let access = source.context.access;
+    let git = RepositoryGit::of_read_source(source);
     let view_key = ProjectionViewKey::from_access(access);
     let private_view = view_key == ProjectionViewKey::Private;
-    let mut projection_source = None;
-    let base_repo = match git_head.as_ref() {
+    let base_repo = match git.git_head.as_ref() {
         Some(head) if private_view => {
             state
                 .repository_engine
-                .materialize_repository(state, &incarnation, head, &git_pack_spans)
+                .materialize_repository(state, &git.incarnation, head, &git.git_pack_spans)
                 .await?
         }
-        _ => {
-            let source =
-                projection_source.insert(repository_projection_source(state, &context).await?);
-            projection_bare_repo_for_state(
-                state,
-                &incarnation,
-                &source.project(view_key),
-                git_head.as_ref(),
-                &git_pack_spans,
-            )
-            .await?
-        }
+        _ => git.view_repo(state, view_key).await?,
     };
     let mut requests = Vec::new();
     for (request, is_invitee) in state
         .metadata
         .requests()
-        .requests_with_invitee_status(&context.record.id, viewer_user_id.as_deref())
+        .requests_with_invitee_status(&repo_id, viewer_user_id.as_deref())
         .await?
     {
         let decision = request_policy(
@@ -152,35 +135,18 @@ pub(crate) async fn git_upload_pack_repo_for_request(
             request.audience == scope_domain::requests::RequestAudience::Public
                 && request.git_snapshot.is_none()
         }) {
-        let source = match projection_source {
-            Some(source) => source,
-            None => repository_projection_source(state, &context).await?,
-        };
-        Some(
-            projection_bare_repo_for_state(
-                state,
-                &incarnation,
-                &source.project(ProjectionViewKey::Public),
-                git_head.as_ref(),
-                &git_pack_spans,
-            )
-            .await?,
-        )
+        Some(git.view_repo(state, ProjectionViewKey::Public).await?)
     } else {
         None
     };
-    git_read_view_repo(state, &incarnation, base_repo, public_base_repo, &requests).await
-}
-
-async fn repository_projection_source(
-    state: &AppState,
-    context: &RepositoryAccessContext,
-) -> Result<RepositoryProjectionSource, ApiError> {
-    Ok(state
-        .metadata
-        .repositories()
-        .repository_projection_source(&context.incarnation(), context.record.content_version)
-        .await?)
+    git_read_view_repo(
+        state,
+        &git.incarnation,
+        base_repo,
+        public_base_repo,
+        &requests,
+    )
+    .await
 }
 
 async fn git_read_view_repo(
