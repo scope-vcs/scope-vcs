@@ -38,12 +38,12 @@ impl CatalogFixture {
         &mut self,
         owner: &UserAccount,
         name: &str,
-        default_visibility: ViewId,
+        default_view: ViewId,
     ) -> Result<&Repository, CatalogError> {
         let repository = Repository::new(
             owner,
             name,
-            default_visibility,
+            default_view,
             format!(
                 "repoi_fixture_{}",
                 scope_domain::repository::repo_id(&owner.handle, name)

@@ -76,8 +76,8 @@ async fn seed_compaction_repo(store: &MetadataStore) -> [GitPackSpan; 3] {
                 ) VALUES (
                     'repo_compaction', 'compaction', 'repo', 'user_compaction', 'Ready',
                     4, 4,
-                    '{"kind":"scope.repo-config","version":1,"visibility":{"default":"private","rules":[]}}'::jsonb,
-                    '{"default_visibility":"Private","rules":[]}'::jsonb,
+                    '{"kind":"scope.repo-config","version":2,"views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"members"}],"files":{"default":"private","rules":[]},"history":{"rewrites":[]}}'::jsonb,
+                    '{"default":"private","rules":[]}'::jsonb,
                     'repoi_compaction_repo'
                 );
                 INSERT INTO scope_git_heads (
@@ -120,8 +120,8 @@ async fn seed_scheduled_repo(store: &MetadataStore) {
                 ) VALUES (
                     'scheduler/repo', 'scheduler-user', 'repo', 'scheduler_user', 'Ready',
                     1, 1,
-                    '{"kind":"scope.repo-config","version":1,"visibility":{"default":"private","rules":[]}}'::jsonb,
-                    '{"default_visibility":"Private","rules":[]}'::jsonb,
+                    '{"kind":"scope.repo-config","version":2,"views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"members"}],"files":{"default":"private","rules":[]},"history":{"rewrites":[]}}'::jsonb,
+                    '{"default":"private","rules":[]}'::jsonb,
                     'repoi_scheduler_repo'
                 );
             "#,
