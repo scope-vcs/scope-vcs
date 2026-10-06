@@ -21,10 +21,10 @@ use scope_domain::{
     },
 };
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, Statement,
-    TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
+    Statement, TransactionTrait,
 };
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
 const HISTORY_TABLES: &str = "scope_logical_commits, scope_file_changes, scope_live_files, \
     scope_visibility_change_sets, scope_visibility_changes, scope_git_segments, \
@@ -105,15 +105,10 @@ async fn fixture() -> MetadataStore {
 #[tokio::test]
 async fn collaboration_reads_no_history_or_pack_spans() {
     let store = fixture().await;
-    let held = store.db.begin().await.unwrap();
-    held.execute_unprepared(&format!(
-        "LOCK TABLE {HISTORY_TABLES} IN ACCESS EXCLUSIVE MODE"
-    ))
-    .await
-    .unwrap();
+    let held = lock_history(&store).await;
 
-    let collaboration = tokio::time::timeout(
-        Duration::from_secs(2),
+    let collaboration = unless_blocked_by(
+        &held,
         store
             .repositories()
             .repository_collaboration("owner", "repo", "owner"),
@@ -127,8 +122,8 @@ async fn collaboration_reads_no_history_or_pack_spans() {
     assert_eq!(collaboration.collaboration.invitations[0].id, "invite_1");
     assert!(collaboration.invite_emails.contains_key("invite_1"));
 
-    let owner_check = tokio::time::timeout(
-        Duration::from_secs(2),
+    let owner_check = unless_blocked_by(
+        &held,
         store
             .repositories()
             .repository_read_access("owner", "repo", Some("owner")),
@@ -140,12 +135,9 @@ async fn collaboration_reads_no_history_or_pack_spans() {
     assert!(owner_check.ensure_owner().is_ok());
 
     assert!(
-        tokio::time::timeout(
-            Duration::from_millis(200),
-            store.repositories().repository("owner", "repo"),
-        )
-        .await
-        .is_err()
+        unless_blocked_by(&held, store.repositories().repository("owner", "repo"))
+            .await
+            .is_none()
     );
     held.rollback().await.unwrap();
 }
@@ -175,7 +167,7 @@ async fn only_the_owner_reads_collaboration() {
 const REPO_ID: &str = "owner/repo";
 const NOW: u64 = 200;
 
-async fn lock_history(store: &MetadataStore) -> sea_orm::DatabaseTransaction {
+async fn lock_history(store: &MetadataStore) -> DatabaseTransaction {
     let held = store.db.begin().await.unwrap();
     held.execute_unprepared(&format!(
         "LOCK TABLE {HISTORY_TABLES} IN ACCESS EXCLUSIVE MODE"
@@ -185,15 +177,46 @@ async fn lock_history(store: &MetadataStore) -> sea_orm::DatabaseTransaction {
     held
 }
 
-macro_rules! without_history {
-    ($store:expr, $name:literal, $op:expr) => {{
-        let held = lock_history(&$store).await;
-        let result = tokio::time::timeout(Duration::from_secs(2), $op)
-            .await
-            .unwrap_or_else(|_| panic!("{} must not wait on history tables", $name));
-        held.rollback().await.unwrap();
-        result
-    }};
+async fn unless_blocked_by<T>(
+    held: &DatabaseTransaction,
+    operation: impl Future<Output = T>,
+) -> Option<T> {
+    tokio::select! {
+        biased;
+        result = operation => Some(result),
+        () = blocked_by(held) => None,
+    }
+}
+
+async fn blocked_by(held: &DatabaseTransaction) {
+    let waiting_on_holder = Statement::from_string(
+        DatabaseBackend::Postgres,
+        "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted \
+         AND pg_backend_pid() = ANY(pg_blocking_pids(pid))) AS blocked",
+    );
+    while !held
+        .query_one_raw(waiting_on_holder.clone())
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<bool>("", "blocked")
+        .unwrap()
+    {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn without_history<T>(
+    store: &MetadataStore,
+    name: &str,
+    operation: impl Future<Output = T>,
+) -> T {
+    let held = lock_history(store).await;
+    let result = unless_blocked_by(&held, operation)
+        .await
+        .unwrap_or_else(|| panic!("{name} must not wait on history tables"));
+    held.rollback().await.unwrap();
+    result
 }
 
 async fn change_version(store: &MetadataStore) -> u64 {
@@ -245,8 +268,8 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
     let version = change_version(&store).await;
     let derived = derived_work(&store).await;
 
-    let created = without_history!(
-        store,
+    let created = without_history(
+        &store,
         "creating an invite",
         repositories.create_repository_invite(CreateRepositoryInviteMutation {
             owner: "owner".into(),
@@ -257,8 +280,9 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
             invite_id: "invite_2".into(),
             email_id: "invite_email_2".into(),
             now_unix: NOW,
-        },)
+        }),
     )
+    .await
     .unwrap();
     assert_eq!(created.change_version, version + 1);
     assert_eq!(created.value.1.unwrap().id, "invite_email_2");
@@ -266,8 +290,8 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
     assert_eq!(first_email.invite_id.as_deref(), Some("invite_2"));
     assert_eq!(first_email.state, "Queued");
 
-    let linked = without_history!(
-        store,
+    let linked = without_history(
+        &store,
         "copying an invite link",
         repositories.issue_repository_invite_link(IssueRepositoryInviteLinkCommand {
             owner: "owner".into(),
@@ -276,13 +300,14 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
             invite_id: "invite_1".into(),
             link_hash: "sha256:copied".into(),
             now_unix: NOW,
-        },)
+        }),
     )
+    .await
     .unwrap();
     assert_eq!(linked.change_version, version + 2);
 
-    let updated = without_history!(
-        store,
+    let updated = without_history(
+        &store,
         "changing member permissions",
         repositories.update_repository_member_permissions(
             UpdateRepositoryMemberPermissionsCommand {
@@ -296,8 +321,9 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
                 },
                 now_unix: NOW,
             },
-        )
+        ),
     )
+    .await
     .unwrap();
     assert_eq!(updated.change_version, version + 3);
     let member_row = entities::repository_member::Entity::find_by_id((
@@ -317,16 +343,17 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
         .await
         .unwrap();
     assert!(claimed.contains(&"invite_email_1".to_string()));
-    let delivery = without_history!(
-        store,
+    let delivery = without_history(
+        &store,
         "issuing an email's link",
         repositories.issue_repository_invite_email_link(
             "invite_email_1",
             "claim",
             "sha256:emailed".into(),
             NOW,
-        )
+        ),
     )
+    .await
     .unwrap()
     .unwrap();
     assert_eq!(delivery.change_version, version + 4);
@@ -334,8 +361,8 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
         delivery.value.invite.link_hashes,
         ["sha256:copied", "sha256:emailed"]
     );
-    let settled = without_history!(
-        store,
+    let settled = without_history(
+        &store,
         "recording an email attempt",
         repositories.record_repository_invite_email_attempt(
             "invite_email_1",
@@ -343,8 +370,9 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
             InviteEmailAttempt::Accepted,
             Some("message_1".into()),
             NOW,
-        )
+        ),
     )
+    .await
     .unwrap()
     .unwrap();
     assert_eq!(settled.change_version, version + 5);
@@ -353,8 +381,8 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
     assert_eq!(sent.provider_message_id.as_deref(), Some("message_1"));
     assert_eq!(sent.claim_token, None);
 
-    let resent = without_history!(
-        store,
+    let resent = without_history(
+        &store,
         "emailing an invite again",
         repositories.request_repository_invite_email(RequestRepositoryInviteEmailCommand {
             owner: "owner".into(),
@@ -363,33 +391,37 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
             invite_id: "invite_1".into(),
             email_id: "invite_email_3".into(),
             now_unix: NOW,
-        },)
+        }),
     )
+    .await
     .unwrap();
     assert_eq!(resent.change_version, version + 6);
     assert_eq!(resent.value.1.state, RepositoryInviteEmailState::Queued);
 
-    let revoked = without_history!(
-        store,
+    let revoked = without_history(
+        &store,
         "revoking an invite",
-        repositories.revoke_repository_invite("owner", "repo", &owner.id, "invite_2", NOW,)
+        repositories.revoke_repository_invite("owner", "repo", &owner.id, "invite_2", NOW),
     )
+    .await
     .unwrap();
     assert_eq!(revoked.change_version, version + 7);
 
-    let removed = without_history!(
-        store,
+    let removed = without_history(
+        &store,
         "removing a member",
-        repositories.remove_repository_member("owner", "repo", &owner.id, "member", NOW,)
+        repositories.remove_repository_member("owner", "repo", &owner.id, "member", NOW),
     )
+    .await
     .unwrap();
     assert_eq!(removed.change_version, version + 8);
 
-    let (_, accepted) = without_history!(
-        store,
+    let (_, accepted) = without_history(
+        &store,
         "accepting an invite",
-        repositories.accept_repository_invite("sha256:copied", user("invitee"), NOW,)
+        repositories.accept_repository_invite("sha256:copied", user("invitee"), NOW),
     )
+    .await
     .unwrap();
     assert!(matches!(
         accepted,
@@ -397,11 +429,12 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
     ));
     assert_eq!(change_version(&store).await, version + 9);
 
-    let (_, landed) = without_history!(
-        store,
+    let (_, landed) = without_history(
+        &store,
         "opening an invite link",
-        repositories.repository_invite_by_link_hash("sha256:emailed")
+        repositories.repository_invite_by_link_hash("sha256:emailed"),
     )
+    .await
     .unwrap()
     .unwrap();
     assert_eq!(landed.accepted_by_user_id.as_deref(), Some("invitee"));
@@ -430,24 +463,26 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
     assert_eq!(committed.invite_emails["invite_1"].id, "invite_email_3");
     assert_eq!(committed.invite_emails["invite_2"].id, "invite_email_2");
 
-    let pruned = without_history!(
-        store,
+    let pruned = without_history(
+        &store,
         "pruning ended invites",
         repositories
-            .prune_ended_repository_invites(REPO_ID, NOW + REPOSITORY_INVITE_RETENTION_SECS,)
+            .prune_ended_repository_invites(REPO_ID, NOW + REPOSITORY_INVITE_RETENTION_SECS),
     )
+    .await
     .unwrap()
     .unwrap();
     assert_eq!(pruned.value, 2);
     assert_eq!(pruned.change_version, version + 10);
 
-    let deleted = without_history!(
-        store,
+    let deleted = without_history(
+        &store,
         "deleting a member's account",
         store
             .auth()
-            .delete_account("invitee", NOW, &test_generated_id)
+            .delete_account("invitee", NOW, &test_generated_id),
     )
+    .await
     .unwrap();
     assert_eq!(deleted.changed_repositories[0].change_version, version + 11);
 
