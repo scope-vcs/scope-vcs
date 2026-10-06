@@ -12,11 +12,11 @@ repositories?: Array<string>, };
 
 export type ErrorResponse = { code: ErrorCode, message: string, error_reference?: string | null, instruction?: string | null, fields?: ErrorFields, retryable: boolean, };
 
-export type Visibility = "Public" | "Private";
+export type ViewId = string;
 
 export type RepositoryActor = "Public" | "Member" | "Owner";
 
-export type RepositoryMemberPermissions = { can_push: boolean, can_change_file_visibility: boolean, };
+export type RepositoryMemberPermissions = { can_push: boolean, can_change_file_visibility: boolean, view: ViewId, };
 
 export type RepositoryInviteState = "Pending" | "Accepted" | "Revoked" | "Expired";
 
@@ -38,13 +38,17 @@ export type FirstPushTokenStatus = "Active" | "Expired" | "Used";
 
 export type FileChangeKind = "Added" | "Modified" | "Deleted";
 
-export type ConfigVisibility = "public" | "private";
+export type RepoConfig = { kind: string, version: number, views: Array<ViewDefinition>, files: RepoConfigFiles, history: RepoConfigHistory, };
 
-export type RepoConfig = { kind: string, version: number, visibility: RepoConfigVisibility, history: RepoConfigHistory, };
+export type ViewDefinition = { id: ViewId, name: string, includes: ViewIncludes, readers: ViewReaders, };
 
-export type RepoConfigVisibility = { default: ConfigVisibility, rules: Array<RepoConfigVisibilityRule>, };
+export type ViewIncludes = string | Array<ViewId>;
 
-export type RepoConfigVisibilityRule = { path: string, visibility: ConfigVisibility, };
+export type ViewReaders = "anyone" | "members" | "assigned";
+
+export type RepoConfigFiles = { default: ViewId, rules: Array<RepoConfigFileRule>, };
+
+export type RepoConfigFileRule = { path: string, view: ViewId, };
 
 export type RepoConfigHistory = { rewrites: Array<HistoryRewriteRequest>, };
 
@@ -53,8 +57,6 @@ export type HistoryRewriteRequest = { path: string, action: HistoryRewriteAction
 export type HistoryRewriteAction = "redact-public-history";
 
 export type RequestActorRole = "Public" | "Member" | "Owner";
-
-export type RequestAudience = "Public" | "Private";
 
 export type RequestState = "Draft" | "Open" | "Closed" | "Merged";
 
@@ -110,8 +112,6 @@ export type GitOid = string;
 
 export type RequestEventKind = "Started" | "Submitted" | "RevisionPushed" | "Merged" | "Closed" | "IdentityEdited" | "DiscussionResolved" | "DiscussionReopened" | "AutoMergeEnabled" | "AutoMergeCancelled" | "AutoMergeStopped" | "AutoMergeFulfilled";
 
-export type ProjectionPreviewAudience = "private" | "public";
-
 export type AccountSessionResponse = { identity: SessionIdentity | null, user: UserResponse | null, };
 
 export type UserResponse = { id: string, handle: string, email: string, email_verified: boolean, };
@@ -148,7 +148,7 @@ export type RepoSummaryResponse = { description: string | null, website_url: str
 
 export type OwnerProfileResponse = { handle: string, repositories: Array<RepoSummaryResponse>, };
 
-export type CreateRepoRequest = { name: string, file_default_visibility: Visibility | null, };
+export type CreateRepoRequest = { name: string, file_default_view: ViewId | null, };
 
 export type UpdateRepoMetadataRequest = { description: string | null, website_url: string | null, };
 
@@ -168,13 +168,13 @@ export type FirstPushTokenResponse = { status: FirstPushTokenStatus, created_at_
 
 export type GitPushTokenResponse = { created_at_unix: number, secret: string | null, };
 
-export type RepoFileResponse = { path: string, oid: string, tracked: boolean, visibility: Visibility, };
+export type RepoFileResponse = { path: string, oid: string, tracked: boolean, label: ViewId, };
 
 export type RepoFileContentRequest = { path: string, };
 
-export type RepoFileContentResponse = { path: string, oid: string, visibility: Visibility, size_bytes: number, content: ReviewFileContentResponse, };
+export type RepoFileContentResponse = { path: string, oid: string, label: ViewId, size_bytes: number, content: ReviewFileContentResponse, };
 
-export type RepositoryAccessResponse = { actor: RepositoryActor, can_read_private_files: boolean, can_push: boolean, can_change_file_visibility: boolean, can_manage_members: boolean, can_delete_repo: boolean, };
+export type RepositoryAccessResponse = { actor: RepositoryActor, view: ViewId, can_push: boolean, can_change_file_visibility: boolean, can_manage_members: boolean, can_delete_repo: boolean, };
 
 export type RepositoryCollaborationResponse = { members: Array<RepositoryMemberResponse>, invites: Array<RepositoryInviteResponse>, };
 
@@ -357,11 +357,11 @@ export type GitHubWorkflowRunResponse = { id: number, workflow_name: string, bra
  */
 request_id: string | null, };
 
-export type HistoryPageRequest = { feed: HistoryFeed | null, audience: ProjectionPreviewAudience | null, before: string | null, };
+export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null, };
 
-export type HistoryEntryRequest = { audience: ProjectionPreviewAudience | null, };
+export type HistoryEntryRequest = { view: ViewId | null, };
 
-export type HistoryEntryFileDiffRequest = { commit_oid: string | null, visibility_change: string | null, audience: ProjectionPreviewAudience | null, path: string, };
+export type HistoryEntryFileDiffRequest = { commit_oid: string | null, visibility_change: string | null, view: ViewId | null, path: string, };
 
 export type RequestFileDiffRequest = { path: string, };
 
@@ -369,7 +369,7 @@ export type ReviewFileContentResponse = { "kind": "text", text: string, } | { "k
 
 export type ReviewFileDiffResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_content: ReviewFileContentResponse | null, new_content: ReviewFileContentResponse | null, };
 
-export type HistoryPageResponse = { feed: HistoryFeed, audience: ProjectionPreviewAudience, repo_id: string, view_key: string, generation: string, head_oid: string | null, entries: Array<HistoryEntrySummaryResponse>, next_cursor: string | null, };
+export type HistoryPageResponse = { feed: HistoryFeed, view: ViewId, repo_id: string, generation: string, head_oid: string | null, entries: Array<HistoryEntrySummaryResponse>, next_cursor: string | null, };
 
 export type HistoryEntrySummaryResponse = { occurred_at_unix: number | null, id: string, source_id: string, parent_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, };
 
@@ -377,31 +377,31 @@ export type HistoryEntryKind = "push" | "merged_request" | "visibility_change";
 
 export type HistoryFeed = "updates" | "all" | "visibility";
 
-export type HistoryEntryDetailResponse = { native_commits: Array<NativeHistoryCommitResponse>, audience: ProjectionPreviewAudience, repo_id: string, view_key: string, occurred_at_unix: number | null, id: string, source_id: string, 
+export type HistoryEntryDetailResponse = { native_commits: Array<NativeHistoryCommitResponse>, view: ViewId, repo_id: string, occurred_at_unix: number | null, id: string, source_id: string, 
 /**
  * Adjacent entries in all activity, addressed by source id.
  */
 older_source_id: string | null, newer_source_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, files: Array<HistoryEntryFileResponse>, visibility_changes: Array<HistoryVisibilityChangeResponse>, };
 
-export type HistoryEntryFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, visibility: Visibility, };
+export type HistoryEntryFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, label: ViewId, };
 
 export type NativeHistoryCommitResponse = { oid: string, parent_oids: Array<string>, tree_oid: string, author: string, message: string, occurred_at_unix: number, files: Array<HistoryEntryFileResponse>, };
 
-export type HistoryVisibilitySummaryResponse = { made_public_count: number, made_private_count: number, };
+export type HistoryVisibilitySummaryResponse = { entered_count: number, left_count: number, };
 
-export type HistoryVisibilityChangeResponse = { id: string, file: HistoryEntryFileResponse | null, path: string, old_visibility: Visibility, new_visibility: Visibility, };
+export type HistoryVisibilityChangeResponse = { id: string, file: HistoryEntryFileResponse | null, path: string, old_label: ViewId, new_label: ViewId, };
 
-export type CommitFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, visibility: Visibility, };
+export type CommitFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, label: ViewId, };
 
-export type ProjectionPreviewRequest = { audience: ProjectionPreviewAudience, };
+export type ProjectionPreviewRequest = { view: ViewId, };
 
-export type ProjectionPreviewResponse = { audience: ProjectionPreviewAudience, repo_id: string, view_key: string, head_oid: string | null, files: Array<ProjectionPreviewFileResponse>, commits: Array<ProjectionPreviewCommitResponse>, summary: ProjectionPreviewSummaryResponse, };
+export type ProjectionPreviewResponse = { view: ViewId, repo_id: string, head_oid: string | null, files: Array<ProjectionPreviewFileResponse>, commits: Array<ProjectionPreviewCommitResponse>, summary: ProjectionPreviewSummaryResponse, };
 
-export type ProjectionPreviewFileResponse = { path: string, oid: string, visibility: Visibility, };
+export type ProjectionPreviewFileResponse = { path: string, oid: string, label: ViewId, };
 
 export type ProjectionPreviewCommitResponse = { projected_id: string, logical_commit_id: string, parent_projected_ids: Array<string>, author: string | null, message: string, visibility: ProjectionPreviewCommitVisibilityResponse, change_count: number, };
 
-export type ProjectionPreviewCommitVisibilityResponse = "FullyPublic" | "Mixed" | "FullyPrivate";
+export type ProjectionPreviewCommitVisibilityResponse = "AllInView" | "SomeInView" | "NoneInView";
 
 export type ProjectionPreviewSummaryResponse = { visible_files: number, hidden_files: number, visible_commits: number, hidden_commits: number, };
 
@@ -449,13 +449,13 @@ export type RequestRatingsResponse = { ratings: Array<RequestRatingResponse>, el
 
 export type RequestMutationResponse = { request: RequestSummaryResponse, };
 
-export type RequestListItemResponse = { id: string, name: string, title: string, author_role: RequestActorRole, audience: RequestAudience, head_oid: GitOid, state: RequestState, submitted_at_unix: number | null, updated_at_unix: number, mergeability: RequestMergeabilityResponse, };
+export type RequestListItemResponse = { id: string, name: string, title: string, author_role: RequestActorRole, view: ViewId, head_oid: GitOid, state: RequestState, submitted_at_unix: number | null, updated_at_unix: number, mergeability: RequestMergeabilityResponse, };
 
 export type RequestSummaryResponse = { id: string, name: string, title: string, description_markdown: string, 
 /**
  * Null once that account is deleted; clients show a deleted user.
  */
-author_user_id: string | null, author_role: RequestActorRole, audience: RequestAudience, base_main_oid: GitOid, head_oid: GitOid, state: RequestState, activity_version: number, submitted_at_unix: number | null, closed_at_unix: number | null, closed_by_user_id: string | null, merged_at_unix: number | null, merged_by_user_id: string | null, merged_head_oid: GitOid | null, merged_main_oid: GitOid | null, created_at_unix: number, updated_at_unix: number, invitees: Array<RequestInviteeResponse>, permissions: RequestPermissionsResponse, mergeability: RequestMergeabilityResponse, };
+author_user_id: string | null, author_role: RequestActorRole, view: ViewId, base_main_oid: GitOid, head_oid: GitOid, state: RequestState, activity_version: number, submitted_at_unix: number | null, closed_at_unix: number | null, closed_by_user_id: string | null, merged_at_unix: number | null, merged_by_user_id: string | null, merged_head_oid: GitOid | null, merged_main_oid: GitOid | null, created_at_unix: number, updated_at_unix: number, invitees: Array<RequestInviteeResponse>, permissions: RequestPermissionsResponse, mergeability: RequestMergeabilityResponse, };
 
 export type RequestInviteeResponse = { user: RequestActorSummaryResponse, 
 /**
@@ -594,7 +594,7 @@ export type RequestActivityPageResponse = { events: Array<RequestEventResponse>,
 
 export type RequestCloseResponse = { deleted: boolean, request: RequestSummaryResponse | null, };
 
-export type StartRequestRequest = { name: string, title: string | null, audience: RequestAudience, };
+export type StartRequestRequest = { name: string, title: string | null, view: ViewId, };
 
 export type SubmitRequestRequest = Record<symbol, never>;
 
@@ -610,7 +610,7 @@ export type CreateRequestDiscussionReplyRequest = { body_markdown: string, clien
 
 export type MarkRequestDiscussionReadRequest = { through_position: number, };
 
-export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | { "RepositoryChanged": { reason: string, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, audience: RequestAudience, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, audience: RequestAudience, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
+export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | { "RepositoryChanged": { reason: string, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, view: ViewId, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, view: ViewId, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
 
 export type RunChangeKind = "Created" | "StatusChanged" | "LogsAppended";
 
