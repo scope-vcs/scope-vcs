@@ -9,6 +9,7 @@ use scope_domain::runs::{
 use sea_orm::{EntityTrait, QuerySelect, TransactionTrait};
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_runtime"))]
     pub async fn claim_runtime(
         &self,
         attempt_id: &str,
@@ -43,6 +44,7 @@ impl RunStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "authenticate_attempt"))]
     pub async fn authenticate_attempt(
         &self,
         attempt_id: &str,

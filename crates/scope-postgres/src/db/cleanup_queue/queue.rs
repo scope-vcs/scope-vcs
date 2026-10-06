@@ -15,6 +15,7 @@ use sea_orm::{
 pub(crate) const SOURCE_BLOB_DELETE_GRACE_SECONDS: u64 = 600;
 
 impl CleanupStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "pending_cleanup_queues"))]
     pub async fn pending_cleanup_queues(
         &self,
     ) -> Result<(Vec<RepoStorageCleanup>, Vec<SourceBlob>), PostgresError> {
@@ -24,6 +25,7 @@ impl CleanupStore {
         ))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "queue_pending_source_blob_deletions"))]
     pub async fn queue_pending_source_blob_deletions(
         &self,
         blobs: Vec<SourceBlob>,

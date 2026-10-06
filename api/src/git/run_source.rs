@@ -5,7 +5,8 @@ use crate::{
     git::{
         cache::{GitDerivedCacheNamespace, GitRepoHandle},
         command::{
-            git_process_output, git_stdout_text, run_git, run_git_output, truncated_git_stderr,
+            git_process_output, git_stdout_text, git_subprocess_span, record_git_exit, run_git,
+            run_git_output, truncated_git_stderr,
         },
         repository_engine::GitRevision,
     },
@@ -673,6 +674,8 @@ fn run_git_inspection(
     operation: &str,
     max_stdout_bytes: usize,
 ) -> Result<Option<Vec<u8>>, ApiError> {
+    let span = git_subprocess_span(command);
+    let _entered = span.enter();
     let output = run_process(
         command,
         None,
@@ -686,6 +689,7 @@ fn run_git_inspection(
             ApiError::internal_message(error.to_string())
         }
     })?;
+    record_git_exit(&span, output.status);
     Ok(output.status.success().then_some(output.stdout))
 }
 

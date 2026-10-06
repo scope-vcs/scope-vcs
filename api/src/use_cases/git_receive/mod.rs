@@ -256,6 +256,7 @@ pub(crate) async fn prepare(
     })
 }
 
+#[tracing::instrument(skip_all, name = "use_case.git_receive.complete")]
 pub(crate) async fn complete(
     state: &AppState,
     owner: &str,
@@ -368,6 +369,7 @@ async fn complete_inner(
     Ok(ReceiveCompletion::MainPush)
 }
 
+#[tracing::instrument(skip_all, name = "use_case.git_receive.main_push", fields(scope.change.count = tracing::field::Empty, scope.landed_request.count = tracing::field::Empty))]
 async fn complete_main_push(
     state: &AppState,
     owner: &str,
@@ -382,6 +384,7 @@ async fn complete_main_push(
     let import_started_at = Instant::now();
     let (prepared, change_count): (PreparedReceivePackUpdate, usize) =
         main_push::prepare_main_push(state, owner, repo_name, staging_repo, &access).await?;
+    tracing::Span::current().record("scope.change.count", change_count);
     let landed_request_candidates = if first_push {
         Vec::new()
     } else {
@@ -406,6 +409,10 @@ async fn complete_main_push(
             }
         }
     };
+    tracing::Span::current().record(
+        "scope.landed_request.count",
+        landed_request_candidates.len(),
+    );
     let persisted = main_push::persist_main_push(
         state,
         owner,

@@ -4,6 +4,7 @@ use scope_domain::error::DomainErrorKind;
 use sea_orm::EntityTrait;
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "authorize_cache_grant"))]
     pub async fn authorize_cache_grant(
         &self,
         attempt_id: &str,

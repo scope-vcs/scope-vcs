@@ -84,6 +84,7 @@ pub struct RequestAutoMergeCheckState {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "authorize_request_auto_merge"))]
     pub async fn authorize_request_auto_merge(
         &self,
         command: AuthorizeRequestAutoMergeCommand,
@@ -119,6 +120,7 @@ impl RequestStore {
         Ok(mutation)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "cancel_request_auto_merge"))]
     pub async fn cancel_request_auto_merge(
         &self,
         command: CancelRequestAutoMergeCommand,
@@ -147,6 +149,7 @@ impl RequestStore {
         Ok(mutation)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_auto_merge_intent"))]
     pub async fn request_auto_merge_intent(
         &self,
         request_id: &str,
@@ -163,6 +166,7 @@ impl RequestStore {
             .transpose()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_due_request_auto_merges"))]
     pub async fn claim_due_request_auto_merges(
         &self,
         command: ClaimDueRequestAutoMergesCommand,
@@ -230,6 +234,7 @@ impl RequestStore {
         Ok(claimed)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "release_request_auto_merge_claim"))]
     pub async fn release_request_auto_merge_claim(
         &self,
         command: ReleaseRequestAutoMergeClaimCommand,
@@ -274,6 +279,7 @@ impl RequestStore {
         Ok(result.rows_affected == 1)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "stop_claimed_request_auto_merge"))]
     pub async fn stop_claimed_request_auto_merge(
         &self,
         command: StopClaimedRequestAutoMergeCommand,

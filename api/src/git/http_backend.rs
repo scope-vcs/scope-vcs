@@ -1,5 +1,7 @@
 use crate::{
-    error::ApiError, git::command::git_command_output_with_timeout, runtime_budgets::RuntimeBudgets,
+    error::ApiError,
+    git::command::{git_command_output_with_timeout, git_subprocess_span, record_git_exit},
+    runtime_budgets::RuntimeBudgets,
 };
 use axum::{body::Body, http::StatusCode, response::Response};
 use futures_util::StreamExt;
@@ -12,6 +14,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     task::JoinHandle,
 };
+use tracing::Instrument as _;
 
 pub(crate) fn git_http_backend(
     staging_repo: &FsPath,
@@ -98,6 +101,7 @@ pub(crate) async fn git_http_backend_streaming(
         command.env("CONTENT_TYPE", content_type);
     }
 
+    let git_span = git_subprocess_span(command.as_std());
     let mut child = command.spawn().map_err(ApiError::internal)?;
     let mut process_group = GitProcessGroupGuard::new(child.id());
     let Some(mut stdin) = child.stdin.take() else {
@@ -118,8 +122,8 @@ pub(crate) async fn git_http_backend_streaming(
             "opening git http-backend stderr failed",
         ));
     };
-    let mut stdout_task = tokio::spawn(read_git_pipe(stdout));
-    let mut stderr_task = tokio::spawn(read_git_pipe(stderr));
+    let mut stdout_task = tokio::spawn(read_git_pipe(stdout).in_current_span());
+    let mut stderr_task = tokio::spawn(read_git_pipe(stderr).in_current_span());
     let process_timeout = RuntimeBudgets::default_git_command_timeout();
     let process_deadline = tokio::time::Instant::now() + process_timeout;
     let writer = async move {
@@ -202,6 +206,7 @@ pub(crate) async fn git_http_backend_streaming(
         }
     };
     process_group.disarm();
+    record_git_exit(&git_span, output.status);
     if !output.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(
             "git http-backend failed: {}",

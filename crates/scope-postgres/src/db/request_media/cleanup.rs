@@ -21,6 +21,7 @@ const LATE_WRITE_GRACE_SECONDS: u64 = 60;
 const TOMBSTONE_RECONCILIATION_SECONDS: u64 = 24 * 60 * 60;
 
 impl MediaStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "enqueue_expired_attachment_cleanup"))]
     pub async fn enqueue_expired_attachment_cleanup(
         &self,
         now_unix: u64,
@@ -104,6 +105,7 @@ impl MediaStore {
         Ok(inserted)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_cleanup_job"))]
     pub async fn claim_cleanup_job(
         &self,
         lease_token: &str,
@@ -130,6 +132,7 @@ impl MediaStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "renew_cleanup_lease"))]
     pub async fn renew_cleanup_lease(
         &self,
         attachment_id: &str,
@@ -181,6 +184,7 @@ impl MediaStore {
         Ok(orphan_updated.rows_affected() == 1)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_cleanup_job"))]
     pub async fn complete_cleanup_job(
         &self,
         attachment_id: &str,
@@ -269,6 +273,7 @@ impl MediaStore {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "fail_cleanup_job"))]
     pub async fn fail_cleanup_job(
         &self,
         attachment_id: &str,

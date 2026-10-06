@@ -7,6 +7,7 @@ use std::{
     sync::{Arc, Condvar, Mutex},
 };
 use tokio::sync::Notify;
+use tracing::Instrument as _;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum GitDerivedCacheNamespace {
@@ -85,7 +86,7 @@ impl GitDerivedCacheCoordinator {
                 completed: false,
             };
             let is_ready = is_ready.clone();
-            let built = tokio::spawn(async move {
+            let build_task = async move {
                 let built = if is_ready() {
                     Ok(Ok(()))
                 } else {
@@ -93,11 +94,12 @@ impl GitDerivedCacheCoordinator {
                 };
                 leader.complete(cache_build_outcome(&built));
                 built
-            })
-            .await
-            .map_err(|error| {
-                ApiError::internal_message(format!("Git cache build task failed: {error}"))
-            })?;
+            };
+            let built = tokio::spawn(build_task.in_current_span())
+                .await
+                .map_err(|error| {
+                    ApiError::internal_message(format!("Git cache build task failed: {error}"))
+                })?;
             return match built {
                 Ok(result) => result,
                 Err(payload) => resume_unwind(payload),

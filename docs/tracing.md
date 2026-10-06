@@ -22,6 +22,14 @@ When spans are exported, every log line written inside a traced request starts
 with `trace_id=<id>`. Paste the ID into the Railway Traces page to open the
 request.
 
+## Which traces are kept
+
+A span with a parent follows its parent's sampling decision, so every span
+inside an edge request is kept. A span without a parent starts a trace only
+when it is a server span or a claimed job's consumer span. Store queries and
+outbound calls made by idle worker polls have no parent and are dropped, with
+everything nested under them, so polling cannot exhaust Railway's span quota.
+
 ## What spans may contain
 
 Anyone with access to the Railway project can read span attributes, so the

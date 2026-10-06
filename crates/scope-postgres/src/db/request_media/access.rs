@@ -19,6 +19,7 @@ use scope_domain::requests::{RequestViewer, request_policy};
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 impl MediaStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_attachment_for_viewer"))]
     pub async fn request_attachment_for_viewer(
         &self,
         request_id: &str,
@@ -28,6 +29,7 @@ impl MediaStore {
         authorized_attachment(self.db.as_ref(), request_id, attachment_id, viewer_user_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "list_request_attachments_for_viewer"))]
     pub async fn list_request_attachments_for_viewer(
         &self,
         request_id: &str,
@@ -72,6 +74,7 @@ impl MediaStore {
         Ok(visible)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "authorized_media_manifest"))]
     pub async fn authorized_media_manifest(
         &self,
         request_id: &str,

@@ -4,7 +4,10 @@ use crate::{
     git::{
         GitRemoteMode,
         cache::{GitDerivedCacheNamespace, GitRepoHandle},
-        command::{git_command_output, git_command_output_with_timeout, truncated_git_stderr},
+        command::{
+            git_command_output, git_command_output_with_timeout, git_subprocess_span,
+            record_git_exit, truncated_git_stderr,
+        },
         git_read_scope_user,
         projection_repo::projection_bare_repo_for_state,
         request_refs::attach_visible_request_refs,
@@ -38,6 +41,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
+use tracing::Instrument as _;
 mod read_view_identity;
 mod read_view_seed;
 #[cfg(test)]
@@ -317,9 +321,11 @@ pub(crate) async fn git_upload_pack_response(
     let repo_path = repo.as_ref().to_path_buf();
     let request = request.to_vec();
     let (sender, receiver) = tokio::sync::mpsc::channel(2);
-    tokio::spawn(async move {
+    let work = async move {
         let error_sender = sender.clone();
+        let blocking_span = tracing::Span::current();
         let result = tokio::task::spawn_blocking(move || {
+            let _entered = blocking_span.enter();
             let _permit = permit;
             let _repo = repo;
             let deadline = Instant::now() + timeout;
@@ -328,7 +334,9 @@ pub(crate) async fn git_upload_pack_response(
                 .arg("upload-pack")
                 .arg("--stateless-rpc")
                 .arg(repo_path);
-            run_with_stdout(
+            let git_span = git_subprocess_span(&command);
+            let _entered = git_span.enter();
+            let output = run_with_stdout(
                 &mut command,
                 Some(request),
                 ProcessLimits::new(timeout),
@@ -347,7 +355,11 @@ pub(crate) async fn git_upload_pack_response(
                         )?;
                     }
                 },
-            )
+            );
+            if let Ok(output) = &output {
+                record_git_exit(&git_span, output.status);
+            }
+            output
         })
         .await;
         let stream_error = match result {
@@ -367,7 +379,8 @@ pub(crate) async fn git_upload_pack_response(
         if let Some(message) = stream_error {
             let _ = error_sender.try_send(Err(std::io::Error::other(message)));
         }
-    });
+    };
+    tokio::spawn(work.in_current_span());
 
     Ok((
         StatusCode::OK,

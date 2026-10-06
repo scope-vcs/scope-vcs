@@ -9,3 +9,4 @@ repository.workspace = true
 scope_domain.workspace = true
 scope_storage.workspace = true
 scope_postgres.workspace = true
+tracing.workspace = true

@@ -14,6 +14,7 @@ use sea_orm::{
 use std::collections::{BTreeMap, BTreeSet};
 
 impl AuthStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "users_by_ids"))]
     pub async fn users_by_ids(
         &self,
         user_ids: impl IntoIterator<Item = String>,
@@ -21,6 +22,7 @@ impl AuthStore {
         load_users_by_ids(self.db.as_ref(), user_ids).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_cli_device_login"))]
     pub async fn start_cli_device_login(
         &self,
         command: StartDeviceLoginCommand,
@@ -47,6 +49,7 @@ impl AuthStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_cli_device_login_by_user_code_hash"))]
     pub async fn complete_cli_device_login_by_user_code_hash(
         &self,
         user_code_hash: &str,
@@ -98,6 +101,7 @@ impl AuthStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "poll_cli_device_login_by_hash"))]
     pub async fn poll_cli_device_login_by_hash(
         &self,
         device_code_hash: &str,
@@ -151,6 +155,7 @@ impl AuthStore {
         }
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "verify_cli_session_by_hash"))]
     pub async fn verify_cli_session_by_hash(
         &self,
         token_hash: &str,
@@ -184,6 +189,7 @@ impl AuthStore {
         Ok(user)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "revoke_cli_session_by_hash"))]
     pub async fn revoke_cli_session_by_hash(
         &self,
         token_hash: &str,

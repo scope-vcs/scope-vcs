@@ -3,9 +3,12 @@ use crate::error::ApiError;
 pub(crate) async fn run<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, ApiError> + Send + 'static,
 ) -> Result<T, ApiError> {
-    tokio::task::spawn_blocking(work).await.map_err(|error| {
-        ApiError::internal_message(format!("Git blocking operation failed: {error}"))
-    })?
+    let span = tracing::Span::current();
+    tokio::task::spawn_blocking(move || span.in_scope(work))
+        .await
+        .map_err(|error| {
+            ApiError::internal_message(format!("Git blocking operation failed: {error}"))
+        })?
 }
 
 pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {

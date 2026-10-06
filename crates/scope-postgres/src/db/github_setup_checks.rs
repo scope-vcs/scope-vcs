@@ -41,6 +41,7 @@ pub struct GitHubSetupCheckRead {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_github_setup_check"))]
     pub async fn start_github_setup_check(
         &self,
         repo_id: &str,
@@ -88,6 +89,7 @@ impl RepositoryStore {
         Ok((check, context.incarnation()))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "record_github_setup_check_baseline"))]
     pub async fn record_github_setup_check_baseline(
         &self,
         repo_id: &str,
@@ -106,6 +108,7 @@ impl RepositoryStore {
         Ok(true)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_setup_check"))]
     pub async fn github_setup_check(
         &self,
         repo_id: &str,
@@ -157,6 +160,7 @@ impl RepositoryStore {
         }))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "running_github_setup_checks"))]
     pub async fn running_github_setup_checks(
         &self,
         limit: u64,
@@ -179,6 +183,7 @@ impl RepositoryStore {
         .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "observe_github_setup_check"))]
     pub async fn observe_github_setup_check(
         &self,
         repo_id: &str,

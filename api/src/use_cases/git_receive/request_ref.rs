@@ -220,6 +220,7 @@ async fn public_projection_repo(
     .await
 }
 
+#[tracing::instrument(skip_all, name = "use_case.git_receive.request_revision")]
 pub(super) async fn persist_request_ref_revision(
     state: &AppState,
     owner: &str,

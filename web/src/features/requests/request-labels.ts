@@ -44,7 +44,7 @@ const MERGEABILITY = {
 
 const CHECK_EVALUATION_NOTES = {
   'no-checks': 'This head asks for no checks.',
-  'awaiting-approval': null,
+  'awaiting-approval': 'These checks wait for a maintainer to start them.',
   'started': null,
   'configuration-error': null,
 } as const satisfies Record<RequestCheckEvaluationState, string | null>
@@ -86,11 +86,6 @@ export function requestCheckEvaluationNote(checks: RequestChecksResponse) {
   if (checks.state === 'configuration-error') {
     return 'This head’s workflow configuration is invalid.'
   }
-  if (checks.state === 'awaiting-approval') {
-    return checks.github_push
-      ? 'These checks wait for a maintainer. Approving sends this revision to GitHub Actions.'
-      : 'These checks wait for a maintainer to start them.'
-  }
   return CHECK_EVALUATION_NOTES[checks.state]
 }
 
@@ -100,36 +95,10 @@ export function requestChecksWorkflowWarning(checks: RequestChecksResponse) {
     : null
 }
 
-export function requestPublicGitHubNote(checks: RequestChecksResponse) {
+export function requestPublicChecksNote(checks: RequestChecksResponse) {
   return checks.private_request_on_public_github
-    ? 'This private request’s checks run in a public GitHub repository, so its changes are public on GitHub.'
+    ? 'Checks run publicly, so this private request’s changes are public.'
     : null
-}
-
-export function requestGitHubPushNote(
-  push: RequestChecksResponse['github_push'],
-): { text: string; failed: boolean } | null {
-  if (!push) return null
-  switch (push.state) {
-    case 'awaiting_approval':
-      return null
-    case 'sending':
-      return {
-        text: push.error
-          ? `Sending to GitHub again. The last attempt failed: ${push.error}`
-          : 'Sending this revision to GitHub.',
-        failed: false,
-      }
-    case 'sent':
-      return { text: `Sent to GitHub as ${push.branch}.`, failed: false }
-    case 'failed':
-      return {
-        text: push.error
-          ? `Sending to GitHub failed: ${push.error}`
-          : 'Sending to GitHub failed.',
-        failed: true,
-      }
-  }
 }
 
 export function requestEventBody(event: RequestEventResponse) {
