@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
-import { requestQueueResource } from './request-queue-cache'
+import { invalidateRequestQueues } from './request-queue-cache'
 import { runRequestContentSubmission } from './request-attachment-drafts'
 import {
   createRequestDiscussionReplyReads,
@@ -148,7 +148,7 @@ export function useRequestDiscussionReplies({
       onExpandedChange(discussion.id, true)
       setQuoteId(null)
       if (waitAfterReply) {
-        requestQueueResource.invalidate(repoResourceScope(repo, userId ?? null))
+        invalidateRequestQueues(repoResourceScope(repo, userId ?? null))
       }
       return true
     } catch (error) {

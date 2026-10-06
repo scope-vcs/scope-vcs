@@ -9,6 +9,7 @@ import { RepoViewingAsPicker, useViewingAs } from '../repo-detail/use-viewing-as
 import { REQUEST_QUEUE_SECTION_ORDER } from './request-list-model'
 import {
   loadMoreRequestQueue,
+  requestQueueIdentity,
   searchRequestQueue,
   type LoadRequestQueuePage,
 } from './request-queue-cache'
@@ -154,8 +155,4 @@ function RequestWorkspaceContent({
       </RequestWorkspaceProvider>
     </RequestWorkspaceShell>
   )
-}
-
-function requestQueueIdentity(scope: string, view: string) {
-  return JSON.stringify([scope, view])
 }

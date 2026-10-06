@@ -1,4 +1,4 @@
-import { requestQueueResource } from '../requests/request-queue-cache'
+import { requestQueueIdentity, requestQueueResource } from '../requests/request-queue-cache'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RepoChangeEvent } from '../../api/types.generated'
@@ -19,7 +19,7 @@ const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'r
 function seed() {
   requestQueueResource.clear()
   const page = { requests: [], next_cursor: null, next_attention_at_unix: null }
-  for (const scope of ['viewer-a', 'viewer-b']) requestQueueResource.write(scope, { query: 'needle', requestedQuery: 'needle', pages: { active: page, unclaimed: page, set_aside: page, done: page } })
+  for (const scope of ['viewer-a', 'viewer-b']) for (const view of ['private', 'public']) requestQueueResource.write(requestQueueIdentity(scope, view), { query: 'needle', requestedQuery: 'needle', pages: { active: page, unclaimed: page, set_aside: page, done: page } })
   repositoryActivityResource.clear()
   requestActivityResource.clear()
   repositoryDependencyResource.clear()
@@ -35,9 +35,10 @@ function seed() {
 test('repository updates invalidate retained activity even when its page is unmounted', () => {
   seed()
   invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'push' } }))
-  assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, true)
-  assert.equal(requestQueueResource.getSnapshot('viewer-b').stale, false)
-  assert.equal(requestQueueResource.peek('viewer-a')?.query, 'needle')
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'public')).stale, true)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-b', 'private')).stale, false)
+  assert.equal(requestQueueResource.peek(requestQueueIdentity('viewer-a', 'private'))?.query, 'needle')
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
   assert.equal(repositoryActivityResource.peek(repositoryActivityIdentity('viewer-a', 'public'))?.head_oid, 'head')
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'agent')).stale, true)
@@ -69,8 +70,9 @@ test('request changes target one request and leave latest repository activity re
   invalidateRepoResources('viewer-a', event({ RequestTimelineChanged: {
     request_id: 'one', discussion_id: 'discussion', through_position: 2, view: 'public',
   } }))
-  assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, true)
-  assert.equal(requestQueueResource.getSnapshot('viewer-b').stale, false)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'public')).stale, true)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-b', 'private')).stale, false)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, true)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'two')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
@@ -88,9 +90,9 @@ test('dependency completion invalidates only the retained dependency report', ()
 test('run changes refresh request-owned state without invalidating repository resources', () => {
   seed()
   invalidateRepoResources('viewer-a', event({ RunChanged: { run_id: 'run', change: 'LogsAppended' } }))
-  assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, false)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, false)
   invalidateRepoResources('viewer-a', event({ RunChanged: { run_id: 'run', change: 'StatusChanged' } }))
-  assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, true)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
   assert.equal(
     requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale,
     true,
@@ -119,7 +121,7 @@ test('GitHub workflow runs refresh only the retained GitHub run lists', () => {
   assert.equal(githubWorkflowRunsResource.getSnapshot(lint).stale, true)
   assert.equal(githubWorkflowRunsResource.peek(all), runs)
   assert.equal(githubWorkflowRunsResource.getSnapshot(other).stale, false)
-  assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, false)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
 
   githubWorkflowRunsResource.write(all, runs)
@@ -157,21 +159,22 @@ test('connection and lag recovery invalidate retained resources only in their sc
   for (const kind of ['Connected', 'Lagged'] as const) {
     seed()
     invalidateRepoResources('viewer-a', event(kind))
-    assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, true)
+    assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
     assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
     assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
-    assert.equal(requestQueueResource.getSnapshot('viewer-b').stale, false)
+    assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-b', 'private')).stale, false)
   }
 })
 
 test('a pending summary owns queue reconciliation while other resources refresh immediately', () => {
   seed()
   invalidateRepoResources('viewer-a', event('Lagged'), true)
-  assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, false)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
   invalidateRepoSummaryResources('viewer-a')
-  assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, true)
-  assert.equal(requestQueueResource.getSnapshot('viewer-b').stale, false)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'public')).stale, true)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-b', 'private')).stale, false)
 })
 
 test('public code with unchanged version refreshes retained tree and file on repository changes', async () => {
