@@ -12,7 +12,7 @@ use crate::{
         storage::repository_storage_key,
     },
     repo_access::{ensure_repo_read, find_repo},
-    runtime_budgets::RuntimePermit,
+    runtime_budgets::{RuntimeBudgets, RuntimePermit},
     state::AppState,
 };
 use axum::{
@@ -33,8 +33,9 @@ use scope_domain::{
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use std::{
+    collections::BTreeSet,
     fs,
-    io::Read,
+    io::{BufRead, BufReader, Read},
     path::Path as FsPath,
     process::Command,
     sync::atomic::{AtomicU64, Ordering},
@@ -226,13 +227,13 @@ async fn git_read_view_repo(
     let repo_path_for_ready = repo_path.clone();
     let is_ready = move || repo_path_for_ready.join("objects").is_dir();
     let state_for_build = state.clone();
-    let base_repo_for_build = base_repo;
-    let public_base_repo_for_build = public_base_repo;
+    let base_repo_for_build = base_repo.as_ref().to_path_buf();
+    let public_base_repo_for_build = public_base_repo.as_deref().map(FsPath::to_path_buf);
     let requests_for_build = requests.to_vec();
     let cache_root_for_build = cache_root.clone();
     let repo_path_for_build = repo_path.clone();
     let repository_id = incarnation.repository_id().to_string();
-    state.repository_engine.materialize_derived(
+    let read_view = state.repository_engine.materialize_derived(
         incarnation,
         GitDerivedCacheNamespace::RequestReadView,
         cache_key.clone(),
@@ -257,7 +258,7 @@ async fn git_read_view_repo(
                             .arg("clone")
                             .arg("--bare")
                             .arg("--no-hardlinks")
-                            .arg(base_repo_for_build.as_ref())
+                        .arg(&base_repo_for_build)
                             .arg(&temp_path),
                         None,
                     )?;
@@ -307,7 +308,12 @@ async fn git_read_view_repo(
             })?
         },
     )
-    .await
+    .await?;
+    let read_view = read_view.with_dependency(base_repo);
+    Ok(match public_base_repo {
+        Some(public_base_repo) => read_view.with_dependency(public_base_repo),
+        None => read_view,
+    })
 }
 
 pub(crate) async fn git_read_principal_for_request(
@@ -358,7 +364,17 @@ pub(crate) async fn git_upload_pack_response(
     permit: RuntimePermit,
 ) -> Result<Response, ApiError> {
     let repo_path = repo.as_ref().to_path_buf();
-    let request = request.to_vec();
+    let mut request = request.to_vec();
+    if repo_path.join("objects/info/alternates").is_file() {
+        let validation_repo = repo_path.clone();
+        request = tokio::task::spawn_blocking(move || {
+            prepare_upload_pack_request(&validation_repo, &request)
+        })
+        .await
+        .map_err(|error| {
+            ApiError::internal_message(format!("Git upload-pack validation task failed: {error}"))
+        })??;
+    }
     let (sender, receiver) = tokio::sync::mpsc::channel(2);
     tokio::spawn(async move {
         let error_sender = sender.clone();
@@ -366,11 +382,8 @@ pub(crate) async fn git_upload_pack_response(
             let _permit = permit;
             let _repo = repo;
             let deadline = Instant::now() + timeout;
-            let mut command = Command::new("git");
-            command
-                .arg("upload-pack")
-                .arg("--stateless-rpc")
-                .arg(repo_path);
+            let mut command = git_upload_pack_command();
+            command.arg("--stateless-rpc").arg(repo_path);
             run_with_stdout(
                 &mut command,
                 Some(request),
@@ -423,6 +436,112 @@ pub(crate) async fn git_upload_pack_response(
         .into_response())
 }
 
+fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec<u8>, ApiError> {
+    let mut required = BTreeSet::new();
+    let mut haves = BTreeSet::new();
+    let mut have_packets = Vec::new();
+    let mut offset = 0;
+    while offset < request.len() {
+        let packet_start = offset;
+        let header = request
+            .get(offset..offset + 4)
+            .ok_or_else(|| ApiError::bad_request("malformed Git upload-pack packet"))?;
+        let length = std::str::from_utf8(header)
+            .ok()
+            .and_then(|header| usize::from_str_radix(header, 16).ok())
+            .ok_or_else(|| ApiError::bad_request("malformed Git upload-pack packet"))?;
+        offset += 4;
+        if length <= 2 {
+            continue;
+        }
+        if length < 4 {
+            return Err(ApiError::bad_request("malformed Git upload-pack packet"));
+        }
+        let payload = request
+            .get(offset..offset + length - 4)
+            .ok_or_else(|| ApiError::bad_request("malformed Git upload-pack packet"))?;
+        offset += length - 4;
+        let required_object = payload
+            .strip_prefix(b"want ")
+            .or_else(|| payload.strip_prefix(b"shallow "));
+        if let Some(object) = required_object.or_else(|| payload.strip_prefix(b"have ")) {
+            let oid = object
+                .split(|byte| matches!(byte, b' ' | b'\n' | 0))
+                .next()
+                .unwrap_or_default();
+            if oid.len() != 40 || !oid.iter().all(u8::is_ascii_hexdigit) {
+                return Err(ApiError::bad_request("malformed Git upload-pack object ID"));
+            }
+            if required_object.is_some() {
+                required.insert(oid.to_ascii_lowercase());
+            } else {
+                let oid = oid.to_ascii_lowercase();
+                haves.insert(oid.clone());
+                have_packets.push((packet_start, offset, oid));
+            }
+        }
+    }
+    if required.is_empty() && haves.is_empty() {
+        return Ok(request.to_vec());
+    }
+    let tips = git_command_output(
+        Command::new("git")
+            .arg("--git-dir")
+            .arg(repo_path)
+            .args(["for-each-ref", "--format=%(objectname)"]),
+        None,
+    )?;
+    for tip in tips.split(|byte| *byte == b'\n') {
+        required.remove(tip);
+        haves.remove(tip);
+    }
+    if required.is_empty() && haves.is_empty() {
+        return Ok(request.to_vec());
+    }
+    let reachable = run_with_stdout(
+        Command::new("git").arg("--git-dir").arg(repo_path).args([
+            "rev-list",
+            "--objects",
+            "--all",
+        ]),
+        None,
+        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
+        "checking Git upload-pack object reachability",
+        move |stdout, _cancellation| {
+            for line in BufReader::new(stdout).split(b'\n') {
+                let line = line?;
+                let oid = line.split(|byte| *byte == b' ').next().unwrap_or_default();
+                required.remove(oid);
+                haves.remove(oid);
+            }
+            Ok::<_, std::io::Error>((required, haves))
+        },
+    )
+    .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
+    if !reachable.status.success() {
+        return Err(ApiError::infrastructure_unavailable(format!(
+            "checking Git upload-pack object reachability: {}",
+            truncated_git_stderr(&reachable.stderr)
+        )));
+    }
+    let (required, haves) = reachable.value;
+    if !required.is_empty() {
+        return Err(ApiError::bad_request(
+            "Git object is outside the visible refs",
+        ));
+    }
+    let mut filtered = Vec::with_capacity(request.len());
+    let mut copied_through = 0;
+    for (packet_start, packet_end, oid) in have_packets {
+        if haves.contains(&oid) {
+            filtered.extend_from_slice(&request[copied_through..packet_start]);
+            copied_through = packet_end;
+        }
+    }
+    filtered.extend_from_slice(&request[copied_through..]);
+    Ok(filtered)
+}
+
 fn send_upload_pack_chunk(
     sender: &tokio::sync::mpsc::Sender<Result<Bytes, std::io::Error>>,
     chunk: Bytes,
@@ -456,10 +575,8 @@ fn send_upload_pack_chunk(
 
 pub(crate) fn git_upload_pack_advertisement(repo_path: &FsPath, timeout: Duration) -> Response {
     match git_command_output_with_timeout(
-        Command::new("git")
-            .arg("upload-pack")
-            .arg("--stateless-rpc")
-            .arg("--advertise-refs")
+        git_upload_pack_command()
+            .args(["--stateless-rpc", "--advertise-refs"])
             .arg(repo_path),
         None,
         timeout,
@@ -472,6 +589,20 @@ pub(crate) fn git_upload_pack_advertisement(repo_path: &FsPath, timeout: Duratio
         }
         Err(error) => git_advertisement_error(error.into_public_message()),
     }
+}
+
+fn git_upload_pack_command() -> Command {
+    let mut command = Command::new("git");
+    command.args([
+        "-c",
+        "uploadpack.allowAnySHA1InWant=false",
+        "-c",
+        "uploadpack.allowReachableSHA1InWant=false",
+        "-c",
+        "uploadpack.allowTipSHA1InWant=false",
+        "upload-pack",
+    ]);
+    command
 }
 
 pub(crate) fn git_response(content_type: &'static str, body: Vec<u8>) -> Response {

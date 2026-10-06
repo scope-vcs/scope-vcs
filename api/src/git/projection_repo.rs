@@ -10,6 +10,7 @@ use crate::{
 };
 use scope_domain::{
     content_ref::ContentRef,
+    policy::Visibility,
     projection::{Projection, ProjectionMaterialization},
     repository::RepositoryIncarnation,
 };
@@ -27,7 +28,7 @@ use std::{
 mod index;
 use index::ProjectionIndex;
 
-const PROJECTION_CACHE_SEMANTICS_VERSION: &str = "shared-projection-view-v2-native-commits";
+const PROJECTION_CACHE_SEMANTICS_VERSION: &str = "shared-projection-labels-v3-alternates";
 static PROJECTION_CACHE_ATTEMPT: AtomicU64 = AtomicU64::new(1);
 
 struct ProjectionBuildArtifacts {
@@ -109,6 +110,13 @@ fn projection_bare_repo_with_loader(
         ]),
         None,
     )?;
+    if let Some(source_repo) = native_source_repo {
+        fs::write(
+            temp_path.join("objects/info/alternates"),
+            format!("{}\n", source_repo.join("objects").display()),
+        )
+        .map_err(ApiError::internal)?;
+    }
     let mut index = ProjectionIndex::new(&temp_path, &index_path, parent_commit.as_deref())?;
     index.remember_verified_blobs(
         projection.commits[..reused_commits]
@@ -385,6 +393,22 @@ pub(crate) async fn projection_bare_repo_for_state(
     git_head: Option<&scope_domain::repository::git::GitHead>,
     git_pack_spans: &[scope_domain::repository::git::GitPackSpan],
 ) -> Result<GitRepoHandle, ApiError> {
+    let canonical_repo = if let Some(head) = git_head {
+        Some(
+            state
+                .repository_engine
+                .materialize_repository(state, incarnation, head, git_pack_spans)
+                .await?,
+        )
+    } else {
+        if projection_requires_raw_source(projection) {
+            return Err(ApiError::internal_message(
+                "Git-backed projection requires a canonical Git head",
+            ));
+        }
+        None
+    };
+    let canonical_path = canonical_repo.as_deref().map(FsPath::to_path_buf);
     let cache_root = state.repository_engine.cache_root().to_path_buf();
     let cache_key = projection_cache_key(Some(incarnation), projection);
     let repo_path = cache_root.join(format!("{cache_key}.git"));
@@ -393,10 +417,8 @@ pub(crate) async fn projection_bare_repo_for_state(
     let state_for_build = state.clone();
     let incarnation_for_build = incarnation.clone();
     let projection_for_build = projection.clone();
-    let git_head_for_build = git_head.cloned();
-    let git_pack_spans_for_build = git_pack_spans.to_vec();
     let cache_root_for_build = cache_root.clone();
-    state
+    let repo = state
         .repository_engine
         .materialize_derived(
             incarnation,
@@ -405,26 +427,6 @@ pub(crate) async fn projection_bare_repo_for_state(
             &repo_path,
             is_ready,
             move || async move {
-                let raw_source_repo = if projection_requires_raw_source(&projection_for_build) {
-                    let head = git_head_for_build.as_ref().ok_or_else(|| {
-                        ApiError::internal_message(
-                            "Git-backed projection requires a canonical Git head",
-                        )
-                    })?;
-                    Some(
-                        state_for_build
-                            .repository_engine
-                            .materialize_repository(
-                                &state_for_build,
-                                &incarnation_for_build,
-                                head,
-                                &git_pack_spans_for_build,
-                            )
-                            .await?,
-                    )
-                } else {
-                    None
-                };
                 let permit = state_for_build.runtime_budgets.try_git_materialization()?;
                 let state = state_for_build.clone();
                 tokio::task::spawn_blocking(move || {
@@ -438,10 +440,10 @@ pub(crate) async fn projection_bare_repo_for_state(
                         &cache_root_for_build,
                         Some(&incarnation_for_build),
                         &projection_for_build,
-                        raw_source_repo.as_deref(),
+                        canonical_path.as_deref(),
                         prefix,
                         |blob| {
-                            source_content_bytes_from_repo(&state, blob, raw_source_repo.as_deref())
+                            source_content_bytes_from_repo(&state, blob, canonical_path.as_deref())
                         },
                     )
                     .map(|_| ())
@@ -454,7 +456,11 @@ pub(crate) async fn projection_bare_repo_for_state(
                 })?
             },
         )
-        .await
+        .await?;
+    Ok(match canonical_repo {
+        Some(canonical_repo) => repo.with_dependency(canonical_repo),
+        None => repo,
+    })
 }
 
 pub(crate) fn verify_projection_materialization(
@@ -513,7 +519,7 @@ fn projection_cache_key(
     incarnation: Option<&RepositoryIncarnation>,
     projection: &Projection,
 ) -> String {
-    projection_cache_keys(incarnation, projection)
+    projection_cache_keys(incarnation, projection, projection.view_key.labels())
         .pop()
         .expect("empty projection has a cache key")
 }
@@ -521,6 +527,7 @@ fn projection_cache_key(
 fn projection_cache_keys(
     incarnation: Option<&RepositoryIncarnation>,
     projection: &Projection,
+    labels: &[Visibility],
 ) -> Vec<String> {
     let mut hasher = Sha1::new();
     hash_field(
@@ -536,18 +543,21 @@ fn projection_cache_keys(
         );
     }
     hash_field(&mut hasher, b"repo", projection.repo_id.as_bytes());
-    hash_field(
-        &mut hasher,
-        b"view",
-        projection.view_key.as_str().as_bytes(),
-    );
+    let mut labels = labels
+        .iter()
+        .map(|label| match label {
+            Visibility::Private => b"private".as_slice(),
+            Visibility::Public => b"public".as_slice(),
+        })
+        .collect::<Vec<_>>();
+    labels.sort_unstable();
+    labels.dedup();
+    for label in labels {
+        hash_field(&mut hasher, b"label", label);
+    }
     let mut keys = vec![hex::encode(hasher.clone().finalize())];
     for commit in &projection.commits {
-        hash_field(&mut hasher, b"commit", commit.projected_id.as_bytes());
         hash_field(&mut hasher, b"logical", commit.logical_commit_id.as_bytes());
-        if let Some(parent) = &commit.parent_projected_id {
-            hash_field(&mut hasher, b"parent", parent.as_bytes());
-        }
         hash_field(&mut hasher, b"message", commit.message.as_bytes());
         match &commit.materialization {
             ProjectionMaterialization::Generate => {
@@ -593,7 +603,7 @@ fn cached_projection_prefix(
     incarnation: &RepositoryIncarnation,
     projection: &Projection,
 ) -> Result<Option<ProjectionPrefix>, ApiError> {
-    let keys = projection_cache_keys(Some(incarnation), projection);
+    let keys = projection_cache_keys(Some(incarnation), projection, projection.view_key.labels());
     for count in (1..projection.commits.len()).rev() {
         if matches!(
             projection.commits[count - 1].materialization,

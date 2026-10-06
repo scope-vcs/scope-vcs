@@ -155,6 +155,33 @@ fn derived_repository_counts_toward_the_budget_and_is_leased_while_in_use() {
 }
 
 #[test]
+fn derived_repository_lease_keeps_its_alternate_source_materialized() {
+    let root = temp_cache_root("git-cache-derived-alternate");
+    let registry = RepositoryGitCache::new(root.clone(), 100).unwrap();
+    let incarnation = incarnation("owner/source");
+    let source_path = registry.path_for(&incarnation);
+    let view_path = root.join("view.git");
+    fs::create_dir_all(&source_path).unwrap();
+    fs::create_dir_all(&view_path).unwrap();
+    fs::write(source_path.join("pack"), [0_u8; 40]).unwrap();
+    fs::write(view_path.join("pack"), [0_u8; 40]).unwrap();
+    let view = registry
+        .lease_derived(view_path.clone())
+        .unwrap()
+        .with_dependency(registry.lease(&incarnation).unwrap());
+
+    registry.prune_to(0).unwrap();
+    assert!(view_path.exists());
+    assert!(source_path.exists());
+
+    drop(view);
+    registry.prune_to(0).unwrap();
+    assert!(!view_path.exists());
+    assert!(!source_path.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn least_recently_used_repository_is_evicted_when_cache_exceeds_byte_budget() {
     let root = temp_cache_root("git-cache-lru");
     let registry = RepositoryGitCache::new(root.clone(), 250).unwrap();
