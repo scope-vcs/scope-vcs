@@ -2,8 +2,8 @@ use super::*;
 use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
 use scope_domain::{
     account::UserAccount,
-    policy::Visibility,
     repository::{RepoLifecycleState, Repository},
+    views::ViewId,
 };
 
 #[test]
@@ -308,7 +308,7 @@ fn seed_repository(store: &MetadataStore) -> String {
         email: "cache-owner@example.com".to_string(),
         email_verified: true,
     };
-    let mut repository = Repository::new(&owner, "cache-repo", Visibility::Private, "repoi_test")
+    let mut repository = Repository::new(&owner, "cache-repo", ViewId::private(), "repoi_test")
         .expect("test repository is valid");
     repository.record.lifecycle_state = RepoLifecycleState::Ready;
     let repository_id = repository.record.id.clone();

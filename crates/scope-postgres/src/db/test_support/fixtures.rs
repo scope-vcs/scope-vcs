@@ -3,8 +3,8 @@ use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
     content_ref::ContentRef,
-    policy::Visibility,
     repository::{RepoLifecycleState, Repository},
+    views::ViewId,
 };
 
 pub fn user(id: &str, handle: &str) -> UserAccount {
@@ -16,7 +16,7 @@ pub fn user(id: &str, handle: &str) -> UserAccount {
     }
 }
 
-pub fn repository(owner: &UserAccount, name: &str, visibility: Visibility) -> Repository {
+pub fn repository(owner: &UserAccount, name: &str, visibility: ViewId) -> Repository {
     let mut repository = Repository::new(
         owner,
         name,

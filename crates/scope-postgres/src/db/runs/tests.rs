@@ -10,13 +10,13 @@ use crate::{
     error::PostgresErrorKind,
 };
 use scope_domain::{
-    policy::Visibility,
     repository::collaboration::{RepositoryMember, RepositoryMemberPermissions},
     runs::{
         job::RunJobState,
         run::RunState,
         source::{RunSource, RunTrigger},
     },
+    views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use std::time::Duration;
@@ -60,19 +60,20 @@ impl Command {
 
 async fn fixture(command: Command) -> MetadataStore {
     let owner = user(OWNER, "owner");
-    let mut repo = repository(&owner, "repo", Visibility::Public);
+    let mut repo = repository(&owner, "repo", ViewId::public());
     repo.collaboration.members.push(RepositoryMember {
         repo_id: REPO.into(),
         user_id: MEMBER.into(),
         permissions: RepositoryMemberPermissions {
             can_push: false,
             can_change_file_visibility: false,
+            view: ViewId::private(),
         },
         created_at_unix: 1,
         updated_at_unix: 1,
     });
     let store =
-        store_with_native_run_repositories([repo, repository(&owner, "other", Visibility::Public)]);
+        store_with_native_run_repositories([repo, repository(&owner, "other", ViewId::public())]);
     let revision = scope_run_config::parse_workflow(
         "/.scope/runs/test.yml",
         br#"

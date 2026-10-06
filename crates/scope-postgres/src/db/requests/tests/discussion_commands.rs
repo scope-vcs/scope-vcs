@@ -7,7 +7,7 @@ async fn discussion_commands_derive_actor_permissions_from_persisted_private_req
     let mut start = public_start_input();
     start.author_user_id = "user_owner".into();
     start.author_role = RequestActorRole::Owner;
-    start.audience = RequestAudience::Private;
+    start.view = ViewId::private();
     store.requests().start_request(start).await.unwrap();
     let mut upload = public_upload_input();
     upload.actor_user_id = "user_owner".into();

@@ -7,8 +7,8 @@ use crate::db::{
 use crate::error::PostgresErrorKind;
 use scope_domain::{
     account::{ExternalIdentity, deletion::CLERK_USER_DELETION_TOMBSTONE_SECS},
-    policy::Visibility,
     repository::collaboration::RepositoryMember,
+    views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use serde_json::{Value, json};
@@ -46,12 +46,12 @@ const CONTRIBUTIONS: &str = r#"
         submitted_at_unix, closed_at_unix, closed_by_user_id, merged_at_unix,
         merged_by_user_id, merged_head_oid, merged_main_oid, created_at_unix, updated_at_unix)
     VALUES
-        ('authored', 'owner/shared', 'authored', 'leaver', 'Member', 'Private', repeat('a', 40),
+        ('authored', 'owner/shared', 'authored', 'leaver', 'Member', 'private', repeat('a', 40),
             repeat('b', 40), 'Authored', '', 2, 2, 3, 'leaver', NULL, NULL, NULL, NULL, 1, 3),
-        ('merged', 'owner/shared', 'merged', 'owner', 'Owner', 'Private', repeat('a', 40),
+        ('merged', 'owner/shared', 'merged', 'owner', 'Owner', 'private', repeat('a', 40),
             repeat('b', 40), 'Merged', '', 2, 2, NULL, NULL, 3, 'leaver', repeat('b', 40),
             repeat('c', 40), 1, 3),
-        ('open', 'owner/shared', 'open', 'owner', 'Owner', 'Private', repeat('a', 40),
+        ('open', 'owner/shared', 'open', 'owner', 'Owner', 'private', repeat('a', 40),
             repeat('b', 40), 'Open', '', 2, 2, NULL, NULL, NULL, NULL, NULL, NULL, 1, 3);
     INSERT INTO scope_request_events (id, request_id, actor_user_id, kind, position, payload,
         created_at_unix)
@@ -76,7 +76,7 @@ const CONTRIBUTIONS: &str = r#"
         permissions, invited_by_user_id, created_at_unix, updated_at_unix, expires_at_unix,
         accepted_by_user_id, accepted_at_unix)
         VALUES ('invite', 'owner/shared', 'Leaver@scope.test', 'leaver@scope.test',
-            '{"can_push": false, "can_change_file_visibility": false}', 'owner', 1, 1, 999,
+            '{"can_push": false, "can_change_file_visibility": false, "view": "private"}', 'owner', 1, 1, 999,
             'leaver', 2);
     INSERT INTO scope_request_auto_merge_intents (id, repo_id, repository_incarnation_id,
         request_id, revision_id, head_oid, actor_user_id, status, created_position,
@@ -97,13 +97,13 @@ const CONTRIBUTIONS: &str = r#"
 async fn deleting_an_account_keeps_its_work_in_other_repositories() {
     let owner = user("owner", "owner");
     let leaver = user("leaver", "leaver");
-    let mut shared = repository(&owner, "shared", Visibility::Private);
+    let mut shared = repository(&owner, "shared", ViewId::private());
     shared.collaboration.members = vec![
         member("owner/shared", "leaver"),
         member("owner/shared", "guest"),
     ];
     let shared_version = shared.record.change_version;
-    let store = store_with_repositories([shared, repository(&leaver, "solo", Visibility::Private)]);
+    let store = store_with_repositories([shared, repository(&leaver, "solo", ViewId::private())]);
     store.db.execute_unprepared(CONTRIBUTIONS).await.unwrap();
 
     let deleted = store
@@ -221,9 +221,9 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
     let owner = user("owner", "owner");
     let leaver = user("leaver", "leaver");
     let store = store_with_repositories([
-        repository(&owner, "public", Visibility::Public),
-        repository(&owner, "linked", Visibility::Private),
-        repository(&leaver, "solo", Visibility::Private),
+        repository(&owner, "public", ViewId::public()),
+        repository(&owner, "linked", ViewId::private()),
+        repository(&leaver, "solo", ViewId::private()),
     ]);
     store
         .db
@@ -242,9 +242,9 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
                 base_main_oid, head_oid, title, description_markdown, activity_version,
                 submitted_at_unix, created_at_unix, updated_at_unix)
             VALUES
-                ('submitted', 'owner/public', 'submitted', 'leaver', 'Public', 'Public',
+                ('submitted', 'owner/public', 'submitted', 'leaver', 'Public', 'public',
                     repeat('a', 40), repeat('b', 40), 'Submitted', '', 1, 2, 1, 2),
-                ('draft', 'owner/public', 'draft', 'leaver', 'Public', 'Public',
+                ('draft', 'owner/public', 'draft', 'leaver', 'Public', 'public',
                     repeat('a', 40), repeat('b', 40), 'Draft', '', 1, NULL, 1, 1)",
         )
         .await
@@ -286,9 +286,9 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
 #[tokio::test]
 async fn owning_a_repository_with_another_member_blocks_deletion() {
     let leaver = user("leaver", "leaver");
-    let mut team = repository(&leaver, "team", Visibility::Private);
+    let mut team = repository(&leaver, "team", ViewId::private());
     team.collaboration.members = vec![member("leaver/team", "friend")];
-    let store = store_with_repositories([team, repository(&leaver, "solo", Visibility::Private)]);
+    let store = store_with_repositories([team, repository(&leaver, "solo", ViewId::private())]);
 
     let refused = store
         .auth()

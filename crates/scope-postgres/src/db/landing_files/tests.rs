@@ -1,8 +1,7 @@
 use super::*;
 use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
 use scope_domain::{
-    account::UserAccount, content::DEFAULT_GIT_FILE_MODE, policy::Visibility,
-    repository::Repository,
+    account::UserAccount, content::DEFAULT_GIT_FILE_MODE, repository::Repository, views::ViewId,
 };
 use sea_orm::{DatabaseBackend, Statement};
 use sha2::{Digest as _, Sha256};
@@ -18,7 +17,7 @@ fn fixture() -> MetadataStore {
         email: "landing@scope.test".into(),
         email_verified: true,
     };
-    let repo = Repository::new(&owner, "repo", Visibility::Private, "repoi_landing").unwrap();
+    let repo = Repository::new(&owner, "repo", ViewId::private(), "repoi_landing").unwrap();
     let mut catalog = CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner);
     catalog.repositories.insert(repo.record.id.clone(), repo);

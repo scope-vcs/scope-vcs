@@ -7,10 +7,9 @@ use crate::{
     error::PostgresErrorKind,
 };
 use scope_domain::{
-    policy::Visibility,
     requests::{
-        NativeRequestCheck, RequestActorRole, RequestAudience, RequestCheck,
-        RequestCheckEvaluation, RequestCheckEvaluationState, StartRequestInput,
+        NativeRequestCheck, RequestActorRole, RequestCheck, RequestCheckEvaluation,
+        RequestCheckEvaluationState, StartRequestInput,
     },
     runs::{
         availability::NATIVE_RUNS_UNAVAILABLE,
@@ -25,6 +24,7 @@ use scope_domain::{
             revision::WorkflowRevision,
         },
     },
+    views::ViewId,
 };
 
 const OWNER_ID: &str = "user_native_owner";
@@ -76,7 +76,7 @@ fn unlisted_store() -> (MetadataStore, WorkflowRevision) {
     let repo = repository(
         &user(OWNER_ID, OWNER_HANDLE),
         "native-repo",
-        Visibility::Private,
+        ViewId::private(),
     );
     let revision = workflow(&repo.record.id);
     (store_with_repositories([repo]), revision)
@@ -228,7 +228,7 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
                 author_user_id: "user_public".into(),
                 title: None,
                 author_role: RequestActorRole::Public,
-                audience: RequestAudience::Public,
+                view: ViewId::public(),
                 base_main_oid: head_oid.clone(),
                 event_id: format!("{request_id}-event"),
                 now_unix: 2,

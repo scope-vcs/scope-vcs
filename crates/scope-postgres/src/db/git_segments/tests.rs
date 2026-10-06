@@ -17,8 +17,8 @@ async fn store_with_repository(repo_id: &str) -> MetadataStore {
                 change_version, content_version, repo_config, policy, incarnation_id
              ) VALUES (
                 '{repo_id}', 'segment-user', 'repo', 'segment_user', 'Ready', 1, 1,
-                '{{\"kind\":\"scope.repo-config\",\"version\":1,\"visibility\":{{\"default\":\"private\",\"rules\":[]}}}}'::jsonb,
-                '{{\"default_visibility\":\"Private\",\"rules\":[]}}'::jsonb,
+                '{{\"kind\":\"scope.repo-config\",\"version\":2,\"views\":[{{\"id\":\"public\",\"name\":\"Public\",\"includes\":[],\"readers\":\"anyone\"}},{{\"id\":\"private\",\"name\":\"Private\",\"includes\":\"all\",\"readers\":\"members\"}}],\"files\":{{\"default\":\"private\",\"rules\":[]}},\"history\":{{\"rewrites\":[]}}}}'::jsonb,
+                '{{\"default\":\"private\",\"rules\":[]}}'::jsonb,
                 'segment-test-incarnation'
              )"
         ))

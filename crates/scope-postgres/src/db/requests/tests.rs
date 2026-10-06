@@ -13,12 +13,12 @@ use super::*;
 use scope_domain::{
     account::UserAccount,
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
-    policy::Visibility,
     repository::{RepoLifecycleState, Repository},
     requests::{
-        RecordRequestRevisionInput, RequestActorRole, RequestAudience, RequestDiscussionAnchor,
+        RecordRequestRevisionInput, RequestActorRole, RequestDiscussionAnchor,
         RequestDiscussionStatus, RequestRevisionGitFacts, RequestState,
     },
+    views::ViewId,
 };
 
 #[tokio::test]
@@ -258,7 +258,7 @@ async fn completed_private_discussion_transitions_persist_nothing() {
     let mut input = public_start_input();
     input.author_user_id = "user_owner".to_string();
     input.author_role = RequestActorRole::Owner;
-    input.audience = RequestAudience::Private;
+    input.view = ViewId::private();
     requests.start_request(input).await.unwrap();
     let mut upload = public_upload_input();
     upload.actor_user_id = "user_owner".to_string();
@@ -723,7 +723,7 @@ fn catalog_with_repo() -> crate::db::CatalogFixture {
         email: "guest@example.com".to_string(),
         email_verified: true,
     };
-    let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_test").unwrap();
+    let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_test").unwrap();
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
 
     let mut catalog = crate::db::CatalogFixture::default();
@@ -782,7 +782,7 @@ fn public_start_input() -> StartRequestInput {
         author_user_id: "user_public".to_string(),
         title: Some("Fix parser crash".to_string()),
         author_role: RequestActorRole::Public,
-        audience: RequestAudience::Public,
+        view: ViewId::public(),
         base_main_oid: "base".to_string(),
         event_id: "event_started".to_string(),
         now_unix: 2,

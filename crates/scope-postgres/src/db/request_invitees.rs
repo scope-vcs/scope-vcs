@@ -369,9 +369,9 @@ mod tests {
     use crate::error::PostgresErrorKind;
     use scope_domain::{
         account::UserAccount,
-        policy::Visibility,
         repository::{RepoLifecycleState, Repository},
-        requests::{RequestActorRole, StartRequestInput, ViewId},
+        requests::{RequestActorRole, StartRequestInput},
+        views::ViewId,
     };
     use std::sync::Arc;
     use tokio::sync::Barrier;
@@ -609,7 +609,7 @@ mod tests {
                 author_user_id: "user_author".to_string(),
                 title: None,
                 author_role: RequestActorRole::Public,
-                audience: ViewId::public(),
+                view: ViewId::public(),
                 base_main_oid: "base".to_string(),
                 event_id: format!("event_{request_id}"),
                 now_unix: 2,

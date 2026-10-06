@@ -1,12 +1,12 @@
 use super::*;
 use crate::db::test_support::fixtures::{repository, store_with_repositories, user};
-use scope_domain::{policy::Visibility, projection::LogicalCommitOrigin};
+use scope_domain::{projection::LogicalCommitOrigin, views::ViewId};
 use sea_orm::{DatabaseBackend, Statement};
 
 #[tokio::test]
 async fn histories_load_more_parents_than_postgres_bind_limit() {
     let owner = user("history-owner", "history-owner");
-    let repo = repository(&owner, "large-history", Visibility::Private);
+    let repo = repository(&owner, "large-history", ViewId::private());
     let repo_id = repo.record.id.clone();
     let store = store_with_repositories([repo]);
     let origin = serde_json::to_value(LogicalCommitOrigin::CanonicalPush {

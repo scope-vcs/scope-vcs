@@ -4,8 +4,8 @@ use scope_domain::{
     account::UserAccount,
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     content_ref::ContentRef,
-    policy::Visibility,
     repository::Repository,
+    views::ViewId,
 };
 use sea_orm::{DatabaseBackend, Statement};
 use std::time::Duration;
@@ -22,7 +22,7 @@ fn fixture() -> MetadataStore {
         email: "workflow@scope.test".into(),
         email_verified: true,
     };
-    let repo = Repository::new(&owner, "repo", Visibility::Private, "repoi_workflows").unwrap();
+    let repo = Repository::new(&owner, "repo", ViewId::private(), "repoi_workflows").unwrap();
     let mut catalog = CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner);
     catalog.repositories.insert(repo.record.id.clone(), repo);
