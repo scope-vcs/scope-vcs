@@ -172,7 +172,9 @@ export type GitPushTokenResponse = { created_at_unix: number, secret: string | n
 
 export type RepoFileResponse = { path: string, oid: string, tracked: boolean, label: ViewId, };
 
-export type RepoFileContentRequest = { path: string, };
+export type RepoFileContentRequest = { path: string, view: ViewId | null, };
+
+export type RepoFilesRequest = { view: ViewId | null, };
 
 export type RepoFileContentResponse = { path: string, oid: string, label: ViewId, size_bytes: number, content: ReviewFileContentResponse, };
 
