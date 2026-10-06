@@ -329,6 +329,7 @@ async fn authorize_run_control(
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
     access.ensure_member()?;
+    access.ensure_run_reader()?;
     Ok(())
 }
 

@@ -922,6 +922,7 @@ async fn a_pushed_head_without_any_run_says_no_workflow_started_after_ten_minute
         crate::http::request_checks::checks_response(
             state,
             &context.record,
+            &context.views,
             &scope_request,
             context.access,
             None,

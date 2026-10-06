@@ -94,7 +94,7 @@ async fn open_run(
         .await?
         .ok_or_else(not_found)?;
     let request_visible = match detail.read.request_id.as_deref() {
-        Some(request_id) if !access.is_maintainer() => {
+        Some(request_id) if !repo.reads_full_view() => {
             match visible_request(
                 state,
                 &repo.record.id,
@@ -111,7 +111,7 @@ async fn open_run(
         }
         _ => false,
     };
-    if !github_run_visible(access, connection.visibility, request_visible) {
+    if !github_run_visible(&access, &repo.views, connection.visibility, request_visible) {
         return Err(not_found());
     }
     Ok(OpenedRun { connection, detail })

@@ -40,17 +40,11 @@ impl RepositoryAccessContext {
     }
 
     pub fn reads_full_view(&self) -> bool {
-        self.can_read_view(self.views.full())
+        self.access.reads_full_view(&self.views)
     }
 
-    pub fn ensure_full_view(&self) -> Result<(), crate::error::DomainError> {
-        if self.reads_full_view() {
-            Ok(())
-        } else {
-            Err(crate::error::DomainError::forbidden(
-                "the repository's full view is required",
-            ))
-        }
+    pub fn ensure_run_reader(&self) -> Result<(), crate::error::DomainError> {
+        self.access.ensure_run_reader(&self.views)
     }
 
     pub fn ensure_member(&self) -> Result<(), crate::error::DomainError> {
@@ -144,6 +138,20 @@ impl RepositoryAccess {
             && self
                 .reader_view(views)
                 .is_some_and(|reader| views.may_read(reader, view))
+    }
+
+    pub fn reads_full_view(&self, views: &Views) -> bool {
+        self.can_read_view(views, views.full())
+    }
+
+    pub fn ensure_run_reader(&self, views: &Views) -> Result<(), crate::error::DomainError> {
+        if self.reads_full_view(views) {
+            Ok(())
+        } else {
+            Err(crate::error::DomainError::forbidden(
+                "repository runs need the repository's full view",
+            ))
+        }
     }
 
     pub fn public() -> Self {

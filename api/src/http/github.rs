@@ -504,6 +504,7 @@ async fn maintainer_access(
 ) -> Result<RepositoryAccessContext, ApiError> {
     let context = find_read_access(state, owner, repo, Some(user_id)).await?;
     ensure_can_manage_github_connection(context.access.clone())?;
+    context.ensure_run_reader()?;
     Ok(context)
 }
 

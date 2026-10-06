@@ -478,3 +478,73 @@ async fn a_member_on_a_narrower_view_cannot_read_or_push_through_the_full_view()
         );
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_output_needs_the_full_view_on_every_run_and_github_endpoint() {
+    let (state, head, _source) = fixture("custom-views-run-gates").await;
+    let listed = [
+        "/v1/repos/owner/repo/runs",
+        "/v1/repos/owner/repo/run-workflows",
+        "/v1/repos/owner/repo/github",
+        "/v1/repos/owner/repo/github/workflow-runs",
+    ];
+    for uri in listed {
+        let owner = api_request(
+            router(state.clone()),
+            "GET",
+            uri,
+            Some(&bearer_header()),
+            None,
+        )
+        .await
+        .status();
+        assert_eq!(owner, StatusCode::OK, "owner {uri}");
+    }
+    let push_trigger = format!("/v1/repos/owner/repo/push-trigger-evaluations/{head}");
+    let refused = listed.iter().map(|uri| ("GET", *uri, None)).chain([
+        ("GET", "/v1/repos/owner/repo/dependencies", None),
+        ("GET", "/v1/repos/owner/repo/runs/run_any", None),
+        ("GET", "/v1/repos/owner/repo/runs/run_any/detail", None),
+        (
+            "GET",
+            "/v1/repos/owner/repo/runs/run_any/attempts/attempt_any/steps/0/logs",
+            None,
+        ),
+        ("GET", "/v1/repos/owner/repo/runs/run_any/events", None),
+        ("POST", "/v1/repos/owner/repo/runs/run_any/cancel", None),
+        ("POST", "/v1/repos/owner/repo/runs/run_any/retry", None),
+        ("GET", push_trigger.as_str(), None),
+        ("GET", "/v1/repos/owner/repo/github/workflow-runs/1", None),
+        (
+            "GET",
+            "/v1/repos/owner/repo/github/workflow-runs/1/jobs/1/log",
+            None,
+        ),
+        ("POST", "/v1/repos/owner/repo/github/run-import", None),
+        (
+            "PUT",
+            "/v1/repos/owner/repo/github/run-import",
+            Some(r#"{"count":5}"#),
+        ),
+        (
+            "PUT",
+            "/v1/repos/owner/repo/github/required-checks",
+            Some(r#"{"names":["build"]}"#),
+        ),
+    ]);
+    for (method, uri, body) in refused {
+        let status = api_request(
+            router(state.clone()),
+            method,
+            uri,
+            Some(&member_bearer()),
+            body,
+        )
+        .await
+        .status();
+        assert!(
+            matches!(status, StatusCode::FORBIDDEN | StatusCode::NOT_FOUND),
+            "{method} {uri}: {status}"
+        );
+    }
+}

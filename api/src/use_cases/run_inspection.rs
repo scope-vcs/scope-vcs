@@ -28,7 +28,7 @@ pub(crate) async fn require_full_view_member(
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{name} not found")))?;
     repo.ensure_member()?;
-    repo.ensure_full_view()?;
+    repo.ensure_run_reader()?;
     Ok(repo)
 }
 

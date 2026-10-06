@@ -249,9 +249,9 @@ pub(crate) struct HistoryEntryDetailResponse {
     pub(crate) message: String,
     pub(crate) file_change_count: usize,
     pub(crate) visibility_summary: HistoryVisibilitySummaryResponse,
-    pub(crate) views: Option<ViewsTransition>,
     pub(crate) files: Vec<HistoryEntryFileResponse>,
     pub(crate) visibility_changes: Vec<HistoryVisibilityChangeResponse>,
+    pub(crate) views: Option<ViewsTransition>,
 }
 
 #[derive(Debug, Serialize)]
@@ -507,7 +507,6 @@ pub(crate) fn history_entry_detail_response(
         message: entry.message.clone(),
         file_change_count: entry.files.len(),
         visibility_summary: history_visibility_summary_response(entry),
-        views: entry.views.as_ref().map(ViewsTransition::from),
         files: entry
             .files
             .iter()
@@ -518,6 +517,7 @@ pub(crate) fn history_entry_detail_response(
             .iter()
             .map(history_visibility_change_response)
             .collect(),
+        views: entry.views.as_ref().map(ViewsTransition::from),
     })
 }
 
