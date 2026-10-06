@@ -61,7 +61,7 @@ async fn private_request_accepts_and_reviews_an_introduced_root_commit() {
     )
     .unwrap();
     let (origin, _server) = spawn_test_server(&state).await;
-    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     configure_bearer_header(&source, &remote, &bearer);
     run_git(
         Some(&source),

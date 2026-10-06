@@ -28,7 +28,7 @@ async fn receive_pack_capacity_exhaustion_returns_backpressure() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/git/permissioned/owner/repo/info/refs?service=git-receive-pack")
+                .uri("/git/private/owner/repo/info/refs?service=git-receive-pack")
                 .header(
                     AUTHORIZATION,
                     format!("Basic {}", BASE64.encode(format!("scope:{secret}"))),

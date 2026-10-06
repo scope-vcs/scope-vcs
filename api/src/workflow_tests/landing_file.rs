@@ -25,7 +25,7 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
     let captured = state
         .metadata
         .repositories()
-        .repo_live_file_with_landing_content(TEST_REPO_OWNER, TEST_REPO_NAME, None, &path)
+        .repo_live_file_with_landing_content(TEST_REPO_OWNER, TEST_REPO_NAME, None, None, &path)
         .await
         .unwrap()
         .unwrap();

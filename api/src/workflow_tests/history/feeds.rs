@@ -39,6 +39,7 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
                     new_label,
                     current_content: content.clone(),
                 }],
+                None,
             )
             .unwrap(),
         );

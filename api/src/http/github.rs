@@ -23,7 +23,7 @@ use crate::{
     state::AppState,
     use_cases::{
         github_check_results, github_pushes, github_setup_checks::publish_setup_check_change,
-        github_workflow_jobs, github_workflow_runs, run_inspection::require_repo_member,
+        github_workflow_jobs, github_workflow_runs, run_inspection::require_full_view_member,
     },
 };
 use axum::{
@@ -304,7 +304,7 @@ pub(crate) async fn get_github_workflow_runs(
     Query(query): Query<GitHubWorkflowRunsQuery>,
 ) -> Result<Json<GitHubWorkflowRunsResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let context = require_repo_member(&state, &user.id, &owner, &repo).await?;
+    let context = require_full_view_member(&state, &user.id, &owner, &repo).await?;
     let repositories = state.metadata.repositories();
     let connection = repositories
         .github_connection(&context.record.id)

@@ -3,7 +3,6 @@ use crate::{
     config::{AWAITING_FIRST_PUSH_GIT_ERROR, GIT_UPLOAD_PACK},
     error::ApiError,
     git::{
-        GitRemoteMode,
         cache::{GitDerivedCacheNamespace, GitRepoHandle},
         command::{git_command_output, git_command_output_with_timeout, truncated_git_stderr},
         git_read_scope_user,
@@ -19,7 +18,7 @@ use axum::{
     body::{Body, Bytes},
     http::{
         HeaderMap, StatusCode,
-        header::{CACHE_CONTROL, CONTENT_TYPE},
+        header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE},
     },
     response::{IntoResponse, Response},
 };
@@ -29,6 +28,7 @@ use scope_domain::{
     repository::access::RepositoryActor,
     repository::{RepoLifecycleState, RepositoryIncarnation},
     requests::{Request, RequestViewer, request_policy},
+    views::ViewId,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
@@ -54,7 +54,7 @@ pub(crate) async fn authorized_git_read(
     headers: &HeaderMap,
     owner: &str,
     repo_name: &str,
-    mode: GitRemoteMode,
+    view: &ViewId,
 ) -> Result<
     (
         scope_domain::repository::Repository,
@@ -63,24 +63,32 @@ pub(crate) async fn authorized_git_read(
     ),
     ApiError,
 > {
+    let anonymous = !headers.contains_key(AUTHORIZATION);
+    let credentials_required = || ApiError::unauthorized("Git credentials required");
     let (repo, principal, viewer_user_id) =
-        match git_read_principal_for_request(state, headers, owner, repo_name, mode).await {
+        match git_read_principal_for_request(state, headers, owner, repo_name).await {
             Ok(value) => value,
-            Err(error)
-                if mode == GitRemoteMode::Public && error.status() == StatusCode::NOT_FOUND =>
-            {
-                return Err(ApiError::unauthorized("Git credentials required"));
+            Err(error) if anonymous && error.status() == StatusCode::NOT_FOUND => {
+                return Err(credentials_required());
             }
             Err(error) => return Err(error),
         };
     if repo.record.lifecycle_state != RepoLifecycleState::Ready {
-        return Err(unpublished_git_read_error(
-            &repo, owner, repo_name, &principal,
-        ));
+        return Err(if anonymous {
+            credentials_required()
+        } else {
+            unpublished_git_read_error(&repo, owner, repo_name, &principal)
+        });
     }
-    ensure_repo_read(&repo, &principal)?;
     let access = repo.access_for_principal(&principal);
-    Ok((repo, access, viewer_user_id))
+    let readable = ensure_repo_read(&repo, &principal).is_ok() && repo.can_read_view(&access, view);
+    match (readable, anonymous) {
+        (true, _) => Ok((repo, access, viewer_user_id)),
+        (false, true) => Err(credentials_required()),
+        (false, false) => Err(ApiError::not_found(format!(
+            "Git view {view} of {owner}/{repo_name} not found"
+        ))),
+    }
 }
 
 pub(crate) async fn git_upload_pack_repo_for_request(
@@ -88,17 +96,11 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     headers: &HeaderMap,
     owner: &str,
     repo_name: &str,
-    mode: GitRemoteMode,
+    view: &ViewId,
 ) -> Result<GitRepoHandle, ApiError> {
     let (repo, access, viewer_user_id) =
-        authorized_git_read(state, headers, owner, repo_name, mode).await?;
+        authorized_git_read(state, headers, owner, repo_name, view).await?;
     let views = repo.repo_config.views();
-    let view = match mode {
-        GitRemoteMode::Public => views
-            .anyone()
-            .ok_or_else(|| ApiError::not_found("public Git view not found"))?,
-        GitRemoteMode::Permissioned => &access.view,
-    };
     let private_view = view == views.full();
     let base_repo = if private_view {
         match repo.git_head.as_ref() {
@@ -143,7 +145,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
             &request,
             RequestViewer::new(access.clone(), viewer_user_id.as_deref(), is_invitee),
         );
-        if decision.exact_visible {
+        if decision.exact_visible && views.may_read(view, &request.view) {
             requests.push(request);
         }
     }
@@ -322,12 +324,11 @@ async fn git_read_view_repo(
     })
 }
 
-pub(crate) async fn git_read_principal_for_request(
+async fn git_read_principal_for_request(
     state: &AppState,
     headers: &HeaderMap,
     owner: &str,
     repo_name: &str,
-    mode: GitRemoteMode,
 ) -> Result<
     (
         scope_domain::repository::Repository,
@@ -336,18 +337,14 @@ pub(crate) async fn git_read_principal_for_request(
     ),
     ApiError,
 > {
-    match mode {
-        GitRemoteMode::Public => {
-            let repo = find_repo(state, owner, repo_name).await?;
-            Ok((repo, Principal::public(), None))
-        }
-        GitRemoteMode::Permissioned => {
-            let user = git_read_scope_user(state, headers).await?;
-            let repo = find_repo(state, owner, repo_name).await?;
-            let principal = principal_for_user_id(&repo, &user.id);
-            Ok((repo, principal, Some(user.id)))
-        }
+    if !headers.contains_key(AUTHORIZATION) {
+        let repo = find_repo(state, owner, repo_name).await?;
+        return Ok((repo, Principal::public(), None));
     }
+    let user = git_read_scope_user(state, headers).await?;
+    let repo = find_repo(state, owner, repo_name).await?;
+    let principal = principal_for_user_id(&repo, &user.id);
+    Ok((repo, principal, Some(user.id)))
 }
 
 fn unpublished_git_read_error(

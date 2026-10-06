@@ -23,7 +23,7 @@ async fn receive_post(
 ) -> Response {
     let mut request = Request::builder()
         .method("POST")
-        .uri("/git/permissioned/owner/repo/git-receive-pack")
+        .uri("/git/private/owner/repo/git-receive-pack")
         .header(CONTENT_TYPE, "application/x-git-receive-pack-request")
         .header("x-scope-push-intent", intent)
         .header(
@@ -109,7 +109,7 @@ async fn upload_pack_accepts_gzip_encoded_request_body() {
         &HeaderMap::new(),
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
-        GitRemoteMode::Public,
+        &scope_domain::views::ViewId::public(),
     )
     .await
     .unwrap();

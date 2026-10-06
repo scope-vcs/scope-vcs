@@ -280,7 +280,7 @@ async fn request_push_checkout(
         "clone public repo for request ref",
     )
     .unwrap();
-    let permissioned_remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let permissioned_remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     configure_bearer_header(
         &source,
         &permissioned_remote,

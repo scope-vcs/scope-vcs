@@ -13,7 +13,7 @@ use axum::{
 use futures_util::stream;
 use scope_domain::{
     account::UserAccount,
-    repository::access::{RepositoryAccessContext, RepositoryActor},
+    repository::access::RepositoryAccessContext,
     repository::{RepositoryIncarnation, repo_id},
     requests::{RequestViewer, request_policy},
 };
@@ -229,7 +229,7 @@ fn event_for_access(
     repo: &RepositoryAccessContext,
     event: RepoChangeEvent,
 ) -> Option<RepoChangeEvent> {
-    if repo.access.actor != RepositoryActor::Public {
+    if repo.reads_full_view() {
         return Some(event);
     }
 
@@ -246,7 +246,7 @@ fn event_for_access(
     if let RepoChangeKind::RequestTimelineChanged { view, .. }
     | RepoChangeKind::RequestAttachmentChanged { view, .. } = &event.kind
     {
-        if scope_domain::views::Views::builtin().may_read(&repo.access.view, &view.clone().into()) {
+        if repo.can_read_view(&view.clone().into()) {
             return Some(RepoChangeEvent {
                 version: 0,
                 ..event

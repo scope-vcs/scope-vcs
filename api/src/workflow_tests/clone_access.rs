@@ -11,20 +11,13 @@ async fn git_projection_for_request(
     headers: &HeaderMap,
     owner: &str,
     repo_name: &str,
-    mode: GitRemoteMode,
+    view: &ViewId,
 ) -> Result<Projection, ApiError> {
-    let (repo, access, _) = authorized_git_read(state, headers, owner, repo_name, mode).await?;
-    let views = repo.repo_config.views();
-    let view = match mode {
-        GitRemoteMode::Public => views
-            .anyone()
-            .ok_or_else(|| ApiError::not_found("public view not found"))?,
-        GitRemoteMode::Permissioned => &access.view,
-    };
+    let (repo, _, _) = authorized_git_read(state, headers, owner, repo_name, view).await?;
     Ok(project_graph(
         &repo.graph,
         &repo.visibility_change_sets,
-        views,
+        repo.repo_config.views(),
         view,
     ))
 }
@@ -62,7 +55,7 @@ async fn cli_basic_headers(state: &AppState) -> HeaderMap {
 }
 
 #[tokio::test]
-async fn permissioned_git_projection_accepts_basic_scope_cli_session_for_repo_owner() {
+async fn private_git_view_accepts_basic_scope_cli_session_for_repo_owner() {
     let state = test_state_with_repo();
     repo_with_secret(&state, "/secret.txt").await;
     let headers = cli_basic_headers(&state).await;
@@ -72,7 +65,7 @@ async fn permissioned_git_projection_accepts_basic_scope_cli_session_for_repo_ow
         &headers,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
-        GitRemoteMode::Permissioned,
+        &ViewId::private(),
     )
     .await
     .unwrap();
@@ -83,7 +76,7 @@ async fn permissioned_git_projection_accepts_basic_scope_cli_session_for_repo_ow
 }
 
 #[tokio::test]
-async fn permissioned_git_projection_serves_public_view_without_target_repo_membership() {
+async fn public_git_view_serves_signed_in_readers_without_target_repo_membership() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
     let clerk_id = "user_other_owner";
@@ -92,7 +85,7 @@ async fn permissioned_git_projection_serves_public_view_without_target_repo_memb
         &authorization_headers(bearer_header_for(clerk_id, "other@example.com")),
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
-        GitRemoteMode::Permissioned,
+        &ViewId::public(),
     )
     .await
     .unwrap();
@@ -106,7 +99,7 @@ async fn permissioned_git_projection_serves_public_view_without_target_repo_memb
 }
 
 #[tokio::test]
-async fn public_git_projection_ignores_credentials_and_omits_private_files() {
+async fn public_git_view_omits_private_files_even_for_the_owner() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
     repo_with_secret(&state, "/owner-secret.txt").await;
@@ -115,7 +108,7 @@ async fn public_git_projection_ignores_credentials_and_omits_private_files() {
         &authorization_headers(bearer_header()),
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
-        GitRemoteMode::Public,
+        &ViewId::public(),
     )
     .await
     .unwrap();
@@ -126,7 +119,7 @@ async fn public_git_projection_ignores_credentials_and_omits_private_files() {
 }
 
 #[tokio::test]
-async fn permissioned_public_git_read_view_physically_excludes_private_objects() {
+async fn public_git_read_view_physically_excludes_private_objects() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
     repo_with_secret(&state, "/owner-secret.txt").await;
@@ -195,7 +188,7 @@ async fn permissioned_public_git_read_view_physically_excludes_private_objects()
         &authorization_headers(bearer_header_for("public-reader", "reader@example.com")),
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
-        GitRemoteMode::Permissioned,
+        &ViewId::public(),
     )
     .await
     .unwrap();

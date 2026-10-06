@@ -58,7 +58,7 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
     assert_eq!(blocked.status(), StatusCode::CONFLICT);
     assert_eq!(response_json(blocked).await["message"], PUBLIC_MAIN_MOVED);
 
-    let public_remote = remote.replace("/git/permissioned/", "/git/public/");
+    let public_remote = remote.replace("/git/private/", "/git/public/");
     run_git(
         Some(&source),
         &[
@@ -186,7 +186,7 @@ async fn maintainer_rebases_and_amends_a_private_request() {
         .unwrap()
         .to_string();
     let (origin, _server) = spawn_test_server(&state).await;
-    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     let source = clone_test_repo(&main_source, "request-rebase-maintainer-checkout", false);
     configure_bearer_header(&source, &remote, &bearer);
     configure_bearer_header(&main_source, &remote, &bearer);

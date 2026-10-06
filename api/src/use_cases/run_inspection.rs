@@ -15,7 +15,7 @@ pub(crate) struct InspectedRun {
     pub(crate) logs_truncated: bool,
 }
 
-pub(crate) async fn require_repo_member(
+pub(crate) async fn require_full_view_member(
     state: &AppState,
     user_id: &str,
     owner: &str,
@@ -28,6 +28,7 @@ pub(crate) async fn require_repo_member(
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{name} not found")))?;
     repo.ensure_member()?;
+    repo.ensure_full_view()?;
     Ok(repo)
 }
 
@@ -38,7 +39,7 @@ pub(crate) async fn require_run_access(
     repo_name: &str,
     run_id: &str,
 ) -> Result<Run, ApiError> {
-    let repo = require_repo_member(state, user_id, owner, repo_name).await?;
+    let repo = require_full_view_member(state, user_id, owner, repo_name).await?;
     let run = state
         .metadata
         .runs()

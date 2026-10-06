@@ -9,7 +9,9 @@ use crate::{
         run_response::repository_run_summary,
     },
     state::AppState,
-    use_cases::{repository_workflows::current_workflows, run_inspection::require_repo_member},
+    use_cases::{
+        repository_workflows::current_workflows, run_inspection::require_full_view_member,
+    },
 };
 use axum::{
     Json,
@@ -36,7 +38,7 @@ pub(crate) async fn get_repository_run_workflows(
     Path((owner, repo_name)): Path<(String, String)>,
 ) -> Result<Json<RepositoryRunWorkflowListResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let repo = require_repo_member(&state, &user.id, &owner, &repo_name).await?;
+    let repo = require_full_view_member(&state, &user.id, &owner, &repo_name).await?;
     let native_runs = state
         .metadata
         .native_runs()
@@ -67,7 +69,7 @@ pub(crate) async fn get_repository_run_history(
     Query(query): Query<RepositoryRunHistoryQuery>,
 ) -> Result<Json<RepositoryRunHistoryPageResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let repo = require_repo_member(&state, &user.id, &owner, &repo_name).await?;
+    let repo = require_full_view_member(&state, &user.id, &owner, &repo_name).await?;
     let native_runs = state
         .metadata
         .native_runs()

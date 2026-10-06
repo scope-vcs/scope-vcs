@@ -176,7 +176,10 @@ pub(crate) async fn authorize(
                     None => ApiError::forbidden("valid Scope push intent required"),
                 }
             };
+            let narrower_member = push_policy.access.is_maintainer()
+                && !repo.can_read_view(&push_policy.access, repo.repo_config.views().full());
             if repo.record.lifecycle_state == RepoLifecycleState::Ready
+                && !narrower_member
                 && actor_can_receive_request_push(
                     state,
                     &repo,

@@ -331,6 +331,7 @@ pub(crate) async fn accept_repository_invite(
     let summary = repo_summary_for_access(
         &repo.record,
         repo.access.clone(),
+        &repo.views,
         open_request_count,
         &git_origin,
     )

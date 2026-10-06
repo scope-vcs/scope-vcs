@@ -76,7 +76,7 @@ pub(super) async fn owner_request(label: &str, required: &[&str]) -> OwnerReques
         .unwrap()
         .to_string();
     let (origin, server) = spawn_test_server(&state).await;
-    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     configure_bearer_header(&source, &remote, &bearer);
     push_change(
         &source,

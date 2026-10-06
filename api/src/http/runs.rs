@@ -14,7 +14,7 @@ use crate::{
             resolve_manual_run as resolve_manual_run_control, retry_run as retry_run_control,
         },
         run_inspection::{
-            inspect_run, inspect_run_detail, inspect_run_step_logs, require_repo_member,
+            inspect_run, inspect_run_detail, inspect_run_step_logs, require_full_view_member,
         },
     },
 };
@@ -43,7 +43,7 @@ pub(crate) async fn create_manual_run(
     body: Body,
 ) -> Result<Json<RunResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let repo = require_repo_member(&state, &user.id, &owner, &repo_name).await?;
+    let repo = require_full_view_member(&state, &user.id, &owner, &repo_name).await?;
     let request = manual_run_request(repo.record.id, user.id, query)?;
     let bundle = Vec::from(
         to_bytes(body, MAX_MANUAL_BUNDLE_BYTES)
@@ -182,7 +182,7 @@ pub(crate) async fn get_push_trigger_evaluation(
     Path((owner, repo_name, head_oid)): Path<(String, String, String)>,
 ) -> Result<Json<PushTriggerEvaluationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let repo = require_repo_member(&state, &user.id, &owner, &repo_name).await?;
+    let repo = require_full_view_member(&state, &user.id, &owner, &repo_name).await?;
     let head_oid = git_oid_request("head_oid", &head_oid)?;
     let evaluation = state
         .metadata
