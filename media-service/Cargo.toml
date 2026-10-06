@@ -21,7 +21,7 @@ scope_postgres.workspace = true
 serde.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
 tokio-stream = "0.1.17"
-tower-http = { workspace = true, features = ["cors", "trace"] }
+tower-http = { workspace = true, features = ["cors"] }
 tracing.workspace = true
 url = "2.5.7"
 

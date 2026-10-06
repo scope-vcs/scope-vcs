@@ -64,6 +64,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0070_github_setup_checks_and_workflow_runs",
     "m0071_public_check_commits",
     "m0072_github_run_imports",
+    "m0073_github_workflow_jobs",
 ];
 
 pub(super) async fn isolated_database() -> (

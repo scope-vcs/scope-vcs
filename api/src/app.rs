@@ -1,19 +1,15 @@
-use crate::{git, http, state::AppState, telemetry};
+use crate::{git, http, state::AppState};
 use axum::{
     Router,
-    body::Body,
     http::{
-        Method, Request,
+        Method,
         header::{AUTHORIZATION, CONTENT_TYPE},
     },
     middleware,
     routing::{delete, get, patch, post},
 };
 use http::routes;
-use tower_http::{
-    cors::{Any, CorsLayer},
-    trace::TraceLayer,
-};
+use tower_http::cors::{Any, CorsLayer};
 
 pub fn router(state: AppState) -> Router {
     let router = Router::new()
@@ -164,6 +160,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             routes::REPO_GITHUB_WORKFLOW_RUNS,
             get(http::github::get_github_workflow_runs),
+        )
+        .route(
+            routes::REPO_GITHUB_WORKFLOW_RUN,
+            get(http::github_runs::get_github_workflow_run),
+        )
+        .route(
+            routes::REPO_GITHUB_WORKFLOW_JOB_LOG,
+            get(http::github_runs::get_github_workflow_job_log),
         )
         .route(
             routes::REPO_GITHUB_RUN_IMPORT,
@@ -418,15 +422,5 @@ pub fn router(state: AppState) -> Router {
                 ])
                 .allow_headers([AUTHORIZATION, CONTENT_TYPE]),
         )
-        .layer(
-            TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
-                tracing::info_span!(
-                    "http_request",
-                    request_id = %telemetry::request_trace_id(),
-                    replica_id = telemetry::replica_id(),
-                    method = %request.method(),
-                    uri = %request.uri(),
-                )
-            }),
-        )
+        .layer(scope_service_runtime::request_tracing())
 }

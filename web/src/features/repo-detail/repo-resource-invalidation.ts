@@ -18,6 +18,7 @@ import { repoFileResource } from './repo-file-cache'
 import { historyEntryResource, historyFeedResource } from '../history/history-resource-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { invalidateGitHubWorkflowRuns } from '../runs/github-workflow-runs-resource'
+import { invalidateGitHubWorkflowRunDetails } from '../runs/github-workflow-run-detail-resource'
 
 export function invalidateRepoSummaryResources(scope: string) {
   requestQueueResource.invalidate(scope)
@@ -53,10 +54,14 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, 
     requestChecksResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestAutoMergeResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     invalidateGitHubWorkflowRuns(scope)
+    invalidateGitHubWorkflowRunDetails(scope)
   } else if (event.kind === 'DependenciesChanged') {
     repositoryDependencyResource.invalidate(scope)
   } else if (event.kind === 'GitHubWorkflowRunsChanged') {
     invalidateGitHubWorkflowRuns(scope)
+    invalidateGitHubWorkflowRunDetails(scope)
+  } else if (typeof event.kind === 'object' && 'GitHubWorkflowRunChanged' in event.kind) {
+    invalidateGitHubWorkflowRunDetails(scope, event.kind.GitHubWorkflowRunChanged.github_run_id)
   } else if (typeof event.kind === 'object' && 'RequestTimelineChanged' in event.kind) {
     const timeline = event.kind.RequestTimelineChanged
     requestQueueResource.invalidate(scope)

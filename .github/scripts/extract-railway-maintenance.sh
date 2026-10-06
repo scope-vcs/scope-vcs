@@ -30,9 +30,17 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ -n "${SCOPE_RAILWAY_REGISTRY_USERNAME:-}" ]]; then
-  printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" |
-    docker_with_config login "${image%%/*}" \
-      --username "$SCOPE_RAILWAY_REGISTRY_USERNAME" --password-stdin >/dev/null
+  for attempt in 1 2 3; do
+    printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" |
+      docker_with_config login "${image%%/*}" \
+        --username "$SCOPE_RAILWAY_REGISTRY_USERNAME" --password-stdin >/dev/null && break
+    if ((attempt == 3)); then
+      echo "Registry login failed after 3 attempts: ${image%%/*}" >&2
+      exit 1
+    fi
+    echo "Registry login failed; retrying ($attempt/3)." >&2
+    sleep $((attempt * 5))
+  done
 fi
 docker_with_config pull --platform linux/amd64 "$image" >/dev/null
 docker_with_config create --name "$container_name" --network none \

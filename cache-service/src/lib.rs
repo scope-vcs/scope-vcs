@@ -17,7 +17,6 @@ use scope_cache_contract::{
 use scope_postgres::db::MetadataStore;
 use scope_storage::{S3Backend, S3Presigner};
 use std::sync::Arc;
-use tower_http::trace::TraceLayer;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -64,6 +63,5 @@ pub fn router(state: AppState) -> Router {
         .route(RESTORE_CACHE_PATH, post(handlers::restore))
         .route(PREPARE_CACHE_UPLOAD_PATH, post(handlers::prepare_upload))
         .route(COMMIT_CACHE_UPLOAD_PATH, post(handlers::commit_upload))
-        .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

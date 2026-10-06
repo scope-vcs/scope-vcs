@@ -15,11 +15,13 @@ use axum::{
     http::HeaderMap,
 };
 use scope_api_contract::{
-    ApproveRequestChecksRequest, RequestCheckResponse, RequestChecksResponse,
-    RequestGitHubPushResponse, RequestGitHubPushState, RequestMergeabilityResponse,
+    ApproveRequestChecksRequest, RequestCheckResponse, RequestCheckRunResponse,
+    RequestChecksResponse, RequestGitHubPushResponse, RequestGitHubPushState,
+    RequestMergeabilityResponse,
 };
 use scope_domain::{
-    github_connection::GitHubRepositoryVisibility,
+    github_connection::{GitHubConnection, GitHubRepositoryVisibility},
+    github_workflow_jobs::github_run_visible,
     repository::{RepoRecord, access::RepositoryAccess},
     requests::{
         GitHubBranch, GitHubPushStatus, Request, RequestAudience, RequestCheck,
@@ -27,6 +29,7 @@ use scope_domain::{
     },
 };
 use scope_postgres::db::ApproveRequestChecksCommand;
+use std::collections::HashMap;
 
 pub(crate) async fn get_request_checks(
     State(state): State<AppState>,
@@ -111,16 +114,17 @@ pub(crate) async fn checks_response(
         request_head_oid: git_oid_response(request.head_oid.clone())?,
         reason: decision.reason.map(str::to_string),
     };
+    let github_connection = state
+        .metadata
+        .repositories()
+        .github_connection(&request.repo_id)
+        .await?
+        .map(|read| read.connection);
     let private_request_on_public_github = request.audience == RequestAudience::Private
-        && state
-            .metadata
-            .repositories()
-            .github_connection(&request.repo_id)
-            .await?
-            .is_some_and(|read| {
-                read.connection.is_connected()
-                    && read.connection.visibility != GitHubRepositoryVisibility::Private
-            });
+        && github_connection.as_ref().is_some_and(|connection| {
+            connection.is_connected()
+                && connection.visibility != GitHubRepositoryVisibility::Private
+        });
     let Some(evaluation) = evaluation else {
         return Ok(RequestChecksResponse {
             request_id: request.id.clone(),
@@ -146,6 +150,15 @@ pub(crate) async fn checks_response(
     let changes_github_workflows = can_approve
         && evaluation.asks_github()
         && request_checks::changes_github_workflow_files(state, repo, request).await;
+    let check_runs = github_check_runs(
+        state,
+        github_connection.as_ref(),
+        access,
+        &evaluation.checks,
+        &evaluation.tested_oid,
+        &results,
+    )
+    .await?;
     Ok(RequestChecksResponse {
         request_id: request.id.clone(),
         head_oid: git_oid_response(request.head_oid.clone())?,
@@ -154,7 +167,7 @@ pub(crate) async fn checks_response(
         checks: evaluation
             .checks
             .iter()
-            .map(|check| check_response(check, &evaluation.tested_oid, &results))
+            .map(|check| check_response(check, &evaluation.tested_oid, &results, &check_runs))
             .collect(),
         can_approve,
         github_push,
@@ -182,10 +195,47 @@ fn github_push_response(
     }
 }
 
+async fn github_check_runs(
+    state: &AppState,
+    connection: Option<&GitHubConnection>,
+    access: RepositoryAccess,
+    checks: &[RequestCheck],
+    tested_oid: &str,
+    results: &RequestCheckResults,
+) -> Result<HashMap<u64, u64>, ApiError> {
+    let Some(connection) = connection.filter(|_| state.github.is_some()) else {
+        return Ok(HashMap::new());
+    };
+    if !github_run_visible(access, connection.visibility, true) {
+        return Ok(HashMap::new());
+    }
+    let suites = checks
+        .iter()
+        .filter_map(|check| match check {
+            RequestCheck::GitHub { name } => {
+                results.github.latest(tested_oid, name)?.check_suite_id
+            }
+            RequestCheck::Native(_) => None,
+        })
+        .collect::<Vec<_>>();
+    Ok(state
+        .metadata
+        .repositories()
+        .github_workflow_runs_for_check_suites(
+            &connection.repository_id,
+            connection.github_repository_id,
+            &suites,
+        )
+        .await?
+        .into_iter()
+        .collect())
+}
+
 fn check_response(
     check: &RequestCheck,
     tested_oid: &str,
     results: &RequestCheckResults,
+    check_runs: &HashMap<u64, u64>,
 ) -> RequestCheckResponse {
     match check {
         RequestCheck::Native(check) => RequestCheckResponse::Native {
@@ -207,6 +257,13 @@ fn check_response(
                 status: run.map(|run| run.status.into()),
                 conclusion: run.and_then(|run| run.conclusion.map(Into::into)),
                 details_url: run.and_then(|run| run.details_url.clone()),
+                run: run.and_then(|run| {
+                    let workflow_run = check_runs.get(&run.check_suite_id?)?;
+                    Some(RequestCheckRunResponse {
+                        run_id: workflow_run.to_string(),
+                        job_id: run.github_check_run_id.to_string(),
+                    })
+                }),
             }
         }
     }

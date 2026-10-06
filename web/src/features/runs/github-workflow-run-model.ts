@@ -47,7 +47,6 @@ export type GitHubWorkflowRunRow = {
   branch: string | null
   event: string
   commit: string
-  href: string
   requestId: string | null
   at: number
 }
@@ -62,7 +61,6 @@ export function githubWorkflowRunRow(run: GitHubWorkflowRunResponse): GitHubWork
     branch: run.branch,
     event: run.event,
     commit: run.head_oid.slice(0, 7),
-    href: run.html_url,
     requestId: run.request_id,
     at: run.run_started_at_unix ?? run.updated_at_unix,
   }

@@ -58,7 +58,7 @@ const DURATION_JOINERS: Record<RunTone, string> = {
   waiting: 'for',
 }
 
-export function runDurationLead(state: string) {
-  const { label, tone } = runStatus(state)
+export function runDurationLead(state: string, label = runStatus(state).label) {
+  const { tone } = runStatus(state)
   return `${label.charAt(0).toUpperCase()}${label.slice(1)} ${DURATION_JOINERS[tone]}`
 }

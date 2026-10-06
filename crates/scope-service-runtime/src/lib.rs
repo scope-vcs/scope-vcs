@@ -1,8 +1,10 @@
 mod bootstrap;
 pub mod http;
 pub mod readiness;
+mod telemetry;
 
-pub use bootstrap::{init_tracing, port_from_env, serve, shutdown_signal};
+pub use bootstrap::{port_from_env, serve, shutdown_signal};
+pub use telemetry::{Telemetry, init_telemetry, request_tracing};
 
 pub fn unix_now() -> Result<u64, std::time::SystemTimeError> {
     std::time::SystemTime::now()

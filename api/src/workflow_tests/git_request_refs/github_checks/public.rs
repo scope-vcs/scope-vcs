@@ -4,11 +4,14 @@ use scope_domain::{
     repo_config::RepoConfigVisibilityRule,
     requests::{GitHubTestedCommit, PRIVATE_CODE_CONFLICT_MESSAGE},
 };
+use scope_postgres::db::RebuildCheckCommitCommand;
 
 const PRIVATE_FILE: &str = "secret.txt";
 const PRIVATE_CONTENT: &str = "private code\n";
 
-async fn private_file_repository(label: &str) -> (AppState, Arc<FakeGitHub>, TempGitRepo) {
+pub(super) async fn private_file_repository(
+    label: &str,
+) -> (AppState, Arc<FakeGitHub>, TempGitRepo) {
     let mut state = test_state_with_repo();
     cache_test_jwks(&state);
     let source = temp_git_repo(label);
@@ -407,6 +410,64 @@ async fn green_checks_on_an_older_private_main_do_not_clear_the_merge() {
     assert_eq!(
         live_file_content(&state, "/request.txt").await.as_deref(),
         Some("contribution\n")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_late_renewal_onto_the_same_private_main_queues_no_second_push() {
+    let (state, fake, owner_source) =
+        private_file_repository("github-public-check-late-renewal").await;
+    let (_source, remote, _server, head) = approved_contribution(
+        &state,
+        "github-public-check-late-renewal-push",
+        "request.txt",
+        "contribution\n",
+    )
+    .await;
+    let old = tested_oid(&state, &head).await;
+    push_main_change(
+        &state,
+        &owner_source,
+        &remote,
+        PRIVATE_FILE,
+        "new private code\n",
+    )
+    .await;
+    checks(
+        &state,
+        REQUEST_ID,
+        &bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL),
+    )
+    .await;
+    let renewed = state
+        .metadata
+        .requests()
+        .request_check_evaluation(REQUEST_ID, &head)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_ne!(renewed.tested_oid, old);
+
+    let late = state
+        .metadata
+        .requests()
+        .rebuild_request_check_commit(RebuildCheckCommitCommand {
+            request_id: REQUEST_ID.into(),
+            head_oid: head.clone(),
+            replaced_tested_oid: renewed.tested_oid.clone(),
+            tested: GitHubTestedCommit::CheckCommit {
+                oid: renewed.tested_oid.clone(),
+                base: renewed.check_commit_base.clone().unwrap(),
+            },
+            now_unix: unix_now(),
+        })
+        .await
+        .unwrap();
+    assert!(late.is_none());
+    assert_eq!(push_pass(&state, unix_now()).await, 1);
+    assert_eq!(
+        fake.branch_head(&format!("scope/requests/{REQUEST_ID}")),
+        Some(renewed.tested_oid)
     );
 }
 
