@@ -1,5 +1,4 @@
 import { useMemo, useRef } from 'react'
-import { cn } from '@/lib/utils'
 import type {
   StepLogs,
   StepSelection,
@@ -7,7 +6,7 @@ import type {
 import { attemptForJob, jobsHaveDependencies } from './repository-run-detail-model'
 import { RunDetailSteps } from './run-detail-steps'
 import { RunDuration } from './run-duration'
-import { RUN_JOB_LIST_CLASS, RUN_JOB_ROW_CLASS } from './run-job-layout'
+import { RUN_JOB_ITEM_CLASS, RUN_JOB_LIST_CLASS, runJobButtonClass } from './run-job-layout'
 import { runJobPanelId } from './run-job-ids'
 import { RunJobGraph } from './run-job-graph'
 import { orderJobsByDependency } from './run-job-graph-model'
@@ -128,15 +127,11 @@ function RunJobList({
         const { job } = jobDetail
         const selected = job.key === selectedJobKey
         return (
-          <li key={job.key}>
+          <li className={RUN_JOB_ITEM_CLASS} key={job.key}>
             <button
               aria-controls={runJobPanelId(job.key)}
               aria-pressed={selected}
-              className={cn(
-                RUN_JOB_ROW_CLASS,
-                'outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                selected && 'bg-muted font-medium lg:before:absolute lg:before:inset-y-1.5 lg:before:left-0 lg:before:w-0.5 lg:before:rounded-full lg:before:bg-foreground',
-              )}
+              className={runJobButtonClass(selected)}
               onClick={() => onSelectJob(jobDetail)}
               type="button"
             >

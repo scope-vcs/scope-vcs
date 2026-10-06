@@ -11,7 +11,15 @@ import tailwindcss from '@tailwindcss/vite'
 
 const require = createRequire(import.meta.url)
 
-test('GitHub workflow runs link out, keep their list across navigation and refresh in place', async (t) => {
+async function screenshot(page, options) {
+  await page.mouse.move(0, 0)
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+    .map((animation) => animation.finished)))
+  await page.screenshot(options)
+}
+
+async function openFixture(t) {
   const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-github-runs-'))
   t.after(() => rm(cacheDir, { recursive: true, force: true }))
   const server = await createServer({
@@ -36,15 +44,19 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
   page.setDefaultTimeout(10_000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  const base = server.resolvedUrls.local[0]
+  return { base: server.resolvedUrls.local[0], errors, page }
+}
+
+test('GitHub workflow runs open on Scope, keep their list across navigation and refresh in place', async (t) => {
+  const { base, errors, page } = await openFixture(t)
 
   await page.goto(new URL('/octo/demo/runs', base).href, { timeout: 30_000 })
   const rows = page.locator('main li')
   await rows.first().waitFor()
   assert.equal(await rows.count(), 3)
   const ci = rows.first().getByRole('link', { name: 'ci', exact: true })
-  assert.equal(await ci.getAttribute('href'), 'https://github.com/octo/demo/actions/runs/1')
-  assert.equal(await ci.getAttribute('target'), '_blank')
+  assert.equal(await ci.getAttribute('href'), '/octo/demo/runs/1')
+  assert.equal(await ci.getAttribute('target'), null)
   assert.equal(
     await page.getByRole('link', { name: 'All runs on GitHub' }).getAttribute('href'),
     'https://github.com/octo/demo/actions',
@@ -57,7 +69,7 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
       `${name} has no horizontal scroll`,
     )
     if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
-      await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.runs-${name}.png` })
+      await screenshot(page, { path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.runs-${name}.png` })
     }
   }
   await page.setViewportSize({ width: 1280, height: 900 })
@@ -92,7 +104,7 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
       `${name} filter has no horizontal scroll`,
     )
     if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
-      await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.runs-filter-${name}.png` })
+      await screenshot(page, { path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.runs-filter-${name}.png` })
     }
   }
   await page.setViewportSize({ width: 1280, height: 900 })
@@ -131,7 +143,7 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
       `${name} has no horizontal scroll`,
     )
     if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
-      await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.connect-${name}.png` })
+      await screenshot(page, { path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.connect-${name}.png` })
     }
   }
   await page.setViewportSize({ width: 1280, height: 900 })
@@ -158,10 +170,102 @@ test('GitHub workflow runs link out, keep their list across navigation and refre
   assert.equal(await test.getAttribute('href'), '/octo/demo/settings#ci')
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.connected-empty-phone.png` })
+    await screenshot(page, { path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.connected-empty-phone.png` })
     await page.setViewportSize({ width: 1280, height: 900 })
   }
   await test.click()
   await page.getByRole('heading', { name: 'Settings' }).waitFor()
+  assert.deepEqual(errors, [])
+})
+
+test('a GitHub run shows its jobs, steps and finished logs, follows job links and refreshes in place', async (t) => {
+  const { base, errors, page } = await openFixture(t)
+  const shots = process.env.SCOPE_COMPONENT_SCREENSHOT
+  const job = (name) => page.getByRole('navigation', { name: 'Jobs' }).getByRole('button').filter({ hasText: name })
+  const log = page.getByRole('region', { name: 'Log' })
+
+  await page.goto(new URL('/octo/demo/runs', base).href, { timeout: 30_000 })
+  await page.locator('main li').first().getByRole('link', { name: 'ci', exact: true }).click()
+  await page.waitForURL('**/octo/demo/runs/1')
+  await page.locator('h1', { hasText: 'ci' }).waitFor()
+  const failed = job('test (ubuntu-latest, node 24)')
+  assert.equal(await failed.getAttribute('aria-pressed'), 'true')
+  await page.getByText('at Run the unit and integration test suites').waitFor()
+  await log.getByText('Process completed with exit code 1.', { exact: false }).waitFor()
+  assert.equal((await log.locator('pre').textContent()).includes('2026-10-05T'), false)
+  assert.equal(
+    await log.getByRole('link', { name: 'Full log' }).getAttribute('href'),
+    'https://github.com/octo/demo/actions/runs/1/job/102',
+  )
+  assert.equal(
+    await page.getByRole('link', { name: 'scope/requests/req_1', exact: true }).getAttribute('href'),
+    '/octo/demo/requests/req_1',
+  )
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), theme === 'dark')
+    for (const [width, height, name] of [[1280, 900, 'desktop'], [390, 844, 'phone']]) {
+      await page.setViewportSize({ width, height })
+      assert.equal(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        true,
+        `${name} run page has no horizontal scroll`,
+      )
+      if (shots) await screenshot(page, { fullPage: true, path: `${shots}.run-${theme}-${name}.png` })
+    }
+  }
+  await page.evaluate(() => document.documentElement.classList.remove('dark'))
+  await page.setViewportSize({ width: 1280, height: 900 })
+
+  await job('build').click()
+  await log.getByText('The log appears when this job finishes.').waitFor()
+  assert.equal(await page.evaluate(() => location.hash), '#run-job-103')
+  if (shots) {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await screenshot(page, { fullPage: true, path: `${shots}.run-running-job-phone.png` })
+    await page.setViewportSize({ width: 1280, height: 900 })
+  }
+  await failed.click()
+  await log.getByText('Process completed with exit code 1.', { exact: false }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.logLoads), ['102'])
+
+  await job('build').click()
+  await page.evaluate(() => {
+    window.finishBuild()
+    window.emitRunChanged(1)
+  })
+  await page.waitForFunction(() => window.runLoads.length === 1)
+  assert.equal(await job('lint').count(), 1)
+  await log.getByText('The log appears when this job finishes.').waitFor()
+  await page.evaluate(() => window.finishRunLoad())
+  await log.getByText('Build finished.').waitFor()
+  assert.deepEqual(await page.evaluate(() => window.logLoads), ['102', '103'])
+
+  await page.goto(new URL('/octo/demo/runs', base).href)
+  await page.goto(new URL('/octo/demo/runs/1#run-job-101', base).href)
+  await log.getByText('Found 0 warnings and 0 errors.').waitFor()
+  assert.equal(await job('lint').getAttribute('aria-pressed'), 'true')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.evaluate(() => { location.hash = '#run-job-104' })
+  await page.getByText('Steps appear once a runner picks up this job.').waitFor()
+  assert.equal(await job('deploy preview environment to the staging cluster').getAttribute('aria-pressed'), 'true')
+  await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-controls="run-job-104"]')
+    const list = button?.closest('ul')
+    if (!button || !list) return false
+    const shown = list.getBoundingClientRect()
+    const row = button.getBoundingClientRect()
+    return row.left >= shown.left - 1 && row.right <= shown.right + 1
+  })
+  if (shots) await screenshot(page, { fullPage: true, path: `${shots}.run-linked-queued-phone.png` })
+  await page.setViewportSize({ width: 1280, height: 900 })
+
+  await page.goto(new URL('/octo/demo/runs/2', base).href)
+  await page.getByText('The jobs could not be read.', { exact: false }).waitFor()
+  if (shots) {
+    for (const [width, height, name] of [[1280, 900, 'desktop'], [390, 844, 'phone']]) {
+      await page.setViewportSize({ width, height })
+      await screenshot(page, { fullPage: true, path: `${shots}.run-unavailable-${name}.png` })
+    }
+  }
   assert.deepEqual(errors, [])
 })

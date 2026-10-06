@@ -9,6 +9,11 @@ import { repositoryDependencyResource } from './repository-dependency-resource'
 import { historyFeedResource } from '../history/history-resource-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { githubWorkflowRunsIdentity, githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
+import {
+  githubWorkflowRunDetailIdentity,
+  githubWorkflowRunDetailResource,
+} from '../runs/github-workflow-run-detail-resource'
+import type { GitHubWorkflowRunDetailResponse } from '../../api/types.generated'
 
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
 function seed() {
@@ -117,6 +122,32 @@ test('GitHub workflow runs refresh only the retained GitHub run lists', () => {
   githubWorkflowRunsResource.write(all, runs)
   invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'github-connection-changed' } }))
   assert.equal(githubWorkflowRunsResource.getSnapshot(all).stale, true)
+})
+
+test('a GitHub job report refreshes only its run, keeping what the run shows', () => {
+  seed()
+  githubWorkflowRunsResource.clear()
+  githubWorkflowRunDetailResource.clear()
+  const detail = { run: {}, jobs: [], jobs_unavailable: null } as unknown as GitHubWorkflowRunDetailResponse
+  const reported = githubWorkflowRunDetailIdentity('viewer-a', '7')
+  const sibling = githubWorkflowRunDetailIdentity('viewer-a', '8')
+  const otherScope = githubWorkflowRunDetailIdentity('viewer-b', '7')
+  const list = githubWorkflowRunsIdentity('viewer-a', null)
+  for (const identity of [reported, sibling, otherScope]) githubWorkflowRunDetailResource.write(identity, detail)
+  githubWorkflowRunsResource.write(list, {
+    list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], workflows: [], next_cursor: null },
+    pages: 1,
+  })
+  invalidateRepoResources('viewer-a', event({ GitHubWorkflowRunChanged: { github_run_id: 7 } }))
+  assert.equal(githubWorkflowRunDetailResource.getSnapshot(reported).stale, true)
+  assert.equal(githubWorkflowRunDetailResource.peek(reported), detail)
+  assert.equal(githubWorkflowRunDetailResource.getSnapshot(sibling).stale, false)
+  assert.equal(githubWorkflowRunDetailResource.getSnapshot(otherScope).stale, false)
+  assert.equal(githubWorkflowRunsResource.getSnapshot(list).stale, false)
+
+  invalidateRepoResources('viewer-a', event('GitHubWorkflowRunsChanged'))
+  assert.equal(githubWorkflowRunDetailResource.getSnapshot(sibling).stale, true)
+  assert.equal(githubWorkflowRunDetailResource.getSnapshot(otherScope).stale, false)
 })
 
 test('connection and lag recovery invalidate retained resources only in their scope', () => {

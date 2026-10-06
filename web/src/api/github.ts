@@ -3,8 +3,10 @@ import type {
   ConnectRepoGitHubInput,
   GitHubSetupInput,
   RepoGitHubAuthorizeInput,
+  RepoGitHubWorkflowJobLogInput,
   RepoGitHubWorkflowRunsInput,
   RepoParams,
+  RunActionInput,
   SetRepoGitHubRequiredChecksInput,
   SetRepoGitHubRunImportCountInput,
 } from './types'
@@ -12,10 +14,12 @@ import type {
   GitHubAuthorizeResponse,
   GitHubConnectionResponse,
   GitHubSetupResponse,
+  GitHubWorkflowJobLogResponse,
+  GitHubWorkflowRunDetailResponse,
   GitHubWorkflowRunsResponse,
 } from './types.generated'
 import { repoRoute } from './paths'
-import { ApiRouteTemplates } from './types.generated'
+import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import { apiValidators } from './validators.generated'
 
 export async function loadRepoGitHubConnectionForRequest(
@@ -145,6 +149,35 @@ export async function loadRepoGitHubWorkflowRunsForRequest(
   return api.get(
     `${repoRoute(ApiRouteTemplates.repoGitHubWorkflowRuns, data)}${suffix}`,
     apiValidators.GitHubWorkflowRunsResponse,
+    { auth: 'optional' },
+  )
+}
+
+export async function loadRepoGitHubWorkflowRunForRequest(
+  data: RunActionInput,
+): Promise<GitHubWorkflowRunDetailResponse> {
+  return createApiClient().get(
+    buildApiPath(ApiRouteTemplates.repoGitHubWorkflowRun, {
+      owner: data.owner,
+      repo: data.repo,
+      run_id: data.run_id,
+    }),
+    apiValidators.GitHubWorkflowRunDetailResponse,
+    { auth: 'optional' },
+  )
+}
+
+export async function loadRepoGitHubWorkflowJobLogForRequest(
+  data: RepoGitHubWorkflowJobLogInput,
+): Promise<GitHubWorkflowJobLogResponse> {
+  return createApiClient().get(
+    buildApiPath(ApiRouteTemplates.repoGitHubWorkflowJobLog, {
+      owner: data.owner,
+      repo: data.repo,
+      run_id: data.run_id,
+      job_id: data.job_id,
+    }),
+    apiValidators.GitHubWorkflowJobLogResponse,
     { auth: 'optional' },
   )
 }

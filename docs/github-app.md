@@ -27,10 +27,11 @@ checklist for the production app.
   webhook secret.
 - **Repository permissions**: Contents read and write, Workflows read and
   write, Checks read, Actions read, Metadata read.
-- **Subscribed events**: Check run, Check suite, Workflow run, Repository,
-  Installation, Installation repositories. Installation events are always
-  delivered to GitHub Apps; the others are chosen on the registration page.
-  Repository events report a repository made public or private.
+- **Subscribed events**: Check run, Check suite, Workflow run, Workflow job,
+  Repository, Installation, Installation repositories. Installation events
+  are always delivered to GitHub Apps; the others are chosen on the
+  registration page. Repository events report a repository made public or
+  private, and Workflow job events keep an open run's jobs current.
 - **Where can this app be installed**: any account.
 
 Generate a private key and a client secret on the app's page. The callback
@@ -296,8 +297,8 @@ stored runs as GitHub reports them; `?workflow=<name>` lists only the runs of
 the workflow with exactly that name, and the page
 offers them as a workflow filter. Runs list in the order they started, or by
 when GitHub last changed them before they started.
-Every run links to GitHub, which keeps the logs; a run on
-`scope/requests/<id>` also links to its request while the request exists.
+Every run opens on Scope's run page, and a run on `scope/requests/<id>` also
+links to its request while the request exists.
 Repositories without a link keep their native runs. When such a repository
 has no runs and no workflows of its own, and the server has a GitHub App,
 the Runs page says its runs come from GitHub Actions once GitHub is connected
@@ -319,6 +320,44 @@ stored run sends a `GitHubWorkflowRunsChanged` repository event, which open
 Runs pages use to refresh their list in place: a page reads again as many
 pages as it had loaded, of the workflow it shows, and keeps listing the old
 runs meanwhile.
+
+### Run page
+
+`/{owner}/{repo}/runs/{run_id}` with GitHub's numeric run id shows the run with
+the jobs of its latest attempt, each job's steps, and a finished job's log.
+Scope's own run ids start with `run_`, so the two never collide.
+`GET /v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}` returns the run
+and its jobs, and `…/jobs/{job_id}/log` the end of a finished job's log.
+
+Jobs come from GitHub's Actions API and are stored in
+`scope_github_workflow_jobs`. A `workflow_job` delivery reads that job again
+and sends a `GitHubWorkflowRunChanged` repository event, which the run's open
+pages use to refresh in place. Opening a run reads all of its jobs when Scope
+never read them for the run's current attempt, when the run is still going or
+lists no jobs and the last read is 30 seconds old, or when the run finished
+after the last read.
+Only one reader claims each such read, so many viewers of one run ask GitHub
+once, and a read that fails hands its claim back so the next visit tries
+again. A stored job only moves forward, like a stored run. A read GitHub does
+not answer leaves the page with what Scope has; with no jobs at all, the page
+says GitHub could not be reached. Pages that do not receive repository events
+check again every 15 seconds while the run or a job is unfinished.
+
+GitHub serves a job's log only once the job finishes, so a running job shows
+its steps and says its log appears when it finishes. The first time someone
+opens a finished job, Scope reads its log and keeps the last 1 MB, from the
+first whole line, in `scope_github_workflow_job_logs`; the page says when a log
+is cut and links to the whole log on GitHub. A log GitHub has let expire is
+kept as gone, and one it has not published yet is asked for again.
+
+Maintainers open every run. When the GitHub repository is public, everything
+its runs print is public on GitHub, so anyone who can see a request also opens
+the runs that tested it; other runs, and every run of a private GitHub
+repository, stay with maintainers. Anyone else is told the run does not exist.
+The request checks response names, for each GitHub check that is a GitHub
+Actions job the viewer may open, its run and job (`run: { run_id, job_id }`),
+which link to `/{owner}/{repo}/runs/{run_id}#run-job-{job_id}`; the run page
+opens the job a `#run-job-…` anchor names, for Scope's own runs too.
 
 ### Importing recent runs
 

@@ -66,6 +66,11 @@ pub(super) struct FakeGitHub {
     pub(super) check_runs_unavailable: AtomicBool,
     workflow_runs: Mutex<HashMap<String, Vec<serde_json::Value>>>,
     pub(super) workflow_run_unavailable: AtomicBool,
+    workflow_jobs: Mutex<HashMap<u64, Vec<serde_json::Value>>>,
+    pub(super) job_list_reads: AtomicUsize,
+    pub(super) job_list_unavailable: AtomicBool,
+    job_logs: Mutex<HashMap<u64, Option<String>>>,
+    pub(super) job_log_reads: AtomicUsize,
     pub(super) run_list_reads: AtomicUsize,
     pub(super) run_list_unavailable: AtomicBool,
     git_root: tempfile::TempDir,
@@ -148,6 +153,38 @@ pub(super) fn workflow_run_started_at(
     })
 }
 
+pub(super) fn workflow_job(
+    id: u64,
+    run_id: u64,
+    name: &str,
+    conclusion: Option<&str>,
+    steps: &[&str],
+) -> serde_json::Value {
+    let last = steps.len();
+    serde_json::json!({
+        "id": id,
+        "run_id": run_id,
+        "run_attempt": 1,
+        "name": name,
+        "status": if conclusion.is_some() { "completed" } else { "in_progress" },
+        "conclusion": conclusion,
+        "started_at": "2026-10-05T12:00:00Z",
+        "completed_at": conclusion.map(|_| "2026-10-05T12:01:00Z"),
+        "html_url": format!("https://github.com/{GITHUB_FULL_NAME}/actions/runs/{run_id}/job/{id}"),
+        "steps": steps.iter().enumerate().map(|(index, step)| {
+            let finished = conclusion.is_some() || index + 1 < last;
+            serde_json::json!({
+                "number": index + 1,
+                "name": step,
+                "status": if finished { "completed" } else { "in_progress" },
+                "conclusion": finished.then_some("success"),
+                "started_at": "2026-10-05T12:00:00Z",
+                "completed_at": finished.then_some("2026-10-05T12:00:30Z"),
+            })
+        }).collect::<Vec<_>>(),
+    })
+}
+
 pub(super) fn user_repository(id: u64, full_name: &str, push: bool) -> serde_json::Value {
     let mut repository = github_repository(id, full_name);
     repository["permissions"] =
@@ -190,6 +227,11 @@ impl FakeGitHub {
             check_runs_unavailable: AtomicBool::new(false),
             workflow_runs: Mutex::default(),
             workflow_run_unavailable: AtomicBool::new(false),
+            workflow_jobs: Mutex::default(),
+            job_list_reads: AtomicUsize::new(0),
+            job_list_unavailable: AtomicBool::new(false),
+            job_logs: Mutex::default(),
+            job_log_reads: AtomicUsize::new(0),
             run_list_reads: AtomicUsize::new(0),
             run_list_unavailable: AtomicBool::new(false),
             git_root: tempfile::tempdir().unwrap(),
@@ -276,6 +318,32 @@ impl FakeGitHub {
 
     pub(super) fn accept_pushes(&self) {
         fs::remove_file(self.repository_path().join("hooks/pre-receive")).unwrap();
+    }
+
+    pub(super) fn report_workflow_jobs(&self, jobs: Vec<serde_json::Value>) {
+        let mut reported = self.workflow_jobs.lock().unwrap();
+        for job in jobs {
+            let run = reported.entry(job["run_id"].as_u64().unwrap()).or_default();
+            run.retain(|existing| existing["id"] != job["id"]);
+            run.push(job);
+        }
+    }
+
+    pub(super) fn report_job_log(&self, job_id: u64, log: Option<&str>) {
+        self.job_logs
+            .lock()
+            .unwrap()
+            .insert(job_id, log.map(str::to_string));
+    }
+
+    fn job(&self, job_id: u64) -> Option<serde_json::Value> {
+        self.workflow_jobs
+            .lock()
+            .unwrap()
+            .values()
+            .flatten()
+            .find(|job| job["id"] == job_id)
+            .cloned()
     }
 
     pub(super) fn report_check_runs(&self, commit_oid: &str, runs: Vec<serde_json::Value>) {
@@ -471,6 +539,61 @@ impl FakeGitHub {
                                 || StatusCode::NOT_FOUND.into_response(),
                                 |run| Json(run).into_response(),
                             )
+                    },
+                ),
+            )
+            .route(
+                "/repos/{owner}/{name}/actions/runs/{id}/attempts/{attempt}/jobs",
+                get(
+                    |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                     AxumPath((_, _, id, _)): AxumPath<(String, String, u64, u32)>,
+                     AxumQuery(query): AxumQuery<HashMap<String, String>>| async move {
+                        fake.job_list_reads.fetch_add(1, Ordering::SeqCst);
+                        if fake.job_list_unavailable.load(Ordering::SeqCst) {
+                            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                        }
+                        let jobs = if query["page"] == "1" {
+                            fake.workflow_jobs.lock().unwrap().get(&id).cloned().unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        };
+                        Json(serde_json::json!({ "total_count": jobs.len(), "jobs": jobs }))
+                            .into_response()
+                    },
+                ),
+            )
+            .route(
+                "/repos/{owner}/{name}/actions/jobs/{id}",
+                get(
+                    |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                     AxumPath((_, _, id)): AxumPath<(String, String, u64)>| async move {
+                        fake.job(id).map_or_else(
+                            || StatusCode::NOT_FOUND.into_response(),
+                            |job| Json(job).into_response(),
+                        )
+                    },
+                ),
+            )
+            .route(
+                "/repos/{owner}/{name}/actions/jobs/{id}/logs",
+                get(|AxumPath((_, _, id)): AxumPath<(String, String, u64)>| async move {
+                    (
+                        StatusCode::FOUND,
+                        [(axum::http::header::LOCATION, format!("/job-logs/{id}"))],
+                    )
+                }),
+            )
+            .route(
+                "/job-logs/{id}",
+                get(
+                    |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                     AxumPath(id): AxumPath<u64>| async move {
+                        fake.job_log_reads.fetch_add(1, Ordering::SeqCst);
+                        match fake.job_logs.lock().unwrap().get(&id).cloned() {
+                            Some(Some(log)) => log.into_response(),
+                            Some(None) => StatusCode::GONE.into_response(),
+                            None => StatusCode::NOT_FOUND.into_response(),
+                        }
                     },
                 ),
             )
