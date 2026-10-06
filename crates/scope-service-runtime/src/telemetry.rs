@@ -168,7 +168,7 @@ mod tests {
     use super::*;
     use opentelemetry::{
         InstrumentationScope,
-        trace::{SpanContext, SpanId, SpanKind, TraceFlags, TraceId, TraceState},
+        trace::{Event, SpanContext, SpanId, SpanKind, TraceFlags, TraceId, TraceState},
     };
     use opentelemetry_sdk::trace::SpanLinks;
     use std::{
@@ -230,6 +230,13 @@ mod tests {
 
     #[test]
     fn exported_spans_keep_only_reviewed_attributes() {
+        let mut events = SpanEvents::default();
+        events.events.push(Event::new(
+            "loaded acme/private-app/README.md",
+            SystemTime::UNIX_EPOCH,
+            vec![KeyValue::new("path", "README.md")],
+            0,
+        ));
         let mut span = SpanData {
             span_context: SpanContext::new(
                 TraceId::from(1),
@@ -252,7 +259,7 @@ mod tests {
                 KeyValue::new("exception.message", "repository acme/private-app failed"),
             ],
             dropped_attributes_count: 0,
-            events: SpanEvents::default(),
+            events,
             links: SpanLinks::default(),
             status: Status::error("repository acme/private-app failed"),
             instrumentation_scope: InstrumentationScope::builder("scope").build(),
@@ -263,5 +270,6 @@ mod tests {
             vec![KeyValue::new("http.route", "/repos/{owner}/{repo}")]
         );
         assert_eq!(span.status, Status::error(""));
+        assert!(span.events.is_empty());
     }
 }
