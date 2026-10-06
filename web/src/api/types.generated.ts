@@ -158,7 +158,15 @@ export type CreateRepoResponse = { repo: RepoSummaryResponse, init: RepoInitResp
 
 export type DeleteRepoResponse = { id: string, deleted: boolean, };
 
-export type CreatePushIntentRequest = { head_oid: string, base_config_hash: string, config: RepoConfig, 
+export type CreatePushIntentRequest = { head_oid: string, 
+/**
+ * The fingerprint of the config the pusher reviewed; required when pushing through the full view and ignored otherwise.
+ */
+base_config_hash: string | null, 
+/**
+ * The reviewed config; required when pushing through the full view and ignored otherwise.
+ */
+config: RepoConfig | null, 
 /**
  * The view of the remote the push goes through.
  */
@@ -417,13 +425,19 @@ export type HistoryEntryKind = "push" | "merged_request" | "visibility_change" |
 
 export type HistoryFeed = "updates" | "all" | "visibility";
 
-export type HistoryEntryDetailResponse = { native_commits: Array<NativeHistoryCommitResponse>, view: ViewId, repo_id: string, occurred_at_unix: number | null, id: string, source_id: string, 
+export type HistoryEntryDetailResponse = { native_commits: HistoryNativeCommitsResponse | null, view: ViewId, repo_id: string, occurred_at_unix: number | null, id: string, source_id: string, 
 /**
  * Adjacent entries in all activity, addressed by source id.
  */
 older_source_id: string | null, newer_source_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, files: Array<HistoryEntryFileResponse>, visibility_changes: Array<HistoryVisibilityChangeResponse>, views: ViewsTransition | null, };
 
 export type HistoryEntryFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, label: ViewId, };
+
+export type HistoryNativeCommitsResponse = { 
+/**
+ * The view the request that made these commits was merged through.
+ */
+view: ViewId, commits: Array<NativeHistoryCommitResponse>, };
 
 export type NativeHistoryCommitResponse = { oid: string, parent_oids: Array<string>, tree_oid: string, author: string, message: string, occurred_at_unix: number, files: Array<HistoryEntryFileResponse>, };
 

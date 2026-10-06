@@ -12,18 +12,18 @@ export type HistoryNativeCommitRow = {
 }
 
 export function historyNativeCommitsHeading(
-  detail: Pick<HistoryEntryDetailResponse, 'view'>,
-  views: Pick<RepoViews, 'full' | 'name'>,
+  detail: Pick<HistoryEntryDetailResponse, 'native_commits'>,
+  views: Pick<RepoViews, 'name'>,
 ) {
-  return detail.view === views.full
-    ? 'Request commits'
-    : `Request commits preserved in the ${views.name(detail.view)} view`
+  return detail.native_commits
+    ? `Request commits preserved in the ${views.name(detail.native_commits.view)} view`
+    : 'Request commits'
 }
 
 export function historyNativeCommitRows(
   detail: Pick<HistoryEntryDetailResponse, 'native_commits'>,
 ): HistoryNativeCommitRow[] {
-  return detail.native_commits.map((commit) => ({
+  return (detail.native_commits?.commits ?? []).map((commit) => ({
     oid: commit.oid,
     shortOid: shortOid(commit.oid),
     title: historyCommitTitle(commit),

@@ -10,10 +10,10 @@ const views = repoViews([
   { id: 'agent', name: 'Agent', includes: ['public'], readers: 'assigned' },
 ])
 
-test('a narrower history names the view that preserved the request commits', () => {
-  assert.equal(historyNativeCommitsHeading({ view: 'agent' }, views), 'Request commits preserved in the Agent view')
-  assert.equal(historyNativeCommitsHeading({ view: 'public' }, views), 'Request commits preserved in the Public view')
-  assert.equal(historyNativeCommitsHeading({ view: 'private' }, views), 'Request commits')
+test('the heading names the view that preserved the request commits', () => {
+  assert.equal(historyNativeCommitsHeading({ native_commits: { view: 'agent', commits: [] } }, views), 'Request commits preserved in the Agent view')
+  assert.equal(historyNativeCommitsHeading({ native_commits: { view: 'public', commits: [] } }, views), 'Request commits preserved in the Public view')
+  assert.equal(historyNativeCommitsHeading({ native_commits: null }, views), 'Request commits')
 })
 
 test('request commits list their short id, first message line, author and file count', () => {
@@ -27,9 +27,10 @@ test('request commits list their short id, first message line, author and file c
     occurred_at_unix: 1,
     files: Array.from({ length: files }, () => file) as NativeHistoryCommitResponse['files'],
   })
-  const detail = {
-    native_commits: [commit('a'.repeat(40), 'Teach the agent\n\nbody', 1), commit('b'.repeat(40), '', 2)],
-  } as Pick<HistoryEntryDetailResponse, 'native_commits'>
+  const detail: Pick<HistoryEntryDetailResponse, 'native_commits'> = {
+    native_commits: { view: 'agent', commits: [commit('a'.repeat(40), 'Teach the agent\n\nbody', 1), commit('b'.repeat(40), '', 2)] },
+  }
+  assert.deepEqual(historyNativeCommitRows({ native_commits: null }), [])
   assert.deepEqual(historyNativeCommitRows(detail), [
     { oid: 'a'.repeat(40), shortOid: 'aaaaaaaaaaaa', title: 'Teach the agent', author: 'ada', fileCount: '1 file' },
     { oid: 'b'.repeat(40), shortOid: 'bbbbbbbbbbbb', title: '(no message)', author: 'ada', fileCount: '2 files' },
