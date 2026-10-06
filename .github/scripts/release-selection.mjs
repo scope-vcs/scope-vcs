@@ -30,7 +30,7 @@ export function assertReusableStagingSource(comparison, { allowSmokeChanges = fa
     || filename === "dev/check-git-version.mjs"
     || filename === "dev/media-smoke.mjs"
     || /^\.github\/workflows\/(release|validate|validate-server|prepare-release|prepare-smoke-tools|deploy-staging|deploy-backend|deploy-web)\.yml$/.test(filename)
-    || /^\.github\/scripts\/(staging|railway|prepare-railway|extract-railway|extract-staging-web-manifest|deploy-|stop-staging|verify-staging|rehearse-release|[^/]*smoke|recovery-preparation-trust|release-selection)/.test(filename)
+    || /^\.github\/scripts\/(staging|railway|prepare-railway|extract-railway|extract-staging-web-manifest|deploy-|stop-railway|verify-staging|rehearse-release|[^/]*smoke|recovery-preparation-trust|release-selection)/.test(filename)
     || filename.startsWith("crates/scope-postgres/src/migrations/")
     || filename.startsWith("deploy/postgres/")
     || filename.startsWith("deploy/railway/")

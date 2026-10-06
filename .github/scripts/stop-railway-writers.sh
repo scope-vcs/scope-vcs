@@ -6,7 +6,7 @@ manifest_path="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
 source "$(dirname "${BASH_SOURCE[0]}")/railway-graphql.sh"
 
 if [[ -z "${RAILWAY_API_TOKEN:-}" || -n "${RAILWAY_TOKEN:-}" ]]; then
-  echo "Stopping staging writers requires only RAILWAY_API_TOKEN." >&2
+  echo "Stopping writers requires only RAILWAY_API_TOKEN." >&2
   exit 1
 fi
 
@@ -23,10 +23,16 @@ if [[ "$staging_environment_id" == "$production_environment_id" ]]; then
   echo "Staging environment matches production." >&2
   exit 1
 fi
+target_environment_id="${SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID:-$staging_environment_id}"
+if [[ "$target_environment_id" == "$production_environment_id" ]] ||
+  [[ -n "${SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID:-}" && "$target_environment_id" == "$staging_environment_id" ]]; then
+  echo "Preview environment must differ from production and staging." >&2
+  exit 1
+fi
 
 railway_scope=(
   --project "$project_id"
-  --environment "$staging_environment_id"
+  --environment "$target_environment_id"
 )
 
 read_railway() {
@@ -72,7 +78,7 @@ stop_service() {
       [[ "$remaining" == 0 ]] && return 0
       sleep 2
     done
-    echo "Could not confirm staging deployment removal." >&2
+    echo "Could not confirm writer deployment removal." >&2
     return 1
   fi
 }
@@ -93,7 +99,7 @@ wait_until_stopped() {
     sleep 5
   done
 
-  echo "Timed out waiting for staging service $service to stop." >&2
+  echo "Timed out waiting for writer service $service to stop." >&2
   return 1
 }
 

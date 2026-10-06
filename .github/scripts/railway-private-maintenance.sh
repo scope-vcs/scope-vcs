@@ -9,6 +9,13 @@ case "$command" in
   fence|drain-writers|apply|backfill-workflow-catalogs) private_command=railway_private_command ;;
   *) echo 'Unsupported private maintenance command.' >&2; exit 2 ;;
 esac
+if [[ -n "${SCOPE_ROLE_GRANTS_SQL:-}" ]]; then
+  [[ -n "${SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID:-}" && "$environment" == "$SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID" ]] || {
+    echo 'Prepared role grants apply only to the preview environment.' >&2; exit 2; }
+  grants() { cat -- "$SCOPE_ROLE_GRANTS_SQL"; }
+else
+  grants() { node deploy/postgres/runtime-roles.mjs --grants-only; }
+fi
 binary="${SCOPE_MAINTENANCE_BINARY:-./target/release/scope-maintenance}"
 prepared="${SCOPE_PREPARED_RELEASE_PATH:?Prepared release manifest is required}"
 node "$(dirname "${BASH_SOURCE[0]}")/railway-artifact.mjs" verify-maintenance "$prepared" "$binary" >/dev/null
@@ -30,6 +37,5 @@ statement="$(jq -er '.releasePolicy.migrationStatementTimeoutSeconds | select(ty
   "$directory/scope-maintenance" "$2"
 ' scope-maintenance "$digest" "$command" "$lock" "$statement" < "$binary"
 if [[ "$command" == apply ]]; then
-  node deploy/postgres/runtime-roles.mjs --grants-only | \
-    railway_private_command "$environment" sh -ceu 'exec psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1' >/dev/null
+  grants | railway_private_command "$environment" sh -ceu 'exec psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1' >/dev/null
 fi

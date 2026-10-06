@@ -38,12 +38,12 @@ fs.writeFileSync(file, JSON.stringify(state));
 process.stdout.write(JSON.stringify(response));
 if (failure) { process.stderr.write('SECRET provider diagnostics'); process.exitCode = 22; }
 `, { mode: 0o755 });
-  const result = spawnSync('bash', ['.github/scripts/staging-railway-token.sh', action], {
+  const result = spawnSync('bash', ['.github/scripts/railway-environment-token.sh', action], {
     encoding: 'utf8', timeout: 60_000,
     env: {
       ...process.env, PATH: `${root}:${process.env.PATH}`,
       MOCK_STATE: join(root, 'state'), MOCK_SCENARIO: scenario,
-      SCOPE_RAILWAY_PROJECT_ID: 'project', SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID: 'staging',
+      SCOPE_RAILWAY_PROJECT_ID: 'project', SCOPE_RAILWAY_TOKEN_ENVIRONMENT_ID: 'staging',
       SCOPE_RAILWAY_PROJECT_TOKEN_NAME: 'run-name', RAILWAY_API_TOKEN: 'account-token',
       GITHUB_ENV: join(root, 'github-env'),
     },
