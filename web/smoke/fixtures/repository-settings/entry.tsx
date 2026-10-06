@@ -17,7 +17,8 @@ import './styles.css'
 const initial = {
   id: 'owner/demo', owner_handle: 'owner', name: 'demo', lifecycle_state: 'Ready',
   description: 'Original description', website_url: '', change_version: 0, content_version: 0,
-  access: { actor: 'Owner', can_manage_members: true },
+  views: [{ id: 'public', name: 'Public', includes: [], readers: 'anyone' as const }, { id: 'private', name: 'Private', includes: 'all' as const, readers: 'assigned' as const }],
+  access: { actor: 'Owner', view: 'private', can_manage_members: true },
 } as RepoSummary
 const members = ['alice', 'bob'].map((name) => ({
   user_id: name, handle: name, email: `${name}@example.com`,

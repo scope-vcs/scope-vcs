@@ -13,7 +13,7 @@ import type { RunPageResources } from '@/features/runs/run-history-cache'
 import type { RouterHistory } from '@tanstack/react-router'
 import { cancelRun, detail, initialPage, loadDetail, loadLogs, seeded } from './actions'
 
-const repoSummary = (actor: string) => ({ id: 'repo-1', owner_handle: 'owner', name: 'repo', access: { actor } }) as RepoLiveState['repo']
+const repoSummary = (actor: string) => ({ id: 'repo-1', owner_handle: 'owner', name: 'repo', views: [{ id: 'public', name: 'Public', includes: [], readers: 'anyone' as const }, { id: 'private', name: 'Private', includes: 'all' as const, readers: 'assigned' as const }], access: { actor, view: 'private' } }) as RepoLiveState['repo']
 const params = { owner: 'owner', repo: 'repo' }
 const initialScope = repoResourceScope(repoSummary('Owner'), 'adam')
 const listeners = new Set<(event: RepoChangeEvent) => void>()

@@ -33,7 +33,7 @@ function Repository() {
   Object.assign(window, { setViewer, setActor })
   const live = { repo: {
     id: `${owner}/${repo}`, owner_handle: owner, name: repo, lifecycle_state: 'Ready',
-    open_request_count: items.length, access: { actor },
+    open_request_count: items.length, views: [{ id: 'public', name: 'Public', includes: [], readers: 'anyone' as const }, { id: 'private', name: 'Private', includes: 'all' as const, readers: 'assigned' as const }], access: { actor, view: 'private' },
   } } as RepoLiveState
   return <FixtureViewer value={viewer}>
     <RepoLayoutProvider live={live} subscribe={subscribe}>

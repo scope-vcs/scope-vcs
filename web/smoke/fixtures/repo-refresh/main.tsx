@@ -11,6 +11,7 @@ const repo = {
   id: 'owner/repo', owner_handle: 'owner', name: 'repo', description: null,
   website_url: null, git_remote_url: 'https://scope.test/repo.git',
   lifecycle_state: 'Ready', change_version: 7, content_version: 7, open_request_count: 0,
+  views: [{ id: 'public', name: 'Public', includes: [], readers: 'anyone' as const }, { id: 'private', name: 'Private', includes: 'all' as const, readers: 'assigned' as const }],
   access: { actor: 'Owner', view: 'private', can_push: true,
     can_change_file_visibility: true, can_manage_members: true, can_delete_repo: true },
 } satisfies RepoLiveState['repo']
