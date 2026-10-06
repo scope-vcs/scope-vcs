@@ -7,6 +7,7 @@ use scope_domain::requests::{Request, lands_with_main};
 use scope_postgres::db::LandedRequestCandidate;
 use std::path::Path;
 
+#[tracing::instrument(skip_all, name = "use_case.git_receive.find_landed_requests", fields(scope.landed_request.count = tracing::field::Empty))]
 pub(super) async fn landed_request_candidates(
     state: &AppState,
     repository_id: &str,
@@ -26,7 +27,11 @@ pub(super) async fn landed_request_candidates(
     }
     let path = staging_repo.to_path_buf();
     let main_oid = main_oid.to_string();
-    crate::git::blocking::run(move || requests_carried_by(&path, &main_oid, candidates)).await
+    let landed =
+        crate::git::blocking::run(move || requests_carried_by(&path, &main_oid, candidates))
+            .await?;
+    tracing::Span::current().record("scope.landed_request.count", landed.len());
+    Ok(landed)
 }
 
 fn requests_carried_by(

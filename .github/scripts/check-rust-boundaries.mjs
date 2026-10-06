@@ -11,6 +11,7 @@ const contractDependencies = new Map([
   ['scope-api-contract', new Set(['scope-domain'])],
   ['scope-cache-contract', new Set(['scope-cache-domain'])],
 ])
+const telemetryDependencies = /^(?:opentelemetry.*|tracing-opentelemetry|axum-tracing-opentelemetry)$/
 function workspacePackages(metadata) {
   const members = new Set(metadata.workspace_members)
   return metadata.packages.filter(({ id }) => members.has(id))
@@ -32,6 +33,14 @@ export function validateRustBoundaries(mainMetadata, cliMetadata, expectedCliRoo
     pkg.name,
     normalWorkspaceDependencies(pkg, workspaceNames),
   ]))
+
+  for (const pkg of [...packages, ...workspacePackages(cliMetadata)]) {
+    if (pkg.name === 'scope-service-runtime') continue
+    const forbidden = pkg.dependencies
+      .filter(({ name }) => telemetryDependencies.test(name))
+      .map(({ name }) => name)
+    if (forbidden.length > 0) errors.push(`${pkg.name}: OpenTelemetry dependency belongs in scope-service-runtime: ${forbidden.join(', ')}`)
+  }
 
   for (const leaf of leafPackages) {
     const actual = dependencies.get(leaf)

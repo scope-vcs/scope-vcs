@@ -17,6 +17,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use tracing::Instrument as _;
+
 const LEASE_SECONDS: u64 = 60;
 const HEARTBEAT: Duration = Duration::from_secs(5);
 const ANALYZER_TIMEOUT: Duration = Duration::from_secs(120);
@@ -155,6 +157,26 @@ async fn process_next(
     else {
         return Ok(PollOutcome::Idle);
     };
+    let span = tracing::info_span!(
+        parent: None,
+        "job.dependency_analysis",
+        otel.kind = "consumer",
+        scope.job.kind = "dependency_analysis",
+        scope.job.id = claim.incarnation.repository_id(),
+    );
+    analyze_claimed(metadata, objects, segments, settings, health, claim)
+        .instrument(span)
+        .await
+}
+
+async fn analyze_claimed(
+    metadata: &MetadataStore,
+    objects: Arc<dyn ObjectStore>,
+    segments: Arc<GitSegmentStore>,
+    settings: &WorkerSettings,
+    health: &WorkerHealth,
+    claim: DependencyAnalysisClaim,
+) -> anyhow::Result<PollOutcome> {
     if claim.reusable_analysis.is_some() {
         let completed = metadata
             .jobs()
@@ -169,9 +191,10 @@ async fn process_next(
     let data_dir = settings.data_dir.clone();
     let cancellation = ProcessCancellation::new();
     let task_cancellation = cancellation.clone();
-    let mut task = tokio::spawn(async move {
-        analyze(&task_claim, objects, segments, data_dir, task_cancellation).await
-    });
+    let mut task = tokio::spawn(
+        async move { analyze(&task_claim, objects, segments, data_dir, task_cancellation).await }
+            .in_current_span(),
+    );
     let deadline = tokio::time::sleep(ANALYSIS_TIMEOUT);
     tokio::pin!(deadline);
     let mut interval = tokio::time::interval(HEARTBEAT);

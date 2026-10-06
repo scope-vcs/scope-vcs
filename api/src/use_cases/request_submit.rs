@@ -9,6 +9,7 @@ use scope_domain::{
 use scope_postgres::db::SubmitRequestCommand;
 use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
 
+#[tracing::instrument(skip_all, name = "use_case.request.submit")]
 pub(crate) async fn submit_request(
     state: &AppState,
     repo: &RepositoryAccessContext,
