@@ -71,6 +71,21 @@ test('rejects broad contracts and orchestration without two real consumers', () 
   assert.ok(result.errors.some((error) => error.includes('expected API and worker consumers')))
 })
 
+test('rejects OpenTelemetry dependencies outside scope-service-runtime', () => {
+  const main = validMainMetadata()
+  main.packages.find(({ name }) => name === 'scope-domain').dependencies.push(dependency('opentelemetry'))
+  main.packages.find(({ name }) => name === 'api').dependencies.push(dependency('tracing-opentelemetry'))
+  main.packages.push(packageFixture('scope-service-runtime', [dependency('opentelemetry_sdk')]))
+  main.workspace_members.push(main.packages.at(-1).id)
+  const cli = validCliMetadata()
+  cli.packages[0].dependencies.push(dependency('axum-tracing-opentelemetry', 'dev'))
+  const result = validateRustBoundaries(main, cli, cliRoot)
+  assert.ok(result.errors.some((error) => error.includes('scope-domain: OpenTelemetry dependency')))
+  assert.ok(result.errors.some((error) => error.includes('api: OpenTelemetry dependency')))
+  assert.ok(result.errors.some((error) => error.includes('scope-cli: OpenTelemetry dependency')))
+  assert.ok(!result.errors.some((error) => error.includes('scope-service-runtime: OpenTelemetry dependency')))
+})
+
 test('ignores dev-only test support and protects CLI independence', () => {
   const main = validMainMetadata()
   main.packages.find(({ name }) => name === 'scope-cache-service').dependencies.push(dependency('scope-domain', 'dev'))

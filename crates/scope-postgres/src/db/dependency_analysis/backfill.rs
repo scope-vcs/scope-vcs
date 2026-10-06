@@ -6,6 +6,7 @@ use scope_domain::repository::RepositoryIncarnation;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
 impl JobStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "enqueue_dependency_analysis_backfill"))]
     pub async fn enqueue_dependency_analysis_backfill(
         &self,
         analyzer_version: &str,

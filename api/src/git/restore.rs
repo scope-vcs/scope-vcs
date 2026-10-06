@@ -2,7 +2,7 @@ use crate::{
     error::ApiError,
     git::{
         GitContext,
-        command::{run_git, truncated_git_stderr},
+        command::{git_subprocess_span, record_git_exit, run_git, truncated_git_stderr},
     },
 };
 use futures_util::{StreamExt as _, stream};
@@ -178,7 +178,9 @@ pub(crate) async fn hydrate_git_pack_spans<C: GitContext>(
         let root = repo_root.to_path_buf();
         let count = spans.len();
         let timeout = context.runtime_budgets().git_command_timeout();
+        let parent_span = tracing::Span::current();
         tokio::task::spawn_blocking(move || {
+            let _entered = parent_span.enter();
             let started = Instant::now();
             let result = install_verified_git_pack(&root, pack.path(), timeout);
             tracing::info!(
@@ -219,16 +221,21 @@ pub(super) fn install_verified_git_pack(
             .suffix(".idx")
             .tempfile_in(temporary_root)
             .map_err(ApiError::internal)?;
+        let mut command = Command::new("git");
+        command
+            .args(["index-pack", "--index-version=2", "-o"])
+            .arg(temporary.path())
+            .arg(pack);
+        let span = git_subprocess_span(&command);
+        let _entered = span.enter();
         let output = run_process(
-            Command::new("git")
-                .args(["index-pack", "--index-version=2", "-o"])
-                .arg(temporary.path())
-                .arg(pack),
+            &mut command,
             None,
             ProcessLimits::new(timeout),
             "indexing verified Git pack",
         )
         .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
+        record_git_exit(&span, output.status);
         if !output.status.success() {
             return Err(ApiError::infrastructure_unavailable(format!(
                 "indexing verified Git pack: {}",
@@ -277,7 +284,9 @@ pub(crate) async fn run_timed_git_restore_phase_async(
     context: &'static str,
 ) -> Result<(), ApiError> {
     let repository_id = repository_id.to_string();
+    let parent_span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
+        let _entered = parent_span.enter();
         let args = args.iter().map(String::as_str).collect::<Vec<_>>();
         run_timed_git_restore_phase(
             &repository_id,

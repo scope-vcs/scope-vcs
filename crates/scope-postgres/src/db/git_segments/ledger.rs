@@ -10,6 +10,7 @@ use sea_orm::{
 };
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "begin_git_segment_upload"))]
     pub async fn begin_git_segment_upload(
         &self,
         repo_id: &str,
@@ -57,6 +58,7 @@ impl RepositoryStore {
             })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mark_git_segment_upload_ready"))]
     pub async fn mark_git_segment_upload_ready(
         &self,
         segment: &GitSegmentRef,
@@ -94,6 +96,7 @@ impl RepositoryStore {
         require_one_transition(result.rows_affected(), &segment.segment_id, "ready")
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "touch_git_segment_upload"))]
     pub async fn touch_git_segment_upload(
         &self,
         segment_id: &str,
@@ -117,6 +120,7 @@ impl RepositoryStore {
         Ok(result.rows_affected() == 1)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "abandon_git_segment_upload"))]
     pub async fn abandon_git_segment_upload(
         &self,
         segment_id: &str,
@@ -136,6 +140,7 @@ impl RepositoryStore {
         Ok(transitioned == 1)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mark_git_segment_upload_deleted"))]
     pub async fn mark_git_segment_upload_deleted(
         &self,
         segment_id: &str,
@@ -151,6 +156,7 @@ impl RepositoryStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "load_stale_git_segment_uploads"))]
     pub async fn load_stale_git_segment_uploads(
         &self,
         updated_before_unix: u64,

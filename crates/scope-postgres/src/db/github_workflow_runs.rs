@@ -95,6 +95,7 @@ const REQUEST_JOIN: &str = "LEFT JOIN scope_requests request
      AND run.head_branch = 'scope/requests/' || request.id";
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "save_github_workflow_run"))]
     pub async fn save_github_workflow_run(
         &self,
         repo_id: &str,
@@ -104,6 +105,7 @@ impl RepositoryStore {
         save_workflow_run(self.db.as_ref(), repo_id, github_repository_id, run).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "queue_github_workflow_run_read"))]
     pub async fn queue_github_workflow_run_read(
         &self,
         repo_id: &str,
@@ -130,6 +132,7 @@ impl RepositoryStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_due_github_workflow_run_reads"))]
     pub async fn claim_due_github_workflow_run_reads(
         &self,
         now_unix: u64,
@@ -171,6 +174,7 @@ impl RepositoryStore {
         .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_workflow_run_read"))]
     pub async fn finish_github_workflow_run_read(
         &self,
         job: &GitHubWorkflowRunReadJob,
@@ -206,6 +210,7 @@ impl RepositoryStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_run_page"))]
     pub async fn github_workflow_run_page(
         &self,
         query: GitHubWorkflowRunPageQuery<'_>,
@@ -251,6 +256,7 @@ impl RepositoryStore {
         .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_run"))]
     pub async fn github_workflow_run(
         &self,
         repo_id: &str,
@@ -292,6 +298,7 @@ impl RepositoryStore {
         .transpose()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "replace_github_jobs_read"))]
     pub async fn replace_github_jobs_read(
         &self,
         repo_id: &str,
@@ -330,6 +337,7 @@ impl RepositoryStore {
         Ok(result.rows_affected() == 1)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_runs_for_check_suites"))]
     pub async fn github_workflow_runs_for_check_suites(
         &self,
         repo_id: &str,
@@ -373,6 +381,7 @@ impl RepositoryStore {
             .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_names"))]
     pub async fn github_workflow_names(
         &self,
         repo_id: &str,

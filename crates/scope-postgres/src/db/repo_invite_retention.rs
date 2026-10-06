@@ -13,6 +13,7 @@ use sea_orm::{
 };
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repositories_with_prunable_invites"))]
     pub async fn repositories_with_prunable_invites(
         &self,
         now_unix: u64,
@@ -38,6 +39,7 @@ impl RepositoryStore {
             .map_err(PostgresError::internal)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "prune_ended_repository_invites"))]
     pub async fn prune_ended_repository_invites(
         &self,
         repo_id: &str,

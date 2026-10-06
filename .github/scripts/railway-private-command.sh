@@ -2,12 +2,14 @@
 railway_private_command() (
   local environment="$1"; shift
   local manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
-  local project service production staging remote command argument
+  local project service production staging preview remote command argument
   project="$(jq -er '.railway.projectId' "$manifest")" || return
   service="${SCOPE_RAILWAY_MAINTENANCE_SERVICE_ID:-$(jq -er '.railway.maintenanceServiceId' "$manifest")}" || return
   production="$(jq -er '.environments.production.environmentId' "$manifest")" || return
   staging="$(jq -er '.environments.staging.environmentId' "$manifest")" || return
-  [[ "$environment" == "$production" || "$environment" == "$staging" ]] || { echo 'Unknown maintenance environment.' >&2; return 2; }
+  preview="${SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID:-}"
+  [[ -z "$preview" || ( "$preview" != "$production" && "$preview" != "$staging" ) ]] || { echo 'Preview environment must differ from production and staging.' >&2; return 2; }
+  [[ "$environment" == "$production" || "$environment" == "$staging" || ( -n "$preview" && "$environment" == "$preview" ) ]] || { echo 'Unknown maintenance environment.' >&2; return 2; }
   for argument in "$project" "$service" "$environment"; do
     [[ "$argument" =~ ^[a-fA-F0-9]{8}(-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}$ ]] || { echo 'Maintenance requires explicit UUID targets.' >&2; return 2; }
   done

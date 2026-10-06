@@ -10,9 +10,16 @@ use scope_media_worker::{
 use scope_postgres::db::MetadataStore;
 use std::{path::Path, time::Duration};
 
+fn main() -> anyhow::Result<()> {
+    let telemetry =
+        scope_service_runtime::init_telemetry("scope_media_worker=info,scope_postgres=info")?;
+    let result = run_command();
+    telemetry.shutdown();
+    result
+}
+
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    scope_service_runtime::init_tracing("scope_media_worker=info,scope_postgres=info");
+async fn run_command() -> anyhow::Result<()> {
     let mut args = std::env::args_os();
     let _program = args.next();
     match args.next().as_deref().and_then(|value| value.to_str()) {

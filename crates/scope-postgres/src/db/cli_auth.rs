@@ -19,6 +19,7 @@ use sea_orm::{
 };
 
 impl AuthStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_cli_browser_login"))]
     pub async fn start_cli_browser_login(
         &self,
         command: StartBrowserLoginCommand,
@@ -47,6 +48,7 @@ impl AuthStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_cli_browser_login"))]
     pub async fn complete_cli_browser_login(
         &self,
         request_id: &str,
@@ -103,6 +105,7 @@ impl AuthStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "exchange_cli_browser_login"))]
     pub async fn exchange_cli_browser_login(
         &self,
         request_id: &str,
@@ -153,6 +156,7 @@ impl AuthStore {
         Ok(identity)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "create_cli_exchange_grant"))]
     pub async fn create_cli_exchange_grant(
         &self,
         command: CreateCliExchangeGrantCommand,
@@ -177,6 +181,7 @@ impl AuthStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "exchange_cli_grant_by_hash"))]
     pub async fn exchange_cli_grant_by_hash(
         &self,
         grant_hash: &str,
@@ -220,6 +225,7 @@ impl AuthStore {
         Ok(identity)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "list_cli_sessions_for_user"))]
     pub async fn list_cli_sessions_for_user(
         &self,
         user: &UserAccount,
@@ -245,6 +251,7 @@ impl AuthStore {
         Ok(sessions)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "revoke_cli_session_for_user"))]
     pub async fn revoke_cli_session_for_user(
         &self,
         user: &UserAccount,

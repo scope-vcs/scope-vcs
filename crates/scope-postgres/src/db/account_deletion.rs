@@ -75,6 +75,7 @@ const CONTRIBUTED_REPOSITORIES_SQL: &str = r#"
 "#;
 
 impl AuthStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "delete_account"))]
     pub async fn delete_account(
         &self,
         user_id: &str,

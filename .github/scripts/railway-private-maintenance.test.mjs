@@ -116,6 +116,19 @@ test('rejects unknown targets and command injection before SSH', t => {
   }
 });
 
+test('reaches a preview environment only when it is named and distinct from release environments', t => {
+  const f = fixture(t);
+  const preview = '55555555-5555-4555-8555-555555555555';
+  assert.notEqual(f.run([preview, 'plan']).status, 0);
+  for (const named of [production, staging]) {
+    assert.notEqual(f.run([named, 'plan'], { SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID: named }).status, 0);
+  }
+  assert.equal(existsSync(f.env.TEST_CALLED), false);
+  const result = f.run([preview, 'plan'], { SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID: preview });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { exact: true });
+});
+
 test('rejects altered local bytes before SSH', t => {
   const f = fixture(t);
   writeFileSync(f.binary, 'altered');
@@ -175,6 +188,21 @@ test('apply refreshes runtime grants and surfaces grant failures', t => {
   assert.equal(success.status, 0, success.stderr);
   assert.match(readFileSync(f.env.TEST_GRANTS, 'utf8'), /GRANT/);
   assert.notEqual(f.run([production, 'apply'], { TEST_GRANT_FAILURE: '1' }).status, 0);
+});
+
+test('preview apply refreshes grants from the prepared preview policy only in that preview', t => {
+  const f = fixture(t);
+  const preview = '55555555-5555-4555-8555-555555555555';
+  const policy = join(f.dir, 'preview-grants.sql');
+  writeFileSync(policy, 'GRANT preview;\n');
+  const result = f.run([preview, 'apply'], { SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID: preview, SCOPE_ROLE_GRANTS_SQL: policy });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(f.env.TEST_GRANTS, 'utf8'), 'GRANT preview;\n');
+  const attempts = readFileSync(f.env.TEST_ATTEMPTS, 'utf8');
+  const refused = f.run([staging, 'apply'], { SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID: preview, SCOPE_ROLE_GRANTS_SQL: policy });
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /only to the preview environment/);
+  assert.equal(readFileSync(f.env.TEST_ATTEMPTS, 'utf8'), attempts);
 });
 
 test('maintenance image pins PostgreSQL clients and runs only the non-root maintenance server', () => {

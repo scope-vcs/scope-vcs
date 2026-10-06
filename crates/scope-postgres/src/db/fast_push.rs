@@ -34,6 +34,7 @@ pub struct ApplyContentOnlyPushCommand {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "apply_content_only_push"))]
     pub async fn apply_content_only_push(
         &self,
         command: ApplyContentOnlyPushCommand,

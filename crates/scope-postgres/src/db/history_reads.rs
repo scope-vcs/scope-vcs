@@ -105,6 +105,7 @@ pub(super) async fn delete_history_payloads<C: ConnectionTrait>(
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "ensure_live_projection_read_models"))]
     pub async fn ensure_live_projection_read_models(
         &self,
         incarnation: &RepositoryIncarnation,
@@ -135,6 +136,7 @@ impl RepositoryStore {
         tx.commit().await.map_err(PostgresError::internal)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_history_page"))]
     pub async fn repository_history_page(
         &self,
         query: RepositoryHistoryQuery<'_>,

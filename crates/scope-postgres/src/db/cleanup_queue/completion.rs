@@ -24,6 +24,7 @@ const RETAINED_SOURCE_BLOB_ERROR: &str = "source blob cleanup retained after dra
 const MAX_CLEANUP_RETRY_SECONDS: i64 = 3_600;
 
 impl CleanupStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_repo_storage_cleanup"))]
     pub async fn finish_repo_storage_cleanup(
         &self,
         batch: RepoStorageCleanupBatch,
@@ -43,6 +44,7 @@ impl CleanupStore {
         .await?;
         tx.commit().await.map_err(PostgresError::internal)
     }
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_source_blob_cleanup"))]
     pub async fn finish_source_blob_cleanup(
         &self,
         batch: SourceBlobCleanupBatch,

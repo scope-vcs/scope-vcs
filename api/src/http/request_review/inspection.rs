@@ -162,6 +162,8 @@ fn request_commit_change_summaries(
         "--diff-merges=first-parent",
         "--always",
     ]);
+    let git_span = crate::git::command::git_subprocess_span(&command);
+    let _entered = git_span.enter();
     let output = run_with_stdout(
         &mut command,
         Some(input),
@@ -182,6 +184,7 @@ fn request_commit_change_summaries(
         }
         StreamingProcessError::Consumer(error) => error,
     })?;
+    crate::git::command::record_git_exit(&git_span, output.status);
     if !output.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(
             "reading bounded request commit identities: {}",

@@ -8,7 +8,8 @@ use crate::{
     error::ApiError,
     git::{
         InitialPushCredential, ReceivePackAuthorization, authorize_git_push_token_for_repo,
-        authorize_initial_push_for_repo, find_repo_after_git_scope_token, git_credential_error,
+        authorize_initial_push_for_repo, git_credential_error,
+        git_push_credentials_after_scope_token,
         import::PreparedReceivePackUpdate,
         invalid_git_credentials,
         request_refs::{non_request_refs_changed, receive_pack_refs, request_ref_update_from_refs},
@@ -86,27 +87,24 @@ pub(crate) async fn authorize(
     match authorization {
         ReceivePackAuthorization::ScopeToken { secret } => {
             let push_intent = required_push_intent(state, push_intent_secret)?;
-            let repo = find_repo_after_git_scope_token(state, owner, repo_name).await?;
+            let repo = git_push_credentials_after_scope_token(state, owner, repo_name).await?;
             let credential = if secret.starts_with(GIT_PUSH_TOKEN_PREFIX) {
                 InitialPushCredential::GitPushToken { secret }
             } else {
                 InitialPushCredential::FirstPushToken { secret }
             };
-            if repo.is_waiting_for_first_push() {
-                authorize_initial_push_for_repo(&repo, &credential)
-                    .map_err(git_credential_error)?;
-                let author_id = repo.record.owner_user_id.clone();
-                push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
-                return Ok(ReceivePackAccess::FirstPush {
-                    author_id,
-                    incarnation: repo.incarnation(),
-                    push_intent,
-                });
-            }
             match repo.record.lifecycle_state {
-                RepoLifecycleState::AwaitingFirstPush => Err(ApiError::conflict(
-                    "repo is awaiting its first push and cannot receive another push",
-                )),
+                RepoLifecycleState::AwaitingFirstPush => {
+                    authorize_initial_push_for_repo(&repo, &credential)
+                        .map_err(git_credential_error)?;
+                    let author_id = repo.record.owner_user_id.clone();
+                    push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
+                    Ok(ReceivePackAccess::FirstPush {
+                        author_id,
+                        incarnation: repo.record.incarnation(),
+                        push_intent,
+                    })
+                }
                 RepoLifecycleState::Ready => match credential {
                     InitialPushCredential::GitPushToken { secret } => {
                         let author_id = authorize_git_push_token_for_repo(&repo, &secret)
@@ -114,7 +112,7 @@ pub(crate) async fn authorize(
                         push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
                         Ok(ReceivePackAccess::ReadyMember {
                             author_id,
-                            incarnation: repo.incarnation(),
+                            incarnation: repo.record.incarnation(),
                             push_intent,
                         })
                     }
@@ -258,6 +256,7 @@ pub(crate) async fn prepare(
     })
 }
 
+#[tracing::instrument(skip_all, name = "use_case.git_receive.complete")]
 pub(crate) async fn complete(
     state: &AppState,
     owner: &str,
@@ -370,6 +369,7 @@ async fn complete_inner(
     Ok(ReceiveCompletion::MainPush)
 }
 
+#[tracing::instrument(skip_all, name = "use_case.git_receive.main_push", fields(scope.change.count = tracing::field::Empty, scope.landed_request.count = tracing::field::Empty))]
 async fn complete_main_push(
     state: &AppState,
     owner: &str,
@@ -384,6 +384,7 @@ async fn complete_main_push(
     let import_started_at = Instant::now();
     let (prepared, change_count): (PreparedReceivePackUpdate, usize) =
         main_push::prepare_main_push(state, owner, repo_name, staging_repo, &access).await?;
+    tracing::Span::current().record("scope.change.count", change_count);
     let landed_request_candidates = if first_push {
         Vec::new()
     } else {
@@ -408,6 +409,10 @@ async fn complete_main_push(
             }
         }
     };
+    tracing::Span::current().record(
+        "scope.landed_request.count",
+        landed_request_candidates.len(),
+    );
     let persisted = main_push::persist_main_push(
         state,
         owner,

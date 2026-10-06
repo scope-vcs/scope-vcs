@@ -1,4 +1,4 @@
-use scope_service_runtime::{init_tracing, shutdown_signal};
+use scope_service_runtime::{init_telemetry, shutdown_signal};
 mod cleanup;
 mod compaction;
 mod control;
@@ -36,13 +36,14 @@ const SCHEMA_WAIT_RETRY_SECS: u64 = 2;
 
 fn main() -> anyhow::Result<()> {
     scope_git_process::install_pid1_reaper_if_needed()?;
-    run_service()
+    let telemetry = init_telemetry("worker=info,scope_postgres=info")?;
+    let result = run_service();
+    telemetry.shutdown();
+    result
 }
 
 #[tokio::main]
 async fn run_service() -> anyhow::Result<()> {
-    init_tracing("worker=info,scope_postgres=info");
-
     run().await
 }
 

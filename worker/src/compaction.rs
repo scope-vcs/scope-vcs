@@ -2,7 +2,7 @@ use crate::git_repo::{CompactionPackMetrics, build_compacted_pack};
 use scope_domain::repository::git::GitPackSpan;
 use scope_git::GitStorageLimits;
 use scope_git_process::ProcessError;
-use scope_postgres::db::MetadataStore;
+use scope_postgres::db::{GitCompactionClaim, MetadataStore};
 use scope_storage::{
     ENCODING_VERSION, GitSegmentIngestTimings, GitSegmentReservation, GitSegmentStore,
     StagedGitSegment,
@@ -17,6 +17,9 @@ use crate::{
     health::{WorkerHealth, WorkerLoop},
     settings::{GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings},
 };
+use tracing::Instrument as _;
+
+const LEASE_SECONDS: u64 = GIT_COMPACTION_TIMEOUT.as_secs().saturating_add(30);
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum CompactionOutcome {
@@ -74,18 +77,16 @@ pub(crate) async fn compact_one_git_repository(
     settings: &WorkerSettings,
     health: &WorkerHealth,
 ) -> anyhow::Result<CompactionOutcome> {
-    let timeout = GIT_COMPACTION_TIMEOUT;
     let attempt_started = Instant::now();
     let claim_now_unix = super::unix_now()?;
     let candidate_started = Instant::now();
-    let lease_seconds = timeout.as_secs().saturating_add(30);
     let Some(claim) = metadata
         .jobs()
         .claim_git_compaction(
             &settings.worker_id,
             u64::try_from(settings.git_storage_limits.max_object_bytes()).unwrap_or(u64::MAX),
             claim_now_unix,
-            lease_seconds,
+            LEASE_SECONDS,
             &crate::generate_persistence_id,
         )
         .await
@@ -93,6 +94,40 @@ pub(crate) async fn compact_one_git_repository(
     else {
         return Ok(CompactionOutcome::NoJob);
     };
+    let span = tracing::info_span!(
+        parent: None,
+        "job.git_compaction",
+        otel.kind = "consumer",
+        scope.job.kind = "git_compaction",
+        scope.job.id = claim.lease_generation(),
+        scope.job.attempt = claim.attempts.saturating_add(1),
+    );
+    let started = ClaimTimings {
+        attempt: attempt_started,
+        candidate: candidate_started,
+    };
+    compact_claimed(metadata, segment_store, settings, health, claim, started)
+        .instrument(span)
+        .await
+}
+
+struct ClaimTimings {
+    attempt: Instant,
+    candidate: Instant,
+}
+
+async fn compact_claimed(
+    metadata: &MetadataStore,
+    segment_store: Arc<GitSegmentStore>,
+    settings: &WorkerSettings,
+    health: &WorkerHealth,
+    claim: GitCompactionClaim,
+    started: ClaimTimings,
+) -> anyhow::Result<CompactionOutcome> {
+    let timeout = GIT_COMPACTION_TIMEOUT;
+    let lease_seconds = LEASE_SECONDS;
+    let attempt_started = started.attempt;
+    let candidate_started = started.candidate;
     health.mark_work_progress(
         WorkerLoop::Compaction,
         super::unix_now()?,
@@ -127,17 +162,20 @@ pub(crate) async fn compact_one_git_repository(
     let build_reservation = reservation.clone();
     let storage_limits = settings.git_storage_limits;
     let data_dir = settings.data_dir.clone();
-    let mut build = tokio::spawn(async move {
-        build_compacted_span(
-            build_store,
-            &build_candidate,
-            build_reservation,
-            storage_limits,
-            timeout,
-            data_dir,
-        )
-        .await
-    });
+    let mut build = tokio::spawn(
+        async move {
+            build_compacted_span(
+                build_store,
+                &build_candidate,
+                build_reservation,
+                storage_limits,
+                timeout,
+                data_dir,
+            )
+            .await
+        }
+        .in_current_span(),
+    );
     let renewal_interval = Duration::from_secs((lease_seconds / 3).max(1));
     let mut renewal = tokio::time::interval(renewal_interval);
     renewal.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -401,7 +439,7 @@ pub(crate) async fn compact_one_git_repository(
 }
 
 fn log_compaction_attempt(
-    claim: &scope_postgres::db::GitCompactionClaim,
+    claim: &GitCompactionClaim,
     candidate: &scope_postgres::db::GitCompactionCandidate,
     metrics: &CompactionMetrics,
     candidate_query_ms: u64,

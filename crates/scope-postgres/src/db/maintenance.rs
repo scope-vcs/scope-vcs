@@ -4,6 +4,7 @@ use crate::migrations::{MigrationLimits, MigrationPlan};
 use sea_orm::{ConnectionTrait, Database};
 
 impl AdminStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "readiness_check"))]
     pub async fn readiness_check(&self) -> Result<(), PostgresError> {
         crate::migrations::assert_exact_state(self.db.as_ref())
             .await

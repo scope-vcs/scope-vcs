@@ -29,8 +29,16 @@ docker buildx build --platform linux/amd64 --provenance=false --push \
   "$workspace/context"
 digest="$(jq -er '."containerimage.digest" | select(test("^sha256:[a-f0-9]{64}$"))' "$workspace/metadata.json")"
 image="$repository@$digest"
-printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" | \
-  DOCKER_CONFIG="$workspace/pull-config" docker login ghcr.io --username "$SCOPE_RAILWAY_REGISTRY_USERNAME" --password-stdin >/dev/null
+for attempt in 1 2 3; do
+  printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" | \
+    DOCKER_CONFIG="$workspace/pull-config" docker login ghcr.io --username "$SCOPE_RAILWAY_REGISTRY_USERNAME" --password-stdin >/dev/null && break
+  if ((attempt == 3)); then
+    echo 'Registry login failed after 3 attempts: ghcr.io' >&2
+    exit 1
+  fi
+  echo "Registry login failed; retrying ($attempt/3)." >&2
+  sleep $((attempt * 5))
+done
 DOCKER_CONFIG="$workspace/pull-config" docker manifest inspect "$image" >/dev/null
 node .github/scripts/maintenance-runtime.mjs verify-package
 jq -n --arg image "$image" --arg runtimeSourceSha "$GITHUB_SHA" --slurpfile source "$workspace/source.json" \

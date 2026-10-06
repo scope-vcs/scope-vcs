@@ -22,6 +22,7 @@ const CLEANUP_BATCH_SIZE: u64 = 100;
 const CLEANUP_CLAIM_SECONDS: i64 = 300;
 
 impl CleanupStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repo_storage_cleanup_batch"))]
     pub async fn repo_storage_cleanup_batch(
         &self,
         now_unix: u64,
@@ -41,6 +42,7 @@ impl CleanupStore {
             loaded,
         })
     }
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "source_blob_cleanup_batch"))]
     pub async fn source_blob_cleanup_batch(
         &self,
         now_unix: u64,

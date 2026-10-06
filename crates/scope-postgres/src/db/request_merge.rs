@@ -37,6 +37,7 @@ pub struct MergeRequestContentMutation {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "merge_request_content"))]
     pub async fn merge_request_content(
         &self,
         command: MergeRequestContentCommand,

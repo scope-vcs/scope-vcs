@@ -6,8 +6,10 @@ use crate::{
         db_error, dependencies_ready, lease_expiry, random_id, retry_delay, wait_or_shutdown,
     },
 };
+use scope_domain::requests::attachments::RequestAttachmentCleanupLease;
 use scope_media_storage::MediaStorage;
 use scope_postgres::db::{MediaLeaseMutation, MetadataStore};
+use tracing::Instrument as _;
 
 pub async fn run(
     metadata: MetadataStore,
@@ -68,6 +70,26 @@ async fn cleanup_next_job(
     else {
         return Ok(CleanupOutcome::NoJob);
     };
+    let span = tracing::info_span!(
+        parent: None,
+        "job.media_cleanup",
+        otel.kind = "consumer",
+        scope.job.kind = "media_cleanup",
+        scope.job.id = %lease.attachment_id,
+        scope.job.attempt = lease.attempt,
+    );
+    clean_up_lease(metadata, storage, settings, health, &lease)
+        .instrument(span)
+        .await
+}
+
+async fn clean_up_lease(
+    metadata: &MetadataStore,
+    storage: &MediaStorage,
+    settings: &WorkerSettings,
+    health: &WorkerHealth,
+    lease: &RequestAttachmentCleanupLease,
+) -> anyhow::Result<CleanupOutcome> {
     let _activity = health.cleanup_activity();
     for key in &lease.object_keys {
         let deletion = storage.delete_object_key(key);

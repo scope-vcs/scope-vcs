@@ -40,6 +40,7 @@ aws-sdk-s3 = { version = "1.149.0", default-features = false, features = ["behav
 aws-sigv4 = "1.6.0"
 aws-smithy-http = "0.64.0"
 axum = "0.8.7"
+axum-tracing-opentelemetry = "0.42"
 base64 = "0.22.1"
 bytes = "1.11.0"
 chacha20poly1305 = "0.11.0"
@@ -49,6 +50,10 @@ hmac = "0.13.0"
 http = "1.4.2"
 jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
 libc = "0.2.177"
+opentelemetry = "0.33"
+opentelemetry-http = "0.33"
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["trace", "http-proto", "reqwest-blocking-client"] }
+opentelemetry_sdk = "0.33"
 reqwest = { version = "0.13.5", default-features = false }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.147"
@@ -61,8 +66,9 @@ thiserror = "2.0.18"
 time = { version = "0.3.44", features = ["formatting"] }
 tokio = "1.48.0"
 tower = "0.5.3"
-tower-http = { version = "0.6.8", features = ["trace"] }
+tower-http = "0.6.8"
 tracing = "0.1.44"
+tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
 ts-rs = "12.0.1"
 url = "2.5.8"
