@@ -11,7 +11,7 @@ async fn private_request_accepts_and_reviews_an_introduced_root_commit() {
         "POST",
         &format!("/v1/repos/{TEST_REPO_ID}/requests"),
         Some(&bearer),
-        Some(r#"{"name":"private-root","audience":"Private"}"#),
+        Some(r#"{"name":"private-root","view":"private"}"#),
     )
     .await;
     assert_eq!(started.status(), StatusCode::OK);

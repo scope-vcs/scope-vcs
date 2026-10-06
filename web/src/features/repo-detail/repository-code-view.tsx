@@ -409,7 +409,7 @@ function FileMeta({ file }: { file: RepoFileContentResponse }) {
           </button>
         )}
       />
-      <VisibilityBadge compact visibility={file.visibility} />
+      <VisibilityBadge compact visibility={file.label} />
     </>
   )
 }

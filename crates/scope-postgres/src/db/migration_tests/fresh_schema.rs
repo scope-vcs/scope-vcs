@@ -59,7 +59,7 @@ async fn fresh_database_reaches_exact_latest_schema() {
     assert!(relation_exists(db.as_ref(), "scope_dependency_analyses").await);
     assert!(relation_exists(db.as_ref(), "scope_dependency_reports").await);
     assert!(relation_exists(db.as_ref(), "scope_dependency_analysis_jobs").await);
-    assert!(relation_exists(db.as_ref(), "scope_repository_history_views").await);
+    assert!(relation_exists(db.as_ref(), "scope_repository_history_payloads").await);
     assert!(relation_exists(db.as_ref(), "scope_repository_history_entries").await);
     assert!(relation_exists(db.as_ref(), "scope_git_segment_uploads").await);
     assert!(relation_exists(db.as_ref(), "scope_cache_orphan_uploads").await);

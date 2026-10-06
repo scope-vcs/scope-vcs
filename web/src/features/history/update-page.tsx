@@ -2,7 +2,7 @@ import type { RepoParams } from '@/api/types'
 import type {
   CommitFileResponse,
   HistoryEntryDetailResponse,
-  ProjectionPreviewAudience,
+  ViewId,
 } from '@/api/types.generated'
 import { WorkbenchPane } from '@/components/page-header'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
@@ -12,7 +12,6 @@ import { loadHistoryEntry, loadHistoryEntryFileDiff } from '@/routes/-repo-histo
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback } from 'react'
-import { defaultHistoryAudience } from './history-feed'
 import { HistoryEntryDetailPanel } from './history-entry-detail'
 import {
   historyDiffResource,
@@ -26,7 +25,7 @@ import { historyFileSelection } from './history-selection'
 import { resourceToDiffState, type CommitFileDiffState } from './history-state'
 import type { HistoryVisibilityChange } from './history-visibility-changes'
 import { UpdateNavigation } from './update-navigation'
-import { updateAudienceSearch, type UpdateSearch } from './update-search'
+import { updateViewSearch, type UpdateSearch } from './update-search'
 
 type UpdatePageProps = {
   initialEntry: HistoryEntryDetailResponse
@@ -37,7 +36,7 @@ type UpdatePageProps = {
 
 export function UpdatePage(props: UpdatePageProps) {
   const {
-    audienceSearch,
+    viewSearch,
     closeDiff,
     diffIdentity,
     entryResource,
@@ -58,7 +57,7 @@ export function UpdatePage(props: UpdatePageProps) {
         newer={detail?.newer_source_id ?? null}
         older={detail?.older_source_id ?? null}
         params={repoParams}
-        search={audienceSearch}
+        search={viewSearch}
       />
       <HistoryEntryDetailPanel
         diffIdentity={diffIdentity}
@@ -84,20 +83,20 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
   const { userId, isLoaded } = useAuth()
   const { repo } = useRepoLayout()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
-  const audience: ProjectionPreviewAudience = search.audience ?? initialEntry.audience
-  const audienceSearch = updateAudienceSearch(
-    audience,
-    defaultHistoryAudience(repo.access.can_read_private_files),
+  const view: ViewId = search.view ?? initialEntry.view
+  const viewSearch = updateViewSearch(
+    view,
+    repo.access.view,
   )
   const { owner, repo: repoName, entryId } = params
   const version = String(repo.content_version)
-  const entryIdentity = scope ? historyEntryCacheKey({ scope, audience, entry: entryId }) : null
+  const entryIdentity = scope ? historyEntryCacheKey({ scope, view, entry: entryId }) : null
   const loadEntry = useCallback(
     (signal: AbortSignal) => loadHistoryEntry({
-      data: { audience, entry: entryId, owner, repo: repoName },
+      data: { view, entry: entryId, owner, repo: repoName },
       signal,
     }).then((result) => result.entry),
-    [audience, entryId, owner, repoName],
+    [view, entryId, owner, repoName],
   )
   const entryResource = useCachedResource({
     fallbackError: 'This update is unavailable.',
@@ -113,7 +112,7 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
   const diffIdentity = scope && selectedFile
     ? historyEntryDiffCacheKey({
         scope,
-        audience,
+        view,
         entry: entryId,
         visibilityChange: selectedVisibilityId,
         newOid: selectedFile.new_oid,
@@ -124,7 +123,7 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
   const loadDiff = useCallback(
     (signal: AbortSignal) => loadHistoryEntryFileDiff({
       data: {
-        audience,
+        view,
         entry: entryId,
         owner,
         path: selectedFilePath ?? '',
@@ -133,7 +132,7 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
       },
       signal,
     }),
-    [audience, entryId, owner, repoName, selectedFilePath, selectedVisibilityId],
+    [view, entryId, owner, repoName, selectedFilePath, selectedVisibilityId],
   )
   const diffResource = useCachedResource({
     fallbackError: 'This file diff is unavailable.',
@@ -169,7 +168,7 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
   )
 
   return {
-    audienceSearch,
+    viewSearch,
     closeDiff,
     diffIdentity,
     entryResource,

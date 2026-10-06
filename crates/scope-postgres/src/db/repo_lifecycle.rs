@@ -19,11 +19,11 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     content::SourceBlob,
-    policy::Visibility,
     repo_actions::{create_repo as create_repo_command, delete_repo as delete_repo_command},
     repository::credentials::{FirstPushToken, GitPushToken},
     repository::{Repository, RepositoryIncarnation, repo_id},
     requests::Request,
+    views::ViewId,
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
@@ -49,7 +49,7 @@ impl<E> From<PostgresError> for RepositoryCreationError<E> {
 pub struct CreateRepositoryCommand {
     pub owner_user_id: String,
     pub name: String,
-    pub default_visibility: Visibility,
+    pub default_view: ViewId,
     pub init_tokens: (FirstPushToken, GitPushToken),
     pub now_unix: u64,
 }
@@ -71,7 +71,7 @@ impl RepositoryStore {
         let CreateRepositoryCommand {
             owner_user_id,
             name,
-            default_visibility,
+            default_view,
             init_tokens: (first_push_token, git_push_token),
             now_unix,
         } = command;
@@ -85,7 +85,7 @@ impl RepositoryStore {
         let repo = create_repo_command(
             &owner,
             &name,
-            default_visibility,
+            default_view,
             first_push_token,
             git_push_token,
             incarnation_id,
@@ -407,7 +407,7 @@ mod tests {
                     CreateRepositoryCommand {
                         owner_user_id: "user_owner".to_string(),
                         name: "repo".to_string(),
-                        default_visibility: Visibility::Private,
+                        default_view: ViewId::private(),
                         init_tokens: (first_push_token, git_push_token),
                         now_unix: 1_700_000_000,
                     },
@@ -439,7 +439,7 @@ mod tests {
                     CreateRepositoryCommand {
                         owner_user_id: "user_owner".to_string(),
                         name: "repo".to_string(),
-                        default_visibility: Visibility::Private,
+                        default_view: ViewId::private(),
                         init_tokens: (first_push_token, git_push_token),
                         now_unix: 1_700_000_000,
                     },
@@ -493,7 +493,7 @@ mod tests {
         };
         let mut catalog = crate::db::CatalogFixture::default();
         let recreated = catalog
-            .create_repository(&owner, "repo", Visibility::Private)
+            .create_repository(&owner, "repo", ViewId::private())
             .unwrap()
             .clone();
         catalog.users.insert(owner.id.clone(), owner);

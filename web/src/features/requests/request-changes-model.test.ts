@@ -156,7 +156,7 @@ function revision(
         old_mode: '100644',
         old_oid: 'base',
         path: `${oid}.txt`,
-        visibility: 'Public' as const,
+        label: 'public' as const,
       }],
       message: `Commit ${oid}`,
       oid,

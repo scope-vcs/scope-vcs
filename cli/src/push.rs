@@ -63,7 +63,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     progress.cancellation().check()?;
     let access = scope_domain::repository::access::RepositoryAccess {
         actor: push_context.access.actor.into(),
-        can_read_private_files: push_context.access.can_read_private_files,
+        view: push_context.access.view.into(),
         can_push: push_context.access.can_push,
         can_change_file_visibility: push_context.access.can_change_file_visibility,
         can_manage_members: push_context.access.can_manage_members,

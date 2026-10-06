@@ -62,7 +62,7 @@ impl RepositoryStore {
             .map_err(PostgresError::internal)?
             .map(|head| head.head_oid);
         let check = start_github_setup_check(
-            context.access,
+            context.access.clone(),
             connection.as_ref(),
             current.as_ref(),
             main_oid.as_deref(),

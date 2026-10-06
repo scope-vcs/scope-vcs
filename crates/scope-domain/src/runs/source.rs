@@ -3,7 +3,6 @@ use crate::{
     content::SourceBlob,
     content_ref::ContentRef,
     error::DomainError,
-    projection::ProjectionViewKey,
     repository::git::{GitHead, GitPackSpan, GitSegmentRef, validate_git_pack_layout},
 };
 use serde::{Deserialize, Serialize};
@@ -30,7 +29,6 @@ pub enum RunSource {
         repository_id: String,
         head: GitHead,
         pack_spans: Vec<GitPackSpan>,
-        audience: ProjectionViewKey,
     },
 }
 
@@ -60,7 +58,6 @@ impl RunSource {
         repository_id: impl Into<String>,
         head: GitHead,
         pack_spans: Vec<GitPackSpan>,
-        audience: ProjectionViewKey,
     ) -> Result<Self, DomainError> {
         let repository_id = repository_id.into();
         if repository_id.trim().is_empty() {
@@ -92,7 +89,6 @@ impl RunSource {
             repository_id,
             head,
             pack_spans,
-            audience,
         })
     }
 
@@ -188,7 +184,6 @@ mod tests {
             "owner/repo",
             GitHead::new(head_oid.clone(), 1, 7),
             vec![pack.clone()],
-            ProjectionViewKey::Private,
         )
         .unwrap();
 
@@ -215,7 +210,6 @@ mod tests {
                 head_oid: head_oid.clone(),
                 segment: git_segment('c'),
             }],
-            ProjectionViewKey::Private,
         );
 
         assert!(source.unwrap_err().message.contains("do not reach"));

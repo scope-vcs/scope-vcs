@@ -26,7 +26,7 @@ const discussionEvent = (version: number) =>
     incarnation_id: TEST_INCARNATION_ID,
     kind: {
       RequestTimelineChanged: {
-        audience: 'Public',
+        view: 'public',
         discussion_id: 'discussion-1',
         request_id: 'request-1',
         through_position: version,

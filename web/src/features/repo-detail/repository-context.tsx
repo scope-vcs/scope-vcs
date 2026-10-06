@@ -1,5 +1,6 @@
 import type { RepoContent } from '@/api/types'
 import type { RepoSummaryResponse } from '@/api/types.generated'
+import { mayReadView, viewName } from '@/api/repo-views'
 import { Globe2, LockKeyhole, ExternalLink } from 'lucide-react'
 import { RepositoryResourcesMenu } from './repository-resources-menu'
 
@@ -14,16 +15,17 @@ export function RepositoryContext({
   onSelectFilePath: (path: string) => void
   repo: RepoSummaryResponse
 }) {
-  const includesPrivate = content?.files.some((file) => file.visibility === 'Private') ?? false
+  const includesPrivate = content?.files.some((file) => file.label === 'private') ?? false
+  const fullView = mayReadView(repo.access, 'private')
   const viewLabel = includesPrivate
-    ? 'Includes private files'
-    : repo.access.can_read_private_files ? 'Full view' : 'Public view'
+    ? `Includes ${viewName('private')} files`
+    : fullView ? 'Full view' : `${viewName(repo.access.view)} view`
   return (
     <div className="min-w-0">
       {repo.description && <p className="mb-2 max-w-[75ch] break-words text-sm leading-5 text-foreground">{repo.description}</p>}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
-          {includesPrivate ? <LockKeyhole aria-hidden="true" className="size-3.5" /> : <Globe2 aria-hidden="true" className="size-3.5" />}
+          {fullView ? <LockKeyhole aria-hidden="true" className="size-3.5" /> : <Globe2 aria-hidden="true" className="size-3.5" />}
           {viewLabel}
         </span>
         {content ? (

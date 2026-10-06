@@ -1,13 +1,14 @@
 use super::{
-    policy::{ScopePath, ScopePathError, Visibility},
+    policy::{ScopePath, ScopePathError},
     repo_control::{is_private_control_path, is_repo_control_pattern, is_repo_rules_path},
+    views::{ViewId, Views},
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const REPO_CONFIG_KIND: &str = "scope.repo-config";
-pub const REPO_CONFIG_VERSION: u64 = 1;
+pub const REPO_CONFIG_VERSION: u64 = 2;
 
 #[derive(Debug, Error)]
 pub enum RepoConfigError {
@@ -17,7 +18,7 @@ pub enum RepoConfigError {
     InvalidJson(serde_json::Error),
     #[error("repo config kind must be scope.repo-config")]
     InvalidKind,
-    #[error("repo config version must be 1")]
+    #[error("repo config version must be 2")]
     InvalidVersion,
     #[error("repo config path must be absolute and start with /")]
     RelativePath,
@@ -25,48 +26,29 @@ pub enum RepoConfigError {
     InvalidSegment,
     #[error("repo config cannot configure reserved Scope control path {0}")]
     ReservedControlPath(String),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ConfigVisibility {
-    Public,
-    Private,
-}
-
-impl From<ConfigVisibility> for Visibility {
-    fn from(value: ConfigVisibility) -> Self {
-        match value {
-            ConfigVisibility::Public => Self::Public,
-            ConfigVisibility::Private => Self::Private,
-        }
-    }
-}
-
-impl From<Visibility> for ConfigVisibility {
-    fn from(value: Visibility) -> Self {
-        match value {
-            Visibility::Public => Self::Public,
-            Visibility::Private => Self::Private,
-        }
-    }
+    #[error("repo config contains an unknown view {0}")]
+    UnknownView(ViewId),
+    #[error("repo config views are invalid: {0}")]
+    InvalidViews(crate::error::DomainError),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoConfig {
     pub kind: String,
     pub version: u64,
-    pub visibility: RepoConfigVisibility,
+    pub views: Views,
+    pub files: RepoConfigFiles,
     #[serde(default)]
     pub history: RepoConfigHistory,
 }
 
 impl RepoConfig {
-    pub fn with_default_visibility(default: ConfigVisibility) -> Self {
+    pub fn with_default_view(default: ViewId) -> Self {
         Self {
             kind: REPO_CONFIG_KIND.to_string(),
             version: REPO_CONFIG_VERSION,
-            visibility: RepoConfigVisibility {
+            views: Views::builtin(),
+            files: RepoConfigFiles {
                 default,
                 rules: Vec::new(),
             },
@@ -87,7 +69,14 @@ impl RepoConfig {
         if self.version != REPO_CONFIG_VERSION {
             return Err(RepoConfigError::InvalidVersion);
         }
-        for rule in &self.visibility.rules {
+        Views::new(self.views.iter().cloned().collect()).map_err(RepoConfigError::InvalidViews)?;
+        if self.views.get(&self.files.default).is_none() {
+            return Err(RepoConfigError::UnknownView(self.files.default.clone()));
+        }
+        for rule in &self.files.rules {
+            if self.views.get(&rule.view).is_none() {
+                return Err(RepoConfigError::UnknownView(rule.view.clone()));
+            }
             validate_config_pattern(&rule.path)?;
             if is_repo_control_pattern(&rule.path) {
                 return Err(RepoConfigError::ReservedControlPath(rule.path.clone()));
@@ -102,34 +91,39 @@ impl RepoConfig {
         Ok(())
     }
 
-    pub fn visibility_for_path(&self, path: &ScopePath) -> Visibility {
-        self.visibility_for_path_skipping_rule(path, None)
+    pub fn views(&self) -> &Views {
+        &self.views
     }
 
-    pub(crate) fn visibility_for_path_skipping_rule(
+    pub fn files(&self) -> &RepoConfigFiles {
+        &self.files
+    }
+
+    pub fn label_for_path(&self, path: &ScopePath) -> ViewId {
+        self.label_for_path_skipping_rule(path, None)
+    }
+
+    pub(crate) fn label_for_path_skipping_rule(
         &self,
         path: &ScopePath,
         skipped_rule: Option<usize>,
-    ) -> Visibility {
+    ) -> ViewId {
         if is_repo_rules_path(path) {
-            return Visibility::Public;
+            return ViewId::public();
         }
         if is_private_control_path(path) {
-            return Visibility::Private;
+            return self.views.full().clone();
         }
 
-        let mut selected = (
-            0usize,
-            Visibility::from(self.visibility.default_visibility()),
-        );
-        for (index, rule) in self.visibility.rules.iter().enumerate() {
+        let mut selected = (0usize, self.files.default_view());
+        for (index, rule) in self.files.rules.iter().enumerate() {
             if skipped_rule == Some(index) {
                 continue;
             }
             if pattern_matches_path(&rule.path, path.as_str()) {
                 let weight = pattern_weight(&rule.path);
                 if weight >= selected.0 {
-                    selected = (weight, Visibility::from(rule.visibility));
+                    selected = (weight, rule.view.clone());
                 }
             }
         }
@@ -152,23 +146,23 @@ impl RepoConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RepoConfigVisibility {
-    #[serde(default = "default_private_visibility")]
-    pub default: ConfigVisibility,
+pub struct RepoConfigFiles {
+    #[serde(default = "default_private_view")]
+    pub default: ViewId,
     #[serde(default)]
-    pub rules: Vec<RepoConfigVisibilityRule>,
+    pub rules: Vec<RepoConfigFileRule>,
 }
 
-impl RepoConfigVisibility {
-    pub fn default_visibility(&self) -> ConfigVisibility {
-        self.default
+impl RepoConfigFiles {
+    pub fn default_view(&self) -> ViewId {
+        self.default.clone()
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RepoConfigVisibilityRule {
+pub struct RepoConfigFileRule {
     pub path: String,
-    pub visibility: ConfigVisibility,
+    pub view: ViewId,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -242,8 +236,8 @@ pub(crate) fn pattern_base_path(pattern: &str) -> &str {
     pattern.strip_suffix("/**").unwrap_or(pattern)
 }
 
-fn default_private_visibility() -> ConfigVisibility {
-    ConfigVisibility::Private
+fn default_private_view() -> ViewId {
+    ViewId::private()
 }
 
 #[cfg(test)]
@@ -251,17 +245,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn version_one_config_is_rejected() {
+        let mut json =
+            serde_json::to_value(RepoConfig::with_default_view(ViewId::private())).unwrap();
+        json["version"] = serde_json::json!(1);
+        assert!(matches!(
+            RepoConfig::parse_json(&serde_json::to_vec(&json).unwrap()),
+            Err(RepoConfigError::InvalidVersion)
+        ));
+    }
+
+    #[test]
     fn config_default_and_rules_determine_visibility() {
         let config = RepoConfig::parse_json(
             br#"{
                 "kind": "scope.repo-config",
-                "version": 1,
-                "visibility": {
+                "version": 2,
+                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"members"}],
+                "files": {
                     "default": "private",
                     "rules": [
-                        { "path": "/README.md", "visibility": "public" },
-                        { "path": "/src/**", "visibility": "public" },
-                        { "path": "/src/secrets/**", "visibility": "private" }
+                        { "path": "/README.md", "view": "public" },
+                        { "path": "/src/**", "view": "public" },
+                        { "path": "/src/secrets/**", "view": "private" }
                     ]
                 }
             }"#,
@@ -269,13 +275,13 @@ mod tests {
         .unwrap();
 
         for (path, expected) in [
-            ("/README.md", Visibility::Public),
-            ("/src/lib.rs", Visibility::Public),
-            ("/src/secrets/key.txt", Visibility::Private),
-            ("/notes.txt", Visibility::Private),
+            ("/README.md", ViewId::public()),
+            ("/src/lib.rs", ViewId::public()),
+            ("/src/secrets/key.txt", ViewId::private()),
+            ("/notes.txt", ViewId::private()),
         ] {
             assert_eq!(
-                config.visibility_for_path(&ScopePath::parse(path).unwrap()),
+                config.label_for_path(&ScopePath::parse(path).unwrap()),
                 expected
             );
         }
@@ -286,8 +292,9 @@ mod tests {
         let config = RepoConfig::parse_json(
             br#"{
                 "kind": "scope.repo-config",
-                "version": 1,
-                "visibility": {
+                "version": 2,
+                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"members"}],
+                "files": {
                     "default": "public",
                     "rules": []
                 }
@@ -297,26 +304,23 @@ mod tests {
 
         for path in ["/.scope/repo.json", "/.scope/runs/test.yml", "/.scope"] {
             assert_eq!(
-                config.visibility_for_path(&ScopePath::parse(path).unwrap()),
-                Visibility::Private
+                config.label_for_path(&ScopePath::parse(path).unwrap()),
+                ViewId::private()
             );
         }
         assert_eq!(
-            config.visibility_for_path(&ScopePath::parse("/.scope/RULES.md").unwrap()),
-            Visibility::Public
+            config.label_for_path(&ScopePath::parse("/.scope/RULES.md").unwrap()),
+            ViewId::public()
         );
 
-        let mut private_config = RepoConfig::with_default_visibility(ConfigVisibility::Private);
-        private_config
-            .visibility
-            .rules
-            .push(RepoConfigVisibilityRule {
-                path: "/.scope/RULES.md".to_string(),
-                visibility: ConfigVisibility::Private,
-            });
+        let mut private_config = RepoConfig::with_default_view(ViewId::private());
+        private_config.files.rules.push(RepoConfigFileRule {
+            path: "/.scope/RULES.md".to_string(),
+            view: ViewId::private(),
+        });
         assert_eq!(
-            private_config.visibility_for_path(&ScopePath::parse("/.scope/RULES.md").unwrap()),
-            Visibility::Public
+            private_config.label_for_path(&ScopePath::parse("/.scope/RULES.md").unwrap()),
+            ViewId::public()
         );
     }
 
@@ -327,13 +331,15 @@ mod tests {
             ("/.scope/runs/test.yml", "private"),
             ("/.scope/RULES.md", "private"),
         ] {
+            let views_json = serde_json::to_string(&Views::builtin()).unwrap();
             let json = format!(
                 r#"{{
                     "kind": "scope.repo-config",
-                    "version": 1,
-                    "visibility": {{
+                    "version": 2,
+                    "views":{views_json},
+                    "files": {{
                         "default": "private",
-                        "rules": [{{ "path": "{path}", "visibility": "{visibility}" }}]
+                        "rules": [{{ "path": "{path}", "view": "{visibility}" }}]
                     }}
                 }}"#
             );
@@ -342,8 +348,8 @@ mod tests {
         }
         let error = RepoConfig::parse_json(
             br#"{
-                "kind":"scope.repo-config","version":1,
-                "visibility":{"default":"private","rules":[]},
+                "kind":"scope.repo-config","version":2,"views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"members"}],
+                "files":{"default":"private","rules":[]},
                 "history":{"rewrites":[{"path":"/.scope/RULES.md","action":"redact-public-history"}]}
             }"#,
         )
@@ -355,13 +361,14 @@ mod tests {
     fn non_canonical_paths_are_rejected_in_rules_and_rewrites() {
         for path in ["/secrets//**", "/secrets/** ", "/README.md "] {
             for section in [
-                format!(r#""rules":[{{"path":"{path}","visibility":"private"}}]"#),
+                format!(r#""rules":[{{"path":"{path}","view":"private"}}]"#),
                 format!(
                     r#""rules":[]}},"history":{{"rewrites":[{{"path":"{path}","action":"redact-public-history"}}]"#
                 ),
             ] {
+                let views_json = serde_json::to_string(&Views::builtin()).unwrap();
                 let json = format!(
-                    r#"{{"kind":"scope.repo-config","version":1,"visibility":{{"default":"public",{section}}}}}"#
+                    r#"{{"kind":"scope.repo-config","version":2,"views":{views_json},"files":{{"default":"public",{section}}}}}"#
                 );
                 let error = RepoConfig::parse_json(json.as_bytes()).unwrap_err();
                 assert!(
@@ -380,8 +387,9 @@ mod tests {
         let config = RepoConfig::parse_json(
             br#"{
                 "kind": "scope.repo-config",
-                "version": 1,
-                "visibility": {
+                "version": 2,
+                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"members"}],
+                "files": {
                     "default": "private",
                     "rules": []
                 },

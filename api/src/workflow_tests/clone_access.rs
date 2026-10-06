@@ -1,8 +1,9 @@
 use super::*;
 use crate::error::ApiError;
+use scope_domain::views::ViewId;
 use scope_domain::{
     projection::Projection,
-    requests::{RequestActorRole, RequestAudience, StartRequestInput},
+    requests::{RequestActorRole, StartRequestInput},
 };
 
 async fn git_projection_for_request(
@@ -13,6 +14,13 @@ async fn git_projection_for_request(
     mode: GitRemoteMode,
 ) -> Result<Projection, ApiError> {
     let (source, _) = authorized_git_read(state, headers, owner, repo_name, mode).await?;
+    let views = scope_domain::views::Views::builtin();
+    let view = match mode {
+        GitRemoteMode::Public => views
+            .anyone()
+            .ok_or_else(|| ApiError::not_found("public view not found"))?,
+        GitRemoteMode::Permissioned => &source.context.access.view,
+    };
     let projection_source = state
         .metadata
         .repositories()
@@ -21,16 +29,16 @@ async fn git_projection_for_request(
             source.context.record.content_version,
         )
         .await?;
-    Ok(projection_source.project(ProjectionViewKey::from_access(source.context.access)))
+    Ok(projection_source.project(&views, view))
 }
 
 async fn repo_with_secret(state: &AppState, path: &str) {
     let mut repo = repo_with_readme(state);
     repo.policy
-        .add_rule(VisibilityRule::private(ScopePath::parse(path).unwrap()))
+        .add_rule(LabelRule::private(ScopePath::parse(path).unwrap()))
         .unwrap();
     repo.graph.commits[0].changes.push(FileChange {
-        visibility: Visibility::Private,
+        label: ViewId::private(),
         path: ScopePath::parse(path).unwrap(),
         old_content: None,
         new_content: Some(source_blob(state, "owner only")),
@@ -72,7 +80,7 @@ async fn permissioned_git_projection_accepts_basic_scope_cli_session_for_repo_ow
     .await
     .unwrap();
     let paths = projection.visible_paths();
-    assert_eq!(projection.view_key, ProjectionViewKey::Private);
+    assert_eq!(projection.view_key, ViewId::private());
     assert!(paths.iter().any(|path| path == "/README.md"));
     assert!(paths.iter().any(|path| path == "/secret.txt"));
 }
@@ -91,7 +99,7 @@ async fn permissioned_git_projection_serves_public_view_without_target_repo_memb
     )
     .await
     .unwrap();
-    assert_eq!(projection.view_key, ProjectionViewKey::Public);
+    assert_eq!(projection.view_key, ViewId::public());
     assert!(
         projection
             .visible_paths()
@@ -115,7 +123,7 @@ async fn public_git_projection_ignores_credentials_and_omits_private_files() {
     .await
     .unwrap();
     let paths = projection.visible_paths();
-    assert_eq!(projection.view_key, ProjectionViewKey::Public);
+    assert_eq!(projection.view_key, ViewId::public());
     assert!(paths.iter().any(|path| path == "/README.md"));
     assert!(!paths.iter().any(|path| path == "/owner-secret.txt"));
 }
@@ -141,7 +149,8 @@ async fn permissioned_public_git_read_view_physically_excludes_private_objects()
     let projection = project_graph(
         &repo.graph,
         &repo.visibility_change_sets,
-        ProjectionViewKey::Public,
+        repo.repo_config.views(),
+        &ViewId::public(),
     );
     let public_repo = projection_bare_repo_for_state(
         &state,
@@ -177,7 +186,7 @@ async fn permissioned_public_git_read_view_physically_excludes_private_objects()
             author_user_id: reader_id,
             title: None,
             author_role: RequestActorRole::Public,
-            audience: RequestAudience::Public,
+            view: ViewId::public(),
             base_main_oid,
             event_id: "event_req_public_read_view_started".to_string(),
             now_unix: 2,

@@ -30,7 +30,7 @@ impl RepositoryStore {
         let context = repository_access(&tx, repo_id, Some(user_id))
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        let names = set_github_required_checks(context.access, names)?;
+        let names = set_github_required_checks(context.access.clone(), names)?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "DELETE FROM scope_github_required_checks WHERE repo_id = $1",

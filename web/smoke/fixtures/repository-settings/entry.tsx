@@ -21,7 +21,7 @@ const initial = {
 } as RepoSummary
 const members = ['alice', 'bob'].map((name) => ({
   user_id: name, handle: name, email: `${name}@example.com`,
-  permissions: { can_push: false, can_change_file_visibility: false },
+  permissions: { can_push: false, can_change_file_visibility: false, view: 'private' },
   created_at_unix: 1, updated_at_unix: 1,
 })) as RepoMember[]
 const sessions = ['session-a', 'session-b'].map((id) => ({ id, label: id, created_at_unix: 1, expires_at_unix: 100 })) as CliSession[]

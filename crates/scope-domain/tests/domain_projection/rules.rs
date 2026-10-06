@@ -80,10 +80,10 @@ fn public_projection_keeps_historical_rules_changes() {
     let graph = graph(vec![commit(
         "rv1",
         "add rules",
-        added("/.scope/RULES.md", Visibility::Public, ""),
+        added("/.scope/RULES.md", ViewId::public(), ""),
     )]);
 
-    let projection = project_graph(&graph, &[], ProjectionViewKey::Public);
+    let projection = project_graph(&graph, &[], &Views::builtin(), &ViewId::public());
 
     assert_eq!(projection.visible_paths(), vec!["/.scope/RULES.md"]);
 }

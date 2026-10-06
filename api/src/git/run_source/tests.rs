@@ -4,8 +4,7 @@ use crate::git::{
     import::git_push_from_repo,
 };
 use scope_domain::{
-    account::UserAccount, policy::Visibility, projection::ProjectionViewKey,
-    repository::git::GitHead, runs::source::RunSource,
+    account::UserAccount, repository::git::GitHead, runs::source::RunSource, views::ViewId,
 };
 use std::time::Instant;
 
@@ -20,7 +19,7 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
     };
     let mut catalog = scope_postgres::db::CatalogFixture::default();
     catalog
-        .create_repository(&owner, "repo", Visibility::Private)
+        .create_repository(&owner, "repo", ViewId::private())
         .unwrap();
     catalog.users.insert(owner.id.clone(), owner);
     state
@@ -74,7 +73,6 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
             ..pushed.stored.head.clone()
         },
         vec![pushed.stored.pack_span.clone()],
-        ProjectionViewKey::Private,
     )
     .unwrap();
 
@@ -308,7 +306,7 @@ async fn git_head_fixture(state: &AppState) -> (RunSource, TemporarySourceDirect
     };
     let mut catalog = scope_postgres::db::CatalogFixture::default();
     catalog
-        .create_repository(&owner, "repo", Visibility::Private)
+        .create_repository(&owner, "repo", ViewId::private())
         .unwrap();
     catalog.users.insert(owner.id.clone(), owner);
     state
@@ -360,7 +358,6 @@ async fn git_head_fixture(state: &AppState) -> (RunSource, TemporarySourceDirect
             ..pushed.stored.head.clone()
         },
         vec![pushed.stored.pack_span.clone()],
-        ProjectionViewKey::Private,
     )
     .unwrap();
 

@@ -6,7 +6,6 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     content::SourceBlob,
-    projection::ProjectionViewKey,
     runs::{manual::ManualRunRequest, source::RunSource, workflow::revision::WorkflowRevision},
 };
 use sea_orm::{EntityTrait, TransactionTrait};
@@ -87,12 +86,8 @@ impl RunStore {
                 .map_err(PostgresError::invalid_input)?
                 .into_revision(request.repository_id())
                 .map_err(PostgresError::invalid_input)?;
-        let source = RunSource::accepted_git_head(
-            request.repository_id(),
-            head,
-            context.git_pack_spans,
-            ProjectionViewKey::Private,
-        )?;
+        let source =
+            RunSource::accepted_git_head(request.repository_id(), head, context.git_pack_spans)?;
         let run = request.create_run(&revision, source, now_unix)?;
         let enqueued = enqueue_run_in_transaction(&tx, run, revision).await?;
         tx.commit().await.map_err(PostgresError::internal)?;

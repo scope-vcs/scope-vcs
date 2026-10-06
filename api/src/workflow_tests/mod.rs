@@ -1,3 +1,4 @@
+use scope_domain::views::ViewId;
 mod http_surface;
 use crate::{
     app::router,
@@ -24,15 +25,13 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use futures_util::FutureExt;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode, jwk::JwkSet};
-use scope_domain::policy::{Policy, ScopePath, Visibility, VisibilityRule};
-use scope_domain::projection::{
-    FileChange, LogicalCommit, ProjectionViewKey, SourceGraph, project_graph,
-};
+use scope_domain::policy::{LabelRule, Policy, ScopePath};
+use scope_domain::projection::{FileChange, LogicalCommit, SourceGraph, project_graph};
 use scope_domain::{
     account::UserAccount,
     projection::LogicalCommitOrigin,
     repo_actions::RepoStorageCleanup,
-    repo_config::{ConfigVisibility, RepoConfig},
+    repo_config::RepoConfig,
     repository::collaboration::{RepositoryInvite, RepositoryMember, RepositoryMemberPermissions},
     repository::credentials::GitPushToken,
     repository::{RepoLifecycleState, RepoRecord, Repository},
@@ -625,10 +624,10 @@ fn test_repo(owner_id: &str) -> Repository {
             change_version: 1,
             content_version: 1,
         },
-        repo_config: RepoConfig::with_default_visibility(ConfigVisibility::Public),
+        repo_config: RepoConfig::with_default_view(ViewId::public()),
         first_push_token: None,
         git_push_token: None,
-        policy: Policy::new(Visibility::Public),
+        policy: Policy::new(ViewId::public()),
         graph: SourceGraph {
             repo_id: TEST_REPO_ID.to_string(),
             commits: Vec::new(),
@@ -662,6 +661,7 @@ fn member_permissions(
     RepositoryMemberPermissions {
         can_push,
         can_change_file_visibility,
+        view: ViewId::private(),
     }
 }
 
@@ -728,7 +728,7 @@ fn repo_with_readme(state: &AppState) -> Repository {
         author_id: repo.record.owner_user_id.clone(),
         message: "initial".to_string(),
         changes: vec![FileChange {
-            visibility: Visibility::Public,
+            label: ViewId::public(),
             path: path.clone(),
             old_content: None,
             new_content: Some(content.clone()),
@@ -739,7 +739,7 @@ fn repo_with_readme(state: &AppState) -> Repository {
 }
 
 fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> ReceivePackUpdate {
-    let config = repo_config(Visibility::Public);
+    let config = repo_config(ViewId::public());
     let head_oid = "1111111111111111111111111111111111111111";
     ReceivePackUpdate {
         occurred_at_unix: None,
@@ -782,14 +782,14 @@ fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> 
     }
 }
 
-fn repo_config(default_visibility: Visibility) -> RepoConfig {
-    RepoConfig::with_default_visibility(default_visibility.into())
+fn repo_config(default_view: ViewId) -> RepoConfig {
+    RepoConfig::with_default_view(default_view)
 }
 
 fn push_intent_request_json(head_oid: &str, config: RepoConfig) -> String {
     push_intent_request_json_with_base(
         head_oid,
-        repo_config_fingerprint(&repo_config(Visibility::Public)).unwrap(),
+        repo_config_fingerprint(&repo_config(ViewId::public())).unwrap(),
         config,
     )
 }
@@ -901,13 +901,13 @@ fn logical_commit(id: &str, message: &str, changes: Vec<FileChange>) -> LogicalC
 
 fn history_change(
     path: &str,
-    visibility: Visibility,
+    label: ViewId,
     old: Option<scope_domain::content::SourceBlob>,
     new: Option<scope_domain::content::SourceBlob>,
 ) -> FileChange {
     FileChange {
         path: ScopePath::parse(path).unwrap(),
-        visibility,
+        label,
         old_content: old,
         new_content: new,
     }

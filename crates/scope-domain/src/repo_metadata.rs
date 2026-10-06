@@ -61,8 +61,8 @@ mod tests {
     use super::*;
     use crate::{
         account::UserAccount,
-        policy::Visibility,
         repository::collaboration::{RepositoryMember, RepositoryMemberPermissions},
+        views::ViewId,
     };
 
     fn repository() -> Repository {
@@ -74,7 +74,7 @@ mod tests {
                 email_verified: true,
             },
             "repo",
-            Visibility::Public,
+            ViewId::public(),
             "repoi_test",
         )
         .unwrap()

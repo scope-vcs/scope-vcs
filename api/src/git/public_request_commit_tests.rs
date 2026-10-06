@@ -1,3 +1,4 @@
+use scope_domain::views::ViewId;
 use std::{fs, path::Path, process::Command};
 
 use scope_domain::{content_ref::ContentRef, policy::ScopePath};
@@ -74,7 +75,7 @@ fn reads_original_author_time_message_and_root_blob() {
     assert_eq!(details.changes.len(), 1);
     let change = &details.changes[0];
     assert!(change.old_content.is_none());
-    assert_eq!(change.visibility, Visibility::Public);
+    assert_eq!(change.label, ViewId::public());
     let blob = change.new_content.as_ref().unwrap();
     let expected_oid = blob_oid(repo.path(), &oid, "root.txt");
     assert_eq!(blob.git_oid, expected_oid);
@@ -178,7 +179,7 @@ fn merge_uses_first_parent_blobs_independently_of_safety_paths() {
         details
             .changes
             .iter()
-            .all(|change| change.visibility == Visibility::Public)
+            .all(|change| change.label == ViewId::public())
     );
 }
 

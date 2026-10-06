@@ -9,13 +9,13 @@ import { createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/$owner/$repo/updates/$entryId')({
   validateSearch: parseUpdateSearch,
-  loaderDeps: ({ search }) => ({ audience: search.audience ?? null }),
+  loaderDeps: ({ search }) => ({ view: search.view ?? null }),
   staleTime: Infinity,
   loader: async ({ deps, params, parentMatchPromise }) => {
     const [parent, loaded] = await Promise.all([
       parentMatchPromise,
       loadHistoryEntry({
-        data: { owner: params.owner, repo: params.repo, audience: deps.audience, entry: params.entryId },
+        data: { owner: params.owner, repo: params.repo, view: deps.view, entry: params.entryId },
       }),
     ])
     const live = parent.loaderData as RepoLiveState

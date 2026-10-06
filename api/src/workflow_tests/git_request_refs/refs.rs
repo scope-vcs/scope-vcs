@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn permissioned_clone_fetches_named_public_requests_without_joining() {
@@ -94,7 +95,7 @@ async fn public_request_receive_pack_requires_current_repo_read() {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.policy = Policy::new(Visibility::Private);
+            repo.policy = Policy::new(ViewId::private());
             repo.graph.commits.clear();
             repo.bump_content_version();
         })
@@ -512,14 +513,15 @@ async fn draft_push_records_revision_activity_without_touching_main() {
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
             repo.policy
-                .add_rule(VisibilityRule::private(private_path.clone()))
+                .add_rule(LabelRule::private(private_path.clone()))
                 .unwrap();
-            repo.repo_config.visibility.rules.push(
-                scope_domain::repo_config::RepoConfigVisibilityRule {
+            repo.repo_config
+                .files
+                .rules
+                .push(scope_domain::repo_config::RepoConfigFileRule {
                     path: private_path.as_str().to_string(),
-                    visibility: ConfigVisibility::Private,
-                },
-            );
+                    view: ViewId::private(),
+                });
             repo.bump_content_version();
         })
         .await

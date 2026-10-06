@@ -12,14 +12,14 @@ function textFile(path: string, oid: string, text: string): RepoFileContentRespo
     oid,
     path,
     size_bytes: text.length,
-    visibility: 'Public',
+    label: 'public',
   }
 }
 
-test('keys file entries by repository version, audience and normalized path', () => {
+test('keys file entries by repository version, view and normalized path', () => {
   const base = {
     scope: 'viewer-a',
-    audience: 'public' as const,
+    view: 'public' as const,
     contentVersion: 3,
     path: 'README.html',
     repoId: 'repo-1',
@@ -31,7 +31,7 @@ test('keys file entries by repository version, audience and normalized path', ()
   )
   assert.notEqual(
     repoFileCacheKey(base),
-    repoFileCacheKey({ ...base, audience: 'private' }),
+    repoFileCacheKey({ ...base, view: 'private' }),
   )
   assert.equal(repoFileCacheKey(base), repoFileCacheKey({ ...base, path: '/README.html' }))
   assert.notEqual(

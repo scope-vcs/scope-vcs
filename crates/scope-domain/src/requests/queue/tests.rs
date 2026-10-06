@@ -1,6 +1,7 @@
 use super::*;
 use crate::error::DomainErrorKind;
-use crate::requests::{RequestActorRole, RequestAudience};
+use crate::requests::RequestActorRole;
+use crate::views::ViewId;
 
 #[test]
 fn groups_split_active_rows_by_who_acts_next() {
@@ -295,7 +296,7 @@ fn open_request() -> Request {
         name: "request".into(),
         author_user_id: Some("author".into()),
         author_role: RequestActorRole::Public,
-        audience: RequestAudience::Public,
+        view: ViewId::public(),
         base_main_oid: "0".repeat(40),
         head_oid: "1".repeat(40),
         git_snapshot: None,

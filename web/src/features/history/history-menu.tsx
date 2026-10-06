@@ -1,13 +1,15 @@
 import type { RepoParams } from '@/api/types'
-import type { HistoryFeed, ProjectionPreviewAudience } from '@/api/types.generated'
+import type { HistoryFeed, ViewId } from '@/api/types.generated'
+import type { RepositoryAccessResponse } from '@/api/types.generated'
+import { mayReadView, readableViews } from '@/api/repo-views'
 import { MenuListPanel } from '@/components/menu-list-panel'
 import { Popover } from '@/components/ui/popover'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { ChevronDown, History } from 'lucide-react'
 import { useState } from 'react'
 import { HistoryFeedList } from './history-entry-list'
-import { defaultHistoryAudience, useHistoryFeed } from './history-feed'
-import { updateAudienceSearch } from './update-search'
+import { useHistoryFeed } from './history-feed'
+import { updateViewSearch } from './update-search'
 
 const FEEDS: { value: HistoryFeed; label: string; empty: string }[] = [
   { value: 'all', label: 'All', empty: 'No history yet.' },
@@ -16,32 +18,33 @@ const FEEDS: { value: HistoryFeed; label: string; empty: string }[] = [
 ]
 
 export function HistoryMenu({
-  canReadPrivateFiles,
+  access,
   initialFeed = 'all',
   label = 'History',
   params,
 }: {
-  canReadPrivateFiles: boolean
+  access: RepositoryAccessResponse
   initialFeed?: HistoryFeed
   label?: string
   params: RepoParams
 }) {
-  const defaultAudience = defaultHistoryAudience(canReadPrivateFiles)
+  const defaultView = access.view
   const [feed, setFeed] = useState<HistoryFeed>(initialFeed)
-  const [audience, setAudience] = useState<ProjectionPreviewAudience>(defaultAudience)
+  const [view, setView] = useState<ViewId>(defaultView)
+  const selectedView = mayReadView(access, view) ? view : defaultView
 
   return (
     <Popover
-      className="w-[min(30rem,calc(100vw-2rem))] p-0"
+      className="w-[min(30rem,calc(100vw-3rem))] p-0"
       label="Repository history"
       panel={(close) => (
         <HistoryMenuPanel
-          audience={audience}
-          canReadPrivateFiles={canReadPrivateFiles}
-          defaultAudience={defaultAudience}
+          view={selectedView}
+          access={access}
+          defaultView={defaultView}
           feed={feed}
           onNavigate={close}
-          onSelectAudience={setAudience}
+          onSelectView={setView}
           onSelectFeed={setFeed}
           params={params}
         />
@@ -61,26 +64,27 @@ export function HistoryMenu({
 }
 
 function HistoryMenuPanel({
-  audience,
-  canReadPrivateFiles,
-  defaultAudience,
+  view,
+  access,
+  defaultView,
   feed,
   onNavigate,
-  onSelectAudience,
+  onSelectView,
   onSelectFeed,
   params,
 }: {
-  audience: ProjectionPreviewAudience
-  canReadPrivateFiles: boolean
-  defaultAudience: ProjectionPreviewAudience
+  view: ViewId
+  access: RepositoryAccessResponse
+  defaultView: ViewId
   feed: HistoryFeed
   onNavigate: () => void
-  onSelectAudience: (audience: ProjectionPreviewAudience) => void
+  onSelectView: (view: ViewId) => void
   onSelectFeed: (feed: HistoryFeed) => void
   params: RepoParams
 }) {
-  const history = useHistoryFeed({ audience, feed, params })
+  const history = useHistoryFeed({ view, feed, params })
   const empty = FEEDS.find((option) => option.value === feed)?.empty ?? ''
+  const options = readableViews(access)
 
   return (
     <MenuListPanel
@@ -98,17 +102,18 @@ function HistoryMenuPanel({
               <ToggleGroupItem key={option.value} value={option.value}>{option.label}</ToggleGroupItem>
             ))}
           </ToggleGroup>
-          {canReadPrivateFiles ? (
+          {options.length > 1 ? (
             <ToggleGroup
               aria-label="Viewing as"
               onValueChange={(value) => {
-                if (value) onSelectAudience(value as ProjectionPreviewAudience)
+                if (value) onSelectView(value as ViewId)
               }}
               type="single"
-              value={audience}
+              value={view}
             >
-              <ToggleGroupItem value="private">Private</ToggleGroupItem>
-              <ToggleGroupItem value="public">Public</ToggleGroupItem>
+              {options.map((option) => (
+                <ToggleGroupItem key={option.id} value={option.id}>{option.name}</ToggleGroupItem>
+              ))}
             </ToggleGroup>
           ) : null}
         </>
@@ -119,7 +124,7 @@ function HistoryMenuPanel({
         history={history}
         onNavigate={onNavigate}
         params={params}
-        search={updateAudienceSearch(audience, defaultAudience)}
+        search={updateViewSearch(view, defaultView)}
       />
     </MenuListPanel>
   )

@@ -9,12 +9,6 @@ pub enum RequestActorRole {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RequestAudience {
-    Public,
-    Private,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RequestState {
     Draft,
     Open,
@@ -29,7 +23,7 @@ pub struct Request {
     pub name: String,
     pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
-    pub audience: RequestAudience,
+    pub view: crate::views::ViewId,
     pub base_main_oid: String,
     pub head_oid: String,
     pub git_snapshot: Option<SourceBlob>,

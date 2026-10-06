@@ -503,7 +503,7 @@ async fn maintainer_access(
     user_id: &str,
 ) -> Result<RepositoryAccessContext, ApiError> {
     let context = find_read_access(state, owner, repo, Some(user_id)).await?;
-    ensure_can_manage_github_connection(context.access)?;
+    ensure_can_manage_github_connection(context.access.clone())?;
     Ok(context)
 }
 
@@ -533,7 +533,7 @@ async fn connection_response(
         GitHubConnectionParts {
             read,
             required_checks,
-            can_confirm_public: can_publish_to_github(context.access),
+            can_confirm_public: can_publish_to_github(context.access.clone()),
             setup_check,
             run_import_count,
             run_import,

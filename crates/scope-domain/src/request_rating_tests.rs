@@ -1,7 +1,8 @@
 use crate::requests::{
-    CreateRequestRatingInput, Request, RequestActorRole, RequestAudience, RequestReputation,
-    create_request_rating, eligible_rating_subject_user_id,
+    CreateRequestRatingInput, Request, RequestActorRole, RequestReputation, create_request_rating,
+    eligible_rating_subject_user_id,
 };
+use crate::views::ViewId;
 
 #[test]
 fn reputation_accepts_only_possible_rating_totals() {
@@ -25,7 +26,7 @@ fn terminal_request(merged: bool) -> Request {
         name: "change".to_string(),
         author_user_id: Some("author".to_string()),
         author_role: RequestActorRole::Public,
-        audience: RequestAudience::Public,
+        view: ViewId::public(),
         base_main_oid: "a".repeat(40),
         head_oid: "b".repeat(40),
         git_snapshot: None,

@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { RepositoryInviteResponse, RepositoryMemberResponse } from '../../api/types.generated'
 import { invalidateRepoSettings, refreshWhenNextInviteExpires, repoSettingsResource, retainCollaborationResult, retainGitHubConnection } from './repo-settings-resource'
 
-const member: RepositoryMemberResponse = { user_id: 'member', handle: 'member', email: 'member@example.com', created_at_unix: 1, updated_at_unix: 1, permissions: { can_push: false, can_change_file_visibility: false } }
+const member: RepositoryMemberResponse = { user_id: 'member', handle: 'member', email: 'member@example.com', created_at_unix: 1, updated_at_unix: 1, permissions: { can_push: false, can_change_file_visibility: false, view: 'private' } }
 
 test('settings reuse one scoped snapshot and write results fence older reads without hiding updated permissions', async () => {
   repoSettingsResource.clear()

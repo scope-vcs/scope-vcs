@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn permissioned_scope_sessions_share_raw_live_head() {
@@ -24,13 +25,13 @@ async fn permissioned_scope_sessions_share_raw_live_head() {
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
             repo.record.lifecycle_state = RepoLifecycleState::AwaitingFirstPush;
-            repo.repo_config = repo_config(Visibility::Private);
-            repo.policy = Policy::new(Visibility::Private);
+            repo.repo_config = repo_config(ViewId::private());
+            repo.policy = Policy::new(ViewId::private());
             repo.bump_content_version();
         })
         .await
         .unwrap();
-    apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Private)).await;
+    apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::private())).await;
 
     let member_subject = "user_member";
     let member_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", member_subject);

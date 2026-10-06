@@ -1,48 +1,29 @@
 use crate::error::ApiError;
-use scope_api_contract::Visibility;
+use scope_api_contract::ViewId;
 pub(crate) use scope_api_contract::{
     ProjectionPreviewCommitVisibilityResponse, ProjectionPreviewSummaryResponse,
 };
 use scope_domain::{
     policy::ScopePath,
     projection_views::{
-        ProjectionAudience, ProjectionPreviewCommit, ProjectionPreviewFile, ProjectionViewFile,
-        projection_preview, repo_scope_path as domain_repo_scope_path,
+        ProjectionPreviewCommit, ProjectionPreviewFile, ProjectionPreviewSource,
+        ProjectionViewFile, projection_preview, repo_scope_path as domain_repo_scope_path,
     },
 };
 use scope_postgres::db::{RepositoryProjectionSource, RepositoryReadPolicy};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "type-export", ts(rename_all = "lowercase"))]
-pub(crate) enum ProjectionPreviewAudience {
-    Private,
-    Public,
-}
-
-impl From<ProjectionPreviewAudience> for ProjectionAudience {
-    fn from(audience: ProjectionPreviewAudience) -> Self {
-        match audience {
-            ProjectionPreviewAudience::Private => Self::Private,
-            ProjectionPreviewAudience::Public => Self::Public,
-        }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct ProjectionPreviewRequest {
-    pub(crate) audience: ProjectionPreviewAudience,
+    pub(crate) view: ViewId,
 }
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct ProjectionPreviewResponse {
-    pub(crate) audience: ProjectionPreviewAudience,
+    pub(crate) view: ViewId,
     pub(crate) repo_id: String,
-    pub(crate) view_key: String,
     pub(crate) head_oid: Option<String>,
     pub(crate) files: Vec<ProjectionPreviewFileResponse>,
     pub(crate) commits: Vec<ProjectionPreviewCommitResponse>,
@@ -54,7 +35,7 @@ pub(crate) struct ProjectionPreviewResponse {
 pub(crate) struct ProjectionPreviewFileResponse {
     pub(crate) path: String,
     pub(crate) oid: String,
-    pub(crate) visibility: Visibility,
+    pub(crate) label: ViewId,
 }
 
 #[derive(Debug, Serialize)]
@@ -75,7 +56,7 @@ pub(crate) struct RepoFileResponse {
     pub(crate) path: String,
     pub(crate) oid: String,
     pub(crate) tracked: bool,
-    pub(crate) visibility: Visibility,
+    pub(crate) label: ViewId,
 }
 
 #[derive(Debug, Serialize)]
@@ -83,7 +64,7 @@ pub(crate) struct RepoFileResponse {
 pub(crate) struct RepoFileContentResponse {
     pub(crate) path: String,
     pub(crate) oid: String,
-    pub(crate) visibility: Visibility,
+    pub(crate) label: ViewId,
     pub(crate) size_bytes: u64,
     pub(crate) content: super::ReviewFileContentResponse,
 }
@@ -91,30 +72,32 @@ pub(crate) struct RepoFileContentResponse {
 pub(crate) fn projection_preview_response(
     repo: &RepositoryReadPolicy,
     source: &RepositoryProjectionSource,
-    audience: ProjectionPreviewAudience,
+    view: &scope_domain::views::ViewId,
     include_private_counts: bool,
     native_details: &std::collections::BTreeMap<
         String,
         scope_domain::projection::NativePublicCommitDetails,
     >,
 ) -> Result<ProjectionPreviewResponse, ApiError> {
-    let projection_audience = ProjectionAudience::from(audience);
-    let projection = source.project(projection_audience.into());
+    let views = &repo.views;
+    let projection = source.project(views, view);
     let preview = projection_preview(
-        &repo.context.record.id,
-        &repo.policy,
-        &source.graph,
-        &source.visibility_change_sets,
-        projection_audience,
+        ProjectionPreviewSource {
+            repo_id: &repo.context.record.id,
+            policy: &repo.policy,
+            graph: &source.graph,
+            visibility_change_sets: &source.visibility_change_sets,
+        },
+        views,
+        view,
         include_private_counts,
         native_details,
     )?;
     let head_oid = scope_git::projection_head_oid(&projection).map_err(ApiError::internal)?;
 
     Ok(ProjectionPreviewResponse {
-        audience,
+        view: preview.view.into(),
         repo_id: preview.repo_id,
-        view_key: preview.view_key,
         head_oid,
         files: preview
             .files
@@ -142,7 +125,7 @@ fn projection_preview_file_response(file: ProjectionPreviewFile) -> ProjectionPr
     ProjectionPreviewFileResponse {
         path: file.path.as_str().to_string(),
         oid: file.oid,
-        visibility: file.visibility.into(),
+        label: file.label.into(),
     }
 }
 
@@ -165,6 +148,6 @@ fn repo_file_response(file: ProjectionViewFile) -> RepoFileResponse {
         path: file.path.as_str().to_string(),
         oid: file.oid,
         tracked: file.tracked,
-        visibility: file.visibility.into(),
+        label: file.label.into(),
     }
 }

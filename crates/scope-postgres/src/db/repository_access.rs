@@ -2,12 +2,12 @@ use super::integer_columns;
 use super::{RepositoryStore, begin_metadata_read_snapshot, entities};
 use crate::error::PostgresError;
 use scope_domain::{
-    projection::ProjectionViewKey,
     repository::{
         RepoRecord,
         access::{RepositoryAccess, RepositoryAccessContext, repository_access_for_user_id},
         repo_id,
     },
+    views::ViewId,
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, FromQueryResult, QueryFilter,
@@ -32,6 +32,7 @@ struct AccessRow {
 pub struct RepositoryReadPolicy {
     pub context: RepositoryAccessContext,
     pub policy: scope_domain::policy::Policy,
+    pub views: scope_domain::views::Views,
 }
 
 impl RepositoryStore {
@@ -66,8 +67,14 @@ impl RepositoryStore {
             return Ok(None);
         };
         let policy = load_policy(&tx, &context.record.id).await?;
+        let views =
+            super::projection_read_models::repository_views(&tx, &context.record.id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(Some(RepositoryReadPolicy { context, policy }))
+        Ok(Some(RepositoryReadPolicy {
+            context,
+            policy,
+            views,
+        }))
     }
 
     pub(super) async fn begin_read_access_snapshot(
@@ -103,16 +110,24 @@ impl RepositoryStore {
                 && context.record.lifecycle_state
                     == scope_domain::repository::RepoLifecycleState::Ready
             {
-                let Some(view) = super::history_reads::history_view_metadata(
+                let views =
+                    super::projection_read_models::repository_views(&tx, &context.record.id)
+                        .await?;
+                let Some(public_view) = views.anyone() else {
+                    tx.commit().await.map_err(PostgresError::internal)?;
+                    return Ok(None);
+                };
+                let Some(view) = super::projection_read_models::live_projection_read_model(
                     &tx,
                     &context.record.id,
                     context.record.content_version,
-                    scope_domain::projection::ProjectionViewKey::Public,
+                    public_view,
                 )
                 .await?
                 else {
                     tx.commit().await.map_err(PostgresError::internal)?;
-                    self.ensure_history_view(&context.incarnation()).await?;
+                    self.ensure_live_projection_read_models(&context.incarnation())
+                        .await?;
                     continue;
                 };
                 view.visible_files
@@ -182,31 +197,30 @@ impl RepositoryStore {
         &self,
         context: &RepositoryAccessContext,
     ) -> Result<Option<String>, PostgresError> {
-        self.repository_main_oid_for_audience(
-            context,
-            ProjectionViewKey::from_access(context.access),
-        )
-        .await
+        self.repository_main_oid_for_view(context, &context.access.view)
+            .await
     }
 
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_main_oid_for_audience"))]
-    pub async fn repository_main_oid_for_audience(
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_main_oid_for_view"))]
+    pub async fn repository_main_oid_for_view(
         &self,
         context: &RepositoryAccessContext,
-        audience: ProjectionViewKey,
+        view: &ViewId,
     ) -> Result<Option<String>, PostgresError> {
-        if audience == ProjectionViewKey::Private && !context.access.can_read_private_files {
-            return Err(PostgresError::permission_denied(
-                "private repository files require maintainer access",
-            ));
-        }
         for _ in 0..2 {
             let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
             let current = repository_access(&tx, &context.record.id, None)
                 .await?
                 .ok_or_else(|| PostgresError::not_found("repo not found"))?;
             ensure_current_context(context, &current)?;
-            if audience == ProjectionViewKey::Private
+            let views =
+                super::projection_read_models::repository_views(&tx, &context.record.id).await?;
+            if !views.may_read(&context.access.view, view) {
+                return Err(PostgresError::permission_denied(
+                    "repository view requires access",
+                ));
+            }
+            if view == views.full()
                 && let Some(head) = entities::git_head::Entity::find_by_id(&context.record.id)
                     .one(&tx)
                     .await
@@ -215,18 +229,19 @@ impl RepositoryStore {
                 tx.commit().await.map_err(PostgresError::internal)?;
                 return Ok(Some(head.head_oid));
             }
-            let metadata = super::history_reads::history_view_metadata(
+            let metadata = super::projection_read_models::live_projection_read_model(
                 &tx,
                 &context.record.id,
                 context.record.content_version,
-                audience,
+                view,
             )
             .await?;
             tx.commit().await.map_err(PostgresError::internal)?;
             if let Some(view) = metadata {
                 return Ok(view.head_oid);
             }
-            self.ensure_history_view(&context.incarnation()).await?;
+            self.ensure_live_projection_read_models(&context.incarnation())
+                .await?;
         }
         Err(PostgresError::conflict(
             "repository changed while reading its head; retry",

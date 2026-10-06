@@ -4,9 +4,15 @@ use scope_domain::history::{HistoryView, history_view_from_projection};
 fn history_view(
     graph: &SourceGraph,
     sets: &[VisibilityChangeSet],
-    view_key: ProjectionViewKey,
+    view_key: ViewId,
 ) -> HistoryView {
-    history_view_from_projection(project_graph(graph, sets, view_key), graph, sets)
+    history_view_from_projection(
+        project_graph(graph, sets, &Views::builtin(), &view_key),
+        graph,
+        sets,
+        &Views::builtin(),
+        &view_key,
+    )
 }
 
 #[test]
@@ -14,7 +20,7 @@ fn history_times_follow_visible_metadata_without_changing_projected_revisions() 
     let mut source = graph(vec![commit(
         "private",
         "Private history",
-        added("/secret.md", Visibility::Private, "secret"),
+        added("/secret.md", ViewId::private(), "secret"),
     )]);
     source.commits[0].occurred_at_unix = Some(1_600_000_000);
     let mut reveal = visibility_event(
@@ -22,13 +28,13 @@ fn history_times_follow_visible_metadata_without_changing_projected_revisions() 
         Some("private"),
         None,
         "/secret.md",
-        Visibility::Public,
+        ViewId::public(),
         blob("secret"),
     );
     reveal.occurred_at_unix = Some(1_700_000_000);
     let sets = vec![reveal];
-    let projected = project_graph(&source, &sets, ProjectionViewKey::Public);
-    let public = history_view(&source, &sets, ProjectionViewKey::Public);
+    let projected = project_graph(&source, &sets, &Views::builtin(), &ViewId::public());
+    let public = history_view(&source, &sets, ViewId::public());
     assert!(!public.entries.is_empty());
     assert!(
         public
@@ -43,27 +49,23 @@ fn history_times_follow_visible_metadata_without_changing_projected_revisions() 
             .filter(|entry| entry.author.is_none())
             .all(|entry| entry.occurred_at_unix.is_none())
     );
-    let private = history_view(&source, &sets, ProjectionViewKey::Private);
+    let private = history_view(&source, &sets, ViewId::private());
     assert_eq!(private.entries[0].occurred_at_unix, Some(1_700_000_000));
     assert_eq!(private.entries[1].occurred_at_unix, Some(1_600_000_000));
     source.commits[0].occurred_at_unix = Some(1_650_000_000);
     assert_eq!(
-        project_graph(&source, &sets, ProjectionViewKey::Public),
+        project_graph(&source, &sets, &Views::builtin(), &ViewId::public()),
         projected
     );
-    assert_eq!(
-        history_view(&source, &sets, ProjectionViewKey::Public),
-        public
-    );
+    assert_eq!(history_view(&source, &sets, ViewId::public()), public);
     assert_ne!(
-        history_view(&source, &sets, ProjectionViewKey::Private).generation,
+        history_view(&source, &sets, ViewId::private()).generation,
         private.generation
     );
 }
 
 #[test]
 fn native_history_refs_follow_audience_and_round_trip() {
-    use scope_domain::history::{HistoryView, history_view};
     let native = NativePublicCommit {
         oid: "native".into(),
         parent_oids: vec!["base".into()],
@@ -73,7 +75,7 @@ fn native_history_refs_follow_audience_and_round_trip() {
     let mut logical = commit(
         "merge",
         "Merge request",
-        added("/README.md", Visibility::Public, "public"),
+        added("/README.md", ViewId::public(), "public"),
     );
     logical.origin = LogicalCommitOrigin::PublicRequestMerge {
         request_id: "request".into(),
@@ -84,7 +86,7 @@ fn native_history_refs_follow_audience_and_round_trip() {
         preserve_public_commits: true,
     };
     let mut source = graph(vec![logical]);
-    let public = history_view(&source, &[], ProjectionViewKey::Public);
+    let public = history_view(&source, &[], ViewId::public());
     assert_eq!(public.entries[0].native_commits, vec![native.clone()]);
     assert_eq!(public.entries[0].message, "Merge request");
     let persisted: HistoryView =
@@ -92,8 +94,8 @@ fn native_history_refs_follow_audience_and_round_trip() {
     assert_eq!(persisted, public);
     source.commits[0]
         .changes
-        .push(added("/secret.md", Visibility::Private, "secret"));
-    let mixed = history_view(&source, &[], ProjectionViewKey::Public);
+        .push(added("/secret.md", ViewId::private(), "secret"));
+    let mixed = history_view(&source, &[], ViewId::public());
     assert!(
         mixed
             .entries
@@ -101,7 +103,7 @@ fn native_history_refs_follow_audience_and_round_trip() {
             .all(|entry| entry.native_commits.is_empty())
     );
     assert_eq!(
-        history_view(&source, &[], ProjectionViewKey::Private).entries[0].native_commits,
+        history_view(&source, &[], ViewId::private()).entries[0].native_commits,
         vec![native]
     );
     if let LogicalCommitOrigin::PublicRequestMerge {
@@ -113,7 +115,7 @@ fn native_history_refs_follow_audience_and_round_trip() {
     }
     source.commits[0].changes.pop();
     assert!(
-        history_view(&source, &[], ProjectionViewKey::Public)
+        history_view(&source, &[], ViewId::public())
             .entries
             .iter()
             .all(|entry| entry.native_commits.is_empty())

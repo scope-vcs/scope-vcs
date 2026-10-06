@@ -72,7 +72,7 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
 }
 
 function metadataItems(detail: HistoryEntryDetailResponse): ReactNode[] {
-  const count = historyEntryCountLabel(detail)
+  const count = historyEntryCountLabel(detail, detail.view)
   return [
     detail.kind === 'push' ? null : historyEntryKindLabel(detail.kind),
     detail.author,

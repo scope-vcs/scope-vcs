@@ -1,6 +1,5 @@
 use super::{
-    RequestStore,
-    entities::{self, encode_enum},
+    RequestStore, entities,
     github_connections::repository_github_connection,
     github_pushes::queue_github_push,
     native_runs::lock_native_runs_availability,
@@ -10,14 +9,15 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     requests::{
-        GitHubBranch, GitHubCheckResults, GitHubPushDestination, Request, RequestAudience,
-        RequestCheckEvaluation, RequestCheckPlan, RequestCheckResults, RequestRevision,
-        ensure_approving_reviewed_head, stop_request_auto_merge_for_check_evaluation,
+        GitHubBranch, GitHubCheckResults, GitHubPushDestination, Request, RequestCheckEvaluation,
+        RequestCheckPlan, RequestCheckResults, RequestRevision, ensure_approving_reviewed_head,
+        stop_request_auto_merge_for_check_evaluation,
     },
     runs::{
         run::Run,
         workflow::{identity::WorkflowIdentity, revision::WorkflowRevision},
     },
+    views::ViewId,
 };
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, EntityTrait, IntoActiveModel,
@@ -344,7 +344,7 @@ async fn private_request_ids<C: ConnectionTrait>(
 ) -> Result<Vec<String>, PostgresError> {
     Ok(entities::request::Entity::find()
         .filter(entities::request::Column::Id.is_in(request_ids.iter().cloned()))
-        .filter(entities::request::Column::Audience.eq(encode_enum(RequestAudience::Private)?))
+        .filter(entities::request::Column::Audience.eq(ViewId::private().as_str().to_string()))
         .all(conn)
         .await
         .map_err(PostgresError::internal)?

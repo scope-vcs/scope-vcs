@@ -58,6 +58,7 @@ fn persisted_domain_shapes_roundtrip_the_recorded_json() {
     persisted_roundtrip::<RepositoryMemberPermissions>(json!({
         "can_push": true,
         "can_change_file_visibility": false,
+        "view": "private",
     }));
     persisted_roundtrip::<RepositoryInvite>(json!({
         "id": "invite-1",
@@ -67,6 +68,7 @@ fn persisted_domain_shapes_roundtrip_the_recorded_json() {
         "permissions": {
             "can_push": true,
             "can_change_file_visibility": false,
+            "view": "private",
         },
         "invited_by_user_id": "owner-user",
         "link_hashes": ["link-hash"],

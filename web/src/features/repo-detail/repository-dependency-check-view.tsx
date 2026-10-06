@@ -1,4 +1,5 @@
 import { ChevronRight } from 'lucide-react'
+import { viewName } from '../../api/repo-views'
 import type { DependencyCheckPresentation } from './repository-dependency-model'
 
 export function RepositoryDependencyCheckView({
@@ -103,7 +104,7 @@ function DependencyPath({
       onClick={() => onSelectFilePath(path)}
       type="button"
     >
-      <span className="mb-0.5 block font-sans text-[10px] text-muted-foreground">{visibility === 'public' ? 'Public file' : 'Private file'}</span>
+      <span className="mb-0.5 block font-sans text-[10px] text-muted-foreground">{viewName(visibility)} file</span>
       <span className={`block break-all ${visibility === 'public' ? 'text-success-strong' : 'text-danger-strong'}`}>{path}</span>
     </button>
   )

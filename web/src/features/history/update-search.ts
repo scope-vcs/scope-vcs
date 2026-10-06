@@ -1,24 +1,24 @@
-import { parseVisibilityChange } from '@/api/history-inputs'
+import { parseHistoryView, parseVisibilityChange } from '@/api/history-inputs'
 import { parseRouteFilePathSearch } from '@/lib/route-file'
-import type { ProjectionPreviewAudience } from '@/api/types.generated'
+import type { ViewId } from '@/api/types.generated'
 
 export type UpdateSearch = {
-  audience?: ProjectionPreviewAudience
+  view?: ViewId
   path?: string
   visibility_change?: string
 }
 
 export function parseUpdateSearch(search: Record<string, unknown>): UpdateSearch {
   return {
-    audience: search.audience === 'private' || search.audience === 'public' ? search.audience : undefined,
+    view: search.view ? parseHistoryView(search.view) : undefined,
     path: parseRouteFilePathSearch(search.path),
     visibility_change: parseVisibilityChange(search.visibility_change) ?? undefined,
   }
 }
 
-export function updateAudienceSearch(
-  audience: ProjectionPreviewAudience,
-  defaultAudience: ProjectionPreviewAudience,
+export function updateViewSearch(
+  view: ViewId,
+  defaultView: ViewId,
 ): UpdateSearch {
-  return audience === defaultAudience ? {} : { audience }
+  return view === defaultView ? {} : { view }
 }

@@ -1,6 +1,20 @@
 use super::*;
 use crate::error::ErrorKind;
-use scope_domain::policy::VisibilityRule;
+use scope_domain::policy::LabelRule;
+use scope_domain::views::ViewId;
+
+fn inspect_request_changes(
+    changes: &[u8],
+    policy: &Policy,
+    access: RepositoryAccess,
+) -> Result<InspectedRequestChanges, ApiError> {
+    super::inspect_request_changes(
+        changes,
+        policy,
+        &scope_domain::views::Views::builtin(),
+        &access,
+    )
+}
 
 #[test]
 fn changes_preserve_kinds_modes_oids_raw_paths_and_sorting() {
@@ -10,7 +24,7 @@ fn changes_preserve_kinds_modes_oids_raw_paths_and_sorting() {
         :100644 100755 old new M\0m.txt\0";
     let inspected = inspect_request_changes(
         changes,
-        &Policy::new(Visibility::Public),
+        &Policy::new(ViewId::public()),
         RepositoryAccess::public(),
     )
     .unwrap();
@@ -41,46 +55,43 @@ fn changes_preserve_kinds_modes_oids_raw_paths_and_sorting() {
     assert_eq!(files[3].old_oid.as_deref(), Some("old"));
     assert_eq!(files[3].new_mode, None);
     assert_eq!(files[3].new_oid, None);
-    assert!(
-        files
-            .iter()
-            .all(|file| file.visibility == Visibility::Public)
-    );
+    assert!(files.iter().all(|file| file.label == ViewId::public()));
 }
 
 #[test]
 fn mixed_visibility_records_hidden_paths_without_hiding_readable_changes() {
-    let mut policy = Policy::new(Visibility::Private);
+    let mut policy = Policy::new(ViewId::private());
     policy
-        .add_rule(VisibilityRule::public(ScopePath::parse("/public").unwrap()))
+        .add_rule(LabelRule::public(ScopePath::parse("/public").unwrap()))
         .unwrap();
     let changes = b":100644 100644 old new M\0private.txt\0\
         :100644 100644 old new M\0public//file.txt\0";
-    for can_read_private_files in [false, true] {
+    for full_view in [false, true] {
         let result = inspect_request_changes(
             changes,
             &policy,
             RepositoryAccess {
-                can_read_private_files,
+                view: if full_view {
+                    ViewId::private()
+                } else {
+                    ViewId::public()
+                },
                 ..RepositoryAccess::public()
             },
         )
         .unwrap();
-        assert_eq!(result.hidden, !can_read_private_files);
-        assert_eq!(
-            result.files.len(),
-            if can_read_private_files { 2 } else { 1 }
-        );
-        if can_read_private_files {
-            assert_eq!(result.files[0].visibility, Visibility::Private);
+        assert_eq!(result.hidden, !full_view);
+        assert_eq!(result.files.len(), if full_view { 2 } else { 1 });
+        if full_view {
+            assert_eq!(result.files[0].label, ViewId::private());
         }
         let public = result.files.last().unwrap();
         assert_eq!(public.path, "public//file.txt");
-        assert_eq!(public.visibility, Visibility::Public);
+        assert_eq!(public.label, ViewId::public());
     }
     let hidden = inspect_request_changes(
         &[&changes[..], b":100644 100644 old new R100\0renamed.txt\0"].concat(),
-        &Policy::new(Visibility::Private),
+        &Policy::new(ViewId::private()),
         RepositoryAccess::public(),
     )
     .unwrap();
@@ -110,7 +121,7 @@ fn malformed_records_keep_their_error_categories_and_diagnostics() {
     ] {
         let error = inspect_request_changes(
             bytes,
-            &Policy::new(Visibility::Public),
+            &Policy::new(ViewId::public()),
             RepositoryAccess::public(),
         )
         .unwrap_err();
@@ -120,7 +131,7 @@ fn malformed_records_keep_their_error_categories_and_diagnostics() {
     }
     let error = inspect_request_changes(
         b":100644 100644 old new A\0private.txt\0malformed\0",
-        &Policy::new(Visibility::Private),
+        &Policy::new(ViewId::private()),
         RepositoryAccess::public(),
     )
     .unwrap_err();
@@ -135,7 +146,7 @@ fn malformed_records_keep_their_error_categories_and_diagnostics() {
     ] {
         let error = inspect_request_changes(
             bytes,
-            &Policy::new(Visibility::Private),
+            &Policy::new(ViewId::private()),
             RepositoryAccess::public(),
         )
         .unwrap_err();
@@ -147,7 +158,7 @@ fn malformed_records_keep_their_error_categories_and_diagnostics() {
 fn reader_keeps_existing_permissive_framing_and_status_interpretation() {
     let result = inspect_request_changes(
         b"\0\0:100644 100644 old new M100\0file",
-        &Policy::new(Visibility::Public),
+        &Policy::new(ViewId::public()),
         RepositoryAccess::public(),
     )
     .unwrap();
@@ -156,14 +167,14 @@ fn reader_keeps_existing_permissive_framing_and_status_interpretation() {
     assert_eq!(result.files[0].path, "file");
     let empty_path = inspect_request_changes(
         b":100644 100644 old new M\0",
-        &Policy::new(Visibility::Public),
+        &Policy::new(ViewId::public()),
         RepositoryAccess::public(),
     )
     .unwrap();
     assert_eq!(empty_path.files[0].path, "");
     let empty = inspect_request_changes(
         b"\0",
-        &Policy::new(Visibility::Public),
+        &Policy::new(ViewId::public()),
         RepositoryAccess::public(),
     )
     .unwrap();

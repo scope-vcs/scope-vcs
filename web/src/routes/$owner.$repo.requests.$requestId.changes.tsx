@@ -176,7 +176,7 @@ function RequestChangesRoute() {
         ? (
             <RequestChangesWorkbench
               accessScope={scope}
-              audience={live.repo.access.can_read_private_files ? 'private' : 'public'}
+              view={live.repo.access.view}
               initialDiscussionReferences={initial?.discussionReferences ?? { commitKey: null, page: null }}
               loadDiff={loadDiffForView}
               loadDiscussions={loadDiscussionsForView}
