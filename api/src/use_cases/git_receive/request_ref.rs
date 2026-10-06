@@ -79,17 +79,18 @@ pub(crate) async fn prepare_request_staging_repo(
     }
 
     let git = RepositoryGit::of_push_context(&context);
-    let seed_repo = match (access.actor, git.git_head.as_ref()) {
-        (RepositoryActor::Owner | RepositoryActor::Member, Some(head)) => {
+    let views = context.repo_config.views();
+    let seed_repo = match (
+        access.can_read_view(views, views.full()),
+        git.git_head.as_ref(),
+    ) {
+        (true, Some(head)) => {
             state
                 .repository_engine
                 .materialize_repository(state, &git.incarnation, head, &git.git_pack_spans)
                 .await?
         }
-        _ => {
-            git.view_repo(state, context.repo_config.views(), &access.view)
-                .await?
-        }
+        _ => git.view_repo(state, views, &access.view).await?,
     };
     let staging_repo = {
         let state = state.clone();
