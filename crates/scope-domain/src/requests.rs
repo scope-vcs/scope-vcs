@@ -2,8 +2,8 @@ use crate::error::DomainError;
 
 #[cfg(test)]
 pub(crate) mod fixtures;
-mod public_paths;
-pub use public_paths::{PublicRequestPathError, PublicRequestPaths};
+mod view_paths;
+pub use view_paths::{RequestViewPathError, RequestViewPaths};
 
 mod access;
 pub use access::{
