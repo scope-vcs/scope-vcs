@@ -4,6 +4,7 @@ use crate::{
     policy::ScopePath,
     projection::{ProjectedChange, Projection, ProjectionMaterialization},
     reviewed_updates::content::source_content_matches,
+    views::ViewId,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -20,6 +21,7 @@ pub(super) struct ProjectedAction {
 pub(super) struct ProjectionHistory {
     pub actions: HashMap<String, ProjectedAction>,
     pub visibility: HashMap<String, Option<HistoryEntryFile>>,
+    pub boundaries: HashMap<String, Vec<(ScopePath, ViewId)>>,
 }
 
 impl ProjectionHistory {
@@ -31,9 +33,15 @@ impl ProjectionHistory {
                     let touches_visible_path =
                         tree.contains_key(&change.path) || change.new_content.is_some();
                     let id = visibility_change_id(&set_id, &change.path);
+                    let boundary = (change.path.clone(), change.label.clone());
                     let file = apply_change(&mut tree, change);
                     if touches_visible_path {
                         result.visibility.insert(id, file);
+                        result
+                            .boundaries
+                            .entry(set_id.clone())
+                            .or_default()
+                            .push(boundary);
                     }
                 }
             } else {

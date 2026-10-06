@@ -286,10 +286,10 @@ fn an_invite_is_pruned_once_it_has_been_over_for_the_retention_period() {
 }
 
 #[test]
-fn members_and_invites_read_the_full_view_until_views_can_be_assigned() {
+fn invites_name_an_existing_view_and_writers_need_the_full_view() {
     let mut repo = repo_with_invite();
-    for view in [ViewId::public(), ViewId::parse("agent").unwrap()] {
-        let error = create_repository_invite(
+    let mut invite = |view: &str, can_push: bool| {
+        create_repository_invite(
             &mut repo,
             CreateRepositoryInviteCommand {
                 id: invite_id(),
@@ -297,15 +297,21 @@ fn members_and_invites_read_the_full_view_until_views_can_be_assigned() {
                 invited_email: "other@example.com".to_string(),
                 invitee: None,
                 permissions: RepositoryMemberPermissions {
-                    view,
+                    view: ViewId::parse(view).unwrap(),
+                    can_push,
                     ..RepositoryMemberPermissions::default()
                 },
                 now_unix: CREATED_AT,
             },
         )
-        .unwrap_err();
-        assert_eq!(error.kind, DomainErrorKind::InvalidInput);
+    };
+    for (view, can_push) in [("agent", false), ("public", true)] {
+        assert_eq!(
+            invite(view, can_push).unwrap_err().kind,
+            DomainErrorKind::InvalidInput
+        );
     }
+    assert!(invite("public", false).is_ok());
     assert!(
         Repository::new(
             &owner(),

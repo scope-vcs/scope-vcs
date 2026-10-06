@@ -28,6 +28,8 @@ mod history_metadata;
 mod history_rewrite_baselines;
 #[path = "domain_projection/rules.rs"]
 mod rules;
+#[path = "domain_projection/views.rs"]
+mod views;
 
 fn blob(content: &str) -> SourceBlob {
     SourceBlob {
@@ -105,6 +107,7 @@ fn visibility_event(
             new_label,
             current_content: Some(current_content),
         }],
+        views: None,
     }
 }
 

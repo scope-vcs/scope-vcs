@@ -35,8 +35,44 @@ pub enum ViewIncludes {
 wire_enum!(
     #[serde(rename_all = "lowercase")]
     #[cfg_attr(feature = "ts", ts(rename_all = "lowercase"))]
-    ViewReaders => DomainViewReaders { Anyone, Members, Assigned }
+    ViewReaders => DomainViewReaders { Anyone, Assigned }
 );
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct ViewsTransition {
+    pub before: Vec<ViewDefinition>,
+    pub after: Vec<ViewDefinition>,
+}
+
+pub fn view_definitions(views: &domain_views::Views) -> Vec<ViewDefinition> {
+    views.iter().map(ViewDefinition::from).collect()
+}
+
+impl From<&domain_views::ViewDefinition> for ViewDefinition {
+    fn from(definition: &domain_views::ViewDefinition) -> Self {
+        Self {
+            id: definition.id.clone().into(),
+            name: definition.name.clone(),
+            includes: match &definition.includes {
+                domain_views::ViewIncludes::All => ViewIncludes::All("all".into()),
+                domain_views::ViewIncludes::Some(ids) => {
+                    ViewIncludes::Some(ids.iter().cloned().map(Into::into).collect())
+                }
+            },
+            readers: definition.readers.clone().into(),
+        }
+    }
+}
+
+impl From<&domain_views::ViewsTransition> for ViewsTransition {
+    fn from(transition: &domain_views::ViewsTransition) -> Self {
+        Self {
+            before: view_definitions(&transition.before),
+            after: view_definitions(&transition.after),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -82,21 +118,7 @@ impl From<domain::RepoConfig> for RepoConfig {
         Self {
             kind: value.kind,
             version: value.version,
-            views: value
-                .views
-                .iter()
-                .map(|definition| ViewDefinition {
-                    id: definition.id.clone().into(),
-                    name: definition.name.clone(),
-                    includes: match &definition.includes {
-                        domain_views::ViewIncludes::All => ViewIncludes::All("all".into()),
-                        domain_views::ViewIncludes::Some(ids) => {
-                            ViewIncludes::Some(ids.iter().cloned().map(Into::into).collect())
-                        }
-                    },
-                    readers: definition.readers.clone().into(),
-                })
-                .collect(),
+            views: view_definitions(&value.views),
             files: value.files.into(),
             history: value.history.into(),
         }
@@ -168,5 +190,31 @@ mod tests {
         let wire = RepoConfig::from(domain.clone());
         assert_eq!(serde_json::to_value(&wire).unwrap(), domain_json);
         assert_eq!(domain::RepoConfig::try_from(wire).unwrap(), domain);
+    }
+
+    #[test]
+    fn views_transitions_and_history_kinds_match_the_domain_json() {
+        let mut after = Vec::<domain_views::ViewDefinition>::from(domain_views::Views::builtin());
+        after.push(domain_views::ViewDefinition {
+            id: domain_views::ViewId::parse("agent").unwrap(),
+            name: "Agent".to_string(),
+            includes: domain_views::ViewIncludes::Some([domain_views::ViewId::public()].into()),
+            readers: domain_views::ViewReaders::Assigned,
+        });
+        let transition = domain_views::ViewsTransition {
+            before: domain_views::Views::builtin(),
+            after: domain_views::Views::new(after).unwrap(),
+        };
+        assert_eq!(
+            serde_json::to_value(ViewsTransition::from(&transition)).unwrap(),
+            serde_json::to_value(&transition).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(crate::HistoryEntryKind::from(
+                scope_domain::history::HistoryEntryKind::ViewsChange
+            ))
+            .unwrap(),
+            serde_json::json!("views_change")
+        );
     }
 }

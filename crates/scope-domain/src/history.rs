@@ -5,7 +5,7 @@ use crate::{
         LogicalCommit, LogicalCommitOrigin, NativePublicCommit, Projection, SourceGraph,
         project_graph,
     },
-    views::{ViewId, Views},
+    views::{ViewId, Views, ViewsTransition},
     visibility_changes::VisibilityChangeSet,
 };
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ pub use feed::HistoryFeed;
 use generation::{history_generation_after, history_generation_start};
 use projection_history::{ProjectedAction, ProjectionHistory};
 
-pub const HISTORY_GENERATION_VERSION: &str = "v9";
+pub const HISTORY_GENERATION_VERSION: &str = "v10";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FileChangeKind {
@@ -48,6 +48,7 @@ pub struct HistoryEntry {
     pub files: Vec<HistoryEntryFile>,
     pub visibility_changes: Vec<HistoryEntryVisibilityChange>,
     pub native_commits: Vec<NativePublicCommit>,
+    pub views: Option<ViewsTransition>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +56,7 @@ pub enum HistoryEntryKind {
     Push,
     MergedRequest,
     VisibilityChange,
+    ViewsChange,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -148,7 +150,7 @@ pub fn history_entries_after(
         match set
             .source_update_id
             .as_deref()
-            .filter(|id| logical_ids.contains(id))
+            .filter(|id| set.views.is_none() && logical_ids.contains(id))
         {
             Some(source_id) => sets_by_source.entry(source_id).or_default().push(set),
             None => {
@@ -211,6 +213,7 @@ pub fn history_entries_after(
                 files,
                 visibility_changes,
                 native_commits,
+                views: None,
             });
         }
         append_visibility_actions(
@@ -258,28 +261,73 @@ fn append_visibility_actions(
     view: &ViewId,
 ) {
     for set in sets.into_iter().flatten() {
-        let visibility_changes =
-            visibility_changes_for_action(vec![set], None, projected, views, view);
-        if visibility_changes.is_empty() {
-            continue;
-        }
+        let full = view == views.full();
+        let (kind, visibility_changes, message) = match &set.views {
+            Some(_) => {
+                let source = set
+                    .source_update_id
+                    .as_deref()
+                    .and_then(|source_id| projected.actions.get(source_id));
+                let mut visibility_changes =
+                    visibility_changes_for_action(vec![set], source, projected, views, view);
+                let relabelled = visibility_changes.len();
+                visibility_changes.extend(views_boundary_changes(set, projected));
+                (
+                    HistoryEntryKind::ViewsChange,
+                    visibility_changes,
+                    views_change_message(relabelled),
+                )
+            }
+            None => {
+                let visibility_changes =
+                    visibility_changes_for_action(vec![set], None, projected, views, view);
+                if visibility_changes.is_empty() {
+                    continue;
+                }
+                let message = visibility_change_message(&visibility_changes);
+                (
+                    HistoryEntryKind::VisibilityChange,
+                    visibility_changes,
+                    message,
+                )
+            }
+        };
         entries.push(HistoryEntry {
-            occurred_at_unix: if view == views.full() {
-                set.occurred_at_unix
-            } else {
-                None
-            },
+            occurred_at_unix: if full { set.occurred_at_unix } else { None },
             id: set.id.clone(),
             source_id: set.id.clone(),
             parent_id: None,
-            kind: HistoryEntryKind::VisibilityChange,
-            author: (view == views.full()).then(|| set.author_id.clone()),
-            message: visibility_change_message(&visibility_changes),
+            kind,
+            author: full.then(|| set.author_id.clone()),
+            message,
             files: Vec::new(),
             visibility_changes,
             native_commits: Vec::new(),
+            views: set.views.clone(),
         });
     }
+}
+
+fn views_boundary_changes<'a>(
+    set: &'a VisibilityChangeSet,
+    projected: &'a ProjectionHistory,
+) -> impl Iterator<Item = HistoryEntryVisibilityChange> + 'a {
+    projected
+        .boundaries
+        .get(&set.id)
+        .into_iter()
+        .flatten()
+        .filter(|(path, _)| !set.changes.iter().any(|change| &change.path == path))
+        .map(|(path, label)| {
+            let id = visibility_change_id(&set.id, path);
+            HistoryEntryVisibilityChange {
+                file: projected.visibility.get(&id).cloned().flatten(),
+                id,
+                path: path.clone(),
+                old_label: label.clone(),
+                new_label: label.clone(),
+            }
+        })
 }
 
 fn visibility_changes_for_action(
@@ -313,6 +361,14 @@ fn visibility_changes_for_action(
 
 pub(super) fn visibility_change_id(set_id: &str, path: &ScopePath) -> String {
     format!("{set_id}:{}", path.as_str())
+}
+
+fn views_change_message(relabelled: usize) -> String {
+    match relabelled {
+        0 => "Updated views".to_string(),
+        1 => "Updated views and 1 label".to_string(),
+        count => format!("Updated views and {count} labels"),
+    }
 }
 
 fn visibility_change_message(changes: &[HistoryEntryVisibilityChange]) -> String {

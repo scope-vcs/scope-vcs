@@ -196,7 +196,7 @@ routes! {
         REPOSITORY_INVITE_ACCEPT = "/v1/repository-invites/{token}/accept" => "repositoryInviteAccept";
         REPO_PROJECTION_PREVIEW = "/v1/repos/{owner}/{repo}/projection-preview"
             => "repoProjectionPreview";
-        GIT_REPO = "/git/{mode}/{org}/{repo}" => "gitRepo", git_repo(mode: &str, org: &str, repo: &str);
+        GIT_REPO = "/git/{view}/{org}/{repo}" => "gitRepo", git_repo(view: &str, org: &str, repo: &str);
     }
     internal {
         HEALTH = "/healthz";
@@ -250,9 +250,9 @@ routes! {
             media_attachment_original(attachment_id: &str);
         MEDIA_ATTACHMENT_DERIVATIVE = "/v1/attachments/{attachment_id}/derivatives/{derivative_id}",
             media_attachment_derivative(attachment_id: &str, derivative_id: &str);
-        GIT_INFO_REFS = "/git/{mode}/{org}/{repo}/info/refs";
-        GIT_RECEIVE_PACK = "/git/{mode}/{org}/{repo}/git-receive-pack";
-        GIT_UPLOAD_PACK = "/git/{mode}/{org}/{repo}/git-upload-pack";
+        GIT_INFO_REFS = "/git/{view}/{org}/{repo}/info/refs";
+        GIT_RECEIVE_PACK = "/git/{view}/{org}/{repo}/git-receive-pack";
+        GIT_UPLOAD_PACK = "/git/{view}/{org}/{repo}/git-upload-pack";
         DEV_BENCH_CLI_SESSION = "/v1/dev/bench/cli-session";
         DEV_CLI_SESSION = "/v1/dev/cli-session/{handle}";
     }
@@ -392,8 +392,8 @@ mod tests {
                 "/v1/repos/an%20owner/r%2Fname/runs/run%3F%231/attempts/attempt%2F%231/steps/3/logs",
             ),
             (
-                git_repo("permissioned", "an owner", "r/name"),
-                "/git/permissioned/an%20owner/r%2Fname",
+                git_repo("agent", "an owner", "r/name"),
+                "/git/agent/an%20owner/r%2Fname",
             ),
         ];
         for (actual, expected) in routes {
