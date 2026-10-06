@@ -2,7 +2,7 @@ import type { RepositoryMemberPermissions } from '@/api/types.generated'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Eye } from 'lucide-react'
-import { builtinViews, viewName } from '@/api/repo-views'
+import { viewName } from '@/api/repo-views'
 import { permissionLabels } from './repo-member-permission-model'
 
 export function MemberAccessSummary({
@@ -29,17 +29,7 @@ export function PermissionEditor({
 }) {
   return (
     <div className="space-y-2">
-      <label className="flex items-center justify-between gap-4 text-sm">
-        <span className="font-medium">View</span>
-        <select
-          className="rounded border border-border bg-background px-2 py-1 text-foreground"
-          disabled={disabled}
-          onChange={(event) => onChange({ ...permissions, view: event.target.value })}
-          value={permissions.view}
-        >
-          {builtinViews.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
-        </select>
-      </label>
+      <MemberViewRead view={permissions.view} />
       {permissionLabels.map((permission) => (
         <label className="flex items-start justify-between gap-4 text-sm" key={permission.key}>
           <span className="min-w-0">
