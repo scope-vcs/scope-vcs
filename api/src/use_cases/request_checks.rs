@@ -220,8 +220,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     views: &Views,
     request: &Request,
     revision: &RequestRevision,
-    actor_user_id: &str,
-    actor_is_maintainer: bool,
+    maintainer_pusher: Option<&str>,
     staging_repo: &Path,
 ) {
     let path = staging_repo.to_path_buf();
@@ -237,7 +236,6 @@ pub(crate) async fn best_effort_evaluate_request_checks(
         })
     };
     let check_commit = Box::pin(view_tested_commit(state, git, request, revision));
-    let maintainer_pusher = actor_is_maintainer.then_some(actor_user_id);
     let evaluated = evaluate_request_checks(
         state,
         request,

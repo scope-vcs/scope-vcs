@@ -191,8 +191,7 @@ pub(super) async fn complete_view_main_push(
         views,
         &mutation.request,
         &mutation.revision,
-        &push.author_id,
-        true,
+        Some(&push.author_id),
         staging_repo,
     )
     .await;

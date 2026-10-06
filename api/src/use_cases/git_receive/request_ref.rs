@@ -306,8 +306,7 @@ pub(super) async fn persist_request_ref_revision(
                 context.repo_config.views(),
                 &mutation.request,
                 &mutation.revision,
-                actor_user_id,
-                context.access.is_maintainer(),
+                context.access.is_maintainer().then_some(actor_user_id),
                 staging_repo,
             )
             .await;
