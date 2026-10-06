@@ -211,12 +211,26 @@ impl AdminStore {
     pub async fn lock_repository_history_for_tests(
         &self,
     ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
+        self.lock_tables_for_tests(&[
+            "scope_logical_commits",
+            "scope_file_changes",
+            "scope_live_files",
+            "scope_visibility_change_sets",
+            "scope_visibility_changes",
+        ])
+        .await
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn lock_tables_for_tests(
+        &self,
+        tables: &[&str],
+    ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        tx.execute_unprepared(
-            "LOCK TABLE scope_logical_commits, scope_file_changes, scope_live_files,
-                        scope_visibility_change_sets, scope_visibility_changes
-                        IN ACCESS EXCLUSIVE MODE",
-        )
+        tx.execute_unprepared(&format!(
+            "LOCK TABLE {} IN ACCESS EXCLUSIVE MODE",
+            tables.join(", ")
+        ))
         .await
         .map_err(PostgresError::internal)?;
         Ok(tx)

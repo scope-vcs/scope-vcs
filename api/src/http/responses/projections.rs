@@ -5,13 +5,12 @@ pub(crate) use scope_api_contract::{
 };
 use scope_domain::{
     policy::ScopePath,
-    projection::project_graph,
     projection_views::{
         ProjectionAudience, ProjectionPreviewCommit, ProjectionPreviewFile, ProjectionViewFile,
         projection_preview, repo_scope_path as domain_repo_scope_path,
     },
-    repository::Repository,
 };
+use scope_postgres::db::{RepositoryProjectionSource, RepositoryReadPolicy};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -90,7 +89,8 @@ pub(crate) struct RepoFileContentResponse {
 }
 
 pub(crate) fn projection_preview_response(
-    repo: &Repository,
+    repo: &RepositoryReadPolicy,
+    source: &RepositoryProjectionSource,
     audience: ProjectionPreviewAudience,
     include_private_counts: bool,
     native_details: &std::collections::BTreeMap<
@@ -99,13 +99,12 @@ pub(crate) fn projection_preview_response(
     >,
 ) -> Result<ProjectionPreviewResponse, ApiError> {
     let projection_audience = ProjectionAudience::from(audience);
-    let projection = project_graph(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        projection_audience.into(),
-    );
+    let projection = source.project(projection_audience.into());
     let preview = projection_preview(
-        repo,
+        &repo.context.record.id,
+        &repo.policy,
+        &source.graph,
+        &source.visibility_change_sets,
         projection_audience,
         include_private_counts,
         native_details,

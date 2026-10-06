@@ -6,7 +6,6 @@ use crate::{
     git::{command::*, import::*, projection_repo::*, staging::*, storage::*, upload::*, *},
     http::responses::*,
     push_intents::*,
-    repo_access::*,
     runtime_budgets::{BudgetedObjectStore, RuntimeBudgetConfig, RuntimeBudgets},
     state::*,
     use_cases::{
@@ -82,6 +81,7 @@ mod repo_events;
 mod repo_invites;
 mod repo_lifecycle;
 mod repo_metadata;
+mod repo_route_reads;
 mod repo_visibility;
 mod request_attachments;
 mod request_attention;
@@ -584,6 +584,19 @@ async fn published_staging_repo(state: &AppState) -> PathBuf {
     )
     .await
     .unwrap()
+}
+
+async fn find_repo(
+    state: &AppState,
+    owner: &str,
+    name: &str,
+) -> Result<Repository, crate::error::ApiError> {
+    state
+        .metadata
+        .repositories()
+        .repository(owner, name)
+        .await?
+        .ok_or_else(|| crate::error::ApiError::not_found(format!("repo {owner}/{name} not found")))
 }
 
 fn test_repo_incarnation() -> scope_domain::repository::RepositoryIncarnation {

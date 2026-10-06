@@ -25,9 +25,8 @@ use scope_api_contract::{
     StartRequestRequest, SubmitRequestRequest,
 };
 use scope_domain::{
-    projection::{ProjectionViewKey, project_graph},
-    repository::Repository,
-    repository::access::{RepositoryAccess, RepositoryAccessContext, RepositoryActor},
+    projection::ProjectionViewKey,
+    repository::access::{RepositoryAccess, RepositoryAccessContext},
     requests::{
         CloseRequestMutation, REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, Request,
         RequestAudience, RequestChecksOutcome, RequestViewer, StartRequestInput,
@@ -183,7 +182,7 @@ async fn merge_response(
     state: &AppState,
     result: MergeRequestResult,
 ) -> Result<Json<RequestMutationResponse>, ApiError> {
-    let current_main_oid = committed_main_oid_for_access(&result.repo, result.access)?;
+    let current_main_oid = Some(result.main_oid);
     let viewer = request_viewer(
         state,
         &result.request.id,
@@ -194,24 +193,6 @@ async fn merge_response(
     let request =
         request_response_for_viewer(state, result.request, viewer, current_main_oid).await?;
     Ok(Json(RequestMutationResponse { request }))
-}
-
-fn committed_main_oid_for_access(
-    repo: &Repository,
-    access: RepositoryAccess,
-) -> Result<Option<String>, ApiError> {
-    if access.actor != RepositoryActor::Public
-        && access.can_read_private_files
-        && let Some(head) = repo.git_head.as_ref()
-    {
-        return Ok(Some(head.head_oid.clone()));
-    }
-    let projection = project_graph(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        ProjectionViewKey::from_access(access),
-    );
-    scope_git::projection_head_oid(&projection).map_err(ApiError::internal)
 }
 
 pub(crate) async fn close_request(
