@@ -4,6 +4,7 @@ use crate::{
     git::{
         command::{git_ref_listing, run_git, run_git_output},
         import::{git_snapshot_from_ref, validate_pushed_commit_range},
+        repository_git::RepositoryGit,
         request_ref_public_safety::ensure_public_request_ref_is_public_safe,
         staging::write_receive_pack_hook,
         storage::{
@@ -14,7 +15,7 @@ use crate::{
 };
 use scope_domain::{
     content::SourceBlob,
-    repository::{Repository, RepositoryIncarnation},
+    repository::RepositoryIncarnation,
     requests::{
         Request, RequestAudience, RequestRevisionGitFacts, canonical_request_ref,
         request_base_after_revision,
@@ -296,7 +297,7 @@ pub(crate) struct PersistedRequestRef {
 
 pub(crate) async fn persist_request_ref_to_store(
     state: &AppState,
-    repo: &Repository,
+    git: &RepositoryGit,
     staging_repo: &FsPath,
     request: &Request,
     update: &RequestRefUpdate,
@@ -309,11 +310,11 @@ pub(crate) async fn persist_request_ref_to_store(
         ensure_request_ref_descends_from_base(&path, &base_oid, &head_oid)
     })
     .await?;
-    let accepted_main_oid = repo.git_head.as_ref().map(|head| head.head_oid.clone());
+    let accepted_main_oid = git.git_head.as_ref().map(|head| head.head_oid.clone());
     let main_oid = match request.audience {
         RequestAudience::Public => Some(
             ensure_public_request_ref_is_public_safe(
-                repo,
+                git,
                 state,
                 staging_repo,
                 &update.new_head_oid,
@@ -322,7 +323,7 @@ pub(crate) async fn persist_request_ref_to_store(
         ),
         RequestAudience::Private => accepted_main_oid.clone(),
     };
-    let incarnation = repo.incarnation();
+    let incarnation = git.incarnation.clone();
     let prepared = {
         let state = state.clone();
         let incarnation = incarnation.clone();

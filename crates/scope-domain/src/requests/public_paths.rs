@@ -1,7 +1,7 @@
 use crate::{
     policy::{ScopePath, Visibility},
+    repo_config::RepoConfig,
     repo_control::is_public_request_protected_path,
-    repository::Repository,
 };
 use std::collections::BTreeSet;
 
@@ -11,36 +11,46 @@ pub enum PublicRequestPathError {
     PrivatePath,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PathHistory {
+    pub live_paths: BTreeSet<ScopePath>,
+    pub file_change_visibilities: Vec<(ScopePath, Visibility)>,
+    pub visibility_changes: Vec<(ScopePath, Visibility, Visibility)>,
+}
+
 pub struct PublicRequestPaths<'a> {
-    repository: &'a Repository,
+    repo_config: &'a RepoConfig,
     public_visible_paths: &'a BTreeSet<String>,
+    live_paths: &'a BTreeSet<ScopePath>,
     private_history_paths: BTreeSet<&'a ScopePath>,
 }
 
 impl<'a> PublicRequestPaths<'a> {
-    pub fn new(repository: &'a Repository, public_visible_paths: &'a BTreeSet<String>) -> Self {
-        let private_history_paths = repository
-            .graph
-            .commits
+    pub fn new(
+        repo_config: &'a RepoConfig,
+        public_visible_paths: &'a BTreeSet<String>,
+        history: &'a PathHistory,
+    ) -> Self {
+        let private_history_paths = history
+            .file_change_visibilities
             .iter()
-            .flat_map(|commit| &commit.changes)
-            .filter(|change| change.visibility == Visibility::Private)
-            .map(|change| &change.path)
+            .filter(|(_, visibility)| *visibility == Visibility::Private)
+            .map(|(path, _)| path)
             .chain(
-                repository
-                    .visibility_change_sets
+                history
+                    .visibility_changes
                     .iter()
-                    .flat_map(|set| &set.changes)
-                    .filter(|change| {
-                        change.old_visibility == Visibility::Private
-                            || change.new_visibility == Visibility::Private
+                    .filter(|(_, old_visibility, new_visibility)| {
+                        *old_visibility == Visibility::Private
+                            || *new_visibility == Visibility::Private
                     })
-                    .map(|change| &change.path),
+                    .map(|(path, _, _)| path),
             )
             .collect();
         Self {
-            repository,
+            repo_config,
             public_visible_paths,
+            live_paths: &history.live_paths,
             private_history_paths,
         }
     }
@@ -52,10 +62,10 @@ impl<'a> PublicRequestPaths<'a> {
         if self.public_visible_paths.contains(path.as_str()) {
             return Ok(());
         }
-        if self.repository.live_file_exists(path) || self.private_history_paths.contains(path) {
+        if self.live_paths.contains(path) || self.private_history_paths.contains(path) {
             return Err(PublicRequestPathError::PrivatePath);
         }
-        if self.repository.repo_config.visibility_for_path(path) == Visibility::Public {
+        if self.repo_config.visibility_for_path(path) == Visibility::Public {
             Ok(())
         } else {
             Err(PublicRequestPathError::PrivatePath)
