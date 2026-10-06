@@ -306,7 +306,6 @@ mod tests {
     use scope_domain::{
         account::UserAccount,
         content_ref::ContentRef,
-        policy::Visibility,
         repository::{RepoLifecycleState, Repository},
         runs::{
             run::Run,
@@ -320,6 +319,7 @@ mod tests {
                 revision::WorkflowRevision,
             },
         },
+        views::ViewId,
     };
     use scope_postgres::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
     use scope_storage::{S3Backend, S3Presigner, S3Settings};
@@ -648,7 +648,7 @@ mod tests {
             email_verified: true,
         };
         let mut repository =
-            Repository::new(&owner, "e2e", Visibility::Private, "repoi_test").unwrap();
+            Repository::new(&owner, "e2e", ViewId::private(), "repoi_test").unwrap();
         repository.record.lifecycle_state = RepoLifecycleState::Ready;
         let repository_id = repository.record.id.clone();
         let mut catalog = CatalogFixture::default();
