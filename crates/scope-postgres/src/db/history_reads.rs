@@ -137,10 +137,7 @@ impl RepositoryStore {
                 .await?
                 .is_none();
         }
-        let view_missing = live_projection_read_model(&tx, &row.id, version, view)
-            .await?
-            .is_none();
-        if eager_missing || view_missing {
+        if eager_missing {
             fold_live_projection_read_models(&tx, &row.id, version).await?;
         }
         if live_projection_read_model(&tx, &row.id, version, view)

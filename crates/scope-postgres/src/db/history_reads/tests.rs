@@ -725,6 +725,7 @@ async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
                 "owner",
                 "history",
                 (view_key == ViewId::private()).then_some("history_owner"),
+                None,
             )
             .await
             .unwrap()

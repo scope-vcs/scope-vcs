@@ -27,11 +27,30 @@ pub struct RepositoryAccess {
 pub struct RepositoryAccessContext {
     pub record: RepoRecord,
     pub access: RepositoryAccess,
+    pub views: Views,
 }
 
 impl RepositoryAccessContext {
     pub fn incarnation(&self) -> RepositoryIncarnation {
         self.record.incarnation()
+    }
+
+    pub fn can_read_view(&self, view: &ViewId) -> bool {
+        self.access.can_read_view(&self.views, view)
+    }
+
+    pub fn reads_full_view(&self) -> bool {
+        self.can_read_view(self.views.full())
+    }
+
+    pub fn ensure_full_view(&self) -> Result<(), crate::error::DomainError> {
+        if self.reads_full_view() {
+            Ok(())
+        } else {
+            Err(crate::error::DomainError::forbidden(
+                "the repository's full view is required",
+            ))
+        }
     }
 
     pub fn ensure_member(&self) -> Result<(), crate::error::DomainError> {

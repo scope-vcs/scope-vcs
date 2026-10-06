@@ -27,6 +27,7 @@ use {
         },
         repository::collaboration::RepositoryMemberPermissions,
         repository::{RepoLifecycleState, Repository, repo_id},
+        views::{ViewId, Views},
     },
 };
 
@@ -42,6 +43,7 @@ pub struct RepoSummaryRead {
     pub change_version: u64,
     pub content_version: u64,
     pub access: RepositoryAccess,
+    pub views: Views,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -67,6 +69,7 @@ struct RepoReadRow {
     publication_state: String,
     change_version: i64,
     content_version: i64,
+    repo_config: serde_json::Value,
 }
 
 impl RepositoryStore {
@@ -122,12 +125,13 @@ impl RepositoryStore {
         owner: &str,
         name: &str,
         viewer_user_id: Option<&str>,
+        view: Option<&ViewId>,
     ) -> Result<Option<Vec<ProjectionViewFile>>, PostgresError> {
         let owner = owner.to_string();
         let name = name.to_string();
         let viewer_user_id = viewer_user_id.map(str::to_string);
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let files = repo_live_files_tx(&tx, &owner, &name, viewer_user_id.as_deref()).await?;
+        let files = repo_live_files_tx(&tx, &owner, &name, viewer_user_id.as_deref(), view).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(files)
     }
@@ -137,10 +141,11 @@ impl RepositoryStore {
         owner: &str,
         name: &str,
         viewer_user_id: Option<&str>,
+        view: Option<&ViewId>,
         path: &ScopePath,
     ) -> Result<Option<ProjectionViewFileContent>, PostgresError> {
         Ok(self
-            .repo_live_file_with_landing_content(owner, name, viewer_user_id, path)
+            .repo_live_file_with_landing_content(owner, name, viewer_user_id, view, path)
             .await?
             .map(|content| content.projected))
     }
@@ -150,6 +155,7 @@ impl RepositoryStore {
         owner: &str,
         name: &str,
         viewer_user_id: Option<&str>,
+        view: Option<&ViewId>,
         path: &ScopePath,
     ) -> Result<Option<RepoLiveFileWithLandingContent>, PostgresError> {
         let owner = owner.to_string();
@@ -162,6 +168,7 @@ impl RepositoryStore {
             &owner,
             &name,
             viewer_user_id.as_deref(),
+            view,
             &path,
         )
         .await?;
@@ -232,6 +239,7 @@ async fn repo_live_files_tx<C>(
     owner: &str,
     name: &str,
     viewer_user_id: Option<&str>,
+    requested_view: Option<&ViewId>,
 ) -> Result<Option<Vec<ProjectionViewFile>>, PostgresError>
 where
     C: ConnectionTrait,
@@ -245,9 +253,9 @@ where
         return Ok(None);
     }
 
+    let view = readable_view(&access, &row.views()?, requested_view)?;
     if let Some(files) =
-        load_live_projection_files_for_view(conn, &row.id, row.content_version()?, &access.view)
-            .await?
+        load_live_projection_files_for_view(conn, &row.id, row.content_version()?, view).await?
     {
         return Ok(Some(files));
     }
@@ -256,7 +264,7 @@ where
     Ok(Some(domain_projected_files(
         &repo,
         repo.repo_config.views(),
-        &access.view,
+        view,
     )))
 }
 
@@ -265,6 +273,7 @@ async fn repo_live_file_with_landing_content_tx<C>(
     owner: &str,
     name: &str,
     viewer_user_id: Option<&str>,
+    requested_view: Option<&ViewId>,
     path: &ScopePath,
 ) -> Result<Option<RepoLiveFileWithLandingContent>, PostgresError>
 where
@@ -278,20 +287,16 @@ where
     if !viewer_can_read(conn, &row, &access).await? {
         return Ok(None);
     }
-    let lookup = load_live_projection_file_for_view(
-        conn,
-        &row.id,
-        row.content_version()?,
-        &access.view,
-        path,
-    )
-    .await?;
+    let view = readable_view(&access, &row.views()?, requested_view)?;
+    let lookup =
+        load_live_projection_file_for_view(conn, &row.id, row.content_version()?, view, path)
+            .await?;
     let content = match lookup {
         ProjectionFileLookup::Found(content) => Some(content),
         ProjectionFileLookup::Missing => None,
         ProjectionFileLookup::NotReady => {
             let repo = hydrate_repo_from_row_id(conn, &row.id).await?;
-            domain_projected_file_content(&repo, repo.repo_config.views(), &access.view, path)
+            domain_projected_file_content(&repo, repo.repo_config.views(), view, path)
         }
     };
     let Some(projected) = content else {
@@ -306,6 +311,19 @@ where
         projected,
         landing_file,
     }))
+}
+
+fn readable_view<'a>(
+    access: &'a RepositoryAccess,
+    views: &Views,
+    requested: Option<&'a ViewId>,
+) -> Result<&'a ViewId, PostgresError> {
+    let view = requested.unwrap_or(&access.view);
+    if access.can_read_view(views, view) {
+        Ok(view)
+    } else {
+        Err(PostgresError::permission_denied("view access required"))
+    }
 }
 
 async fn repo_read_row_by_owner_name<C>(
@@ -353,6 +371,7 @@ fn repo_read_query() -> sea_orm::Select<entities::repository::Entity> {
         .column(entities::repository::Column::PublicationState)
         .column(entities::repository::Column::ChangeVersion)
         .column(entities::repository::Column::ContentVersion)
+        .column(entities::repository::Column::RepoConfig)
 }
 
 async fn member_permissions_for_viewer<C>(
@@ -452,6 +471,7 @@ fn summary_from_row(
     let lifecycle_state = row.publication_state()?;
     let change_version = access.visible_version(row.change_version()?);
     let content_version = access.visible_version(row.content_version()?);
+    let views = row.views()?;
     Ok(RepoSummaryRead {
         open_request_count: 0,
         id: row.id,
@@ -462,6 +482,7 @@ fn summary_from_row(
         lifecycle_state,
         change_version,
         content_version,
+        views,
         access,
     })
 }
@@ -531,6 +552,12 @@ pub(super) async fn public_repository_visible<C: ConnectionTrait>(
 }
 
 impl RepoReadRow {
+    fn views(&self) -> Result<Views, PostgresError> {
+        let config: scope_domain::repo_config::RepoConfig =
+            super::decode_json(self.repo_config.clone())?;
+        Ok(config.views)
+    }
+
     fn publication_state(&self) -> Result<RepoLifecycleState, PostgresError> {
         entities::decode_enum(self.publication_state.clone())
     }

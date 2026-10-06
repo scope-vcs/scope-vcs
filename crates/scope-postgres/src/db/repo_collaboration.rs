@@ -299,6 +299,7 @@ impl RepositoryStore {
             RepositoryAccessContext {
                 record: repo.record,
                 access,
+                views: repo.views,
             },
             outcome,
         ))

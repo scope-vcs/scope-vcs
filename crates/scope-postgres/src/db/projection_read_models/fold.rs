@@ -130,6 +130,13 @@ where
     C: ConnectionTrait,
 {
     let views = repository_views(conn, repo_id).await?;
+    entities::projection_read_model::Entity::delete_by_id((
+        repo_id.to_string(),
+        view.as_str().to_string(),
+    ))
+    .exec(conn)
+    .await
+    .map_err(PostgresError::internal)?;
     build_views_from_start(
         conn,
         repo_id,
