@@ -1,6 +1,6 @@
 use crate::{error::ApiError, repo_events::RepoChangeReason, state::AppState};
 use scope_domain::{
-    repository::Repository,
+    repository::RepositoryIncarnation,
     requests::{StartRequestInput, StartRequestMutation},
 };
 use scope_product_analytics::ProductEvent;
@@ -8,7 +8,7 @@ use scope_product_analytics::ProductEvent;
 #[tracing::instrument(skip_all, name = "use_case.request.start")]
 pub(crate) async fn start_request(
     state: &AppState,
-    repo: &Repository,
+    incarnation: &RepositoryIncarnation,
     input: StartRequestInput,
 ) -> Result<StartRequestMutation, ApiError> {
     let author_user_id = input.author_user_id.clone();
@@ -19,13 +19,13 @@ pub(crate) async fn start_request(
         .product_analytics
         .capture(ProductEvent::request_started(
             &author_user_id,
-            repo.incarnation().incarnation_id(),
+            incarnation.incarnation_id(),
             &mutation.request.id,
             audience,
             author_role,
         ));
     state
-        .publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestStarted)
+        .publish_request_summary_refresh(incarnation, RepoChangeReason::RequestStarted)
         .await;
     Ok(mutation)
 }

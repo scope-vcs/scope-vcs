@@ -150,7 +150,7 @@ fn revision_response_keeps_oversized_commit_identity_and_prioritizes_selection()
 
     let default = request_revision_commits(
         directory.path(),
-        &repo,
+        &repo.policy,
         access,
         &revision,
         None,
@@ -170,7 +170,7 @@ fn revision_response_keeps_oversized_commit_identity_and_prioritizes_selection()
 
     let selected = request_revision_commits(
         directory.path(),
-        &repo,
+        &repo.policy,
         access,
         &revision,
         Some(&oversized),
@@ -246,7 +246,7 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
 
     let response = request_revision_commits(
         directory.path(),
-        &repo,
+        &repo.policy,
         repo.access_for_user_id(&owner.id),
         &revision,
         None,
@@ -269,7 +269,7 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
         .unwrap();
     let public_response = request_revision_commits(
         directory.path(),
-        &repo,
+        &repo.policy,
         RepositoryAccess::public(),
         &revision,
         None,
@@ -389,7 +389,7 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
     for file_budget in [0, 100] {
         let listing = request_revision_commits(
             raw_repo,
-            &repo,
+            &repo.policy,
             owner_access,
             &revision,
             None,
@@ -426,9 +426,16 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
         ))
         .unwrap();
     for file_budget in [0, 100] {
-        let listing =
-            request_revision_commits(raw_repo, &repo, public, &revision, None, 100, file_budget)
-                .unwrap();
+        let listing = request_revision_commits(
+            raw_repo,
+            &repo.policy,
+            public,
+            &revision,
+            None,
+            100,
+            file_budget,
+        )
+        .unwrap();
         assert!(!listing.visible.iter().any(|commit| commit.oid == root));
     }
     assert!(

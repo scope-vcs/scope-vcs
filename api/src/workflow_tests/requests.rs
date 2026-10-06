@@ -707,3 +707,60 @@ fn request_ids(body: &serde_json::Value) -> Vec<&str> {
         })
         .collect()
 }
+
+async fn start_private_request(app: &axum::Router, name: &str) -> Response {
+    let body = format!(r#"{{"name":"{name}","title":null,"audience":"Private"}}"#);
+    api_request(
+        app.clone(),
+        "POST",
+        "/v1/repos/owner/repo/requests",
+        Some(&bearer_header()),
+        Some(&body),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn starting_and_reviewing_a_request_reads_no_repository_history() {
+    let state = test_state_with_readme().await;
+    cache_test_jwks(&state);
+    let app = router(state.clone());
+    assert_eq!(
+        start_private_request(&app, "warm-history-view")
+            .await
+            .status(),
+        StatusCode::OK
+    );
+
+    let held = state
+        .metadata
+        .admin()
+        .lock_repository_history_for_tests()
+        .await
+        .unwrap();
+    let started = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        start_private_request(&app, "without-history"),
+    )
+    .await
+    .expect("starting a request must not wait on history tables");
+    assert_eq!(started.status(), StatusCode::OK);
+    let request_id = response_json(started).await["request"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let changes = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        api_request(
+            app.clone(),
+            "GET",
+            &format!("/v1/repos/owner/repo/requests/{request_id}/changes"),
+            Some(&bearer_header()),
+            None,
+        ),
+    )
+    .await
+    .expect("listing request changes must not wait on history tables");
+    held.rollback().await.unwrap();
+    assert_eq!(changes.status(), StatusCode::OK);
+}

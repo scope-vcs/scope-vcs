@@ -1,9 +1,8 @@
 use crate::{
-    auth::scope::{optional_scope_user, principal_for_scope_user, require_scope_user},
+    auth::scope::{optional_scope_user, require_scope_user},
     error::ApiError,
     http::responses::*,
     persistence::unix_now,
-    repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
@@ -35,7 +34,7 @@ use scope_domain::{
         request_actor_role, request_mergeability, request_policy, validate_start_request_audience,
     },
 };
-use scope_postgres::db::EditRequestIdentityCommand;
+use scope_postgres::db::{EditRequestIdentityCommand, RepositoryReadPolicy};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -251,21 +250,20 @@ pub(crate) async fn start_request(
     Json(input): Json<StartRequestRequest>,
 ) -> Result<Json<RequestMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let repo = find_repo(&state, &owner, &repo_name).await?;
-    let principal = principal_for_scope_user(&repo, Some(&user));
-    ensure_repo_read(&repo, &principal)?;
-    let access = repo.access_for_principal(&principal);
+    let repo =
+        crate::repo_access::find_read_access(&state, &owner, &repo_name, Some(&user.id)).await?;
+    let access = repo.access;
     let audience: RequestAudience = input.audience.into();
     validate_start_request_audience(request_actor_role(access), audience)
         .map_err(|error| ApiError::forbidden(error.message))?;
-    let base_main_oid = current_main_oid_for_audience(&state, &repo, access, audience)
+    let base_main_oid = current_main_oid_for_audience(&state, &repo, audience)
         .await?
         .ok_or_else(|| ApiError::conflict("repo has no main branch to base a request on"))?;
     let request_id = crate::persistence_ids::generate_prefixed_id("req")?;
     let now_unix = unix_now()?;
     let mutation = request_start::start_request(
         &state,
-        &repo,
+        &repo.incarnation(),
         StartRequestInput {
             id: request_id.clone(),
             repo_id: repo.record.id.clone(),
@@ -280,7 +278,7 @@ pub(crate) async fn start_request(
         },
     )
     .await?;
-    let current_main_oid = committed_main_oid_for_access(&repo, access)?;
+    let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let viewer = request_viewer(&state, &mutation.request.id, access, Some(&user.id)).await?;
     let request =
         request_response_for_viewer(&state, mutation.request, viewer, current_main_oid).await?;
@@ -431,16 +429,15 @@ pub(crate) async fn repo_and_access(
     headers: &HeaderMap,
     owner: &str,
     repo_name: &str,
-) -> Result<(Repository, RepositoryAccess, Option<String>), ApiError> {
-    let repo = find_repo(state, owner, repo_name).await?;
+) -> Result<(RepositoryReadPolicy, Option<String>), ApiError> {
     let user = optional_scope_user(state, headers).await?;
-    let principal = user
-        .as_ref()
-        .map(|user| principal_for_scope_user(&repo, Some(user)))
-        .unwrap_or_else(scope_domain::policy::Principal::public);
-    ensure_repo_read(&repo, &principal)?;
-    let access = repo.access_for_principal(&principal);
-    Ok((repo, access, user.map(|user| user.id)))
+    let repo = state
+        .metadata
+        .repositories()
+        .repository_read_policy(owner, repo_name, user.as_ref().map(|user| user.id.as_str()))
+        .await?
+        .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
+    Ok((repo, user.map(|user| user.id)))
 }
 
 pub(crate) async fn visible_request<'a>(
@@ -511,10 +508,9 @@ async fn request_response_for_viewer(
     request_summary_response(request, invitees, permissions, mergeability)
 }
 
-pub(crate) async fn current_main_oid_for_audience(
+async fn current_main_oid_for_audience(
     state: &AppState,
-    repo: &Repository,
-    access: RepositoryAccess,
+    repo: &RepositoryAccessContext,
     audience: RequestAudience,
 ) -> Result<Option<String>, ApiError> {
     let view_key = match audience {
@@ -524,13 +520,7 @@ pub(crate) async fn current_main_oid_for_audience(
     state
         .metadata
         .repositories()
-        .repository_main_oid_for_audience(
-            &RepositoryAccessContext {
-                record: repo.record.clone(),
-                access,
-            },
-            view_key,
-        )
+        .repository_main_oid_for_audience(repo, view_key)
         .await
         .map_err(Into::into)
 }
