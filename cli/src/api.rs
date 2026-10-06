@@ -61,8 +61,8 @@ pub struct CreatePushIntentParams<'a> {
     pub owner: &'a str,
     pub repo: &'a str,
     pub head_oid: &'a str,
-    pub base_config_hash: &'a str,
-    pub config: &'a DomainRepoConfig,
+    pub base_config_hash: Option<&'a str>,
+    pub config: Option<&'a DomainRepoConfig>,
     pub view: &'a DomainViewId,
 }
 
@@ -304,8 +304,8 @@ pub fn create_push_intent(
         )
         .json(&CreatePushIntentRequest {
             head_oid: params.head_oid.to_string(),
-            base_config_hash: params.base_config_hash.to_string(),
-            config: params.config.clone().into(),
+            base_config_hash: params.base_config_hash.map(str::to_string),
+            config: params.config.cloned().map(Into::into),
             view: params.view.clone().into(),
         })
         .send()

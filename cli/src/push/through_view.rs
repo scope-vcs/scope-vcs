@@ -9,12 +9,9 @@ use crate::{
     git_transport::ScopeRemote,
     login::session_from_cache_or_browser_with_progress,
     progress::PreparationProgress,
-    repository_views::{repository_views, summary_repo_config},
+    repository_views::repository_views,
 };
-use scope_domain::{
-    repo_config::repo_config_fingerprint, repository::access::MainPushMode,
-    requests::main_push_request_name,
-};
+use scope_domain::{repository::access::MainPushMode, requests::main_push_request_name};
 use serde_json::json;
 
 pub(super) fn push(
@@ -52,15 +49,14 @@ pub(super) fn push(
         }
     }
     progress.finish()?;
-    let config = summary_repo_config(views.clone());
     let intent = create_push_intent(
         api,
         CreatePushIntentParams {
             owner: &target.owner,
             repo: &target.repo,
             head_oid,
-            base_config_hash: &repo_config_fingerprint(&config)?,
-            config: &config,
+            base_config_hash: None,
+            config: None,
             view: &target.view,
         },
     )?;

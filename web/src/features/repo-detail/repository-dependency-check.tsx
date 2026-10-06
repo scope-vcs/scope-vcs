@@ -24,7 +24,8 @@ export function RepositoryDependencyCheck({
   const { isLoaded, userId } = useAuth()
   const views = useRepoViews()
   const { owner, repo: repoName } = params
-  const identity = isLoaded && repo.lifecycle_state === 'Ready'
+  const readsFullView = views.full !== null && views.mayRead(repo.access.view, views.full)
+  const identity = isLoaded && repo.lifecycle_state === 'Ready' && readsFullView
     ? repositoryDependencyIdentity(repo, userId ?? null)
     : null
   const load = useCallback((signal: AbortSignal) => loadRepositoryDependencies({

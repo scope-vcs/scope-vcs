@@ -185,8 +185,8 @@ fn push_to_main(
             owner: &target.owner,
             repo: &target.repo,
             head_oid: reviewed_head_oid,
-            base_config_hash: &base_config_hash,
-            config: &config,
+            base_config_hash: Some(&base_config_hash),
+            config: Some(&config),
             view: &target.view,
         },
     )?;

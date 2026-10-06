@@ -494,7 +494,10 @@ fn access_label(actor: RepositoryActor) -> &'static str {
 }
 
 pub(super) fn view_label(views: &Views, view: &ViewId) -> String {
-    format!("{} main", views.display_name(&view.clone().into()))
+    format!(
+        "{} main",
+        terminal_text(views.display_name(&view.clone().into()))
+    )
 }
 
 fn state_label(state: RequestState) -> &'static str {

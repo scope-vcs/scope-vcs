@@ -5,7 +5,7 @@ import { loadRepoRouteState } from '../../../src/features/repo-detail/repo-route
 import { repoResourceScope } from '../../../src/features/repo-detail/repo-resource-scope'
 import { useRequestQueue } from '../../../src/features/requests/use-request-queue'
 import type { RepoLiveState } from '../../../src/api/types'
-import type { LoadRequestQueuePage } from '../../../src/features/requests/request-queue-cache'
+import { requestQueueIdentity, type LoadRequestQueuePage } from '../../../src/features/requests/request-queue-cache'
 
 const repo = {
   id: 'owner/repo', owner_handle: 'owner', name: 'repo', description: null,
@@ -33,7 +33,7 @@ const load: LoadRequestQueuePage = async section => {
   return { requests: section === 'active' ? server.ids.map(id => ({ request: { id } })) as never[] : [], next_cursor: null, next_attention_at_unix: null }
 }
 function Queue({ current }: { current: RepoLiveState }) {
-  const queue = useRequestQueue(repoResourceScope(current.repo, 'viewer'), String(current.repo.change_version), load)
+  const queue = useRequestQueue(requestQueueIdentity(repoResourceScope(current.repo, 'viewer'), current.repo.access.view), String(current.repo.change_version), load)
   return <ul aria-label="Request queue">{queue.value?.pages.active.requests.map(item => <li key={item.request.id}>{item.request.id}</li>)}</ul>
 }
 function App({ initial }: { initial: Awaited<ReturnType<typeof summary>> }) {
