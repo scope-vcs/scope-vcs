@@ -17,6 +17,7 @@ use scope_domain::{
     requests::{
         CheckCommitBase, GitHubTestedCommit, Request, RequestRevision, canonical_request_ref,
     },
+    views::Views,
 };
 use std::{
     fs,
@@ -33,8 +34,14 @@ pub(crate) async fn public_tested_commit(
 ) -> Result<GitHubTestedCommit, ApiError> {
     let staging = CheckStaging::open(state, &git.incarnation, request, revision).await?;
     let built = async {
-        let public_base_oid =
-            public_contribution_base(git, state, &staging.path, &revision.new_head_oid).await?;
+        let public_base_oid = public_contribution_base(
+            git,
+            &Views::builtin(),
+            state,
+            &staging.path,
+            &revision.new_head_oid,
+        )
+        .await?;
         let base = CheckCommitBase::new(staging.private_main_oid.clone(), public_base_oid)?;
         let path = staging.path.clone();
         let request_id = request.id.clone();

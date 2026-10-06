@@ -2,21 +2,30 @@ use super::*;
 
 pub mod projection_read_model {
     use super::*;
+    use scope_domain::{history::HistoryCursor, projection::ProjectionCursor};
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_projection_read_models")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
-        pub repo_version: i64,
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub source: String,
         #[sea_orm(primary_key, auto_increment = false)]
         pub audience: String,
-        pub head_oid: Option<String>,
+        pub repo_version: i64,
         pub identity_version: i16,
-        pub rebuilt_at_unix: i64,
+        pub history_version: String,
+        pub folded_commits: i64,
+        pub folded_change_sets: i64,
+        pub last_commit_id: Option<String>,
+        pub last_change_set_id: Option<String>,
+        pub projected_commits: i64,
+        pub last_projected_id: Option<String>,
+        pub head_oid: Option<String>,
         pub file_count: i64,
+        pub visible_files: bool,
+        pub history_entries: i64,
+        pub last_history_entry_id: Option<String>,
+        pub history_generation: String,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -24,28 +33,54 @@ pub mod projection_read_model {
 
     impl ActiveModelBehavior for ActiveModel {}
 
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    pub struct FoldPosition {
+        pub commits: usize,
+        pub change_sets: usize,
+        pub last_commit_id: Option<String>,
+        pub last_change_set_id: Option<String>,
+    }
+
     impl Model {
-        pub fn live(
-            repo_id: &str,
-            repo_version: u64,
-            audience: ProjectionViewKey,
-            head_oid: Option<String>,
-            rebuilt_at_unix: u64,
-            file_count: usize,
-        ) -> Result<Self, PostgresError> {
-            Ok(Self {
-                repo_id: repo_id.to_string(),
-                repo_version: u64_to_i64(repo_version, "projection repository version")?,
-                source: LIVE_PROJECTION_SOURCE.to_string(),
-                audience: audience.as_str().to_string(),
-                head_oid,
-                identity_version: scope_git::PROJECTION_IDENTITY_VERSION,
-                rebuilt_at_unix: u64_to_i64(rebuilt_at_unix, "projection rebuild time")?,
-                file_count: usize_to_i64(file_count, "projection file count")?,
+        pub fn current(&self) -> bool {
+            self.identity_version == scope_git::PROJECTION_IDENTITY_VERSION
+                && self.history_version == scope_domain::history::HISTORY_GENERATION_VERSION
+        }
+
+        pub fn position(&self) -> Result<FoldPosition, PostgresError> {
+            Ok(FoldPosition {
+                commits: i64_to_usize(self.folded_commits, "folded commit count")?,
+                change_sets: i64_to_usize(self.folded_change_sets, "folded change set count")?,
+                last_commit_id: self.last_commit_id.clone(),
+                last_change_set_id: self.last_change_set_id.clone(),
             })
         }
+
+        pub fn projection_cursor(&self) -> Result<ProjectionCursor, PostgresError> {
+            Ok(ProjectionCursor {
+                commit_count: i64_to_usize(self.projected_commits, "projected commit count")?,
+                last_projected_id: self.last_projected_id.clone(),
+            })
+        }
+
+        pub fn history_cursor(&self) -> HistoryCursor {
+            HistoryCursor {
+                last_entry_id: self.last_history_entry_id.clone(),
+                generation: self.history_generation.clone(),
+            }
+        }
+
+        pub fn history_entries(&self) -> Result<usize, PostgresError> {
+            i64_to_usize(self.history_entries, "history entry count")
+        }
+    }
+
+    fn i64_to_usize(value: i64, label: &str) -> Result<usize, PostgresError> {
+        usize::try_from(value)
+            .map_err(|_| PostgresError::internal_message(format!("{label} cannot be negative")))
     }
 }
+
 pub mod projection_file {
     use super::*;
     use sha2::{Digest as _, Sha256};
@@ -55,11 +90,6 @@ pub mod projection_file {
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
-        pub repo_version: i64,
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub source: String,
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub audience: String,
         #[sea_orm(primary_key, auto_increment = false)]
         pub path_key: String,
         pub path: String,
@@ -86,8 +116,6 @@ pub mod projection_file {
     impl Model {
         pub fn live(
             repo_id: &str,
-            repo_version: u64,
-            audience: ProjectionViewKey,
             content: ProjectionViewFileContent,
         ) -> Result<Self, PostgresError> {
             if !content.file.tracked {
@@ -108,13 +136,10 @@ pub mod projection_file {
             let path_key = projection_file_path_key(&content.file.path);
             Ok(Self {
                 repo_id: repo_id.to_string(),
-                repo_version: u64_to_i64(repo_version, "projection repository version")?,
-                source: LIVE_PROJECTION_SOURCE.to_string(),
-                audience: audience.as_str().to_string(),
                 path_key,
                 path: content.file.path.as_str().to_string(),
                 oid: content.file.oid,
-                visibility: encode_enum(content.file.visibility)?,
+                visibility: content.file.label.as_str().to_string(),
                 sha256: content.blob.sha256,
                 object_key: serde_json::to_string(&content.blob.content_ref)
                     .map_err(PostgresError::internal)?,
@@ -134,7 +159,7 @@ pub mod projection_file {
                     path: ScopePath::parse(&self.path).map_err(PostgresError::internal)?,
                     oid: self.oid.clone(),
                     tracked: true,
-                    visibility: decode_enum::<Visibility>(self.visibility)?,
+                    label: ViewId::parse(&self.visibility).map_err(PostgresError::internal)?,
                 },
                 blob: SourceBlob {
                     content_ref: serde_json::from_str(&self.object_key)

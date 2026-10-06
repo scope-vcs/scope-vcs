@@ -1,7 +1,6 @@
 use crate::{
-    policy::{ScopePath, Visibility},
-    repo_config::RepoConfig,
-    repo_control::is_public_request_protected_path,
+    policy::ScopePath, repo_config::RepoConfig, repo_control::is_public_request_protected_path,
+    views::ViewId,
 };
 use std::collections::BTreeSet;
 
@@ -14,8 +13,8 @@ pub enum PublicRequestPathError {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PathHistory {
     pub live_paths: BTreeSet<ScopePath>,
-    pub file_change_visibilities: Vec<(ScopePath, Visibility)>,
-    pub visibility_changes: Vec<(ScopePath, Visibility, Visibility)>,
+    pub file_change_labels: Vec<(ScopePath, ViewId)>,
+    pub visibility_changes: Vec<(ScopePath, ViewId, ViewId)>,
 }
 
 pub struct PublicRequestPaths<'a> {
@@ -32,17 +31,16 @@ impl<'a> PublicRequestPaths<'a> {
         history: &'a PathHistory,
     ) -> Self {
         let private_history_paths = history
-            .file_change_visibilities
+            .file_change_labels
             .iter()
-            .filter(|(_, visibility)| *visibility == Visibility::Private)
+            .filter(|(_, label)| label.is_private())
             .map(|(path, _)| path)
             .chain(
                 history
                     .visibility_changes
                     .iter()
-                    .filter(|(_, old_visibility, new_visibility)| {
-                        *old_visibility == Visibility::Private
-                            || *new_visibility == Visibility::Private
+                    .filter(|(_, old_label, new_label)| {
+                        old_label.is_private() || new_label.is_private()
                     })
                     .map(|(path, _, _)| path),
             )
@@ -65,7 +63,7 @@ impl<'a> PublicRequestPaths<'a> {
         if self.live_paths.contains(path) || self.private_history_paths.contains(path) {
             return Err(PublicRequestPathError::PrivatePath);
         }
-        if self.repo_config.visibility_for_path(path) == Visibility::Public {
+        if self.repo_config.label_for_path(path).is_public() {
             Ok(())
         } else {
             Err(PublicRequestPathError::PrivatePath)

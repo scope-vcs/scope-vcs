@@ -1,8 +1,7 @@
 use super::*;
-use crate::repo_config::ConfigVisibility;
 
-fn config(visibility: ConfigVisibility) -> RepoConfig {
-    RepoConfig::with_default_visibility(visibility)
+fn config(default_view: ViewId) -> RepoConfig {
+    RepoConfig::with_default_view(default_view)
 }
 
 fn path(value: &str) -> ScopePath {
@@ -11,13 +10,9 @@ fn path(value: &str) -> ScopePath {
 
 #[test]
 fn current_public_paths_override_private_history_but_never_protected_paths() {
-    let config = config(ConfigVisibility::Private);
+    let config = config(ViewId::private());
     let history = PathHistory {
-        visibility_changes: vec![(
-            path("/visible.txt"),
-            Visibility::Private,
-            Visibility::Public,
-        )],
+        visibility_changes: vec![(path("/visible.txt"), ViewId::private(), ViewId::public())],
         ..PathHistory::default()
     };
     let visible = BTreeSet::from(["/visible.txt".into(), "/.scope/repo.json".into()]);
@@ -35,10 +30,10 @@ fn current_public_paths_override_private_history_but_never_protected_paths() {
 
 #[test]
 fn deleted_or_renamed_private_paths_cannot_be_recreated_under_public_defaults() {
-    let config = config(ConfigVisibility::Public);
+    let config = config(ViewId::public());
     let history = PathHistory {
-        file_change_visibilities: vec![(path("/old-private.txt"), Visibility::Private)],
-        visibility_changes: vec![(path("/hidden.txt"), Visibility::Public, Visibility::Private)],
+        file_change_labels: vec![(path("/old-private.txt"), ViewId::private())],
+        visibility_changes: vec![(path("/hidden.txt"), ViewId::public(), ViewId::private())],
         ..PathHistory::default()
     };
     let visible = BTreeSet::new();
@@ -54,10 +49,10 @@ fn deleted_or_renamed_private_paths_cannot_be_recreated_under_public_defaults() 
 
 #[test]
 fn live_files_hidden_from_the_public_view_stay_private() {
-    let config = config(ConfigVisibility::Public);
+    let config = config(ViewId::public());
     let history = PathHistory {
         live_paths: BTreeSet::from([path("/live-private.txt")]),
-        file_change_visibilities: vec![(path("/always-public.txt"), Visibility::Public)],
+        file_change_labels: vec![(path("/always-public.txt"), ViewId::public())],
         ..PathHistory::default()
     };
     let visible = BTreeSet::new();

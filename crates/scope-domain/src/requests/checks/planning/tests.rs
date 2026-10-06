@@ -1,10 +1,10 @@
 use super::*;
+use crate::views::ViewId;
 use crate::{
     content::SourceBlob,
     content_ref::ContentRef,
     requests::{
-        CheckCommitBase, RequestAudience, RequestCheckEvaluationState, check_commit_message,
-        fixtures::open_request,
+        CheckCommitBase, RequestCheckEvaluationState, check_commit_message, fixtures::open_request,
     },
     runs::{
         availability::NativeRunsAvailability,
@@ -38,7 +38,7 @@ fn request() -> Request {
 
 fn private_request() -> Request {
     Request {
-        audience: RequestAudience::Private,
+        view: ViewId::private(),
         ..request()
     }
 }
@@ -81,9 +81,9 @@ fn revision(name: &str) -> WorkflowRevision {
 #[test]
 fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
     let revisions = [revision("test"), revision("lint")];
-    for audience in [RequestAudience::Public, RequestAudience::Private] {
+    for view in [ViewId::public(), ViewId::private()] {
         let request = Request {
-            audience,
+            view: view.clone(),
             ..request()
         };
         for maintainer in [false, true] {
@@ -129,8 +129,7 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
                     assert_eq!(run.source.git_oid(), request.head_oid);
                     assert_eq!(
                         run.source.request_git_source().map(|(_, base)| base),
-                        (audience == RequestAudience::Private)
-                            .then_some(request.base_main_oid.as_str())
+                        (view == ViewId::private()).then_some(request.base_main_oid.as_str())
                     );
                     assert_eq!(run.created_at_unix, 30);
                 }
@@ -483,7 +482,7 @@ fn a_contribution_that_conflicts_with_private_code_is_a_configuration_error_and_
 }
 
 #[test]
-fn the_tested_commit_must_fit_the_requests_audience() {
+fn the_tested_commit_must_fit_the_requests_view() {
     for (request, tested) in [
         (request(), GitHubTestedCommit::Head),
         (private_request(), check_commit()),
@@ -493,7 +492,7 @@ fn the_tested_commit_must_fit_the_requests_audience() {
             RequestCheckPlan::evaluate_github(&request, tested, &[], Some("owner"), 30)
                 .unwrap_err()
                 .message,
-            "the tested commit does not fit the request's audience"
+            "the tested commit does not fit the request's view"
         );
     }
     let request = request();
@@ -514,16 +513,16 @@ fn a_check_commit_carries_private_code_and_a_public_head_does_not() {
             .evaluation;
     assert!(check_commit.tests_check_commit());
     assert_eq!(
-        check_commit.tested_code_audience(RequestAudience::Public),
-        RequestAudience::Private
+        check_commit.tested_code_view(ViewId::public()),
+        ViewId::private()
     );
     let public_head =
         RequestCheckPlan::evaluate(&request, AVAILABLE, Ok(&[revision("test")]), None, 30)
             .unwrap()
             .evaluation;
     assert_eq!(
-        public_head.tested_code_audience(RequestAudience::Public),
-        RequestAudience::Public
+        public_head.tested_code_view(ViewId::public()),
+        ViewId::public()
     );
     let private_head = RequestCheckPlan::evaluate_github(
         &private_request(),
@@ -535,8 +534,8 @@ fn a_check_commit_carries_private_code_and_a_public_head_does_not() {
     .unwrap()
     .evaluation;
     assert_eq!(
-        private_head.tested_code_audience(RequestAudience::Private),
-        RequestAudience::Private
+        private_head.tested_code_view(ViewId::private()),
+        ViewId::private()
     );
 }
 

@@ -1,5 +1,6 @@
 use super::*;
 use scope_domain::landing_file::{RepositoryLandingFile, RepositoryLandingFileMutation};
+use scope_domain::views::ViewId;
 
 #[tokio::test]
 async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() {
@@ -15,7 +16,7 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
     .unwrap();
     commit_all(&source, "add repository landing file");
     let bare = clone_test_repo(&source, "landing-file-direct-read-bare", true);
-    apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+    apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::public())).await;
 
     let rebuilt = drain_outbox(&state, "landing-file-test").await;
     assert_eq!(rebuilt.failed, 0);
@@ -76,7 +77,7 @@ async fn missing_landing_snapshot_does_not_fall_back_to_git() {
     let readme = source_blob(&state, "<h1>legacy row without snapshot</h1>");
     let path = ScopePath::parse("/README.html").unwrap();
     repo.graph.commits[0].changes.push(FileChange {
-        visibility: Visibility::Public,
+        label: ViewId::public(),
         path: path.clone(),
         old_content: None,
         new_content: Some(readme.clone()),

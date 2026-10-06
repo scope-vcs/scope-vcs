@@ -1,5 +1,5 @@
 import type { RepoParams } from '@/api/types'
-import type { HistoryEntrySummaryResponse } from '@/api/types.generated'
+import type { HistoryEntrySummaryResponse, ViewId } from '@/api/types.generated'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { formatUnixMonthDay } from '@/lib/date-format'
 import { useHydrated } from '@/lib/use-hydrated'
@@ -21,8 +21,8 @@ import {
 } from './visibility-timeline-rows'
 
 const BAR_FILL: Record<VisibilityDirection, string> = {
-  private: 'var(--border-strong)',
-  public: 'var(--success)',
+  entered: 'var(--success)',
+  left: 'var(--border-strong)',
 }
 
 const CHART_CLASS = [
@@ -39,10 +39,12 @@ export function VisibilityTimeline({
   entries,
   params,
   search,
+  view,
 }: {
   entries: readonly HistoryEntrySummaryResponse[]
   params: RepoParams
   search: UpdateSearch
+  view: ViewId
 }) {
   const hydrated = useHydrated()
   const navigate = useNavigate()
@@ -66,7 +68,7 @@ export function VisibilityTimeline({
           to: '/$owner/$repo/updates/$entryId',
         })
       }}
-      renderTooltipBody={({ primaryPoint }) => primaryPoint ? <TimelineTooltip entry={primaryPoint.datum.entry} /> : null}
+      renderTooltipBody={({ primaryPoint }) => primaryPoint ? <TimelineTooltip entry={primaryPoint.datum.entry} view={view} /> : null}
     />
   )
 }
@@ -116,7 +118,7 @@ function visibilityTimelineDefinition(bars: readonly VisibilityTimelineBar[], hy
   })
 }
 
-function TimelineTooltip({ entry }: { entry: HistoryEntrySummaryResponse }) {
+function TimelineTooltip({ entry, view }: { entry: HistoryEntrySummaryResponse; view: ViewId }) {
   return (
     <span className="grid gap-0.5 text-xs">
       <span className="text-[13px] font-medium text-foreground">{historyCommitTitle(entry)}</span>
@@ -124,7 +126,7 @@ function TimelineTooltip({ entry }: { entry: HistoryEntrySummaryResponse }) {
         {[historyEntryKindLabel(entry.kind), entry.author].filter(Boolean).join(' · ')}
         {entry.occurred_at_unix !== null ? <> · <RelativeTimestamp value={entry.occurred_at_unix} /></> : null}
       </span>
-      <span className="tabular-nums text-muted-foreground">{historyEntryCountLabel(entry)}</span>
+      <span className="tabular-nums text-muted-foreground">{historyEntryCountLabel(entry, view)}</span>
     </span>
   )
 }

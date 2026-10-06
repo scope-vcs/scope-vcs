@@ -368,7 +368,7 @@ fn queue_item(id: &str, name: &str, group: &str, reason: &str, claimer: Option<&
         "attention_at_unix": 1,
         "request": {
             "id": id, "name": name, "title": name, "author_role": "Public",
-            "audience": "Public", "head_oid": OID, "state": "Open",
+            "view": "public", "head_oid": OID, "state": "Open",
             "submitted_at_unix": 1, "updated_at_unix": 2,
             "mergeability": {"status": "Ready", "current_main_oid": OID, "request_head_oid": OID, "reason": null}
         },
@@ -394,5 +394,5 @@ fn attention_mutation() -> Value {
 }
 
 fn request_detail(activity_version: u64, state: &str) -> Value {
-    json!({"id":"req_one","name":"fix-one","title":"Fix one","description_markdown":"","author_user_id":"usr_author","author_role":"Public","audience":"Public","base_main_oid":OID,"head_oid":OID,"state":state,"activity_version":activity_version,"submitted_at_unix":1,"closed_at_unix":null,"closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,"updated_at_unix":2,"invitees":[],"permissions":{"can_view_activity":true,"can_open_discussion":true,"can_reply_to_discussion":true,"can_wait_after_reply":false,"can_edit_identity":false,"can_pull_branch":true,"can_push_branch":false,"can_submit":false,"can_manage_invitees":false,"can_leave_request":false,"can_close":true,"can_merge":true},"mergeability":{"status":"Ready","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
+    json!({"id":"req_one","name":"fix-one","title":"Fix one","description_markdown":"","author_user_id":"usr_author","author_role":"Public","view":"public","base_main_oid":OID,"head_oid":OID,"state":state,"activity_version":activity_version,"submitted_at_unix":1,"closed_at_unix":null,"closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,"updated_at_unix":2,"invitees":[],"permissions":{"can_view_activity":true,"can_open_discussion":true,"can_reply_to_discussion":true,"can_wait_after_reply":false,"can_edit_identity":false,"can_pull_branch":true,"can_push_branch":false,"can_submit":false,"can_manage_invitees":false,"can_leave_request":false,"can_close":true,"can_merge":true},"mergeability":{"status":"Ready","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
 }

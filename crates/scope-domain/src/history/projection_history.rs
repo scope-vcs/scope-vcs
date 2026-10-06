@@ -23,9 +23,8 @@ pub(super) struct ProjectionHistory {
 }
 
 impl ProjectionHistory {
-    pub fn replay(projection: Projection) -> Self {
+    pub fn replay(mut tree: BTreeMap<ScopePath, SourceBlob>, projection: Projection) -> Self {
         let mut result = Self::default();
-        let mut tree = BTreeMap::new();
         for commit in projection.commits {
             if let Some(set_id) = commit.visibility_change_set_id {
                 for change in commit.changes {
@@ -85,6 +84,6 @@ fn apply_change(
         kind,
         old_content,
         new_content,
-        visibility: change.visibility,
+        label: change.label,
     })
 }

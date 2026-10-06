@@ -1,9 +1,9 @@
 import type { VisibilityState } from '@/api/types'
-import type { Visibility } from '@/api/types.generated'
+import type { ViewId } from '@/api/types.generated'
 
 export type FileSystemTreeFileBase = {
   path: string
-  visibility: Visibility
+  label: ViewId
 }
 
 export type FileSystemTreeNode<
@@ -85,12 +85,8 @@ export function buildFileSystemTree<TFile extends FileSystemTreeFileBase>(
 export function folderVisibility(
   files: FileSystemTreeFileBase[],
 ): VisibilityState {
-  const hasPublic = files.some((file) => file.visibility === 'Public')
-  const hasPrivate = files.some((file) => file.visibility === 'Private')
-  if (hasPublic && hasPrivate) {
-    return 'Mixed'
-  }
-  return hasPublic ? 'Public' : 'Private'
+  const labels = new Set(files.map((file) => file.label))
+  return labels.size > 1 ? 'Mixed' : labels.values().next().value ?? 'Mixed'
 }
 
 export function ancestorFolderKeys(path: string) {

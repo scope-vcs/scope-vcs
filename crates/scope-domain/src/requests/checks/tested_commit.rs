@@ -1,5 +1,5 @@
 use super::Request;
-use crate::{error::DomainError, requests::RequestAudience, runs::validation::validate_git_oid};
+use crate::{error::DomainError, runs::validation::validate_git_oid};
 use serde::{Deserialize, Serialize};
 
 pub const PRIVATE_CODE_CONFLICT_MESSAGE: &str = "This contribution conflicts with private code, so its checks cannot run. A maintainer must resolve the conflict.";
@@ -12,9 +12,10 @@ pub enum GitHubCheckTarget {
 
 impl GitHubCheckTarget {
     pub fn for_request(request: &Request) -> Self {
-        match request.audience {
-            RequestAudience::Private => Self::Head,
-            RequestAudience::Public => Self::CheckCommit,
+        if request.view.is_private() {
+            Self::Head
+        } else {
+            Self::CheckCommit
         }
     }
 }

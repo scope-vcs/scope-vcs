@@ -6,9 +6,9 @@ use scope_domain::projection_views::{
 use serde::{Deserialize, Serialize};
 
 wire_enum!(ProjectionPreviewCommitVisibilityResponse => DomainProjectionPreviewCommitVisibility {
-    FullyPublic,
-    Mixed,
-    FullyPrivate,
+    AllInView,
+    SomeInView,
+    NoneInView,
 });
 
 #[derive(Debug, Deserialize, Serialize)]

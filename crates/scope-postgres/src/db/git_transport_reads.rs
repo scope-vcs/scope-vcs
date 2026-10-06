@@ -1,14 +1,13 @@
 use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities,
     git_segments::load_git_pack_spans,
-    history_reads::history_view_metadata,
     history_rows::{RepositoryProjectionSource, load_repository_projection_sources},
+    projection_read_models::live_projection_read_model,
     repository_access::load_repo_record,
 };
 use crate::error::PostgresError;
 use scope_domain::{
     policy::ScopePath,
-    projection::ProjectionViewKey,
     repository::{
         RepoRecord, RepositoryIncarnation,
         access::RepositoryAccessContext,
@@ -16,6 +15,7 @@ use scope_domain::{
         repo_id,
     },
     requests::PathHistory,
+    views::ViewId,
 };
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect};
 
@@ -113,17 +113,18 @@ impl RepositoryStore {
         &self,
         incarnation: &RepositoryIncarnation,
         content_version: u64,
-        audience: ProjectionViewKey,
+        view: &ViewId,
     ) -> Result<Option<String>, PostgresError> {
         for _ in 0..2 {
             let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
             let record = load_record_at_version(&tx, incarnation, content_version).await?;
-            let view = history_view_metadata(&tx, &record.id, content_version, audience).await?;
+            let read_model =
+                live_projection_read_model(&tx, &record.id, content_version, view).await?;
             tx.commit().await.map_err(PostgresError::internal)?;
-            if let Some(view) = view {
-                return Ok(view.head_oid);
+            if let Some(read_model) = read_model {
+                return Ok(read_model.head_oid);
             }
-            self.ensure_history_view(incarnation).await?;
+            self.ensure_live_projection_read_models(incarnation).await?;
         }
         Err(PostgresError::conflict(
             "repository history view kept changing; retry",
@@ -155,7 +156,7 @@ impl RepositoryStore {
             {
                 history.live_paths.insert(scope_path(path)?);
             }
-            for (path, visibility) in file_change::Entity::find()
+            for (path, label) in file_change::Entity::find()
                 .select_only()
                 .columns([file_change::Column::Path, file_change::Column::Visibility])
                 .filter(file_change::Column::RepoId.eq(record.id.as_str()))
@@ -166,10 +167,10 @@ impl RepositoryStore {
                 .map_err(PostgresError::internal)?
             {
                 history
-                    .file_change_visibilities
-                    .push((scope_path(path)?, entities::decode_enum(visibility)?));
+                    .file_change_labels
+                    .push((scope_path(path)?, view_label(&label)?));
             }
-            for (path, old_visibility, new_visibility) in visibility_change::Entity::find()
+            for (path, old_label, new_label) in visibility_change::Entity::find()
                 .select_only()
                 .columns([
                     visibility_change::Column::Path,
@@ -185,8 +186,8 @@ impl RepositoryStore {
             {
                 history.visibility_changes.push((
                     scope_path(path)?,
-                    entities::decode_enum(old_visibility)?,
-                    entities::decode_enum(new_visibility)?,
+                    view_label(&old_label)?,
+                    view_label(&new_label)?,
                 ));
             }
         }
@@ -196,6 +197,10 @@ impl RepositoryStore {
 }
 
 const PATH_BATCH_SIZE: usize = 1000;
+
+fn view_label(value: &str) -> Result<ViewId, PostgresError> {
+    ViewId::parse(value).map_err(PostgresError::internal)
+}
 
 async fn load_record_at_version<C: ConnectionTrait>(
     conn: &C,

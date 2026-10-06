@@ -372,7 +372,7 @@ mod tests {
                 "attention_at_unix": 1_000,
                 "request": {
                     "id": "req_one", "name": "fix-refs", "title": "Fix refs",
-                    "author_role": "Public", "audience": "Public", "head_oid": "b".repeat(40),
+                    "author_role": "Public", "view": "public", "head_oid": "b".repeat(40),
                     "state": "Open", "submitted_at_unix": 10, "updated_at_unix": 20,
                     "mergeability": {
                         "status": "NotMaintainer",

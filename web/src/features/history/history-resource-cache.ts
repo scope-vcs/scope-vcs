@@ -1,7 +1,7 @@
 import type { ReviewFileDiff } from '@/api/types'
 import type {
   HistoryEntryDetailResponse,
-  ProjectionPreviewAudience,
+  ViewId,
 } from '@/api/types.generated'
 import { createBoundedCache } from '../../lib/bounded-cache'
 import { createCachedResource } from '../../lib/cached-resource'
@@ -35,10 +35,10 @@ onViewerChange(() => diffScroll.clear())
 
 type HistoryScope = {
   scope: string
-  audience: ProjectionPreviewAudience
+  view: ViewId
   generation: string
   repoId: string
-  viewKey: string
+  revisionKey: string
 }
 
 type HistoryFileIdentity = {
@@ -49,17 +49,17 @@ type HistoryFileIdentity = {
 
 export function historyEntryCacheKey(identity: {
   scope: string
-  audience: ProjectionPreviewAudience
+  view: ViewId
   entry: string
 }) {
-  const { scope, audience, entry } = identity
-  return [scope, audience, entry].join('\0')
+  const { scope, view, entry } = identity
+  return [scope, view, entry].join('\0')
 }
 
 export function historyDiffCacheKey(identity: HistoryScope & HistoryFileIdentity & { commit: string }) {
-  const { scope, repoId, generation, viewKey, audience, commit } = identity
+  const { scope, repoId, generation, revisionKey, view, commit } = identity
   return [
-    scope, repoId, generation, viewKey, audience, commit,
+    scope, repoId, generation, revisionKey, view, commit,
     identity.path,
     identity.oldOid ?? '',
     identity.newOid ?? '',
@@ -68,7 +68,7 @@ export function historyDiffCacheKey(identity: HistoryScope & HistoryFileIdentity
 
 export function historyEntryDiffCacheKey(identity: HistoryFileIdentity & {
   scope: string
-  audience: ProjectionPreviewAudience
+  view: ViewId
   entry: string
   visibilityChange: string | null
 }) {

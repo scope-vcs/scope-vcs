@@ -1,6 +1,6 @@
 import { createApiClient } from '@/api/client'
 import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
-import { parseHistoryAudience, parseHistoryFeed } from './history-inputs'
+import { parseHistoryView, parseHistoryFeed } from './history-inputs'
 import type {
   HistoryEntryDetailInput,
   HistoryEntryFileDiffInput,
@@ -24,7 +24,7 @@ export async function loadHistoryPageForRequest(
   signal?: AbortSignal,
 ): Promise<HistoryPageResponse> {
   const query = new URLSearchParams()
-  if (data.audience) query.set('audience', parseHistoryAudience(data.audience))
+  if (data.view) query.set('view', parseHistoryView(data.view))
   if (data.before) query.set('before', data.before)
   query.set('feed', parseHistoryFeed(data.feed))
 
@@ -42,7 +42,7 @@ export async function loadHistoryEntryForRequest(
   data: HistoryEntryDetailInput,
 ): Promise<HistoryEntryDetailResponse> {
   const query = new URLSearchParams()
-  if (data.audience) query.set('audience', parseHistoryAudience(data.audience))
+  if (data.view) query.set('view', parseHistoryView(data.view))
 
   return createApiClient().get(
     `${buildApiPath(ApiRouteTemplates.repoHistoryEntry, {
@@ -60,7 +60,7 @@ export async function loadHistoryEntryFileDiffForRequest(
   signal?: AbortSignal,
 ): Promise<ReviewFileDiff> {
   const query = new URLSearchParams({
-    audience: parseHistoryAudience(data.audience),
+    view: parseHistoryView(data.view),
     path: data.path,
   })
 

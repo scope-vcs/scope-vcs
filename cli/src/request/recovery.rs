@@ -89,7 +89,7 @@ mod tests {
                 "git_remote_url":"https://scope.example/git/public/owner/repo",
                 "lifecycle_state":"Ready", "change_version":1, "content_version":1,
                 "open_request_count":1,
-                "access":{"actor":"Public", "can_read_private_files":false,
+                "access":{"actor":"Public", "view":"public",
                     "can_push":false, "can_change_file_visibility":false,
                     "can_manage_members":false, "can_delete_repo":false}
             }))
@@ -99,7 +99,7 @@ mod tests {
         let request: RequestSummaryResponse = serde_json::from_value(json!({
             "id":"req_one", "name":"fix-one", "title":"Fix one",
             "description_markdown":"", "author_user_id":"usr_one",
-            "author_role":"Public", "audience":"Public",
+            "author_role":"Public", "view":"public",
             "base_main_oid":head, "head_oid":head, "state":"Draft",
             "activity_version":0, "submitted_at_unix":null, "closed_at_unix":null,
             "closed_by_user_id":null, "merged_at_unix":null,

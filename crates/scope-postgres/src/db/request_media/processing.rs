@@ -25,6 +25,7 @@ use scope_domain::requests::attachments::{
     transition_attachment, validate_lease_grant, validate_processing_completion,
     validate_processing_failure,
 };
+use scope_domain::views::ViewId;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
 impl MediaStore {
@@ -647,9 +648,11 @@ where
     let incarnation_id = row
         .try_get::<String>("", "incarnation_id")
         .map_err(PostgresError::internal)?;
-    let audience = row
-        .try_get::<String>("", "audience")
-        .map_err(PostgresError::internal)?;
+    let view = ViewId::parse(
+        &row.try_get::<String>("", "audience")
+            .map_err(PostgresError::internal)?,
+    )
+    .map_err(PostgresError::internal)?;
     let payload = serde_json::json!({
         "event": {
             "repo_id": attachment.repository_id,
@@ -659,7 +662,7 @@ where
                 "RequestAttachmentChanged": {
                     "request_id": attachment.request_id,
                     "attachment_id": attachment.id,
-                    "audience": audience,
+                    "view": view,
                 }
             }
         },

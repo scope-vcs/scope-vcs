@@ -103,7 +103,7 @@ fn linked_worktrees_get_distinct_scope_state_directories() {
 fn server_config_initializes_only_absent_worktree_state() {
     let dir = TempDir::git_repo("sync-missing-state", "main");
     let mut server = default_scope_repo_config();
-    server.visibility.default = ConfigVisibility::Public;
+    server.files.default = ViewId::public();
     assert_eq!(
         worktree_scope_repo_config_presence(&dir.path).unwrap(),
         WorktreeRepoConfigPresence::Absent
@@ -135,7 +135,7 @@ fn server_config_initializes_only_absent_worktree_state() {
 fn partial_worktree_state_recovers_only_when_local_matches_server() {
     let dir = TempDir::git_repo("partial-state", "main");
     let mut server = default_scope_repo_config();
-    server.visibility.default = ConfigVisibility::Public;
+    server.files.default = ViewId::public();
     write_worktree_scope_repo_config(&dir.path, &server).unwrap();
     assert_eq!(
         sync_missing_worktree_scope_repo_config(&dir.path, &server).unwrap(),
@@ -177,4 +177,28 @@ fn invalid_partial_worktree_state_is_preserved() {
             .contains("without a local visibility config")
     );
     assert!(!paths.config.exists());
+}
+
+#[test]
+fn a_config_from_an_older_release_is_replaced_by_the_server_config() {
+    let dir = TempDir::git_repo("outdated-config", "main");
+    let server = default_scope_repo_config();
+    write_worktree_scope_repo_config_with_base(&dir.path, &server).unwrap();
+    let paths = repo_state_paths(&dir.path).unwrap();
+    fs::write(
+        &paths.config,
+        r#"{"kind":"scope.repo-config","version":1,"visibility":{"default":"public","rules":[]},"history":{"rewrites":[]}}"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        worktree_scope_repo_config_presence(&dir.path).unwrap(),
+        WorktreeRepoConfigPresence::Absent
+    );
+    assert!(!paths.state.exists());
+    assert_eq!(
+        sync_missing_worktree_scope_repo_config(&dir.path, &server).unwrap(),
+        WorktreeRepoConfigSync::Created
+    );
+    assert_eq!(load_worktree_scope_repo_config(&dir.path).unwrap(), server);
 }

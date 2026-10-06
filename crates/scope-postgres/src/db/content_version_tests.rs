@@ -1,15 +1,17 @@
 use crate::db::{
     CatalogFixture, CreateRepositoryInviteMutation, MetadataStore, RepositoryMutation,
-    TestDatabaseTarget, generated_ids::test_generated_id, history_reads::history_view_metadata,
+    TestDatabaseTarget, generated_ids::test_generated_id,
+    projection_read_models::live_projection_read_model,
 };
 use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
     content_ref::ContentRef,
-    policy::{Policy, ScopePath, Visibility},
-    projection::{FileChange, LogicalCommit, LogicalCommitOrigin, ProjectionViewKey},
+    policy::{Policy, ScopePath},
+    projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repo_metadata::update_repo_metadata,
     repository::{RepoLifecycleState, Repository, collaboration::RepositoryMemberPermissions},
+    views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
@@ -28,7 +30,7 @@ async fn fixture() -> (MetadataStore, Repository) {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let owner = owner();
-    let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_repo").unwrap();
+    let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_repo").unwrap();
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
     let path = ScopePath::parse("/README.md").unwrap();
     let blob = SourceBlob {
@@ -50,7 +52,7 @@ async fn fixture() -> (MetadataStore, Repository) {
             path: path.clone(),
             old_content: None,
             new_content: Some(blob.clone()),
-            visibility: Visibility::Public,
+            label: ViewId::public(),
         }],
     });
     repo.live_files.insert(path, blob);
@@ -137,13 +139,13 @@ async fn invites_and_metadata_edits_keep_projections_and_history_current() {
         live_projection_count(&store, &repo.record.id, content_version).await,
         2
     );
-    for audience in [ProjectionViewKey::Private, ProjectionViewKey::Public] {
+    for audience in [ViewId::private(), ViewId::public()] {
         assert!(
-            history_view_metadata(
+            live_projection_read_model(
                 store.db.as_ref(),
                 &repo.record.id,
                 content_version,
-                audience
+                &audience
             )
             .await
             .unwrap()
@@ -158,7 +160,7 @@ async fn content_changes_must_advance_the_content_version() {
     let error = store
         .repositories()
         .mutate_repository_for_tests(&repo.record.id, |repo| {
-            repo.policy = Policy::new(Visibility::Private);
+            repo.policy = Policy::new(ViewId::private());
             repo.bump_change_version();
         })
         .await
@@ -172,7 +174,7 @@ async fn content_changes_must_advance_the_content_version() {
     store
         .repositories()
         .mutate_repository_for_tests(&repo.record.id, |repo| {
-            repo.policy = Policy::new(Visibility::Private);
+            repo.policy = Policy::new(ViewId::private());
             repo.bump_content_version();
         })
         .await

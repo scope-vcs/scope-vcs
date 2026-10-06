@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[tokio::test]
 async fn history_resolves_handles_in_pages_and_details_without_changing_stored_authors() {
@@ -9,12 +10,12 @@ async fn history_resolves_handles_in_pages_and_details_without_changing_stored_a
     replace_test_repo(&state, repo).await;
     assert_ne!(test_owner_id(), TEST_REPO_OWNER);
 
-    for audience in ["public", "private"] {
+    for view in ["public", "private"] {
         let page = api_request(
             router(state.clone()),
             "GET",
-            &format!("/v1/repos/owner/repo/history?feed=all&audience={audience}"),
-            (audience == "private").then(bearer_header).as_deref(),
+            &format!("/v1/repos/owner/repo/history?feed=all&view={view}"),
+            (view == "private").then(bearer_header).as_deref(),
             None,
         )
         .await;
@@ -26,8 +27,8 @@ async fn history_resolves_handles_in_pages_and_details_without_changing_stored_a
         let detail = api_request(
             router(state.clone()),
             "GET",
-            &format!("/v1/repos/owner/repo/history/{source_id}?audience={audience}"),
-            (audience == "private").then(bearer_header).as_deref(),
+            &format!("/v1/repos/owner/repo/history/{source_id}?view={view}"),
+            (view == "private").then(bearer_header).as_deref(),
             None,
         )
         .await;
@@ -64,13 +65,13 @@ async fn public_history_keeps_partial_update_authors_hidden() {
                 vec![
                     history_change(
                         "/README.md",
-                        Visibility::Public,
+                        ViewId::public(),
                         None,
                         Some(source_blob(&state, "public")),
                     ),
                     history_change(
                         "/secret.txt",
-                        Visibility::Private,
+                        ViewId::private(),
                         None,
                         Some(source_blob(&state, "secret")),
                     ),
@@ -84,7 +85,7 @@ async fn public_history_keeps_partial_update_authors_hidden() {
     let page = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?audience=public",
+        "/v1/repos/owner/repo/history?view=public",
         None,
         None,
     )
@@ -96,7 +97,7 @@ async fn public_history_keeps_partial_update_authors_hidden() {
     let detail = api_request(
         router(state),
         "GET",
-        &format!("/v1/repos/owner/repo/history/{source_id}?audience=public"),
+        &format!("/v1/repos/owner/repo/history/{source_id}?view=public"),
         None,
         None,
     )

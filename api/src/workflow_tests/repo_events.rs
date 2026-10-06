@@ -1,7 +1,8 @@
 use super::*;
 use crate::repo_events::{RepoChangeReason, repository_change_event, run_change_event};
 use scope_api_contract::RunChangeKind;
-use scope_domain::requests::{RequestActorRole, RequestAudience, StartRequestInput};
+use scope_domain::requests::{RequestActorRole, StartRequestInput};
+use scope_domain::views::ViewId;
 use std::time::Duration;
 use tokio_stream::StreamExt;
 
@@ -170,14 +171,14 @@ async fn real_git_push_emits_one_post_commit_event_and_failed_push_emits_none() 
 async fn repo_events_stay_private_when_only_canonical_rules_are_public() {
     let state = test_state_with_repo();
     let mut repo = repo_with_readme(&state);
-    repo.repo_config = repo_config(Visibility::Private);
-    repo.policy = Policy::new(Visibility::Private);
+    repo.repo_config = repo_config(ViewId::private());
+    repo.policy = Policy::new(ViewId::private());
     repo.policy
-        .add_rule(VisibilityRule::public(
+        .add_rule(LabelRule::public(
             ScopePath::parse("/.scope/RULES.md").unwrap(),
         ))
         .unwrap();
-    repo.graph.commits[0].changes[0].visibility = Visibility::Private;
+    repo.graph.commits[0].changes[0].label = ViewId::private();
     replace_test_repo(&state, repo).await;
 
     let response = events(state, None).await;
@@ -215,7 +216,7 @@ async fn repo_events_stream_permission_changes_to_members() {
         "PATCH",
         &format!("/v1/repos/owner/repo/members/{writer_id}"),
         Some(&bearer_header()),
-        Some(r#"{"permissions":{"can_push":false,"can_change_file_visibility":false}}"#),
+        Some(r#"{"permissions":{"can_push":false,"can_change_file_visibility":false,"view":"private"}}"#),
     )
     .await;
     expect_json(updated, StatusCode::OK).await;
@@ -342,7 +343,7 @@ async fn public_repo_stream_drops_private_discussion_identifiers() {
             author_user_id: test_owner_id(),
             title: Some("Private stream".to_string()),
             author_role: RequestActorRole::Owner,
-            audience: RequestAudience::Private,
+            view: ViewId::private(),
             base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             event_id: "event_private_stream_started".to_string(),
             now_unix: 1,
@@ -359,7 +360,7 @@ async fn public_repo_stream_drops_private_discussion_identifiers() {
             author_user_id: test_owner_id(),
             title: Some("Public stream".to_string()),
             author_role: RequestActorRole::Owner,
-            audience: RequestAudience::Public,
+            view: ViewId::public(),
             base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             event_id: "event_public_stream_started".to_string(),
             now_unix: 1,
@@ -391,7 +392,7 @@ async fn public_repo_stream_drops_private_discussion_identifiers() {
             "req_private_stream".to_string(),
             "discussion_private".to_string(),
             2,
-            RequestAudience::Private,
+            ViewId::private(),
         )
         .await;
     assert!(
@@ -406,7 +407,7 @@ async fn public_repo_stream_drops_private_discussion_identifiers() {
             "req_public_stream".to_string(),
             "discussion_ready".to_string(),
             2,
-            RequestAudience::Public,
+            ViewId::public(),
         )
         .await;
     let ready = next_event(&mut stream).await;
@@ -418,7 +419,7 @@ async fn public_repo_stream_drops_private_discussion_identifiers() {
             "req_public_stream".to_string(),
             "discussion_open".to_string(),
             3,
-            RequestAudience::Public,
+            ViewId::public(),
         )
         .await;
     let visible = next_event(&mut stream).await;

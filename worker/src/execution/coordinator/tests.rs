@@ -5,7 +5,6 @@ use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
     content_ref::ContentRef,
-    policy::Visibility,
     repository::{RepoLifecycleState, Repository},
     runs::{
         run::Run,
@@ -19,6 +18,7 @@ use scope_domain::{
             revision::WorkflowRevision,
         },
     },
+    views::ViewId,
 };
 use scope_postgres::db::{CatalogFixture, TestDatabaseTarget};
 use serde_json::json;
@@ -390,7 +390,7 @@ pub(super) async fn queued_runs(count: usize) -> MetadataStore {
     let mut repository = Repository::new(
         &owner,
         "worker-test",
-        Visibility::Private,
+        ViewId::private(),
         "repoi_worker_test",
     )
     .unwrap();

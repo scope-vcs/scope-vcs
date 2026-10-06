@@ -24,14 +24,15 @@ use scope_api_contract::{
     RequestMutationResponse, RequestPermissionsResponse, RequestSummaryResponse,
     StartRequestRequest, SubmitRequestRequest,
 };
+use scope_domain::views::ViewId;
 use scope_domain::{
-    projection::{ProjectionViewKey, project_graph},
+    projection::project_graph,
     repository::Repository,
     repository::access::{RepositoryAccess, RepositoryAccessContext, RepositoryActor},
     requests::{
         CloseRequestMutation, REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, Request,
-        RequestAudience, RequestChecksOutcome, RequestViewer, StartRequestInput,
-        request_actor_role, request_mergeability, request_policy, validate_start_request_audience,
+        RequestChecksOutcome, RequestViewer, StartRequestInput, request_actor_role,
+        request_mergeability, request_policy, validate_start_request_view,
     },
 };
 use scope_postgres::db::{EditRequestIdentityCommand, RepositoryReadPolicy};
@@ -66,7 +67,7 @@ pub(crate) async fn list_requests(
         .request_list_page(scope_postgres::db::RequestListPageQuery {
             repo_id: &repo.record.id,
             viewer_user_id: viewer_user_id.as_deref(),
-            access,
+            access: access.clone(),
             after_id: after_id.as_deref(),
             limit: (limit + 1) as u64,
         })
@@ -95,7 +96,7 @@ pub(crate) async fn list_requests(
                 .get(&request.id)
                 .copied()
                 .unwrap_or(RequestChecksOutcome::NotEvaluated);
-            request_list_item_response(request, access, current_main_oid.clone(), checks)
+            request_list_item_response(request, access.clone(), current_main_oid.clone(), checks)
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
 
@@ -127,7 +128,7 @@ pub(crate) async fn get_request(
     let (request, viewer) = visible_request(
         &state,
         &repo.record.id,
-        access,
+        access.clone().clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -146,11 +147,18 @@ pub(crate) async fn submit_request(
 ) -> Result<Json<RequestMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) =
-        visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    let (request, _) = visible_request(
+        &state,
+        &repo.record.id,
+        access.clone().clone(),
+        Some(&user.id),
+        &request_id,
+    )
+    .await?;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let mutation = request_submit::submit_request(&state, &repo, &request, &user.id).await?;
-    let viewer = request_viewer(&state, &mutation.request.id, access, Some(&user.id)).await?;
+    let viewer =
+        request_viewer(&state, &mutation.request.id, access.clone(), Some(&user.id)).await?;
     let request =
         request_response_for_viewer(&state, mutation.request, viewer, current_main_oid).await?;
     Ok(Json(RequestMutationResponse { request }))
@@ -183,11 +191,11 @@ async fn merge_response(
     state: &AppState,
     result: MergeRequestResult,
 ) -> Result<Json<RequestMutationResponse>, ApiError> {
-    let current_main_oid = committed_main_oid_for_access(&result.repo, result.access)?;
+    let current_main_oid = committed_main_oid_for_access(&result.repo, &result.access)?;
     let viewer = request_viewer(
         state,
         &result.request.id,
-        result.access,
+        result.access.clone(),
         Some(&result.actor_user_id),
     )
     .await?;
@@ -198,10 +206,10 @@ async fn merge_response(
 
 fn committed_main_oid_for_access(
     repo: &Repository,
-    access: RepositoryAccess,
+    access: &RepositoryAccess,
 ) -> Result<Option<String>, ApiError> {
     if access.actor != RepositoryActor::Public
-        && access.can_read_private_files
+        && &access.view == repo.repo_config.views().full()
         && let Some(head) = repo.git_head.as_ref()
     {
         return Ok(Some(head.head_oid.clone()));
@@ -209,7 +217,8 @@ fn committed_main_oid_for_access(
     let projection = project_graph(
         &repo.graph,
         &repo.visibility_change_sets,
-        ProjectionViewKey::from_access(access),
+        repo.repo_config.views(),
+        &access.view,
     );
     scope_git::projection_head_oid(&projection).map_err(ApiError::internal)
 }
@@ -221,8 +230,14 @@ pub(crate) async fn close_request(
 ) -> Result<Json<RequestCloseResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) =
-        visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    let (request, _) = visible_request(
+        &state,
+        &repo.record.id,
+        access.clone().clone(),
+        Some(&user.id),
+        &request_id,
+    )
+    .await?;
     let mutation =
         crate::use_cases::request_close::close_request(&state, &repo, &request, &user.id).await?;
     match mutation {
@@ -232,7 +247,8 @@ pub(crate) async fn close_request(
         })),
         CloseRequestMutation::Closed { request, .. } => {
             let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-            let viewer = request_viewer(&state, &request.id, access, Some(&user.id)).await?;
+            let viewer =
+                request_viewer(&state, &request.id, access.clone(), Some(&user.id)).await?;
             let request =
                 request_response_for_viewer(&state, request, viewer, current_main_oid).await?;
             Ok(Json(RequestCloseResponse {
@@ -250,36 +266,36 @@ pub(crate) async fn start_request(
     Json(input): Json<StartRequestRequest>,
 ) -> Result<Json<RequestMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let repo =
-        crate::repo_access::find_read_access(&state, &owner, &repo_name, Some(&user.id)).await?;
-    let access = repo.access;
-    let audience: RequestAudience = input.audience.into();
-    validate_start_request_audience(request_actor_role(access), audience)
+    let repo = read_policy(&state, &owner, &repo_name, Some(&user.id)).await?;
+    let access = repo.context.access.clone();
+    let view: ViewId = input.view.into();
+    validate_start_request_view(request_actor_role(access.clone()), view.clone())
         .map_err(|error| ApiError::forbidden(error.message))?;
-    let base_main_oid = current_main_oid_for_audience(&state, &repo, audience)
+    let base_main_oid = current_main_oid_for_view(&state, &repo, view.clone())
         .await?
         .ok_or_else(|| ApiError::conflict("repo has no main branch to base a request on"))?;
+    let current_main_oid = current_main_oid_for_context(&state, &repo.context).await?;
     let request_id = crate::persistence_ids::generate_prefixed_id("req")?;
     let now_unix = unix_now()?;
     let mutation = request_start::start_request(
         &state,
-        &repo.incarnation(),
+        &repo.context.incarnation(),
         StartRequestInput {
             id: request_id.clone(),
-            repo_id: repo.record.id.clone(),
+            repo_id: repo.context.record.id.clone(),
             name: input.name,
             author_user_id: user.id.clone(),
             title: input.title,
-            author_role: request_actor_role(access),
-            audience,
+            author_role: request_actor_role(access.clone()),
+            view,
             base_main_oid,
             event_id: crate::persistence_ids::generate_prefixed_id("event_request_started")?,
             now_unix,
         },
     )
     .await?;
-    let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    let viewer = request_viewer(&state, &mutation.request.id, access, Some(&user.id)).await?;
+    let viewer =
+        request_viewer(&state, &mutation.request.id, access.clone(), Some(&user.id)).await?;
     let request =
         request_response_for_viewer(&state, mutation.request, viewer, current_main_oid).await?;
     Ok(Json(RequestMutationResponse { request }))
@@ -293,8 +309,14 @@ pub(crate) async fn edit_request_identity(
 ) -> Result<Json<RequestMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) =
-        visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    let (request, _) = visible_request(
+        &state,
+        &repo.record.id,
+        access.clone().clone(),
+        Some(&user.id),
+        &request_id,
+    )
+    .await?;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let mutation = request_identity::edit_request_identity(
         &state,
@@ -312,7 +334,8 @@ pub(crate) async fn edit_request_identity(
         },
     )
     .await?;
-    let viewer = request_viewer(&state, &mutation.request.id, access, Some(&user.id)).await?;
+    let viewer =
+        request_viewer(&state, &mutation.request.id, access.clone(), Some(&user.id)).await?;
     let request =
         request_response_for_viewer(&state, mutation.request, viewer, current_main_oid).await?;
     Ok(Json(RequestMutationResponse { request }))
@@ -326,7 +349,14 @@ pub(crate) async fn add_request_invitee(
 ) -> Result<Json<RequestInviteeMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    visible_request(
+        &state,
+        &repo.record.id,
+        access.clone().clone(),
+        Some(&user.id),
+        &request_id,
+    )
+    .await?;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let invitee = request_invitee::add_request_invitee(
         &state,
@@ -358,7 +388,14 @@ pub(crate) async fn remove_request_invitee(
 ) -> Result<Json<RequestInviteeMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    visible_request(
+        &state,
+        &repo.record.id,
+        access.clone().clone(),
+        Some(&user.id),
+        &request_id,
+    )
+    .await?;
     let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
     let invitee = request_invitee::remove_request_invitee(
         &state,
@@ -388,7 +425,14 @@ pub(crate) async fn leave_request(
 ) -> Result<Json<LeaveRequestResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    visible_request(
+        &state,
+        &repo.record.id,
+        access.clone().clone(),
+        Some(&user.id),
+        &request_id,
+    )
+    .await?;
     let invitee = state
         .metadata
         .requests()
@@ -418,7 +462,13 @@ async fn invitee_mutation_response(
         .request_by_id(&request_id)
         .await?
         .ok_or_else(|| ApiError::not_found("request not found"))?;
-    let viewer = request_viewer(state, &request.id, repo.access, Some(viewer_user_id)).await?;
+    let viewer = request_viewer(
+        state,
+        &request.id,
+        repo.access.clone(),
+        Some(viewer_user_id),
+    )
+    .await?;
     let request = request_response_for_viewer(state, request, viewer, current_main_oid).await?;
     let invitee = request_invitee_response(invitee);
     Ok(Json(RequestInviteeMutationResponse { request, invitee }))
@@ -431,13 +481,23 @@ pub(crate) async fn repo_and_access(
     repo_name: &str,
 ) -> Result<(RepositoryReadPolicy, Option<String>), ApiError> {
     let user = optional_scope_user(state, headers).await?;
-    let repo = state
+    let user_id = user.map(|user| user.id);
+    let repo = read_policy(state, owner, repo_name, user_id.as_deref()).await?;
+    Ok((repo, user_id))
+}
+
+async fn read_policy(
+    state: &AppState,
+    owner: &str,
+    repo_name: &str,
+    viewer_user_id: Option<&str>,
+) -> Result<RepositoryReadPolicy, ApiError> {
+    state
         .metadata
         .repositories()
-        .repository_read_policy(owner, repo_name, user.as_ref().map(|user| user.id.as_str()))
+        .repository_read_policy(owner, repo_name, viewer_user_id)
         .await?
-        .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
-    Ok((repo, user.map(|user| user.id)))
+        .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))
 }
 
 pub(crate) async fn visible_request<'a>(
@@ -453,8 +513,8 @@ pub(crate) async fn visible_request<'a>(
         .request_by_id(request_id)
         .await?
         .ok_or_else(|| ApiError::not_found("request not found"))?;
-    let viewer = request_viewer(state, &request.id, access, viewer_user_id).await?;
-    if request.repo_id != repo_id || !request_policy(&request, viewer).exact_visible {
+    let viewer = request_viewer(state, &request.id, access.clone(), viewer_user_id).await?;
+    if request.repo_id != repo_id || !request_policy(&request, viewer.clone()).exact_visible {
         return Err(ApiError::not_found("request not found"));
     }
     Ok((request, viewer))
@@ -466,8 +526,8 @@ async fn request_response_for_viewer(
     viewer: RequestViewer<'_>,
     current_main_oid: Option<String>,
 ) -> Result<RequestSummaryResponse, ApiError> {
-    let policy = request_policy(&request, viewer);
-    let invitees = if request.audience == RequestAudience::Public && policy.exact_visible {
+    let policy = request_policy(&request, viewer.clone());
+    let invitees = if request.view.is_public() && policy.exact_visible {
         state
             .metadata
             .requests()
@@ -498,7 +558,7 @@ async fn request_response_for_viewer(
     let checks = crate::use_cases::request_checks::recorded_checks_view(state, &request)
         .await?
         .outcome;
-    let decision = request_mergeability(&request, viewer.access, checks);
+    let decision = request_mergeability(&request, viewer.access.clone(), checks);
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
         current_main_oid: current_main_oid.map(git_oid_response).transpose()?,
@@ -508,19 +568,18 @@ async fn request_response_for_viewer(
     request_summary_response(request, invitees, permissions, mergeability)
 }
 
-async fn current_main_oid_for_audience(
+async fn current_main_oid_for_view(
     state: &AppState,
-    repo: &RepositoryAccessContext,
-    audience: RequestAudience,
+    repo: &RepositoryReadPolicy,
+    view: ViewId,
 ) -> Result<Option<String>, ApiError> {
-    let view_key = match audience {
-        RequestAudience::Private => ProjectionViewKey::Private,
-        RequestAudience::Public => ProjectionViewKey::Public,
-    };
+    if !repo.views.may_read(&repo.context.access.view, &view) {
+        return Err(ApiError::forbidden("view access required"));
+    }
     state
         .metadata
         .repositories()
-        .repository_main_oid_for_audience(repo, view_key)
+        .repository_main_oid_for_view(&repo.context, &view)
         .await
         .map_err(Into::into)
 }
@@ -539,8 +598,8 @@ pub(crate) async fn repo_metadata_and_access(
         user.as_ref().map(|user| user.id.as_str()),
     )
     .await?;
-    let access = repo.access;
-    Ok((repo, access, user.map(|user| user.id)))
+    let access = repo.access.clone();
+    Ok((repo, access.clone(), user.map(|user| user.id)))
 }
 
 pub(crate) async fn current_main_oid_for_context(
@@ -583,5 +642,5 @@ async fn request_viewer<'a>(
         }
         None => false,
     };
-    Ok(RequestViewer::new(access, user_id, is_invitee))
+    Ok(RequestViewer::new(access.clone(), user_id, is_invitee))
 }

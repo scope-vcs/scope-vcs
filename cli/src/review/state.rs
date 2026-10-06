@@ -7,7 +7,7 @@ use crate::git_repo::GitChangedPath;
 use scope_domain::{
     dependency_analysis::DependencyGap,
     repo_config::{HistoryRewriteAction, RepoConfig},
-    repo_visibility::ReviewVisibility,
+    repo_visibility::ReviewLabel,
 };
 use std::collections::BTreeSet;
 
@@ -40,7 +40,7 @@ enum ReviewItem {
 pub struct ReviewState {
     tree: ReviewTree,
     config: RepoConfig,
-    visibilities: Vec<ReviewVisibility>,
+    visibilities: Vec<ReviewLabel>,
     original_config: RepoConfig,
     expanded_tree_nodes: BTreeSet<usize>,
     expanded_change_lists: BTreeSet<ChangeListKind>,
@@ -91,7 +91,7 @@ pub enum ReviewRow {
         path: String,
         kind: ReviewNodeKind,
         expanded: bool,
-        visibility: ReviewVisibility,
+        visibility: ReviewLabel,
         rule: String,
         reserved: bool,
         change_status: Option<String>,
@@ -642,7 +642,7 @@ impl ReviewState {
                     path: node.path.clone(),
                     kind: node.kind,
                     expanded: self.expanded_tree_nodes.contains(&id),
-                    visibility: self.visibilities[id],
+                    visibility: self.visibilities[id].clone(),
                     rule: rule_label(&self.config, node),
                     reserved: node.reserved,
                     change_status: node.change_status.clone(),

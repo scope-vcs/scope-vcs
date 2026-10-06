@@ -596,7 +596,7 @@ async fn session() -> Json<Value> {
 
 async fn repository() -> Json<Value> {
     Json(repository_response(json!({
-        "access":{"actor":"Owner","can_read_private_files":true,"can_push":true,"can_change_file_visibility":true,"can_manage_members":true,"can_delete_repo":true},
+        "access":{"actor":"Owner","view":"private","can_push":true,"can_change_file_visibility":true,"can_manage_members":true,"can_delete_repo":true},
         "open_request_count":1
     })))
 }
@@ -836,7 +836,7 @@ fn attachment_json(prepare: &Value, state: &str) -> Value {
 fn request_json(description: &str) -> Value {
     json!({
         "id":"req_one","name":"fix-one","title":"Fix one","description_markdown":description,
-        "author_user_id":"usr_test","author_role":"Owner","audience":"Private",
+        "author_user_id":"usr_test","author_role":"Owner","view":"private",
         "base_main_oid":OID,"head_oid":OID,"state":"Draft","activity_version":0,
         "submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,
         "merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,

@@ -60,7 +60,7 @@ test('an action receipt replaces cached status without a follow-up read', async 
 
 const invalidatingKinds: RepoChangeEvent['kind'][] = [
   { RequestTimelineChanged: {
-    audience: 'Public',
+    view: 'public',
     discussion_id: 'discussion',
     request_id: 'request',
     through_position: 2,
@@ -99,7 +99,7 @@ test('one request timeline change leaves another request reusable', () => {
   invalidateRepoResources('viewer-access', {
     incarnation_id: 'incarnation',
     kind: { RequestTimelineChanged: {
-      audience: 'Public',
+      view: 'public',
       discussion_id: 'discussion',
       request_id: 'request',
       through_position: 2,

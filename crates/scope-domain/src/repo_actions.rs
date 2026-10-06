@@ -1,12 +1,12 @@
 use super::{
     account::UserAccount,
     content::SourceBlob,
-    policy::Visibility,
     repository::{
         CatalogError, Repository,
         credentials::{FirstPushToken, GitPushToken},
     },
     reviewed_updates::error::ReviewedUpdateError,
+    views::ViewId,
 };
 use crate::error::DomainError;
 use serde::{Deserialize, Serialize};
@@ -102,6 +102,9 @@ pub fn catalog_error(error: CatalogError) -> DomainError {
     match error {
         CatalogError::InvalidRepositoryName(message)
         | CatalogError::InvalidRepositoryIdentity(message) => DomainError::invalid_input(message),
+        CatalogError::UnknownView(view) => {
+            DomainError::invalid_input(format!("unknown view {view}"))
+        }
     }
 }
 
@@ -116,13 +119,13 @@ pub fn reviewed_update_domain_error(error: ReviewedUpdateError) -> DomainError {
 pub fn create_repo(
     owner: &UserAccount,
     name: &str,
-    default_visibility: Visibility,
+    default_label: ViewId,
     first_push_token: FirstPushToken,
     git_push_token: GitPushToken,
     incarnation_id: impl Into<String>,
 ) -> Result<Repository, DomainError> {
     let mut repo =
-        Repository::new(owner, name, default_visibility, incarnation_id).map_err(catalog_error)?;
+        Repository::new(owner, name, default_label, incarnation_id).map_err(catalog_error)?;
     repo.first_push_token = Some(secretless_first_push_token(first_push_token));
     repo.git_push_token = Some(git_push_token);
     Ok(repo)
@@ -149,16 +152,14 @@ pub fn delete_repo(
 mod tests {
     use super::*;
     use crate::{
-        account::UserAccount,
-        content::DEFAULT_GIT_FILE_MODE,
-        policy::{ScopePath, Visibility},
+        account::UserAccount, content::DEFAULT_GIT_FILE_MODE, policy::ScopePath,
         repository::git::GitHead,
     };
 
     #[test]
     fn deleting_repo_returns_storage_and_source_blob_cleanup_effects() {
         let owner = test_owner();
-        let mut repo = Repository::new(&owner, "repo", Visibility::Private, "repoi_test").unwrap();
+        let mut repo = Repository::new(&owner, "repo", ViewId::private(), "repoi_test").unwrap();
         let snapshot = source_blob("live-snapshot");
         repo.git_head = Some(GitHead::new(snapshot.git_oid.clone(), 1, 1));
         repo.graph.commits.push(crate::projection::LogicalCommit {
@@ -173,7 +174,7 @@ mod tests {
                 path: ScopePath::parse("/README.md").unwrap(),
                 old_content: None,
                 new_content: Some(snapshot.clone()),
-                visibility: Visibility::Private,
+                label: ViewId::private(),
             }],
         });
 

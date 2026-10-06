@@ -1,5 +1,6 @@
 use super::*;
-use scope_domain::repo_config::RepoConfigVisibilityRule;
+use scope_domain::repo_config::RepoConfigFileRule;
+use scope_domain::views::ViewId;
 
 async fn stored_config(state: &AppState) -> RepoConfig {
     find_repo(state, TEST_REPO_OWNER, TEST_REPO_NAME)
@@ -9,10 +10,10 @@ async fn stored_config(state: &AppState) -> RepoConfig {
 }
 
 fn readme_private_config() -> RepoConfig {
-    let mut config = repo_config(Visibility::Public);
-    config.visibility.rules.push(RepoConfigVisibilityRule {
+    let mut config = repo_config(ViewId::public());
+    config.files.rules.push(RepoConfigFileRule {
         path: "/README.md".into(),
-        visibility: ConfigVisibility::Private,
+        view: ViewId::private(),
     });
     config
 }
@@ -26,7 +27,7 @@ pub(super) async fn published_git_fixture(label: &str) -> (AppState, TempGitRepo
     commit_all(&source, "initial");
     let bare = clone_test_repo(&source, &format!("{label}-bare"), true);
     let head = git_head_oid(&bare);
-    apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+    apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::public())).await;
     (state, source, head)
 }
 
@@ -38,8 +39,8 @@ async fn create_push_intent_rejects_stale_local_config_base_hash() {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.policy = Policy::new(Visibility::Private);
-            repo.repo_config = repo_config(Visibility::Private);
+            repo.policy = Policy::new(ViewId::private());
+            repo.repo_config = repo_config(ViewId::private());
             repo.bump_content_version();
         })
         .await
@@ -52,7 +53,7 @@ async fn create_push_intent_rejects_stale_local_config_base_hash() {
         Some(&bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL)),
         Some(&push_intent_request_json_with_base(
             TEST_PUSH_HEAD_OID,
-            repo_config_fingerprint(&repo_config(Visibility::Public)).unwrap(),
+            repo_config_fingerprint(&repo_config(ViewId::public())).unwrap(),
             readme_private_config(),
         )),
     )
@@ -64,21 +65,18 @@ async fn create_push_intent_rejects_stale_local_config_base_hash() {
         "repo config changed since review; rerun scope visibility edit"
     );
 
-    assert_eq!(
-        stored_config(&state).await,
-        repo_config(Visibility::Private)
-    );
+    assert_eq!(stored_config(&state).await, repo_config(ViewId::private()));
 }
 
 #[tokio::test]
 async fn create_push_intent_rejects_oversized_config_for_git_header_transport() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
-    let mut oversized_config = repo_config(Visibility::Public);
-    oversized_config.visibility.rules = (0..300)
-        .map(|index| RepoConfigVisibilityRule {
+    let mut oversized_config = repo_config(ViewId::public());
+    oversized_config.files.rules = (0..300)
+        .map(|index| RepoConfigFileRule {
             path: format!("/private/path-{index}.txt"),
-            visibility: ConfigVisibility::Private,
+            view: ViewId::private(),
         })
         .collect::<Vec<_>>();
 
@@ -122,7 +120,7 @@ async fn create_push_intent_applies_config_when_reviewed_head_is_current() {
     let history = api_request(
         router(state),
         "GET",
-        "/v1/repos/owner/repo/history?feed=all&audience=private",
+        "/v1/repos/owner/repo/history?feed=all&view=private",
         Some(&bearer_header()),
         None,
     )
@@ -136,7 +134,7 @@ async fn create_push_intent_applies_config_when_reviewed_head_is_current() {
 #[tokio::test]
 async fn create_push_intent_rejects_stale_config_only_review() {
     let (state, _source, head_oid) = published_git_fixture("stale-config-intent").await;
-    let old_base_hash = repo_config_fingerprint(&repo_config(Visibility::Public)).unwrap();
+    let old_base_hash = repo_config_fingerprint(&repo_config(ViewId::public())).unwrap();
     let applied = api_request(
         router(state.clone()),
         "POST",
@@ -145,7 +143,7 @@ async fn create_push_intent_rejects_stale_config_only_review() {
         Some(&push_intent_request_json_with_base(
             &head_oid,
             old_base_hash.clone(),
-            repo_config(Visibility::Private),
+            repo_config(ViewId::private()),
         )),
     )
     .await;
@@ -165,10 +163,7 @@ async fn create_push_intent_rejects_stale_config_only_review() {
     .await;
 
     assert_eq!(stale.status(), StatusCode::CONFLICT);
-    assert_eq!(
-        stored_config(&state).await,
-        repo_config(Visibility::Private)
-    );
+    assert_eq!(stored_config(&state).await, repo_config(ViewId::private()));
 }
 
 #[tokio::test]
@@ -196,7 +191,7 @@ async fn incremental_git_pack_layout_restores_after_cache_loss() {
         TEST_REPO_NAME,
         &bare,
         &test_owner_id(),
-        repo_config(Visibility::Public),
+        repo_config(ViewId::public()),
         ReviewedUpdateMode::ReadyPush,
     )
     .await
@@ -248,7 +243,7 @@ async fn content_push_rejects_stale_reviewed_config() {
         TEST_REPO_NAME,
         &stale_bare,
         &test_owner_id(),
-        repo_config(Visibility::Public),
+        repo_config(ViewId::public()),
         ReviewedUpdateMode::ReadyPush,
     )
     .await
@@ -310,7 +305,7 @@ async fn reviewed_push_cannot_cross_repository_recreation() {
         TEST_REPO_NAME,
         &bare,
         &test_owner_id(),
-        repo_config(Visibility::Public),
+        repo_config(ViewId::public()),
         ReviewedUpdateMode::ReadyPush,
     )
     .await

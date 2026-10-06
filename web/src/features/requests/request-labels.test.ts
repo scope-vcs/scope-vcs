@@ -6,11 +6,19 @@ import {
   requestChecksWorkflowWarning,
   requestEventBody,
   requestPublicChecksNote,
+  requestViewLabel,
 } from './request-labels'
 import type {
   RequestChecksResponse,
   RequestEventResponse,
+  RequestListItemResponse,
 } from '@/api/types.generated'
+
+test('request labels follow the wire view id', () => {
+  const request = (view: string) => ({ view }) as RequestListItemResponse
+  assert.equal(requestViewLabel(request('private')), 'Private request')
+  assert.equal(requestViewLabel(request('public')), 'Public request')
+})
 
 test('a head nobody evaluated says so instead of claiming it asks for no checks', () => {
   const checks = (state: RequestChecksResponse['state']) =>

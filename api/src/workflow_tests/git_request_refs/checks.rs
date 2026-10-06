@@ -56,7 +56,7 @@ async fn owner_request_push_with_native_runs(
         "POST",
         &format!("/v1/repos/{TEST_REPO_ID}/requests"),
         Some(&bearer),
-        Some(r#"{"name":"checks","audience":"Private"}"#),
+        Some(r#"{"name":"checks","view":"private"}"#),
     )
     .await;
     let request_id = expect_json(started, StatusCode::OK).await["request"]["id"]

@@ -2,6 +2,7 @@ use super::run_resources::{
     state_with_pushed_workflow_checkout, state_with_pushed_workflow_source,
 };
 use super::*;
+use scope_domain::views::ViewId;
 use scope_storage::{ObjectStore, ObjectStoreError};
 
 struct RevokeMembershipOnUpload {
@@ -234,7 +235,7 @@ async fn known_manual_source_is_pinned_once_and_replay_survives_catalog_changes(
         TEST_REPO_NAME,
         &next,
         &test_owner_id(),
-        repo_config(Visibility::Public),
+        repo_config(ViewId::public()),
         ReviewedUpdateMode::ReadyPush,
     )
     .await
@@ -489,7 +490,7 @@ async fn an_unlisted_owners_push_to_main_starts_no_runs() {
     run_git(Some(&source), &["add", "."], "stage workflow source").unwrap();
     commit_all(&source, "add push workflow");
     let bare = clone_test_repo(&source, "push-main-unlisted-owner-bare", true);
-    apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+    apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::public())).await;
 
     let summary = drain_outbox(&state, "push-main-unlisted-owner").await;
 

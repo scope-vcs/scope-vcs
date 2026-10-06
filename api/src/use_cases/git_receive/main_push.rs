@@ -197,7 +197,7 @@ pub(crate) async fn persist_main_push(
                 let mut update = update;
                 let push_policy = repo.push_policy_for_user_id(&author_id);
                 authorize_reviewed_update(ReviewedUpdateAuthorization {
-                    access: push_policy.access,
+                    access: push_policy.access.clone(),
                     push_mode: push_policy.mode,
                     current_config: &repo.repo_config,
                     proposed_config: &repo.repo_config,
@@ -206,7 +206,7 @@ pub(crate) async fn persist_main_push(
                 let committed_git_head = update.git_head.clone();
                 ensure_receive_pack_config_base_matches(repo, &update)?;
                 authorize_reviewed_update(ReviewedUpdateAuthorization {
-                    access: push_policy.access,
+                    access: push_policy.access.clone(),
                     push_mode: push_policy.mode,
                     current_config: &repo.repo_config,
                     proposed_config: &update.config,

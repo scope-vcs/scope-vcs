@@ -1,6 +1,7 @@
 import { VisibilityBadge } from '@/components/visibility-badge'
 import { ArrowRight } from 'lucide-react'
 import type { HistoryEntryDetailResponse } from '@/api/types.generated'
+import { viewName } from '@/api/repo-views'
 
 export type HistoryVisibilityChange = HistoryEntryDetailResponse['visibility_changes'][number]
 
@@ -31,12 +32,12 @@ export function VisibilityChanges({
             <span className="min-w-0 flex-1 break-all font-mono text-xs">{change.path}</span>
           )}
           <span className="text-xs text-muted-foreground">
-            {change.new_visibility === 'Public' ? 'Made public' : 'Made private'}
+            {`Moved to ${viewName(change.new_label)}`}
           </span>
           <span className="flex items-center gap-2">
-            <VisibilityBadge compact visibility={change.old_visibility} />
+            <VisibilityBadge compact visibility={change.old_label} />
             <ArrowRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-            <VisibilityBadge compact visibility={change.new_visibility} />
+            <VisibilityBadge compact visibility={change.new_label} />
           </span>
         </div>
       ))}

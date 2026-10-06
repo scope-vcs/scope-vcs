@@ -1,7 +1,8 @@
 use super::*;
 use crate::db::{MetadataStore, requests::tests::postgres_store};
 use scope_domain::requests::RequestCheckEvaluationState;
-use scope_domain::requests::{RequestActorRole, RequestAudience, StartRequestInput};
+use scope_domain::requests::{RequestActorRole, StartRequestInput};
+use scope_domain::views::ViewId;
 
 const HEAD_A_OLD: &str = "1111111111111111111111111111111111111111";
 const HEAD_A_CURRENT: &str = "2222222222222222222222222222222222222222";
@@ -79,7 +80,7 @@ async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) 
             author_user_id: "user_public".into(),
             title: None,
             author_role: RequestActorRole::Public,
-            audience: RequestAudience::Public,
+            view: ViewId::public(),
             base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             event_id: event_id.into(),
             now_unix: 2,

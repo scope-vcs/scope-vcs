@@ -1,11 +1,11 @@
 import { createCachedResource } from '../../lib/cached-resource'
 import type {
   HistoryEntrySummaryResponse,
-  ProjectionPreviewAudience,
+  ViewId,
 } from '../../api/types.generated'
 
 type RepositoryActivity = {
-  audience: ProjectionPreviewAudience
+  view: ViewId
   entry: HistoryEntrySummaryResponse | null
   head_oid: string | null
 }

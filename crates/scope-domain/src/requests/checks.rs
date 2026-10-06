@@ -1,4 +1,5 @@
-use super::{Request, RequestAudience, RequestState, limits::validate_required};
+use super::{Request, RequestState, limits::validate_required};
+use crate::views::ViewId;
 use crate::{
     error::DomainError,
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
@@ -136,11 +137,10 @@ impl NativeRequestCheck {
             revision.digest(),
             RunTrigger::Request,
             Some(requested_by_user_id.to_string()),
-            match request.audience {
-                RequestAudience::Private => {
-                    RunSource::request_git_snapshot(snapshot, request.base_main_oid.clone())?
-                }
-                RequestAudience::Public => RunSource::ephemeral_git_bundle(snapshot)?,
+            if request.view.is_private() {
+                RunSource::request_git_snapshot(snapshot, request.base_main_oid.clone())?
+            } else {
+                RunSource::ephemeral_git_bundle(snapshot)?
             },
             now_unix,
         )
@@ -344,11 +344,11 @@ impl RequestCheckEvaluation {
             && !self.check_commit_is_current(private_main_oid)
     }
 
-    pub fn tested_code_audience(&self, request_audience: RequestAudience) -> RequestAudience {
+    pub fn tested_code_view(&self, request_view: ViewId) -> ViewId {
         if self.tests_check_commit() {
-            RequestAudience::Private
+            ViewId::private()
         } else {
-            request_audience
+            request_view
         }
     }
 

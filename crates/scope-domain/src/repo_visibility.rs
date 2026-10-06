@@ -1,21 +1,20 @@
 use super::{
-    policy::{ScopePath, Visibility},
+    policy::ScopePath,
     repo_config::{
-        ConfigVisibility, RepoConfig, RepoConfigVisibilityRule, pattern_base_path,
-        pattern_matches_path, pattern_weight,
+        RepoConfig, RepoConfigFileRule, pattern_base_path, pattern_matches_path, pattern_weight,
     },
     repo_control::is_repo_control_pattern,
+    views::ViewId,
 };
 use std::collections::BTreeMap;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReviewVisibility {
-    Public,
-    Private,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReviewLabel {
+    View(ViewId),
     Mixed,
 }
 
-impl ReviewVisibility {
+impl ReviewLabel {
     pub fn combine(self, other: Self) -> Self {
         if self == other { self } else { Self::Mixed }
     }
@@ -54,15 +53,15 @@ pub fn toggle_visibility_target(
         };
     }
 
-    let before = config.visibility.rules.clone();
-    let before_default = config.visibility.default;
+    let before = config.files.rules.clone();
+    let before_default = config.files.default.clone();
     match target.kind {
         VisibilityNodeKind::Root => {
-            config.visibility.default = opposite_config_visibility(config.visibility.default);
+            config.files.default = next_view(config, &config.files.default.clone());
         }
         VisibilityNodeKind::Directory => {
             let next = next_directory_visibility(config, &target);
-            replace_visibility_rules_in_subtree(config, target.path, next);
+            replace_visibility_rules_in_subtree(config, target.path, next.clone());
             upsert_visibility_rule(config, folder_rule_path(target.path), next);
         }
         VisibilityNodeKind::File => {
@@ -75,63 +74,53 @@ pub fn toggle_visibility_target(
                     ),
                 };
             }
-            let current = effective_config_visibility_for_path(config, target.path);
+            let current = effective_config_label_for_path(config, target.path);
             remove_same_base_folder_rule(config, target.path);
-            upsert_visibility_rule(
-                config,
-                target.path.to_string(),
-                opposite_config_visibility(current),
-            );
+            upsert_visibility_rule(config, target.path.to_string(), next_view(config, &current));
         }
     }
     canonicalize_visibility_rules(config);
 
     ToggleResult {
-        changed: config.visibility.rules != before || config.visibility.default != before_default,
+        changed: config.files.rules != before || config.files.default != before_default,
         message: format!(
             "{} set to {}",
             target.name,
-            visibility_label(target_visibility(config, &target))
+            visibility_label(target_visibility(config, &target), config)
         ),
     }
 }
 
-pub fn target_visibility(config: &RepoConfig, target: &VisibilityTarget<'_>) -> ReviewVisibility {
+pub fn target_visibility(config: &RepoConfig, target: &VisibilityTarget<'_>) -> ReviewLabel {
     if target.kind == VisibilityNodeKind::Root {
         return aggregate_visibility(
             target
                 .file_paths_under
                 .iter()
-                .map(|path| effective_config_visibility_for_path(config, path)),
-            config.visibility.default,
+                .map(|path| effective_config_label_for_path(config, path)),
+            config.files.default.clone(),
         );
     }
     if target.kind == VisibilityNodeKind::File {
-        return config_visibility_to_review(effective_config_visibility_for_path(
-            config,
-            target.path,
-        ));
+        return config_visibility_to_review(effective_config_label_for_path(config, target.path));
     }
 
     if target.file_paths_under.is_empty() {
-        return config_visibility_to_review(effective_config_visibility_for_path(
-            config,
-            target.path,
-        ));
+        return config_visibility_to_review(effective_config_label_for_path(config, target.path));
     }
     aggregate_visibility(
         target
             .file_paths_under
             .iter()
-            .map(|path| effective_config_visibility_for_path(config, path)),
-        config.visibility.default,
+            .map(|path| effective_config_label_for_path(config, path)),
+        config.files.default.clone(),
     )
 }
 
 pub fn rule_label(config: &RepoConfig, target: &VisibilityTarget<'_>) -> String {
     if target.reserved {
         return if target.kind == VisibilityNodeKind::File
-            && target_visibility(config, target) == ReviewVisibility::Public
+            && target_visibility(config, target) == ReviewLabel::View(ViewId::public())
         {
             "forced public".to_string()
         } else if target.kind == VisibilityNodeKind::File {
@@ -141,10 +130,7 @@ pub fn rule_label(config: &RepoConfig, target: &VisibilityTarget<'_>) -> String 
         };
     }
     if target.kind == VisibilityNodeKind::Root {
-        return format!(
-            "default {}",
-            config_visibility_label(config.visibility.default)
-        );
+        return format!("default {}", config_visibility_label(&config.files.default));
     }
 
     let direct_rule_path = match target.kind {
@@ -153,7 +139,7 @@ pub fn rule_label(config: &RepoConfig, target: &VisibilityTarget<'_>) -> String 
         VisibilityNodeKind::File => Some(target.path.to_string()),
     };
     if let Some(path) = direct_rule_path
-        && config.visibility.rules.iter().any(|rule| rule.path == path)
+        && config.files.rules.iter().any(|rule| rule.path == path)
     {
         return format!("explicit {path}");
     }
@@ -163,37 +149,41 @@ pub fn rule_label(config: &RepoConfig, target: &VisibilityTarget<'_>) -> String 
         .unwrap_or_else(|| "inherited default".to_string())
 }
 
-pub fn visibility_label(visibility: ReviewVisibility) -> &'static str {
-    match visibility {
-        ReviewVisibility::Public => "public",
-        ReviewVisibility::Private => "private",
-        ReviewVisibility::Mixed => "mixed",
+pub fn visibility_label(label: ReviewLabel, config: &RepoConfig) -> String {
+    match label {
+        ReviewLabel::View(view) => config
+            .views
+            .get(&view)
+            .map(|definition| definition.name.as_str())
+            .unwrap_or(view.as_str())
+            .to_string(),
+        ReviewLabel::Mixed => "mixed".to_string(),
     }
 }
 
-pub fn config_visibility_label(visibility: ConfigVisibility) -> &'static str {
-    match visibility {
-        ConfigVisibility::Public => "public",
-        ConfigVisibility::Private => "private",
-    }
+pub fn config_visibility_label(view: &ViewId) -> &str {
+    view.as_str()
 }
 
 pub fn canonicalize_visibility_rules(config: &mut RepoConfig) {
     let base_visibilities = effective_visibilities_by_rule_base(config);
     let mut rules_by_path = BTreeMap::new();
-    for rule in &config.visibility.rules {
+    for rule in &config.files.rules {
         if is_repo_control_pattern(&rule.path) {
             continue;
         }
-        rules_by_path.insert(rule.path.clone(), rule.visibility);
+        rules_by_path.insert(rule.path.clone(), rule.view.clone());
     }
-    config.visibility.rules = rules_by_path
+    config.files.rules = rules_by_path
         .into_iter()
-        .map(|(path, visibility)| RepoConfigVisibilityRule { path, visibility })
+        .map(|(path, visibility)| RepoConfigFileRule {
+            path,
+            view: visibility,
+        })
         .collect();
 
     while let Some(index) = redundant_rule_index(config) {
-        config.visibility.rules.remove(index);
+        config.files.rules.remove(index);
     }
     restore_rule_base_visibilities(config, &base_visibilities);
     sort_visibility_rules(config, &base_visibilities);
@@ -201,23 +191,21 @@ pub fn canonicalize_visibility_rules(config: &mut RepoConfig) {
 
 fn redundant_rule_index(config: &RepoConfig) -> Option<usize> {
     config
-        .visibility
+        .files
         .rules
         .iter()
         .enumerate()
         .find_map(|(index, rule)| rule_is_redundant(config, index, rule).then_some(index))
 }
 
-fn rule_is_redundant(config: &RepoConfig, index: usize, rule: &RepoConfigVisibilityRule) -> bool {
+fn rule_is_redundant(config: &RepoConfig, index: usize, rule: &RepoConfigFileRule) -> bool {
     let without_rule = |path: &str| {
         ScopePath::parse(path)
-            .map(|path| {
-                ConfigVisibility::from(config.visibility_for_path_skipping_rule(&path, Some(index)))
-            })
-            .unwrap_or(config.visibility.default)
+            .map(|path| config.label_for_path_skipping_rule(&path, Some(index)))
+            .unwrap_or(config.files.default.clone())
     };
     let base = pattern_base_path(&rule.path);
-    if without_rule(base) != rule.visibility {
+    if without_rule(base) != rule.view {
         return false;
     }
 
@@ -226,25 +214,25 @@ fn rule_is_redundant(config: &RepoConfig, index: usize, rule: &RepoConfigVisibil
     }
 
     let descendant_probe = format!("{base}/__scope_probe__");
-    without_rule(&descendant_probe) == rule.visibility
+    without_rule(&descendant_probe) == rule.view
 }
 
-fn upsert_visibility_rule(config: &mut RepoConfig, path: String, visibility: ConfigVisibility) {
-    config.visibility.rules.retain(|rule| rule.path != path);
-    config
-        .visibility
-        .rules
-        .push(RepoConfigVisibilityRule { path, visibility });
+fn upsert_visibility_rule(config: &mut RepoConfig, path: String, visibility: ViewId) {
+    config.files.rules.retain(|rule| rule.path != path);
+    config.files.rules.push(RepoConfigFileRule {
+        path,
+        view: visibility,
+    });
 }
 
-fn effective_visibilities_by_rule_base(config: &RepoConfig) -> BTreeMap<String, ConfigVisibility> {
+fn effective_visibilities_by_rule_base(config: &RepoConfig) -> BTreeMap<String, ViewId> {
     config
-        .visibility
+        .files
         .rules
         .iter()
         .map(|rule| {
             let base = pattern_base_path(&rule.path).to_string();
-            let visibility = effective_config_visibility_for_path(config, &base);
+            let visibility = effective_config_label_for_path(config, &base);
             (base, visibility)
         })
         .collect()
@@ -252,20 +240,17 @@ fn effective_visibilities_by_rule_base(config: &RepoConfig) -> BTreeMap<String, 
 
 fn restore_rule_base_visibilities(
     config: &mut RepoConfig,
-    base_visibilities: &BTreeMap<String, ConfigVisibility>,
+    base_visibilities: &BTreeMap<String, ViewId>,
 ) {
     for (base, visibility) in base_visibilities {
-        if effective_config_visibility_for_path(config, base) != *visibility {
-            upsert_visibility_rule(config, base.clone(), *visibility);
+        if effective_config_label_for_path(config, base) != *visibility {
+            upsert_visibility_rule(config, base.clone(), visibility.clone());
         }
     }
 }
 
-fn sort_visibility_rules(
-    config: &mut RepoConfig,
-    base_visibilities: &BTreeMap<String, ConfigVisibility>,
-) {
-    config.visibility.rules.sort_by(|left, right| {
+fn sort_visibility_rules(config: &mut RepoConfig, base_visibilities: &BTreeMap<String, ViewId>) {
+    config.files.rules.sort_by(|left, right| {
         pattern_base_path(&left.path)
             .cmp(pattern_base_path(&right.path))
             .then_with(|| {
@@ -278,11 +263,11 @@ fn sort_visibility_rules(
 }
 
 fn semantic_sort_rank(
-    rule: &RepoConfigVisibilityRule,
-    base_visibilities: &BTreeMap<String, ConfigVisibility>,
+    rule: &RepoConfigFileRule,
+    base_visibilities: &BTreeMap<String, ViewId>,
 ) -> u8 {
     let base = pattern_base_path(&rule.path);
-    if base_visibilities.get(base).copied() == Some(rule.visibility) {
+    if base_visibilities.get(base).cloned() == Some(rule.view.clone()) {
         1
     } else {
         0
@@ -293,39 +278,36 @@ fn rule_sort_rank(path: &str) -> u8 {
     if path.ends_with("/**") { 0 } else { 1 }
 }
 
-fn replace_visibility_rules_in_subtree(
-    config: &mut RepoConfig,
-    folder_path: &str,
-    next: ConfigVisibility,
-) {
-    config.visibility.rules.retain(|rule| {
+fn replace_visibility_rules_in_subtree(config: &mut RepoConfig, folder_path: &str, next: ViewId) {
+    config.files.rules.retain(|rule| {
         if !pattern_is_inside_subtree(&rule.path, folder_path) {
             return true;
         }
 
-        next == ConfigVisibility::Public && rule.visibility == ConfigVisibility::Private
+        next.is_public() && rule.view.is_private()
     });
 }
 
 fn remove_same_base_folder_rule(config: &mut RepoConfig, file_path: &str) {
     let stale_folder_rule = folder_rule_path(file_path);
     config
-        .visibility
+        .files
         .rules
         .retain(|rule| rule.path != stale_folder_rule);
 }
 
 fn aggregate_visibility(
-    visibilities: impl Iterator<Item = ConfigVisibility>,
-    fallback: ConfigVisibility,
-) -> ReviewVisibility {
-    let mut selected = None;
+    visibilities: impl Iterator<Item = ViewId>,
+    fallback: ViewId,
+) -> ReviewLabel {
+    let mut selected: Option<ReviewLabel> = None;
     for visibility in visibilities {
         let visibility = config_visibility_to_review(visibility);
-        let combined = selected.map_or(visibility, |previous: ReviewVisibility| {
-            previous.combine(visibility)
-        });
-        if combined == ReviewVisibility::Mixed {
+        let combined = match selected {
+            Some(previous) => previous.combine(visibility),
+            None => visibility,
+        };
+        if combined == ReviewLabel::Mixed {
             return combined;
         }
         selected = Some(combined);
@@ -333,49 +315,43 @@ fn aggregate_visibility(
     selected.unwrap_or_else(|| config_visibility_to_review(fallback))
 }
 
-fn effective_config_visibility_for_path(config: &RepoConfig, path: &str) -> ConfigVisibility {
+fn effective_config_label_for_path(config: &RepoConfig, path: &str) -> ViewId {
     let Ok(scope_path) = ScopePath::parse(path) else {
-        return config.visibility.default;
+        return config.files.default.clone();
     };
-    match config.visibility_for_path(&scope_path) {
-        Visibility::Public => ConfigVisibility::Public,
-        Visibility::Private => ConfigVisibility::Private,
-    }
+    config.label_for_path(&scope_path)
 }
 
-fn next_directory_visibility(
-    config: &RepoConfig,
-    target: &VisibilityTarget<'_>,
-) -> ConfigVisibility {
+fn next_directory_visibility(config: &RepoConfig, target: &VisibilityTarget<'_>) -> ViewId {
     match target_visibility(config, target) {
-        ReviewVisibility::Public => ConfigVisibility::Private,
-        ReviewVisibility::Private => ConfigVisibility::Public,
-        ReviewVisibility::Mixed => {
-            opposite_config_visibility(effective_config_visibility_for_path(config, target.path))
-        }
+        ReviewLabel::View(view) => next_view(config, &view),
+        ReviewLabel::Mixed => next_view(
+            config,
+            &effective_config_label_for_path(config, target.path),
+        ),
     }
 }
 
-fn opposite_config_visibility(visibility: ConfigVisibility) -> ConfigVisibility {
-    match visibility {
-        ConfigVisibility::Public => ConfigVisibility::Private,
-        ConfigVisibility::Private => ConfigVisibility::Public,
-    }
+fn next_view(config: &RepoConfig, current: &ViewId) -> ViewId {
+    let ids = config
+        .views
+        .iter()
+        .map(|definition| &definition.id)
+        .collect::<Vec<_>>();
+    let index = ids.iter().position(|id| *id == current).unwrap_or(0);
+    ids[(index + 1) % ids.len()].clone()
 }
 
-fn config_visibility_to_review(visibility: ConfigVisibility) -> ReviewVisibility {
-    match visibility {
-        ConfigVisibility::Public => ReviewVisibility::Public,
-        ConfigVisibility::Private => ReviewVisibility::Private,
-    }
+fn config_visibility_to_review(view: ViewId) -> ReviewLabel {
+    ReviewLabel::View(view)
 }
 
 fn matching_visibility_rule<'a>(
     config: &'a RepoConfig,
     path: &str,
-) -> Option<&'a RepoConfigVisibilityRule> {
+) -> Option<&'a RepoConfigFileRule> {
     config
-        .visibility
+        .files
         .rules
         .iter()
         .filter(|rule| pattern_matches_path(&rule.path, path))

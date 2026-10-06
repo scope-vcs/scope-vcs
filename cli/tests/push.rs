@@ -55,14 +55,13 @@ fn push_validates_config_before_remote_lookup() {
     create_repo_with_head(dir.path());
     let config_path = repo_config_path(dir.path()).unwrap();
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
-    fs::write(
-        config_path,
-        r#"{
-      "kind": "wrong", "version": 1,
-      "visibility": { "default": "private", "rules": [] }
-    }"#,
-    )
-    .unwrap();
+    let mut invalid =
+        serde_json::to_value(scope_domain::repo_config::RepoConfig::with_default_view(
+            scope_domain::views::ViewId::private(),
+        ))
+        .unwrap();
+    invalid["kind"] = "wrong".into();
+    fs::write(config_path, serde_json::to_vec(&invalid).unwrap()).unwrap();
     scope_failure(
         dir.path(),
         ["push", "--main", "--no-review"],
@@ -126,11 +125,10 @@ fn configured_repo(label: &str) -> TempDir {
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
     fs::write(
         config_path,
-        r#"{
-      "kind": "scope.repo-config", "version": 1,
-      "visibility": { "default": "private", "rules": [] },
-      "history": { "rewrites": [] }
-    }"#,
+        serde_json::to_vec(&scope_domain::repo_config::RepoConfig::with_default_view(
+            scope_domain::views::ViewId::private(),
+        ))
+        .unwrap(),
     )
     .unwrap();
     dir

@@ -4,9 +4,9 @@ use super::{
     policy::policy_from_config_for_tree,
 };
 use crate::{
-    policy::Visibility,
     repo_config::RepoConfig,
     repository::Repository,
+    views::ViewId,
     visibility_changes::{VisibilityChange, VisibilityChangeSet, visibility_change_set_id},
 };
 use std::collections::BTreeSet;
@@ -46,22 +46,22 @@ pub fn apply_reviewed_config_to_repo(
         .map(|change| change.path.clone())
         .collect::<BTreeSet<_>>();
     for (path, current_content) in &live_tree {
-        let old_visibility = repo.policy.effective_visibility(path);
-        let new_visibility = update.config.visibility_for_path(path);
-        if old_visibility == new_visibility || baseline_paths.contains(path) {
+        let old_label = repo.policy.label(path, repo.repo_config.views());
+        let new_label = update.config.label_for_path(path);
+        if old_label == new_label || baseline_paths.contains(path) {
             continue;
         }
         if history_rewrite.redacted_paths.contains(path)
-            && old_visibility == Visibility::Public
-            && new_visibility == Visibility::Private
+            && old_label == ViewId::public()
+            && new_label == ViewId::private()
         {
             continue;
         }
 
         visibility_changes.push(VisibilityChange {
             path: path.clone(),
-            old_visibility,
-            new_visibility,
+            old_label,
+            new_label,
             current_content: Some(current_content.clone()),
         });
     }

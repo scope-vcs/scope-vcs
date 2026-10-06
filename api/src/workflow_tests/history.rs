@@ -1,15 +1,16 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 mod authors;
 mod pagination;
 
 fn history_repo(commits: Vec<LogicalCommit>, public_path: Option<&str>) -> Repository {
     let mut repo = test_repo(&test_owner_id());
-    repo.repo_config = repo_config(Visibility::Private);
-    repo.policy = Policy::new(Visibility::Private);
+    repo.repo_config = repo_config(ViewId::private());
+    repo.policy = Policy::new(ViewId::private());
     if let Some(path) = public_path {
         repo.policy
-            .add_rule(VisibilityRule::public(ScopePath::parse(path).unwrap()))
+            .add_rule(LabelRule::public(ScopePath::parse(path).unwrap()))
             .unwrap();
     }
     repo.graph.commits = commits;
@@ -31,7 +32,8 @@ async fn latest_history_metadata_and_revision_ignore_private_only_activity() {
     let expected_head = scope_git::projection_head_oid(&scope_domain::projection::project_graph(
         &repo.graph,
         &repo.visibility_change_sets,
-        scope_domain::projection::ProjectionViewKey::Public,
+        repo.repo_config.views(),
+        &ViewId::public(),
     ))
     .unwrap()
     .unwrap();
@@ -55,7 +57,7 @@ async fn latest_history_metadata_and_revision_ignore_private_only_activity() {
         "Secret change",
         vec![history_change(
             "/secret.txt",
-            Visibility::Private,
+            ViewId::private(),
             None,
             Some(source_blob(&state, "secret")),
         )],
@@ -104,7 +106,7 @@ async fn latest_history_metadata_and_revision_ignore_private_only_activity() {
 }
 
 #[tokio::test]
-async fn history_defaults_to_the_readers_broadest_audience() {
+async fn history_defaults_to_the_readers_broadest_view() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
     replace_test_repo(&state, paged_history_repo(&state, 1)).await;
@@ -119,7 +121,7 @@ async fn history_defaults_to_the_readers_broadest_audience() {
     .await;
     assert_eq!(public.status(), StatusCode::OK);
     let public = response_json(public).await;
-    assert_eq!(public["audience"], "public");
+    assert_eq!(public["view"], "public");
     assert_eq!(public["feed"], "updates");
 
     let maintainer = api_request(
@@ -131,7 +133,7 @@ async fn history_defaults_to_the_readers_broadest_audience() {
     )
     .await;
     assert_eq!(maintainer.status(), StatusCode::OK);
-    assert_eq!(response_json(maintainer).await["audience"], "private");
+    assert_eq!(response_json(maintainer).await["view"], "private");
 }
 
 #[tokio::test]
@@ -145,8 +147,8 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
             "rv1",
             "initial",
             vec![
-                history_change("/one.md", Visibility::Public, None, Some(one.clone())),
-                history_change("/two.md", Visibility::Private, None, Some(two.clone())),
+                history_change("/one.md", ViewId::public(), None, Some(one.clone())),
+                history_change("/two.md", ViewId::private(), None, Some(two.clone())),
             ],
         )],
         Some("/two.md"),
@@ -160,14 +162,14 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
             vec![
                 scope_domain::visibility_changes::VisibilityChange {
                     path: ScopePath::parse("/one.md").unwrap(),
-                    old_visibility: Visibility::Public,
-                    new_visibility: Visibility::Private,
+                    old_label: ViewId::public(),
+                    new_label: ViewId::private(),
                     current_content: Some(one),
                 },
                 scope_domain::visibility_changes::VisibilityChange {
                     path: ScopePath::parse("/two.md").unwrap(),
-                    old_visibility: Visibility::Private,
-                    new_visibility: Visibility::Public,
+                    old_label: ViewId::private(),
+                    new_label: ViewId::public(),
                     current_content: Some(two),
                 },
             ],
@@ -179,7 +181,7 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
     let private = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?feed=all&audience=private",
+        "/v1/repos/owner/repo/history?feed=all&view=private",
         Some(&bearer_header()),
         None,
     )
@@ -194,18 +196,15 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
     );
     assert_eq!(private["entries"][0]["file_change_count"], 0);
     assert_eq!(
-        private["entries"][0]["visibility_summary"]["made_public_count"],
+        private["entries"][0]["visibility_summary"]["entered_count"],
         1
     );
-    assert_eq!(
-        private["entries"][0]["visibility_summary"]["made_private_count"],
-        1
-    );
+    assert_eq!(private["entries"][0]["visibility_summary"]["left_count"], 1);
 
     let detail = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history/vchg_2?audience=private",
+        "/v1/repos/owner/repo/history/vchg_2?view=private",
         Some(&bearer_header()),
         None,
     )
@@ -214,13 +213,13 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
     assert_eq!(detail["author"], TEST_REPO_OWNER);
     assert_eq!(detail["visibility_changes"].as_array().unwrap().len(), 2);
     assert_eq!(detail["visibility_changes"][0]["path"], "/one.md");
-    assert_eq!(detail["visibility_changes"][0]["old_visibility"], "Public");
-    assert_eq!(detail["visibility_changes"][0]["new_visibility"], "Private");
+    assert_eq!(detail["visibility_changes"][0]["old_label"], "public");
+    assert_eq!(detail["visibility_changes"][0]["new_label"], "private");
 
     let public = api_request(
         router(state),
         "GET",
-        "/v1/repos/owner/repo/history?feed=all&audience=public",
+        "/v1/repos/owner/repo/history?feed=all&view=public",
         None,
         None,
     )
@@ -231,13 +230,10 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
     assert!(public["entries"][0]["author"].is_null());
     assert_eq!(public["entries"][0]["file_change_count"], 0);
     assert_eq!(
-        public["entries"][0]["visibility_summary"]["made_public_count"],
+        public["entries"][0]["visibility_summary"]["entered_count"],
         1
     );
-    assert_eq!(
-        public["entries"][0]["visibility_summary"]["made_private_count"],
-        1
-    );
+    assert_eq!(public["entries"][0]["visibility_summary"]["left_count"], 1);
 }
 
 #[tokio::test]
@@ -251,7 +247,7 @@ async fn unresolved_visibility_source_degrades_to_a_direct_update() {
             "initial",
             vec![history_change(
                 "/README.md",
-                Visibility::Private,
+                ViewId::private(),
                 None,
                 Some(readme.clone()),
             )],
@@ -266,8 +262,8 @@ async fn unresolved_visibility_source_degrades_to_a_direct_update() {
             test_owner_id(),
             vec![scope_domain::visibility_changes::VisibilityChange {
                 path: ScopePath::parse("/README.md").unwrap(),
-                old_visibility: Visibility::Private,
-                new_visibility: Visibility::Public,
+                old_label: ViewId::private(),
+                new_label: ViewId::public(),
                 current_content: Some(readme),
             }],
         )
@@ -278,7 +274,7 @@ async fn unresolved_visibility_source_degrades_to_a_direct_update() {
     let updates = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?audience=public",
+        "/v1/repos/owner/repo/history?view=public",
         None,
         None,
     )
@@ -292,7 +288,7 @@ async fn unresolved_visibility_source_degrades_to_a_direct_update() {
     let public = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?feed=all&audience=public",
+        "/v1/repos/owner/repo/history?feed=all&view=public",
         None,
         None,
     )
@@ -305,7 +301,7 @@ async fn unresolved_visibility_source_degrades_to_a_direct_update() {
     let private = api_request(
         router(state),
         "GET",
-        "/v1/repos/owner/repo/history?feed=all&audience=private",
+        "/v1/repos/owner/repo/history?feed=all&view=private",
         Some(&bearer_header()),
         None,
     )
@@ -329,8 +325,8 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
                 "rv1",
                 "initial",
                 vec![
-                    history_change("/one.md", Visibility::Private, None, Some(one.clone())),
-                    history_change("/two.md", Visibility::Public, None, Some(two_old.clone())),
+                    history_change("/one.md", ViewId::private(), None, Some(one.clone())),
+                    history_change("/two.md", ViewId::public(), None, Some(two_old.clone())),
                 ],
             ),
             logical_commit(
@@ -338,7 +334,7 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
                 "mixed policy push",
                 vec![history_change(
                     "/two.md",
-                    Visibility::Private,
+                    ViewId::private(),
                     Some(two_old),
                     Some(two_new.clone()),
                 )],
@@ -355,14 +351,14 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
             vec![
                 scope_domain::visibility_changes::VisibilityChange {
                     path: ScopePath::parse("/one.md").unwrap(),
-                    old_visibility: Visibility::Private,
-                    new_visibility: Visibility::Public,
+                    old_label: ViewId::private(),
+                    new_label: ViewId::public(),
                     current_content: Some(one),
                 },
                 scope_domain::visibility_changes::VisibilityChange {
                     path: ScopePath::parse("/two.md").unwrap(),
-                    old_visibility: Visibility::Public,
-                    new_visibility: Visibility::Private,
+                    old_label: ViewId::public(),
+                    new_label: ViewId::private(),
                     current_content: Some(two_new),
                 },
             ],
@@ -371,11 +367,11 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
     );
     replace_test_repo(&state, repo).await;
 
-    for (audience, private) in [("private", true), ("public", false)] {
+    for (view, private) in [("private", true), ("public", false)] {
         let response = api_request(
             router(state.clone()),
             "GET",
-            &format!("/v1/repos/owner/repo/history?audience={audience}"),
+            &format!("/v1/repos/owner/repo/history?view={view}"),
             (private).then(bearer_header).as_deref(),
             None,
         )
@@ -385,18 +381,18 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
         assert_eq!(response["entries"][0]["source_id"], "rv2");
         assert_eq!(response["entries"][0]["kind"], "push");
         assert_eq!(
-            response["entries"][0]["visibility_summary"]["made_public_count"],
+            response["entries"][0]["visibility_summary"]["entered_count"],
             1
         );
         assert_eq!(
-            response["entries"][0]["visibility_summary"]["made_private_count"],
+            response["entries"][0]["visibility_summary"]["left_count"],
             1
         );
 
         let visibility = api_request(
             router(state.clone()),
             "GET",
-            &format!("/v1/repos/owner/repo/history?audience={audience}&feed=visibility"),
+            &format!("/v1/repos/owner/repo/history?view={view}&feed=visibility"),
             (private).then(bearer_header).as_deref(),
             None,
         )
@@ -415,7 +411,7 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
         let detail = api_request(
             router(state.clone()),
             "GET",
-            &format!("/v1/repos/owner/repo/history/rv2?audience={audience}"),
+            &format!("/v1/repos/owner/repo/history/rv2?view={view}"),
             (private).then(bearer_header).as_deref(),
             None,
         )
@@ -444,7 +440,7 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
                     "private draft",
                     vec![history_change(
                         "/notes.md",
-                        Visibility::Private,
+                        ViewId::private(),
                         None,
                         Some(private.clone()),
                     )],
@@ -454,7 +450,7 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
                     "public release",
                     vec![history_change(
                         "/notes.md",
-                        Visibility::Public,
+                        ViewId::public(),
                         Some(private),
                         Some(source_blob(&state, "public release")),
                     )],
@@ -468,7 +464,7 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
     let public_list = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?audience=public",
+        "/v1/repos/owner/repo/history?view=public",
         None,
         None,
     )
@@ -481,7 +477,7 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
     let detail = api_request(
         router(state.clone()),
         "GET",
-        &format!("/v1/repos/owner/repo/history/{public_id}?audience=public"),
+        &format!("/v1/repos/owner/repo/history/{public_id}?view=public"),
         None,
         None,
     )
@@ -491,9 +487,7 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
     let public = api_request(
         router(state.clone()),
         "GET",
-        &format!(
-            "/v1/repos/owner/repo/history/{public_id}/file-diff?audience=public&path=/notes.md"
-        ),
+        &format!("/v1/repos/owner/repo/history/{public_id}/file-diff?view=public&path=/notes.md"),
         None,
         None,
     )
@@ -507,7 +501,7 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
     let private_list = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?audience=private",
+        "/v1/repos/owner/repo/history?view=private",
         Some(&bearer_header()),
         None,
     )
@@ -519,9 +513,7 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
     let private = api_request(
         router(state),
         "GET",
-        &format!(
-            "/v1/repos/owner/repo/history/{private_id}/file-diff?audience=private&path=/notes.md"
-        ),
+        &format!("/v1/repos/owner/repo/history/{private_id}/file-diff?view=private&path=/notes.md"),
         Some(&bearer_header()),
         None,
     )
@@ -543,7 +535,7 @@ fn paged_history_repo(state: &AppState, count: usize) -> Repository {
                 &format!("push {index}"),
                 vec![history_change(
                     "/README.md",
-                    Visibility::Public,
+                    ViewId::public(),
                     previous.take(),
                     Some(next.clone()),
                 )],
@@ -567,7 +559,7 @@ async fn history_entries_report_their_update_kind() {
                 "push",
                 vec![history_change(
                     "/README.md",
-                    Visibility::Public,
+                    ViewId::public(),
                     None,
                     Some(first.clone()),
                 )],
@@ -583,7 +575,7 @@ async fn history_entries_report_their_update_kind() {
                 message: "merged request".into(),
                 changes: vec![history_change(
                     "/README.md",
-                    Visibility::Public,
+                    ViewId::public(),
                     Some(first),
                     Some(second.clone()),
                 )],
@@ -600,8 +592,8 @@ async fn history_entries_report_their_update_kind() {
             author_id: test_owner_id(),
             changes: vec![scope_domain::visibility_changes::VisibilityChange {
                 path: ScopePath::parse("/README.md").unwrap(),
-                old_visibility: Visibility::Public,
-                new_visibility: Visibility::Private,
+                old_label: ViewId::public(),
+                new_label: ViewId::private(),
                 current_content: Some(second),
             }],
         });
@@ -611,7 +603,7 @@ async fn history_entries_report_their_update_kind() {
     let public = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?feed=all&audience=public",
+        "/v1/repos/owner/repo/history?feed=all&view=public",
         Some(&bearer_header()),
         None,
     )
@@ -633,22 +625,19 @@ async fn history_entries_report_their_update_kind() {
     .await;
     assert_eq!(private.status(), StatusCode::OK);
     let private = response_json(private).await;
-    assert_eq!(private["audience"], "private");
+    assert_eq!(private["view"], "private");
     let private_entries = private["entries"].as_array().unwrap();
     assert_eq!(private_entries[0]["source_id"], "visibility-1");
     assert_eq!(private_entries[0]["kind"], "visibility_change");
     assert_eq!(private_entries[0]["file_change_count"], 0);
-    assert_eq!(
-        private_entries[0]["visibility_summary"]["made_private_count"],
-        1
-    );
+    assert_eq!(private_entries[0]["visibility_summary"]["left_count"], 1);
     assert_eq!(private_entries[1]["kind"], "merged_request");
     assert_eq!(private_entries[2]["kind"], "push");
 
     let detail = api_request(
         router(state),
         "GET",
-        "/v1/repos/owner/repo/history/visibility-1?audience=private",
+        "/v1/repos/owner/repo/history/visibility-1?view=private",
         Some(&bearer_header()),
         None,
     )
@@ -658,8 +647,8 @@ async fn history_entries_report_their_update_kind() {
     assert_eq!(detail["message"], "Made 1 file private");
     assert!(detail["files"].as_array().unwrap().is_empty());
     assert_eq!(detail["visibility_changes"][0]["path"], "/README.md");
-    assert_eq!(detail["visibility_changes"][0]["old_visibility"], "Public");
-    assert_eq!(detail["visibility_changes"][0]["new_visibility"], "Private");
+    assert_eq!(detail["visibility_changes"][0]["old_label"], "public");
+    assert_eq!(detail["visibility_changes"][0]["new_label"], "private");
 }
 
 mod feeds;

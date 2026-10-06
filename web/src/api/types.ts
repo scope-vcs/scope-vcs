@@ -11,16 +11,15 @@ import type {
   HistoryEntryRequest,
   HistoryPageRequest,
   OwnerProfileResponse,
-  ProjectionPreviewAudience,
+  ViewId,
   RepoFileResponse,
   RepoSummaryResponse,
   RepositoryMemberPermissions,
   ReviewFileDiffResponse,
   UpdateRepoMetadataRequest,
-  Visibility,
 } from './types.generated'
 
-export type VisibilityState = Visibility | 'Mixed'
+export type VisibilityState = ViewId | 'Mixed'
 
 export type CommitSummary = {
   projected_id: string
@@ -31,10 +30,9 @@ export type CommitSummary = {
   change_count: number
 }
 export type CommitDetail = CommitSummary & {
-  audience: ProjectionPreviewAudience
+  view: ViewId
   files_truncated: boolean
   repo_id: string
-  view_key: string
   files: CommitFileResponse[]
 }
 

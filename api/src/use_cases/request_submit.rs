@@ -31,8 +31,8 @@ pub(crate) async fn submit_request(
             actor_user_id,
             repo.incarnation().incarnation_id(),
             &request.id,
-            request.audience,
-            request_actor_role(repo.access),
+            request.view.clone(),
+            request_actor_role(repo.access.clone()),
         ));
     state
         .publish_request_summary_refresh(&repo.incarnation(), RepoChangeReason::RequestSubmitted)

@@ -24,8 +24,8 @@ use scope_domain::{
     github_workflow_jobs::github_run_visible,
     repository::{RepoRecord, access::RepositoryAccess},
     requests::{
-        GitHubBranch, GitHubPushStatus, Request, RequestAudience, RequestCheck,
-        RequestCheckResults, request_checks_message, request_mergeability,
+        GitHubBranch, GitHubPushStatus, Request, RequestCheck, RequestCheckResults,
+        request_checks_message, request_mergeability,
     },
 };
 use scope_postgres::db::ApproveRequestChecksCommand;
@@ -41,7 +41,7 @@ pub(crate) async fn get_request_checks(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -67,8 +67,14 @@ pub(crate) async fn approve_request_checks(
 ) -> Result<Json<RequestChecksResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) =
-        visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    let (request, _) = visible_request(
+        &state,
+        &repo.record.id,
+        access.clone(),
+        Some(&user.id),
+        &request_id,
+    )
+    .await?;
     request_checks::checks_view(&state, &repo.record, &request).await?;
     let mutation = state
         .metadata
@@ -107,7 +113,7 @@ pub(crate) async fn checks_response(
         results,
         outcome,
     } = request_checks::readable_checks_view(state, repo, request).await?;
-    let decision = request_mergeability(request, access, outcome);
+    let decision = request_mergeability(request, access.clone(), outcome);
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
         current_main_oid: current_main_oid.map(git_oid_response).transpose()?,
@@ -120,7 +126,7 @@ pub(crate) async fn checks_response(
         .github_connection(&request.repo_id)
         .await?
         .map(|read| read.connection);
-    let private_request_on_public_github = request.audience == RequestAudience::Private
+    let private_request_on_public_github = !request.view.is_public()
         && github_connection.as_ref().is_some_and(|connection| {
             connection.is_connected()
                 && connection.visibility != GitHubRepositoryVisibility::Private
@@ -146,7 +152,7 @@ pub(crate) async fn checks_response(
         .latest_github_push(&request.id)
         .await?;
     let github_push = GitHubPushStatus::for_evaluation(&evaluation, latest_push.as_ref())
-        .map(|status| github_push_response(&request.id, status, access));
+        .map(|status| github_push_response(&request.id, status, access.clone()));
     let changes_github_workflows = can_approve
         && evaluation.asks_github()
         && request_checks::changes_github_workflow_files(state, repo, request).await;

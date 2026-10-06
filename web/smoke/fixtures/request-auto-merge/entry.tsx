@@ -16,6 +16,7 @@ Object.assign(window, { calls })
 
 const request = {
   author_role: 'Member',
+  view: 'private',
   head_oid: headOid,
   mergeability: {
     reason: 'Checks are still running.',

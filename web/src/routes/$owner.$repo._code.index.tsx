@@ -183,7 +183,7 @@ function repoCodeCacheKeys(repo: RepoSummaryResponse, accessScope: string | null
   if (!accessScope) return { contentIdentity: null, fileIdentity: null }
   const scope = {
     scope: accessScope,
-    audience: repo.access.can_read_private_files ? 'private' as const : 'public' as const,
+    view: repo.access.view,
     contentVersion: repo.content_version,
     repoId: repo.id,
   }

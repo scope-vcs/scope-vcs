@@ -247,7 +247,7 @@ pub fn revoke_cli_session(api: ApiSession<'_>) -> anyhow::Result<()> {
 pub fn create_repo(api: ApiSession<'_>, name: String) -> anyhow::Result<CreateRepoResponse> {
     let request = CreateRepoRequest {
         name,
-        file_default_visibility: None,
+        file_default_view: None,
     };
     let response = api
         .request(reqwest::Method::POST, routes::REPOS)
@@ -281,7 +281,10 @@ pub fn get_repo_config(
     let response: RepoConfigResponse =
         decode_json_response(response, &format!("get repo config for {owner}/{repo}"))?;
     Ok(RepoConfigContext {
-        config: response.config.into(),
+        config: response
+            .config
+            .try_into()
+            .context("validate repository config")?,
         config_hash: response.config_hash,
         lifecycle_state: response.lifecycle_state,
         access: response.access,

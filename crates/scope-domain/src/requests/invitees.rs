@@ -1,5 +1,6 @@
-use super::{Request, RequestAudience, RequestInvitee, validate_required};
+use super::{Request, RequestInvitee, validate_required};
 use crate::error::DomainError;
+use crate::views::ViewId;
 
 pub const REQUEST_ACTIVE_INVITEE_LIMIT: usize = 30;
 
@@ -104,7 +105,7 @@ pub fn leave_request(
 }
 
 fn validate_invitee_request(request: &Request) -> Result<(), DomainError> {
-    if request.audience != RequestAudience::Public {
+    if request.view != ViewId::public() {
         return Err(DomainError::conflict(
             "private requests do not support invitees",
         ));
