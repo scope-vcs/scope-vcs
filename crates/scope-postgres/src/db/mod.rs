@@ -38,6 +38,7 @@ mod integer_columns;
 mod json;
 mod landing_files;
 mod locks;
+mod main_push_requests;
 mod maintenance;
 mod manual_runs;
 #[cfg(test)]
