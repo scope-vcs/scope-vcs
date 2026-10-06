@@ -2,6 +2,7 @@ use super::{git_command_output, git_index_command};
 use crate::error::ApiError;
 use scope_domain::{
     content::{SourceBlob, is_supported_git_file_mode},
+    content_ref::ContentRef,
     projection::ProjectedChange,
 };
 use scope_git::GitTreePath;
@@ -68,9 +69,17 @@ impl ProjectionIndex {
                     blob.git_file_mode
                 )));
             }
+            if let ContentRef::GitBlob { git_oid } = &blob.content_ref
+                && git_oid != &blob.git_oid
+            {
+                return Err(ApiError::internal_message(
+                    "Git blob identity does not match persisted OID",
+                ));
+            }
             if self
                 .written_blobs
                 .insert((blob.git_oid.clone(), blob.sha256.clone()))
+                && !matches!(blob.content_ref, ContentRef::GitBlob { .. })
             {
                 let bytes = load(blob)?;
                 let oid = git_command_output(

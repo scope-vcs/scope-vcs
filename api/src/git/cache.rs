@@ -39,6 +39,7 @@ pub(crate) struct RepositoryGitCache {
 pub(crate) struct GitRepoHandle {
     path: PathBuf,
     _lease: RepositoryGitCacheLease,
+    dependencies: Vec<GitRepoHandle>,
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -114,6 +115,7 @@ impl RepositoryGitCache {
         Ok(GitRepoHandle {
             path: path.clone(),
             _lease: RepositoryGitCacheLease { path },
+            dependencies: Vec::new(),
         })
     }
 
@@ -289,6 +291,13 @@ impl std::fmt::Debug for GitRepoHandle {
             .debug_struct("GitRepoHandle")
             .field("path", &self.path)
             .finish_non_exhaustive()
+    }
+}
+
+impl GitRepoHandle {
+    pub(crate) fn with_dependency(mut self, dependency: GitRepoHandle) -> Self {
+        self.dependencies.push(dependency);
+        self
     }
 }
 
