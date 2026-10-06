@@ -15,7 +15,8 @@ use clap::{Parser, Subcommand};
 use scope_domain::{
     policy::ScopePath,
     repo_config::{RepoConfig, repo_config_fingerprint},
-    repo_visibility::{config_visibility_label, visibility_label},
+    repo_visibility::{ReviewLabel, visibility_label},
+    views::ViewId,
 };
 use serde::Serialize;
 use std::{fs, path::PathBuf};
@@ -63,7 +64,10 @@ pub enum VisibilityCommand {
 struct PathVisibility {
     path: String,
     kind: &'static str,
-    visibility: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    view: Option<ViewId>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    mixed: bool,
     rule: String,
     managed: bool,
 }
@@ -80,8 +84,8 @@ struct VisibilityReport {
 #[derive(Serialize)]
 struct VisibilityChange {
     path: String,
-    before: &'static str,
-    after: &'static str,
+    before_view: ViewId,
+    after_view: ViewId,
     rule: String,
 }
 
@@ -153,16 +157,16 @@ fn show(repo: &GitRepo, config: RepoConfig) -> Result<()> {
         .collect::<Vec<_>>();
     let mut lines = vec![format!(
         "Local worktree configuration, default {}. Paths include tracked and untracked files; ignored files are excluded.",
-        config_visibility_label(config.visibility.default)
+        view_name(&config, &config.files.default)
     )];
-    for rule in &config.visibility.rules {
+    for rule in &config.files.rules {
         lines.push(format!(
             "Rule {}: {}",
             escaped(&rule.path),
-            config_visibility_label(rule.visibility)
+            view_name(&config, &rule.view)
         ));
     }
-    lines.extend(paths.iter().map(path_line));
+    lines.extend(paths.iter().map(|path| path_line(path, &config)));
     execution::emit(
         "visibility.show",
         &VisibilityReport {
@@ -211,7 +215,7 @@ fn explain(repo: &GitRepo, config: &RepoConfig, input: &str) -> Result<()> {
             "present_in_worktree": known,
             "path": report,
         }),
-        vec![path_line(&report)],
+        vec![path_line(&report, config)],
     )
 }
 
@@ -226,11 +230,11 @@ fn preview(repo: &GitRepo, config: &RepoConfig, candidate_path: PathBuf) -> Resu
     let changes = before
         .into_iter()
         .zip(after)
-        .filter(|(before, after)| before.kind == "file" && before.visibility != after.visibility)
+        .filter(|(before, after)| before.kind == "file" && before.view != after.view)
         .map(|(before, after)| VisibilityChange {
             path: after.path,
-            before: before.visibility,
-            after: after.visibility,
+            before_view: before.view.expect("file has a view"),
+            after_view: after.view.expect("file has a view"),
             rule: after.rule,
         })
         .collect::<Vec<_>>();
@@ -242,8 +246,8 @@ fn preview(repo: &GitRepo, config: &RepoConfig, candidate_path: PathBuf) -> Resu
         format!(
             "{}: {} -> {} ({})",
             escaped(&change.path),
-            change.before,
-            change.after,
+            view_name(config, &change.before_view),
+            view_name(&candidate, &change.after_view),
             escaped(&change.rule)
         )
     }));
@@ -273,20 +277,31 @@ fn path_visibilities(config: &RepoConfig, tree: &ReviewTree) -> Vec<PathVisibili
                 ReviewNodeKind::Directory => "directory",
                 ReviewNodeKind::File => "file",
             },
-            visibility: visibility_label(visibilities[node.id]),
+            view: match &visibilities[node.id] {
+                ReviewLabel::View(view) => Some(view.clone()),
+                ReviewLabel::Mixed => None,
+            },
+            mixed: visibilities[node.id] == ReviewLabel::Mixed,
             rule: rule_label(config, node),
             managed: node.reserved,
         })
         .collect()
 }
 
-fn path_line(path: &PathVisibility) -> String {
+fn path_line(path: &PathVisibility, config: &RepoConfig) -> String {
     format!(
         "{} {} ({})",
-        path.visibility,
+        path.view
+            .as_ref()
+            .map(|view| view_name(config, view))
+            .unwrap_or_else(|| "mixed".into()),
         escaped(&path.path),
         escaped(&path.rule)
     )
+}
+
+fn view_name(config: &RepoConfig, view: &ViewId) -> String {
+    visibility_label(ReviewLabel::View(view.clone()), config)
 }
 
 fn escaped(value: &str) -> String {

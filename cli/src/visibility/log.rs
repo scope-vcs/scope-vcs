@@ -25,7 +25,12 @@ pub(super) fn run(remote: Option<&str>, before: Option<&str>) -> Result<()> {
 }
 
 fn lines(page: &VisibilityHistoryPage) -> Vec<String> {
-    let mut lines: Vec<_> = page.entries.iter().map(entry_line).collect();
+    let view = &page.view;
+    let mut lines: Vec<_> = page
+        .entries
+        .iter()
+        .map(|entry| entry_line(entry, view))
+        .collect();
     if lines.is_empty() {
         lines.push("No visibility changes.".into());
     }
@@ -38,26 +43,31 @@ fn lines(page: &VisibilityHistoryPage) -> Vec<String> {
     lines
 }
 
-fn entry_line(entry: &HistoryEntrySummary) -> String {
+fn entry_line(entry: &HistoryEntrySummary, view: &scope_api_contract::ViewId) -> String {
     let mut parts = vec![terminal_text(&entry.source_id)];
     parts.extend(entry.occurred_at_unix.and_then(utc_minute));
     parts.extend(entry.author.as_deref().map(terminal_text));
     let message = entry.message.lines().next().unwrap_or_default();
     parts.push(terminal_text(message.trim()));
     if entry.kind != HistoryEntryKind::VisibilityChange {
-        parts.push(summary_label(&entry.visibility_summary));
+        parts.push(summary_label(&entry.visibility_summary, view));
     }
     parts.join(" · ")
 }
 
-fn summary_label(summary: &HistoryVisibilitySummary) -> String {
+fn summary_label(summary: &HistoryVisibilitySummary, view: &scope_api_contract::ViewId) -> String {
+    let views = scope_domain::views::Views::builtin();
+    let name = views
+        .get(&view.clone().into())
+        .map(|definition| definition.name.as_str())
+        .unwrap_or(view.as_str());
     [
-        (summary.made_public_count, "made public"),
-        (summary.made_private_count, "made private"),
+        (summary.entered_count, "entered"),
+        (summary.left_count, "left"),
     ]
     .into_iter()
     .filter(|(count, _)| *count > 0)
-    .map(|(count, label)| format!("{count} {label}"))
+    .map(|(count, label)| format!("{count} {label} {name}"))
     .collect::<Vec<_>>()
     .join(", ")
 }
@@ -77,14 +87,13 @@ fn utc_minute(unix: i64) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::HistoryAudience;
 
     fn entry(
         kind: HistoryEntryKind,
         occurred_at_unix: Option<i64>,
         author: Option<&str>,
         message: &str,
-        (made_public_count, made_private_count): (usize, usize),
+        (entered_count, left_count): (usize, usize),
     ) -> HistoryEntrySummary {
         HistoryEntrySummary {
             occurred_at_unix,
@@ -92,17 +101,17 @@ mod tests {
             kind,
             author: author.map(Into::into),
             message: message.into(),
-            file_change_count: made_public_count + made_private_count,
+            file_change_count: entered_count + left_count,
             visibility_summary: HistoryVisibilitySummary {
-                made_public_count,
-                made_private_count,
+                entered_count,
+                left_count,
             },
         }
     }
 
     fn page(entries: Vec<HistoryEntrySummary>, next_cursor: Option<&str>) -> VisibilityHistoryPage {
         VisibilityHistoryPage {
-            audience: HistoryAudience::Private,
+            view: scope_api_contract::ViewId::private(),
             entries,
             next_cursor: next_cursor.map(Into::into),
         }
@@ -133,7 +142,7 @@ mod tests {
             lines,
             [
                 "vc_000041 · 2026-09-23 16:40 UTC · adamblumoff · Made 3 files public",
-                "vc_000041 · 2026-09-23 16:40 UTC · adamblumoff · Merge pull request #407 · 2 made public, 1 made private",
+                "vc_000041 · 2026-09-23 16:40 UTC · adamblumoff · Merge pull request #407 · 2 entered Private, 1 left Private",
             ]
         );
     }
@@ -150,7 +159,7 @@ mod tests {
             )],
             None,
         ));
-        assert_eq!(lines, ["vc_000041 · Tighten docs · 1 made private"]);
+        assert_eq!(lines, ["vc_000041 · Tighten docs · 1 left Private"]);
     }
 
     #[test]

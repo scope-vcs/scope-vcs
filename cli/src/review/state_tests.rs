@@ -6,9 +6,8 @@ use scope_domain::{
         AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION, DependencyEdge, DependencyEdgeKind,
         DependencyGap, StoredDependencyAnalysis,
     },
-    repo_config::{
-        ConfigVisibility, HistoryRewriteAction, HistoryRewriteRequest, RepoConfigVisibilityRule,
-    },
+    repo_config::{HistoryRewriteAction, HistoryRewriteRequest, RepoConfigFileRule},
+    views::ViewId,
 };
 
 fn state_with_mode(mode: ReviewMode) -> ReviewState {
@@ -388,10 +387,10 @@ fn empty_tree_summary_uses_config_default() {
 }
 
 fn dependency_config() -> RepoConfig {
-    let mut config = RepoConfig::with_default_visibility(ConfigVisibility::Public);
-    config.visibility.rules.push(RepoConfigVisibilityRule {
+    let mut config = RepoConfig::with_default_view(ViewId::public());
+    config.files.rules.push(RepoConfigFileRule {
         path: "/private/**".into(),
-        visibility: ConfigVisibility::Private,
+        view: ViewId::private(),
     });
     config
 }

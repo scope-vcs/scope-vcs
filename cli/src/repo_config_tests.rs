@@ -103,7 +103,7 @@ fn linked_worktrees_get_distinct_scope_state_directories() {
 fn server_config_initializes_only_absent_worktree_state() {
     let dir = TempDir::git_repo("sync-missing-state", "main");
     let mut server = default_scope_repo_config();
-    server.visibility.default = ConfigVisibility::Public;
+    server.files.default = ViewId::public();
     assert_eq!(
         worktree_scope_repo_config_presence(&dir.path).unwrap(),
         WorktreeRepoConfigPresence::Absent
@@ -135,7 +135,7 @@ fn server_config_initializes_only_absent_worktree_state() {
 fn partial_worktree_state_recovers_only_when_local_matches_server() {
     let dir = TempDir::git_repo("partial-state", "main");
     let mut server = default_scope_repo_config();
-    server.visibility.default = ConfigVisibility::Public;
+    server.files.default = ViewId::public();
     write_worktree_scope_repo_config(&dir.path, &server).unwrap();
     assert_eq!(
         sync_missing_worktree_scope_repo_config(&dir.path, &server).unwrap(),

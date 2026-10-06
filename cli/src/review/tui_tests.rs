@@ -4,7 +4,7 @@ use crate::review::{
     state::{ChangeListKind, DependencyPathSide, ReviewMode, ReviewRow},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use scope_domain::repo_visibility::ReviewVisibility;
+use scope_domain::repo_visibility::ReviewLabel;
 use unicode_width::UnicodeWidthStr;
 
 #[test]
@@ -33,10 +33,22 @@ fn tree_rows_use_web_visibility_icons_and_stay_within_terminal_width() {
         change_status: Some("A".to_string()),
     };
 
-    let public_line = row_line(&row(ReviewVisibility::Public), false, 80).to_string();
-    let private_line = row_line(&row(ReviewVisibility::Private), false, 80).to_string();
-    assert!(public_line.contains("🌐 public"), "{public_line}");
-    assert!(private_line.contains("🔒 private"), "{private_line}");
+    let public_line = row_line(
+        &row(ReviewLabel::View(scope_domain::views::ViewId::public())),
+        false,
+        80,
+        &crate::repo_config::default_scope_repo_config(),
+    )
+    .to_string();
+    let private_line = row_line(
+        &row(ReviewLabel::View(scope_domain::views::ViewId::private())),
+        false,
+        80,
+        &crate::repo_config::default_scope_repo_config(),
+    )
+    .to_string();
+    assert!(public_line.contains("🌐 Public"), "{public_line}");
+    assert!(private_line.contains("🔒 Private"), "{private_line}");
     assert!(!public_line.ends_with("  A"), "{public_line}");
     assert_eq!(UnicodeWidthStr::width(public_line.as_str()), 80);
     assert_eq!(UnicodeWidthStr::width(private_line.as_str()), 80);
@@ -49,7 +61,13 @@ fn change_section_rows_are_compact_and_descriptive() {
         count: 87,
         expanded: false,
     };
-    let line = row_line(&row, false, 80).to_string();
+    let line = row_line(
+        &row,
+        false,
+        80,
+        &crate::repo_config::default_scope_repo_config(),
+    )
+    .to_string();
 
     assert!(line.starts_with("[>] Deleted files (87)"), "{line}");
     assert_eq!(UnicodeWidthStr::width(line.as_str()), 80);
@@ -61,7 +79,13 @@ fn change_rows_escape_control_characters_without_splitting_literal_arrows() {
         kind: ChangeListKind::Added,
         path: " old -> new\t\n\u{1b}[31m.rs".to_string(),
     };
-    let line = row_line(&row, false, 100).to_string();
+    let line = row_line(
+        &row,
+        false,
+        100,
+        &crate::repo_config::default_scope_repo_config(),
+    )
+    .to_string();
     assert!(line.contains("old -> new\\t\\n\\u{1b}[31m.rs"), "{line:?}");
     assert!(!line.chars().any(char::is_control), "{line:?}");
     assert_eq!(UnicodeWidthStr::width(line.as_str()), 100);
@@ -104,6 +128,7 @@ fn dependency_summary_and_pair_fit_narrow_terminals_with_text_labels() {
         }),
         false,
         42,
+        &crate::repo_config::default_scope_repo_config(),
     )
     .to_string();
     let pair = row_line(
@@ -114,6 +139,7 @@ fn dependency_summary_and_pair_fit_narrow_terminals_with_text_labels() {
         },
         true,
         42,
+        &crate::repo_config::default_scope_repo_config(),
     )
     .to_string();
 

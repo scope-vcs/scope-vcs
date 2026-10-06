@@ -1,6 +1,7 @@
 use anyhow::{Context, bail};
-use scope_domain::repo_config::{
-    ConfigVisibility, RepoConfig, is_repo_config_fingerprint, repo_config_fingerprint,
+use scope_domain::{
+    repo_config::{RepoConfig, is_repo_config_fingerprint, repo_config_fingerprint},
+    views::ViewId,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -171,7 +172,7 @@ pub fn repo_config_path(git_root: &Path) -> anyhow::Result<PathBuf> {
 }
 
 pub fn default_scope_repo_config() -> RepoConfig {
-    RepoConfig::with_default_visibility(ConfigVisibility::Private)
+    RepoConfig::with_default_view(ViewId::private())
 }
 
 pub fn write_worktree_scope_repo_config(

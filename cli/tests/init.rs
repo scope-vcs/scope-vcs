@@ -293,7 +293,7 @@ fn create_repo_response() -> serde_json::Value {
         "change_version": 1,
         "access": {
             "actor": "Owner",
-            "can_read_private_files": true,
+            "view": "private",
             "can_push": true,
             "can_change_file_visibility": true,
             "can_manage_members": true,
