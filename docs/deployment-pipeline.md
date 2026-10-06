@@ -71,9 +71,9 @@ runtime verification, and the production readiness audit) make up to three
 attempts when SSH reports a transport failure; migrations, backfills, writer
 fencing and draining, restores, dumps, and seeding never retry one. Runner base
 image pushes also make up to three attempts. Release image preparation,
-maintenance binary extraction, and maintenance runtime publication each make up
-to three attempts to log in to the registry before pulling or inspecting an
-image.
+maintenance binary extraction, maintenance runtime publication, and the staging
+web manifest read each make up to three attempts to log in to the registry
+before pulling or inspecting an image.
 
 If the original staging job passed, requesting smoke resume does not repeat it.
 Reuse still requires trusted main preparation, the validation gate, exact images,
