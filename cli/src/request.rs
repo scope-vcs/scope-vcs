@@ -186,7 +186,10 @@ fn show_request_status(
             &context.target.repo,
             &request_id,
         )?;
-        human_lines.extend(request_detail_lines(&detail.request));
+        human_lines.extend(request_detail_lines(
+            &detail.request,
+            &crate::repository_views::repository_views(&context.repo.views)?,
+        ));
         return Ok(RequestCommandOutcome::new(
             "request.status",
             RequestCommandResult::Detail(DetailResult {
