@@ -94,3 +94,55 @@ async fn projection_preview_reads_history_but_no_live_files() {
     assert_eq!(paths, ["/README.md", "/docs.txt"]);
     assert_eq!(private.status(), StatusCode::FORBIDDEN);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn git_backed_file_content_reads_no_commit_history() {
+    let (state, source, _server, _) = super::git_http::first_push_fixture(
+        "git-backed-file-content",
+        "hello\n",
+        Some(("script.sh", "#!/bin/sh\necho hi\n")),
+    )
+    .await;
+    run_git(
+        Some(&source),
+        &["push", "-u", "scope", "HEAD:main"],
+        "push git-backed files",
+    )
+    .unwrap();
+    drain_outbox(&state, "git-backed-file-content").await;
+    let stored = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    assert!(matches!(
+        stored.live_files[&ScopePath::parse("/script.sh").unwrap()].content_ref,
+        scope_domain::content_ref::ContentRef::GitBlob { .. }
+    ));
+    let app = router(state.clone());
+    let owner = bearer_header();
+    let content = "/v1/repos/owner/repo/files/content?path=script.sh";
+    cache_test_jwks(&state);
+    assert_eq!(
+        get(&app, content, Some(&owner)).await.status(),
+        StatusCode::OK
+    );
+
+    let held = state
+        .metadata
+        .admin()
+        .lock_tables_for_tests(&[
+            "scope_logical_commits",
+            "scope_file_changes",
+            "scope_visibility_change_sets",
+            "scope_visibility_changes",
+        ])
+        .await
+        .unwrap();
+    let file = within_lock(get(&app, content, Some(&owner))).await;
+    held.rollback().await.unwrap();
+
+    assert_eq!(file.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(file).await["content"]["text"],
+        "#!/bin/sh\necho hi\n"
+    );
+}
