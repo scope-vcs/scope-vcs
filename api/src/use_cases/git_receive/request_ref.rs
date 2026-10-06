@@ -16,7 +16,6 @@ use crate::{
     repo_events::RepoChangeReason,
     state::AppState,
 };
-use scope_domain::views::ViewId;
 use scope_domain::{
     projection::project_graph,
     repository::{
@@ -183,7 +182,7 @@ async fn seed_editable_request_refs_for_repo(
     let public_base_repo = if access.actor != RepositoryActor::Public
         && requests
             .iter()
-            .any(|request| request.view == ViewId::public() && request.git_snapshot.is_none())
+            .any(|request| request.view.is_public() && request.git_snapshot.is_none())
     {
         Some(public_projection_repo(state, repo).await?)
     } else {

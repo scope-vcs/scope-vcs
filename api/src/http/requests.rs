@@ -521,7 +521,7 @@ async fn request_response_for_viewer(
     current_main_oid: Option<String>,
 ) -> Result<RequestSummaryResponse, ApiError> {
     let policy = request_policy(&request, viewer.clone());
-    let invitees = if request.view == ViewId::public() && policy.exact_visible {
+    let invitees = if request.view.is_public() && policy.exact_visible {
         state
             .metadata
             .requests()
