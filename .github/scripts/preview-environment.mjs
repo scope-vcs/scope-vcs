@@ -7,7 +7,7 @@ import { loadDeploymentManifest } from './railway-artifact.mjs';
 import { readRailway } from './railway-read.mjs';
 import { RAILWAY_MUTATION_TIMEOUT_MS, retryRailway } from './railway-retry.mjs';
 import {
-  RUNTIME_ROLES, assertPreviewEnvironment, changedVariables, databaseBootstrap, databaseBootstrapPending,
+  RUNTIME_ROLES, assertPreviewEnvironment, changedVariables, copiedSecrets, databaseBootstrap, databaseBootstrapPending,
   generatePreviewSecrets, previewDomains, previewEnvironmentName, previewVariables, releaseEnvironmentIds,
   rolePassword, serviceIds,
 } from './preview-environment-plan.mjs';
@@ -21,11 +21,16 @@ export function railwayClient() {
       return readRailway(['api', query, '--variables', '@-'], { input: JSON.stringify(variables) }).data;
     },
     mutate(query, variables) {
-      const result = JSON.parse(execFileSync('railway', ['api', query, '--variables', '@-'], {
-        input: JSON.stringify(variables), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: RAILWAY_MUTATION_TIMEOUT_MS, killSignal: 'SIGKILL',
-      }));
-      if (result.errors?.length) throw new Error('Railway GraphQL request failed.');
+      let result;
+      try {
+        result = JSON.parse(execFileSync('railway', ['api', query, '--variables', '@-'], {
+          input: JSON.stringify(variables), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: RAILWAY_MUTATION_TIMEOUT_MS, killSignal: 'SIGKILL',
+        }));
+      } catch {
+        throw new Error(`Railway ${query.split('(')[0]} failed.`);
+      }
+      if (result.errors?.length) throw new Error(`Railway ${query.split('(')[0]} failed.`);
       return result.data;
     },
     pause(milliseconds) {
@@ -71,6 +76,18 @@ function upsertVariables(railway, projectId, environmentId, changes) {
         { input: { projectId, environmentId, serviceId, variables, skipDeploys: true } });
       if (data?.variableCollectionUpsert !== true) throw new Error('Railway did not confirm preview variables.');
     });
+  }
+}
+
+function deleteVariables(railway, projectId, environmentId, names) {
+  for (const [serviceId, variables] of Object.entries(names)) {
+    for (const name of variables) {
+      retryRailway(() => {
+        const data = railway.mutate('mutation PreviewVariableDelete($input:VariableDeleteInput!){variableDelete(input:$input)}',
+          { input: { projectId, environmentId, serviceId, name } });
+        if (data?.variableDelete !== true) throw new Error('Railway did not confirm removing a copied staging secret.');
+      });
+    }
   }
 }
 
@@ -142,10 +159,14 @@ export function ensurePreviewEnvironment({ manifest, pullRequest, clerk, registr
   configureMaintenanceRegistry(railway, environmentId, ids.maintenance, registryCredentials);
 
   const current = currentVariables(railway, projectId, environmentId, ids);
-  const changes = changedVariables(previewVariables({ manifest, domains, current, secrets, clerk }), current);
+  const desired = previewVariables({ manifest, domains, current, secrets, clerk });
+  const managed = previewVariables({ manifest, domains, current: {}, secrets, clerk });
+  const removed = copiedSecrets(managed, current);
+  const changes = changedVariables(desired, current);
+  deleteVariables(railway, projectId, environmentId, removed);
   upsertVariables(railway, projectId, environmentId, changes);
   for (const component of ['postgres', 'maintenance']) {
-    if (changes[ids[component]] || latestDeploymentStatus(railway, environmentId, ids[component]) !== 'SUCCESS') {
+    if (changes[ids[component]] || removed[ids[component]] || latestDeploymentStatus(railway, environmentId, ids[component]) !== 'SUCCESS') {
       deployService(railway, environmentId, ids[component], `preview ${component}`);
     }
   }
@@ -180,7 +201,7 @@ export function deletePreviewEnvironment({ manifest, pullRequest, railway }) {
 }
 
 function runBootstrapOverSsh(environmentId, sql) {
-  execFileSync('bash', ['-c', 'source "$1"; railway_private_command "$2" sh -ceu \'exec psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1\'',
+  execFileSync('bash', ['-c', 'source "$1"; railway_private_command "$2" sh -ceu \'exec psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=terse\'',
     'preview-bootstrap', new URL('./railway-private-command.sh', import.meta.url).pathname, environmentId], {
     input: sql, stdio: ['pipe', 'ignore', 'inherit'], env: { ...process.env, SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID: environmentId },
   });

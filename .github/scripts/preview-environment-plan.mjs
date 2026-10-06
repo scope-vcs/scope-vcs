@@ -190,6 +190,17 @@ export function databaseBootstrap(rolePasswords, migratorPassword) {
   };
 }
 
+const SECRET_NAME = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/;
+
+export function copiedSecrets(managed, current) {
+  return Object.fromEntries(Object.entries(current)
+    .map(([serviceId, values]) => [serviceId, Object.entries(values)
+      .filter(([name, value]) => SECRET_NAME.test(name) && !(name in (managed[serviceId] ?? {})) &&
+        typeof value === 'string' && value !== '' && !value.includes('${{'))
+      .map(([name]) => name)])
+    .filter(([, names]) => names.length > 0));
+}
+
 export function changedVariables(desired, current) {
   return Object.fromEntries(Object.entries(desired)
     .map(([serviceId, values]) => [serviceId, Object.fromEntries(Object.entries(values)

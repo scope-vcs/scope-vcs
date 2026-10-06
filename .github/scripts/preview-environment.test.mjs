@@ -22,7 +22,13 @@ function stagingCopy() {
     services[ids[component]] = { networking: { serviceDomains: { [`${manifest.services[component].name}-pr-7.up.railway.app`]: {} } } };
   }
   const variables = Object.fromEntries(Object.values(ids).map((id) => [id, {}]));
-  Object.assign(variables[ids.api], { SCOPE_API_PUBLIC_URL: 'https://scope-api-staging.up.railway.app' });
+  Object.assign(variables[ids.api], {
+    SCOPE_API_PUBLIC_URL: 'https://scope-api-staging.up.railway.app',
+    SCOPE_RESEND_API_KEY: 're_staging_secret',
+    SCOPE_BUCKET_ACCESS_KEY_ID: '${{scope-blobs.ACCESS_KEY_ID}}',
+    SCOPE_GIT_COMMAND_TIMEOUT_SECS: '60',
+  });
+  Object.assign(variables[ids.web], { PAGENT_SOURCE_TOKEN: 'pagent-staging-token', PAGENT_ENABLED: 'false' });
   Object.assign(variables[ids.cache], { SCOPE_CACHE_GRANT_PUBLIC_KEY: 'staging-public-key' });
   Object.assign(variables[ids['media-api']], { SCOPE_MEDIA_GRANT_PUBLIC_KEY: 'staging-public-key' });
   Object.assign(variables[ids.maintenance], { SCOPE_BUCKET_NAME: 'scope-blobs-staging' });
@@ -78,6 +84,12 @@ function fakeRailway({ environments = [] } = {}) {
         assert.equal(skipDeploys, true);
         Object.assign(state.copy.variables[serviceId], values);
         return { variableCollectionUpsert: true };
+      }
+      if (query.startsWith('mutation PreviewVariableDelete')) {
+        const { serviceId, name, environmentId } = variables.input;
+        assert.equal(environmentId, preview);
+        delete state.copy.variables[serviceId][name];
+        return { variableDelete: true };
       }
       if (query.startsWith('mutation PreviewDeploy')) {
         state.deployments.push(variables.serviceId);
@@ -190,6 +202,10 @@ test('creates, configures, and bootstraps a preview copy of staging once', () =>
   assert.deepEqual(railway.state.deployments, [ids.postgres, ids.maintenance, ids.maintenance]);
   assert.equal(railway.state.bootstraps.length, 1);
   assert.equal(railway.state.bootstraps[0].environmentId, preview);
+  assert.doesNotMatch(JSON.stringify(railway.state.copy.variables), /re_staging_secret|pagent-staging-token/);
+  assert.equal(railway.state.copy.variables[ids.api].SCOPE_BUCKET_ACCESS_KEY_ID, '${{scope-blobs.ACCESS_KEY_ID}}');
+  assert.equal(railway.state.copy.variables[ids.api].SCOPE_GIT_COMMAND_TIMEOUT_SECS, '60');
+  assert.equal(railway.state.copy.variables[ids.web].PAGENT_ENABLED, 'false');
   assert.equal(rolePassword(railway.state.copy.variables[ids.maintenance].DATABASE_URL, 'scope_migrator').length, 64);
 
   const before = structuredClone(railway.state.copy.variables);
