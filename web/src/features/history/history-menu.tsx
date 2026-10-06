@@ -17,13 +17,17 @@ const FEEDS: { value: HistoryFeed; label: string; empty: string }[] = [
 
 export function HistoryMenu({
   canReadPrivateFiles,
+  initialFeed = 'all',
+  label = 'History',
   params,
 }: {
   canReadPrivateFiles: boolean
+  initialFeed?: HistoryFeed
+  label?: string
   params: RepoParams
 }) {
   const defaultAudience = defaultHistoryAudience(canReadPrivateFiles)
-  const [feed, setFeed] = useState<HistoryFeed>('all')
+  const [feed, setFeed] = useState<HistoryFeed>(initialFeed)
   const [audience, setAudience] = useState<ProjectionPreviewAudience>(defaultAudience)
 
   return (
@@ -48,7 +52,7 @@ export function HistoryMenu({
           type="button"
           {...props}
         >
-          <History aria-hidden="true" className="size-3.5" /> History
+          <History aria-hidden="true" className="size-3.5" /> {label}
           <ChevronDown aria-hidden="true" className="size-3.5" />
         </button>
       )}
