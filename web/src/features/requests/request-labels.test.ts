@@ -7,7 +7,6 @@ import {
   requestEventBody,
   requestGitHubPushNote,
   requestPublicGitHubNote,
-  requestMainLabel,
   requestViewLabel,
 } from './request-labels'
 import type {
@@ -19,9 +18,7 @@ import type {
 test('request labels follow the wire view id', () => {
   const request = (view: string) => ({ view }) as RequestListItemResponse
   assert.equal(requestViewLabel(request('private')), 'Private request')
-  assert.equal(requestMainLabel(request('private')), 'private main')
   assert.equal(requestViewLabel(request('public')), 'Public request')
-  assert.equal(requestMainLabel(request('public')), 'public main')
 })
 
 test('a head nobody evaluated says so instead of claiming it asks for no checks', () => {

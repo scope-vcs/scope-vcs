@@ -67,10 +67,6 @@ export function requestViewLabel(request: RequestLabelSource) {
   return `${viewName(request.view)} request`
 }
 
-export function requestMainLabel(request: RequestLabelSource) {
-  return `${viewName(request.view).toLowerCase()} main`
-}
-
 export function eventKindLabel(kind: RequestEventKind) {
   return EVENT_LABELS[kind]
 }

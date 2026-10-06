@@ -8,7 +8,6 @@ import { RequestRatingsSection } from './request-ratings-section'
 import type { RateRequestInput } from '@/api/requests'
 import {
   requestViewLabel,
-  requestMainLabel,
   requestAuthorRoleLabel,
 } from './request-labels'
 import { AbsoluteTimestamp } from '@/components/timestamp'
@@ -66,7 +65,7 @@ export function RequestDetails({ placement }: { placement: RequestDetailsPlaceme
           <RequestRatingsSection initial={ratings} onRate={onRate} params={params} />
 
           <DetailsSection title="git state">
-            <DetailsValue label={`Base on ${requestMainLabel(request)}`} value={shortOid(request.base_main_oid)} />
+            <DetailsValue label="Base" value={shortOid(request.base_main_oid)} />
             <DetailsValue label="Head" value={shortOid(request.head_oid)} />
             <pre className="mt-1 min-w-0 whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 text-[11px] leading-5"><code>{`git fetch origin\ngit switch --track origin/${request.name}`}</code></pre>
           </DetailsSection>
