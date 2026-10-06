@@ -2,7 +2,7 @@ use super::*;
 use crate::test_support::TempDir;
 use std::{fs, path::Path, process::Command};
 
-const REMOTE: &str = "https://scope.example/git/permissioned/adam/random";
+const REMOTE: &str = "https://scope.example/git/private/adam/random";
 
 #[test]
 fn authenticated_git_plans_keep_secrets_in_numbered_environment_config() {
@@ -101,10 +101,10 @@ fn assert_auth_plan(plan: GitCommandPlan, args: &[&str], inherited_count: usize,
 }
 
 #[test]
-fn install_scope_fetch_auth_writes_secret_free_credential_helper_for_permissioned_remote() {
+fn install_scope_fetch_auth_writes_secret_free_credential_helper_for_the_remote_view() {
     let dir = TempDir::git_repo("scope-fetch-auth", "main");
     let root = dir.path();
-    let remote_url = "https://scope.example/git/permissioned/adam/random";
+    let remote_url = "https://scope.example/git/private/adam/random";
 
     install_scope_fetch_auth(root, remote_url, "https://api.scope.example").unwrap();
     install_scope_fetch_auth(root, remote_url, "https://api.scope.example").unwrap();
@@ -143,6 +143,55 @@ fn install_scope_fetch_auth_writes_secret_free_credential_helper_for_permissione
     );
 }
 
+#[test]
+fn legacy_permissioned_remotes_move_to_the_full_view_once() {
+    let dir = TempDir::git_repo("scope-legacy-remote", "main");
+    let root = dir.path();
+    let legacy = "https://scope.example/git/permissioned/adam/random";
+    let current = "https://scope.example/git/private/adam/random";
+    dir.run_git([
+        "remote",
+        "add",
+        "scope",
+        "https://scope@scope.example/git/permissioned/adam/random",
+    ]);
+    dir.run_git(["remote", "set-url", "--push", "scope", legacy]);
+    install_scope_fetch_auth(root, legacy, "https://api.scope.example").unwrap();
+    let repo = GitRepo {
+        root: root.to_path_buf(),
+    };
+
+    assert_eq!(
+        git_remote_fetch_url(&repo, "scope").unwrap(),
+        "https://scope@scope.example/git/private/adam/random"
+    );
+    assert_eq!(git_remote_push_url(&repo, "scope").unwrap(), current);
+    assert_eq!(
+        git_config(root, &["--get-urlmatch", "credential.helper", current]),
+        SCOPE_GIT_CREDENTIAL_HELPER
+    );
+    let config = fs::read_to_string(root.join(".git/config")).unwrap();
+    assert!(!config.contains("permissioned"), "{config}");
+}
+
+#[test]
+fn remotes_without_legacy_addresses_are_left_alone() {
+    let dir = TempDir::git_repo("scope-current-remote", "main");
+    dir.run_git([
+        "remote",
+        "add",
+        "origin",
+        "https://github.com/adam/permissioned",
+    ]);
+    let repo = GitRepo {
+        root: dir.path().to_path_buf(),
+    };
+    assert_eq!(
+        git_remote_fetch_url(&repo, "origin").unwrap(),
+        "https://github.com/adam/permissioned"
+    );
+}
+
 fn git_config(root: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .current_dir(root)
@@ -164,7 +213,7 @@ fn install_scope_fetch_auth_rejects_config_injection() {
     assert!(
         install_scope_fetch_auth(
             root,
-            "https://scope.example/git/permissioned/adam/random\n[alias]",
+            "https://scope.example/git/private/adam/random\n[alias]",
             "https://api.scope.example",
         )
         .is_err()

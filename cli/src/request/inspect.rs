@@ -46,7 +46,7 @@ pub(super) fn checkout_request(
     )?;
     fetch_scope_remote_with_bearer(
         git_repo,
-        &context.target.permissioned_url,
+        &context.target.url(),
         &context.target.remote,
         &detail.request.name,
         api.token,

@@ -73,7 +73,7 @@ fn clone_and_configure(
         .and_then(|_| write_worktree_scope_repo_config_with_base(checkout_dir, config))
         .map_err(|error| CliError::partial(
             format!("Clone completed at {}, but local Scope setup failed: {error:#}", checkout_dir.display()),
-            json!({"operation": "clone", "cloned": true, "configured": false, "directory": checkout_dir, "remote_url": remote_url, "recovery": "Keep this checkout. Run scope doctor from it to inspect local Scope configuration and fix the reported Git or filesystem error. Run scope pull to restore permissioned fetch authentication and any missing local visibility state, then scope visibility show to inspect it before publishing. Do not repeat clone into this directory."})
+            json!({"operation": "clone", "cloned": true, "configured": false, "directory": checkout_dir, "remote_url": remote_url, "recovery": "Keep this checkout. Run scope doctor from it to inspect local Scope configuration and fix the reported Git or filesystem error. Run scope pull to restore fetch authentication and any missing local visibility state, then scope visibility show to inspect it before publishing. Do not repeat clone into this directory."})
         ).into())
 }
 

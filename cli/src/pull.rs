@@ -37,11 +37,8 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     )?;
 
     let result = (|| -> anyhow::Result<()> {
-        run_git_in_repo(
-            &repo,
-            &["remote", "set-url", &remote, &target.permissioned_url],
-        )?;
-        install_scope_fetch_auth(&repo.root, &target.permissioned_url, &api_url)?;
+        run_git_in_repo(&repo, &["remote", "set-url", &remote, &target.url()])?;
+        install_scope_fetch_auth(&repo.root, &target.url(), &api_url)?;
 
         let before = remote_refs(&repo, &remote)?;
         run_git_in_repo(&repo, &["fetch", "--prune", &remote])?;
@@ -296,7 +293,7 @@ mod tests {
         let target = ScopeRemote::parse(
             "https://scope.example",
             "scope",
-            "https://scope.example/git/permissioned/owner/repo",
+            "https://scope.example/git/private/owner/repo",
         )
         .unwrap();
         let prior = json!({

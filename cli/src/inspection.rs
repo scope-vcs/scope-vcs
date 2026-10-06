@@ -560,7 +560,7 @@ fn check_fetch_auth(
             "--local",
             "--get-urlmatch",
             "credential.helper",
-            &target.permissioned_url,
+            &target.url(),
         ],
     );
     if helper.as_deref() == Some("!scope git-credential") {
@@ -576,8 +576,8 @@ fn check_fetch_auth(
             report,
             "git_authentication",
             DiagnosticState::Problem,
-            "Scope credential helper is missing for the permissioned remote".into(),
-            Some("Use scope pull to configure permissioned fetch authentication".into()),
+            "Scope credential helper is missing for the Scope remote".into(),
+            Some("Use scope pull to configure fetch authentication".into()),
         );
     }
 }

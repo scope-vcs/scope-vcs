@@ -53,19 +53,28 @@ pub(super) fn refresh_main_projection(
     view: &ViewId,
     session_token: &str,
 ) -> anyhow::Result<String> {
-    let fetch_url = if scope_domain::views::ViewId::from(view.clone()).is_public() {
-        &target.public_url
-    } else {
-        &target.permissioned_url
-    };
+    fetch_main_projection(
+        git_repo,
+        &target.remote,
+        &target.url_for_view(&view.clone().into()),
+        session_token,
+    )
+}
+
+fn fetch_main_projection(
+    git_repo: &GitRepo,
+    remote: &str,
+    fetch_url: &str,
+    session_token: &str,
+) -> anyhow::Result<String> {
     fetch_scope_remote_with_bearer(
         git_repo,
         fetch_url,
-        &target.remote,
+        remote,
         DEFAULT_SCOPE_BRANCH,
         session_token,
     )?;
-    scope_remote_head_oid(git_repo, &target.remote, DEFAULT_SCOPE_BRANCH)?
+    scope_remote_head_oid(git_repo, remote, DEFAULT_SCOPE_BRANCH)?
         .context("Scope main projection did not produce a local remote ref")
 }
 
@@ -81,7 +90,7 @@ pub(super) fn push_request_head(
 ) -> anyhow::Result<()> {
     let request_ref = format!("refs/heads/{request_name}");
     push_head_to_ref_with_bearer(
-        &target.permissioned_url,
+        &target.full_view_url(),
         request_head_oid,
         &request_ref,
         expected_head_oid,
@@ -416,13 +425,8 @@ pub(super) fn require_git_remote(context: &RequestContext) -> anyhow::Result<()>
 
 #[cfg(test)]
 mod tests {
-    use super::{inferred_request_name, refresh_main_projection};
-    use crate::{
-        git_repo::GitRepo,
-        git_transport::{GitAccess, ScopeRemote},
-        test_support::TempDir,
-    };
-    use scope_api_contract::ViewId;
+    use super::{fetch_main_projection, inferred_request_name};
+    use crate::{git_repo::GitRepo, test_support::TempDir};
     use std::fs;
 
     #[test]
@@ -448,34 +452,25 @@ mod tests {
     }
 
     #[test]
-    fn main_projection_refresh_follows_alternating_request_audiences() {
+    fn main_projection_refresh_follows_alternating_request_views() {
         let (public, public_oid) = repository_with_commit("public-main", "public.txt");
         let (private, private_oid) = repository_with_commit("private-main", "private.txt");
         let checkout = TempDir::git_repo("alternating-main", "main");
         let repo = GitRepo {
             root: checkout.path().to_path_buf(),
         };
-        let target = ScopeRemote {
-            remote: "scope".to_string(),
-            access: GitAccess::Permissioned,
-            public_url: file_url(public.path()),
-            permissioned_url: file_url(private.path()),
-            owner: "owner".to_string(),
-            repo: "repo".to_string(),
-        };
+        let (public_url, private_url) = (file_url(public.path()), file_url(private.path()));
 
-        assert_eq!(
-            refresh_main_projection(&repo, &target, &ViewId::public(), "unused").unwrap(),
-            public_oid
-        );
-        assert_eq!(
-            refresh_main_projection(&repo, &target, &ViewId::private(), "unused").unwrap(),
-            private_oid
-        );
-        assert_eq!(
-            refresh_main_projection(&repo, &target, &ViewId::public(), "unused").unwrap(),
-            public_oid
-        );
+        for (url, oid) in [
+            (&public_url, &public_oid),
+            (&private_url, &private_oid),
+            (&public_url, &public_oid),
+        ] {
+            assert_eq!(
+                &fetch_main_projection(&repo, "scope", url, "unused").unwrap(),
+                oid
+            );
+        }
     }
 
     fn repository_with_commit(label: &str, file: &str) -> (TempDir, String) {
