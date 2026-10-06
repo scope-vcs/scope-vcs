@@ -5,7 +5,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m0074_incremental_projection_read_models"
+        "m0075_incremental_projection_read_models"
     }
 }
 

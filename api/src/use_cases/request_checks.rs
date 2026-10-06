@@ -3,6 +3,7 @@ use crate::{
     git::{
         command::{run_git_output, successful_git_output},
         import::{ReadWorkflowFiles, read_repository_workflow_files},
+        repository_git::RepositoryGit,
         request_refs::with_request_revision_store_repo,
     },
     persistence::unix_now,
@@ -156,7 +157,8 @@ async fn evaluate_saved_head(
     };
     let check_commit = async {
         let repo = find_repo(state, &repo.owner_handle, &repo.name).await?;
-        Box::pin(public_tested_commit(state, &repo, request, &revision)).await
+        let git = RepositoryGit::of_repository(&repo);
+        Box::pin(public_tested_commit(state, &git, request, &revision)).await
     };
     Box::pin(evaluate_request_checks(
         state,
@@ -215,7 +217,7 @@ pub(crate) async fn checks_outcomes(
 
 pub(crate) async fn best_effort_evaluate_request_checks(
     state: &AppState,
-    repo: &Repository,
+    git: &RepositoryGit,
     request: &Request,
     revision: &RequestRevision,
     actor_user_id: &str,
@@ -234,7 +236,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
             request_workflow_revisions(request, files)
         })
     };
-    let check_commit = Box::pin(public_tested_commit(state, repo, request, revision));
+    let check_commit = Box::pin(public_tested_commit(state, git, request, revision));
     let maintainer_pusher = actor_is_maintainer.then_some(actor_user_id);
     let evaluated = evaluate_request_checks(
         state,
@@ -246,7 +248,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     .await;
     match evaluated {
         Ok(mutation) => {
-            publish_request_checks_change(state, &repo.incarnation(), &mutation).await;
+            publish_request_checks_change(state, &git.incarnation, &mutation).await;
         }
         Err(error) => warn_evaluation_failed(request, &error),
     }
@@ -264,7 +266,8 @@ async fn renew_check_commit(
         .request_revision_with_head(&request.id, &request.head_oid)
         .await?
         .ok_or_else(|| ApiError::conflict("request head has no saved revision"))?;
-    let tested = Box::pin(public_tested_commit(state, repo, request, &revision)).await?;
+    let git = RepositoryGit::of_repository(repo);
+    let tested = Box::pin(public_tested_commit(state, &git, request, &revision)).await?;
     let mutation = state
         .metadata
         .requests()

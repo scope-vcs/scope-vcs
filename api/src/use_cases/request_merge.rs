@@ -8,6 +8,7 @@ use crate::{
             reviewed_update_from_staging_repo,
         },
         projection_repo::verify_projection_materialization,
+        repository_git::RepositoryGit,
         request_merge_tree::{MergedTree, merge_request_tree},
         request_ref_public_safety::validate_public_request_merge_range,
         request_refs::attach_visible_request_refs,
@@ -357,10 +358,14 @@ async fn prepare_request_merge_for_execution(
         })?;
         let request_ref = canonical_request_ref(&request.name);
         let (origin, merge_base_oid) = if request.view.is_public() {
-            let validated =
-                validate_public_request_merge_range(repo, state, &staging_repo, &request.head_oid)
-                    .await
-                    .map_err(RequestMergeFailure::public_range)?;
+            let validated = validate_public_request_merge_range(
+                &RepositoryGit::of_repository(repo),
+                state,
+                &staging_repo,
+                &request.head_oid,
+            )
+            .await
+            .map_err(RequestMergeFailure::public_range)?;
             let merge_base_oid = validated.public_base_oid.clone();
             (
                 RequestMergeOrigin::Public {
