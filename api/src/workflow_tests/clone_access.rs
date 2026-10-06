@@ -148,6 +148,7 @@ async fn public_git_read_view_physically_excludes_private_objects() {
     let public_repo = projection_bare_repo_for_state(
         &state,
         &repo.incarnation(),
+        repo.repo_config.views(),
         &projection,
         repo.git_head.as_ref(),
         &repo.git_pack_spans,

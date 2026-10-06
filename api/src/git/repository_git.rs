@@ -131,6 +131,7 @@ impl RepositoryGit {
         projection_bare_repo_for_state(
             state,
             &self.incarnation,
+            views,
             &projection,
             self.git_head.as_ref(),
             &self.git_pack_spans,

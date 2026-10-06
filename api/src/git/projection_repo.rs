@@ -46,13 +46,14 @@ impl Drop for ProjectionBuildArtifacts {
 fn projection_bare_repo_with_loader(
     cache_root: &FsPath,
     incarnation: Option<&RepositoryIncarnation>,
+    labels: &[ViewId],
     projection: &Projection,
     native_source_repo: Option<&FsPath>,
     prefix: Option<ProjectionPrefix>,
     load_content: impl Fn(&scope_domain::content::SourceBlob) -> Result<Vec<u8>, ApiError>,
 ) -> Result<PathBuf, ApiError> {
     let expected_head = scope_git::projection_head_oid(projection).map_err(ApiError::internal)?;
-    let cache_key = projection_cache_key(incarnation, projection)?;
+    let cache_key = projection_cache_key(incarnation, labels, projection)?;
     let repo_path = cache_root.join(format!("{cache_key}.git"));
     if repo_path
         .join("refs")
@@ -389,6 +390,7 @@ fn git_object_field(repo_path: &FsPath, oid: &str, format: &str) -> Result<Strin
 pub(crate) async fn projection_bare_repo_for_state(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
+    views: &Views,
     projection: &Projection,
     git_head: Option<&scope_domain::repository::git::GitHead>,
     git_pack_spans: &[scope_domain::repository::git::GitPackSpan],
@@ -413,7 +415,8 @@ pub(crate) async fn projection_bare_repo_for_state(
         .map(GitRepoHandle::share)
         .transpose()?;
     let cache_root = state.repository_engine.cache_root().to_path_buf();
-    let cache_key = projection_cache_key(Some(incarnation), projection)?;
+    let labels = view_labels(views, &projection.view_key);
+    let cache_key = projection_cache_key(Some(incarnation), &labels, projection)?;
     let repo_path = cache_root.join(format!("{cache_key}.git"));
     let repo_path_for_ready = repo_path.clone();
     let is_ready = move || projection_cache_is_ready(&repo_path_for_ready);
@@ -437,12 +440,14 @@ pub(crate) async fn projection_bare_repo_for_state(
                     let prefix = cached_projection_prefix(
                         &state.repository_engine,
                         &incarnation_for_build,
+                        &labels,
                         &projection_for_build,
                     )?;
                     let canonical_path = canonical_for_build.as_deref();
                     projection_bare_repo_with_loader(
                         &cache_root_for_build,
                         Some(&incarnation_for_build),
+                        &labels,
                         &projection_for_build,
                         canonical_path,
                         prefix,
@@ -472,7 +477,7 @@ pub(crate) fn cached_projection_repo(
     view: &ViewId,
     head_oid: Option<&str>,
 ) -> Result<Option<GitRepoHandle>, ApiError> {
-    let labels = views.labels(view).into_iter().collect::<Vec<_>>();
+    let labels = view_labels(views, view);
     let key = projection_cache_key_for_head(
         Some(incarnation),
         incarnation.repository_id(),
@@ -506,6 +511,7 @@ pub(crate) fn verify_projection_materialization(
     let verification = projection_bare_repo_with_loader(
         &verification_root,
         None,
+        &[],
         projection,
         Some(native_source_repo),
         None,
@@ -544,20 +550,16 @@ fn projection_cache_is_ready(repo_path: &FsPath) -> bool {
 
 fn projection_cache_key(
     incarnation: Option<&RepositoryIncarnation>,
+    labels: &[ViewId],
     projection: &Projection,
 ) -> Result<String, ApiError> {
-    Ok(
-        projection_cache_keys(incarnation, projection, &projection_labels(projection))?
-            .pop()
-            .expect("empty projection has a cache key"),
-    )
+    Ok(projection_cache_keys(incarnation, projection, labels)?
+        .pop()
+        .expect("empty projection has a cache key"))
 }
 
-fn projection_labels(projection: &Projection) -> Vec<ViewId> {
-    scope_domain::views::Views::builtin()
-        .labels(&projection.view_key)
-        .into_iter()
-        .collect()
+fn view_labels(views: &Views, view: &ViewId) -> Vec<ViewId> {
+    views.labels(view).into_iter().collect()
 }
 
 fn projection_cache_keys(
@@ -619,13 +621,10 @@ struct ProjectionPrefix {
 fn cached_projection_prefix(
     engine: &std::sync::Arc<crate::git::repository_engine::RepositoryEngine>,
     incarnation: &RepositoryIncarnation,
+    labels: &[ViewId],
     projection: &Projection,
 ) -> Result<Option<ProjectionPrefix>, ApiError> {
-    let keys = projection_cache_keys(
-        Some(incarnation),
-        projection,
-        &projection_labels(projection),
-    )?;
+    let keys = projection_cache_keys(Some(incarnation), projection, labels)?;
     for count in (1..projection.commits.len()).rev() {
         if matches!(
             projection.commits[count - 1].materialization,
