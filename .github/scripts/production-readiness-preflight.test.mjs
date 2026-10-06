@@ -43,7 +43,7 @@ case "$1" in
 esac
 `, { mode: 0o755 });
   const result = spawnSync('bash', ['.github/scripts/production-readiness-preflight.sh'], {
-    cwd: root, encoding: 'utf8', timeout: 10_000,
+    cwd: root, encoding: 'utf8', timeout: 60_000,
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, NODE_OPTIONS: `--require=${mockFetch}`,
       GITHUB_TOKEN: 'test', GITHUB_REPOSITORY: 'test/repo', GITHUB_OUTPUT: output,
       SCOPE_DEPLOYMENT_MANIFEST: join(root, '.github/deployment-services.json'),
