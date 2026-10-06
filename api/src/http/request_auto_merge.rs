@@ -30,7 +30,7 @@ pub(crate) async fn get(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -46,8 +46,14 @@ pub(crate) async fn authorize(
 ) -> Result<Json<RequestAutoMergeResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) =
-        visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    let (request, _) = visible_request(
+        &state,
+        &repo.record.id,
+        access.clone(),
+        Some(&user.id),
+        &request_id,
+    )
+    .await?;
     request_auto_merge::authorize(
         &state,
         &request.id,
@@ -67,8 +73,14 @@ pub(crate) async fn cancel(
 ) -> Result<Json<RequestAutoMergeResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) =
-        visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    let (request, _) = visible_request(
+        &state,
+        &repo.record.id,
+        access.clone(),
+        Some(&user.id),
+        &request_id,
+    )
+    .await?;
     request_auto_merge::cancel(&state, &request.id, &user.id, input.expected_intent_id).await?;
     response(&state, &request, access).await.map(Json)
 }

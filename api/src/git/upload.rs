@@ -25,10 +25,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use scope_domain::{
-    projection::ProjectionViewKey,
     repository::access::RepositoryActor,
     repository::{RepoLifecycleState, RepositoryIncarnation},
     requests::{Request, RequestViewer, request_policy},
+    views::{ViewId, Views},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
@@ -101,10 +101,16 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     let (source, viewer_user_id) =
         authorized_git_read(state, headers, owner, repo_name, mode).await?;
     let repo_id = source.context.record.id.clone();
-    let access = source.context.access;
+    let access = source.context.access.clone();
     let git = RepositoryGit::of_read_source(source);
-    let view_key = ProjectionViewKey::from_access(access);
-    let private_view = view_key == ProjectionViewKey::Private;
+    let views = Views::builtin();
+    let view = match mode {
+        GitRemoteMode::Public => views
+            .anyone()
+            .ok_or_else(|| ApiError::not_found("public Git view not found"))?,
+        GitRemoteMode::Permissioned => &access.view,
+    };
+    let private_view = view == views.full();
     let base_repo = match git.git_head.as_ref() {
         Some(head) if private_view => {
             state
@@ -112,7 +118,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
                 .materialize_repository(state, &git.incarnation, head, &git.git_pack_spans)
                 .await?
         }
-        _ => git.view_repo(state, view_key).await?,
+        _ => git.view_repo(state, &views, view).await?,
     };
     let mut requests = Vec::new();
     for (request, is_invitee) in state
@@ -123,7 +129,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     {
         let decision = request_policy(
             &request,
-            RequestViewer::new(access, viewer_user_id.as_deref(), is_invitee),
+            RequestViewer::new(access.clone(), viewer_user_id.as_deref(), is_invitee),
         );
         if decision.exact_visible {
             requests.push(request);
@@ -131,11 +137,14 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     }
     requests.sort_by(|left, right| left.name.cmp(&right.name));
     let public_base_repo = if private_view
-        && requests.iter().any(|request| {
-            request.audience == scope_domain::requests::RequestAudience::Public
-                && request.git_snapshot.is_none()
-        }) {
-        Some(git.view_repo(state, ProjectionViewKey::Public).await?)
+        && requests
+            .iter()
+            .any(|request| request.view == ViewId::public() && request.git_snapshot.is_none())
+    {
+        let public_view = views
+            .anyone()
+            .ok_or_else(|| ApiError::not_found("public Git view not found"))?;
+        Some(git.view_repo(state, &views, public_view).await?)
     } else {
         None
     };

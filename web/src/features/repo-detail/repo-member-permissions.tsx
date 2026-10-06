@@ -2,6 +2,7 @@ import type { RepositoryMemberPermissions } from '@/api/types.generated'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Eye } from 'lucide-react'
+import { viewName } from '@/api/repo-views'
 import { permissionLabels } from './repo-member-permission-model'
 
 export function MemberAccessSummary({
@@ -11,7 +12,7 @@ export function MemberAccessSummary({
 }) {
   return (
     <div className="space-y-3 text-sm">
-      <AlwaysOnPrivateRead />
+      <MemberViewRead view={permissions.view} />
       <PermissionSummary permissions={permissions} />
     </div>
   )
@@ -28,6 +29,7 @@ export function PermissionEditor({
 }) {
   return (
     <div className="space-y-2">
+      <MemberViewRead view={permissions.view} />
       {permissionLabels.map((permission) => (
         <label className="flex items-start justify-between gap-4 text-sm" key={permission.key}>
           <span className="min-w-0">
@@ -61,14 +63,14 @@ function PermissionSummary({ permissions }: { permissions: RepositoryMemberPermi
   )
 }
 
-export function AlwaysOnPrivateRead() {
+export function MemberViewRead({ view }: { view: string }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
       <span className="inline-flex items-center gap-2">
         <Eye className="size-3.5 text-muted-foreground" />
-        <span>Read private files</span>
+        <span>Read view</span>
       </span>
-      <Badge variant="success">Always on</Badge>
+      <Badge variant="success">{viewName(view)}</Badge>
     </div>
   )
 }

@@ -4,7 +4,6 @@ use crate::db::{
     test_support::fixtures::{repository, source_blob, store_with_native_run_repositories, user},
 };
 use scope_domain::{
-    policy::Visibility,
     runs::{
         run::Run,
         source::{RunSource, RunTrigger},
@@ -18,6 +17,7 @@ use scope_domain::{
             revision::WorkflowRevision,
         },
     },
+    views::ViewId,
 };
 const IMAGE_DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -67,7 +67,7 @@ async fn fixture(count: usize) -> MetadataStore {
     let repo = repository(
         &user("user_cache_owner", "cache-owner"),
         "cache-repo",
-        Visibility::Private,
+        ViewId::private(),
     );
     let repository_id = repo.record.id.clone();
     let store = store_with_native_run_repositories([repo]);

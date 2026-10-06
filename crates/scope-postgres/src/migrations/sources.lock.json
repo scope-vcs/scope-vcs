@@ -32,5 +32,6 @@
   "m0072_github_run_imports.rs": "ca81c39d003e91555f628ee04e1e5310ffe7223ef82d16992b32a91ca434e8fd",
   "m0073_github_workflow_jobs.rs": "3f077975737309bb6369b5a51070990b6250a3b259d2496e691446b8ddeb7721",
   "m0074_history_path_indexes.rs": "13e4ec361001bfe29ee1ed705b0ff48ee50202708c0126eccc1fee0ab33a8886",
-  "m0075_incremental_projection_read_models.rs": "24a99d97d38eb619f450d264843a7458e52942278a51ca71e30fcc2121c75c9e"
+  "m0075_incremental_projection_read_models.rs": "24a99d97d38eb619f450d264843a7458e52942278a51ca71e30fcc2121c75c9e",
+  "m0076_view_ids.rs": "890c30380e5bfaa0cd5df34e7b67193c0d31a6f19d656c0a2dbbd4e0418eabc0"
 }

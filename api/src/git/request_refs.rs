@@ -18,8 +18,7 @@ use scope_domain::{
     repo_config::RepoConfig,
     repository::RepositoryIncarnation,
     requests::{
-        Request, RequestAudience, RequestRevisionGitFacts, canonical_request_ref,
-        request_base_after_revision,
+        Request, RequestRevisionGitFacts, canonical_request_ref, request_base_after_revision,
     },
 };
 use scope_git::DEFAULT_GIT_BRANCH;
@@ -313,8 +312,8 @@ pub(crate) async fn persist_request_ref_to_store(
     })
     .await?;
     let accepted_main_oid = git.git_head.as_ref().map(|head| head.head_oid.clone());
-    let main_oid = match request.audience {
-        RequestAudience::Public => Some(
+    let main_oid = if request.view.is_public() {
+        Some(
             ensure_public_request_ref_is_public_safe(
                 git,
                 repo_config,
@@ -323,8 +322,9 @@ pub(crate) async fn persist_request_ref_to_store(
                 &update.new_head_oid,
             )
             .await?,
-        ),
-        RequestAudience::Private => accepted_main_oid.clone(),
+        )
+    } else {
+        accepted_main_oid.clone()
     };
     let incarnation = git.incarnation.clone();
     let prepared = {
@@ -342,7 +342,7 @@ pub(crate) async fn persist_request_ref_to_store(
                 &update,
                 RequestMainTips {
                     accepted: accepted_main_oid.as_deref(),
-                    audience: main_oid.as_deref(),
+                    view: main_oid.as_deref(),
                 },
             )
         })
@@ -412,7 +412,7 @@ struct PreparedRequestRef {
 
 struct RequestMainTips<'a> {
     accepted: Option<&'a str>,
-    audience: Option<&'a str>,
+    view: Option<&'a str>,
 }
 
 fn prepare_request_ref_snapshot(
@@ -444,10 +444,10 @@ fn prepare_request_ref_snapshot(
         &request.base_main_oid,
         logical_old_head,
         &update.new_head_oid,
-        main_tips.audience,
+        main_tips.view,
     )?;
     let snapshot_base = thin_snapshot_base(
-        request.audience,
+        request.view.clone(),
         request_base_after_revision(request, &git_facts),
         main_tips.accepted,
         staging_repo,

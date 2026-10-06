@@ -1,4 +1,5 @@
 use super::requests::*;
+use crate::views::ViewId;
 use crate::{
     error::DomainErrorKind,
     repository::access::{RepositoryAccess, RepositoryActor},
@@ -321,7 +322,7 @@ fn discussion_moderation_does_not_change_request_lifecycle() {
 #[test]
 fn completed_private_discussion_transitions_are_rejected_before_mutation() {
     let mut request = open_request();
-    request.audience = RequestAudience::Private;
+    request.view = ViewId::private();
     let (request, open, resolved) = completed_request_discussions(request);
 
     let resolve_error = resolve_request_discussion(
@@ -441,12 +442,28 @@ fn close_input(actor: &str, actor_is_maintainer: bool) -> CloseRequestInput {
 fn maintainer_access() -> RepositoryAccess {
     RepositoryAccess {
         actor: RepositoryActor::Member,
-        can_read_private_files: true,
+        view: ViewId::private(),
         can_push: true,
         can_change_file_visibility: false,
         can_manage_members: false,
         can_delete_repo: false,
     }
+}
+
+#[test]
+fn public_view_member_cannot_read_private_request_metadata() {
+    let mut request = open_request();
+    request.view = ViewId::private();
+    let mut access = maintainer_access();
+    access.view = ViewId::public();
+    let decision = request_policy(
+        &request,
+        RequestViewer::new(access, Some("maintainer"), false),
+    );
+    assert!(!decision.listable);
+    assert!(!decision.exact_visible);
+    assert!(!decision.permissions.can_pull_branch);
+    assert!(policy_for(&request, ViewerKind::Maintainer).exact_visible);
 }
 
 #[test]

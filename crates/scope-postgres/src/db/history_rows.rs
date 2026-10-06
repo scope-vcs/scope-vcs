@@ -1,13 +1,12 @@
-use super::entities::{self, decode_enum, encode_enum};
+use super::entities;
 use super::integer_columns::usize_to_i64;
 use super::object_references::insert_object_reference;
 use crate::error::PostgresError;
 use scope_domain::content::SourceBlob;
 use scope_domain::{
     policy::ScopePath,
-    projection::{
-        FileChange, LogicalCommit, Projection, ProjectionViewKey, SourceGraph, project_graph,
-    },
+    projection::{FileChange, LogicalCommit, Projection, SourceGraph, project_graph},
+    views::{ViewId, Views},
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 use sea_orm::{
@@ -34,8 +33,8 @@ pub struct RepositoryProjectionSource {
 }
 
 impl RepositoryProjectionSource {
-    pub fn project(&self, view_key: ProjectionViewKey) -> Projection {
-        project_graph(&self.graph, &self.visibility_change_sets, view_key)
+    pub fn project(&self, views: &Views, view: &ViewId) -> Projection {
+        project_graph(&self.graph, &self.visibility_change_sets, views, view)
     }
 }
 
@@ -150,7 +149,8 @@ pub(super) fn file_change_from_row(
         path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
         old_content: decode_optional(row.old_content)?,
         new_content: decode_optional(row.new_content)?,
-        visibility: decode_enum(row.visibility)?,
+        label: scope_domain::views::ViewId::parse(&row.visibility)
+            .map_err(PostgresError::internal)?,
     })
 }
 
@@ -173,8 +173,10 @@ pub(super) fn visibility_change_from_row(
 ) -> Result<VisibilityChange, PostgresError> {
     Ok(VisibilityChange {
         path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
-        old_visibility: decode_enum(row.old_visibility)?,
-        new_visibility: decode_enum(row.new_visibility)?,
+        old_label: scope_domain::views::ViewId::parse(&row.old_visibility)
+            .map_err(PostgresError::internal)?,
+        new_label: scope_domain::views::ViewId::parse(&row.new_visibility)
+            .map_err(PostgresError::internal)?,
         current_content: decode_optional(row.current_content)?,
     })
 }
@@ -473,7 +475,7 @@ where
                         path: change.path.as_str().to_string(),
                         old_content: encode_optional(change.old_content.as_ref())?,
                         new_content: encode_optional(change.new_content.as_ref())?,
-                        visibility: encode_enum(change.visibility)?,
+                        visibility: change.label.as_str().to_string(),
                     }
                     .into_active_model())
                 })
@@ -540,8 +542,8 @@ where
                 change_set_id: set.id.clone(),
                 ordinal: usize_to_i64(ordinal, "history ordinal")?,
                 path: change.path.as_str().to_string(),
-                old_visibility: encode_enum(change.old_visibility)?,
-                new_visibility: encode_enum(change.new_visibility)?,
+                old_visibility: change.old_label.as_str().to_string(),
+                new_visibility: change.new_label.as_str().to_string(),
                 current_content: encode_optional(change.current_content.as_ref())?,
             }
             .into_active_model()

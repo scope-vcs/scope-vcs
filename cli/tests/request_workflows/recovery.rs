@@ -136,7 +136,7 @@ fn request_start_metadata_failure_can_retry_push_without_creating_another_reques
     );
     run_git(
         dir.path(),
-        ["config", "branch.fix-one.scopeRequestAudience", "private"],
+        ["config", "branch.fix-one.scopeRequestView", "private"],
     );
     run_git(dir.path(), ["config", "branch.fix-one.remote", "origin"]);
     run_git(

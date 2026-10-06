@@ -203,8 +203,8 @@ impl AppState {
 mod tests {
     use super::*;
     use scope_domain::{
-        account::UserAccount, policy::Visibility, repo_collaboration::REPOSITORY_INVITE_TTL_SECS,
-        repository::Repository,
+        account::UserAccount, repo_collaboration::REPOSITORY_INVITE_TTL_SECS,
+        repository::Repository, views::ViewId,
     };
 
     #[test]
@@ -215,7 +215,7 @@ mod tests {
             email: "owner@example.com".into(),
             email_verified: true,
         };
-        let repo = Repository::new(&owner, "repo", Visibility::Private, "repoi_test")
+        let repo = Repository::new(&owner, "repo", ViewId::private(), "repoi_test")
             .unwrap()
             .record;
         let invite = RepositoryInvite {

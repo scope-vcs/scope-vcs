@@ -5,12 +5,12 @@ import type {
   HistoryEntryFileDiffInput,
   HistoryPageInput,
 } from './types'
-import type { HistoryFeed, ProjectionPreviewAudience } from './types.generated'
+import type { HistoryFeed, ViewId } from './types.generated'
 
 export function parseHistoryPageInput(input: unknown): HistoryPageInput {
   return {
     ...parseRepoParams(input),
-    audience: parseOptionalAudience(input),
+    view: parseOptionalView(input),
     before: parseOptionalBefore(input),
     feed: parseHistoryFeed((input as { feed?: unknown } | null)?.feed),
   }
@@ -25,7 +25,7 @@ export function parseHistoryEntryDetailInput(input: unknown): HistoryEntryDetail
 
   return {
     ...parseRepoParams(input),
-    audience: parseOptionalAudience(input),
+    view: parseOptionalView(input),
     entry,
   }
 }
@@ -39,21 +39,21 @@ export function parseHistoryEntryFileDiffInput(input: unknown): HistoryEntryFile
   }
 }
 
-export function parseHistoryAudience(
-  audience: unknown,
-): ProjectionPreviewAudience {
-  if (audience === 'private' || audience === 'public') {
-    return audience
+export function parseHistoryView(
+  view: unknown,
+): ViewId {
+  if (typeof view === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(view)) {
+    return view
   }
-  throw new Error(`Unsupported history audience: ${String(audience)}`)
+  throw new Error(`Unsupported history view: ${String(view)}`)
 }
 
-function parseOptionalAudience(input: unknown): ProjectionPreviewAudience | null {
-  const audience = (input as { audience?: unknown } | null)?.audience
-  if (audience === undefined || audience === null || audience === '') {
+function parseOptionalView(input: unknown): ViewId | null {
+  const view = (input as { view?: unknown } | null)?.view
+  if (view === undefined || view === null || view === '') {
     return null
   }
-  return parseHistoryAudience(audience)
+  return parseHistoryView(view)
 }
 
 function parseOptionalBefore(input: unknown) {

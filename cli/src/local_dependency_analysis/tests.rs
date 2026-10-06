@@ -4,7 +4,8 @@ use scope_domain::{
     dependency_analysis::{
         DependencyEdge, DependencyEdgeKind, DependencyGap, evaluate_dependency_analysis,
     },
-    repo_config::{ConfigVisibility, RepoConfig, RepoConfigVisibilityRule},
+    repo_config::{RepoConfig, RepoConfigFileRule},
+    views::ViewId,
 };
 use std::{
     fs,
@@ -109,10 +110,10 @@ fn analysis_reuses_commit_cache_and_visibility_changes_only_reevaluate() {
     })
     .unwrap();
     assert_eq!(first, second);
-    let mut config = RepoConfig::with_default_visibility(ConfigVisibility::Public);
-    config.visibility.rules.push(RepoConfigVisibilityRule {
+    let mut config = RepoConfig::with_default_view(ViewId::public());
+    config.files.rules.push(RepoConfigFileRule {
         path: "/internal/**".into(),
-        visibility: ConfigVisibility::Private,
+        view: ViewId::private(),
     });
     assert_eq!(
         evaluate_dependency_analysis(&second, &config)
@@ -120,7 +121,7 @@ fn analysis_reuses_commit_cache_and_visibility_changes_only_reevaluate() {
             .public_file_count,
         1
     );
-    config.visibility.rules.clear();
+    config.files.rules.clear();
     assert!(
         evaluate_dependency_analysis(&second, &config)
             .unwrap()

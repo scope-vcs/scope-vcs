@@ -12,22 +12,22 @@ use {
     scope_domain::{
         content::SourceBlob,
         history::{HistoryCursor, history_entries_after},
-        policy::{ScopePath, Visibility},
+        policy::ScopePath,
         projection::{
-            ProjectionCursor, ProjectionViewKey, SourceGraph, project_graph_after,
-            projection_delta_appends,
+            ProjectionCursor, SourceGraph, project_graph_after, projection_delta_appends,
         },
         projection_views::{ProjectionViewFile, ProjectionViewFileContent},
+        repo_config::RepoConfig,
         repo_control::{
             LEGACY_REPO_RULES_PATH, REPO_CONTROL_PREFIX, REPO_CONTROL_ROOT, is_repo_control_path,
         },
+        views::{ViewId, Views},
         visibility_changes::VisibilityChangeSet,
     },
     std::collections::BTreeMap,
 };
 
 const PROJECTION_FILE_INSERT_BATCH_SIZE: usize = 1_000;
-const VIEWS: [ProjectionViewKey; 2] = [ProjectionViewKey::Private, ProjectionViewKey::Public];
 
 pub(super) enum ProjectionFileLookup {
     Found(ProjectionViewFileContent),
@@ -35,7 +35,20 @@ pub(super) enum ProjectionFileLookup {
     NotReady,
 }
 
-type LabelledFiles = BTreeMap<ScopePath, (SourceBlob, Visibility)>;
+type LabelledFiles = BTreeMap<ScopePath, (SourceBlob, ViewId)>;
+
+pub(super) async fn repository_views<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<Views, PostgresError> {
+    let row = entities::repository::Entity::find_by_id(repo_id.to_string())
+        .one(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .ok_or_else(|| PostgresError::internal_message("repository is missing"))?;
+    let config: RepoConfig = super::decode_json(row.repo_config)?;
+    Ok(config.views)
+}
 
 enum FoldOutcome {
     Folded,
@@ -50,13 +63,14 @@ pub async fn fold_live_projection_read_models<C>(
 where
     C: ConnectionTrait,
 {
+    let views = repository_views(conn, repo_id).await?;
     let rows = entities::projection_read_model::Entity::find()
         .filter(entities::projection_read_model::Column::RepoId.eq(repo_id.to_string()))
         .all(conn)
         .await
         .map_err(PostgresError::internal)?;
-    if let Some(rows) = resumable(rows)? {
-        match fold(conn, repo_id, content_version, Some(rows)).await? {
+    if let Some(rows) = resumable(rows, &views)? {
+        match fold(conn, repo_id, content_version, &views, Some(rows)).await? {
             FoldOutcome::Folded => return Ok(()),
             FoldOutcome::Diverged(reason) => {
                 tracing::warn!(
@@ -68,7 +82,7 @@ where
         }
     }
     reset_live_projection_read_models(conn, repo_id).await?;
-    match fold(conn, repo_id, content_version, None).await? {
+    match fold(conn, repo_id, content_version, &views, None).await? {
         FoldOutcome::Folded => Ok(()),
         FoldOutcome::Diverged(reason) => Err(PostgresError::internal_message(reason)),
     }
@@ -76,11 +90,12 @@ where
 
 fn resumable(
     rows: Vec<entities::projection_read_model::Model>,
+    views: &Views,
 ) -> Result<Option<Vec<entities::projection_read_model::Model>>, PostgresError> {
-    if rows.len() != VIEWS.len()
-        || !VIEWS
+    if rows.len() != views.iter().count()
+        || !views
             .iter()
-            .all(|view| rows.iter().any(|row| row.audience == view.as_str()))
+            .all(|view| rows.iter().any(|row| row.audience == view.id.as_str()))
         || !rows.iter().all(|row| row.current())
     {
         return Ok(None);
@@ -119,6 +134,7 @@ async fn fold<C>(
     conn: &C,
     repo_id: &str,
     content_version: u64,
+    views: &Views,
     resumed: Option<Vec<entities::projection_read_model::Model>>,
 ) -> Result<FoldOutcome, PostgresError>
 where
@@ -155,7 +171,8 @@ where
     };
     let after = label_files(before.clone(), &graph, &sets);
 
-    for view in VIEWS {
+    for definition in views.iter() {
+        let view = &definition.id;
         let row = resumed
             .as_ref()
             .and_then(|rows| rows.iter().find(|row| row.audience == view.as_str()));
@@ -163,8 +180,8 @@ where
             .map(entities::projection_read_model::Model::projection_cursor)
             .transpose()?
             .unwrap_or_default();
-        let view_before = view_files(&before, view);
-        let projection = project_graph_after(&cursor, &graph, &sets, view);
+        let view_before = view_files(&before, views, view);
+        let projection = project_graph_after(&cursor, &graph, &sets, views, view);
         let mut head = scope_git::ProjectionHead::resume(
             row.and_then(|row| row.head_oid.clone()),
             view_before.iter(),
@@ -174,7 +191,7 @@ where
             .map_err(PostgresError::internal)?;
         let mut projected = view_before.clone();
         projection.apply_to(&mut projected);
-        if projected != view_files(&after, view) {
+        if projected != view_files(&after, views, view) {
             return Ok(FoldOutcome::Diverged(format!(
                 "{} projection does not show the files its labels select",
                 view.as_str()
@@ -190,8 +207,16 @@ where
         };
         let mut history = row
             .map(entities::projection_read_model::Model::history_cursor)
-            .unwrap_or_else(|| HistoryCursor::start(repo_id, view));
-        let entries = history_entries_after(&mut history, view_before, projection, &graph, &sets);
+            .unwrap_or_else(|| HistoryCursor::start(repo_id, views, view));
+        let entries = history_entries_after(
+            &mut history,
+            view_before,
+            projection,
+            &graph,
+            &sets,
+            views,
+            view,
+        );
         let first_position = row
             .map(entities::projection_read_model::Model::history_entries)
             .transpose()?
@@ -280,7 +305,9 @@ fn label_files(
     for commit in &graph.commits {
         for change in &commit.changes {
             match &change.new_content {
-                Some(blob) => files.insert(change.path.clone(), (blob.clone(), change.visibility)),
+                Some(blob) => {
+                    files.insert(change.path.clone(), (blob.clone(), change.label.clone()))
+                }
                 None => files.remove(&change.path),
             };
         }
@@ -296,28 +323,32 @@ fn label_files(
 fn relabel<'a>(files: &mut LabelledFiles, sets: impl Iterator<Item = &'a VisibilityChangeSet>) {
     for change in sets.flat_map(|set| &set.changes) {
         if let Some((_, label)) = files.get_mut(&change.path) {
-            *label = change.new_visibility;
+            *label = change.new_label.clone();
         }
     }
 }
 
-fn view_files(files: &LabelledFiles, view: ProjectionViewKey) -> BTreeMap<ScopePath, SourceBlob> {
+fn view_files(
+    files: &LabelledFiles,
+    views: &Views,
+    view: &ViewId,
+) -> BTreeMap<ScopePath, SourceBlob> {
     files
         .iter()
-        .filter(|(path, (_, label))| view.shows(path, *label))
+        .filter(|(path, (_, label))| views.shows(view, path, label))
         .map(|(path, (blob, _))| (path.clone(), blob.clone()))
         .collect()
 }
 
-fn view_condition(view: ProjectionViewKey) -> Result<Condition, PostgresError> {
-    let labels = view
-        .labels()
+fn view_condition(views: &Views, view: &ViewId) -> Condition {
+    let labels = views
+        .labels(view)
         .iter()
-        .map(|label| entities::encode_enum(*label))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|label| label.as_str().to_string())
+        .collect::<Vec<_>>();
     let mut condition =
         Condition::all().add(entities::projection_file::Column::Visibility.is_in(labels));
-    if view != ProjectionViewKey::Private {
+    if view != views.full() {
         condition = condition.add(
             Condition::any()
                 .add(entities::projection_file::Column::Path.eq(LEGACY_REPO_RULES_PATH))
@@ -331,7 +362,7 @@ fn view_condition(view: ProjectionViewKey) -> Result<Condition, PostgresError> {
                 ),
         );
     }
-    Ok(condition)
+    condition
 }
 
 async fn load_projection_files<C>(conn: &C, repo_id: &str) -> Result<LabelledFiles, PostgresError>
@@ -346,7 +377,7 @@ where
         .into_iter()
         .map(|row| {
             let content = row.try_into_content()?;
-            Ok((content.file.path, (content.blob, content.file.visibility)))
+            Ok((content.file.path, (content.blob, content.file.label)))
         })
         .collect()
 }
@@ -384,7 +415,7 @@ where
                         path: path.clone(),
                         oid: blob.git_oid.clone(),
                         tracked: true,
-                        visibility: *label,
+                        label: label.clone(),
                     },
                     blob: blob.clone(),
                 },
@@ -421,7 +452,7 @@ pub(super) async fn live_projection_read_model<C>(
     conn: &C,
     repo_id: &str,
     repo_version: u64,
-    view: ProjectionViewKey,
+    view: &ViewId,
 ) -> Result<Option<entities::projection_read_model::Model>, PostgresError>
 where
     C: ConnectionTrait,
@@ -437,11 +468,11 @@ where
     .filter(|row| row.current() && row.repo_version == repo_version))
 }
 
-pub(super) async fn load_live_projection_file_for_audience<C>(
+pub(super) async fn load_live_projection_file_for_view<C>(
     conn: &C,
     repo_id: &str,
     repo_version: u64,
-    view: ProjectionViewKey,
+    view: &ViewId,
     path: &ScopePath,
 ) -> Result<ProjectionFileLookup, PostgresError>
 where
@@ -464,7 +495,11 @@ where
     match row {
         Some(row) => {
             let content = row.try_into_content()?;
-            if view.shows(&content.file.path, content.file.visibility) {
+            if repository_views(conn, repo_id).await?.shows(
+                view,
+                &content.file.path,
+                &content.file.label,
+            ) {
                 Ok(ProjectionFileLookup::Found(content))
             } else {
                 Ok(ProjectionFileLookup::Missing)
@@ -474,11 +509,11 @@ where
     }
 }
 
-pub(super) async fn load_live_projection_files_for_audience<C>(
+pub(super) async fn load_live_projection_files_for_view<C>(
     conn: &C,
     repo_id: &str,
     repo_version: u64,
-    view: ProjectionViewKey,
+    view: &ViewId,
 ) -> Result<Option<Vec<ProjectionViewFile>>, PostgresError>
 where
     C: ConnectionTrait,
@@ -486,9 +521,10 @@ where
     let Some(model) = live_projection_read_model(conn, repo_id, repo_version, view).await? else {
         return Ok(None);
     };
+    let views = repository_views(conn, repo_id).await?;
     let rows = entities::projection_file::Entity::find()
         .filter(entities::projection_file::Column::RepoId.eq(repo_id.to_string()))
-        .filter(view_condition(view)?)
+        .filter(view_condition(&views, view))
         .order_by_asc(entities::projection_file::Column::Path)
         .all(conn)
         .await

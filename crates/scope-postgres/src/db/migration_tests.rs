@@ -31,6 +31,7 @@ mod request_run_source_base;
 mod run_attempt_active_indexes;
 mod run_execution_invariants;
 mod run_state_constraints;
+mod view_ids;
 
 const LATEST_MIGRATIONS: &[&str] = &[
     "m0042_current_schema_baseline",
@@ -67,6 +68,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0073_github_workflow_jobs",
     "m0074_history_path_indexes",
     "m0075_incremental_projection_read_models",
+    "m0076_view_ids",
 ];
 
 pub(super) async fn isolated_database() -> (

@@ -1,6 +1,5 @@
-use scope_domain::policy::{
-    Policy, PolicyError, ScopePath, ScopePathError, Visibility, VisibilityRule,
-};
+use scope_domain::policy::{LabelRule, Policy, PolicyError, ScopePath, ScopePathError};
+use scope_domain::views::{ViewId, Views};
 
 fn path(value: &str) -> ScopePath {
     ScopePath::parse(value).unwrap()
@@ -28,17 +27,17 @@ fn scope_paths_preserve_filename_whitespace_without_relaxing_absolute_paths() {
 
 #[test]
 fn filename_whitespace_does_not_inherit_another_files_visibility() {
-    use scope_domain::repo_config::{ConfigVisibility, RepoConfig, RepoConfigVisibilityRule};
+    use scope_domain::repo_config::{RepoConfig, RepoConfigFileRule};
 
-    let mut config = RepoConfig::with_default_visibility(ConfigVisibility::Private);
-    config.visibility.rules.push(RepoConfigVisibilityRule {
+    let mut config = RepoConfig::with_default_view(ViewId::private());
+    config.files.rules.push(RepoConfigFileRule {
         path: "/public.txt".to_string(),
-        visibility: ConfigVisibility::Public,
+        view: ViewId::public(),
     });
     config.validate().unwrap();
     assert_eq!(
-        config.visibility_for_path(&path("/public.txt")),
-        Visibility::Public
+        config.label_for_path(&path("/public.txt")),
+        ViewId::public()
     );
     for value in [
         "/public.txt ",
@@ -47,21 +46,21 @@ fn filename_whitespace_does_not_inherit_another_files_visibility() {
         "/.scope/RULES.md ",
     ] {
         assert_eq!(
-            config.visibility_for_path(&path(value)),
-            Visibility::Private,
+            config.label_for_path(&path(value)),
+            ViewId::private(),
             "{value:?}"
         );
     }
     assert_eq!(
-        config.visibility_for_path(&path("/.scope/RULES.md")),
-        Visibility::Public
+        config.label_for_path(&path("/.scope/RULES.md")),
+        ViewId::public()
     );
 }
 
 fn policy_with_private_internal() -> Policy {
-    let mut policy = Policy::new(Visibility::Public);
+    let mut policy = Policy::new(ViewId::public());
     policy
-        .add_rule(VisibilityRule::private(path("/internal")))
+        .add_rule(LabelRule::private(path("/internal")))
         .unwrap();
     policy
 }
@@ -71,8 +70,8 @@ fn private_parent_hides_children() {
     let policy = policy_with_private_internal();
     let path = path("/internal/model.rs");
 
-    assert!(!policy.can_read(&path, false));
-    assert!(policy.can_read(&path, true));
+    assert!(!policy.can_read(&path, &ViewId::public(), &Views::builtin()));
+    assert!(policy.can_read(&path, &ViewId::private(), &Views::builtin()));
 }
 
 #[test]
@@ -80,7 +79,7 @@ fn rejects_public_island_under_private_parent() {
     let mut policy = policy_with_private_internal();
 
     let error = policy
-        .add_rule(VisibilityRule::public(path("/internal/readme.md")))
+        .add_rule(LabelRule::public(path("/internal/readme.md")))
         .unwrap_err();
 
     assert!(matches!(error, PolicyError::PublicIsland { .. }));
@@ -89,17 +88,17 @@ fn rejects_public_island_under_private_parent() {
 #[test]
 fn batched_rules_preserve_visibility_and_last_replacement() {
     let rules = [
-        VisibilityRule::public(path("/docs")),
-        VisibilityRule::private(path("/docs/secrets")),
-        VisibilityRule::public(path("/src/lib.rs")),
-        VisibilityRule::private(path("/src/lib.rs")),
-        VisibilityRule::public(path("/src/main.rs")),
+        LabelRule::public(path("/docs")),
+        LabelRule::private(path("/docs/secrets")),
+        LabelRule::public(path("/src/lib.rs")),
+        LabelRule::private(path("/src/lib.rs")),
+        LabelRule::public(path("/src/main.rs")),
     ];
-    let mut sequential = Policy::new(Visibility::Private);
+    let mut sequential = Policy::new(ViewId::private());
     for rule in rules.clone() {
         sequential.add_rule(rule).unwrap();
     }
-    let mut batch = Policy::new(Visibility::Private);
+    let mut batch = Policy::new(ViewId::private());
     batch.add_rules(rules).unwrap();
     assert_eq!(batch.rules(), sequential.rules());
     for file in [
@@ -110,14 +109,14 @@ fn batched_rules_preserve_visibility_and_last_replacement() {
         "/other",
     ] {
         assert_eq!(
-            batch.effective_visibility(&path(file)),
-            sequential.effective_visibility(&path(file))
+            batch.label(&path(file), &Views::builtin()),
+            sequential.label(&path(file), &Views::builtin())
         );
     }
     batch.remove_rule(&path("/docs/secrets"));
     assert_eq!(
-        batch.effective_visibility(&path("/docs/secrets/key")),
-        Visibility::Public
+        batch.label(&path("/docs/secrets/key"), &Views::builtin()),
+        ViewId::public()
     );
 }
 
@@ -125,11 +124,11 @@ fn batched_rules_preserve_visibility_and_last_replacement() {
 fn batch_rejects_private_ancestors_in_either_input_order_without_mutation() {
     for parent in ["/", "/docs", "/docs/private"] {
         let rules = [
-            VisibilityRule::public(path("/docs/private/file")),
-            VisibilityRule::private(path(parent)),
+            LabelRule::public(path("/docs/private/file")),
+            LabelRule::private(path(parent)),
         ];
         for rules in [rules.clone(), [rules[1].clone(), rules[0].clone()]] {
-            let mut policy = Policy::new(Visibility::Public);
+            let mut policy = Policy::new(ViewId::public());
             let error = policy.add_rules(rules).unwrap_err();
             assert_eq!(
                 error,
@@ -145,17 +144,17 @@ fn batch_rejects_private_ancestors_in_either_input_order_without_mutation() {
 
 #[test]
 fn ancestor_lookup_respects_segment_boundaries_and_lexical_siblings() {
-    let mut policy = Policy::new(Visibility::Private);
+    let mut policy = Policy::new(ViewId::private());
     policy
         .add_rules([
-            VisibilityRule::private(path("/a")),
-            VisibilityRule::public(path("/a-b")),
-            VisibilityRule::public(path("/ab/child")),
+            LabelRule::private(path("/a")),
+            LabelRule::public(path("/a-b")),
+            LabelRule::public(path("/ab/child")),
         ])
         .unwrap();
     let before = policy.rules().to_vec();
     assert!(matches!(
-        policy.add_rule(VisibilityRule::public(path("/a/child"))),
+        policy.add_rule(LabelRule::public(path("/a/child"))),
         Err(PolicyError::PublicIsland { .. })
     ));
     assert_eq!(policy.rules(), before);
@@ -163,18 +162,16 @@ fn ancestor_lookup_respects_segment_boundaries_and_lexical_siblings() {
 
 #[test]
 fn replacing_a_private_rule_with_public_keeps_existing_children_valid() {
-    let mut policy = Policy::new(Visibility::Private);
-    policy
-        .add_rule(VisibilityRule::private(path("/docs")))
-        .unwrap();
+    let mut policy = Policy::new(ViewId::private());
+    policy.add_rule(LabelRule::private(path("/docs"))).unwrap();
     policy
         .add_rules([
-            VisibilityRule::public(path("/docs")),
-            VisibilityRule::public(path("/docs/guide.md")),
+            LabelRule::public(path("/docs")),
+            LabelRule::public(path("/docs/guide.md")),
         ])
         .unwrap();
     assert_eq!(
-        policy.effective_visibility(&path("/docs/guide.md")),
-        Visibility::Public
+        policy.label(&path("/docs/guide.md"), &Views::builtin()),
+        ViewId::public()
     );
 }

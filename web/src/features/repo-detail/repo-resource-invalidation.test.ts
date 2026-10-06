@@ -23,8 +23,8 @@ function seed() {
   repositoryActivityResource.clear()
   requestActivityResource.clear()
   repositoryDependencyResource.clear()
-  repositoryActivityResource.write('viewer-a', { audience: 'public', entry: null, head_oid: 'head' })
-  repositoryActivityResource.write('viewer-b', { audience: 'public', entry: null, head_oid: 'other' })
+  repositoryActivityResource.write('viewer-a', { view: 'public', entry: null, head_oid: 'head' })
+  repositoryActivityResource.write('viewer-b', { view: 'public', entry: null, head_oid: 'other' })
   for (const id of ['one', 'two']) requestActivityResource.write(requestActivityIdentity('viewer-a', id), { events: [], through_position: 1 })
   repositoryDependencyResource.write('viewer-a', { error: null, report: null, status: 'Pending' })
   historyFeedResource.clear()
@@ -64,7 +64,7 @@ test('allowlist changes refresh the retained Runs page workflows and their avail
 test('request changes target one request and leave latest repository activity reusable', () => {
   seed()
   invalidateRepoResources('viewer-a', event({ RequestTimelineChanged: {
-    request_id: 'one', discussion_id: 'discussion', through_position: 2, audience: 'Public',
+    request_id: 'one', discussion_id: 'discussion', through_position: 2, view: 'public',
   } }))
   assert.equal(requestQueueResource.getSnapshot('viewer-a').stale, true)
   assert.equal(requestQueueResource.getSnapshot('viewer-b').stale, false)
@@ -176,12 +176,12 @@ test('public code with unchanged version refreshes retained tree and file on rep
   const { repoFileCacheKey, repoFileResource } = await import('./repo-file-cache')
   repoContentResource.clear()
   repoFileResource.clear()
-  const identity = { scope: 'viewer-a', repoId: 'repo', audience: 'public' as const, contentVersion: 0 }
+  const identity = { scope: 'viewer-a', repoId: 'repo', view: 'public' as const, contentVersion: 0 }
   const treeKey = repoContentCacheKey(identity)
   const fileKey = repoFileCacheKey({ ...identity, path: 'README.md' })
   let loads = 0
   const loadTree = async () => { loads += 1; return { clone_remote_url: 'remote', files: [] } }
-  const oldFile = { content: { kind: 'text' as const, text: 'old' }, oid: 'old', path: 'README.md', size_bytes: 3, visibility: 'Public' as const }
+  const oldFile = { content: { kind: 'text' as const, text: 'old' }, oid: 'old', path: 'README.md', size_bytes: 3, label: 'public' as const }
   await repoContentResource.load(treeKey, '', loadTree)
   await repoContentResource.load(treeKey, '', loadTree)
   repoFileResource.write(fileKey, oldFile)
@@ -194,7 +194,7 @@ test('public code with unchanged version refreshes retained tree and file on rep
   await repoFileResource.load(fileKey, '', async () => ({ ...oldFile, oid: 'new', content: { kind: 'text', text: 'new' } }))
   assert.equal(loads, 2)
   assert.equal(repoFileResource.peek(fileKey)?.oid, 'new')
-  for (const alternate of [{ ...identity, scope: 'viewer-b' }, { ...identity, audience: 'private' as const }, { ...identity, contentVersion: 1 }]) {
+  for (const alternate of [{ ...identity, scope: 'viewer-b' }, { ...identity, view: 'private' as const }, { ...identity, contentVersion: 1 }]) {
     assert.equal(repoContentResource.peek(repoContentCacheKey(alternate)), null)
     assert.equal(repoFileResource.peek(repoFileCacheKey({ ...alternate, path: 'README.md' })), null)
   }

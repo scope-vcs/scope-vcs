@@ -538,9 +538,10 @@ mod tests {
         account::UserAccount,
         content::SourceBlob,
         content_ref::ContentRef,
-        policy::{ScopePath, Visibility},
+        policy::ScopePath,
         projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
         repository::{RepoLifecycleState, Repository},
+        views::ViewId,
     };
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -578,7 +579,7 @@ mod tests {
         let mut repo = Repository::new(
             &owner,
             "worker-history",
-            Visibility::Public,
+            ViewId::public(),
             "worker_history_repo",
         )
         .unwrap();
@@ -601,7 +602,7 @@ mod tests {
                     git_file_mode: "100644".into(),
                     size_bytes: 1,
                 }),
-                visibility: Visibility::Public,
+                label: ViewId::public(),
             }],
         });
         let mut catalog = crate::db::CatalogFixture::default();
@@ -949,7 +950,7 @@ mod tests {
         };
         let mut catalog = crate::db::CatalogFixture::default();
         let repo = catalog
-            .create_repository(&owner, "repo", Visibility::Private)
+            .create_repository(&owner, "repo", ViewId::private())
             .unwrap()
             .clone();
         catalog.users.insert(owner.id.clone(), owner);

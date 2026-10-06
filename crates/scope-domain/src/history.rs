@@ -1,10 +1,11 @@
 use crate::{
     content::SourceBlob,
-    policy::{ScopePath, Visibility},
+    policy::ScopePath,
     projection::{
-        LogicalCommit, LogicalCommitOrigin, NativePublicCommit, Projection, ProjectionViewKey,
-        SourceGraph, project_graph,
+        LogicalCommit, LogicalCommitOrigin, NativePublicCommit, Projection, SourceGraph,
+        project_graph,
     },
+    views::{ViewId, Views},
     visibility_changes::VisibilityChangeSet,
 };
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,7 @@ pub use feed::HistoryFeed;
 use generation::{history_generation_after, history_generation_start};
 use projection_history::{ProjectedAction, ProjectionHistory};
 
-pub const HISTORY_GENERATION_VERSION: &str = "v8";
+pub const HISTORY_GENERATION_VERSION: &str = "v9";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FileChangeKind {
@@ -30,7 +31,7 @@ pub enum FileChangeKind {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HistoryView {
     pub repo_id: String,
-    pub view_key: String,
+    pub view: ViewId,
     pub generation: String,
     pub entries: Vec<HistoryEntry>,
 }
@@ -62,46 +63,82 @@ pub struct HistoryEntryFile {
     pub kind: FileChangeKind,
     pub old_content: Option<SourceBlob>,
     pub new_content: Option<SourceBlob>,
-    pub visibility: Visibility,
+    pub label: ViewId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HistoryEntryVisibilityChange {
     pub id: String,
     pub path: ScopePath,
-    pub old_visibility: Visibility,
-    pub new_visibility: Visibility,
+    pub old_label: ViewId,
+    pub new_label: ViewId,
     pub file: Option<HistoryEntryFile>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HistoryVisibilitySummary {
+    pub entered: usize,
+    pub left: usize,
+}
+
+impl HistoryEntry {
+    pub fn visibility_summary(&self, views: &Views, view: &ViewId) -> HistoryVisibilitySummary {
+        let Some(measured) = visibility_summary_view(views, view) else {
+            return HistoryVisibilitySummary::default();
+        };
+        self.visibility_changes.iter().fold(
+            HistoryVisibilitySummary::default(),
+            |mut summary, change| {
+                let before = views.shows(measured, &change.path, &change.old_label);
+                let after = views.shows(measured, &change.path, &change.new_label);
+                summary.entered += usize::from(!before && after);
+                summary.left += usize::from(before && !after);
+                summary
+            },
+        )
+    }
+}
+
+fn visibility_summary_view<'a>(views: &'a Views, view: &'a ViewId) -> Option<&'a ViewId> {
+    if view == views.full() {
+        views.anyone()
+    } else {
+        Some(view)
+    }
 }
 
 pub fn history_view(
     graph: &SourceGraph,
     visibility_change_sets: &[VisibilityChangeSet],
-    view_key: ProjectionViewKey,
+    views: &Views,
+    view: &ViewId,
 ) -> HistoryView {
-    let projection = project_graph(graph, visibility_change_sets, view_key);
-    history_view_from_projection(projection, graph, visibility_change_sets)
+    let projection = project_graph(graph, visibility_change_sets, views, view);
+    history_view_from_projection(projection, graph, visibility_change_sets, views, view)
 }
 
 pub fn history_view_from_projection(
     projection: Projection,
     graph: &SourceGraph,
     visibility_change_sets: &[VisibilityChangeSet],
+    views: &Views,
+    view: &ViewId,
 ) -> HistoryView {
     let repo_id = projection.repo_id.clone();
-    let view_key = projection.view_key;
-    let mut cursor = HistoryCursor::start(&repo_id, view_key);
+    let mut cursor = HistoryCursor::start(&repo_id, views, view);
     let mut entries = history_entries_after(
         &mut cursor,
         BTreeMap::new(),
         projection,
         graph,
         visibility_change_sets,
+        views,
+        view,
     );
     entries.reverse();
     HistoryView {
         repo_id,
-        view_key: view_key.as_str().to_string(),
+        view: view.clone(),
         generation: cursor.generation,
         entries,
     }
@@ -114,10 +151,10 @@ pub struct HistoryCursor {
 }
 
 impl HistoryCursor {
-    pub fn start(repo_id: &str, view_key: ProjectionViewKey) -> Self {
+    pub fn start(repo_id: &str, _views: &Views, view: &ViewId) -> Self {
         Self {
             last_entry_id: None,
-            generation: history_generation_start(repo_id, view_key),
+            generation: history_generation_start(repo_id, view),
         }
     }
 }
@@ -128,8 +165,9 @@ pub fn history_entries_after(
     projection: Projection,
     graph: &SourceGraph,
     visibility_change_sets: &[VisibilityChangeSet],
+    views: &Views,
+    view: &ViewId,
 ) -> Vec<HistoryEntry> {
-    let view_key = projection.view_key;
     let projected = ProjectionHistory::replay(tree, projection);
     let logical_ids = graph
         .commits
@@ -160,7 +198,8 @@ pub fn history_entries_after(
         &mut entries,
         sets_by_anchor.remove(&None),
         &projected,
-        view_key,
+        views,
+        view,
     );
     for logical in &graph.commits {
         let source = projected.actions.get(&logical.id);
@@ -170,14 +209,15 @@ pub fn history_entries_after(
                 .unwrap_or_default(),
             source,
             &projected,
-            view_key,
+            views,
+            view,
         );
         let files = source
             .map(|action| action.files.clone())
             .unwrap_or_default();
         let native_commits = match &logical.origin {
             LogicalCommitOrigin::PublicRequestMerge { commits, .. }
-                if view_key == ProjectionViewKey::Private
+                if view == views.full()
                     || source.is_some_and(|action| action.preserves_git_commits) =>
             {
                 commits.clone()
@@ -185,7 +225,7 @@ pub fn history_entries_after(
             _ => Vec::new(),
         };
         if !files.is_empty() || !visibility_changes.is_empty() || !native_commits.is_empty() {
-            let (author, message, occurred_at_unix) = action_metadata(logical, source, view_key);
+            let (author, message, occurred_at_unix) = action_metadata(logical, source, views, view);
             entries.push(HistoryEntry {
                 occurred_at_unix,
                 id: logical.id.clone(),
@@ -209,7 +249,8 @@ pub fn history_entries_after(
             &mut entries,
             sets_by_anchor.remove(&Some(logical.id.as_str())),
             &projected,
-            view_key,
+            views,
+            view,
         );
     }
     for entry in &mut entries {
@@ -222,17 +263,17 @@ pub fn history_entries_after(
 fn action_metadata(
     logical: &LogicalCommit,
     projected: Option<&ProjectedAction>,
-    view_key: ProjectionViewKey,
+    views: &Views,
+    view: &ViewId,
 ) -> (Option<String>, String, Option<i64>) {
-    let (author, message) = if view_key == ProjectionViewKey::Private
-        || projected.is_some_and(|action| action.preserves_git_commits)
-    {
-        (Some(logical.author_id.clone()), logical.message.clone())
-    } else {
-        projected
-            .map(|action| (action.author.clone(), action.message.clone()))
-            .unwrap_or_else(|| (None, "Projected public update".into()))
-    };
+    let (author, message) =
+        if view == views.full() || projected.is_some_and(|action| action.preserves_git_commits) {
+            (Some(logical.author_id.clone()), logical.message.clone())
+        } else {
+            projected
+                .map(|action| (action.author.clone(), action.message.clone()))
+                .unwrap_or_else(|| (None, "Projected public update".into()))
+        };
     let occurred_at_unix = if author.is_some() {
         logical.occurred_at_unix
     } else {
@@ -245,16 +286,17 @@ fn append_visibility_actions(
     entries: &mut Vec<HistoryEntry>,
     sets: Option<Vec<&VisibilityChangeSet>>,
     projected: &ProjectionHistory,
-    view_key: ProjectionViewKey,
+    views: &Views,
+    view: &ViewId,
 ) {
     for set in sets.into_iter().flatten() {
         let visibility_changes =
-            visibility_changes_for_action(vec![set], None, projected, view_key);
+            visibility_changes_for_action(vec![set], None, projected, views, view);
         if visibility_changes.is_empty() {
             continue;
         }
         entries.push(HistoryEntry {
-            occurred_at_unix: if view_key == ProjectionViewKey::Private {
+            occurred_at_unix: if view == views.full() {
                 set.occurred_at_unix
             } else {
                 None
@@ -263,7 +305,7 @@ fn append_visibility_actions(
             source_id: set.id.clone(),
             parent_id: None,
             kind: HistoryEntryKind::VisibilityChange,
-            author: (view_key == ProjectionViewKey::Private).then(|| set.author_id.clone()),
+            author: (view == views.full()).then(|| set.author_id.clone()),
             message: visibility_change_message(&visibility_changes),
             files: Vec::new(),
             visibility_changes,
@@ -276,7 +318,8 @@ fn visibility_changes_for_action(
     sets: Vec<&VisibilityChangeSet>,
     content: Option<&ProjectedAction>,
     projected: &ProjectionHistory,
-    view_key: ProjectionViewKey,
+    views: &Views,
+    view: &ViewId,
 ) -> Vec<HistoryEntryVisibilityChange> {
     sets.into_iter()
         .flat_map(|set| {
@@ -285,17 +328,14 @@ fn visibility_changes_for_action(
                 let boundary = projected.visibility.get(&id);
                 let visible_in_content =
                     content.is_some_and(|action| action.paths.contains(&change.path));
-                if view_key == ProjectionViewKey::Public
-                    && boundary.is_none()
-                    && !visible_in_content
-                {
+                if view != views.full() && boundary.is_none() && !visible_in_content {
                     return None;
                 }
                 Some(HistoryEntryVisibilityChange {
                     id,
                     path: change.path.clone(),
-                    old_visibility: change.old_visibility,
-                    new_visibility: change.new_visibility,
+                    old_label: change.old_label.clone(),
+                    new_label: change.new_label.clone(),
                     file: boundary.cloned().flatten(),
                 })
             })
@@ -310,7 +350,7 @@ pub(super) fn visibility_change_id(set_id: &str, path: &ScopePath) -> String {
 fn visibility_change_message(changes: &[HistoryEntryVisibilityChange]) -> String {
     let made_public = changes
         .iter()
-        .filter(|change| change.new_visibility == Visibility::Public)
+        .filter(|change| change.new_label.is_public())
         .count();
     let made_private = changes.len() - made_public;
     let files = |count| if count == 1 { "file" } else { "files" };

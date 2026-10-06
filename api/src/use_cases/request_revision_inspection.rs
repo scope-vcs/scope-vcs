@@ -4,9 +4,10 @@ use crate::{
 };
 use scope_domain::{
     history::FileChangeKind,
-    policy::{Policy, ScopePath, Visibility},
+    policy::{Policy, ScopePath},
     repository::access::RepositoryAccess,
     requests::RequestRevision,
+    views::{ViewId, Views},
 };
 use std::{collections::BTreeSet, path::Path as FsPath};
 
@@ -21,7 +22,7 @@ pub(crate) struct InspectedRequestChange {
     pub(crate) new_mode: Option<String>,
     pub(crate) old_oid: Option<String>,
     pub(crate) new_oid: Option<String>,
-    pub(crate) visibility: Visibility,
+    pub(crate) label: ViewId,
 }
 
 #[derive(Debug)]
@@ -33,12 +34,14 @@ pub(crate) struct InspectedRequestChanges {
 pub(crate) fn inspect_request_changes(
     changes: &[u8],
     policy: &Policy,
-    access: RepositoryAccess,
+    views: &Views,
+    access: &RepositoryAccess,
 ) -> Result<InspectedRequestChanges, ApiError> {
     let mut files = Vec::new();
     let hidden = visit_request_changes(
         changes,
         policy,
+        views,
         access,
         |path, scope_path, kind, columns| {
             files.push(InspectedRequestChange {
@@ -48,7 +51,7 @@ pub(crate) fn inspect_request_changes(
                 new_mode: git_mode(columns[1]),
                 old_oid: (kind != FileChangeKind::Added).then(|| columns[2].to_string()),
                 new_oid: (kind != FileChangeKind::Deleted).then(|| columns[3].to_string()),
-                visibility: policy.effective_visibility(&scope_path),
+                label: policy.label(&scope_path, views),
             });
         },
     )?;
@@ -59,10 +62,11 @@ pub(crate) fn inspect_request_changes(
 pub(crate) fn inspect_request_paths(
     changes: &[u8],
     policy: &Policy,
-    access: RepositoryAccess,
+    views: &Views,
+    access: &RepositoryAccess,
 ) -> Result<(BTreeSet<ScopePath>, bool), ApiError> {
     let mut paths = BTreeSet::new();
-    let hidden = visit_request_changes(changes, policy, access, |_, scope_path, _, _| {
+    let hidden = visit_request_changes(changes, policy, views, access, |_, scope_path, _, _| {
         paths.insert(scope_path);
     })?;
     Ok((paths, hidden))
@@ -71,17 +75,19 @@ pub(crate) fn inspect_request_paths(
 pub(crate) fn request_commit_visible_paths(
     raw_repo: &FsPath,
     policy: &Policy,
-    access: RepositoryAccess,
+    views: &Views,
+    access: &RepositoryAccess,
     commit_oid: &str,
 ) -> Result<(BTreeSet<ScopePath>, bool), ApiError> {
     let changes = request_commit_changes(raw_repo, commit_oid)?;
-    inspect_request_paths(&changes, policy, access)
+    inspect_request_paths(&changes, policy, views, access)
 }
 
 fn visit_request_changes(
     changes: &[u8],
     policy: &Policy,
-    access: RepositoryAccess,
+    views: &Views,
+    access: &RepositoryAccess,
     mut visit: impl FnMut(String, ScopePath, FileChangeKind, &[&str]),
 ) -> Result<bool, ApiError> {
     let mut fields = changes.split(|byte| *byte == 0);
@@ -103,7 +109,7 @@ fn visit_request_changes(
             .ok_or_else(|| ApiError::internal_message("request diff is missing a path"))?;
         let path = String::from_utf8(path.to_vec()).map_err(ApiError::bad_request)?;
         let scope_path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
-        if !policy.can_read(&scope_path, access.can_read_private_files) {
+        if !policy.can_read(&scope_path, &access.view, views) {
             hidden = true;
             continue;
         }

@@ -12,14 +12,14 @@ use crate::{
     push::DEFAULT_SCOPE_BRANCH,
 };
 use anyhow::{Context, bail};
-use scope_api_contract::{ErrorCode, ErrorResponse, RequestAudience};
+use scope_api_contract::{ErrorCode, ErrorResponse, ViewId};
 
 const REQUEST_REMOTE_KEY: &str = "scopeRequestRemote";
 const REQUEST_ID_KEY: &str = "scopeRequestId";
 const REQUEST_NAME_KEY: &str = "scopeRequestName";
 const REQUEST_OWNER_KEY: &str = "scopeRequestOwner";
 const REQUEST_REPO_KEY: &str = "scopeRequestRepo";
-const REQUEST_AUDIENCE_KEY: &str = "scopeRequestAudience";
+const REQUEST_VIEW_KEY: &str = "scopeRequestView";
 
 pub(super) struct RequestContext {
     pub(super) target: ScopeRemote,
@@ -50,12 +50,13 @@ pub(super) fn load_context_and_request_id(
 pub(super) fn refresh_main_projection(
     git_repo: &GitRepo,
     target: &ScopeRemote,
-    audience: RequestAudience,
+    view: &ViewId,
     session_token: &str,
 ) -> anyhow::Result<String> {
-    let fetch_url = match audience {
-        RequestAudience::Public => &target.public_url,
-        RequestAudience::Private => &target.permissioned_url,
+    let fetch_url = if scope_domain::views::ViewId::from(view.clone()).is_public() {
+        &target.public_url
+    } else {
+        &target.permissioned_url
     };
     fetch_scope_remote_with_bearer(
         git_repo,
@@ -328,12 +329,7 @@ pub(super) fn store_request_metadata(
     set_branch_config_value(git_repo, branch, REQUEST_REMOTE_KEY, &context.target.remote)?;
     set_branch_config_value(git_repo, branch, REQUEST_ID_KEY, &request.id)?;
     set_branch_config_value(git_repo, branch, REQUEST_NAME_KEY, &request.name)?;
-    set_branch_config_value(
-        git_repo,
-        branch,
-        REQUEST_AUDIENCE_KEY,
-        audience_config_value(request.audience),
-    )
+    set_branch_config_value(git_repo, branch, REQUEST_VIEW_KEY, request.view.as_str())
 }
 
 pub(super) fn adoptable_current_branch(
@@ -403,13 +399,6 @@ pub(super) fn request_remote_ref(remote: &str, request_name: &str) -> String {
     format!("refs/remotes/{remote}/{request_name}")
 }
 
-fn audience_config_value(audience: RequestAudience) -> &'static str {
-    match audience {
-        RequestAudience::Public => "public",
-        RequestAudience::Private => "private",
-    }
-}
-
 fn normalized_optional_arg(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_string())
@@ -433,7 +422,7 @@ mod tests {
         git_transport::{GitAccess, ScopeRemote},
         test_support::TempDir,
     };
-    use scope_api_contract::RequestAudience;
+    use scope_api_contract::ViewId;
     use std::fs;
 
     #[test]
@@ -476,15 +465,15 @@ mod tests {
         };
 
         assert_eq!(
-            refresh_main_projection(&repo, &target, RequestAudience::Public, "unused").unwrap(),
+            refresh_main_projection(&repo, &target, &ViewId::public(), "unused").unwrap(),
             public_oid
         );
         assert_eq!(
-            refresh_main_projection(&repo, &target, RequestAudience::Private, "unused").unwrap(),
+            refresh_main_projection(&repo, &target, &ViewId::private(), "unused").unwrap(),
             private_oid
         );
         assert_eq!(
-            refresh_main_projection(&repo, &target, RequestAudience::Public, "unused").unwrap(),
+            refresh_main_projection(&repo, &target, &ViewId::public(), "unused").unwrap(),
             public_oid
         );
     }

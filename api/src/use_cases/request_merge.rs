@@ -22,7 +22,7 @@ use crate::{
 };
 use scope_domain::{
     landing_file::RepositoryLandingFileMutation,
-    projection::{ProjectionViewKey, project_graph},
+    projection::project_graph,
     repo_actions::reviewed_update_domain_error,
     repository::updates::RequestMergeOrigin,
     repository::{
@@ -30,8 +30,8 @@ use scope_domain::{
         access::{RepositoryAccess, RepositoryActor},
     },
     requests::{
-        Request, RequestAudience, RequestChecksOutcome, RequestViewer, canonical_request_ref,
-        request_actor_role, request_mergeability, request_policy,
+        Request, RequestChecksOutcome, RequestViewer, canonical_request_ref, request_actor_role,
+        request_mergeability, request_policy,
     },
     reviewed_updates::content::apply_request_merge_to_repo,
     runs::catalog::RepositoryWorkflowCatalog,
@@ -94,7 +94,7 @@ pub(crate) async fn merge_request(
         request_id: None,
     }
     .run(state, async {
-        merge_request_inner(state, &command)
+        Box::pin(merge_request_inner(state, &command))
             .await
             .map_err(RequestMergeFailure::into_api_error)
     })
@@ -122,7 +122,7 @@ pub(crate) async fn merge_request_inner(
         .await?;
     let policy = request_policy(
         &request,
-        RequestViewer::new(access, Some(&command.actor_user_id), is_invitee),
+        RequestViewer::new(access.clone(), Some(&command.actor_user_id), is_invitee),
     );
     if request.repo_id != repo.record.id || !policy.exact_visible {
         return Err(ApiError::not_found("request not found").into());
@@ -146,7 +146,7 @@ pub(crate) async fn merge_request_inner(
     let checks =
         crate::use_cases::request_checks::checks_outcome(state, &repo.record, &request).await?;
     if checks != RequestChecksOutcome::Clear {
-        let decision = request_mergeability(&request, access, checks);
+        let decision = request_mergeability(&request, access.clone(), checks);
         return Err(ApiError::conflict(
             decision.reason.unwrap_or("request checks have not cleared"),
         )
@@ -157,8 +157,8 @@ pub(crate) async fn merge_request_inner(
         &command.actor_user_id,
         &repo.record.incarnation_id,
         &request.id,
-        request.audience,
-        request_actor_role(access),
+        request.view.clone(),
+        request_actor_role(access.clone()),
     );
     let prepared = prepare_request_merge_for_execution(
         state,
@@ -357,36 +357,35 @@ async fn prepare_request_merge_for_execution(
             }
         })?;
         let request_ref = canonical_request_ref(&request.name);
-        let (origin, merge_base_oid) = match request.audience {
-            RequestAudience::Public => {
-                let validated = validate_public_request_merge_range(
-                    &RepositoryGit::of_repository(repo),
-                    &repo.repo_config,
-                    state,
-                    &staging_repo,
-                    &request.head_oid,
-                )
-                .await
-                .map_err(RequestMergeFailure::public_range)?;
-                let merge_base_oid = validated.public_base_oid.clone();
-                (
-                    RequestMergeOrigin::Public {
-                        request_id: request.id.clone(),
-                        public_base_oid: validated.public_base_oid,
-                        public_parent_oids: validated.public_parent_oids,
-                        request_head_oid: request.head_oid.clone(),
-                        commits: validated.commits,
-                    },
-                    merge_base_oid,
-                )
-            }
-            RequestAudience::Private => (
+        let (origin, merge_base_oid) = if request.view.is_public() {
+            let validated = validate_public_request_merge_range(
+                &RepositoryGit::of_repository(repo),
+                &repo.repo_config,
+                state,
+                &staging_repo,
+                &request.head_oid,
+            )
+            .await
+            .map_err(RequestMergeFailure::public_range)?;
+            let merge_base_oid = validated.public_base_oid.clone();
+            (
+                RequestMergeOrigin::Public {
+                    request_id: request.id.clone(),
+                    public_base_oid: validated.public_base_oid,
+                    public_parent_oids: validated.public_parent_oids,
+                    request_head_oid: request.head_oid.clone(),
+                    commits: validated.commits,
+                },
+                merge_base_oid,
+            )
+        } else {
+            (
                 RequestMergeOrigin::Private {
                     request_id: request.id.clone(),
                     request_head_oid: request.head_oid.clone(),
                 },
                 request.base_main_oid.clone(),
-            ),
+            )
         };
         let merged_main_oid = merge_main_oid_for_execution(
             &staging_repo,
@@ -438,7 +437,12 @@ async fn prepare_request_merge_for_execution(
             Ok(project_graph(
                 &proposed_repo.graph,
                 &proposed_repo.visibility_change_sets,
-                ProjectionViewKey::Public,
+                proposed_repo.repo_config.views(),
+                proposed_repo
+                    .repo_config
+                    .views()
+                    .anyone()
+                    .ok_or_else(|| ApiError::not_found("public view not found"))?,
             ))
         })();
         let preflight = match public_projection {

@@ -32,13 +32,13 @@ test('generated validators enforce arrays and JavaScript safe integers', () => {
     oid: '0123456789abcdef0123456789abcdef01234567',
     path: '/README.md',
     tracked: true,
-    visibility: 'Public',
+    label: 'public',
   }]), true)
   assert.equal(validateRepoFiles([{
     oid: '0123456789abcdef0123456789abcdef01234567',
     path: '/README.md',
     tracked: 'yes',
-    visibility: 'Public',
+    label: 'public',
   }]), false)
 
   const connected = {

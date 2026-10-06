@@ -1,6 +1,10 @@
 use anyhow::{Context, bail};
-use scope_domain::repo_config::{
-    ConfigVisibility, RepoConfig, is_repo_config_fingerprint, repo_config_fingerprint,
+use scope_domain::{
+    repo_config::{
+        REPO_CONFIG_KIND, REPO_CONFIG_VERSION, RepoConfig, is_repo_config_fingerprint,
+        repo_config_fingerprint,
+    },
+    views::ViewId,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -72,6 +76,7 @@ pub fn worktree_scope_repo_config_presence(
         }
         Err(error) => return Err(error).context("inspect Scope repo state directory"),
     }
+    discard_outdated_worktree_scope_repo_config(&paths)?;
     let config = state_file_exists(&paths.config, "Scope repo config")?;
     let state = state_file_exists(&paths.state, "Scope repo config state")?;
     Ok(match (config, state) {
@@ -115,6 +120,33 @@ pub fn sync_missing_worktree_scope_repo_config(
     }
 }
 
+fn discard_outdated_worktree_scope_repo_config(paths: &RepoStatePaths) -> anyhow::Result<()> {
+    let bytes = match fs::read(&paths.config) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error).context("read Scope repo config"),
+    };
+    let outdated = serde_json::from_slice::<serde_json::Value>(&bytes).is_ok_and(|json| {
+        json.get("kind").and_then(serde_json::Value::as_str) == Some(REPO_CONFIG_KIND)
+            && json.get("version").and_then(serde_json::Value::as_u64) != Some(REPO_CONFIG_VERSION)
+    });
+    if !outdated {
+        return Ok(());
+    }
+    for path in [&paths.config, &paths.state] {
+        match fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error).context("discard outdated Scope repo config"),
+        }
+    }
+    eprintln!(
+        "Discarded {} from an older Scope release; it is refreshed from the server",
+        paths.config.display()
+    );
+    Ok(())
+}
+
 pub fn is_linked_worktree(git_root: &Path) -> anyhow::Result<bool> {
     let git_dir = git_path(git_root, &["rev-parse", "--git-dir"])?;
     let common_dir = git_path(git_root, &["rev-parse", "--git-common-dir"])?;
@@ -124,6 +156,7 @@ pub fn is_linked_worktree(git_root: &Path) -> anyhow::Result<bool> {
 pub fn ensure_scope_repo_config_exists(git_root: &Path) -> anyhow::Result<bool> {
     let paths = repo_state_paths(git_root)?;
     ensure_safe_state_directory_exists(&paths.directory)?;
+    discard_outdated_worktree_scope_repo_config(&paths)?;
     match fs::symlink_metadata(&paths.config) {
         Ok(metadata) => {
             ensure_regular_file(&metadata, "Scope repo config")?;
@@ -171,7 +204,7 @@ pub fn repo_config_path(git_root: &Path) -> anyhow::Result<PathBuf> {
 }
 
 pub fn default_scope_repo_config() -> RepoConfig {
-    RepoConfig::with_default_visibility(ConfigVisibility::Private)
+    RepoConfig::with_default_view(ViewId::private())
 }
 
 pub fn write_worktree_scope_repo_config(

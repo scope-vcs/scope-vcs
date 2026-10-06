@@ -9,8 +9,8 @@ use {
         repository::access::RepositoryActor,
         repository::{RepoLifecycleState, access::RepositoryAccessContext},
         requests::{
-            Request, RequestActorRole, RequestAudience, RequestPolicyDecision, RequestViewer,
-            StartRequestInput, request_policy,
+            Request, RequestActorRole, RequestPolicyDecision, RequestViewer, StartRequestInput,
+            request_policy,
         },
     },
 };
@@ -28,7 +28,7 @@ pub(super) fn authorize_start_request(
                     "ready repository required",
                 ));
             }
-            input.audience = RequestAudience::Public;
+            input.view = scope_domain::views::ViewId::public();
             RequestActorRole::Public
         }
     };
@@ -49,7 +49,7 @@ where
         super::request_invitees::request_is_invitee(conn, &request.id, user_id).await?;
     Ok(request_policy(
         request,
-        RequestViewer::new(repo.access, Some(user_id), is_invitee),
+        RequestViewer::new(repo.access.clone(), Some(user_id), is_invitee),
     ))
 }
 

@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[tokio::test]
 async fn history_pages_are_newest_first_and_exhaust_cleanly() {
@@ -8,7 +9,7 @@ async fn history_pages_are_newest_first_and_exhaust_cleanly() {
     let first = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?audience=public",
+        "/v1/repos/owner/repo/history?view=public",
         None,
         None,
     )
@@ -25,7 +26,7 @@ async fn history_pages_are_newest_first_and_exhaust_cleanly() {
     let second = api_request(
         router(state),
         "GET",
-        &format!("/v1/repos/owner/repo/history?audience=public&before={cursor}"),
+        &format!("/v1/repos/owner/repo/history?view=public&before={cursor}"),
         None,
         None,
     )
@@ -58,7 +59,7 @@ async fn history_cursor_rejects_appended_history_and_restarts_from_the_new_gener
     let first = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?audience=public",
+        "/v1/repos/owner/repo/history?view=public",
         None,
         None,
     )
@@ -71,7 +72,7 @@ async fn history_cursor_rejects_appended_history_and_restarts_from_the_new_gener
     let stale = api_request(
         router(state.clone()),
         "GET",
-        &format!("/v1/repos/owner/repo/history?audience=public&before={cursor}"),
+        &format!("/v1/repos/owner/repo/history?view=public&before={cursor}"),
         None,
         None,
     )
@@ -85,7 +86,7 @@ async fn history_cursor_rejects_appended_history_and_restarts_from_the_new_gener
     let restarted = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?audience=public",
+        "/v1/repos/owner/repo/history?view=public",
         None,
         None,
     )
@@ -100,7 +101,7 @@ async fn history_cursor_rejects_appended_history_and_restarts_from_the_new_gener
     let second = api_request(
         router(state),
         "GET",
-        &format!("/v1/repos/owner/repo/history?audience=public&before={cursor}"),
+        &format!("/v1/repos/owner/repo/history?view=public&before={cursor}"),
         None,
         None,
     )
@@ -132,7 +133,7 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
     let first = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?audience=public",
+        "/v1/repos/owner/repo/history?view=public",
         None,
         None,
     )
@@ -153,8 +154,8 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
             author_id: test_owner_id(),
             changes: vec![scope_domain::visibility_changes::VisibilityChange {
                 path: ScopePath::parse("/README.md").unwrap(),
-                old_visibility: Visibility::Public,
-                new_visibility: Visibility::Private,
+                old_label: ViewId::public(),
+                new_label: ViewId::private(),
                 current_content: Some(source_blob(&state, "version 1")),
             }],
         });
@@ -163,7 +164,7 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
     let stale = api_request(
         router(state.clone()),
         "GET",
-        &format!("/v1/repos/owner/repo/history?audience=public&before={cursor}"),
+        &format!("/v1/repos/owner/repo/history?view=public&before={cursor}"),
         None,
         None,
     )
@@ -177,7 +178,7 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
     let restarted = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?audience=public",
+        "/v1/repos/owner/repo/history?view=public",
         None,
         None,
     )
@@ -203,7 +204,7 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
     let second = api_request(
         router(state.clone()),
         "GET",
-        &format!("/v1/repos/owner/repo/history?audience=public&before={cursor}"),
+        &format!("/v1/repos/owner/repo/history?view=public&before={cursor}"),
         None,
         None,
     )
@@ -218,7 +219,7 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
     let detail = api_request(
         router(state),
         "GET",
-        "/v1/repos/owner/repo/history/rv2?audience=public",
+        "/v1/repos/owner/repo/history/rv2?view=public",
         None,
         None,
     )
@@ -230,7 +231,7 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
 }
 
 #[tokio::test]
-async fn history_cursor_rejects_invalid_values_and_other_audiences() {
+async fn history_cursor_rejects_invalid_values_and_other_views() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
     replace_test_repo(&state, paged_history_repo(&state, 51)).await;
@@ -238,7 +239,7 @@ async fn history_cursor_rejects_invalid_values_and_other_audiences() {
     let invalid = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?audience=public&before=not-a-cursor",
+        "/v1/repos/owner/repo/history?view=public&before=not-a-cursor",
         None,
         None,
     )
@@ -248,28 +249,28 @@ async fn history_cursor_rejects_invalid_values_and_other_audiences() {
     let first = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/history?audience=public",
+        "/v1/repos/owner/repo/history?view=public",
         None,
         None,
     )
     .await;
     let first = response_json(first).await;
     let cursor = first["next_cursor"].as_str().unwrap();
-    let wrong_audience = api_request(
+    let wrong_view = api_request(
         router(state.clone()),
         "GET",
-        &format!("/v1/repos/owner/repo/history?audience=private&before={cursor}"),
+        &format!("/v1/repos/owner/repo/history?view=private&before={cursor}"),
         Some(&bearer_header()),
         None,
     )
     .await;
-    assert_eq!(wrong_audience.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(wrong_view.status(), StatusCode::BAD_REQUEST);
 
     replace_test_repo(&state, paged_history_repo(&state, 1)).await;
     let missing_boundary = api_request(
         router(state),
         "GET",
-        &format!("/v1/repos/owner/repo/history?audience=public&before={cursor}"),
+        &format!("/v1/repos/owner/repo/history?view=public&before={cursor}"),
         None,
         None,
     )

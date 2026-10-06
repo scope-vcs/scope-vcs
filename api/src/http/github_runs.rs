@@ -98,7 +98,7 @@ async fn open_run(
             match visible_request(
                 state,
                 &repo.record.id,
-                access,
+                access.clone(),
                 viewer_user_id.as_deref(),
                 request_id,
             )

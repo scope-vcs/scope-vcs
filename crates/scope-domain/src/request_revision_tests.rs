@@ -2,6 +2,7 @@ use super::requests::{
     fixtures::{source_blob, start_input},
     *,
 };
+use crate::views::ViewId;
 
 fn uploaded_request() -> Request {
     let started = start_request(
@@ -10,7 +11,7 @@ fn uploaded_request() -> Request {
             id: "request_change".to_string(),
             name: "change".to_string(),
             title: Some("Change".to_string()),
-            audience: RequestAudience::Private,
+            view: ViewId::private(),
             ..start_input(RequestActorRole::Owner)
         },
     )

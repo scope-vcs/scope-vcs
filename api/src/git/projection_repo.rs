@@ -10,9 +10,9 @@ use crate::{
 };
 use scope_domain::{
     content_ref::ContentRef,
-    policy::Visibility,
-    projection::{Projection, ProjectionMaterialization, ProjectionViewKey},
+    projection::{Projection, ProjectionMaterialization},
     repository::RepositoryIncarnation,
+    views::{ViewId, Views},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::ProcessLimits;
@@ -468,13 +468,15 @@ pub(crate) async fn projection_bare_repo_for_state(
 pub(crate) fn cached_projection_repo(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    view_key: ProjectionViewKey,
+    views: &Views,
+    view: &ViewId,
     head_oid: Option<&str>,
 ) -> Result<Option<GitRepoHandle>, ApiError> {
+    let labels = views.labels(view).into_iter().collect::<Vec<_>>();
     let key = projection_cache_key_for_head(
         Some(incarnation),
         incarnation.repository_id(),
-        view_key.labels(),
+        &labels,
         head_oid,
     );
     let path = state
@@ -545,16 +547,23 @@ fn projection_cache_key(
     projection: &Projection,
 ) -> Result<String, ApiError> {
     Ok(
-        projection_cache_keys(incarnation, projection, projection.view_key.labels())?
+        projection_cache_keys(incarnation, projection, &projection_labels(projection))?
             .pop()
             .expect("empty projection has a cache key"),
     )
 }
 
+fn projection_labels(projection: &Projection) -> Vec<ViewId> {
+    scope_domain::views::Views::builtin()
+        .labels(&projection.view_key)
+        .into_iter()
+        .collect()
+}
+
 fn projection_cache_keys(
     incarnation: Option<&RepositoryIncarnation>,
     projection: &Projection,
-    labels: &[Visibility],
+    labels: &[ViewId],
 ) -> Result<Vec<String>, ApiError> {
     let commit_oids = scope_git::projection_commit_oids(projection).map_err(ApiError::internal)?;
     Ok(std::iter::once(None)
@@ -568,7 +577,7 @@ fn projection_cache_keys(
 pub(crate) fn projection_cache_key_for_head(
     incarnation: Option<&RepositoryIncarnation>,
     repo_id: &str,
-    labels: &[Visibility],
+    labels: &[ViewId],
     head_oid: Option<&str>,
 ) -> String {
     let mut hasher = Sha1::new();
@@ -587,10 +596,7 @@ pub(crate) fn projection_cache_key_for_head(
     hash_field(&mut hasher, b"repo", repo_id.as_bytes());
     let mut labels = labels
         .iter()
-        .map(|label| match label {
-            Visibility::Private => b"private".as_slice(),
-            Visibility::Public => b"public".as_slice(),
-        })
+        .map(|label| label.as_str().as_bytes())
         .collect::<Vec<_>>();
     labels.sort_unstable();
     labels.dedup();
@@ -615,7 +621,11 @@ fn cached_projection_prefix(
     incarnation: &RepositoryIncarnation,
     projection: &Projection,
 ) -> Result<Option<ProjectionPrefix>, ApiError> {
-    let keys = projection_cache_keys(Some(incarnation), projection, projection.view_key.labels())?;
+    let keys = projection_cache_keys(
+        Some(incarnation),
+        projection,
+        &projection_labels(projection),
+    )?;
     for count in (1..projection.commits.len()).rev() {
         if matches!(
             projection.commits[count - 1].materialization,

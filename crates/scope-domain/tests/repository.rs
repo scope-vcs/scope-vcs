@@ -1,11 +1,7 @@
 use scope_domain::{
     account::UserAccount,
-    policy::{
-        Principal, PrincipalKind, ScopePath, Visibility,
-        Visibility::{Private, Public},
-    },
+    policy::{Principal, PrincipalKind, ScopePath},
     repo_collaboration::{CreateRepositoryInviteCommand, create_repository_invite},
-    repo_config::ConfigVisibility,
     repository::{
         RepoLifecycleState::{AwaitingFirstPush, Ready},
         Repository, RepositoryIncarnation,
@@ -13,6 +9,7 @@ use scope_domain::{
         collaboration::{CollaborationState, RepositoryMember, RepositoryMemberPermissions},
         credentials::{FirstPushToken, FirstPushTokenStatus},
     },
+    views::{ViewId, Views},
 };
 
 const TEST_OWNER_ID: &str = "user_owner";
@@ -26,7 +23,7 @@ fn test_owner() -> UserAccount {
     }
 }
 
-fn test_repo(visibility: Visibility) -> Repository {
+fn test_repo(visibility: ViewId) -> Repository {
     let mut repo = Repository::new(&test_owner(), "repo", visibility, "repoi_test").unwrap();
     repo.record.lifecycle_state = Ready;
     repo
@@ -55,7 +52,7 @@ fn add_member(repo: &mut Repository, user_id: &str, can_push: bool) {
 #[test]
 fn create_repository_makes_private_owner_repo_pending_first_push() {
     let owner = test_owner();
-    let repo = Repository::new(&owner, "Draft.Repo", Private, "repoi_test").unwrap();
+    let repo = Repository::new(&owner, "Draft.Repo", ViewId::private(), "repoi_test").unwrap();
 
     assert_eq!(repo.record.id, "owner/draft.repo");
     assert_eq!(
@@ -63,13 +60,13 @@ fn create_repository_makes_private_owner_repo_pending_first_push() {
         RepositoryIncarnation::new("owner/draft.repo", "repoi_test").unwrap()
     );
     assert_eq!(repo.record.lifecycle_state, AwaitingFirstPush);
-    assert_eq!(
-        repo.repo_config.visibility.default_visibility(),
-        ConfigVisibility::Private
-    );
+    assert_eq!(repo.repo_config.files.default_view(), ViewId::private());
     assert!(repo.graph.commits.is_empty());
     let root = ScopePath::root();
-    assert_eq!(repo.policy.effective_visibility(&root), Private);
+    assert_eq!(
+        repo.policy.label(&root, &Views::builtin()),
+        ViewId::private()
+    );
 
     let principal = user_principal(TEST_OWNER_ID);
     assert!(repo.can_read_path(&principal, &root));
@@ -91,7 +88,7 @@ fn repository_incarnation_requires_both_durable_identity_parts() {
 
 #[test]
 fn published_push_policy_uses_repository_permissions() {
-    let mut repo = test_repo(Public);
+    let mut repo = test_repo(ViewId::public());
     add_member(&mut repo, "user_member", true);
 
     for (user, mode) in [
@@ -127,7 +124,7 @@ fn first_push_token_reports_active_expired_and_used_shape() {
 
 #[test]
 fn unpublished_repo_is_owner_only_even_with_reader_membership() {
-    let mut repo = test_repo(Public);
+    let mut repo = test_repo(ViewId::public());
     repo.record.lifecycle_state = AwaitingFirstPush;
     add_member(&mut repo, "user_reader", false);
     let owner_principal = user_principal(TEST_OWNER_ID);
@@ -140,7 +137,7 @@ fn unpublished_repo_is_owner_only_even_with_reader_membership() {
 
 #[test]
 fn pending_invite_does_not_grant_private_access() {
-    let mut repo = test_repo(Private);
+    let mut repo = test_repo(ViewId::private());
     let private_path = ScopePath::parse("/private.txt").unwrap();
     let mut collaboration = CollaborationState {
         record: repo.record.clone(),

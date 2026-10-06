@@ -263,7 +263,7 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
         >
           <VisibilityBadge
             compact={compactVisibility}
-            visibility={node.file.visibility}
+            visibility={node.file.label}
           />
         </div>
       </li>

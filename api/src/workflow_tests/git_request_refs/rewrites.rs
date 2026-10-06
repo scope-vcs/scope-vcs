@@ -177,7 +177,7 @@ async fn maintainer_rebases_and_amends_a_private_request() {
         "POST",
         &format!("/v1/repos/{TEST_REPO_ID}/requests"),
         Some(&bearer),
-        Some(r#"{"name":"rebased","audience":"Private"}"#),
+        Some(r#"{"name":"rebased","view":"private"}"#),
     )
     .await;
     assert_eq!(started.status(), StatusCode::OK);

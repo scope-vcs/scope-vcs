@@ -88,7 +88,7 @@ impl RequestCheckPlan {
     ) -> Result<Self, DomainError> {
         if tested.target() != GitHubCheckTarget::for_request(request) {
             return Err(DomainError::invalid_input(
-                "the tested commit does not fit the request's audience",
+                "the tested commit does not fit the request's view",
             ));
         }
         let check_commit = match tested {
@@ -167,7 +167,7 @@ impl RequestCheckPlan {
             }
             GitHubTestedCommit::Head => {
                 return Err(DomainError::invalid_input(
-                    "the tested commit does not fit the request's audience",
+                    "the tested commit does not fit the request's view",
                 ));
             }
         };

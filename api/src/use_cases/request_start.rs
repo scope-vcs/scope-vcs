@@ -12,7 +12,7 @@ pub(crate) async fn start_request(
     input: StartRequestInput,
 ) -> Result<StartRequestMutation, ApiError> {
     let author_user_id = input.author_user_id.clone();
-    let audience = input.audience;
+    let view = input.view.clone();
     let author_role = input.author_role;
     let mutation = state.metadata.requests().start_request(input).await?;
     state
@@ -21,7 +21,7 @@ pub(crate) async fn start_request(
             &author_user_id,
             repo.incarnation().incarnation_id(),
             &mutation.request.id,
-            audience,
+            view,
             author_role,
         ));
     state

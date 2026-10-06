@@ -50,7 +50,7 @@ pub(super) async fn validate(
             .repositories()
             .repository_policy(&context.repo)
             .await?;
-        let access = context.access;
+        let access = context.access.clone();
         let commit_oid = commit_oid.to_string();
         let visible_paths = with_request_revision_store_repo(
             state,
@@ -87,7 +87,13 @@ fn visible_commit_paths(
     if !commit_belongs_to_revision(raw_repo, revision, commit_oid)? {
         return Err(ApiError::not_found("request revision commit not found"));
     }
-    let (paths, has_hidden) = request_commit_visible_paths(raw_repo, policy, access, commit_oid)?;
+    let (paths, has_hidden) = request_commit_visible_paths(
+        raw_repo,
+        policy,
+        &scope_domain::views::Views::builtin(),
+        &access,
+        commit_oid,
+    )?;
     if has_hidden {
         return Err(ApiError::not_found("request revision commit not found"));
     }

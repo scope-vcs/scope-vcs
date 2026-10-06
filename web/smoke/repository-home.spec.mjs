@@ -133,7 +133,7 @@ test('an explicit file remains readable while its tree is pending and after the 
 
 test('views without a README or any files open deliberately without guessing a file request', async () => {
   for (const files of [
-    [{ path: '/src/app.ts', oid: 'test-oid', tracked: true, visibility: 'Public' }],
+    [{ path: '/src/app.ts', oid: 'test-oid', tracked: true, label: 'public' }],
     [],
   ]) {
     let fileRequests = 0
@@ -162,9 +162,9 @@ test('views without a README or any files open deliberately without guessing a f
 
 test('visible project resources open through file tabs and reopen a closed selected resource', async () => {
   const files = [
-    { path: '/LICENSE', oid: 'license-oid', tracked: true, visibility: 'Public' },
-    { path: '/.github/CONTRIBUTING.md', oid: 'contributing-oid', tracked: true, visibility: 'Public' },
-    { path: '/internal/notes.md', oid: 'private-oid', tracked: true, visibility: 'Private' },
+    { path: '/LICENSE', oid: 'license-oid', tracked: true, label: 'public' },
+    { path: '/.github/CONTRIBUTING.md', oid: 'contributing-oid', tracked: true, label: 'public' },
+    { path: '/internal/notes.md', oid: 'private-oid', tracked: true, label: 'private' },
   ]
   const fulfillResources = (page) => page.route('**/_serverFn/**', async (route) => {
     const name = serverFunctionName(route.request())

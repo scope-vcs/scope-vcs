@@ -5,18 +5,18 @@ use crate::db::{
     test_support::fixtures::{repository, source_blob, store_with_native_run_repositories, user},
 };
 use scope_domain::{
-    policy::Visibility,
     runs::{
         run::Run,
         source::{RunSource, RunTrigger},
     },
+    views::ViewId,
 };
 
 async fn fixture() -> MetadataStore {
     let store = store_with_native_run_repositories([repository(
         &user("owner", "owner"),
         "repo",
-        Visibility::Private,
+        ViewId::private(),
     )]);
     let revision = scope_run_config::parse_workflow("/.scope/runs/checks.yml", format!(
         "name: Checks\non:\n  manual: true\ncontainer: {{ image: rust@sha256:{} }}\ntimeout: 10m\njobs:\n  a:\n    steps:\n      - {{ name: A, run: echo a }}\n  b:\n    steps:\n      - {{ name: B, run: echo b }}\n", "a".repeat(64)).as_bytes())

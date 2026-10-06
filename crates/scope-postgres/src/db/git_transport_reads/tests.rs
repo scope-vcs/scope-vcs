@@ -6,8 +6,8 @@ use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
     content_ref::ContentRef,
-    policy::{ScopePath, Visibility},
-    projection::{FileChange, LogicalCommit, LogicalCommitOrigin, ProjectionViewKey},
+    policy::ScopePath,
+    projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repository::{
         RepoLifecycleState, Repository, RepositoryIncarnation,
         access::RepositoryActor,
@@ -15,6 +15,7 @@ use scope_domain::{
         credentials::GitPushToken,
         git::GitHead,
     },
+    views::ViewId,
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 use sea_orm::{ConnectionTrait, DatabaseTransaction, TransactionTrait};
@@ -38,7 +39,7 @@ async fn fixture() -> MetadataStore {
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let owner = user("owner");
     let member = user("member");
-    let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_repo").unwrap();
+    let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_repo").unwrap();
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
     for index in 0..COMMITS {
         let oid = format!("{:040x}", index + 1);
@@ -60,7 +61,7 @@ async fn fixture() -> MetadataStore {
                     git_file_mode: "100644".into(),
                     size_bytes: 100,
                 }),
-                visibility: Visibility::Public,
+                label: ViewId::public(),
             }],
         });
     }
@@ -72,8 +73,8 @@ async fn fixture() -> MetadataStore {
             owner.id.clone(),
             vec![VisibilityChange {
                 path: path("/file-5.txt"),
-                old_visibility: Visibility::Public,
-                new_visibility: Visibility::Private,
+                old_label: ViewId::public(),
+                new_label: ViewId::private(),
                 current_content: None,
             }],
         )
@@ -265,18 +266,18 @@ async fn path_history_reads_only_the_requested_paths() {
     held.rollback().await.unwrap();
 
     assert_eq!(history.live_paths, [path("/file-19.txt")].into());
-    let mut file_changes = history.file_change_visibilities;
+    let mut file_changes = history.file_change_labels;
     file_changes.sort_by(|left, right| left.0.cmp(&right.0));
     assert_eq!(
         file_changes,
         [
-            (path("/file-19.txt"), Visibility::Public),
-            (path("/file-5.txt"), Visibility::Public),
+            (path("/file-19.txt"), ViewId::public()),
+            (path("/file-5.txt"), ViewId::public()),
         ]
     );
     assert_eq!(
         history.visibility_changes,
-        [(path("/file-5.txt"), Visibility::Public, Visibility::Private)]
+        [(path("/file-5.txt"), ViewId::public(), ViewId::private())]
     );
 
     let stale = store
@@ -362,7 +363,7 @@ async fn view_head_reads_the_history_view_without_history() {
         .repository_projection_source(&incarnation(), version)
         .await
         .unwrap()
-        .project(ProjectionViewKey::Public);
+        .project(&scope_domain::views::Views::builtin(), &ViewId::public());
     let expected = scope_git::projection_head_oid(&expected).unwrap();
     let held = lock(
         &store,
@@ -373,7 +374,7 @@ async fn view_head_reads_the_history_view_without_history() {
     let head = within_lock(store.repositories().repository_view_head(
         &incarnation(),
         version,
-        ProjectionViewKey::Public,
+        &ViewId::public(),
     ))
     .await
     .unwrap();
@@ -383,7 +384,7 @@ async fn view_head_reads_the_history_view_without_history() {
     assert_eq!(head, expected);
     let stale = store
         .repositories()
-        .repository_view_head(&incarnation(), version + 1, ProjectionViewKey::Public)
+        .repository_view_head(&incarnation(), version + 1, &ViewId::public())
         .await
         .unwrap_err();
     assert_eq!(stale.kind, PostgresErrorKind::Conflict);

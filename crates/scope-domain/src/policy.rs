@@ -1,3 +1,7 @@
+use crate::{
+    repo_control::{is_private_control_path, is_repo_rules_path},
+    views::{ViewId, Views},
+};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Borrow, collections::BTreeMap, fmt};
 use thiserror::Error;
@@ -95,55 +99,49 @@ impl Principal {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Visibility {
-    Public,
-    Private,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct VisibilityRule {
+pub struct LabelRule {
     pub path: ScopePath,
-    pub visibility: Visibility,
+    pub view: ViewId,
 }
 
-impl VisibilityRule {
+impl LabelRule {
     pub fn public(path: ScopePath) -> Self {
         Self {
             path,
-            visibility: Visibility::Public,
+            view: ViewId::public(),
         }
     }
 
     pub fn private(path: ScopePath) -> Self {
         Self {
             path,
-            visibility: Visibility::Private,
+            view: ViewId::private(),
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Policy {
-    default_visibility: Visibility,
-    rules: Vec<VisibilityRule>,
+    default: ViewId,
+    rules: Vec<LabelRule>,
 }
 
 impl Policy {
-    pub fn new(default_visibility: Visibility) -> Self {
+    pub fn new(default: ViewId) -> Self {
         Self {
-            default_visibility,
+            default,
             rules: Vec::new(),
         }
     }
 
-    pub fn add_rule(&mut self, rule: VisibilityRule) -> Result<(), PolicyError> {
+    pub fn add_rule(&mut self, rule: LabelRule) -> Result<(), PolicyError> {
         self.add_rules([rule])
     }
 
     pub fn add_rules(
         &mut self,
-        rules: impl IntoIterator<Item = VisibilityRule>,
+        rules: impl IntoIterator<Item = LabelRule>,
     ) -> Result<(), PolicyError> {
         let mut additions = rules.into_iter().peekable();
         if additions.peek().is_none() {
@@ -154,10 +152,10 @@ impl Policy {
             .iter()
             .cloned()
             .chain(additions)
-            .map(|rule| (rule.path, rule.visibility))
+            .map(|rule| (rule.path, rule.view))
             .collect::<BTreeMap<_, _>>();
-        for (path, visibility) in &rules {
-            if *visibility != Visibility::Public {
+        for (path, view) in &rules {
+            if !view.is_public() {
                 continue;
             }
             for (separator, _) in path.as_str().match_indices('/') {
@@ -166,7 +164,8 @@ impl Policy {
                 } else {
                     &path.as_str()[..separator]
                 };
-                if ancestor != path.as_str() && rules.get(ancestor) == Some(&Visibility::Private) {
+                if ancestor != path.as_str() && rules.get(ancestor).is_some_and(ViewId::is_private)
+                {
                     return Err(PolicyError::PublicIsland {
                         child: path.clone(),
                         parent: ScopePath(ancestor.to_string()),
@@ -176,36 +175,39 @@ impl Policy {
         }
         self.rules = rules
             .into_iter()
-            .map(|(path, visibility)| VisibilityRule { path, visibility })
+            .map(|(path, view)| LabelRule { path, view })
             .collect();
         Ok(())
     }
 
-    fn effective_rule(&self, path: &ScopePath) -> Option<&VisibilityRule> {
+    fn effective_rule(&self, path: &ScopePath) -> Option<&LabelRule> {
         self.rules
             .iter()
             .filter(|rule| rule.path.is_ancestor_of(path))
             .max_by_key(|rule| rule.path.as_str().len())
     }
 
-    pub fn effective_visibility(&self, path: &ScopePath) -> Visibility {
+    pub fn label(&self, path: &ScopePath, views: &Views) -> ViewId {
+        if is_repo_rules_path(path) {
+            return ViewId::public();
+        }
+        if is_private_control_path(path) {
+            return views.full().clone();
+        }
         self.effective_rule(path)
-            .map(|rule| rule.visibility)
-            .unwrap_or(self.default_visibility)
+            .map(|rule| rule.view.clone())
+            .unwrap_or_else(|| self.default.clone())
     }
 
     pub fn remove_rule(&mut self, path: &ScopePath) {
         self.rules.retain(|rule| &rule.path != path);
     }
 
-    pub fn can_read(&self, path: &ScopePath, can_read_private_files: bool) -> bool {
-        match self.effective_visibility(path) {
-            Visibility::Public => true,
-            Visibility::Private => can_read_private_files,
-        }
+    pub fn can_read(&self, path: &ScopePath, reader: &ViewId, views: &Views) -> bool {
+        views.shows(reader, path, &self.label(path, views))
     }
 
-    pub fn rules(&self) -> &[VisibilityRule] {
+    pub fn rules(&self) -> &[LabelRule] {
         &self.rules
     }
 }

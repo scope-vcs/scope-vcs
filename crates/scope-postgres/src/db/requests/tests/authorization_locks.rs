@@ -46,7 +46,7 @@ async fn request_write_waits_for_membership_revocation_and_rechecks_permissions(
     let store = store_with_public_user_membership();
     let mut input = public_start_input();
     input.author_user_id = "user_owner".to_string();
-    input.audience = RequestAudience::Private;
+    input.view = ViewId::private();
     store.requests().start_request(input).await.unwrap();
 
     let revocation = store.db.begin().await.unwrap();
@@ -107,7 +107,7 @@ async fn submission_waits_for_membership_revocation_and_rechecks_permissions() {
 
     let store = store_with_public_user_membership();
     let mut input = public_start_input();
-    input.audience = RequestAudience::Private;
+    input.view = ViewId::private();
     store.requests().start_request(input).await.unwrap();
     store
         .requests()
@@ -124,7 +124,7 @@ async fn submission_waits_for_membership_revocation_and_rechecks_permissions() {
         .unwrap()
         .unwrap();
     assert_eq!(draft.state(), RequestState::Draft);
-    assert_eq!(draft.audience, RequestAudience::Private);
+    assert_eq!(draft.view, ViewId::private());
     assert_eq!(draft.author_user_id.as_deref(), Some("user_public"));
     assert!(draft.git_snapshot.is_some());
     let repo = super::super::super::request_access::repo_by_id(
@@ -219,6 +219,7 @@ pub(super) fn store_with_public_user_membership() -> MetadataStore {
             permissions: RepositoryMemberPermissions {
                 can_push: true,
                 can_change_file_visibility: true,
+                view: ViewId::private(),
             },
             created_at_unix: 1,
             updated_at_unix: 1,

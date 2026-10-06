@@ -375,9 +375,9 @@ mod tests {
     use crate::error::PostgresErrorKind;
     use scope_domain::{
         account::UserAccount,
-        policy::Visibility,
         repository::{RepoLifecycleState, Repository},
-        requests::{RequestActorRole, RequestAudience, StartRequestInput},
+        requests::{RequestActorRole, StartRequestInput},
+        views::ViewId,
     };
     use std::sync::Arc;
     use tokio::sync::Barrier;
@@ -592,7 +592,7 @@ mod tests {
     fn catalog(target_count: usize) -> crate::db::CatalogFixture {
         let owner = user("user_owner", "owner");
         let author = user("user_author", "author");
-        let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_test").unwrap();
+        let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_test").unwrap();
         repo.record.lifecycle_state = RepoLifecycleState::Ready;
         let mut catalog = crate::db::CatalogFixture::default();
         catalog.users.insert(owner.id.clone(), owner);
@@ -615,7 +615,7 @@ mod tests {
                 author_user_id: "user_author".to_string(),
                 title: None,
                 author_role: RequestActorRole::Public,
-                audience: RequestAudience::Public,
+                view: ViewId::public(),
                 base_main_oid: "base".to_string(),
                 event_id: format!("event_{request_id}"),
                 now_unix: 2,

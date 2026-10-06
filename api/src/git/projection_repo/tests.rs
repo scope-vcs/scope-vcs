@@ -1,9 +1,10 @@
 use super::*;
+use scope_domain::views::ViewId;
 use scope_domain::{
     content::SourceBlob,
     content_ref::ContentRef,
-    policy::{ScopePath, Visibility},
-    projection::{ProjectedChange, ProjectedCommit, ProjectionViewKey},
+    policy::ScopePath,
+    projection::{ProjectedChange, ProjectedCommit},
 };
 use scope_git::GitTreePath;
 use std::{
@@ -55,7 +56,7 @@ fn generated_projection_matches_canonical_head_identity() {
     fs::create_dir_all(&root).unwrap();
     let projection = Projection {
         repo_id: "repo".to_string(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![ProjectedCommit {
             projected_id: "generated-base".to_string(),
             logical_commit_id: "logical-base".to_string(),
@@ -95,7 +96,7 @@ fn generated_projection_preserves_a_leading_quote_in_a_file_name() {
     fs::create_dir_all(&root).unwrap();
     let projection = Projection {
         repo_id: "repo".to_string(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![ProjectedCommit {
             projected_id: "generated-base".to_string(),
             logical_commit_id: "logical-base".to_string(),
@@ -142,7 +143,7 @@ fn projection_identity_and_materializer_reject_the_same_reserved_path() {
     fs::create_dir_all(&root).unwrap();
     let projection = Projection {
         repo_id: "repo".to_string(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![ProjectedCommit {
             projected_id: "generated-base".to_string(),
             logical_commit_id: "logical-base".to_string(),
@@ -315,7 +316,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     };
     let projection = Projection {
         repo_id: "repo".to_string(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![generated, preserved],
     };
 
@@ -494,7 +495,7 @@ fn projected_change(path: &str, content: &str) -> ProjectedChange {
             git_file_mode: "100644".to_string(),
             size_bytes: content.len() as u64,
         }),
-        visibility: Visibility::Public,
+        label: ViewId::public(),
     }
 }
 
@@ -502,7 +503,7 @@ fn projected_change(path: &str, content: &str) -> ProjectedChange {
 fn projection_cache_key_uses_labels_and_logical_history() {
     let first = Projection {
         repo_id: "repo".into(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![ProjectedCommit {
             projected_id: "pv_public_logical_1".into(),
             logical_commit_id: "logical".into(),
@@ -515,13 +516,13 @@ fn projection_cache_key_uses_labels_and_logical_history() {
         }],
     };
     let mut second = first.clone();
-    second.view_key = ProjectionViewKey::Private;
+    second.view_key = ViewId::private();
     second.commits[0].projected_id = "pv_private_logical_1".into();
     second.commits[0].parent_projected_id = Some("pv_private_parent_0".into());
 
     assert_eq!(
-        projection_cache_keys(None, &first, &[Visibility::Public]).unwrap(),
-        projection_cache_keys(None, &second, &[Visibility::Public]).unwrap()
+        projection_cache_keys(None, &first, &[ViewId::public()]).unwrap(),
+        projection_cache_keys(None, &second, &[ViewId::public()]).unwrap()
     );
     assert_ne!(
         projection_cache_key(None, &first).unwrap(),
@@ -554,7 +555,7 @@ fn git_backed_projection_borrows_blob_without_loading_it() {
     assert_eq!(String::from_utf8(bytes).unwrap().trim(), blob.git_oid);
     let projection = Projection {
         repo_id: "repo".into(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![ProjectedCommit {
             projected_id: "view-logical-1".into(),
             logical_commit_id: "logical".into(),
@@ -638,7 +639,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     let incarnation = RepositoryIncarnation::new("owner/repo", "repoi_original").unwrap();
     let mut projection = Projection {
         repo_id: "owner/repo".into(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![ProjectedCommit {
             projected_id: "initial".into(),
             logical_commit_id: "initial".into(),
@@ -826,7 +827,7 @@ fn incremental_index_handles_deletes_modes_and_directory_replacement() {
             ProjectedChange {
                 path: ScopePath::parse("/path").unwrap(),
                 new_content: None,
-                visibility: Visibility::Public,
+                label: ViewId::public(),
             },
             projected_change("/path/child", "child"),
         ],
@@ -834,14 +835,14 @@ fn incremental_index_handles_deletes_modes_and_directory_replacement() {
             ProjectedChange {
                 path: ScopePath::parse("/path/child").unwrap(),
                 new_content: None,
-                visibility: Visibility::Public,
+                label: ViewId::public(),
             },
             projected_change("/path", "replacement"),
         ],
     ];
     let projection = Projection {
         repo_id: "repo".into(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: changes
             .into_iter()
             .enumerate()

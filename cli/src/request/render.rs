@@ -1,11 +1,11 @@
 use crate::api::{
     GitHubCheckConclusion, GitHubCheckStatus, LeaveRequestResponse, RepoSummaryResponse,
-    RepositoryActor, RequestActivityPageResponse, RequestAudience, RequestCheckEvaluationState,
+    RepositoryActor, RequestActivityPageResponse, RequestCheckEvaluationState,
     RequestCheckResponse, RequestChecksResponse, RequestCloseResponse,
     RequestDiscussionMutationResponse, RequestDiscussionReplyMutationResponse, RequestEventPayload,
     RequestGitHubPushResponse, RequestGitHubPushState, RequestInviteeMutationResponse,
     RequestMergeabilityResponse, RequestMergeabilityStatus, RequestMutationResponse,
-    RequestPermissionsResponse, RequestState, RequestSummaryResponse,
+    RequestPermissionsResponse, RequestState, RequestSummaryResponse, ViewId,
 };
 use crate::display::{short_oid, terminal_text};
 
@@ -169,7 +169,7 @@ pub(super) fn request_detail_lines(request: &RequestSummaryResponse) -> Vec<Stri
         format!(
             "  branch: {} · base {} {} · head {}",
             request.name,
-            audience_label(request.audience),
+            view_label(&request.view),
             short_oid(&request.base_main_oid),
             short_oid(&request.head_oid)
         ),
@@ -492,11 +492,13 @@ fn access_label(actor: RepositoryActor) -> &'static str {
     }
 }
 
-pub(super) fn audience_label(audience: RequestAudience) -> &'static str {
-    match audience {
-        RequestAudience::Public => "public main",
-        RequestAudience::Private => "private main",
-    }
+pub(super) fn view_label(view: &ViewId) -> String {
+    let views = scope_domain::views::Views::builtin();
+    let name = views
+        .get(&view.clone().into())
+        .map(|definition| definition.name.as_str())
+        .unwrap_or(view.as_str());
+    format!("{name} main")
 }
 
 fn state_label(state: RequestState) -> &'static str {

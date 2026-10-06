@@ -240,7 +240,7 @@ mod tests {
         use crate::repository::access::RepositoryActor;
         let viewer = |actor| RepositoryAccess {
             actor,
-            can_read_private_files: false,
+            view: crate::views::ViewId::public(),
             can_push: false,
             can_change_file_visibility: false,
             can_manage_members: false,

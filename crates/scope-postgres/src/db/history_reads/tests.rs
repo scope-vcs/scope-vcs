@@ -5,9 +5,10 @@ use scope_domain::{
     content::SourceBlob,
     content_ref::ContentRef,
     history::history_view_from_projection,
-    policy::{ScopePath, Visibility},
+    policy::ScopePath,
     projection::{FileChange, LogicalCommit, LogicalCommitOrigin, SourceGraph, project_graph},
     repository::{RepoLifecycleState, Repository},
+    views::{ViewId, Views},
     visibility_changes::VisibilityChangeSet,
 };
 use std::time::Duration;
@@ -15,9 +16,16 @@ use std::time::Duration;
 fn history_view(
     graph: &SourceGraph,
     sets: &[VisibilityChangeSet],
-    view_key: ProjectionViewKey,
+    view_key: ViewId,
 ) -> HistoryView {
-    history_view_from_projection(project_graph(graph, sets, view_key), graph, sets)
+    let views = Views::builtin();
+    history_view_from_projection(
+        project_graph(graph, sets, &views, &view_key),
+        graph,
+        sets,
+        &views,
+        &view_key,
+    )
 }
 
 fn fixture(commits: usize) -> (MetadataStore, Repository) {
@@ -29,7 +37,7 @@ fn fixture(commits: usize) -> (MetadataStore, Repository) {
         email: "history@example.com".into(),
         email_verified: true,
     };
-    let mut repo = Repository::new(&owner, "history", Visibility::Public, "repoi_history").unwrap();
+    let mut repo = Repository::new(&owner, "history", ViewId::public(), "repoi_history").unwrap();
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
     for index in 0..commits {
         let oid = format!("{:040x}", index + 1);
@@ -51,10 +59,10 @@ fn fixture(commits: usize) -> (MetadataStore, Repository) {
                     git_file_mode: "100644".into(),
                     size_bytes: 100,
                 }),
-                visibility: if index % 2 == 0 {
-                    Visibility::Public
+                label: if index % 2 == 0 {
+                    ViewId::public()
                 } else {
-                    Visibility::Private
+                    ViewId::private()
                 },
             }],
         });
@@ -85,14 +93,14 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
     let expected_private = history_view(
         &hydrated.graph,
         &hydrated.visibility_change_sets,
-        ProjectionViewKey::Private,
+        ViewId::private(),
     );
     let first = store
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
             change_version: repo.record.change_version,
-            audience: ProjectionViewKey::Private,
+            view: &ViewId::private(),
             feed: HistoryFeed::All,
             before: None,
             entry_source_id: None,
@@ -116,7 +124,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
             .repository_history_page(RepositoryHistoryQuery {
                 incarnation: &repo.incarnation(),
                 change_version: repo.record.change_version,
-                audience: ProjectionViewKey::Private,
+                view: &ViewId::private(),
                 feed: HistoryFeed::All,
                 before: first.next_boundary.as_ref(),
                 entry_source_id: None,
@@ -137,17 +145,13 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
     .expect("public access must reuse current projection facts")
     .unwrap()
     .unwrap();
-    let expected_public = history_view(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        ProjectionViewKey::Public,
-    );
+    let expected_public = history_view(&repo.graph, &repo.visibility_change_sets, ViewId::public());
     let public = store
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &public_access.incarnation(),
             change_version: public_access.record.change_version,
-            audience: ProjectionViewKey::from_access(public_access.access),
+            view: &public_access.access.view,
             feed: HistoryFeed::All,
             before: None,
             entry_source_id: None,
@@ -165,7 +169,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
             change_version: repo.record.change_version,
-            audience: ProjectionViewKey::Public,
+            view: &ViewId::public(),
             feed: HistoryFeed::All,
             before: None,
             entry_source_id: Some(&public.view.entries[10].source_id),
@@ -190,19 +194,15 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
             "history_owner".into(),
             vec![VisibilityChange {
                 path: repo.graph.commits[0].changes[0].path.clone(),
-                old_visibility: Visibility::Public,
-                new_visibility: Visibility::Private,
+                old_label: ViewId::public(),
+                new_label: ViewId::private(),
                 current_content: repo.graph.commits[0].changes[0].new_content.clone(),
             }],
         )
         .unwrap(),
     );
     repo.bump_content_version();
-    let expected = history_view(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        ProjectionViewKey::Public,
-    );
+    let expected = history_view(&repo.graph, &repo.visibility_change_sets, ViewId::public());
     assert_eq!(
         expected
             .entries
@@ -230,7 +230,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
             store.db.as_ref(),
             &repo.record.id,
             repo.record.content_version,
-            ProjectionViewKey::Public,
+            &ViewId::public(),
         )
         .await
         .unwrap()
@@ -250,7 +250,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
             .repository_history_page(RepositoryHistoryQuery {
                 incarnation: &repo.incarnation(),
                 change_version: repo.record.change_version,
-                audience: ProjectionViewKey::Public,
+                view: &ViewId::public(),
                 feed: HistoryFeed::All,
                 before: before.as_ref(),
                 entry_source_id: None,
@@ -277,7 +277,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
             change_version: repo.record.change_version,
-            audience: ProjectionViewKey::Public,
+            view: &ViewId::public(),
             feed: HistoryFeed::All,
             before: None,
             entry_source_id: Some("logical_4"),
@@ -303,7 +303,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
             change_version: repo.record.change_version,
-            audience: ProjectionViewKey::Public,
+            view: &ViewId::public(),
             feed: HistoryFeed::All,
             before: first_boundary.as_ref(),
             entry_source_id: None,
@@ -342,7 +342,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
             store.db.as_ref(),
             &repo.record.id,
             repo.record.content_version,
-            ProjectionViewKey::Private
+            &ViewId::private()
         )
         .await
         .unwrap()
@@ -353,16 +353,12 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
         .repository_history_page(RepositoryHistoryQuery {
             incarnation: &repo.incarnation(),
             change_version: repo.record.change_version,
-            audience: ProjectionViewKey::Private,
+            view: &ViewId::private(),
             feed: HistoryFeed::All,
             before: Some(&RepositoryHistoryBoundary {
                 generation: HistoryFeed::All.generation(
-                    &history_view(
-                        &repo.graph,
-                        &repo.visibility_change_sets,
-                        ProjectionViewKey::Private,
-                    )
-                    .generation,
+                    &history_view(&repo.graph, &repo.visibility_change_sets, ViewId::private())
+                        .generation,
                     &repo.record.id,
                     "private",
                 ),
@@ -399,7 +395,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
             .repository_history_page(RepositoryHistoryQuery {
                 incarnation: &repo.incarnation(),
                 change_version: repo.record.change_version,
-                audience: ProjectionViewKey::Private,
+                view: &ViewId::private(),
                 feed: HistoryFeed::All,
                 before: None,
                 entry_source_id: None,
@@ -434,16 +430,14 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
 #[tokio::test]
 async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabilities() {
     use scope_domain::{
-        policy::{Policy, Principal, VisibilityRule},
+        policy::{LabelRule, Policy},
         repository::collaboration::{RepositoryMember, RepositoryMemberPermissions},
     };
     let (store, mut repo) = fixture(4);
     repo.bump_content_version();
-    repo.policy = Policy::new(Visibility::Private);
+    repo.policy = Policy::new(ViewId::private());
     repo.policy
-        .add_rule(VisibilityRule::public(
-            ScopePath::parse("/file-0.txt").unwrap(),
-        ))
+        .add_rule(LabelRule::public(ScopePath::parse("/file-0.txt").unwrap()))
         .unwrap();
     repo.collaboration.members.push(RepositoryMember {
         repo_id: repo.record.id.clone(),
@@ -451,6 +445,7 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
         permissions: RepositoryMemberPermissions {
             can_push: true,
             can_change_file_visibility: false,
+            view: ViewId::private(),
         },
         created_at_unix: 1,
         updated_at_unix: 1,
@@ -482,7 +477,7 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
                 .repository_history_page(RepositoryHistoryQuery {
                     incarnation: &narrow.incarnation(),
                     change_version: narrow.record.change_version,
-                    audience: ProjectionViewKey::from_access(narrow.access),
+                    view: &narrow.access.view,
                     feed: HistoryFeed::All,
                     before: None,
                     entry_source_id: None,
@@ -492,28 +487,19 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
                 .unwrap();
             assert_eq!(
                 public.view.entries,
-                history_view(
-                    &repo.graph,
-                    &repo.visibility_change_sets,
-                    ProjectionViewKey::Public
-                )
-                .entries
+                history_view(&repo.graph, &repo.visibility_change_sets, ViewId::public()).entries
             );
             assert_ne!(
                 public.view.entries,
-                history_view(
-                    &repo.graph,
-                    &repo.visibility_change_sets,
-                    ProjectionViewKey::Private
-                )
-                .entries
+                history_view(&repo.graph, &repo.visibility_change_sets, ViewId::private()).entries
             );
         }
     }
     assert!(
         scope_domain::projection_views::has_visible_projected_non_control_files(
             &repo,
-            &Principal::public()
+            repo.repo_config.views(),
+            &ViewId::public()
         )
     );
     store.db.execute_unprepared("UPDATE scope_repositories SET publication_state='AwaitingFirstPush', change_version=change_version+1 WHERE id='owner/history'").await.unwrap();
@@ -559,9 +545,9 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
     let (store, mut repo) = fixture(55);
     for index in 0..60 {
         let (old_visibility, new_visibility) = if index % 2 == 0 {
-            (Visibility::Public, Visibility::Private)
+            (ViewId::public(), ViewId::private())
         } else {
-            (Visibility::Private, Visibility::Public)
+            (ViewId::private(), ViewId::public())
         };
         repo.visibility_change_sets.push(
             VisibilityChangeSet::new(
@@ -571,8 +557,8 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
                 "history_owner".into(),
                 vec![VisibilityChange {
                     path: repo.graph.commits[0].changes[0].path.clone(),
-                    old_visibility,
-                    new_visibility,
+                    old_label: old_visibility,
+                    new_label: new_visibility,
                     current_content: repo.graph.commits[32].changes[0].new_content.clone(),
                 }],
             )
@@ -586,10 +572,11 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
         .await
         .unwrap();
     let incarnation = repo.incarnation();
+    let private_view = ViewId::private();
     let query = |feed, before| RepositoryHistoryQuery {
         incarnation: &incarnation,
         change_version: repo.record.change_version,
-        audience: ProjectionViewKey::Private,
+        view: &private_view,
         feed,
         before,
         entry_source_id: None,
@@ -674,7 +661,7 @@ async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
                 git_file_mode: "100644".into(),
                 size_bytes: 100,
             }),
-            visibility: Visibility::Public,
+            label: ViewId::public(),
         }],
     };
     repo.graph.commits.push(pushed.clone());
@@ -700,14 +687,14 @@ async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
         .unwrap();
     assert_eq!(rebuilt.failed, 0, "{rebuilt:?}");
 
-    for view_key in [ProjectionViewKey::Private, ProjectionViewKey::Public] {
-        let expected = history_view(&repo.graph, &repo.visibility_change_sets, view_key);
+    for view_key in [ViewId::private(), ViewId::public()] {
+        let expected = history_view(&repo.graph, &repo.visibility_change_sets, view_key.clone());
         let page = store
             .repositories()
             .repository_history_page(RepositoryHistoryQuery {
                 incarnation: &repo.incarnation(),
                 change_version: repo.record.change_version,
-                audience: view_key,
+                view: &view_key,
                 feed: HistoryFeed::All,
                 before: None,
                 entry_source_id: None,
@@ -725,7 +712,8 @@ async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
             scope_git::projection_head_oid(&project_graph(
                 &repo.graph,
                 &repo.visibility_change_sets,
-                view_key
+                repo.repo_config.views(),
+                &view_key
             ))
             .unwrap()
         );
@@ -734,23 +722,23 @@ async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
             .repo_live_files(
                 "owner",
                 "history",
-                (view_key == ProjectionViewKey::Private).then_some("history_owner"),
+                (view_key == ViewId::private()).then_some("history_owner"),
             )
             .await
             .unwrap()
             .unwrap();
         assert_eq!(
             files.len(),
-            if view_key == ProjectionViewKey::Private {
+            if view_key == ViewId::private() {
                 32
             } else {
                 16
             }
         );
-        assert!(
-            files
-                .iter()
-                .all(|file| view_key.shows(&file.path, file.visibility))
-        );
+        assert!(files.iter().all(|file| repo.repo_config.views().shows(
+            &view_key,
+            &file.path,
+            &file.label
+        )));
     }
 }

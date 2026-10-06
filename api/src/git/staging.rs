@@ -8,10 +8,7 @@ use crate::{
     persistence::ensure_private_dir,
     state::AppState,
 };
-use scope_domain::{
-    projection::ProjectionViewKey,
-    repository::{RepoLifecycleState, RepositoryIncarnation},
-};
+use scope_domain::repository::{RepoLifecycleState, RepositoryIncarnation};
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{
     fs,
@@ -87,7 +84,7 @@ pub(crate) async fn ensure_ready_receive_pack_staging_repo(
             .await?
     } else {
         RepositoryGit::of_push_context(&repo)
-            .view_repo(state, ProjectionViewKey::from_access(repo.access))
+            .view_repo(state, repo.repo_config.views(), &repo.access.view)
             .await?
     };
     let state = state.clone();
