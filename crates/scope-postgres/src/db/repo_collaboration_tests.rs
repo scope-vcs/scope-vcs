@@ -8,7 +8,7 @@ use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
     content_ref::ContentRef,
-    policy::{ScopePath, Visibility},
+    policy::ScopePath,
     projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repo_collaboration::{
         AcceptRepositoryInviteOutcome, REPOSITORY_INVITE_RETENTION_SECS, REPOSITORY_INVITE_TTL_SECS,
@@ -19,6 +19,7 @@ use scope_domain::{
         collaboration::{RepositoryMember, RepositoryMemberPermissions},
         git::GitHead,
     },
+    views::ViewId,
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, Statement,
@@ -45,7 +46,7 @@ async fn fixture() -> MetadataStore {
     let owner = user("owner");
     let member = user("member");
     let invitee = user("invitee");
-    let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_repo").unwrap();
+    let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_repo").unwrap();
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
     for index in 0..20 {
         let oid = format!("{:040x}", index + 1);
@@ -67,7 +68,7 @@ async fn fixture() -> MetadataStore {
                     git_file_mode: "100644".into(),
                     size_bytes: 100,
                 }),
-                visibility: Visibility::Public,
+                label: ViewId::public(),
             }],
         });
     }
@@ -293,6 +294,7 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
                 permissions: RepositoryMemberPermissions {
                     can_push: true,
                     can_change_file_visibility: false,
+                    view: ViewId::private(),
                 },
                 now_unix: NOW,
             },

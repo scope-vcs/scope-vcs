@@ -519,9 +519,10 @@ mod tests {
         account::UserAccount,
         content::SourceBlob,
         content_ref::ContentRef,
-        policy::{ScopePath, Visibility},
+        policy::ScopePath,
         projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
         repository::{RepoLifecycleState, Repository},
+        views::ViewId,
     };
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -582,7 +583,7 @@ mod tests {
                     git_file_mode: "100644".into(),
                     size_bytes: 1,
                 }),
-                visibility: ViewId::public(),
+                label: ViewId::public(),
             }],
         });
         let mut catalog = crate::db::CatalogFixture::default();

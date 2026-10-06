@@ -8,16 +8,16 @@ use crate::{
 };
 use scope_domain::{
     account::UserAccount,
-    policy::Visibility,
     repository::{RepoLifecycleState, Repository},
     requests::{
-        RequestActorRole, RequestAudience, StartRequestInput,
+        RequestActorRole, StartRequestInput,
         attachments::{
             RequestAttachmentDerivative, RequestAttachmentDerivativeKind,
             RequestAttachmentPartReceipt, RequestAttachmentState, RequestAttachmentStoredObject,
             RequestAttachmentTarget,
         },
     },
+    views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 use std::time::Duration;
@@ -40,7 +40,7 @@ fn fixture() -> Fixture {
         email_verified: true,
     };
     let mut repository =
-        Repository::new(&owner, "media", Visibility::Public, "repoi_media_tests").unwrap();
+        Repository::new(&owner, "media", ViewId::public(), "repoi_media_tests").unwrap();
     repository.record.lifecycle_state = RepoLifecycleState::Ready;
     let repository_id = repository.record.id.clone();
     let mut catalog = CatalogFixture::default();
@@ -66,7 +66,7 @@ async fn start_request(fixture: &Fixture, request_id: &str, name: &str, now_unix
             author_user_id: OWNER_ID.to_string(),
             title: Some(format!("Request {name}")),
             author_role: RequestActorRole::Owner,
-            audience: RequestAudience::Public,
+            view: ViewId::public(),
             base_main_oid: "base".to_string(),
             event_id: format!("event_start_{request_id}"),
             now_unix,

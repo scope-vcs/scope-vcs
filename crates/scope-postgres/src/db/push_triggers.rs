@@ -317,7 +317,7 @@ impl RunStore {
 mod tests {
     use super::*;
     use crate::db::MetadataStore;
-    use scope_domain::{account::UserAccount, policy::Visibility, runs::trigger::PushWorkflowFile};
+    use scope_domain::{account::UserAccount, runs::trigger::PushWorkflowFile, views::ViewId};
 
     #[tokio::test]
     async fn evaluation_uses_each_pinned_head_and_enqueues_once() {

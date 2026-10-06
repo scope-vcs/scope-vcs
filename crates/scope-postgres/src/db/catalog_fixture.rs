@@ -2,13 +2,13 @@ use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
     landing_file::RepositoryLandingFile,
-    policy::Visibility,
     repo_actions::RepoStorageCleanup,
     repository::{CatalogError, Repository, git::GitSegmentUpload, repo_id},
     requests::{
         Request, RequestDiscussion, RequestDiscussionReadState, RequestDiscussionReply,
         RequestEvent, RequestRevision,
     },
+    views::ViewId,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,7 +38,7 @@ impl CatalogFixture {
         &mut self,
         owner: &UserAccount,
         name: &str,
-        default_visibility: Visibility,
+        default_visibility: ViewId,
     ) -> Result<&Repository, CatalogError> {
         let repository = Repository::new(
             owner,
