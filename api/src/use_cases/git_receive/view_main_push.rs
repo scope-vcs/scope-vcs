@@ -131,6 +131,7 @@ pub(super) async fn complete_view_main_push(
             repository_incarnation_id: repo.record.incarnation_id.clone(),
             pusher_user_id: push.author_id.clone(),
             pusher_handle,
+            validated_view: push.view.clone(),
             base_main_oid: view_main_oid,
             head_oid,
             git_snapshot: persisted.git_snapshot.clone(),

@@ -36,6 +36,7 @@ fn input() -> StartMainPushRequestInput {
         repository_incarnation_id: "incarnation".into(),
         pusher_user_id: "pusher".into(),
         pusher_handle: "ada".into(),
+        validated_view: agent(),
         base_main_oid: BASE.into(),
         head_oid: HEAD.into(),
         git_snapshot: source_blob(HEAD),
@@ -61,7 +62,10 @@ fn start(
         StartRequestFacts::default(),
         access,
         lifecycle_state,
-        input(),
+        StartMainPushRequestInput {
+            validated_view: access.view.clone(),
+            ..input()
+        },
         &views_with_agent(),
     )
 }
@@ -170,4 +174,21 @@ fn only_narrower_members_with_push_permission_start_main_push_requests() {
         assert_eq!(error.kind, DomainErrorKind::Forbidden);
         assert_eq!(error.message, message);
     }
+}
+
+#[test]
+fn a_main_push_checked_for_another_view_is_refused() {
+    let views = views_with_agent();
+    let access = member(agent(), true);
+    let mut reassigned = input();
+    reassigned.validated_view = ViewId::public();
+    let error = start_main_push_request(
+        StartRequestFacts::default(),
+        &access,
+        RepoLifecycleState::Ready,
+        reassigned,
+        &views,
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, crate::error::DomainErrorKind::Conflict);
 }

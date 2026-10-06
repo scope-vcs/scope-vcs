@@ -11,7 +11,7 @@ use crate::{
         RepoLifecycleState,
         access::{MainPushMode, RepositoryAccess},
     },
-    views::Views,
+    views::{ViewId, Views},
 };
 
 #[derive(Clone, Debug)]
@@ -21,6 +21,7 @@ pub struct StartMainPushRequestInput {
     pub repository_incarnation_id: String,
     pub pusher_user_id: String,
     pub pusher_handle: String,
+    pub validated_view: ViewId,
     pub base_main_oid: String,
     pub head_oid: String,
     pub git_snapshot: SourceBlob,
@@ -73,6 +74,11 @@ pub fn start_main_push_request(
             ));
         }
     };
+    if view != input.validated_view {
+        return Err(DomainError::conflict(
+            "the pusher's view changed since the push was checked; push again",
+        ));
+    }
     let started = start_request(
         facts,
         StartRequestInput {
