@@ -47,9 +47,11 @@ pub(crate) async fn visible_commits<'a>(
         let result = visible_commits_in_revision(
             state,
             &incarnation,
-            &policy,
-            &repo.views,
-            repo.access.clone(),
+            RevisionReader {
+                policy: policy.clone(),
+                views: repo.views.clone(),
+                access: repo.access.clone(),
+            },
             request,
             &revision_id,
             commit_oids,
@@ -98,12 +100,16 @@ fn flatten(commits_by_revision: BTreeMap<String, BTreeSet<String>>) -> BTreeSet<
         .collect()
 }
 
+struct RevisionReader {
+    policy: Policy,
+    views: Views,
+    access: RepositoryAccess,
+}
+
 async fn visible_commits_in_revision(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    policy: &Policy,
-    views: &Views,
-    access: RepositoryAccess,
+    reader: RevisionReader,
     request: &Request,
     revision_id: &str,
     commit_oids: BTreeSet<String>,
@@ -116,8 +122,11 @@ async fn visible_commits_in_revision(
     else {
         return Ok(BTreeSet::new());
     };
-    let policy = policy.clone();
-    let views = views.clone();
+    let RevisionReader {
+        policy,
+        views,
+        access,
+    } = reader;
     with_request_revision_store_repo(
         state,
         incarnation,
