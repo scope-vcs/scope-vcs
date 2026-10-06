@@ -16,7 +16,7 @@ pub struct StartRequestParams<'a> {
     pub repo: &'a str,
     pub name: String,
     pub title: Option<String>,
-    pub audience: RequestAudience,
+    pub view: ViewId,
 }
 
 pub struct CreateRequestDiscussionParams<'a> {
@@ -237,7 +237,7 @@ pub fn start_request(
             .json(&StartRequestRequest {
                 name: params.name,
                 title: params.title,
-                audience: params.audience,
+                view: params.view,
             }),
         format!("start request for {owner}/{repo}"),
     )

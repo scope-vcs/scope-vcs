@@ -1,5 +1,5 @@
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
-use scope_api_contract::{RequestAudience, RequestQueueSection};
+use scope_api_contract::{RequestQueueSection, ViewId};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -73,12 +73,8 @@ pub(super) struct RequestStartArgs {
         help = "Attach the request to the current branch and its commits instead of creating a branch from main"
     )]
     pub(super) current_branch: bool,
-    #[arg(
-        long,
-        value_enum,
-        help = "Public or private request audience (defaults to private for maintainers)"
-    )]
-    pub(super) audience: Option<RequestAudienceArg>,
+    #[arg(long, value_parser = parse_view, help = "Request view (defaults to your repository view)")]
+    pub(super) view: Option<ViewId>,
 }
 
 #[derive(Args)]
@@ -381,19 +377,8 @@ pub(super) enum SnoozeFor {
     NextWeek,
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-pub(super) enum RequestAudienceArg {
-    Public,
-    Private,
-}
-
-impl From<RequestAudienceArg> for RequestAudience {
-    fn from(audience: RequestAudienceArg) -> Self {
-        match audience {
-            RequestAudienceArg::Public => RequestAudience::Public,
-            RequestAudienceArg::Private => RequestAudience::Private,
-        }
-    }
+fn parse_view(value: &str) -> Result<ViewId, String> {
+    ViewId::parse(value).map_err(|error| error.message)
 }
 
 #[cfg(test)]

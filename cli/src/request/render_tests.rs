@@ -336,7 +336,7 @@ fn summary() -> RequestSummaryResponse {
         r#"{
             "id":"req_one","name":"fix-refs","title":"Fix request refs",
             "description_markdown":"Atomic updates","author_user_id":"scope_usr_author",
-            "author_role":"Public","audience":"Public",
+            "author_role":"Public","view":"public",
             "base_main_oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "head_oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","state":"Draft",
             "activity_version":1,
