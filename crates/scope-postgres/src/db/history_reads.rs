@@ -4,8 +4,8 @@ use super::{RepositoryStore, acquire_aggregate_lock, begin_metadata_read_snapsho
 use crate::error::PostgresError;
 use scope_domain::{
     history::{HistoryEntry, HistoryFeed, HistoryView},
-    projection::ProjectionViewKey,
     repository::RepositoryIncarnation,
+    views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, Statement, TransactionTrait};
 use sha2::{Digest, Sha256};
@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 pub struct RepositoryHistoryQuery<'a> {
     pub incarnation: &'a RepositoryIncarnation,
     pub change_version: u64,
-    pub audience: ProjectionViewKey,
+    pub view: &'a ViewId,
     pub feed: HistoryFeed,
     pub before: Option<&'a RepositoryHistoryBoundary>,
     pub entry_source_id: Option<&'a str>,
@@ -42,7 +42,7 @@ pub struct RepositoryHistoryNeighbors {
 pub(super) async fn append_history_entries<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
-    view: ProjectionViewKey,
+    view: &ViewId,
     first_position: usize,
     entries: &[HistoryEntry],
 ) -> Result<(), PostgresError> {
@@ -124,8 +124,9 @@ impl RepositoryStore {
         let version =
             integer_columns::i64_to_u64(row.content_version, "repository content version")?;
         let mut missing = false;
-        for view in [ProjectionViewKey::Private, ProjectionViewKey::Public] {
-            missing |= live_projection_read_model(&tx, &row.id, version, view)
+        let views = super::projection_read_models::repository_views(&tx, &row.id).await?;
+        for definition in views.iter() {
+            missing |= live_projection_read_model(&tx, &row.id, version, &definition.id)
                 .await?
                 .is_none();
         }
@@ -142,7 +143,7 @@ impl RepositoryStore {
         let RepositoryHistoryQuery {
             incarnation,
             change_version,
-            audience,
+            view,
             feed,
             before,
             entry_source_id,
@@ -165,7 +166,7 @@ impl RepositoryStore {
                 &tx,
                 incarnation.repository_id(),
                 current.record.content_version,
-                audience,
+                view,
             )
             .await?
             else {
@@ -176,7 +177,7 @@ impl RepositoryStore {
             let generation = feed.generation(
                 &metadata.history_generation,
                 incarnation.repository_id(),
-                audience.as_str(),
+                view.as_str(),
             );
             let boundary = match before {
                 Some(boundary) => {
@@ -190,7 +191,7 @@ impl RepositoryStore {
                     tx.query_one_raw(Statement::from_sql_and_values(
                         DatabaseBackend::Postgres,
                         "SELECT position FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2 AND position=$3",
-                        [incarnation.repository_id().into(), audience.as_str().into(), position.into()],
+                        [incarnation.repository_id().into(), view.as_str().into(), position.into()],
                     )).await.map_err(PostgresError::internal)?
                         .ok_or_else(|| PostgresError::invalid_input("history cursor boundary is no longer available"))?;
                     Some(position)
@@ -198,7 +199,7 @@ impl RepositoryStore {
                 None => None,
             };
             let limit = limit.clamp(1, 50) as i64;
-            let mut values = vec![incarnation.repository_id().into(), audience.as_str().into()];
+            let mut values = vec![incarnation.repository_id().into(), view.as_str().into()];
             let feed_predicate = match feed {
                 HistoryFeed::Updates => " AND p.payload->>'kind' != 'VisibilityChange'",
                 HistoryFeed::All => "",
@@ -269,7 +270,7 @@ impl RepositoryStore {
             return Ok(RepositoryHistoryPage {
                 view: HistoryView {
                     repo_id: incarnation.repository_id().to_string(),
-                    view_key: audience.as_str().to_string(),
+                    view: view.clone(),
                     generation,
                     entries,
                 },

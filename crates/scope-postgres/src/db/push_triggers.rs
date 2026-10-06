@@ -8,7 +8,6 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::{
-    projection::ProjectionViewKey,
     repository::git::{GitHead, GitPackSpan},
     runs::{
         run::Run,
@@ -52,13 +51,8 @@ where
             "push trigger input does not match the accepted Git head",
         ));
     }
-    let pinned_source = RunSource::accepted_git_head(
-        repo_id,
-        head.clone(),
-        pack_spans.to_vec(),
-        ProjectionViewKey::Private,
-    )
-    .map_err(PostgresError::from)?;
+    let pinned_source = RunSource::accepted_git_head(repo_id, head.clone(), pack_spans.to_vec())
+        .map_err(PostgresError::from)?;
     let evaluation =
         PushTriggerEvaluation::pending(repo_id, head.change_version, &head.head_oid, now_unix)
             .map_err(PostgresError::from)?;
@@ -166,7 +160,6 @@ where
                 &job.repo_id,
                 payload.head.clone(),
                 payload.pack_spans.clone(),
-                ProjectionViewKey::Private,
             )
             .map_err(PostgresError::from)?;
             let run = Run::new(
@@ -522,13 +515,7 @@ jobs:
             revision.digest(),
             RunTrigger::PushMain,
             None,
-            RunSource::accepted_git_head(
-                &repo_id,
-                payload.head,
-                payload.pack_spans,
-                ProjectionViewKey::Private,
-            )
-            .unwrap(),
+            RunSource::accepted_git_head(&repo_id, payload.head, payload.pack_spans).unwrap(),
             now(),
         )
         .unwrap();
@@ -746,7 +733,7 @@ jobs:
         };
         let mut catalog = crate::db::CatalogFixture::default();
         let repo = catalog
-            .create_repository(&owner, "repo", Visibility::Private)
+            .create_repository(&owner, "repo", ViewId::private())
             .unwrap()
             .clone();
         catalog.git_segment_uploads = (1..=10)

@@ -39,8 +39,9 @@ use scope_domain::{
     repository::{RepoLifecycleState, RepoRecord, Repository},
 };
 use scope_domain::{
-    policy::{Policy, ScopePath, Visibility},
+    policy::{Policy, ScopePath},
     projection_views::{ProjectionViewFile, ProjectionViewFileContent},
+    views::ViewId,
 };
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -149,7 +150,7 @@ mod tests {
                     path: ScopePath::parse(&path).unwrap(),
                     oid: "1111111111111111111111111111111111111111".to_string(),
                     tracked: true,
-                    visibility: Visibility::Public,
+                    label: ViewId::public(),
                 },
                 blob: SourceBlob {
                     content_ref: scope_domain::content_ref::ContentRef::blob_sha256("sha256"),
@@ -182,7 +183,7 @@ mod tests {
                 path: ScopePath::parse("/README.md").unwrap(),
                 oid: "1111111111111111111111111111111111111111".to_string(),
                 tracked: true,
-                visibility: Visibility::Public,
+                label: ViewId::public(),
             },
             blob: SourceBlob {
                 content_ref: scope_domain::content_ref::ContentRef::blob_sha256("sha256"),
