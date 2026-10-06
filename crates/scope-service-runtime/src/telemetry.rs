@@ -29,7 +29,7 @@ use tracing_subscriber::{
 const EXPORTED_SPANS: &str =
     "off,otel::tracing=trace,api=info,worker=info,scope_=info,aws_sdk_s3::operation=debug";
 const UNTRACED_PATHS: [&str; 2] = ["/healthz", "/readyz"];
-const EXPORTED_ATTRIBUTES: [&str; 14] = [
+const EXPORTED_ATTRIBUTES: [&str; 20] = [
     "db.operation.name",
     "db.system.name",
     "git.subcommand",
@@ -41,6 +41,12 @@ const EXPORTED_ATTRIBUTES: [&str; 14] = [
     "rpc.method",
     "rpc.service",
     "rpc.system",
+    "scope.blob.count",
+    "scope.change.count",
+    "scope.job.attempt",
+    "scope.job.id",
+    "scope.job.kind",
+    "scope.landed_request.count",
     "server.address",
     "server.port",
     "url.scheme",

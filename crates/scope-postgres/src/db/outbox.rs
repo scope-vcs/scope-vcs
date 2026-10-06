@@ -12,6 +12,7 @@ use sea_orm::{
     sea_query::{Expr, LockBehavior, LockType, OnConflict},
 };
 use std::sync::Arc;
+use tracing::Instrument as _;
 
 const PROJECTION_READ_MODEL_REBUILD: &str = "projection_read_model_rebuild";
 const JOB_READY: &str = "ready";
@@ -93,11 +94,24 @@ impl JobStore {
                 break;
             };
             summary.claimed += 1;
+            let span = tracing::info_span!(
+                parent: None,
+                "job.outbox",
+                otel.kind = "consumer",
+                scope.job.kind = %job.kind,
+                scope.job.id = %job.id,
+                scope.job.attempt = job.attempts.saturating_add(1),
+            );
 
-            match execute_outbox_job(db.as_ref(), &job, claim_now_unix).await {
+            match execute_outbox_job(db.as_ref(), &job, claim_now_unix)
+                .instrument(span.clone())
+                .await
+            {
                 Ok(created_runs) => {
                     let (_, completion_now) = outbox_time(current_time)?;
-                    complete_outbox_job(db.as_ref(), &job, &worker_id, completion_now).await?;
+                    complete_outbox_job(db.as_ref(), &job, &worker_id, completion_now)
+                        .instrument(span)
+                        .await?;
                     summary.completed += 1;
                     summary.created_runs.extend(created_runs);
                 }
@@ -105,6 +119,7 @@ impl JobStore {
                     let message = error.message;
                     let (_, completion_now) = outbox_time(current_time)?;
                     let attempts = next_retry_attempt(job.attempts)?;
+                    let entered = span.enter();
                     if is_terminal_retry_attempt(attempts) {
                         tracing::error!(
                             job_id = %job.id,
@@ -125,7 +140,10 @@ impl JobStore {
                             "outbox job failed; scheduling retry"
                         );
                     }
-                    fail_outbox_job(db.as_ref(), &job, &worker_id, message, completion_now).await?;
+                    drop(entered);
+                    fail_outbox_job(db.as_ref(), &job, &worker_id, message, completion_now)
+                        .instrument(span)
+                        .await?;
                     summary.failed += 1;
                 }
             }

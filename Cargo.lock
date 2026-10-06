@@ -3482,6 +3482,7 @@ dependencies = [
  "scope-domain",
  "scope-postgres",
  "scope-storage",
+ "tracing",
 ]
 
 [[package]]
