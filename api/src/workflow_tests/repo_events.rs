@@ -216,7 +216,7 @@ async fn repo_events_stream_permission_changes_to_members() {
         "PATCH",
         &format!("/v1/repos/owner/repo/members/{writer_id}"),
         Some(&bearer_header()),
-        Some(r#"{"permissions":{"can_push":false,"can_change_file_visibility":false}}"#),
+        Some(r#"{"permissions":{"can_push":false,"can_change_file_visibility":false,"view":"private"}}"#),
     )
     .await;
     expect_json(updated, StatusCode::OK).await;
