@@ -2,7 +2,6 @@ use super::{HISTORY_GENERATION_VERSION, HistoryEntry, HistoryEntryKind};
 use crate::{content::SourceBlob, policy::Visibility, projection::ProjectionViewKey};
 use sha2::{Digest, Sha256};
 
-/// The generation of a view's history before any entry.
 pub(super) fn history_generation_start(repo_id: &str, view_key: ProjectionViewKey) -> String {
     let mut hasher = Sha256::new();
     hash_field(
@@ -15,8 +14,6 @@ pub(super) fn history_generation_start(repo_id: &str, view_key: ProjectionViewKe
     hex::encode(hasher.finalize())
 }
 
-/// Chains one more entry onto a generation, so appending to a history never
-/// rehashes the entries before it.
 pub(super) fn history_generation_after(generation: &str, entry: &HistoryEntry) -> String {
     let mut hasher = Sha256::new();
     hash_field(&mut hasher, b"generation", generation.as_bytes());

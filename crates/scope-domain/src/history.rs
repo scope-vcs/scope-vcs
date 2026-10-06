@@ -107,7 +107,6 @@ pub fn history_view_from_projection(
     }
 }
 
-/// Where a view's history stands after the entries produced so far.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HistoryCursor {
     pub last_entry_id: Option<String>,
@@ -123,8 +122,6 @@ impl HistoryCursor {
     }
 }
 
-/// The history entries, oldest first, for a projection of commits and change
-/// sets appended after `cursor`. `tree` holds the view's files before them.
 pub fn history_entries_after(
     cursor: &mut HistoryCursor,
     tree: BTreeMap<ScopePath, SourceBlob>,

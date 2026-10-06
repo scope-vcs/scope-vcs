@@ -103,14 +103,6 @@ pub enum ProjectionViewKey {
 }
 
 impl ProjectionViewKey {
-    /// The file labels this view shows.
-    pub fn labels(self) -> &'static [Visibility] {
-        match self {
-            Self::Private => &[Visibility::Private, Visibility::Public],
-            Self::Public => &[Visibility::Public],
-        }
-    }
-
     pub fn from_access(access: RepositoryAccess) -> Self {
         match access.actor {
             RepositoryActor::Owner => Self::Private,
@@ -126,7 +118,6 @@ impl ProjectionViewKey {
         }
     }
 
-    /// The file labels this view shows.
     pub fn labels(self) -> &'static [Visibility] {
         match self {
             Self::Private => &[Visibility::Private, Visibility::Public],
@@ -134,7 +125,6 @@ impl ProjectionViewKey {
         }
     }
 
-    /// Whether this view shows a file with this label at this path.
     pub fn shows(self, path: &ScopePath, label: Visibility) -> bool {
         self.can_read_private_files()
             || (self.labels().contains(&label) && !is_private_control_path(path))
@@ -145,8 +135,6 @@ impl ProjectionViewKey {
     }
 }
 
-/// Where a view's projection stands after the commits and visibility change
-/// sets folded so far. The default is the start of history.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ProjectionCursor {
     pub commit_count: usize,
@@ -159,10 +147,6 @@ impl ProjectionCursor {
     }
 }
 
-/// Whether commits and change sets appended to a repository continue its
-/// projections from `last_folded_commit_id`. A change set that anchors or
-/// sources itself on an older commit changes history already projected, so
-/// the projections must be rebuilt from the start instead.
 pub fn projection_delta_appends(
     last_folded_commit_id: Option<&str>,
     commits: &[LogicalCommit],
@@ -194,7 +178,6 @@ impl Projection {
         })
     }
 
-    /// Applies this projection's changes, in order, to a view's files.
     pub fn apply_to(&self, tree: &mut BTreeMap<ScopePath, SourceBlob>) {
         for change in self.commits.iter().flat_map(|commit| &commit.changes) {
             match &change.new_content {
@@ -226,8 +209,6 @@ pub fn project_graph(
     )
 }
 
-/// Projects commits and change sets appended after `cursor`. The caller must
-/// have checked `projection_delta_appends`.
 pub fn project_graph_after(
     cursor: &ProjectionCursor,
     graph: &SourceGraph,

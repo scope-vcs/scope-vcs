@@ -39,9 +39,6 @@ pub struct RepositoryHistoryNeighbors {
     pub newer_source_id: Option<String>,
 }
 
-/// Appends a view's history entries from `first_position`. Each distinct
-/// payload is stored once per repository; views that render an entry the same
-/// way share it.
 pub(super) async fn append_history_entries<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
@@ -108,8 +105,6 @@ pub(super) async fn delete_history_payloads<C: ConnectionTrait>(
 }
 
 impl RepositoryStore {
-    /// Builds the read models for the repository's current content when a
-    /// read finds them missing or stale.
     pub async fn ensure_live_projection_read_models(
         &self,
         incarnation: &RepositoryIncarnation,

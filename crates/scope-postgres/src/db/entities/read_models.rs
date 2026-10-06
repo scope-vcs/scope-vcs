@@ -4,10 +4,6 @@ pub mod projection_read_model {
     use super::*;
     use scope_domain::{history::HistoryCursor, projection::ProjectionCursor};
 
-    /// One view's read models and the fold position they were built from.
-    /// Commits and change sets are folded in ordinal order; a view folded to
-    /// the same position as the repository's history only needs the rows
-    /// appended since.
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_projection_read_models")]
     pub struct Model {
@@ -37,7 +33,6 @@ pub mod projection_read_model {
 
     impl ActiveModelBehavior for ActiveModel {}
 
-    /// Where a repository's history stands in a view's fold.
     #[derive(Clone, Debug, Default, PartialEq, Eq)]
     pub struct FoldPosition {
         pub commits: usize,
@@ -90,8 +85,6 @@ pub mod projection_file {
     use super::*;
     use sha2::{Digest as _, Sha256};
 
-    /// One live file with its label. A view's files are the rows whose label
-    /// the view shows.
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_projection_files")]
     pub struct Model {

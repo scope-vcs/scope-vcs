@@ -45,8 +45,6 @@ pub fn projection_head_oid(
     Ok(head.oid)
 }
 
-/// A view's head commit and the tree it holds, so commits appended to the
-/// view's projection can be identified without replaying the ones before.
 #[derive(Default)]
 pub struct ProjectionHead {
     tree: Tree,

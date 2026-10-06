@@ -688,8 +688,6 @@ async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
         .replace_repository_for_tests(repo.clone())
         .await
         .unwrap();
-    // Only the pushed commit's changes stay readable: a fold that replayed
-    // the whole history would see 300 empty commits.
     store
         .db
         .execute_unprepared("DELETE FROM scope_file_changes WHERE commit_id <> 'logical_300'")

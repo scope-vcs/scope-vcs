@@ -102,8 +102,6 @@ where
         .await?;
     }
     if commits_rewritten || visibility_change_sets_rewritten {
-        // Rewritten history cannot be folded onto read models built from the
-        // old history; the next rebuild starts over.
         super::projection_read_models::reset_live_projection_read_models(
             conn,
             &after_graph.repo_id,
@@ -128,13 +126,11 @@ where
     Ok(())
 }
 
-/// The commits and visibility change sets appended after a fold position.
 pub struct AppendedRepositoryHistory {
     pub commits: Vec<LogicalCommit>,
     pub visibility_change_sets: Vec<VisibilityChangeSet>,
 }
 
-/// Whether the repository's history still begins with what `position` folded.
 pub(super) async fn history_position_matches<C>(
     conn: &C,
     repo_id: &str,
@@ -175,7 +171,6 @@ where
         && last_change_set_id == position.last_change_set_id)
 }
 
-/// Loads the commits and change sets at or after the given ordinals.
 pub(super) async fn load_repository_history_after<C>(
     conn: &C,
     repo_id: &str,

@@ -315,6 +315,15 @@ impl RepositoryStore {
         {
             Some(row) => {
                 let before = repository_from_model(&tx, row).await?;
+                if before.record.content_version == repo.record.content_version
+                    && !before.content_matches(&repo)
+                {
+                    super::projection_read_models::reset_live_projection_read_models(
+                        &tx,
+                        &repo.record.id,
+                    )
+                    .await?;
+                }
                 save_repository_rows(&tx, &before, &repo, CATALOG_SEED_NOW_UNIX).await?;
                 queue_content_rebuilds(
                     &tx,

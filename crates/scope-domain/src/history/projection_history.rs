@@ -23,7 +23,6 @@ pub(super) struct ProjectionHistory {
 }
 
 impl ProjectionHistory {
-    /// Replays a projection on top of `tree`, the view's files before it.
     pub fn replay(mut tree: BTreeMap<ScopePath, SourceBlob>, projection: Projection) -> Self {
         let mut result = Self::default();
         for commit in projection.commits {

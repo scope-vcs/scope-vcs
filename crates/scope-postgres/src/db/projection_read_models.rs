@@ -21,6 +21,7 @@ use {
         repo_control::{
             LEGACY_REPO_RULES_PATH, REPO_CONTROL_PREFIX, REPO_CONTROL_ROOT, is_repo_control_path,
         },
+        visibility_changes::VisibilityChangeSet,
     },
     std::collections::BTreeMap,
 };
@@ -41,10 +42,6 @@ enum FoldOutcome {
     Diverged(String),
 }
 
-/// Brings every view's read models up to the repository's content version by
-/// folding the commits and change sets appended since they were last built.
-/// Read models that cannot continue from where they stand are rebuilt from the
-/// start of history.
 pub async fn fold_live_projection_read_models<C>(
     conn: &C,
     repo_id: &str,
@@ -77,8 +74,6 @@ where
     }
 }
 
-/// Rows every view can continue from: one current row per view, all at the
-/// same fold position.
 fn resumable(
     rows: Vec<entities::projection_read_model::Model>,
 ) -> Result<Option<Vec<entities::projection_read_model::Model>>, PostgresError> {
@@ -158,18 +153,7 @@ where
         Some(_) => load_projection_files(conn, repo_id).await?,
         None => LabelledFiles::new(),
     };
-    let mut after = before.clone();
-    for change in graph.commits.iter().flat_map(|commit| &commit.changes) {
-        match &change.new_content {
-            Some(blob) => after.insert(change.path.clone(), (blob.clone(), change.visibility)),
-            None => after.remove(&change.path),
-        };
-    }
-    for change in sets.iter().flat_map(|set| &set.changes) {
-        if let Some((_, label)) = after.get_mut(&change.path) {
-            *label = change.new_visibility;
-        }
-    }
+    let after = label_files(before.clone(), &graph, &sets);
 
     for view in VIEWS {
         let row = resumed
@@ -280,6 +264,43 @@ where
     Ok(FoldOutcome::Folded)
 }
 
+fn label_files(
+    mut files: LabelledFiles,
+    graph: &SourceGraph,
+    sets: &[VisibilityChangeSet],
+) -> LabelledFiles {
+    let appended = |anchor: Option<&str>| {
+        anchor.is_some_and(|anchor| graph.commits.iter().any(|commit| commit.id == anchor))
+    };
+    relabel(
+        &mut files,
+        sets.iter()
+            .filter(|set| !appended(set.anchor_commit_id.as_deref())),
+    );
+    for commit in &graph.commits {
+        for change in &commit.changes {
+            match &change.new_content {
+                Some(blob) => files.insert(change.path.clone(), (blob.clone(), change.visibility)),
+                None => files.remove(&change.path),
+            };
+        }
+        relabel(
+            &mut files,
+            sets.iter()
+                .filter(|set| set.anchor_commit_id.as_deref() == Some(&commit.id)),
+        );
+    }
+    files
+}
+
+fn relabel<'a>(files: &mut LabelledFiles, sets: impl Iterator<Item = &'a VisibilityChangeSet>) {
+    for change in sets.flat_map(|set| &set.changes) {
+        if let Some((_, label)) = files.get_mut(&change.path) {
+            *label = change.new_visibility;
+        }
+    }
+}
+
 fn view_files(files: &LabelledFiles, view: ProjectionViewKey) -> BTreeMap<ScopePath, SourceBlob> {
     files
         .iter()
@@ -288,7 +309,6 @@ fn view_files(files: &LabelledFiles, view: ProjectionViewKey) -> BTreeMap<ScopeP
         .collect()
 }
 
-/// The SQL form of `ProjectionViewKey::shows`.
 fn view_condition(view: ProjectionViewKey) -> Result<Condition, PostgresError> {
     let labels = view
         .labels()
@@ -397,7 +417,6 @@ where
     Ok(())
 }
 
-/// The view's read model at this content version, when it has been built.
 pub(super) async fn live_projection_read_model<C>(
     conn: &C,
     repo_id: &str,
