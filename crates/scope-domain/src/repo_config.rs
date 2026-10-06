@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const REPO_CONFIG_KIND: &str = "scope.repo-config";
-pub const REPO_CONFIG_VERSION: u64 = 2;
+pub const REPO_CONFIG_VERSION: u64 = 3;
 
 #[derive(Debug, Error)]
 pub enum RepoConfigError {
@@ -18,7 +18,7 @@ pub enum RepoConfigError {
     InvalidJson(serde_json::Error),
     #[error("repo config kind must be scope.repo-config")]
     InvalidKind,
-    #[error("repo config version must be 2")]
+    #[error("repo config version must be {REPO_CONFIG_VERSION}")]
     InvalidVersion,
     #[error("repo config path must be absolute and start with /")]
     RelativePath,
@@ -260,7 +260,7 @@ mod tests {
         let config = RepoConfig::parse_json(
             br#"{
                 "kind": "scope.repo-config",
-                "version": 2,
+                "version": 3,
                 "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
                 "files": {
                     "default": "private",
@@ -292,7 +292,7 @@ mod tests {
         let config = RepoConfig::parse_json(
             br#"{
                 "kind": "scope.repo-config",
-                "version": 2,
+                "version": 3,
                 "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
                 "files": {
                     "default": "public",
@@ -335,7 +335,7 @@ mod tests {
             let json = format!(
                 r#"{{
                     "kind": "scope.repo-config",
-                    "version": 2,
+                    "version": 3,
                     "views":{views_json},
                     "files": {{
                         "default": "private",
@@ -348,7 +348,7 @@ mod tests {
         }
         let error = RepoConfig::parse_json(
             br#"{
-                "kind":"scope.repo-config","version":2,"views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
+                "kind":"scope.repo-config","version":3,"views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
                 "files":{"default":"private","rules":[]},
                 "history":{"rewrites":[{"path":"/.scope/RULES.md","action":"redact-public-history"}]}
             }"#,
@@ -368,7 +368,7 @@ mod tests {
             ] {
                 let views_json = serde_json::to_string(&Views::builtin()).unwrap();
                 let json = format!(
-                    r#"{{"kind":"scope.repo-config","version":2,"views":{views_json},"files":{{"default":"public",{section}}}}}"#
+                    r#"{{"kind":"scope.repo-config","version":3,"views":{views_json},"files":{{"default":"public",{section}}}}}"#
                 );
                 let error = RepoConfig::parse_json(json.as_bytes()).unwrap_err();
                 assert!(
@@ -387,7 +387,7 @@ mod tests {
         let config = RepoConfig::parse_json(
             br#"{
                 "kind": "scope.repo-config",
-                "version": 2,
+                "version": 3,
                 "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
                 "files": {
                     "default": "private",

@@ -22,6 +22,7 @@ mod native_runs_accounts;
 mod provider_neutral_request_checks;
 mod public_check_commits;
 mod public_request_check_source;
+mod repo_config_version;
 mod repository_content_version;
 mod repository_invite_emails;
 mod repository_invite_links;
@@ -70,6 +71,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0074_incremental_projection_read_models",
     "m0075_view_ids",
     "m0076_custom_views",
+    "m0077_repo_config_version",
 ];
 
 pub(super) async fn isolated_database() -> (

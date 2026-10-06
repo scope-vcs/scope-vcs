@@ -101,6 +101,58 @@ fn assert_auth_plan(plan: GitCommandPlan, args: &[&str], inherited_count: usize,
 }
 
 #[test]
+fn narrower_fetch_addresses_push_to_the_full_view() {
+    let dir = TempDir::git_repo("scope-push-address", "main");
+    let root = dir.path();
+    std::process::Command::new("git")
+        .current_dir(root)
+        .args([
+            "remote",
+            "add",
+            "scope",
+            "https://scope.example/git/agent/adam/random",
+        ])
+        .status()
+        .unwrap();
+
+    configure_scope_push_address(root, "scope", "https://scope.example/git/agent/adam/random")
+        .unwrap();
+    assert_eq!(
+        git_config(root, &["--get", "remote.scope.pushurl"]),
+        "https://scope.example/git/private/adam/random"
+    );
+
+    configure_scope_push_address(
+        root,
+        "scope",
+        "https://scope.example/git/private/adam/random",
+    )
+    .unwrap();
+    let status = std::process::Command::new("git")
+        .current_dir(root)
+        .args(["config", "--get", "remote.scope.pushurl"])
+        .status()
+        .unwrap();
+    assert!(!status.success());
+}
+
+#[test]
+fn fetching_every_scope_ref_sends_the_session_as_a_header() {
+    let plan = git_fetch_refs_auth_plan(
+        "https://scope.example/git/public/adam/random",
+        "scope",
+        "scope_cli_secret",
+        Some(1),
+    );
+    assert_auth_plan(
+        plan,
+        &["-c", "protocol.version=2", "fetch", "--prune", "scope"],
+        1,
+        &["Authorization: Bearer scope_cli_secret"],
+    );
+}
+
+#[test]
 fn install_scope_fetch_auth_writes_secret_free_credential_helper_for_the_remote_view() {
     let dir = TempDir::git_repo("scope-fetch-auth", "main");
     let root = dir.path();

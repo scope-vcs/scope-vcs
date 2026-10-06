@@ -1,4 +1,4 @@
-import type { RequestQueueItemResponse, RequestQueuePageResponse, RequestQueueSection, ViewId } from '../../api/types.generated'
+import type { RequestQueueItemResponse, RequestQueuePageResponse, RequestQueueSection } from '../../api/types.generated'
 
 export const REQUEST_QUEUE_SECTION_ORDER = ['active', 'unclaimed', 'set_aside', 'done'] as const satisfies readonly RequestQueueSection[]
 export type RequestQueuePages = Record<RequestQueueSection, RequestQueuePageResponse>
@@ -12,16 +12,6 @@ function appendRequestPage(current: RequestQueueItemResponse[], incoming: Reques
 
 export function appendQueuePage(current: RequestQueuePageResponse, incoming: RequestQueuePageResponse): RequestQueuePageResponse {
   return { ...incoming, requests: appendRequestPage(current.requests, incoming.requests) }
-}
-
-export function requestQueueReadableBy(
-  pages: RequestQueuePages,
-  mayRead: (view: ViewId) => boolean,
-): RequestQueuePages {
-  return Object.fromEntries(REQUEST_QUEUE_SECTION_ORDER.map((section) => [
-    section,
-    { ...pages[section], requests: pages[section].requests.filter((item) => mayRead(item.request.view)) },
-  ])) as RequestQueuePages
 }
 
 export function nextRequestAttentionAt(pages: RequestQueuePages): number | null {
