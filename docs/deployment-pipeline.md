@@ -132,7 +132,10 @@ copy sealed variables, so the workflow generates the Postgres administrator
 password, one login per runtime role, encryption keys, grant signing keys, and
 the operator token, and points bucket credentials at the environment's own
 bucket instances. It switches Railway tracing on for every service except
-Postgres, with automatic instrumentation for `scope-web`, before anything deploys. Clerk uses the repository's development key pair. Existing
+Postgres, with automatic instrumentation for `scope-web`, before anything
+deploys. Staging secrets Railway does copy, such as the Resend and PAGENT
+keys, are deleted so pull request code cannot read them. Clerk uses the
+repository's development key pair. Existing
 keys and passwords are never regenerated once set. The private maintenance
 service applies `runtime-roles.mjs --roles-only` with the administrator login,
 sets each role's password, and switches itself to `scope_migrator`. Every later
