@@ -43,6 +43,8 @@ async fn assert_restored_request_head(state: &AppState, expected: &str) -> PathB
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &public_user_id(),
+        &scope_domain::views::ViewId::public(),
+        crate::use_cases::git_receive::request_ref::RequestStagingKind::RequestRefsOnly,
     )
     .await
     .unwrap();
@@ -139,6 +141,7 @@ async fn start_request_for_author(
             author_user_id,
             title: Some("Request branch".to_string()),
             author_role,
+            author_view: scope_domain::views::ViewId::private(),
             view: ViewId::public(),
             base_main_oid,
             event_id: "event_request_branch_started".to_string(),

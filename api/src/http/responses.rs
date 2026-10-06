@@ -235,7 +235,7 @@ pub(crate) struct HistoryEntrySummaryResponse {
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryEntryDetailResponse {
-    pub(crate) native_commits: Vec<NativeHistoryCommitResponse>,
+    pub(crate) native_commits: Option<HistoryNativeCommitsResponse>,
     pub(crate) view: ViewId,
     pub(crate) repo_id: String,
     pub(crate) occurred_at_unix: Option<i64>,
@@ -252,6 +252,14 @@ pub(crate) struct HistoryEntryDetailResponse {
     pub(crate) files: Vec<HistoryEntryFileResponse>,
     pub(crate) visibility_changes: Vec<HistoryVisibilityChangeResponse>,
     pub(crate) views: Option<ViewsTransition>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct HistoryNativeCommitsResponse {
+    /// The view the request that made these commits was merged through.
+    pub(crate) view: ViewId,
+    pub(crate) commits: Vec<NativeHistoryCommitResponse>,
 }
 
 #[derive(Debug, Serialize)]
@@ -449,6 +457,7 @@ pub(crate) fn history_page_response(
     next_cursor: Option<String>,
     head_oid: Option<String>,
     users: &BTreeMap<String, UserAccount>,
+    views: &scope_domain::views::Views,
 ) -> Result<HistoryPageResponse, ApiError> {
     Ok(HistoryPageResponse {
         feed,
@@ -458,7 +467,7 @@ pub(crate) fn history_page_response(
         head_oid,
         entries: entries
             .iter()
-            .map(|entry| history_entry_summary_response(entry, users))
+            .map(|entry| history_entry_summary_response(history, entry, users, views))
             .collect::<Result<_, _>>()?,
         next_cursor,
     })
@@ -469,10 +478,52 @@ pub(crate) fn history_entry_detail_response(
     entry: &HistoryEntry,
     neighbors: scope_postgres::db::RepositoryHistoryNeighbors,
     users: &BTreeMap<String, UserAccount>,
-    native_details: &BTreeMap<String, scope_domain::projection::NativePublicCommitDetails>,
+    views: &scope_domain::views::Views,
+    native_details: &BTreeMap<String, scope_domain::projection::NativeRequestCommitDetails>,
 ) -> Result<HistoryEntryDetailResponse, ApiError> {
     let native_commits = entry
         .native_commits
+        .as_ref()
+        .map(|native| {
+            Ok::<_, ApiError>(HistoryNativeCommitsResponse {
+                view: native.view.clone().into(),
+                commits: native_history_commits(&native.commits, native_details)?,
+            })
+        })
+        .transpose()?;
+    Ok(HistoryEntryDetailResponse {
+        native_commits,
+        view: history.view.clone().into(),
+        repo_id: history.repo_id.clone(),
+        occurred_at_unix: entry.occurred_at_unix,
+        id: entry.id.clone(),
+        source_id: entry.source_id.clone(),
+        older_source_id: neighbors.older_source_id,
+        newer_source_id: neighbors.newer_source_id,
+        kind: entry.kind.into(),
+        author: history_author_handle(entry.author.as_deref(), users),
+        message: entry.message_in(views, &history.view),
+        file_change_count: entry.files.len(),
+        visibility_summary: history_visibility_summary_response(entry),
+        files: entry
+            .files
+            .iter()
+            .map(history_entry_file_response)
+            .collect(),
+        visibility_changes: entry
+            .visibility_changes
+            .iter()
+            .map(history_visibility_change_response)
+            .collect(),
+        views: entry.views.as_ref().map(ViewsTransition::from),
+    })
+}
+
+fn native_history_commits(
+    commits: &[scope_domain::projection::NativeRequestCommit],
+    native_details: &BTreeMap<String, scope_domain::projection::NativeRequestCommitDetails>,
+) -> Result<Vec<NativeHistoryCommitResponse>, ApiError> {
+    commits
         .iter()
         .map(|commit| {
             let details = native_details
@@ -492,33 +543,7 @@ pub(crate) fn history_entry_detail_response(
                     .collect(),
             })
         })
-        .collect::<Result<Vec<_>, ApiError>>()?;
-    Ok(HistoryEntryDetailResponse {
-        native_commits,
-        view: history.view.clone().into(),
-        repo_id: history.repo_id.clone(),
-        occurred_at_unix: entry.occurred_at_unix,
-        id: entry.id.clone(),
-        source_id: entry.source_id.clone(),
-        older_source_id: neighbors.older_source_id,
-        newer_source_id: neighbors.newer_source_id,
-        kind: entry.kind.into(),
-        author: history_author_handle(entry.author.as_deref(), users),
-        message: entry.message.clone(),
-        file_change_count: entry.files.len(),
-        visibility_summary: history_visibility_summary_response(entry),
-        files: entry
-            .files
-            .iter()
-            .map(history_entry_file_response)
-            .collect(),
-        visibility_changes: entry
-            .visibility_changes
-            .iter()
-            .map(history_visibility_change_response)
-            .collect(),
-        views: entry.views.as_ref().map(ViewsTransition::from),
-    })
+        .collect()
 }
 
 pub(crate) fn native_history_file(
@@ -538,8 +563,10 @@ pub(crate) fn native_history_file(
 }
 
 fn history_entry_summary_response(
+    history: &HistoryView,
     entry: &HistoryEntry,
     users: &BTreeMap<String, UserAccount>,
+    views: &scope_domain::views::Views,
 ) -> Result<HistoryEntrySummaryResponse, ApiError> {
     Ok(HistoryEntrySummaryResponse {
         occurred_at_unix: entry.occurred_at_unix,
@@ -548,7 +575,7 @@ fn history_entry_summary_response(
         parent_id: entry.parent_id.clone(),
         kind: entry.kind.into(),
         author: history_author_handle(entry.author.as_deref(), users),
-        message: entry.message.clone(),
+        message: entry.message_in(views, &history.view),
         file_change_count: entry.files.len(),
         visibility_summary: history_visibility_summary_response(entry),
         views: entry.views.as_ref().map(ViewsTransition::from),

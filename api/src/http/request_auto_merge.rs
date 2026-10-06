@@ -30,6 +30,7 @@ pub(crate) async fn get(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
@@ -49,6 +50,7 @@ pub(crate) async fn authorize(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         Some(&user.id),
         &request_id,
@@ -76,6 +78,7 @@ pub(crate) async fn cancel(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         Some(&user.id),
         &request_id,

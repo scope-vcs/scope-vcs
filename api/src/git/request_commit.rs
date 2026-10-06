@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, path::Path, time::Instant};
 
 use scope_domain::{
-    projection::{FileChange, NativePublicCommit, NativePublicCommitDetails},
+    projection::{FileChange, NativeRequestCommit, NativeRequestCommitDetails},
     views::ViewId,
 };
 use scope_git::git_blob_reference;
@@ -14,11 +14,12 @@ use crate::{
     },
 };
 
-pub(crate) fn inspect_native_public_commit(
+pub(crate) fn inspect_native_request_commit(
     repo: &Path,
-    native: &NativePublicCommit,
+    view: &ViewId,
+    native: &NativeRequestCommit,
     deadline: Instant,
-) -> Result<NativePublicCommitDetails, ApiError> {
+) -> Result<NativeRequestCommitDetails, ApiError> {
     let output = run_git_output_until(
         Some(repo),
         &[
@@ -27,12 +28,12 @@ pub(crate) fn inspect_native_public_commit(
             "--format=%H%x00%T%x00%P%x00%ct%x00%an <%ae>%x00%B",
             &native.oid,
         ],
-        "reading public request commit metadata",
+        "reading request commit metadata",
         deadline,
     )?;
     if !output.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(
-            "reading public request commit metadata: {}",
+            "reading request commit metadata: {}",
             truncated_git_stderr(&output.stderr).trim()
         )));
     }
@@ -42,7 +43,7 @@ pub(crate) fn inspect_native_public_commit(
         .collect::<Vec<_>>();
     if fields.len() != 6 {
         return Err(ApiError::internal_message(
-            "invalid public request commit metadata",
+            "invalid request commit metadata",
         ));
     }
     let parents = std::str::from_utf8(fields[2]).map_err(ApiError::internal)?;
@@ -51,13 +52,13 @@ pub(crate) fn inspect_native_public_commit(
         || parents.split_ascii_whitespace().collect::<Vec<_>>() != native.parent_oids
     {
         return Err(ApiError::internal_message(
-            "public request commit does not match its recorded Git identity",
+            "request commit does not match its recorded Git identity",
         ));
     }
     let occurred_at_unix = std::str::from_utf8(fields[3])
         .map_err(ApiError::internal)?
         .parse()
-        .map_err(|_| ApiError::internal_message("invalid public request commit time"))?;
+        .map_err(|_| ApiError::internal_message("invalid request commit time"))?;
     let author = String::from_utf8_lossy(fields[4]).into_owned();
     let message = String::from_utf8_lossy(fields[5])
         .trim_end_matches(&['\r', '\n'][..])
@@ -80,12 +81,12 @@ pub(crate) fn inspect_native_public_commit(
                     .map(|entry| git_blob_reference(entry.oid, entry.mode, entry.size_bytes)),
                 new_content: new_entry
                     .map(|entry| git_blob_reference(entry.oid, entry.mode, entry.size_bytes)),
-                label: ViewId::public(),
+                label: view.clone(),
             }
         })
         .collect();
     remaining_git_time(deadline)?;
-    Ok(NativePublicCommitDetails {
+    Ok(NativeRequestCommitDetails {
         author,
         message,
         occurred_at_unix,
@@ -94,5 +95,5 @@ pub(crate) fn inspect_native_public_commit(
 }
 
 #[cfg(test)]
-#[path = "public_request_commit_tests.rs"]
+#[path = "request_commit_tests.rs"]
 mod tests;

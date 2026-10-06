@@ -373,12 +373,14 @@ async fn merge_route_persists_git_content_once() {
         logical_commit_count_before + 1
     );
     match &committed_repo.graph.commits.last().unwrap().origin {
-        LogicalCommitOrigin::PublicRequestMerge {
+        LogicalCommitOrigin::RequestMerge {
             request_id,
+            view,
             request_head_oid,
             commits,
             ..
         } => {
+            assert_eq!(view, &scope_domain::views::ViewId::public());
             assert_eq!(request_id, REQUEST_ID);
             assert_eq!(request_head_oid, &request_head);
             assert_eq!(

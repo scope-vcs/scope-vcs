@@ -76,6 +76,7 @@ pub(crate) async fn list_discussions(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
@@ -188,6 +189,7 @@ pub(crate) async fn list_replies(
     visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
@@ -361,6 +363,7 @@ pub(crate) async fn changed_discussions(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
@@ -408,6 +411,7 @@ pub(crate) async fn activity(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
@@ -426,6 +430,7 @@ pub(crate) async fn activity(
     if !request_policy(
         &request,
         RequestViewer::new(access, viewer_user_id.as_deref(), is_invitee),
+        &repo.views,
     )
     .activity_stream_visible
     {

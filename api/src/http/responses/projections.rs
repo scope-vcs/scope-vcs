@@ -76,7 +76,7 @@ pub(crate) fn projection_preview_response(
     include_private_counts: bool,
     native_details: &std::collections::BTreeMap<
         String,
-        scope_domain::projection::NativePublicCommitDetails,
+        scope_domain::projection::NativeRequestCommitDetails,
     >,
 ) -> Result<ProjectionPreviewResponse, ApiError> {
     let views = repo.repo_config.views();

@@ -1,15 +1,17 @@
 use crate::{error::ApiError, state::AppState};
 use scope_domain::{
-    projection::{NativePublicCommit, NativePublicCommitDetails},
+    projection::{NativeRequestCommit, NativeRequestCommitDetails},
     repository::RepositoryIncarnation,
+    views::ViewId,
 };
 use std::{collections::BTreeMap, time::Instant};
 
 pub(crate) async fn native_commit_details(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    commits: &[NativePublicCommit],
-) -> Result<BTreeMap<String, NativePublicCommitDetails>, ApiError> {
+    view: &ViewId,
+    commits: &[NativeRequestCommit],
+) -> Result<BTreeMap<String, NativeRequestCommitDetails>, ApiError> {
     if commits.is_empty() {
         return Ok(BTreeMap::new());
     }
@@ -27,13 +29,15 @@ pub(crate) async fn native_commit_details(
         .await?;
     let permit = state.runtime_budgets.try_git_materialization()?;
     let commits = commits.to_vec();
+    let view = view.clone();
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
         commits
             .iter()
             .map(|commit| {
-                crate::git::public_request_commit::inspect_native_public_commit(
+                crate::git::request_commit::inspect_native_request_commit(
                     repo.as_ref(),
+                    &view,
                     commit,
                     deadline,
                 )

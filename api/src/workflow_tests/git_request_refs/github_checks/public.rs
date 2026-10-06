@@ -1,5 +1,5 @@
 use super::{public_repositories::make_github_repository_public, *};
-use crate::use_cases::public_check_commits::public_tested_commit;
+use crate::use_cases::view_check_commits::view_tested_commit;
 use scope_domain::views::ViewId;
 use scope_domain::{
     repo_config::RepoConfigFileRule,
@@ -168,7 +168,7 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
     .unwrap();
     assert_eq!(
         parents.split_whitespace().collect::<Vec<_>>(),
-        [base.private_main_oid.as_str(), head.as_str()]
+        [base.canonical_main_oid.as_str(), head.as_str()]
     );
 
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
@@ -183,7 +183,7 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        public_tested_commit(&state, &repo, &request, &revision)
+        view_tested_commit(&state, &repo, &request, &revision)
             .await
             .unwrap(),
         GitHubTestedCommit::CheckCommit {
@@ -219,7 +219,7 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
     )
     .await;
     for view in [&contributor_view, &request_view] {
-        for private_oid in [&tested, &base.private_main_oid] {
+        for private_oid in [&tested, &base.canonical_main_oid] {
             assert!(!view.to_string().contains(private_oid.as_str()), "{view}");
         }
     }

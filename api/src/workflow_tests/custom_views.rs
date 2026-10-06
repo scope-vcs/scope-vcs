@@ -328,6 +328,7 @@ async fn a_member_on_a_narrower_view_cannot_read_or_push_through_the_full_view()
             author_user_id: test_owner_id(),
             title: None,
             author_role: RequestActorRole::Owner,
+            author_view: scope_domain::views::ViewId::private(),
             view: ViewId::private(),
             base_main_oid: head.clone(),
             event_id: "event_req_private_views_started".to_string(),

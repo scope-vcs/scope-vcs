@@ -84,6 +84,7 @@ pub(crate) async fn get_history_page(
         next_cursor,
         page.head_oid,
         &users,
+        &repo.views,
     )?))
 }
 
@@ -116,17 +117,24 @@ pub(crate) async fn get_history_entry(
         .auth()
         .users_by_ids(entry.author.iter().cloned())
         .await?;
-    let native_details = crate::use_cases::native_commit_details::native_commit_details(
-        &state,
-        &repo.incarnation(),
-        &entry.native_commits,
-    )
-    .await?;
+    let native_details = match &entry.native_commits {
+        Some(native) => {
+            crate::use_cases::native_commit_details::native_commit_details(
+                &state,
+                &repo.incarnation(),
+                &native.view,
+                &native.commits,
+            )
+            .await?
+        }
+        None => Default::default(),
+    };
     Ok(Json(history_entry_detail_response(
         &history,
         entry,
         neighbors,
         &users,
+        &repo.views,
         &native_details,
     )?))
 }
@@ -161,14 +169,19 @@ pub(crate) async fn get_history_entry_file_diff(
     }
     let native_file;
     let file = if let Some(oid) = input.commit_oid.as_deref() {
-        let commit = entry
+        let native = entry
             .native_commits
+            .as_ref()
+            .ok_or_else(|| ApiError::not_found("native commit not found in history entry"))?;
+        let commit = native
+            .commits
             .iter()
             .find(|commit| commit.oid == oid)
             .ok_or_else(|| ApiError::not_found("native commit not found in history entry"))?;
         let details = crate::use_cases::native_commit_details::native_commit_details(
             &state,
             &repo.incarnation(),
+            &native.view,
             std::slice::from_ref(commit),
         )
         .await?;
