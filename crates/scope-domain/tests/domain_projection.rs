@@ -6,7 +6,7 @@ use scope_domain::{
     projection::{
         FileChange, LogicalCommit, ProjectionMaterialization, SourceGraph, project_graph,
     },
-    projection::{LogicalCommitOrigin, NativePublicCommit},
+    projection::{LogicalCommitOrigin, NativeRequestCommit},
     projection_views::{ProjectionPreviewCommitVisibility, projection_preview},
     repo_config::{HistoryRewriteAction, HistoryRewriteRequest, RepoConfig, RepoConfigFileRule},
     repository::updates::RequestMergeOrigin,
@@ -26,6 +26,8 @@ use scope_domain::{
 mod history_metadata;
 #[path = "domain_projection/history_rewrite_baselines.rs"]
 mod history_rewrite_baselines;
+#[path = "domain_projection/request_views.rs"]
+mod request_views;
 #[path = "domain_projection/rules.rs"]
 mod rules;
 #[path = "domain_projection/views.rs"]
@@ -402,7 +404,7 @@ fn content_push_command_returns_normalized_effects_without_previous_config() {
 }
 
 #[test]
-fn public_request_merge_requires_an_ordered_public_native_range() {
+fn request_merge_requires_an_ordered_native_range_inside_its_view() {
     let repo = published_repo_with_public_file("initial", "/README.md", "hello");
     let config = repo.repo_config.clone();
     let state = ContentPushState {
@@ -421,13 +423,13 @@ fn public_request_merge_requires_an_ordered_public_native_range() {
         config,
     );
     let commits = vec![
-        NativePublicCommit {
+        NativeRequestCommit {
             oid: "1111111111111111111111111111111111111111".to_string(),
             parent_oids: vec!["9999999999999999999999999999999999999999".to_string()],
             tree_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             changed_paths: vec![ScopePath::parse("/README.md").unwrap()],
         },
-        NativePublicCommit {
+        NativeRequestCommit {
             oid: "2222222222222222222222222222222222222222".to_string(),
             parent_oids: vec![
                 "1111111111111111111111111111111111111111".to_string(),
@@ -437,10 +439,11 @@ fn public_request_merge_requires_an_ordered_public_native_range() {
             changed_paths: vec![ScopePath::parse("/README.md").unwrap()],
         },
     ];
-    let origin = RequestMergeOrigin::Public {
+    let origin = RequestMergeOrigin::View {
         request_id: "request-1".to_string(),
-        public_base_oid: "0000000000000000000000000000000000000000".to_string(),
-        public_parent_oids: vec![
+        view: ViewId::public(),
+        base_oid: "0000000000000000000000000000000000000000".to_string(),
+        parent_oids: vec![
             "0000000000000000000000000000000000000000".to_string(),
             "9999999999999999999999999999999999999999".to_string(),
         ],
@@ -451,16 +454,17 @@ fn public_request_merge_requires_an_ordered_public_native_range() {
     let accepted = accept_request_merge(state.clone(), update.clone(), origin).unwrap();
     assert_eq!(
         accepted.logical_commit.origin,
-        LogicalCommitOrigin::PublicRequestMerge {
+        LogicalCommitOrigin::RequestMerge {
             request_id: "request-1".to_string(),
-            public_base_oid: "0000000000000000000000000000000000000000".to_string(),
-            public_parent_oids: vec![
+            view: ViewId::public(),
+            base_oid: "0000000000000000000000000000000000000000".to_string(),
+            parent_oids: vec![
                 "0000000000000000000000000000000000000000".to_string(),
                 "9999999999999999999999999999999999999999".to_string(),
             ],
             request_head_oid: "2222222222222222222222222222222222222222".to_string(),
             commits: commits.clone(),
-            preserve_public_commits: true,
+            preserve_commits: true,
         }
     );
 
@@ -470,10 +474,11 @@ fn public_request_merge_requires_an_ordered_public_native_range() {
         accept_request_merge(
             state.clone(),
             update.clone(),
-            RequestMergeOrigin::Public {
+            RequestMergeOrigin::View {
                 request_id: "request-1".to_string(),
-                public_base_oid: "0000000000000000000000000000000000000000".to_string(),
-                public_parent_oids: vec![
+                view: ViewId::public(),
+                base_oid: "0000000000000000000000000000000000000000".to_string(),
+                parent_oids: vec![
                     "0000000000000000000000000000000000000000".to_string(),
                     "9999999999999999999999999999999999999999".to_string(),
                 ],
@@ -491,10 +496,11 @@ fn public_request_merge_requires_an_ordered_public_native_range() {
         accept_request_merge(
             state,
             update,
-            RequestMergeOrigin::Public {
+            RequestMergeOrigin::View {
                 request_id: "request-1".to_string(),
-                public_base_oid: "0000000000000000000000000000000000000000".to_string(),
-                public_parent_oids: vec![
+                view: ViewId::public(),
+                base_oid: "0000000000000000000000000000000000000000".to_string(),
+                parent_oids: vec![
                     "0000000000000000000000000000000000000000".to_string(),
                     "9999999999999999999999999999999999999999".to_string(),
                 ],
@@ -502,14 +508,13 @@ fn public_request_merge_requires_an_ordered_public_native_range() {
                 commits: external_parent_commits,
             },
         ),
-        Err(ReviewedUpdateError::Conflict(
-            "public request merge contains a parent outside public history"
-        ))
+        Err(ReviewedUpdateError::Domain(error))
+            if error.message == "request merge contains a parent outside Public history"
     ));
 }
 
 #[test]
-fn public_request_merge_rejects_private_paths() {
+fn request_merge_rejects_paths_outside_its_view() {
     let cases = [
         (
             "reviewed private change",
@@ -554,12 +559,13 @@ fn public_request_merge_rejects_private_paths() {
                 Some(config.clone()),
                 config,
             ),
-            RequestMergeOrigin::Public {
+            RequestMergeOrigin::View {
                 request_id: "request-1".to_string(),
-                public_base_oid: "0000000000000000000000000000000000000000".to_string(),
-                public_parent_oids: vec!["0000000000000000000000000000000000000000".to_string()],
+                view: ViewId::public(),
+                base_oid: "0000000000000000000000000000000000000000".to_string(),
+                parent_oids: vec!["0000000000000000000000000000000000000000".to_string()],
                 request_head_oid: "1111111111111111111111111111111111111111".to_string(),
-                commits: vec![NativePublicCommit {
+                commits: vec![NativeRequestCommit {
                     oid: "1111111111111111111111111111111111111111".to_string(),
                     parent_oids: vec!["0000000000000000000000000000000000000000".to_string()],
                     tree_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
@@ -709,20 +715,21 @@ fn public_request_origin_expands_to_exact_native_commits_only_in_public_view() {
         "merge public request",
         added("/README.md", ViewId::public(), "contributor version"),
     );
-    request_merge.origin = LogicalCommitOrigin::PublicRequestMerge {
+    request_merge.origin = LogicalCommitOrigin::RequestMerge {
         request_id: "request-1".to_string(),
-        public_base_oid: "base".to_string(),
-        public_parent_oids: vec!["base".to_string()],
+        view: ViewId::public(),
+        base_oid: "base".to_string(),
+        parent_oids: vec!["base".to_string()],
         request_head_oid: "r2".to_string(),
-        preserve_public_commits: true,
+        preserve_commits: true,
         commits: vec![
-            NativePublicCommit {
+            NativeRequestCommit {
                 oid: "r1".to_string(),
                 parent_oids: vec!["base".to_string()],
                 tree_oid: "tree-1".to_string(),
                 changed_paths: vec![ScopePath::parse("/README.md").unwrap()],
             },
-            NativePublicCommit {
+            NativeRequestCommit {
                 oid: "r2".to_string(),
                 parent_oids: vec!["r1".to_string()],
                 tree_oid: "tree-2".to_string(),
@@ -823,12 +830,13 @@ fn redacting_intermediate_native_path_invalidates_descendant_commit_preservation
         "merge public request",
         added("/kept.txt", ViewId::public(), "kept"),
     );
-    request_merge.origin = LogicalCommitOrigin::PublicRequestMerge {
+    request_merge.origin = LogicalCommitOrigin::RequestMerge {
         request_id: "request-1".to_string(),
-        public_base_oid: "base".to_string(),
-        public_parent_oids: vec!["base".to_string()],
+        view: ViewId::public(),
+        base_oid: "base".to_string(),
+        parent_oids: vec!["base".to_string()],
         request_head_oid: "request-head".to_string(),
-        commits: vec![NativePublicCommit {
+        commits: vec![NativeRequestCommit {
             oid: "request-head".to_string(),
             parent_oids: vec!["base".to_string()],
             tree_oid: "request-tree".to_string(),
@@ -837,7 +845,7 @@ fn redacting_intermediate_native_path_invalidates_descendant_commit_preservation
                 ScopePath::parse("/kept.txt").unwrap(),
             ],
         }],
-        preserve_public_commits: true,
+        preserve_commits: true,
     };
     repo.graph.commits.push(request_merge);
     repo.live_files.insert(path("/kept.txt"), blob("kept"));
@@ -846,18 +854,19 @@ fn redacting_intermediate_native_path_invalidates_descendant_commit_preservation
         "merge later public request",
         added("/later.txt", ViewId::public(), "later"),
     );
-    later_request_merge.origin = LogicalCommitOrigin::PublicRequestMerge {
+    later_request_merge.origin = LogicalCommitOrigin::RequestMerge {
         request_id: "request-2".to_string(),
-        public_base_oid: "request-head".to_string(),
-        public_parent_oids: vec!["request-head".to_string()],
+        view: ViewId::public(),
+        base_oid: "request-head".to_string(),
+        parent_oids: vec!["request-head".to_string()],
         request_head_oid: "later-request-head".to_string(),
-        commits: vec![NativePublicCommit {
+        commits: vec![NativeRequestCommit {
             oid: "later-request-head".to_string(),
             parent_oids: vec!["request-head".to_string()],
             tree_oid: "later-request-tree".to_string(),
             changed_paths: vec![ScopePath::parse("/later.txt").unwrap()],
         }],
-        preserve_public_commits: true,
+        preserve_commits: true,
     };
     repo.graph.commits.push(later_request_merge);
     repo.live_files.insert(path("/later.txt"), blob("later"));
@@ -883,15 +892,15 @@ fn redacting_intermediate_native_path_invalidates_descendant_commit_preservation
     );
     assert!(matches!(
         &repo.graph.commits[1].origin,
-        LogicalCommitOrigin::PublicRequestMerge {
-            preserve_public_commits: false,
+        LogicalCommitOrigin::RequestMerge {
+            preserve_commits: false,
             ..
         }
     ));
     assert!(matches!(
         &repo.graph.commits[2].origin,
-        LogicalCommitOrigin::PublicRequestMerge {
-            preserve_public_commits: false,
+        LogicalCommitOrigin::RequestMerge {
+            preserve_commits: false,
             ..
         }
     ));

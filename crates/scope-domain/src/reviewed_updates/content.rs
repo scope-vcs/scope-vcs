@@ -11,7 +11,7 @@ use crate::{
     policy::{LabelRule, Policy, ScopePath},
     projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repo_config::RepoConfig,
-    repo_control::is_public_request_protected_path,
+    repo_control::is_request_protected_path,
     repository::{
         RepoLifecycleState, Repository,
         access::{MainPushMode, RepositoryAccess, RepositoryActor},
@@ -478,9 +478,10 @@ fn validate_commit_origin(
     changes: &[FileChange],
     repo_config: &RepoConfig,
 ) -> ReviewedUpdateResult<()> {
-    let LogicalCommitOrigin::PublicRequestMerge {
-        public_base_oid,
-        public_parent_oids,
+    let LogicalCommitOrigin::RequestMerge {
+        view,
+        base_oid,
+        parent_oids,
         request_head_oid,
         commits,
         ..
@@ -488,36 +489,47 @@ fn validate_commit_origin(
     else {
         return Ok(());
     };
-
-    if changes.iter().any(|change| {
-        change.label != ViewId::public() || is_public_request_protected_path(&change.path)
-    }) {
+    let views = repo_config.views();
+    if views.get(view).is_none() || view == views.full() {
         return Err(ReviewedUpdateError::Conflict(
-            "public request merge contains non-public changes",
+            "request merge preserves commits only for a view narrower than the full view",
+        ));
+    }
+    let labels = views.labels(view);
+    let editable = |path: &ScopePath, label: &ViewId| {
+        labels.contains(label) && !is_request_protected_path(path)
+    };
+
+    if changes
+        .iter()
+        .any(|change| !editable(&change.path, &change.label))
+    {
+        return Err(ReviewedUpdateError::Conflict(
+            "request merge contains changes outside its view",
         ));
     }
     let Some(last) = commits.last() else {
         return Err(ReviewedUpdateError::Conflict(
-            "public request merge has no native commits",
+            "request merge has no native commits",
         ));
     };
     if &last.oid != request_head_oid {
         return Err(ReviewedUpdateError::Conflict(
-            "public request merge native commits do not end at request head",
+            "request merge native commits do not end at request head",
         ));
     }
     let range_oids = commits
         .iter()
         .map(|commit| commit.oid.as_str())
         .collect::<BTreeSet<_>>();
-    let public_parent_oid_set = public_parent_oids
+    let view_parent_oids = parent_oids
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
     if range_oids.len() != commits.len()
-        || public_parent_oid_set.is_empty()
-        || public_parent_oid_set.len() != public_parent_oids.len()
-        || public_parent_oids.iter().any(String::is_empty)
+        || view_parent_oids.is_empty()
+        || view_parent_oids.len() != parent_oids.len()
+        || parent_oids.iter().any(String::is_empty)
         || commits.iter().any(|commit| {
             commit.oid.is_empty()
                 || commit.tree_oid.is_empty()
@@ -526,48 +538,49 @@ fn validate_commit_origin(
         })
     {
         return Err(ReviewedUpdateError::Conflict(
-            "public request merge contains malformed native commit facts",
+            "request merge contains malformed native commit facts",
         ));
     }
     let touched_paths = commits
         .iter()
         .flat_map(|commit| commit.changed_paths.iter())
         .collect::<BTreeSet<_>>();
-    if touched_paths.iter().any(|path| {
-        is_public_request_protected_path(path)
-            || repo_config.label_for_path(path) != ViewId::public()
-    }) || changes
+    if touched_paths
         .iter()
-        .any(|change| !touched_paths.contains(&change.path))
+        .any(|path| !editable(path, &repo_config.label_for_path(path)))
+        || changes
+            .iter()
+            .any(|change| !touched_paths.contains(&change.path))
     {
         return Err(ReviewedUpdateError::Conflict(
-            "public request merge native paths do not cover the logical changes",
+            "request merge native paths do not cover the logical changes",
         ));
     }
     let mut seen = BTreeSet::new();
-    let mut descends_from_public_base = false;
+    let mut descends_from_base = false;
     for commit in commits {
         for parent_oid in &commit.parent_oids {
-            descends_from_public_base |= parent_oid == public_base_oid;
+            descends_from_base |= parent_oid == base_oid;
             if range_oids.contains(parent_oid.as_str()) {
                 if seen.contains(parent_oid.as_str()) {
                     continue;
                 }
                 return Err(ReviewedUpdateError::Conflict(
-                    "public request merge native commits are not ordered ancestor-first",
+                    "request merge native commits are not ordered ancestor-first",
                 ));
             }
-            if !public_parent_oid_set.contains(parent_oid.as_str()) {
-                return Err(ReviewedUpdateError::Conflict(
-                    "public request merge contains a parent outside public history",
-                ));
+            if !view_parent_oids.contains(parent_oid.as_str()) {
+                return Err(ReviewedUpdateError::Domain(DomainError::conflict(format!(
+                    "request merge contains a parent outside {} history",
+                    views.display_name(view)
+                ))));
             }
         }
         seen.insert(commit.oid.as_str());
     }
-    if !descends_from_public_base || !public_parent_oid_set.contains(public_base_oid.as_str()) {
+    if !descends_from_base || !view_parent_oids.contains(base_oid.as_str()) {
         return Err(ReviewedUpdateError::Conflict(
-            "public request merge does not include the current public base as a parent",
+            "request merge does not include its view's current base as a parent",
         ));
     }
     Ok(())

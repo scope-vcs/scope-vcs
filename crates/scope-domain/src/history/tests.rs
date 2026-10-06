@@ -235,7 +235,11 @@ fn standalone_actions_stay_between_their_source_anchors_even_when_the_anchor_is_
     let publish = &public.entries[1];
     assert_eq!(publish.kind, HistoryEntryKind::VisibilityChange);
     assert!(publish.files.is_empty());
-    assert_eq!(publish.message, "Made 1 file public");
+    assert_eq!(publish.message, "1 file entered the public view");
+    assert_eq!(
+        publish.message_in(&Views::builtin(), &ViewId::public()),
+        "1 file entered the Public view"
+    );
     assert_eq!(publish.author, None);
     assert_eq!(
         publish.visibility_changes[0].file.as_ref().unwrap().kind,
@@ -246,6 +250,10 @@ fn standalone_actions_stay_between_their_source_anchors_even_when_the_anchor_is_
     assert_eq!(sources(&private), ["push", "publish", "private-base"]);
     assert_eq!(private.entries[1].author.as_deref(), Some("maintainer"));
     assert!(private.entries[1].visibility_changes[0].file.is_none());
+    assert_eq!(
+        private.entries[1].message_in(&Views::builtin(), &ViewId::private()),
+        "1 file entered the Public view"
+    );
 }
 
 #[test]

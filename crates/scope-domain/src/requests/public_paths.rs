@@ -1,7 +1,5 @@
 use crate::views::ViewId;
-use crate::{
-    policy::ScopePath, repo_control::is_public_request_protected_path, repository::Repository,
-};
+use crate::{policy::ScopePath, repo_control::is_request_protected_path, repository::Repository};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,7 +40,7 @@ impl<'a> PublicRequestPaths<'a> {
     }
 
     pub fn ensure_editable(&self, path: &ScopePath) -> Result<(), PublicRequestPathError> {
-        if is_public_request_protected_path(path) {
+        if is_request_protected_path(path) {
             return Err(PublicRequestPathError::ProtectedPath);
         }
         if self.public_visible_paths.contains(path.as_str()) {

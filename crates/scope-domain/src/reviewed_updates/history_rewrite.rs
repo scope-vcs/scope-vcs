@@ -56,7 +56,7 @@ pub(super) fn apply_history_rewrites(
     let mut invalidate_preservation_from = None;
     for (index, commit) in repo.graph.commits.iter().enumerate() {
         let native_history_matches = match &commit.origin {
-            LogicalCommitOrigin::PublicRequestMerge { commits, .. } => commits
+            LogicalCommitOrigin::RequestMerge { commits, .. } => commits
                 .iter()
                 .flat_map(|native| native.changed_paths.iter())
                 .any(&should_redact),
@@ -87,14 +87,14 @@ pub(super) fn apply_history_rewrites(
 
     let mut redacted_paths = BTreeSet::new();
     for (index, commit) in repo.graph.commits.iter_mut().enumerate() {
-        if let LogicalCommitOrigin::PublicRequestMerge {
+        if let LogicalCommitOrigin::RequestMerge {
             commits,
-            preserve_public_commits,
+            preserve_commits,
             ..
         } = &mut commit.origin
         {
             if invalidate_preservation_from.is_some_and(|first| index >= first) {
-                *preserve_public_commits = false;
+                *preserve_commits = false;
             }
             for path in commits
                 .iter()

@@ -2,7 +2,7 @@ use crate::{
     content::SourceBlob,
     policy::ScopePath,
     projection::{
-        LogicalCommit, LogicalCommitOrigin, NativePublicCommit, Projection, SourceGraph,
+        LogicalCommit, LogicalCommitOrigin, NativeRequestCommit, Projection, SourceGraph,
         project_graph,
     },
     views::{ViewId, Views, ViewsTransition},
@@ -19,7 +19,7 @@ pub use feed::HistoryFeed;
 use generation::{history_generation_after, history_generation_start};
 use projection_history::{ProjectedAction, ProjectionHistory};
 
-pub const HISTORY_GENERATION_VERSION: &str = "v10";
+pub const HISTORY_GENERATION_VERSION: &str = "v11";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FileChangeKind {
@@ -47,8 +47,33 @@ pub struct HistoryEntry {
     pub message: String,
     pub files: Vec<HistoryEntryFile>,
     pub visibility_changes: Vec<HistoryEntryVisibilityChange>,
-    pub native_commits: Vec<NativePublicCommit>,
+    pub native_commits: Option<HistoryNativeCommits>,
     pub views: Option<ViewsTransition>,
+}
+
+impl HistoryEntry {
+    pub fn message_in(&self, views: &Views, view: &ViewId) -> String {
+        match self.kind {
+            HistoryEntryKind::VisibilityChange => {
+                let reference = visibility_reference_view(views, view);
+                visibility_change_message(
+                    &self.visibility_changes,
+                    views,
+                    reference,
+                    reference.map_or("", |reference| views.display_name(reference)),
+                )
+            }
+            HistoryEntryKind::Push
+            | HistoryEntryKind::MergedRequest
+            | HistoryEntryKind::ViewsChange => self.message.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryNativeCommits {
+    pub view: ViewId,
+    pub commits: Vec<NativeRequestCommit>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -186,15 +211,21 @@ pub fn history_entries_after(
             .map(|action| action.files.clone())
             .unwrap_or_default();
         let native_commits = match &logical.origin {
-            LogicalCommitOrigin::PublicRequestMerge { commits, .. }
-                if view == views.full()
-                    || source.is_some_and(|action| action.preserves_git_commits) =>
+            LogicalCommitOrigin::RequestMerge {
+                view: origin_view,
+                commits,
+                ..
+            } if view == views.full()
+                || source.is_some_and(|action| action.preserves_git_commits) =>
             {
-                commits.clone()
+                Some(HistoryNativeCommits {
+                    view: origin_view.clone(),
+                    commits: commits.clone(),
+                })
             }
-            _ => Vec::new(),
+            _ => None,
         };
-        if !files.is_empty() || !visibility_changes.is_empty() || !native_commits.is_empty() {
+        if !files.is_empty() || !visibility_changes.is_empty() || native_commits.is_some() {
             let (author, message, occurred_at_unix) = action_metadata(logical, source, views, view);
             entries.push(HistoryEntry {
                 occurred_at_unix,
@@ -204,9 +235,7 @@ pub fn history_entries_after(
                 kind: match logical.origin {
                     LogicalCommitOrigin::CanonicalPush { .. } => HistoryEntryKind::Push,
                     LogicalCommitOrigin::PrivateRequestMerge { .. }
-                    | LogicalCommitOrigin::PublicRequestMerge { .. } => {
-                        HistoryEntryKind::MergedRequest
-                    }
+                    | LogicalCommitOrigin::RequestMerge { .. } => HistoryEntryKind::MergedRequest,
                 },
                 author,
                 message,
@@ -284,7 +313,13 @@ fn append_visibility_actions(
                 if visibility_changes.is_empty() {
                     continue;
                 }
-                let message = visibility_change_message(&visibility_changes);
+                let reference = visibility_reference_view(views, view);
+                let message = visibility_change_message(
+                    &visibility_changes,
+                    views,
+                    reference,
+                    reference.map_or("", ViewId::as_str),
+                );
                 (
                     HistoryEntryKind::VisibilityChange,
                     visibility_changes,
@@ -302,7 +337,7 @@ fn append_visibility_actions(
             message,
             files: Vec::new(),
             visibility_changes,
-            native_commits: Vec::new(),
+            native_commits: None,
             views: set.views.clone(),
         });
     }
@@ -371,17 +406,46 @@ fn views_change_message(relabelled: usize) -> String {
     }
 }
 
-fn visibility_change_message(changes: &[HistoryEntryVisibilityChange]) -> String {
-    let made_public = changes
+fn visibility_reference_view<'a>(views: &'a Views, view: &'a ViewId) -> Option<&'a ViewId> {
+    if view == views.full() {
+        views.anyone()
+    } else {
+        Some(view)
+    }
+}
+
+fn visibility_change_message(
+    changes: &[HistoryEntryVisibilityChange],
+    views: &Views,
+    reference: Option<&ViewId>,
+    reference_name: &str,
+) -> String {
+    let labels = reference.map(|reference| views.labels(reference));
+    let shown = |label: &ViewId| labels.as_ref().is_some_and(|labels| labels.contains(label));
+    let entered = changes
         .iter()
-        .filter(|change| change.new_label.is_public())
+        .filter(|change| shown(&change.new_label) && !shown(&change.old_label))
         .count();
-    let made_private = changes.len() - made_public;
+    let left = changes
+        .iter()
+        .filter(|change| shown(&change.old_label) && !shown(&change.new_label))
+        .count();
     let files = |count| if count == 1 { "file" } else { "files" };
-    match (made_public, made_private) {
-        (public, 0) => format!("Made {public} {} public", files(public)),
-        (0, private) => format!("Made {private} {} private", files(private)),
-        _ => format!("Updated visibility for {} files", changes.len()),
+    match (entered, left) {
+        (entered, 0) if entered == changes.len() => {
+            format!(
+                "{entered} {} entered the {reference_name} view",
+                files(entered)
+            )
+        }
+        (0, left) if left == changes.len() => {
+            format!("{left} {} left the {reference_name} view", files(left))
+        }
+        _ => format!(
+            "Updated visibility for {} {}",
+            changes.len(),
+            files(changes.len())
+        ),
     }
 }
 
