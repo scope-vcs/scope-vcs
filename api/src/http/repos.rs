@@ -215,10 +215,16 @@ pub(crate) async fn create_push_intent(
         .git_push_context(&owner, &repo_name, &user.id)
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
-    let head_oid = git_oid_request("head_oid", &input.head_oid)?;
     let view: ViewId = input.view.clone().into();
     let views = repo.repo_config.views();
-    match repo.access.main_push_mode(repo.lifecycle_state, views) {
+    let mode = repo.access.main_push_mode(repo.lifecycle_state, views);
+    if mode == MainPushMode::Denied {
+        return Err(ApiError::not_found(format!(
+            "repo {owner}/{repo_name} not found"
+        )));
+    }
+    let head_oid = git_oid_request("head_oid", &input.head_oid)?;
+    match mode {
         MainPushMode::Denied => Err(ApiError::not_found(format!(
             "repo {owner}/{repo_name} not found"
         ))),

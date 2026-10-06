@@ -234,23 +234,16 @@ async fn complete_inner(
                 "Scope accepts either one request ref update or one main update",
             ));
         }
-        let author_id = match &preparation.access {
-            ReceivePackAccess::FirstPush { .. } => {
-                return Err(ApiError::bad_request(
-                    "request refs cannot be pushed during first push",
-                ));
-            }
-            ReceivePackAccess::ReadyMember { author_id, .. }
-            | ReceivePackAccess::ViewMainPusher { author_id, .. }
-            | ReceivePackAccess::RequestContributor { author_id, .. } => author_id,
-        };
+        if matches!(&preparation.access, ReceivePackAccess::FirstPush { .. }) {
+            return Err(ApiError::bad_request(
+                "request refs cannot be pushed during first push",
+            ));
+        }
         request_ref::persist_request_ref_revision(
             state,
             owner,
             repo_name,
-            preparation.access.incarnation(),
-            author_id,
-            preparation.access.request_ref_view(),
+            &preparation.access,
             staging_repo,
             update,
         )

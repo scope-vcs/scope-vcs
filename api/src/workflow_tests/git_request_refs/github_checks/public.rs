@@ -68,6 +68,7 @@ async fn push_main_change(
     path: &str,
     content: &str,
 ) {
+    let remote = &remote.replace("/git/public/", "/git/private/");
     fs::write(owner_source.join(path), content).unwrap();
     run_git(Some(owner_source), &["add", path], "stage main change").unwrap();
     commit_all(owner_source, "change main");

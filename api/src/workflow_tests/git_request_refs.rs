@@ -253,11 +253,11 @@ async fn request_checkout(
     state: &AppState,
     label: &str,
 ) -> (TempGitRepo, String, TestServer, String) {
-    let (source, permissioned_remote, server) =
+    let (source, request_remote, server) =
         request_push_checkout(state, label, PUBLIC_SUBJECT, PUBLIC_EMAIL).await;
     push_change(
         &source,
-        &permissioned_remote,
+        &request_remote,
         REQUEST_REF,
         "request.txt",
         "request branch content\n",
@@ -265,7 +265,7 @@ async fn request_checkout(
     )
     .unwrap();
     let first_request_head = git_head_oid(&source);
-    (source, permissioned_remote, server, first_request_head)
+    (source, request_remote, server, first_request_head)
 }
 
 async fn request_push_checkout(
@@ -283,13 +283,8 @@ async fn request_push_checkout(
         "clone public repo for request ref",
     )
     .unwrap();
-    let permissioned_remote = format!("{origin}/git/private/{TEST_REPO_ID}");
-    configure_bearer_header(
-        &source,
-        &permissioned_remote,
-        &bearer_header_for(subject, email),
-    );
-    (source, permissioned_remote, server)
+    configure_bearer_header(&source, &public_remote, &bearer_header_for(subject, email));
+    (source, public_remote, server)
 }
 
 fn configure_bearer_header(repo: &FsPath, remote: &str, bearer: &str) {

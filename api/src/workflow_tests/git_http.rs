@@ -208,7 +208,7 @@ async fn receive_pack_requires_credentials_before_repo_state_is_revealed() {
 }
 
 #[tokio::test]
-async fn public_git_remote_cannot_receive_pack() {
+async fn public_git_remote_asks_for_credentials_before_receive_pack() {
     let state = test_state_with_repo();
     let response = api_request(
         router(state).clone(),
@@ -219,7 +219,7 @@ async fn public_git_remote_cannot_receive_pack() {
     )
     .await;
 
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]

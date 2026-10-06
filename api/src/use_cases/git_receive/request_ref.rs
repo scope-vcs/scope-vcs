@@ -18,7 +18,7 @@ use crate::{
 };
 use scope_domain::{
     projection::project_graph,
-    repository::{RepoLifecycleState, Repository, RepositoryIncarnation, access::RepositoryAccess},
+    repository::{RepoLifecycleState, Repository, access::RepositoryAccess},
     requests::{RecordRequestRevisionInput, Request, RequestViewer, request_policy},
     views::{ViewId, Views},
 };
@@ -235,12 +235,13 @@ pub(super) async fn persist_request_ref_revision(
     state: &AppState,
     owner: &str,
     repo_name: &str,
-    expected_incarnation: &RepositoryIncarnation,
-    actor_user_id: &str,
-    address_view: Option<&ViewId>,
+    access: &super::ReceivePackAccess,
     staging_repo: &Path,
     update: RequestRefUpdate,
 ) -> Result<(), ApiError> {
+    let expected_incarnation = access.incarnation();
+    let actor_user_id = access.author_id();
+    let address_view = access.request_ref_view();
     let (repo, request) = ensure_request_ref_update_allowed(
         state,
         owner,
