@@ -94,7 +94,7 @@ pub(crate) async fn merge_request(
         request_id: None,
     }
     .run(state, async {
-        merge_request_inner(state, &command)
+        Box::pin(merge_request_inner(state, &command))
             .await
             .map_err(RequestMergeFailure::into_api_error)
     })
