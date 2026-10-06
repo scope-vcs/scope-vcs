@@ -112,8 +112,6 @@ pub fn projection_delta_appends(
     last_folded_commit_id: Option<&str>,
     commits: &[LogicalCommit],
     visibility_change_sets: &[VisibilityChangeSet],
-    _views: &Views,
-    _view: &ViewId,
 ) -> bool {
     let appended = |id: &str| commits.iter().any(|commit| commit.id == id);
     visibility_change_sets.iter().all(|set| {

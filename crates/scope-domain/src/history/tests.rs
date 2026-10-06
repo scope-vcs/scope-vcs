@@ -557,16 +557,12 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
     assert!(projection_delta_appends(
         Some("second"),
         &rest.commits,
-        &sets,
-        &Views::builtin(),
-        &ViewId::public()
+        &sets
     ));
     assert!(!projection_delta_appends(
         Some("first"),
         &rest.commits,
-        &sets,
-        &Views::builtin(),
-        &ViewId::public()
+        &sets
     ));
 
     for view_key in [ViewId::private(), ViewId::public()] {

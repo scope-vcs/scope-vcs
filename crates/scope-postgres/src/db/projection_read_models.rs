@@ -149,15 +149,11 @@ where
             .await?;
     if resumed.is_some()
         && (!history_position_matches(conn, repo_id, &position).await?
-            || !views.iter().all(|view| {
-                projection_delta_appends(
-                    position.last_commit_id.as_deref(),
-                    &appended.commits,
-                    &appended.visibility_change_sets,
-                    views,
-                    &view.id,
-                )
-            }))
+            || !projection_delta_appends(
+                position.last_commit_id.as_deref(),
+                &appended.commits,
+                &appended.visibility_change_sets,
+            ))
     {
         return Ok(FoldOutcome::Diverged(
             "repository history no longer continues the folded read models".to_string(),
