@@ -17,7 +17,7 @@ use crate::{
 };
 use anyhow::{Context, bail};
 use scope_api_contract::{ErrorCode, ErrorResponse, RequestDiscussionAnchorInput, ViewId};
-use scope_domain::{policy::ScopePath, repo_control::is_public_request_protected_path};
+use scope_domain::{policy::ScopePath, repo_control::is_request_protected_path, views::Views};
 use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
@@ -186,7 +186,7 @@ fn show_request_status(
             &context.target.repo,
             &request_id,
         )?;
-        human_lines.extend(request_detail_lines(&detail.request));
+        human_lines.extend(request_detail_lines(&detail.request, &context.views));
         return Ok(RequestCommandOutcome::new(
             "request.status",
             RequestCommandResult::Detail(DetailResult {
@@ -341,27 +341,22 @@ fn close_request_branch(
 
 fn start_view(
     access: &crate::api::RepositoryAccessResponse,
+    views: &Views,
     requested: Option<ViewId>,
 ) -> anyhow::Result<ViewId> {
     let view = requested.unwrap_or_else(|| access.view.clone());
-    if scope_domain::views::Views::builtin()
-        .get(&view.clone().into())
-        .is_none()
-    {
-        return Err(crate::error::CliError::usage(format!(
-            "Requests target the public or private view until custom views accept requests; pass --view public instead of {}",
-            view.as_str()
-        ))
-        .into());
-    }
-    let actor = access.actor;
-    let author_role = match actor {
+    let author_role = match access.actor {
         crate::api::RepositoryActor::Public => crate::api::RequestActorRole::Public,
         crate::api::RepositoryActor::Member => crate::api::RequestActorRole::Member,
         crate::api::RepositoryActor::Owner => crate::api::RequestActorRole::Owner,
     };
-    scope_domain::requests::validate_start_request_view(author_role.into(), view.clone().into())
-        .map_err(|error| crate::error::CliError::usage(error.message))?;
+    scope_domain::requests::validate_start_request_view(
+        author_role.into(),
+        &access.view.clone().into(),
+        &view.clone().into(),
+        views,
+    )
+    .map_err(|error| crate::error::CliError::usage(error.message))?;
     Ok(view)
 }
 
@@ -391,22 +386,75 @@ mod view_tests {
     use super::*;
     use crate::api::RepositoryActor;
 
+    fn access(actor: RepositoryActor, view: &str) -> crate::api::RepositoryAccessResponse {
+        crate::api::RepositoryAccessResponse {
+            actor,
+            view: ViewId::parse(view).unwrap(),
+            can_push: false,
+            can_change_file_visibility: false,
+            can_manage_members: false,
+            can_delete_repo: false,
+        }
+    }
+
+    fn agent_views() -> Views {
+        serde_json::from_value(serde_json::json!([
+            {"id": "public", "name": "Public", "includes": [], "readers": "anyone"},
+            {"id": "private", "name": "Private", "includes": "all", "readers": "assigned"},
+            {"id": "agent", "name": "Agent", "includes": ["public"], "readers": "assigned"},
+        ]))
+        .unwrap()
+    }
+
+    fn requested(view: &str) -> Option<ViewId> {
+        Some(ViewId::parse(view).unwrap())
+    }
+
     #[test]
     fn request_view_defaults_follow_repository_access() {
+        let views = agent_views();
         for (actor, view) in [
-            (RepositoryActor::Owner, ViewId::private()),
-            (RepositoryActor::Member, ViewId::private()),
-            (RepositoryActor::Public, ViewId::public()),
+            (RepositoryActor::Owner, "private"),
+            (RepositoryActor::Member, "private"),
+            (RepositoryActor::Member, "agent"),
+            (RepositoryActor::Public, "public"),
         ] {
-            let access = crate::api::RepositoryAccessResponse {
-                actor,
-                view: view.clone(),
-                can_push: false,
-                can_change_file_visibility: false,
-                can_manage_members: false,
-                can_delete_repo: false,
-            };
-            assert_eq!(start_view(&access, None).unwrap(), view);
+            assert_eq!(
+                start_view(&access(actor, view), &views, None).unwrap(),
+                ViewId::parse(view).unwrap()
+            );
         }
+    }
+
+    #[test]
+    fn requests_start_in_any_view_their_author_can_read() {
+        let views = agent_views();
+        let agent_member = access(RepositoryActor::Member, "agent");
+        let owner = access(RepositoryActor::Owner, "private");
+        for (author, view) in [
+            (&agent_member, "public"),
+            (&owner, "agent"),
+            (&owner, "public"),
+        ] {
+            assert_eq!(
+                start_view(author, &views, requested(view)).unwrap(),
+                ViewId::parse(view).unwrap()
+            );
+        }
+
+        let refusal = |author, view| {
+            let error = start_view(author, &views, requested(view)).unwrap_err();
+            assert_eq!(crate::error::exit_code(&error), 2);
+            error.to_string()
+        };
+        assert!(
+            refusal(&agent_member, "private")
+                .contains("requests in the Private view need an author who can read it")
+        );
+        assert!(refusal(&owner, "ops").contains("this repository has no ops view"));
+        assert!(
+            refusal(&access(RepositoryActor::Public, "public"), "agent")
+                .contains("public contributors can only create requests in the Public view")
+        );
     }
 }

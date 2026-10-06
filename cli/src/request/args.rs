@@ -20,7 +20,7 @@ pub(super) enum RequestCommand {
     Close(RequestCloseArgs),
     #[command(about = "Edit a request title or description")]
     Edit(RequestEditArgs),
-    #[command(about = "Invite a user to push a public request branch")]
+    #[command(about = "Invite a user to push a request branch in the view anyone can read")]
     Invite(RequestInviteArgs),
     #[command(about = "Remove a request invitee")]
     Uninvite(RequestUninviteArgs),
@@ -73,7 +73,7 @@ pub(super) struct RequestStartArgs {
         help = "Attach the request to the current branch and its commits instead of creating a branch from main"
     )]
     pub(super) current_branch: bool,
-    #[arg(long, value_parser = parse_view, help = "Request view (defaults to your repository view)")]
+    #[arg(long, value_parser = parse_view, help = "Request view: any view you can read (defaults to your repository view)")]
     pub(super) view: Option<ViewId>,
 }
 

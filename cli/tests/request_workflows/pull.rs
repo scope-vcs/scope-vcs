@@ -24,6 +24,7 @@ fn pull_fast_forwards_a_checked_out_request_alias_and_preserves_divergence() {
     detail["mergeability"]["request_head_oid"] = head.clone().into();
     let server = FixtureServer::with_request(detail);
     let private_remote = format!("{}/git/private/owner/repo", server.server.api_url);
+    let request_view_remote = format!("{}/git/public/owner/repo", server.server.api_url);
     run_git(dir.path(), ["remote", "add", "scope", &private_remote]);
 
     let shim = TempDir::new("pull-git-transport");
@@ -33,7 +34,7 @@ fn pull_fast_forwards_a_checked_out_request_alias_and_preserves_divergence() {
         r#"#!/bin/bash
 for arg in "$@"; do
   if [[ "$arg" == "fetch" ]]; then
-    exec "$SCOPE_TEST_REAL_GIT" -c "url.$SCOPE_TEST_FILE_URL.insteadOf=$SCOPE_TEST_PRIVATE_URL" "$@"
+    exec "$SCOPE_TEST_REAL_GIT" -c "url.$SCOPE_TEST_FILE_URL.insteadOf=$SCOPE_TEST_PRIVATE_URL" -c "url.$SCOPE_TEST_FILE_URL.insteadOf=$SCOPE_TEST_REQUEST_VIEW_URL" "$@"
   fi
 done
 exec "$SCOPE_TEST_REAL_GIT" "$@"
@@ -59,6 +60,7 @@ exec "$SCOPE_TEST_REAL_GIT" "$@"
             .env("PATH", &test_path)
             .env("SCOPE_TEST_REAL_GIT", &real_git)
             .env("SCOPE_TEST_PRIVATE_URL", &private_remote)
+            .env("SCOPE_TEST_REQUEST_VIEW_URL", &request_view_remote)
             .env("SCOPE_TEST_FILE_URL", &file_url);
         command
     };

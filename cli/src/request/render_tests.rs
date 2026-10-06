@@ -14,7 +14,7 @@ fn detail_uses_server_capabilities_and_renders_invitees_and_submission() {
     }]))
     .unwrap();
 
-    let rendered = request_detail_lines(&request).join("\n");
+    let rendered = request_detail_lines(&request, &Views::builtin()).join("\n");
 
     assert!(rendered.contains("open"), "{rendered}");
     assert!(rendered.contains("submitted"), "{rendered}");
@@ -259,7 +259,7 @@ fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workf
     assert!(
         request_checks_lines(&public)
             .join("\n")
-            .contains("this private request is public there")
+            .contains("this request is public there")
     );
 }
 
