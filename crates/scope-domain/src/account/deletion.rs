@@ -142,6 +142,7 @@ mod tests {
         let team = repo(&owner, "team", &["leaving", "staying"]);
         let mut shared = CollaborationState {
             record: team.record,
+            views: team.repo_config.views,
             collaboration: team.collaboration,
         };
         let invite = |id: &str, email: &str, accepted_by: Option<&str>| RepositoryInvite {

@@ -163,6 +163,7 @@ impl AuthStore {
                 owned.push(repository_from_model(&tx, row).await?);
             } else {
                 others.push(CollaborationState {
+                    views: super::projection_read_models::repository_views(&tx, &repo_id).await?,
                     collaboration: load_repository_collaboration(&tx, &repo_id).await?,
                     record,
                 });

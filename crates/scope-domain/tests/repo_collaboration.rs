@@ -18,7 +18,7 @@ use scope_domain::{
             RepositoryMemberPermissions,
         },
     },
-    views::ViewId,
+    views::{ViewDefinition, ViewId, ViewIncludes, ViewReaders, Views},
 };
 
 const OWNER_ID: &str = "user_owner";
@@ -67,6 +67,7 @@ fn repo_with_invite() -> CollaborationState {
     let created = Repository::new(&owner(), "repo", ViewId::private(), "repoi_test").unwrap();
     let mut repo = CollaborationState {
         record: created.record,
+        views: created.repo_config.views,
         collaboration: created.collaboration,
     };
     repo.record.lifecycle_state = RepoReady;
@@ -321,4 +322,60 @@ fn invites_name_an_existing_view_and_writers_need_the_full_view() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn invites_to_a_custom_view_accept_only_while_the_view_exists() {
+    let mut repo = repo_with_invite();
+    let agent = ViewDefinition {
+        id: ViewId::parse("agent").unwrap(),
+        name: "Agent".into(),
+        includes: ViewIncludes::Some([ViewId::public()].into()),
+        readers: ViewReaders::Assigned,
+    };
+    let mut definitions: Vec<ViewDefinition> = Views::builtin().into();
+    definitions.push(agent.clone());
+    repo.views = Views::new(definitions).unwrap();
+    let id = invite_id();
+    create_repository_invite(
+        &mut repo,
+        CreateRepositoryInviteCommand {
+            id: id.clone(),
+            owner: &owner(),
+            invited_email: "agent@example.com".to_string(),
+            invitee: None,
+            permissions: RepositoryMemberPermissions {
+                view: agent.id.clone(),
+                ..RepositoryMemberPermissions::default()
+            },
+            now_unix: CREATED_AT,
+        },
+    )
+    .unwrap();
+    issue_repository_invite_link(&mut repo, OWNER_ID, &id, "sha256:agent".into(), CREATED_AT)
+        .unwrap();
+    let agent_user = UserAccount {
+        email: "agent@example.com".to_string(),
+        ..invitee()
+    };
+
+    repo.views = Views::builtin();
+    let Err(refused) =
+        accept_repository_invite(&mut repo, &agent_user, "sha256:agent", CREATED_AT + 1)
+    else {
+        panic!("a removed view must refuse the invite");
+    };
+    assert_eq!(refused.kind, DomainErrorKind::Conflict);
+    assert!(repo.member_for_user(&agent_user.id).is_none());
+
+    let mut definitions: Vec<ViewDefinition> = Views::builtin().into();
+    definitions.push(agent.clone());
+    repo.views = Views::new(definitions).unwrap();
+    match accept_repository_invite(&mut repo, &agent_user, "sha256:agent", CREATED_AT + 2).unwrap()
+    {
+        AcceptRepositoryInviteOutcome::Accepted(member) => {
+            assert_eq!(member.permissions.view, agent.id);
+        }
+        AcceptRepositoryInviteOutcome::AlreadyAccepted(_) => panic!("invite was new"),
+    }
 }

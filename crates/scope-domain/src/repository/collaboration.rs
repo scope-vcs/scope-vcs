@@ -116,6 +116,7 @@ impl RepositoryCollaboration {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CollaborationState {
     pub record: RepoRecord,
+    pub views: Views,
     pub collaboration: RepositoryCollaboration,
 }
 

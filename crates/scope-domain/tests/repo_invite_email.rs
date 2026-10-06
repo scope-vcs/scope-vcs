@@ -27,6 +27,7 @@ fn repo_with_invite() -> CollaborationState {
     let created = Repository::new(&owner, "repo", ViewId::private(), "repoi_test").unwrap();
     let mut repo = CollaborationState {
         record: created.record,
+        views: created.repo_config.views,
         collaboration: created.collaboration,
     };
     repo.record.lifecycle_state = RepoLifecycleState::Ready;

@@ -5,7 +5,7 @@ use super::{
         RepositoryMemberPermissions, normalize_repository_invite_email,
     },
 };
-use crate::{error::DomainError, views::Views};
+use crate::error::DomainError;
 
 pub const REPOSITORY_INVITE_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 pub const REPOSITORY_INVITE_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
@@ -65,7 +65,7 @@ pub fn create_repository_invite(
         ));
     }
 
-    command.permissions.validate(&Views::builtin())?;
+    command.permissions.validate(&repo.views)?;
     let invite = RepositoryInvite {
         id: command.id,
         repo_id: repo.record.id.clone(),
@@ -191,6 +191,15 @@ pub fn accept_repository_invite(
         }
     }
 
+    if repo.collaboration.invitations[index]
+        .permissions
+        .validate(&repo.views)
+        .is_err()
+    {
+        return Err(DomainError::conflict(
+            "the invited view no longer exists; ask the owner for a new invite",
+        ));
+    }
     let invite = &mut repo.collaboration.invitations[index];
     invite.accepted_by_user_id = Some(user.id.clone());
     invite.accepted_at_unix = Some(now_unix);
@@ -269,7 +278,7 @@ pub fn update_repository_member_permissions(
     now_unix: u64,
 ) -> Result<RepositoryMember, DomainError> {
     ensure_can_manage_members(repo, owner_user_id)?;
-    permissions.validate(&Views::builtin())?;
+    permissions.validate(&repo.views)?;
     let member = repo
         .collaboration
         .members

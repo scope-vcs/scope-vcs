@@ -141,6 +141,7 @@ fn pending_invite_does_not_grant_private_access() {
     let private_path = ScopePath::parse("/private.txt").unwrap();
     let mut collaboration = CollaborationState {
         record: repo.record.clone(),
+        views: repo.repo_config.views.clone(),
         collaboration: repo.collaboration.clone(),
     };
     create_repository_invite(
