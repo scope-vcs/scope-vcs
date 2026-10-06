@@ -10,9 +10,10 @@ use {
     crate::error::PostgresError,
     scope_domain::repository::access::RepositoryAccess,
     scope_domain::requests::{
-        REQUEST_LIST_MAX_PAGE_SIZE, Request, RequestActorRole, RequestAudience, RequestEvent,
-        RequestListPredicate, RequestState, request_list_predicate,
+        REQUEST_LIST_MAX_PAGE_SIZE, Request, RequestActorRole, RequestEvent, RequestListPredicate,
+        RequestState, request_list_predicate,
     },
+    scope_domain::views::ViewId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,7 +23,7 @@ pub struct RequestListRow {
     pub title: String,
     pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
-    pub audience: RequestAudience,
+    pub view: ViewId,
     pub head_oid: String,
     pub state: RequestState,
     pub submitted_at_unix: Option<u64>,
@@ -79,7 +80,7 @@ impl RequestListModel {
             title: self.title,
             author_user_id: self.author_user_id,
             author_role: entities::decode_enum(self.author_role)?,
-            audience: entities::decode_enum(self.audience)?,
+            view: ViewId::parse(&self.audience).map_err(PostgresError::internal)?,
             head_oid: self.head_oid,
             state: RequestState::from_timestamps(merged_at_unix, closed_at_unix, submitted_at_unix),
             submitted_at_unix,
@@ -139,7 +140,7 @@ fn request_list_select(
         query = query.filter(entities::request::Column::Id.gt(after_id));
     }
     query = query.filter(request_list_condition(&request_list_predicate(
-        input.access,
+        input.access.clone(),
         input.viewer_user_id,
     ))?);
     Ok(query)
@@ -159,8 +160,10 @@ pub(super) fn request_list_condition(
             .try_fold(Condition::any(), |condition, predicate| {
                 Ok(condition.add(request_list_condition(predicate)?))
             }),
-        RequestListPredicate::Audience(audience) => Ok(Condition::all()
-            .add(entities::request::Column::Audience.eq(entities::encode_enum(*audience)?))),
+        RequestListPredicate::View(view) => {
+            Ok(Condition::all()
+                .add(entities::request::Column::Audience.eq(view.as_str().to_string())))
+        }
         RequestListPredicate::Submitted => {
             Ok(Condition::all().add(entities::request::Column::SubmittedAtUnix.is_not_null()))
         }

@@ -2,8 +2,8 @@ use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities,
     landing_files::repository_landing_file,
     projection_read_models::{
-        ProjectionFileLookup, load_live_projection_file_for_audience,
-        load_live_projection_files_for_audience,
+        ProjectionFileLookup, load_live_projection_file_for_view,
+        load_live_projection_files_for_view,
     },
     repository_from_model,
 };
@@ -16,8 +16,7 @@ use {
     crate::error::PostgresError,
     scope_domain::{
         landing_file::{REPOSITORY_LANDING_FILE_PATH, RepositoryLandingFile},
-        policy::{Principal, PrincipalKind, ScopePath},
-        projection::ProjectionViewKey,
+        policy::ScopePath,
         projection_views::{
             ProjectionViewFile, ProjectionViewFileContent, has_visible_projected_non_control_files,
             projected_file_content as domain_projected_file_content,
@@ -192,7 +191,7 @@ where
     let member_permissions = member_permissions_for_rows(conn, &rows, viewer_user_id).await?;
     let mut repositories = Vec::new();
     for row in rows {
-        let permissions = member_permissions.get(&row.id).copied();
+        let permissions = member_permissions.get(&row.id).cloned();
         let access = access_for_row(&row, viewer_user_id, permissions)?;
         if let Some(summary) = summary_for_viewer_row(conn, row, access).await? {
             repositories.push(summary);
@@ -242,21 +241,23 @@ where
     };
     let permissions = member_permissions_for_viewer(conn, &row, viewer_user_id).await?;
     let access = access_for_row(&row, viewer_user_id, permissions)?;
-    let audience = ProjectionViewKey::from_access(access);
-    if !viewer_can_read(conn, &row, access).await? {
+    if !viewer_can_read(conn, &row, &access).await? {
         return Ok(None);
     }
 
     if let Some(files) =
-        load_live_projection_files_for_audience(conn, &row.id, row.content_version()?, audience)
+        load_live_projection_files_for_view(conn, &row.id, row.content_version()?, &access.view)
             .await?
     {
         return Ok(Some(files));
     }
 
     let repo = hydrate_repo_from_row_id(conn, &row.id).await?;
-    let principal = principal_for_access(viewer_user_id, access);
-    Ok(Some(domain_projected_files(&repo, &principal)))
+    Ok(Some(domain_projected_files(
+        &repo,
+        repo.repo_config.views(),
+        &access.view,
+    )))
 }
 
 async fn repo_live_file_with_landing_content_tx<C>(
@@ -274,15 +275,14 @@ where
     };
     let permissions = member_permissions_for_viewer(conn, &row, viewer_user_id).await?;
     let access = access_for_row(&row, viewer_user_id, permissions)?;
-    if !viewer_can_read(conn, &row, access).await? {
+    if !viewer_can_read(conn, &row, &access).await? {
         return Ok(None);
     }
-    let audience = ProjectionViewKey::from_access(access);
-    let lookup = load_live_projection_file_for_audience(
+    let lookup = load_live_projection_file_for_view(
         conn,
         &row.id,
         row.content_version()?,
-        audience,
+        &access.view,
         path,
     )
     .await?;
@@ -291,8 +291,7 @@ where
         ProjectionFileLookup::Missing => None,
         ProjectionFileLookup::NotReady => {
             let repo = hydrate_repo_from_row_id(conn, &row.id).await?;
-            let principal = principal_for_access(viewer_user_id, access);
-            domain_projected_file_content(&repo, &principal, path)
+            domain_projected_file_content(&repo, repo.repo_config.views(), &access.view, path)
         }
     };
     let Some(projected) = content else {
@@ -440,7 +439,7 @@ async fn summary_for_viewer_row<C>(
 where
     C: ConnectionTrait,
 {
-    if !viewer_can_read(conn, &row, access).await? {
+    if !viewer_can_read(conn, &row, &access).await? {
         return Ok(None);
     }
     Ok(Some(summary_from_row(row, access)?))
@@ -487,7 +486,7 @@ fn access_for_row(
 async fn viewer_can_read<C>(
     conn: &C,
     row: &RepoReadRow,
-    access: RepositoryAccess,
+    access: &RepositoryAccess,
 ) -> Result<bool, PostgresError>
 where
     C: ConnectionTrait,
@@ -508,11 +507,15 @@ pub(super) async fn public_repository_visible<C: ConnectionTrait>(
     repo_id: &str,
     content_version: u64,
 ) -> Result<bool, PostgresError> {
+    let views = super::projection_read_models::repository_views(conn, repo_id).await?;
+    let Some(public_view) = views.anyone() else {
+        return Ok(false);
+    };
     if let Some(view) = super::projection_read_models::live_projection_read_model(
         conn,
         repo_id,
         content_version,
-        ProjectionViewKey::Public,
+        public_view,
     )
     .await?
     {
@@ -522,18 +525,9 @@ pub(super) async fn public_repository_visible<C: ConnectionTrait>(
     let repo = hydrate_repo_from_row_id(conn, repo_id).await?;
     Ok(has_visible_projected_non_control_files(
         &repo,
-        &Principal::public(),
+        repo.repo_config.views(),
+        public_view,
     ))
-}
-
-fn principal_for_access(viewer_user_id: Option<&str>, access: RepositoryAccess) -> Principal {
-    match viewer_user_id {
-        Some(user_id) if access.actor != RepositoryActor::Public => Principal {
-            id: user_id.to_string(),
-            kind: PrincipalKind::User,
-        },
-        _ => Principal::public(),
-    }
 }
 
 impl RepoReadRow {
@@ -574,7 +568,10 @@ async fn load_open_request_counts<C: ConnectionTrait>(
             Ok::<_, PostgresError>(condition.add(
                 Condition::all().add(Column::RepoId.eq(&summary.id)).add(
                     super::request_rows::request_list_condition(
-                        &scope_domain::requests::request_list_predicate(summary.access, None),
+                        &scope_domain::requests::request_list_predicate(
+                            summary.access.clone(),
+                            None,
+                        ),
                     )?,
                 ),
             ))

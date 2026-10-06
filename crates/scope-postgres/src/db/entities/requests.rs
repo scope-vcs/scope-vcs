@@ -1,11 +1,12 @@
 use super::*;
 use scope_domain::requests::{
     CheckCommitBase, Request, RequestActorRole, RequestAttention, RequestAttentionReason,
-    RequestAttentionState, RequestAudience, RequestCheckEvaluation, RequestClaim,
-    RequestDiscussion, RequestDiscussionAnchor, RequestDiscussionReadState, RequestDiscussionReply,
+    RequestAttentionState, RequestCheckEvaluation, RequestClaim, RequestDiscussion,
+    RequestDiscussionAnchor, RequestDiscussionReadState, RequestDiscussionReply,
     RequestDiscussionStatus, RequestEvent, RequestEventKind, RequestEventPayload, RequestInvitee,
     RequestRating, RequestRevision,
 };
+use scope_domain::views::ViewId;
 use scope_domain::{content::SourceBlob, policy::ScopePath};
 
 pub mod request {
@@ -52,7 +53,7 @@ pub mod request {
                 name: request.name.clone(),
                 author_user_id: request.author_user_id.clone(),
                 author_role: encode_enum(request.author_role)?,
-                audience: encode_enum(request.audience)?,
+                audience: request.view.as_str().to_string(),
                 base_main_oid: request.base_main_oid.clone(),
                 head_oid: request.head_oid.clone(),
                 git_snapshot: request.git_snapshot.as_ref().map(encode_json).transpose()?,
@@ -81,7 +82,7 @@ pub mod request {
                 name: self.name,
                 author_user_id: self.author_user_id,
                 author_role: decode_enum::<RequestActorRole>(self.author_role)?,
-                audience: decode_enum::<RequestAudience>(self.audience)?,
+                view: ViewId::parse(&self.audience).map_err(PostgresError::internal)?,
                 base_main_oid: self.base_main_oid,
                 head_oid: self.head_oid,
                 git_snapshot: self

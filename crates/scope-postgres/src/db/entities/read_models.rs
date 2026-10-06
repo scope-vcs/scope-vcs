@@ -139,7 +139,7 @@ pub mod projection_file {
                 path_key,
                 path: content.file.path.as_str().to_string(),
                 oid: content.file.oid,
-                visibility: encode_enum(content.file.visibility)?,
+                visibility: content.file.label.as_str().to_string(),
                 sha256: content.blob.sha256,
                 object_key: serde_json::to_string(&content.blob.content_ref)
                     .map_err(PostgresError::internal)?,
@@ -159,7 +159,7 @@ pub mod projection_file {
                     path: ScopePath::parse(&self.path).map_err(PostgresError::internal)?,
                     oid: self.oid.clone(),
                     tracked: true,
-                    visibility: decode_enum::<Visibility>(self.visibility)?,
+                    label: ViewId::parse(&self.visibility).map_err(PostgresError::internal)?,
                 },
                 blob: SourceBlob {
                     content_ref: serde_json::from_str(&self.object_key)
