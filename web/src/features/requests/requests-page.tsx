@@ -3,9 +3,10 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { loadRequestQueuePage } from '@/routes/-request-workspace-actions'
-import { useRepoLayout } from '../repo-detail/repo-layout-context'
+import { useRepoLayout, useRepoViews } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
-import { REQUEST_QUEUE_SECTION_ORDER } from './request-list-model'
+import { RepoViewingAsPicker, useViewingAs } from '../repo-detail/use-viewing-as'
+import { REQUEST_QUEUE_SECTION_ORDER, requestQueueReadableBy } from './request-list-model'
 import {
   loadMoreRequestQueue,
   searchRequestQueue,
@@ -53,6 +54,8 @@ function RequestWorkspaceContent({
   version: string
 }) {
   const selectedId = useParams({ strict: false, select: (value) => value.requestId })
+  const views = useRepoViews()
+  const { options, reader, view } = useViewingAs()
   const [collapsed, setCollapsed] = useState(readRequestWorkspaceCollapsed)
   const [focus, setFocus] = useState(false)
   const [draft, setDraft] = useState<string | null>(null)
@@ -81,6 +84,12 @@ function RequestWorkspaceContent({
   const pages = useMemo(
     () => loadedPages && applyAttentionMoves(loadedPages, moves),
     [loadedPages, moves],
+  )
+  const sidebarPages = useMemo(
+    () => pages && view !== reader
+      ? requestQueueReadableBy(pages, (requestView) => views.mayRead(view, requestView))
+      : pages,
+    [pages, reader, view, views],
   )
   const selected =
     REQUEST_QUEUE_SECTION_ORDER.flatMap((section) => pages?.[section].requests ?? []).find(
@@ -127,11 +136,12 @@ function RequestWorkspaceContent({
             else queue.retry()
           }}
           onSearch={search}
-          pages={pages}
+          pages={sidebarPages}
           params={params}
           pendingId={pendingId}
           query={query}
           selectedId={selectedId}
+          viewingAs={options.length > 1 ? <RepoViewingAsPicker compact /> : null}
         />
       }
     >

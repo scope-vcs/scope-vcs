@@ -11,7 +11,8 @@ import {
   historyEntryCountLabel,
   historyEntryKindLabel,
 } from './history-row-labels'
-import { VisibilityChanges, type HistoryVisibilityChange } from './history-visibility-changes'
+import { ViewsChanges, VisibilityChanges, type HistoryVisibilityChange } from './history-visibility-changes'
+import { useRepoViews } from '@/features/repo-detail/repo-layout-context'
 import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 import type { ReactNode } from 'react'
 
@@ -23,6 +24,7 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
 }) {
   const { resource, onCloseDiff, onRetryDetail, onSelectVisibility, selectedFilePath, selectedVisibilityId } = props
   const navigation = useChangedFileNavigation(onCloseDiff, selectedFilePath === null)
+  const views = useRepoViews()
   if (resource.status === 'loading') {
     return (
       <PendingSurface label="Loading update details" onRetry={onRetryDetail}>
@@ -47,7 +49,7 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
           {historyCommitTitle(detail)}
         </h1>
         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          {metadataItems(detail).map((item, index) => (
+          {metadataItems(detail, views.name(detail.view)).map((item, index) => (
             <span className="flex items-center gap-2" key={index}>
               {index > 0 ? <span aria-hidden="true">·</span> : null}
               {item}
@@ -55,10 +57,12 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
           ))}
         </p>
       </header>
+      <ViewsChanges transition={detail.views} />
       <VisibilityChanges
         changes={detail.visibility_changes}
         onSelect={onSelectVisibility}
         selectedId={selectedVisibilityId}
+        view={detail.view}
       />
       <ChangedFilesWorkbench
         {...props}
@@ -71,8 +75,8 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
   )
 }
 
-function metadataItems(detail: HistoryEntryDetailResponse): ReactNode[] {
-  const count = historyEntryCountLabel(detail, detail.view)
+function metadataItems(detail: HistoryEntryDetailResponse, viewName: string): ReactNode[] {
+  const count = historyEntryCountLabel(detail, viewName)
   return [
     detail.kind === 'push' ? null : historyEntryKindLabel(detail.kind),
     detail.author,

@@ -7,7 +7,7 @@ import type {
   UpdateRepoMetadataInput,
 } from './types'
 import type { RepositoryMemberPermissions } from './types.generated'
-import { builtinViews } from './repo-views'
+import { parseViewId } from './repo-views'
 import { parseRepoParams } from './repo-params'
 
 export function parseUpdateRepoMetadataInput(input: unknown): UpdateRepoMetadataInput {
@@ -75,13 +75,10 @@ function requiredId(value: unknown, message: string) {
 
 function parseMemberPermissions(input: unknown): RepositoryMemberPermissions {
   const data = input as Partial<RepositoryMemberPermissions> | null
-  const view = data?.view
-  if (!view || !builtinViews.some((definition) => definition.id === view)) {
-    throw new Error('Select a repository view for the member.')
-  }
+  if (!data?.view) throw new Error('Select a repository view for the member.')
   return {
-    can_change_file_visibility: data?.can_change_file_visibility === true,
-    can_push: data?.can_push === true,
-    view,
+    can_change_file_visibility: data.can_change_file_visibility === true,
+    can_push: data.can_push === true,
+    view: parseViewId(data.view),
   }
 }

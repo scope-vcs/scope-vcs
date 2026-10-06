@@ -1,38 +1,63 @@
-import type { RepositoryAccessResponse, ViewDefinition, ViewId } from './types.generated'
+import type { ViewDefinition, ViewId } from './types.generated'
 
-export const builtinViews: ViewDefinition[] = [
-  { id: 'public', name: 'Public', includes: [], readers: 'anyone' },
-  { id: 'private', name: 'Private', includes: 'all', readers: 'members' },
-]
+const VIEW_ID = /^[a-z][a-z0-9_-]{0,31}$/
 
-export function viewName(view: ViewId, views: readonly ViewDefinition[] = builtinViews) {
-  return views.find((definition) => definition.id === view)?.name ?? view
+export type RepoViews = {
+  definitions: readonly ViewDefinition[]
+  full: ViewId | null
+  anyone: ViewId | null
+  get: (view: ViewId) => ViewDefinition | null
+  name: (view: ViewId) => string
+  mayRead: (reader: ViewId, target: ViewId) => boolean
+  readableBy: (reader: ViewId) => ViewDefinition[]
+  includedNames: (view: ViewId) => string[] | 'all'
 }
 
-export function mayReadView(
-  access: RepositoryAccessResponse,
-  target: ViewId,
-  views: readonly ViewDefinition[] = builtinViews,
-) {
-  if (!views.some((definition) => definition.id === target)) return false
-  const pending = [access.view]
-  const visited = new Set<ViewId>()
-  while (pending.length > 0) {
-    const id = pending.pop()!
-    if (id === target) return true
-    if (visited.has(id)) continue
-    visited.add(id)
-    const definition = views.find((candidate) => candidate.id === id)
-    if (!definition) continue
-    if (definition.includes === 'all') return true
-    pending.push(...definition.includes)
+export function parseViewId(value: unknown): ViewId {
+  if (typeof value === 'string' && VIEW_ID.test(value)) return value
+  throw new Error(`Unsupported view: ${String(value)}`)
+}
+
+export function repoViews(definitions: readonly ViewDefinition[]): RepoViews {
+  const byId = new Map(definitions.map((definition) => [definition.id, definition]))
+  const labelCache = new Map<ViewId, ReadonlySet<ViewId>>()
+
+  function labels(view: ViewId): ReadonlySet<ViewId> {
+    const cached = labelCache.get(view)
+    if (cached) return cached
+    const reached = new Set<ViewId>()
+    const pending = byId.has(view) ? [view] : []
+    while (pending.length > 0) {
+      const id = pending.pop()!
+      if (reached.has(id)) continue
+      const definition = byId.get(id)
+      if (!definition) continue
+      reached.add(id)
+      if (!Array.isArray(definition.includes)) {
+        const everything = new Set(byId.keys())
+        labelCache.set(view, everything)
+        return everything
+      }
+      pending.push(...definition.includes)
+    }
+    labelCache.set(view, reached)
+    return reached
   }
-  return false
-}
 
-export function readableViews(
-  access: RepositoryAccessResponse,
-  views: readonly ViewDefinition[] = builtinViews,
-) {
-  return views.filter((definition) => mayReadView(access, definition.id, views))
+  const mayRead = (reader: ViewId, target: ViewId) => labels(reader).has(target)
+
+  return {
+    definitions,
+    full: definitions.find((definition) => !Array.isArray(definition.includes))?.id ?? null,
+    anyone: definitions.find((definition) => definition.readers === 'anyone')?.id ?? null,
+    get: (view) => byId.get(view) ?? null,
+    name: (view) => byId.get(view)?.name ?? view,
+    mayRead,
+    readableBy: (reader) => definitions.filter((definition) => mayRead(reader, definition.id)),
+    includedNames: (view) => {
+      const includes = byId.get(view)?.includes ?? []
+      if (!Array.isArray(includes)) return 'all'
+      return includes.map((id) => byId.get(id)?.name ?? id)
+    },
+  }
 }

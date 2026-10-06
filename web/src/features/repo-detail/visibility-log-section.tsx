@@ -3,9 +3,10 @@ import { SectionRow, SectionRows } from '@/components/section-rows'
 import { HistoryFeedList } from '@/features/history/history-entry-list'
 import { useHistoryFeed } from '@/features/history/history-feed'
 import { Eye } from 'lucide-react'
+import type { ViewId } from '@/api/types.generated'
 
-export function VisibilityLogSection({ params }: { params: RepoParams }) {
-  const history = useHistoryFeed({ view: 'private', feed: 'visibility', params })
+export function VisibilityLogSection({ params, view }: { params: RepoParams; view: ViewId }) {
+  const history = useHistoryFeed({ view, feed: 'visibility', params })
   return (
     <SectionRows>
       <SectionRow
@@ -18,7 +19,6 @@ export function VisibilityLogSection({ params }: { params: RepoParams }) {
             empty="No visibility changes yet."
             history={history}
             params={params}
-            search={{}}
           />
         </div>
       </SectionRow>

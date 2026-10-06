@@ -1,4 +1,4 @@
-import { parseRepoParams } from './repo-params'
+import { parseRepoParams, parseRepoViewInput } from './repo-params'
 import { parseFilePath } from './file-path-input'
 import type { ApproveRequestChecksInput, RequestParams } from './types'
 import type { RequestActionInput } from '../features/requests/request-actions-api'
@@ -59,7 +59,7 @@ export function parseRequestParams(input: unknown): RequestParams {
 
 export function parseRepoFileInput(input: unknown) {
   const data = object(input)
-  return { ...parseRepoParams(data), path: parseFilePath(data.path) }
+  return { ...parseRepoViewInput(data), path: parseFilePath(data.path) }
 }
 
 export function parseLoadRequestRevisionsInput(input: unknown) {

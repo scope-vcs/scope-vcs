@@ -2,7 +2,6 @@ import type { RepoParams } from '@/api/types'
 import type {
   CommitFileResponse,
   HistoryEntryDetailResponse,
-  ViewId,
 } from '@/api/types.generated'
 import { WorkbenchPane } from '@/components/page-header'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
@@ -25,7 +24,8 @@ import { historyFileSelection } from './history-selection'
 import { resourceToDiffState, type CommitFileDiffState } from './history-state'
 import type { HistoryVisibilityChange } from './history-visibility-changes'
 import { UpdateNavigation } from './update-navigation'
-import { updateViewSearch, type UpdateSearch } from './update-search'
+import type { UpdateSearch } from './update-search'
+import { useViewingAs } from '@/features/repo-detail/use-viewing-as'
 
 type UpdatePageProps = {
   initialEntry: HistoryEntryDetailResponse
@@ -36,7 +36,6 @@ type UpdatePageProps = {
 
 export function UpdatePage(props: UpdatePageProps) {
   const {
-    viewSearch,
     closeDiff,
     diffIdentity,
     entryResource,
@@ -57,7 +56,6 @@ export function UpdatePage(props: UpdatePageProps) {
         newer={detail?.newer_source_id ?? null}
         older={detail?.older_source_id ?? null}
         params={repoParams}
-        search={viewSearch}
       />
       <HistoryEntryDetailPanel
         diffIdentity={diffIdentity}
@@ -83,11 +81,7 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
   const { userId, isLoaded } = useAuth()
   const { repo } = useRepoLayout()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
-  const view: ViewId = search.view ?? initialEntry.view
-  const viewSearch = updateViewSearch(
-    view,
-    repo.access.view,
-  )
+  const { view } = useViewingAs()
   const { owner, repo: repoName, entryId } = params
   const version = String(repo.content_version)
   const entryIdentity = scope ? historyEntryCacheKey({ scope, view, entry: entryId }) : null
@@ -101,7 +95,7 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
   const entryResource = useCachedResource({
     fallbackError: 'This update is unavailable.',
     identity: entryIdentity,
-    initialValue: scope === initialEntryScope && initialEntry.source_id === entryId ? initialEntry : null,
+    initialValue: scope === initialEntryScope && initialEntry.source_id === entryId && initialEntry.view === view ? initialEntry : null,
     load: loadEntry,
     resource: historyEntryResource,
     version,
@@ -168,7 +162,6 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
   )
 
   return {
-    viewSearch,
     closeDiff,
     diffIdentity,
     entryResource,
