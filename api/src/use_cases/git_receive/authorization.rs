@@ -1,22 +1,20 @@
 use super::{ReceivePackAccess, request_ref};
 use crate::{
-    auth::scope::principal_for_user_id,
     config::GIT_PUSH_TOKEN_PREFIX,
     error::ApiError,
     git::{
         InitialPushCredential, ReceivePackAuthorization, authorize_git_push_token_for_repo,
-        authorize_initial_push_for_repo, find_repo_after_git_scope_token, git_credential_error,
-        invalid_git_credentials,
+        authorize_initial_push_for_repo, git_credential_error,
+        git_push_credentials_after_scope_token, invalid_git_credentials,
     },
     push_intents::ValidatedPushIntent,
-    repo_access::{ensure_repo_read, find_repo},
     state::AppState,
 };
 use scope_domain::{
-    repository::{RepoLifecycleState, Repository, access::MainPushMode},
+    repository::{RepoLifecycleState, access::MainPushMode},
     views::ViewId,
 };
-use scope_postgres::db::GitPushContext;
+use scope_postgres::db::{GitPushContext, GitPushCredentials};
 
 pub(crate) async fn authorize(
     state: &AppState,
@@ -29,8 +27,14 @@ pub(crate) async fn authorize(
     match authorization {
         ReceivePackAuthorization::ScopeToken { secret } => {
             let push_intent = required_push_intent(state, push_intent_secret)?;
-            let repo = find_repo_after_git_scope_token(state, owner, repo_name).await?;
-            let views = repo.repo_config.views();
+            let repo = git_push_credentials_after_scope_token(state, owner, repo_name).await?;
+            let views = state
+                .metadata
+                .repositories()
+                .repository_access(owner, repo_name, None)
+                .await?
+                .ok_or_else(invalid_git_credentials)?
+                .views;
             if view != views.full() {
                 return Err(ApiError::forbidden(format!(
                     "Git push tokens push through the {} view's address",
@@ -57,7 +61,7 @@ pub(crate) async fn authorize(
 }
 
 fn authorize_scope_token(
-    repo: Repository,
+    repo: GitPushCredentials,
     secret: String,
     push_intent: ValidatedPushIntent,
 ) -> Result<ReceivePackAccess, ApiError> {
@@ -66,20 +70,17 @@ fn authorize_scope_token(
     } else {
         InitialPushCredential::FirstPushToken { secret }
     };
-    if repo.is_waiting_for_first_push() {
-        authorize_initial_push_for_repo(&repo, &credential).map_err(git_credential_error)?;
-        let author_id = repo.record.owner_user_id.clone();
-        push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
-        return Ok(ReceivePackAccess::FirstPush {
-            author_id,
-            incarnation: repo.incarnation(),
-            push_intent,
-        });
-    }
     match repo.record.lifecycle_state {
-        RepoLifecycleState::AwaitingFirstPush => Err(ApiError::conflict(
-            "repo is awaiting its first push and cannot receive another push",
-        )),
+        RepoLifecycleState::AwaitingFirstPush => {
+            authorize_initial_push_for_repo(&repo, &credential).map_err(git_credential_error)?;
+            let author_id = repo.record.owner_user_id.clone();
+            push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
+            Ok(ReceivePackAccess::FirstPush {
+                author_id,
+                incarnation: repo.record.incarnation(),
+                push_intent,
+            })
+        }
         RepoLifecycleState::Ready => match credential {
             InitialPushCredential::GitPushToken { secret } => {
                 let author_id = authorize_git_push_token_for_repo(&repo, &secret)
@@ -87,7 +88,7 @@ fn authorize_scope_token(
                 push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
                 Ok(ReceivePackAccess::ReadyMember {
                     author_id,
-                    incarnation: repo.incarnation(),
+                    incarnation: repo.record.incarnation(),
                     push_intent,
                 })
             }
@@ -141,28 +142,32 @@ async fn authorize_scope_user(
     author_id: String,
     push_intent_secret: Option<&str>,
 ) -> Result<ReceivePackAccess, ApiError> {
-    let repo = find_repo(state, owner, repo_name).await?;
-    let principal = principal_for_user_id(&repo, &author_id);
-    let push_policy = repo.push_policy_for_user_id(&author_id);
-    let views = repo.repo_config.views();
-    if push_policy.mode == MainPushMode::FirstPush && view == views.full() {
+    let not_found = || ApiError::not_found(format!("repo {owner}/{repo_name} not found"));
+    let context = state
+        .metadata
+        .repositories()
+        .repository_read_access(owner, repo_name, Some(&author_id))
+        .await?
+        .ok_or_else(not_found)?;
+    let repo = &context.record;
+    let access = context.access;
+    let views = &context.views;
+    let push_mode = access.main_push_mode(repo.lifecycle_state, views);
+    if push_mode == MainPushMode::FirstPush && view == views.full() {
         let push_intent = required_push_intent(state, push_intent_secret)?;
-        push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
+        push_intent.ensure_repo_user(&repo.id, &author_id)?;
         return Ok(ReceivePackAccess::FirstPush {
             author_id,
             incarnation: repo.incarnation(),
             push_intent,
         });
     }
-    let not_found = || ApiError::not_found(format!("repo {owner}/{repo_name} not found"));
-    if ensure_repo_read(&repo, &principal).is_err()
-        || !repo.can_read_view(&push_policy.access, view)
-    {
+    if !access.can_read_view(views, view) {
         return Err(not_found());
     }
-    let rejection = match push_policy.mode {
+    let rejection = match push_mode {
         MainPushMode::Denied => not_found(),
-        _ if repo.record.lifecycle_state == RepoLifecycleState::AwaitingFirstPush => {
+        _ if repo.lifecycle_state == RepoLifecycleState::AwaitingFirstPush => {
             return Err(ApiError::conflict(
                 "repo is awaiting its first push and cannot receive another push",
             ));
@@ -176,13 +181,9 @@ async fn authorize_scope_user(
             None => ApiError::forbidden("valid Scope push intent required"),
         },
     };
-    if repo.record.lifecycle_state == RepoLifecycleState::Ready
+    if repo.lifecycle_state == RepoLifecycleState::Ready
         && request_ref::actor_has_open_editable_request(
-            state,
-            &repo,
-            &author_id,
-            push_policy.access,
-            view,
+            state, &repo.id, &author_id, access, views, view,
         )
         .await?
     {

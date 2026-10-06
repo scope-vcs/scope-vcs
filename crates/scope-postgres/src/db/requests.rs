@@ -36,6 +36,7 @@ use {
 };
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_list_page"))]
     pub async fn request_list_page(
         &self,
         input: super::RequestListPageQuery<'_>,
@@ -43,11 +44,13 @@ impl RequestStore {
         request_list_page(self.db.as_ref(), input).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_by_id"))]
     pub async fn request_by_id(&self, request_id: &str) -> Result<Option<Request>, PostgresError> {
         let request_id = request_id.to_string();
         request_by_id(self.db.as_ref(), &request_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_by_name"))]
     pub async fn request_by_name(
         &self,
         repo_id: &str,
@@ -58,11 +61,13 @@ impl RequestStore {
         request_by_name(self.db.as_ref(), &repo_id, &request_name).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requests_by_repo_id"))]
     pub async fn requests_by_repo_id(&self, repo_id: &str) -> Result<Vec<Request>, PostgresError> {
         let repo_id = repo_id.to_string();
         requests_by_repo_id(self.db.as_ref(), &repo_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requests_by_repo_author"))]
     pub async fn requests_by_repo_author(
         &self,
         repo_id: &str,
@@ -73,6 +78,7 @@ impl RequestStore {
         requests_by_repo_author(self.db.as_ref(), &repo_id, &author_user_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_events_by_request_id"))]
     pub async fn request_events_by_request_id(
         &self,
         request_id: &str,
@@ -81,6 +87,7 @@ impl RequestStore {
         request_events_by_request_id(self.db.as_ref(), &request_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_events_after_position"))]
     pub async fn request_events_after_position(
         &self,
         request_id: &str,
@@ -90,6 +97,7 @@ impl RequestStore {
         request_events_after_position(self.db.as_ref(), request_id, after_position, limit).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "latest_request_events"))]
     pub async fn latest_request_events(
         &self,
         request_id: &str,
@@ -98,6 +106,7 @@ impl RequestStore {
         latest_request_events(self.db.as_ref(), request_id, limit).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_request"))]
     pub async fn start_request(
         &self,
         input: StartRequestInput,
@@ -128,6 +137,7 @@ impl RequestStore {
         Ok(mutation)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "record_working_request_upload"))]
     pub async fn record_working_request_upload(
         &self,
         input: RecordWorkingRequestUploadInput,
@@ -155,6 +165,7 @@ impl RequestStore {
         Ok(mutation)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "record_request_revision"))]
     pub async fn record_request_revision(
         &self,
         input: RecordRequestRevisionInput,
@@ -211,6 +222,7 @@ impl RequestStore {
         Ok(mutation)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "edit_request_identity"))]
     pub async fn edit_request_identity(
         &self,
         command: EditRequestIdentityCommand,
@@ -264,6 +276,7 @@ impl RequestStore {
         Ok(mutation)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "close_request"))]
     pub async fn close_request(
         &self,
         command: CloseRequestCommand,

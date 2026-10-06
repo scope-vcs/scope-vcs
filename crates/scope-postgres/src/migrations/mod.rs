@@ -30,11 +30,12 @@ mod m0070_github_setup_checks_and_workflow_runs;
 mod m0071_public_check_commits;
 mod m0072_github_run_imports;
 mod m0073_github_workflow_jobs;
-mod m0074_incremental_projection_read_models;
-mod m0075_view_ids;
-mod m0076_custom_views;
-mod m0077_repo_config_version;
-mod m0078_request_views;
+mod m0074_history_path_indexes;
+mod m0075_incremental_projection_read_models;
+mod m0076_view_ids;
+mod m0077_custom_views;
+mod m0078_repo_config_version;
+mod m0079_request_views;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -207,23 +208,27 @@ fn migration_registry() -> Vec<RegisteredMigration> {
             metadata_restore_safe: true,
         },
         RegisteredMigration {
-            migration: Box::new(m0074_incremental_projection_read_models::Migration),
+            migration: Box::new(m0074_history_path_indexes::Migration),
             metadata_restore_safe: true,
         },
         RegisteredMigration {
-            migration: Box::new(m0075_view_ids::Migration),
+            migration: Box::new(m0075_incremental_projection_read_models::Migration),
             metadata_restore_safe: true,
         },
         RegisteredMigration {
-            migration: Box::new(m0076_custom_views::Migration),
+            migration: Box::new(m0076_view_ids::Migration),
             metadata_restore_safe: true,
         },
         RegisteredMigration {
-            migration: Box::new(m0077_repo_config_version::Migration),
+            migration: Box::new(m0077_custom_views::Migration),
             metadata_restore_safe: true,
         },
         RegisteredMigration {
-            migration: Box::new(m0078_request_views::Migration),
+            migration: Box::new(m0078_repo_config_version::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0079_request_views::Migration),
             metadata_restore_safe: true,
         },
     ]

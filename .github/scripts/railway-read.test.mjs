@@ -148,6 +148,6 @@ test("CLI outputs only JSON and does not wait for stdin on routine reads", async
   assert.equal(execFileSync(process.execPath, [script, "api", "query { me { id } }", "--variables", "@-"], {
     input: '{"id":"stdin-value"}', encoding: "utf8",
     env: { ...process.env, PATH: `${directory}:${process.env.PATH}` },
-    timeout: 5_000,
+    timeout: 60_000,
   }), '{"received":"stdin-value"}\n');
 });

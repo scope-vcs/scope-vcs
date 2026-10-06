@@ -252,18 +252,19 @@ pub(super) fn parse_enum<T: DeserializeOwned>(value: &str) -> Option<T> {
 
 impl GitHubApp {
     pub(crate) async fn exchange_user_code(&self, code: &str) -> Result<String, ApiError> {
-        let response = self
-            .http
-            .post(format!("{}/login/oauth/access_token", self.web_url))
-            .header(reqwest::header::ACCEPT, "application/json")
-            .json(&serde_json::json!({
+        let response = scope_service_runtime::outbound_http::send_traced(
+            self.http
+                .post(format!("{}/login/oauth/access_token", self.web_url))
+                .header(reqwest::header::ACCEPT, "application/json")
+                .json(&serde_json::json!({
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
                 "code": code,
-            }))
-            .send()
-            .await
-            .map_err(|error| unavailable(format!("GitHub OAuth was unreachable: {error}")))?;
+                })),
+            "/login/oauth/access_token",
+        )
+        .await
+        .map_err(|error| unavailable(format!("GitHub OAuth was unreachable: {error}")))?;
         if !response.status().is_success() {
             return Err(unavailable(format!(
                 "GitHub OAuth answered {}",
@@ -290,9 +291,12 @@ impl GitHubApp {
         user_token: &str,
     ) -> Result<Vec<PushableRepository>, ApiError> {
         let installations = self
-            .pages::<InstallationsPage, _>(user_token, "/user/installations", |page| {
-                page.installations
-            })
+            .pages::<InstallationsPage, _>(
+                user_token,
+                "/user/installations",
+                "/user/installations",
+                |page| page.installations,
+            )
             .await?
             .unwrap_or_default();
         let mut pushable = Vec::new();
@@ -301,6 +305,7 @@ impl GitHubApp {
                 .pages::<RepositoriesPage, _>(
                     user_token,
                     &format!("/user/installations/{}/repositories", installation.id),
+                    "/user/installations/{installation_id}/repositories",
                     |page| page.repositories,
                 )
                 .await?
@@ -338,9 +343,12 @@ impl GitHubApp {
             return Ok(Vec::new());
         };
         Ok(self
-            .pages::<RepositoriesPage, _>(&token, "/installation/repositories", |page| {
-                page.repositories
-            })
+            .pages::<RepositoriesPage, _>(
+                &token,
+                "/installation/repositories",
+                "/installation/repositories",
+                |page| page.repositories,
+            )
             .await?
             .unwrap_or_default())
     }
@@ -355,13 +363,16 @@ impl GitHubApp {
                 &format!("/app/installations/{installation_id}"),
             )
             .bearer_auth(self.app_jwt(unix_now()?)?);
-        let status = match send::<InstallationDetail>(request).await? {
-            None => InstallationStatus::Uninstalled,
-            Some(InstallationDetail {
-                suspended_at: Some(_),
-            }) => InstallationStatus::Suspended,
-            Some(_) => InstallationStatus::Active,
-        };
+        let status =
+            match send::<InstallationDetail>(request, "/app/installations/{installation_id}")
+                .await?
+            {
+                None => InstallationStatus::Uninstalled,
+                Some(InstallationDetail {
+                    suspended_at: Some(_),
+                }) => InstallationStatus::Suspended,
+                Some(_) => InstallationStatus::Active,
+            };
         if status != InstallationStatus::Active {
             self.installation_tokens
                 .lock()
@@ -384,6 +395,7 @@ impl GitHubApp {
             .pages::<CheckRunsPage, _>(
                 &token,
                 &format!("/repos/{full_name}/commits/{commit_oid}/check-runs?filter=all"),
+                "/repos/{owner}/{repo}/commits/{commit_oid}/check-runs",
                 |page| page.check_runs,
             )
             .await?
@@ -412,9 +424,11 @@ impl GitHubApp {
                 &format!("/repos/{full_name}/actions/runs/{run_id}"),
             )
             .bearer_auth(token);
-        Ok(send::<WorkflowRun>(request)
-            .await?
-            .and_then(WorkflowRun::into_domain))
+        Ok(
+            send::<WorkflowRun>(request, "/repos/{owner}/{repo}/actions/runs/{run_id}")
+                .await?
+                .and_then(WorkflowRun::into_domain),
+        )
     }
 
     pub(crate) async fn branch_workflow_runs(
@@ -433,7 +447,12 @@ impl GitHubApp {
             .finish();
         let path = format!("/repos/{full_name}/actions/runs?{query}");
         Ok(self
-            .pages::<WorkflowRunsPage, _>(&token, &path, |page| page.workflow_runs)
+            .pages::<WorkflowRunsPage, _>(
+                &token,
+                &path,
+                "/repos/{owner}/{repo}/actions/runs",
+                |page| page.workflow_runs,
+            )
             .await?
             .map(|runs| {
                 runs.into_iter()
@@ -457,17 +476,21 @@ impl GitHubApp {
                 &format!("/repos/{full_name}/actions/runs?per_page={PAGE_SIZE}&page={page}"),
             )
             .bearer_auth(token);
-        Ok(send::<WorkflowRunsPage>(request).await?.map(|page| {
-            let more = page.workflow_runs.len() == PAGE_SIZE;
-            WorkflowRunListPage {
-                runs: page
-                    .workflow_runs
-                    .into_iter()
-                    .filter_map(WorkflowRun::into_domain)
-                    .collect(),
-                more,
-            }
-        }))
+        Ok(
+            send::<WorkflowRunsPage>(request, "/repos/{owner}/{repo}/actions/runs")
+                .await?
+                .map(|page| {
+                    let more = page.workflow_runs.len() == PAGE_SIZE;
+                    WorkflowRunListPage {
+                        runs: page
+                            .workflow_runs
+                            .into_iter()
+                            .filter_map(WorkflowRun::into_domain)
+                            .collect(),
+                        more,
+                    }
+                }),
+        )
     }
 
     pub(crate) async fn installation_token(
@@ -490,7 +513,12 @@ impl GitHubApp {
                 &format!("/app/installations/{installation_id}/access_tokens"),
             )
             .bearer_auth(self.app_jwt(now)?);
-        let Some(minted) = send::<AccessToken>(request).await? else {
+        let Some(minted) = send::<AccessToken>(
+            request,
+            "/app/installations/{installation_id}/access_tokens",
+        )
+        .await?
+        else {
             return Ok(None);
         };
         let expires_at_unix = OffsetDateTime::parse(&minted.expires_at, &Rfc3339)
@@ -533,6 +561,7 @@ impl GitHubApp {
         &self,
         token: &str,
         path: &str,
+        route: &'static str,
         items: impl Fn(P) -> Vec<T>,
     ) -> Result<Option<Vec<T>>, ApiError> {
         let mut all = Vec::new();
@@ -544,7 +573,7 @@ impl GitHubApp {
                     &format!("{path}{separator}per_page={PAGE_SIZE}&page={page}"),
                 )
                 .bearer_auth(token);
-            let Some(page) = send::<P>(request).await? else {
+            let Some(page) = send::<P>(request, route).await? else {
                 return Ok(None);
             };
             let page = items(page);
@@ -567,9 +596,9 @@ impl GitHubApp {
 
 pub(super) async fn send<T: DeserializeOwned>(
     request: RequestBuilder,
+    route: &'static str,
 ) -> Result<Option<T>, ApiError> {
-    let response = request
-        .send()
+    let response = scope_service_runtime::outbound_http::send_traced(request, route)
         .await
         .map_err(|error| unavailable(format!("GitHub was unreachable: {}", error.without_url())))?;
     let status = response.status();

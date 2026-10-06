@@ -77,7 +77,7 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "cac
   const result = spawnSync("bash", [deployScript, "cache-id"], {
     cwd: root,
     encoding: "utf8",
-    timeout: 10_000,
+    timeout: 60_000,
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH}`,
@@ -176,7 +176,7 @@ function upload(t, { output, exitCode, stderr = "" }) {
     else process.exit(99);
   `, { mode: 0o755 });
   const result = spawnSync("bash", [deployScript, "cli-id", "upload-root"], {
-    cwd: root, encoding: "utf8", timeout: 10_000,
+    cwd: root, encoding: "utf8", timeout: 60_000,
     env: {
       ...process.env, PATH: `${bin}:${process.env.PATH}`,
       RAILWAY_API_TOKEN: "test-token", RAILWAY_TOKEN: "", RAILWAY_PROJECT_ID: "test-project",

@@ -1,7 +1,7 @@
 use crate::{
     policy::ScopePath,
+    repo_config::RepoConfig,
     repo_control::is_request_protected_path,
-    repository::Repository,
     views::{ViewId, Views},
 };
 use std::collections::BTreeSet;
@@ -12,47 +12,54 @@ pub enum RequestViewPathError {
     HiddenPath,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PathHistory {
+    pub live_paths: BTreeSet<ScopePath>,
+    pub file_change_labels: Vec<(ScopePath, ViewId)>,
+    pub visibility_changes: Vec<(ScopePath, ViewId, ViewId)>,
+}
+
 pub struct RequestViewPaths<'a> {
-    repository: &'a Repository,
+    repo_config: &'a RepoConfig,
     views: &'a Views,
     view: &'a ViewId,
     labels: BTreeSet<ViewId>,
     visible_paths: &'a BTreeSet<String>,
+    live_paths: &'a BTreeSet<ScopePath>,
     hidden_history_paths: BTreeSet<&'a ScopePath>,
 }
 
 impl<'a> RequestViewPaths<'a> {
     pub fn new(
-        repository: &'a Repository,
+        repo_config: &'a RepoConfig,
         views: &'a Views,
         view: &'a ViewId,
         visible_paths: &'a BTreeSet<String>,
+        history: &'a PathHistory,
     ) -> Self {
         let labels = views.labels(view);
-        let hidden_history_paths = repository
-            .graph
-            .commits
+        let hidden_history_paths = history
+            .file_change_labels
             .iter()
-            .flat_map(|commit| &commit.changes)
-            .filter(|change| !labels.contains(&change.label))
-            .map(|change| &change.path)
+            .filter(|(_, label)| !labels.contains(label))
+            .map(|(path, _)| path)
             .chain(
-                repository
-                    .visibility_change_sets
+                history
+                    .visibility_changes
                     .iter()
-                    .flat_map(|set| &set.changes)
-                    .filter(|change| {
-                        !labels.contains(&change.old_label) || !labels.contains(&change.new_label)
+                    .filter(|(_, old_label, new_label)| {
+                        !labels.contains(old_label) || !labels.contains(new_label)
                     })
-                    .map(|change| &change.path),
+                    .map(|(path, _, _)| path),
             )
             .collect();
         Self {
-            repository,
+            repo_config,
             views,
             view,
             labels,
             visible_paths,
+            live_paths: &history.live_paths,
             hidden_history_paths,
         }
     }
@@ -64,13 +71,10 @@ impl<'a> RequestViewPaths<'a> {
         if self.visible_paths.contains(path.as_str()) {
             return Ok(());
         }
-        if self.repository.live_file_exists(path) || self.hidden_history_paths.contains(path) {
+        if self.live_paths.contains(path) || self.hidden_history_paths.contains(path) {
             return Err(RequestViewPathError::HiddenPath);
         }
-        if self
-            .labels
-            .contains(&self.repository.repo_config.label_for_path(path))
-        {
+        if self.labels.contains(&self.repo_config.label_for_path(path)) {
             Ok(())
         } else {
             Err(RequestViewPathError::HiddenPath)

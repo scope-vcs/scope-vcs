@@ -2,6 +2,7 @@ use crate::{
     error::ApiError,
     git::{
         command::{git_is_ancestor, run_git},
+        repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, ensure_request_ref_is_view_safe},
         request_refs::{
             RequestRefUpdate, acquire_request_ref_update_lock_async, persist_request_ref_to_store,
@@ -11,12 +12,11 @@ use crate::{
     persistence::unix_now,
     persistence_ids::generate_prefixed_id,
     push_intents::ValidatedPushIntent,
-    repo_access::find_repo,
     repo_events::RepoChangeReason,
     state::AppState,
 };
 use scope_domain::{
-    repository::{Repository, RepositoryIncarnation},
+    repository::RepositoryIncarnation,
     requests::{
         MainPushRequestMutation, Request, StartMainPushRequestInput, StartRequestFacts,
         StartRequestInput, canonical_request_ref, main_push_request_name, main_push_request_title,
@@ -25,6 +25,7 @@ use scope_domain::{
     views::ViewId,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
+use scope_postgres::db::GitPushContext;
 use std::{collections::BTreeMap, path::Path};
 
 pub(super) struct ViewMainPush {
@@ -45,24 +46,24 @@ pub(super) async fn complete_view_main_push(
 ) -> Result<MainPushRequestMutation, ApiError> {
     let head_oid = pushed_main_head(&push.refs_before, &push.refs_after)?;
     push.push_intent.ensure_head(&head_oid)?;
-    let repo = find_repo(state, owner, repo_name).await?;
-    if repo.incarnation() != push.incarnation {
+    let context =
+        super::request_ref::git_push_context(state, owner, repo_name, &push.author_id).await?;
+    if context.incarnation != push.incarnation {
         return Err(ApiError::conflict(
             "repository changed after receive-pack; retry the push",
         ));
     }
+    let git = RepositoryGit::of_push_context(&context);
+    let views = context.repo_config.views();
     let view_main_oid = ensure_request_ref_is_view_safe(
-        RequestView::new(&repo, &push.view),
+        RequestView::new(&git, views, &push.view),
+        &context.repo_config,
         state,
         staging_repo,
         &head_oid,
     )
     .await?;
-    let view_name = repo
-        .repo_config
-        .views()
-        .display_name(&push.view)
-        .to_string();
+    let view_name = views.display_name(&push.view).to_string();
     let descends = {
         let staging_repo = staging_repo.to_path_buf();
         let (view_main_oid, head_oid) = (view_main_oid.clone(), head_oid.clone());
@@ -92,7 +93,7 @@ pub(super) async fn complete_view_main_push(
     let request_id = generate_prefixed_id("req")?;
     let now_unix = unix_now()?;
     let request = provisional_request(
-        &repo,
+        &context,
         &push,
         &request_id,
         &pusher_handle,
@@ -120,15 +121,22 @@ pub(super) async fn complete_view_main_push(
     let update_lock =
         acquire_request_ref_update_lock_async(state, &push.incarnation, &update.request_ref)
             .await?;
-    let persisted =
-        persist_request_ref_to_store(state, &repo, staging_repo, &request, &update).await?;
+    let persisted = persist_request_ref_to_store(
+        state,
+        &git,
+        &context.repo_config,
+        staging_repo,
+        &request,
+        &update,
+    )
+    .await?;
     let mutation = state
         .metadata
         .requests()
         .start_main_push_request(StartMainPushRequestInput {
             id: request_id,
-            repo_id: repo.record.id.clone(),
-            repository_incarnation_id: repo.record.incarnation_id.clone(),
+            repo_id: context.repo_id.clone(),
+            repository_incarnation_id: context.incarnation.incarnation_id().to_string(),
             pusher_user_id: push.author_id.clone(),
             pusher_handle,
             validated_view: push.view.clone(),
@@ -179,7 +187,8 @@ pub(super) async fn complete_view_main_push(
         .await;
     crate::use_cases::request_checks::best_effort_evaluate_request_checks(
         state,
-        &repo,
+        &git,
+        views,
         &mutation.request,
         &mutation.revision,
         &push.author_id,
@@ -212,14 +221,14 @@ fn pushed_main_head(
 }
 
 fn provisional_request(
-    repo: &Repository,
+    context: &GitPushContext,
     push: &ViewMainPush,
     request_id: &str,
     pusher_handle: &str,
     view_main_oid: &str,
     now_unix: u64,
 ) -> Result<Request, ApiError> {
-    let access = repo.access_for_user_id(&push.author_id);
+    let access = &context.access;
     Ok(start_request(
         StartRequestFacts {
             request_id_exists: false,
@@ -228,18 +237,18 @@ fn provisional_request(
         },
         StartRequestInput {
             id: request_id.to_string(),
-            repo_id: repo.record.id.clone(),
+            repo_id: context.repo_id.clone(),
             name: main_push_request_name(&push.push_intent.head_oid),
             author_user_id: push.author_id.clone(),
             title: Some(main_push_request_title(pusher_handle)),
             author_role: request_actor_role(access.clone()),
-            author_view: access.view,
+            author_view: access.view.clone(),
             view: push.view.clone(),
             base_main_oid: view_main_oid.to_string(),
             event_id: generate_prefixed_id("event_request_started")?,
             now_unix,
         },
-        repo.repo_config.views(),
+        context.repo_config.views(),
     )?
     .request)
 }

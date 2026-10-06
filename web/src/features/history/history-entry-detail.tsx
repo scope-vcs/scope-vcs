@@ -15,6 +15,7 @@ import { ViewsChanges, VisibilityChanges, type HistoryVisibilityChange } from '.
 import { NativeCommits } from './history-native-commits'
 import { useRepoViews } from '@/features/repo-detail/repo-layout-context'
 import type { HistoryEntryDetailResponse } from '@/api/types.generated'
+import type { RepoViews } from '@/api/repo-views'
 import type { ReactNode } from 'react'
 
 export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
@@ -50,7 +51,7 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
           {historyCommitTitle(detail)}
         </h1>
         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          {metadataItems(detail, views.name(detail.view)).map((item, index) => (
+          {metadataItems(detail, views).map((item, index) => (
             <span className="flex items-center gap-2" key={index}>
               {index > 0 ? <span aria-hidden="true">·</span> : null}
               {item}
@@ -77,8 +78,8 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
   )
 }
 
-function metadataItems(detail: HistoryEntryDetailResponse, viewName: string): ReactNode[] {
-  const count = historyEntryCountLabel(detail, viewName)
+function metadataItems(detail: HistoryEntryDetailResponse, views: RepoViews): ReactNode[] {
+  const count = historyEntryCountLabel(detail, detail.view, views)
   return [
     detail.kind === 'push' ? null : historyEntryKindLabel(detail.kind),
     detail.author,

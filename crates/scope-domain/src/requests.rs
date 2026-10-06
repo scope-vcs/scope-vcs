@@ -3,7 +3,7 @@ use crate::error::DomainError;
 #[cfg(test)]
 pub(crate) mod fixtures;
 mod view_paths;
-pub use view_paths::{RequestViewPathError, RequestViewPaths};
+pub use view_paths::{PathHistory, RequestViewPathError, RequestViewPaths};
 
 mod access;
 pub use access::{

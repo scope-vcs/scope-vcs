@@ -69,11 +69,12 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0071_public_check_commits",
     "m0072_github_run_imports",
     "m0073_github_workflow_jobs",
-    "m0074_incremental_projection_read_models",
-    "m0075_view_ids",
-    "m0076_custom_views",
-    "m0077_repo_config_version",
-    "m0078_request_views",
+    "m0074_history_path_indexes",
+    "m0075_incremental_projection_read_models",
+    "m0076_view_ids",
+    "m0077_custom_views",
+    "m0078_repo_config_version",
+    "m0079_request_views",
 ];
 
 pub(super) async fn isolated_database() -> (

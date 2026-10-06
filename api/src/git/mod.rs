@@ -9,6 +9,7 @@ pub(crate) mod http_backend;
 pub(crate) mod import;
 pub(crate) mod projection_repo;
 pub(crate) mod repository_engine;
+pub(crate) mod repository_git;
 pub(crate) mod request_commit;
 pub(crate) mod request_merge_tree;
 pub(crate) mod request_ref_view_safety;
@@ -50,6 +51,7 @@ use std::{
     path::{Path as FsPath, PathBuf},
     time::Instant,
 };
+use tracing::Instrument as _;
 
 struct TemporaryRepository(PathBuf);
 
@@ -162,10 +164,11 @@ pub(crate) async fn git_info_refs(
                 Ok(permit) => permit,
                 Err(error) => return git_error_response(error),
             };
-            let operation = tokio::spawn(async move {
+            let work = async move {
                 let _permit = permit;
                 handle_git_receive_pack(&state, &org, &repo, "GET", Vec::new(), None, access).await
-            });
+            };
+            let operation = tokio::spawn(work.in_current_span());
             match operation.await {
                 Ok(Ok(response)) => response,
                 Ok(Err(error)) => git_error_response(error),
@@ -247,16 +250,17 @@ pub(crate) async fn git_receive_pack(
         Err(error) => return git_error_response(error),
     };
 
-    tokio::spawn(async move {
+    let work = async move {
         let _permit = permit;
         receive_pack_request(state, headers, org, repo, request, access).await
-    })
-    .await
-    .unwrap_or_else(|error| {
-        git_error_response(ApiError::internal_message(format!(
-            "Git receive operation failed: {error}"
-        )))
-    })
+    };
+    tokio::spawn(work.in_current_span())
+        .await
+        .unwrap_or_else(|error| {
+            git_error_response(ApiError::internal_message(format!(
+                "Git receive operation failed: {error}"
+            )))
+        })
 }
 
 async fn receive_pack_request(

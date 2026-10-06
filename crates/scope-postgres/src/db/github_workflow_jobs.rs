@@ -49,6 +49,7 @@ const SELECT_JOB: &str = "github_job_id, github_run_id, run_attempt, name, statu
     started_at_unix, completed_at_unix, html_url, steps";
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "save_github_workflow_jobs"))]
     pub async fn save_github_workflow_jobs(
         &self,
         repo_id: &str,
@@ -61,6 +62,7 @@ impl RepositoryStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_jobs"))]
     pub async fn github_workflow_jobs(
         &self,
         repo_id: &str,
@@ -91,6 +93,7 @@ impl RepositoryStore {
         .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_job"))]
     pub async fn github_workflow_job(
         &self,
         repo_id: &str,
@@ -119,6 +122,7 @@ impl RepositoryStore {
         .transpose()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_job_log"))]
     pub async fn github_workflow_job_log(
         &self,
         github_job_id: u64,
@@ -141,6 +145,7 @@ impl RepositoryStore {
         }))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "save_github_workflow_job_log"))]
     pub async fn save_github_workflow_job_log(
         &self,
         github_job_id: u64,

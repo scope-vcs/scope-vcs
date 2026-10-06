@@ -17,9 +17,9 @@ const appliedMigrations = ['m0043_retire_git_manifests.rs', 'm0044_request_atten
   'm0067_provider_neutral_request_checks.rs', 'm0068_github_connections.rs',
   'm0069_github_request_checks.rs', 'm0070_github_setup_checks_and_workflow_runs.rs',
   'm0072_github_run_imports.rs', 'm0073_github_workflow_jobs.rs',
-  'm0074_incremental_projection_read_models.rs', 'm0075_view_ids.rs',
-  'm0076_custom_views.rs', 'm0077_repo_config_version.rs',
-  'm0078_request_views.rs'];
+  'm0075_incremental_projection_read_models.rs', 'm0076_view_ids.rs',
+  'm0077_custom_views.rs', 'm0078_repo_config_version.rs',
+  'm0079_request_views.rs'];
 
 test('every table-creating migration after the baseline is applied to the role inventory', () => {
   const creators = readdirSync(migrationsDir)
@@ -59,7 +59,7 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query('GRANT SELECT (id) ON scope_cli_sessions TO scope_cache;');
     query(renderPolicy());
     query('SELECT id FROM scope_cli_sessions;', 'scope_cache', false);
-    query(renderPolicy({ grantsOnly: true }), 'scope_migrator');
+    query(renderPolicy({ mode: 'grants' }), 'scope_migrator');
     query(renderRuntimeRoleAudit(), 'scope_migrator');
     query('GRANT SELECT (id) ON scope_cli_sessions TO scope_cache;');
     query(renderRuntimeRoleAudit(), 'scope_migrator');
@@ -75,7 +75,7 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     auditFails(/Unreviewed production relation/);
     query('DROP TABLE old_pending_relation;', 'scope_migrator');
     auditFails(/Production column privilege differs/);
-    query(renderPolicy({ grantsOnly: true }), 'scope_migrator');
+    query(renderPolicy({ mode: 'grants' }), 'scope_migrator');
     query(renderRuntimeRoleAudit(), 'scope_migrator');
     query('ALTER TABLE scope_cli_sessions OWNER TO postgres;');
     auditFails(/not owned by scope_migrator/);
@@ -154,7 +154,7 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     const restoredSchema = execFileSync(join(pgBin, 'pg_dump'), ['-h', dir, '-U', 'postgres', '-d', 'postgres', '--schema-only', '--no-owner', '--no-acl'], { encoding: 'utf8' });
     query(`DROP SCHEMA public CASCADE; CREATE SCHEMA public; ${restoredSchema}`, 'scope_migrator');
     query('SELECT * FROM public.scope_runs;', 'scope_cache', false);
-    query(renderPolicy({ grantsOnly: true }), 'scope_migrator');
+    query(renderPolicy({ mode: 'grants' }), 'scope_migrator');
     query('SELECT * FROM scope_runs;', 'scope_cache');
     query('SELECT * FROM scope_cli_sessions;', 'scope_cache', false);
     query('CREATE TABLE future_table(id int); CREATE FUNCTION future_function() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;', 'scope_migrator');
@@ -170,6 +170,42 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     const membership = spawnSync(join(pgBin, 'psql'), ['-X', '-qAt', '-h', dir, '-U', 'postgres', '-d', 'postgres'], { input: renderPolicy(), encoding: 'utf8' });
     assert.notEqual(membership.status, 0);
     assert.match(membership.stderr, /must have no memberships/);
+  } finally {
+    if (started) execFileSync(join(pgBin, 'pg_ctl'), ['-D', data, '-m', 'immediate', '-w', 'stop'], { stdio: 'pipe' });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('roles-only bootstrap lets the migration login build and grant an empty database', { skip: localClusterSkip }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'scope-role-bootstrap-'));
+  const data = join(dir, 'data');
+  let started = false;
+  function query(sql, role = 'postgres', succeeds = true) {
+    const result = spawnSync(join(pgBin, 'psql'), ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1',
+      '-h', dir, '-U', role, '-d', 'postgres'], { input: sql, encoding: 'utf8' });
+    if (succeeds) assert.equal(result.status, 0, result.stderr);
+    else assert.notEqual(result.status, 0, sql);
+    return result;
+  }
+  try {
+    execFileSync(join(pgBin, 'initdb'), ['-D', data, '-U', 'postgres', '--auth=trust', '--no-locale'], { stdio: 'pipe' });
+    execFileSync(join(pgBin, 'pg_ctl'), ['-D', data, '-l', join(dir, 'log'), '-o', `-k ${dir} -c listen_addresses=''`, '-w', 'start'], { stdio: 'pipe' });
+    started = true;
+    assert.doesNotMatch(renderPolicy({ mode: 'roles' }), /^GRANT [A-Z, ]+ ON (TABLE|SEQUENCE) public\./m);
+    query(renderPolicy({ mode: 'roles' }));
+    query(renderPolicy({ mode: 'roles' }));
+    query('CREATE TABLE early(id int);', 'scope_api', false);
+    query(readFileSync(new URL('../../crates/scope-postgres/src/migrations/current_schema.sql', import.meta.url), 'utf8'), 'scope_migrator');
+    for (const filename of appliedMigrations) {
+      const source = readFileSync(new URL(filename, migrationsDir), 'utf8');
+      query(`BEGIN; ${source.match(/r#"([\s\S]*?)"#/)[1]} COMMIT;`, 'scope_migrator');
+    }
+    query('CREATE TABLE seaql_migrations (version text PRIMARY KEY);', 'scope_migrator');
+    query('SELECT * FROM scope_runs;', 'scope_cache', false);
+    query(renderPolicy({ mode: 'grants' }), 'scope_migrator');
+    query('SELECT * FROM scope_runs;', 'scope_cache');
+    query('SELECT * FROM scope_cli_sessions;', 'scope_cache', false);
+    query(renderRuntimeRoleAudit(), 'scope_migrator');
   } finally {
     if (started) execFileSync(join(pgBin, 'pg_ctl'), ['-D', data, '-m', 'immediate', '-w', 'stop'], { stdio: 'pipe' });
     rmSync(dir, { recursive: true, force: true });

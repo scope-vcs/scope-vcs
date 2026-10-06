@@ -27,6 +27,7 @@ pub use types::{
 
 #[allow(clippy::too_many_arguments)]
 impl CacheStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "restore"))]
     pub async fn restore(
         &self,
         repository_id: &str,
@@ -111,6 +112,7 @@ impl CacheStore {
         }))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "prepare_upload"))]
     pub async fn prepare_upload(
         &self,
         repository_id: &str,
@@ -282,6 +284,7 @@ impl CacheStore {
         }))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "upload"))]
     pub async fn upload(&self, upload_id: &str) -> Result<CacheUploadRecord, PostgresError> {
         let row = self
             .db
@@ -300,6 +303,7 @@ impl CacheStore {
         decode_upload(&row)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "commit_upload"))]
     pub async fn commit_upload(
         &self,
         upload_id: &str,

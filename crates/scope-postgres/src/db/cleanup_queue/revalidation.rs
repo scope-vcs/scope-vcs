@@ -11,6 +11,7 @@ use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Transactio
 use std::collections::BTreeSet;
 
 impl CleanupStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "source_blob_cleanup_decision"))]
     pub async fn source_blob_cleanup_decision(
         &self,
         batch: &SourceBlobCleanupBatch,

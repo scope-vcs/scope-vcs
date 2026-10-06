@@ -52,6 +52,7 @@ struct ConnectionRow {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_connection"))]
     pub async fn github_connection(
         &self,
         repo_id: &str,
@@ -64,6 +65,7 @@ impl RepositoryStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_connection_for_github_repository"))]
     pub async fn github_connection_for_github_repository(
         &self,
         github_repository_id: u64,
@@ -77,6 +79,7 @@ impl RepositoryStore {
         .map(|read| read.connection))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "connect_github_repository"))]
     pub async fn connect_github_repository<E: From<PostgresError>>(
         &self,
         command: ConnectGitHubRepository,
@@ -156,6 +159,7 @@ impl RepositoryStore {
         Ok((connection, context.incarnation()))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "apply_github_repository_visibility"))]
     pub async fn apply_github_repository_visibility(
         &self,
         github_repository_id: u64,
@@ -184,6 +188,7 @@ impl RepositoryStore {
         Ok(changed)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "acknowledge_public_github_repository"))]
     pub async fn acknowledge_public_github_repository(
         &self,
         repo_id: &str,
@@ -206,6 +211,7 @@ impl RepositoryStore {
         Ok(context.incarnation())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "disconnect_github_repository"))]
     pub async fn disconnect_github_repository(
         &self,
         repo_id: &str,
@@ -233,6 +239,7 @@ impl RepositoryStore {
         Ok(context.incarnation())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "apply_github_installation_change"))]
     pub async fn apply_github_installation_change<E: From<PostgresError>>(
         &self,
         installation_id: u64,

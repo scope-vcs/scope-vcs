@@ -4,6 +4,7 @@ use crate::{
     git::{
         command::{git_ref_listing, run_git, run_git_output},
         import::{git_snapshot_from_ref, validate_pushed_commit_range},
+        repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, ensure_request_ref_is_view_safe},
         staging::write_receive_pack_hook,
         storage::{
@@ -14,7 +15,8 @@ use crate::{
 };
 use scope_domain::{
     content::SourceBlob,
-    repository::{Repository, RepositoryIncarnation},
+    repo_config::RepoConfig,
+    repository::RepositoryIncarnation,
     requests::{
         Request, RequestRevisionGitFacts, canonical_request_ref, request_base_after_revision,
     },
@@ -293,7 +295,8 @@ pub(crate) struct PersistedRequestRef {
 
 pub(crate) async fn persist_request_ref_to_store(
     state: &AppState,
-    repo: &Repository,
+    git: &RepositoryGit,
+    repo_config: &RepoConfig,
     staging_repo: &FsPath,
     request: &Request,
     update: &RequestRefUpdate,
@@ -306,13 +309,15 @@ pub(crate) async fn persist_request_ref_to_store(
         ensure_request_ref_descends_from_base(&path, &base_oid, &head_oid)
     })
     .await?;
-    let accepted_main_oid = repo.git_head.as_ref().map(|head| head.head_oid.clone());
-    let main_oid = if &request.view == repo.repo_config.views().full() {
+    let accepted_main_oid = git.git_head.as_ref().map(|head| head.head_oid.clone());
+    let views = repo_config.views();
+    let main_oid = if &request.view == views.full() {
         accepted_main_oid.clone()
     } else {
         Some(
             ensure_request_ref_is_view_safe(
-                RequestView::new(repo, &request.view),
+                RequestView::new(git, views, &request.view),
+                repo_config,
                 state,
                 staging_repo,
                 &update.new_head_oid,
@@ -320,7 +325,7 @@ pub(crate) async fn persist_request_ref_to_store(
             .await?,
         )
     };
-    let incarnation = repo.incarnation();
+    let incarnation = git.incarnation.clone();
     let prepared = {
         let state = state.clone();
         let incarnation = incarnation.clone();

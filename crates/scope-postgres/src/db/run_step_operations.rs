@@ -3,6 +3,7 @@ use crate::error::PostgresError;
 use scope_domain::runs::step::StepConclusion;
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_attempt_step"))]
     pub async fn start_attempt_step(
         &self,
         attempt_id: &str,
@@ -17,6 +18,7 @@ impl RunStore {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_attempt_step"))]
     pub async fn complete_attempt_step(
         &self,
         attempt_id: &str,

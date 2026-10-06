@@ -18,7 +18,7 @@ async fn public_request_merge_origins_become_request_merges_in_the_public_view()
     let (_target, db, _lease) = isolated_database().await;
     let previous_count = migrations::Migrator::migrations()
         .iter()
-        .position(|migration| migration.name() == "m0078_request_views")
+        .position(|migration| migration.name() == "m0079_request_views")
         .unwrap();
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await

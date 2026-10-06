@@ -2,18 +2,13 @@ use crate::{
     config::EMPTY_GIT_OID,
     error::ApiError,
     git::{
-        command::run_git, projection_repo::projection_bare_repo_for_state,
-        request_refs::REQUEST_REF_COMMIT_ERROR, storage::receive_pack_staging_repo_path,
+        command::run_git, repository_git::RepositoryGit, request_refs::REQUEST_REF_COMMIT_ERROR,
+        storage::receive_pack_staging_repo_path,
     },
     persistence::ensure_private_dir,
-    repo_access::find_repo,
     state::AppState,
 };
-use scope_domain::{
-    policy::Principal,
-    projection::project_graph,
-    repository::{RepoLifecycleState, RepositoryIncarnation},
-};
+use scope_domain::repository::{RepoLifecycleState, RepositoryIncarnation};
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{
     fs,
@@ -88,26 +83,9 @@ pub(crate) async fn ensure_ready_receive_pack_staging_repo(
             .materialize_repository(state, incarnation, head, &repo.git_pack_spans)
             .await?
     } else {
-        let repo = find_repo(state, owner, repo_name).await?;
-        let principal = Principal {
-            id: author_id.to_string(),
-            kind: scope_domain::policy::PrincipalKind::User,
-        };
-        let view = repo.access_for_principal(&principal).view;
-        let projection = project_graph(
-            &repo.graph,
-            &repo.visibility_change_sets,
-            repo.repo_config.views(),
-            &view,
-        );
-        projection_bare_repo_for_state(
-            state,
-            incarnation,
-            &projection,
-            repo.git_head.as_ref(),
-            &repo.git_pack_spans,
-        )
-        .await?
+        RepositoryGit::of_push_context(&repo)
+            .view_repo(state, repo.repo_config.views(), &repo.access.view)
+            .await?
     };
     let state = state.clone();
     let incarnation = incarnation.clone();

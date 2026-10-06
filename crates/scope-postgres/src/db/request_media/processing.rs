@@ -29,6 +29,7 @@ use scope_domain::views::ViewId;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
 impl MediaStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_processing_job"))]
     pub async fn claim_processing_job(
         &self,
         lease_token: &str,
@@ -173,6 +174,7 @@ impl MediaStore {
         }))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "renew_processing_lease"))]
     pub async fn renew_processing_lease(
         &self,
         attachment_id: &str,
@@ -208,6 +210,7 @@ impl MediaStore {
         Ok(result.rows_affected() == 1)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "processing_source_manifest"))]
     pub async fn processing_source_manifest(
         &self,
         lease: &RequestAttachmentProcessingLease,
@@ -248,6 +251,7 @@ impl MediaStore {
         manifest_by_id(self.db.as_ref(), &manifest_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "reserve_processing_object_key"))]
     pub async fn reserve_processing_object_key(
         &self,
         attachment_id: &str,
@@ -325,6 +329,7 @@ impl MediaStore {
         Ok(MediaLeaseMutation::Applied(()))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mark_processing_source_validated"))]
     pub async fn mark_processing_source_validated(
         &self,
         command: ValidateRequestAttachmentSourceCommand,
@@ -361,6 +366,7 @@ impl MediaStore {
         Ok(MediaLeaseMutation::Applied(next))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_processing_job"))]
     pub async fn complete_processing_job(
         &self,
         command: CompleteRequestAttachmentProcessingCommand,
@@ -431,6 +437,7 @@ impl MediaStore {
         Ok(MediaLeaseMutation::Applied(next))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "fail_processing_job"))]
     pub async fn fail_processing_job(
         &self,
         command: FailRequestAttachmentProcessingCommand,
@@ -509,6 +516,7 @@ impl MediaStore {
         Ok(MediaLeaseMutation::Applied(next))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "retry_request_attachment_processing"))]
     pub async fn retry_request_attachment_processing(
         &self,
         request_id: &str,

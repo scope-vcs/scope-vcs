@@ -28,6 +28,7 @@ pub struct RunDetail {
 }
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_detail"))]
     pub async fn run_detail(&self, run_id: &str) -> Result<Option<RunDetail>, PostgresError> {
         let tx = super::begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let Some(run) = entities::run::Entity::find_by_id(run_id.to_string())

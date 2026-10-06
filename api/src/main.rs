@@ -1,6 +1,6 @@
 use anyhow::Context;
 use api::{AppState, router};
-use scope_service_runtime::{init_tracing, shutdown_signal};
+use scope_service_runtime::{init_telemetry, shutdown_signal};
 use std::net::{Ipv6Addr, SocketAddr};
 
 #[global_allocator]
@@ -8,13 +8,14 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() -> anyhow::Result<()> {
     scope_git_process::install_pid1_reaper_if_needed()?;
-    run()
+    let telemetry = init_telemetry("api=info,scope_postgres=info")?;
+    let result = run();
+    telemetry.shutdown();
+    result
 }
 
 #[tokio::main]
 async fn run() -> anyhow::Result<()> {
-    init_tracing("api=info,scope_postgres=info,tower_http=info");
-
     let port = scope_service_runtime::port_from_env(8080);
     let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
     let state = app_state_from_env().await?;

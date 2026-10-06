@@ -82,6 +82,7 @@ struct QueueModel {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_queue_page"))]
     pub async fn request_queue_page(
         &self,
         input: RequestQueuePageQuery<'_>,

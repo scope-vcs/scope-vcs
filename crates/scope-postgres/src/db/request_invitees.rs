@@ -47,6 +47,7 @@ pub struct LeaveRequestCommand {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requests_with_invitee_status"))]
     pub async fn requests_with_invitee_status(
         &self,
         repository_id: &str,
@@ -55,6 +56,7 @@ impl RequestStore {
         requests_with_invitee_status(self.db.as_ref(), repository_id, viewer_user_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_invitees"))]
     pub async fn request_invitees(
         &self,
         request_id: &str,
@@ -62,6 +64,7 @@ impl RequestStore {
         request_invitee_reads(self.db.as_ref(), request_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_is_invitee"))]
     pub async fn request_is_invitee(
         &self,
         request_id: &str,
@@ -70,6 +73,7 @@ impl RequestStore {
         request_is_invitee(self.db.as_ref(), request_id, user_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "add_request_invitee"))]
     pub async fn add_request_invitee(
         &self,
         command: AddRequestInviteeCommand,
@@ -113,6 +117,7 @@ impl RequestStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "remove_request_invitee"))]
     pub async fn remove_request_invitee(
         &self,
         command: RemoveRequestInviteeCommand,
@@ -146,6 +151,7 @@ impl RequestStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "leave_request"))]
     pub async fn leave_request(
         &self,
         command: LeaveRequestCommand,

@@ -48,6 +48,7 @@ pub struct RequestChecksMutation {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "record_request_checks"))]
     pub async fn record_request_checks(
         &self,
         command: RecordRequestChecksCommand,
@@ -109,6 +110,7 @@ impl RequestStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "approve_request_checks"))]
     pub async fn approve_request_checks(
         &self,
         command: ApproveRequestChecksCommand,
@@ -170,6 +172,7 @@ impl RequestStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "latest_request_revision"))]
     pub async fn latest_request_revision(
         &self,
         request_id: &str,
@@ -178,6 +181,7 @@ impl RequestStore {
             .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_revision_with_head"))]
     pub async fn request_revision_with_head(
         &self,
         request_id: &str,
@@ -191,6 +195,7 @@ impl RequestStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_check_evaluation"))]
     pub async fn request_check_evaluation(
         &self,
         request_id: &str,
@@ -199,6 +204,7 @@ impl RequestStore {
         evaluation_for_head(self.db.as_ref(), request_id, head_oid).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_check_evaluation_testing"))]
     pub async fn request_check_evaluation_testing(
         &self,
         request_id: &str,
@@ -214,6 +220,7 @@ impl RequestStore {
             .transpose()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_check_results"))]
     pub async fn request_check_results(
         &self,
         repo_id: &str,
@@ -222,6 +229,7 @@ impl RequestStore {
         request_check_results(self.db.as_ref(), repo_id, evaluations).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_check_evaluations"))]
     pub async fn request_check_evaluations(
         &self,
         heads: &[(String, String)],

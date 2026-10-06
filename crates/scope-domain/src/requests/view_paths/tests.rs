@@ -1,31 +1,17 @@
 use super::*;
 use crate::{
-    account::UserAccount,
-    projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repo_config::RepoConfigFileRule,
     requests::fixtures::{agent, views_with_agent},
-    visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 
-fn repository(label: ViewId) -> Repository {
-    Repository::new(
-        &UserAccount {
-            id: "owner".into(),
-            handle: "owner".into(),
-            email: "owner@example.test".into(),
-            email_verified: true,
-        },
-        "repo",
-        label,
-        "incarnation",
-    )
-    .unwrap()
+fn config(default_view: ViewId) -> RepoConfig {
+    RepoConfig::with_default_view(default_view)
 }
 
-fn agent_repository() -> Repository {
-    let mut repo = repository(ViewId::public());
-    repo.repo_config.views = views_with_agent();
-    repo.repo_config.files.rules = vec![
+fn agent_config() -> RepoConfig {
+    let mut config = config(ViewId::public());
+    config.views = views_with_agent();
+    config.files.rules = vec![
         RepoConfigFileRule {
             path: "/src/**".into(),
             view: agent(),
@@ -35,58 +21,25 @@ fn agent_repository() -> Repository {
             view: ViewId::private(),
         },
     ];
-    repo.repo_config.validate().unwrap();
-    repo
+    config.validate().unwrap();
+    config
 }
 
 fn path(value: &str) -> ScopePath {
     ScopePath::parse(value).unwrap()
 }
 
-fn removal(path_value: &str, label: ViewId) -> LogicalCommit {
-    LogicalCommit {
-        id: format!("commit{path_value}"),
-        origin: LogicalCommitOrigin::CanonicalPush {
-            source_head_oid: "a".repeat(40),
-        },
-        author_id: "owner".into(),
-        message: "remove a file".into(),
-        occurred_at_unix: None,
-        changes: vec![FileChange {
-            path: path(path_value),
-            old_content: None,
-            new_content: None,
-            label,
-        }],
-    }
-}
-
-fn relabel(path_value: &str, old_label: ViewId, new_label: ViewId) -> VisibilityChangeSet {
-    VisibilityChangeSet::new(
-        "visibility".into(),
-        None,
-        None,
-        "owner".into(),
-        vec![VisibilityChange {
-            path: path(path_value),
-            old_label,
-            new_label,
-            current_content: None,
-        }],
-        None,
-    )
-    .unwrap()
-}
-
 #[test]
 fn current_view_paths_override_hidden_history_but_never_protected_paths() {
-    let mut repo = repository(ViewId::private());
-    repo.visibility_change_sets
-        .push(relabel("/visible.txt", ViewId::private(), ViewId::public()));
-    let views = Views::builtin();
+    let config = config(ViewId::private());
+    let history = PathHistory {
+        visibility_changes: vec![(path("/visible.txt"), ViewId::private(), ViewId::public())],
+        ..PathHistory::default()
+    };
+    let views = config.views.clone();
     let public = ViewId::public();
     let visible = BTreeSet::from(["/visible.txt".into(), "/.scope/repo.json".into()]);
-    let paths = RequestViewPaths::new(&repo, &views, &public, &visible);
+    let paths = RequestViewPaths::new(&config, &views, &public, &visible, &history);
     assert_eq!(paths.ensure_editable(&path("/visible.txt")), Ok(()));
     assert_eq!(
         paths.ensure_editable(&path("/.scope/repo.json")),
@@ -100,16 +53,16 @@ fn current_view_paths_override_hidden_history_but_never_protected_paths() {
 
 #[test]
 fn deleted_or_relabelled_hidden_paths_cannot_be_recreated_under_view_defaults() {
-    let mut repo = repository(ViewId::public());
-    repo.graph
-        .commits
-        .push(removal("/old-private.txt", ViewId::private()));
-    repo.visibility_change_sets
-        .push(relabel("/hidden.txt", ViewId::public(), ViewId::private()));
-    let views = Views::builtin();
+    let config = config(ViewId::public());
+    let history = PathHistory {
+        file_change_labels: vec![(path("/old-private.txt"), ViewId::private())],
+        visibility_changes: vec![(path("/hidden.txt"), ViewId::public(), ViewId::private())],
+        ..PathHistory::default()
+    };
+    let views = config.views.clone();
     let public = ViewId::public();
     let visible = BTreeSet::new();
-    let paths = RequestViewPaths::new(&repo, &views, &public, &visible);
+    let paths = RequestViewPaths::new(&config, &views, &public, &visible, &history);
     for value in ["/old-private.txt", "/hidden.txt"] {
         assert_eq!(
             paths.ensure_editable(&path(value)),
@@ -120,13 +73,35 @@ fn deleted_or_relabelled_hidden_paths_cannot_be_recreated_under_view_defaults() 
 }
 
 #[test]
-fn a_public_request_cannot_recreate_a_path_that_once_carried_a_custom_label() {
-    let mut repo = agent_repository();
-    repo.graph.commits.push(removal("/notes.txt", agent()));
-    let views = repo.repo_config.views.clone();
+fn live_files_hidden_from_the_view_stay_hidden() {
+    let config = config(ViewId::public());
+    let history = PathHistory {
+        live_paths: BTreeSet::from([path("/live-private.txt")]),
+        file_change_labels: vec![(path("/always-public.txt"), ViewId::public())],
+        ..PathHistory::default()
+    };
+    let views = config.views.clone();
     let public = ViewId::public();
     let visible = BTreeSet::new();
-    let paths = RequestViewPaths::new(&repo, &views, &public, &visible);
+    let paths = RequestViewPaths::new(&config, &views, &public, &visible, &history);
+    assert_eq!(
+        paths.ensure_editable(&path("/live-private.txt")),
+        Err(RequestViewPathError::HiddenPath)
+    );
+    assert_eq!(paths.ensure_editable(&path("/always-public.txt")), Ok(()));
+}
+
+#[test]
+fn a_public_request_cannot_recreate_a_path_that_once_carried_a_custom_label() {
+    let config = agent_config();
+    let history = PathHistory {
+        file_change_labels: vec![(path("/notes.txt"), agent())],
+        ..PathHistory::default()
+    };
+    let views = config.views.clone();
+    let public = ViewId::public();
+    let visible = BTreeSet::new();
+    let paths = RequestViewPaths::new(&config, &views, &public, &visible, &history);
     assert_eq!(
         paths.ensure_editable(&path("/notes.txt")),
         Err(RequestViewPathError::HiddenPath)
@@ -136,20 +111,19 @@ fn a_public_request_cannot_recreate_a_path_that_once_carried_a_custom_label() {
 
 #[test]
 fn an_agent_request_edits_only_paths_the_agent_view_shows_or_may_create() {
-    let mut repo = agent_repository();
-    repo.graph
-        .commits
-        .push(removal("/old-public.txt", ViewId::public()));
-    repo.graph
-        .commits
-        .push(removal("/src/old-agent.rs", agent()));
-    repo.graph
-        .commits
-        .push(removal("/src/once-private.rs", ViewId::private()));
-    let views = repo.repo_config.views.clone();
+    let config = agent_config();
+    let history = PathHistory {
+        file_change_labels: vec![
+            (path("/old-public.txt"), ViewId::public()),
+            (path("/src/old-agent.rs"), agent()),
+            (path("/src/once-private.rs"), ViewId::private()),
+        ],
+        ..PathHistory::default()
+    };
+    let views = config.views.clone();
     let view = agent();
     let visible = BTreeSet::from(["/src/lib.rs".into()]);
-    let paths = RequestViewPaths::new(&repo, &views, &view, &visible);
+    let paths = RequestViewPaths::new(&config, &views, &view, &visible, &history);
     for editable in [
         "/src/lib.rs",
         "/src/new.rs",

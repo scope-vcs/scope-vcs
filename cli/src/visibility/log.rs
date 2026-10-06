@@ -9,7 +9,7 @@ use crate::{
     repository_views::repository_views,
 };
 use anyhow::Result;
-use scope_domain::views::Views;
+use scope_domain::views::{ViewId, Views};
 
 pub(super) fn run(remote: Option<&str>, before: Option<&str>) -> Result<()> {
     let repo = crate::context::discover_optional()?;
@@ -24,7 +24,13 @@ pub(super) fn run(remote: Option<&str>, before: Option<&str>) -> Result<()> {
 }
 
 fn lines(page: &VisibilityHistoryPage, views: &Views) -> Vec<String> {
-    let name = terminal_text(views.display_name(&page.view.clone().into()));
+    let view = ViewId::from(page.view.clone());
+    let measured = if &view == views.full() {
+        views.anyone().unwrap_or(&view)
+    } else {
+        &view
+    };
+    let name = terminal_text(views.display_name(measured));
     let mut lines: Vec<_> = page
         .entries
         .iter()
@@ -147,7 +153,7 @@ mod tests {
             lines,
             [
                 "vc_000041 · 2026-09-23 16:40 UTC · adamblumoff · Made 3 files public",
-                "vc_000041 · 2026-09-23 16:40 UTC · adamblumoff · Merge pull request #407 · 2 entered Private, 1 left Private",
+                "vc_000041 · 2026-09-23 16:40 UTC · adamblumoff · Merge pull request #407 · 2 entered Public, 1 left Public",
             ]
         );
     }
@@ -167,7 +173,7 @@ mod tests {
             ),
             &Views::builtin(),
         );
-        assert_eq!(lines, ["vc_000041 · Tighten docs · 1 left Private"]);
+        assert_eq!(lines, ["vc_000041 · Tighten docs · 1 left Public"]);
     }
 
     #[test]
@@ -228,7 +234,7 @@ mod tests {
     #[test]
     fn view_names_with_control_characters_are_neutralized() {
         let mut definitions = Vec::from(Views::builtin());
-        definitions[1].name = "Pri\u{1b}[31mvate".into();
+        definitions[0].name = "Pub\u{1b}[31mlic".into();
         let views = Views::new(definitions).unwrap();
         let lines = lines(
             &page(
@@ -243,6 +249,6 @@ mod tests {
             ),
             &views,
         );
-        assert_eq!(lines, ["vc_000041 · Tighten docs · 1 left Pri [31mvate"]);
+        assert_eq!(lines, ["vc_000041 · Tighten docs · 1 left Pub [31mlic"]);
     }
 }

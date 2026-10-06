@@ -73,6 +73,7 @@ struct RepoReadRow {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository"))]
     pub async fn repository(
         &self,
         owner: &str,
@@ -92,6 +93,7 @@ impl RepositoryStore {
         Ok(repo)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "owner_profile"))]
     pub async fn owner_profile(
         &self,
         handle: &str,
@@ -105,6 +107,7 @@ impl RepositoryStore {
         Ok(profile)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repo_summary"))]
     pub async fn repo_summary(
         &self,
         owner: &str,
@@ -120,6 +123,7 @@ impl RepositoryStore {
         Ok(summary)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repo_live_files"))]
     pub async fn repo_live_files(
         &self,
         owner: &str,
@@ -136,6 +140,7 @@ impl RepositoryStore {
         Ok(files)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repo_live_file_content"))]
     pub async fn repo_live_file_content(
         &self,
         owner: &str,
@@ -150,6 +155,7 @@ impl RepositoryStore {
             .map(|content| content.projected))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repo_live_file_with_landing_content"))]
     pub async fn repo_live_file_with_landing_content(
         &self,
         owner: &str,

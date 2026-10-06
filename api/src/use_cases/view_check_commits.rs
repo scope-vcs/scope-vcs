@@ -4,6 +4,7 @@ use crate::{
         cache::GitRepoHandle,
         check_commit::write_check_commit,
         command::{git_stdout_text, run_git},
+        repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, view_contribution_base},
         request_refs::with_request_revision_store_repo,
         storage::{receive_pack_staging_repo_path, remove_dir_if_exists},
@@ -12,7 +13,7 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    repository::{Repository, RepositoryIncarnation},
+    repository::RepositoryIncarnation,
     requests::{
         CheckCommitBase, GitHubTestedCommit, Request, RequestRevision, canonical_request_ref,
     },
@@ -26,14 +27,15 @@ const CHECK_HEAD_REF: &str = "refs/scope/internal/check-head";
 
 pub(crate) async fn view_tested_commit(
     state: &AppState,
-    repo: &Repository,
+    git: &RepositoryGit,
     request: &Request,
     revision: &RequestRevision,
 ) -> Result<GitHubTestedCommit, ApiError> {
-    let staging = CheckStaging::open(state, &repo.incarnation(), request, revision).await?;
+    let staging = CheckStaging::open(state, &git.incarnation, request, revision).await?;
     let built = async {
+        let views = git.views(state).await?;
         let view_base_oid = view_contribution_base(
-            RequestView::new(repo, &request.view),
+            RequestView::new(git, &views, &request.view),
             state,
             &staging.path,
             &revision.new_head_oid,

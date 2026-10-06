@@ -351,13 +351,15 @@ async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
     assert_eq!(fake.branch_head(&branch), None);
 }
 
+const CLOCK_LEAD_OVER_SLOW_PUSHES_SECS: u64 = 60 * 60;
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_failed_push_retries_with_backoff_then_gives_up_with_its_last_error() {
     let request = owner_request("github-checks-push-failure", &[REQUIRED_CHECK]).await;
     let (state, fake) = (&request.state, &request.fake);
     fs::remove_dir_all(fake.repository_path()).unwrap();
 
-    let now = unix_now();
+    let now = unix_now() + CLOCK_LEAD_OVER_SLOW_PUSHES_SECS;
     assert_eq!(push_pass(state, now).await, 1);
     let retrying = request.checks().await["github_push"].clone();
     assert_eq!(retrying["state"], "sending");

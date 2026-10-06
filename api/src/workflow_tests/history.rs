@@ -198,9 +198,9 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
     assert_eq!(private["entries"][0]["file_change_count"], 0);
     assert_eq!(
         private["entries"][0]["visibility_summary"]["entered_count"],
-        0
+        1
     );
-    assert_eq!(private["entries"][0]["visibility_summary"]["left_count"], 0);
+    assert_eq!(private["entries"][0]["visibility_summary"]["left_count"], 1);
 
     let detail = api_request(
         router(state.clone()),
@@ -385,11 +385,11 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
         assert_eq!(response["entries"][0]["kind"], "push");
         assert_eq!(
             response["entries"][0]["visibility_summary"]["entered_count"],
-            if private { 0 } else { 1 }
+            1
         );
         assert_eq!(
             response["entries"][0]["visibility_summary"]["left_count"],
-            if private { 0 } else { 1 }
+            1
         );
 
         let visibility = api_request(
@@ -634,7 +634,7 @@ async fn history_entries_report_their_update_kind() {
     assert_eq!(private_entries[0]["source_id"], "visibility-1");
     assert_eq!(private_entries[0]["kind"], "visibility_change");
     assert_eq!(private_entries[0]["file_change_count"], 0);
-    assert_eq!(private_entries[0]["visibility_summary"]["left_count"], 0);
+    assert_eq!(private_entries[0]["visibility_summary"]["left_count"], 1);
     assert_eq!(private_entries[1]["kind"], "merged_request");
     assert_eq!(private_entries[2]["kind"], "push");
 

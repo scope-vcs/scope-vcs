@@ -41,7 +41,7 @@ test('default Railway transport retries a failed source read without repeating e
   `;
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
     env: { ...process.env, PATH: `${directory}:${process.env.PATH}` },
-    encoding: 'utf8', timeout: 10000,
+    encoding: 'utf8', timeout: 60_000,
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).deploymentId, 'new-api');

@@ -5,16 +5,16 @@ use crate::{
             git_is_ancestor, git_stdout_text, run_git, run_git_output, successful_git_output,
         },
         import::validate_pushed_tree,
-        projection_repo::projection_bare_repo_for_state,
+        repository_git::RepositoryGit,
     },
     state::AppState,
 };
 use scope_domain::{
     policy::ScopePath,
-    projection::{NativeRequestCommit, project_graph},
-    repository::Repository,
-    requests::{RequestViewPathError, RequestViewPaths},
-    views::ViewId,
+    projection::NativeRequestCommit,
+    repo_config::RepoConfig,
+    requests::{PathHistory, RequestViewPathError, RequestViewPaths},
+    views::{ViewId, Views},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{collections::BTreeSet, path::Path as FsPath};
@@ -32,22 +32,24 @@ pub(crate) struct ValidatedViewRequestRange {
 
 #[derive(Clone, Copy)]
 pub(crate) struct RequestView<'a> {
-    repo: &'a Repository,
+    git: &'a RepositoryGit,
+    views: &'a Views,
     view: &'a ViewId,
 }
 
 impl<'a> RequestView<'a> {
-    pub(crate) fn new(repo: &'a Repository, view: &'a ViewId) -> Self {
-        Self { repo, view }
+    pub(crate) fn new(git: &'a RepositoryGit, views: &'a Views, view: &'a ViewId) -> Self {
+        Self { git, views, view }
     }
 
     fn name(&self) -> &'a str {
-        self.repo.repo_config.views().display_name(self.view)
+        self.views.display_name(self.view)
     }
 }
 
 pub(crate) async fn ensure_request_ref_is_view_safe(
     request_view: RequestView<'_>,
+    repo_config: &RepoConfig,
     state: &AppState,
     staging_repo: &FsPath,
     new_head_oid: &str,
@@ -57,15 +59,18 @@ pub(crate) async fn ensure_request_ref_is_view_safe(
     ensure_request_branch_is_based_on_view_main(request_view, staging_repo, new_head_oid)?;
     let commit_oids = commits_after(staging_repo, VIEW_REQUEST_BASE_REF, new_head_oid)?;
     validated_view_parent_oids(request_view.name(), staging_repo, &commit_oids)?;
-    for commit_oid in commit_oids {
-        validate_pushed_tree(staging_repo, &commit_oid)?;
-        ensure_view_request_commit_paths(request_view, &visible_paths, staging_repo, &commit_oid)?;
+    let commits = validated_changed_paths_by_commit(staging_repo, commit_oids)?;
+    let history = changed_path_history(request_view.git, state, &commits).await?;
+    let policy = request_view_paths(request_view, repo_config, &visible_paths, &history);
+    for (_, paths) in &commits {
+        ensure_view_request_commit_paths(&policy, paths)?;
     }
     Ok(view_main_oid)
 }
 
 pub(crate) async fn validate_view_request_merge_range(
     request_view: RequestView<'_>,
+    repo_config: &RepoConfig,
     state: &AppState,
     staging_repo: &FsPath,
     request_head_oid: &str,
@@ -85,18 +90,15 @@ pub(crate) async fn validate_view_request_merge_range(
         return Err(ApiError::conflict(VIEW_MAIN_MOVED_ERROR));
     }
 
-    let mut commits = Vec::with_capacity(commit_oids.len());
-    for commit_oid in commit_oids {
-        validate_pushed_tree(staging_repo, &commit_oid)?;
-        let changed_paths = ensure_view_request_commit_paths(
-            request_view,
-            &visible_paths,
-            staging_repo,
-            &commit_oid,
-        )?;
+    let changed = validated_changed_paths_by_commit(staging_repo, commit_oids)?;
+    let history = changed_path_history(request_view.git, state, &changed).await?;
+    let policy = request_view_paths(request_view, repo_config, &visible_paths, &history);
+    let mut commits = Vec::with_capacity(changed.len());
+    for (commit_oid, paths) in &changed {
+        let changed_paths = ensure_view_request_commit_paths(&policy, paths)?;
         commits.push(native_request_commit(
             staging_repo,
-            &commit_oid,
+            commit_oid,
             changed_paths,
         )?);
     }
@@ -184,38 +186,23 @@ async fn fetch_current_view_projection(
     state: &AppState,
     staging_repo: &FsPath,
 ) -> Result<(String, BTreeSet<String>), ApiError> {
-    let repo = request_view.repo;
-    let views = repo.repo_config.views();
+    let views = request_view.views;
     if views.get(request_view.view).is_none() {
         return Err(ApiError::not_found(format!(
             "view {} not found",
             request_view.view
         )));
     }
-    let projection = project_graph(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        views,
-        request_view.view,
-    );
-    if projection.commits.is_empty() {
+    let git = request_view.git;
+    let Some(head_oid) = git.view_head(state, request_view.view).await? else {
         return Err(ApiError::conflict(format!(
             "repo has no {} main branch for this request",
             request_view.name()
         )));
-    }
-    let visible_paths = projection
-        .visible_paths()
-        .into_iter()
-        .collect::<BTreeSet<_>>();
-    let view_repo = projection_bare_repo_for_state(
-        state,
-        &repo.incarnation(),
-        &projection,
-        repo.git_head.as_ref(),
-        &repo.git_pack_spans,
-    )
-    .await?;
+    };
+    let view_repo = git
+        .view_repo_at(state, views, request_view.view, Some(&head_oid))
+        .await?;
     let refspec = format!("+refs/heads/{DEFAULT_GIT_BRANCH}:{VIEW_REQUEST_BASE_REF}");
     run_git(
         Some(staging_repo),
@@ -227,7 +214,29 @@ async fn fetch_current_view_projection(
         "fetching the request view base",
     )?;
     let base_oid = git_commit_oid(staging_repo, VIEW_REQUEST_BASE_REF)?;
-    Ok((base_oid, visible_paths))
+    Ok((base_oid, view_tree_paths(staging_repo)?))
+}
+
+fn view_tree_paths(staging_repo: &FsPath) -> Result<BTreeSet<String>, ApiError> {
+    let action = "listing request view base paths";
+    let output = successful_git_output(
+        run_git_output(
+            Some(staging_repo),
+            &["ls-tree", "-r", "--name-only", "-z", VIEW_REQUEST_BASE_REF],
+            action,
+        )?,
+        action,
+    )?;
+    output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .map(|path| {
+            String::from_utf8(path.to_vec())
+                .map(|path| format!("/{path}"))
+                .map_err(ApiError::internal)
+        })
+        .collect()
 }
 
 fn ensure_request_branch_is_based_on_view_main(
@@ -324,26 +333,63 @@ fn git_commit_oid(staging_repo: &FsPath, revision: &str) -> Result<String, ApiEr
     .map(|oid| oid.trim().to_string())
 }
 
-fn ensure_view_request_commit_paths(
-    request_view: RequestView<'_>,
-    visible_paths: &BTreeSet<String>,
+fn validated_changed_paths_by_commit(
     staging_repo: &FsPath,
-    commit_oid: &str,
-) -> Result<Vec<ScopePath>, ApiError> {
-    let repo = request_view.repo;
-    let policy = RequestViewPaths::new(
-        repo,
-        repo.repo_config.views(),
+    commit_oids: Vec<String>,
+) -> Result<Vec<(String, Vec<String>)>, ApiError> {
+    commit_oids
+        .into_iter()
+        .map(|commit_oid| {
+            validate_pushed_tree(staging_repo, &commit_oid)?;
+            let paths = request_changed_paths(staging_repo, &commit_oid)?;
+            Ok((commit_oid, paths))
+        })
+        .collect()
+}
+
+async fn changed_path_history(
+    git: &RepositoryGit,
+    state: &AppState,
+    commits: &[(String, Vec<String>)],
+) -> Result<PathHistory, ApiError> {
+    let paths = commits
+        .iter()
+        .flat_map(|(_, paths)| paths)
+        .filter_map(|path| ScopePath::parse(format!("/{path}")).ok())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    git.path_history(state, &paths).await
+}
+
+fn request_view_paths<'a>(
+    request_view: RequestView<'a>,
+    repo_config: &'a RepoConfig,
+    visible_paths: &'a BTreeSet<String>,
+    history: &'a PathHistory,
+) -> RequestViewPaths<'a> {
+    RequestViewPaths::new(
+        repo_config,
+        request_view.views,
         request_view.view,
         visible_paths,
-    );
+        history,
+    )
+}
+
+fn ensure_view_request_commit_paths(
+    policy: &RequestViewPaths<'_>,
+    paths: &[String],
+) -> Result<Vec<ScopePath>, ApiError> {
     let mut changed_paths = BTreeSet::new();
-    for path in request_changed_paths(staging_repo, commit_oid)? {
+    for path in paths {
         let scope_path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
         policy
             .ensure_editable(&scope_path)
             .map_err(|error| match error {
-                RequestViewPathError::ProtectedPath => ApiError::protected_paths(vec![path]),
+                RequestViewPathError::ProtectedPath => {
+                    ApiError::protected_paths(vec![path.clone()])
+                }
                 RequestViewPathError::HiddenPath => {
                     ApiError::conflict(policy.rejection(&scope_path, error))
                 }

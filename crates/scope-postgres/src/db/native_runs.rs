@@ -28,6 +28,7 @@ pub struct NativeRunsAddition {
 }
 
 impl NativeRunsStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "accounts"))]
     pub async fn accounts(&self) -> Result<Vec<NativeRunsAccountListing>, PostgresError> {
         self.db
             .query_all_raw(Statement::from_string(
@@ -44,6 +45,7 @@ impl NativeRunsStore {
             .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "add_account"))]
     pub async fn add_account(
         &self,
         handle: &str,
@@ -79,6 +81,7 @@ impl NativeRunsStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "remove_account"))]
     pub async fn remove_account(
         &self,
         handle: &str,
@@ -100,6 +103,7 @@ impl NativeRunsStore {
         withdrawal::settle(self.db.as_ref(), &user_id, removed, now_unix).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_availability"))]
     pub async fn repository_availability(
         &self,
         repository_id: &str,

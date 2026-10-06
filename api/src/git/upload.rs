@@ -1,19 +1,20 @@
 use crate::{
-    auth::scope::principal_for_user_id,
     config::{AWAITING_FIRST_PUSH_GIT_ERROR, GIT_UPLOAD_PACK},
     error::ApiError,
     git::{
         cache::{GitDerivedCacheNamespace, GitRepoHandle},
-        command::{git_command_output, git_command_output_with_timeout, truncated_git_stderr},
+        command::{
+            git_command_output, git_command_output_with_timeout, git_subprocess_span,
+            record_git_exit, truncated_git_stderr,
+        },
         git_read_scope_user,
-        projection_repo::projection_bare_repo_for_state,
+        repository_git::RepositoryGit,
         request_refs::{
             RequestViewBases, attach_visible_request_refs, request_view_bases,
             share_request_view_bases,
         },
         storage::repository_storage_key,
     },
-    repo_access::{ensure_repo_read, find_repo},
     runtime_budgets::{RuntimeBudgets, RuntimePermit},
     state::AppState,
 };
@@ -25,9 +26,7 @@ use axum::{
     },
     response::{IntoResponse, Response},
 };
-use scope_domain::policy::Principal;
 use scope_domain::{
-    projection::project_graph,
     repository::access::RepositoryActor,
     repository::{RepoLifecycleState, RepositoryIncarnation},
     requests::{Request, RequestViewer, request_policy},
@@ -35,6 +34,7 @@ use scope_domain::{
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
+use scope_postgres::db::GitReadSource;
 use std::{
     collections::BTreeSet,
     fs,
@@ -44,6 +44,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
+use tracing::Instrument as _;
 mod read_view_identity;
 mod read_view_seed;
 #[cfg(test)]
@@ -58,40 +59,48 @@ pub(crate) async fn authorized_git_read(
     owner: &str,
     repo_name: &str,
     view: &ViewId,
-) -> Result<
-    (
-        scope_domain::repository::Repository,
-        scope_domain::repository::access::RepositoryAccess,
-        Option<String>,
-    ),
-    ApiError,
-> {
+) -> Result<(GitReadSource, Option<String>), ApiError> {
     let anonymous = !headers.contains_key(AUTHORIZATION);
     let credentials_required = || ApiError::unauthorized("Git credentials required");
-    let (repo, principal, viewer_user_id) =
-        match git_read_principal_for_request(state, headers, owner, repo_name).await {
-            Ok(value) => value,
-            Err(error) if anonymous && error.status() == StatusCode::NOT_FOUND => {
-                return Err(credentials_required());
-            }
-            Err(error) => return Err(error),
-        };
-    if repo.record.lifecycle_state != RepoLifecycleState::Ready {
+    let viewer_user_id = if anonymous {
+        None
+    } else {
+        Some(git_read_scope_user(state, headers).await?.id)
+    };
+    let Some(source) = state
+        .metadata
+        .repositories()
+        .git_read_source(owner, repo_name, viewer_user_id.as_deref())
+        .await?
+    else {
         return Err(if anonymous {
             credentials_required()
         } else {
-            unpublished_git_read_error(&repo, owner, repo_name, &principal)
+            repo_not_found(owner, repo_name)
+        });
+    };
+    let context = &source.context;
+    if context.record.lifecycle_state != RepoLifecycleState::Ready {
+        return Err(if anonymous {
+            credentials_required()
+        } else if context.access.actor == RepositoryActor::Owner {
+            ApiError::forbidden(AWAITING_FIRST_PUSH_GIT_ERROR)
+        } else {
+            repo_not_found(owner, repo_name)
         });
     }
-    let access = repo.access_for_principal(&principal);
-    let readable = ensure_repo_read(&repo, &principal).is_ok() && repo.can_read_view(&access, view);
+    let readable = context.can_read(source.public_files_visible) && context.can_read_view(view);
     match (readable, anonymous) {
-        (true, _) => Ok((repo, access, viewer_user_id)),
+        (true, _) => Ok((source, viewer_user_id)),
         (false, true) => Err(credentials_required()),
         (false, false) => Err(ApiError::not_found(format!(
             "Git view {view} of {owner}/{repo_name} not found"
         ))),
     }
+}
+
+fn repo_not_found(owner: &str, repo_name: &str) -> ApiError {
+    ApiError::not_found(format!("repo {owner}/{repo_name} not found"))
 }
 
 pub(crate) async fn git_upload_pack_repo_for_request(
@@ -101,61 +110,41 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     repo_name: &str,
     view: &ViewId,
 ) -> Result<GitRepoHandle, ApiError> {
-    let (repo, access, viewer_user_id) =
+    let (source, viewer_user_id) =
         authorized_git_read(state, headers, owner, repo_name, view).await?;
-    let views = repo.repo_config.views();
+    let repo_id = source.context.record.id.clone();
+    let access = source.context.access.clone();
+    let views = source.context.views.clone();
+    let git = RepositoryGit::of_read_source(source);
     let private_view = view == views.full();
-    let base_repo = if private_view {
-        match repo.git_head.as_ref() {
-            Some(head) => {
-                state
-                    .repository_engine
-                    .materialize_repository(state, &repo.incarnation(), head, &repo.git_pack_spans)
-                    .await?
-            }
-            None => {
-                let projection =
-                    project_graph(&repo.graph, &repo.visibility_change_sets, views, view);
-                projection_bare_repo_for_state(
-                    state,
-                    &repo.incarnation(),
-                    &projection,
-                    repo.git_head.as_ref(),
-                    &repo.git_pack_spans,
-                )
+    let base_repo = match git.git_head.as_ref() {
+        Some(head) if private_view => {
+            state
+                .repository_engine
+                .materialize_repository(state, &git.incarnation, head, &git.git_pack_spans)
                 .await?
-            }
         }
-    } else {
-        let projection = project_graph(&repo.graph, &repo.visibility_change_sets, views, view);
-        projection_bare_repo_for_state(
-            state,
-            &repo.incarnation(),
-            &projection,
-            repo.git_head.as_ref(),
-            &repo.git_pack_spans,
-        )
-        .await?
+        _ => git.view_repo(state, &views, view).await?,
     };
     let mut requests = Vec::new();
     for (request, is_invitee) in state
         .metadata
         .requests()
-        .requests_with_invitee_status(&repo.record.id, viewer_user_id.as_deref())
+        .requests_with_invitee_status(&repo_id, viewer_user_id.as_deref())
         .await?
     {
         let decision = request_policy(
             &request,
             RequestViewer::new(access.clone(), viewer_user_id.as_deref(), is_invitee),
-            views,
+            &views,
         );
         if decision.exact_visible && views.may_read(view, &request.view) {
             requests.push(request);
         }
     }
     requests.sort_by(|left, right| left.name.cmp(&right.name));
-    let view_bases = request_view_bases(state, &repo, &requests, view).await?;
-    git_read_view_repo(state, &repo.incarnation(), base_repo, view_bases, &requests).await
+    let view_bases = request_view_bases(state, &git, &views, &requests, view).await?;
+    git_read_view_repo(state, &git.incarnation, base_repo, view_bases, &requests).await
 }
 
 async fn git_read_view_repo(
@@ -299,42 +288,6 @@ async fn git_read_view_repo(
         }))
 }
 
-async fn git_read_principal_for_request(
-    state: &AppState,
-    headers: &HeaderMap,
-    owner: &str,
-    repo_name: &str,
-) -> Result<
-    (
-        scope_domain::repository::Repository,
-        Principal,
-        Option<String>,
-    ),
-    ApiError,
-> {
-    if !headers.contains_key(AUTHORIZATION) {
-        let repo = find_repo(state, owner, repo_name).await?;
-        return Ok((repo, Principal::public(), None));
-    }
-    let user = git_read_scope_user(state, headers).await?;
-    let repo = find_repo(state, owner, repo_name).await?;
-    let principal = principal_for_user_id(&repo, &user.id);
-    Ok((repo, principal, Some(user.id)))
-}
-
-fn unpublished_git_read_error(
-    repo: &scope_domain::repository::Repository,
-    owner: &str,
-    repo_name: &str,
-    principal: &Principal,
-) -> ApiError {
-    if repo.access_for_principal(principal).actor == RepositoryActor::Owner {
-        ApiError::forbidden(AWAITING_FIRST_PUSH_GIT_ERROR)
-    } else {
-        ApiError::not_found(format!("repo {owner}/{repo_name} not found"))
-    }
-}
-
 pub(crate) async fn git_upload_pack_response(
     repo: GitRepoHandle,
     request: &[u8],
@@ -354,15 +307,19 @@ pub(crate) async fn git_upload_pack_response(
         })??;
     }
     let (sender, receiver) = tokio::sync::mpsc::channel(2);
-    tokio::spawn(async move {
+    let work = async move {
         let error_sender = sender.clone();
+        let blocking_span = tracing::Span::current();
         let result = tokio::task::spawn_blocking(move || {
+            let _entered = blocking_span.enter();
             let _permit = permit;
             let _repo = repo;
             let deadline = Instant::now() + timeout;
             let mut command = git_upload_pack_command();
             command.arg("--stateless-rpc").arg(repo_path);
-            run_with_stdout(
+            let git_span = git_subprocess_span(&command);
+            let _entered = git_span.enter();
+            let output = run_with_stdout(
                 &mut command,
                 Some(request),
                 ProcessLimits::new(timeout),
@@ -381,7 +338,11 @@ pub(crate) async fn git_upload_pack_response(
                         )?;
                     }
                 },
-            )
+            );
+            if let Ok(output) = &output {
+                record_git_exit(&git_span, output.status);
+            }
+            output
         })
         .await;
         let stream_error = match result {
@@ -401,7 +362,8 @@ pub(crate) async fn git_upload_pack_response(
         if let Some(message) = stream_error {
             let _ = error_sender.try_send(Err(std::io::Error::other(message)));
         }
-    });
+    };
+    tokio::spawn(work.in_current_span());
 
     Ok((
         StatusCode::OK,

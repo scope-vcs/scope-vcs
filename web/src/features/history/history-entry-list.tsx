@@ -25,6 +25,36 @@ export function HistoryFeedList({
   onNavigate?: () => void
   params: RepoParams
 }) {
+  return (
+    <HistoryFeedState empty={empty} resource={resource}>
+      {(page) => (
+        <HistoryEntryList
+          entries={page.entries}
+          loadOlderError={loadOlderError}
+          loadingOlder={loadingOlder}
+          onLoadOlder={() => void loadOlder()}
+          onNavigate={onNavigate}
+          params={params}
+          showLoadOlder={page.next_cursor !== null}
+          view={view}
+        />
+      )}
+    </HistoryFeedState>
+  )
+}
+
+type HistoryFeedResource = ReturnType<typeof useHistoryFeed>['resource']
+type HistoryFeedPage = NonNullable<HistoryFeedResource['value']>
+
+export function HistoryFeedState({
+  children,
+  empty,
+  resource,
+}: {
+  children: (page: HistoryFeedPage) => ReactNode
+  empty: string
+  resource: HistoryFeedResource
+}) {
   if (resource.status === 'failed') {
     return (
       <PanelState tone="error">
@@ -47,18 +77,7 @@ export function HistoryFeedList({
   if (!resource.value.entries.length) {
     return <p className="px-3 py-6 text-center text-xs text-muted-foreground">{empty}</p>
   }
-  return (
-    <HistoryEntryList
-      entries={resource.value.entries}
-      loadOlderError={loadOlderError}
-      loadingOlder={loadingOlder}
-      onLoadOlder={() => void loadOlder()}
-      onNavigate={onNavigate}
-      params={params}
-      showLoadOlder={resource.value.next_cursor !== null}
-      view={view}
-    />
-  )
+  return children(resource.value)
 }
 
 function HistoryEntryList({
@@ -80,13 +99,13 @@ function HistoryEntryList({
   showLoadOlder: boolean
   view: ViewId
 }) {
-  const viewName = useRepoViews().name(view)
+  const views = useRepoViews()
   const search = viewingAsSearch(view, useRepoLayout().repo.access.view)
   return (
     <div>
       <ul className="divide-y divide-border">
         {entries.map((entry) => {
-          const labels = historyEntryLabels(entry, viewName)
+          const labels = historyEntryLabels(entry, view, views)
           return (
             <li key={entry.id}>
               <Link

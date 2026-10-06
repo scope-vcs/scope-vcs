@@ -116,6 +116,7 @@ async fn start_request_for_author(
     let projection_repo = projection_bare_repo_for_state(
         state,
         &repo.incarnation(),
+        repo.repo_config.views(),
         &projection,
         repo.git_head.as_ref(),
         &repo.git_pack_spans,

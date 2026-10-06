@@ -4,6 +4,7 @@ use scope_cache_domain::EvictionDecision;
 const UPLOAD_DELETE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl CacheStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_orphan_uploads"))]
     pub async fn claim_orphan_uploads(
         &self,
         now_unix: u64,
@@ -49,6 +50,7 @@ impl CacheStore {
             .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_orphan_upload_cleanup"))]
     pub async fn complete_orphan_upload_cleanup(
         &self,
         object_key: &str,
@@ -63,6 +65,7 @@ impl CacheStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "fail_orphan_upload_cleanup"))]
     pub async fn fail_orphan_upload_cleanup(
         &self,
         object_key: &str,
@@ -85,6 +88,7 @@ impl CacheStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "expire_references"))]
     pub async fn expire_references(&self, now_unix: u64, limit: u64) -> Result<u64, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let rows = tx
@@ -114,6 +118,7 @@ impl CacheStore {
         Ok(count)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "expire_uploads"))]
     pub async fn expire_uploads(
         &self,
         now_unix: u64,
@@ -159,6 +164,7 @@ impl CacheStore {
             .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "cleanup_upload"))]
     pub async fn cleanup_upload<F, Fut>(
         &self,
         claim: &CacheUploadCleanupClaim,
@@ -206,6 +212,7 @@ impl CacheStore {
         .map_err(PostgresError::internal)?
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "expire_committed_uploads"))]
     pub async fn expire_committed_uploads(
         &self,
         now_unix: u64,
@@ -230,6 +237,7 @@ impl CacheStore {
         Ok(result.rows_affected())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_deletions"))]
     pub async fn claim_deletions(
         &self,
         now_unix: u64,
@@ -303,6 +311,7 @@ impl CacheStore {
         Ok(deletions)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_deletion"))]
     pub async fn complete_deletion(
         &self,
         repository_id: &str,
@@ -333,6 +342,7 @@ impl CacheStore {
         Ok(result.rows_affected() == 1)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "fail_deletion"))]
     pub async fn fail_deletion(
         &self,
         deletion: &PendingCacheDeletion,

@@ -8,6 +8,7 @@ use crate::{
             reviewed_update_from_staging_repo,
         },
         projection_repo::verify_projection_materialization,
+        repository_git::RepositoryGit,
         request_merge_tree::{MergedTree, merge_request_tree},
         request_ref_view_safety::{RequestView, validate_view_request_merge_range},
         request_refs::{RequestViewBases, attach_visible_request_refs},
@@ -80,6 +81,7 @@ pub(crate) struct PreparedRequestMerge {
     pub(crate) write_lease: RepositoryGitWriteLease,
 }
 
+#[tracing::instrument(skip_all, name = "use_case.request.merge")]
 pub(crate) async fn merge_request(
     state: &AppState,
     command: MergeRequestCommand,
@@ -92,7 +94,7 @@ pub(crate) async fn merge_request(
         request_id: None,
     }
     .run(state, async {
-        merge_request_inner(state, &command)
+        Box::pin(merge_request_inner(state, &command))
             .await
             .map_err(RequestMergeFailure::into_api_error)
     })
@@ -366,8 +368,10 @@ async fn prepare_request_merge_for_execution(
                 request.base_main_oid.clone(),
             )
         } else {
+            let git = RepositoryGit::of_repository(repo);
             let validated = validate_view_request_merge_range(
-                RequestView::new(repo, &request.view),
+                RequestView::new(&git, views, &request.view),
+                &repo.repo_config,
                 state,
                 &staging_repo,
                 &request.head_oid,
