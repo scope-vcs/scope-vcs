@@ -333,15 +333,15 @@ impl RequestCheckEvaluation {
         self.check_commit_base.is_some()
     }
 
-    pub fn check_commit_is_current(&self, private_main_oid: Option<&str>) -> bool {
+    pub fn check_commit_is_current(&self, canonical_main_oid: Option<&str>) -> bool {
         self.check_commit_base
             .as_ref()
-            .is_none_or(|base| Some(base.private_main_oid.as_str()) == private_main_oid)
+            .is_none_or(|base| Some(base.canonical_main_oid.as_str()) == canonical_main_oid)
     }
 
-    pub fn needs_new_check_commit(&self, private_main_oid: Option<&str>) -> bool {
+    pub fn needs_new_check_commit(&self, canonical_main_oid: Option<&str>) -> bool {
         self.state == RequestCheckEvaluationState::Started
-            && !self.check_commit_is_current(private_main_oid)
+            && !self.check_commit_is_current(canonical_main_oid)
     }
 
     pub fn tested_code_view(&self, request_view: ViewId) -> ViewId {
@@ -432,7 +432,7 @@ pub struct RequestCheckResults {
     pub native_runs: Vec<(String, RunState)>,
     pub github: GitHubCheckResults,
     pub withheld_from_github: Vec<String>,
-    pub private_main_oid: Option<String>,
+    pub canonical_main_oid: Option<String>,
 }
 
 impl RequestCheckResults {
@@ -469,7 +469,7 @@ pub fn request_checks_outcome(
         RequestCheckEvaluationState::AwaitingApproval => RequestChecksOutcome::AwaitingApproval,
         RequestCheckEvaluationState::ConfigurationError => RequestChecksOutcome::ConfigurationError,
         RequestCheckEvaluationState::Started
-            if !evaluation.check_commit_is_current(results.private_main_oid.as_deref()) =>
+            if !evaluation.check_commit_is_current(results.canonical_main_oid.as_deref()) =>
         {
             RequestChecksOutcome::Pending
         }

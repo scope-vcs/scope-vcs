@@ -3,7 +3,7 @@ use super::{
     Request, RequestCheck, RequestCheckEvaluation, RequestCheckEvaluationState, Run,
     WorkflowRevision, request_checks_start_immediately,
 };
-use crate::{error::DomainError, runs::availability::NativeRunsAvailability};
+use crate::{error::DomainError, runs::availability::NativeRunsAvailability, views::Views};
 
 #[derive(Clone, Debug)]
 pub struct RequestCheckPlan {
@@ -81,12 +81,13 @@ impl RequestCheckPlan {
 
     pub fn evaluate_github(
         request: &Request,
+        views: &Views,
         tested: GitHubTestedCommit,
         required_check_names: &[String],
         maintainer_pusher: Option<&str>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
-        if tested.target() != GitHubCheckTarget::for_request(request) {
+        if tested.target() != GitHubCheckTarget::for_request(request, views) {
             return Err(DomainError::invalid_input(
                 "the tested commit does not fit the request's view",
             ));

@@ -21,7 +21,7 @@ fn results(native_runs: &[(&str, RunState)]) -> RequestCheckResults {
             .collect(),
         github: GitHubCheckResults::Connected(Vec::new()),
         withheld_from_github: Vec::new(),
-        private_main_oid: None,
+        canonical_main_oid: None,
     }
 }
 
