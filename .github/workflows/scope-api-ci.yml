@@ -6,6 +6,9 @@ on:
       build_release_artifact:
         type: boolean
         default: false
+      run_checks:
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -13,6 +16,7 @@ permissions:
 jobs:
   dependency-analyzer:
     name: Check dependency analyzer
+    if: inputs.run_checks
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
@@ -30,6 +34,7 @@ jobs:
         run: ./dev/checks/dependency-analyzer
 
   checks:
+    if: inputs.run_checks
     uses: ./.github/workflows/rust-workspace-checks.yml
 
   release-artifact:

@@ -1,0 +1,73 @@
+name: Preview build
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scope-preview-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  select:
+    name: Select labeled pull request
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'preview') &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'main' &&
+      (github.event.action != 'labeled' || github.event.label.name == 'preview')
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: Report preview build
+        env:
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          echo "Building preview images of $SOURCE_SHA for pull request #$PULL_REQUEST."
+
+  backend:
+    name: Backend artifacts
+    needs: select
+    uses: ./.github/workflows/scope-api-ci.yml
+    with:
+      build_release_artifact: true
+      run_checks: false
+
+  web:
+    name: Web artifacts
+    needs: select
+    uses: ./.github/workflows/scope-web-ci.yml
+    with:
+      build_release_artifact: true
+
+  media-worker:
+    name: Media worker image
+    needs: select
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/scope-media-worker-image.yml
+    with:
+      publish: true
+      source_sha: ${{ github.sha }}
+
+  prepare:
+    name: Prepare preview images
+    needs: [backend, web, media-worker]
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+      deployments: read
+    uses: ./.github/workflows/prepare-release.yml
+    with:
+      source_sha: ${{ github.sha }}
+      prepare_backend: true
+      prepare_router: true
+      prepare_web: true
+      media_worker_image: ${{ needs.media-worker.outputs.image_ref }}
+    secrets: inherit

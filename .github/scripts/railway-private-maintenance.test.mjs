@@ -116,6 +116,19 @@ test('rejects unknown targets and command injection before SSH', t => {
   }
 });
 
+test('reaches a preview environment only when it is named and distinct from release environments', t => {
+  const f = fixture(t);
+  const preview = '55555555-5555-4555-8555-555555555555';
+  assert.notEqual(f.run([preview, 'plan']).status, 0);
+  for (const named of [production, staging]) {
+    assert.notEqual(f.run([named, 'plan'], { SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID: named }).status, 0);
+  }
+  assert.equal(existsSync(f.env.TEST_CALLED), false);
+  const result = f.run([preview, 'plan'], { SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID: preview });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { exact: true });
+});
+
 test('rejects altered local bytes before SSH', t => {
   const f = fixture(t);
   writeFileSync(f.binary, 'altered');

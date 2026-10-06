@@ -109,3 +109,37 @@ keeps cron and the scheduler from running together.
 Validate the next staging transition and compare its per-job timing with the audit
 before claiming a production speedup. Local provider simulations cover failure and
 recovery behavior, but they do not measure Railway's real activation latency.
+
+## Preview environments
+
+Adding the `preview` label to a same-repository pull request into `main` gives
+it a Railway environment named `pr-<number>`. Each push rebuilds and redeploys
+it. Removing the label or closing the pull request, merged or not, deletes the
+environment with its database volume and bucket instances. Staging remains the
+release gate; previews never replace its production baseline or smoke checks.
+
+`Preview build` runs on the pull request without Railway credentials. It builds
+the backend binaries, web runtime, and media worker image for the merge commit
+and prepares digest-pinned images. `Preview environment` runs the reviewed
+orchestration from `main` through `workflow_run` and `pull_request_target`, so
+the account Railway token and SSH key stay in the main-only `preview` GitHub
+environment. Before deploying, it confirms the build is the merge of the
+pull request's current head into `main` and that the label is still present. It
+never executes pull request code on the runner.
+
+The first deployment copies staging with `skipInitialDeploys`. Railway does not
+copy sealed variables, so the workflow generates the Postgres administrator
+password, one login per runtime role, encryption keys, grant signing keys, and
+the operator token, and points bucket credentials at the environment's own
+bucket instances. It switches Railway tracing on for every service except
+Postgres, with automatic instrumentation for `scope-web`, before anything deploys. Clerk uses the repository's development key pair. Existing
+keys and passwords are never regenerated once set. The private maintenance
+service applies `runtime-roles.mjs --roles-only` with the administrator login,
+sets each role's password, and switches itself to `scope_migrator`. Every later
+deployment uses the staging path: stop writers, migrate as `scope_migrator`,
+refresh grants, then activate cache, media, worker, API, router, and web.
+Deployment and SSH use a project token scoped to the preview environment and
+deleted when the job ends.
+
+The `preview` GitHub environment must allow only `main` and hold
+`RAILWAY_API_TOKEN` and `SCOPE_RAILWAY_SSH_PRIVATE_KEY`.

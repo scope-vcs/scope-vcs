@@ -1,0 +1,222 @@
+name: Preview environment
+
+on:
+  workflow_run:
+    workflows: [Preview build]
+    types: [completed]
+  pull_request_target:
+    types: [closed, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scope-preview-environment-${{ github.event.workflow_run.pull_requests[0].number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy preview environment
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 90
+    environment: preview
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      SCOPE_RAILWAY_PROJECT_TOKEN_NAME: scope-preview-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout trusted orchestration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+
+      - name: Download prepared preview images
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: prepared-release-*
+          merge-multiple: true
+          path: artifacts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify the build is the current pull request merge
+        id: verify
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/preview-pull-request.mjs artifacts/prepared-release.json
+
+      - name: Download preview maintenance binary
+        if: steps.verify.outputs.deploy == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: backend-release-${{ steps.verify.outputs.source_sha }}
+          path: artifacts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Extract maintenance binary
+        if: steps.verify.outputs.deploy == 'true'
+        env:
+          SOURCE_SHA: ${{ steps.verify.outputs.source_sha }}
+        run: |
+          mkdir -p artifacts/backend
+          python3 .github/scripts/extract-railway-release.py backend artifacts/backend-release.tar.gz artifacts/backend
+          {
+            echo "SCOPE_PREPARED_RELEASE_PATH=$GITHUB_WORKSPACE/artifacts/prepared-release.json"
+            echo "SCOPE_MAINTENANCE_BINARY=$GITHUB_WORKSPACE/artifacts/backend/scope-maintenance"
+            echo "SCOPE_DEPLOYMENT_SOURCE_SHA=$SOURCE_SHA"
+            echo "SCOPE_RAILWAY_PROJECT_ID=$(jq -er '.railway.projectId' .github/deployment-services.json)"
+          } >> "$GITHUB_ENV"
+
+      - name: Install Railway CLI
+        if: steps.verify.outputs.deploy == 'true'
+        run: npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
+
+      - name: Create or update the preview copy of staging
+        id: environment
+        if: steps.verify.outputs.deploy == 'true'
+        env:
+          PULL_REQUEST: ${{ steps.verify.outputs.pull_request }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          CLERK_DEVELOPMENT_PUBLISHABLE_KEY: ${{ secrets.CLERK_DEVELOPMENT_PUBLISHABLE_KEY }}
+          CLERK_DEVELOPMENT_SECRET_KEY: ${{ secrets.CLERK_DEVELOPMENT_SECRET_KEY }}
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
+        run: |
+          unset RAILWAY_TOKEN
+          node .github/scripts/preview-environment.mjs ensure "$PULL_REQUEST" > "$RUNNER_TEMP/preview.json"
+          {
+            echo "name=$(jq -er '.name' "$RUNNER_TEMP/preview.json")"
+            echo "web_url=$(jq -er '.urls.web' "$RUNNER_TEMP/preview.json")"
+            echo "api_url=$(jq -er '.urls.api' "$RUNNER_TEMP/preview.json")"
+          } >> "$GITHUB_OUTPUT"
+          echo "SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID=$(jq -er '.environmentId' "$RUNNER_TEMP/preview.json")" >> "$GITHUB_ENV"
+
+      - name: Create preview-scoped Railway token
+        id: token
+        if: steps.environment.outcome == 'success'
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: SCOPE_RAILWAY_TOKEN_ENVIRONMENT_ID="$SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID" bash .github/scripts/railway-environment-token.sh create
+
+      - name: Bootstrap preview database roles
+        if: steps.token.outcome == 'success'
+        env:
+          SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
+        run: node .github/scripts/preview-environment.mjs bootstrap "$SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID"
+
+      - name: Stop preview writers before migration
+        if: steps.token.outcome == 'success'
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          unset RAILWAY_TOKEN
+          bash .github/scripts/stop-railway-writers.sh
+
+      - name: Migrate and deploy preview images
+        if: steps.token.outcome == 'success'
+        env:
+          SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
+          SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
+          SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
+        run: bash .github/scripts/deploy-preview-railway.sh
+
+      - name: Report preview environment on the pull request
+        if: steps.environment.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PULL_REQUEST: ${{ steps.verify.outputs.pull_request }}
+          ENVIRONMENT: ${{ steps.environment.outputs.name }}
+          WEB_URL: ${{ steps.environment.outputs.web_url }}
+          API_URL: ${{ steps.environment.outputs.api_url }}
+          OUTCOME: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ "$OUTCOME" == success ]]; then
+            status="Deployed \`$SCOPE_DEPLOYMENT_SOURCE_SHA\`."
+          else
+            status="Deploying \`$SCOPE_DEPLOYMENT_SOURCE_SHA\` failed: $RUN_URL"
+          fi
+          body="$(printf '**Preview environment** `%s`\n\n%s\n\n- Web: %s\n- API: %s\n\nRemoving the `preview` label or closing this pull request deletes the environment.' \
+            "$ENVIRONMENT" "$status" "$WEB_URL" "$API_URL")"
+          comment="$(gh api --paginate "repos/$REPOSITORY/issues/$PULL_REQUEST/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("**Preview environment**"))) | .id' | head -n 1)"
+          if [[ -n "$comment" ]]; then
+            gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment" -f body="$body" >/dev/null
+          else
+            gh api "repos/$REPOSITORY/issues/$PULL_REQUEST/comments" -f body="$body" >/dev/null
+          fi
+
+      - name: Delete preview-scoped Railway token
+        if: always() && steps.environment.outcome == 'success'
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          unset RAILWAY_TOKEN
+          SCOPE_RAILWAY_TOKEN_ENVIRONMENT_ID="$SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID" bash .github/scripts/railway-environment-token.sh delete
+
+  delete:
+    name: Delete preview environment
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      ((github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'preview')) ||
+      (github.event.action == 'unlabeled' && github.event.label.name == 'preview'))
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    environment: preview
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout trusted orchestration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+
+      - name: Install Railway CLI
+        run: npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
+
+      - name: Delete the pull request environment
+        id: delete
+        env:
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          unset RAILWAY_TOKEN
+          result="$(node .github/scripts/preview-environment.mjs delete "$PULL_REQUEST")"
+          echo "deleted=$(jq -er '.deleted' <<< "$result")" >> "$GITHUB_OUTPUT"
+          echo "name=$(jq -er '.name' <<< "$result")" >> "$GITHUB_OUTPUT"
+
+      - name: Report deletion on the pull request
+        if: steps.delete.outputs.deleted == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+          ENVIRONMENT: ${{ steps.delete.outputs.name }}
+        run: |
+          body="$(printf '**Preview environment** `%s`\n\nDeleted.' "$ENVIRONMENT")"
+          comment="$(gh api --paginate "repos/$REPOSITORY/issues/$PULL_REQUEST/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("**Preview environment**"))) | .id' | head -n 1)"
+          if [[ -n "$comment" ]]; then
+            gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment" -f body="$body" >/dev/null
+          else
+            gh api "repos/$REPOSITORY/issues/$PULL_REQUEST/comments" -f body="$body" >/dev/null
+          fi

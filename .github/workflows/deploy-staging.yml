@@ -64,7 +64,7 @@ jobs:
         run: |
           {
             echo "SCOPE_RAILWAY_PROJECT_ID=$(jq -er '.railway.projectId' .github/deployment-services.json)"
-            echo "SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID=$(jq -er '.environments.staging.environmentId' .github/deployment-services.json)"
+            echo "SCOPE_RAILWAY_TOKEN_ENVIRONMENT_ID=$(jq -er '.environments.staging.environmentId' .github/deployment-services.json)"
           } >> "$GITHUB_ENV"
 
       - name: Install reviewed Git for staging smoke
@@ -86,7 +86,7 @@ jobs:
       - name: Create staging-scoped Railway token
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-        run: bash .github/scripts/staging-railway-token.sh create
+        run: bash .github/scripts/railway-environment-token.sh create
 
       - name: Configure staging registry access with trusted orchestration
         env:
@@ -155,7 +155,7 @@ jobs:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           unset RAILWAY_TOKEN
-          bash .github/scripts/stop-staging-writers.sh
+          bash .github/scripts/stop-railway-writers.sh
 
       - name: Checkout exact candidate revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -404,7 +404,7 @@ jobs:
         run: |
           {
             echo "SCOPE_RAILWAY_PROJECT_ID=$(jq -er '.railway.projectId' .github/deployment-services.json)"
-            echo "SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID=$(jq -er '.environments.staging.environmentId' .github/deployment-services.json)"
+            echo "SCOPE_RAILWAY_TOKEN_ENVIRONMENT_ID=$(jq -er '.environments.staging.environmentId' .github/deployment-services.json)"
           } >> "$GITHUB_ENV"
 
       - name: Install Railway CLI
@@ -419,7 +419,7 @@ jobs:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           unset RAILWAY_TOKEN
-          bash .github/scripts/stop-staging-writers.sh
+          bash .github/scripts/stop-railway-writers.sh
 
       - name: Delete staging-scoped Railway token
         if: always()
@@ -427,4 +427,4 @@ jobs:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           unset RAILWAY_TOKEN
-          bash .github/scripts/staging-railway-token.sh delete
+          bash .github/scripts/railway-environment-token.sh delete

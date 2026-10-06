@@ -34,6 +34,7 @@ async function fixture() {
   }))
   await writeFile(join(root, 'railway'), `#!/usr/bin/env bash
 set -euo pipefail
+[[ "$*" == *"--environment \${SCOPE_TEST_ENVIRONMENT:-staging}"* ]] || exit 3
 if [[ "$*" == *"deployment list"* ]]; then
   if [[ "\${SCOPE_TEST_SCENARIO:-}" == "list-fails" ]]; then
     printf '%s\\n' '[]'
@@ -95,7 +96,7 @@ printf '%s\\n' '{"data":{"deploymentRemove":true}}'
 
 test('stops only the reviewed staging metadata-writer deployments', async () => {
   const { manifest, removals, root } = await fixture()
-  const result = spawnSync('bash', ['.github/scripts/stop-staging-writers.sh'], {
+  const result = spawnSync('bash', ['.github/scripts/stop-railway-writers.sh'], {
     cwd: process.cwd(),
     encoding: 'utf8',
     env: {
@@ -122,7 +123,7 @@ test('stops only the reviewed staging metadata-writer deployments', async () => 
 
 test('rejects mixed Railway token privileges before making requests', async () => {
   const { manifest, root } = await fixture()
-  const result = spawnSync('bash', ['.github/scripts/stop-staging-writers.sh'], {
+  const result = spawnSync('bash', ['.github/scripts/stop-railway-writers.sh'], {
     cwd: process.cwd(),
     encoding: 'utf8',
     env: {
@@ -141,7 +142,7 @@ test('rejects mixed Railway token privileges before making requests', async () =
 for (const scenario of ['list-fails', 'remove-false', 'remove-ambiguous']) {
   test(`reconciles staging shutdown failure: ${scenario}`, async () => {
     const { manifest, removals, root } = await fixture()
-    const result = spawnSync('bash', ['.github/scripts/stop-staging-writers.sh'], {
+    const result = spawnSync('bash', ['.github/scripts/stop-railway-writers.sh'], {
       encoding: 'utf8', timeout: 15_000,
       env: {
         ...process.env, PATH: `${root}:${process.env.PATH}`,
@@ -165,7 +166,7 @@ for (const scenario of ['list-fails', 'remove-false', 'remove-ambiguous']) {
 for (const replicas of [undefined, { running: 0 }, { running: null, crashed: 0 }, { running: 0, crashed: '0' }]) {
   test(`staging shutdown rejects incomplete replica state: ${JSON.stringify(replicas)}`, async () => {
     const { manifest, removals, root } = await fixture()
-    const result = spawnSync('bash', ['-c', 'bash .github/scripts/stop-staging-writers.sh && echo capture-baseline'], {
+    const result = spawnSync('bash', ['-c', 'bash .github/scripts/stop-railway-writers.sh && echo capture-baseline'], {
       encoding: 'utf8', timeout: 15_000,
       env: { ...process.env, PATH: `${root}:${process.env.PATH}`,
         RAILWAY_API_TOKEN: 'account-token', RAILWAY_TOKEN: '',
@@ -185,7 +186,7 @@ test('already removed staging writers allow baseline capture without another rem
   const services = ['api', 'worker', 'cache', 'media', 'media-worker'].map(id => ({
     id, status: null, deploymentId: null, latestDeployment: null, replicas: null,
   }))
-  const result = spawnSync('bash', ['-c', 'bash .github/scripts/stop-staging-writers.sh && echo capture-baseline'], {
+  const result = spawnSync('bash', ['-c', 'bash .github/scripts/stop-railway-writers.sh && echo capture-baseline'], {
     encoding: 'utf8', timeout: 15_000,
     env: { ...process.env, PATH: `${root}:${process.env.PATH}`,
       RAILWAY_API_TOKEN: 'account-token', RAILWAY_TOKEN: '',
@@ -199,3 +200,51 @@ test('already removed staging writers allow baseline capture without another rem
   assert.match(result.stdout, /capture-baseline/)
   await assert.rejects(readFile(removals), { code: 'ENOENT' })
 })
+
+test('stops writers in a named preview environment', async () => {
+  const { manifest, removals, root } = await fixture()
+  const result = spawnSync('bash', ['.github/scripts/stop-railway-writers.sh'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: `${root}:${process.env.PATH}`,
+      RAILWAY_API_TOKEN: 'account-token',
+      RAILWAY_TOKEN: '',
+      SCOPE_DEPLOYMENT_MANIFEST: manifest,
+      SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID: 'preview',
+      SCOPE_TEST_ENVIRONMENT: 'preview',
+      SCOPE_TEST_REMOVALS: removals,
+      SCOPE_TEST_RAILWAY_READ_HELPER: join(root, 'railway'),
+    },
+  })
+
+  assert.equal(result.status, 0, result.stderr)
+  const requests = (await readFile(removals, 'utf8')).trim().split('\n').map(JSON.parse)
+  assert.equal(requests.length, 5)
+})
+
+for (const preview of ['production', 'staging']) {
+  test(`refuses ${preview} as a preview environment`, async () => {
+    const { manifest, removals, root } = await fixture()
+    const result = spawnSync('bash', ['.github/scripts/stop-railway-writers.sh'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${root}:${process.env.PATH}`,
+        RAILWAY_API_TOKEN: 'account-token',
+        RAILWAY_TOKEN: '',
+        SCOPE_DEPLOYMENT_MANIFEST: manifest,
+        SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID: preview,
+        SCOPE_TEST_ENVIRONMENT: preview,
+        SCOPE_TEST_REMOVALS: removals,
+        SCOPE_TEST_RAILWAY_READ_HELPER: join(root, 'railway'),
+      },
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /Preview environment must differ/)
+    await assert.rejects(readFile(removals, 'utf8'))
+  })
+}

@@ -40,6 +40,10 @@ before writers reopen.
 
 Role names are cluster-wide. Use separate PostgreSQL instances for separate environments, and do not reuse these logins for unrelated databases. Bootstrap rejects role memberships except the migration role's `pg_signal_backend` membership. It does not inventory permissions in other databases; check and remove such access before cutover. Preserve a separately controlled administrator recovery path.
 
+## Empty databases
+
+`node deploy/postgres/runtime-roles.mjs --roles-only` creates the logins, transfers the empty database and `public` schema to `scope_migrator`, and applies the default-deny policy without table grants. Apply it as the administrator, set each login's password, and then run migrations as `scope_migrator` followed by the grants-only refresh. Preview environments use this path; see the deployment pipeline guide.
+
 ## Local verification
 
 Run `node --test deploy/postgres/runtime-roles.test.mjs`. The test creates and removes its own local cluster, loads the real baseline and table-adding migration SQL, and connects as each service login. It verifies every effective table grant, runs the Rust outbox history rebuild as the worker login, denies direct history-entry deletion and unrelated mutations or reads, checks schema restore and grant refresh, checks future objects default to denied, removes a stale column grant, and confirms the migration login can terminate a runtime session. It also rejects unexpected tables and inherited role access. Cargo is required for the worker rebuild check.
