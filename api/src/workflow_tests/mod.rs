@@ -346,9 +346,11 @@ async fn create_test_push_intent(state: &AppState, user_id: &str, head_oid: &str
             TEST_REPO_ID,
             user_id,
             head_oid,
-            config.clone(),
-            repo_config_fingerprint(&config).unwrap(),
-            repo.git_head.as_ref().map(|head| head.frontier()),
+            PushIntentTarget::Canonical {
+                base_config_hash: repo_config_fingerprint(&config).unwrap(),
+                config,
+                base_git_frontier: repo.git_head.as_ref().map(|head| head.frontier()),
+            },
         )
         .unwrap()
         .token
@@ -567,6 +569,7 @@ async fn receive_pack_access(
         state,
         owner,
         repo_name,
+        &ViewId::private(),
         authorization,
         push_intent.as_deref(),
     )

@@ -63,9 +63,11 @@ async fn push_intent_is_signed_instead_of_process_local() {
             TEST_REPO_ID,
             &test_owner_id(),
             TEST_PUSH_HEAD_OID,
-            repo_config(ViewId::public()),
-            repo_config_fingerprint(&repo_config(ViewId::public())).unwrap(),
-            None,
+            crate::push_intents::PushIntentTarget::Canonical {
+                config: repo_config(ViewId::public()),
+                base_config_hash: repo_config_fingerprint(&repo_config(ViewId::public())).unwrap(),
+                base_git_frontier: None,
+            },
         )
         .unwrap()
         .token;
@@ -74,7 +76,11 @@ async fn push_intent_is_signed_instead_of_process_local() {
     intent
         .ensure_repo_user(TEST_REPO_ID, &test_owner_id())
         .unwrap();
-    let base = intent.base_for_head(TEST_PUSH_HEAD_OID).unwrap();
+    let base = intent
+        .canonical()
+        .unwrap()
+        .base_for_head(&intent, TEST_PUSH_HEAD_OID)
+        .unwrap();
 
     assert_eq!(base, None);
 }
