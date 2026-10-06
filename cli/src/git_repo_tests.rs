@@ -138,12 +138,7 @@ fn narrower_fetch_addresses_push_to_the_full_view() {
 
 #[test]
 fn fetching_every_scope_ref_sends_the_session_as_a_header() {
-    let plan = git_fetch_refs_auth_plan(
-        "https://scope.example/git/public/adam/random",
-        "scope",
-        "scope_cli_secret",
-        Some(1),
-    );
+    let plan = git_fetch_refs_auth_plan(REMOTE, "scope", "scope_cli_secret", Some(1));
     assert_auth_plan(
         plan,
         &["-c", "protocol.version=2", "fetch", "--prune", "scope"],
