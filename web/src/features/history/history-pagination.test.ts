@@ -38,14 +38,13 @@ test('ignores an older-generation response after history is reset', () => {
 
 function page(entries: HistoryEntrySummaryResponse[], nextCursor: string | null): HistoryPageResponse {
   return {
-    audience: 'public',
+    view: 'public',
     feed: 'updates',
     entries,
     generation: 'generation-1',
     head_oid: null,
     next_cursor: nextCursor,
     repo_id: 'scope/demo',
-    view_key: 'public',
   }
 }
 
@@ -59,6 +58,6 @@ function entry(index: number): HistoryEntrySummaryResponse {
     message: `Update ${index}`,
     parent_id: index === 0 ? null : `entry-${index - 1}`,
     source_id: `source-${index}`,
-    visibility_summary: { made_private_count: 0, made_public_count: 0 },
+    visibility_summary: { left_count: 0, entered_count: 0 },
   }
 }

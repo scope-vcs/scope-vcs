@@ -21,14 +21,14 @@ function diff(path: string, text = 'content'): ReviewFileDiff {
   }
 }
 
-test('keys resources by immutable audience-aware identities', () => {
+test('keys resources by immutable view-aware identities', () => {
   const commitBase = {
     scope: 'viewer-a:public',
-    audience: 'public' as const,
+    view: 'public' as const,
     entry: 'c1',
     generation: 'generation-1',
     repoId: 'scope/demo',
-    viewKey: 'public',
+    revisionKey: 'public',
   }
   assert.notEqual(
     historyEntryCacheKey(commitBase),
@@ -36,7 +36,7 @@ test('keys resources by immutable audience-aware identities', () => {
   )
   assert.notEqual(
     historyEntryCacheKey(commitBase),
-    historyEntryCacheKey({ ...commitBase, audience: 'private' }),
+    historyEntryCacheKey({ ...commitBase, view: 'private' }),
   )
   assert.notEqual(
     historyEntryCacheKey(commitBase),
@@ -97,7 +97,7 @@ test('keeps diff scroll state with its bounded cache entry', () => {
 })
 
 test('isolates content and exact visibility preview caches for the same file and blobs', () => {
-  const base = { scope: 'viewer-a:public', audience: 'public' as const, entry: 'push-1', path: '/same.ts', oldOid: null, newOid: 'blob', visibilityChange: null }
+  const base = { scope: 'viewer-a:public', view: 'public' as const, entry: 'push-1', path: '/same.ts', oldOid: null, newOid: 'blob', visibilityChange: null }
   assert.notEqual(historyEntryDiffCacheKey(base), historyEntryDiffCacheKey({ ...base, visibilityChange: 'first' }))
   assert.notEqual(historyEntryDiffCacheKey({ ...base, visibilityChange: 'first' }), historyEntryDiffCacheKey({ ...base, visibilityChange: 'second' }))
 })

@@ -9,13 +9,13 @@ import { historyEntryLabels } from '@/features/history/history-row-labels'
 import { Link } from '@tanstack/react-router'
 import { LoaderCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
-import type { HistoryEntrySummaryResponse } from '@/api/types.generated'
+import type { HistoryEntrySummaryResponse, ViewId } from '@/api/types.generated'
 import type { useHistoryFeed } from './history-feed'
 import type { UpdateSearch } from './update-search'
 
 export function HistoryFeedList({
   empty,
-  history: { loadOlder, loadOlderError, loadingOlder, resource },
+  history: { loadOlder, loadOlderError, loadingOlder, resource, view },
   onNavigate,
   params,
   search,
@@ -58,6 +58,7 @@ export function HistoryFeedList({
       params={params}
       search={search}
       showLoadOlder={resource.value.next_cursor !== null}
+      view={view}
     />
   )
 }
@@ -71,6 +72,7 @@ function HistoryEntryList({
   params,
   search,
   showLoadOlder,
+  view,
 }: {
   entries: HistoryEntrySummaryResponse[]
   loadOlderError: string | null
@@ -80,12 +82,13 @@ function HistoryEntryList({
   params: RepoParams
   search: UpdateSearch
   showLoadOlder: boolean
+  view: ViewId
 }) {
   return (
     <div>
       <ul className="divide-y divide-border">
         {entries.map((entry) => {
-          const labels = historyEntryLabels(entry)
+          const labels = historyEntryLabels(entry, view)
           return (
             <li key={entry.id}>
               <Link

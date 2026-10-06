@@ -8,19 +8,19 @@ import {
 
 test('normalizes an optional history cursor', () => {
   assert.deepEqual(parseHistoryPageInput({
-    audience: 'private',
+    view: 'private',
     before: '  cursor-50 ',
     owner: ' scope ',
     repo: ' vcs ',
   }), {
-    audience: 'private',
+    view: 'private',
     before: 'cursor-50',
     feed: 'updates',
     owner: 'scope',
     repo: 'vcs',
   })
   assert.equal(parseHistoryPageInput({ owner: 'scope', repo: 'vcs' }).before, null)
-  assert.equal(parseHistoryPageInput({ owner: 'scope', repo: 'vcs' }).audience, null)
+  assert.equal(parseHistoryPageInput({ owner: 'scope', repo: 'vcs' }).view, null)
 })
 
 test('validates direct history entry and file diff requests', () => {
@@ -48,7 +48,7 @@ test('history diffs preserve filename whitespace and reject invalid paths', () =
 
 test('defaults to pushes and merges and validates the independent feed', () => {
   assert.equal(parseHistoryPageInput({ owner: 'scope', repo: 'vcs' }).feed, 'updates')
-  assert.equal(parseHistoryPageInput({ owner: 'scope', repo: 'vcs', feed: 'all', audience: 'public' }).feed, 'all')
+  assert.equal(parseHistoryPageInput({ owner: 'scope', repo: 'vcs', feed: 'all', view: 'public' }).feed, 'all')
   assert.equal(parseHistoryPageInput({ owner: 'scope', repo: 'vcs', feed: 'visibility' }).feed, 'visibility')
   assert.throws(() => parseHistoryPageInput({ owner: 'scope', repo: 'vcs', feed: 'private' }), /Unsupported history feed/)
 })
