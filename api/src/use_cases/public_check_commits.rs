@@ -31,7 +31,7 @@ pub(crate) async fn public_tested_commit(
     request: &Request,
     revision: &RequestRevision,
 ) -> Result<GitHubTestedCommit, ApiError> {
-    let staging = CheckStaging::open(state, git, request, revision).await?;
+    let staging = CheckStaging::open(state, &git.incarnation, request, revision).await?;
     let built = async {
         let public_base_oid =
             public_contribution_base(git, state, &staging.path, &revision.new_head_oid).await?;
@@ -65,8 +65,7 @@ pub(crate) async fn with_check_commit<T: Send + 'static>(
     expected_oid: &str,
     action: impl FnOnce(&Path) -> T + Send + 'static,
 ) -> Result<T, ApiError> {
-    let git = RepositoryGit::load(state, incarnation).await?;
-    let staging = CheckStaging::open(state, &git, request, revision).await?;
+    let staging = CheckStaging::open(state, incarnation, request, revision).await?;
     let path = staging.path.clone();
     let request_id = request.id.clone();
     let head_oid = revision.new_head_oid.clone();
@@ -96,21 +95,25 @@ struct CheckStaging {
 impl CheckStaging {
     async fn open(
         state: &AppState,
-        git: &RepositoryGit,
+        incarnation: &RepositoryIncarnation,
         request: &Request,
         revision: &RequestRevision,
     ) -> Result<Self, ApiError> {
-        let Some(head) = git.git_head.as_ref() else {
+        let (Some(head), spans) = state
+            .metadata
+            .repositories()
+            .repository_content_source(incarnation)
+            .await?
+        else {
             return Err(ApiError::conflict("repo has no accepted Git head"));
         };
-        let incarnation = &git.incarnation;
         let private = state
             .repository_engine
-            .materialize_repository(state, incarnation, head, &git.git_pack_spans)
+            .materialize_repository(state, incarnation, &head, &spans)
             .await?;
         let staging = Self {
             path: receive_pack_staging_repo_path(state, incarnation)?,
-            private_main_oid: head.head_oid.clone(),
+            private_main_oid: head.head_oid,
             private,
         };
         let initialized = {
