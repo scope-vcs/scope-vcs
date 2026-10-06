@@ -65,7 +65,11 @@ export const grants = {
 const literal = (value) => `'${value.replaceAll("'", "''")}'`;
 const identifier = (value) => `"${value.replaceAll('"', '""')}"`;
 
-export function renderPolicy({ grantsOnly = false } = {}) {
+const modes = new Set(['full', 'grants', 'roles']);
+
+export function renderPolicy({ mode = 'full' } = {}) {
+  if (!modes.has(mode)) throw new Error(`Unknown role policy mode: ${mode}`);
+  const grantsOnly = mode === 'grants';
   const roles = Object.keys(grants);
   const allRoles = ['scope_migrator', ...roles];
   const sql = [`\\set ON_ERROR_STOP on`, 'BEGIN;', `SET LOCAL lock_timeout = '15s';`,
@@ -134,15 +138,20 @@ END $attributes$;`,
     `ALTER DEFAULT PRIVILEGES FOR ROLE scope_migrator IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC, ${roles.join(', ')};`,
     `ALTER DEFAULT PRIVILEGES FOR ROLE scope_migrator IN SCHEMA public REVOKE ALL ON SEQUENCES FROM PUBLIC, ${roles.join(', ')};`,
     `ALTER DEFAULT PRIVILEGES FOR ROLE scope_migrator IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM PUBLIC, ${roles.join(', ')};`);
-  for (const [role, policy] of Object.entries(grants)) {
-    for (const [table, privileges] of Object.entries(policy)) {
-      sql.push(`GRANT ${privileges.join(', ')} ON TABLE public.${identifier(table)} TO ${role};`);
+  if (mode !== 'roles') {
+    for (const [role, policy] of Object.entries(grants)) {
+      for (const [table, privileges] of Object.entries(policy)) {
+        sql.push(`GRANT ${privileges.join(', ')} ON TABLE public.${identifier(table)} TO ${role};`);
+      }
     }
+    sql.push('GRANT USAGE ON SEQUENCE public.scope_run_creation_sequence TO scope_api, scope_run_worker;');
   }
-  sql.push('GRANT USAGE ON SEQUENCE public.scope_run_creation_sequence TO scope_api, scope_run_worker;', 'COMMIT;');
+  sql.push('COMMIT;');
   return `${sql.join('\n')}\n`;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (process.argv.slice(2).some((arg) => arg !== '--grants-only')) throw new Error('Usage: runtime-roles.mjs [--grants-only]');
-  process.stdout.write(renderPolicy({ grantsOnly: process.argv.includes('--grants-only') }));
+  const flags = { '--grants-only': 'grants', '--roles-only': 'roles' };
+  const args = process.argv.slice(2);
+  if (args.length > 1 || args.some((arg) => !(arg in flags))) throw new Error('Usage: runtime-roles.mjs [--grants-only | --roles-only]');
+  process.stdout.write(renderPolicy({ mode: flags[args[0]] ?? 'full' }));
 }
