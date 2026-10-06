@@ -10,6 +10,7 @@ pub(crate) mod import;
 pub(crate) mod projection_repo;
 pub(crate) mod public_request_commit;
 pub(crate) mod repository_engine;
+pub(crate) mod repository_git;
 pub(crate) mod request_merge_tree;
 pub(crate) mod request_ref_public_safety;
 pub(crate) mod request_refs;
