@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 mod cache_schema;
 mod current_schema_baseline;
+mod custom_views;
 mod fresh_schema;
 mod git_manifest_retirement;
 mod git_segment_schema;
@@ -21,6 +22,7 @@ mod native_runs_accounts;
 mod provider_neutral_request_checks;
 mod public_check_commits;
 mod public_request_check_source;
+mod repo_config_version;
 mod repository_content_version;
 mod repository_invite_emails;
 mod repository_invite_links;
@@ -69,6 +71,8 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0074_history_path_indexes",
     "m0075_incremental_projection_read_models",
     "m0076_view_ids",
+    "m0077_custom_views",
+    "m0078_repo_config_version",
 ];
 
 pub(super) async fn isolated_database() -> (

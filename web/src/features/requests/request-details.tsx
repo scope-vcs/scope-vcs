@@ -12,6 +12,7 @@ import {
 } from './request-labels'
 import { AbsoluteTimestamp } from '@/components/timestamp'
 import type { RequestActionController } from './use-request-actions'
+import { useRepoViews } from '../repo-detail/repo-layout-context'
 
 export type RequestDetailsPlacement = 'drawer' | 'rail'
 
@@ -32,6 +33,7 @@ export function RequestDetailsProvider({ children, value }: { children: ReactNod
 
 export function RequestDetails({ placement }: { placement: RequestDetailsPlacement }) {
   const context = use(RequestDetailsContext)
+  const views = useRepoViews()
   if (!context) throw new Error('Request details context is unavailable')
   if (context.placement !== placement) return null
   const { actions, onRate, params, ratings, request } = context
@@ -41,7 +43,7 @@ export function RequestDetails({ placement }: { placement: RequestDetailsPlaceme
         <div className="grid min-w-0 gap-x-12 gap-y-8 @3xl:grid-cols-2">
           <DetailsSection title="lifecycle">
             <DetailsValue label="Author" value={requestAuthorRoleLabel(request)} />
-            <DetailsValue label="View" value={requestViewLabel(request)} />
+            <DetailsValue label="View" value={requestViewLabel(request, views)} />
             <DetailsValue
               label="Submitted"
               value={<AbsoluteTimestamp value={request.submitted_at_unix} />}

@@ -44,7 +44,9 @@ export type ViewDefinition = { id: ViewId, name: string, includes: ViewIncludes,
 
 export type ViewIncludes = string | Array<ViewId>;
 
-export type ViewReaders = "anyone" | "members" | "assigned";
+export type ViewReaders = "anyone" | "assigned";
+
+export type ViewsTransition = { before: Array<ViewDefinition>, after: Array<ViewDefinition>, };
 
 export type RepoConfigFiles = { default: ViewId, rules: Array<RepoConfigFileRule>, };
 
@@ -144,7 +146,7 @@ export type CliSessionsResponse = { sessions: Array<CliSessionResponse>, };
 
 export type CliSessionResponse = { id: string, label: string, created_at_unix: number, last_used_at_unix: number | null, expires_at_unix: number, };
 
-export type RepoSummaryResponse = { description: string | null, website_url: string | null, id: string, owner_handle: string, name: string, git_remote_url: string, lifecycle_state: RepoLifecycleState, change_version: number, content_version: number, access: RepositoryAccessResponse, open_request_count: number, };
+export type RepoSummaryResponse = { description: string | null, website_url: string | null, id: string, owner_handle: string, name: string, git_remote_url: string, lifecycle_state: RepoLifecycleState, change_version: number, content_version: number, access: RepositoryAccessResponse, views: Array<ViewDefinition>, open_request_count: number, };
 
 export type OwnerProfileResponse = { handle: string, repositories: Array<RepoSummaryResponse>, };
 
@@ -170,7 +172,9 @@ export type GitPushTokenResponse = { created_at_unix: number, secret: string | n
 
 export type RepoFileResponse = { path: string, oid: string, tracked: boolean, label: ViewId, };
 
-export type RepoFileContentRequest = { path: string, };
+export type RepoFileContentRequest = { path: string, view: ViewId | null, };
+
+export type RepoFilesRequest = { view: ViewId | null, };
 
 export type RepoFileContentResponse = { path: string, oid: string, label: ViewId, size_bytes: number, content: ReviewFileContentResponse, };
 
@@ -399,9 +403,9 @@ export type ReviewFileDiffResponse = { path: string, kind: FileChangeKind, old_m
 
 export type HistoryPageResponse = { feed: HistoryFeed, view: ViewId, repo_id: string, generation: string, head_oid: string | null, entries: Array<HistoryEntrySummaryResponse>, next_cursor: string | null, };
 
-export type HistoryEntrySummaryResponse = { occurred_at_unix: number | null, id: string, source_id: string, parent_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, };
+export type HistoryEntrySummaryResponse = { occurred_at_unix: number | null, id: string, source_id: string, parent_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, views: ViewsTransition | null, };
 
-export type HistoryEntryKind = "push" | "merged_request" | "visibility_change";
+export type HistoryEntryKind = "push" | "merged_request" | "visibility_change" | "views_change";
 
 export type HistoryFeed = "updates" | "all" | "visibility";
 
@@ -409,7 +413,7 @@ export type HistoryEntryDetailResponse = { native_commits: Array<NativeHistoryCo
 /**
  * Adjacent entries in all activity, addressed by source id.
  */
-older_source_id: string | null, newer_source_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, files: Array<HistoryEntryFileResponse>, visibility_changes: Array<HistoryVisibilityChangeResponse>, };
+older_source_id: string | null, newer_source_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, files: Array<HistoryEntryFileResponse>, visibility_changes: Array<HistoryVisibilityChangeResponse>, views: ViewsTransition | null, };
 
 export type HistoryEntryFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, label: ViewId, };
 
@@ -776,7 +780,7 @@ export const ApiRouteTemplates = {
   repositoryInvite: "/v1/repository-invites/{token}",
   repositoryInviteAccept: "/v1/repository-invites/{token}/accept",
   repoProjectionPreview: "/v1/repos/{owner}/{repo}/projection-preview",
-  gitRepo: "/git/{mode}/{org}/{repo}",
+  gitRepo: "/git/{view}/{org}/{repo}",
 } as const;
 
 export function buildApiPath(

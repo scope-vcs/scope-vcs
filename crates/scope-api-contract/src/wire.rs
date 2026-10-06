@@ -1,6 +1,6 @@
 use scope_domain::{
     account::SessionIdentity as DomainSessionIdentity,
-    history::FileChangeKind as DomainFileChangeKind,
+    history::{FileChangeKind as DomainFileChangeKind, HistoryEntryKind as DomainHistoryEntryKind},
     repository::RepoLifecycleState as DomainRepoLifecycleState,
     repository::access::RepositoryActor as DomainRepositoryActor,
     repository::collaboration::{
@@ -141,6 +141,16 @@ wire_enum!(RepositoryInviteState => DomainRepositoryInviteState {
 wire_enum!(RepoLifecycleState => DomainRepoLifecycleState { AwaitingFirstPush, Ready });
 wire_enum!(FirstPushTokenStatus => DomainFirstPushTokenStatus { Active, Expired, Used });
 wire_enum!(FileChangeKind => DomainFileChangeKind { Added, Modified, Deleted });
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    HistoryEntryKind => DomainHistoryEntryKind {
+        Push,
+        MergedRequest,
+        VisibilityChange,
+        ViewsChange,
+    }
+);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]

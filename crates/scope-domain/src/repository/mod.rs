@@ -9,7 +9,7 @@ use crate::{
     account::UserAccount,
     content::SourceBlob,
     policy::{Policy, ScopePath, ScopePathError},
-    projection::SourceGraph,
+    projection::{SourceGraph, initial_views},
     repo_config::RepoConfig,
     repository::{
         collaboration::{RepositoryCollaboration, RepositoryMember},
@@ -148,6 +148,10 @@ impl Repository {
 
     pub fn member_for_user(&self, user_id: &str) -> Option<&RepositoryMember> {
         self.collaboration.member_for_user(user_id)
+    }
+
+    pub fn initial_views(&self) -> Views {
+        initial_views(&self.visibility_change_sets, self.repo_config.views())
     }
 
     pub fn is_waiting_for_first_push(&self) -> bool {

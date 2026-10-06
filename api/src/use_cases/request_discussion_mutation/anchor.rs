@@ -13,6 +13,7 @@ use scope_domain::{
     policy::{Policy, ScopePath},
     repository::access::RepositoryAccess,
     requests::{RequestDiscussionAnchor, RequestRevision},
+    views::Views,
 };
 use std::{collections::BTreeSet, path::Path as FsPath};
 
@@ -51,6 +52,7 @@ pub(super) async fn validate(
             .repository_policy(&context.repo)
             .await?;
         let access = context.access.clone();
+        let views = context.repo.views.clone();
         let commit_oid = commit_oid.to_string();
         let visible_paths = with_request_revision_store_repo(
             state,
@@ -58,7 +60,7 @@ pub(super) async fn validate(
             &context.request,
             &revision,
             move |raw_repo, revision| {
-                visible_commit_paths(raw_repo, &policy, access, revision, &commit_oid)
+                visible_commit_paths(raw_repo, &policy, &views, access, revision, &commit_oid)
             },
         )
         .await?;
@@ -80,6 +82,7 @@ pub(super) async fn validate(
 fn visible_commit_paths(
     raw_repo: &FsPath,
     policy: &Policy,
+    views: &Views,
     access: RepositoryAccess,
     revision: &RequestRevision,
     commit_oid: &str,
@@ -87,13 +90,8 @@ fn visible_commit_paths(
     if !commit_belongs_to_revision(raw_repo, revision, commit_oid)? {
         return Err(ApiError::not_found("request revision commit not found"));
     }
-    let (paths, has_hidden) = request_commit_visible_paths(
-        raw_repo,
-        policy,
-        &scope_domain::views::Views::builtin(),
-        &access,
-        commit_oid,
-    )?;
+    let (paths, has_hidden) =
+        request_commit_visible_paths(raw_repo, policy, views, &access, commit_oid)?;
     if has_hidden {
         return Err(ApiError::not_found("request revision commit not found"));
     }

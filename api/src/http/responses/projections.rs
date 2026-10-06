@@ -79,7 +79,7 @@ pub(crate) fn projection_preview_response(
         scope_domain::projection::NativePublicCommitDetails,
     >,
 ) -> Result<ProjectionPreviewResponse, ApiError> {
-    let views = &repo.views;
+    let views = &repo.context.views;
     let projection = source.project(views, view);
     let preview = projection_preview(
         ProjectionPreviewSource {

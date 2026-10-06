@@ -26,7 +26,7 @@ fn status_counts_unpublished_scope_commits_even_when_github_is_up_to_date() {
             "remote",
             "add",
             "scope",
-            "http://127.0.0.1:9/git/permissioned/owner/repo",
+            "http://127.0.0.1:9/git/private/owner/repo",
         ],
     );
     run_git(
@@ -107,7 +107,7 @@ fn status_compares_unattached_work_with_the_selected_push_remote() {
             "remote",
             "add",
             "writable",
-            "http://127.0.0.1:9/git/permissioned/owner/repo",
+            "http://127.0.0.1:9/git/private/owner/repo",
         ],
     );
     run_git(

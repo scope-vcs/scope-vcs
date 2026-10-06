@@ -3,6 +3,7 @@ use crate::{
     github_workflow_runs::GitHubWorkflowRun,
     repository::access::RepositoryAccess,
     requests::{GitHubCheckConclusion, GitHubCheckStatus},
+    views::Views,
 };
 
 pub const GITHUB_JOBS_READ_INTERVAL_SECS: u64 = 30;
@@ -113,11 +114,12 @@ impl GitHubJobLog {
 }
 
 pub fn github_run_visible(
-    access: RepositoryAccess,
+    access: &RepositoryAccess,
+    views: &Views,
     github_visibility: GitHubRepositoryVisibility,
     request_visible: bool,
 ) -> bool {
-    access.is_maintainer()
+    access.ensure_run_reader(views).is_ok()
         || (request_visible && github_visibility != GitHubRepositoryVisibility::Private)
 }
 
@@ -238,9 +240,11 @@ mod tests {
     #[test]
     fn runs_of_a_public_github_repository_open_to_whoever_sees_their_request() {
         use crate::repository::access::RepositoryActor;
-        let viewer = |actor| RepositoryAccess {
+        use crate::views::{ViewId, Views};
+        let views = Views::builtin();
+        let viewer = |actor, view: ViewId| RepositoryAccess {
             actor,
-            view: crate::views::ViewId::public(),
+            view,
             can_push: false,
             can_change_file_visibility: false,
             can_manage_members: false,
@@ -249,31 +253,40 @@ mod tests {
         let public = GitHubRepositoryVisibility::Public { acknowledged: true };
         let private = GitHubRepositoryVisibility::Private;
         for visibility in [public, private] {
-            assert!(github_run_visible(
-                viewer(RepositoryActor::Member),
-                visibility,
-                false
-            ));
-            assert!(github_run_visible(
-                viewer(RepositoryActor::Owner),
+            for actor in [RepositoryActor::Member, RepositoryActor::Owner] {
+                assert!(github_run_visible(
+                    &viewer(actor, ViewId::private()),
+                    &views,
+                    visibility,
+                    false
+                ));
+            }
+            assert!(!github_run_visible(
+                &viewer(RepositoryActor::Member, ViewId::public()),
+                &views,
                 visibility,
                 false
             ));
         }
-        assert!(github_run_visible(
-            viewer(RepositoryActor::Public),
-            public,
-            true
-        ));
+        for actor in [RepositoryActor::Public, RepositoryActor::Member] {
+            assert!(github_run_visible(
+                &viewer(actor, ViewId::public()),
+                &views,
+                public,
+                true
+            ));
+            assert!(!github_run_visible(
+                &viewer(actor, ViewId::public()),
+                &views,
+                private,
+                true
+            ));
+        }
         assert!(!github_run_visible(
-            viewer(RepositoryActor::Public),
+            &viewer(RepositoryActor::Public, ViewId::public()),
+            &views,
             public,
             false
-        ));
-        assert!(!github_run_visible(
-            viewer(RepositoryActor::Public),
-            private,
-            true
         ));
     }
 }

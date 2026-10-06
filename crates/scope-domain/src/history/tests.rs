@@ -2,8 +2,10 @@ use super::*;
 use crate::{
     content_ref::ContentRef,
     projection::{
-        FileChange, ProjectionCursor, project_graph, project_graph_after, projection_delta_appends,
+        FileChange, LabelledTree, ProjectionCursor, project_graph, project_graph_after,
+        projection_delta_appends,
     },
+    views::{ViewDefinition, ViewIncludes, ViewReaders},
     visibility_changes::VisibilityChange,
 };
 
@@ -73,6 +75,7 @@ fn visibility(
             new_label,
             current_content: content.map(blob),
         }],
+        None,
     )
     .unwrap()
 }
@@ -532,6 +535,13 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
             vec![file("/new", ViewId::public(), None, Some("new"))],
         ),
     ];
+    let include = views_change(
+        "include",
+        Some("third"),
+        agent_views(&[]),
+        agent_views(&["public"]),
+        Vec::new(),
+    );
     let sets = vec![
         visibility(
             "hide",
@@ -541,6 +551,7 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
             ViewId::private(),
             Some("doc three"),
         ),
+        include,
         visibility(
             "show",
             Some("fourth"),
@@ -565,25 +576,29 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
         &sets
     ));
 
-    for view_key in [ViewId::private(), ViewId::public()] {
-        let at_once = project_graph(&whole, &sets, &Views::builtin(), &view_key);
-        let prefix = project_graph(&first, &[], &Views::builtin(), &view_key);
-        let cursor = ProjectionCursor {
-            commit_count: prefix.commits.len(),
-            last_projected_id: prefix
-                .commits
-                .last()
-                .map(|commit| commit.projected_id.clone()),
-        };
-        let suffix = project_graph_after(&cursor, &rest, &sets, &Views::builtin(), &view_key);
+    let current = agent_views(&["public"]);
+    for view_key in [ViewId::private(), ViewId::public(), agent()] {
+        let at_once = project_graph(&whole, &sets, &current, &view_key);
+        let start = ProjectionCursor::start(agent_views(&[]));
+        let prefix = project_graph_after(&start, &LabelledTree::default(), &first, &[], &view_key);
+        let cursor = start.advanced(&prefix, &first, &[]);
+        let mut labelled = LabelledTree::default();
+        labelled.fold(&first, &[]);
+        let suffix = project_graph_after(&cursor, &labelled, &rest, &sets, &view_key);
         assert_eq!(
             [prefix.commits.clone(), suffix.commits.clone()].concat(),
             at_once.commits
         );
+        assert_eq!(cursor.advanced(&suffix, &rest, &sets).views, current);
 
-        let expected =
-            history_view_from_projection(at_once, &whole, &sets, &Views::builtin(), &view_key);
-        let mut history = HistoryCursor::start("owner/repo", &Views::builtin(), &view_key);
+        let expected = history_view_from_projection(at_once, &whole, &sets, &current, &view_key);
+        assert!(
+            expected
+                .entries
+                .iter()
+                .any(|entry| entry.kind == HistoryEntryKind::ViewsChange)
+        );
+        let mut history = HistoryCursor::start("owner/repo", &current, &view_key);
         let mut tree = BTreeMap::new();
         prefix.apply_to(&mut tree);
         let mut entries = history_entries_after(
@@ -592,7 +607,7 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
             prefix,
             &first,
             &[],
-            &Views::builtin(),
+            &current,
             &view_key,
         );
         entries.extend(history_entries_after(
@@ -601,7 +616,7 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
             suffix,
             &rest,
             &sets,
-            &Views::builtin(),
+            &current,
             &view_key,
         ));
         entries.reverse();
@@ -612,6 +627,158 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
             expected.entries.first().map(|entry| entry.id.as_str())
         );
     }
+}
+
+fn agent() -> ViewId {
+    ViewId::parse("agent").unwrap()
+}
+
+fn agent_views(includes: &[&str]) -> Views {
+    let mut definitions = Vec::<ViewDefinition>::from(Views::builtin());
+    definitions.push(ViewDefinition {
+        id: agent(),
+        name: "Agent".into(),
+        includes: ViewIncludes::Some(
+            includes
+                .iter()
+                .map(|id| ViewId::parse(id).unwrap())
+                .collect(),
+        ),
+        readers: ViewReaders::Assigned,
+    });
+    Views::new(definitions).unwrap()
+}
+
+fn views_change(
+    id: &str,
+    anchor: Option<&str>,
+    before: Views,
+    after: Views,
+    changes: Vec<VisibilityChange>,
+) -> VisibilityChangeSet {
+    let mut set = VisibilityChangeSet::new(
+        id.into(),
+        anchor.map(str::to_string),
+        None,
+        "maintainer".into(),
+        changes,
+        Some(ViewsTransition { before, after }),
+    )
+    .unwrap();
+    set.occurred_at_unix = Some(1_700_000_000);
+    set
+}
+
+fn include_public_history() -> (SourceGraph, Vec<VisibilityChangeSet>) {
+    let graph = graph(vec![
+        commit(
+            "base",
+            vec![
+                file("/README.md", ViewId::public(), None, Some("readme")),
+                file("/secret", ViewId::private(), None, Some("secret")),
+            ],
+        ),
+        commit(
+            "later",
+            vec![file("/docs.md", ViewId::public(), None, Some("docs"))],
+        ),
+    ]);
+    let sets = vec![views_change(
+        "include",
+        Some("base"),
+        agent_views(&[]),
+        agent_views(&["public"]),
+        vec![VisibilityChange {
+            path: path("/secret"),
+            old_label: ViewId::private(),
+            new_label: agent(),
+            current_content: Some(blob("secret")),
+        }],
+    )];
+    (graph, sets)
+}
+
+#[test]
+fn a_views_change_is_one_entry_listing_the_paths_that_entered_the_view() {
+    let (graph, sets) = include_public_history();
+    let current = agent_views(&["public"]);
+    let history = history_view(&graph, &sets, &current, &agent());
+    assert_eq!(sources(&history), ["later", "include"]);
+    let entry = &history.entries[1];
+    assert_eq!(entry.kind, HistoryEntryKind::ViewsChange);
+    assert_eq!(entry.message, "Updated views and 1 label");
+    assert_eq!(entry.views, sets[0].views);
+    assert_eq!(
+        entry.visibility_summary(&current, &agent()),
+        HistoryVisibilitySummary {
+            entered: 2,
+            left: 0
+        }
+    );
+    assert_eq!(entry.author, None);
+    assert_eq!(entry.occurred_at_unix, None);
+    let entered = entry
+        .visibility_changes
+        .iter()
+        .map(|change| {
+            (
+                change.path.as_str(),
+                change.old_label.as_str(),
+                change.new_label.as_str(),
+                change.file.as_ref().map(|file| file.kind),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        entered,
+        [
+            ("/secret", "private", "agent", Some(FileChangeKind::Added)),
+            (
+                "/README.md",
+                "public",
+                "public",
+                Some(FileChangeKind::Added)
+            ),
+        ]
+    );
+}
+
+#[test]
+fn every_view_records_a_views_change_even_when_its_files_do_not_change() {
+    let (graph, sets) = include_public_history();
+    let current = agent_views(&["public"]);
+    let public = history_view(&graph, &sets, &current, &ViewId::public());
+    assert_eq!(sources(&public), ["later", "include", "base"]);
+    let entry = &public.entries[1];
+    assert_eq!(entry.kind, HistoryEntryKind::ViewsChange);
+    assert_eq!(entry.message, "Updated views");
+    assert!(entry.visibility_changes.is_empty());
+
+    let full = history_view(&graph, &sets, &current, &ViewId::private());
+    let entry = &full.entries[1];
+    assert_eq!(entry.kind, HistoryEntryKind::ViewsChange);
+    assert_eq!(entry.author.as_deref(), Some("maintainer"));
+    assert_eq!(entry.occurred_at_unix, Some(1_700_000_000));
+    assert!(
+        entry
+            .visibility_changes
+            .iter()
+            .all(|change| change.old_label != change.new_label && change.file.is_none())
+    );
+    assert_eq!(entry.message, "Updated views and 1 label");
+}
+
+#[test]
+fn history_generation_covers_the_views_transition() {
+    let (graph, mut sets) = include_public_history();
+    let current = agent_views(&["public"]);
+    let before = history_view(&graph, &sets, &current, &ViewId::public());
+    let mut renamed = Vec::<ViewDefinition>::from(agent_views(&["public"]));
+    renamed[2].name = "Agents".into();
+    sets[0].views.as_mut().unwrap().after = Views::new(renamed).unwrap();
+    let after = history_view(&graph, &sets, &current, &ViewId::public());
+    assert_eq!(after.entries.len(), before.entries.len());
+    assert_ne!(before.generation, after.generation);
 }
 
 #[test]
@@ -639,6 +806,7 @@ fn the_full_views_summary_counts_movement_across_the_anyone_view() {
             change("3", "/closed.md", ViewId::public(), ViewId::private()),
         ],
         native_commits: Vec::new(),
+        views: None,
     };
     let views = Views::builtin();
     let movement = HistoryVisibilitySummary {

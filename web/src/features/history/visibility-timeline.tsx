@@ -12,7 +12,9 @@ import { useNavigate } from '@tanstack/react-router'
 import { scaleSqrt } from 'd3-scale'
 import { useMemo } from 'react'
 import { historyCommitTitle, historyEntryCountLabel, historyEntryKindLabel } from './history-row-labels'
-import type { UpdateSearch } from './update-search'
+import type { RepoViews } from '@/api/repo-views'
+import { useRepoViews } from '@/features/repo-detail/repo-layout-context'
+import type { ViewingAsSearch } from '@/features/repo-detail/viewing-as'
 import {
   VISIBILITY_TIMELINE_ENTRY_LIMIT,
   visibilityTimelineBars,
@@ -43,11 +45,12 @@ export function VisibilityTimeline({
 }: {
   entries: readonly HistoryEntrySummaryResponse[]
   params: RepoParams
-  search: UpdateSearch
+  search: ViewingAsSearch
   view: ViewId
 }) {
   const hydrated = useHydrated()
   const navigate = useNavigate()
+  const views = useRepoViews()
   const definition = useMemo(
     () => visibilityTimelineDefinition(visibilityTimelineBars(entries), hydrated),
     [entries, hydrated],
@@ -68,7 +71,7 @@ export function VisibilityTimeline({
           to: '/$owner/$repo/updates/$entryId',
         })
       }}
-      renderTooltipBody={({ primaryPoint }) => primaryPoint ? <TimelineTooltip entry={primaryPoint.datum.entry} view={view} /> : null}
+      renderTooltipBody={({ primaryPoint }) => primaryPoint ? <TimelineTooltip entry={primaryPoint.datum.entry} view={view} views={views} /> : null}
     />
   )
 }
@@ -118,7 +121,15 @@ function visibilityTimelineDefinition(bars: readonly VisibilityTimelineBar[], hy
   })
 }
 
-function TimelineTooltip({ entry, view }: { entry: HistoryEntrySummaryResponse; view: ViewId }) {
+function TimelineTooltip({
+  entry,
+  view,
+  views,
+}: {
+  entry: HistoryEntrySummaryResponse
+  view: ViewId
+  views: RepoViews
+}) {
   return (
     <span className="grid gap-0.5 text-xs">
       <span className="text-[13px] font-medium text-foreground">{historyCommitTitle(entry)}</span>
@@ -126,7 +137,7 @@ function TimelineTooltip({ entry, view }: { entry: HistoryEntrySummaryResponse; 
         {[historyEntryKindLabel(entry.kind), entry.author].filter(Boolean).join(' · ')}
         {entry.occurred_at_unix !== null ? <> · <RelativeTimestamp value={entry.occurred_at_unix} /></> : null}
       </span>
-      <span className="tabular-nums text-muted-foreground">{historyEntryCountLabel(entry, view)}</span>
+      <span className="tabular-nums text-muted-foreground">{historyEntryCountLabel(entry, view, views)}</span>
     </span>
   )
 }

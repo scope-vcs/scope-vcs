@@ -34,7 +34,7 @@ function App() {
     mode === 'unsafe' ? '```mermaid\nflowchart LR\nA@{ "img": "//example.invalid/tracker.png" }\n```' :
     `${revision ? 'Updated explanation.\n\n' : ''}${flowchart}`
   return (
-    <RequestAttachmentProvider actions={actions as never} live={{ repo: { id: 'repo', owner_handle: 'dev', name: 'demo', access: { actor: 'Public' } } } as never} requestId="request" viewerId={viewer}>
+    <RequestAttachmentProvider actions={actions as never} live={{ repo: { id: 'repo', owner_handle: 'dev', name: 'demo', views: [{ id: 'public', name: 'Public', includes: [], readers: 'anyone' as const }, { id: 'private', name: 'Private', includes: 'all' as const, readers: 'assigned' as const }], access: { actor: 'Public', view: 'public' } } } as never} requestId="request" viewerId={viewer}>
       <main id="main-content" className="mx-auto h-screen max-w-3xl overflow-y-auto px-5 py-8 text-foreground">
         <h1 className="mb-5 text-2xl">Request diagram review</h1>
         <nav className="mb-6 flex flex-wrap gap-4" aria-label="Fixture actions">

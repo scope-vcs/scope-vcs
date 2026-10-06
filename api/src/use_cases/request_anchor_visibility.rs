@@ -13,6 +13,7 @@ use scope_domain::{
         access::{RepositoryAccess, RepositoryAccessContext},
     },
     requests::{Request, RequestDiscussionAnchor},
+    views::Views,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -26,7 +27,7 @@ pub(crate) async fn visible_commits<'a>(
     if commits_by_revision.is_empty() {
         return BTreeSet::new();
     }
-    if repo.access.view == *scope_domain::views::Views::builtin().full() {
+    if repo.access.view == *repo.views.full() {
         return flatten(commits_by_revision);
     }
     let policy = match state.metadata.repositories().repository_policy(repo).await {
@@ -46,8 +47,11 @@ pub(crate) async fn visible_commits<'a>(
         let result = visible_commits_in_revision(
             state,
             &incarnation,
-            &policy,
-            repo.access.clone(),
+            RevisionReader {
+                policy: policy.clone(),
+                views: repo.views.clone(),
+                access: repo.access.clone(),
+            },
             request,
             &revision_id,
             commit_oids,
@@ -96,11 +100,16 @@ fn flatten(commits_by_revision: BTreeMap<String, BTreeSet<String>>) -> BTreeSet<
         .collect()
 }
 
+struct RevisionReader {
+    policy: Policy,
+    views: Views,
+    access: RepositoryAccess,
+}
+
 async fn visible_commits_in_revision(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    policy: &Policy,
-    access: RepositoryAccess,
+    reader: RevisionReader,
     request: &Request,
     revision_id: &str,
     commit_oids: BTreeSet<String>,
@@ -113,7 +122,11 @@ async fn visible_commits_in_revision(
     else {
         return Ok(BTreeSet::new());
     };
-    let policy = policy.clone();
+    let RevisionReader {
+        policy,
+        views,
+        access,
+    } = reader;
     with_request_revision_store_repo(
         state,
         incarnation,
@@ -125,13 +138,8 @@ async fn visible_commits_in_revision(
                 if !commit_belongs_to_revision(raw_repo, revision, commit_oid)? {
                     continue;
                 }
-                let (_, hidden) = request_commit_visible_paths(
-                    raw_repo,
-                    &policy,
-                    &scope_domain::views::Views::builtin(),
-                    &access,
-                    commit_oid,
-                )?;
+                let (_, hidden) =
+                    request_commit_visible_paths(raw_repo, &policy, &views, &access, commit_oid)?;
                 if !hidden {
                     visible.insert(commit_oid.clone());
                 }

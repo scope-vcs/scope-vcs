@@ -55,7 +55,7 @@ async fn permissioned_scope_sessions_share_raw_live_head() {
         .unwrap();
 
     let (origin, _server) = spawn_test_server(&state).await;
-    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     let actors = [
         ("owner", bearer_header()),
         (

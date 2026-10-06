@@ -2,6 +2,7 @@ use super::{
     error::{ReviewedUpdateError, ReviewedUpdateResult},
     history_rewrite::{HistoryRewriteInput, apply_history_rewrites},
     policy::policy_from_config_for_tree,
+    views::views_transition,
 };
 use crate::views::ViewId;
 use crate::{
@@ -124,6 +125,7 @@ pub fn apply_reviewed_update_to_repo(
     {
         return apply_content_only_update(repo, update);
     }
+    let views = views_transition(repo, &update.config).map_err(ReviewedUpdateError::Domain)?;
     let old_tree = repo.live_files.clone();
     let mut file_changes = build_file_changes(
         &old_tree,
@@ -211,13 +213,14 @@ pub fn apply_reviewed_update_to_repo(
     let next_policy = policy_from_config_for_tree(&update.config, new_tree.keys())?;
     let next_config = update.config.clone();
 
-    if !visibility_changes.is_empty() {
+    if !visibility_changes.is_empty() || views.is_some() {
         let mut set = VisibilityChangeSet::new(
             visibility_change_set_id(repo.record.change_version.saturating_add(1)),
             after_commit_id,
             Some(logical_id.clone()),
             update.author_id.clone(),
             visibility_changes,
+            views,
         )
         .map_err(ReviewedUpdateError::Conflict)?;
         set.occurred_at_unix = update.occurred_at_unix;

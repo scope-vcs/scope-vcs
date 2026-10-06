@@ -14,7 +14,8 @@ fn detail_uses_server_capabilities_and_renders_invitees_and_submission() {
     }]))
     .unwrap();
 
-    let rendered = request_detail_lines(&request).join("\n");
+    let rendered =
+        request_detail_lines(&request, &scope_domain::views::Views::builtin()).join("\n");
 
     assert!(rendered.contains("open"), "{rendered}");
     assert!(rendered.contains("submitted"), "{rendered}");

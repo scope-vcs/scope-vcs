@@ -1,18 +1,21 @@
 import type { RepositoryMemberPermissions } from '@/api/types.generated'
+import type { RepoViews } from '@/api/repo-views'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Eye } from 'lucide-react'
-import { viewName } from '@/api/repo-views'
-import { permissionLabels } from './repo-member-permission-model'
+import { actionsNeedFullView, permissionLabels } from './repo-member-permission-model'
+import { MemberViewField } from './repo-member-view-field'
 
 export function MemberAccessSummary({
   permissions,
+  viewName,
 }: {
   permissions: RepositoryMemberPermissions
+  viewName: string
 }) {
   return (
     <div className="space-y-3 text-sm">
-      <MemberViewRead view={permissions.view} />
+      <MemberViewRead viewName={viewName} />
       <PermissionSummary permissions={permissions} />
     </div>
   )
@@ -22,14 +25,17 @@ export function PermissionEditor({
   disabled,
   onChange,
   permissions,
+  views,
 }: {
   disabled?: boolean
   onChange: (permissions: RepositoryMemberPermissions) => void
   permissions: RepositoryMemberPermissions
+  views: Pick<RepoViews, 'definitions' | 'full' | 'name'>
 }) {
+  const narrowView = actionsNeedFullView(permissions.view, views)
   return (
     <div className="space-y-2">
-      <MemberViewRead view={permissions.view} />
+      <MemberViewField disabled={disabled} onChange={onChange} permissions={permissions} views={views} />
       {permissionLabels.map((permission) => (
         <label className="flex items-start justify-between gap-4 text-sm" key={permission.key}>
           <span className="min-w-0">
@@ -38,7 +44,7 @@ export function PermissionEditor({
           </span>
           <Switch
             checked={permissions[permission.key]}
-            disabled={disabled}
+            disabled={disabled || narrowView}
             onCheckedChange={(checked) => onChange({ ...permissions, [permission.key]: checked })}
             type="button"
           />
@@ -63,14 +69,14 @@ function PermissionSummary({ permissions }: { permissions: RepositoryMemberPermi
   )
 }
 
-export function MemberViewRead({ view }: { view: string }) {
+export function MemberViewRead({ viewName }: { viewName: string }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
       <span className="inline-flex items-center gap-2">
         <Eye className="size-3.5 text-muted-foreground" />
         <span>Read view</span>
       </span>
-      <Badge variant="success">{viewName(view)}</Badge>
+      <Badge variant="success">{viewName}</Badge>
     </div>
   )
 }

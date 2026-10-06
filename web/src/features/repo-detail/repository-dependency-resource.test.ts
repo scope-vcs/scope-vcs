@@ -30,6 +30,7 @@ function repo(actor: RepositoryActor): RepoSummaryResponse {
     name: 'repo',
     open_request_count: 0,
     owner_handle: 'acme',
+    views: [],
     website_url: null,
   }
 }

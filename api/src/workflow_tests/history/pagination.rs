@@ -147,6 +147,7 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
     let mut repo = paged_history_repo(&state, 51);
     repo.visibility_change_sets
         .push(scope_domain::visibility_changes::VisibilityChangeSet {
+            views: None,
             occurred_at_unix: None,
             id: "visibility-after-rv1".into(),
             anchor_commit_id: Some("rv1".into()),

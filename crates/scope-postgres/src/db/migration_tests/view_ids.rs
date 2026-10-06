@@ -77,12 +77,12 @@ async fn old_view_values_and_documents_migrate_to_named_views() {
         .unwrap()
         .unwrap();
     let config = row.try_get::<serde_json::Value>("", "repo_config").unwrap();
-    assert_eq!(config["version"], 2);
+    assert_eq!(config["version"], 3);
     assert_eq!(
         config["views"],
         serde_json::json!([
             {"id":"public","name":"Public","includes":[],"readers":"anyone"},
-            {"id":"private","name":"Private","includes":"all","readers":"members"}
+            {"id":"private","name":"Private","includes":"all","readers":"assigned"}
         ])
     );
     assert_eq!(

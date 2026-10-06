@@ -9,7 +9,7 @@ export function UpdatePagePending() {
   return (
     <PendingSurface label="Loading update">
       <WorkbenchPane>
-        <UpdateNavigation newer={null} older={null} params={{ owner, repo }} search={{}} />
+        <UpdateNavigation newer={null} older={null} params={{ owner, repo }} />
         <UpdateDetailSkeleton />
       </WorkbenchPane>
     </PendingSurface>

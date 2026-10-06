@@ -1,5 +1,6 @@
 use crate::{api::api_url, auth::read_stored_session_token};
 use anyhow::Context;
+use scope_domain::views::ViewId;
 use std::io::{self, BufRead, Write};
 
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -42,7 +43,7 @@ fn write_git_credential_response_with(
         return Ok(());
     }
 
-    if !is_scope_permissioned_credential_request(&request) {
+    if !is_scope_authenticated_view_request(&request) {
         return Ok(());
     }
     let Some(session_token) = read_token(configured_api_url.trim_end_matches('/'))? else {
@@ -76,7 +77,7 @@ fn parse_git_credential_request(reader: impl BufRead) -> anyhow::Result<GitCrede
     Ok(request)
 }
 
-fn is_scope_permissioned_credential_request(request: &GitCredentialRequest) -> bool {
+fn is_scope_authenticated_view_request(request: &GitCredentialRequest) -> bool {
     if !matches!(request.protocol.as_deref(), Some("http" | "https")) {
         return false;
     }
@@ -91,15 +92,14 @@ fn is_scope_permissioned_credential_request(request: &GitCredentialRequest) -> b
         return false;
     };
     let path = format!("/{}", path.trim_start_matches('/'));
-    let Some((_, repo_path)) = path.split_once("/git/permissioned/") else {
+    let Some((_, view_path)) = path.split_once("/git/") else {
         return false;
     };
-    repo_path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .take(2)
-        .count()
-        == 2
+    let mut segments = view_path.split('/').filter(|segment| !segment.is_empty());
+    let Some(view) = segments.next().and_then(|view| ViewId::parse(view).ok()) else {
+        return false;
+    };
+    !view.is_public() && segments.take(2).count() == 2
 }
 
 #[cfg(test)]
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn parse_git_credential_request_reads_scope_fields() {
         let request = parse_git_credential_request(Cursor::new(
-            "protocol=https\nhost=scope.example\npath=git/permissioned/adam/repo\n\n",
+            "protocol=https\nhost=scope.example\npath=git/private/adam/repo\n\n",
         ))
         .unwrap();
 
@@ -119,35 +119,45 @@ mod tests {
             GitCredentialRequest {
                 protocol: Some("https".to_string()),
                 host: Some("scope.example".to_string()),
-                path: Some("git/permissioned/adam/repo".to_string()),
+                path: Some("git/private/adam/repo".to_string()),
             }
         );
     }
 
-    #[test]
-    fn permissioned_credentials_accept_a_separate_git_host() {
-        let request = GitCredentialRequest {
+    fn request_for(path: &str) -> GitCredentialRequest {
+        GitCredentialRequest {
             protocol: Some("https".to_string()),
             host: Some("scope.example:8443".to_string()),
-            path: Some("api/git/permissioned/adam/repo".to_string()),
-        };
-
-        assert!(is_scope_permissioned_credential_request(&request));
+            path: Some(path.to_string()),
+        }
     }
 
     #[test]
-    fn permissioned_credentials_ignore_public_or_incomplete_paths() {
+    fn credentials_are_offered_for_every_view_but_public() {
+        for path in [
+            "git/private/adam/repo",
+            "git/agent/adam/repo",
+            "api/git/private/adam/repo",
+        ] {
+            assert!(
+                is_scope_authenticated_view_request(&request_for(path)),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn credentials_ignore_public_invalid_or_incomplete_paths() {
         for path in [
             "git/public/adam/repo",
-            "git/permissioned/adam",
-            "other/permissioned/adam/repo",
+            "git/private/adam",
+            "git/Agent/adam/repo",
+            "other/private/adam/repo",
         ] {
-            let request = GitCredentialRequest {
-                protocol: Some("https".to_string()),
-                host: Some("scope.example".to_string()),
-                path: Some(path.to_string()),
-            };
-            assert!(!is_scope_permissioned_credential_request(&request));
+            assert!(
+                !is_scope_authenticated_view_request(&request_for(path)),
+                "{path}"
+            );
         }
     }
 
@@ -156,7 +166,7 @@ mod tests {
         let mut output = Vec::new();
         write_git_credential_response_with(
             "store",
-            Cursor::new("protocol=https\nhost=scope.example\npath=git/permissioned/adam/repo\n\n"),
+            Cursor::new("protocol=https\nhost=scope.example\npath=git/private/adam/repo\n\n"),
             &mut output,
             "https://api.scope.example",
             |_| panic!("store must not read a token"),
@@ -171,9 +181,7 @@ mod tests {
         let mut output = Vec::new();
         write_git_credential_response_with(
             "get",
-            Cursor::new(
-                "protocol=https\nhost=git.scope.example\npath=git/permissioned/adam/repo\n\n",
-            ),
+            Cursor::new("protocol=https\nhost=git.scope.example\npath=git/private/adam/repo\n\n"),
             &mut output,
             "https://api.scope.example/",
             |api_url| {

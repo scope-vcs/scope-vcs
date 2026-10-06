@@ -48,6 +48,22 @@ fn deleted_or_renamed_private_paths_cannot_be_recreated_under_public_defaults() 
 }
 
 #[test]
+fn paths_once_labelled_with_a_custom_view_are_hidden_history_too() {
+    let config = config(ViewId::public());
+    let history = PathHistory {
+        file_change_labels: vec![(path("/ops.txt"), ViewId::parse("ops").unwrap())],
+        ..PathHistory::default()
+    };
+    let visible = BTreeSet::new();
+    let policy = PublicRequestPaths::new(&config, &visible, &history);
+    assert_eq!(
+        policy.ensure_editable(&path("/ops.txt")),
+        Err(PublicRequestPathError::PrivatePath)
+    );
+    assert_eq!(policy.ensure_editable(&path("/new.txt")), Ok(()));
+}
+
+#[test]
 fn live_files_hidden_from_the_public_view_stay_private() {
     let config = config(ViewId::public());
     let history = PathHistory {

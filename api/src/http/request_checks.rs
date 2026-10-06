@@ -27,6 +27,7 @@ use scope_domain::{
         GitHubBranch, GitHubPushStatus, Request, RequestCheck, RequestCheckResults,
         request_checks_message, request_mergeability,
     },
+    views::Views,
 };
 use scope_postgres::db::ApproveRequestChecksCommand;
 use std::collections::HashMap;
@@ -50,6 +51,7 @@ pub(crate) async fn get_request_checks(
     checks_response(
         &state,
         &repo.record,
+        &repo.views,
         &request,
         access,
         current_main_oid,
@@ -91,6 +93,7 @@ pub(crate) async fn approve_request_checks(
     checks_response(
         &state,
         &repo.record,
+        &repo.views,
         &request,
         access,
         current_main_oid,
@@ -103,6 +106,7 @@ pub(crate) async fn approve_request_checks(
 pub(crate) async fn checks_response(
     state: &AppState,
     repo: &RepoRecord,
+    views: &Views,
     request: &Request,
     access: RepositoryAccess,
     current_main_oid: Option<String>,
@@ -160,6 +164,7 @@ pub(crate) async fn checks_response(
         state,
         github_connection.as_ref(),
         access,
+        views,
         &evaluation.checks,
         &evaluation.tested_oid,
         &results,
@@ -205,6 +210,7 @@ async fn github_check_runs(
     state: &AppState,
     connection: Option<&GitHubConnection>,
     access: RepositoryAccess,
+    views: &Views,
     checks: &[RequestCheck],
     tested_oid: &str,
     results: &RequestCheckResults,
@@ -212,7 +218,7 @@ async fn github_check_runs(
     let Some(connection) = connection.filter(|_| state.github.is_some()) else {
         return Ok(HashMap::new());
     };
-    if !github_run_visible(access, connection.visibility, true) {
+    if !github_run_visible(&access, views, connection.visibility, true) {
         return Ok(HashMap::new());
     }
     let suites = checks

@@ -79,7 +79,7 @@ mod tests {
         let target = ScopeRemote::parse(
             "https://scope.example",
             "scope",
-            "https://scope.example/git/permissioned/owner/repo",
+            "https://scope.example/git/private/owner/repo",
         )
         .unwrap();
         let context = RequestContext {
@@ -89,6 +89,8 @@ mod tests {
                 "git_remote_url":"https://scope.example/git/public/owner/repo",
                 "lifecycle_state":"Ready", "change_version":1, "content_version":1,
                 "open_request_count":1,
+                "views":[{"id":"public", "name":"Public", "includes":[], "readers":"anyone"},
+                    {"id":"private", "name":"Private", "includes":"all", "readers":"assigned"}],
                 "access":{"actor":"Public", "view":"public",
                     "can_push":false, "can_change_file_visibility":false,
                     "can_manage_members":false, "can_delete_repo":false}

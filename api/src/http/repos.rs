@@ -189,6 +189,12 @@ pub(crate) async fn get_repo_config(
         crate::repo_access::find_read_access(&state, &owner, &repo_name, Some(&user.id)).await?;
         return Err(ApiError::forbidden("repo membership required"));
     }
+    let views = repo.repo_config.views();
+    if !repo.access.can_read_view(views, views.full()) {
+        return Err(ApiError::forbidden(
+            "the repository's full view is required",
+        ));
+    }
 
     Ok(Json(RepoConfigResponse {
         config_hash: repo_config_fingerprint(&repo.repo_config)?,
@@ -366,17 +372,17 @@ pub(crate) async fn get_projection_preview(
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
     let view: ViewId = input.view.into();
-    if !repo.views.may_read(&repo.context.access.view, &view) {
+    if !repo.context.can_read_view(&view) {
         return Err(ApiError::forbidden("view access required"));
     }
-    let include_private_counts = repo.context.access.actor != RepositoryActor::Public;
+    let include_private_counts = repo.context.reads_full_view();
     let incarnation = repo.context.incarnation();
     let source = state
         .metadata
         .repositories()
         .repository_projection_source(&incarnation, repo.context.record.content_version)
         .await?;
-    let projection = source.project(&repo.views, &view);
+    let projection = source.project(&repo.context.views, &view);
     let commits = projection
         .commits
         .iter()
@@ -414,8 +420,10 @@ pub(crate) async fn get_files(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((owner, repo_name)): Path<(String, String)>,
+    Query(input): Query<RepoFilesRequest>,
 ) -> Result<Json<Vec<RepoFileResponse>>, ApiError> {
     let user = optional_scope_user(&state, &headers).await?;
+    let view = input.view.map(ViewId::from);
     let files = state
         .metadata
         .repositories()
@@ -423,6 +431,7 @@ pub(crate) async fn get_files(
             &owner,
             &repo_name,
             user.as_ref().map(|user| user.id.as_str()),
+            view.as_ref(),
         )
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
@@ -441,6 +450,7 @@ pub(crate) async fn get_file_content(
         return Err(ApiError::bad_request("file path is required"));
     }
     let user = optional_scope_user(&state, &headers).await?;
+    let view = input.view.map(ViewId::from);
     let projected = state
         .metadata
         .repositories()
@@ -448,6 +458,7 @@ pub(crate) async fn get_file_content(
             &owner,
             &repo_name,
             user.as_ref().map(|user| user.id.as_str()),
+            view.as_ref(),
             &path,
         )
         .await?
@@ -529,7 +540,7 @@ pub(super) fn repo_summary_response(
         id: summary.id,
         git_remote_url: repository_git_remote_url(
             git_origin,
-            summary.access.actor,
+            &summary.access.view,
             &summary.owner_handle,
             &summary.name,
         ),
@@ -541,6 +552,7 @@ pub(super) fn repo_summary_response(
         change_version: summary.change_version,
         content_version: summary.content_version,
         access: repository_access_response(summary.access),
+        views: scope_api_contract::view_definitions(&summary.views),
         open_request_count: summary.open_request_count,
     })
 }

@@ -41,7 +41,7 @@ async fn merge_route_persists_git_content_once() {
         "advance public main",
     )
     .unwrap();
-    let public_remote = remote.replace("/git/permissioned/", "/git/public/");
+    let public_remote = remote.replace("/git/private/", "/git/public/");
     run_git(
         Some(&source),
         &[
@@ -198,6 +198,7 @@ async fn merge_route_persists_git_content_once() {
             TEST_REPO_OWNER,
             TEST_REPO_NAME,
             None,
+            None,
             &ScopePath::parse("/README.html").unwrap(),
         )
         .await
@@ -253,6 +254,7 @@ async fn merge_route_persists_git_content_once() {
     let public_repo = projection_bare_repo_for_state(
         &state,
         &repo.incarnation(),
+        repo.repo_config.views(),
         &public_projection,
         repo.git_head.as_ref(),
         &repo.git_pack_spans,

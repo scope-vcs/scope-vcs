@@ -12,18 +12,18 @@ pub(crate) use scope_api_contract::CommitFileResponse;
 use scope_api_contract::{
     DeviceLoginStatus, FileChangeKind, FirstPushTokenResponse, GitOid, GitPushTokenResponse,
     RepoInitResponse, RepoSummaryResponse, RepositoryAccessResponse, RequestActorSummaryResponse,
-    UserResponse, ViewId,
+    UserResponse, ViewId, view_definitions,
 };
+pub(crate) use scope_api_contract::{HistoryEntryKind, ViewsTransition};
 use scope_git::DEFAULT_GIT_BRANCH;
 
 use crate::error::ApiError;
 use scope_domain::history::{
-    HistoryEntry, HistoryEntryFile, HistoryEntryKind as DomainHistoryEntryKind,
-    HistoryEntryVisibilityChange, HistoryView,
+    HistoryEntry, HistoryEntryFile, HistoryEntryVisibilityChange, HistoryView,
 };
 use scope_domain::{
     account::UserAccount,
-    repository::access::{RepositoryAccess, RepositoryActor, can_read_repository},
+    repository::access::{RepositoryAccess, can_read_repository},
     repository::credentials::{FirstPushToken, GitPushToken},
     repository::{RepoRecord, Repository},
     views::Views,
@@ -193,6 +193,13 @@ pub(crate) struct RequestFileDiffRequest {
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct RepoFileContentRequest {
     pub(crate) path: String,
+    pub(crate) view: Option<ViewId>,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct RepoFilesRequest {
+    pub(crate) view: Option<ViewId>,
 }
 
 pub(crate) use scope_api_contract::{ReviewFileContentResponse, ReviewFileDiffResponse};
@@ -221,16 +228,7 @@ pub(crate) struct HistoryEntrySummaryResponse {
     pub(crate) message: String,
     pub(crate) file_change_count: usize,
     pub(crate) visibility_summary: HistoryVisibilitySummaryResponse,
-}
-
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "type-export", ts(rename_all = "snake_case"))]
-pub(crate) enum HistoryEntryKind {
-    Push,
-    MergedRequest,
-    VisibilityChange,
+    pub(crate) views: Option<ViewsTransition>,
 }
 
 #[derive(Debug, Serialize)]
@@ -252,6 +250,7 @@ pub(crate) struct HistoryEntryDetailResponse {
     pub(crate) visibility_summary: HistoryVisibilitySummaryResponse,
     pub(crate) files: Vec<HistoryEntryFileResponse>,
     pub(crate) visibility_changes: Vec<HistoryVisibilityChangeResponse>,
+    pub(crate) views: Option<ViewsTransition>,
 }
 
 #[derive(Debug, Serialize)]
@@ -304,6 +303,7 @@ pub(crate) fn repo_summary_for_user(
     repo_summary_for_access(
         &repo.record,
         repo.access_for_user_id(user_id),
+        repo.repo_config.views(),
         open_request_count,
         git_origin,
     )
@@ -312,6 +312,7 @@ pub(crate) fn repo_summary_for_user(
 pub(crate) fn repo_summary_for_access(
     record: &RepoRecord,
     access: RepositoryAccess,
+    views: &Views,
     open_request_count: usize,
     git_origin: &str,
 ) -> Option<RepoSummaryResponse> {
@@ -327,7 +328,7 @@ pub(crate) fn repo_summary_for_access(
         website_url: record.website_url.clone(),
         git_remote_url: repository_git_remote_url(
             git_origin,
-            access.actor,
+            &access.view,
             &record.owner_handle,
             &record.name,
         ),
@@ -335,6 +336,7 @@ pub(crate) fn repo_summary_for_access(
         change_version: access.visible_version(record.change_version),
         content_version: access.visible_version(record.content_version),
         access: repository_access_response(access),
+        views: view_definitions(views),
         open_request_count,
     })
 }
@@ -382,18 +384,14 @@ pub(crate) fn repo_init_response(
 
 pub(crate) fn repository_git_remote_url(
     git_origin: &str,
-    actor: RepositoryActor,
+    view: &scope_domain::views::ViewId,
     owner: &str,
     repo: &str,
 ) -> String {
-    let mode = match actor {
-        RepositoryActor::Public => "public",
-        RepositoryActor::Owner | RepositoryActor::Member => "permissioned",
-    };
     format!(
         "{}{}",
         git_origin.trim_end_matches('/'),
-        scope_api_contract::routes::git_repo(mode, owner, repo)
+        scope_api_contract::routes::git_repo(view.as_str(), owner, repo)
     )
 }
 
@@ -520,6 +518,7 @@ pub(crate) fn history_entry_detail_response(
             .iter()
             .map(history_visibility_change_response)
             .collect(),
+        views: entry.views.as_ref().map(ViewsTransition::from),
     })
 }
 
@@ -555,6 +554,7 @@ fn history_entry_summary_response(
         message: entry.message.clone(),
         file_change_count: entry.files.len(),
         visibility_summary: history_visibility_summary_response(entry, views, view),
+        views: entry.views.as_ref().map(ViewsTransition::from),
     })
 }
 
@@ -588,16 +588,6 @@ fn history_visibility_change_response(
         path: change.path.as_str().to_string(),
         old_label: change.old_label.clone().into(),
         new_label: change.new_label.clone().into(),
-    }
-}
-
-impl From<DomainHistoryEntryKind> for HistoryEntryKind {
-    fn from(kind: DomainHistoryEntryKind) -> Self {
-        match kind {
-            DomainHistoryEntryKind::Push => Self::Push,
-            DomainHistoryEntryKind::MergedRequest => Self::MergedRequest,
-            DomainHistoryEntryKind::VisibilityChange => Self::VisibilityChange,
-        }
     }
 }
 

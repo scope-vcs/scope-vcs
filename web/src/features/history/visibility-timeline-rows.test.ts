@@ -13,6 +13,7 @@ const entry = (id: string, entered: number, left: number): HistoryEntrySummaryRe
   parent_id: null,
   source_id: `source-${id}`,
   visibility_summary: { entered_count: entered, left_count: left },
+  views: null,
 })
 
 const summarize = (newestFirst: HistoryEntrySummaryResponse[]) =>

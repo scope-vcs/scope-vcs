@@ -264,7 +264,7 @@ pub(crate) async fn get_request_revision_commit_file_diff(
             let inspected = request_revision_commit_files(
                 raw_repo,
                 &repo_for_inspection.policy,
-                &repo_for_inspection.views,
+                &repo_for_inspection.context.views,
                 access,
                 revision,
                 &commit_oid,
@@ -344,7 +344,7 @@ fn request_revision_commits(
         let commit = inspect_request_commit(
             raw_repo,
             &repo.policy,
-            &repo.views,
+            &repo.context.views,
             access.clone(),
             &commit_oids[index],
         )?;
@@ -362,7 +362,7 @@ fn request_revision_commits(
         let identity_only = inspect_request_commits_identity_only(
             raw_repo,
             &repo.policy,
-            &repo.views,
+            &repo.context.views,
             access.clone(),
             &identity_only_oids,
         )?;

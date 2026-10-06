@@ -295,7 +295,7 @@ async fn native_open_request(
     .await;
     let request_id = started["request"]["id"].as_str().unwrap().to_string();
     let (origin, server) = spawn_test_server(&state).await;
-    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     let public_request_source = if view == ViewId::public() {
         let request_source = TempGitRepo(unique_test_path(&format!("{label}-public-request")));
         let public_remote = format!("{origin}/git/public/{TEST_REPO_ID}");

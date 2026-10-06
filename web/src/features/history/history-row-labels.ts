@@ -2,10 +2,9 @@ import type { CommitSummary } from '@/api/types'
 import type {
   HistoryEntryKind,
   HistoryEntrySummaryResponse,
-  ViewDefinition,
   ViewId,
 } from '@/api/types.generated'
-import { anyoneView, builtinViews, fullView, viewName } from '../../api/repo-views'
+import type { RepoViews } from '@/api/repo-views'
 
 type HistoryRowCommit = Pick<
   CommitSummary,
@@ -33,9 +32,9 @@ export function historyCommitTitle(commit: Pick<CommitSummary, 'message'>) {
   return commit.message.split(/\r?\n/, 1)[0]?.trim() || '(no message)'
 }
 
-export function historyEntryLabels(entry: HistoryEntrySummaryResponse, view: ViewId) {
+export function historyEntryLabels(entry: HistoryEntrySummaryResponse, view: ViewId, views: RepoViews) {
   return {
-    count: historyEntryCountLabel(entry, view),
+    count: historyEntryCountLabel(entry, view, views),
     kind: entry.kind === 'push' ? null : historyEntryKindLabel(entry.kind),
     title: historyCommitTitle(entry),
   }
@@ -49,6 +48,8 @@ export function historyEntryKindLabel(kind: HistoryEntryKind) {
       return 'Merged'
     case 'visibility_change':
       return 'Visibility'
+    case 'views_change':
+      return 'Views'
   }
 }
 
@@ -60,11 +61,11 @@ export function compactHistorySourceId(sourceId: string) {
 export function historyEntryCountLabel(
   entry: Pick<HistoryEntrySummaryResponse, 'file_change_count' | 'kind' | 'visibility_summary'>,
   view: ViewId,
-  views: readonly ViewDefinition[] = builtinViews,
+  views: RepoViews,
 ) {
-  const files = entry.kind === 'visibility_change' ? 0 : entry.file_change_count
+  const files = entry.kind === 'push' || entry.kind === 'merged_request' ? entry.file_change_count : 0
   const { entered_count: entered, left_count: left } = entry.visibility_summary
-  const name = viewName(visibilitySummaryView(view, views), views)
+  const name = views.name(visibilitySummaryView(view, views))
   return [
     files > 0 ? `${files} ${files === 1 ? 'file' : 'files'}` : null,
     entered > 0 ? `${entered} entered the ${name} view` : null,
@@ -72,6 +73,6 @@ export function historyEntryCountLabel(
   ].filter(Boolean).join(', ')
 }
 
-function visibilitySummaryView(view: ViewId, views: readonly ViewDefinition[]) {
-  return view === fullView(views) ? anyoneView(views) ?? view : view
+function visibilitySummaryView(view: ViewId, views: RepoViews) {
+  return view === views.full ? views.anyone ?? view : view
 }

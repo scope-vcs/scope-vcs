@@ -1,4 +1,4 @@
-import type { RequestQueuePageResponse, RequestQueueSection } from '../../api/types.generated'
+import type { RequestQueuePageResponse, RequestQueueSection, ViewId } from '../../api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 import { appendQueuePage, REQUEST_QUEUE_SECTION_ORDER, type RequestQueuePages, type RequestQueueViewState } from './request-list-model'
 
@@ -9,6 +9,23 @@ export const requestQueueResource = createCachedResource<RequestQueueViewState>(
   maxWeight: 4 * 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
+
+export function requestQueueIdentity(scope: string, view: ViewId) {
+  return JSON.stringify([scope, view])
+}
+
+export function requestQueueScope(identity: string): string | null {
+  try {
+    const value: unknown = JSON.parse(identity)
+    return Array.isArray(value) && typeof value[0] === 'string' ? value[0] : null
+  } catch {
+    return null
+  }
+}
+
+export function invalidateRequestQueues(scope: string) {
+  requestQueueResource.invalidateMatching((identity) => requestQueueScope(identity) === scope)
+}
 
 export async function refreshRequestQueue(key: string, load: LoadRequestQueuePage, signal: AbortSignal): Promise<RequestQueueViewState> {
   const previous = requestQueueResource.peek(key)

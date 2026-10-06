@@ -370,7 +370,10 @@ pub(super) fn show_one_request(
         detail.request.activity_version,
     )?;
     let auto_merge = get_request_auto_merge(api, api_target(&context, &request_id))?;
-    let mut human_lines = request_detail_lines(&detail.request);
+    let mut human_lines = request_detail_lines(
+        &detail.request,
+        &crate::repository_views::repository_views(&context.repo.views)?,
+    );
     human_lines.extend(auto_merge_status_lines(&auto_merge));
     human_lines.extend(request_activity_lines_for_response(&activity));
     Ok(RequestCommandOutcome::new(

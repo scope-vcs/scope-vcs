@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { notEmailedNotice } from './repo-invite-model'
 import { defaultPermissions } from './repo-member-permission-model'
 import { PermissionEditor } from './repo-member-permissions'
+import { useRepoViews } from './repo-layout-context'
 
 export function InviteMemberDialog({
   createInvite,
@@ -32,6 +33,7 @@ export function InviteMemberDialog({
     useState<RepositoryMemberPermissions>(defaultPermissions)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const views = useRepoViews()
 
   function changeOpen(next: boolean) {
     if (pending) return
@@ -97,6 +99,7 @@ export function InviteMemberDialog({
               disabled={pending}
               onChange={setPermissions}
               permissions={permissions}
+              views={views}
             />
 
             <p className="text-sm leading-5 text-muted-foreground">

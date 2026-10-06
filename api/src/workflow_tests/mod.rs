@@ -55,6 +55,7 @@ mod auth_fixtures;
 mod cli_auth;
 mod clone_access;
 mod cloud_runs;
+mod custom_views;
 mod dependencies;
 mod device_login;
 mod fake_github;

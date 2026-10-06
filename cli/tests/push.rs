@@ -193,7 +193,7 @@ fn ctrl_c_during_delayed_login_validation_exits_before_publish() {
                 }),
             ),
     );
-    let remote = format!("{}/git/permissioned/owner/repo", server.api_url);
+    let remote = format!("{}/git/private/owner/repo", server.api_url);
     run_git(dir.path(), ["remote", "add", "scope", &remote]);
 
     let mut command = server.command(dir.path());
@@ -312,7 +312,7 @@ fn browser_login_instructions_remain_readable_and_cancellable() {
             }
         }),
     ));
-    let remote = format!("{}/git/permissioned/owner/repo", server.api_url);
+    let remote = format!("{}/git/private/owner/repo", server.api_url);
     run_git(dir.path(), ["remote", "add", "scope", &remote]);
     let config = TempDir::new("push-browser-no-session");
     let mut command = server.command(dir.path());

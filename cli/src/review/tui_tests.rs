@@ -55,6 +55,37 @@ fn tree_rows_use_web_visibility_icons_and_stay_within_terminal_width() {
 }
 
 #[test]
+fn custom_view_rows_show_their_escaped_names() {
+    let mut config = crate::repo_config::default_scope_repo_config();
+    let mut definitions = Vec::from(config.views().clone());
+    definitions.push(scope_domain::views::ViewDefinition {
+        id: scope_domain::views::ViewId::parse("agent").unwrap(),
+        name: "Ag\u{1b}[31ment".into(),
+        includes: scope_domain::views::ViewIncludes::Some(
+            [scope_domain::views::ViewId::public()].into(),
+        ),
+        readers: scope_domain::views::ViewReaders::Assigned,
+    });
+    config.views = scope_domain::views::Views::new(definitions).unwrap();
+    let row = ReviewRow::TreeNode {
+        depth: 1,
+        name: "main.rs".to_string(),
+        path: "/src/main.rs".to_string(),
+        kind: crate::review::tree::ReviewNodeKind::File,
+        expanded: false,
+        visibility: ReviewLabel::View(scope_domain::views::ViewId::parse("agent").unwrap()),
+        rule: "explicit /src/**".to_string(),
+        reserved: false,
+        change_status: None,
+    };
+
+    let line = row_line(&row, false, 80, &config).to_string();
+
+    assert!(line.contains("👥 Ag\\u{1b}"), "{line}");
+    assert!(!line.contains('\u{1b}'), "{line}");
+}
+
+#[test]
 fn change_section_rows_are_compact_and_descriptive() {
     let row = ReviewRow::ChangeSection {
         kind: ChangeListKind::Deleted,

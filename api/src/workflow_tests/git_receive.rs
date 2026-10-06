@@ -161,6 +161,7 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
                 TEST_REPO_OWNER,
                 TEST_REPO_NAME,
                 None,
+                None,
                 &ScopePath::parse("/README.md").unwrap(),
             )
             .await

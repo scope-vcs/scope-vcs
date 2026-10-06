@@ -20,9 +20,11 @@ pub mod progress;
 pub mod pull;
 pub mod push;
 pub mod repo_config;
+pub mod repository_views;
 pub mod request;
 pub mod review;
 pub mod run;
+pub mod view;
 pub mod visibility;
 
 mod display;

@@ -195,8 +195,11 @@ test('repository components retain drafts, previews and pending actions across r
     assert.equal(await alice.getByRole('switch').first().isDisabled(), true)
     await page.evaluate(() => window.finishAction('alice'))
     assert.deepEqual(await page.evaluate(() => window.calls.filter(call => call.member_user_id === 'alice').at(-1).permissions), { can_push: true, can_change_file_visibility: true, view: 'private' })
-    await bob.locator('[data-slot="badge"]').filter({ hasText: 'Private' }).first().waitFor()
-    assert.equal(await bob.getByRole('combobox', { name: 'View' }).count(), 0)
+    await bob.getByRole('combobox', { name: 'View' }).selectOption('public')
+    await page.evaluate(() => window.finishAction('bob'))
+    await page.waitForFunction(() => [...document.querySelectorAll('li')].find(node => node.textContent.includes('bob@example.com')).querySelector('select').value === 'public')
+    assert.equal(await bob.getByRole('switch', { name: 'Push changes' }).isDisabled(), true)
+    assert.deepEqual(await page.evaluate(() => window.calls.filter(call => call.member_user_id === 'bob').at(-1).permissions), { can_push: false, can_change_file_visibility: false, view: 'public' })
 
     await page.getByRole('button', { name: 'Create login command', exact: true }).click()
     await page.getByRole('button', { name: 'Revoke session-a', exact: true }).click()

@@ -154,7 +154,10 @@ pub(super) fn wait_label(submitted_at_unix: Option<u64>, now_unix: u64) -> Strin
     }
 }
 
-pub(super) fn request_detail_lines(request: &RequestSummaryResponse) -> Vec<String> {
+pub(super) fn request_detail_lines(
+    request: &RequestSummaryResponse,
+    views: &scope_domain::views::Views,
+) -> Vec<String> {
     let mut lines = vec![
         request_line(request),
         format!(
@@ -169,7 +172,7 @@ pub(super) fn request_detail_lines(request: &RequestSummaryResponse) -> Vec<Stri
         format!(
             "  branch: {} · base {} {} · head {}",
             request.name,
-            view_label(&request.view),
+            view_label(&request.view, views),
             short_oid(&request.base_main_oid),
             short_oid(&request.head_oid)
         ),
@@ -492,13 +495,11 @@ fn access_label(actor: RepositoryActor) -> &'static str {
     }
 }
 
-pub(super) fn view_label(view: &ViewId) -> String {
-    let views = scope_domain::views::Views::builtin();
-    let name = views
-        .get(&view.clone().into())
-        .map(|definition| definition.name.as_str())
-        .unwrap_or(view.as_str());
-    format!("{name} main")
+pub(super) fn view_label(view: &ViewId, views: &scope_domain::views::Views) -> String {
+    format!(
+        "{} main",
+        terminal_text(views.display_name(&view.clone().into()))
+    )
 }
 
 fn state_label(state: RequestState) -> &'static str {

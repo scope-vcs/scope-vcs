@@ -397,18 +397,25 @@ fn visibility_cell(
     use scope_domain::repo_visibility::ReviewLabel;
 
     match visibility {
-        ReviewLabel::View(view) => (
-            format!(
-                "{} {}",
-                if view.is_public() { "🌐" } else { "🔒" },
-                scope_domain::repo_visibility::visibility_label(visibility.clone(), config)
-            ),
-            Style::new().fg(if view.is_public() {
-                Color::Green
+        ReviewLabel::View(view) => {
+            let (icon, color) = if config.views().anyone() == Some(view) {
+                ("🌐", Color::Green)
+            } else if config.views().full() == view {
+                ("🔒", Color::Red)
             } else {
-                Color::Red
-            }),
-        ),
+                ("👥", Color::Cyan)
+            };
+            (
+                format!(
+                    "{icon} {}",
+                    tui_escaped(&scope_domain::repo_visibility::visibility_label(
+                        visibility.clone(),
+                        config
+                    ))
+                ),
+                Style::new().fg(color),
+            )
+        }
         ReviewLabel::Mixed => ("− mixed".into(), Style::new().fg(Color::Yellow)),
     }
 }

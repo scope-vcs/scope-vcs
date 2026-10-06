@@ -24,31 +24,27 @@ async fn advertisement_and_exact_fetch_follow_viewer_and_publication_policy() {
         .insert_user_for_tests(test_user(unrelated_user_id(), "unrelated", UNRELATED_EMAIL))
         .await
         .unwrap();
-    let public_remote = permissioned_remote.replace("/permissioned/", "/public/");
+    let private_remote = permissioned_remote;
+    let public_remote = private_remote.replace("/git/private/", "/git/public/");
     let author = bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL);
     let invitee = bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL);
     let maintainer = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
     let unrelated = bearer_header_for(UNRELATED_SUBJECT, UNRELATED_EMAIL);
 
-    assert!(advertises_request_ref(&permissioned_remote, Some(&author)));
-    assert!(advertises_request_ref(&permissioned_remote, Some(&invitee)));
-    assert!(!advertises_request_ref(
-        &permissioned_remote,
-        Some(&maintainer)
-    ));
-    assert!(!advertises_request_ref(
-        &permissioned_remote,
-        Some(&unrelated)
-    ));
+    assert!(advertises_request_ref(&public_remote, Some(&author)));
+    assert!(advertises_request_ref(&public_remote, Some(&invitee)));
+    assert!(!advertises_request_ref(&private_remote, Some(&maintainer)));
+    assert!(!advertises_request_ref(&public_remote, Some(&unrelated)));
+    assert!(!advertises_request_ref(&private_remote, Some(&author)));
     assert!(!advertises_request_ref(&public_remote, None));
     assert!(!fetch_exact_request_tip(
-        &permissioned_remote,
+        &private_remote,
         Some(&maintainer),
         &request_head,
         "maintainer-draft-exact-fetch",
     ));
     assert!(!fetch_exact_request_tip(
-        &permissioned_remote,
+        &public_remote,
         Some(&unrelated),
         &request_head,
         "unrelated-draft-exact-fetch",
@@ -73,10 +69,10 @@ async fn advertisement_and_exact_fetch_follow_viewer_and_publication_policy() {
         .unwrap();
     for (remote, bearer) in [
         (public_remote.as_str(), None),
-        (permissioned_remote.as_str(), Some(author.as_str())),
-        (permissioned_remote.as_str(), Some(invitee.as_str())),
-        (permissioned_remote.as_str(), Some(maintainer.as_str())),
-        (permissioned_remote.as_str(), Some(unrelated.as_str())),
+        (public_remote.as_str(), Some(author.as_str())),
+        (public_remote.as_str(), Some(invitee.as_str())),
+        (private_remote.as_str(), Some(maintainer.as_str())),
+        (public_remote.as_str(), Some(unrelated.as_str())),
     ] {
         assert!(advertises_request_ref(remote, bearer));
     }
