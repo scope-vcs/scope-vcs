@@ -134,23 +134,8 @@ impl RepositoryStore {
         ),
         PostgresError,
     > {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let context = repository_access(&tx, incarnation.repository_id(), None)
-            .await?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        if context.incarnation() != *incarnation {
-            return Err(PostgresError::conflict("repository was recreated; retry"));
-        }
-        let head = entities::git_head::Entity::find_by_id(incarnation.repository_id())
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-            .map(entities::git_head::Model::try_into_domain)
-            .transpose()?;
-        let spans =
-            super::git_segments::load_git_pack_spans(&tx, incarnation.repository_id()).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
-        Ok((head, spans))
+        let state = self.repository_git_state(incarnation).await?;
+        Ok((state.git_head, state.git_pack_spans))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_policy"))]

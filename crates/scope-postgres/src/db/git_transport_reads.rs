@@ -27,7 +27,41 @@ pub struct GitReadSource {
     pub git_pack_spans: Vec<GitPackSpan>,
 }
 
+#[derive(Clone, Debug)]
+pub struct RepositoryGitState {
+    pub content_version: u64,
+    pub git_head: Option<GitHead>,
+    pub git_pack_spans: Vec<GitPackSpan>,
+}
+
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_git_state"))]
+    pub async fn repository_git_state(
+        &self,
+        incarnation: &RepositoryIncarnation,
+    ) -> Result<RepositoryGitState, PostgresError> {
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let record = load_repo_record(&tx, incarnation.repository_id())
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        if record.incarnation() != *incarnation {
+            return Err(PostgresError::conflict("repository was recreated; retry"));
+        }
+        let git_head = entities::git_head::Entity::find_by_id(incarnation.repository_id())
+            .one(&tx)
+            .await
+            .map_err(PostgresError::internal)?
+            .map(entities::git_head::Model::try_into_domain)
+            .transpose()?;
+        let git_pack_spans = load_git_pack_spans(&tx, incarnation.repository_id()).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(RepositoryGitState {
+            content_version: record.content_version,
+            git_head,
+            git_pack_spans,
+        })
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_read_source"))]
     pub async fn git_read_source(
         &self,
