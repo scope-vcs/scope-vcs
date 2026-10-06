@@ -9,6 +9,7 @@ use scope_cli::{
     run::RunArgs,
     visibility::VisibilityArgs,
 };
+use scope_domain::views::ViewId;
 use std::{path::PathBuf, process::ExitCode};
 
 #[derive(Parser)]
@@ -118,6 +119,12 @@ struct PullArgs {
 struct CloneArgs {
     repository: String,
     destination: Option<PathBuf>,
+    #[arg(
+        long,
+        value_parser = parse_view,
+        help = "View to clone (defaults to the view Scope assigns you)"
+    )]
+    view: Option<ViewId>,
 }
 #[derive(Parser)]
 struct LoginArgs {
@@ -224,9 +231,11 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         CommandKind::Pull(args) => scope_cli::pull::run(args.remote.as_deref()),
         CommandKind::Visibility(args) => scope_cli::visibility::run(args),
         CommandKind::Request(args) => run_request(args),
-        CommandKind::Clone(args) => {
-            scope_cli::clone::clone_repo(&args.repository, args.destination.as_deref())
-        }
+        CommandKind::Clone(args) => scope_cli::clone::clone_repo(
+            &args.repository,
+            args.view.as_ref(),
+            args.destination.as_deref(),
+        ),
         CommandKind::Login(args) => {
             scope_cli::login::login(args.headless, args.exchange, args.exchange_file.as_deref())
         }
@@ -252,6 +261,10 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
     }
 }
+fn parse_view(value: &str) -> Result<ViewId, String> {
+    ViewId::parse(value).map_err(|error| error.message)
+}
+
 fn run_request(args: RequestArgs) -> anyhow::Result<()> {
     let command = prepare_request_command(args)?;
     let api_url = api_url()?;

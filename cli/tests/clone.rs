@@ -47,6 +47,17 @@ fn clone_without_auth_returns_authentication_json() {
 }
 
 #[test]
+fn clone_rejects_malformed_view_ids_before_contacting_scope() {
+    let dir = support::TempDir::new("clone-view-id");
+    let output = support::scope_command(dir.path())
+        .args(["clone", "adam/repo", "--view", "Agent"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--view"));
+}
+
+#[test]
 fn clone_json_keeps_git_output_off_stdout() {
     use axum::{Json, Router, routing::get};
     let source = support::TempDir::new("clone-json-source");

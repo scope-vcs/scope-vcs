@@ -1,12 +1,14 @@
 use crate::api::ApiSession;
 use crate::{
-    api::{RepositoryActor, api_url, get_repo, get_repo_config, http_client},
+    api::{api_url, get_repo, http_client},
     auth::read_stored_session_token,
     git_repo::{clone_with_bearer, install_scope_fetch_auth},
-    repo_config::{default_scope_repo_config, write_worktree_scope_repo_config_with_base},
+    git_transport::ScopeRemote,
+    repo_config::write_worktree_scope_repo_config_with_base,
+    repository_views::reader_repo_config,
 };
 use crate::{error::CliError, execution::emit};
-use scope_domain::repo_config::RepoConfig;
+use scope_domain::{repo_config::RepoConfig, views::ViewId};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
@@ -16,7 +18,11 @@ pub struct RepoSpec {
     pub repo: String,
 }
 
-pub fn clone_repo(repository: &str, destination: Option<&Path>) -> anyhow::Result<()> {
+pub fn clone_repo(
+    repository: &str,
+    view: Option<&ViewId>,
+    destination: Option<&Path>,
+) -> anyhow::Result<()> {
     let target = parse_repo_spec(repository)?;
     let api_url = api_url()?;
     let session_token = read_stored_session_token(&api_url)?
@@ -24,14 +30,8 @@ pub fn clone_repo(repository: &str, destination: Option<&Path>) -> anyhow::Resul
     let client = http_client()?;
     let api = ApiSession::new(&client, &api_url, &session_token);
     let repo = get_repo(api, &target.owner, &target.repo)?;
-    let repo_config = match repo.access.actor {
-        RepositoryActor::Public => default_scope_repo_config(),
-        RepositoryActor::Member | RepositoryActor::Owner => {
-            let context = get_repo_config(api, &target.owner, &target.repo)?;
-            context.config
-        }
-    };
-    let remote_url = repo.git_remote_url;
+    let repo_config = reader_repo_config(api, &target.owner, &target.repo, &repo)?;
+    let remote_url = clone_url(&repo.git_remote_url, &repo_config, view)?;
     let checkout_dir = destination
         .map(Path::to_path_buf)
         .unwrap_or_else(|| default_clone_dir(&target.repo));
@@ -59,6 +59,29 @@ pub fn clone_repo(repository: &str, destination: Option<&Path>) -> anyhow::Resul
             checkout_dir.display()
         )],
     )
+}
+
+fn clone_url(
+    reader_url: &str,
+    config: &RepoConfig,
+    view: Option<&ViewId>,
+) -> anyhow::Result<String> {
+    let Some(view) = view else {
+        return Ok(reader_url.to_string());
+    };
+    if config.views().get(view).is_none() {
+        return Err(CliError::usage(format!(
+            "Unknown repository view {view}; choose one of {}",
+            config
+                .views()
+                .iter()
+                .map(|definition| definition.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+        .into());
+    }
+    Ok(ScopeRemote::from_url(reader_url)?.url_for_view(view))
 }
 
 fn clone_and_configure(
@@ -113,6 +136,21 @@ mod tests {
         test_support::TempDir,
     };
     use std::{fs, process::Command};
+
+    #[test]
+    fn clone_defaults_to_the_reader_view_and_switches_to_a_requested_view() {
+        let config = default_scope_repo_config();
+        let reader = "https://git.scope.example/git/public/adam/repo";
+        assert_eq!(clone_url(reader, &config, None).unwrap(), reader);
+        assert_eq!(
+            clone_url(reader, &config, Some(&ViewId::private())).unwrap(),
+            "https://git.scope.example/git/private/adam/repo"
+        );
+        let error = clone_url(reader, &config, Some(&ViewId::parse("agent").unwrap()))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("Unknown repository view agent"), "{error}");
+    }
 
     #[test]
     fn clone_installs_fetch_auth_and_repo_config() {

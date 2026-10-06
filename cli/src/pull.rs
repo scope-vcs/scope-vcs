@@ -1,7 +1,7 @@
 use crate::api::ApiSession;
 use crate::display::short_oid;
 use crate::{
-    api::{RepositoryActor, api_url, get_repo, get_repo_config, http_client},
+    api::{api_url, get_repo, http_client},
     git_repo::{
         GitRepo, branch_config_value, current_branch, ensure_git_repo_ready, git_remote_fetch_url,
         head_oid, install_scope_fetch_auth, run_git_in_repo, scope_git_origin,
@@ -10,10 +10,11 @@ use crate::{
     login::session_from_cache_or_browser,
     push::DEFAULT_SCOPE_BRANCH,
     repo_config::{
-        WorktreeRepoConfigPresence, WorktreeRepoConfigSync, default_scope_repo_config,
-        load_worktree_scope_repo_config, load_worktree_scope_repo_config_base_hash,
-        sync_missing_worktree_scope_repo_config, worktree_scope_repo_config_presence,
+        WorktreeRepoConfigPresence, WorktreeRepoConfigSync, load_worktree_scope_repo_config,
+        load_worktree_scope_repo_config_base_hash, sync_missing_worktree_scope_repo_config,
+        worktree_scope_repo_config_presence,
     },
+    repository_views::reader_repo_config,
 };
 use crate::{error::CliError, execution::emit};
 use anyhow::{Context, bail};
@@ -117,12 +118,7 @@ fn sync_pull_visibility(
         return Ok(WorktreeRepoConfigSync::Unchanged);
     }
     let summary = get_repo(api, &target.owner, &target.repo)?;
-    let config = match summary.access.actor {
-        RepositoryActor::Public => default_scope_repo_config(),
-        RepositoryActor::Member | RepositoryActor::Owner => {
-            get_repo_config(api, &target.owner, &target.repo)?.config
-        }
-    };
+    let config = reader_repo_config(api, &target.owner, &target.repo, &summary)?;
     sync_missing_worktree_scope_repo_config(&repo.root, &config)
 }
 
@@ -198,6 +194,7 @@ fn ref_change_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repo_config::default_scope_repo_config;
     use crate::test_support::TempDir;
     use std::fs;
 
