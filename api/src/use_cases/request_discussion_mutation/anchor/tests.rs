@@ -1,18 +1,32 @@
-use crate::use_cases::request_revision_inspection::inspect_request_paths;
+use crate::use_cases::request_revision_inspection::inspect_request_paths as inspect_request_paths_with_views;
 use axum::http::StatusCode;
+use scope_domain::views::ViewId;
 use scope_domain::{
-    policy::{Policy, ScopePath, Visibility, VisibilityRule},
+    policy::{LabelRule, Policy, ScopePath},
     repository::access::RepositoryAccess,
 };
 
 const ZERO_OID: &str = "0000000000000000000000000000000000000000";
 const ONE_OID: &str = "1111111111111111111111111111111111111111";
 
+fn inspect_request_paths(
+    changes: &[u8],
+    policy: &Policy,
+    access: RepositoryAccess,
+) -> Result<(std::collections::BTreeSet<ScopePath>, bool), crate::error::ApiError> {
+    inspect_request_paths_with_views(
+        changes,
+        policy,
+        &scope_domain::views::Views::builtin(),
+        &access,
+    )
+}
+
 #[test]
 fn anchor_parser_hides_unreadable_paths_before_validating_change_status() {
-    let mut policy = Policy::new(Visibility::Public);
+    let mut policy = Policy::new(ViewId::public());
     policy
-        .add_rule(VisibilityRule::private(
+        .add_rule(LabelRule::private(
             ScopePath::parse("/private.txt").unwrap(),
         ))
         .unwrap();
@@ -32,7 +46,7 @@ fn anchor_parser_hides_unreadable_paths_before_validating_change_status() {
             changes.as_bytes(),
             &policy,
             RepositoryAccess {
-                can_read_private_files: true,
+                view: ViewId::private(),
                 ..RepositoryAccess::public()
             },
         )
@@ -45,9 +59,9 @@ fn anchor_parser_hides_unreadable_paths_before_validating_change_status() {
 
 #[test]
 fn anchor_parser_reports_framing_and_path_faults_before_change_status() {
-    let mut policy = Policy::new(Visibility::Public);
+    let mut policy = Policy::new(ViewId::public());
     policy
-        .add_rule(VisibilityRule::private(
+        .add_rule(LabelRule::private(
             ScopePath::parse("/private.txt").unwrap(),
         ))
         .unwrap();
@@ -80,7 +94,7 @@ fn anchor_parser_reports_framing_and_path_faults_before_change_status() {
 
 #[test]
 fn anchor_parser_validates_records_after_a_hidden_change() {
-    let policy = Policy::new(Visibility::Private);
+    let policy = Policy::new(ViewId::private());
     let changes = format!("{}\0private.txt\0malformed\0", header("A"));
 
     assert_api_error(
@@ -93,9 +107,9 @@ fn anchor_parser_validates_records_after_a_hidden_change() {
 
 #[test]
 fn anchor_parser_accepts_all_statuses_and_canonicalizes_paths() {
-    let mut policy = Policy::new(Visibility::Public);
+    let mut policy = Policy::new(ViewId::public());
     policy
-        .add_rule(VisibilityRule::private(
+        .add_rule(LabelRule::private(
             ScopePath::parse("/private.txt").unwrap(),
         ))
         .unwrap();

@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[tokio::test]
 async fn published_receive_pack_accepts_git_push_token() {
@@ -62,8 +63,8 @@ async fn push_intent_is_signed_instead_of_process_local() {
             TEST_REPO_ID,
             &test_owner_id(),
             TEST_PUSH_HEAD_OID,
-            repo_config(Visibility::Public),
-            repo_config_fingerprint(&repo_config(Visibility::Public)).unwrap(),
+            repo_config(ViewId::public()),
+            repo_config_fingerprint(&repo_config(ViewId::public())).unwrap(),
             None,
         )
         .unwrap()
@@ -120,7 +121,7 @@ async fn request_push_intent(state: AppState, authorization: &str, head_oid: &st
         Some(authorization),
         Some(&push_intent_request_json(
             head_oid,
-            repo_config(Visibility::Public),
+            repo_config(ViewId::public()),
         )),
     )
     .await
@@ -308,8 +309,8 @@ async fn private_upload_pack_without_credentials_challenges_for_auth() {
     let state = test_state_with_repo();
     {
         let mut repo = test_repo(&test_owner_id());
-        repo.repo_config = repo_config(Visibility::Private);
-        repo.policy = Policy::new(Visibility::Private);
+        repo.repo_config = repo_config(ViewId::private());
+        repo.policy = Policy::new(ViewId::private());
         repo.graph.commits.push(LogicalCommit {
             occurred_at_unix: None,
             id: "rv1".to_string(),
@@ -319,7 +320,7 @@ async fn private_upload_pack_without_credentials_challenges_for_auth() {
             author_id: repo.record.owner_user_id.clone(),
             message: "initial".to_string(),
             changes: vec![FileChange {
-                visibility: Visibility::Private,
+                label: ViewId::private(),
                 path: ScopePath::parse("/secret.txt").unwrap(),
                 old_content: None,
                 new_content: Some(source_blob(&state, "secret")),
@@ -415,7 +416,7 @@ async fn real_git_first_push_over_http_applies_immediately() {
         ["repository:repository_initialize"]
     );
     let live_tree = &repo.live_files;
-    assert_eq!(repo.repo_config, repo_config(Visibility::Public));
+    assert_eq!(repo.repo_config, repo_config(ViewId::public()));
     assert_eq!(
         live_tree
             .get(&ScopePath::parse("/script.sh").unwrap())
@@ -503,14 +504,15 @@ async fn chunked_real_git_published_push_over_http_accepts_image_context() {
         .unwrap();
     let image_path = ScopePath::parse("/.scope/images/checks/Dockerfile").unwrap();
     assert_eq!(
-        repo.repo_config.visibility_for_path(&image_path),
-        Visibility::Private
+        repo.repo_config.label_for_path(&image_path),
+        ViewId::private()
     );
     assert!(
         !project_graph(
             &repo.graph,
             &repo.visibility_change_sets,
-            ProjectionViewKey::Public,
+            repo.repo_config.views(),
+            &ViewId::public()
         )
         .visible_paths()
         .iter()

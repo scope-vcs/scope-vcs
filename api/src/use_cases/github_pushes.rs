@@ -4,9 +4,10 @@ use crate::{
     repo_events::RepoChangeReason, state::AppState,
     use_cases::public_check_commits::with_check_commit,
 };
+use scope_domain::views::ViewId;
 use scope_domain::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
-    requests::{GitHubBranch, GitHubPush, RequestAudience, github_push_retry_at},
+    requests::{GitHubBranch, GitHubPush, github_push_retry_at},
 };
 use scope_postgres::db::{GitHubPushOutcome, GitHubPushStanding};
 use std::path::Path;
@@ -104,7 +105,7 @@ async fn ensure_current(
     state: &AppState,
     push: &GitHubPush,
     claim_token: &str,
-    audience: Option<RequestAudience>,
+    view: Option<ViewId>,
 ) -> Result<(), PushFailure> {
     let requests = state.metadata.requests();
     match requests
@@ -139,14 +140,14 @@ async fn ensure_current(
                     .to_string(),
             )
         })?;
-    ensure_may_receive(&connection, audience)
+    ensure_may_receive(&connection, view)
 }
 
 fn ensure_may_receive(
     connection: &GitHubConnection,
-    audience: Option<RequestAudience>,
+    view: Option<ViewId>,
 ) -> Result<(), PushFailure> {
-    if audience == Some(RequestAudience::Private) && !connection.may_receive_private_requests() {
+    if view == Some(ViewId::private()) && !connection.may_receive_private_requests() {
         return Err(PushFailure::GiveUp(
             PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string(),
         ));
@@ -224,15 +225,15 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         }
         GitHubBranch::SetupCheck => None,
     };
-    let audience = Some(
+    let view = Some(
         tested
             .as_ref()
-            .map_or(RequestAudience::Private, |(request, evaluation)| {
-                evaluation.tested_code_audience(request.audience)
+            .map_or(ViewId::private(), |(request, evaluation)| {
+                evaluation.tested_code_view(request.view.clone())
             }),
     );
-    ensure_current(state, push, claim_token, audience).await?;
-    if audience == Some(RequestAudience::Private)
+    ensure_current(state, push, claim_token, view.clone()).await?;
+    if view == Some(ViewId::private())
         && let Some(connection) = state
             .metadata
             .repositories()
@@ -242,7 +243,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
     {
         ensure_may_receive(
             &refresh_github_visibility(state, &connection.connection).await?,
-            audience,
+            view.clone(),
         )?;
     }
     let token = installation_token(&app, destination.installation_id).await?;
@@ -264,7 +265,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             &check_state,
             &check_push,
             &claim_token,
-            audience,
+            view,
         ))
         .and_then(|()| {
             remote

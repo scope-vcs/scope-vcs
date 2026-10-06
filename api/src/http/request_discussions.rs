@@ -76,7 +76,7 @@ pub(crate) async fn list_discussions(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -188,7 +188,7 @@ pub(crate) async fn list_replies(
     visible_request(
         &state,
         &repo.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -361,7 +361,7 @@ pub(crate) async fn changed_discussions(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -408,7 +408,7 @@ pub(crate) async fn activity(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )

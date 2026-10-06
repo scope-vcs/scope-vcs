@@ -29,7 +29,7 @@ pub(crate) async fn list_request_ratings(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -45,8 +45,14 @@ pub(crate) async fn create_request_rating(
 ) -> Result<Json<RequestRatingResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) =
-        visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    let (request, _) = visible_request(
+        &state,
+        &repo.record.id,
+        access.clone(),
+        Some(&user.id),
+        &request_id,
+    )
+    .await?;
     let rating = state
         .metadata
         .requests()
@@ -63,7 +69,7 @@ pub(crate) async fn create_request_rating(
         &user.id,
         &repo.record.incarnation_id,
         &request.id,
-        request.audience,
+        request.view,
         rating.score,
     ));
     state

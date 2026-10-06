@@ -1,14 +1,15 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 const PUSH_ONLY_MEMBER_ID: &str = "user_push_only";
-fn config_with_rules(default: Visibility, rules: &[(&str, ConfigVisibility)]) -> RepoConfig {
+fn config_with_rules(default: ViewId, rules: &[(&str, ViewId)]) -> RepoConfig {
     let mut config = repo_config(default);
-    config.visibility.rules = rules
+    config.files.rules = rules
         .iter()
         .map(
-            |(path, visibility)| scope_domain::repo_config::RepoConfigVisibilityRule {
+            |(path, visibility)| scope_domain::repo_config::RepoConfigFileRule {
                 path: (*path).to_string(),
-                visibility: *visibility,
+                view: visibility.clone(),
             },
         )
         .collect();
@@ -60,25 +61,20 @@ async fn rejected_config_push(
 #[tokio::test]
 async fn push_only_member_cannot_publish_private_path_via_config() {
     let state = test_state_with_repo();
-    let existing_config = config_with_rules(
-        Visibility::Private,
-        &[("/README.md", ConfigVisibility::Public)],
-    );
+    let existing_config = config_with_rules(ViewId::private(), &[("/README.md", ViewId::public())]);
     let mut repo = repo_with_readme(&state);
     repo.repo_config = existing_config;
-    repo.policy = Policy::new(Visibility::Private);
+    repo.policy = Policy::new(ViewId::private());
     repo.policy
-        .add_rule(VisibilityRule::public(
-            ScopePath::parse("/README.md").unwrap(),
-        ))
+        .add_rule(LabelRule::public(ScopePath::parse("/README.md").unwrap()))
         .unwrap();
     install_push_only_repo(&state, repo).await;
 
     let config = config_with_rules(
-        Visibility::Private,
+        ViewId::private(),
         &[
-            ("/README.md", ConfigVisibility::Public),
-            ("/secret.txt", ConfigVisibility::Public),
+            ("/README.md", ViewId::public()),
+            ("/secret.txt", ViewId::public()),
         ],
     );
 
@@ -100,31 +96,28 @@ async fn push_only_member_cannot_restore_stale_public_config_after_visibility_ch
         scope_domain::reviewed_updates::config::ReviewedConfigUpdateInput {
             author_id: test_owner_id(),
             occurred_at_unix: 10,
-            config: config_with_rules(
-                Visibility::Public,
-                &[("/README.md", ConfigVisibility::Private)],
-            ),
+            config: config_with_rules(ViewId::public(), &[("/README.md", ViewId::private())]),
         },
     )
     .unwrap();
     assert_eq!(
-        repo.repo_config.visibility_for_path(&readme_path),
-        Visibility::Private
+        repo.repo_config.label_for_path(&readme_path),
+        ViewId::private()
     );
     install_push_only_repo(&state, repo).await;
 
     let repo = rejected_config_push(
         &state,
         vec![("/README.md", Some("member update"))],
-        repo_config(Visibility::Public),
+        repo_config(ViewId::public()),
     )
     .await;
     assert_eq!(
-        repo.policy.effective_visibility(&readme_path),
-        Visibility::Private
+        repo.policy.label(&readme_path, repo.repo_config.views()),
+        ViewId::private()
     );
     assert_eq!(
-        repo.repo_config.visibility_for_path(&readme_path),
-        Visibility::Private
+        repo.repo_config.label_for_path(&readme_path),
+        ViewId::private()
     );
 }

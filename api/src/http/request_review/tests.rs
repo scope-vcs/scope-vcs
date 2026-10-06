@@ -1,14 +1,15 @@
 use super::{
     MAX_IMPORTED_REQUEST_REVISIONS, MAX_IMPORTED_REQUEST_SNAPSHOT_BYTES,
-    RequestRevisionListWorkBudget, inspect_request_changes, request_file_response,
-    request_revision_commits,
+    RequestRevisionListWorkBudget, inspect_request_changes as inspect_request_changes_with_views,
+    request_file_response, request_revision_commits,
 };
-use scope_api_contract::{FileChangeKind as ApiFileChangeKind, Visibility as ApiVisibility};
+use scope_api_contract::{FileChangeKind as ApiFileChangeKind, ViewId as ApiViewId};
+use scope_domain::views::ViewId;
 use scope_domain::{
     account::UserAccount,
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     content_ref::ContentRef,
-    policy::{Policy, ScopePath, Visibility, VisibilityRule},
+    policy::{LabelRule, Policy, ScopePath},
     repository::{Repository, access::RepositoryAccess},
     requests::RequestRevision,
 };
@@ -18,11 +19,27 @@ use std::{
     process::{Command, Stdio},
 };
 
+fn inspect_request_changes(
+    changes: &[u8],
+    policy: &Policy,
+    access: RepositoryAccess,
+) -> Result<
+    crate::use_cases::request_revision_inspection::InspectedRequestChanges,
+    crate::error::ApiError,
+> {
+    inspect_request_changes_with_views(
+        changes,
+        policy,
+        &scope_domain::views::Views::builtin(),
+        &access,
+    )
+}
+
 #[test]
 fn request_file_response_maps_type_changes_and_private_visibility() {
-    let policy = Policy::new(Visibility::Private);
+    let policy = Policy::new(ViewId::private());
     let access = RepositoryAccess {
-        can_read_private_files: true,
+        view: ViewId::private(),
         ..RepositoryAccess::public()
     };
     let parsed =
@@ -36,12 +53,12 @@ fn request_file_response_maps_type_changes_and_private_visibility() {
     assert_eq!(
         files
             .iter()
-            .map(|file| (file.path.as_str(), file.kind, file.visibility))
+            .map(|file| (file.path.as_str(), file.kind, file.label.clone()))
             .collect::<Vec<_>>(),
         [(
             "type.txt",
             ApiFileChangeKind::Modified,
-            ApiVisibility::Private
+            ApiViewId::private()
         )]
     );
     let file = &files[0];
@@ -145,13 +162,13 @@ fn revision_response_keeps_oversized_commit_identity_and_prioritizes_selection()
         email: "owner@example.test".to_string(),
         email_verified: true,
     };
-    let repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_test").unwrap();
+    let repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_test").unwrap();
     let access = repo.access_for_user_id(&owner.id);
 
     let default = request_revision_commits(
         directory.path(),
         &repo,
-        access,
+        access.clone(),
         &revision,
         None,
         100,
@@ -171,7 +188,7 @@ fn revision_response_keeps_oversized_commit_identity_and_prioritizes_selection()
     let selected = request_revision_commits(
         directory.path(),
         &repo,
-        access,
+        access.clone(),
         &revision,
         Some(&oversized),
         100,
@@ -242,7 +259,7 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
         email: "owner@example.test".to_string(),
         email_verified: true,
     };
-    let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_test").unwrap();
+    let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_test").unwrap();
 
     let response = request_revision_commits(
         directory.path(),
@@ -263,9 +280,7 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
     assert!(!response.visible[1].files_truncated);
 
     repo.policy
-        .add_rule(VisibilityRule::private(
-            ScopePath::parse("/file.txt").unwrap(),
-        ))
+        .add_rule(LabelRule::private(ScopePath::parse("/file.txt").unwrap()))
         .unwrap();
     let public_response = request_revision_commits(
         directory.path(),
@@ -384,13 +399,13 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
         email: "owner@example.test".to_string(),
         email_verified: true,
     };
-    let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_test").unwrap();
+    let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_test").unwrap();
     let owner_access = repo.access_for_user_id(&owner.id);
     for file_budget in [0, 100] {
         let listing = request_revision_commits(
             raw_repo,
             &repo,
-            owner_access,
+            owner_access.clone(),
             &revision,
             None,
             100,
@@ -406,9 +421,14 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
         assert_eq!(root_summary.change_count, 1);
         assert_eq!(root_summary.files_truncated, file_budget == 0);
     }
-    let files =
-        request_revision_commit_files(raw_repo, &repo.policy, owner_access, &revision, &root)
-            .unwrap();
+    let files = request_revision_commit_files(
+        raw_repo,
+        &repo.policy,
+        owner_access.clone(),
+        &revision,
+        &root,
+    )
+    .unwrap();
     assert_eq!(files.commit.files.len(), 1);
     let file = &files.commit.files[0];
     assert_eq!(file.path, "root.txt");
@@ -417,25 +437,38 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
     assert_eq!(file.kind, scope_api_contract::FileChangeKind::Added);
     let public = RepositoryAccess::public();
     let public_files =
-        request_revision_commit_files(raw_repo, &repo.policy, public, &revision, &root).unwrap();
+        request_revision_commit_files(raw_repo, &repo.policy, public.clone(), &revision, &root)
+            .unwrap();
     assert_eq!(public_files.commit.files[0].path, "root.txt");
 
     repo.policy
-        .add_rule(VisibilityRule::private(
-            ScopePath::parse("/root.txt").unwrap(),
-        ))
+        .add_rule(LabelRule::private(ScopePath::parse("/root.txt").unwrap()))
         .unwrap();
     for file_budget in [0, 100] {
-        let listing =
-            request_revision_commits(raw_repo, &repo, public, &revision, None, 100, file_budget)
-                .unwrap();
+        let listing = request_revision_commits(
+            raw_repo,
+            &repo,
+            public.clone(),
+            &revision,
+            None,
+            100,
+            file_budget,
+        )
+        .unwrap();
         assert!(!listing.visible.iter().any(|commit| commit.oid == root));
     }
     assert!(
-        request_revision_commit_files(raw_repo, &repo.policy, public, &revision, &root).is_err()
+        request_revision_commit_files(raw_repo, &repo.policy, public.clone(), &revision, &root)
+            .is_err()
     );
     assert!(
-        request_revision_commit_files(raw_repo, &repo.policy, owner_access, &revision, &root)
-            .is_ok()
+        request_revision_commit_files(
+            raw_repo,
+            &repo.policy,
+            owner_access.clone(),
+            &revision,
+            &root
+        )
+        .is_ok()
     );
 }

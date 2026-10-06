@@ -18,12 +18,13 @@ use scope_api_contract::{
     ApproveRequestChecksRequest, RequestCheckResponse, RequestChecksResponse,
     RequestGitHubPushResponse, RequestGitHubPushState, RequestMergeabilityResponse,
 };
+use scope_domain::views::ViewId;
 use scope_domain::{
     github_connection::GitHubRepositoryVisibility,
     repository::{RepoRecord, access::RepositoryAccess},
     requests::{
-        GitHubBranch, GitHubPushStatus, Request, RequestAudience, RequestCheck,
-        RequestCheckResults, request_checks_message, request_mergeability,
+        GitHubBranch, GitHubPushStatus, Request, RequestCheck, RequestCheckResults,
+        request_checks_message, request_mergeability,
     },
 };
 use scope_postgres::db::ApproveRequestChecksCommand;
@@ -38,7 +39,7 @@ pub(crate) async fn get_request_checks(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -64,8 +65,14 @@ pub(crate) async fn approve_request_checks(
 ) -> Result<Json<RequestChecksResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) =
-        visible_request(&state, &repo.record.id, access, Some(&user.id), &request_id).await?;
+    let (request, _) = visible_request(
+        &state,
+        &repo.record.id,
+        access.clone(),
+        Some(&user.id),
+        &request_id,
+    )
+    .await?;
     request_checks::checks_view(&state, &repo.record, &request).await?;
     let mutation = state
         .metadata
@@ -104,14 +111,14 @@ pub(crate) async fn checks_response(
         results,
         outcome,
     } = request_checks::readable_checks_view(state, repo, request).await?;
-    let decision = request_mergeability(request, access, outcome);
+    let decision = request_mergeability(request, access.clone(), outcome);
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
         current_main_oid: current_main_oid.map(git_oid_response).transpose()?,
         request_head_oid: git_oid_response(request.head_oid.clone())?,
         reason: decision.reason.map(str::to_string),
     };
-    let private_request_on_public_github = request.audience == RequestAudience::Private
+    let private_request_on_public_github = request.view == ViewId::private()
         && state
             .metadata
             .repositories()

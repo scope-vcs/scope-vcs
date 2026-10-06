@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 async fn repo_with_push_member(
     state: &AppState,
@@ -23,7 +24,7 @@ async fn published_receive_pack_push_applies_from_seeded_git_repo() {
     let state = test_state_with_repo();
     let mut repo = repo_with_readme(&state);
     repo.graph.commits[0].changes.push(FileChange {
-        visibility: Visibility::Public,
+        label: ViewId::public(),
         path: ScopePath::parse("/unchanged.md").unwrap(),
         old_content: None,
         new_content: Some(source_blob(&state, "already here")),
@@ -48,7 +49,7 @@ async fn published_receive_pack_push_applies_from_seeded_git_repo() {
         TEST_REPO_NAME,
         &staging_repo,
         &test_owner_id(),
-        repo_config(Visibility::Public),
+        repo_config(ViewId::public()),
         ReviewedUpdateMode::ReadyPush,
     )
     .await
@@ -329,7 +330,7 @@ async fn published_receive_pack_staging_restores_accepted_git_head_from_bucket_s
     let bare = clone_test_repo(&source, "snapshot-first-push-bare", true);
     let expected_head =
         git_stdout_text(&bare, &["rev-parse", DEFAULT_GIT_BRANCH], "first push head").unwrap();
-    apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+    apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::public())).await;
 
     let restored = ensure_ready_receive_pack_staging_repo(
         &state,

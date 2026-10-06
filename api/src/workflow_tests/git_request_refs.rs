@@ -1,7 +1,8 @@
 use super::*;
 use scope_domain::requests::{
-    Request, RequestActorRole, RequestAudience, RequestEventKind, RequestState, StartRequestInput,
+    Request, RequestActorRole, RequestEventKind, RequestState, StartRequestInput,
 };
+use scope_domain::views::ViewId;
 use scope_postgres::db::{AddRequestInviteeCommand, SubmitRequestCommand};
 
 const PUBLIC_SUBJECT: &str = "user_public";
@@ -107,7 +108,8 @@ async fn start_request_for_author(
     let projection = project_graph(
         &repo.graph,
         &repo.visibility_change_sets,
-        ProjectionViewKey::Public,
+        repo.repo_config.views(),
+        &ViewId::public(),
     );
     let projection_repo = projection_bare_repo_for_state(
         state,
@@ -137,7 +139,7 @@ async fn start_request_for_author(
             author_user_id,
             title: Some("Request branch".to_string()),
             author_role,
-            audience: RequestAudience::Public,
+            view: ViewId::public(),
             base_main_oid,
             event_id: "event_request_branch_started".to_string(),
             now_unix: 2,
@@ -156,7 +158,7 @@ async fn insert_private_request_for_public_user(state: &AppState) {
             name: "private-request".to_string(),
             author_user_id: Some(public_user_id()),
             author_role: RequestActorRole::Member,
-            audience: RequestAudience::Private,
+            view: ViewId::private(),
             base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             head_oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
             git_snapshot: None,
