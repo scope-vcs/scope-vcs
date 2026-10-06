@@ -29,7 +29,7 @@ async fn within_lock(response: impl std::future::Future<Output = Response>) -> R
 }
 
 #[tokio::test]
-async fn file_content_and_config_routes_read_no_repository_history() {
+async fn file_content_and_config_routes_read_no_commit_history() {
     let state = state_with_docs().await;
     let app = router(state.clone());
     let owner = bearer_header();
@@ -43,7 +43,12 @@ async fn file_content_and_config_routes_read_no_repository_history() {
     let held = state
         .metadata
         .admin()
-        .lock_repository_history_for_tests()
+        .lock_tables_for_tests(&[
+            "scope_logical_commits",
+            "scope_file_changes",
+            "scope_visibility_change_sets",
+            "scope_visibility_changes",
+        ])
         .await
         .unwrap();
     let file = within_lock(get(&app, content, Some(&owner))).await;
@@ -60,6 +65,7 @@ async fn projection_preview_reads_history_but_no_live_files() {
     let state = state_with_docs().await;
     let app = router(state.clone());
     let preview = "/v1/repos/owner/repo/projection-preview?audience=public";
+    assert_eq!(get(&app, preview, None).await.status(), StatusCode::OK);
 
     let held = state
         .metadata
