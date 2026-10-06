@@ -198,6 +198,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
                 new_label: ViewId::private(),
                 current_content: repo.graph.commits[0].changes[0].new_content.clone(),
             }],
+            None,
         )
         .unwrap(),
     );
@@ -324,7 +325,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
     let (store, repo) = fixture(4);
     store
         .repositories()
-        .ensure_live_projection_read_models(&repo.incarnation())
+        .ensure_live_projection_read_models(&repo.incarnation(), &ViewId::private())
         .await
         .unwrap();
     store
@@ -334,7 +335,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
         .unwrap();
     store
         .repositories()
-        .ensure_live_projection_read_models(&repo.incarnation())
+        .ensure_live_projection_read_models(&repo.incarnation(), &ViewId::private())
         .await
         .unwrap();
     assert!(
@@ -561,6 +562,7 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
                     new_label: new_visibility,
                     current_content: repo.graph.commits[32].changes[0].new_content.clone(),
                 }],
+                None,
             )
             .unwrap(),
         );

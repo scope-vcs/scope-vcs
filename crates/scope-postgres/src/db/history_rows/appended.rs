@@ -162,7 +162,7 @@ where
             let changes = changes_by_set.remove(&row.id).unwrap_or_default();
             visibility_change_set_from_row(row, changes)
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(AppendedRepositoryHistory {
         commits,
         visibility_change_sets,

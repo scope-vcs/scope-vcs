@@ -1,5 +1,8 @@
 use super::integer_columns::{self, usize_to_i64};
-use super::projection_read_models::{fold_live_projection_read_models, live_projection_read_model};
+use super::projection_read_models::{
+    build_projection_read_model, eager_views, fold_live_projection_read_models,
+    live_projection_read_model,
+};
 use super::{RepositoryStore, acquire_aggregate_lock, begin_metadata_read_snapshot, entities};
 use crate::error::PostgresError;
 use scope_domain::{
@@ -108,6 +111,7 @@ impl RepositoryStore {
     pub async fn ensure_live_projection_read_models(
         &self,
         incarnation: &RepositoryIncarnation,
+        view: &ViewId,
     ) -> Result<(), PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", incarnation.repository_id()).await?;
@@ -123,15 +127,27 @@ impl RepositoryStore {
         }
         let version =
             integer_columns::i64_to_u64(row.content_version, "repository content version")?;
-        let mut missing = false;
         let views = super::projection_read_models::repository_views(&tx, &row.id).await?;
-        for definition in views.iter() {
-            missing |= live_projection_read_model(&tx, &row.id, version, &definition.id)
+        if views.get(view).is_none() {
+            return Err(PostgresError::not_found("repository view not found"));
+        }
+        let mut eager_missing = false;
+        for eager in eager_views(&tx, &row.id, &views).await? {
+            eager_missing |= live_projection_read_model(&tx, &row.id, version, &eager)
                 .await?
                 .is_none();
         }
-        if missing {
+        let view_missing = live_projection_read_model(&tx, &row.id, version, view)
+            .await?
+            .is_none();
+        if eager_missing || view_missing {
             fold_live_projection_read_models(&tx, &row.id, version).await?;
+        }
+        if live_projection_read_model(&tx, &row.id, version, view)
+            .await?
+            .is_none()
+        {
+            build_projection_read_model(&tx, &row.id, version, view).await?;
         }
         tx.commit().await.map_err(PostgresError::internal)
     }
@@ -171,7 +187,8 @@ impl RepositoryStore {
             .await?
             else {
                 tx.commit().await.map_err(PostgresError::internal)?;
-                self.ensure_live_projection_read_models(incarnation).await?;
+                self.ensure_live_projection_read_models(incarnation, view)
+                    .await?;
                 continue;
             };
             let generation = feed.generation(

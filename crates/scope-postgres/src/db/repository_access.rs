@@ -77,7 +77,7 @@ impl RepositoryStore {
                 .await?
                 else {
                     tx.commit().await.map_err(PostgresError::internal)?;
-                    self.ensure_live_projection_read_models(&context.incarnation())
+                    self.ensure_live_projection_read_models(&context.incarnation(), public_view)
                         .await?;
                     continue;
                 };
@@ -211,7 +211,7 @@ impl RepositoryStore {
             if let Some(view) = metadata {
                 return Ok(view.head_oid);
             }
-            self.ensure_live_projection_read_models(&context.incarnation())
+            self.ensure_live_projection_read_models(&context.incarnation(), view)
                 .await?;
         }
         Err(PostgresError::conflict(

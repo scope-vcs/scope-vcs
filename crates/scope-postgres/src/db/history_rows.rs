@@ -6,6 +6,7 @@ use scope_domain::content::SourceBlob;
 use scope_domain::{
     policy::ScopePath,
     projection::{FileChange, LogicalCommit, SourceGraph},
+    views::ViewsTransition,
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 use sea_orm::{
@@ -171,15 +172,28 @@ pub(super) fn visibility_change_from_row(
 pub(super) fn visibility_change_set_from_row(
     row: entities::visibility_change_set::Model,
     changes: Vec<VisibilityChange>,
-) -> VisibilityChangeSet {
-    VisibilityChangeSet {
+) -> Result<VisibilityChangeSet, PostgresError> {
+    let views = match (row.views_before, row.views_after) {
+        (Some(before), Some(after)) => Some(ViewsTransition {
+            before: super::decode_json(before)?,
+            after: super::decode_json(after)?,
+        }),
+        (None, None) => None,
+        _ => {
+            return Err(PostgresError::internal_message(
+                "a views transition needs both its before and after views",
+            ));
+        }
+    };
+    Ok(VisibilityChangeSet {
         occurred_at_unix: row.occurred_at_unix,
         id: row.id,
         anchor_commit_id: row.anchor_commit_id,
         source_update_id: row.source_update_id,
         author_id: row.author_id,
         changes,
-    }
+        views,
+    })
 }
 
 pub async fn load_repository_histories<C>(
@@ -278,7 +292,7 @@ where
                 .unwrap_or_default();
             history
                 .visibility_change_sets
-                .push(visibility_change_set_from_row(row, changes));
+                .push(visibility_change_set_from_row(row, changes)?);
         }
     }
     for row in entities::live_file::Entity::find()
@@ -492,6 +506,8 @@ where
             anchor_commit_id: set.anchor_commit_id.clone(),
             source_update_id: set.source_update_id.clone(),
             author_id: set.author_id.clone(),
+            views_before: encode_optional(set.views.as_ref().map(|views| &views.before))?,
+            views_after: encode_optional(set.views.as_ref().map(|views| &views.after))?,
         }
         .into_active_model()
         .insert(conn)
