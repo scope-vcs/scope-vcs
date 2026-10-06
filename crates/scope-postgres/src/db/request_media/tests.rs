@@ -810,6 +810,10 @@ async fn binding_a_ready_attachment_notifies_only_after_the_transaction_commits(
         payload["event"]["kind"]["RequestAttachmentChanged"]["attachment_id"],
         "notification_attachment"
     );
+    assert_eq!(
+        payload["event"]["kind"]["RequestAttachmentChanged"]["view"],
+        "public"
+    );
 }
 
 #[tokio::test]
