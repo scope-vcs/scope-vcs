@@ -1,8 +1,8 @@
 use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities,
     git_segments::load_git_pack_spans,
-    history_reads::history_view_metadata,
     history_rows::{RepositoryProjectionSource, load_repository_projection_sources},
+    projection_read_models::live_projection_read_model,
     repository_access::load_repo_record,
 };
 use crate::error::PostgresError;
@@ -118,12 +118,13 @@ impl RepositoryStore {
         for _ in 0..2 {
             let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
             let record = load_record_at_version(&tx, incarnation, content_version).await?;
-            let view = history_view_metadata(&tx, &record.id, content_version, audience).await?;
+            let view =
+                live_projection_read_model(&tx, &record.id, content_version, audience).await?;
             tx.commit().await.map_err(PostgresError::internal)?;
             if let Some(view) = view {
                 return Ok(view.head_oid);
             }
-            self.ensure_history_view(incarnation).await?;
+            self.ensure_live_projection_read_models(incarnation).await?;
         }
         Err(PostgresError::conflict(
             "repository history view kept changing; retry",

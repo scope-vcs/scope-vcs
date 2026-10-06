@@ -4,7 +4,7 @@ mod snapshot;
 mod tree_path;
 
 pub use projection_identity::{
-    PROJECTION_IDENTITY_VERSION, ProjectionIdentityError, projection_commit_oids,
+    PROJECTION_IDENTITY_VERSION, ProjectionHead, ProjectionIdentityError, projection_commit_oids,
     projection_head_oid,
 };
 #[cfg(feature = "storage")]

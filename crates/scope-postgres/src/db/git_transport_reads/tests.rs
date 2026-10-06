@@ -102,7 +102,7 @@ async fn fixture() -> MetadataStore {
     store.admin().seed_catalog_for_tests(catalog).unwrap();
     store
         .repositories()
-        .ensure_history_view(&incarnation())
+        .ensure_live_projection_read_models(&incarnation())
         .await
         .unwrap();
     store

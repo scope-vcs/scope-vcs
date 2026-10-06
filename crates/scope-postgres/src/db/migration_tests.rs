@@ -66,6 +66,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0072_github_run_imports",
     "m0073_github_workflow_jobs",
     "m0074_history_path_indexes",
+    "m0075_incremental_projection_read_models",
 ];
 
 pub(super) async fn isolated_database() -> (
@@ -134,7 +135,7 @@ async fn representative_business_snapshot(db: &DatabaseConnection) -> String {
                     FROM scope_outbox_jobs item
                 ),
                 'projections', (
-                    SELECT jsonb_agg(to_jsonb(item) ORDER BY repo_id, source, audience)
+                    SELECT jsonb_agg(to_jsonb(item) ORDER BY repo_id, audience)
                     FROM scope_projection_read_models item
                 )
             )::text AS value

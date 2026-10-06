@@ -1,7 +1,9 @@
 use super::*;
 use crate::{
     content_ref::ContentRef,
-    projection::{FileChange, project_graph},
+    projection::{
+        FileChange, ProjectionCursor, project_graph, project_graph_after, projection_delta_appends,
+    },
     visibility_changes::VisibilityChange,
 };
 
@@ -496,4 +498,116 @@ fn partial_public_push_does_not_disclose_its_occurrence_time() {
     assert_eq!(public.entries[0].occurred_at_unix, None);
     graph.commits[0].occurred_at_unix = Some(1_800_000_000);
     assert_eq!(history_view(&graph, &[], ProjectionViewKey::Public), public);
+}
+
+#[test]
+fn history_folded_in_steps_matches_history_folded_at_once() {
+    let commits = vec![
+        commit(
+            "first",
+            vec![
+                file("/doc", Visibility::Public, None, Some("doc")),
+                file("/secret", Visibility::Private, None, Some("secret")),
+            ],
+        ),
+        commit(
+            "second",
+            vec![file(
+                "/doc",
+                Visibility::Public,
+                Some("doc"),
+                Some("doc two"),
+            )],
+        ),
+        commit(
+            "third",
+            vec![
+                file(
+                    "/secret",
+                    Visibility::Public,
+                    Some("secret"),
+                    Some("shared"),
+                ),
+                file(
+                    "/doc",
+                    Visibility::Private,
+                    Some("doc two"),
+                    Some("doc three"),
+                ),
+            ],
+        ),
+        commit(
+            "fourth",
+            vec![file("/new", Visibility::Public, None, Some("new"))],
+        ),
+    ];
+    let sets = vec![
+        visibility(
+            "hide",
+            Some("second"),
+            Some("third"),
+            "/doc",
+            Visibility::Private,
+            Some("doc three"),
+        ),
+        visibility(
+            "show",
+            Some("fourth"),
+            None,
+            "/doc",
+            Visibility::Public,
+            Some("doc three"),
+        ),
+    ];
+    let whole = graph(commits.clone());
+    let folded_commits = 2;
+    let first = graph(commits[..folded_commits].to_vec());
+    let rest = graph(commits[folded_commits..].to_vec());
+    assert!(projection_delta_appends(
+        Some("second"),
+        &rest.commits,
+        &sets
+    ));
+    assert!(!projection_delta_appends(
+        Some("first"),
+        &rest.commits,
+        &sets
+    ));
+
+    for view_key in [ProjectionViewKey::Private, ProjectionViewKey::Public] {
+        let at_once = project_graph(&whole, &sets, view_key);
+        let prefix = project_graph(&first, &[], view_key);
+        let cursor = ProjectionCursor {
+            commit_count: prefix.commits.len(),
+            last_projected_id: prefix
+                .commits
+                .last()
+                .map(|commit| commit.projected_id.clone()),
+        };
+        let suffix = project_graph_after(&cursor, &rest, &sets, view_key);
+        assert_eq!(
+            [prefix.commits.clone(), suffix.commits.clone()].concat(),
+            at_once.commits
+        );
+
+        let expected = history_view_from_projection(at_once, &whole, &sets);
+        let mut history = HistoryCursor::start("owner/repo", view_key);
+        let mut tree = BTreeMap::new();
+        prefix.apply_to(&mut tree);
+        let mut entries = history_entries_after(&mut history, BTreeMap::new(), prefix, &first, &[]);
+        entries.extend(history_entries_after(
+            &mut history,
+            tree,
+            suffix,
+            &rest,
+            &sets,
+        ));
+        entries.reverse();
+        assert_eq!(entries, expected.entries);
+        assert_eq!(history.generation, expected.generation);
+        assert_eq!(
+            history.last_entry_id.as_deref(),
+            expected.entries.first().map(|entry| entry.id.as_str())
+        );
+    }
 }

@@ -1,20 +1,14 @@
-use super::integer_columns;
-use super::{
-    RepositoryStore, acquire_aggregate_lock, begin_metadata_read_snapshot, entities,
-    repository_from_model,
-};
+use super::integer_columns::{self, usize_to_i64};
+use super::projection_read_models::{fold_live_projection_read_models, live_projection_read_model};
+use super::{RepositoryStore, acquire_aggregate_lock, begin_metadata_read_snapshot, entities};
 use crate::error::PostgresError;
 use scope_domain::{
-    history::{
-        HISTORY_GENERATION_VERSION, HistoryEntry, HistoryFeed, HistoryView,
-        history_view_from_projection,
-    },
-    projection::{Projection, ProjectionViewKey, project_graph},
-    repo_control::is_repo_control_path,
-    repository::{Repository, RepositoryIncarnation},
+    history::{HistoryEntry, HistoryFeed, HistoryView},
+    projection::ProjectionViewKey,
+    repository::RepositoryIncarnation,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, Statement, TransactionTrait};
-use std::collections::BTreeSet;
+use sha2::{Digest, Sha256};
 
 pub struct RepositoryHistoryQuery<'a> {
     pub incarnation: &'a RepositoryIncarnation,
@@ -37,7 +31,6 @@ pub struct RepositoryHistoryPage {
     pub neighbors: Option<RepositoryHistoryNeighbors>,
     pub head_oid: Option<String>,
     pub next_boundary: Option<RepositoryHistoryBoundary>,
-    pub available: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -46,128 +39,74 @@ pub struct RepositoryHistoryNeighbors {
     pub newer_source_id: Option<String>,
 }
 
-pub(super) struct HistoryViewMetadata {
-    pub generation: String,
-    pub available: bool,
-    pub visible_files: bool,
-    pub head_oid: Option<String>,
-}
-
-pub(super) async fn history_view_metadata<C: ConnectionTrait>(
+pub(super) async fn append_history_entries<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
-    version: u64,
-    audience: ProjectionViewKey,
-) -> Result<Option<HistoryViewMetadata>, PostgresError> {
-    let row = conn.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-        "SELECT generation, available, visible_files, head_oid FROM scope_repository_history_views WHERE repo_id=$1 AND repo_version=$2 AND audience=$3 AND identity_version=$4 AND history_version=$5",
-        [repo_id.into(), integer_columns::u64_to_i64(version, "repository version")?.into(), audience.as_str().into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
-    )).await.map_err(PostgresError::internal)?;
-    row.map(|row| {
-        Ok(HistoryViewMetadata {
-            generation: row
-                .try_get("", "generation")
-                .map_err(PostgresError::internal)?,
-            available: row
-                .try_get("", "available")
-                .map_err(PostgresError::internal)?,
-            visible_files: row
-                .try_get("", "visible_files")
-                .map_err(PostgresError::internal)?,
-            head_oid: row
-                .try_get("", "head_oid")
-                .map_err(PostgresError::internal)?,
-        })
-    })
-    .transpose()
-}
-
-pub(super) async fn save_repository_history_views<C: ConnectionTrait>(
-    conn: &C,
-    repo: &Repository,
+    view: ProjectionViewKey,
+    first_position: usize,
+    entries: &[HistoryEntry],
 ) -> Result<(), PostgresError> {
-    for audience in [ProjectionViewKey::Private, ProjectionViewKey::Public] {
-        let projection = project_graph(&repo.graph, &repo.visibility_change_sets, audience);
-        let head_oid =
-            scope_git::projection_head_oid(&projection).map_err(PostgresError::internal)?;
-        save_repository_history_view(conn, repo, projection, head_oid).await?;
+    for (batch_index, batch) in entries.chunks(500).enumerate() {
+        let mut payload_values = Vec::with_capacity(batch.len() * 3);
+        let mut entry_values = Vec::with_capacity(batch.len() * 5);
+        let mut payload_rows = Vec::with_capacity(batch.len());
+        let mut entry_rows = Vec::with_capacity(batch.len());
+        for (index, entry) in batch.iter().enumerate() {
+            let payload = serde_json::to_value(entry).map_err(PostgresError::internal)?;
+            let payload_hash = hex::encode(Sha256::digest(
+                serde_json::to_vec(&payload).map_err(PostgresError::internal)?,
+            ));
+            let position = usize_to_i64(
+                first_position + batch_index * 500 + index,
+                "history position",
+            )?;
+            let offset = index * 3;
+            payload_values.extend([repo_id.into(), payload_hash.clone().into(), payload.into()]);
+            payload_rows.push(format!("(${},${},${})", offset + 1, offset + 2, offset + 3));
+            let offset = index * 5;
+            entry_values.extend([
+                repo_id.into(),
+                view.as_str().into(),
+                position.into(),
+                entry.source_id.clone().into(),
+                payload_hash.into(),
+            ]);
+            entry_rows.push(format!(
+                "(${},${},${},${},${})",
+                offset + 1,
+                offset + 2,
+                offset + 3,
+                offset + 4,
+                offset + 5
+            ));
+        }
+        conn.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            format!("INSERT INTO scope_repository_history_payloads (repo_id,payload_hash,payload) VALUES {} ON CONFLICT DO NOTHING", payload_rows.join(",")), payload_values,
+        )).await.map_err(PostgresError::internal)?;
+        conn.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            format!("INSERT INTO scope_repository_history_entries (repo_id,audience,position,source_id,payload_hash) VALUES {}", entry_rows.join(",")), entry_values,
+        )).await.map_err(PostgresError::internal)?;
     }
     Ok(())
 }
 
-pub(super) async fn save_repository_history_view<C: ConnectionTrait>(
+pub(super) async fn delete_history_payloads<C: ConnectionTrait>(
     conn: &C,
-    repo: &Repository,
-    projection: Projection,
-    head_oid: Option<String>,
+    repo_id: &str,
 ) -> Result<(), PostgresError> {
-    let audience = projection.view_key;
-    let available = true;
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "DELETE FROM scope_repository_history_views WHERE repo_id=$1 AND audience=$2",
-        [repo.record.id.clone().into(), audience.as_str().into()],
+        "DELETE FROM scope_repository_history_payloads WHERE repo_id=$1",
+        [repo_id.into()],
     ))
     .await
     .map_err(PostgresError::internal)?;
-    let mut tree = BTreeSet::new();
-    for change in projection.commits.iter().flat_map(|commit| &commit.changes) {
-        if change.new_content.is_some() {
-            tree.insert(&change.path);
-        } else {
-            tree.remove(&change.path);
-        }
-    }
-    let visible_files = tree.into_iter().any(|path| !is_repo_control_path(path));
-    let view = history_view_from_projection(projection, &repo.graph, &repo.visibility_change_sets);
-    conn.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "INSERT INTO scope_repository_history_views (repo_id,audience,repo_version,generation,available,visible_files,head_oid,identity_version,history_version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-            [repo.record.id.clone().into(), audience.as_str().into(), integer_columns::u64_to_i64(repo.record.content_version,"repository content version")?.into(), view.generation.into(), available.into(), visible_files.into(), head_oid.into(), scope_git::PROJECTION_IDENTITY_VERSION.into(), HISTORY_GENERATION_VERSION.into()],
-        )).await.map_err(PostgresError::internal)?;
-    for batch in view
-        .entries
-        .iter()
-        .rev()
-        .enumerate()
-        .collect::<Vec<_>>()
-        .chunks(500)
-    {
-        let mut values = Vec::with_capacity(batch.len() * 5);
-        let rows = batch
-            .iter()
-            .enumerate()
-            .map(|(index, (position, entry))| {
-                let offset = index * 5;
-                values.extend([
-                    repo.record.id.clone().into(),
-                    audience.as_str().into(),
-                    (*position as i64).into(),
-                    entry.source_id.clone().into(),
-                    serde_json::to_value(entry)
-                        .map_err(PostgresError::internal)?
-                        .into(),
-                ]);
-                Ok(format!(
-                    "(${},${},${},${},${})",
-                    offset + 1,
-                    offset + 2,
-                    offset + 3,
-                    offset + 4,
-                    offset + 5
-                ))
-            })
-            .collect::<Result<Vec<_>, PostgresError>>()?
-            .join(",");
-        conn.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-                format!("INSERT INTO scope_repository_history_entries (repo_id,audience,position,source_id,payload) VALUES {rows}"), values,
-            )).await.map_err(PostgresError::internal)?;
-    }
     Ok(())
 }
 
 impl RepositoryStore {
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "ensure_history_view"))]
-    pub async fn ensure_history_view(
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "ensure_live_projection_read_models"))]
+    pub async fn ensure_live_projection_read_models(
         &self,
         incarnation: &RepositoryIncarnation,
     ) -> Result<(), PostgresError> {
@@ -185,15 +124,14 @@ impl RepositoryStore {
         }
         let version =
             integer_columns::i64_to_u64(row.content_version, "repository content version")?;
-        if history_view_metadata(&tx, &row.id, version, ProjectionViewKey::Private)
-            .await?
-            .is_none()
-            || history_view_metadata(&tx, &row.id, version, ProjectionViewKey::Public)
+        let mut missing = false;
+        for view in [ProjectionViewKey::Private, ProjectionViewKey::Public] {
+            missing |= live_projection_read_model(&tx, &row.id, version, view)
                 .await?
-                .is_none()
-        {
-            let repo = repository_from_model(&tx, row).await?;
-            save_repository_history_views(&tx, &repo).await?;
+                .is_none();
+        }
+        if missing {
+            fold_live_projection_read_models(&tx, &row.id, version).await?;
         }
         tx.commit().await.map_err(PostgresError::internal)
     }
@@ -225,7 +163,7 @@ impl RepositoryStore {
                     "repository changed while reading history; retry",
                 ));
             }
-            let Some(metadata) = history_view_metadata(
+            let Some(metadata) = live_projection_read_model(
                 &tx,
                 incarnation.repository_id(),
                 current.record.content_version,
@@ -234,11 +172,11 @@ impl RepositoryStore {
             .await?
             else {
                 tx.commit().await.map_err(PostgresError::internal)?;
-                self.ensure_history_view(incarnation).await?;
+                self.ensure_live_projection_read_models(incarnation).await?;
                 continue;
             };
             let generation = feed.generation(
-                &metadata.generation,
+                &metadata.history_generation,
                 incarnation.repository_id(),
                 audience.as_str(),
             );
@@ -264,25 +202,26 @@ impl RepositoryStore {
             let limit = limit.clamp(1, 50) as i64;
             let mut values = vec![incarnation.repository_id().into(), audience.as_str().into()];
             let feed_predicate = match feed {
-                HistoryFeed::Updates => " AND payload->>'kind' != 'VisibilityChange'",
+                HistoryFeed::Updates => " AND p.payload->>'kind' != 'VisibilityChange'",
                 HistoryFeed::All => "",
-                HistoryFeed::Visibility => " AND payload->'visibility_changes' != '[]'::jsonb",
+                HistoryFeed::Visibility => " AND p.payload->'visibility_changes' != '[]'::jsonb",
             };
             let sql = if let Some(source_id) = entry_source_id {
                 values.push(source_id.into());
-                "SELECT e.position, e.payload, \
+                "SELECT e.position, p.payload, \
                     (SELECT o.source_id FROM scope_repository_history_entries o WHERE o.repo_id=e.repo_id AND o.audience=e.audience AND o.position<e.position ORDER BY o.position DESC LIMIT 1) AS older_source_id, \
                     (SELECT n.source_id FROM scope_repository_history_entries n WHERE n.repo_id=e.repo_id AND n.audience=e.audience AND n.position>e.position ORDER BY n.position LIMIT 1) AS newer_source_id \
-                 FROM scope_repository_history_entries e WHERE e.repo_id=$1 AND e.audience=$2 AND e.source_id=$3".to_string()
+                 FROM scope_repository_history_entries e JOIN scope_repository_history_payloads p ON p.repo_id=e.repo_id AND p.payload_hash=e.payload_hash \
+                 WHERE e.repo_id=$1 AND e.audience=$2 AND e.source_id=$3".to_string()
             } else if let Some(position) = boundary {
                 values.extend([position.into(), (limit + 1).into()]);
                 format!(
-                    "SELECT position, payload FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2 AND position<$3{feed_predicate} ORDER BY position DESC LIMIT $4"
+                    "SELECT e.position, p.payload FROM scope_repository_history_entries e JOIN scope_repository_history_payloads p ON p.repo_id=e.repo_id AND p.payload_hash=e.payload_hash WHERE e.repo_id=$1 AND e.audience=$2 AND e.position<$3{feed_predicate} ORDER BY e.position DESC LIMIT $4"
                 )
             } else {
                 values.push((limit + 1).into());
                 format!(
-                    "SELECT position, payload FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2{feed_predicate} ORDER BY position DESC LIMIT $3"
+                    "SELECT e.position, p.payload FROM scope_repository_history_entries e JOIN scope_repository_history_payloads p ON p.repo_id=e.repo_id AND p.payload_hash=e.payload_hash WHERE e.repo_id=$1 AND e.audience=$2{feed_predicate} ORDER BY e.position DESC LIMIT $3"
                 )
             };
             let rows = tx
@@ -338,7 +277,6 @@ impl RepositoryStore {
                 },
                 neighbors,
                 next_boundary,
-                available: metadata.available,
                 head_oid: metadata.head_oid,
             });
         }

@@ -39,6 +39,7 @@ pub(crate) struct RepositoryGitCache {
 pub(crate) struct GitRepoHandle {
     path: PathBuf,
     _lease: RepositoryGitCacheLease,
+    dependencies: Vec<GitRepoHandle>,
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -114,6 +115,7 @@ impl RepositoryGitCache {
         Ok(GitRepoHandle {
             path: path.clone(),
             _lease: RepositoryGitCacheLease { path },
+            dependencies: Vec::new(),
         })
     }
 
@@ -289,6 +291,27 @@ impl std::fmt::Debug for GitRepoHandle {
             .debug_struct("GitRepoHandle")
             .field("path", &self.path)
             .finish_non_exhaustive()
+    }
+}
+
+impl GitRepoHandle {
+    pub(crate) fn with_dependency(mut self, dependency: GitRepoHandle) -> Self {
+        self.dependencies.push(dependency);
+        self
+    }
+
+    pub(crate) fn share(&self) -> Result<GitRepoHandle, ApiError> {
+        let mut users = cache_users()
+            .lock()
+            .map_err(|_| ApiError::internal_message("repository Git cache registry is poisoned"))?;
+        *users.entry(self.path.clone()).or_default() += 1;
+        Ok(GitRepoHandle {
+            path: self.path.clone(),
+            _lease: RepositoryGitCacheLease {
+                path: self.path.clone(),
+            },
+            dependencies: Vec::new(),
+        })
     }
 }
 

@@ -4,9 +4,10 @@ use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
     content_ref::ContentRef,
+    history::history_view_from_projection,
     policy::{ScopePath, Visibility},
-    projection::{FileChange, LogicalCommit, LogicalCommitOrigin, SourceGraph},
-    repository::RepoLifecycleState,
+    projection::{FileChange, LogicalCommit, LogicalCommitOrigin, SourceGraph, project_graph},
+    repository::{RepoLifecycleState, Repository},
     visibility_changes::VisibilityChangeSet,
 };
 use std::time::Duration;
@@ -72,7 +73,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
     let (store, repo) = fixture(1000);
     store
         .db
-        .execute_unprepared("DELETE FROM scope_repository_history_views")
+        .execute_unprepared("DELETE FROM scope_projection_read_models")
         .await
         .unwrap();
     let hydrated = store
@@ -225,7 +226,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
     assert!(rebuilt.completed > 0);
     assert_eq!(rebuilt.failed, 0);
     assert!(
-        history_view_metadata(
+        live_projection_read_model(
             store.db.as_ref(),
             &repo.record.id,
             repo.record.content_version,
@@ -237,7 +238,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
     );
     store
         .db
-        .execute_unprepared("DELETE FROM scope_repository_history_views")
+        .execute_unprepared("DELETE FROM scope_projection_read_models")
         .await
         .unwrap();
     let mut before = None;
@@ -323,21 +324,21 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
     let (store, repo) = fixture(4);
     store
         .repositories()
-        .ensure_history_view(&repo.incarnation())
+        .ensure_live_projection_read_models(&repo.incarnation())
         .await
         .unwrap();
     store
         .db
-        .execute_unprepared("UPDATE scope_repository_history_views SET history_version='stale'")
+        .execute_unprepared("UPDATE scope_projection_read_models SET history_version='stale'")
         .await
         .unwrap();
     store
         .repositories()
-        .ensure_history_view(&repo.incarnation())
+        .ensure_live_projection_read_models(&repo.incarnation())
         .await
         .unwrap();
     assert!(
-        history_view_metadata(
+        live_projection_read_model(
             store.db.as_ref(),
             &repo.record.id,
             repo.record.content_version,
@@ -572,7 +573,7 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
                     path: repo.graph.commits[0].changes[0].path.clone(),
                     old_visibility,
                     new_visibility,
-                    current_content: repo.graph.commits[0].changes[0].new_content.clone(),
+                    current_content: repo.graph.commits[32].changes[0].new_content.clone(),
                 }],
             )
             .unwrap(),
@@ -644,5 +645,112 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
         .await
         .unwrap();
     assert_eq!(detail.view.entries[0].source_id, "visibility_59");
-    assert!(store.db.execute_unprepared("INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload) SELECT repo_id, audience, position + 10000, source_id, payload FROM scope_repository_history_entries LIMIT 1").await.is_err());
+    assert!(store.db.execute_unprepared("INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload_hash) SELECT repo_id, audience, position + 10000, source_id, payload_hash FROM scope_repository_history_entries LIMIT 1").await.is_err());
+}
+
+#[tokio::test]
+async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
+    let (store, mut repo) = fixture(300);
+    store
+        .jobs()
+        .run_ready_outbox_jobs("history-fold", 10, &|| Ok(1_700_000_000))
+        .await
+        .unwrap();
+    let pushed = LogicalCommit {
+        occurred_at_unix: Some(1_700_000_001),
+        id: "logical_300".into(),
+        origin: LogicalCommitOrigin::CanonicalPush {
+            source_head_oid: format!("{:040x}", 301),
+        },
+        author_id: "history_owner".into(),
+        message: "Change 300".into(),
+        changes: vec![FileChange {
+            path: ScopePath::parse("/file-0.txt").unwrap(),
+            old_content: repo.graph.commits[288].changes[0].new_content.clone(),
+            new_content: Some(SourceBlob {
+                content_ref: ContentRef::git_bundle_sha256("bundle-300"),
+                sha256: "hash-300".into(),
+                git_oid: format!("{:040x}", 301),
+                git_file_mode: "100644".into(),
+                size_bytes: 100,
+            }),
+            visibility: Visibility::Public,
+        }],
+    };
+    repo.graph.commits.push(pushed.clone());
+    repo.live_files.insert(
+        pushed.changes[0].path.clone(),
+        pushed.changes[0].new_content.clone().unwrap(),
+    );
+    repo.bump_content_version();
+    store
+        .repositories()
+        .replace_repository_for_tests(repo.clone())
+        .await
+        .unwrap();
+    store
+        .db
+        .execute_unprepared("DELETE FROM scope_file_changes WHERE commit_id <> 'logical_300'")
+        .await
+        .unwrap();
+    let rebuilt = store
+        .jobs()
+        .run_ready_outbox_jobs("history-fold", 10, &|| Ok(1_700_000_002))
+        .await
+        .unwrap();
+    assert_eq!(rebuilt.failed, 0, "{rebuilt:?}");
+
+    for view_key in [ProjectionViewKey::Private, ProjectionViewKey::Public] {
+        let expected = history_view(&repo.graph, &repo.visibility_change_sets, view_key);
+        let page = store
+            .repositories()
+            .repository_history_page(RepositoryHistoryQuery {
+                incarnation: &repo.incarnation(),
+                change_version: repo.record.change_version,
+                audience: view_key,
+                feed: HistoryFeed::All,
+                before: None,
+                entry_source_id: None,
+                limit: 50,
+            })
+            .await
+            .unwrap();
+        assert_eq!(page.view.entries, expected.entries[..50]);
+        assert_eq!(
+            page.view.generation,
+            HistoryFeed::All.generation(&expected.generation, &repo.record.id, view_key.as_str())
+        );
+        assert_eq!(
+            page.head_oid,
+            scope_git::projection_head_oid(&project_graph(
+                &repo.graph,
+                &repo.visibility_change_sets,
+                view_key
+            ))
+            .unwrap()
+        );
+        let files = store
+            .repositories()
+            .repo_live_files(
+                "owner",
+                "history",
+                (view_key == ProjectionViewKey::Private).then_some("history_owner"),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            files.len(),
+            if view_key == ProjectionViewKey::Private {
+                32
+            } else {
+                16
+            }
+        );
+        assert!(
+            files
+                .iter()
+                .all(|file| view_key.shows(&file.path, file.visibility))
+        );
+    }
 }

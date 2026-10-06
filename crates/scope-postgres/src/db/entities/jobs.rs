@@ -49,7 +49,6 @@ pub mod outbox_job {
                 payload: encode_json(&serde_json::json!({
                     "repo_id": repo_id,
                     "repo_version": repo_version,
-                    "source": LIVE_PROJECTION_SOURCE,
                 }))?,
                 state: "ready".to_string(),
                 attempts: 0,

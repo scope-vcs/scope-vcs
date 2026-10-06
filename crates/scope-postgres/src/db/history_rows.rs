@@ -18,6 +18,9 @@ use std::collections::BTreeMap;
 
 const PERSISTENCE_BATCH_SIZE: usize = 500;
 
+mod appended;
+pub(crate) use appended::{history_position_matches, load_repository_history_after};
+
 pub struct RepositoryHistory {
     pub graph: SourceGraph,
     pub visibility_change_sets: Vec<VisibilityChangeSet>,
@@ -115,6 +118,13 @@ where
         )
         .await?;
     }
+    if commits_rewritten || visibility_change_sets_rewritten {
+        super::projection_read_models::reset_live_projection_read_models(
+            conn,
+            &after_graph.repo_id,
+        )
+        .await?;
+    }
     if commits_rewritten || after_graph.commits.len() != before_graph.commits.len() + 1 {
         if before_live_files != after_live_files {
             replace_live_files(conn, &after_graph.repo_id, after_live_files).await?;
@@ -131,6 +141,56 @@ where
         .await?;
     }
     Ok(())
+}
+
+pub(super) fn file_change_from_row(
+    row: entities::file_change::Model,
+) -> Result<FileChange, PostgresError> {
+    Ok(FileChange {
+        path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
+        old_content: decode_optional(row.old_content)?,
+        new_content: decode_optional(row.new_content)?,
+        visibility: decode_enum(row.visibility)?,
+    })
+}
+
+pub(super) fn logical_commit_from_row(
+    row: entities::logical_commit::Model,
+    changes: Vec<FileChange>,
+) -> Result<LogicalCommit, PostgresError> {
+    Ok(LogicalCommit {
+        occurred_at_unix: row.occurred_at_unix,
+        id: row.id,
+        origin: serde_json::from_value(row.origin).map_err(PostgresError::internal)?,
+        author_id: row.author_id,
+        message: row.message,
+        changes,
+    })
+}
+
+pub(super) fn visibility_change_from_row(
+    row: entities::visibility_change::Model,
+) -> Result<VisibilityChange, PostgresError> {
+    Ok(VisibilityChange {
+        path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
+        old_visibility: decode_enum(row.old_visibility)?,
+        new_visibility: decode_enum(row.new_visibility)?,
+        current_content: decode_optional(row.current_content)?,
+    })
+}
+
+pub(super) fn visibility_change_set_from_row(
+    row: entities::visibility_change_set::Model,
+    changes: Vec<VisibilityChange>,
+) -> VisibilityChangeSet {
+    VisibilityChangeSet {
+        occurred_at_unix: row.occurred_at_unix,
+        id: row.id,
+        anchor_commit_id: row.anchor_commit_id,
+        source_update_id: row.source_update_id,
+        author_id: row.author_id,
+        changes,
+    }
 }
 
 pub async fn load_repository_histories<C>(
@@ -219,29 +279,22 @@ where
             .await
             .map_err(PostgresError::internal)?
         {
+            let key = (row.repo_id.clone(), row.commit_id.clone());
             changes_by_commit
-                .entry((row.repo_id.clone(), row.commit_id.clone()))
+                .entry(key)
                 .or_default()
-                .push(FileChange {
-                    path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
-                    old_content: decode_optional(row.old_content)?,
-                    new_content: decode_optional(row.new_content)?,
-                    visibility: decode_enum(row.visibility)?,
-                });
+                .push(file_change_from_row(row)?);
         }
     }
     for row in commits {
         if let Some(source) = sources.get_mut(&row.repo_id) {
-            source.graph.commits.push(LogicalCommit {
-                occurred_at_unix: row.occurred_at_unix,
-                id: row.id.clone(),
-                origin: serde_json::from_value(row.origin).map_err(PostgresError::internal)?,
-                author_id: row.author_id,
-                message: row.message,
-                changes: changes_by_commit
-                    .remove(&(row.repo_id.clone(), row.id.clone()))
-                    .unwrap_or_default(),
-            });
+            let changes = changes_by_commit
+                .remove(&(row.repo_id.clone(), row.id.clone()))
+                .unwrap_or_default();
+            source
+                .graph
+                .commits
+                .push(logical_commit_from_row(row, changes)?);
         }
     }
 
@@ -263,28 +316,21 @@ where
             .await
             .map_err(PostgresError::internal)?
         {
+            let key = (row.repo_id.clone(), row.change_set_id.clone());
             changes_by_set
-                .entry((row.repo_id.clone(), row.change_set_id.clone()))
+                .entry(key)
                 .or_default()
-                .push(VisibilityChange {
-                    path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
-                    old_visibility: decode_enum(row.old_visibility)?,
-                    new_visibility: decode_enum(row.new_visibility)?,
-                    current_content: decode_optional(row.current_content)?,
-                });
+                .push(visibility_change_from_row(row)?);
         }
     }
     for row in set_rows {
         if let Some(source) = sources.get_mut(&row.repo_id) {
-            let key = (row.repo_id.clone(), row.id.clone());
-            source.visibility_change_sets.push(VisibilityChangeSet {
-                occurred_at_unix: row.occurred_at_unix,
-                id: row.id,
-                anchor_commit_id: row.anchor_commit_id,
-                source_update_id: row.source_update_id,
-                author_id: row.author_id,
-                changes: changes_by_set.remove(&key).unwrap_or_default(),
-            });
+            let changes = changes_by_set
+                .remove(&(row.repo_id.clone(), row.id.clone()))
+                .unwrap_or_default();
+            source
+                .visibility_change_sets
+                .push(visibility_change_set_from_row(row, changes));
         }
     }
     Ok(sources)

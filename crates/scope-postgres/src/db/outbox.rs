@@ -2,8 +2,8 @@
 use super::MetadataStore;
 use super::{
     GeneratedIdKind, GeneratedIdSource, JobStore, acquire_aggregate_lock, entities,
-    generated_ids::generate_id, projection_read_models::save_live_projection_read_models,
-    repository_from_model,
+    generated_ids::generate_id, integer_columns,
+    projection_read_models::fold_live_projection_read_models,
 };
 use crate::error::PostgresError;
 use sea_orm::{
@@ -280,7 +280,7 @@ where
 {
     match job.kind.as_str() {
         PROJECTION_READ_MODEL_REBUILD => {
-            rebuild_live_projection_read_models_for_job(conn, job, now_unix).await?;
+            rebuild_live_projection_read_models_for_job(conn, job).await?;
             Ok(Vec::new())
         }
         super::push_triggers::JOB_KIND => {
@@ -302,7 +302,6 @@ where
 async fn rebuild_live_projection_read_models_for_job<C>(
     conn: &C,
     job: &ClaimedOutboxJob,
-    now_unix: u64,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
@@ -321,8 +320,9 @@ where
         tx.commit().await.map_err(PostgresError::internal)?;
         return Ok(());
     }
-    let repo = repository_from_model(&tx, repo).await?;
-    save_live_projection_read_models(&tx, &repo, now_unix).await?;
+    let content_version =
+        integer_columns::i64_to_u64(repo.content_version, "repository content version")?;
+    fold_live_projection_read_models(&tx, &repo.id, content_version).await?;
     tx.commit().await.map_err(PostgresError::internal)?;
     Ok(())
 }
@@ -639,22 +639,37 @@ mod tests {
             "outbox rebuild must insert history entries"
         );
 
-        admin
-            .execute_raw(sea_orm::Statement::from_sql_and_values(
-                sea_orm::DatabaseBackend::Postgres,
-                "INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload) VALUES ($1, 'private', 1000000, 'stale-entry', '{}'::jsonb)",
-                [repo.record.id.clone().into()],
-            ))
-            .await
-            .unwrap();
+        for sql in [
+            "INSERT INTO scope_repository_history_payloads (repo_id, payload_hash, payload) VALUES ($1, 'stale', '{}'::jsonb)",
+            "INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload_hash) VALUES ($1, 'private', 1000000, 'stale-entry', 'stale')",
+        ] {
+            admin
+                .execute_raw(sea_orm::Statement::from_sql_and_values(
+                    sea_orm::DatabaseBackend::Postgres,
+                    sql,
+                    [repo.record.id.clone().into()],
+                ))
+                .await
+                .unwrap();
+        }
         assert_eq!(history_entry_count(admin.as_ref()).await, entry_count + 1);
-        save_live_projection_read_models(worker.as_ref(), &repo, 1_700_000_002)
-            .await
-            .unwrap();
+        super::super::projection_read_models::reset_live_projection_read_models(
+            worker.as_ref(),
+            &repo.record.id,
+        )
+        .await
+        .unwrap();
+        fold_live_projection_read_models(
+            worker.as_ref(),
+            &repo.record.id,
+            repo.record.content_version,
+        )
+        .await
+        .unwrap();
         let replaced_count = history_entry_count(admin.as_ref()).await;
         assert_eq!(
             replaced_count, entry_count,
-            "view replacement must cascade old entries"
+            "a rebuild from the start must replace old entries"
         );
     }
 

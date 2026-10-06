@@ -136,6 +136,29 @@ pub(crate) fn non_request_refs_changed(
         .any(|refname| before.get(refname) != after.get(refname))
 }
 
+pub(crate) fn clone_without_shared_objects(
+    seed_repo: &FsPath,
+    repo_root: &FsPath,
+    context: &str,
+) -> Result<(), ApiError> {
+    let transport = if seed_repo.join("objects/info/alternates").is_file() {
+        "--no-local"
+    } else {
+        "--no-hardlinks"
+    };
+    run_git(
+        None,
+        &[
+            "clone",
+            "--bare",
+            transport,
+            seed_repo.to_string_lossy().as_ref(),
+            repo_root.to_string_lossy().as_ref(),
+        ],
+        context,
+    )
+}
+
 pub(crate) fn create_request_receive_pack_staging_repo(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -145,15 +168,9 @@ pub(crate) fn create_request_receive_pack_staging_repo(
     if let Some(parent) = repo_root.parent() {
         crate::persistence::ensure_private_dir(parent)?;
     }
-    run_git(
-        None,
-        &[
-            "clone",
-            "--bare",
-            "--no-hardlinks",
-            seed_repo.to_string_lossy().as_ref(),
-            repo_root.to_string_lossy().as_ref(),
-        ],
+    clone_without_shared_objects(
+        seed_repo,
+        &repo_root,
         "cloning request receive-pack staging repo",
     )?;
     if let Err(error) = run_git(
