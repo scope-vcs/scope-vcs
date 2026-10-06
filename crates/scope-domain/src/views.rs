@@ -6,6 +6,8 @@ use std::{collections::BTreeSet, fmt};
 #[serde(try_from = "String", into = "String")]
 pub struct ViewId(String);
 
+const RESERVED_LEGACY_ADDRESS: &str = "permissioned";
+
 impl ViewId {
     pub const PUBLIC: &str = "public";
     pub const PRIVATE: &str = "private";
@@ -158,6 +160,11 @@ impl Views {
             .collect::<BTreeSet<_>>();
         if ids.len() != definitions.len() {
             return Err(DomainError::invalid_input("view ids must be unique"));
+        }
+        if ids.iter().any(|id| id.as_str() == RESERVED_LEGACY_ADDRESS) {
+            return Err(DomainError::invalid_input(format!(
+                "view id {RESERVED_LEGACY_ADDRESS} is reserved"
+            )));
         }
         let mut names = BTreeSet::new();
         for definition in &definitions {
@@ -400,6 +407,10 @@ mod tests {
             (
                 "includes the full view",
                 with(vec![custom("agent", "Agent", &["private"])]),
+            ),
+            (
+                "reserved legacy address",
+                with(vec![custom("permissioned", "Legacy", &[])]),
             ),
             ("second full view", {
                 let mut extra = custom("agent", "Agent", &[]);

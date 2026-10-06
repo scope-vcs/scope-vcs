@@ -181,7 +181,7 @@ export function RepoSettingsPage({
 
         {readsFullView && visibilityLog}
 
-        {repo.access.actor !== 'Public' && (
+        {readsFullView && (
           <RepoCiSection
             confirmPublic={() => confirmPublicGitHub(params)}
             disconnect={() => disconnectGitHub(params)}
