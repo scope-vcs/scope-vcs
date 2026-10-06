@@ -15,6 +15,7 @@ async fn state_with_docs() -> AppState {
     });
     repo.live_files.insert(path, content);
     replace_test_repo(&state, repo).await;
+    drain_outbox(&state, "repo-route-reads").await;
     state
 }
 
