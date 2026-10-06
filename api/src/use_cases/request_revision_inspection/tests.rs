@@ -66,12 +66,12 @@ fn mixed_visibility_records_hidden_paths_without_hiding_readable_changes() {
         .unwrap();
     let changes = b":100644 100644 old new M\0private.txt\0\
         :100644 100644 old new M\0public//file.txt\0";
-    for can_read_private_files in [false, true] {
+    for full_view in [false, true] {
         let result = inspect_request_changes(
             changes,
             &policy,
             RepositoryAccess {
-                view: if can_read_private_files {
+                view: if full_view {
                     ViewId::private()
                 } else {
                     ViewId::public()
@@ -80,12 +80,9 @@ fn mixed_visibility_records_hidden_paths_without_hiding_readable_changes() {
             },
         )
         .unwrap();
-        assert_eq!(result.hidden, !can_read_private_files);
-        assert_eq!(
-            result.files.len(),
-            if can_read_private_files { 2 } else { 1 }
-        );
-        if can_read_private_files {
+        assert_eq!(result.hidden, !full_view);
+        assert_eq!(result.files.len(), if full_view { 2 } else { 1 });
+        if full_view {
             assert_eq!(result.files[0].label, ViewId::private());
         }
         let public = result.files.last().unwrap();
