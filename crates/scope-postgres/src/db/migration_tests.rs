@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 mod cache_schema;
 mod current_schema_baseline;
+mod custom_views;
 mod fresh_schema;
 mod git_manifest_retirement;
 mod git_segment_schema;
@@ -68,6 +69,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0073_github_workflow_jobs",
     "m0074_incremental_projection_read_models",
     "m0075_view_ids",
+    "m0076_custom_views",
 ];
 
 pub(super) async fn isolated_database() -> (

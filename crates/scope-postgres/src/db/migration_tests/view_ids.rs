@@ -82,7 +82,7 @@ async fn old_view_values_and_documents_migrate_to_named_views() {
         config["views"],
         serde_json::json!([
             {"id":"public","name":"Public","includes":[],"readers":"anyone"},
-            {"id":"private","name":"Private","includes":"all","readers":"members"}
+            {"id":"private","name":"Private","includes":"all","readers":"assigned"}
         ])
     );
     assert_eq!(
