@@ -100,7 +100,6 @@ pub(crate) async fn merge_request(
     .await
 }
 
-#[tracing::instrument(skip_all, name = "use_case.request.merge.authorize_and_apply")]
 pub(crate) async fn merge_request_inner(
     state: &AppState,
     command: &MergeRequestCommand,
@@ -216,7 +215,6 @@ pub(crate) async fn merge_request_inner(
     })
 }
 
-#[tracing::instrument(skip_all, name = "use_case.request.merge.persist")]
 async fn persist_prepared_merge(
     state: &AppState,
     command: &MergeRequestCommand,
@@ -306,7 +304,6 @@ pub(crate) async fn prepare_request_merge(
         .map_err(RequestMergeFailure::into_api_error)
 }
 
-#[tracing::instrument(skip_all, name = "use_case.request.merge.prepare")]
 async fn prepare_request_merge_for_execution(
     state: &AppState,
     owner: &str,

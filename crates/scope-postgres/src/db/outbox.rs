@@ -119,6 +119,7 @@ impl JobStore {
                     let message = error.message;
                     let (_, completion_now) = outbox_time(current_time)?;
                     let attempts = next_retry_attempt(job.attempts)?;
+                    let entered = span.enter();
                     if is_terminal_retry_attempt(attempts) {
                         tracing::error!(
                             job_id = %job.id,
@@ -139,6 +140,7 @@ impl JobStore {
                             "outbox job failed; scheduling retry"
                         );
                     }
+                    drop(entered);
                     fail_outbox_job(db.as_ref(), &job, &worker_id, message, completion_now)
                         .instrument(span)
                         .await?;

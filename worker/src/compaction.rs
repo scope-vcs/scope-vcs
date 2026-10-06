@@ -99,12 +99,9 @@ pub(crate) async fn compact_one_git_repository(
         "job.git_compaction",
         otel.kind = "consumer",
         scope.job.kind = "git_compaction",
-        scope.job.id = tracing::field::Empty,
+        scope.job.id = claim.lease_generation(),
         scope.job.attempt = claim.attempts.saturating_add(1),
     );
-    if let Some(candidate) = &claim.candidate {
-        span.record("scope.job.id", candidate.incarnation.repository_id());
-    }
     let started = ClaimTimings {
         attempt: attempt_started,
         candidate: candidate_started,

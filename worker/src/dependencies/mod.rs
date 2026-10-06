@@ -162,7 +162,7 @@ async fn process_next(
         "job.dependency_analysis",
         otel.kind = "consumer",
         scope.job.kind = "dependency_analysis",
-        scope.job.id = claim.incarnation.repository_id(),
+        scope.job.id = %claim.lease_generation,
     );
     analyze_claimed(metadata, objects, segments, settings, health, claim)
         .instrument(span)

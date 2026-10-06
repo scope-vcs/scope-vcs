@@ -37,6 +37,12 @@ pub struct GitCompactionClaim {
     lease_generation: String,
 }
 
+impl GitCompactionClaim {
+    pub fn lease_generation(&self) -> &str {
+        &self.lease_generation
+    }
+}
+
 const MAX_COMPACTION_RETRY_SECONDS: i64 = 3_600;
 
 pub(super) async fn schedule_git_compaction<C>(
