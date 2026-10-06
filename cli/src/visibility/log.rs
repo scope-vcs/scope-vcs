@@ -24,7 +24,7 @@ pub(super) fn run(remote: Option<&str>, before: Option<&str>) -> Result<()> {
 }
 
 fn lines(page: &VisibilityHistoryPage, views: &Views) -> Vec<String> {
-    let name = views.display_name(&page.view.clone().into()).to_string();
+    let name = terminal_text(views.display_name(&page.view.clone().into()));
     let mut lines: Vec<_> = page
         .entries
         .iter()
@@ -223,5 +223,26 @@ mod tests {
             &views,
         );
         assert_eq!(lines, ["vc_000041 · Updated views · 2 entered Agent"]);
+    }
+
+    #[test]
+    fn view_names_with_control_characters_are_neutralized() {
+        let mut definitions = Vec::from(Views::builtin());
+        definitions[1].name = "Pri\u{1b}[31mvate".into();
+        let views = Views::new(definitions).unwrap();
+        let lines = lines(
+            &page(
+                vec![entry(
+                    HistoryEntryKind::Push,
+                    None,
+                    None,
+                    "Tighten docs",
+                    (0, 1),
+                )],
+                None,
+            ),
+            &views,
+        );
+        assert_eq!(lines, ["vc_000041 · Tighten docs · 1 left Pri [31mvate"]);
     }
 }
