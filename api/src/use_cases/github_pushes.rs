@@ -147,7 +147,9 @@ fn ensure_may_receive(
     connection: &GitHubConnection,
     view: Option<ViewId>,
 ) -> Result<(), PushFailure> {
-    if view == Some(ViewId::private()) && !connection.may_receive_private_requests() {
+    if view.as_ref().is_some_and(|view| !view.is_public())
+        && !connection.may_receive_private_requests()
+    {
         return Err(PushFailure::GiveUp(
             PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string(),
         ));
@@ -233,7 +235,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             }),
     );
     ensure_current(state, push, claim_token, view.clone()).await?;
-    if view == Some(ViewId::private())
+    if view.as_ref().is_some_and(|view| !view.is_public())
         && let Some(connection) = state
             .metadata
             .repositories()
