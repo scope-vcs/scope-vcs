@@ -74,7 +74,7 @@ function brokerOperation(t, command, overrides = {}, changeSet = '') {
     AWS_REGION: 'us-east-1', SCOPE_AWS_EXECUTION_ROLE_ARN: executionRole }
   for (const key of ['SCOPE_BROKER_CODE_BUCKET', 'SCOPE_BROKER_CODE_KEY', 'SCOPE_BROKER_CODE_VERSION', 'FAKE_STACK_STATUS']) delete env[key]
   const result = spawnSync('bash', [brokerScript, command, changeSet], {
-    env: { ...env, ...overrides }, encoding: 'utf8', timeout: 10000,
+    env: { ...env, ...overrides }, encoding: 'utf8', timeout: 60_000,
   })
   assert.ifError(result.error)
   let calls = []

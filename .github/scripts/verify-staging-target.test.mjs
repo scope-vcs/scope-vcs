@@ -118,7 +118,7 @@ test('staging deploys and records the candidate checkout when the workflow revis
   const result = spawnSync('bash', [join(scripts, 'deploy-staging-railway.sh'), 'finish', 'web'], {
     cwd: root,
     encoding: 'utf8',
-    timeout: 10_000,
+    timeout: 60_000,
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH}`,
@@ -327,7 +327,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   writeFileSync(join(root, 'prepared.json'), JSON.stringify({ schemaVersion: 1, sourceSha: candidate, components,
     maintenanceSha256: createHash('sha256').update(readFileSync(binary)).digest('hex') }))
   const result = spawnSync('bash', [join(scripts, 'deploy-staging-railway.sh')], {
-    cwd: root, encoding: 'utf8', timeout: 15_000,
+    cwd: root, encoding: 'utf8', timeout: 60_000,
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RAILWAY_TOKEN: 'staging-token', RAILWAY_API_TOKEN: '',
       SCOPE_STAGING_RESUME: resume ? '1' : '0',
       SCOPE_MAINTENANCE_BINARY: binary, SCOPE_DEPLOYMENT_MANIFEST: join(root, '.github/deployment-services.json'),

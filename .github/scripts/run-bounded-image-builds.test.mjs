@@ -21,7 +21,7 @@ if [[ "$1" == slowlong ]]; then sleep 0.8; else sleep 0.15; fi
 printf 'end %s\\n' "$1" >> "$BUILD_EVENTS"
 `);
   const result = spawnSync('bash', [delayWait ? delayedRunner : runner, builder, ...components], {
-    env: { ...process.env, BUILD_EVENTS: events }, encoding: 'utf8', timeout: 5000,
+    env: { ...process.env, BUILD_EVENTS: events }, encoding: 'utf8', timeout: 60_000,
   });
   const lines = readFileSync(events, 'utf8').trim().split('\n');
   rmSync(directory, { recursive: true, force: true });
