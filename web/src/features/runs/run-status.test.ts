@@ -42,5 +42,6 @@ describe('run status', () => {
     assert.equal(runDurationLead('succeeded'), 'Succeeded in')
     assert.equal(runDurationLead('failed'), 'Failed after')
     assert.equal(runDurationLead('canceled'), 'Canceled after')
+    assert.equal(runDurationLead('failed', 'timed out'), 'Timed out after')
   })
 })

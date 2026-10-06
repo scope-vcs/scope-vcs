@@ -23,10 +23,6 @@ pub struct GitHubWorkflowRunProgress {
     pub updated_at_unix: u64,
 }
 
-const STAGE_WAITING: u8 = 0;
-const STAGE_RUNNING: u8 = 1;
-const STAGE_COMPLETED: u8 = 2;
-
 impl GitHubWorkflowRun {
     pub fn scope_branch(&self) -> Option<GitHubBranch> {
         self.head_branch.as_deref().and_then(GitHubBranch::parse)
@@ -50,14 +46,7 @@ impl GitHubWorkflowRun {
     pub fn progress(&self) -> GitHubWorkflowRunProgress {
         GitHubWorkflowRunProgress {
             run_attempt: self.run_attempt,
-            stage: match self.status {
-                GitHubCheckStatus::Completed => STAGE_COMPLETED,
-                GitHubCheckStatus::InProgress => STAGE_RUNNING,
-                GitHubCheckStatus::Queued
-                | GitHubCheckStatus::Waiting
-                | GitHubCheckStatus::Requested
-                | GitHubCheckStatus::Pending => STAGE_WAITING,
-            },
+            stage: self.status.stage(),
             updated_at_unix: self.updated_at_unix,
         }
     }

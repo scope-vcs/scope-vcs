@@ -14,6 +14,7 @@ use std::sync::atomic::Ordering;
 mod native_runs_list;
 mod public;
 mod public_repositories;
+mod run_page;
 
 const REQUIRED_CHECK: &str = "ci / test";
 
@@ -178,7 +179,7 @@ async fn a_maintainers_push_reaches_github_and_github_results_decide_the_merge()
         waiting["checks"],
         serde_json::json!([{
             "provider": "github", "name": REQUIRED_CHECK,
-            "status": null, "conclusion": null, "details_url": null,
+            "status": null, "conclusion": null, "details_url": null, "run": null,
         }])
     );
     assert_eq!(waiting["github_push"]["state"], "sending");

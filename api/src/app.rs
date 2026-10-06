@@ -166,6 +166,14 @@ pub fn router(state: AppState) -> Router {
             get(http::github::get_github_workflow_runs),
         )
         .route(
+            routes::REPO_GITHUB_WORKFLOW_RUN,
+            get(http::github_runs::get_github_workflow_run),
+        )
+        .route(
+            routes::REPO_GITHUB_WORKFLOW_JOB_LOG,
+            get(http::github_runs::get_github_workflow_job_log),
+        )
+        .route(
             routes::REPO_GITHUB_RUN_IMPORT,
             post(http::github::start_github_run_import)
                 .put(http::github::set_github_run_import_count),

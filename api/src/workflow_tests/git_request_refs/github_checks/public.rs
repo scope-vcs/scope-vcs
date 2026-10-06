@@ -8,7 +8,9 @@ use scope_domain::{
 const PRIVATE_FILE: &str = "secret.txt";
 const PRIVATE_CONTENT: &str = "private code\n";
 
-async fn private_file_repository(label: &str) -> (AppState, Arc<FakeGitHub>, TempGitRepo) {
+pub(super) async fn private_file_repository(
+    label: &str,
+) -> (AppState, Arc<FakeGitHub>, TempGitRepo) {
     let mut state = test_state_with_repo();
     cache_test_jwks(&state);
     let source = temp_git_repo(label);

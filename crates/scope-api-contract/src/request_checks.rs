@@ -58,7 +58,19 @@ pub enum RequestCheckResponse {
         status: Option<GitHubCheckStatus>,
         conclusion: Option<GitHubCheckConclusion>,
         details_url: Option<String>,
+        /// The workflow run and job on Scope's run page that answer the
+        /// check, when it is a GitHub Actions job the viewer may open there.
+        run: Option<RequestCheckRunResponse>,
     },
+}
+
+/// A GitHub Actions job on Scope's run page:
+/// `/{owner}/{repo}/runs/{run_id}#run-job-{job_id}`.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestCheckRunResponse {
+    pub run_id: String,
+    pub job_id: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

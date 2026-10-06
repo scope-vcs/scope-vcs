@@ -205,7 +205,7 @@ impl WorkflowRun {
     }
 }
 
-fn parse_time(value: &str) -> Option<u64> {
+pub(super) fn parse_time(value: &str) -> Option<u64> {
     OffsetDateTime::parse(value, &Rfc3339)
         .ok()
         .and_then(|time| u64::try_from(time.unix_timestamp()).ok())
@@ -246,7 +246,7 @@ impl CheckRun {
     }
 }
 
-fn parse_enum<T: DeserializeOwned>(value: &str) -> Option<T> {
+pub(super) fn parse_enum<T: DeserializeOwned>(value: &str) -> Option<T> {
     serde_json::from_value(serde_json::Value::String(value.to_string())).ok()
 }
 
@@ -529,7 +529,7 @@ impl GitHubApp {
         .map_err(ApiError::internal)
     }
 
-    async fn pages<P: DeserializeOwned, T>(
+    pub(super) async fn pages<P: DeserializeOwned, T>(
         &self,
         token: &str,
         path: &str,
@@ -557,7 +557,7 @@ impl GitHubApp {
         Ok(Some(all))
     }
 
-    fn request(&self, method: Method, path: &str) -> RequestBuilder {
+    pub(super) fn request(&self, method: Method, path: &str) -> RequestBuilder {
         self.http
             .request(method, format!("{}{path}", self.api_url))
             .header(reqwest::header::ACCEPT, "application/vnd.github+json")
@@ -565,7 +565,9 @@ impl GitHubApp {
     }
 }
 
-async fn send<T: DeserializeOwned>(request: RequestBuilder) -> Result<Option<T>, ApiError> {
+pub(super) async fn send<T: DeserializeOwned>(
+    request: RequestBuilder,
+) -> Result<Option<T>, ApiError> {
     let response = request
         .send()
         .await
@@ -592,7 +594,7 @@ async fn send<T: DeserializeOwned>(request: RequestBuilder) -> Result<Option<T>,
         .map_err(|error| unavailable(format!("GitHub answered unreadably: {error}")))
 }
 
-fn unavailable(diagnostic: String) -> ApiError {
+pub(super) fn unavailable(diagnostic: String) -> ApiError {
     ApiError::upstream_unavailable(
         "GitHub could not complete the request. Try again.",
         diagnostic,

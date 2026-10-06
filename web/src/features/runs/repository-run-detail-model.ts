@@ -49,7 +49,24 @@ export function runCanChange(state: RunState): boolean {
 
 export function selectInitialView(
   jobs: readonly JobLike[],
+  linkedJobKey: string | null = null,
 ): InitialRunView {
+  const linkedJob = linkedJobKey === null
+    ? undefined
+    : jobs.find(({ job }) => job.key === linkedJobKey)
+  if (linkedJob) {
+    const attempt = latestAttempt(linkedJob.attempts)
+    const step = attempt?.steps.find((candidate) => candidate.state === 'failed')
+      ?? attempt?.steps.find((candidate) => candidate.state === 'running')
+      ?? attempt?.steps.at(-1)
+    return {
+      selectedJobKey: linkedJob.job.key,
+      selection: attempt && step
+        ? { attemptId: attempt.id, jobKey: linkedJob.job.key, stepIndex: step.index }
+        : null,
+    }
+  }
+
   const failedJob = jobs.find(({ job }) => job.state === 'failed')
   const failedAttempt = failedJob ? latestAttempt(failedJob.attempts) : null
   const failedStep = failedAttempt?.steps.find((step) => step.state === 'failed')

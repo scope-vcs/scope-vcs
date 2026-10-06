@@ -1,6 +1,14 @@
 import { createApiClient } from '@/api/client'
-import { loadRepoGitHubWorkflowRunsForRequest } from '@/api/github'
-import { parseRepoGitHubWorkflowRunsInput } from '@/api/github-inputs'
+import {
+  loadRepoGitHubWorkflowJobLogForRequest,
+  loadRepoGitHubWorkflowRunForRequest,
+  loadRepoGitHubWorkflowRunsForRequest,
+} from '@/api/github'
+import {
+  parseRepoGitHubWorkflowJobLogInput,
+  parseRepoGitHubWorkflowRunInput,
+  parseRepoGitHubWorkflowRunsInput,
+} from '@/api/github-inputs'
 import { loadOptionalResource } from '@/api/http'
 import {
   loadRepoRunDetailForRequest,
@@ -46,6 +54,14 @@ export const loadRepoRunWorkflows = createServerFn({ method: 'GET' })
 export const loadRepoGitHubWorkflowRuns = createServerFn({ method: 'GET' })
   .validator(parseRepoGitHubWorkflowRunsInput)
   .handler(({ data }) => loadRepoGitHubWorkflowRunsForRequest(data))
+
+export const loadRepoGitHubWorkflowRun = createServerFn({ method: 'GET' })
+  .validator(parseRepoGitHubWorkflowRunInput)
+  .handler(({ data }) => loadRepoGitHubWorkflowRunForRequest(data))
+
+export const loadRepoGitHubWorkflowJobLog = createServerFn({ method: 'GET' })
+  .validator(parseRepoGitHubWorkflowJobLogInput)
+  .handler(({ data }) => loadRepoGitHubWorkflowJobLogForRequest(data))
 
 export const loadRepoRunHistory = createServerFn({ method: 'GET' })
   .validator(parseRepoRunHistoryInput)

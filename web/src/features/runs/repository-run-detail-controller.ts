@@ -21,6 +21,8 @@ import {
   selectInitialView,
   type StepSelection,
 } from './repository-run-detail-model'
+import { useRunJobHash } from './run-job-hash'
+import { jobKeyForHash } from './run-job-ids'
 import { useRunLiveRefresh, type RunRefresh } from './run-live-refresh'
 import {
   canReuseRunLogs,
@@ -52,6 +54,7 @@ export type StepLogs = {
 type DetailViewState = {
   actionError: string | null
   attemptOverrides: Record<string, string>
+  linkedJobKey: string | null
   manualSelection: boolean
   pendingAction: 'cancel' | 'retry' | null
   reconciliationGeneration: number | null
@@ -65,6 +68,7 @@ function createDetailViewState(detail: RepositoryRunDetailResponse): DetailViewS
   return {
     actionError: null,
     attemptOverrides: {},
+    linkedJobKey: null,
     manualSelection: false,
     pendingAction: null,
     reconciliationGeneration: null,
@@ -115,7 +119,7 @@ export function useRepositoryRunDetailController({
       const reconciledAction = current.reconciliationGeneration !== null &&
         (detailSnapshot.value?.generation ?? 0) >= current.reconciliationGeneration
       const selectionStillValid = current.selection !== null && selectionExists(current.selection, detail.jobs)
-      const initialView = current.manualSelection ? null : selectInitialView(detail.jobs)
+      const initialView = current.manualSelection ? null : selectInitialView(detail.jobs, current.linkedJobKey)
       const selection = selectionStillValid ? current.selection
         : current.manualSelection ? null : initialView?.selection ?? null
       return {
@@ -131,6 +135,18 @@ export function useRepositoryRunDetailController({
       }
     })
   }, [detail, detailSnapshot.value?.generation])
+
+  useRunJobHash((hash) => {
+    const linkedJobKey = jobKeyForHash(detail.jobs.map(({ job }) => job.key), hash)
+    if (linkedJobKey === null) return false
+    updateView((current) => ({
+      ...current,
+      ...selectInitialView(detail.jobs, linkedJobKey),
+      linkedJobKey,
+      manualSelection: false,
+    }))
+    return true
+  })
 
   const refreshDetail = useCallback((forceAfterInFlight = false) =>
     refreshRunDetail(key, loadDetail, forceAfterInFlight), [key, loadDetail])

@@ -24,7 +24,8 @@ Developer settings, GitHub Apps, New GitHub App):
 - [ ] **Repository permissions**: Contents read and write, Workflows read and
       write, Checks read-only, Actions read-only, Metadata read-only.
 - [ ] **Subscribe to events**: Check run, Check suite, Workflow run,
-      Repository. Installation events arrive without subscribing.
+      Workflow job, Repository. Installation events arrive without
+      subscribing.
 - [ ] **Where can this GitHub App be installed**: Any account.
 
 After creating it:
