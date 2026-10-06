@@ -45,6 +45,23 @@ impl RepositoryGit {
         }
     }
 
+    pub(crate) async fn load(
+        state: &AppState,
+        incarnation: &RepositoryIncarnation,
+    ) -> Result<Self, ApiError> {
+        let git = state
+            .metadata
+            .repositories()
+            .repository_git_state(incarnation)
+            .await?;
+        Ok(Self {
+            incarnation: incarnation.clone(),
+            content_version: git.content_version,
+            git_head: git.git_head,
+            git_pack_spans: git.git_pack_spans,
+        })
+    }
+
     pub(crate) fn of_repository(repo: &Repository) -> Self {
         Self {
             incarnation: repo.incarnation(),

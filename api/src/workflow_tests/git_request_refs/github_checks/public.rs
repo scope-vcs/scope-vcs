@@ -172,15 +172,9 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
         [base.private_main_oid.as_str(), head.as_str()]
     );
 
-    let git = crate::git::repository_git::RepositoryGit::of_push_context(
-        &state
-            .metadata
-            .repositories()
-            .git_push_context(TEST_REPO_OWNER, TEST_REPO_NAME, &test_owner_id())
-            .await
-            .unwrap()
-            .unwrap(),
-    );
+    let git = crate::git::repository_git::RepositoryGit::load(&state, &test_repo_incarnation())
+        .await
+        .unwrap();
     let request = stored_request(&state, REQUEST_ID).await;
     let revision = state
         .metadata
@@ -189,10 +183,21 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
         .await
         .unwrap()
         .unwrap();
+    let held = state
+        .metadata
+        .admin()
+        .lock_repository_history_for_tests()
+        .await
+        .unwrap();
+    let rebuilt = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        public_tested_commit(&state, &git, &request, &revision),
+    )
+    .await
+    .expect("rebuilding a check commit must not wait on history tables");
+    held.rollback().await.unwrap();
     assert_eq!(
-        public_tested_commit(&state, &git, &request, &revision)
-            .await
-            .unwrap(),
+        rebuilt.unwrap(),
         GitHubTestedCommit::CheckCommit {
             oid: tested.clone(),
             base: base.clone(),
