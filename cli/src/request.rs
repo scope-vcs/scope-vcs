@@ -349,7 +349,7 @@ fn start_view(
         .is_none()
     {
         return Err(crate::error::CliError::usage(format!(
-            "Unknown repository view {}",
+            "Requests target the public or private view until custom views accept requests; pass --view public instead of {}",
             view.as_str()
         ))
         .into());
