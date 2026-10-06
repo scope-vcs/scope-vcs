@@ -264,9 +264,12 @@ fn reply_wait_capability_requires_a_maintainer_and_an_open_request() {
         ] {
             let mut access = RepositoryAccess::public();
             access.actor = actor;
-            let permissions =
-                request_policy(&request, RequestViewer::new(access, Some("author"), false))
-                    .permissions;
+            let permissions = request_policy(
+                &request,
+                RequestViewer::new(access, Some("author"), false),
+                &crate::views::Views::builtin(),
+            )
+            .permissions;
             assert!(permissions.can_reply_to_discussion);
             assert_eq!(
                 permissions.can_wait_after_reply,

@@ -84,18 +84,29 @@ pub enum RequestListPredicate<'a> {
 pub fn request_list_predicate<'a>(
     access: RepositoryAccess,
     viewer_user_id: Option<&'a str>,
+    views: &Views,
 ) -> RequestListPredicate<'a> {
-    let mut public_access = vec![RequestListPredicate::Submitted];
-    if let Some(viewer_user_id) = viewer_user_id {
-        public_access.push(RequestListPredicate::Author(viewer_user_id));
-        public_access.push(RequestListPredicate::Invitee(viewer_user_id));
+    let anyone = views.anyone();
+    let mut visible = Vec::new();
+    if let Some(anyone) = anyone {
+        let mut anyone_access = vec![RequestListPredicate::Submitted];
+        if let Some(viewer_user_id) = viewer_user_id {
+            anyone_access.push(RequestListPredicate::Author(viewer_user_id));
+            anyone_access.push(RequestListPredicate::Invitee(viewer_user_id));
+        }
+        visible.push(RequestListPredicate::All(vec![
+            RequestListPredicate::View(anyone.clone()),
+            RequestListPredicate::Any(anyone_access),
+        ]));
     }
-    let mut visible = vec![RequestListPredicate::All(vec![
-        RequestListPredicate::View(ViewId::public()),
-        RequestListPredicate::Any(public_access),
-    ])];
-    if access.is_maintainer() && Views::builtin().may_read(&access.view, &ViewId::private()) {
-        visible.push(RequestListPredicate::View(ViewId::private()));
+    if access.is_maintainer() {
+        visible.extend(
+            views
+                .readable_by(Some(&access.view))
+                .into_iter()
+                .filter(|view| Some(*view) != anyone)
+                .map(|view| RequestListPredicate::View(view.clone())),
+        );
     }
     RequestListPredicate::Any(visible)
 }
@@ -125,58 +136,58 @@ pub fn request_actor_role(access: RepositoryAccess) -> RequestActorRole {
     }
 }
 
-pub fn request_policy(request: &Request, viewer: RequestViewer<'_>) -> RequestPolicyDecision {
-    let maintainer = matches!(
-        viewer.access.actor,
-        RepositoryActor::Owner | RepositoryActor::Member
-    );
+pub fn request_policy(
+    request: &Request,
+    viewer: RequestViewer<'_>,
+    views: &Views,
+) -> RequestPolicyDecision {
+    let maintainer = viewer.access.is_maintainer();
     let authenticated = viewer.user_id.is_some();
     let author = viewer
         .user_id
         .is_some_and(|user_id| request.is_author(user_id));
     let invitee = viewer.is_invitee;
-    let public = request.view == ViewId::public();
-    let private = request.view == ViewId::private();
-    let can_read_view = Views::builtin().may_read(&viewer.access.view, &request.view);
+    let anyone_view = views.anyone() == Some(&request.view);
+    let full_view = &request.view == views.full();
+    let reads_request_view =
+        views.get(&request.view).is_some() && views.may_read(&viewer.access.view, &request.view);
+    let merges_into_canonical_main = maintainer
+        && (views.may_read(&viewer.access.view, views.full())
+            || (author && viewer.access.can_push));
     let submitted = request.is_submitted();
     let terminal = request.is_terminal();
     let open = request.state() == RequestState::Open;
 
-    let exact_visible = if private {
-        maintainer && can_read_view
-    } else if submitted {
-        true
+    let exact_visible = if anyone_view {
+        submitted || author || invitee
     } else {
-        author || invitee
+        maintainer && reads_request_view
     };
-    let listable =
-        request_list_predicate(viewer.access, viewer.user_id).matches(request, viewer.is_invitee);
-    let branch_actor = if private {
-        maintainer
-    } else {
-        author || invitee || maintainer
-    };
+    let listable = request_list_predicate(viewer.access.clone(), viewer.user_id, views)
+        .matches(request, viewer.is_invitee);
+    let branch_actor = author || (anyone_view && invitee) || (maintainer && reads_request_view);
     let branch_mutable = exact_visible && branch_actor && !terminal;
     let discussion_visible = exact_visible;
     let activity_stream_visible = discussion_visible && listable;
-    let can_discuss = discussion_visible && authenticated && (public || (maintainer && !terminal));
+    let can_discuss =
+        discussion_visible && authenticated && (!full_view || (maintainer && !terminal));
 
     let permissions = RequestPermissions {
         can_open_discussion: can_discuss,
         can_reply_to_discussion: can_discuss,
         can_wait_after_reply: can_discuss && maintainer && open,
-        can_transition_discussion: discussion_visible && authenticated && (public || !terminal),
+        can_transition_discussion: discussion_visible && authenticated && (!full_view || !terminal),
         can_edit_identity: exact_visible && !terminal && (author || maintainer),
         can_pull_branch: exact_visible,
         can_push_branch: branch_mutable,
         can_submit: exact_visible && !submitted && author,
-        can_manage_invitees: exact_visible && public && !terminal && (author || maintainer),
-        can_leave_request: exact_visible && public && invitee && !terminal,
+        can_manage_invitees: exact_visible && anyone_view && !terminal && (author || maintainer),
+        can_leave_request: exact_visible && anyone_view && invitee && !terminal,
         can_close: exact_visible
             && viewer.user_id.is_some_and(|user_id| {
                 ensure_request_close_allowed(request, user_id, maintainer).is_ok()
             }),
-        can_merge: exact_visible && maintainer && open,
+        can_merge: exact_visible && merges_into_canonical_main && open,
     };
 
     RequestPolicyDecision {
