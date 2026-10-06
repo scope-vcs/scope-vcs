@@ -14,6 +14,7 @@ use sea_orm::{
 use std::collections::BTreeSet;
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "prune_terminal_runs"))]
     pub async fn prune_terminal_runs(
         &self,
         completed_before_unix: u64,

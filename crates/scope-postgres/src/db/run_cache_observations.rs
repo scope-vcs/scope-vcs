@@ -31,6 +31,7 @@ pub struct AttemptCacheFinalizationCommand {
 }
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "report_attempt_cache_preparations"))]
     pub async fn report_attempt_cache_preparations(
         &self,
         attempt_id: &str,
@@ -134,6 +135,7 @@ impl RunStore {
         Ok(changed.then_some(claim))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "report_attempt_cache_finalizations"))]
     pub async fn report_attempt_cache_finalizations(
         &self,
         attempt_id: &str,

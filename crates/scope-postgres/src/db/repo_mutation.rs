@@ -92,6 +92,7 @@ impl<R> RepositoryMutation<R> {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mutate_repository"))]
     pub async fn mutate_repository<R, F>(
         &self,
         owner: &str,

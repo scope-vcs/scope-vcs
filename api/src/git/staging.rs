@@ -6,12 +6,9 @@ use crate::{
         request_refs::REQUEST_REF_COMMIT_ERROR, storage::receive_pack_staging_repo_path,
     },
     persistence::ensure_private_dir,
-    repo_access::find_repo,
     state::AppState,
 };
 use scope_domain::{
-    policy::Principal,
-    projection::project_graph,
     repository::{RepoLifecycleState, RepositoryIncarnation},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
@@ -88,23 +85,16 @@ pub(crate) async fn ensure_ready_receive_pack_staging_repo(
             .materialize_repository(state, incarnation, head, &repo.git_pack_spans)
             .await?
     } else {
-        let repo = find_repo(state, owner, repo_name).await?;
-        let principal = Principal {
-            id: author_id.to_string(),
-            kind: scope_domain::policy::PrincipalKind::User,
-        };
-        let view = repo.access_for_principal(&principal).view;
-        let projection = project_graph(
-            &repo.graph,
-            &repo.visibility_change_sets,
-            repo.repo_config.views(),
-            &view,
-        );
+        let source = state
+            .metadata
+            .repositories()
+            .repository_projection_source(incarnation, repo.content_version)
+            .await?;
         projection_bare_repo_for_state(
             state,
             incarnation,
-            &projection,
-            repo.git_head.as_ref(),
+            &source.project(repo.repo_config.views(), &repo.access.view),
+            None,
             &repo.git_pack_spans,
         )
         .await?

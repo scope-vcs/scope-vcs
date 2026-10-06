@@ -29,6 +29,7 @@ pub struct RepositoryRun {
 }
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_run_history_page"))]
     pub async fn repository_run_history_page(
         &self,
         query: RunHistoryPageQuery<'_>,

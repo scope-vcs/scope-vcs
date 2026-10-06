@@ -380,6 +380,7 @@ async fn ingest_compacted_pack(
     let repository_id = repository_id.to_string();
     let repo = repo.to_path_buf();
     let runtime = tokio::runtime::Handle::current();
+    let span = tracing::Span::current();
     let output = tokio::task::spawn_blocking(move || {
         let mut command = Command::new("git");
         command
@@ -392,6 +393,7 @@ async fn ingest_compacted_pack(
             ProcessLimits::new(timeout),
             "git pack-objects --stdout",
             move |stdout, cancellation| {
+                let _entered = span.enter();
                 runtime.block_on(segment_store.ingest_reserved_blocking_reader(
                     &repository_id,
                     reservation,

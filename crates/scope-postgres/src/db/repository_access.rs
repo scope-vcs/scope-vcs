@@ -29,6 +29,7 @@ struct AccessRow {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_read_access"))]
     pub async fn repository_read_access(
         &self,
         owner: &str,
@@ -50,6 +51,23 @@ impl RepositoryStore {
         repo_id: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<(DatabaseTransaction, RepositoryAccessContext)>, PostgresError> {
+        let Some((tx, context, public_files_visible)) =
+            self.begin_access_snapshot(repo_id, viewer_user_id).await?
+        else {
+            return Ok(None);
+        };
+        if !context.can_read(public_files_visible) {
+            tx.commit().await.map_err(PostgresError::internal)?;
+            return Ok(None);
+        }
+        Ok(Some((tx, context)))
+    }
+
+    pub(super) async fn begin_access_snapshot(
+        &self,
+        repo_id: &str,
+        viewer_user_id: Option<&str>,
+    ) -> Result<Option<(DatabaseTransaction, RepositoryAccessContext, bool)>, PostgresError> {
         for _ in 0..3 {
             let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
             let Some(context) = repository_access(&tx, repo_id, viewer_user_id).await? else {
@@ -85,17 +103,14 @@ impl RepositoryStore {
             } else {
                 false
             };
-            if !context.can_read(public_files_visible) {
-                tx.commit().await.map_err(PostgresError::internal)?;
-                return Ok(None);
-            }
-            return Ok(Some((tx, context)));
+            return Ok(Some((tx, context, public_files_visible)));
         }
         Err(PostgresError::conflict(
             "repository kept changing while reading access; retry",
         ))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_access"))]
     pub async fn repository_access(
         &self,
         owner: &str,
@@ -108,6 +123,7 @@ impl RepositoryStore {
         Ok(context)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_record"))]
     pub async fn repository_record(
         &self,
         repo_id: &str,
@@ -115,6 +131,7 @@ impl RepositoryStore {
         load_repo_record(self.db.as_ref(), repo_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_content_source"))]
     pub async fn repository_content_source(
         &self,
         incarnation: &scope_domain::repository::RepositoryIncarnation,
@@ -144,6 +161,7 @@ impl RepositoryStore {
         Ok((head, spans))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_policy"))]
     pub async fn repository_policy(
         &self,
         context: &RepositoryAccessContext,
@@ -165,6 +183,7 @@ impl RepositoryStore {
         serde_json::from_value(policy).map_err(PostgresError::internal)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_main_oid"))]
     pub async fn repository_main_oid(
         &self,
         context: &RepositoryAccessContext,
@@ -173,6 +192,7 @@ impl RepositoryStore {
             .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_main_oid_for_view"))]
     pub async fn repository_main_oid_for_view(
         &self,
         context: &RepositoryAccessContext,

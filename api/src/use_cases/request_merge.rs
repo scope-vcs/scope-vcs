@@ -80,6 +80,7 @@ pub(crate) struct PreparedRequestMerge {
     pub(crate) write_lease: RepositoryGitWriteLease,
 }
 
+#[tracing::instrument(skip_all, name = "use_case.request.merge")]
 pub(crate) async fn merge_request(
     state: &AppState,
     command: MergeRequestCommand,

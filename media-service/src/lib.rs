@@ -29,7 +29,6 @@ use scope_postgres::db::MetadataStore;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tower_http::cors::CorsLayer;
-use tracing::Instrument as _;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -92,8 +91,7 @@ pub fn router(state: AppState, allowed_origin: &str) -> anyhow::Result<Router> {
 async fn redacted_access_log(request: Request, next: Next) -> Response {
     let method = request.method().clone();
     let path = request.uri().path().to_string();
-    let span = tracing::info_span!("media_request", %method, %path);
-    let response = next.run(request).instrument(span.clone()).await;
-    tracing::info!(parent: &span, status = response.status().as_u16(), "request completed");
+    let response = next.run(request).await;
+    tracing::info!(%method, %path, status = response.status().as_u16(), "request completed");
     response
 }

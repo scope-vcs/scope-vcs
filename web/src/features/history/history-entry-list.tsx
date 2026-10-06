@@ -26,6 +26,37 @@ export function HistoryFeedList({
   params: RepoParams
   search: UpdateSearch
 }) {
+  return (
+    <HistoryFeedState empty={empty} resource={resource}>
+      {(page) => (
+        <HistoryEntryList
+          entries={page.entries}
+          loadOlderError={loadOlderError}
+          loadingOlder={loadingOlder}
+          onLoadOlder={() => void loadOlder()}
+          onNavigate={onNavigate}
+          params={params}
+          search={search}
+          showLoadOlder={page.next_cursor !== null}
+          view={view}
+        />
+      )}
+    </HistoryFeedState>
+  )
+}
+
+type HistoryFeedResource = ReturnType<typeof useHistoryFeed>['resource']
+type HistoryFeedPage = NonNullable<HistoryFeedResource['value']>
+
+export function HistoryFeedState({
+  children,
+  empty,
+  resource,
+}: {
+  children: (page: HistoryFeedPage) => ReactNode
+  empty: string
+  resource: HistoryFeedResource
+}) {
   if (resource.status === 'failed') {
     return (
       <PanelState tone="error">
@@ -48,19 +79,7 @@ export function HistoryFeedList({
   if (!resource.value.entries.length) {
     return <p className="px-3 py-6 text-center text-xs text-muted-foreground">{empty}</p>
   }
-  return (
-    <HistoryEntryList
-      entries={resource.value.entries}
-      loadOlderError={loadOlderError}
-      loadingOlder={loadingOlder}
-      onLoadOlder={() => void loadOlder()}
-      onNavigate={onNavigate}
-      params={params}
-      search={search}
-      showLoadOlder={resource.value.next_cursor !== null}
-      view={view}
-    />
-  )
+  return children(resource.value)
 }
 
 function HistoryEntryList({

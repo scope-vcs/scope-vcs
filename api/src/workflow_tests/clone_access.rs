@@ -13,20 +13,23 @@ async fn git_projection_for_request(
     repo_name: &str,
     mode: GitRemoteMode,
 ) -> Result<Projection, ApiError> {
-    let (repo, access, _) = authorized_git_read(state, headers, owner, repo_name, mode).await?;
-    let views = repo.repo_config.views();
+    let (source, _) = authorized_git_read(state, headers, owner, repo_name, mode).await?;
+    let views = scope_domain::views::Views::builtin();
     let view = match mode {
         GitRemoteMode::Public => views
             .anyone()
             .ok_or_else(|| ApiError::not_found("public view not found"))?,
-        GitRemoteMode::Permissioned => &access.view,
+        GitRemoteMode::Permissioned => &source.context.access.view,
     };
-    Ok(project_graph(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        views,
-        view,
-    ))
+    let projection_source = state
+        .metadata
+        .repositories()
+        .repository_projection_source(
+            &source.context.incarnation(),
+            source.context.record.content_version,
+        )
+        .await?;
+    Ok(projection_source.project(&views, view))
 }
 
 async fn repo_with_secret(state: &AppState, path: &str) {

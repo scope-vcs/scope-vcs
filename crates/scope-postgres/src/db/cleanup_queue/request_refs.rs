@@ -56,6 +56,7 @@ where
 }
 
 impl CleanupStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_ref_is_live"))]
     pub async fn request_ref_is_live(
         &self,
         incarnation: &RepositoryIncarnation,
@@ -70,6 +71,7 @@ impl CleanupStore {
         row.try_get("", "live").map_err(PostgresError::internal)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "pending_request_ref_cleanups"))]
     pub async fn pending_request_ref_cleanups(
         &self,
         due_at_unix: Option<u64>,
@@ -107,6 +109,7 @@ impl CleanupStore {
             .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_request_ref_cleanup"))]
     pub async fn complete_request_ref_cleanup(&self, id: &str) -> Result<(), PostgresError> {
         entities::request_ref_cleanup_job::Entity::delete_by_id(id.to_string())
             .exec(self.db.as_ref())
@@ -115,6 +118,7 @@ impl CleanupStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "retry_request_ref_cleanup"))]
     pub async fn retry_request_ref_cleanup(
         &self,
         cleanup: &RequestRefCleanup,

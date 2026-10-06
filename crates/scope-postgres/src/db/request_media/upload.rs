@@ -22,6 +22,7 @@ use scope_domain::requests::attachments::{
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, TransactionTrait};
 
 impl MediaStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "prepare_request_attachment"))]
     pub async fn prepare_request_attachment(
         &self,
         command: PrepareRequestAttachmentCommand,
@@ -120,6 +121,7 @@ impl MediaStore {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "reserve_upload_part"))]
     pub async fn reserve_upload_part(
         &self,
         attachment_id: &str,
@@ -222,6 +224,7 @@ impl MediaStore {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mark_upload_part_stored"))]
     pub async fn mark_upload_part_stored(
         &self,
         attachment_id: &str,
@@ -286,6 +289,7 @@ impl MediaStore {
         Ok(StorePartResult::Recorded)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_request_attachment_upload"))]
     pub async fn finish_request_attachment_upload(
         &self,
         command: FinishRequestAttachmentUploadCommand,

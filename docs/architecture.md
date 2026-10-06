@@ -203,8 +203,11 @@ to `.output/client-chunk-graph.json`, outside the served `public` directory.
 `web/scripts/check-client-bundle.mjs` gzips every emitted script and fails when
 the entry chunks plus their static imports exceed 300 KiB, or when any single
 chunk exceeds 512 KiB. The caps and their references are constants at the top of
-that script. `web/smoke/request-mermaid-components.spec.mjs` separately caps the
+that script. `web/smoke/request-mermaid-components.budget.mjs` separately caps the
 lazy JavaScript for a cold diagram render at 256 KiB and the render at 1,000 ms.
+`pnpm test:smoke` runs `*.budget.mjs` files one at a time after the concurrent
+`*.spec.mjs` suite, so wall-clock budgets never share the CPU with other browser
+tests.
 
 ## Reading important behavior
 

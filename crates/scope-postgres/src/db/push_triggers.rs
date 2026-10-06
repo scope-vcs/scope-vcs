@@ -282,6 +282,7 @@ fn stable_push_run_id(repo_id: &str, idempotency_key: &str) -> String {
 }
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "push_trigger_evaluation"))]
     pub async fn push_trigger_evaluation(
         &self,
         repository_id: &str,
@@ -298,6 +299,7 @@ impl RunStore {
             .transpose()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "runs_by_ids"))]
     pub async fn runs_by_ids(&self, run_ids: &[String]) -> Result<Vec<Run>, PostgresError> {
         if run_ids.is_empty() {
             return Ok(Vec::new());

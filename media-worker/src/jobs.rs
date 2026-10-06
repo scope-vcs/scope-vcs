@@ -28,6 +28,7 @@ use scope_postgres::db::{
 use sha2::{Digest, Sha256};
 use std::{path::Path, time::Duration};
 use tokio::io::AsyncReadExt;
+use tracing::Instrument as _;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProcessingOutcome {
@@ -94,12 +95,21 @@ async fn process_next_job(
         lease_generation = lease.lease_generation,
         "claimed media processing job"
     );
+    let span = tracing::info_span!(
+        parent: None,
+        "job.media_processing",
+        otel.kind = "consumer",
+        scope.job.kind = "media_processing",
+        scope.job.id = %lease.attachment_id,
+        scope.job.attempt = lease.attempt,
+    );
     let _activity = health.processing_activity();
     let work = settle_claim(metadata, storage, pipeline, scratch, settings, &lease);
     match supervise_lease(work, settings.lease_duration, || async {
         let now = crate::unix_now()?;
         renew_processing(metadata, &lease, settings.lease_duration, now).await
     })
+    .instrument(span)
     .await
     {
         Ok(outcome) => outcome,

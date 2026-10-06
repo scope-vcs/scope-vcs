@@ -257,24 +257,23 @@ impl ClerkVerifier {
                 "Clerk auth requires {CLERK_JWKS_URL_ENV} or {CLERK_ISSUER_ENV}"
             ))
         })?;
-        self.client
-            .get(jwks_url)
-            .send()
-            .await
-            .map_err(|error| {
-                ApiError::infrastructure_unavailable(format!("failed to fetch Clerk JWKS: {error}"))
-            })?
-            .error_for_status()
-            .map_err(|error| {
-                ApiError::infrastructure_unavailable(format!("failed to fetch Clerk JWKS: {error}"))
-            })?
-            .json::<JwkSet>()
-            .await
-            .map_err(|error| {
-                ApiError::infrastructure_unavailable(format!(
-                    "failed to decode Clerk JWKS: {error}"
-                ))
-            })
+        scope_service_runtime::outbound_http::send_traced(
+            self.client.get(jwks_url),
+            "/.well-known/jwks.json",
+        )
+        .await
+        .map_err(|error| {
+            ApiError::infrastructure_unavailable(format!("failed to fetch Clerk JWKS: {error}"))
+        })?
+        .error_for_status()
+        .map_err(|error| {
+            ApiError::infrastructure_unavailable(format!("failed to fetch Clerk JWKS: {error}"))
+        })?
+        .json::<JwkSet>()
+        .await
+        .map_err(|error| {
+            ApiError::infrastructure_unavailable(format!("failed to decode Clerk JWKS: {error}"))
+        })
     }
 
     fn last_known_good_or_error(

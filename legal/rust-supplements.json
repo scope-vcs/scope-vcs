@@ -8,6 +8,16 @@
   },
   "inherited_reasons": {},
   "packages": {
+    "rust:axum-tracing-opentelemetry@0.42.1": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/davidB-tracing-opentelemetry-instrumentation-sdk-7efdaf5cb7b4-LICENSE",
+          "url": "https://raw.githubusercontent.com/davidB/tracing-opentelemetry-instrumentation-sdk/7efdaf5cb7b42265f9142595f731c7969bba9f98/LICENSE",
+          "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
+        }
+      ]
+    },
     "rust:base64-simd@0.8.0": {
       "reason_key": "published-vcs-license",
       "documents": [
@@ -229,6 +239,66 @@
       ],
       "declared_metadata": true
     },
+    "rust:opentelemetry-http@0.33.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE",
+          "url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-rust/19833847cab86c8464c1dfb6d28b1de9c0b50038/LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
+    "rust:opentelemetry-otlp@0.33.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE",
+          "url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-rust/19833847cab86c8464c1dfb6d28b1de9c0b50038/LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
+    "rust:opentelemetry-proto@0.33.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE",
+          "url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-rust/19833847cab86c8464c1dfb6d28b1de9c0b50038/LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
+    "rust:opentelemetry-semantic-conventions@0.33.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE",
+          "url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-rust/19833847cab86c8464c1dfb6d28b1de9c0b50038/LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
+    "rust:opentelemetry@0.33.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE",
+          "url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-rust/19833847cab86c8464c1dfb6d28b1de9c0b50038/LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
+    "rust:opentelemetry_sdk@0.33.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE",
+          "url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-rust/19833847cab86c8464c1dfb6d28b1de9c0b50038/LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
     "rust:r-efi@5.3.0": {
       "reason_key": "published-vcs-authors-mit",
       "documents": [
@@ -370,6 +440,16 @@
           "path": "legal/upstream/SeaQL-sea-schema-7bf88ccc9583-LICENSE-MIT",
           "url": "https://raw.githubusercontent.com/SeaQL/sea-schema/7bf88ccc9583a2731ddcb3f0b18a98b9c5bf09ae/LICENSE-MIT",
           "sha256": "382b1ae2eb3b0eb5391c3c049e62c7170bd080906724f87c1c632d8a2967563d"
+        }
+      ]
+    },
+    "rust:tracing-opentelemetry-instrumentation-sdk@0.42.1": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/davidB-tracing-opentelemetry-instrumentation-sdk-7efdaf5cb7b4-LICENSE",
+          "url": "https://raw.githubusercontent.com/davidB/tracing-opentelemetry-instrumentation-sdk/7efdaf5cb7b42265f9142595f731c7969bba9f98/LICENSE",
+          "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
         }
       ]
     },

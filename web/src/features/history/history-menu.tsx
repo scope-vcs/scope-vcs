@@ -19,13 +19,17 @@ const FEEDS: { value: HistoryFeed; label: string; empty: string }[] = [
 
 export function HistoryMenu({
   access,
+  initialFeed = 'all',
+  label = 'History',
   params,
 }: {
   access: RepositoryAccessResponse
+  initialFeed?: HistoryFeed
+  label?: string
   params: RepoParams
 }) {
   const defaultView = access.view
-  const [feed, setFeed] = useState<HistoryFeed>('all')
+  const [feed, setFeed] = useState<HistoryFeed>(initialFeed)
   const [view, setView] = useState<ViewId>(defaultView)
   const selectedView = mayReadView(access, view) ? view : defaultView
 
@@ -51,7 +55,7 @@ export function HistoryMenu({
           type="button"
           {...props}
         >
-          <History aria-hidden="true" className="size-3.5" /> History
+          <History aria-hidden="true" className="size-3.5" /> {label}
           <ChevronDown aria-hidden="true" className="size-3.5" />
         </button>
       )}

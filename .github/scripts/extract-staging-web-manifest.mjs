@@ -52,6 +52,7 @@ export function stagingWebImage(prepared, manifest, repository, status, history,
 
 export function copyWebManifest(image, destination, {
   execute = execFileSync,
+  pause = (milliseconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds),
   registryUsername = process.env.SCOPE_RAILWAY_REGISTRY_USERNAME,
   registryPassword = process.env.SCOPE_RAILWAY_REGISTRY_PASSWORD,
 } = {}) {
@@ -76,7 +77,17 @@ export function copyWebManifest(image, destination, {
   });
   try {
     if (registryUsername) {
-      docker(['login', image.split('/')[0], '--username', registryUsername, '--password-stdin'], registryPassword);
+      const registry = image.split('/')[0];
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          docker(['login', registry, '--username', registryUsername, '--password-stdin'], registryPassword);
+          break;
+        } catch (error) {
+          if (attempt === 3) throw new Error(`Registry login failed after 3 attempts: ${registry}\n${error.message}`);
+          console.error(`Registry login failed; retrying (${attempt}/3).\n${error.message}`);
+          pause(attempt * 5_000);
+        }
+      }
     }
     docker(['pull', '--platform', 'linux/amd64', image]);
     docker(['create', '--name', container, '--network', 'none', '--entrypoint', '/bin/false', image]);

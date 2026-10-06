@@ -6,8 +6,8 @@ use crate::{
     config::{MAX_PENDING_IMPORT_BLOB_BYTES, MAX_PENDING_IMPORT_FILES},
     error::ApiError,
     git::command::{
-        git_process_output, git_ref_listing, git_stdout_text, remaining_git_time, run_git,
-        run_git_output, run_git_output_until, truncated_git_stderr,
+        git_process_output, git_ref_listing, git_stdout_text, git_subprocess_span, record_git_exit,
+        remaining_git_time, run_git, run_git_output, run_git_output_until, truncated_git_stderr,
     },
     runtime_budgets::RuntimeBudgets,
     state::AppState,
@@ -368,14 +368,18 @@ pub(crate) async fn git_push_from_repo(
     let repository_id_for_ingest = repository_id.to_string();
     let repo = repo.to_path_buf();
     let timeout = state.runtime_budgets.git_command_timeout();
+    let parent_span = tracing::Span::current();
     let output = tokio::task::spawn_blocking(move || {
+        let _entered = parent_span.enter();
         let _ingest_permit = ingest_permit;
         let runtime = tokio::runtime::Handle::current();
         let mut command = Command::new("git");
         command
             .current_dir(repo)
             .args(["pack-objects", "--revs", "--stdout"]);
-        run_with_stdout(
+        let git_span = git_subprocess_span(&command);
+        let _entered = git_span.enter();
+        let output = run_with_stdout(
             &mut command,
             Some(revisions.into_bytes()),
             ProcessLimits::new(timeout),
@@ -389,7 +393,11 @@ pub(crate) async fn git_push_from_repo(
                     Some(cancellation),
                 ))
             },
-        )
+        );
+        if let Ok(output) = &output {
+            record_git_exit(&git_span, output.status);
+        }
+        output
     })
     .await;
     let output = match output {
