@@ -1,5 +1,6 @@
 mod client;
 pub(crate) mod config;
+mod jobs;
 pub(crate) mod push;
 pub(crate) mod setup_tokens;
 pub(crate) mod webhook;

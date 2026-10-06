@@ -357,6 +357,34 @@ export type GitHubWorkflowRunResponse = { id: number, workflow_name: string, bra
  */
 request_id: string | null, };
 
+export type GitHubWorkflowRunDetailResponse = { run: GitHubWorkflowRunResponse, 
+/**
+ * In the order GitHub created them.
+ */
+jobs: Array<GitHubWorkflowJobResponse>, 
+/**
+ * Set when Scope has no jobs for the run because GitHub could not be read.
+ */
+jobs_unavailable: string | null, };
+
+export type GitHubWorkflowJobResponse = { id: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null, 
+/**
+ * The job on GitHub, which keeps its whole log.
+ */
+html_url: string, steps: Array<GitHubWorkflowStepResponse>, };
+
+export type GitHubWorkflowStepResponse = { number: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null, };
+
+export type GitHubWorkflowJobLogResponse = { 
+/**
+ * `None` when GitHub no longer keeps the log.
+ */
+text: string | null, 
+/**
+ * Whether `text` is only the end of a longer log.
+ */
+truncated: boolean, };
+
 export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null, };
 
 export type HistoryEntryRequest = { view: ViewId | null, };
@@ -503,7 +531,14 @@ export type RequestGitHubPushResponse = { state: RequestGitHubPushState, branch:
  */
 error: string | null, };
 
-export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null, };
+export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null, 
+/**
+ * The workflow run and job on Scope's run page that answer the
+ * check, when it is a GitHub Actions job the viewer may open there.
+ */
+run: RequestCheckRunResponse | null, };
+
+export type RequestCheckRunResponse = { run_id: string, job_id: string, };
 
 export type RequestChecksResponse = { request_id: string, head_oid: GitOid, 
 /**
@@ -610,7 +645,7 @@ export type CreateRequestDiscussionReplyRequest = { body_markdown: string, clien
 
 export type MarkRequestDiscussionReadRequest = { through_position: number, };
 
-export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | { "RepositoryChanged": { reason: string, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, view: ViewId, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, view: ViewId, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
+export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | { "GitHubWorkflowRunChanged": { github_run_id: number, } } | { "RepositoryChanged": { reason: string, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, view: ViewId, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, view: ViewId, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
 
 export type RunChangeKind = "Created" | "StatusChanged" | "LogsAppended";
 
@@ -685,6 +720,8 @@ export const ApiRouteTemplates = {
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
   repoGitHubSetupCheck: "/v1/repos/{owner}/{repo}/github/setup-check",
   repoGitHubWorkflowRuns: "/v1/repos/{owner}/{repo}/github/workflow-runs",
+  repoGitHubWorkflowRun: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}",
+  repoGitHubWorkflowJobLog: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}/jobs/{job_id}/log",
   repoGitHubRunImport: "/v1/repos/{owner}/{repo}/github/run-import",
   githubSetup: "/v1/github/setup",
   repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",

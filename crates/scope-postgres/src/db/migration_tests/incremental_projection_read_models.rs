@@ -11,7 +11,7 @@ async fn read_models_record_a_consistent_fold_position_and_own_their_entries() {
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);
         INSERT INTO scope_repositories (id,owner_handle,name,owner_user_id,publication_state,
             change_version,content_version,repo_config,policy,incarnation_id)
-            VALUES ('owner/one','owner','one','owner','Ready',0,0,'{}','{}','repoi_m0073_one');
+            VALUES ('owner/one','owner','one','owner','Ready',0,0,'{}','{}','repoi_m0074_one');
         INSERT INTO scope_projection_read_models (repo_id,audience,repo_version,identity_version,
             history_version,folded_commits,folded_change_sets,last_commit_id,last_change_set_id,
             projected_commits,last_projected_id,head_oid,file_count,visible_files,

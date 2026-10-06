@@ -415,6 +415,7 @@ fn check_line(check: &RequestCheckResponse) -> String {
             status,
             conclusion,
             details_url,
+            run: _,
         } => {
             let state = match (status, conclusion) {
                 (None, _) => "no run yet",

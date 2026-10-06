@@ -41,6 +41,7 @@ test('a GitHub check shows its conclusion, then its status, and links GitHub', (
     details_url: status ? 'https://github.com/o/r/runs/1' : null,
     name: 'ci / test',
     provider: 'github',
+    run: null,
     status,
   })
   assert.deepEqual(requestCheckRow(github('completed', 'timed_out')), {

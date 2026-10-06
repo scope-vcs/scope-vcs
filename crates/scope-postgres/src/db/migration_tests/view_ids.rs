@@ -5,7 +5,7 @@ async fn old_view_values_and_documents_migrate_to_named_views() {
     let (_target, db, _lease) = isolated_database().await;
     let previous_count = migrations::Migrator::migrations()
         .iter()
-        .position(|migration| migration.name() == "m0074_view_ids")
+        .position(|migration| migration.name() == "m0075_view_ids")
         .unwrap();
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await

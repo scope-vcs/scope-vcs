@@ -155,6 +155,10 @@ export type RepoGitHubWorkflowRunsInput = RepoParams & {
   after?: string
 }
 
+export type RepoGitHubWorkflowJobLogInput = RunActionInput & {
+  job_id: string
+}
+
 export type RepoInviteTokenInput = {
   token: string
 }

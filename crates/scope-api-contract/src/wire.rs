@@ -443,6 +443,10 @@ pub enum RepoChangeKind {
     DependenciesChanged,
     /// GitHub reported a workflow run of the connected repository.
     GitHubWorkflowRunsChanged,
+    /// GitHub reported a job of this workflow run.
+    GitHubWorkflowRunChanged {
+        github_run_id: u64,
+    },
     RepositoryChanged {
         reason: String,
     },

@@ -32,6 +32,10 @@ pub(crate) enum GitHubWebhookEvent {
         commit_oid: String,
         workflow_run_id: Option<u64>,
     },
+    WorkflowJobChanged {
+        github_repository_id: u64,
+        job_id: u64,
+    },
     RepositoryVisibilityChanged {
         github_repository_id: u64,
     },
@@ -69,6 +73,17 @@ impl GitHubWebhookEvent {
                     github_repository_id: repository.id,
                     commit_oid: subject.head_sha,
                     workflow_run_id: subject.id.filter(|_| event == "workflow_run"),
+                })
+            }
+            "workflow_job" => {
+                let payload: WorkflowJobPayload = payload(body)?;
+                let (Some(repository), Some(job)) = (payload.repository, payload.workflow_job)
+                else {
+                    return Ok(Self::Ignored);
+                };
+                Ok(Self::WorkflowJobChanged {
+                    github_repository_id: repository.id,
+                    job_id: job.id,
                 })
             }
             "installation" => {
@@ -162,6 +177,17 @@ struct ChecksPayload {
     check_run: Option<ChecksSubject>,
     check_suite: Option<ChecksSubject>,
     workflow_run: Option<ChecksSubject>,
+}
+
+#[derive(Deserialize)]
+struct WorkflowJobPayload {
+    repository: Option<Repository>,
+    workflow_job: Option<WorkflowJob>,
+}
+
+#[derive(Deserialize)]
+struct WorkflowJob {
+    id: u64,
 }
 
 #[derive(Deserialize)]
@@ -287,6 +313,28 @@ mod tests {
         }
         assert_eq!(
             parse(serde_json::json!({ "action": "renamed", "repository": { "id": 42 } })),
+            GitHubWebhookEvent::Ignored
+        );
+    }
+
+    #[test]
+    fn job_events_name_the_repository_and_job_to_read_again() {
+        let parse = |body: serde_json::Value| {
+            GitHubWebhookEvent::parse("workflow_job", body.to_string().as_bytes()).unwrap()
+        };
+        assert_eq!(
+            parse(serde_json::json!({
+                "action": "in_progress",
+                "repository": { "id": 42 },
+                "workflow_job": { "id": 7, "run_id": 9 },
+            })),
+            GitHubWebhookEvent::WorkflowJobChanged {
+                github_repository_id: 42,
+                job_id: 7
+            }
+        );
+        assert_eq!(
+            parse(serde_json::json!({ "action": "queued", "repository": { "id": 42 } })),
             GitHubWebhookEvent::Ignored
         );
     }

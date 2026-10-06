@@ -238,6 +238,7 @@ fn event_for_access(
         RepoChangeKind::RunChanged { .. }
             | RepoChangeKind::DependenciesChanged
             | RepoChangeKind::GitHubWorkflowRunsChanged
+            | RepoChangeKind::GitHubWorkflowRunChanged { .. }
     ) {
         return None;
     }
