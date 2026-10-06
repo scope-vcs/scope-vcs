@@ -15,6 +15,7 @@ use crate::{
 };
 use scope_domain::{
     content::SourceBlob,
+    repo_config::RepoConfig,
     repository::RepositoryIncarnation,
     requests::{
         Request, RequestAudience, RequestRevisionGitFacts, canonical_request_ref,
@@ -281,6 +282,7 @@ pub(crate) struct PersistedRequestRef {
 pub(crate) async fn persist_request_ref_to_store(
     state: &AppState,
     git: &RepositoryGit,
+    repo_config: &RepoConfig,
     staging_repo: &FsPath,
     request: &Request,
     update: &RequestRefUpdate,
@@ -298,6 +300,7 @@ pub(crate) async fn persist_request_ref_to_store(
         RequestAudience::Public => Some(
             ensure_public_request_ref_is_public_safe(
                 git,
+                repo_config,
                 state,
                 staging_repo,
                 &update.new_head_oid,

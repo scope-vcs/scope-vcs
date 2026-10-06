@@ -39,10 +39,13 @@ pub enum ProjectionIdentityError {
 pub fn projection_head_oid(
     projection: &Projection,
 ) -> Result<Option<String>, ProjectionIdentityError> {
-    if projection.commits.is_empty() {
-        return Ok(None);
-    }
+    Ok(projection_commit_oids(projection)?.pop())
+}
 
+pub fn projection_commit_oids(
+    projection: &Projection,
+) -> Result<Vec<String>, ProjectionIdentityError> {
+    let mut commit_oids = Vec::with_capacity(projection.commits.len());
     let mut tree = Tree::default();
     let mut parent_oid: Option<String> = None;
     let mut native_range: Option<NativeRange> = None;
@@ -137,13 +140,14 @@ pub fn projection_head_oid(
                 oid
             }
         });
+        commit_oids.extend(parent_oid.clone());
     }
 
     if let Some(range) = native_range {
         validate_native_range(range, &tree.oid()?)?;
     }
 
-    Ok(parent_oid)
+    Ok(commit_oids)
 }
 
 struct NativeRange {
@@ -468,6 +472,16 @@ mod tests {
         assert_eq!(
             projection_head_oid(&mixed).unwrap(),
             Some(materialize_with_git(&mixed, &blobs))
+        );
+        let commit_oids = projection_commit_oids(&mixed).unwrap();
+        assert_eq!(
+            commit_oids[..2],
+            projection_commit_oids(&preserved).unwrap()
+        );
+        assert_eq!(commit_oids[1], native_oid);
+        assert_eq!(
+            commit_oids.last().cloned(),
+            projection_head_oid(&mixed).unwrap()
         );
     }
 

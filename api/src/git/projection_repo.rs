@@ -10,7 +10,7 @@ use crate::{
 };
 use scope_domain::{
     content_ref::ContentRef,
-    projection::{Projection, ProjectionMaterialization},
+    projection::{Projection, ProjectionMaterialization, ProjectionViewKey},
     repository::RepositoryIncarnation,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
@@ -27,7 +27,7 @@ use std::{
 mod index;
 use index::ProjectionIndex;
 
-const PROJECTION_CACHE_SEMANTICS_VERSION: &str = "shared-projection-view-v2-native-commits";
+const PROJECTION_CACHE_SEMANTICS_VERSION: &str = "shared-projection-view-v3-head-oid";
 static PROJECTION_CACHE_ATTEMPT: AtomicU64 = AtomicU64::new(1);
 
 struct ProjectionBuildArtifacts {
@@ -51,7 +51,7 @@ fn projection_bare_repo_with_loader(
     load_content: impl Fn(&scope_domain::content::SourceBlob) -> Result<Vec<u8>, ApiError>,
 ) -> Result<PathBuf, ApiError> {
     let expected_head = scope_git::projection_head_oid(projection).map_err(ApiError::internal)?;
-    let cache_key = projection_cache_key(incarnation, projection);
+    let cache_key = projection_cache_key(incarnation, projection)?;
     let repo_path = cache_root.join(format!("{cache_key}.git"));
     if repo_path
         .join("refs")
@@ -386,7 +386,7 @@ pub(crate) async fn projection_bare_repo_for_state(
     git_pack_spans: &[scope_domain::repository::git::GitPackSpan],
 ) -> Result<GitRepoHandle, ApiError> {
     let cache_root = state.repository_engine.cache_root().to_path_buf();
-    let cache_key = projection_cache_key(Some(incarnation), projection);
+    let cache_key = projection_cache_key(Some(incarnation), projection)?;
     let repo_path = cache_root.join(format!("{cache_key}.git"));
     let repo_path_for_ready = repo_path.clone();
     let is_ready = move || projection_cache_is_ready(&repo_path_for_ready);
@@ -457,6 +457,29 @@ pub(crate) async fn projection_bare_repo_for_state(
         .await
 }
 
+pub(crate) fn cached_projection_repo(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    view_key: ProjectionViewKey,
+    head_oid: Option<&str>,
+) -> Result<Option<GitRepoHandle>, ApiError> {
+    let key = projection_cache_key_for_head(
+        Some(incarnation),
+        incarnation.repository_id(),
+        view_key,
+        head_oid,
+    );
+    let path = state
+        .repository_engine
+        .cache_root()
+        .join(format!("{key}.git"));
+    if !projection_cache_is_ready(&path) {
+        return Ok(None);
+    }
+    let repo = state.repository_engine.lease_derived(path)?;
+    Ok(projection_cache_is_ready(&repo).then_some(repo))
+}
+
 pub(crate) fn verify_projection_materialization(
     state: &AppState,
     projection: &Projection,
@@ -512,16 +535,36 @@ fn projection_cache_is_ready(repo_path: &FsPath) -> bool {
 fn projection_cache_key(
     incarnation: Option<&RepositoryIncarnation>,
     projection: &Projection,
-) -> String {
-    projection_cache_keys(incarnation, projection)
+) -> Result<String, ApiError> {
+    Ok(projection_cache_keys(incarnation, projection)?
         .pop()
-        .expect("empty projection has a cache key")
+        .expect("empty projection has a cache key"))
 }
 
 fn projection_cache_keys(
     incarnation: Option<&RepositoryIncarnation>,
     projection: &Projection,
-) -> Vec<String> {
+) -> Result<Vec<String>, ApiError> {
+    let commit_oids = scope_git::projection_commit_oids(projection).map_err(ApiError::internal)?;
+    Ok(std::iter::once(None)
+        .chain(commit_oids.iter().map(|oid| Some(oid.as_str())))
+        .map(|head_oid| {
+            projection_cache_key_for_head(
+                incarnation,
+                &projection.repo_id,
+                projection.view_key,
+                head_oid,
+            )
+        })
+        .collect())
+}
+
+pub(crate) fn projection_cache_key_for_head(
+    incarnation: Option<&RepositoryIncarnation>,
+    repo_id: &str,
+    view_key: ProjectionViewKey,
+    head_oid: Option<&str>,
+) -> String {
     let mut hasher = Sha1::new();
     hash_field(
         &mut hasher,
@@ -535,52 +578,14 @@ fn projection_cache_keys(
             incarnation.incarnation_id().as_bytes(),
         );
     }
-    hash_field(&mut hasher, b"repo", projection.repo_id.as_bytes());
+    hash_field(&mut hasher, b"repo", repo_id.as_bytes());
+    hash_field(&mut hasher, b"view", view_key.as_str().as_bytes());
     hash_field(
         &mut hasher,
-        b"view",
-        projection.view_key.as_str().as_bytes(),
+        b"head",
+        head_oid.unwrap_or_default().as_bytes(),
     );
-    let mut keys = vec![hex::encode(hasher.clone().finalize())];
-    for commit in &projection.commits {
-        hash_field(&mut hasher, b"commit", commit.projected_id.as_bytes());
-        hash_field(&mut hasher, b"logical", commit.logical_commit_id.as_bytes());
-        if let Some(parent) = &commit.parent_projected_id {
-            hash_field(&mut hasher, b"parent", parent.as_bytes());
-        }
-        hash_field(&mut hasher, b"message", commit.message.as_bytes());
-        match &commit.materialization {
-            ProjectionMaterialization::Generate => {
-                hash_field(&mut hasher, b"materialization", b"generate");
-            }
-            ProjectionMaterialization::PreserveGitCommit {
-                oid,
-                parent_oids,
-                tree_oid,
-            } => {
-                hash_field(&mut hasher, b"materialization", b"preserve");
-                hash_field(&mut hasher, b"native_oid", oid.as_bytes());
-                hash_field(&mut hasher, b"native_tree", tree_oid.as_bytes());
-                for parent_oid in parent_oids {
-                    hash_field(&mut hasher, b"native_parent", parent_oid.as_bytes());
-                }
-            }
-        }
-        for change in &commit.changes {
-            hash_field(&mut hasher, b"path", change.path.as_str().as_bytes());
-            match &change.new_content {
-                Some(blob) => {
-                    hash_field(&mut hasher, b"sha256", blob.sha256.as_bytes());
-                    hash_field(&mut hasher, b"git_oid", blob.git_oid.as_bytes());
-                    hash_field(&mut hasher, b"mode", blob.git_file_mode.as_bytes());
-                    hash_field(&mut hasher, b"size", blob.size_bytes.to_string().as_bytes());
-                }
-                None => hash_field(&mut hasher, b"delete", b""),
-            }
-        }
-        keys.push(hex::encode(hasher.clone().finalize()));
-    }
-    keys
+    hex::encode(hasher.finalize())
 }
 
 struct ProjectionPrefix {
@@ -593,7 +598,7 @@ fn cached_projection_prefix(
     incarnation: &RepositoryIncarnation,
     projection: &Projection,
 ) -> Result<Option<ProjectionPrefix>, ApiError> {
-    let keys = projection_cache_keys(Some(incarnation), projection);
+    let keys = projection_cache_keys(Some(incarnation), projection)?;
     for count in (1..projection.commits.len()).rev() {
         if matches!(
             projection.commits[count - 1].materialization,
