@@ -12,6 +12,7 @@ import {
   historyEntryKindLabel,
 } from './history-row-labels'
 import { ViewsChanges, VisibilityChanges, type HistoryVisibilityChange } from './history-visibility-changes'
+import { NativeCommits } from './history-native-commits'
 import { useRepoViews } from '@/features/repo-detail/repo-layout-context'
 import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 import type { ReactNode } from 'react'
@@ -64,6 +65,7 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
         selectedId={selectedVisibilityId}
         view={detail.view}
       />
+      <NativeCommits detail={detail} />
       <ChangedFilesWorkbench
         {...props}
         expandFolders
