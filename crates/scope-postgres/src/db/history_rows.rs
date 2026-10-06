@@ -101,6 +101,15 @@ where
         )
         .await?;
     }
+    if commits_rewritten || visibility_change_sets_rewritten {
+        // Rewritten history cannot be folded onto read models built from the
+        // old history; the next rebuild starts over.
+        super::projection_read_models::reset_live_projection_read_models(
+            conn,
+            &after_graph.repo_id,
+        )
+        .await?;
+    }
     if commits_rewritten || after_graph.commits.len() != before_graph.commits.len() + 1 {
         if before_live_files != after_live_files {
             replace_live_files(conn, &after_graph.repo_id, after_live_files).await?;
@@ -117,6 +126,192 @@ where
         .await?;
     }
     Ok(())
+}
+
+/// The commits and visibility change sets appended after a fold position.
+pub struct AppendedRepositoryHistory {
+    pub commits: Vec<LogicalCommit>,
+    pub visibility_change_sets: Vec<VisibilityChangeSet>,
+}
+
+/// Whether the repository's history still begins with what `position` folded.
+pub(super) async fn history_position_matches<C>(
+    conn: &C,
+    repo_id: &str,
+    position: &entities::projection_read_model::FoldPosition,
+) -> Result<bool, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let last_commit_id = match position.commits.checked_sub(1) {
+        Some(ordinal) => entities::logical_commit::Entity::find()
+            .filter(entities::logical_commit::Column::RepoId.eq(repo_id.to_string()))
+            .filter(
+                entities::logical_commit::Column::Ordinal
+                    .eq(usize_to_i64(ordinal, "commit ordinal")?),
+            )
+            .one(conn)
+            .await
+            .map_err(PostgresError::internal)?
+            .map(|row| row.id),
+        None => None,
+    };
+    let last_change_set_id = match position.change_sets.checked_sub(1) {
+        Some(ordinal) => entities::visibility_change_set::Entity::find()
+            .filter(entities::visibility_change_set::Column::RepoId.eq(repo_id.to_string()))
+            .filter(
+                entities::visibility_change_set::Column::Ordinal
+                    .eq(usize_to_i64(ordinal, "change set ordinal")?),
+            )
+            .one(conn)
+            .await
+            .map_err(PostgresError::internal)?
+            .map(|row| row.id),
+        None => None,
+    };
+    Ok(last_commit_id.is_some() == (position.commits > 0)
+        && last_commit_id == position.last_commit_id
+        && last_change_set_id.is_some() == (position.change_sets > 0)
+        && last_change_set_id == position.last_change_set_id)
+}
+
+/// Loads the commits and change sets at or after the given ordinals.
+pub(super) async fn load_repository_history_after<C>(
+    conn: &C,
+    repo_id: &str,
+    commits_from: usize,
+    change_sets_from: usize,
+) -> Result<AppendedRepositoryHistory, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let commit_rows = entities::logical_commit::Entity::find()
+        .filter(entities::logical_commit::Column::RepoId.eq(repo_id.to_string()))
+        .filter(
+            entities::logical_commit::Column::Ordinal
+                .gte(usize_to_i64(commits_from, "commit ordinal")?),
+        )
+        .order_by_asc(entities::logical_commit::Column::Ordinal)
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    let mut changes_by_commit = BTreeMap::<String, Vec<FileChange>>::new();
+    if !commit_rows.is_empty() {
+        for row in entities::file_change::Entity::find()
+            .filter(entities::file_change::Column::RepoId.eq(repo_id.to_string()))
+            .filter(
+                entities::file_change::Column::CommitId
+                    .is_in(commit_rows.iter().map(|row| row.id.clone())),
+            )
+            .order_by_asc(entities::file_change::Column::CommitId)
+            .order_by_asc(entities::file_change::Column::Ordinal)
+            .all(conn)
+            .await
+            .map_err(PostgresError::internal)?
+        {
+            changes_by_commit
+                .entry(row.commit_id.clone())
+                .or_default()
+                .push(file_change_from_row(row)?);
+        }
+    }
+    let commits = commit_rows
+        .into_iter()
+        .map(|row| {
+            let changes = changes_by_commit.remove(&row.id).unwrap_or_default();
+            logical_commit_from_row(row, changes)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let set_rows = entities::visibility_change_set::Entity::find()
+        .filter(entities::visibility_change_set::Column::RepoId.eq(repo_id.to_string()))
+        .filter(
+            entities::visibility_change_set::Column::Ordinal
+                .gte(usize_to_i64(change_sets_from, "change set ordinal")?),
+        )
+        .order_by_asc(entities::visibility_change_set::Column::Ordinal)
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?;
+    let mut changes_by_set = BTreeMap::<String, Vec<VisibilityChange>>::new();
+    if !set_rows.is_empty() {
+        for row in entities::visibility_change::Entity::find()
+            .filter(entities::visibility_change::Column::RepoId.eq(repo_id.to_string()))
+            .filter(
+                entities::visibility_change::Column::ChangeSetId
+                    .is_in(set_rows.iter().map(|row| row.id.clone())),
+            )
+            .order_by_asc(entities::visibility_change::Column::ChangeSetId)
+            .order_by_asc(entities::visibility_change::Column::Ordinal)
+            .all(conn)
+            .await
+            .map_err(PostgresError::internal)?
+        {
+            changes_by_set
+                .entry(row.change_set_id.clone())
+                .or_default()
+                .push(visibility_change_from_row(row)?);
+        }
+    }
+    let visibility_change_sets = set_rows
+        .into_iter()
+        .map(|row| {
+            let changes = changes_by_set.remove(&row.id).unwrap_or_default();
+            visibility_change_set_from_row(row, changes)
+        })
+        .collect::<Vec<_>>();
+    Ok(AppendedRepositoryHistory {
+        commits,
+        visibility_change_sets,
+    })
+}
+
+fn file_change_from_row(row: entities::file_change::Model) -> Result<FileChange, PostgresError> {
+    Ok(FileChange {
+        path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
+        old_content: decode_optional(row.old_content)?,
+        new_content: decode_optional(row.new_content)?,
+        visibility: decode_enum(row.visibility)?,
+    })
+}
+
+fn logical_commit_from_row(
+    row: entities::logical_commit::Model,
+    changes: Vec<FileChange>,
+) -> Result<LogicalCommit, PostgresError> {
+    Ok(LogicalCommit {
+        occurred_at_unix: row.occurred_at_unix,
+        id: row.id,
+        origin: serde_json::from_value(row.origin).map_err(PostgresError::internal)?,
+        author_id: row.author_id,
+        message: row.message,
+        changes,
+    })
+}
+
+fn visibility_change_from_row(
+    row: entities::visibility_change::Model,
+) -> Result<VisibilityChange, PostgresError> {
+    Ok(VisibilityChange {
+        path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
+        old_visibility: decode_enum(row.old_visibility)?,
+        new_visibility: decode_enum(row.new_visibility)?,
+        current_content: decode_optional(row.current_content)?,
+    })
+}
+
+fn visibility_change_set_from_row(
+    row: entities::visibility_change_set::Model,
+    changes: Vec<VisibilityChange>,
+) -> VisibilityChangeSet {
+    VisibilityChangeSet {
+        occurred_at_unix: row.occurred_at_unix,
+        id: row.id,
+        anchor_commit_id: row.anchor_commit_id,
+        source_update_id: row.source_update_id,
+        author_id: row.author_id,
+        changes,
+    }
 }
 
 pub async fn load_repository_histories<C>(
@@ -164,29 +359,22 @@ where
             .await
             .map_err(PostgresError::internal)?
         {
+            let key = (row.repo_id.clone(), row.commit_id.clone());
             changes_by_commit
-                .entry((row.repo_id.clone(), row.commit_id.clone()))
+                .entry(key)
                 .or_default()
-                .push(FileChange {
-                    path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
-                    old_content: decode_optional(row.old_content)?,
-                    new_content: decode_optional(row.new_content)?,
-                    visibility: decode_enum(row.visibility)?,
-                });
+                .push(file_change_from_row(row)?);
         }
     }
     for row in commits {
         if let Some(history) = histories.get_mut(&row.repo_id) {
-            history.graph.commits.push(LogicalCommit {
-                occurred_at_unix: row.occurred_at_unix,
-                id: row.id.clone(),
-                origin: serde_json::from_value(row.origin).map_err(PostgresError::internal)?,
-                author_id: row.author_id,
-                message: row.message,
-                changes: changes_by_commit
-                    .remove(&(row.repo_id.clone(), row.id.clone()))
-                    .unwrap_or_default(),
-            });
+            let changes = changes_by_commit
+                .remove(&(row.repo_id.clone(), row.id.clone()))
+                .unwrap_or_default();
+            history
+                .graph
+                .commits
+                .push(logical_commit_from_row(row, changes)?);
         }
     }
 
@@ -208,28 +396,21 @@ where
             .await
             .map_err(PostgresError::internal)?
         {
+            let key = (row.repo_id.clone(), row.change_set_id.clone());
             changes_by_set
-                .entry((row.repo_id.clone(), row.change_set_id.clone()))
+                .entry(key)
                 .or_default()
-                .push(VisibilityChange {
-                    path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
-                    old_visibility: decode_enum(row.old_visibility)?,
-                    new_visibility: decode_enum(row.new_visibility)?,
-                    current_content: decode_optional(row.current_content)?,
-                });
+                .push(visibility_change_from_row(row)?);
         }
     }
     for row in set_rows {
         if let Some(history) = histories.get_mut(&row.repo_id) {
-            let key = (row.repo_id.clone(), row.id.clone());
-            history.visibility_change_sets.push(VisibilityChangeSet {
-                occurred_at_unix: row.occurred_at_unix,
-                id: row.id,
-                anchor_commit_id: row.anchor_commit_id,
-                source_update_id: row.source_update_id,
-                author_id: row.author_id,
-                changes: changes_by_set.remove(&key).unwrap_or_default(),
-            });
+            let changes = changes_by_set
+                .remove(&(row.repo_id.clone(), row.id.clone()))
+                .unwrap_or_default();
+            history
+                .visibility_change_sets
+                .push(visibility_change_set_from_row(row, changes));
         }
     }
     for row in entities::live_file::Entity::find()

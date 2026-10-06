@@ -1,6 +1,7 @@
 use crate::db::{
     CatalogFixture, CreateRepositoryInviteMutation, MetadataStore, RepositoryMutation,
-    TestDatabaseTarget, generated_ids::test_generated_id, history_reads::history_view_metadata,
+    TestDatabaseTarget, generated_ids::test_generated_id,
+    projection_read_models::live_projection_read_model,
 };
 use scope_domain::{
     account::UserAccount,
@@ -139,7 +140,7 @@ async fn invites_and_metadata_edits_keep_projections_and_history_current() {
     );
     for audience in [ProjectionViewKey::Private, ProjectionViewKey::Public] {
         assert!(
-            history_view_metadata(
+            live_projection_read_model(
                 store.db.as_ref(),
                 &repo.record.id,
                 content_version,

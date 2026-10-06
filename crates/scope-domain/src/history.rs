@@ -8,17 +8,17 @@ use crate::{
     visibility_changes::VisibilityChangeSet,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod feed;
 mod generation;
 mod projection_history;
 
 pub use feed::HistoryFeed;
-use generation::history_generation;
+use generation::{history_generation_after, history_generation_start};
 use projection_history::{ProjectedAction, ProjectionHistory};
 
-pub const HISTORY_GENERATION_VERSION: &str = "v7";
+pub const HISTORY_GENERATION_VERSION: &str = "v8";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FileChangeKind {
@@ -90,7 +90,50 @@ pub fn history_view_from_projection(
 ) -> HistoryView {
     let repo_id = projection.repo_id.clone();
     let view_key = projection.view_key;
-    let projected = ProjectionHistory::replay(projection);
+    let mut cursor = HistoryCursor::start(&repo_id, view_key);
+    let mut entries = history_entries_after(
+        &mut cursor,
+        BTreeMap::new(),
+        projection,
+        graph,
+        visibility_change_sets,
+    );
+    entries.reverse();
+    HistoryView {
+        repo_id,
+        view_key: view_key.as_str().to_string(),
+        generation: cursor.generation,
+        entries,
+    }
+}
+
+/// Where a view's history stands after the entries produced so far.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryCursor {
+    pub last_entry_id: Option<String>,
+    pub generation: String,
+}
+
+impl HistoryCursor {
+    pub fn start(repo_id: &str, view_key: ProjectionViewKey) -> Self {
+        Self {
+            last_entry_id: None,
+            generation: history_generation_start(repo_id, view_key),
+        }
+    }
+}
+
+/// The history entries, oldest first, for a projection of commits and change
+/// sets appended after `cursor`. `tree` holds the view's files before them.
+pub fn history_entries_after(
+    cursor: &mut HistoryCursor,
+    tree: BTreeMap<ScopePath, SourceBlob>,
+    projection: Projection,
+    graph: &SourceGraph,
+    visibility_change_sets: &[VisibilityChangeSet],
+) -> Vec<HistoryEntry> {
+    let view_key = projection.view_key;
+    let projected = ProjectionHistory::replay(tree, projection);
     let logical_ids = graph
         .commits
         .iter()
@@ -172,19 +215,11 @@ pub fn history_view_from_projection(
             view_key,
         );
     }
-    let mut parent_id = None;
     for entry in &mut entries {
-        entry.parent_id = parent_id;
-        parent_id = Some(entry.id.clone());
+        entry.parent_id = cursor.last_entry_id.replace(entry.id.clone());
+        cursor.generation = history_generation_after(&cursor.generation, entry);
     }
-    let generation = history_generation(&repo_id, view_key, &entries);
-    entries.reverse();
-    HistoryView {
-        repo_id,
-        view_key: view_key.as_str().to_string(),
-        generation,
-        entries,
-    }
+    entries
 }
 
 fn action_metadata(

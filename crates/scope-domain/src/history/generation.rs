@@ -2,11 +2,8 @@ use super::{HISTORY_GENERATION_VERSION, HistoryEntry, HistoryEntryKind};
 use crate::{content::SourceBlob, policy::Visibility, projection::ProjectionViewKey};
 use sha2::{Digest, Sha256};
 
-pub(super) fn history_generation(
-    repo_id: &str,
-    view_key: ProjectionViewKey,
-    entries: &[HistoryEntry],
-) -> String {
+/// The generation of a view's history before any entry.
+pub(super) fn history_generation_start(repo_id: &str, view_key: ProjectionViewKey) -> String {
     let mut hasher = Sha256::new();
     hash_field(
         &mut hasher,
@@ -15,68 +12,74 @@ pub(super) fn history_generation(
     );
     hash_field(&mut hasher, b"repo", repo_id.as_bytes());
     hash_field(&mut hasher, b"view", view_key.as_str().as_bytes());
-    for entry in entries {
-        hash_field(&mut hasher, b"entry", entry.id.as_bytes());
-        hash_field(&mut hasher, b"source", entry.source_id.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+/// Chains one more entry onto a generation, so appending to a history never
+/// rehashes the entries before it.
+pub(super) fn history_generation_after(generation: &str, entry: &HistoryEntry) -> String {
+    let mut hasher = Sha256::new();
+    hash_field(&mut hasher, b"generation", generation.as_bytes());
+    hash_field(&mut hasher, b"entry", entry.id.as_bytes());
+    hash_field(&mut hasher, b"source", entry.source_id.as_bytes());
+    hash_field(
+        &mut hasher,
+        b"kind",
+        match entry.kind {
+            HistoryEntryKind::Push => b"push",
+            HistoryEntryKind::MergedRequest => b"merged_request",
+            HistoryEntryKind::VisibilityChange => b"visibility_change",
+        },
+    );
+    hash_optional_field(&mut hasher, b"parent", entry.parent_id.as_deref());
+    hash_optional_field(&mut hasher, b"author", entry.author.as_deref());
+    hash_optional_field(
+        &mut hasher,
+        b"occurred_at",
+        entry
+            .occurred_at_unix
+            .map(|time| time.to_string())
+            .as_deref(),
+    );
+    hash_field(&mut hasher, b"message", entry.message.as_bytes());
+    for commit in &entry.native_commits {
+        hash_field(&mut hasher, b"native_oid", commit.oid.as_bytes());
+        hash_field(&mut hasher, b"native_tree", commit.tree_oid.as_bytes());
+        for parent in &commit.parent_oids {
+            hash_field(&mut hasher, b"native_parent", parent.as_bytes());
+        }
+    }
+    for file in &entry.files {
+        hash_field(&mut hasher, b"path", file.path.as_str().as_bytes());
         hash_field(
             &mut hasher,
-            b"kind",
-            match entry.kind {
-                HistoryEntryKind::Push => b"push",
-                HistoryEntryKind::MergedRequest => b"merged_request",
-                HistoryEntryKind::VisibilityChange => b"visibility_change",
-            },
+            b"visibility",
+            visibility_bytes(file.visibility),
         );
-        hash_optional_field(&mut hasher, b"parent", entry.parent_id.as_deref());
-        hash_optional_field(&mut hasher, b"author", entry.author.as_deref());
-        hash_optional_field(
+        hash_optional_blob(&mut hasher, b"old", file.old_content.as_ref());
+        hash_optional_blob(&mut hasher, b"new", file.new_content.as_ref());
+    }
+    for change in &entry.visibility_changes {
+        hash_field(&mut hasher, b"visibility_change_id", change.id.as_bytes());
+        if let Some(file) = &change.file {
+            hash_optional_blob(&mut hasher, b"visibility_old", file.old_content.as_ref());
+            hash_optional_blob(&mut hasher, b"visibility_new", file.new_content.as_ref());
+        }
+        hash_field(
             &mut hasher,
-            b"occurred_at",
-            entry
-                .occurred_at_unix
-                .map(|time| time.to_string())
-                .as_deref(),
+            b"visibility_path",
+            change.path.as_str().as_bytes(),
         );
-        hash_field(&mut hasher, b"message", entry.message.as_bytes());
-        for commit in &entry.native_commits {
-            hash_field(&mut hasher, b"native_oid", commit.oid.as_bytes());
-            hash_field(&mut hasher, b"native_tree", commit.tree_oid.as_bytes());
-            for parent in &commit.parent_oids {
-                hash_field(&mut hasher, b"native_parent", parent.as_bytes());
-            }
-        }
-        for file in &entry.files {
-            hash_field(&mut hasher, b"path", file.path.as_str().as_bytes());
-            hash_field(
-                &mut hasher,
-                b"visibility",
-                visibility_bytes(file.visibility),
-            );
-            hash_optional_blob(&mut hasher, b"old", file.old_content.as_ref());
-            hash_optional_blob(&mut hasher, b"new", file.new_content.as_ref());
-        }
-        for change in &entry.visibility_changes {
-            hash_field(&mut hasher, b"visibility_change_id", change.id.as_bytes());
-            if let Some(file) = &change.file {
-                hash_optional_blob(&mut hasher, b"visibility_old", file.old_content.as_ref());
-                hash_optional_blob(&mut hasher, b"visibility_new", file.new_content.as_ref());
-            }
-            hash_field(
-                &mut hasher,
-                b"visibility_path",
-                change.path.as_str().as_bytes(),
-            );
-            hash_field(
-                &mut hasher,
-                b"old_visibility",
-                visibility_bytes(change.old_visibility),
-            );
-            hash_field(
-                &mut hasher,
-                b"new_visibility",
-                visibility_bytes(change.new_visibility),
-            );
-        }
+        hash_field(
+            &mut hasher,
+            b"old_visibility",
+            visibility_bytes(change.old_visibility),
+        );
+        hash_field(
+            &mut hasher,
+            b"new_visibility",
+            visibility_bytes(change.new_visibility),
+        );
     }
     hex::encode(hasher.finalize())
 }

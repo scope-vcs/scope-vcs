@@ -1,8 +1,9 @@
 use crate::{GitTreePath, GitTreePathError};
 use scope_domain::{
-    content::is_supported_git_file_mode,
+    content::{SourceBlob, is_supported_git_file_mode},
     content_ref::git_object_oid,
-    projection::{Projection, ProjectionMaterialization},
+    policy::ScopePath,
+    projection::{ProjectedCommit, Projection, ProjectionMaterialization},
 };
 use std::{
     cmp::Ordering,
@@ -39,111 +40,139 @@ pub enum ProjectionIdentityError {
 pub fn projection_head_oid(
     projection: &Projection,
 ) -> Result<Option<String>, ProjectionIdentityError> {
-    if projection.commits.is_empty() {
-        return Ok(None);
-    }
+    let mut head = ProjectionHead::default();
+    head.apply(&projection.commits)?;
+    Ok(head.oid)
+}
 
-    let mut tree = Tree::default();
-    let mut parent_oid: Option<String> = None;
-    let mut native_range: Option<NativeRange> = None;
-    for commit in &projection.commits {
-        if native_range
-            .as_ref()
-            .is_some_and(|range: &NativeRange| range.logical_commit_id != commit.logical_commit_id)
-        {
-            validate_native_range(
-                native_range.take().expect("native range checked"),
-                &tree.oid()?,
+/// A view's head commit and the tree it holds, so commits appended to the
+/// view's projection can be identified without replaying the ones before.
+#[derive(Default)]
+pub struct ProjectionHead {
+    tree: Tree,
+    pub oid: Option<String>,
+}
+
+impl ProjectionHead {
+    pub fn resume<'a>(
+        oid: Option<String>,
+        files: impl IntoIterator<Item = (&'a ScopePath, &'a SourceBlob)>,
+    ) -> Result<Self, ProjectionIdentityError> {
+        let mut tree = Tree::default();
+        for (path, blob) in files {
+            let path = GitTreePath::from_scope_path(path)?;
+            tree.insert(
+                &path.as_str().split('/').collect::<Vec<_>>(),
+                tree_file(path.as_str(), blob)?,
             )?;
         }
+        Ok(Self { tree, oid })
+    }
 
-        let mut delta = BTreeMap::<GitTreePath, Option<TreeFile>>::new();
-        for change in &commit.changes {
-            let path = GitTreePath::from_scope_path(&change.path)?;
-            match &change.new_content {
-                Some(blob) => {
-                    if !is_supported_git_file_mode(&blob.git_file_mode) {
-                        return Err(ProjectionIdentityError::UnsupportedMode {
-                            path: change.path.as_str().to_string(),
-                            mode: blob.git_file_mode.clone(),
-                        });
+    pub fn apply(&mut self, commits: &[ProjectedCommit]) -> Result<(), ProjectionIdentityError> {
+        let Self {
+            tree,
+            oid: parent_oid,
+        } = self;
+        let mut native_range: Option<NativeRange> = None;
+        for commit in commits {
+            if native_range.as_ref().is_some_and(|range: &NativeRange| {
+                range.logical_commit_id != commit.logical_commit_id
+            }) {
+                validate_native_range(
+                    native_range.take().expect("native range checked"),
+                    &tree.oid()?,
+                )?;
+            }
+
+            let mut delta = BTreeMap::<GitTreePath, Option<TreeFile>>::new();
+            for change in &commit.changes {
+                let path = GitTreePath::from_scope_path(&change.path)?;
+                match &change.new_content {
+                    Some(blob) => {
+                        let file = tree_file(change.path.as_str(), blob)?;
+                        delta.insert(path, Some(file));
                     }
-                    delta.insert(
-                        path,
-                        Some(TreeFile {
-                            mode: blob.git_file_mode.clone(),
-                            oid: parse_oid(&blob.git_oid, "blob")?,
-                        }),
-                    );
-                }
-                None => {
-                    delta.insert(path, None);
+                    None => {
+                        delta.insert(path, None);
+                    }
                 }
             }
-        }
-        for (path, file) in &delta {
-            if file.is_none() {
-                tree.remove(&path.as_str().split('/').collect::<Vec<_>>());
+            for (path, file) in &delta {
+                if file.is_none() {
+                    tree.remove(&path.as_str().split('/').collect::<Vec<_>>());
+                }
             }
-        }
-        for (path, file) in delta {
-            if let Some(file) = file {
-                tree.insert(&path.as_str().split('/').collect::<Vec<_>>(), file)?;
+            for (path, file) in delta {
+                if let Some(file) = file {
+                    tree.insert(&path.as_str().split('/').collect::<Vec<_>>(), file)?;
+                }
             }
-        }
 
-        let tree_oid = tree.oid()?;
-        parent_oid = Some(match &commit.materialization {
-            ProjectionMaterialization::Generate => {
-                if let Some(range) = native_range.take() {
-                    validate_native_range(range, &tree_oid)?;
+            let tree_oid = tree.oid()?;
+            *parent_oid = Some(match &commit.materialization {
+                ProjectionMaterialization::Generate => {
+                    if let Some(range) = native_range.take() {
+                        validate_native_range(range, &tree_oid)?;
+                    }
+                    generated_commit_oid(
+                        &tree_oid,
+                        parent_oid.as_deref(),
+                        &format!("{}\n", commit.message),
+                    )
                 }
-                generated_commit_oid(
-                    &tree_oid,
-                    parent_oid.as_deref(),
-                    &format!("{}\n", commit.message),
-                )
-            }
-            ProjectionMaterialization::PreserveGitCommit {
-                oid,
-                parent_oids,
-                tree_oid: expected_tree_oid,
-            } => {
-                if oid != &commit.projected_id {
-                    return Err(ProjectionIdentityError::PreservedCommitIdentityMismatch);
+                ProjectionMaterialization::PreserveGitCommit {
+                    oid,
+                    parent_oids,
+                    tree_oid: expected_tree_oid,
+                } => {
+                    if oid != &commit.projected_id {
+                        return Err(ProjectionIdentityError::PreservedCommitIdentityMismatch);
+                    }
+                    let oid = parse_oid(oid, "preserved commit")?;
+                    let expected_tree_oid = parse_oid(expected_tree_oid, "preserved tree")?;
+                    let oid = hex::encode(oid);
+                    let base_oid = parent_oid
+                        .as_ref()
+                        .ok_or(ProjectionIdentityError::MissingPreservedCommitBase)?;
+                    native_range.get_or_insert_with(|| NativeRange {
+                        logical_commit_id: commit.logical_commit_id.clone(),
+                        base_oid: base_oid.clone(),
+                        expected_tree_oid,
+                        descendants_of_base: BTreeSet::new(),
+                        head_descends_from_base: false,
+                    });
+                    let range = native_range.as_mut().expect("native range initialized");
+                    let descends_from_base = parent_oids.iter().any(|parent| {
+                        parent == &range.base_oid || range.descendants_of_base.contains(parent)
+                    });
+                    if descends_from_base {
+                        range.descendants_of_base.insert(oid.clone());
+                    }
+                    range.expected_tree_oid = expected_tree_oid;
+                    range.head_descends_from_base = descends_from_base;
+                    oid
                 }
-                let oid = parse_oid(oid, "preserved commit")?;
-                let expected_tree_oid = parse_oid(expected_tree_oid, "preserved tree")?;
-                let oid = hex::encode(oid);
-                let base_oid = parent_oid
-                    .as_ref()
-                    .ok_or(ProjectionIdentityError::MissingPreservedCommitBase)?;
-                native_range.get_or_insert_with(|| NativeRange {
-                    logical_commit_id: commit.logical_commit_id.clone(),
-                    base_oid: base_oid.clone(),
-                    expected_tree_oid,
-                    descendants_of_base: BTreeSet::new(),
-                    head_descends_from_base: false,
-                });
-                let range = native_range.as_mut().expect("native range initialized");
-                let descends_from_base = parent_oids.iter().any(|parent| {
-                    parent == &range.base_oid || range.descendants_of_base.contains(parent)
-                });
-                if descends_from_base {
-                    range.descendants_of_base.insert(oid.clone());
-                }
-                range.expected_tree_oid = expected_tree_oid;
-                range.head_descends_from_base = descends_from_base;
-                oid
-            }
+            });
+        }
+        if let Some(range) = native_range {
+            validate_native_range(range, &tree.oid()?)?;
+        }
+        Ok(())
+    }
+}
+
+fn tree_file(path: &str, blob: &SourceBlob) -> Result<TreeFile, ProjectionIdentityError> {
+    if !is_supported_git_file_mode(&blob.git_file_mode) {
+        return Err(ProjectionIdentityError::UnsupportedMode {
+            path: path.to_string(),
+            mode: blob.git_file_mode.clone(),
         });
     }
-
-    if let Some(range) = native_range {
-        validate_native_range(range, &tree.oid()?)?;
-    }
-
-    Ok(parent_oid)
+    Ok(TreeFile {
+        mode: blob.git_file_mode.clone(),
+        oid: parse_oid(&blob.git_oid, "blob")?,
+    })
 }
 
 struct NativeRange {

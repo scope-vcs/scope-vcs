@@ -118,9 +118,55 @@ impl ProjectionViewKey {
         }
     }
 
+    /// The file labels this view shows.
+    pub fn labels(self) -> &'static [Visibility] {
+        match self {
+            Self::Private => &[Visibility::Private, Visibility::Public],
+            Self::Public => &[Visibility::Public],
+        }
+    }
+
+    /// Whether this view shows a file with this label at this path.
+    pub fn shows(self, path: &ScopePath, label: Visibility) -> bool {
+        self.can_read_private_files()
+            || (self.labels().contains(&label) && !is_private_control_path(path))
+    }
+
     fn can_read_private_files(self) -> bool {
         matches!(self, Self::Private)
     }
+}
+
+/// Where a view's projection stands after the commits and visibility change
+/// sets folded so far. The default is the start of history.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProjectionCursor {
+    pub commit_count: usize,
+    pub last_projected_id: Option<String>,
+}
+
+impl ProjectionCursor {
+    fn next_id(&self, view_key: ProjectionViewKey, source_id: &str, appended: usize) -> String {
+        projected_id(view_key, source_id, self.commit_count + appended + 1)
+    }
+}
+
+/// Whether commits and change sets appended to a repository continue its
+/// projections from `last_folded_commit_id`. A change set that anchors or
+/// sources itself on an older commit changes history already projected, so
+/// the projections must be rebuilt from the start instead.
+pub fn projection_delta_appends(
+    last_folded_commit_id: Option<&str>,
+    commits: &[LogicalCommit],
+    visibility_change_sets: &[VisibilityChangeSet],
+) -> bool {
+    let appended = |id: &str| commits.iter().any(|commit| commit.id == id);
+    visibility_change_sets.iter().all(|set| {
+        set.anchor_commit_id.as_deref() == last_folded_commit_id
+            || set.anchor_commit_id.as_deref().is_some_and(appended)
+    }) && visibility_change_sets
+        .iter()
+        .all(|set| set.source_update_id.as_deref().is_none_or(appended))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,16 +186,22 @@ impl Projection {
         })
     }
 
+    /// Applies this projection's changes, in order, to a view's files.
+    pub fn apply_to(&self, tree: &mut BTreeMap<ScopePath, SourceBlob>) {
+        for change in self.commits.iter().flat_map(|commit| &commit.changes) {
+            match &change.new_content {
+                Some(blob) => tree.insert(change.path.clone(), blob.clone()),
+                None => tree.remove(&change.path),
+            };
+        }
+    }
+
     pub fn visible_paths(&self) -> Vec<String> {
         let mut live = BTreeMap::new();
-        for change in self.commits.iter().flat_map(|commit| commit.changes.iter()) {
-            if change.new_content.is_some() {
-                live.insert(change.path.as_str().to_string(), ());
-            } else {
-                live.remove(change.path.as_str());
-            }
-        }
-        live.into_keys().collect::<Vec<_>>()
+        self.apply_to(&mut live);
+        live.into_keys()
+            .map(|path| path.as_str().to_string())
+            .collect()
     }
 }
 
@@ -158,15 +210,32 @@ pub fn project_graph(
     visibility_change_sets: &[VisibilityChangeSet],
     view_key: ProjectionViewKey,
 ) -> Projection {
+    project_graph_after(
+        &ProjectionCursor::default(),
+        graph,
+        visibility_change_sets,
+        view_key,
+    )
+}
+
+/// Projects commits and change sets appended after `cursor`. The caller must
+/// have checked `projection_delta_appends`.
+pub fn project_graph_after(
+    cursor: &ProjectionCursor,
+    graph: &SourceGraph,
+    visibility_change_sets: &[VisibilityChangeSet],
+    view_key: ProjectionViewKey,
+) -> Projection {
     if view_key.can_read_private_files() {
-        return project_private_graph(graph, view_key);
+        return project_private_graph(cursor, graph, view_key);
     }
 
     let mut commits = Vec::new();
-    let mut last_visible: Option<String> = None;
+    let mut last_visible = cursor.last_projected_id.clone();
     let boundary_events = projection_boundary_events_by_anchor(graph, visibility_change_sets);
 
     process_projection_boundary_events_after(
+        cursor,
         &mut commits,
         &mut last_visible,
         &boundary_events,
@@ -225,6 +294,7 @@ pub fn project_graph(
             }
             last_visible = native.last().map(|commit| commit.oid.clone());
             process_projection_boundary_events_after(
+                cursor,
                 &mut commits,
                 &mut last_visible,
                 &boundary_events,
@@ -236,6 +306,7 @@ pub fn project_graph(
 
         if visible_changes.is_empty() {
             process_projection_boundary_events_after(
+                cursor,
                 &mut commits,
                 &mut last_visible,
                 &boundary_events,
@@ -246,7 +317,7 @@ pub fn project_graph(
         }
 
         let partial = visible_content_count < logical.changes.len();
-        let projected_id = projected_id(view_key, &logical.id, commits.len() + 1);
+        let projected_id = cursor.next_id(view_key, &logical.id, commits.len());
 
         commits.push(ProjectedCommit {
             projected_id: projected_id.clone(),
@@ -265,6 +336,7 @@ pub fn project_graph(
 
         last_visible = Some(projected_id);
         process_projection_boundary_events_after(
+            cursor,
             &mut commits,
             &mut last_visible,
             &boundary_events,
@@ -280,9 +352,13 @@ pub fn project_graph(
     }
 }
 
-fn project_private_graph(graph: &SourceGraph, view_key: ProjectionViewKey) -> Projection {
+fn project_private_graph(
+    cursor: &ProjectionCursor,
+    graph: &SourceGraph,
+    view_key: ProjectionViewKey,
+) -> Projection {
     let mut commits = Vec::new();
-    let mut last_visible: Option<String> = None;
+    let mut last_visible = cursor.last_projected_id.clone();
 
     for logical in &graph.commits {
         let changes = logical
@@ -298,7 +374,7 @@ fn project_private_graph(graph: &SourceGraph, view_key: ProjectionViewKey) -> Pr
             continue;
         }
 
-        let projected_id = projected_id(view_key, &logical.id, commits.len() + 1);
+        let projected_id = cursor.next_id(view_key, &logical.id, commits.len());
         commits.push(ProjectedCommit {
             projected_id: projected_id.clone(),
             logical_commit_id: logical.id.clone(),
@@ -408,6 +484,7 @@ fn projection_boundary_events_by_anchor<'a>(
 }
 
 fn process_projection_boundary_events_after(
+    cursor: &ProjectionCursor,
     commits: &mut Vec<ProjectedCommit>,
     last_visible: &mut Option<String>,
     boundary_events: &ProjectionBoundaryEventsByAnchor<'_>,
@@ -425,7 +502,7 @@ fn process_projection_boundary_events_after(
 
     for (set_id, boundaries) in group_boundary_events_by_set(events) {
         let logical_commit_id = boundaries[0].source_id.to_string();
-        let projected_id = projected_id(view_key, set_id, commits.len() + 1);
+        let projected_id = cursor.next_id(view_key, set_id, commits.len());
         commits.push(ProjectedCommit {
             projected_id: projected_id.clone(),
             logical_commit_id,

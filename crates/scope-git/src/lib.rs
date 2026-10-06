@@ -4,7 +4,7 @@ mod snapshot;
 mod tree_path;
 
 pub use projection_identity::{
-    PROJECTION_IDENTITY_VERSION, ProjectionIdentityError, projection_head_oid,
+    PROJECTION_IDENTITY_VERSION, ProjectionHead, ProjectionIdentityError, projection_head_oid,
 };
 #[cfg(feature = "storage")]
 pub use snapshot::{StoredGitPush, prepare_git_push};

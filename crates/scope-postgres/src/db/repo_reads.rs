@@ -2,8 +2,8 @@ use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities,
     landing_files::repository_landing_file,
     projection_read_models::{
-        ProjectionFileLookup, live_projection_has_non_control_file_for_audience,
-        load_live_projection_file_for_audience, load_live_projection_files_for_audience,
+        ProjectionFileLookup, load_live_projection_file_for_audience,
+        load_live_projection_files_for_audience,
     },
     repository_from_model,
 };
@@ -508,7 +508,7 @@ pub(super) async fn public_repository_visible<C: ConnectionTrait>(
     repo_id: &str,
     content_version: u64,
 ) -> Result<bool, PostgresError> {
-    if let Some(view) = super::history_reads::history_view_metadata(
+    if let Some(view) = super::projection_read_models::live_projection_read_model(
         conn,
         repo_id,
         content_version,
@@ -517,16 +517,6 @@ pub(super) async fn public_repository_visible<C: ConnectionTrait>(
     .await?
     {
         return Ok(view.visible_files);
-    }
-    if let Some(visible) = live_projection_has_non_control_file_for_audience(
-        conn,
-        repo_id,
-        content_version,
-        ProjectionViewKey::Public,
-    )
-    .await?
-    {
-        return Ok(visible);
     }
 
     let repo = hydrate_repo_from_row_id(conn, repo_id).await?;

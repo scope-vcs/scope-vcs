@@ -12,7 +12,7 @@ const repositoryTables = names(`file_changes git_compaction_jobs git_heads git_s
   git_segment_uploads git_segments live_files logical_commits metadata_locks object_references
   orphan_object_jobs outbox_jobs projection_files projection_read_models push_trigger_evaluations
   repo_storage_cleanup_jobs repositories repository_first_push_tokens repository_git_push_tokens
-  repository_history_entries repository_history_views repository_invites repository_invite_links
+  repository_history_entries repository_history_payloads repository_invites repository_invite_links
   repository_invite_emails repository_landing_files repository_members repository_workflow_catalogs repository_workflow_files visibility_change_sets
   visibility_changes workflow_revisions dependency_analyses dependency_reports dependency_analysis_jobs
   request_ref_cleanup_jobs github_connections github_required_checks github_pushes
@@ -49,7 +49,7 @@ export const grants = {
     repository_git_push_tokens repository_invites
     repository_invite_links repository_landing_files repository_members repository_workflow_catalogs repository_workflow_files
     visibility_change_sets visibility_changes requests request_revisions users request_check_evaluations`)),
-    scope_repository_history_views: ['SELECT', 'INSERT', 'DELETE'],
+    scope_repository_history_payloads: ['SELECT', 'INSERT', 'DELETE'],
     scope_repository_history_entries: ['SELECT', 'INSERT'],
     scope_requests: ['SELECT', 'UPDATE'],
     scope_request_auto_merge_intents: ['SELECT', 'UPDATE'],

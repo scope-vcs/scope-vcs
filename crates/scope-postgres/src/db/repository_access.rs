@@ -61,7 +61,7 @@ impl RepositoryStore {
                 && context.record.lifecycle_state
                     == scope_domain::repository::RepoLifecycleState::Ready
             {
-                let Some(view) = super::history_reads::history_view_metadata(
+                let Some(view) = super::projection_read_models::live_projection_read_model(
                     &tx,
                     &context.record.id,
                     context.record.content_version,
@@ -70,7 +70,8 @@ impl RepositoryStore {
                 .await?
                 else {
                     tx.commit().await.map_err(PostgresError::internal)?;
-                    self.ensure_history_view(&context.incarnation()).await?;
+                    self.ensure_live_projection_read_models(&context.incarnation())
+                        .await?;
                     continue;
                 };
                 view.visible_files
@@ -193,7 +194,7 @@ impl RepositoryStore {
                 tx.commit().await.map_err(PostgresError::internal)?;
                 return Ok(Some(head.head_oid));
             }
-            let metadata = super::history_reads::history_view_metadata(
+            let metadata = super::projection_read_models::live_projection_read_model(
                 &tx,
                 &context.record.id,
                 context.record.content_version,
@@ -204,7 +205,8 @@ impl RepositoryStore {
             if let Some(view) = metadata {
                 return Ok(view.head_oid);
             }
-            self.ensure_history_view(&context.incarnation()).await?;
+            self.ensure_live_projection_read_models(&context.incarnation())
+                .await?;
         }
         Err(PostgresError::conflict(
             "repository changed while reading its head; retry",

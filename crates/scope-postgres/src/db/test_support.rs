@@ -308,13 +308,6 @@ impl RepositoryStore {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         ensure_repository_users_for_tests(&tx, &repo).await?;
         acquire_aggregate_lock(&tx, "repository", &repo.record.id).await?;
-        tx.execute_raw(Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            "DELETE FROM scope_repository_history_views WHERE repo_id = $1",
-            [repo.record.id.clone().into()],
-        ))
-        .await
-        .map_err(PostgresError::internal)?;
         match entities::repository::Entity::find_by_id(repo.record.id.clone())
             .one(&tx)
             .await

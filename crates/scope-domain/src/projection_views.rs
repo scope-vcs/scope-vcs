@@ -207,16 +207,7 @@ pub fn projected_file_contents(
         ProjectionViewKey::from_access(access),
     );
     let mut live_files = BTreeMap::new();
-    for change in projection.commits.iter().flat_map(|commit| &commit.changes) {
-        match &change.new_content {
-            Some(blob) => {
-                live_files.insert(change.path.clone(), blob.clone());
-            }
-            None => {
-                live_files.remove(&change.path);
-            }
-        }
-    }
+    projection.apply_to(&mut live_files);
 
     live_files
         .into_iter()
@@ -314,19 +305,8 @@ fn hidden_logical_commit_count(owner_projection: &Projection, projection: &Proje
 
 fn projection_tree(projection: &Projection) -> BTreeMap<ScopePath, String> {
     let mut tree = BTreeMap::new();
-    for change in projection
-        .commits
-        .iter()
-        .flat_map(|commit| commit.changes.iter())
-    {
-        match &change.new_content {
-            Some(blob) => {
-                tree.insert(change.path.clone(), blob.git_oid.clone());
-            }
-            None => {
-                tree.remove(&change.path);
-            }
-        }
-    }
-    tree
+    projection.apply_to(&mut tree);
+    tree.into_iter()
+        .map(|(path, blob)| (path, blob.git_oid))
+        .collect()
 }
