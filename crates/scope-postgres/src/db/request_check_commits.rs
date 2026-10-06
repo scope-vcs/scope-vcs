@@ -36,9 +36,11 @@ impl RequestStore {
         else {
             return Ok(None);
         };
+        let private_main = private_main_oid(&tx, &request.repo_id).await?;
         if request.is_terminal()
             || request.head_oid != command.head_oid
             || evaluation.tested_oid != command.replaced_tested_oid
+            || !evaluation.needs_new_check_commit(private_main.as_deref())
         {
             return Ok(None);
         }
