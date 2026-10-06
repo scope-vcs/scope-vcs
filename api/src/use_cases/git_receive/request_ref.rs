@@ -19,6 +19,7 @@ use scope_domain::{
         access::{RepositoryAccess, RepositoryActor},
     },
     requests::{RecordRequestRevisionInput, Request, RequestViewer, request_policy},
+    views::Views,
 };
 use scope_postgres::db::GitPushContext;
 use scope_product_analytics::ProductEvent;
@@ -85,7 +86,10 @@ pub(crate) async fn prepare_request_staging_repo(
                 .materialize_repository(state, &git.incarnation, head, &git.git_pack_spans)
                 .await?
         }
-        _ => git.view_repo(state, &access.view).await?,
+        _ => {
+            git.view_repo(state, context.repo_config.views(), &access.view)
+                .await?
+        }
     };
     let staging_repo = {
         let state = state.clone();
@@ -98,6 +102,7 @@ pub(crate) async fn prepare_request_staging_repo(
     let seeded = seed_editable_request_refs_for_repo(
         state,
         &git,
+        context.repo_config.views(),
         actor_user_id,
         access,
         &staging_repo,
@@ -132,8 +137,9 @@ pub(super) async fn seed_editable_request_refs(
     seed_editable_request_refs_for_repo(
         state,
         &RepositoryGit::of_push_context(&context),
+        context.repo_config.views(),
         actor_user_id,
-        context.access,
+        context.access.clone(),
         staging_repo,
         candidates,
     )
@@ -143,6 +149,7 @@ pub(super) async fn seed_editable_request_refs(
 async fn seed_editable_request_refs_for_repo(
     state: &AppState,
     git: &RepositoryGit,
+    views: &Views,
     actor_user_id: &str,
     access: RepositoryAccess,
     staging_repo: &Path,
@@ -163,12 +170,10 @@ async fn seed_editable_request_refs_for_repo(
             .iter()
             .any(|request| request.view.is_public() && request.git_snapshot.is_none())
     {
-        let public_view = git
-            .repo_config
-            .views()
+        let public_view = views
             .anyone()
             .ok_or_else(|| ApiError::not_found("public view not found"))?;
-        Some(git.view_repo(state, public_view).await?)
+        Some(git.view_repo(state, views, public_view).await?)
     } else {
         None
     };
@@ -232,8 +237,15 @@ pub(super) async fn persist_request_ref_revision(
         .old_head_oid
         .clone()
         .or_else(|| Some(request.head_oid.clone()));
-    let persisted =
-        persist_request_ref_to_store(state, &git, staging_repo, &request, &update).await?;
+    let persisted = persist_request_ref_to_store(
+        state,
+        &git,
+        &context.repo_config,
+        staging_repo,
+        &request,
+        &update,
+    )
+    .await?;
     let mutation = state
         .metadata
         .requests()

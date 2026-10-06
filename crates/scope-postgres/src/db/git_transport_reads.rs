@@ -2,6 +2,7 @@ use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities,
     git_segments::load_git_pack_spans,
     history_rows::{RepositoryProjectionSource, load_repository_projection_sources},
+    projection_read_models::live_projection_read_model,
     repository_access::load_repo_record,
 };
 use crate::error::PostgresError;
@@ -71,6 +72,29 @@ impl RepositoryStore {
             .ok_or_else(|| PostgresError::internal_message("repository history missing"))?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(source)
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_view_head"))]
+    pub async fn repository_view_head(
+        &self,
+        incarnation: &RepositoryIncarnation,
+        content_version: u64,
+        view: &ViewId,
+    ) -> Result<Option<String>, PostgresError> {
+        for _ in 0..2 {
+            let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+            let record = load_record_at_version(&tx, incarnation, content_version).await?;
+            let read_model =
+                live_projection_read_model(&tx, &record.id, content_version, view).await?;
+            tx.commit().await.map_err(PostgresError::internal)?;
+            if let Some(read_model) = read_model {
+                return Ok(read_model.head_oid);
+            }
+            self.ensure_live_projection_read_models(incarnation).await?;
+        }
+        Err(PostgresError::conflict(
+            "repository history view kept changing; retry",
+        ))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_path_history"))]

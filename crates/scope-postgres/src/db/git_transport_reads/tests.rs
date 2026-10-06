@@ -353,3 +353,39 @@ async fn content_version(store: &MetadataStore) -> u64 {
         .unwrap()
         .content_version
 }
+
+#[tokio::test]
+async fn view_head_reads_the_history_view_without_history() {
+    let store = fixture().await;
+    let version = content_version(&store).await;
+    let expected = store
+        .repositories()
+        .repository_projection_source(&incarnation(), version)
+        .await
+        .unwrap()
+        .project(&scope_domain::views::Views::builtin(), &ViewId::public());
+    let expected = scope_git::projection_head_oid(&expected).unwrap();
+    let held = lock(
+        &store,
+        &format!("{PROJECTION_HISTORY_TABLES}, scope_live_files"),
+    )
+    .await;
+
+    let head = within_lock(store.repositories().repository_view_head(
+        &incarnation(),
+        version,
+        &ViewId::public(),
+    ))
+    .await
+    .unwrap();
+    held.rollback().await.unwrap();
+
+    assert!(head.is_some());
+    assert_eq!(head, expected);
+    let stale = store
+        .repositories()
+        .repository_view_head(&incarnation(), version + 1, &ViewId::public())
+        .await
+        .unwrap_err();
+    assert_eq!(stale.kind, PostgresErrorKind::Conflict);
+}
