@@ -123,7 +123,7 @@ pub fn connect_github_repository(
     github_repository_link: Option<&GitHubConnection>,
     command: ConnectGitHubRepository,
 ) -> Result<GitHubConnection, DomainError> {
-    ensure_maintainer(access)?;
+    ensure_maintainer(access.clone())?;
     validate_github_run_import_count(command.run_import_count)?;
     if command.installation_id == 0 || command.github_repository_id == 0 {
         return Err(DomainError::invalid_input(
@@ -178,7 +178,7 @@ pub fn acknowledge_public_github_repository(
     access: RepositoryAccess,
     current: Option<&GitHubConnection>,
 ) -> Result<GitHubConnection, DomainError> {
-    ensure_maintainer(access)?;
+    ensure_maintainer(access.clone())?;
     ensure_can_publish(access)?;
     let Some(current) = current.filter(|current| current.is_connected()) else {
         return Err(DomainError::not_found(

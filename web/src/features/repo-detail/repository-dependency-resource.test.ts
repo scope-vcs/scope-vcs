@@ -19,7 +19,7 @@ function repo(actor: RepositoryActor): RepoSummaryResponse {
       can_delete_repo: actor === 'Owner',
       can_manage_members: actor === 'Owner',
       can_push: actor !== 'Public',
-      can_read_private_files: actor !== 'Public',
+      view: actor === 'Public' ? 'public' : 'private',
     },
     change_version: 4,
     content_version: 4,

@@ -1,7 +1,5 @@
-use super::{
-    content::SourceBlob,
-    policy::{ScopePath, Visibility},
-};
+use super::{content::SourceBlob, policy::ScopePath};
+use crate::views::ViewId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -18,8 +16,8 @@ pub struct VisibilityChangeSet {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisibilityChange {
     pub path: ScopePath,
-    pub old_visibility: Visibility,
-    pub new_visibility: Visibility,
+    pub old_label: ViewId,
+    pub new_label: ViewId,
     pub current_content: Option<SourceBlob>,
 }
 
@@ -39,7 +37,7 @@ impl VisibilityChangeSet {
         }
         if changes
             .iter()
-            .any(|change| change.old_visibility == change.new_visibility)
+            .any(|change| change.old_label == change.new_label)
         {
             return Err("visibility change set cannot contain no-op changes");
         }
@@ -70,15 +68,11 @@ pub fn visibility_change_set_id(next_change_version: u64) -> String {
 mod tests {
     use super::*;
 
-    fn change(
-        path: &str,
-        old_visibility: Visibility,
-        new_visibility: Visibility,
-    ) -> VisibilityChange {
+    fn change(path: &str, old_label: ViewId, new_label: ViewId) -> VisibilityChange {
         VisibilityChange {
             path: ScopePath::parse(path).unwrap(),
-            old_visibility,
-            new_visibility,
+            old_label,
+            new_label,
             current_content: None,
         }
     }
@@ -91,8 +85,8 @@ mod tests {
             None,
             "owner".into(),
             vec![
-                change("/public.md", Visibility::Private, Visibility::Public),
-                change("/private.md", Visibility::Public, Visibility::Private),
+                change("/public.md", ViewId::private(), ViewId::public()),
+                change("/private.md", ViewId::public(), ViewId::private()),
             ],
         )
         .unwrap();
@@ -112,7 +106,7 @@ mod tests {
                 None,
                 None,
                 "owner".into(),
-                vec![change("/same.md", Visibility::Public, Visibility::Public)],
+                vec![change("/same.md", ViewId::public(), ViewId::public())],
             )
             .is_err()
         );
@@ -123,8 +117,8 @@ mod tests {
                 None,
                 "owner".into(),
                 vec![
-                    change("/same.md", Visibility::Public, Visibility::Private),
-                    change("/same.md", Visibility::Private, Visibility::Public),
+                    change("/same.md", ViewId::public(), ViewId::private()),
+                    change("/same.md", ViewId::private(), ViewId::public()),
                 ],
             )
             .is_err()

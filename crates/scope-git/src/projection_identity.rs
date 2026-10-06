@@ -1,8 +1,9 @@
 use crate::{GitTreePath, GitTreePathError};
 use scope_domain::{
-    content::is_supported_git_file_mode,
+    content::{SourceBlob, is_supported_git_file_mode},
     content_ref::git_object_oid,
-    projection::{Projection, ProjectionMaterialization},
+    policy::ScopePath,
+    projection::{ProjectedCommit, Projection, ProjectionMaterialization},
 };
 use std::{
     cmp::Ordering,
@@ -45,109 +46,144 @@ pub fn projection_head_oid(
 pub fn projection_commit_oids(
     projection: &Projection,
 ) -> Result<Vec<String>, ProjectionIdentityError> {
-    let mut commit_oids = Vec::with_capacity(projection.commits.len());
-    let mut tree = Tree::default();
-    let mut parent_oid: Option<String> = None;
-    let mut native_range: Option<NativeRange> = None;
-    for commit in &projection.commits {
-        if native_range
-            .as_ref()
-            .is_some_and(|range: &NativeRange| range.logical_commit_id != commit.logical_commit_id)
-        {
-            validate_native_range(
-                native_range.take().expect("native range checked"),
-                &tree.oid()?,
+    ProjectionHead::default().apply_each(&projection.commits)
+}
+
+#[derive(Default)]
+pub struct ProjectionHead {
+    tree: Tree,
+    pub oid: Option<String>,
+}
+
+impl ProjectionHead {
+    pub fn resume<'a>(
+        oid: Option<String>,
+        files: impl IntoIterator<Item = (&'a ScopePath, &'a SourceBlob)>,
+    ) -> Result<Self, ProjectionIdentityError> {
+        let mut tree = Tree::default();
+        for (path, blob) in files {
+            let path = GitTreePath::from_scope_path(path)?;
+            tree.insert(
+                &path.as_str().split('/').collect::<Vec<_>>(),
+                tree_file(path.as_str(), blob)?,
             )?;
         }
+        Ok(Self { tree, oid })
+    }
 
-        let mut delta = BTreeMap::<GitTreePath, Option<TreeFile>>::new();
-        for change in &commit.changes {
-            let path = GitTreePath::from_scope_path(&change.path)?;
-            match &change.new_content {
-                Some(blob) => {
-                    if !is_supported_git_file_mode(&blob.git_file_mode) {
-                        return Err(ProjectionIdentityError::UnsupportedMode {
-                            path: change.path.as_str().to_string(),
-                            mode: blob.git_file_mode.clone(),
-                        });
+    pub fn apply(&mut self, commits: &[ProjectedCommit]) -> Result<(), ProjectionIdentityError> {
+        self.apply_each(commits).map(|_| ())
+    }
+
+    pub fn apply_each(
+        &mut self,
+        commits: &[ProjectedCommit],
+    ) -> Result<Vec<String>, ProjectionIdentityError> {
+        let Self {
+            tree,
+            oid: parent_oid,
+        } = self;
+        let mut commit_oids = Vec::with_capacity(commits.len());
+        let mut native_range: Option<NativeRange> = None;
+        for commit in commits {
+            if native_range.as_ref().is_some_and(|range: &NativeRange| {
+                range.logical_commit_id != commit.logical_commit_id
+            }) {
+                validate_native_range(
+                    native_range.take().expect("native range checked"),
+                    &tree.oid()?,
+                )?;
+            }
+
+            let mut delta = BTreeMap::<GitTreePath, Option<TreeFile>>::new();
+            for change in &commit.changes {
+                let path = GitTreePath::from_scope_path(&change.path)?;
+                match &change.new_content {
+                    Some(blob) => {
+                        let file = tree_file(change.path.as_str(), blob)?;
+                        delta.insert(path, Some(file));
                     }
-                    delta.insert(
-                        path,
-                        Some(TreeFile {
-                            mode: blob.git_file_mode.clone(),
-                            oid: parse_oid(&blob.git_oid, "blob")?,
-                        }),
-                    );
-                }
-                None => {
-                    delta.insert(path, None);
+                    None => {
+                        delta.insert(path, None);
+                    }
                 }
             }
-        }
-        for (path, file) in &delta {
-            if file.is_none() {
-                tree.remove(&path.as_str().split('/').collect::<Vec<_>>());
+            for (path, file) in &delta {
+                if file.is_none() {
+                    tree.remove(&path.as_str().split('/').collect::<Vec<_>>());
+                }
             }
-        }
-        for (path, file) in delta {
-            if let Some(file) = file {
-                tree.insert(&path.as_str().split('/').collect::<Vec<_>>(), file)?;
+            for (path, file) in delta {
+                if let Some(file) = file {
+                    tree.insert(&path.as_str().split('/').collect::<Vec<_>>(), file)?;
+                }
             }
-        }
 
-        let tree_oid = tree.oid()?;
-        parent_oid = Some(match &commit.materialization {
-            ProjectionMaterialization::Generate => {
-                if let Some(range) = native_range.take() {
-                    validate_native_range(range, &tree_oid)?;
+            let tree_oid = tree.oid()?;
+            *parent_oid = Some(match &commit.materialization {
+                ProjectionMaterialization::Generate => {
+                    if let Some(range) = native_range.take() {
+                        validate_native_range(range, &tree_oid)?;
+                    }
+                    generated_commit_oid(
+                        &tree_oid,
+                        parent_oid.as_deref(),
+                        &format!("{}\n", commit.message),
+                    )
                 }
-                generated_commit_oid(
-                    &tree_oid,
-                    parent_oid.as_deref(),
-                    &format!("{}\n", commit.message),
-                )
-            }
-            ProjectionMaterialization::PreserveGitCommit {
-                oid,
-                parent_oids,
-                tree_oid: expected_tree_oid,
-            } => {
-                if oid != &commit.projected_id {
-                    return Err(ProjectionIdentityError::PreservedCommitIdentityMismatch);
+                ProjectionMaterialization::PreserveGitCommit {
+                    oid,
+                    parent_oids,
+                    tree_oid: expected_tree_oid,
+                } => {
+                    if oid != &commit.projected_id {
+                        return Err(ProjectionIdentityError::PreservedCommitIdentityMismatch);
+                    }
+                    let oid = parse_oid(oid, "preserved commit")?;
+                    let expected_tree_oid = parse_oid(expected_tree_oid, "preserved tree")?;
+                    let oid = hex::encode(oid);
+                    let base_oid = parent_oid
+                        .as_ref()
+                        .ok_or(ProjectionIdentityError::MissingPreservedCommitBase)?;
+                    native_range.get_or_insert_with(|| NativeRange {
+                        logical_commit_id: commit.logical_commit_id.clone(),
+                        base_oid: base_oid.clone(),
+                        expected_tree_oid,
+                        descendants_of_base: BTreeSet::new(),
+                        head_descends_from_base: false,
+                    });
+                    let range = native_range.as_mut().expect("native range initialized");
+                    let descends_from_base = parent_oids.iter().any(|parent| {
+                        parent == &range.base_oid || range.descendants_of_base.contains(parent)
+                    });
+                    if descends_from_base {
+                        range.descendants_of_base.insert(oid.clone());
+                    }
+                    range.expected_tree_oid = expected_tree_oid;
+                    range.head_descends_from_base = descends_from_base;
+                    oid
                 }
-                let oid = parse_oid(oid, "preserved commit")?;
-                let expected_tree_oid = parse_oid(expected_tree_oid, "preserved tree")?;
-                let oid = hex::encode(oid);
-                let base_oid = parent_oid
-                    .as_ref()
-                    .ok_or(ProjectionIdentityError::MissingPreservedCommitBase)?;
-                native_range.get_or_insert_with(|| NativeRange {
-                    logical_commit_id: commit.logical_commit_id.clone(),
-                    base_oid: base_oid.clone(),
-                    expected_tree_oid,
-                    descendants_of_base: BTreeSet::new(),
-                    head_descends_from_base: false,
-                });
-                let range = native_range.as_mut().expect("native range initialized");
-                let descends_from_base = parent_oids.iter().any(|parent| {
-                    parent == &range.base_oid || range.descendants_of_base.contains(parent)
-                });
-                if descends_from_base {
-                    range.descendants_of_base.insert(oid.clone());
-                }
-                range.expected_tree_oid = expected_tree_oid;
-                range.head_descends_from_base = descends_from_base;
-                oid
-            }
+            });
+            commit_oids.extend(parent_oid.clone());
+        }
+        if let Some(range) = native_range {
+            validate_native_range(range, &tree.oid()?)?;
+        }
+        Ok(commit_oids)
+    }
+}
+
+fn tree_file(path: &str, blob: &SourceBlob) -> Result<TreeFile, ProjectionIdentityError> {
+    if !is_supported_git_file_mode(&blob.git_file_mode) {
+        return Err(ProjectionIdentityError::UnsupportedMode {
+            path: path.to_string(),
+            mode: blob.git_file_mode.clone(),
         });
-        commit_oids.extend(parent_oid.clone());
     }
-
-    if let Some(range) = native_range {
-        validate_native_range(range, &tree.oid()?)?;
-    }
-
-    Ok(commit_oids)
+    Ok(TreeFile {
+        mode: blob.git_file_mode.clone(),
+        oid: parse_oid(&blob.git_oid, "blob")?,
+    })
 }
 
 struct NativeRange {
@@ -336,11 +372,12 @@ fn git_tree_name_cmp(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use scope_domain::views::ViewId;
     use scope_domain::{
         content::SourceBlob,
         content_ref::ContentRef,
-        policy::{ScopePath, Visibility},
-        projection::{ProjectedChange, ProjectedCommit, ProjectionViewKey},
+        policy::ScopePath,
+        projection::{ProjectedChange, ProjectedCommit},
     };
     use std::{
         fs,
@@ -358,7 +395,7 @@ mod tests {
         let replacement = blob(b"replacement", "100644");
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 generated_commit(
                     "one",
@@ -389,7 +426,18 @@ mod tests {
                 (&replacement, b"replacement"),
             ],
         );
-        assert_eq!(projection_head_oid(&projection).unwrap(), Some(expected));
+        assert_eq!(
+            projection_head_oid(&projection).unwrap(),
+            Some(expected.clone())
+        );
+        let private_projection = Projection {
+            view_key: ViewId::private(),
+            ..projection
+        };
+        assert_eq!(
+            projection_head_oid(&private_projection).unwrap(),
+            Some(expected)
+        );
     }
 
     #[test]
@@ -411,12 +459,12 @@ mod tests {
         );
         let generated_native_projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![base.clone(), native_as_generated],
         };
         let base_oid = projection_head_oid(&Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![base.clone()],
         })
         .unwrap()
@@ -441,7 +489,7 @@ mod tests {
         };
         let preserved = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![base.clone(), native.clone()],
         };
         let blobs = [
@@ -457,7 +505,7 @@ mod tests {
 
         let mixed = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 base,
                 native,
@@ -492,7 +540,7 @@ mod tests {
         let replacement = blob(b"replacement", "100644");
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 generated_commit(
                     "base",
@@ -540,7 +588,7 @@ mod tests {
         );
         let base_oid = projection_head_oid(&Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![base.clone()],
         })
         .unwrap()
@@ -548,7 +596,7 @@ mod tests {
         let merge_oid = "1111111111111111111111111111111111111111";
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 base,
                 ProjectedCommit {
@@ -581,7 +629,7 @@ mod tests {
     fn empty_projection_has_no_canonical_head() {
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: Vec::new(),
         };
 
@@ -594,14 +642,14 @@ mod tests {
         let base = generated_commit("base", None, "Base", vec![change("/file", Some(content))]);
         let base_oid = projection_head_oid(&Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![base.clone()],
         })
         .unwrap()
         .unwrap();
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 base,
                 ProjectedCommit {
@@ -639,7 +687,7 @@ mod tests {
         let second = generated_commit("second", Some("first"), "Second", Vec::new());
         let first_oid = projection_head_oid(&Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![first.clone()],
         })
         .unwrap()
@@ -647,7 +695,7 @@ mod tests {
         let skipped_head = "3333333333333333333333333333333333333333";
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 first,
                 second,
@@ -689,7 +737,7 @@ mod tests {
         ProjectedChange {
             path: ScopePath::parse(path).unwrap(),
             new_content,
-            visibility: Visibility::Public,
+            label: ViewId::public(),
         }
     }
 

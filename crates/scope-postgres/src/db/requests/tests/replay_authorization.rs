@@ -51,7 +51,7 @@ async fn discussion_replays_recheck_membership_after_waiting_for_revocation() {
     let store = super::authorization_locks::store_with_public_user_membership();
     let mut start = public_start_input();
     start.author_user_id = "user_owner".into();
-    start.audience = RequestAudience::Private;
+    start.view = ViewId::private();
     store.requests().start_request(start).await.unwrap();
     let (create, reply, saved_read_state) =
         create_discussion_and_reply(&store, "user_public", 3).await;
@@ -107,7 +107,7 @@ async fn visible_private_discussion_replays_survive_terminal_transition() {
     let store = postgres_store();
     let mut start = public_start_input();
     start.author_user_id = "user_owner".into();
-    start.audience = RequestAudience::Private;
+    start.view = ViewId::private();
     store.requests().start_request(start).await.unwrap();
     let (create, reply, _) = create_discussion_and_reply(&store, "user_owner", 3).await;
     store

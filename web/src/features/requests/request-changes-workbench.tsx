@@ -1,7 +1,7 @@
 import type { CommitDetail, CommitSummary, ReviewFileDiff } from '@/api/types'
 import type {
   CommitFileResponse,
-  ProjectionPreviewAudience,
+  ViewId,
   RequestRevisionListResponse,
 } from '@/api/types.generated'
 import type { LoadRequestRevisionCommitInput } from '@/api/requests'
@@ -70,7 +70,7 @@ type DiscussionReferenceState = {
 
 export function RequestChangesWorkbench({
   accessScope,
-  audience,
+  view,
   initialDiscussionReferences,
   loadDiff,
   loadDiscussions,
@@ -81,7 +81,7 @@ export function RequestChangesWorkbench({
   search,
 }: {
   accessScope: string | null
-  audience: ProjectionPreviewAudience
+  view: ViewId
   initialDiscussionReferences: RequestChangesDiscussionReferences
   loadDiff: (
     input: LoadRequestRevisionCommitInput & { path: string },
@@ -96,7 +96,7 @@ export function RequestChangesWorkbench({
 }) {
   const model = useRequestChangesModel({
     accessScope,
-    audience,
+    view,
     loadDiff,
     onSearchChange,
     params,
@@ -220,7 +220,7 @@ function useRequestDiscussionReferences({
 
 function useRequestChangesModel({
   accessScope,
-  audience,
+  view,
   loadDiff,
   onSearchChange,
   params,
@@ -229,7 +229,7 @@ function useRequestChangesModel({
   search,
 }: {
   accessScope: string | null
-  audience: ProjectionPreviewAudience
+  view: ViewId
   loadDiff: (
     input: LoadRequestRevisionCommitInput & { path: string },
     signal?: AbortSignal,
@@ -260,7 +260,7 @@ function useRequestChangesModel({
     ? requestRevisionCommitId(selectedRevision.id, selectedCommitOid)
     : null
   const generation = `${orderedRevisions.at(-1)?.position ?? 0}`
-  const viewKey = `request:${params.request_id}:${selectedRevision?.id ?? 'none'}`
+  const revisionKey = `request:${params.request_id}:${selectedRevision?.id ?? 'none'}`
   const selectedCommitSummary = selectedRevision?.commits.find(
     ({ oid }) => oid === selectedCommitOid,
   ) ?? null
@@ -268,9 +268,8 @@ function useRequestChangesModel({
     ? commitDetail(
         selectedRevision.id,
         selectedCommitSummary,
-        audience,
+        view,
         repoId,
-        params.request_id,
       )
     : null
   const selectedFilePath = search.path ?? null
@@ -280,14 +279,14 @@ function useRequestChangesModel({
   const diffIdentity = accessScope && selectedCommitId && selectedFile && selectedRevision
     ? historyDiffCacheKey({
         scope: accessScope,
-        audience,
+        view,
         commit: selectedCommitId,
         generation,
         newOid: selectedFile.new_oid,
         oldOid: selectedFile.old_oid,
         path: selectedFile.path,
         repoId,
-        viewKey,
+        revisionKey,
       })
     : null
   const loadSelectedDiff = useCallback(
@@ -496,12 +495,11 @@ function RequestCommitContext({
 function commitDetail(
   revisionId: string,
   commit: RequestRevisionListResponse['revisions'][number]['commits'][number],
-  audience: ProjectionPreviewAudience,
+  view: ViewId,
   repoId: string,
-  requestId: string,
 ): CommitDetail {
   return {
-    audience,
+    view,
     author: commit.author,
     change_count: commit.change_count,
     files_truncated: commit.files_truncated,
@@ -514,6 +512,5 @@ function commitDetail(
     parent_projected_id: commit.parent_oids[0] ?? null,
     projected_id: requestRevisionCommitId(revisionId, commit.oid),
     repo_id: repoId,
-    view_key: `request:${requestId}:${revisionId}`,
   }
 }

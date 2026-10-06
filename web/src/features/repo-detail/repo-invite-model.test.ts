@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { RepositoryInviteResponse } from '../../api/types.generated'
 import { invitationDetail, visibleInvitations } from './repo-invite-model'
 
-const permissions = { can_push: false, can_change_file_visibility: false }
+const permissions = { can_push: false, can_change_file_visibility: false, view: 'private' }
 const invite = (
   id: string,
   invited_email: string,

@@ -3,6 +3,7 @@ use super::{
     RequestEvent, RequestEventKind, RequestEventPayload, advance_request_activity,
     ensure_request_matches, next_request_activity_position, validate_body_size, validate_required,
 };
+use crate::views::ViewId;
 use crate::{error::DomainError, policy::ScopePath};
 use serde::{Deserialize, Serialize};
 
@@ -463,7 +464,7 @@ pub fn ensure_request_discussion_transition_allowed(
             "request discussion resolution access required",
         ));
     }
-    if request.audience == super::RequestAudience::Private && request.is_terminal() {
+    if request.view == ViewId::private() && request.is_terminal() {
         return Err(DomainError::conflict(
             "completed private request discussions are read-only",
         ));

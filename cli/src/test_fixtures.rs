@@ -30,7 +30,7 @@ pub fn repository_response(overrides: Value) -> Value {
         content_version: 1,
         access: RepositoryAccessResponse {
             actor: RepositoryActor::Public,
-            can_read_private_files: false,
+            view: scope_api_contract::ViewId::public(),
             can_push: false,
             can_change_file_visibility: false,
             can_manage_members: false,

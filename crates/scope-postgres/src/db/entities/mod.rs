@@ -1,9 +1,8 @@
 use crate::{
     db::integer_columns::{
         i32_to_u32, i64_to_u64, optional_i32_to_u32, optional_i64_to_u64, optional_u32_to_i32,
-        optional_u64_to_i64, u32_to_i32, u64_to_i64, usize_to_i64,
+        optional_u64_to_i64, u32_to_i32, u64_to_i64,
     },
-    db::projection_encoding::LIVE_PROJECTION_SOURCE,
     db::{decode_json, encode_json},
     error::PostgresError,
 };
@@ -40,9 +39,9 @@ use scope_domain::{
     repository::{RepoLifecycleState, RepoRecord, Repository},
 };
 use scope_domain::{
-    policy::{Policy, ScopePath, Visibility},
-    projection::ProjectionViewKey,
+    policy::{Policy, ScopePath},
     projection_views::{ProjectionViewFile, ProjectionViewFileContent},
+    views::ViewId,
 };
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -146,14 +145,12 @@ mod tests {
         let path = format!("/{}", "deep/".repeat(900)) + "file.txt";
         let model = projection_file::Model::live(
             "owner/repo",
-            1,
-            ProjectionViewKey::Public,
             ProjectionViewFileContent {
                 file: ProjectionViewFile {
                     path: ScopePath::parse(&path).unwrap(),
                     oid: "1111111111111111111111111111111111111111".to_string(),
                     tracked: true,
-                    visibility: Visibility::Public,
+                    label: ViewId::public(),
                 },
                 blob: SourceBlob {
                     content_ref: scope_domain::content_ref::ContentRef::blob_sha256("sha256"),
@@ -180,35 +177,13 @@ mod tests {
     }
 
     #[test]
-    fn projection_read_model_persists_canonical_identity_contract() {
-        let model = projection_read_model::Model::live(
-            "owner/repo",
-            7,
-            ProjectionViewKey::Public,
-            Some("1111111111111111111111111111111111111111".to_string()),
-            10,
-            2,
-        )
-        .unwrap();
-
-        assert_eq!(
-            model.head_oid.as_deref(),
-            Some("1111111111111111111111111111111111111111")
-        );
-        assert_eq!(
-            model.identity_version,
-            scope_git::PROJECTION_IDENTITY_VERSION
-        );
-    }
-
-    #[test]
     fn projection_file_rejects_inconsistent_domain_content() {
         let content = ProjectionViewFileContent {
             file: ProjectionViewFile {
                 path: ScopePath::parse("/README.md").unwrap(),
                 oid: "1111111111111111111111111111111111111111".to_string(),
                 tracked: true,
-                visibility: Visibility::Public,
+                label: ViewId::public(),
             },
             blob: SourceBlob {
                 content_ref: scope_domain::content_ref::ContentRef::blob_sha256("sha256"),
@@ -221,34 +196,15 @@ mod tests {
 
         let mut untracked = content.clone();
         untracked.file.tracked = false;
-        assert!(
-            projection_file::Model::live("owner/repo", 1, ProjectionViewKey::Public, untracked,)
-                .is_err()
-        );
+        assert!(projection_file::Model::live("owner/repo", untracked).is_err());
 
         let mut mismatched_oid = content.clone();
         mismatched_oid.blob.git_oid = "2222222222222222222222222222222222222222".to_string();
-        assert!(
-            projection_file::Model::live(
-                "owner/repo",
-                1,
-                ProjectionViewKey::Public,
-                mismatched_oid,
-            )
-            .is_err()
-        );
+        assert!(projection_file::Model::live("owner/repo", mismatched_oid).is_err());
 
         let mut unsupported_mode = content;
         unsupported_mode.blob.git_file_mode = "120000".to_string();
-        assert!(
-            projection_file::Model::live(
-                "owner/repo",
-                1,
-                ProjectionViewKey::Public,
-                unsupported_mode,
-            )
-            .is_err()
-        );
+        assert!(projection_file::Model::live("owner/repo", unsupported_mode).is_err());
     }
 
     #[test]

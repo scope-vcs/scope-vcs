@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 mod read_contract;
 
@@ -22,7 +23,7 @@ pub(super) async fn state_with_pushed_workflow_checkout(
     run_git(Some(&source), &["add", "."], "stage workflow source").unwrap();
     commit_all(&source, "add workflow");
     let bare = clone_test_repo(&source, &format!("{label}-bare"), true);
-    apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+    apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::public())).await;
     allow_native_runs(&state).await;
     (state, source)
 }
@@ -48,7 +49,7 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
     run_git(Some(&source), &["add", "."], "stage workflow source").unwrap();
     commit_all(&source, "add workflow");
     let bare = clone_test_repo(&source, "run-history-pages-bare", true);
-    apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+    apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::public())).await;
     allow_native_runs(&state).await;
 
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
@@ -313,7 +314,7 @@ async fn direct_push_replaces_the_complete_workflow_catalog() {
     run_git(Some(&source), &["add", "."], "stage initial workflows").unwrap();
     commit_all(&source, "add initial workflows");
     let first = clone_test_repo(&source, "workflow-catalog-replacement-first", true);
-    apply_first_push_from_staging_repo(&state, &first, repo_config(Visibility::Public)).await;
+    apply_first_push_from_staging_repo(&state, &first, repo_config(ViewId::public())).await;
 
     fs::rename(
         source.join(".scope/runs/old.yml"),
@@ -343,7 +344,7 @@ async fn direct_push_replaces_the_complete_workflow_catalog() {
         TEST_REPO_NAME,
         &second,
         &test_owner_id(),
-        repo_config(Visibility::Public),
+        repo_config(ViewId::public()),
         ReviewedUpdateMode::ReadyPush,
     )
     .await
@@ -379,7 +380,7 @@ async fn workflow_catalog_failure_rolls_back_the_push_transaction() {
     run_git(Some(&source), &["add", "."], "stage rollback base").unwrap();
     commit_all(&source, "add rollback base");
     let first = clone_test_repo(&source, "workflow-catalog-rollback-first", true);
-    apply_first_push_from_staging_repo(&state, &first, repo_config(Visibility::Public)).await;
+    apply_first_push_from_staging_repo(&state, &first, repo_config(ViewId::public())).await;
     let before = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
@@ -394,7 +395,7 @@ async fn workflow_catalog_failure_rolls_back_the_push_transaction() {
         TEST_REPO_NAME,
         &second,
         &test_owner_id(),
-        repo_config(Visibility::Public),
+        repo_config(ViewId::public()),
         ReviewedUpdateMode::ReadyPush,
     )
     .await

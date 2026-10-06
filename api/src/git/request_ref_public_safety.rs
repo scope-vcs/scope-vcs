@@ -12,9 +12,9 @@ use crate::{
 use scope_domain::{
     policy::ScopePath,
     projection::NativePublicCommit,
-    projection::ProjectionViewKey,
     repo_config::RepoConfig,
     requests::{PathHistory, PublicRequestPathError, PublicRequestPaths},
+    views::Views,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{collections::BTreeSet, path::Path as FsPath};
@@ -38,7 +38,7 @@ pub(super) async fn ensure_public_request_ref_is_public_safe(
     new_head_oid: &str,
 ) -> Result<String, ApiError> {
     let (public_main_oid, public_visible_paths) =
-        fetch_current_public_projection(git, state, staging_repo).await?;
+        fetch_current_public_projection(git, repo_config.views(), state, staging_repo).await?;
     ensure_public_request_branch_is_based_on_public_main(staging_repo, new_head_oid)?;
     let commit_oids = commits_after(staging_repo, PUBLIC_REQUEST_BASE_REF, new_head_oid)?;
     validated_public_parent_oids(staging_repo, &commit_oids)?;
@@ -59,7 +59,7 @@ pub(crate) async fn validate_public_request_merge_range(
     request_head_oid: &str,
 ) -> Result<ValidatedPublicRequestRange, ApiError> {
     let (public_base_oid, public_visible_paths) =
-        fetch_current_public_projection(git, state, staging_repo).await?;
+        fetch_current_public_projection(git, repo_config.views(), state, staging_repo).await?;
     ensure_public_head_is_request_ancestor(staging_repo, request_head_oid)?;
     let commit_oids = commits_after(staging_repo, PUBLIC_REQUEST_BASE_REF, request_head_oid)?;
     if commit_oids.is_empty() {
@@ -94,11 +94,12 @@ pub(crate) async fn validate_public_request_merge_range(
 
 pub(crate) async fn public_contribution_base(
     git: &RepositoryGit,
+    views: &Views,
     state: &AppState,
     staging_repo: &FsPath,
     request_head_oid: &str,
 ) -> Result<String, ApiError> {
-    fetch_current_public_projection(git, state, staging_repo).await?;
+    fetch_current_public_projection(git, views, state, staging_repo).await?;
     git_stdout_text(
         staging_repo,
         &["merge-base", PUBLIC_REQUEST_BASE_REF, request_head_oid],
@@ -163,16 +164,20 @@ fn validated_public_parent_oids(
 
 async fn fetch_current_public_projection(
     git: &RepositoryGit,
+    views: &Views,
     state: &AppState,
     staging_repo: &FsPath,
 ) -> Result<(String, BTreeSet<String>), ApiError> {
-    let Some(public_head_oid) = git.view_head(state, ProjectionViewKey::Public).await? else {
+    let public_view = views
+        .anyone()
+        .ok_or_else(|| ApiError::not_found("public view not found"))?;
+    let Some(public_head_oid) = git.view_head(state, public_view).await? else {
         return Err(ApiError::conflict(
             "repo has no public main branch for public request",
         ));
     };
     let public_repo = git
-        .view_repo_at(state, ProjectionViewKey::Public, Some(&public_head_oid))
+        .view_repo_at(state, views, public_view, Some(&public_head_oid))
         .await?;
     let refspec = format!("+refs/heads/{DEFAULT_GIT_BRANCH}:{PUBLIC_REQUEST_BASE_REF}");
     run_git(

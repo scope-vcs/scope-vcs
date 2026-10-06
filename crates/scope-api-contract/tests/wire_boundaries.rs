@@ -25,7 +25,7 @@ fn public_payload_fields_are_owned_wire_types() {
         file: CommitFileResponse,
     ) {
         let _: RequestActorRole = summary.author_role;
-        let _: RequestAudience = summary.audience;
+        let _: ViewId = summary.view;
         let _: RequestState = summary.state;
         let _: RequestMergeabilityStatus = summary.mergeability.status;
         let _: RequestState = list_item.state;
@@ -33,7 +33,7 @@ fn public_payload_fields_are_owned_wire_types() {
         let _: RequestEventPayload = event.payload;
         let _: RequestDiscussionStatus = discussion.status;
         let _: FileChangeKind = file.kind;
-        let _: Visibility = file.visibility;
+        let _: ViewId = file.label;
     }
     fn request_auto_merge(response: RequestAutoMergeResponse) {
         if let Some(intent) = response.intent {

@@ -8,8 +8,8 @@ use scope_domain::{
     repository::access::RepositoryAccess,
     requests::{
         REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_QUEUE_RULES, RequestActorRole, RequestAttention,
-        RequestAttentionReason, RequestAttentionState, RequestAudience, RequestClaim,
-        RequestListPredicate, RequestQueueClassification, RequestQueueFacts, RequestQueuePredicate,
+        RequestAttentionReason, RequestAttentionState, RequestClaim, RequestListPredicate,
+        RequestQueueClassification, RequestQueueFacts, RequestQueuePredicate,
         RequestQueuePredicateAtom, RequestQueueSection, RequestState, classify_request_queue_item,
         request_queue_visibility_predicate,
     },
@@ -92,7 +92,7 @@ impl RequestStore {
             .transpose()?;
         let after_id = input.after.map(|cursor| cursor.request_id.clone());
         let limit = input.limit.min((REQUEST_LIST_MAX_PAGE_SIZE + 1) as u64);
-        let sql = queue_sql(input.access, input.viewer_user_id);
+        let sql = queue_sql(input.access.clone(), input.viewer_user_id);
         let rows = QueueModel::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
@@ -182,7 +182,8 @@ impl QueueModel {
                 title: self.title,
                 author_user_id: self.author_user_id,
                 author_role: entities::decode_enum::<RequestActorRole>(self.author_role)?,
-                audience: entities::decode_enum::<RequestAudience>(self.audience)?,
+                view: scope_domain::views::ViewId::parse(&self.audience)
+                    .map_err(PostgresError::internal)?,
                 head_oid: self.head_oid,
                 state,
                 submitted_at_unix: optional_u64(self.submitted_at_unix, "request submission time")?,
@@ -304,8 +305,7 @@ fn request_visibility_sql(predicate: &RequestListPredicate<'_>) -> String {
     match predicate {
         RequestListPredicate::All(predicates) => join_sql_predicates(predicates, " AND "),
         RequestListPredicate::Any(predicates) => join_sql_predicates(predicates, " OR "),
-        RequestListPredicate::Audience(RequestAudience::Public) => "r.audience = 'Public'".into(),
-        RequestListPredicate::Audience(RequestAudience::Private) => "r.audience = 'Private'".into(),
+        RequestListPredicate::View(view) => format!("r.audience = '{}'", view.as_str()),
         RequestListPredicate::Submitted => "r.submitted_at_unix IS NOT NULL".into(),
         RequestListPredicate::Author(_) => "r.author_user_id = $2".into(),
         RequestListPredicate::Invitee(_) => "EXISTS (

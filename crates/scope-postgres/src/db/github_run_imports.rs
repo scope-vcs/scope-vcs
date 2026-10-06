@@ -63,7 +63,7 @@ impl RepositoryStore {
         let context = repository_access(&tx, repo_id, Some(user_id))
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        let count = set_github_run_import_count(context.access, count)?;
+        let count = set_github_run_import_count(context.access.clone(), count)?;
         save_run_import_count(&tx, repo_id, count).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok((count, context.incarnation()))
@@ -87,7 +87,7 @@ impl RepositoryStore {
         let current = load_import(&tx, repo_id).await?;
         let count = run_import_count(&tx, repo_id).await?;
         let import = start_github_run_import(
-            context.access,
+            context.access.clone(),
             connection.as_ref(),
             current.as_ref(),
             count,

@@ -8,8 +8,8 @@ pub(super) fn start_request_branch(
 ) -> anyhow::Result<RequestCommandOutcome> {
     let context = load_context(Some(git_repo), api, args.remote.as_deref())?;
     local::require_git_remote(&context)?;
-    let audience = start_audience(context.repo.access.actor, args.audience)?;
-    let base_oid = refresh_main_projection(git_repo, &context.target, audience, api.token)?;
+    let view = start_view(&context.repo.access, args.view)?;
+    let base_oid = refresh_main_projection(git_repo, &context.target, &view, api.token)?;
     let name = args.name.trim().to_string();
     scope_domain::requests::validate_request_name(&name)
         .map_err(|error| crate::error::CliError::usage(error.message))?;
@@ -30,7 +30,7 @@ pub(super) fn start_request_branch(
             repo: &context.target.repo,
             name,
             title: args.title,
-            audience,
+            view: view.clone(),
         },
     )?;
     if !args.current_branch
@@ -106,7 +106,7 @@ pub(super) fn start_request_branch(
             "Started request {} ({}) on branch {branch} from {} ({})",
             response.request.name,
             response.request.id,
-            audience_label(audience),
+            view_label(&view),
             short_oid(&base_oid)
         ),
         "Next: commit changes, then run scope request push".to_string(),
@@ -160,12 +160,8 @@ pub(super) fn push_request_branch(
     }
     let branch = current_branch(git_repo)?;
     let request_head_oid = head_oid(git_repo)?;
-    let current_main_oid = refresh_main_projection(
-        git_repo,
-        &context.target,
-        detail.request.audience,
-        api.token,
-    )?;
+    let current_main_oid =
+        refresh_main_projection(git_repo, &context.target, &detail.request.view, api.token)?;
     ensure_public_request_paths_allowed(git_repo, &detail, &current_main_oid, &request_head_oid)?;
     let expected_head_oid = last_seen_request_head(
         git_repo,
@@ -220,7 +216,7 @@ pub(super) fn ensure_public_request_paths_allowed(
     current_main_oid: &str,
     request_head_oid: &str,
 ) -> anyhow::Result<()> {
-    if detail.request.audience != RequestAudience::Public {
+    if !scope_domain::views::ViewId::from(detail.request.view.clone()).is_public() {
         return Ok(());
     }
     let changed_paths = request_side_changed_file_paths(

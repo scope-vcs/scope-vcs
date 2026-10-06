@@ -4,10 +4,8 @@ use crate::git::{
     command::{git_command_output, git_process_output, run_git},
     import::git_snapshot_from_ref,
 };
-use scope_domain::{
-    content::SourceBlob,
-    requests::{RequestActorRole, RequestAudience},
-};
+use scope_domain::views::ViewId;
+use scope_domain::{content::SourceBlob, requests::RequestActorRole};
 
 fn request(name: &str, head: &str, git_snapshot: Option<SourceBlob>) -> Request {
     Request {
@@ -16,7 +14,7 @@ fn request(name: &str, head: &str, git_snapshot: Option<SourceBlob>) -> Request 
         name: name.into(),
         author_user_id: Some("author".into()),
         author_role: RequestActorRole::Public,
-        audience: RequestAudience::Public,
+        view: ViewId::public(),
         base_main_oid: head.into(),
         head_oid: head.into(),
         git_snapshot,

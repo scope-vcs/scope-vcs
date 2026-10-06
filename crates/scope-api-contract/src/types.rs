@@ -1,7 +1,7 @@
 use crate::{
     FileChangeKind, FirstPushTokenStatus, GitOid, RepoConfig, RepoLifecycleState, RepositoryActor,
-    RequestActorRole, RequestAudience, RequestDiscussionStatus, RequestEventKind,
-    RequestEventPayload, RequestMergeabilityStatus, RequestState, SessionIdentity, Visibility,
+    RequestActorRole, RequestDiscussionStatus, RequestEventKind, RequestEventPayload,
+    RequestMergeabilityStatus, RequestState, SessionIdentity, ViewId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -104,7 +104,7 @@ pub struct CliSessionTokenResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct CreateRepoRequest {
     pub name: String,
-    pub file_default_visibility: Option<Visibility>,
+    pub file_default_view: Option<ViewId>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -148,7 +148,7 @@ pub struct OwnerProfileResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RepositoryAccessResponse {
     pub actor: RepositoryActor,
-    pub can_read_private_files: bool,
+    pub view: ViewId,
     pub can_push: bool,
     pub can_change_file_visibility: bool,
     pub can_manage_members: bool,
@@ -280,7 +280,7 @@ pub struct RequestSummaryResponse {
     /// Null once that account is deleted; clients show a deleted user.
     pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
-    pub audience: RequestAudience,
+    pub view: ViewId,
     pub base_main_oid: GitOid,
     pub head_oid: GitOid,
     pub state: RequestState,
@@ -340,7 +340,7 @@ pub struct RequestListItemResponse {
     pub name: String,
     pub title: String,
     pub author_role: RequestActorRole,
-    pub audience: RequestAudience,
+    pub view: ViewId,
     pub head_oid: GitOid,
     pub state: RequestState,
     pub submitted_at_unix: Option<u64>,
@@ -477,7 +477,7 @@ pub struct CommitFileResponse {
     pub new_mode: Option<String>,
     pub old_oid: Option<String>,
     pub new_oid: Option<String>,
-    pub visibility: Visibility,
+    pub label: ViewId,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -564,7 +564,7 @@ pub struct RequestActivityPageResponse {
 pub struct StartRequestRequest {
     pub name: String,
     pub title: Option<String>,
-    pub audience: RequestAudience,
+    pub view: ViewId,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

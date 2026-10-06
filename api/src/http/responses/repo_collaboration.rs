@@ -172,7 +172,7 @@ pub(crate) fn repository_member_response(
         user_id: member.user_id.clone(),
         handle: user.handle.clone(),
         email: user.email.clone(),
-        permissions: member.permissions.into(),
+        permissions: member.permissions.clone().into(),
         created_at_unix: member.created_at_unix,
         updated_at_unix: member.updated_at_unix,
     }
@@ -186,7 +186,7 @@ pub(crate) fn repository_invite_response(
     RepositoryInviteResponse {
         id: invite.id.clone(),
         invited_email: invite.invited_email.clone(),
-        permissions: invite.permissions.into(),
+        permissions: invite.permissions.clone().into(),
         state: invite.state(now_unix).into(),
         expires_at_unix: invite.expires_at_unix,
         email: email.map(|email| RepositoryInviteEmailResponse {
@@ -224,7 +224,7 @@ pub(crate) fn repository_invite_landing_response(
             owner_handle,
             repo_name,
             invited_email: invite.invited_email.clone(),
-            permissions: invite.permissions.into(),
+            permissions: invite.permissions.clone().into(),
             expires_at_unix: invite.expires_at_unix,
         },
         RepositoryInviteLanding::Member => RepositoryInviteLandingResponse::Member {

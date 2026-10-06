@@ -10,9 +10,8 @@ import { Link } from '@tanstack/react-router'
 import { useCallback } from 'react'
 import { repoResourceScope } from './repo-resource-scope'
 import { repositoryActivityResource } from './repository-activity-resource'
-import { defaultHistoryAudience } from '@/features/history/history-feed'
 import { HistoryMenu } from '@/features/history/history-menu'
-import { updateAudienceSearch } from '@/features/history/update-search'
+import { updateViewSearch } from '@/features/history/update-search'
 
 export function RepositoryLatestActivity({ params, repo }: { params: RepoParams; repo: RepoSummaryResponse }) {
   const { isLoaded, userId } = useAuth()
@@ -43,7 +42,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       </div>
     )
   }
-  const { audience, entry, head_oid: headOid } = current.value
+  const { view, entry, head_oid: headOid } = current.value
   if (!entry) return null
   const message = entry.message.split('\n', 1)[0] || 'Repository updated'
   return (
@@ -51,7 +50,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       <Link
         className="min-w-0 basis-full truncate rounded font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring sm:flex-1 sm:basis-auto"
         params={{ ...params, entryId: entry.source_id }}
-        search={updateAudienceSearch(audience, defaultHistoryAudience(repo.access.can_read_private_files))}
+        search={updateViewSearch(view, repo.access.view)}
         title={message}
         to="/$owner/$repo/updates/$entryId"
       >
@@ -66,7 +65,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
           </span>
         )}
       </div>
-      <HistoryMenu canReadPrivateFiles={repo.access.can_read_private_files} params={params} />
+      <HistoryMenu access={repo.access} params={params} />
       {current.error && <button className="basis-full text-left underline" onClick={current.retry} type="button">Could not refresh latest change. Retry</button>}
     </div>
   )

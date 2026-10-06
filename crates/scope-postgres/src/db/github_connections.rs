@@ -111,7 +111,7 @@ impl RepositoryStore {
         .map(|read| read.connection);
         let run_import_count = command.run_import_count;
         let connection = connect_github_repository(
-            context.access,
+            context.access.clone(),
             current.as_ref(),
             github_repository_link.as_ref(),
             command,
@@ -203,7 +203,8 @@ impl RepositoryStore {
         let current = load_connection(&tx, "WHERE connection.repo_id = $1", [repo_id.into()])
             .await?
             .map(|read| read.connection);
-        let connection = acknowledge_public_github_repository(context.access, current.as_ref())?;
+        let connection =
+            acknowledge_public_github_repository(context.access.clone(), current.as_ref())?;
         save_visibility(&tx, &connection).await?;
         requeue_started_github_evaluations(&tx, &connection).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -225,7 +226,7 @@ impl RepositoryStore {
         let current = load_connection(&tx, "WHERE connection.repo_id = $1", [repo_id.into()])
             .await?
             .map(|read| read.connection);
-        disconnect_github_repository(context.access, current.as_ref())?;
+        disconnect_github_repository(context.access.clone(), current.as_ref())?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "DELETE FROM scope_github_connections WHERE repo_id = $1",

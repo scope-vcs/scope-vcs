@@ -2,12 +2,44 @@ use super::{
     RepoRecord, RepositoryIncarnation,
     access::{RepositoryAccess, repository_access_for_user_id},
 };
+use crate::{
+    error::DomainError,
+    views::{ViewId, Views},
+};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositoryMemberPermissions {
     pub can_push: bool,
     pub can_change_file_visibility: bool,
+    pub view: ViewId,
+}
+
+impl RepositoryMemberPermissions {
+    pub fn validate(&self, views: &Views) -> Result<(), DomainError> {
+        if views.get(&self.view).is_none() {
+            return Err(DomainError::invalid_input(format!(
+                "unknown view {}",
+                self.view
+            )));
+        }
+        if &self.view != views.full() {
+            return Err(DomainError::invalid_input(
+                "members read the full view until views can be assigned",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Default for RepositoryMemberPermissions {
+    fn default() -> Self {
+        Self {
+            can_push: false,
+            can_change_file_visibility: false,
+            view: ViewId::private(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,7 +136,7 @@ impl CollaborationState {
             &self.record.owner_user_id,
             self.record.lifecycle_state,
             self.member_for_user(user_id)
-                .map(|member| member.permissions),
+                .map(|member| member.permissions.clone()),
             user_id,
         )
     }

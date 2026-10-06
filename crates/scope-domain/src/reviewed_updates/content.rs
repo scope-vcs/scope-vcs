@@ -3,10 +3,11 @@ use super::{
     history_rewrite::{HistoryRewriteInput, apply_history_rewrites},
     policy::policy_from_config_for_tree,
 };
+use crate::views::ViewId;
 use crate::{
     content::SourceBlob,
     error::DomainError,
-    policy::{Policy, ScopePath, Visibility, VisibilityRule},
+    policy::{LabelRule, Policy, ScopePath},
     projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repo_config::RepoConfig,
     repo_control::is_public_request_protected_path,
@@ -39,7 +40,7 @@ pub struct ReviewedUpdateInput {
     pub config: RepoConfig,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ReviewedUpdateAuthorization<'a> {
     pub access: RepositoryAccess,
     pub push_mode: MainPushMode,
@@ -169,7 +170,7 @@ pub fn apply_reviewed_update_to_repo(
     );
     for change in &mut file_changes {
         if change.new_content.is_none() && history_rewrite.redacted_paths.contains(&change.path) {
-            change.visibility = Visibility::Private;
+            change.label = ViewId::private();
         }
     }
     let mut visibility_changes = history_rewrite.visibility_changes;
@@ -178,22 +179,22 @@ pub fn apply_reviewed_update_to_repo(
         .map(|change| change.path.clone())
         .collect::<BTreeSet<_>>();
     for (path, current_content) in &new_tree {
-        let old_visibility = repo.policy.effective_visibility(path);
-        let new_visibility = update.config.visibility_for_path(path);
-        if old_visibility == new_visibility {
+        let old_label = repo.policy.label(path, repo.repo_config.views());
+        let new_label = update.config.label_for_path(path);
+        if old_label == new_label {
             continue;
         }
         if baseline_paths.contains(path) {
             continue;
         }
         if history_rewrite.redacted_paths.contains(path)
-            && old_visibility == Visibility::Public
-            && new_visibility == Visibility::Private
+            && old_label == ViewId::public()
+            && new_label == ViewId::private()
         {
             continue;
         }
-        if old_visibility == Visibility::Public
-            && new_visibility == Visibility::Private
+        if old_label == ViewId::public()
+            && new_label == ViewId::private()
             && !old_tree.contains_key(path)
         {
             continue;
@@ -201,8 +202,8 @@ pub fn apply_reviewed_update_to_repo(
 
         visibility_changes.push(VisibilityChange {
             path: path.clone(),
-            old_visibility,
-            new_visibility,
+            old_label,
+            new_label,
             current_content: Some(current_content.clone()),
         });
     }
@@ -371,9 +372,9 @@ fn accept_content_update(
             file_changes
                 .iter()
                 .filter(|change| change.old_content.is_none() && change.new_content.is_some())
-                .map(|change| VisibilityRule {
+                .map(|change| LabelRule {
                     path: change.path.clone(),
-                    visibility: update.config.visibility_for_path(&change.path),
+                    view: update.config.label_for_path(&change.path),
                 }),
         )
         .map_err(ReviewedUpdateError::InvalidPolicy)?;
@@ -424,17 +425,17 @@ fn build_file_changes(
             continue;
         }
         let visibility = match (written_visibility, &old_content, &change.content) {
-            (_, _, None) => policy.effective_visibility(&change.path),
+            (_, _, None) => policy.label(&change.path, config.views()),
             (WrittenFileVisibility::FromConfig, _, Some(_))
             | (WrittenFileVisibility::ExistingFromPolicy, None, Some(_)) => {
-                config.visibility_for_path(&change.path)
+                config.label_for_path(&change.path)
             }
             (WrittenFileVisibility::ExistingFromPolicy, Some(_), Some(_)) => {
-                policy.effective_visibility(&change.path)
+                policy.label(&change.path, config.views())
             }
         };
         file_changes.push(FileChange {
-            visibility,
+            label: visibility,
             path: change.path,
             old_content,
             new_content: change.content,
@@ -486,7 +487,7 @@ fn validate_commit_origin(
     };
 
     if changes.iter().any(|change| {
-        change.visibility != Visibility::Public || is_public_request_protected_path(&change.path)
+        change.label != ViewId::public() || is_public_request_protected_path(&change.path)
     }) {
         return Err(ReviewedUpdateError::Conflict(
             "public request merge contains non-public changes",
@@ -531,7 +532,7 @@ fn validate_commit_origin(
         .collect::<BTreeSet<_>>();
     if touched_paths.iter().any(|path| {
         is_public_request_protected_path(path)
-            || repo_config.visibility_for_path(path) != Visibility::Public
+            || repo_config.label_for_path(path) != ViewId::public()
     }) || changes
         .iter()
         .any(|change| !touched_paths.contains(&change.path))
@@ -572,9 +573,7 @@ fn validate_commit_origin(
 #[cfg(test)]
 mod authorization_tests {
     use super::*;
-    use crate::{
-        error::DomainErrorKind, repo_config::ConfigVisibility, repository::access::RepositoryActor,
-    };
+    use crate::{error::DomainErrorKind, repository::access::RepositoryActor, views::ViewId};
 
     fn access(
         actor: RepositoryActor,
@@ -583,7 +582,11 @@ mod authorization_tests {
     ) -> RepositoryAccess {
         RepositoryAccess {
             actor,
-            can_read_private_files: actor != RepositoryActor::Public,
+            view: if actor == RepositoryActor::Public {
+                ViewId::public()
+            } else {
+                ViewId::private()
+            },
             can_push,
             can_change_file_visibility: can_change_visibility,
             can_manage_members: false,
@@ -593,7 +596,7 @@ mod authorization_tests {
 
     #[test]
     fn reviewed_update_authorization_masks_public_push_denial_as_membership_required() {
-        let config = RepoConfig::with_default_visibility(ConfigVisibility::Private);
+        let config = RepoConfig::with_default_view(ViewId::private());
         let error = authorize_reviewed_update(ReviewedUpdateAuthorization {
             access: access(RepositoryActor::Public, false, false),
             push_mode: MainPushMode::Denied,
@@ -608,7 +611,7 @@ mod authorization_tests {
 
     #[test]
     fn reviewed_update_authorization_rechecks_member_push_permission() {
-        let config = RepoConfig::with_default_visibility(ConfigVisibility::Private);
+        let config = RepoConfig::with_default_view(ViewId::private());
         let error = authorize_reviewed_update(ReviewedUpdateAuthorization {
             access: access(RepositoryActor::Member, false, false),
             push_mode: MainPushMode::Denied,
@@ -623,8 +626,8 @@ mod authorization_tests {
 
     #[test]
     fn reviewed_update_authorization_protects_config_changes() {
-        let current = RepoConfig::with_default_visibility(ConfigVisibility::Private);
-        let proposed = RepoConfig::with_default_visibility(ConfigVisibility::Public);
+        let current = RepoConfig::with_default_view(ViewId::private());
+        let proposed = RepoConfig::with_default_view(ViewId::public());
         let error = authorize_reviewed_update(ReviewedUpdateAuthorization {
             access: access(RepositoryActor::Member, true, false),
             push_mode: MainPushMode::Ready,
@@ -639,7 +642,7 @@ mod authorization_tests {
 
     #[test]
     fn reviewed_update_authorization_allows_content_only_push_without_visibility_permission() {
-        let config = RepoConfig::with_default_visibility(ConfigVisibility::Private);
+        let config = RepoConfig::with_default_view(ViewId::private());
         authorize_reviewed_update(ReviewedUpdateAuthorization {
             access: access(RepositoryActor::Member, true, false),
             push_mode: MainPushMode::Ready,

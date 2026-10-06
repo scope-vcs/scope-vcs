@@ -37,7 +37,9 @@ pub(crate) fn ensure_repo_read(repo: &Repository, principal: &Principal) -> Resu
     let access = repo.access_for_principal(principal);
     let readable = if access.actor == RepositoryActor::Public {
         repo.record.lifecycle_state == RepoLifecycleState::Ready
-            && has_visible_projected_non_control_files(repo, principal)
+            && repo.repo_config.views().anyone().is_some_and(|view| {
+                has_visible_projected_non_control_files(repo, repo.repo_config.views(), view)
+            })
     } else {
         repo.can_read_path(principal, &ScopePath::root())
     };

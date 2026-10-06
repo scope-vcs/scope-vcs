@@ -11,10 +11,10 @@ const content: RepoContent = {
   files: [],
 }
 
-test('keys repository content by version and audience', () => {
+test('keys repository content by version and view', () => {
   const base = {
     scope: 'viewer-a',
-    audience: 'public' as const,
+    view: 'public' as const,
     contentVersion: 3,
     repoId: 'repo-1',
   }
@@ -25,7 +25,7 @@ test('keys repository content by version and audience', () => {
   )
   assert.notEqual(
     repoContentCacheKey(base),
-    repoContentCacheKey({ ...base, audience: 'private' }),
+    repoContentCacheKey({ ...base, view: 'private' }),
   )
   assert.notEqual(
     repoContentCacheKey(base),

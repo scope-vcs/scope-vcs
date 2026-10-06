@@ -18,13 +18,13 @@ test('history opens a file only from the URL path', () => {
 })
 
 test('selects exact visibility effects independently of content and same-path transitions', () => {
-  const content: HistoryEntryDetailResponse['files'][number] = { path: '/same.ts', kind: 'Modified', old_mode: '100644', new_mode: '100644', old_oid: 'a', new_oid: 'b', visibility: 'Public' }
+  const content: HistoryEntryDetailResponse['files'][number] = { path: '/same.ts', kind: 'Modified', old_mode: '100644', new_mode: '100644', old_oid: 'a', new_oid: 'b', label: 'public' }
   const preview = { ...content, old_oid: null, new_oid: 'c' }
   const detail: Pick<HistoryEntryDetailResponse, 'files' | 'visibility_changes'> = {
     files: [content],
     visibility_changes: [
-      { id: 'first', path: '/same.ts', old_visibility: 'Private', new_visibility: 'Public', file: preview },
-      { id: 'second', path: '/same.ts', old_visibility: 'Public', new_visibility: 'Private', file: null },
+      { id: 'first', path: '/same.ts', old_label: 'private', new_label: 'public', file: preview },
+      { id: 'second', path: '/same.ts', old_label: 'public', new_label: 'private', file: null },
     ],
   }
   assert.equal(historyFileSelection({ path: '/same.ts' }, detail).file, content)

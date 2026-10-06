@@ -41,7 +41,7 @@ fn open_request() -> Request {
         name: "change".into(),
         author_user_id: Some("author".into()),
         author_role: RequestActorRole::Public,
-        audience: super::super::RequestAudience::Public,
+        view: crate::views::ViewId::public(),
         base_main_oid: "base".into(),
         head_oid: HEAD.into(),
         git_snapshot: Some(SourceBlob {

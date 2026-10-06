@@ -1,9 +1,10 @@
 use super::{
-    PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request, RequestActorRole,
-    RequestAudience, RequestEvent, RequestEventKind, RequestEventPayload, RequestRevision,
-    RequestState, advance_request_activity, ensure_event_id_available, ensure_request_matches,
-    request_identity_audit_fact, validate_body_size, validate_required,
+    PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request, RequestActorRole, RequestEvent,
+    RequestEventKind, RequestEventPayload, RequestRevision, RequestState, advance_request_activity,
+    ensure_event_id_available, ensure_request_matches, request_identity_audit_fact,
+    validate_body_size, validate_required,
 };
+use crate::views::ViewId;
 use crate::{content::SourceBlob, error::DomainError};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -21,7 +22,7 @@ pub struct StartRequestInput {
     pub author_user_id: String,
     pub title: Option<String>,
     pub author_role: RequestActorRole,
-    pub audience: RequestAudience,
+    pub view: ViewId,
     pub base_main_oid: String,
     pub event_id: String,
     pub now_unix: u64,
@@ -127,7 +128,7 @@ pub fn start_request(
         name: input.name,
         author_user_id: Some(input.author_user_id),
         author_role: input.author_role,
-        audience: input.audience,
+        view: input.view,
         base_main_oid: input.base_main_oid.clone(),
         head_oid: input.base_main_oid,
         git_snapshot: None,
@@ -357,15 +358,15 @@ fn validate_start_request_input(input: &StartRequestInput) -> Result<(), DomainE
     }
     validate_required("base main oid", &input.base_main_oid)?;
     validate_required("event id", &input.event_id)?;
-    validate_start_request_audience(input.author_role, input.audience)?;
+    validate_start_request_view(input.author_role, input.view.clone())?;
     Ok(())
 }
 
-pub fn validate_start_request_audience(
+pub fn validate_start_request_view(
     author_role: RequestActorRole,
-    audience: RequestAudience,
+    view: ViewId,
 ) -> Result<(), DomainError> {
-    if author_role == RequestActorRole::Public && audience != RequestAudience::Public {
+    if author_role == RequestActorRole::Public && view != ViewId::public() {
         Err(DomainError::invalid_input(
             "public contributors can only create public requests",
         ))
@@ -419,13 +420,9 @@ mod tests {
 
     #[test]
     fn public_contributors_can_only_start_public_requests() {
-        assert!(
-            validate_start_request_audience(RequestActorRole::Public, RequestAudience::Public)
-                .is_ok()
-        );
+        assert!(validate_start_request_view(RequestActorRole::Public, ViewId::public()).is_ok());
         let error =
-            validate_start_request_audience(RequestActorRole::Public, RequestAudience::Private)
-                .unwrap_err();
+            validate_start_request_view(RequestActorRole::Public, ViewId::private()).unwrap_err();
         assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
         assert_eq!(
             error.message,
@@ -436,8 +433,8 @@ mod tests {
     #[test]
     fn maintainers_can_start_public_or_private_requests() {
         for role in [RequestActorRole::Member, RequestActorRole::Owner] {
-            for audience in [RequestAudience::Public, RequestAudience::Private] {
-                assert!(validate_start_request_audience(role, audience).is_ok());
+            for view in [ViewId::public(), ViewId::private()] {
+                assert!(validate_start_request_view(role, view).is_ok());
             }
         }
     }

@@ -33,10 +33,11 @@ use scope_api_contract::{
     RequestRevisionListResponse, RequestRevisionResponse,
 };
 use scope_domain::{
-    policy::{Policy, ScopePath},
+    policy::ScopePath,
     repository::access::RepositoryAccess,
     requests::{RequestRevision, select_request_review_revision},
 };
+use scope_postgres::db::RepositoryReadPolicy;
 use serde::Deserialize;
 use std::{path::Path as FsPath, sync::Arc};
 
@@ -66,13 +67,12 @@ pub(crate) async fn list_request_revisions(
     Query(input): Query<RequestRevisionListRequest>,
 ) -> Result<Json<RequestRevisionListResponse>, ApiError> {
     let (repo, viewer_user_id) = repo_and_access(&state, &headers, &owner, &repo_name).await?;
-    let access = repo.context.access;
-    let incarnation = repo.context.incarnation();
-    let policy = Arc::new(repo.policy);
+    let access = repo.context.access.clone();
+    let repo = Arc::new(repo);
     let (request, _) = visible_request(
         &state,
         &repo.context.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -121,21 +121,22 @@ pub(crate) async fn list_request_revisions(
         let revision = &revisions[index];
         let commit_limit = work_budget.claim_revision(revision.git_snapshot.size_bytes);
         let (commits, inspection) = if let Some(commit_limit) = commit_limit {
-            let policy_for_inspection = policy.clone();
+            let repo_for_inspection = repo.clone();
             let selected_commit = (input.revision.as_deref() == Some(revision.id.as_str()))
                 .then(|| selected_commit.clone())
                 .flatten();
             let file_limit = work_budget.remaining_files;
+            let inspection_access = access.clone();
             let inspected = with_request_revision_store_repo(
                 &state,
-                &incarnation,
+                &repo.context.incarnation(),
                 &request,
                 revision,
                 move |raw_repo, revision| {
                     request_revision_commits(
                         raw_repo,
-                        &policy_for_inspection,
-                        access,
+                        &repo_for_inspection,
+                        inspection_access,
                         revision,
                         selected_commit.as_deref(),
                         commit_limit,
@@ -149,7 +150,7 @@ pub(crate) async fn list_request_revisions(
         } else {
             (Vec::new(), RequestRevisionInspectionState::Unavailable)
         };
-        let (old_head_oid, new_head_oid) = if access.can_read_private_files {
+        let (old_head_oid, new_head_oid) = if access.view.is_private() {
             (
                 Some(revision.old_head_oid.clone()),
                 Some(revision.new_head_oid.clone()),
@@ -234,13 +235,12 @@ pub(crate) async fn get_request_revision_commit_file_diff(
     Query(input): Query<RequestFileDiffRequest>,
 ) -> Result<Json<ReviewFileDiffResponse>, ApiError> {
     let (repo, viewer_user_id) = repo_and_access(&state, &headers, &owner, &repo_name).await?;
-    let access = repo.context.access;
-    let incarnation = repo.context.incarnation();
-    let policy = Arc::new(repo.policy);
+    let access = repo.context.access.clone();
+    let repo = Arc::new(repo);
     let (request, _) = visible_request(
         &state,
         &repo.context.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -253,15 +253,22 @@ pub(crate) async fn get_request_revision_commit_file_diff(
         .ok_or_else(|| ApiError::not_found("request revision not found"))?;
     let commit_oid = canonical_commit_oid(commit_oid)?;
     let path = normalized_path(&input.path)?;
+    let repo_for_inspection = repo.clone();
     let path_for_inspection = path.clone();
     let (file, old_content, new_content) = with_request_revision_store_repo(
         &state,
-        &incarnation,
+        &repo.context.incarnation(),
         &request,
         &revision,
         move |raw_repo, revision| {
-            let inspected =
-                request_revision_commit_files(raw_repo, &policy, access, revision, &commit_oid)?;
+            let inspected = request_revision_commit_files(
+                raw_repo,
+                &repo_for_inspection.policy,
+                &repo_for_inspection.views,
+                access,
+                revision,
+                &commit_oid,
+            )?;
             let file = inspected
                 .commit
                 .files
@@ -294,7 +301,7 @@ pub(crate) async fn get_request_revision_commit_file_diff(
 
 fn request_revision_commits(
     raw_repo: &FsPath,
-    policy: &Policy,
+    repo: &RepositoryReadPolicy,
     access: RepositoryAccess,
     revision: &RequestRevision,
     selected_commit: Option<&str>,
@@ -334,7 +341,13 @@ fn request_revision_commits(
             identity_only_indexes.push(index);
             continue;
         }
-        let commit = inspect_request_commit(raw_repo, policy, access, &commit_oids[index])?;
+        let commit = inspect_request_commit(
+            raw_repo,
+            &repo.policy,
+            &repo.views,
+            access.clone(),
+            &commit_oids[index],
+        )?;
         metadata_incomplete |= commit.inspection == RequestRevisionInspectionState::Incomplete;
         if let Some(mut summary) = commit.commit {
             file_budget_incomplete |= truncate_commit_files(&mut summary, &mut remaining_files);
@@ -346,8 +359,13 @@ fn request_revision_commits(
             .iter()
             .map(|index| commit_oids[*index].clone())
             .collect::<Vec<_>>();
-        let identity_only =
-            inspect_request_commits_identity_only(raw_repo, policy, access, &identity_only_oids)?;
+        let identity_only = inspect_request_commits_identity_only(
+            raw_repo,
+            &repo.policy,
+            &repo.views,
+            access.clone(),
+            &identity_only_oids,
+        )?;
         for (index, commit) in identity_only_indexes.into_iter().zip(identity_only) {
             metadata_incomplete |= commit.inspection == RequestRevisionInspectionState::Incomplete;
             if let Some(summary) = commit.commit {
@@ -430,7 +448,7 @@ fn request_file_response(file: InspectedRequestChange) -> CommitFileResponse {
         new_mode: file.new_mode,
         old_oid: file.old_oid,
         new_oid: file.new_oid,
-        visibility: file.visibility.into(),
+        label: file.label.into(),
     }
 }
 

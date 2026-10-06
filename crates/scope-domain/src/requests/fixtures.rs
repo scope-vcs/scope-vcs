@@ -1,8 +1,9 @@
 use super::{
-    Request, RequestActorRole, RequestAudience, StartRequestFacts, StartRequestInput,
-    SubmitRequestInput, start_request, submit_request,
+    Request, RequestActorRole, StartRequestFacts, StartRequestInput, SubmitRequestInput,
+    start_request, submit_request,
 };
 use crate::content::{DEFAULT_GIT_FILE_MODE, SourceBlob};
+use crate::views::ViewId;
 
 pub(crate) fn source_blob(git_oid: &str) -> SourceBlob {
     SourceBlob {
@@ -22,7 +23,7 @@ pub(crate) fn start_input(author_role: RequestActorRole) -> StartRequestInput {
         author_user_id: "author".to_string(),
         title: Some("Fix parser".to_string()),
         author_role,
-        audience: RequestAudience::Public,
+        view: ViewId::public(),
         base_main_oid: "base".to_string(),
         event_id: "event_started".to_string(),
         now_unix: 10,

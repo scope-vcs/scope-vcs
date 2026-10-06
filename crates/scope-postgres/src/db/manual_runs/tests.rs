@@ -9,7 +9,7 @@ use crate::{
     },
     error::PostgresErrorKind,
 };
-use scope_domain::{policy::Visibility, repository::collaboration::RepositoryMember};
+use scope_domain::{repository::collaboration::RepositoryMember, views::ViewId};
 use sea_orm::{ConnectionTrait, DatabaseBackend, PaginatorTrait, Statement};
 
 fn fixture() -> (
@@ -18,7 +18,7 @@ fn fixture() -> (
     WorkflowRevision,
     SourceBlob,
 ) {
-    let mut repository = repository(&user("owner", "owner"), "repo", Visibility::Private);
+    let mut repository = repository(&user("owner", "owner"), "repo", ViewId::private());
     repository.collaboration.members.push(RepositoryMember {
         repo_id: "owner/repo".into(),
         user_id: "member".into(),

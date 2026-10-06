@@ -7,7 +7,7 @@ import { RequestInvitees } from './request-invitees'
 import { RequestRatingsSection } from './request-ratings-section'
 import type { RateRequestInput } from '@/api/requests'
 import {
-  requestAudienceLabel,
+  requestViewLabel,
   requestAuthorRoleLabel,
 } from './request-labels'
 import { AbsoluteTimestamp } from '@/components/timestamp'
@@ -41,7 +41,7 @@ export function RequestDetails({ placement }: { placement: RequestDetailsPlaceme
         <div className="grid min-w-0 gap-x-12 gap-y-8 @3xl:grid-cols-2">
           <DetailsSection title="lifecycle">
             <DetailsValue label="Author" value={requestAuthorRoleLabel(request)} />
-            <DetailsValue label="Audience" value={requestAudienceLabel(request)} />
+            <DetailsValue label="View" value={requestViewLabel(request)} />
             <DetailsValue
               label="Submitted"
               value={<AbsoluteTimestamp value={request.submitted_at_unix} />}
@@ -74,5 +74,3 @@ export function RequestDetails({ placement }: { placement: RequestDetailsPlaceme
     </div>
   )
 }
-
-

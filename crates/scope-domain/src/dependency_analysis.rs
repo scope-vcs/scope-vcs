@@ -1,7 +1,5 @@
-use crate::{
-    policy::{ScopePath, Visibility},
-    repo_config::RepoConfig,
-};
+use crate::views::ViewId;
+use crate::{policy::ScopePath, repo_config::RepoConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
@@ -161,8 +159,8 @@ pub fn evaluate_dependency_analysis(
     for edge in &analysis.edges {
         let source = dependency_scope_path(&edge.source_path)?;
         let target = dependency_scope_path(&edge.target_path)?;
-        if config.visibility_for_path(&source) == Visibility::Public
-            && config.visibility_for_path(&target) == Visibility::Private
+        if config.label_for_path(&source) == ViewId::public()
+            && config.label_for_path(&target) == ViewId::private()
         {
             findings.insert(DependencyFinding {
                 source_path: edge.source_path.clone(),
@@ -211,13 +209,13 @@ fn dependency_scope_path(path: &str) -> Result<ScopePath, DependencyAnalysisErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repo_config::{ConfigVisibility, RepoConfigVisibilityRule};
+    use crate::repo_config::RepoConfigFileRule;
 
     fn config() -> RepoConfig {
-        let mut config = RepoConfig::with_default_visibility(ConfigVisibility::Public);
-        config.visibility.rules.push(RepoConfigVisibilityRule {
+        let mut config = RepoConfig::with_default_view(ViewId::public());
+        config.files.rules.push(RepoConfigFileRule {
             path: "/private/**".into(),
-            visibility: ConfigVisibility::Private,
+            view: ViewId::private(),
         });
         config
     }

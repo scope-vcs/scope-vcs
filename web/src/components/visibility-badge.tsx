@@ -1,24 +1,24 @@
 import { Badge, type BadgeVariant } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { VisibilityState } from '@/api/types'
-import type { Visibility } from '@/api/types.generated'
+import { builtinViews, viewName } from '@/api/repo-views'
 import { Blend, Globe2, Lock, type LucideIcon } from 'lucide-react'
 
-const visibilityPresentation = {
-  Public: { icon: Globe2, variant: 'success' },
-  Private: { icon: Lock, variant: 'neutral' },
-  Mixed: { icon: Blend, variant: 'neutral' },
-} as const satisfies Record<VisibilityState, { icon: LucideIcon; variant: BadgeVariant }>
+function visibilityPresentation(visibility: VisibilityState): { icon: LucideIcon; variant: BadgeVariant } {
+  if (visibility === 'Mixed') return { icon: Blend, variant: 'neutral' }
+  if (visibility === 'public') return { icon: Globe2, variant: 'success' }
+  return { icon: Lock, variant: 'neutral' }
+}
 
 export function VisibilityBadge({
   compact = false,
   visibility,
 }: {
   compact?: boolean
-  visibility: Visibility | VisibilityState
+  visibility: VisibilityState
 }) {
-  const { icon: Icon, variant } = visibilityPresentation[visibility]
-  const label = visibility.toLowerCase()
+  const { icon: Icon, variant } = visibilityPresentation(visibility)
+  const label = visibility === 'Mixed' ? 'mixed' : viewName(visibility)
   return (
     <Badge
       aria-label={compact ? `${label} visibility` : undefined}
@@ -36,12 +36,12 @@ export function VisibilityBadge({
 export function VisibilityLegend() {
   return (
     <div aria-label="File visibility" className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-      {(Object.keys(visibilityPresentation) as VisibilityState[]).map((visibility) => {
-        const { icon: Icon } = visibilityPresentation[visibility]
+      {[...builtinViews.map((view) => view.id), 'Mixed'].map((visibility) => {
+        const { icon: Icon } = visibilityPresentation(visibility)
         return (
           <span className="inline-flex items-center gap-1" key={visibility}>
             <Icon aria-hidden className="size-3" />
-            {visibility.toLowerCase()}
+            {visibility === 'Mixed' ? 'mixed' : viewName(visibility)}
           </span>
         )
       })}

@@ -26,7 +26,7 @@ export async function assertUpdateFileSelectionKeepsDocument(page) {
       .click()
     await page.waitForURL((url) => (
       url.searchParams.get('path') === '/README.html' &&
-      !url.searchParams.has('audience')
+      !url.searchParams.has('view')
     ))
     const diff = page.getByLabel('README.html diff', { exact: true })
     await diff.waitFor()

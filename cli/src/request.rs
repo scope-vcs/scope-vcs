@@ -16,7 +16,7 @@ use crate::{
     },
 };
 use anyhow::{Context, bail};
-use scope_api_contract::{ErrorCode, ErrorResponse, RequestAudience, RequestDiscussionAnchorInput};
+use scope_api_contract::{ErrorCode, ErrorResponse, RequestDiscussionAnchorInput, ViewId};
 use scope_domain::{policy::ScopePath, repo_control::is_public_request_protected_path};
 use std::{
     sync::atomic::{AtomicU64, Ordering},
@@ -45,9 +45,9 @@ use crate::display::short_oid;
 use actions::*;
 pub use args::RequestArgs;
 use args::{
-    RequestAudienceArg, RequestCommand, RequestDiscussionArgs, RequestDiscussionCommand,
-    RequestDiscussionReopenArgs, RequestDiscussionReplyArgs, RequestDiscussionResolveArgs,
-    RequestDiscussionStartArgs, RequestStartArgs, RequestTargetArgs,
+    RequestCommand, RequestDiscussionArgs, RequestDiscussionCommand, RequestDiscussionReopenArgs,
+    RequestDiscussionReplyArgs, RequestDiscussionResolveArgs, RequestDiscussionStartArgs,
+    RequestStartArgs, RequestTargetArgs,
 };
 use branches::*;
 use confirm::require_confirmation;
@@ -59,7 +59,7 @@ use local::{
 };
 use outcome::*;
 use queue::{AttentionCommand, change_attention, list_request_queue, queue_outcome};
-use render::audience_label;
+use render::view_label;
 use render::{
     auto_merge_receipt_lines, auto_merge_status_lines, close_receipt, discussion_reopened_receipt,
     discussion_replied_receipt, discussion_resolved_receipt, discussion_started_receipt,
@@ -339,24 +339,30 @@ fn close_request_branch(
     ))
 }
 
-fn start_audience(
-    actor: crate::api::RepositoryActor,
-    requested: Option<RequestAudienceArg>,
-) -> anyhow::Result<RequestAudience> {
-    let audience = requested.map(Into::into).unwrap_or(match actor {
-        crate::api::RepositoryActor::Public => RequestAudience::Public,
-        crate::api::RepositoryActor::Owner | crate::api::RepositoryActor::Member => {
-            RequestAudience::Private
-        }
-    });
+fn start_view(
+    access: &crate::api::RepositoryAccessResponse,
+    requested: Option<ViewId>,
+) -> anyhow::Result<ViewId> {
+    let view = requested.unwrap_or_else(|| access.view.clone());
+    if scope_domain::views::Views::builtin()
+        .get(&view.clone().into())
+        .is_none()
+    {
+        return Err(crate::error::CliError::usage(format!(
+            "Unknown repository view {}",
+            view.as_str()
+        ))
+        .into());
+    }
+    let actor = access.actor;
     let author_role = match actor {
         crate::api::RepositoryActor::Public => crate::api::RequestActorRole::Public,
         crate::api::RepositoryActor::Member => crate::api::RequestActorRole::Member,
         crate::api::RepositoryActor::Owner => crate::api::RequestActorRole::Owner,
     };
-    scope_domain::requests::validate_start_request_audience(author_role.into(), audience.into())
+    scope_domain::requests::validate_start_request_view(author_role.into(), view.clone().into())
         .map_err(|error| crate::error::CliError::usage(error.message))?;
-    Ok(audience)
+    Ok(view)
 }
 
 pub fn inspect_current_request(
@@ -381,18 +387,26 @@ pub fn inspect_current_request(
 }
 
 #[cfg(test)]
-mod audience_tests {
+mod view_tests {
     use super::*;
     use crate::api::RepositoryActor;
 
     #[test]
-    fn request_audience_defaults_follow_repository_access() {
-        for (actor, expected) in [
-            (RepositoryActor::Owner, RequestAudience::Private),
-            (RepositoryActor::Member, RequestAudience::Private),
-            (RepositoryActor::Public, RequestAudience::Public),
+    fn request_view_defaults_follow_repository_access() {
+        for (actor, view) in [
+            (RepositoryActor::Owner, ViewId::private()),
+            (RepositoryActor::Member, ViewId::private()),
+            (RepositoryActor::Public, ViewId::public()),
         ] {
-            assert_eq!(start_audience(actor, None).unwrap(), expected);
+            let access = crate::api::RepositoryAccessResponse {
+                actor,
+                view: view.clone(),
+                can_push: false,
+                can_change_file_visibility: false,
+                can_manage_members: false,
+                can_delete_repo: false,
+            };
+            assert_eq!(start_view(&access, None).unwrap(), view);
         }
     }
 }

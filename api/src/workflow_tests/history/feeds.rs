@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[tokio::test]
 async fn history_feed_filters_before_pagination_and_details_remain_addressable() {
@@ -21,10 +22,10 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
         .new_content
         .clone();
     for index in 0..60 {
-        let (old_visibility, new_visibility) = if index % 2 == 0 {
-            (Visibility::Public, Visibility::Private)
+        let (old_label, new_label) = if index % 2 == 0 {
+            (ViewId::public(), ViewId::private())
         } else {
-            (Visibility::Private, Visibility::Public)
+            (ViewId::private(), ViewId::public())
         };
         repo.visibility_change_sets.push(
             scope_domain::visibility_changes::VisibilityChangeSet::new(
@@ -34,8 +35,8 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
                 test_owner_id(),
                 vec![scope_domain::visibility_changes::VisibilityChange {
                     path: ScopePath::parse("/README.md").unwrap(),
-                    old_visibility,
-                    new_visibility,
+                    old_label,
+                    new_label,
                     current_content: content.clone(),
                 }],
             )
@@ -47,11 +48,11 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
             .occurred_at_unix = Some(1_700_000_000 + index);
     }
     replace_test_repo(&state, repo).await;
-    for audience in ["public", "private"] {
+    for view in ["public", "private"] {
         let first = api_request(
             router(state.clone()),
             "GET",
-            &format!("/v1/repos/owner/repo/history?audience={audience}"),
+            &format!("/v1/repos/owner/repo/history?view={view}"),
             Some(&bearer_header()),
             None,
         )
@@ -63,7 +64,7 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
         let mismatch = api_request(
             router(state.clone()),
             "GET",
-            &format!("/v1/repos/owner/repo/history?audience={audience}&feed=all&before={cursor}"),
+            &format!("/v1/repos/owner/repo/history?view={view}&feed=all&before={cursor}"),
             Some(&bearer_header()),
             None,
         )
@@ -72,7 +73,7 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
         let all = api_request(
             router(state.clone()),
             "GET",
-            &format!("/v1/repos/owner/repo/history?audience={audience}&feed=all"),
+            &format!("/v1/repos/owner/repo/history?view={view}&feed=all"),
             Some(&bearer_header()),
             None,
         )
@@ -81,7 +82,7 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
         let all = response_json(all).await;
         assert_eq!(all["feed"], "all");
         assert_eq!(all["entries"][0]["source_id"], "visibility_59");
-        if audience == "private" {
+        if view == "private" {
             assert_eq!(all["entries"][0]["occurred_at_unix"], 1_700_000_059_i64);
             assert_eq!(all["entries"][0]["author"], TEST_REPO_OWNER);
         } else {
@@ -98,7 +99,7 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
         let visibility = api_request(
             router(state.clone()),
             "GET",
-            &format!("/v1/repos/owner/repo/history?audience={audience}&feed=visibility"),
+            &format!("/v1/repos/owner/repo/history?view={view}&feed=visibility"),
             Some(&bearer_header()),
             None,
         )
@@ -111,7 +112,7 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
         let detail = api_request(
             router(state.clone()),
             "GET",
-            &format!("/v1/repos/owner/repo/history/visibility_59?audience={audience}"),
+            &format!("/v1/repos/owner/repo/history/visibility_59?view={view}"),
             Some(&bearer_header()),
             None,
         )
@@ -125,7 +126,7 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
         let change = &detail["visibility_changes"][0];
         let id = change["id"].as_str().unwrap();
         let base = format!(
-            "/v1/repos/owner/repo/history/visibility_59/file-diff?audience={audience}&path=/README.md"
+            "/v1/repos/owner/repo/history/visibility_59/file-diff?view={view}&path=/README.md"
         );
         assert_eq!(
             api_request(
@@ -147,7 +148,7 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
             None,
         )
         .await;
-        if audience == "public" {
+        if view == "public" {
             assert_eq!(change["file"]["kind"], "Added");
             assert_eq!(diff.status(), StatusCode::OK);
             let diff = response_json(diff).await;
@@ -170,7 +171,7 @@ async fn history_feed_filters_before_pagination_and_details_remain_addressable()
             StatusCode::NOT_FOUND
         );
         let wrong_path = format!(
-            "/v1/repos/owner/repo/history/visibility_59/file-diff?audience={audience}&path=/other.md&visibility_change={id}"
+            "/v1/repos/owner/repo/history/visibility_59/file-diff?view={view}&path=/other.md&visibility_change={id}"
         );
         assert_eq!(
             api_request(

@@ -1,3 +1,4 @@
+use scope_domain::views::ViewId;
 #[path = "seed/git_fixtures.rs"]
 mod git_fixtures;
 use git_fixtures::*;
@@ -33,15 +34,15 @@ use crate::error::ApiError;
 use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
-    policy::{ScopePath, Visibility, VisibilityRule},
+    policy::{LabelRule, ScopePath},
     projection::LogicalCommitOrigin,
     projection::{FileChange, LogicalCommit},
     repository::git::{GitHead, GitPackSpan, GitSegmentUpload},
     repository::{RepoLifecycleState, Repository},
     requests::{
         EditRequestIdentityInput, RecordRequestRevisionInput, RecordWorkingRequestUploadInput,
-        RequestActorRole, RequestAudience, RequestRevisionGitFacts, StartRequestFacts,
-        StartRequestInput, canonical_request_ref, edit_request_identity, record_request_revision,
+        RequestActorRole, RequestRevisionGitFacts, StartRequestFacts, StartRequestInput,
+        canonical_request_ref, edit_request_identity, record_request_revision,
         record_working_request_upload, start_request,
     },
 };
@@ -288,7 +289,7 @@ fn published_demo(
     git_segment_store: &scope_storage::GitSegmentStore,
     owner: &UserAccount,
 ) -> Result<(Repository, GitSegmentUpload), ApiError> {
-    let mut repo = repo(owner, "public-demo", Visibility::Public)?;
+    let mut repo = repo(owner, "public-demo", ViewId::public())?;
     let readme = blob(object_store, PUBLIC_DEMO_README_HTML)?;
     let app = blob(object_store, PUBLIC_DEMO_APP)?;
     let private_plan = blob(object_store, PUBLIC_DEMO_PLAN)?;
@@ -296,22 +297,18 @@ fn published_demo(
     let lint_workflow = blob(object_store, PUBLIC_DEMO_LINT_WORKFLOW)?;
     let private_path = ScopePath::parse("/internal/plan.md").map_err(ApiError::internal)?;
     repo.policy
-        .add_rule(VisibilityRule::private(private_path.clone()))
+        .add_rule(LabelRule::private(private_path.clone()))
         .map_err(ApiError::internal)?;
     repo.graph.commits.push(commit(
         &repo,
         "dev-public-1",
         "Seed public demo",
         vec![
-            add_change("/README.html", readme, Visibility::Public)?,
-            add_change("/src/app.ts", app, Visibility::Public)?,
-            add_change(
-                "/.scope/runs/checks.yml",
-                checks_workflow,
-                Visibility::Public,
-            )?,
-            add_change("/.scope/runs/lint.yml", lint_workflow, Visibility::Public)?,
-            add_change(private_path.as_str(), private_plan, Visibility::Private)?,
+            add_change("/README.html", readme, ViewId::public())?,
+            add_change("/src/app.ts", app, ViewId::public())?,
+            add_change("/.scope/runs/checks.yml", checks_workflow, ViewId::public())?,
+            add_change("/.scope/runs/lint.yml", lint_workflow, ViewId::public())?,
+            add_change(private_path.as_str(), private_plan, ViewId::private())?,
         ],
     ));
     populate_seed_live_files(&mut repo);
@@ -341,12 +338,12 @@ fn update_demo(
     git_segment_store: &scope_storage::GitSegmentStore,
     owner: &UserAccount,
 ) -> Result<(Repository, SeedRequestGallery, GitSegmentUpload), ApiError> {
-    let mut repo = repo(owner, "update-demo", Visibility::Public)?;
+    let mut repo = repo(owner, "update-demo", ViewId::public())?;
     let initial_readme = blob(object_store, UPDATE_DEMO_INITIAL_README)?;
     let internal_notes = blob(object_store, UPDATE_DEMO_INTERNAL_NOTES)?;
     let internal_path = ScopePath::parse("/internal/notes.md").map_err(ApiError::internal)?;
     repo.policy
-        .add_rule(VisibilityRule::private(internal_path.clone()))
+        .add_rule(LabelRule::private(internal_path.clone()))
         .map_err(ApiError::internal)?;
     let release_guide = blob(object_store, UPDATE_DEMO_RELEASE_GUIDE)?;
     repo.graph.commits.push(commit(
@@ -354,8 +351,8 @@ fn update_demo(
         "dev-update-1",
         "Seed update demo",
         vec![
-            add_change("/README.md", initial_readme.clone(), Visibility::Public)?,
-            add_change(internal_path.as_str(), internal_notes, Visibility::Private)?,
+            add_change("/README.md", initial_readme.clone(), ViewId::public())?,
+            add_change(internal_path.as_str(), internal_notes, ViewId::private())?,
         ],
     ));
     repo.graph.commits.push(commit(
@@ -365,7 +362,7 @@ fn update_demo(
         vec![add_change(
             "/docs/release.md",
             release_guide,
-            Visibility::Public,
+            ViewId::public(),
         )?],
     ));
     populate_seed_live_files(&mut repo);
@@ -419,7 +416,7 @@ struct SeedRequest {
     description_markdown: Option<&'static str>,
     revisions: Vec<SeedRequestRevision>,
     outcome: SeedRequestOutcome,
-    audience: RequestAudience,
+    view: ViewId,
     now_unix: u64,
 }
 
@@ -463,7 +460,7 @@ fn seed_owner_request(
         description_markdown,
         revisions,
         outcome,
-        audience,
+        view,
         now_unix,
     } = request;
     let started = start_request(
@@ -482,7 +479,7 @@ fn seed_owner_request(
             name: name.to_string(),
             title: Some(title.to_string()),
             author_role: RequestActorRole::Owner,
-            audience,
+            view,
             base_main_oid: base_oid.clone(),
             event_id: format!("event_{id}_started"),
             now_unix,
@@ -585,11 +582,11 @@ fn seed_owner_request(
     Ok(())
 }
 
-fn repo(owner: &UserAccount, name: &str, visibility: Visibility) -> Result<Repository, ApiError> {
+fn repo(owner: &UserAccount, name: &str, label: ViewId) -> Result<Repository, ApiError> {
     Repository::new(
         owner,
         name,
-        visibility,
+        label,
         format!(
             "repoi_seed_{}",
             scope_domain::repository::repo_id(&owner.handle, name)
@@ -611,16 +608,12 @@ fn commit(repo: &Repository, id: &str, message: &str, changes: Vec<FileChange>) 
     }
 }
 
-fn add_change(
-    path: &str,
-    new_content: SourceBlob,
-    visibility: Visibility,
-) -> Result<FileChange, ApiError> {
+fn add_change(path: &str, new_content: SourceBlob, label: ViewId) -> Result<FileChange, ApiError> {
     Ok(FileChange {
         path: ScopePath::parse(path).map_err(ApiError::internal)?,
         old_content: None,
         new_content: Some(new_content),
-        visibility,
+        label,
     })
 }
 

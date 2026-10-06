@@ -16,7 +16,8 @@ const appliedMigrations = ['m0043_retire_git_manifests.rs', 'm0044_request_atten
   'm0064_repository_content_version.rs', 'm0066_native_runs_accounts.rs',
   'm0067_provider_neutral_request_checks.rs', 'm0068_github_connections.rs',
   'm0069_github_request_checks.rs', 'm0070_github_setup_checks_and_workflow_runs.rs',
-  'm0072_github_run_imports.rs', 'm0073_github_workflow_jobs.rs'];
+  'm0072_github_run_imports.rs', 'm0073_github_workflow_jobs.rs',
+  'm0075_incremental_projection_read_models.rs', 'm0076_view_ids.rs'];
 
 test('every table-creating migration after the baseline is applied to the role inventory', () => {
   const creators = readdirSync(migrationsDir)

@@ -144,11 +144,14 @@ fn render(frame: &mut Frame<'_>, state: &mut ReviewState) {
         .into_iter()
         .take(read_only_height)
         .collect::<Vec<_>>();
-    lines.extend(
-        rows.iter()
-            .enumerate()
-            .map(|(index, row)| row_line(row, index + state.scroll() == state.cursor(), width)),
-    );
+    lines.extend(rows.iter().enumerate().map(|(index, row)| {
+        row_line(
+            row,
+            index + state.scroll() == state.cursor(),
+            width,
+            state.config(),
+        )
+    }));
     frame.render_widget(Paragraph::new(lines), chunks[1]);
 
     let mut footer_lines = footer_hints
@@ -173,7 +176,7 @@ fn review_body_heights(
     )
 }
 
-fn row_line(row: &ReviewRow, selected: bool, width: usize) -> Line<'static> {
+fn row_line(row: &ReviewRow, selected: bool, width: usize, config: &RepoConfig) -> Line<'static> {
     let (line, select_entire_row) = match row {
         ReviewRow::DependencySummary(summary) => (dependency_summary_line(summary, width), true),
         ReviewRow::DependencyFinding {
@@ -256,7 +259,7 @@ fn row_line(row: &ReviewRow, selected: bool, width: usize) -> Line<'static> {
                 .unwrap_or_default();
             let reserved = if *reserved { " reserved" } else { "" };
             let detail = format!("{}{}{}", tui_escaped(rule), reserved, change);
-            (tree_line(&path, *visibility, &detail, width), true)
+            (tree_line(&path, visibility, &detail, width, config), true)
         }
     };
     if selected && select_entire_row {
@@ -340,16 +343,17 @@ fn review_header_line(filter: &str, width: usize) -> Line<'static> {
 
 fn tree_line(
     path: &str,
-    visibility: scope_domain::repo_visibility::ReviewVisibility,
+    visibility: &scope_domain::repo_visibility::ReviewLabel,
     detail: &str,
     width: usize,
+    config: &RepoConfig,
 ) -> Line<'static> {
     let (path_width, visibility_width, detail_width) = row_column_widths(width);
-    let (visibility_text, visibility_style) = visibility_cell(visibility);
+    let (visibility_text, visibility_style) = visibility_cell(visibility, config);
     Line::from(vec![
         Span::raw(fit_cell(path, path_width)),
         Span::styled(
-            fit_cell(visibility_text, visibility_width),
+            fit_cell(&visibility_text, visibility_width),
             visibility_style,
         ),
         Span::raw(fit_cell(detail, detail_width)),
@@ -387,14 +391,25 @@ fn change_list_style(kind: ChangeListKind) -> Style {
 }
 
 fn visibility_cell(
-    visibility: scope_domain::repo_visibility::ReviewVisibility,
-) -> (&'static str, Style) {
-    use scope_domain::repo_visibility::ReviewVisibility;
+    visibility: &scope_domain::repo_visibility::ReviewLabel,
+    config: &RepoConfig,
+) -> (String, Style) {
+    use scope_domain::repo_visibility::ReviewLabel;
 
     match visibility {
-        ReviewVisibility::Public => ("🌐 public", Style::new().fg(Color::Green)),
-        ReviewVisibility::Private => ("🔒 private", Style::new().fg(Color::Red)),
-        ReviewVisibility::Mixed => ("− mixed", Style::new().fg(Color::Yellow)),
+        ReviewLabel::View(view) => (
+            format!(
+                "{} {}",
+                if view.is_public() { "🌐" } else { "🔒" },
+                scope_domain::repo_visibility::visibility_label(visibility.clone(), config)
+            ),
+            Style::new().fg(if view.is_public() {
+                Color::Green
+            } else {
+                Color::Red
+            }),
+        ),
+        ReviewLabel::Mixed => ("− mixed".into(), Style::new().fg(Color::Yellow)),
     }
 }
 

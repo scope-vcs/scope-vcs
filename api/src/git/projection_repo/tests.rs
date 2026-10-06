@@ -1,9 +1,10 @@
 use super::*;
+use scope_domain::views::ViewId;
 use scope_domain::{
     content::SourceBlob,
     content_ref::ContentRef,
-    policy::{ScopePath, Visibility},
-    projection::{ProjectedChange, ProjectedCommit, ProjectionViewKey},
+    policy::ScopePath,
+    projection::{ProjectedChange, ProjectedCommit},
 };
 use scope_git::GitTreePath;
 use std::{
@@ -55,7 +56,7 @@ fn generated_projection_matches_canonical_head_identity() {
     fs::create_dir_all(&root).unwrap();
     let projection = Projection {
         repo_id: "repo".to_string(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![ProjectedCommit {
             projected_id: "generated-base".to_string(),
             logical_commit_id: "logical-base".to_string(),
@@ -95,7 +96,7 @@ fn generated_projection_preserves_a_leading_quote_in_a_file_name() {
     fs::create_dir_all(&root).unwrap();
     let projection = Projection {
         repo_id: "repo".to_string(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![ProjectedCommit {
             projected_id: "generated-base".to_string(),
             logical_commit_id: "logical-base".to_string(),
@@ -142,7 +143,7 @@ fn projection_identity_and_materializer_reject_the_same_reserved_path() {
     fs::create_dir_all(&root).unwrap();
     let projection = Projection {
         repo_id: "repo".to_string(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![ProjectedCommit {
             projected_id: "generated-base".to_string(),
             logical_commit_id: "logical-base".to_string(),
@@ -173,8 +174,8 @@ fn projection_identity_and_materializer_reject_the_same_reserved_path() {
     let _ = fs::remove_dir_all(root);
 }
 
-#[test]
-fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
+#[tokio::test]
+async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     let root = std::env::temp_dir().join(format!(
         "scope-native-projection-{}-{}",
         std::process::id(),
@@ -315,7 +316,7 @@ fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     };
     let projection = Projection {
         repo_id: "repo".to_string(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![generated, preserved],
     };
 
@@ -338,9 +339,100 @@ fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         git_object_field(&repo, "refs/heads/main", "%H").unwrap(),
         native_oid
     );
-    assert!(!git_object_exists(&repo, &private_oid));
-    assert!(!git_object_exists(&repo, &secret_blob_oid));
-    assert!(!git_object_exists(&repo, &canonical_merge_oid));
+    assert!(git_object_exists(&repo, &private_oid));
+    assert!(git_object_exists(&repo, &secret_blob_oid));
+    assert!(git_object_exists(&repo, &canonical_merge_oid));
+    assert_eq!(
+        fs::read_to_string(repo.join("objects/info/alternates")).unwrap(),
+        format!("{}\n", source.join("objects").display())
+    );
+
+    let budgets = crate::runtime_budgets::RuntimeBudgets::from_config(Default::default());
+    let request = |oid: &str| {
+        let want = format!("want {oid}\n");
+        format!("{:04x}{want}00000009done\n", want.len() + 4).into_bytes()
+    };
+    for hidden_oid in [&secret_blob_oid, &canonical_merge_oid] {
+        let error = crate::git::upload::git_upload_pack_response(
+            engine.lease_derived(repo.clone()).unwrap(),
+            &request(hidden_oid),
+            RuntimeBudgets::default_git_command_timeout(),
+            budgets.try_upload_pack().unwrap(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
+    }
+    let want = format!("want {native_oid}\n");
+    let shallow = format!("shallow {private_oid}\n");
+    let deepen = "deepen 2147483647\n";
+    let shallow_request = format!(
+        "{:04x}{want}{:04x}{shallow}{:04x}{deepen}00000009done\n",
+        want.len() + 4,
+        shallow.len() + 4,
+        deepen.len() + 4,
+    );
+    let error = crate::git::upload::git_upload_pack_response(
+        engine.lease_derived(repo.clone()).unwrap(),
+        shallow_request.as_bytes(),
+        RuntimeBudgets::default_git_command_timeout(),
+        budgets.try_upload_pack().unwrap(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
+    let have_request = |oid: &str| {
+        let want = format!("want {native_oid} thin-pack\n");
+        let deepen = "deepen 1\n";
+        let have = format!("have {oid}\n");
+        format!(
+            "{:04x}{want}{:04x}{deepen}0000{:04x}{have}0009done\n",
+            want.len() + 4,
+            deepen.len() + 4,
+            have.len() + 4,
+        )
+        .into_bytes()
+    };
+    let hidden_have_response = crate::git::upload::git_upload_pack_response(
+        engine.lease_derived(repo.clone()).unwrap(),
+        &have_request(&private_oid),
+        RuntimeBudgets::default_git_command_timeout(),
+        budgets.try_upload_pack().unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(hidden_have_response.status(), axum::http::StatusCode::OK);
+    let hidden_have_body = axum::body::to_bytes(hidden_have_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let unknown_have = have_request("0000000000000000000000000000000000000000");
+    let response = crate::git::upload::git_upload_pack_response(
+        engine.lease_derived(repo.clone()).unwrap(),
+        &unknown_have,
+        RuntimeBudgets::default_git_command_timeout(),
+        budgets.try_upload_pack().unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert!(body.windows(4).any(|bytes| bytes == b"PACK"));
+    assert_eq!(hidden_have_body, body);
+    let response = crate::git::upload::git_upload_pack_response(
+        engine.lease_derived(repo.clone()).unwrap(),
+        &request(&native_oid),
+        RuntimeBudgets::default_git_command_timeout(),
+        budgets.try_upload_pack().unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert!(body.windows(4).any(|bytes| bytes == b"PACK"));
 
     let mut extended = projection.clone();
     extended.commits.push(ProjectedCommit {
@@ -370,7 +462,7 @@ fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         git_object_field(&extended_repo, "HEAD", "%H").unwrap(),
         scope_git::projection_head_oid(&extended).unwrap().unwrap()
     );
-    assert!(!git_object_exists(&extended_repo, &private_oid));
+    assert!(git_object_exists(&extended_repo, &private_oid));
 
     let mut corrupted = projection;
     let ProjectionMaterialization::PreserveGitCommit { tree_oid, .. } =
@@ -403,8 +495,119 @@ fn projected_change(path: &str, content: &str) -> ProjectedChange {
             git_file_mode: "100644".to_string(),
             size_bytes: content.len() as u64,
         }),
-        visibility: Visibility::Public,
+        label: ViewId::public(),
     }
+}
+
+#[test]
+fn projection_cache_key_uses_labels_and_logical_history() {
+    let first = Projection {
+        repo_id: "repo".into(),
+        view_key: ViewId::public(),
+        commits: vec![ProjectedCommit {
+            projected_id: "pv_public_logical_1".into(),
+            logical_commit_id: "logical".into(),
+            visibility_change_set_id: None,
+            parent_projected_id: Some("pv_public_parent_0".into()),
+            author: None,
+            message: "message".into(),
+            changes: vec![projected_change("/file", "content")],
+            materialization: ProjectionMaterialization::Generate,
+        }],
+    };
+    let mut second = first.clone();
+    second.view_key = ViewId::private();
+    second.commits[0].projected_id = "pv_private_logical_1".into();
+    second.commits[0].parent_projected_id = Some("pv_private_parent_0".into());
+
+    assert_eq!(
+        projection_cache_keys(None, &first, &[ViewId::public()]).unwrap(),
+        projection_cache_keys(None, &second, &[ViewId::public()]).unwrap()
+    );
+    assert_ne!(
+        projection_cache_key(None, &first).unwrap(),
+        projection_cache_key(None, &second).unwrap()
+    );
+}
+
+#[test]
+fn git_backed_projection_borrows_blob_without_loading_it() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source.git");
+    let cache = root.path().join("cache");
+    fs::create_dir_all(&cache).unwrap();
+    git_command_output(
+        Command::new("git").args(["init", "--bare"]).arg(&source),
+        None,
+    )
+    .unwrap();
+    let mut change = projected_change("/file", "content");
+    let blob = change.new_content.as_mut().unwrap();
+    blob.content_ref = ContentRef::git_blob(blob.git_oid.clone());
+    let bytes = git_command_output(
+        Command::new("git")
+            .arg("--git-dir")
+            .arg(&source)
+            .args(["hash-object", "-w", "--stdin"]),
+        Some(b"content"),
+    )
+    .unwrap();
+    assert_eq!(String::from_utf8(bytes).unwrap().trim(), blob.git_oid);
+    let projection = Projection {
+        repo_id: "repo".into(),
+        view_key: ViewId::public(),
+        commits: vec![ProjectedCommit {
+            projected_id: "view-logical-1".into(),
+            logical_commit_id: "logical".into(),
+            visibility_change_set_id: None,
+            parent_projected_id: None,
+            author: None,
+            message: "message".into(),
+            changes: vec![change],
+            materialization: ProjectionMaterialization::Generate,
+        }],
+    };
+    let repo =
+        projection_bare_repo_with_loader(&cache, None, &projection, Some(&source), None, |_| {
+            panic!("Git-backed blob must come from the alternate")
+        })
+        .unwrap();
+    let oid = &projection.commits[0].changes[0]
+        .new_content
+        .as_ref()
+        .unwrap()
+        .git_oid;
+    assert!(git_object_exists(&repo, oid));
+    assert!(
+        !repo
+            .join("objects")
+            .join(&oid[..2])
+            .join(&oid[2..])
+            .exists()
+    );
+    assert_eq!(
+        git_object_field(&repo, "HEAD", "%H").unwrap(),
+        scope_git::projection_head_oid(&projection)
+            .unwrap()
+            .unwrap()
+    );
+
+    let hidden = git_command_output(
+        Command::new("git")
+            .arg("--git-dir")
+            .arg(&source)
+            .args(["hash-object", "-w", "--stdin"]),
+        Some(b"hidden"),
+    )
+    .unwrap();
+    let hidden = String::from_utf8(hidden).unwrap().trim().to_string();
+    assert!(git_object_exists(&repo, &hidden));
+    let staging = root.path().join("staging.git");
+    crate::git::request_refs::clone_without_shared_objects(&repo, &staging, "cloning staging")
+        .unwrap();
+    assert!(!staging.join("objects/info/alternates").exists());
+    assert!(git_object_exists(&staging, oid));
+    assert!(!git_object_exists(&staging, &hidden));
 }
 
 fn projection_tree_path(path: &str) -> GitTreePath {
@@ -436,7 +639,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     let incarnation = RepositoryIncarnation::new("owner/repo", "repoi_original").unwrap();
     let mut projection = Projection {
         repo_id: "owner/repo".into(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: vec![ProjectedCommit {
             projected_id: "initial".into(),
             logical_commit_id: "initial".into(),
@@ -624,7 +827,7 @@ fn incremental_index_handles_deletes_modes_and_directory_replacement() {
             ProjectedChange {
                 path: ScopePath::parse("/path").unwrap(),
                 new_content: None,
-                visibility: Visibility::Public,
+                label: ViewId::public(),
             },
             projected_change("/path/child", "child"),
         ],
@@ -632,14 +835,14 @@ fn incremental_index_handles_deletes_modes_and_directory_replacement() {
             ProjectedChange {
                 path: ScopePath::parse("/path/child").unwrap(),
                 new_content: None,
-                visibility: Visibility::Public,
+                label: ViewId::public(),
             },
             projected_change("/path", "replacement"),
         ],
     ];
     let projection = Projection {
         repo_id: "repo".into(),
-        view_key: ProjectionViewKey::Public,
+        view_key: ViewId::public(),
         commits: changes
             .into_iter()
             .enumerate()

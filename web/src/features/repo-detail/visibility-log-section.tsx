@@ -1,17 +1,16 @@
 import type { RepoParams } from '@/api/types'
 import { SectionRow, SectionRows } from '@/components/section-rows'
 import { HistoryFeedState } from '@/features/history/history-entry-list'
-import { defaultHistoryAudience, useHistoryFeed } from '@/features/history/history-feed'
+import { useHistoryFeed } from '@/features/history/history-feed'
 import { HistoryMenu } from '@/features/history/history-menu'
-import { updateAudienceSearch } from '@/features/history/update-search'
+import { updateViewSearch } from '@/features/history/update-search'
 import { VisibilityTimeline } from '@/features/history/visibility-timeline'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { Eye } from 'lucide-react'
 
 export function VisibilityLogSection({ params }: { params: RepoParams }) {
   const { repo } = useRepoLayout()
-  const canReadPrivateFiles = repo.access.can_read_private_files
-  const history = useHistoryFeed({ audience: 'private', feed: 'visibility', params })
+  const history = useHistoryFeed({ view: 'private', feed: 'visibility', params })
   return (
     <SectionRows>
       <SectionRow
@@ -25,11 +24,12 @@ export function VisibilityLogSection({ params }: { params: RepoParams }) {
               <VisibilityTimeline
                 entries={page.entries}
                 params={params}
-                search={updateAudienceSearch('private', defaultHistoryAudience(canReadPrivateFiles))}
+                search={updateViewSearch('private', repo.access.view)}
+                view="private"
               />
               <div className="flex justify-end text-xs">
                 <HistoryMenu
-                  canReadPrivateFiles={canReadPrivateFiles}
+                  access={repo.access}
                   initialFeed="visibility"
                   label="Visibility history"
                   params={params}

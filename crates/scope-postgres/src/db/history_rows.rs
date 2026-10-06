@@ -1,13 +1,12 @@
-use super::entities::{self, decode_enum, encode_enum};
+use super::entities;
 use super::integer_columns::usize_to_i64;
 use super::object_references::insert_object_reference;
 use crate::error::PostgresError;
 use scope_domain::content::SourceBlob;
 use scope_domain::{
     policy::ScopePath,
-    projection::{
-        FileChange, LogicalCommit, Projection, ProjectionViewKey, SourceGraph, project_graph,
-    },
+    projection::{FileChange, LogicalCommit, Projection, SourceGraph, project_graph},
+    views::{ViewId, Views},
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 use sea_orm::{
@@ -17,6 +16,9 @@ use sea_orm::{
 use std::collections::BTreeMap;
 
 const PERSISTENCE_BATCH_SIZE: usize = 500;
+
+mod appended;
+pub(crate) use appended::{history_position_matches, load_repository_history_after};
 
 pub struct RepositoryHistory {
     pub graph: SourceGraph,
@@ -31,8 +33,8 @@ pub struct RepositoryProjectionSource {
 }
 
 impl RepositoryProjectionSource {
-    pub fn project(&self, view_key: ProjectionViewKey) -> Projection {
-        project_graph(&self.graph, &self.visibility_change_sets, view_key)
+    pub fn project(&self, views: &Views, view: &ViewId) -> Projection {
+        project_graph(&self.graph, &self.visibility_change_sets, views, view)
     }
 }
 
@@ -115,6 +117,13 @@ where
         )
         .await?;
     }
+    if commits_rewritten || visibility_change_sets_rewritten {
+        super::projection_read_models::reset_live_projection_read_models(
+            conn,
+            &after_graph.repo_id,
+        )
+        .await?;
+    }
     if commits_rewritten || after_graph.commits.len() != before_graph.commits.len() + 1 {
         if before_live_files != after_live_files {
             replace_live_files(conn, &after_graph.repo_id, after_live_files).await?;
@@ -131,6 +140,59 @@ where
         .await?;
     }
     Ok(())
+}
+
+pub(super) fn file_change_from_row(
+    row: entities::file_change::Model,
+) -> Result<FileChange, PostgresError> {
+    Ok(FileChange {
+        path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
+        old_content: decode_optional(row.old_content)?,
+        new_content: decode_optional(row.new_content)?,
+        label: scope_domain::views::ViewId::parse(&row.visibility)
+            .map_err(PostgresError::internal)?,
+    })
+}
+
+pub(super) fn logical_commit_from_row(
+    row: entities::logical_commit::Model,
+    changes: Vec<FileChange>,
+) -> Result<LogicalCommit, PostgresError> {
+    Ok(LogicalCommit {
+        occurred_at_unix: row.occurred_at_unix,
+        id: row.id,
+        origin: serde_json::from_value(row.origin).map_err(PostgresError::internal)?,
+        author_id: row.author_id,
+        message: row.message,
+        changes,
+    })
+}
+
+pub(super) fn visibility_change_from_row(
+    row: entities::visibility_change::Model,
+) -> Result<VisibilityChange, PostgresError> {
+    Ok(VisibilityChange {
+        path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
+        old_label: scope_domain::views::ViewId::parse(&row.old_visibility)
+            .map_err(PostgresError::internal)?,
+        new_label: scope_domain::views::ViewId::parse(&row.new_visibility)
+            .map_err(PostgresError::internal)?,
+        current_content: decode_optional(row.current_content)?,
+    })
+}
+
+pub(super) fn visibility_change_set_from_row(
+    row: entities::visibility_change_set::Model,
+    changes: Vec<VisibilityChange>,
+) -> VisibilityChangeSet {
+    VisibilityChangeSet {
+        occurred_at_unix: row.occurred_at_unix,
+        id: row.id,
+        anchor_commit_id: row.anchor_commit_id,
+        source_update_id: row.source_update_id,
+        author_id: row.author_id,
+        changes,
+    }
 }
 
 pub async fn load_repository_histories<C>(
@@ -219,29 +281,22 @@ where
             .await
             .map_err(PostgresError::internal)?
         {
+            let key = (row.repo_id.clone(), row.commit_id.clone());
             changes_by_commit
-                .entry((row.repo_id.clone(), row.commit_id.clone()))
+                .entry(key)
                 .or_default()
-                .push(FileChange {
-                    path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
-                    old_content: decode_optional(row.old_content)?,
-                    new_content: decode_optional(row.new_content)?,
-                    visibility: decode_enum(row.visibility)?,
-                });
+                .push(file_change_from_row(row)?);
         }
     }
     for row in commits {
         if let Some(source) = sources.get_mut(&row.repo_id) {
-            source.graph.commits.push(LogicalCommit {
-                occurred_at_unix: row.occurred_at_unix,
-                id: row.id.clone(),
-                origin: serde_json::from_value(row.origin).map_err(PostgresError::internal)?,
-                author_id: row.author_id,
-                message: row.message,
-                changes: changes_by_commit
-                    .remove(&(row.repo_id.clone(), row.id.clone()))
-                    .unwrap_or_default(),
-            });
+            let changes = changes_by_commit
+                .remove(&(row.repo_id.clone(), row.id.clone()))
+                .unwrap_or_default();
+            source
+                .graph
+                .commits
+                .push(logical_commit_from_row(row, changes)?);
         }
     }
 
@@ -263,28 +318,21 @@ where
             .await
             .map_err(PostgresError::internal)?
         {
+            let key = (row.repo_id.clone(), row.change_set_id.clone());
             changes_by_set
-                .entry((row.repo_id.clone(), row.change_set_id.clone()))
+                .entry(key)
                 .or_default()
-                .push(VisibilityChange {
-                    path: ScopePath::parse(row.path).map_err(PostgresError::internal)?,
-                    old_visibility: decode_enum(row.old_visibility)?,
-                    new_visibility: decode_enum(row.new_visibility)?,
-                    current_content: decode_optional(row.current_content)?,
-                });
+                .push(visibility_change_from_row(row)?);
         }
     }
     for row in set_rows {
         if let Some(source) = sources.get_mut(&row.repo_id) {
-            let key = (row.repo_id.clone(), row.id.clone());
-            source.visibility_change_sets.push(VisibilityChangeSet {
-                occurred_at_unix: row.occurred_at_unix,
-                id: row.id,
-                anchor_commit_id: row.anchor_commit_id,
-                source_update_id: row.source_update_id,
-                author_id: row.author_id,
-                changes: changes_by_set.remove(&key).unwrap_or_default(),
-            });
+            let changes = changes_by_set
+                .remove(&(row.repo_id.clone(), row.id.clone()))
+                .unwrap_or_default();
+            source
+                .visibility_change_sets
+                .push(visibility_change_set_from_row(row, changes));
         }
     }
     Ok(sources)
@@ -427,7 +475,7 @@ where
                         path: change.path.as_str().to_string(),
                         old_content: encode_optional(change.old_content.as_ref())?,
                         new_content: encode_optional(change.new_content.as_ref())?,
-                        visibility: encode_enum(change.visibility)?,
+                        visibility: change.label.as_str().to_string(),
                     }
                     .into_active_model())
                 })
@@ -494,8 +542,8 @@ where
                 change_set_id: set.id.clone(),
                 ordinal: usize_to_i64(ordinal, "history ordinal")?,
                 path: change.path.as_str().to_string(),
-                old_visibility: encode_enum(change.old_visibility)?,
-                new_visibility: encode_enum(change.new_visibility)?,
+                old_visibility: change.old_label.as_str().to_string(),
+                new_visibility: change.new_label.as_str().to_string(),
                 current_content: encode_optional(change.current_content.as_ref())?,
             }
             .into_active_model()

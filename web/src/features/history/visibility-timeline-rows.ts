@@ -2,7 +2,7 @@ import type { HistoryEntrySummaryResponse } from '@/api/types.generated'
 
 export const VISIBILITY_TIMELINE_ENTRY_LIMIT = 50
 
-export type VisibilityDirection = 'public' | 'private'
+export type VisibilityDirection = 'entered' | 'left'
 
 export type VisibilityTimelineBar = {
   direction: VisibilityDirection
@@ -20,10 +20,10 @@ export function visibilityTimelineBars(newestFirst: readonly HistoryEntrySummary
 }
 
 function entryBars(entry: HistoryEntrySummaryResponse): VisibilityTimelineBar[] {
-  const { made_public_count: madePublic, made_private_count: madePrivate } = entry.visibility_summary
+  const { entered_count: entered, left_count: left } = entry.visibility_summary
   return [
-    ...madePublic > 0 ? [{ direction: 'public' as const, entry, label: null, signedCount: madePublic }] : [],
-    ...madePrivate > 0 ? [{ direction: 'private' as const, entry, label: null, signedCount: -madePrivate }] : [],
+    ...entered > 0 ? [{ direction: 'entered' as const, entry, label: null, signedCount: entered }] : [],
+    ...left > 0 ? [{ direction: 'left' as const, entry, label: null, signedCount: -left }] : [],
   ]
 }
 

@@ -15,8 +15,8 @@ async fn upload_pack_status(
 
 async fn private_only_repo(state: &AppState) {
     let mut repo = test_repo(&test_owner_id());
-    repo.repo_config = repo_config(Visibility::Private);
-    repo.policy = Policy::new(Visibility::Private);
+    repo.repo_config = repo_config(ViewId::private());
+    repo.policy = Policy::new(ViewId::private());
     repo.graph.commits.push(LogicalCommit {
         occurred_at_unix: None,
         id: "rv1".to_string(),
@@ -26,7 +26,7 @@ async fn private_only_repo(state: &AppState) {
         author_id: repo.record.owner_user_id.clone(),
         message: "initial".to_string(),
         changes: vec![FileChange {
-            visibility: Visibility::Private,
+            label: ViewId::private(),
             path: ScopePath::parse("/secret.txt").unwrap(),
             old_content: None,
             new_content: Some(source_blob(state, "secret")),

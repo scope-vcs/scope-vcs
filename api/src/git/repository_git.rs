@@ -8,12 +8,13 @@ use crate::{
 };
 use scope_domain::{
     policy::ScopePath,
-    projection::{Projection, ProjectionViewKey},
+    projection::Projection,
     repository::{
         Repository, RepositoryIncarnation,
         git::{GitHead, GitPackSpan},
     },
     requests::PathHistory,
+    views::{ViewId, Views},
 };
 use scope_postgres::db::{GitPushContext, GitReadSource};
 
@@ -73,48 +74,52 @@ impl RepositoryGit {
     pub(crate) async fn projection(
         &self,
         state: &AppState,
-        view_key: ProjectionViewKey,
+        views: &Views,
+        view: &ViewId,
     ) -> Result<Projection, ApiError> {
         Ok(state
             .metadata
             .repositories()
             .repository_projection_source(&self.incarnation, self.content_version)
             .await?
-            .project(view_key))
+            .project(views, view))
     }
 
     pub(crate) async fn view_head(
         &self,
         state: &AppState,
-        view_key: ProjectionViewKey,
+        view: &ViewId,
     ) -> Result<Option<String>, ApiError> {
         Ok(state
             .metadata
             .repositories()
-            .repository_view_head(&self.incarnation, self.content_version, view_key)
+            .repository_view_head(&self.incarnation, self.content_version, view)
             .await?)
     }
 
     pub(crate) async fn view_repo(
         &self,
         state: &AppState,
-        view_key: ProjectionViewKey,
+        views: &Views,
+        view: &ViewId,
     ) -> Result<GitRepoHandle, ApiError> {
-        let head_oid = self.view_head(state, view_key).await?;
-        self.view_repo_at(state, view_key, head_oid.as_deref())
+        let head_oid = self.view_head(state, view).await?;
+        self.view_repo_at(state, views, view, head_oid.as_deref())
             .await
     }
 
     pub(crate) async fn view_repo_at(
         &self,
         state: &AppState,
-        view_key: ProjectionViewKey,
+        views: &Views,
+        view: &ViewId,
         head_oid: Option<&str>,
     ) -> Result<GitRepoHandle, ApiError> {
-        if let Some(repo) = cached_projection_repo(state, &self.incarnation, view_key, head_oid)? {
+        if let Some(repo) = cached_projection_repo(state, &self.incarnation, views, view, head_oid)?
+        {
             return Ok(repo);
         }
-        let projection = self.projection(state, view_key).await?;
+        let projection = self.projection(state, views, view).await?;
         projection_bare_repo_for_state(
             state,
             &self.incarnation,

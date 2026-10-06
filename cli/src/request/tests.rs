@@ -199,7 +199,7 @@ fn request_detail(base_oid: &str, head_oid: &str) -> crate::api::RequestDetailRe
         "request": {
             "id":"req_one","name":"change","title":"Change",
             "description_markdown":"","author_user_id":"scope_usr_author",
-            "author_role":"Public","audience":"Public",
+            "author_role":"Public","view":"public",
             "base_main_oid":base_oid,"head_oid":head_oid,"state":"Draft",
             "activity_version":1,"submitted_at_unix":null,"closed_at_unix":null,
             "closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,

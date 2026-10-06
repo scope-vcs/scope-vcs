@@ -1,8 +1,10 @@
 import type { RepositoryMemberPermissions } from '../../api/types.generated'
+import { viewName } from '../../api/repo-views'
 
 export const defaultPermissions: RepositoryMemberPermissions = {
   can_change_file_visibility: false,
   can_push: false,
+  view: 'private',
 }
 
 export const permissionLabels = [
@@ -21,5 +23,5 @@ export const permissionLabels = [
 export function permissionSummaryText(permissions: RepositoryMemberPermissions) {
   const enabled = permissionLabels.flatMap(({ key, label }) =>
     permissions[key] ? [label.toLowerCase()] : [])
-  return enabled.length === 0 ? 'No extra actions' : `Also allowed: ${enabled.join(', ')}`
+  return [`${viewName(permissions.view)} view`, enabled.length === 0 ? 'No extra actions' : `Also allowed: ${enabled.join(', ')}`].join(' · ')
 }

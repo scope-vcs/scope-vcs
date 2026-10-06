@@ -5,9 +5,9 @@ use scope_domain::{
     dependency_analysis::{
         DependencyCheckStatus, DependencyEdge, DependencyEdgeKind, DependencyFinding,
     },
-    policy::Visibility,
-    repo_config::{ConfigVisibility, RepoConfigVisibilityRule},
+    repo_config::RepoConfigFileRule,
     repository::{RepoLifecycleState, Repository, git::GitHead},
+    views::ViewId,
 };
 
 const NOW: u64 = 1_700_000_000;
@@ -35,17 +35,13 @@ fn repository() -> Repository {
         email_verified: true,
     };
     let mut repository =
-        Repository::new(&owner, "repo", Visibility::Public, "repoi_dependency_test").unwrap();
+        Repository::new(&owner, "repo", ViewId::public(), "repoi_dependency_test").unwrap();
     repository.record.lifecycle_state = RepoLifecycleState::Ready;
     repository.git_head = Some(GitHead::new("a".repeat(40), 1, 1));
-    repository
-        .repo_config
-        .visibility
-        .rules
-        .push(RepoConfigVisibilityRule {
-            path: "/private.ts".into(),
-            visibility: ConfigVisibility::Private,
-        });
+    repository.repo_config.files.rules.push(RepoConfigFileRule {
+        path: "/private.ts".into(),
+        view: ViewId::private(),
+    });
     repository
 }
 
@@ -128,7 +124,7 @@ async fn retained_edges_are_reevaluated_and_stale_policy_completion_is_rejected(
     store
         .repositories()
         .mutate_repository_for_tests(REPO_ID, |repository| {
-            repository.repo_config.visibility.rules.clear();
+            repository.repo_config.files.rules.clear();
             repository.bump_content_version();
         })
         .await
