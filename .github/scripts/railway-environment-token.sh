@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-action="${1:?usage: staging-railway-token.sh <create|delete>}"
+action="${1:?usage: railway-environment-token.sh <create|delete>}"
 project_id="${SCOPE_RAILWAY_PROJECT_ID:?SCOPE_RAILWAY_PROJECT_ID is required}"
-environment_id="${SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID:?SCOPE_RAILWAY_STAGING_ENVIRONMENT_ID is required}"
+environment_id="${SCOPE_RAILWAY_TOKEN_ENVIRONMENT_ID:?SCOPE_RAILWAY_TOKEN_ENVIRONMENT_ID is required}"
 token_name="${SCOPE_RAILWAY_PROJECT_TOKEN_NAME:?SCOPE_RAILWAY_PROJECT_TOKEN_NAME is required}"
 : "${RAILWAY_API_TOKEN:?RAILWAY_API_TOKEN is required}"
 # shellcheck source=.github/scripts/railway-graphql.sh
@@ -42,10 +42,10 @@ delete_tokens() {
 
 case "$action" in
   create)
-    : "${GITHUB_ENV:?GITHUB_ENV is required when creating the staging token}"
+    : "${GITHUB_ENV:?GITHUB_ENV is required when creating the token}"
     token_ids="$(list_token_ids)" || exit 1
     if [[ -n "$token_ids" ]]; then
-      echo "A Railway project token already uses this staging run name." >&2
+      echo "A Railway project token already uses this run name." >&2
       exit 1
     fi
     # shellcheck disable=SC2016
@@ -53,17 +53,17 @@ case "$action" in
       'mutation ProjectTokenCreate($input: ProjectTokenCreateInput!) { projectTokenCreate(input: $input) }' \
       "$(jq -cn --arg projectId "$project_id" --arg environmentId "$environment_id" \
         --arg name "$token_name" '{input: {projectId: $projectId, environmentId: $environmentId, name: $name}}')")"; then
-      delete_tokens || echo "Could not confirm cleanup of the staging run token." >&2
+      delete_tokens || echo "Could not confirm cleanup of the run token." >&2
       exit 1
     fi
     if ! project_token="$(jq -er '.data.projectTokenCreate | strings | select(length > 0)' <<< "$create_response")"; then
-      delete_tokens || echo "Could not confirm cleanup of the staging run token." >&2
+      delete_tokens || echo "Could not confirm cleanup of the run token." >&2
       exit 1
     fi
     printf '::add-mask::%s\n' "$project_token"
     token_ids="$(list_token_ids)" || { delete_tokens; exit 1; }
     if [[ "$(wc -l <<< "$token_ids")" -ne 1 || -z "$token_ids" ]]; then
-      echo "Railway did not return one project token for this staging run." >&2
+      echo "Railway did not return one project token for this run." >&2
       delete_tokens
       exit 1
     fi
@@ -73,7 +73,7 @@ case "$action" in
     delete_tokens
     ;;
   *)
-    echo "usage: staging-railway-token.sh <create|delete>" >&2
+    echo "usage: railway-environment-token.sh <create|delete>" >&2
     exit 2
     ;;
 esac
