@@ -32,6 +32,7 @@ mod request_run_source_base;
 mod run_attempt_active_indexes;
 mod run_execution_invariants;
 mod run_state_constraints;
+mod view_ids;
 
 const LATEST_MIGRATIONS: &[&str] = &[
     "m0042_current_schema_baseline",
@@ -66,6 +67,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0071_public_check_commits",
     "m0072_github_run_imports",
     "m0073_incremental_projection_read_models",
+    "m0074_view_ids",
 ];
 
 pub(super) async fn isolated_database() -> (
