@@ -44,8 +44,9 @@ pub(crate) fn record_git_exit(span: &tracing::Span, status: ExitStatus) {
 }
 
 fn git_subcommand(command: &Command) -> &'static str {
-    const GIT_SUBCOMMANDS: [&str; 38] = [
+    const GIT_SUBCOMMANDS: [&str; 44] = [
         "add",
+        "apply",
         "branch",
         "bundle",
         "cat-file",
@@ -53,8 +54,10 @@ fn git_subcommand(command: &Command) -> &'static str {
         "checkout",
         "clone",
         "commit",
+        "commit-tree",
         "config",
         "diff",
+        "diff-tree",
         "fetch",
         "for-each-ref",
         "fsck",
@@ -63,13 +66,16 @@ fn git_subcommand(command: &Command) -> &'static str {
         "index-pack",
         "init",
         "log",
+        "ls-remote",
         "ls-tree",
         "merge",
         "merge-base",
+        "merge-tree",
         "mktree",
         "pack-objects",
         "push",
         "read-tree",
+        "rebase",
         "receive-pack",
         "reset",
         "rev-list",

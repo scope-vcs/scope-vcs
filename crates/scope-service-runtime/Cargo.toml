@@ -12,7 +12,9 @@ postgres = ["dep:scope_postgres"]
 anyhow.workspace = true
 axum.workspace = true
 axum-tracing-opentelemetry.workspace = true
+bytes.workspace = true
 http.workspace = true
+http-body = "1.0"
 opentelemetry.workspace = true
 opentelemetry-http.workspace = true
 opentelemetry-otlp.workspace = true
@@ -29,4 +31,4 @@ url = "2.5.8"
 
 [dev-dependencies]
 serde_json.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread", "time"] }
