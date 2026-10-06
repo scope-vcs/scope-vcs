@@ -15,6 +15,7 @@ use scope_domain::{
         credentials::GitPushToken,
         git::GitHead,
     },
+    visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 use sea_orm::{ConnectionTrait, DatabaseTransaction, TransactionTrait};
 use std::time::Duration;
@@ -63,6 +64,24 @@ async fn fixture() -> MetadataStore {
             }],
         });
     }
+    repo.visibility_change_sets.push(
+        VisibilityChangeSet::new(
+            "hide_file_5".into(),
+            Some(format!("logical_{}", COMMITS - 1)),
+            None,
+            owner.id.clone(),
+            vec![VisibilityChange {
+                path: path("/file-5.txt"),
+                old_visibility: Visibility::Public,
+                new_visibility: Visibility::Private,
+                current_content: None,
+            }],
+        )
+        .unwrap(),
+    );
+    let live = repo.graph.commits[COMMITS - 1].changes[0].clone();
+    repo.live_files
+        .insert(live.path, live.new_content.expect("live content"));
     repo.git_head = Some(GitHead::new(format!("{:040x}", COMMITS), 1, 1));
     repo.git_push_token = Some(GitPushToken {
         token_hash: "push-token-hash".into(),
@@ -87,6 +106,10 @@ async fn fixture() -> MetadataStore {
         .await
         .unwrap();
     store
+}
+
+fn path(value: &str) -> ScopePath {
+    ScopePath::parse(value).unwrap()
 }
 
 fn incarnation() -> RepositoryIncarnation {
@@ -197,13 +220,7 @@ async fn git_push_credentials_read_no_history_or_pack_spans() {
 #[tokio::test]
 async fn projection_source_reads_no_live_files_and_rejects_a_changed_version() {
     let store = fixture().await;
-    let version = store
-        .repositories()
-        .repository_record("owner/repo")
-        .await
-        .unwrap()
-        .unwrap()
-        .content_version;
+    let version = content_version(&store).await;
     let held = lock(&store, "scope_live_files").await;
 
     let source = within_lock(
@@ -222,4 +239,116 @@ async fn projection_source_reads_no_live_files_and_rejects_a_changed_version() {
         .await
         .unwrap_err();
     assert_eq!(stale.kind, PostgresErrorKind::Conflict);
+}
+
+#[tokio::test]
+async fn path_history_reads_only_the_requested_paths() {
+    let store = fixture().await;
+    let version = content_version(&store).await;
+    let held = lock(
+        &store,
+        "scope_logical_commits, scope_visibility_change_sets, scope_git_segments",
+    )
+    .await;
+
+    let history = within_lock(store.repositories().repository_path_history(
+        &incarnation(),
+        version,
+        &[
+            path("/file-5.txt"),
+            path("/file-19.txt"),
+            path("/missing.txt"),
+        ],
+    ))
+    .await
+    .unwrap();
+    held.rollback().await.unwrap();
+
+    assert_eq!(history.live_paths, [path("/file-19.txt")].into());
+    let mut file_changes = history.file_change_visibilities;
+    file_changes.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(
+        file_changes,
+        [
+            (path("/file-19.txt"), Visibility::Public),
+            (path("/file-5.txt"), Visibility::Public),
+        ]
+    );
+    assert_eq!(
+        history.visibility_changes,
+        [(path("/file-5.txt"), Visibility::Public, Visibility::Private)]
+    );
+
+    let stale = store
+        .repositories()
+        .repository_path_history(&incarnation(), version + 1, &[path("/file-5.txt")])
+        .await
+        .unwrap_err();
+    assert_eq!(stale.kind, PostgresErrorKind::Conflict);
+}
+
+#[tokio::test]
+async fn path_history_lookups_can_use_the_path_indexes() {
+    let store = fixture().await;
+    let tx = store.db.begin().await.unwrap();
+    tx.execute_unprepared("SET LOCAL enable_seqscan = off")
+        .await
+        .unwrap();
+    for (table, index) in [
+        ("scope_file_changes", "idx_scope_file_changes_path"),
+        (
+            "scope_visibility_changes",
+            "idx_scope_visibility_changes_path",
+        ),
+    ] {
+        let plan = tx
+            .query_all_raw(sea_orm::Statement::from_string(
+                sea_orm::DatabaseBackend::Postgres,
+                format!(
+                    "EXPLAIN SELECT path FROM {table} WHERE repo_id = 'owner/repo' AND path = ANY(ARRAY['/file-5.txt'])"
+                ),
+            ))
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|row| row.try_get::<String>("", "QUERY PLAN").unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(plan.contains(index), "{table} plan:\n{plan}");
+    }
+    tx.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn git_push_context_reads_no_history() {
+    let store = fixture().await;
+    let held = lock(
+        &store,
+        &format!("{PROJECTION_HISTORY_TABLES}, scope_live_files"),
+    )
+    .await;
+
+    let context = within_lock(
+        store
+            .repositories()
+            .git_push_context("owner", "repo", "member"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    held.rollback().await.unwrap();
+
+    assert_eq!(context.access.actor, RepositoryActor::Member);
+    assert_eq!(context.incarnation, incarnation());
+    assert_eq!(context.content_version, content_version(&store).await);
+}
+
+async fn content_version(store: &MetadataStore) -> u64 {
+    store
+        .repositories()
+        .repository_record("owner/repo")
+        .await
+        .unwrap()
+        .unwrap()
+        .content_version
 }

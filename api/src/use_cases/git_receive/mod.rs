@@ -3,7 +3,6 @@ pub(crate) mod main_push;
 pub(crate) mod request_ref;
 
 use crate::{
-    auth::scope::principal_for_user_id,
     config::GIT_PUSH_TOKEN_PREFIX,
     error::ApiError,
     git::{
@@ -18,7 +17,6 @@ use crate::{
         },
     },
     push_intents::ValidatedPushIntent,
-    repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
 };
@@ -138,23 +136,31 @@ pub(crate) async fn authorize(
                     push_intent,
                 });
             }
-            let repo = find_repo(state, owner, repo_name).await?;
-            let principal = principal_for_user_id(&repo, &user.id);
-            let push_policy = repo.push_policy_for_user_id(&user.id);
+            let context = state
+                .metadata
+                .repositories()
+                .repository_read_access(owner, repo_name, Some(&user.id))
+                .await?
+                .ok_or_else(|| {
+                    ApiError::not_found(format!("repo {owner}/{repo_name} not found"))
+                })?;
+            let repo = &context.record;
+            let access = context.access;
+            let push_mode = access.main_push_mode(repo.lifecycle_state);
             let author_id = user.id.clone();
-            if push_policy.mode == MainPushMode::FirstPush {
+            if push_mode == MainPushMode::FirstPush {
                 let push_intent = required_push_intent(state, push_intent_secret)?;
-                push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
+                push_intent.ensure_repo_user(&repo.id, &author_id)?;
                 return Ok(ReceivePackAccess::FirstPush {
                     author_id,
                     incarnation: repo.incarnation(),
                     push_intent,
                 });
             }
-            let rejection = if push_policy.mode == MainPushMode::Denied {
+            let rejection = if push_mode == MainPushMode::Denied {
                 ApiError::not_found(format!("repo {owner}/{repo_name} not found"))
             } else {
-                if repo.record.lifecycle_state == RepoLifecycleState::AwaitingFirstPush {
+                if repo.lifecycle_state == RepoLifecycleState::AwaitingFirstPush {
                     return Err(ApiError::conflict(
                         "repo is awaiting its first push and cannot receive another push",
                     ));
@@ -162,7 +168,7 @@ pub(crate) async fn authorize(
                 match push_intent_secret {
                     Some(secret) => match state.validate_push_intent_secret(secret) {
                         Ok(push_intent) => {
-                            push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
+                            push_intent.ensure_repo_user(&repo.id, &author_id)?;
                             return Ok(ReceivePackAccess::ReadyMember {
                                 author_id,
                                 incarnation: repo.incarnation(),
@@ -174,15 +180,9 @@ pub(crate) async fn authorize(
                     None => ApiError::forbidden("valid Scope push intent required"),
                 }
             };
-            if repo.record.lifecycle_state == RepoLifecycleState::Ready
-                && actor_can_receive_request_push(
-                    state,
-                    &repo,
-                    &principal,
-                    &author_id,
-                    push_policy.access,
-                )
-                .await?
+            if repo.lifecycle_state == RepoLifecycleState::Ready
+                && request_ref::actor_has_open_editable_request(state, &repo.id, &author_id, access)
+                    .await?
             {
                 Ok(ReceivePackAccess::RequestContributor {
                     author_id,
@@ -583,15 +583,4 @@ fn required_push_intent(
 ) -> Result<ValidatedPushIntent, ApiError> {
     let secret = secret.ok_or_else(|| ApiError::forbidden("valid Scope push intent required"))?;
     state.validate_push_intent_secret(secret)
-}
-
-async fn actor_can_receive_request_push(
-    state: &AppState,
-    repo: &scope_domain::repository::Repository,
-    principal: &scope_domain::policy::Principal,
-    author_id: &str,
-    access: scope_domain::repository::access::RepositoryAccess,
-) -> Result<bool, ApiError> {
-    ensure_repo_read(repo, principal)?;
-    request_ref::actor_has_open_editable_request(state, &repo.record.id, author_id, access).await
 }

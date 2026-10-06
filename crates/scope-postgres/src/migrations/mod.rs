@@ -30,6 +30,7 @@ mod m0070_github_setup_checks_and_workflow_runs;
 mod m0071_public_check_commits;
 mod m0072_github_run_imports;
 mod m0073_github_workflow_jobs;
+mod m0074_history_path_indexes;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -199,6 +200,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0073_github_workflow_jobs::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0074_history_path_indexes::Migration),
             metadata_restore_safe: true,
         },
     ]

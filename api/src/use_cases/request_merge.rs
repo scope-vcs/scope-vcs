@@ -8,6 +8,7 @@ use crate::{
             reviewed_update_from_staging_repo,
         },
         projection_repo::verify_projection_materialization,
+        repository_git::RepositoryGit,
         request_merge_tree::{MergedTree, merge_request_tree},
         request_ref_public_safety::validate_public_request_merge_range,
         request_refs::attach_visible_request_refs,
@@ -359,7 +360,7 @@ async fn prepare_request_merge_for_execution(
         let (origin, merge_base_oid) = match request.audience {
             RequestAudience::Public => {
                 let validated = validate_public_request_merge_range(
-                    repo,
+                    &RepositoryGit::of_repository(repo),
                     state,
                     &staging_repo,
                     &request.head_oid,
