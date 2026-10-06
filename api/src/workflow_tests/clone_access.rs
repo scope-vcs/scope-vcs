@@ -12,12 +12,16 @@ async fn git_projection_for_request(
     repo_name: &str,
     mode: GitRemoteMode,
 ) -> Result<Projection, ApiError> {
-    let (repo, access, _) = authorized_git_read(state, headers, owner, repo_name, mode).await?;
-    Ok(project_graph(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        ProjectionViewKey::from_access(access),
-    ))
+    let (source, _) = authorized_git_read(state, headers, owner, repo_name, mode).await?;
+    let projection_source = state
+        .metadata
+        .repositories()
+        .repository_projection_source(
+            &source.context.incarnation(),
+            source.context.record.content_version,
+        )
+        .await?;
+    Ok(projection_source.project(ProjectionViewKey::from_access(source.context.access)))
 }
 
 async fn repo_with_secret(state: &AppState, path: &str) {

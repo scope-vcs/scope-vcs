@@ -26,7 +26,7 @@ use sea_orm::{
 };
 use std::{future::Future, time::Duration};
 
-const HISTORY_TABLES: &str = "scope_logical_commits, scope_file_changes, scope_live_files, \
+pub(in crate::db) const HISTORY_TABLES: &str = "scope_logical_commits, scope_file_changes, scope_live_files, \
     scope_visibility_change_sets, scope_visibility_changes, scope_git_segments, \
     scope_git_segment_uploads";
 

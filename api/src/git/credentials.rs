@@ -3,14 +3,14 @@ use crate::{
     config::{CLI_SESSION_TOKEN_PREFIX, FIRST_PUSH_TOKEN_PREFIX, GIT_PUSH_TOKEN_PREFIX},
     error::ApiError,
     persistence::unix_now,
-    repo_access::find_repo,
     state::AppState,
 };
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use scope_domain::account::UserAccount;
-use scope_domain::repository::Repository;
+use scope_domain::repository::RepoLifecycleState;
 use scope_domain::repository::credentials::FirstPushTokenStatus;
+use scope_postgres::db::GitPushCredentials;
 
 #[derive(Clone, Debug)]
 pub(crate) enum InitialPushCredential {
@@ -114,10 +114,10 @@ fn basic_auth_parts(encoded: &str) -> Result<(String, String), ApiError> {
 }
 
 pub(crate) fn authorize_initial_push_for_repo(
-    repo: &Repository,
+    repo: &GitPushCredentials,
     credential: &InitialPushCredential,
 ) -> Result<(), ApiError> {
-    if !repo.is_waiting_for_first_push() {
+    if repo.record.lifecycle_state != RepoLifecycleState::AwaitingFirstPush {
         return Err(ApiError::conflict(
             "repo is not waiting for an initial Git push",
         ));
@@ -132,16 +132,17 @@ pub(crate) fn authorize_initial_push_for_repo(
     }
 }
 
-pub(crate) async fn find_repo_after_git_scope_token(
+pub(crate) async fn git_push_credentials_after_scope_token(
     state: &AppState,
     owner: &str,
     repo_name: &str,
-) -> Result<Repository, ApiError> {
-    match find_repo(state, owner, repo_name).await {
-        Ok(repo) => Ok(repo),
-        Err(error) if error.status() == StatusCode::NOT_FOUND => Err(invalid_git_credentials()),
-        Err(error) => Err(error),
-    }
+) -> Result<GitPushCredentials, ApiError> {
+    state
+        .metadata
+        .repositories()
+        .git_push_credentials(owner, repo_name)
+        .await?
+        .ok_or_else(invalid_git_credentials)
 }
 
 pub(crate) fn invalid_git_credentials() -> ApiError {
@@ -156,8 +157,8 @@ pub(crate) fn git_credential_error(error: ApiError) -> ApiError {
     }
 }
 
-pub(crate) fn authorize_first_push_token_for_repo(
-    repo: &Repository,
+fn authorize_first_push_token_for_repo(
+    repo: &GitPushCredentials,
     token_secret: &str,
 ) -> Result<(), ApiError> {
     let now = unix_now()?;
@@ -182,7 +183,7 @@ pub(crate) fn authorize_first_push_token_for_repo(
 }
 
 pub(crate) fn authorize_git_push_token_for_repo(
-    repo: &Repository,
+    repo: &GitPushCredentials,
     secret: &str,
 ) -> Result<String, ApiError> {
     let Some(token) = repo.git_push_token.as_ref() else {
