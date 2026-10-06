@@ -10,7 +10,7 @@ use crate::{
         repository_git::RepositoryGit,
         request_merge_tree::{MergedTree, merge_request_tree},
         request_ref_public_safety::validate_public_request_merge_range,
-        request_refs::attach_visible_request_refs,
+        request_refs::{attach_visible_request_refs, clone_without_shared_objects},
         storage::{receive_pack_staging_repo_path, remove_dir_if_exists},
     },
     operation_analytics::ObservedOperation,
@@ -351,15 +351,9 @@ async fn prepare_request_merge_for_execution(
     if let Some(parent) = staging_repo.parent() {
         ensure_private_dir(parent)?;
     }
-    run_git(
-        None,
-        &[
-            "clone",
-            "--bare",
-            "--no-hardlinks",
-            base_repo.to_string_lossy().as_ref(),
-            staging_repo.to_string_lossy().as_ref(),
-        ],
+    clone_without_shared_objects(
+        &base_repo,
+        &staging_repo,
         "preparing request merge repository",
     )?;
     let prepared = async {
