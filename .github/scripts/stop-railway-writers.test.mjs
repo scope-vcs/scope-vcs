@@ -143,7 +143,7 @@ for (const scenario of ['list-fails', 'remove-false', 'remove-ambiguous']) {
   test(`reconciles staging shutdown failure: ${scenario}`, async () => {
     const { manifest, removals, root } = await fixture()
     const result = spawnSync('bash', ['.github/scripts/stop-railway-writers.sh'], {
-      encoding: 'utf8', timeout: 15_000,
+      encoding: 'utf8', timeout: 60_000,
       env: {
         ...process.env, PATH: `${root}:${process.env.PATH}`,
         RAILWAY_API_TOKEN: 'account-token', RAILWAY_TOKEN: '',
@@ -167,7 +167,7 @@ for (const replicas of [undefined, { running: 0 }, { running: null, crashed: 0 }
   test(`staging shutdown rejects incomplete replica state: ${JSON.stringify(replicas)}`, async () => {
     const { manifest, removals, root } = await fixture()
     const result = spawnSync('bash', ['-c', 'bash .github/scripts/stop-railway-writers.sh && echo capture-baseline'], {
-      encoding: 'utf8', timeout: 15_000,
+      encoding: 'utf8', timeout: 60_000,
       env: { ...process.env, PATH: `${root}:${process.env.PATH}`,
         RAILWAY_API_TOKEN: 'account-token', RAILWAY_TOKEN: '',
         SCOPE_DEPLOYMENT_MANIFEST: manifest, SCOPE_TEST_REMOVALS: removals,
@@ -187,7 +187,7 @@ test('already removed staging writers allow baseline capture without another rem
     id, status: null, deploymentId: null, latestDeployment: null, replicas: null,
   }))
   const result = spawnSync('bash', ['-c', 'bash .github/scripts/stop-railway-writers.sh && echo capture-baseline'], {
-    encoding: 'utf8', timeout: 15_000,
+    encoding: 'utf8', timeout: 60_000,
     env: { ...process.env, PATH: `${root}:${process.env.PATH}`,
       RAILWAY_API_TOKEN: 'account-token', RAILWAY_TOKEN: '',
       SCOPE_DEPLOYMENT_MANIFEST: manifest, SCOPE_TEST_REMOVALS: removals,

@@ -47,6 +47,7 @@ pub enum GitHubPushStanding {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_push_standing"))]
     pub async fn github_push_standing(
         &self,
         id: &str,
@@ -82,6 +83,7 @@ impl RequestStore {
         )
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "drop_superseded_github_push"))]
     pub async fn drop_superseded_github_push(
         &self,
         id: &str,
@@ -102,6 +104,7 @@ impl RequestStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_due_github_pushes"))]
     pub async fn claim_due_github_pushes(
         &self,
         claim_token: &str,
@@ -160,6 +163,7 @@ impl RequestStore {
         .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_push"))]
     pub async fn finish_github_push(
         &self,
         id: &str,
@@ -236,6 +240,7 @@ impl RequestStore {
         Ok(Some(push))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "latest_github_push"))]
     pub async fn latest_github_push(
         &self,
         request_id: &str,

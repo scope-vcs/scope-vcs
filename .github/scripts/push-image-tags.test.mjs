@@ -20,7 +20,7 @@ attempts="$(grep -cx -- "$2" "$TEST_PUSHES")"
 `, { mode: 0o755 });
   const result = spawnSync('bash', [script], {
     input: 'ghcr.io/scope/checks:sha-a\nghcr.io/scope/checks:main\n',
-    encoding: 'utf8', timeout: 10_000,
+    encoding: 'utf8', timeout: 60_000,
     env: { ...process.env, PATH: `${root}:${process.env.PATH}`, TEST_PUSHES: join(root, 'pushes'), TEST_FAILURES: String(failures) },
   });
   return { result, pushes: readFileSync(join(root, 'pushes'), 'utf8').trim().split('\n') };

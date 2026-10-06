@@ -59,12 +59,11 @@ impl ClerkBackendApi {
         url.path_segments_mut()
             .expect("Clerk users URL has a path")
             .push(clerk_user_id);
-        match self
-            .client
-            .delete(url)
-            .bearer_auth(&self.secret_key)
-            .send()
-            .await
+        match scope_service_runtime::outbound_http::send_traced(
+            self.client.delete(url).bearer_auth(&self.secret_key),
+            "/v1/users/{user_id}",
+        )
+        .await
         {
             Ok(response) => classify_clerk_response(response.status().as_u16()),
             Err(error) => {

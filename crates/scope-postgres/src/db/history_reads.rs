@@ -166,6 +166,7 @@ pub(super) async fn save_repository_history_view<C: ConnectionTrait>(
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "ensure_history_view"))]
     pub async fn ensure_history_view(
         &self,
         incarnation: &RepositoryIncarnation,
@@ -197,6 +198,7 @@ impl RepositoryStore {
         tx.commit().await.map_err(PostgresError::internal)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_history_page"))]
     pub async fn repository_history_page(
         &self,
         query: RepositoryHistoryQuery<'_>,

@@ -29,6 +29,7 @@ struct AccessRow {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_read_access"))]
     pub async fn repository_read_access(
         &self,
         owner: &str,
@@ -88,6 +89,7 @@ impl RepositoryStore {
         ))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_access"))]
     pub async fn repository_access(
         &self,
         owner: &str,
@@ -100,6 +102,7 @@ impl RepositoryStore {
         Ok(context)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_record"))]
     pub async fn repository_record(
         &self,
         repo_id: &str,
@@ -107,6 +110,7 @@ impl RepositoryStore {
         load_repo_record(self.db.as_ref(), repo_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_content_source"))]
     pub async fn repository_content_source(
         &self,
         incarnation: &scope_domain::repository::RepositoryIncarnation,
@@ -136,6 +140,7 @@ impl RepositoryStore {
         Ok((head, spans))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_policy"))]
     pub async fn repository_policy(
         &self,
         context: &RepositoryAccessContext,
@@ -157,6 +162,7 @@ impl RepositoryStore {
         serde_json::from_value(policy).map_err(PostgresError::internal)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_main_oid"))]
     pub async fn repository_main_oid(
         &self,
         context: &RepositoryAccessContext,
@@ -168,6 +174,7 @@ impl RepositoryStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_main_oid_for_audience"))]
     pub async fn repository_main_oid_for_audience(
         &self,
         context: &RepositoryAccessContext,

@@ -92,13 +92,21 @@ export function recloseGate(gate, options) {
   return enterGate(reset, options);
 }
 export function stopGatePredecessors(gate, { railway }) {
-  for (const id of gate.predecessorIds ?? []) {
-    if (id === gate.deploymentId) throw new Error('Refusing to stop the maintenance deployment.');
+  const predecessor = id => {
     const deployment = data(railway, 'query MaintenancePredecessor($id:String!){deployment(id:$id){id status serviceId deploymentStopped}}', { id }).deployment;
     if (deployment?.serviceId !== gate.serviceId) throw new Error('Predecessor belongs to another service.');
-    if (deployment.status === 'REMOVED' || deployment.deploymentStopped === true) continue;
-    const result = data(railway, 'mutation MaintenanceStopPredecessor($id:String!){deploymentStop(id:$id)}', { id });
-    if (result.deploymentStop !== true) throw new Error('Railway did not confirm predecessor stop.');
+    return deployment;
+  };
+  const leaving = deployment => ['REMOVING', 'REMOVED'].includes(deployment.status) || deployment.deploymentStopped === true;
+  for (const id of gate.predecessorIds ?? []) {
+    if (id === gate.deploymentId) throw new Error('Refusing to stop the maintenance deployment.');
+    if (leaving(predecessor(id))) continue;
+    try {
+      const result = data(railway, 'mutation MaintenanceStopPredecessor($id:String!){deploymentStop(id:$id)}', { id });
+      if (result.deploymentStop !== true) throw new Error('Railway did not confirm predecessor stop.');
+    } catch (error) {
+      if (!leaving(predecessor(id))) throw error;
+    }
   }
 }
 export function restoreGateConfiguration(gate, { railway, persist }) {

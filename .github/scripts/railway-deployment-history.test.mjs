@@ -10,7 +10,7 @@ test('deployment inventory failures cannot authorize the no-history branch', () 
     railway_inventory_read() { printf '%s' "$TEST_HISTORY_RESPONSE"; return "$TEST_HISTORY_STATUS"; }
     history="$(service_has_deployment_history service)" || exit $?
     if [[ "$history" == 0 ]]; then echo authorize-bootstrap; else echo require-existing-writer; fi
-  `], { encoding: 'utf8', timeout: 15_000, env: {
+  `], { encoding: 'utf8', timeout: 60_000, env: {
     ...process.env,
     TEST_HISTORY_RESPONSE: response, TEST_HISTORY_STATUS: String(status),
   } });

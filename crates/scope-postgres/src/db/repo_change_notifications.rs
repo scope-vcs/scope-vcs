@@ -44,6 +44,7 @@ impl RepositoryStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "notify_repo_change"))]
     pub async fn notify_repo_change(&self, payload: &str) -> Result<(), PostgresError> {
         self.db
             .execute_raw(Statement::from_sql_and_values(

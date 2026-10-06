@@ -55,6 +55,7 @@ pub struct CreateRepositoryCommand {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "create_repo_with_init_tokens"))]
     pub async fn create_repo_with_init_tokens<F, E>(
         &self,
         command: CreateRepositoryCommand,
@@ -133,6 +134,7 @@ impl RepositoryStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "delete_repo"))]
     pub async fn delete_repo(
         &self,
         owner: &str,

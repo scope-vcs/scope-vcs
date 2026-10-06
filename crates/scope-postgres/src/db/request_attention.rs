@@ -33,6 +33,7 @@ pub struct RequestAttentionResult {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "apply_request_attention"))]
     pub async fn apply_request_attention(
         &self,
         command: ApplyRequestAttentionCommand,

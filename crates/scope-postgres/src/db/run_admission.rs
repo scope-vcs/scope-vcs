@@ -26,6 +26,7 @@ pub(super) async fn lock_admission(tx: &DatabaseTransaction) -> Result<(), Postg
 
 impl RunStore {
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "admit_next_job"))]
     pub async fn admit_next_job(
         &self,
         max_concurrency: u64,

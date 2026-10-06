@@ -20,6 +20,11 @@ const path = require('node:path');
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.DOCKER_TEST_LOG, JSON.stringify({ args, config: process.env.DOCKER_CONFIG }) + '\\n');
 if (args[0] === 'login') {
+  const logins = fs.readFileSync(process.env.DOCKER_TEST_LOG, 'utf8').split('\\n').filter((line) => line.startsWith('{"args":["login"')).length;
+  if (logins <= Number(process.env.DOCKER_TEST_LOGIN_FAILURES || 0)) {
+    process.stderr.write('Error response from daemon: Get "https://ghcr.io/v2/": context deadline exceeded');
+    process.exit(1);
+  }
   const password = fs.readFileSync(0, 'utf8');
   if (password !== process.env.SCOPE_RAILWAY_REGISTRY_PASSWORD) process.exit(2);
   fs.writeFileSync(path.join(process.env.DOCKER_CONFIG, 'config.json'), 'private login');
@@ -46,6 +51,7 @@ function fixture(t) {
   const bin = join(root, 'tools');
   mkdirSync(bin);
   writeFileSync(join(bin, 'docker'), fakeDocker, { mode: 0o755 });
+  writeFileSync(join(bin, 'sleep'), '#!/bin/sh\nprintf \'{"args":["sleep","%s"]}\\n\' "$1" >> "$DOCKER_TEST_LOG"\n', { mode: 0o755 });
   const imageBinary = join(root, 'registry-image-maintenance');
   writeFileSync(imageBinary, 'original compiled maintenance binary');
   const inheritedConfig = join(root, 'publishing-login');
@@ -82,6 +88,17 @@ function commands(f) {
 function extract(f, extra = {}) {
   return spawnSync('bash', [extractor, f.manifest, f.destination], { cwd: repository, env: { ...f.env, ...extra }, encoding: 'utf8' });
 }
+const credentials = { SCOPE_RAILWAY_REGISTRY_USERNAME: 'pull-user', SCOPE_RAILWAY_REGISTRY_PASSWORD: 'durable-read-token' };
+function prepareApi(f, extra = {}) {
+  rmSync(f.manifest);
+  const context = join(f.root, 'api-context');
+  mkdirSync(join(context, 'bin'), { recursive: true });
+  writeFileSync(join(context, 'bin/scope-vcs'), 'api binary', { mode: 0o755 });
+  writeFileSync(join(context, 'bin/scope-maintenance'), readFileSync(f.imageBinary));
+  return spawnSync('bash', [preparer, 'api', context, f.manifest], {
+    cwd: repository, encoding: 'utf8', env: { ...f.env, GITHUB_REPOSITORY: 'example/release', SCOPE_MAINTENANCE_BINARY: f.imageBinary, ...credentials, ...extra },
+  });
+}
 
 test('ordinary deployment and later recovery use the pinned image after build artifacts expire', (t) => {
   const f = fixture(t);
@@ -110,6 +127,31 @@ test('uses scoped durable registry credentials through stdin and removes them af
   assert.equal(existsSync(login.config), false);
   assert.ok(!readFileSync(f.log, 'utf8').includes(password));
   assert.ok(!result.stdout.includes(password));
+});
+
+test('registry login retries transient failures with backoff before pulling', (t) => {
+  for (const preparation of [extract, prepareApi]) {
+    const f = fixture(t);
+    const result = preparation(f, { ...credentials, DOCKER_TEST_LOGIN_FAILURES: '2' });
+    assert.equal(result.status, 0, result.stderr);
+    const calls = commands(f).map(({ args }) => args.slice(0, 2).join(' '));
+    const pull = calls.findIndex((call) => call.startsWith('pull') || call.startsWith('manifest'));
+    assert.deepEqual(calls.slice(calls.indexOf('login ghcr.io'), pull), ['login ghcr.io', 'sleep 5', 'login ghcr.io', 'sleep 10', 'login ghcr.io']);
+    assert.match(result.stderr, /Registry login failed; retrying \(2\/3\)/);
+  }
+});
+
+test('registry login fails visibly after three attempts without pulling', (t) => {
+  for (const preparation of [extract, prepareApi]) {
+    const f = fixture(t);
+    const result = preparation(f, { ...credentials, DOCKER_TEST_LOGIN_FAILURES: '3' });
+    assert.notEqual(result.status, 0);
+    const calls = commands(f).map(({ args }) => args[0]);
+    assert.equal(calls.filter((call) => call === 'login').length, 3);
+    assert.ok(!calls.includes('pull') && !calls.includes('manifest'));
+    assert.match(result.stderr, /context deadline exceeded/);
+    assert.match(result.stderr, /Registry login failed after 3 attempts: ghcr\.io/);
+  }
 });
 
 test('hash mismatch and symlink copies leave an existing maintenance binary untouched', (t) => {
@@ -197,14 +239,7 @@ test('private preparation requires both durable credentials before publishing or
 test('published public or internal packages cannot enter the prepared release manifest', (t) => {
   for (const visibility of ['public', 'internal']) {
     const f = fixture(t);
-    rmSync(f.manifest);
-    const context = join(f.root, 'api-context');
-    mkdirSync(join(context, 'bin'), { recursive: true });
-    writeFileSync(join(context, 'bin/scope-vcs'), 'api binary', { mode: 0o755 });
-    writeFileSync(join(context, 'bin/scope-maintenance'), readFileSync(f.imageBinary));
-    const result = spawnSync('bash', [preparer, 'api', context, f.manifest], {
-      cwd: repository, encoding: 'utf8', env: { ...f.env, GITHUB_REPOSITORY: 'example/release', SCOPE_MAINTENANCE_BINARY: f.imageBinary, SCOPE_RAILWAY_REGISTRY_USERNAME: 'pull-user', SCOPE_RAILWAY_REGISTRY_PASSWORD: 'durable-read-token', GITHUB_TEST_PACKAGE_VISIBILITY: visibility },
-    });
+    const result = prepareApi(f, { GITHUB_TEST_PACKAGE_VISIBILITY: visibility });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /must be private/);
     assert.equal(existsSync(f.manifest), false);
