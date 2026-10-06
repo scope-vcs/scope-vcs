@@ -9,11 +9,13 @@ const github = (
   name: string,
   status: GitHubCheck['status'],
   conclusion: GitHubCheck['conclusion'] = null,
+  run: GitHubCheck['run'] = null,
 ): RequestCheckResponse => ({
   conclusion,
   details_url: status ? 'https://github.com/o/r/runs/1' : null,
   name,
   provider: 'github',
+  run,
   status,
 })
 
@@ -38,7 +40,7 @@ test('a native check links its run, and one without a run has not started', () =
     leaf: 'checks',
     name: 'checks',
     parents: [],
-    runId: 'run_a',
+    run: { id: 'run_a' },
     state: 'dispatching',
     tone: 'waiting',
   })
@@ -50,27 +52,29 @@ test('a native check links its run, and one without a run has not started', () =
       leaf: 'checks',
       name: 'checks',
       parents: [],
-      runId: null,
+      run: null,
       state: 'pending',
       tone: 'waiting',
     },
   )
 })
 
-test('a GitHub check shows its conclusion, then its status, and never links GitHub', () => {
-  assert.deepEqual(rows(github('ci / unit / test', 'completed', 'timed_out'))[0], {
+test('a GitHub check shows its conclusion, then its status, and opens its job on Scope', () => {
+  const run = { run_id: '42', job_id: '7' }
+  assert.deepEqual(rows(github('ci / unit / test', 'completed', 'timed_out', run))[0], {
     key: 'github:ci / unit / test',
     label: 'timed out',
     leaf: 'test',
     name: 'ci / unit / test',
     parents: ['ci', 'unit'],
-    runId: null,
+    run: { id: '42', hash: 'run-job-7' },
     state: 'failed',
     tone: 'danger',
   })
   assert.equal(rows(github('ci', 'completed', 'neutral'))[0]!.state, 'succeeded')
   assert.equal(rows(github('ci', 'in_progress'))[0]!.label, 'in progress')
   assert.equal(rows(github('ci', null))[0]!.label, 'waiting')
+  assert.equal(rows(github('ci', 'completed', 'success'))[0]!.run, null)
 })
 
 test('the summary leads with what is left and lists only checks that need someone', () => {

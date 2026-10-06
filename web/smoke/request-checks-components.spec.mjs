@@ -52,9 +52,14 @@ test('request checks lead with what is left, fold the rest, and only link Scope 
       await checks.getByRole('listitem').evaluateAll((items) => items.map((item) => item.textContent)),
       [
         'Check operationsin progress',
-        'Validate selected components\u00a0/\u00a0CLI validationwaiting',
+        'Validate selected components\u00a0/\u00a0CLI validationqueued',
         'Validate selected components\u00a0/\u00a0Integration validationwaiting',
       ],
+    )
+
+    assert.deepEqual(
+      await checks.getByRole('link').evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
+      ['/octo/demo/runs/9001#run-job-31', '/octo/demo/runs/9002#run-job-45'],
     )
 
     await checks.getByRole('button', { name: 'Show all 12' }).click()
@@ -71,6 +76,9 @@ test('request checks lead with what is left, fold the rest, and only link Scope 
     assert.equal(await job.evaluate((element) => element.scrollWidth <= element.clientWidth), true)
     assert.equal(await checks.getByText(/^Validate selected components/).first().isVisible(), true)
     await checks.getByRole('button', { name: 'Show all 12' }).click()
+    await checks.getByRole('link', { name: /CLI validation/ }).click()
+    await page.getByRole('heading', { name: 'Run 9002#run-job-45' }).waitFor()
+    await page.goBack()
 
     await page.evaluate(() => window.showNative())
     await checks.getByText('1 failed', { exact: true }).waitFor()

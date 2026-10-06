@@ -156,7 +156,7 @@ function CheckRow({
     </>
   )
   const style = depth ? { paddingLeft: 6 + depth * INDENT_PX } : undefined
-  if (!row.runId) {
+  if (!row.run) {
     return (
       <div className={ROW_CLASS} style={style}>
         {content}
@@ -167,7 +167,8 @@ function CheckRow({
   return (
     <Link
       className={cn(ROW_CLASS, 'hover:bg-accent focus-visible:bg-accent')}
-      params={{ ...params, runId: row.runId }}
+      hash={row.run.hash}
+      params={{ ...params, runId: row.run.id }}
       style={style}
       to="/$owner/$repo/runs/$runId"
     >

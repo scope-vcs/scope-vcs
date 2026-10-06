@@ -1,5 +1,6 @@
 import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.generated'
 import { githubRunResult } from '../runs/github-run-status'
+import { runJobPanelId } from '../runs/run-job-ids'
 import { type RunTone, runStatus } from '../runs/run-status'
 
 export type RequestCheckRow = {
@@ -10,7 +11,7 @@ export type RequestCheckRow = {
   state: string
   tone: RunTone
   label: string
-  runId: string | null
+  run: { id: string; hash?: string } | null
 }
 
 export type RequestChecksSummary = {
@@ -30,13 +31,19 @@ function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
       check.workflow_name,
       check.run_state === 'canceled' ? 'failed' : check.run_state ?? 'pending',
       check.run_state ? runStatus(check.run_state).label : 'not started',
-      check.run_id,
+      check.run_id ? { id: check.run_id } : null,
     )
   }
   const result = check.status
     ? githubRunResult(check.status, check.conclusion)
     : { state: 'pending', label: 'waiting' }
-  return row(`github:${check.name}`, check.name, result.state, result.label, null)
+  return row(
+    `github:${check.name}`,
+    check.name,
+    result.state,
+    result.label,
+    check.run ? { id: check.run.run_id, hash: runJobPanelId(check.run.job_id) } : null,
+  )
 }
 
 export function requestChecksSummary(checks: RequestChecksResponse): RequestChecksSummary {
@@ -115,9 +122,9 @@ function row(
   name: string,
   state: string,
   label: string,
-  runId: string | null,
+  run: RequestCheckRow['run'],
 ): RequestCheckRow {
   const parts = name.split(' / ')
   const leaf = parts.pop()!
-  return { key, name, leaf, parents: parts, state, tone: runStatus(state).tone, label, runId }
+  return { key, name, leaf, parents: parts, state, tone: runStatus(state).tone, label, run }
 }

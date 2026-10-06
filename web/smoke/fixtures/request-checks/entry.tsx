@@ -6,8 +6,8 @@ import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.ge
 import './styles.css'
 
 type GitHubCheck = Extract<RequestCheckResponse, { provider: 'github' }>
-const github = (name: string, status: GitHubCheck['status'], conclusion: GitHubCheck['conclusion'] = null): RequestCheckResponse => ({
-  provider: 'github', name, status, conclusion,
+const github = (name: string, status: GitHubCheck['status'], conclusion: GitHubCheck['conclusion'] = null, run: GitHubCheck['run'] = null): RequestCheckResponse => ({
+  provider: 'github', name, status, conclusion, run,
   details_url: status ? 'https://github.com/octo/demo/actions/runs/1/job/2' : null,
 })
 const V = 'Validate selected components'
@@ -17,11 +17,11 @@ const running = {
   changes_github_workflows: false, private_request_on_public_github: true,
   github_push: { state: 'sent', branch: 'scope/requests/req_1', error: null },
   checks: [
-    github('Check operations', 'in_progress'),
+    github('Check operations', 'in_progress', null, { run_id: '9001', job_id: '31' }),
     github('Check repository policy', 'completed', 'success'),
     github('Plan selected components', 'completed', 'success'),
     github('Required PR checks', 'completed', 'success'),
-    github(`${V} / CLI validation`, null),
+    github(`${V} / CLI validation`, 'queued', null, { run_id: '9002', job_id: '45' }),
     github(`${V} / Integration validation`, null),
     github(`${V} / Production validation gate`, 'completed', 'success'),
     github(`${V} / Runner base image`, 'completed', 'skipped'),
@@ -46,7 +46,7 @@ function Request() {
     showNative: () => setChecks(native),
     refresh: () => setChecks((current) => ({
       ...current,
-      checks: current.checks.map((check, index) => index ? check : github('Check operations', 'completed', 'success')),
+      checks: current.checks.map((check, index) => index ? check : { ...check as GitHubCheck, status: 'completed', conclusion: 'success' }),
     })),
   })
   return <main className="mx-auto max-w-3xl"><RequestChecksSection checks={checks} error={null} params={{ owner: owner!, repo: repo! }} /></main>
@@ -54,7 +54,7 @@ function Request() {
 
 function Run() {
   const { runId } = useParams({ strict: false })
-  return <h1>Run {runId}</h1>
+  return <h1>Run {runId}{location.hash}</h1>
 }
 
 const root = createRootRoute({ component: Outlet })
