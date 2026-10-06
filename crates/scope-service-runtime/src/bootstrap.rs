@@ -1,17 +1,6 @@
 use anyhow::Context as _;
 use axum::Router;
 use std::net::{Ipv6Addr, SocketAddr};
-use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
-
-pub fn init_tracing(default_filter: &str) {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| default_filter.into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-}
 
 pub fn port_from_env(default: u16) -> u16 {
     std::env::var("PORT")
@@ -26,7 +15,7 @@ pub async fn serve(port: u16, router: Router, service: &str) -> anyhow::Result<(
         .await
         .with_context(|| format!("binding {service} on {address}"))?;
     tracing::info!(%address, "starting {service}");
-    axum::serve(listener, router)
+    axum::serve(listener, router.layer(crate::request_tracing()))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .with_context(|| format!("serving {service}"))

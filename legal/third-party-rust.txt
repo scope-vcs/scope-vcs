@@ -639,6 +639,17 @@ Repository: "https://github.com/tokio-rs/axum"
 LICENSE: text 008c87afcd2e626eaf564093250bed06dd7efb5732113264bba3dda8f1c556a1
 
 ==============================================================================
+axum-tracing-opentelemetry 0.42.1
+Declared license: CC0-1.0
+Selected license: CC0-1.0
+Source: https://static.crates.io/crates/axum-tracing-opentelemetry/axum-tracing-opentelemetry-0.42.1.crate
+
+Repository: "https://github.com/davidB/tracing-opentelemetry-instrumentation-sdk"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/davidB-tracing-opentelemetry-instrumentation-sdk-7efdaf5cb7b4-LICENSE: text 6d489af6292662d9e36d34ce49423784984a5f6e41d7b58f49b01264df59fa03
+
+==============================================================================
 base16ct 0.2.0
 Declared license: Apache-2.0 OR MIT
 Selected license: MIT
@@ -2934,6 +2945,72 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
 
 ==============================================================================
+opentelemetry 0.33.0
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/opentelemetry/opentelemetry-0.33.0.crate
+
+Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
+opentelemetry-http 0.33.0
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/opentelemetry-http/opentelemetry-http-0.33.0.crate
+
+Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-http"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
+opentelemetry-otlp 0.33.0
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/opentelemetry-otlp/opentelemetry-otlp-0.33.0.crate
+
+Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
+opentelemetry-proto 0.33.0
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/opentelemetry-proto/opentelemetry-proto-0.33.0.crate
+
+Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
+opentelemetry-semantic-conventions 0.33.0
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/opentelemetry-semantic-conventions/opentelemetry-semantic-conventions-0.33.0.crate
+
+Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-semantic-conventions"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
+opentelemetry_sdk 0.33.0
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/opentelemetry_sdk/opentelemetry_sdk-0.33.0.crate
+
+Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-sdk"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
 ordered-float 4.6.0
 Declared license: MIT
 Selected license: MIT
@@ -3267,6 +3344,26 @@ Published author metadata: ["Sergio Benitez <sb@sergio.bz>"]
 Repository: "https://github.com/SergioBenitez/proc-macro2-diagnostics"
 LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e38179
 LICENSE-MIT: text b35c3cb20c9c1c76b462cda6f8fee75cac8a60351e6280a8d919cf581b70f198
+
+==============================================================================
+prost 0.14.4
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/prost/prost-0.14.4.crate
+
+Published author metadata: ["Dan Burkert <dan@danburkert.com>", "Lucio Franco <luciofranco14@gmail.com>", "Casper Meijn <casper@meijn.net>", "Tokio Contributors <team@tokio.rs>"]
+Repository: "https://github.com/tokio-rs/prost"
+LICENSE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
+
+==============================================================================
+prost-derive 0.14.4
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/prost-derive/prost-derive-0.14.4.crate
+
+Published author metadata: ["Dan Burkert <dan@danburkert.com>", "Lucio Franco <luciofranco14@gmail.com>", "Casper Meijn <casper@meijn.net>", "Tokio Contributors <team@tokio.rs>"]
+Repository: "https://github.com/tokio-rs/prost"
+LICENSE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
 
 ==============================================================================
 pulldown-cmark 0.13.4
@@ -4762,6 +4859,26 @@ Source: https://static.crates.io/crates/tracing-log/tracing-log-0.2.0.crate
 Published author metadata: ["Tokio Contributors <team@tokio.rs>"]
 Repository: "https://github.com/tokio-rs/tracing"
 LICENSE: text c1e08ee9a7288bf649d6a78f6079006333df4212f5fcda85be1a0a451f71852d
+
+==============================================================================
+tracing-opentelemetry 0.34.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/tracing-opentelemetry/tracing-opentelemetry-0.34.0.crate
+
+Repository: "https://github.com/tokio-rs/tracing-opentelemetry"
+LICENSE: text c1e08ee9a7288bf649d6a78f6079006333df4212f5fcda85be1a0a451f71852d
+
+==============================================================================
+tracing-opentelemetry-instrumentation-sdk 0.42.1
+Declared license: CC0-1.0
+Selected license: CC0-1.0
+Source: https://static.crates.io/crates/tracing-opentelemetry-instrumentation-sdk/tracing-opentelemetry-instrumentation-sdk-0.42.1.crate
+
+Repository: "https://github.com/davidB/tracing-opentelemetry-instrumentation-sdk"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/davidB-tracing-opentelemetry-instrumentation-sdk-7efdaf5cb7b4-LICENSE: text 6d489af6292662d9e36d34ce49423784984a5f6e41d7b58f49b01264df59fa03
 
 ==============================================================================
 tracing-subscriber 0.3.23
