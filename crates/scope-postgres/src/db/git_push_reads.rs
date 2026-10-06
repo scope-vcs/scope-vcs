@@ -80,6 +80,7 @@ impl RepositoryStore {
         Ok(context)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_push_credentials"))]
     pub async fn git_push_credentials(
         &self,
         owner: &str,

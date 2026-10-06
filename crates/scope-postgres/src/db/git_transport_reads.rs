@@ -22,6 +22,7 @@ pub struct GitReadSource {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_read_source"))]
     pub async fn git_read_source(
         &self,
         owner: &str,
@@ -50,6 +51,7 @@ impl RepositoryStore {
         }))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_projection_source"))]
     pub async fn repository_projection_source(
         &self,
         incarnation: &RepositoryIncarnation,
