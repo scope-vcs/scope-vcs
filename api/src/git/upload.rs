@@ -240,7 +240,6 @@ async fn git_read_view_repo(
                         Command::new("git")
                             .arg("clone")
                             .arg("--bare")
-                            .arg("--no-hardlinks")
                             .arg(base_repo_for_build.as_ref())
                             .arg(&temp_path),
                         None,
