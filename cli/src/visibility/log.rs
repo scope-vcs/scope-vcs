@@ -57,10 +57,15 @@ fn entry_line(entry: &HistoryEntrySummary, view: &scope_api_contract::ViewId) ->
 
 fn summary_label(summary: &HistoryVisibilitySummary, view: &scope_api_contract::ViewId) -> String {
     let views = scope_domain::views::Views::builtin();
-    let name = views
-        .get(&view.clone().into())
-        .map(|definition| definition.name.as_str())
-        .unwrap_or(view.as_str());
+    let view = scope_domain::views::ViewId::from(view.clone());
+    let measured = if &view == views.full() {
+        views.anyone()
+    } else {
+        Some(&view)
+    };
+    let name = measured
+        .and_then(|measured| views.get(measured))
+        .map_or(view.as_str(), |definition| definition.name.as_str());
     [
         (summary.entered_count, "entered"),
         (summary.left_count, "left"),
@@ -142,7 +147,7 @@ mod tests {
             lines,
             [
                 "vc_000041 · 2026-09-23 16:40 UTC · adamblumoff · Made 3 files public",
-                "vc_000041 · 2026-09-23 16:40 UTC · adamblumoff · Merge pull request #407 · 2 entered Private, 1 left Private",
+                "vc_000041 · 2026-09-23 16:40 UTC · adamblumoff · Merge pull request #407 · 2 entered Public, 1 left Public",
             ]
         );
     }
@@ -159,7 +164,7 @@ mod tests {
             )],
             None,
         ));
-        assert_eq!(lines, ["vc_000041 · Tighten docs · 1 left Private"]);
+        assert_eq!(lines, ["vc_000041 · Tighten docs · 1 left Public"]);
     }
 
     #[test]

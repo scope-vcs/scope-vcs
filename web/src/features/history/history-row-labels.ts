@@ -2,9 +2,10 @@ import type { CommitSummary } from '@/api/types'
 import type {
   HistoryEntryKind,
   HistoryEntrySummaryResponse,
+  ViewDefinition,
   ViewId,
 } from '@/api/types.generated'
-import { viewName } from '../../api/repo-views'
+import { anyoneView, builtinViews, fullView, viewName } from '../../api/repo-views'
 
 type HistoryRowCommit = Pick<
   CommitSummary,
@@ -56,13 +57,21 @@ export function compactHistorySourceId(sourceId: string) {
   return reviewedPush ? reviewedPush[1].slice(0, 12) : sourceId
 }
 
-export function historyEntryCountLabel(entry: Pick<HistoryEntrySummaryResponse, 'file_change_count' | 'kind' | 'visibility_summary'>, view: ViewId) {
+export function historyEntryCountLabel(
+  entry: Pick<HistoryEntrySummaryResponse, 'file_change_count' | 'kind' | 'visibility_summary'>,
+  view: ViewId,
+  views: readonly ViewDefinition[] = builtinViews,
+) {
   const files = entry.kind === 'visibility_change' ? 0 : entry.file_change_count
   const { entered_count: entered, left_count: left } = entry.visibility_summary
-  const name = viewName(view).toLowerCase()
+  const name = viewName(visibilitySummaryView(view, views), views)
   return [
     files > 0 ? `${files} ${files === 1 ? 'file' : 'files'}` : null,
-    entered > 0 ? `${entered} entered ${name} view` : null,
-    left > 0 ? `${left} left ${name} view` : null,
+    entered > 0 ? `${entered} entered the ${name} view` : null,
+    left > 0 ? `${left} left the ${name} view` : null,
   ].filter(Boolean).join(', ')
+}
+
+function visibilitySummaryView(view: ViewId, views: readonly ViewDefinition[]) {
+  return view === fullView(views) ? anyoneView(views) ?? view : view
 }

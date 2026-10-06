@@ -9,6 +9,14 @@ export function viewName(view: ViewId, views: readonly ViewDefinition[] = builti
   return views.find((definition) => definition.id === view)?.name ?? view
 }
 
+export function fullView(views: readonly ViewDefinition[] = builtinViews) {
+  return views.find((definition) => definition.includes === 'all')?.id
+}
+
+export function anyoneView(views: readonly ViewDefinition[] = builtinViews) {
+  return views.find((definition) => definition.readers === 'anyone')?.id
+}
+
 export function mayReadView(
   access: RepositoryAccessResponse,
   target: ViewId,

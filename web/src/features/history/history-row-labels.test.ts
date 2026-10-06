@@ -64,11 +64,14 @@ test('labels repository history entries by their actual update kind', () => {
   assert.equal(historyEntryLabels({ ...base, kind: 'push' }, 'public').kind, null)
   assert.equal(historyEntryLabels({ ...base, kind: 'merged_request' }, 'public').kind, 'Merged')
   assert.deepEqual(historyEntryLabels({ ...base, kind: 'visibility_change' }, 'public'), {
-    count: '1 entered public view, 1 left public view',
+    count: '1 entered the Public view, 1 left the Public view',
     kind: 'Visibility',
     title: 'Ship the history page',
   })
-  assert.equal(historyEntryLabels({ ...base, kind: 'visibility_change' }, 'private').count, '1 entered private view, 1 left private view')
+  assert.equal(
+    historyEntryLabels({ ...base, kind: 'visibility_change' }, 'private').count,
+    '1 entered the Public view, 1 left the Public view',
+  )
 })
 
 test('compacts reviewed push ids and keeps other source ids whole', () => {

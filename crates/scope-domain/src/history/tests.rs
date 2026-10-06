@@ -613,3 +613,42 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
         );
     }
 }
+
+#[test]
+fn the_full_views_summary_counts_movement_across_the_anyone_view() {
+    let change =
+        |id: &str, name: &str, old_label: ViewId, new_label: ViewId| HistoryEntryVisibilityChange {
+            id: id.into(),
+            path: path(name),
+            old_label,
+            new_label,
+            file: None,
+        };
+    let entry = HistoryEntry {
+        occurred_at_unix: None,
+        id: "entry".into(),
+        source_id: "vchg".into(),
+        parent_id: None,
+        kind: HistoryEntryKind::VisibilityChange,
+        author: Some("maintainer".into()),
+        message: "Updated visibility".into(),
+        files: Vec::new(),
+        visibility_changes: vec![
+            change("1", "/opened.md", ViewId::private(), ViewId::public()),
+            change("2", "/also-opened.md", ViewId::private(), ViewId::public()),
+            change("3", "/closed.md", ViewId::public(), ViewId::private()),
+        ],
+        native_commits: Vec::new(),
+    };
+    let views = Views::builtin();
+    let movement = HistoryVisibilitySummary {
+        entered: 2,
+        left: 1,
+    };
+
+    assert_eq!(entry.visibility_summary(&views, views.full()), movement);
+    assert_eq!(
+        entry.visibility_summary(&views, &ViewId::public()),
+        movement
+    );
+}

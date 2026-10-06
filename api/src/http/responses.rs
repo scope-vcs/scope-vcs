@@ -572,25 +572,10 @@ fn history_visibility_summary_response(
     views: &Views,
     view: &scope_domain::views::ViewId,
 ) -> HistoryVisibilitySummaryResponse {
-    let entered_count = entry
-        .visibility_changes
-        .iter()
-        .filter(|change| {
-            !views.shows(view, &change.path, &change.old_label)
-                && views.shows(view, &change.path, &change.new_label)
-        })
-        .count();
-    let left_count = entry
-        .visibility_changes
-        .iter()
-        .filter(|change| {
-            views.shows(view, &change.path, &change.old_label)
-                && !views.shows(view, &change.path, &change.new_label)
-        })
-        .count();
+    let summary = entry.visibility_summary(views, view);
     HistoryVisibilitySummaryResponse {
-        entered_count,
-        left_count,
+        entered_count: summary.entered,
+        left_count: summary.left,
     }
 }
 
