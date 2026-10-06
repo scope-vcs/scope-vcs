@@ -216,7 +216,10 @@ fn an_agent_member_reads_exactly_the_public_and_agent_files() {
     assigned.permissions.validate(&agent_views).unwrap();
     let mut pushing = assigned.permissions.clone();
     pushing.can_push = true;
-    assert!(pushing.validate(&agent_views).is_err());
+    pushing.validate(&agent_views).unwrap();
+    let mut relabelling = assigned.permissions.clone();
+    relabelling.can_change_file_visibility = true;
+    assert!(relabelling.validate(&agent_views).is_err());
     repo.collaboration.members.push(assigned);
 
     let access = repo.access_for_user_id("member");

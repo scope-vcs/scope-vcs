@@ -52,13 +52,21 @@ pub struct ReviewedUpdateAuthorization<'a> {
 pub fn authorize_reviewed_update(
     authorization: ReviewedUpdateAuthorization<'_>,
 ) -> Result<(), DomainError> {
-    if authorization.push_mode == MainPushMode::Denied {
-        let message = if authorization.access.actor == RepositoryActor::Public {
-            "repo membership required"
-        } else {
-            "push permission required"
-        };
-        return Err(DomainError::forbidden(message));
+    match &authorization.push_mode {
+        MainPushMode::Denied => {
+            let message = if authorization.access.actor == RepositoryActor::Public {
+                "repo membership required"
+            } else {
+                "push permission required"
+            };
+            return Err(DomainError::forbidden(message));
+        }
+        MainPushMode::ThroughView(view) => {
+            return Err(DomainError::forbidden(format!(
+                "pushes to main through the {view} view land as requests"
+            )));
+        }
+        MainPushMode::FirstPush | MainPushMode::Ready => {}
     }
     if !authorization.access.can_change_file_visibility
         && authorization.current_config != authorization.proposed_config
@@ -638,6 +646,24 @@ mod authorization_tests {
 
         assert_eq!(error.kind, DomainErrorKind::Forbidden);
         assert_eq!(error.message, "push permission required");
+    }
+
+    #[test]
+    fn reviewed_update_authorization_sends_narrower_pushes_through_requests() {
+        let config = RepoConfig::with_default_view(ViewId::private());
+        let error = authorize_reviewed_update(ReviewedUpdateAuthorization {
+            access: access(RepositoryActor::Member, true, false),
+            push_mode: MainPushMode::ThroughView(ViewId::parse("agent").unwrap()),
+            current_config: &config,
+            proposed_config: &config,
+        })
+        .expect_err("a narrower member cannot push canonical main directly");
+
+        assert_eq!(error.kind, DomainErrorKind::Forbidden);
+        assert_eq!(
+            error.message,
+            "pushes to main through the agent view land as requests"
+        );
     }
 
     #[test]
