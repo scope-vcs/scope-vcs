@@ -104,6 +104,49 @@ fn inspection_and_noninteractive_edit_do_not_initialize_missing_state() {
 }
 
 #[test]
+fn views_appear_by_name_and_removed_view_labels_are_refused() {
+    let (dir, mut config) = fixture();
+    let agent = ViewId::parse("agent").unwrap();
+    let mut definitions = Vec::from(config.views.clone());
+    definitions.push(scope_domain::views::ViewDefinition {
+        id: agent.clone(),
+        name: "Agent".into(),
+        includes: scope_domain::views::ViewIncludes::Some([ViewId::public()].into()),
+        readers: scope_domain::views::ViewReaders::Assigned,
+    });
+    config.views = scope_domain::views::Views::new(definitions).unwrap();
+    config.files.rules[0].view = agent;
+    write_worktree_scope_repo_config_with_base(dir.path(), &config).unwrap();
+
+    let shown = scope_command(dir.path())
+        .args(["visibility", "explain", "docs/guide.md"])
+        .output()
+        .unwrap();
+    assert_success(&shown, "scope visibility explain");
+    assert!(
+        String::from_utf8(shown.stdout)
+            .unwrap()
+            .starts_with("Agent /docs/guide.md")
+    );
+
+    let mut removed = serde_json::to_value(&config).unwrap();
+    removed["views"].as_array_mut().unwrap().pop();
+    let candidate = dir.path().join("removed-agent.json");
+    fs::write(&candidate, removed.to_string()).unwrap();
+    let refused = scope_command(dir.path())
+        .args(["visibility", "preview", "--config"])
+        .arg(&candidate)
+        .output()
+        .unwrap();
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("unknown view agent"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+}
+
+#[test]
 fn preview_compares_proposed_policy_without_saving_or_changing_managed_paths() {
     let (dir, mut candidate) = fixture();
     candidate.files.default = ViewId::public();

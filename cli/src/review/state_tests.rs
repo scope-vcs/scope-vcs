@@ -386,6 +386,39 @@ fn empty_tree_summary_uses_config_default() {
     assert_cached_visibility_matches_domain(&state);
 }
 
+#[test]
+fn toggling_cycles_through_custom_views_by_name() {
+    let agent = ViewId::parse("agent").unwrap();
+    let config = crate::view::apply_view_command(
+        default_scope_repo_config(),
+        &crate::view::ViewEdit::Add {
+            id: agent.clone(),
+            name: "Agent".into(),
+            includes: vec![ViewId::public()],
+            anyone: false,
+        },
+    )
+    .unwrap();
+    let mut state = ReviewState::new(
+        ReviewTree::from_paths(&["src/lib.rs".to_string()], &[]),
+        config,
+        ReviewMode::Standalone,
+    );
+
+    let mut defaults = Vec::new();
+    for _ in 0..3 {
+        state.handle_input(ReviewInput::Toggle);
+        defaults.push(state.config().files.default.clone());
+    }
+
+    assert_eq!(defaults, [agent, ViewId::public(), ViewId::private()]);
+    assert!(
+        state.message().ends_with("set to Private"),
+        "{}",
+        state.message()
+    );
+}
+
 fn dependency_config() -> RepoConfig {
     let mut config = RepoConfig::with_default_view(ViewId::public());
     config.files.rules.push(RepoConfigFileRule {
