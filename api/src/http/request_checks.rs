@@ -18,7 +18,6 @@ use scope_api_contract::{
     ApproveRequestChecksRequest, RequestCheckResponse, RequestChecksResponse,
     RequestGitHubPushResponse, RequestGitHubPushState, RequestMergeabilityResponse,
 };
-use scope_domain::views::ViewId;
 use scope_domain::{
     github_connection::GitHubRepositoryVisibility,
     repository::{RepoRecord, access::RepositoryAccess},
@@ -118,7 +117,7 @@ pub(crate) async fn checks_response(
         request_head_oid: git_oid_response(request.head_oid.clone())?,
         reason: decision.reason.map(str::to_string),
     };
-    let private_request_on_public_github = request.view == ViewId::private()
+    let private_request_on_public_github = !request.view.is_public()
         && state
             .metadata
             .repositories()
