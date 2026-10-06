@@ -61,6 +61,8 @@ enum CommandKind {
     Pull(PullArgs),
     #[command(about = "Edit, inspect, explain, and preview file visibility")]
     Visibility(VisibilityArgs),
+    #[command(about = "List, add, rename, remove, and include repository views")]
+    View(scope_cli::view::ViewArgs),
     #[command(about = "Create, inspect, discuss, and merge named requests")]
     Request(RequestArgs),
     #[command(about = "Clone a Scope repository and configure Git authentication")]
@@ -208,6 +210,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             | CommandKind::Push(_)
             | CommandKind::Pull(_)
             | CommandKind::Visibility(_)
+            | CommandKind::View(_)
             | CommandKind::Request(_)
             | CommandKind::Clone(_)
             | CommandKind::Run(_)
@@ -230,6 +233,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
         CommandKind::Pull(args) => scope_cli::pull::run(args.remote.as_deref()),
         CommandKind::Visibility(args) => scope_cli::visibility::run(args),
+        CommandKind::View(args) => scope_cli::view::run(args),
         CommandKind::Request(args) => run_request(args),
         CommandKind::Clone(args) => scope_cli::clone::clone_repo(
             &args.repository,
