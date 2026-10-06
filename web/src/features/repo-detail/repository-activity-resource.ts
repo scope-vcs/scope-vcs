@@ -15,3 +15,7 @@ export const repositoryActivityResource = createCachedResource<RepositoryActivit
   maxWeight: 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
+
+export function repositoryActivityIdentity(scope: string, view: ViewId) {
+  return [scope, view].join('\0')
+}

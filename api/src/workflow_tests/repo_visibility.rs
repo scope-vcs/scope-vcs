@@ -85,6 +85,7 @@ async fn public_files_follow_the_projection_not_the_live_tree() {
                     new_label: ViewId::private(),
                     current_content: Some(public),
                 }],
+                None,
             )
             .unwrap(),
         );

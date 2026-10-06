@@ -2,6 +2,7 @@ use super::{
     error::{ReviewedUpdateError, ReviewedUpdateResult},
     history_rewrite::{HistoryRewriteInput, apply_history_rewrites},
     policy::policy_from_config_for_tree,
+    views::views_transition,
 };
 use crate::{
     repo_config::RepoConfig,
@@ -25,6 +26,7 @@ pub fn apply_reviewed_config_to_repo(
     if repo.repo_config == update.config {
         return Ok(false);
     }
+    let views = views_transition(repo, &update.config).map_err(ReviewedUpdateError::Domain)?;
     let live_tree = repo.live_files.clone();
     let after_commit_id = repo.graph.commits.last().map(|commit| commit.id.clone());
     let history_rewrites = update
@@ -68,13 +70,14 @@ pub fn apply_reviewed_config_to_repo(
 
     repo.policy = policy_from_config_for_tree(&update.config, live_tree.keys())?;
     repo.repo_config = update.config;
-    if !visibility_changes.is_empty() {
+    if !visibility_changes.is_empty() || views.is_some() {
         let mut set = VisibilityChangeSet::new(
             visibility_change_set_id(repo.record.change_version.saturating_add(1)),
             after_commit_id,
             None,
             update.author_id,
             visibility_changes,
+            views,
         )
         .map_err(ReviewedUpdateError::Conflict)?;
         set.occurred_at_unix = Some(update.occurred_at_unix);

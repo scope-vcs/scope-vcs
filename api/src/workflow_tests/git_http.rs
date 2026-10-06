@@ -128,7 +128,7 @@ async fn request_push_intent(state: AppState, authorization: &str, head_oid: &st
 }
 
 fn permissioned_git_service(repo: &str, service: &str) -> String {
-    format!("/git/permissioned/owner/{repo}/info/refs?service={service}")
+    format!("/git/private/owner/{repo}/info/refs?service={service}")
 }
 
 async fn assert_challenges(app: &axum::Router, service: &str, repos: &[&str]) {
@@ -224,7 +224,7 @@ async fn receive_pack_advertisement_prepares_without_persisting_first_push() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/git/permissioned/owner/repo/info/refs?service=git-receive-pack")
+                .uri("/git/private/owner/repo/info/refs?service=git-receive-pack")
                 .header(
                     AUTHORIZATION,
                     format!("Basic {}", BASE64.encode(format!("scope:{secret}"))),
@@ -366,7 +366,7 @@ async fn unpublished_upload_pack_member_scope_session_stays_hidden() {
         &headers,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
-        GitRemoteMode::Permissioned,
+        &ViewId::private(),
     )
     .await
     .unwrap_err();
@@ -433,7 +433,7 @@ async fn chunked_real_git_published_push_over_http_accepts_image_context() {
     let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
     state.product_analytics = analytics;
     let (origin, _server) = spawn_test_server(&state).await;
-    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}").replacen(
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}").replacen(
         "http://",
         &format!("http://scope:{secret}@"),
         1,
@@ -588,7 +588,7 @@ async fn first_push_fixture(
         .unwrap();
     }
     commit_all(&source, "initial");
-    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}").replacen(
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}").replacen(
         "http://",
         &format!("http://scope:{secret}@"),
         1,

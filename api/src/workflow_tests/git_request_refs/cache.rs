@@ -16,14 +16,9 @@ async fn read_view_cache_shares_authorized_output_across_users() {
     let author = authorization_headers(bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL));
     let contributor =
         authorization_headers(bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL));
+    let public = scope_domain::views::ViewId::public();
     let read = |headers| {
-        git_upload_pack_repo_for_request(
-            &state,
-            headers,
-            TEST_REPO_OWNER,
-            TEST_REPO_NAME,
-            GitRemoteMode::Permissioned,
-        )
+        git_upload_pack_repo_for_request(&state, headers, TEST_REPO_OWNER, TEST_REPO_NAME, &public)
     };
     let (first, second) = tokio::join!(read(&author), read(&contributor));
     let first = first.unwrap();
@@ -34,7 +29,7 @@ async fn read_view_cache_shares_authorized_output_across_users() {
         &HeaderMap::new(),
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
-        GitRemoteMode::Public,
+        &scope_domain::views::ViewId::public(),
     )
     .await
     .unwrap();
@@ -69,7 +64,7 @@ async fn read_view_cache_keeps_draft_visibility_separate() {
         &author,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
-        GitRemoteMode::Permissioned,
+        &scope_domain::views::ViewId::public(),
     )
     .await
     .unwrap();
@@ -78,7 +73,7 @@ async fn read_view_cache_keeps_draft_visibility_separate() {
         &contributor,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
-        GitRemoteMode::Permissioned,
+        &scope_domain::views::ViewId::public(),
     )
     .await
     .unwrap();

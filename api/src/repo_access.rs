@@ -1,8 +1,8 @@
 use crate::{error::ApiError, state::AppState};
 use scope_domain::{
-    policy::{Principal, ScopePath},
+    policy::Principal,
     projection_views::has_visible_projected_non_control_files,
-    repository::access::RepositoryActor,
+    repository::access::{RepositoryActor, can_read_repository},
     repository::{RepoLifecycleState, Repository},
 };
 
@@ -41,7 +41,7 @@ pub(crate) fn ensure_repo_read(repo: &Repository, principal: &Principal) -> Resu
                 has_visible_projected_non_control_files(repo, repo.repo_config.views(), view)
             })
     } else {
-        repo.can_read_path(principal, &ScopePath::root())
+        can_read_repository(repo.record.lifecycle_state, &access, false)
     };
 
     if readable {

@@ -42,6 +42,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use flate2::read::GzDecoder;
+use scope_domain::views::ViewId;
 use serde::Deserialize;
 use std::{
     fs,
@@ -111,21 +112,17 @@ pub(crate) struct GitInfoRefsQuery {
     pub(crate) service: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum GitRemoteMode {
-    Public,
-    Permissioned,
+fn git_view(view: &str) -> Result<ViewId, ApiError> {
+    ViewId::parse(view).map_err(|_| ApiError::not_found(format!("Git view {view} not found")))
 }
 
-impl GitRemoteMode {
-    fn parse(mode: &str) -> Result<Self, ApiError> {
-        match mode {
-            "public" => Ok(Self::Public),
-            "permissioned" => Ok(Self::Permissioned),
-            _ => Err(ApiError::not_found(format!(
-                "Git remote mode {mode} not found"
-            ))),
-        }
+fn ensure_receive_view(view: &ViewId) -> Result<(), ApiError> {
+    if view.is_private() {
+        Ok(())
+    } else {
+        Err(ApiError::forbidden(format!(
+            "Git view {view} cannot receive pushes; push to the full view"
+        )))
     }
 }
 
@@ -146,18 +143,18 @@ pub(crate) fn git_error_response(error: ApiError) -> Response {
 pub(crate) async fn git_info_refs(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path((mode, org, repo)): Path<(String, String, String)>,
+    Path((view, org, repo)): Path<(String, String, String)>,
     Query(query): Query<GitInfoRefsQuery>,
 ) -> Response {
-    let mode = match GitRemoteMode::parse(&mode) {
-        Ok(mode) => mode,
+    let view = match git_view(&view) {
+        Ok(view) => view,
         Err(error) => return git_error_response(error),
     };
     match query.service.as_deref() {
-        Some(GIT_RECEIVE_PACK) if mode == GitRemoteMode::Public => git_error_response(
-            ApiError::forbidden("public Git remote cannot receive pushes"),
-        ),
         Some(GIT_RECEIVE_PACK) => {
+            if let Err(error) = ensure_receive_view(&view) {
+                return git_error_response(error);
+            }
             let (authorization, push_intent) =
                 match receive_pack_credentials(&state, &headers).await {
                     Ok(credentials) => credentials,
@@ -197,7 +194,7 @@ pub(crate) async fn git_info_refs(
                 Ok(permit) => permit,
                 Err(error) => return git_advertisement_error(error.into_public_message()),
             };
-            match git_upload_pack_repo_for_request(&state, &headers, &org, &repo, mode).await {
+            match git_upload_pack_repo_for_request(&state, &headers, &org, &repo, &view).await {
                 Ok(repo_path) => {
                     let timeout = state.runtime_budgets.git_command_timeout();
                     match blocking::run(move || {
@@ -235,17 +232,11 @@ pub(crate) async fn git_info_refs(
 
 pub(crate) async fn git_receive_pack(
     State(state): State<AppState>,
-    Path((mode, org, repo)): Path<(String, String, String)>,
+    Path((view, org, repo)): Path<(String, String, String)>,
     request: Request,
 ) -> Response {
-    let mode = match GitRemoteMode::parse(&mode) {
-        Ok(mode) => mode,
-        Err(error) => return git_error_response(error),
-    };
-    if mode == GitRemoteMode::Public {
-        return git_error_response(ApiError::forbidden(
-            "public Git remote cannot receive pushes",
-        ));
+    if let Err(error) = git_view(&view).and_then(|view| ensure_receive_view(&view)) {
+        return git_error_response(error);
     }
     let headers = request.headers().clone();
     let (authorization, push_intent) = match receive_pack_credentials(&state, &headers).await {
@@ -331,11 +322,11 @@ async fn receive_pack_request(
 pub(crate) async fn git_upload_pack_rpc(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path((mode, org, repo_name)): Path<(String, String, String)>,
+    Path((view, org, repo_name)): Path<(String, String, String)>,
     request: Request,
 ) -> Response {
-    let mode = match GitRemoteMode::parse(&mode) {
-        Ok(mode) => mode,
+    let view = match git_view(&view) {
+        Ok(view) => view,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
     let permit = match state.runtime_budgets.try_upload_pack() {
@@ -343,7 +334,7 @@ pub(crate) async fn git_upload_pack_rpc(
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
     let repo_path =
-        match git_upload_pack_repo_for_request(&state, &headers, &org, &repo_name, mode).await {
+        match git_upload_pack_repo_for_request(&state, &headers, &org, &repo_name, &view).await {
             Ok(repo_path) => repo_path,
             Err(error) => return git_upload_pack_error(error.into_public_message()),
         };

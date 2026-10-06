@@ -8,7 +8,7 @@ async fn main_push_carrying_an_open_request_head_merges_only_that_request() {
     let app = router(state.clone());
     let bearer = bearer_header();
     let (origin, _server) = spawn_test_server(&state).await;
-    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     configure_bearer_header(&source, &remote, &bearer);
 
     let mut request_ids = Vec::new();
@@ -157,7 +157,7 @@ async fn landed_request_is_complete_when_main_push_persistence_returns() {
             .await
             .unwrap();
         let (origin, _server) = spawn_test_server(&state).await;
-        let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+        let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
         configure_bearer_header(&source, &remote, &bearer_header());
         push_change(
             &source,

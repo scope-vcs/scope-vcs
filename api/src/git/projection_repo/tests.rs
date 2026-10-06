@@ -69,9 +69,15 @@ fn generated_projection_matches_canonical_head_identity() {
         }],
     };
 
-    let repo = projection_bare_repo_with_loader(&root, None, &projection, None, None, |blob| {
-        Ok(blob.sha256.as_bytes().to_vec())
-    })
+    let repo = projection_bare_repo_with_loader(
+        &root,
+        None,
+        &labels(&projection),
+        &projection,
+        None,
+        None,
+        |blob| Ok(blob.sha256.as_bytes().to_vec()),
+    )
     .unwrap();
 
     assert_eq!(
@@ -109,9 +115,15 @@ fn generated_projection_preserves_a_leading_quote_in_a_file_name() {
         }],
     };
 
-    let repo = projection_bare_repo_with_loader(&root, None, &projection, None, None, |blob| {
-        Ok(blob.sha256.as_bytes().to_vec())
-    })
+    let repo = projection_bare_repo_with_loader(
+        &root,
+        None,
+        &labels(&projection),
+        &projection,
+        None,
+        None,
+        |blob| Ok(blob.sha256.as_bytes().to_vec()),
+    )
     .unwrap();
     let paths = git_command_output(
         Command::new("git")
@@ -159,11 +171,16 @@ fn projection_identity_and_materializer_reject_the_same_reserved_path() {
     let identity_error = scope_git::projection_head_oid(&projection)
         .unwrap_err()
         .to_string();
-    let materialization_error =
-        projection_bare_repo_with_loader(&root, None, &projection, None, None, |_| {
-            panic!("invalid paths must fail before loading content")
-        })
-        .unwrap_err();
+    let materialization_error = projection_bare_repo_with_loader(
+        &root,
+        None,
+        &labels(&projection),
+        &projection,
+        None,
+        None,
+        |_| panic!("invalid paths must fail before loading content"),
+    )
+    .unwrap_err();
 
     assert_eq!(materialization_error.operator_diagnostic(), identity_error);
     assert_eq!(
@@ -329,6 +346,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     let repo = projection_bare_repo_with_loader(
         &cache,
         Some(&incarnation),
+        &labels(&projection),
         &projection,
         Some(&source),
         None,
@@ -445,13 +463,14 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         changes: vec![projected_change("/request.txt", "after native\n")],
         materialization: ProjectionMaterialization::Generate,
     });
-    let prefix = cached_projection_prefix(&engine, &incarnation, &extended)
+    let prefix = cached_projection_prefix(&engine, &incarnation, &labels(&extended), &extended)
         .unwrap()
         .unwrap();
     assert_eq!(prefix.commits, projection.commits.len());
     let extended_repo = projection_bare_repo_with_loader(
         &cache,
         Some(&incarnation),
+        &labels(&extended),
         &extended,
         None,
         Some(prefix),
@@ -471,11 +490,16 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         panic!("expected preserved commit")
     };
     *tree_oid = "0000000000000000000000000000000000000000".to_string();
-    let error =
-        projection_bare_repo_with_loader(&cache, None, &corrupted, Some(&source), None, |blob| {
-            Ok(blob.sha256.as_bytes().to_vec())
-        })
-        .unwrap_err();
+    let error = projection_bare_repo_with_loader(
+        &cache,
+        None,
+        &labels(&corrupted),
+        &corrupted,
+        Some(&source),
+        None,
+        |blob| Ok(blob.sha256.as_bytes().to_vec()),
+    )
+    .unwrap_err();
     assert!(error.operator_diagnostic().contains("tree does not match"));
     assert_eq!(error.public_message(), "Scope hit an internal error.");
 
@@ -525,8 +549,8 @@ fn projection_cache_key_uses_labels_and_logical_history() {
         projection_cache_keys(None, &second, &[ViewId::public()]).unwrap()
     );
     assert_ne!(
-        projection_cache_key(None, &first).unwrap(),
-        projection_cache_key(None, &second).unwrap()
+        projection_cache_key(None, &labels(&first), &first).unwrap(),
+        projection_cache_key(None, &labels(&second), &second).unwrap()
     );
 }
 
@@ -567,11 +591,16 @@ fn git_backed_projection_borrows_blob_without_loading_it() {
             materialization: ProjectionMaterialization::Generate,
         }],
     };
-    let repo =
-        projection_bare_repo_with_loader(&cache, None, &projection, Some(&source), None, |_| {
-            panic!("Git-backed blob must come from the alternate")
-        })
-        .unwrap();
+    let repo = projection_bare_repo_with_loader(
+        &cache,
+        None,
+        &labels(&projection),
+        &projection,
+        Some(&source),
+        None,
+        |_| panic!("Git-backed blob must come from the alternate"),
+    )
+    .unwrap();
     let oid = &projection.commits[0].changes[0]
         .new_content
         .as_ref()
@@ -676,6 +705,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     let base = projection_bare_repo_with_loader(
         root.path(),
         Some(&incarnation),
+        &labels(&projection),
         &projection,
         None,
         None,
@@ -706,7 +736,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
         changes: vec![projected_change("/file-0.txt", "appended\n")],
         materialization: ProjectionMaterialization::Generate,
     });
-    let prefix = cached_projection_prefix(&engine, &incarnation, &projection)
+    let prefix = cached_projection_prefix(&engine, &incarnation, &labels(&projection), &projection)
         .unwrap()
         .unwrap();
     assert_eq!(prefix.commits, 20);
@@ -716,6 +746,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     let appended = projection_bare_repo_with_loader(
         root.path(),
         Some(&incarnation),
+        &labels(&projection),
         &projection,
         None,
         Some(prefix),
@@ -767,13 +798,14 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
         changes: vec![mode_change],
         materialization: ProjectionMaterialization::Generate,
     });
-    let prefix = cached_projection_prefix(&engine, &incarnation, &projection)
+    let prefix = cached_projection_prefix(&engine, &incarnation, &labels(&projection), &projection)
         .unwrap()
         .unwrap();
     assert_eq!(prefix.commits, 21);
     let mode_only = projection_bare_repo_with_loader(
         root.path(),
         Some(&incarnation),
+        &labels(&projection),
         &projection,
         None,
         Some(prefix),
@@ -789,13 +821,14 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
 
     projection.commits[0].changes.remove(1);
     assert!(
-        cached_projection_prefix(&engine, &incarnation, &projection)
+        cached_projection_prefix(&engine, &incarnation, &labels(&projection), &projection)
             .unwrap()
             .is_none()
     );
     let rewritten = projection_bare_repo_with_loader(
         root.path(),
         Some(&incarnation),
+        &labels(&projection),
         &projection,
         None,
         None,
@@ -810,7 +843,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     );
     let other = RepositoryIncarnation::new("owner/repo", "repoi_recreated").unwrap();
     assert!(
-        cached_projection_prefix(&engine, &other, &projection)
+        cached_projection_prefix(&engine, &other, &labels(&projection), &projection)
             .unwrap()
             .is_none()
     );
@@ -858,9 +891,15 @@ fn incremental_index_handles_deletes_modes_and_directory_replacement() {
             })
             .collect(),
     };
-    let repo = projection_bare_repo_with_loader(root.path(), None, &projection, None, None, |b| {
-        Ok(b.sha256.as_bytes().to_vec())
-    })
+    let repo = projection_bare_repo_with_loader(
+        root.path(),
+        None,
+        &labels(&projection),
+        &projection,
+        None,
+        None,
+        |b| Ok(b.sha256.as_bytes().to_vec()),
+    )
     .unwrap();
     assert_eq!(
         git_object_field(&repo, "HEAD", "%H").unwrap(),
@@ -868,4 +907,8 @@ fn incremental_index_handles_deletes_modes_and_directory_replacement() {
             .unwrap()
             .unwrap()
     );
+}
+
+fn labels(projection: &Projection) -> Vec<ViewId> {
+    view_labels(&Views::builtin(), &projection.view_key)
 }

@@ -180,7 +180,10 @@ pub(crate) async fn authorize(
                     None => ApiError::forbidden("valid Scope push intent required"),
                 }
             };
+            let narrower_member = access.is_maintainer()
+                && !access.can_read_view(&context.views, context.views.full());
             if repo.lifecycle_state == RepoLifecycleState::Ready
+                && !narrower_member
                 && request_ref::actor_has_open_editable_request(state, &repo.id, &author_id, access)
                     .await?
             {

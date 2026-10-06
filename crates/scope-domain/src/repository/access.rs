@@ -27,11 +27,24 @@ pub struct RepositoryAccess {
 pub struct RepositoryAccessContext {
     pub record: RepoRecord,
     pub access: RepositoryAccess,
+    pub views: Views,
 }
 
 impl RepositoryAccessContext {
     pub fn incarnation(&self) -> RepositoryIncarnation {
         self.record.incarnation()
+    }
+
+    pub fn can_read_view(&self, view: &ViewId) -> bool {
+        self.access.can_read_view(&self.views, view)
+    }
+
+    pub fn reads_full_view(&self) -> bool {
+        self.access.reads_full_view(&self.views)
+    }
+
+    pub fn ensure_run_reader(&self) -> Result<(), crate::error::DomainError> {
+        self.access.ensure_run_reader(&self.views)
     }
 
     pub fn ensure_member(&self) -> Result<(), crate::error::DomainError> {
@@ -113,6 +126,34 @@ impl RepositoryAccess {
         }
     }
 
+    pub fn reader_view<'a>(&'a self, views: &'a Views) -> Option<&'a ViewId> {
+        match self.actor {
+            RepositoryActor::Public => views.anyone(),
+            RepositoryActor::Member | RepositoryActor::Owner => Some(&self.view),
+        }
+    }
+
+    pub fn can_read_view(&self, views: &Views, view: &ViewId) -> bool {
+        views.get(view).is_some()
+            && self
+                .reader_view(views)
+                .is_some_and(|reader| views.may_read(reader, view))
+    }
+
+    pub fn reads_full_view(&self, views: &Views) -> bool {
+        self.can_read_view(views, views.full())
+    }
+
+    pub fn ensure_run_reader(&self, views: &Views) -> Result<(), crate::error::DomainError> {
+        if self.reads_full_view(views) {
+            Ok(())
+        } else {
+            Err(crate::error::DomainError::forbidden(
+                "repository runs need the repository's full view",
+            ))
+        }
+    }
+
     pub fn public() -> Self {
         Self {
             actor: RepositoryActor::Public,
@@ -187,6 +228,10 @@ impl Repository {
         )
     }
 
+    pub fn can_read_view(&self, access: &RepositoryAccess, view: &ViewId) -> bool {
+        access.can_read_view(self.repo_config.views(), view)
+    }
+
     pub fn can_read_path(&self, principal: &Principal, path: &ScopePath) -> bool {
         if principal.kind == PrincipalKind::Public {
             return self.record.lifecycle_state == RepoLifecycleState::Ready
@@ -255,6 +300,23 @@ mod tests {
             "member",
         );
         assert_eq!(public_member.view, ViewId::public());
+    }
+
+    #[test]
+    fn anonymous_readers_read_the_anyone_view_or_nothing() {
+        let views = Views::builtin();
+        let public = RepositoryAccess::public();
+        assert!(public.can_read_view(&views, &ViewId::public()));
+        assert!(!public.can_read_view(&views, &ViewId::private()));
+        let private_only = Views::new(vec![
+            Vec::<crate::views::ViewDefinition>::from(Views::builtin())[1].clone(),
+        ])
+        .unwrap();
+        assert!(!public.can_read_view(&private_only, &ViewId::public()));
+        let owner =
+            repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "owner");
+        assert!(owner.can_read_view(&private_only, &ViewId::private()));
+        assert!(!owner.can_read_view(&private_only, &ViewId::public()));
     }
 
     #[test]

@@ -5,7 +5,7 @@ use super::{
     validation::validate_git_oid,
     workflow::{identity::WorkflowPath, revision::WorkflowRevision},
 };
-use crate::{error::DomainError, repository::access::RepositoryAccess};
+use crate::{error::DomainError, repository::access::RepositoryAccess, views::Views};
 
 #[derive(Clone, Debug)]
 pub struct ManualRunRequest {
@@ -62,11 +62,15 @@ impl ManualRunRequest {
         format!("run_{}", self.request_id)
     }
 
-    pub fn require_access(&self, access: RepositoryAccess) -> Result<(), DomainError> {
+    pub fn require_access(
+        &self,
+        access: &RepositoryAccess,
+        views: &Views,
+    ) -> Result<(), DomainError> {
         if !access.is_maintainer() {
             return Err(DomainError::forbidden("repo membership required"));
         }
-        Ok(())
+        access.ensure_run_reader(views)
     }
 
     pub fn require_matching_run(&self, run: &Run) -> Result<(), DomainError> {

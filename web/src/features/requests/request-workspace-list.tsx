@@ -154,7 +154,7 @@ function RequestWorkspaceRow({
         className="request-workspace-row-link"
         params={{ ...params, requestId: request.id }}
         preload="intent"
-        search={{}}
+        search={(current) => ({ view: current.view })}
         to="/$owner/$repo/requests/$requestId"
       >
         <span className="request-workspace-row-avatar">

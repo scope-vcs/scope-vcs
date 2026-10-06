@@ -61,7 +61,7 @@ async fn real_git_push_emits_one_post_commit_event_and_failed_push_emits_none() 
             .contains(r#""kind":"Connected""#)
     );
 
-    let permissioned_remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}").replacen(
+    let permissioned_remote = format!("{origin}/git/private/{TEST_REPO_ID}").replacen(
         "http://",
         &format!("http://scope:{secret}@"),
         1,

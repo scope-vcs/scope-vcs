@@ -102,6 +102,36 @@ fn credential_config_key(remote_url: &str, name: &str) -> anyhow::Result<String>
     Ok(format!("credential.{remote_url}.{name}"))
 }
 
+pub fn configure_scope_push_address(
+    repo_root: &Path,
+    remote: &str,
+    fetch_url: &str,
+) -> anyhow::Result<()> {
+    let Ok(scope_remote) = crate::git_transport::ScopeRemote::from_url(fetch_url) else {
+        return Ok(());
+    };
+    let push_url_key = format!("remote.{remote}.pushurl");
+    if scope_remote.view.is_private() {
+        let unset = Command::new("git")
+            .current_dir(repo_root)
+            .args(["config", "--local", "--unset-all", &push_url_key])
+            .status()
+            .context("clear Scope push address")?;
+        if !unset.success() && unset.code() != Some(5) {
+            bail!("clear Scope push address failed");
+        }
+        return Ok(());
+    }
+    run_git_config(
+        repo_root,
+        &[
+            "--replace-all",
+            &push_url_key,
+            &scope_remote.full_view_url(),
+        ],
+    )
+}
+
 pub fn git_remote_push_url(repo: &GitRepo, remote: &str) -> anyhow::Result<String> {
     remote_url(repo, remote, true)
 }
@@ -111,6 +141,22 @@ pub fn git_remote_fetch_url(repo: &GitRepo, remote: &str) -> anyhow::Result<Stri
 }
 
 fn remote_url(repo: &GitRepo, remote: &str, push: bool) -> anyhow::Result<String> {
+    let url = configured_remote_url(repo, remote, push)?;
+    if crate::git_transport::legacy_full_view_url(&url).is_none() {
+        return Ok(url);
+    }
+    migrate_legacy_full_view_remote(repo, remote)?;
+    let url = configured_remote_url(repo, remote, push)?;
+    if crate::git_transport::legacy_full_view_url(&url).is_some() {
+        return Err(crate::error::CliError::usage(format!(
+            "Scope remote '{remote}' uses a /git/permissioned/ address outside this repository's Git config; point it at /git/private/ with git remote set-url"
+        ))
+        .into());
+    }
+    Ok(url)
+}
+
+fn configured_remote_url(repo: &GitRepo, remote: &str, push: bool) -> anyhow::Result<String> {
     let args = if push {
         vec!["remote", "get-url", "--push", remote]
     } else {
@@ -132,6 +178,76 @@ fn remote_url(repo: &GitRepo, remote: &str, push: bool) -> anyhow::Result<String
         .into());
     }
     Ok(url)
+}
+
+fn migrate_legacy_full_view_remote(repo: &GitRepo, remote: &str) -> anyhow::Result<()> {
+    for key in ["url", "pushurl"] {
+        let config_key = format!("remote.{remote}.{key}");
+        for legacy in local_config_values(repo, &config_key)? {
+            let Some(current) = crate::git_transport::legacy_full_view_url(&legacy) else {
+                continue;
+            };
+            run_git_in_repo(
+                repo,
+                &[
+                    "config",
+                    "--local",
+                    "--fixed-value",
+                    "--replace-all",
+                    &config_key,
+                    &current,
+                    &legacy,
+                ],
+            )?;
+            move_credential_section(repo, &legacy, &current)?;
+            eprintln!(
+                "Scope Git addresses now name the view: updated remote {} {key} to {}",
+                crate::display::terminal_text(remote),
+                crate::git_transport::redacted_remote_url(&current)
+            );
+        }
+    }
+    Ok(())
+}
+
+fn move_credential_section(repo: &GitRepo, legacy: &str, current: &str) -> anyhow::Result<()> {
+    let (legacy, current) = (transport_url(legacy)?, transport_url(current)?);
+    if local_config_values(repo, &credential_config_key(&legacy, "helper")?)?.is_empty() {
+        return Ok(());
+    }
+    run_git_in_repo(
+        repo,
+        &[
+            "config",
+            "--local",
+            "--rename-section",
+            &format!("credential.{legacy}"),
+            &format!("credential.{current}"),
+        ],
+    )
+}
+
+fn transport_url(value: &str) -> anyhow::Result<String> {
+    let mut url = Url::parse(value).context("parse Scope transport URL")?;
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url.to_string())
+}
+
+fn local_config_values(repo: &GitRepo, key: &str) -> anyhow::Result<Vec<String>> {
+    let output = git_output_in_repo(repo, &["config", "--local", "--get-all", key])?;
+    if output.status.code() == Some(1) {
+        return Ok(Vec::new());
+    }
+    if !output.status.success() {
+        bail!("read Git config {key} failed");
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect())
 }
 
 pub fn git_remote_names(repo: &GitRepo) -> anyhow::Result<Vec<String>> {

@@ -573,7 +573,7 @@ async fn current_main_oid_for_view(
     repo: &RepositoryReadPolicy,
     view: ViewId,
 ) -> Result<Option<String>, ApiError> {
-    if !repo.views.may_read(&repo.context.access.view, &view) {
+    if !repo.context.can_read_view(&view) {
         return Err(ApiError::forbidden("view access required"));
     }
     state

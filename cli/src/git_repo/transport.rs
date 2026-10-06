@@ -107,6 +107,26 @@ pub fn fetch_scope_remote_with_bearer(
     )
 }
 
+pub fn fetch_scope_remote_refs_with_bearer(
+    repo: &GitRepo,
+    destination: &str,
+    remote: &str,
+    bearer_token: &str,
+) -> anyhow::Result<()> {
+    let plan = git_fetch_refs_auth_plan(
+        destination,
+        remote,
+        bearer_token,
+        inherited_git_config_count(),
+    );
+    run_git_plan_output(
+        plan,
+        Some(&repo.root),
+        "fetch Scope refs",
+        "git fetch from Scope failed",
+    )
+}
+
 pub fn fetch_scope_remote_with_bearer_cancellable(
     repo: &GitRepo,
     destination: &str,
@@ -215,6 +235,26 @@ pub fn git_fetch_auth_plan(
             "--no-tags".to_string(),
             destination.to_string(),
             format!("+refs/heads/{branch}:refs/remotes/{remote}/{branch}"),
+        ],
+        destination,
+        &[format!("Authorization: Bearer {bearer_token}")],
+        inherited_config_count,
+    )
+}
+
+pub fn git_fetch_refs_auth_plan(
+    destination: &str,
+    remote: &str,
+    bearer_token: &str,
+    inherited_config_count: Option<usize>,
+) -> GitCommandPlan {
+    git_auth_plan(
+        vec![
+            "-c".to_string(),
+            "protocol.version=2".to_string(),
+            "fetch".to_string(),
+            "--prune".to_string(),
+            remote.to_string(),
         ],
         destination,
         &[format!("Authorization: Bearer {bearer_token}")],

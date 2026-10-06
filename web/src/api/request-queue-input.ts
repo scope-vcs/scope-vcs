@@ -1,6 +1,7 @@
 import type { RepoParams } from './types'
 import { parseRepoParams } from './repo-params'
-import type { RequestQueueSection } from './types.generated'
+import type { RequestQueueSection, ViewId } from './types.generated'
+import { parseViewId } from './repo-views'
 
 export type { RequestQueueSection } from './types.generated'
 
@@ -15,6 +16,7 @@ export type LoadRequestQueueInput = RepoParams & {
   cursor?: string | null
   search?: string | null
   section: RequestQueueSection
+  view?: ViewId | null
 }
 
 export function parseLoadRequestQueueInput(
@@ -32,10 +34,13 @@ export function parseLoadRequestQueueInput(
     throw new Error('Request queue section is invalid.')
   }
 
+  const view = typeof data?.view === 'string' && data.view ? parseViewId(data.view) : null
+
   return {
     ...params,
     cursor: cursor || null,
     search: search || null,
     section,
+    view,
   }
 }

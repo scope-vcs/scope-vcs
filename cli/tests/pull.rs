@@ -68,6 +68,10 @@ fn failed_fetch_reports_visibility_setup_and_retry_keeps_local_state() {
     assert!(retry["recovery"].is_null());
     assert_eq!(retry["error"]["code"], first["error"]["code"]);
     assert_eq!(git_stdout(dir.path(), ["rev-parse", "HEAD"]), original_head);
+    assert_eq!(
+        git_stdout(dir.path(), ["remote", "get-url", "scope"]),
+        format!("{}/git/public/owner/repo", server.api_url)
+    );
 }
 
 fn failed_pull(server: &TestServer, cwd: &std::path::Path) -> Value {

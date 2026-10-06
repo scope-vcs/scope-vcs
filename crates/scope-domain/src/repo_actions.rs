@@ -113,6 +113,7 @@ pub fn reviewed_update_domain_error(error: ReviewedUpdateError) -> DomainError {
         ReviewedUpdateError::BadRequest(message) => DomainError::invalid_input(message),
         ReviewedUpdateError::Conflict(message) => DomainError::conflict(message),
         ReviewedUpdateError::InvalidPolicy(error) => DomainError::invalid_input(error),
+        ReviewedUpdateError::Domain(error) => error,
     }
 }
 

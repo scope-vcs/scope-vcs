@@ -8,7 +8,7 @@ import { loadRepoRunPage, loadDetail, loads, now } from './actions'
 export async function renderFixture(url: string) {
   resetViewerState()
   Object.assign(loads, { history: 0, detail: 0, workflows: 0, logs: 0 })
-  const scope = repoResourceScope({ id: 'repo-1', access: { actor: 'Owner' } }, 'adam')
+  const scope = repoResourceScope({ id: 'repo-1', access: { actor: 'Owner', view: 'private' } }, 'adam')
   const handoff = url.split('?')[0].endsWith('/run-1')
     ? { scope, detail: await loadDetail(), now, loads: { ...loads } }
     : { scope, page: await loadRepoRunPage(), now, loads: { ...loads } }

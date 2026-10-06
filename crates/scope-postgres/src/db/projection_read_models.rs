@@ -1,41 +1,27 @@
-use super::{
-    entities,
-    history_rows::{history_position_matches, load_repository_history_after},
-    integer_columns::{u64_to_i64, usize_to_i64},
-};
-use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
-    sea_query::OnConflict,
-};
+use super::{entities, integer_columns::u64_to_i64};
+use sea_orm::{ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder};
 use {
     crate::error::PostgresError,
     scope_domain::{
-        content::SourceBlob,
-        history::{HistoryCursor, history_entries_after},
         policy::ScopePath,
-        projection::{
-            ProjectionCursor, SourceGraph, project_graph_after, projection_delta_appends,
-        },
+        projection::LabelledFiles,
         projection_views::{ProjectionViewFile, ProjectionViewFileContent},
         repo_config::RepoConfig,
-        repo_control::{
-            LEGACY_REPO_RULES_PATH, REPO_CONTROL_PREFIX, REPO_CONTROL_ROOT, is_repo_control_path,
-        },
+        repo_control::{LEGACY_REPO_RULES_PATH, REPO_CONTROL_PREFIX, REPO_CONTROL_ROOT},
         views::{ViewId, Views},
-        visibility_changes::VisibilityChangeSet,
     },
-    std::collections::BTreeMap,
 };
 
-const PROJECTION_FILE_INSERT_BATCH_SIZE: usize = 1_000;
+mod fold;
+
+pub use fold::fold_live_projection_read_models;
+pub(super) use fold::{build_projection_read_model, eager_views};
 
 pub(super) enum ProjectionFileLookup {
     Found(ProjectionViewFileContent),
     Missing,
     NotReady,
 }
-
-type LabelledFiles = BTreeMap<ScopePath, (SourceBlob, ViewId)>;
 
 pub(super) async fn repository_views<C: ConnectionTrait>(
     conn: &C,
@@ -48,65 +34,6 @@ pub(super) async fn repository_views<C: ConnectionTrait>(
         .ok_or_else(|| PostgresError::internal_message("repository is missing"))?;
     let config: RepoConfig = super::decode_json(row.repo_config)?;
     Ok(config.views)
-}
-
-enum FoldOutcome {
-    Folded,
-    Diverged(String),
-}
-
-pub async fn fold_live_projection_read_models<C>(
-    conn: &C,
-    repo_id: &str,
-    content_version: u64,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let views = repository_views(conn, repo_id).await?;
-    let rows = entities::projection_read_model::Entity::find()
-        .filter(entities::projection_read_model::Column::RepoId.eq(repo_id.to_string()))
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
-    if let Some(rows) = resumable(rows, &views)? {
-        match fold(conn, repo_id, content_version, &views, Some(rows)).await? {
-            FoldOutcome::Folded => return Ok(()),
-            FoldOutcome::Diverged(reason) => {
-                tracing::warn!(
-                    repo_id,
-                    reason,
-                    "rebuilding projection read models from scratch"
-                );
-            }
-        }
-    }
-    reset_live_projection_read_models(conn, repo_id).await?;
-    match fold(conn, repo_id, content_version, &views, None).await? {
-        FoldOutcome::Folded => Ok(()),
-        FoldOutcome::Diverged(reason) => Err(PostgresError::internal_message(reason)),
-    }
-}
-
-fn resumable(
-    rows: Vec<entities::projection_read_model::Model>,
-    views: &Views,
-) -> Result<Option<Vec<entities::projection_read_model::Model>>, PostgresError> {
-    if rows.len() != views.iter().count()
-        || !views
-            .iter()
-            .all(|view| rows.iter().any(|row| row.audience == view.id.as_str()))
-        || !rows.iter().all(|row| row.current())
-    {
-        return Ok(None);
-    }
-    let position = rows[0].position()?;
-    for row in &rows[1..] {
-        if row.position()? != position {
-            return Ok(None);
-        }
-    }
-    Ok(Some(rows))
 }
 
 pub(super) async fn reset_live_projection_read_models<C>(
@@ -128,216 +55,6 @@ where
         .await
         .map_err(PostgresError::internal)?;
     Ok(())
-}
-
-async fn fold<C>(
-    conn: &C,
-    repo_id: &str,
-    content_version: u64,
-    views: &Views,
-    resumed: Option<Vec<entities::projection_read_model::Model>>,
-) -> Result<FoldOutcome, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let position = match &resumed {
-        Some(rows) => rows[0].position()?,
-        None => Default::default(),
-    };
-    let appended =
-        load_repository_history_after(conn, repo_id, position.commits, position.change_sets)
-            .await?;
-    if resumed.is_some()
-        && (!history_position_matches(conn, repo_id, &position).await?
-            || !projection_delta_appends(
-                position.last_commit_id.as_deref(),
-                &appended.commits,
-                &appended.visibility_change_sets,
-            ))
-    {
-        return Ok(FoldOutcome::Diverged(
-            "repository history no longer continues the folded read models".to_string(),
-        ));
-    }
-    let graph = SourceGraph {
-        repo_id: repo_id.to_string(),
-        commits: appended.commits,
-    };
-    let sets = appended.visibility_change_sets;
-
-    let before = match &resumed {
-        Some(_) => load_projection_files(conn, repo_id).await?,
-        None => LabelledFiles::new(),
-    };
-    let after = label_files(before.clone(), &graph, &sets);
-
-    for definition in views.iter() {
-        let view = &definition.id;
-        let row = resumed
-            .as_ref()
-            .and_then(|rows| rows.iter().find(|row| row.audience == view.as_str()));
-        let cursor = row
-            .map(entities::projection_read_model::Model::projection_cursor)
-            .transpose()?
-            .unwrap_or_default();
-        let view_before = view_files(&before, views, view);
-        let projection = project_graph_after(&cursor, &graph, &sets, views, view);
-        let mut head = scope_git::ProjectionHead::resume(
-            row.and_then(|row| row.head_oid.clone()),
-            view_before.iter(),
-        )
-        .map_err(PostgresError::internal)?;
-        head.apply(&projection.commits)
-            .map_err(PostgresError::internal)?;
-        let mut projected = view_before.clone();
-        projection.apply_to(&mut projected);
-        if projected != view_files(&after, views, view) {
-            return Ok(FoldOutcome::Diverged(format!(
-                "{} projection does not show the files its labels select",
-                view.as_str()
-            )));
-        }
-        let next_cursor = ProjectionCursor {
-            commit_count: cursor.commit_count + projection.commits.len(),
-            last_projected_id: projection
-                .commits
-                .last()
-                .map(|commit| commit.projected_id.clone())
-                .or(cursor.last_projected_id),
-        };
-        let mut history = row
-            .map(entities::projection_read_model::Model::history_cursor)
-            .unwrap_or_else(|| HistoryCursor::start(repo_id, views, view));
-        let entries = history_entries_after(
-            &mut history,
-            view_before,
-            projection,
-            &graph,
-            &sets,
-            views,
-            view,
-        );
-        let first_position = row
-            .map(entities::projection_read_model::Model::history_entries)
-            .transpose()?
-            .unwrap_or(0);
-        let model = entities::projection_read_model::Model {
-            repo_id: repo_id.to_string(),
-            audience: view.as_str().to_string(),
-            repo_version: u64_to_i64(content_version, "projection repository version")?,
-            identity_version: scope_git::PROJECTION_IDENTITY_VERSION,
-            history_version: scope_domain::history::HISTORY_GENERATION_VERSION.to_string(),
-            folded_commits: usize_to_i64(
-                position.commits + graph.commits.len(),
-                "folded commit count",
-            )?,
-            folded_change_sets: usize_to_i64(
-                position.change_sets + sets.len(),
-                "folded change set count",
-            )?,
-            last_commit_id: graph
-                .commits
-                .last()
-                .map(|commit| commit.id.clone())
-                .or_else(|| position.last_commit_id.clone()),
-            last_change_set_id: sets
-                .last()
-                .map(|set| set.id.clone())
-                .or_else(|| position.last_change_set_id.clone()),
-            projected_commits: usize_to_i64(next_cursor.commit_count, "projected commit count")?,
-            last_projected_id: next_cursor.last_projected_id,
-            head_oid: head.oid,
-            file_count: usize_to_i64(projected.len(), "projection file count")?,
-            visible_files: projected.keys().any(|path| !is_repo_control_path(path)),
-            history_entries: usize_to_i64(first_position + entries.len(), "history entry count")?,
-            last_history_entry_id: history.last_entry_id,
-            history_generation: history.generation,
-        };
-        entities::projection_read_model::Entity::insert(model.into_active_model())
-            .on_conflict(
-                OnConflict::columns([
-                    entities::projection_read_model::Column::RepoId,
-                    entities::projection_read_model::Column::Audience,
-                ])
-                .update_columns([
-                    entities::projection_read_model::Column::RepoVersion,
-                    entities::projection_read_model::Column::IdentityVersion,
-                    entities::projection_read_model::Column::HistoryVersion,
-                    entities::projection_read_model::Column::FoldedCommits,
-                    entities::projection_read_model::Column::FoldedChangeSets,
-                    entities::projection_read_model::Column::LastCommitId,
-                    entities::projection_read_model::Column::LastChangeSetId,
-                    entities::projection_read_model::Column::ProjectedCommits,
-                    entities::projection_read_model::Column::LastProjectedId,
-                    entities::projection_read_model::Column::HeadOid,
-                    entities::projection_read_model::Column::FileCount,
-                    entities::projection_read_model::Column::VisibleFiles,
-                    entities::projection_read_model::Column::HistoryEntries,
-                    entities::projection_read_model::Column::LastHistoryEntryId,
-                    entities::projection_read_model::Column::HistoryGeneration,
-                ])
-                .to_owned(),
-            )
-            .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
-        super::history_reads::append_history_entries(conn, repo_id, view, first_position, &entries)
-            .await?;
-    }
-
-    save_projection_files(conn, repo_id, &before, &after).await?;
-    Ok(FoldOutcome::Folded)
-}
-
-fn label_files(
-    mut files: LabelledFiles,
-    graph: &SourceGraph,
-    sets: &[VisibilityChangeSet],
-) -> LabelledFiles {
-    let appended = |anchor: Option<&str>| {
-        anchor.is_some_and(|anchor| graph.commits.iter().any(|commit| commit.id == anchor))
-    };
-    relabel(
-        &mut files,
-        sets.iter()
-            .filter(|set| !appended(set.anchor_commit_id.as_deref())),
-    );
-    for commit in &graph.commits {
-        for change in &commit.changes {
-            match &change.new_content {
-                Some(blob) => {
-                    files.insert(change.path.clone(), (blob.clone(), change.label.clone()))
-                }
-                None => files.remove(&change.path),
-            };
-        }
-        relabel(
-            &mut files,
-            sets.iter()
-                .filter(|set| set.anchor_commit_id.as_deref() == Some(&commit.id)),
-        );
-    }
-    files
-}
-
-fn relabel<'a>(files: &mut LabelledFiles, sets: impl Iterator<Item = &'a VisibilityChangeSet>) {
-    for change in sets.flat_map(|set| &set.changes) {
-        if let Some((_, label)) = files.get_mut(&change.path) {
-            *label = change.new_label.clone();
-        }
-    }
-}
-
-fn view_files(
-    files: &LabelledFiles,
-    views: &Views,
-    view: &ViewId,
-) -> BTreeMap<ScopePath, SourceBlob> {
-    files
-        .iter()
-        .filter(|(path, (_, label))| views.shows(view, path, label))
-        .map(|(path, (blob, _))| (path.clone(), blob.clone()))
-        .collect()
 }
 
 fn view_condition(views: &Views, view: &ViewId) -> Condition {
@@ -380,72 +97,6 @@ where
             Ok((content.file.path, (content.blob, content.file.label)))
         })
         .collect()
-}
-
-async fn save_projection_files<C>(
-    conn: &C,
-    repo_id: &str,
-    before: &LabelledFiles,
-    after: &LabelledFiles,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let removed = before
-        .keys()
-        .filter(|path| !after.contains_key(*path))
-        .map(entities::projection_file::projection_file_path_key)
-        .collect::<Vec<_>>();
-    if !removed.is_empty() {
-        entities::projection_file::Entity::delete_many()
-            .filter(entities::projection_file::Column::RepoId.eq(repo_id.to_string()))
-            .filter(entities::projection_file::Column::PathKey.is_in(removed))
-            .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
-    }
-    let rows = after
-        .iter()
-        .filter(|(path, entry)| before.get(*path) != Some(entry))
-        .map(|(path, (blob, label))| {
-            entities::projection_file::Model::live(
-                repo_id,
-                ProjectionViewFileContent {
-                    file: ProjectionViewFile {
-                        path: path.clone(),
-                        oid: blob.git_oid.clone(),
-                        tracked: true,
-                        label: label.clone(),
-                    },
-                    blob: blob.clone(),
-                },
-            )
-            .map(IntoActiveModel::into_active_model)
-        })
-        .collect::<Result<Vec<_>, PostgresError>>()?;
-    for batch in rows.chunks(PROJECTION_FILE_INSERT_BATCH_SIZE) {
-        entities::projection_file::Entity::insert_many(batch.iter().cloned())
-            .on_conflict(
-                OnConflict::columns([
-                    entities::projection_file::Column::RepoId,
-                    entities::projection_file::Column::PathKey,
-                ])
-                .update_columns([
-                    entities::projection_file::Column::Path,
-                    entities::projection_file::Column::Oid,
-                    entities::projection_file::Column::Visibility,
-                    entities::projection_file::Column::Sha256,
-                    entities::projection_file::Column::ObjectKey,
-                    entities::projection_file::Column::SizeBytes,
-                    entities::projection_file::Column::GitFileMode,
-                ])
-                .to_owned(),
-            )
-            .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
-    }
-    Ok(())
 }
 
 pub(super) async fn live_projection_read_model<C>(
@@ -553,3 +204,6 @@ where
     }
     Ok(Some(files))
 }
+
+#[cfg(test)]
+mod tests;

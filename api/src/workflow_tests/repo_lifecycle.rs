@@ -19,11 +19,11 @@ async fn create_repo_route_creates_user_and_lists_repo() {
     assert_eq!(body["repo"]["access"]["actor"], "Owner");
     assert_eq!(
         body["repo"]["git_remote_url"],
-        "http://localhost:8080/git/permissioned/owner/scope_app"
+        "http://localhost:8080/git/private/owner/scope_app"
     );
     assert_eq!(
         body["init"]["git_remote_url"],
-        "http://localhost:8080/git/permissioned/owner/scope_app"
+        "http://localhost:8080/git/private/owner/scope_app"
     );
     let secret = body["init"]["token"]["secret"].as_str().unwrap();
     assert!(secret.starts_with("scope_fp_"));

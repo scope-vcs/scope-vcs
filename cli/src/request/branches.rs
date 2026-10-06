@@ -106,7 +106,10 @@ pub(super) fn start_request_branch(
             "Started request {} ({}) on branch {branch} from {} ({})",
             response.request.name,
             response.request.id,
-            view_label(&view),
+            view_label(
+                &view,
+                &crate::repository_views::repository_views(&context.repo.views)?
+            ),
             short_oid(&base_oid)
         ),
         "Next: commit changes, then run scope request push".to_string(),
@@ -196,7 +199,10 @@ pub(super) fn push_request_branch(
     )
     .map_err(|error| recover("refresh_request", error))?;
     let mut human_lines = repo_access_lines(&context.repo);
-    human_lines.extend(request_detail_lines(&detail.request));
+    human_lines.extend(request_detail_lines(
+        &detail.request,
+        &crate::repository_views::repository_views(&context.repo.views)?,
+    ));
     let result = DetailResult {
         repo: context.repo,
         request: detail.request,

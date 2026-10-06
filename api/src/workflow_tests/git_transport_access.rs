@@ -5,9 +5,9 @@ async fn upload_pack_status(
     state: &AppState,
     headers: &HeaderMap,
     repo: &str,
-    mode: GitRemoteMode,
+    view: &ViewId,
 ) -> (StatusCode, String) {
-    let error = git_upload_pack_repo_for_request(state, headers, TEST_REPO_OWNER, repo, mode)
+    let error = git_upload_pack_repo_for_request(state, headers, TEST_REPO_OWNER, repo, view)
         .await
         .unwrap_err();
     (error.status(), error.public_message().to_string())
@@ -36,22 +36,35 @@ async fn private_only_repo(state: &AppState) {
 }
 
 #[tokio::test]
-async fn public_remote_challenges_missing_repos_and_hides_unreadable_ones() {
+async fn anonymous_reads_are_challenged_and_signed_in_reads_hide_missing_repos() {
     let state = test_state_with_repo();
+    cache_test_jwks(&state);
     private_only_repo(&state).await;
     let anonymous = HeaderMap::new();
+    let challenged = (
+        StatusCode::UNAUTHORIZED,
+        "Git credentials required".to_string(),
+    );
 
     assert_eq!(
-        upload_pack_status(&state, &anonymous, "missing", GitRemoteMode::Public)
-            .await
-            .0,
-        StatusCode::UNAUTHORIZED
+        upload_pack_status(&state, &anonymous, "missing", &ViewId::public()).await,
+        challenged
     );
     assert_eq!(
-        upload_pack_status(&state, &anonymous, TEST_REPO_NAME, GitRemoteMode::Public).await,
+        upload_pack_status(&state, &anonymous, TEST_REPO_NAME, &ViewId::public()).await,
+        challenged
+    );
+    assert_eq!(
+        upload_pack_status(
+            &state,
+            &authorization_headers(bearer_header()),
+            "missing",
+            &ViewId::private()
+        )
+        .await,
         (
             StatusCode::NOT_FOUND,
-            "repo owner/repo not found".to_string()
+            "repo owner/missing not found".to_string()
         )
     );
 }
@@ -74,7 +87,7 @@ async fn unpublished_repo_tells_only_its_owner_that_it_awaits_a_first_push() {
             &state,
             &authorization_headers(bearer_header()),
             TEST_REPO_NAME,
-            GitRemoteMode::Permissioned
+            &ViewId::private()
         )
         .await,
         (
@@ -83,15 +96,10 @@ async fn unpublished_repo_tells_only_its_owner_that_it_awaits_a_first_push() {
         )
     );
     assert_eq!(
-        upload_pack_status(
-            &state,
-            &HeaderMap::new(),
-            TEST_REPO_NAME,
-            GitRemoteMode::Public
-        )
-        .await
-        .0,
-        StatusCode::NOT_FOUND
+        upload_pack_status(&state, &HeaderMap::new(), TEST_REPO_NAME, &ViewId::public())
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
     );
 }
 

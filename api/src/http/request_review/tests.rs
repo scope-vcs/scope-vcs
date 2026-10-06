@@ -28,9 +28,9 @@ fn read_policy(repo: &Repository) -> RepositoryReadPolicy {
         context: RepositoryAccessContext {
             record: repo.record.clone(),
             access: RepositoryAccess::public(),
+            views: repo.repo_config.views().clone(),
         },
         policy: repo.policy.clone(),
-        views: repo.repo_config.views().clone(),
     }
 }
 

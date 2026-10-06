@@ -85,6 +85,14 @@ impl RepositoryGit {
             .project(views, view))
     }
 
+    pub(crate) async fn views(&self, state: &AppState) -> Result<Views, ApiError> {
+        Ok(state
+            .metadata
+            .repositories()
+            .repository_views(&self.incarnation, self.content_version)
+            .await?)
+    }
+
     pub(crate) async fn view_head(
         &self,
         state: &AppState,
@@ -123,6 +131,7 @@ impl RepositoryGit {
         projection_bare_repo_for_state(
             state,
             &self.incarnation,
+            views,
             &projection,
             self.git_head.as_ref(),
             &self.git_pack_spans,

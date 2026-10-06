@@ -173,6 +173,7 @@ async fn mixed_visibility_set_is_one_update_with_exact_transitions() {
                     current_content: Some(two),
                 },
             ],
+            None,
         )
         .unwrap(),
     );
@@ -266,6 +267,7 @@ async fn unresolved_visibility_source_degrades_to_a_direct_update() {
                 new_label: ViewId::public(),
                 current_content: Some(readme),
             }],
+            None,
         )
         .unwrap(),
     );
@@ -362,6 +364,7 @@ async fn push_visibility_changes_attach_to_the_push_for_changed_and_unchanged_pa
                     current_content: Some(two_new),
                 },
             ],
+            None,
         )
         .unwrap(),
     );
@@ -585,6 +588,7 @@ async fn history_entries_report_their_update_kind() {
     );
     repo.visibility_change_sets
         .push(scope_domain::visibility_changes::VisibilityChangeSet {
+            views: None,
             occurred_at_unix: None,
             id: "visibility-1".into(),
             anchor_commit_id: Some("rv2".into()),

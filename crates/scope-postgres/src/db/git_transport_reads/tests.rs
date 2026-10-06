@@ -77,6 +77,7 @@ async fn fixture() -> MetadataStore {
                 new_label: ViewId::private(),
                 current_content: None,
             }],
+            None,
         )
         .unwrap(),
     );
@@ -103,7 +104,7 @@ async fn fixture() -> MetadataStore {
     store.admin().seed_catalog_for_tests(catalog).unwrap();
     store
         .repositories()
-        .ensure_live_projection_read_models(&incarnation())
+        .ensure_live_projection_read_models(&incarnation(), &ViewId::private())
         .await
         .unwrap();
     store
@@ -237,6 +238,34 @@ async fn projection_source_reads_no_live_files_and_rejects_a_changed_version() {
     let stale = store
         .repositories()
         .repository_projection_source(&incarnation(), version + 1)
+        .await
+        .unwrap_err();
+    assert_eq!(stale.kind, PostgresErrorKind::Conflict);
+}
+
+#[tokio::test]
+async fn views_read_no_history_and_reject_a_changed_version() {
+    let store = fixture().await;
+    let version = content_version(&store).await;
+    let held = lock(
+        &store,
+        &format!("{PROJECTION_HISTORY_TABLES}, scope_live_files"),
+    )
+    .await;
+
+    let views = within_lock(
+        store
+            .repositories()
+            .repository_views(&incarnation(), version),
+    )
+    .await
+    .unwrap();
+    held.rollback().await.unwrap();
+
+    assert_eq!(views, scope_domain::views::Views::builtin());
+    let stale = store
+        .repositories()
+        .repository_views(&incarnation(), version + 1)
         .await
         .unwrap_err();
     assert_eq!(stale.kind, PostgresErrorKind::Conflict);

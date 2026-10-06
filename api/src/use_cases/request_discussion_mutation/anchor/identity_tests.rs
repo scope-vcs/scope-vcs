@@ -2,7 +2,7 @@ use super::{
     request_commit_visible_paths as request_commit_visible_paths_with_views, visible_commit_paths,
 };
 use axum::http::StatusCode;
-use scope_domain::views::ViewId;
+use scope_domain::views::{ViewId, Views};
 use scope_domain::{
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     content_ref::ContentRef,
@@ -101,6 +101,7 @@ fn visible_commit_paths_requires_revision_membership_and_full_visibility() {
     let paths = visible_commit_paths(
         fixture.directory.path(),
         &public_policy,
+        &Views::builtin(),
         RepositoryAccess::public(),
         &revision,
         &fixture.commit,
@@ -118,6 +119,7 @@ fn visible_commit_paths_requires_revision_membership_and_full_visibility() {
         visible_commit_paths(
             fixture.directory.path(),
             &public_policy,
+            &Views::builtin(),
             RepositoryAccess::public(),
             &revision,
             &fixture.outsider,
@@ -134,6 +136,7 @@ fn visible_commit_paths_requires_revision_membership_and_full_visibility() {
         visible_commit_paths(
             fixture.directory.path(),
             &private_policy,
+            &Views::builtin(),
             RepositoryAccess::public(),
             &revision,
             &fixture.commit,

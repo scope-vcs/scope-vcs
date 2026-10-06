@@ -27,9 +27,11 @@ where
     let Some(record) = load_repo_record(conn, repo_id).await? else {
         return Ok(None);
     };
+    let views = super::projection_read_models::repository_views(conn, repo_id).await?;
     let collaboration = load_repository_collaboration(conn, repo_id).await?;
     Ok(Some(CollaborationState {
         record,
+        views,
         collaboration,
     }))
 }

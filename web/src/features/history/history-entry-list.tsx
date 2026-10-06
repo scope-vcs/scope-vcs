@@ -11,20 +11,19 @@ import { LoaderCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { HistoryEntrySummaryResponse, ViewId } from '@/api/types.generated'
 import type { useHistoryFeed } from './history-feed'
-import type { UpdateSearch } from './update-search'
+import { useRepoLayout, useRepoViews } from '@/features/repo-detail/repo-layout-context'
+import { viewingAsSearch } from '@/features/repo-detail/viewing-as'
 
 export function HistoryFeedList({
   empty,
   history: { loadOlder, loadOlderError, loadingOlder, resource, view },
   onNavigate,
   params,
-  search,
 }: {
   empty: string
   history: ReturnType<typeof useHistoryFeed>
   onNavigate?: () => void
   params: RepoParams
-  search: UpdateSearch
 }) {
   return (
     <HistoryFeedState empty={empty} resource={resource}>
@@ -36,7 +35,6 @@ export function HistoryFeedList({
           onLoadOlder={() => void loadOlder()}
           onNavigate={onNavigate}
           params={params}
-          search={search}
           showLoadOlder={page.next_cursor !== null}
           view={view}
         />
@@ -89,7 +87,6 @@ function HistoryEntryList({
   onLoadOlder,
   onNavigate,
   params,
-  search,
   showLoadOlder,
   view,
 }: {
@@ -99,15 +96,16 @@ function HistoryEntryList({
   onLoadOlder: () => void
   onNavigate?: () => void
   params: RepoParams
-  search: UpdateSearch
   showLoadOlder: boolean
   view: ViewId
 }) {
+  const views = useRepoViews()
+  const search = viewingAsSearch(view, useRepoLayout().repo.access.view)
   return (
     <div>
       <ul className="divide-y divide-border">
         {entries.map((entry) => {
-          const labels = historyEntryLabels(entry, view)
+          const labels = historyEntryLabels(entry, view, views)
           return (
             <li key={entry.id}>
               <Link

@@ -80,7 +80,7 @@ pub(crate) async fn get_history_page(
     Ok(Json(history_page_response(
         feed,
         &history,
-        &scope_domain::views::Views::builtin(),
+        &repo.views,
         entries,
         next_cursor,
         page.head_oid,
@@ -125,7 +125,7 @@ pub(crate) async fn get_history_entry(
     .await?;
     Ok(Json(history_entry_detail_response(
         &history,
-        &scope_domain::views::Views::builtin(),
+        &repo.views,
         entry,
         neighbors,
         &users,
@@ -224,7 +224,7 @@ async fn repo_and_view(
     let view = requested_view
         .map(Into::into)
         .unwrap_or_else(|| repo.access.view.clone());
-    if !scope_domain::views::Views::builtin().may_read(&repo.access.view, &view) {
+    if !repo.can_read_view(&view) {
         return Err(ApiError::forbidden("view access required"));
     }
     Ok((repo, view))

@@ -1,4 +1,5 @@
 use crate::{
+    display::terminal_text,
     error::CliError,
     execution,
     git_repo::{GitRepo, discover_git_repo},
@@ -301,7 +302,7 @@ fn path_line(path: &PathVisibility, config: &RepoConfig) -> String {
 }
 
 fn view_name(config: &RepoConfig, view: &ViewId) -> String {
-    visibility_label(ReviewLabel::View(view.clone()), config)
+    terminal_text(&visibility_label(ReviewLabel::View(view.clone()), config))
 }
 
 fn escaped(value: &str) -> String {

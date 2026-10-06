@@ -28,7 +28,7 @@ async fn receive_pack_capacity_exhaustion_returns_backpressure() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/git/permissioned/owner/repo/info/refs?service=git-receive-pack")
+                .uri("/git/private/owner/repo/info/refs?service=git-receive-pack")
                 .header(
                     AUTHORIZATION,
                     format!("Basic {}", BASE64.encode(format!("scope:{secret}"))),
@@ -110,6 +110,7 @@ async fn cold_git_backed_projection_succeeds_with_one_build_permit() {
     let projection_repo = projection_bare_repo_for_state(
         &state,
         &stored.incarnation(),
+        stored.repo_config.views(),
         &projection,
         stored.git_head.as_ref(),
         &stored.git_pack_spans,

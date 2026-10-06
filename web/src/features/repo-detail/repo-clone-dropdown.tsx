@@ -3,39 +3,43 @@ import { Button } from '@/components/ui/button'
 import { Popover } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { ChevronDown, Code2 } from 'lucide-react'
-import {
-  permissionedCloneCommand,
-  publicCloneCommand,
-} from './clone-command'
-import type { RepoSummaryResponse } from '@/api/types.generated'
+import { cloneCommands } from './clone-command'
+import type { RepoSummaryResponse, ViewId } from '@/api/types.generated'
 
 export function RepoCloneDropdown({
   cloneRemoteUrl,
   repo,
+  view,
+  viewName,
 }: {
   cloneRemoteUrl: string
   repo: RepoSummaryResponse
+  view: ViewId
+  viewName: string
 }) {
-  const permissioned = repo.access.actor !== 'Public'
-  const cloneCommand = permissioned
-    ? permissionedCloneCommand(repo.owner_handle, repo.name)
-    : publicCloneCommand(cloneRemoteUrl)
-  const cloneLabel = permissioned ? 'Scope CLI' : 'Public HTTPS'
-  const copyLabel = permissioned
-    ? 'Copy permissioned clone command'
-    : 'Copy public clone command'
+  const commands = cloneCommands({
+    actor: repo.access.actor,
+    owner: repo.owner_handle,
+    readerView: repo.access.view,
+    remoteUrl: cloneRemoteUrl,
+    repo: repo.name,
+    view,
+  })
 
   return (
     <Popover
       className="mt-2 w-[min(420px,calc(100vw-2rem))] border-[var(--border-strong)]"
-      label={`${cloneLabel} clone command`}
+      label={`Clone the ${viewName} view`}
       panel={() => (
-        <>
-          <div className="mb-2 flex h-6 items-center justify-between text-xs font-semibold leading-4">
-            <span>{cloneLabel}</span>
-          </div>
-          <CopyableCodeBlock copyLabel={copyLabel} value={cloneCommand} />
-        </>
+        <div className="grid grid-cols-1 gap-3">
+          <p className="truncate text-xs text-muted-foreground">Cloning the {viewName} view</p>
+          {commands.map((command) => (
+            <div className="min-w-0" key={command.label}>
+              <div className="mb-2 flex h-6 items-center text-xs font-semibold leading-4">{command.label}</div>
+              <CopyableCodeBlock copyLabel={command.copyLabel} value={command.value} />
+            </div>
+          ))}
+        </div>
       )}
       trigger={(props) => (
         <Button size="sm" type="button" variant="secondary" {...props}>
