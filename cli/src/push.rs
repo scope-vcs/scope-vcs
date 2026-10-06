@@ -1,8 +1,9 @@
 use crate::api::ApiSession;
 use crate::{
     api::{
-        CreatePushIntentParams, PushTriggerEvaluationResponse, RepoLifecycleState, api_url,
-        create_push_intent, get_push_trigger_evaluation, get_repo_config, http_client,
+        CreatePushIntentParams, CreatePushIntentResponse, PushTriggerEvaluationResponse,
+        RepoLifecycleState, RepositoryAccessResponse, api_url, create_push_intent,
+        get_push_trigger_evaluation, get_repo_config, http_client,
     },
     git_repo::{
         GitRepo, changed_paths_since_scope_base_at_commit, ensure_git_repo_ready,
@@ -26,65 +27,88 @@ use crate::{
 };
 use anyhow::bail;
 use scope_api_contract::{ErrorCode, ErrorResponse, PushTriggerEvaluationState};
-use scope_domain::repo_config::repo_config_fingerprint;
+use scope_domain::{
+    repo_config::repo_config_fingerprint,
+    repository::access::{MainPushMode, RepositoryAccess},
+    views::{ViewId, Views},
+};
 use serde_json::json;
 use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+mod through_view;
+
 pub const DEFAULT_SCOPE_BRANCH: &str = "main";
 const PUSH_EVALUATION_MAX_POLLS: usize = 300;
 
 pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow::Result<()> {
-    let mut progress = PreparationProgress::start("Checking repository…")?;
+    let progress = PreparationProgress::start("Checking repository…")?;
     let git_repo = ensure_git_repo_ready("scope push")?;
     let reviewed_head_oid = head_oid(&git_repo)?;
-    let config_created = ensure_scope_repo_config_exists(&git_repo.root)?;
-    let config_path = repo_config_path(&git_repo.root)?;
-    let mut config = load_worktree_scope_repo_config(&git_repo.root)?;
     {
         let _pause = progress.pause();
         warn_if_dirty_working_tree(&git_repo)?;
     }
+    let api_url = api_url()?;
+    let remote = select_scope_push_remote(&git_repo, &api_url, explicit_remote)?;
+    let target = load_scope_remote(&git_repo, &api_url, &remote)?;
+    if target.view.is_private() {
+        push_to_main(
+            progress,
+            &git_repo,
+            &api_url,
+            &target,
+            &reviewed_head_oid,
+            no_review,
+            wait,
+        )
+    } else {
+        through_view::push(progress, &api_url, &target, &reviewed_head_oid, wait)
+    }
+}
+
+fn push_to_main(
+    mut progress: PreparationProgress,
+    git_repo: &GitRepo,
+    api_url: &str,
+    target: &ScopeRemote,
+    reviewed_head_oid: &str,
+    no_review: bool,
+    wait: bool,
+) -> anyhow::Result<()> {
+    let remote = target.remote.as_str();
+    let config_created = ensure_scope_repo_config_exists(&git_repo.root)?;
+    let config_path = repo_config_path(&git_repo.root)?;
+    let mut config = load_worktree_scope_repo_config(&git_repo.root)?;
     if !no_review {
         ensure_review_terminal_available("scope push review")?;
     }
 
     progress.set_stage("Verifying login…")?;
-    let api_url = api_url()?;
-    let remote = select_scope_push_remote(&git_repo, &api_url, explicit_remote)?;
-    let target = load_scope_remote(&git_repo, &api_url, &remote)?;
     let client = http_client()?;
-    let session = session_from_cache_or_browser_with_progress(&client, &api_url, &progress)?;
+    let session = session_from_cache_or_browser_with_progress(&client, api_url, &progress)?;
     progress.set_stage("Loading repository configuration…")?;
-    let api = ApiSession::new(&client, &api_url, &session.token);
+    let api = ApiSession::new(&client, api_url, &session.token);
     let push_context = get_repo_config(api, &target.owner, &target.repo)?;
     progress.cancellation().check()?;
-    let access = scope_domain::repository::access::RepositoryAccess {
-        actor: push_context.access.actor.into(),
-        view: push_context.access.view.into(),
-        can_push: push_context.access.can_push,
-        can_change_file_visibility: push_context.access.can_change_file_visibility,
-        can_manage_members: push_context.access.can_manage_members,
-        can_delete_repo: push_context.access.can_delete_repo,
-    };
-    if access.main_push_mode(push_context.lifecycle_state.into())
-        == scope_domain::repository::access::MainPushMode::Denied
-    {
-        let permission = if push_context.lifecycle_state == RepoLifecycleState::AwaitingFirstPush {
-            "owner access to first-push"
-        } else {
-            "write access to"
-        };
-        return Err(CliError::new(ErrorResponse::new(
-            ErrorCode::Forbidden,
-            format!(
-                "you do not have {permission} {}/{}",
-                target.owner, target.repo
-            ),
-        ))
-        .into());
+    match main_push_mode(
+        &push_context.access,
+        push_context.lifecycle_state,
+        push_context.config.views(),
+    ) {
+        MainPushMode::FirstPush | MainPushMode::Ready => {}
+        MainPushMode::Denied => {
+            return Err(main_push_denied(target, push_context.lifecycle_state));
+        }
+        MainPushMode::ThroughView(view) => {
+            return Err(remote_view_mismatch(
+                target,
+                push_context.config.views(),
+                &view,
+            ));
+        }
     }
     if config_created {
         write_worktree_scope_repo_config_with_base(&git_repo.root, &push_context.config)?;
@@ -118,15 +142,15 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
             ))).into()),
         }
     }
-    let local_remote_head = scope_remote_head_oid(&git_repo, &remote, DEFAULT_SCOPE_BRANCH)?;
+    let local_remote_head = scope_remote_head_oid(git_repo, remote, DEFAULT_SCOPE_BRANCH)?;
     if push_context.lifecycle_state == RepoLifecycleState::Ready
         && local_remote_head.as_deref() != push_context.head_oid.as_deref()
     {
         progress.set_stage("Refreshing Scope main…")?;
         fetch_scope_remote_with_bearer_cancellable(
-            &git_repo,
-            &target.full_view_url(),
-            &remote,
+            git_repo,
+            &target.url(),
+            remote,
             DEFAULT_SCOPE_BRANCH,
             &session.token,
             &progress.cancellation(),
@@ -137,8 +161,8 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         None
     } else if push_context.lifecycle_state == RepoLifecycleState::Ready {
         Some(scope_remote_head_oid(
-            &git_repo,
-            &remote,
+            git_repo,
+            remote,
             DEFAULT_SCOPE_BRANCH,
         )?)
     } else {
@@ -146,11 +170,11 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     };
     if let Some(review_base_oid) = &reviewed_base_oid {
         let changed_paths = changed_paths_since_scope_base_at_commit(
-            &git_repo,
+            git_repo,
             review_base_oid.as_deref(),
-            &reviewed_head_oid,
+            reviewed_head_oid,
         )?;
-        config = run_push_review(&git_repo, &reviewed_head_oid, &changed_paths, &mut progress)?;
+        config = run_push_review(git_repo, reviewed_head_oid, &changed_paths, &mut progress)?;
     } else {
         progress.finish()?;
     }
@@ -160,11 +184,13 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         CreatePushIntentParams {
             owner: &target.owner,
             repo: &target.repo,
-            head_oid: &reviewed_head_oid,
+            head_oid: reviewed_head_oid,
             base_config_hash: &base_config_hash,
             config: &config,
+            view: &target.view,
         },
     )?;
+    ensure_intent_destination(&intent, false)?;
     if let Some(review_base_oid) = &reviewed_base_oid {
         ensure_reviewed_base_matches_intent(
             review_base_oid.as_deref(),
@@ -172,9 +198,9 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         )?;
     }
     ensure_review_base_matches_intent(
-        &git_repo,
-        &target.full_view_url(),
-        &remote,
+        git_repo,
+        &target.url(),
+        remote,
         &session.token,
         intent.base_head_oid.as_deref(),
     )?;
@@ -184,20 +210,9 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         target.owner, target.repo, DEFAULT_SCOPE_BRANCH, reviewed_head_oid
     );
 
-    match push_reviewed_head_with_intent(&session.token, &target, &reviewed_head_oid, &intent.token)
-    {
-        Ok(()) => (),
-        Err(_) if push_intent_expired(intent.expires_at_unix) => {
-            return Err(CliError::new(ErrorResponse::new(
-                ErrorCode::Conflict,
-                "Scope push review expired; rerun scope push --main",
-            ))
-            .into());
-        }
-        Err(error) => return Err(error),
-    };
+    push_head_with_intent(&session.token, target, reviewed_head_oid, &intent)?;
     let mut receipt = json!({"repository": format!("{}/{}", target.owner, target.repo), "remote": remote, "ref": format!("refs/heads/{DEFAULT_SCOPE_BRANCH}"), "commit": reviewed_head_oid, "applied": true, "tracking_updated": false, "config_synced": false});
-    mark_scope_remote_pushed(&git_repo, &remote, DEFAULT_SCOPE_BRANCH, &reviewed_head_oid)
+    mark_scope_remote_pushed(git_repo, remote, DEFAULT_SCOPE_BRANCH, reviewed_head_oid)
         .map_err(|error| applied_push_error(&receipt, format!("Push applied, but local tracking setup failed: {error:#}"), "Keep this commit. Fix the reported local Git error, then run scope pull before publishing again."))?;
     receipt["tracking_updated"] = json!(true);
     mark_worktree_scope_repo_config_synced(&git_repo.root, &config)
@@ -206,8 +221,8 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     if wait {
         eprintln!("Push applied at {reviewed_head_oid}; waiting for workflows.");
         let wait_result =
-            get_push_trigger_evaluation(api, &target.owner, &target.repo, &reviewed_head_oid)
-                .and_then(|evaluation| wait_for_push_runs(api, &target, &remote, evaluation));
+            get_push_trigger_evaluation(api, &target.owner, &target.repo, reviewed_head_oid)
+                .and_then(|evaluation| wait_for_push_runs(api, target, remote, evaluation));
         receipt["workflows"] = wait_result.map_err(|error| applied_push_error(&receipt,
             format!("Push applied, but workflow waiting failed: {error:#}"),
             "Inspect scope run list and scope run show for this commit. Do not repeat the push to retry waiting."))?;
@@ -362,37 +377,108 @@ fn unix_now() -> u64 {
         .as_secs()
 }
 
-pub fn load_scope_remote(
+fn load_scope_remote(
     git_repo: &GitRepo,
     api_url: &str,
     remote: &str,
 ) -> anyhow::Result<ScopeRemote> {
     let push_url = git_remote_push_url(git_repo, remote)?;
     let git_origin = scope_git_origin(git_repo, api_url)?;
-    let target = ScopeRemote::parse(&git_origin, remote, &push_url)?;
-    if !target.view.is_private() {
-        return Err(CliError::usage(format!(
-            "Scope remote {remote} must push to the full view address {}",
-            target.full_view_url()
-        ))
-        .into());
-    }
-    Ok(target)
+    ScopeRemote::parse(&git_origin, remote, &push_url)
 }
 
-pub fn push_reviewed_head_with_intent(
+fn main_push_mode(
+    access: &RepositoryAccessResponse,
+    lifecycle_state: RepoLifecycleState,
+    views: &Views,
+) -> MainPushMode {
+    RepositoryAccess {
+        actor: access.actor.into(),
+        view: access.view.clone().into(),
+        can_push: access.can_push,
+        can_change_file_visibility: access.can_change_file_visibility,
+        can_manage_members: access.can_manage_members,
+        can_delete_repo: access.can_delete_repo,
+    }
+    .main_push_mode(lifecycle_state.into(), views)
+}
+
+pub(crate) fn pushes_main_through(
+    access: &RepositoryAccessResponse,
+    lifecycle_state: RepoLifecycleState,
+    views: &Views,
+    remote_view: &ViewId,
+) -> bool {
+    match main_push_mode(access, lifecycle_state, views) {
+        MainPushMode::FirstPush | MainPushMode::Ready => remote_view == views.full(),
+        MainPushMode::ThroughView(view) => &view == remote_view,
+        MainPushMode::Denied => false,
+    }
+}
+
+fn main_push_denied(target: &ScopeRemote, lifecycle_state: RepoLifecycleState) -> anyhow::Error {
+    let permission = if lifecycle_state == RepoLifecycleState::AwaitingFirstPush {
+        "owner access to first-push"
+    } else {
+        "write access to"
+    };
+    CliError::new(ErrorResponse::new(
+        ErrorCode::Forbidden,
+        format!(
+            "you do not have {permission} {}/{}",
+            target.owner, target.repo
+        ),
+    ))
+    .into()
+}
+
+fn remote_view_mismatch(target: &ScopeRemote, views: &Views, push_view: &ViewId) -> anyhow::Error {
+    CliError::usage(format!(
+        "your pushes to main go through the {} view, but remote {} reads the {} view; push from a remote on {}",
+        views.display_name(push_view),
+        target.remote,
+        views.display_name(&target.view),
+        target.url_for_view(push_view)
+    ))
+    .into()
+}
+
+fn ensure_intent_destination(
+    intent: &CreatePushIntentResponse,
+    lands_as_request: bool,
+) -> anyhow::Result<()> {
+    if intent.lands_as_request == lands_as_request {
+        return Ok(());
+    }
+    Err(CliError::new(ErrorResponse::new(
+        ErrorCode::Conflict,
+        "your repository access changed while preparing the push; rerun scope push --main",
+    ))
+    .into())
+}
+
+fn push_head_with_intent(
     session_token: &str,
     target: &ScopeRemote,
-    reviewed_head_oid: &str,
-    push_intent_token: &str,
+    head_oid: &str,
+    intent: &CreatePushIntentResponse,
 ) -> anyhow::Result<()> {
-    push_head_with_bearer(
-        &target.full_view_url(),
-        reviewed_head_oid,
+    match push_head_with_bearer(
+        &target.url(),
+        head_oid,
         DEFAULT_SCOPE_BRANCH,
         session_token,
-        push_intent_token,
-    )
+        &intent.token,
+    ) {
+        Err(_) if push_intent_expired(intent.expires_at_unix) => {
+            Err(CliError::new(ErrorResponse::new(
+                ErrorCode::Conflict,
+                "Scope push review expired; rerun scope push --main",
+            ))
+            .into())
+        }
+        result => result,
+    }
 }
 
 #[cfg(test)]
@@ -431,5 +517,57 @@ mod tests {
         );
         assert!(ensure_reviewed_base_matches_intent(None, Some("def")).is_err());
         assert!(ensure_reviewed_base_matches_intent(Some("abc"), None).is_err());
+    }
+
+    #[test]
+    fn main_pushes_go_through_the_full_view_or_the_pushers_own_view() {
+        let views: Views = serde_json::from_value(json!([
+            {"id": "public", "name": "Public", "includes": [], "readers": "anyone"},
+            {"id": "private", "name": "Private", "includes": "all", "readers": "assigned"},
+            {"id": "agent", "name": "Agent", "includes": ["public"], "readers": "assigned"},
+        ]))
+        .unwrap();
+        let access = |view: &str, can_push| RepositoryAccessResponse {
+            actor: crate::api::RepositoryActor::Member,
+            view: ViewId::parse(view).unwrap().into(),
+            can_push,
+            can_change_file_visibility: false,
+            can_manage_members: false,
+            can_delete_repo: false,
+        };
+        let pushes = |access: &RepositoryAccessResponse, remote: &str| {
+            pushes_main_through(
+                access,
+                RepoLifecycleState::Ready,
+                &views,
+                &ViewId::parse(remote).unwrap(),
+            )
+        };
+
+        assert!(pushes(&access("private", true), "private"));
+        assert!(!pushes(&access("private", true), "agent"));
+        assert!(pushes(&access("agent", true), "agent"));
+        assert!(!pushes(&access("agent", true), "public"));
+        assert!(!pushes(&access("agent", true), "private"));
+        assert!(!pushes(&access("agent", false), "agent"));
+    }
+
+    #[test]
+    fn a_push_intent_must_land_where_the_remote_view_says() {
+        let intent = |lands_as_request| CreatePushIntentResponse {
+            token: "intent".into(),
+            base_head_oid: None,
+            expires_at_unix: 0,
+            lands_as_request,
+        };
+        ensure_intent_destination(&intent(true), true).unwrap();
+        ensure_intent_destination(&intent(false), false).unwrap();
+        let error = ensure_intent_destination(&intent(true), false).unwrap_err();
+        assert_eq!(crate::error::exit_code(&error), 5);
+        assert!(
+            error
+                .to_string()
+                .contains("your repository access changed while preparing the push")
+        );
     }
 }
