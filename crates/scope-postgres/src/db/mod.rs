@@ -132,7 +132,7 @@ pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::{GitPushContext, GitPushCredentials};
 pub use git_segments::RepositoryGitWriteLease;
-pub use git_transport_reads::GitReadSource;
+pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
 pub use github_pushes::{GitHubPushOutcome, GitHubPushStanding};

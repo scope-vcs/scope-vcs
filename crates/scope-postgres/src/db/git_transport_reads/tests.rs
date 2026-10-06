@@ -388,3 +388,31 @@ async fn view_head_reads_the_history_view_without_history() {
         .unwrap_err();
     assert_eq!(stale.kind, PostgresErrorKind::Conflict);
 }
+
+#[tokio::test]
+async fn git_state_reads_no_history() {
+    let store = fixture().await;
+    let held = lock(
+        &store,
+        &format!("{PROJECTION_HISTORY_TABLES}, scope_live_files"),
+    )
+    .await;
+
+    let state = within_lock(store.repositories().repository_git_state(&incarnation()))
+        .await
+        .unwrap();
+    held.rollback().await.unwrap();
+
+    assert_eq!(state.content_version, content_version(&store).await);
+    assert_eq!(
+        state.git_head.map(|head| head.head_oid),
+        Some(format!("{COMMITS:040x}"))
+    );
+    let recreated = RepositoryIncarnation::new("owner/repo", "repoi_other").unwrap();
+    let error = store
+        .repositories()
+        .repository_git_state(&recreated)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, PostgresErrorKind::Conflict);
+}
