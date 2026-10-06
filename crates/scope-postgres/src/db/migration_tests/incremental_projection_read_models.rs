@@ -21,7 +21,7 @@ async fn read_models_record_a_consistent_fold_position_and_own_their_entries() {
         INSERT INTO scope_repository_history_payloads VALUES ('owner/one','hash','{}'::jsonb);
         INSERT INTO scope_repository_history_entries VALUES ('owner/one','public',0,'logical_1','hash');
         INSERT INTO scope_projection_files VALUES ('owner/one','sha256:key','/README.md',
-            repeat('b',40),'Public','{}','sha',1,'100644');
+            repeat('b',40),'public','{}','sha',1,'100644');
         "#,
     )
     .await
@@ -32,8 +32,8 @@ async fn read_models_record_a_consistent_fold_position_and_own_their_entries() {
         "UPDATE scope_projection_read_models SET head_oid = NULL",
         "UPDATE scope_projection_read_models SET projected_commits = 0",
         "UPDATE scope_projection_read_models SET history_entries = 0",
-        "UPDATE scope_projection_read_models SET audience = 'agent'",
-        "UPDATE scope_projection_files SET visibility = 'public'",
+        "UPDATE scope_projection_read_models SET audience = ''",
+        "UPDATE scope_projection_files SET visibility = ''",
         "INSERT INTO scope_repository_history_entries VALUES ('owner/one','public',1,'logical_2','missing')",
         "INSERT INTO scope_repository_history_entries VALUES ('owner/one','private',0,'logical_1','hash')",
     ] {

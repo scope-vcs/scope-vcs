@@ -30,6 +30,7 @@ mod m0070_github_setup_checks_and_workflow_runs;
 mod m0071_public_check_commits;
 mod m0072_github_run_imports;
 mod m0073_incremental_projection_read_models;
+mod m0074_view_ids;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -199,6 +200,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0073_incremental_projection_read_models::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0074_view_ids::Migration),
             metadata_restore_safe: true,
         },
     ]
