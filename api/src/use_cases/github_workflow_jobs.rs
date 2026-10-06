@@ -5,6 +5,7 @@ use scope_domain::{
     github_workflow_jobs::{
         GitHubJobLog, GitHubJobsRead, GitHubWorkflowJob, github_jobs_need_read,
     },
+    github_workflow_runs::GitHubWorkflowRun,
 };
 use scope_postgres::db::GitHubWorkflowRunDetailRead;
 
@@ -72,25 +73,11 @@ pub(crate) async fn run_jobs(
             )
             .await?
     {
-        match configured_app(state)?
-            .run_attempt_jobs(
-                connection.installation_id,
-                &connection.github_full_name,
-                run.github_run_id,
-                run.run_attempt,
-            )
-            .await
-        {
-            Ok(Some(jobs)) => {
-                repositories
-                    .save_github_workflow_jobs(
-                        &connection.repository_id,
-                        connection.github_repository_id,
-                        &jobs,
-                    )
-                    .await?;
+        match read_run_jobs(state, connection, run).await {
+            Ok(true) => publish(state, connection, run.github_run_id).await?,
+            Ok(false) => {
+                unavailable = Some("GitHub no longer reports this run's jobs.".to_string())
             }
-            Ok(None) => unavailable = Some("GitHub no longer reports this run's jobs.".to_string()),
             Err(error) => {
                 tracing::warn!(
                     run_id = run.github_run_id,
@@ -124,6 +111,34 @@ pub(crate) async fn run_jobs(
         unavailable: unavailable.filter(|_| jobs.is_empty()),
         jobs,
     })
+}
+
+async fn read_run_jobs(
+    state: &AppState,
+    connection: &GitHubConnection,
+    run: &GitHubWorkflowRun,
+) -> Result<bool, ApiError> {
+    let Some(jobs) = configured_app(state)?
+        .run_attempt_jobs(
+            connection.installation_id,
+            &connection.github_full_name,
+            run.github_run_id,
+            run.run_attempt,
+        )
+        .await?
+    else {
+        return Ok(false);
+    };
+    state
+        .metadata
+        .repositories()
+        .save_github_workflow_jobs(
+            &connection.repository_id,
+            connection.github_repository_id,
+            &jobs,
+        )
+        .await?;
+    Ok(true)
 }
 
 pub(crate) async fn job_log(

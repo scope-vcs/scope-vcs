@@ -70,8 +70,9 @@ test('only a run-job hash names a job', () => {
   assert.equal(jobKeyForHash(['2'], ''), null)
 })
 
-test('a run can change until it and every job complete', () => {
+test('a run can change until it and every job it lists complete', () => {
   assert.equal(githubRunCanChange(detail({}, [job(1)])), false)
+  assert.equal(githubRunCanChange(detail({}, [])), true)
   assert.equal(githubRunCanChange(detail({ status: 'in_progress', conclusion: null }, [job(1)])), true)
   assert.equal(githubRunCanChange(detail({}, [job(1, { status: 'queued', conclusion: null })])), true)
 })

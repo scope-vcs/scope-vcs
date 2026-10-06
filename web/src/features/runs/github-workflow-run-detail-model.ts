@@ -13,7 +13,7 @@ export function githubJobKey(job: Pick<GitHubWorkflowJobResponse, 'id'>) {
 }
 
 export function githubRunCanChange({ jobs, run }: GitHubWorkflowRunDetailResponse) {
-  return run.status !== 'completed' || jobs.some((job) => job.status !== 'completed')
+  return run.status !== 'completed' || jobs.length === 0 || jobs.some((job) => job.status !== 'completed')
 }
 
 export function selectGitHubJob(

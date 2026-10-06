@@ -42,7 +42,7 @@ export function useGitHubWorkflowRunRecheck(
 ) {
   const pageValueRef = useRef(pageValue)
   useEffect(() => {
-    if (!identity || !mutable) return
+    if (!identity) return
     const recheck = () => {
       if (!githubWorkflowRunDetailResource.getSnapshot(identity).pending) {
         githubWorkflowRunDetailResource.invalidate(identity)
@@ -55,7 +55,7 @@ export function useGitHubWorkflowRunRecheck(
     window.addEventListener('focus', onFocus)
     window.addEventListener('online', recheck)
     document.addEventListener('visibilitychange', onFocus)
-    const interval = window.setInterval(recheck, RECHECK_INTERVAL_MS)
+    const interval = mutable ? window.setInterval(recheck, RECHECK_INTERVAL_MS) : undefined
     return () => {
       window.removeEventListener('focus', onFocus)
       window.removeEventListener('online', recheck)
