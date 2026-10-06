@@ -231,6 +231,15 @@ impl AdminStore {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub async fn execute_for_tests(&self, sql: &str) -> Result<(), PostgresError> {
+        self.db
+            .execute_unprepared(sql)
+            .await
+            .map_err(PostgresError::internal)?;
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn seed_catalog_for_tests(&self, catalog: CatalogFixture) -> Result<(), PostgresError> {
         let db = Arc::clone(&self.db);
         run_test_future(async move { seed_catalog(db.as_ref(), catalog).await })

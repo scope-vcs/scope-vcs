@@ -764,3 +764,33 @@ async fn starting_and_reviewing_a_request_reads_no_repository_history() {
     held.rollback().await.unwrap();
     assert_eq!(changes.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn starting_a_request_succeeds_when_the_repository_changes_as_it_is_created() {
+    let state = test_state_with_readme().await;
+    cache_test_jwks(&state);
+    state
+        .metadata
+        .admin()
+        .execute_for_tests(
+            "CREATE FUNCTION bump_repository_version() RETURNS trigger AS $$
+             BEGIN
+                 UPDATE scope_repositories SET change_version = change_version + 1
+                 WHERE id = NEW.repo_id;
+                 RETURN NEW;
+             END $$ LANGUAGE plpgsql;
+             CREATE TRIGGER bump_repository_version AFTER INSERT ON scope_requests
+             FOR EACH ROW EXECUTE FUNCTION bump_repository_version();",
+        )
+        .await
+        .unwrap();
+    let app = router(state.clone());
+
+    let started = start_private_request(&app, "concurrent-change").await;
+
+    assert_eq!(started.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(started).await["request"]["name"],
+        "concurrent-change"
+    );
+}
