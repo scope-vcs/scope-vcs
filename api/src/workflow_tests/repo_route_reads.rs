@@ -65,7 +65,7 @@ async fn file_content_and_config_routes_read_no_commit_history() {
 async fn projection_preview_reads_history_but_no_live_files() {
     let state = state_with_docs().await;
     let app = router(state.clone());
-    let preview = "/v1/repos/owner/repo/projection-preview?audience=public";
+    let preview = "/v1/repos/owner/repo/projection-preview?view=public";
     assert_eq!(get(&app, preview, None).await.status(), StatusCode::OK);
 
     let held = state
@@ -77,7 +77,7 @@ async fn projection_preview_reads_history_but_no_live_files() {
     let public = within_lock(get(&app, preview, None)).await;
     let private = within_lock(get(
         &app,
-        "/v1/repos/owner/repo/projection-preview?audience=private",
+        "/v1/repos/owner/repo/projection-preview?view=private",
         None,
     ))
     .await;
