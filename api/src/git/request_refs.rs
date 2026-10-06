@@ -140,22 +140,14 @@ pub(crate) fn clone_without_shared_objects(
     repo_root: &FsPath,
     context: &str,
 ) -> Result<(), ApiError> {
-    let transport = if seed_repo.join("objects/info/alternates").is_file() {
-        "--no-local"
-    } else {
-        "--no-hardlinks"
-    };
-    run_git(
-        None,
-        &[
-            "clone",
-            "--bare",
-            transport,
-            seed_repo.to_string_lossy().as_ref(),
-            repo_root.to_string_lossy().as_ref(),
-        ],
-        context,
-    )
+    let seed = seed_repo.to_string_lossy();
+    let target = repo_root.to_string_lossy();
+    let mut args = vec!["clone", "--bare"];
+    if seed_repo.join("objects/info/alternates").is_file() {
+        args.push("--no-local");
+    }
+    args.extend([seed.as_ref(), target.as_ref()]);
+    run_git(None, &args, context)
 }
 
 pub(crate) fn create_request_receive_pack_staging_repo(
