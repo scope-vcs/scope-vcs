@@ -111,7 +111,7 @@ pub(crate) async fn merge_request_inner(
         Some(&command.actor_user_id),
     )
     .await?;
-    let access = context.access;
+    let access = context.access.clone();
     let request = state
         .metadata
         .requests()

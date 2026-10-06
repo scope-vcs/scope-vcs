@@ -8,7 +8,7 @@ async fn state_with_docs() -> AppState {
     let path = ScopePath::parse("/docs.txt").unwrap();
     let content = source_blob(&state, "docs");
     repo.graph.commits[0].changes.push(FileChange {
-        visibility: Visibility::Public,
+        label: ViewId::public(),
         path: path.clone(),
         old_content: None,
         new_content: Some(content.clone()),
