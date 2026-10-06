@@ -620,15 +620,19 @@ mod tests {
             "outbox rebuild must insert history entries"
         );
 
-        admin
-            .execute_raw(sea_orm::Statement::from_sql_and_values(
-                sea_orm::DatabaseBackend::Postgres,
-                "INSERT INTO scope_repository_history_payloads (repo_id, payload_hash, payload) VALUES ($1, 'stale', '{}'::jsonb);
-                 INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload_hash) VALUES ($1, 'private', 1000000, 'stale-entry', 'stale')",
-                [repo.record.id.clone().into()],
-            ))
-            .await
-            .unwrap();
+        for sql in [
+            "INSERT INTO scope_repository_history_payloads (repo_id, payload_hash, payload) VALUES ($1, 'stale', '{}'::jsonb)",
+            "INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload_hash) VALUES ($1, 'private', 1000000, 'stale-entry', 'stale')",
+        ] {
+            admin
+                .execute_raw(sea_orm::Statement::from_sql_and_values(
+                    sea_orm::DatabaseBackend::Postgres,
+                    sql,
+                    [repo.record.id.clone().into()],
+                ))
+                .await
+                .unwrap();
+        }
         assert_eq!(history_entry_count(admin.as_ref()).await, entry_count + 1);
         super::super::projection_read_models::reset_live_projection_read_models(
             worker.as_ref(),

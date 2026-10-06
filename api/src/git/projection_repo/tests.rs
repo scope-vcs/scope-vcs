@@ -590,6 +590,23 @@ fn git_backed_projection_borrows_blob_without_loading_it() {
             .unwrap()
             .unwrap()
     );
+
+    let hidden = git_command_output(
+        Command::new("git")
+            .arg("--git-dir")
+            .arg(&source)
+            .args(["hash-object", "-w", "--stdin"]),
+        Some(b"hidden"),
+    )
+    .unwrap();
+    let hidden = String::from_utf8(hidden).unwrap().trim().to_string();
+    assert!(git_object_exists(&repo, &hidden));
+    let staging = root.path().join("staging.git");
+    crate::git::request_refs::clone_without_shared_objects(&repo, &staging, "cloning staging")
+        .unwrap();
+    assert!(!staging.join("objects/info/alternates").exists());
+    assert!(git_object_exists(&staging, oid));
+    assert!(!git_object_exists(&staging, &hidden));
 }
 
 fn projection_tree_path(path: &str) -> GitTreePath {

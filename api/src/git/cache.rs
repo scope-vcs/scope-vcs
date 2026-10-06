@@ -299,6 +299,20 @@ impl GitRepoHandle {
         self.dependencies.push(dependency);
         self
     }
+
+    pub(crate) fn share(&self) -> Result<GitRepoHandle, ApiError> {
+        let mut users = cache_users()
+            .lock()
+            .map_err(|_| ApiError::internal_message("repository Git cache registry is poisoned"))?;
+        *users.entry(self.path.clone()).or_default() += 1;
+        Ok(GitRepoHandle {
+            path: self.path.clone(),
+            _lease: RepositoryGitCacheLease {
+                path: self.path.clone(),
+            },
+            dependencies: Vec::new(),
+        })
+    }
 }
 
 impl Deref for GitRepoHandle {

@@ -10,7 +10,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder,
+    QueryOrder, sea_query::Query,
 };
 use std::collections::BTreeMap;
 
@@ -195,8 +195,17 @@ where
         for row in entities::file_change::Entity::find()
             .filter(entities::file_change::Column::RepoId.eq(repo_id.to_string()))
             .filter(
-                entities::file_change::Column::CommitId
-                    .is_in(commit_rows.iter().map(|row| row.id.clone())),
+                entities::file_change::Column::CommitId.in_subquery(
+                    Query::select()
+                        .column(entities::logical_commit::Column::Id)
+                        .from(entities::logical_commit::Entity)
+                        .and_where(entities::logical_commit::Column::RepoId.eq(repo_id.to_string()))
+                        .and_where(
+                            entities::logical_commit::Column::Ordinal
+                                .gte(usize_to_i64(commits_from, "commit ordinal")?),
+                        )
+                        .to_owned(),
+                ),
             )
             .order_by_asc(entities::file_change::Column::CommitId)
             .order_by_asc(entities::file_change::Column::Ordinal)
@@ -233,8 +242,19 @@ where
         for row in entities::visibility_change::Entity::find()
             .filter(entities::visibility_change::Column::RepoId.eq(repo_id.to_string()))
             .filter(
-                entities::visibility_change::Column::ChangeSetId
-                    .is_in(set_rows.iter().map(|row| row.id.clone())),
+                entities::visibility_change::Column::ChangeSetId.in_subquery(
+                    Query::select()
+                        .column(entities::visibility_change_set::Column::Id)
+                        .from(entities::visibility_change_set::Entity)
+                        .and_where(
+                            entities::visibility_change_set::Column::RepoId.eq(repo_id.to_string()),
+                        )
+                        .and_where(
+                            entities::visibility_change_set::Column::Ordinal
+                                .gte(usize_to_i64(change_sets_from, "change set ordinal")?),
+                        )
+                        .to_owned(),
+                ),
             )
             .order_by_asc(entities::visibility_change::Column::ChangeSetId)
             .order_by_asc(entities::visibility_change::Column::Ordinal)

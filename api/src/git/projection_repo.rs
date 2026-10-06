@@ -408,7 +408,10 @@ pub(crate) async fn projection_bare_repo_for_state(
         }
         None
     };
-    let canonical_path = canonical_repo.as_deref().map(FsPath::to_path_buf);
+    let canonical_for_build = canonical_repo
+        .as_ref()
+        .map(GitRepoHandle::share)
+        .transpose()?;
     let cache_root = state.repository_engine.cache_root().to_path_buf();
     let cache_key = projection_cache_key(Some(incarnation), projection);
     let repo_path = cache_root.join(format!("{cache_key}.git"));
@@ -436,15 +439,14 @@ pub(crate) async fn projection_bare_repo_for_state(
                         &incarnation_for_build,
                         &projection_for_build,
                     )?;
+                    let canonical_path = canonical_for_build.as_deref();
                     projection_bare_repo_with_loader(
                         &cache_root_for_build,
                         Some(&incarnation_for_build),
                         &projection_for_build,
-                        canonical_path.as_deref(),
+                        canonical_path,
                         prefix,
-                        |blob| {
-                            source_content_bytes_from_repo(&state, blob, canonical_path.as_deref())
-                        },
+                        |blob| source_content_bytes_from_repo(&state, blob, canonical_path),
                     )
                     .map(|_| ())
                 })

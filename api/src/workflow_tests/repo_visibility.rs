@@ -45,8 +45,9 @@ fn add_mixed_commit(state: &AppState, repo: &mut Repository) {
 }
 
 #[tokio::test]
-async fn public_files_use_the_projected_blob() {
+async fn public_files_follow_the_projection_not_the_live_tree() {
     let state = test_state_with_repo();
+    cache_test_jwks(&state);
     mutate_repo(&state, |repo| {
         let public = source_blob(&state, "public readme");
         repo.graph.commits.extend([
@@ -66,11 +67,26 @@ async fn public_files_use_the_projected_blob() {
                 vec![history_change(
                     "/README.md",
                     Visibility::Private,
-                    Some(public),
+                    Some(public.clone()),
                     Some(source_blob(&state, "private draft")),
                 )],
             ),
         ]);
+        repo.visibility_change_sets.push(
+            scope_domain::visibility_changes::VisibilityChangeSet::new(
+                "vchg_hide".into(),
+                Some("rv1".into()),
+                Some("rv2".into()),
+                test_owner_id(),
+                vec![scope_domain::visibility_changes::VisibilityChange {
+                    path: ScopePath::parse("/README.md").unwrap(),
+                    old_visibility: Visibility::Public,
+                    new_visibility: Visibility::Private,
+                    current_content: Some(public),
+                }],
+            )
+            .unwrap(),
+        );
     })
     .await;
     let rebuilt = drain_outbox(&state, "repo-visibility-test").await;
@@ -85,22 +101,20 @@ async fn public_files_use_the_projected_blob() {
         None,
     )
     .await;
-    assert_eq!(files.status(), StatusCode::OK);
-    assert_eq!(response_json(files).await[0]["path"], "/README.md");
-    let response = api_request(
+    assert_eq!(files.status(), StatusCode::NOT_FOUND);
+    let owner = api_request(
         router(state),
         "GET",
         "/v1/repos/owner/repo/files/content?path=README.md",
-        None,
+        Some(&bearer_header()),
         None,
     )
     .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response_json(response).await;
-    assert_eq!(body["path"], "/README.md");
-    assert_eq!(body["size_bytes"], "public readme".len());
-    assert_eq!(body["content"]["kind"], "text");
-    assert_eq!(body["content"]["text"], "public readme");
+    assert_eq!(owner.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(owner).await["content"]["text"],
+        "private draft"
+    );
 }
 
 #[tokio::test]
