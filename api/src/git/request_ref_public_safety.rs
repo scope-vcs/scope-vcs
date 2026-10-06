@@ -40,11 +40,10 @@ pub(super) async fn ensure_public_request_ref_is_public_safe(
     ensure_public_request_branch_is_based_on_public_main(staging_repo, new_head_oid)?;
     let commit_oids = commits_after(staging_repo, PUBLIC_REQUEST_BASE_REF, new_head_oid)?;
     validated_public_parent_oids(staging_repo, &commit_oids)?;
-    let commits = changed_paths_by_commit(staging_repo, commit_oids)?;
+    let commits = validated_changed_paths_by_commit(staging_repo, commit_oids)?;
     let history = changed_path_history(git, state, &commits).await?;
     let policy = PublicRequestPaths::new(&git.repo_config, &public_visible_paths, &history);
-    for (commit_oid, paths) in &commits {
-        validate_pushed_tree(staging_repo, commit_oid)?;
+    for (_, paths) in &commits {
         ensure_public_request_commit_paths(&policy, paths)?;
     }
     Ok(public_main_oid)
@@ -70,12 +69,11 @@ pub(crate) async fn validate_public_request_merge_range(
         return Err(ApiError::conflict(PUBLIC_MAIN_MOVED_ERROR));
     }
 
-    let changed = changed_paths_by_commit(staging_repo, commit_oids)?;
+    let changed = validated_changed_paths_by_commit(staging_repo, commit_oids)?;
     let history = changed_path_history(git, state, &changed).await?;
     let policy = PublicRequestPaths::new(&git.repo_config, &public_visible_paths, &history);
     let mut commits = Vec::with_capacity(changed.len());
     for (commit_oid, paths) in &changed {
-        validate_pushed_tree(staging_repo, commit_oid)?;
         let changed_paths = ensure_public_request_commit_paths(&policy, paths)?;
         commits.push(public_request_commit_fact(
             staging_repo,
@@ -282,13 +280,14 @@ fn git_commit_oid(staging_repo: &FsPath, revision: &str) -> Result<String, ApiEr
     .map(|oid| oid.trim().to_string())
 }
 
-fn changed_paths_by_commit(
+fn validated_changed_paths_by_commit(
     staging_repo: &FsPath,
     commit_oids: Vec<String>,
 ) -> Result<Vec<(String, Vec<String>)>, ApiError> {
     commit_oids
         .into_iter()
         .map(|commit_oid| {
+            validate_pushed_tree(staging_repo, &commit_oid)?;
             let paths = public_request_changed_paths(staging_repo, &commit_oid)?;
             Ok((commit_oid, paths))
         })
