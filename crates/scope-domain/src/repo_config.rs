@@ -261,7 +261,7 @@ mod tests {
             br#"{
                 "kind": "scope.repo-config",
                 "version": 2,
-                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"members"}],
+                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
                 "files": {
                     "default": "private",
                     "rules": [
@@ -293,7 +293,7 @@ mod tests {
             br#"{
                 "kind": "scope.repo-config",
                 "version": 2,
-                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"members"}],
+                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
                 "files": {
                     "default": "public",
                     "rules": []
@@ -348,7 +348,7 @@ mod tests {
         }
         let error = RepoConfig::parse_json(
             br#"{
-                "kind":"scope.repo-config","version":2,"views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"members"}],
+                "kind":"scope.repo-config","version":2,"views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
                 "files":{"default":"private","rules":[]},
                 "history":{"rewrites":[{"path":"/.scope/RULES.md","action":"redact-public-history"}]}
             }"#,
@@ -388,7 +388,7 @@ mod tests {
             br#"{
                 "kind": "scope.repo-config",
                 "version": 2,
-                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"members"}],
+                "views":[{"id":"public","name":"Public","includes":[],"readers":"anyone"},{"id":"private","name":"Private","includes":"all","readers":"assigned"}],
                 "files": {
                     "default": "private",
                     "rules": []
