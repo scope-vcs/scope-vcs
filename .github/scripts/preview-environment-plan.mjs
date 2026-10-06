@@ -190,14 +190,39 @@ export function databaseBootstrap(rolePasswords, migratorPassword) {
   };
 }
 
-const SECRET_NAME = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/;
+const GIT_SEGMENT_SETTINGS = ['SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY', 'SCOPE_GIT_SEGMENT_CHUNK_BYTES',
+  'SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES'];
+const BLOB_REFERENCES = ['SCOPE_BUCKET_ACCESS_KEY_ID', 'SCOPE_BUCKET_ENDPOINT', 'SCOPE_BUCKET_NAME', 'SCOPE_BUCKET_REGION'];
+const MEDIA_BUCKET = ['SCOPE_MEDIA_BUCKET_ACCESS_KEY_ID', 'SCOPE_MEDIA_BUCKET_ENDPOINT', 'SCOPE_MEDIA_BUCKET_NAME',
+  'SCOPE_MEDIA_BUCKET_REGION'];
+export const KEPT_STAGING_SETTINGS = Object.freeze({
+  api: ['PORT', 'RAILPACK_CONFIG_FILE', 'SCOPE_CACHE_BACKEND', 'SCOPE_DATA_DIR', 'SCOPE_GIT_COMMAND_TIMEOUT_SECS',
+    'SCOPE_GIT_RECEIVE_PACK_CONCURRENCY', 'SCOPE_GIT_SEGMENT_INGEST_CONCURRENCY', 'SCOPE_MEDIA_PUBLIC_URL',
+    'SCOPE_OBJECT_STORE_MAX_BYTES', 'SCOPE_RUNTIME_TELEMETRY_INTERVAL_SECS', ...GIT_SEGMENT_SETTINGS, ...BLOB_REFERENCES],
+  web: ['PAGENT_ENABLED', 'SCOPE_API_INTERNAL_URL', 'SCOPE_CLI_INSTALL_URL', 'VITE_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL',
+    'VITE_CLERK_SIGN_IN_URL', 'VITE_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL', 'VITE_CLERK_SIGN_UP_URL',
+    'VITE_SCOPE_WEB_FORCE_SIGNED_OUT'],
+  cache: ['SCOPE_CACHE_BACKEND', 'SCOPE_CACHE_BUCKET_ACCESS_KEY_ID', 'SCOPE_CACHE_BUCKET_ENDPOINT',
+    'SCOPE_CACHE_BUCKET_FORCE_PATH_STYLE', 'SCOPE_CACHE_BUCKET_NAME', 'SCOPE_CACHE_BUCKET_REGION'],
+  'run-worker': ['SCOPE_CLOUD_RUNS_ENABLED', 'SCOPE_CLOUD_RUNS_MAX_CONCURRENCY', 'SCOPE_DATA_DIR',
+    'SCOPE_GIT_COMPACTION_TIMEOUT_SECS', 'SCOPE_OBJECT_STORE_MAX_BYTES', 'SCOPE_RUNTIME_TELEMETRY_INTERVAL_SECS',
+    'SCOPE_RUNTIME_VERSION', ...GIT_SEGMENT_SETTINGS, ...BLOB_REFERENCES],
+  'media-api': MEDIA_BUCKET,
+  'media-worker': MEDIA_BUCKET,
+  'git-router': ['SCOPE_REPO_ROUTER_BACKEND', 'SCOPE_REPO_ROUTER_READ_REPLICAS'],
+  'cli-downloads': ['SCOPE_API_PUBLIC_URL', 'SCOPE_CLI_BINARY_PATH', 'SCOPE_CLI_PUBLIC_URL'],
+  maintenance: ['SCOPE_BUCKET_REGION'],
+  postgres: ['PGDATA', 'PGDATABASE', 'PGHOST', 'PGPORT', 'PGUSER', 'POSTGRES_DB', 'POSTGRES_USER', 'SSL_CERT_DAYS',
+    'RAILWAY_DEPLOYMENT_DRAINING_SECONDS'],
+});
 
-export function copiedSecrets(managed, current) {
-  return Object.fromEntries(Object.entries(current)
-    .map(([serviceId, values]) => [serviceId, Object.entries(values)
-      .filter(([name, value]) => SECRET_NAME.test(name) && !(name in (managed[serviceId] ?? {})) &&
-        typeof value === 'string' && value !== '' && !value.includes('${{'))
-      .map(([name]) => name)])
+export function unreviewedStagingVariables(manifest, managed, current) {
+  const ids = serviceIds(manifest);
+  return Object.fromEntries(Object.entries(ids)
+    .map(([component, serviceId]) => {
+      const kept = new Set([...(KEPT_STAGING_SETTINGS[component] ?? []), ...Object.keys(managed[serviceId] ?? {})]);
+      return [serviceId, Object.keys(current[serviceId] ?? {}).filter((name) => !kept.has(name))];
+    })
     .filter(([, names]) => names.length > 0));
 }
 

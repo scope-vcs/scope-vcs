@@ -3,8 +3,8 @@ import { createPrivateKey, createPublicKey } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
-  RUNTIME_ROLES, changedVariables, databaseBootstrap, generatePreviewSecrets, previewEnvironmentName,
-  previewVariables, rolePassword, serviceIds,
+  KEPT_STAGING_SETTINGS, RUNTIME_ROLES, changedVariables, databaseBootstrap, generatePreviewSecrets, previewEnvironmentName,
+  previewVariables, rolePassword, serviceIds, unreviewedStagingVariables,
 } from './preview-environment-plan.mjs';
 import { bootstrapPreviewDatabase, deletePreviewEnvironment, ensurePreviewEnvironment } from './preview-environment.mjs';
 
@@ -29,6 +29,7 @@ function stagingCopy() {
     SCOPE_GIT_COMMAND_TIMEOUT_SECS: '60',
   });
   Object.assign(variables[ids.web], { PAGENT_SOURCE_TOKEN: 'pagent-staging-token', PAGENT_ENABLED: 'false' });
+  Object.assign(variables[ids['run-worker']], { SCOPE_ANALYTICS_DSN: 'postgresql://reader:staging-pw@${{scope-postgres.RAILWAY_PRIVATE_DOMAIN}}/x' });
   Object.assign(variables[ids.cache], { SCOPE_CACHE_GRANT_PUBLIC_KEY: 'staging-public-key' });
   Object.assign(variables[ids['media-api']], { SCOPE_MEDIA_GRANT_PUBLIC_KEY: 'staging-public-key' });
   Object.assign(variables[ids.maintenance], { SCOPE_BUCKET_NAME: 'scope-blobs-staging' });
@@ -202,7 +203,7 @@ test('creates, configures, and bootstraps a preview copy of staging once', () =>
   assert.deepEqual(railway.state.deployments, [ids.postgres, ids.maintenance, ids.maintenance]);
   assert.equal(railway.state.bootstraps.length, 1);
   assert.equal(railway.state.bootstraps[0].environmentId, preview);
-  assert.doesNotMatch(JSON.stringify(railway.state.copy.variables), /re_staging_secret|pagent-staging-token/);
+  assert.doesNotMatch(JSON.stringify(railway.state.copy.variables), /re_staging_secret|pagent-staging-token|staging-pw/);
   assert.equal(railway.state.copy.variables[ids.api].SCOPE_BUCKET_ACCESS_KEY_ID, '${{scope-blobs.ACCESS_KEY_ID}}');
   assert.equal(railway.state.copy.variables[ids.api].SCOPE_GIT_COMMAND_TIMEOUT_SECS, '60');
   assert.equal(railway.state.copy.variables[ids.web].PAGENT_ENABLED, 'false');
@@ -237,4 +238,27 @@ test('deletes only the pull request preview and tolerates an absent one', () => 
   assert.deepEqual(deletePreviewEnvironment({ manifest, pullRequest: '7', railway }), { deleted: true, name: 'pr-7', environmentId: preview });
   assert.deepEqual(railway.state.environments.map(({ name }) => name), ['staging']);
   assert.deepEqual(deletePreviewEnvironment({ manifest, pullRequest: '7', railway }), { deleted: false, name: 'pr-7' });
+});
+
+test('previews keep only reviewed staging settings and their own variables', () => {
+  const managed = previewVariables({ manifest, domains: { api: 'a', web: 'w', cache: 'c', 'git-router': 'g', 'media-api': 'm' },
+    current: {}, secrets: generatePreviewSecrets(), clerk });
+  const current = stagingCopy().variables;
+  current[ids.api].SCOPE_FUTURE_SETTING = 'unreviewed';
+  const removed = unreviewedStagingVariables(manifest, managed, current);
+  assert.deepEqual(removed[ids.api].sort(), ['SCOPE_FUTURE_SETTING', 'SCOPE_RESEND_API_KEY']);
+  assert.deepEqual(removed[ids.web], ['PAGENT_SOURCE_TOKEN']);
+  assert.deepEqual(removed[ids['run-worker']], ['SCOPE_ANALYTICS_DSN']);
+  assert.equal(removed[ids.maintenance], undefined);
+  for (const names of Object.values(KEPT_STAGING_SETTINGS)) {
+    assert.ok(names.every((name) => !/SECRET|TOKEN|PASSWORD|PRIVATE/.test(name)), names.join(','));
+  }
+});
+
+test('stops provisioning when Railway cannot list a service variables', () => {
+  const railway = fakeRailway();
+  const query = railway.query;
+  railway.query = (text, variables) => text.startsWith('query PreviewVariables') ? { variables: null } : query(text, variables);
+  assert.throws(() => ensure(railway), /did not return preview variables/);
+  assert.ok(!railway.state.calls.some(([name]) => name.startsWith('mutation PreviewVariable')));
 });

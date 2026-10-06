@@ -133,8 +133,10 @@ password, one login per runtime role, encryption keys, grant signing keys, and
 the operator token, and points bucket credentials at the environment's own
 bucket instances. It switches Railway tracing on for every service except
 Postgres, with automatic instrumentation for `scope-web`, before anything
-deploys. Staging secrets Railway does copy, such as the Resend and PAGENT
-keys, are deleted so pull request code cannot read them. Clerk uses the
+deploys. Railway also copies staging's unsealed variables. The preview keeps
+only the settings reviewed in `KEPT_STAGING_SETTINGS` and its own variables and
+deletes the rest, so pull request code cannot read staging credentials; add a new
+non-secret staging setting to that list before previews need it. Clerk uses the
 repository's development key pair. Existing
 keys and passwords are never regenerated once set. The private maintenance
 service applies `runtime-roles.mjs --roles-only` with the administrator login,

@@ -7,7 +7,7 @@ import { loadDeploymentManifest } from './railway-artifact.mjs';
 import { readRailway } from './railway-read.mjs';
 import { RAILWAY_MUTATION_TIMEOUT_MS, retryRailway } from './railway-retry.mjs';
 import {
-  RUNTIME_ROLES, assertPreviewEnvironment, changedVariables, copiedSecrets, databaseBootstrap, databaseBootstrapPending,
+  RUNTIME_ROLES, assertPreviewEnvironment, changedVariables, unreviewedStagingVariables, databaseBootstrap, databaseBootstrapPending,
   generatePreviewSecrets, previewDomains, previewEnvironmentName, previewVariables, releaseEnvironmentIds,
   rolePassword, serviceIds,
 } from './preview-environment-plan.mjs';
@@ -64,9 +64,14 @@ function environmentConfig(railway, environmentId) {
 }
 
 function currentVariables(railway, projectId, environmentId, ids) {
-  return Object.fromEntries(Object.values(ids).map((serviceId) => [serviceId,
-    railway.query('query PreviewVariables($projectId:String!,$environmentId:String!,$serviceId:String!){variables(projectId:$projectId,environmentId:$environmentId,serviceId:$serviceId,unrendered:true)}',
-      { projectId, environmentId, serviceId }).variables ?? {}]));
+  return Object.fromEntries(Object.values(ids).map((serviceId) => {
+    const { variables } = railway.query('query PreviewVariables($projectId:String!,$environmentId:String!,$serviceId:String!){variables(projectId:$projectId,environmentId:$environmentId,serviceId:$serviceId,unrendered:true)}',
+      { projectId, environmentId, serviceId });
+    if (!variables || typeof variables !== 'object' || Array.isArray(variables)) {
+      throw new Error('Railway did not return preview variables.');
+    }
+    return [serviceId, variables];
+  }));
 }
 
 function upsertVariables(railway, projectId, environmentId, changes) {
@@ -85,7 +90,7 @@ function deleteVariables(railway, projectId, environmentId, names) {
       retryRailway(() => {
         const data = railway.mutate('mutation PreviewVariableDelete($input:VariableDeleteInput!){variableDelete(input:$input)}',
           { input: { projectId, environmentId, serviceId, name } });
-        if (data?.variableDelete !== true) throw new Error('Railway did not confirm removing a copied staging secret.');
+        if (data?.variableDelete !== true) throw new Error('Railway did not confirm removing a copied staging variable.');
       });
     }
   }
@@ -161,7 +166,7 @@ export function ensurePreviewEnvironment({ manifest, pullRequest, clerk, registr
   const current = currentVariables(railway, projectId, environmentId, ids);
   const desired = previewVariables({ manifest, domains, current, secrets, clerk });
   const managed = previewVariables({ manifest, domains, current: {}, secrets, clerk });
-  const removed = copiedSecrets(managed, current);
+  const removed = unreviewedStagingVariables(manifest, managed, current);
   const changes = changedVariables(desired, current);
   deleteVariables(railway, projectId, environmentId, removed);
   upsertVariables(railway, projectId, environmentId, changes);
