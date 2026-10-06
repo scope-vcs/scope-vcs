@@ -112,3 +112,35 @@ test('predecessor shutdown targets exact old deployment and refuses gate identit
   assert.deepEqual(stopped, ['old']);
   assert.throws(() => stopGatePredecessors({ ...base, deploymentId: 'gate', predecessorIds: ['gate'] }, { railway }), /Refusing/);
 });
+test('predecessor shutdown accepts Railway removing the predecessor while the stop is rejected', async () => {
+  const { stopGatePredecessors } = await import('./railway-maintenance-gate.mjs');
+  const removal = (statusAfterStop) => {
+    let status = 'SUCCESS';
+    const stops = [];
+    const railway = (query, { id }) => {
+      if (query.startsWith('query')) return { data: { deployment: { id, serviceId: base.serviceId, status } } };
+      stops.push(id);
+      status = statusAfterStop;
+      throw new Error('Command failed: railway api mutation MaintenanceStopPredecessor\nRailway API returned 1 GraphQL error(s)');
+    };
+    return { railway, stops };
+  };
+  for (const status of ['REMOVING', 'REMOVED']) {
+    const { railway, stops } = removal(status);
+    stopGatePredecessors({ ...base, deploymentId: 'gate', predecessorIds: ['old'] }, { railway });
+    assert.deepEqual(stops, ['old']);
+  }
+  const running = removal('SUCCESS');
+  assert.throws(() => stopGatePredecessors({ ...base, deploymentId: 'gate', predecessorIds: ['old'] }, { railway: running.railway }), /GraphQL error/);
+});
+test('predecessor shutdown does not stop a deployment Railway is already removing', async () => {
+  const { stopGatePredecessors } = await import('./railway-maintenance-gate.mjs');
+  const stops = [];
+  const railway = (query, { id }) => {
+    if (query.startsWith('query')) return { data: { deployment: { id, serviceId: base.serviceId, status: 'REMOVING' } } };
+    stops.push(id);
+    return { data: { deploymentStop: true } };
+  };
+  stopGatePredecessors({ ...base, deploymentId: 'gate', predecessorIds: ['old'] }, { railway });
+  assert.deepEqual(stops, []);
+});

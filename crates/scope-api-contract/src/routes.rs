@@ -50,6 +50,10 @@ routes! {
             => "repoGitHubSetupCheck";
         REPO_GITHUB_WORKFLOW_RUNS = "/v1/repos/{owner}/{repo}/github/workflow-runs"
             => "repoGitHubWorkflowRuns";
+        REPO_GITHUB_WORKFLOW_RUN = "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}"
+            => "repoGitHubWorkflowRun";
+        REPO_GITHUB_WORKFLOW_JOB_LOG = "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}/jobs/{job_id}/log"
+            => "repoGitHubWorkflowJobLog";
         REPO_GITHUB_RUN_IMPORT = "/v1/repos/{owner}/{repo}/github/run-import"
             => "repoGitHubRunImport";
         GITHUB_SETUP = "/v1/github/setup" => "githubSetup";

@@ -14,12 +14,14 @@ minimumReleaseAgeExclude:
   - '@tanstack/start-server-core@1.169.39'
   - '@tanstack/start-storage-context@1.167.36'
   - '@tanstack/store@0.11.2'
+  - source-map-js@1.2.2
 trustPolicy: no-downgrade
 trustPolicyExclude:
   - semver@6.3.1
 blockExoticSubdeps: true
 overrides:
   lodash-es: 4.18.1
+  source-map-js: 1.2.2
 supportedArchitectures:
   os:
     - current

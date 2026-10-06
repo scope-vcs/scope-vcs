@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import { ArrowDown } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { StepLogs } from './repository-run-detail-controller'
+import { RUN_LOG_TEXT_CLASS, runLogPreClass } from './run-log-layout'
 import type { RepositoryRunStepResponse } from '@/api/types.generated'
 
 const FOLLOW_THRESHOLD_PX = 32
@@ -62,7 +63,7 @@ export function RunLogView({
   return (
     <section
       aria-label={`${step.name} output`}
-      className="scroll-mt-9 bg-background pl-4 pr-4 pt-2 font-mono text-xs leading-5 text-foreground sm:pl-[3.75rem]"
+      className={cn('scroll-mt-9 pl-4 pr-4 pt-2 sm:pl-[3.75rem]', RUN_LOG_TEXT_CLASS)}
       id={id}
       ref={sectionRef}
     >
@@ -88,12 +89,7 @@ export function RunLogView({
           </Button>
         </p>
       ) : null}
-      <pre
-        className={cn(
-          'mt-1 overflow-x-auto break-words pb-4',
-          wrap ? 'whitespace-pre-wrap' : 'whitespace-pre',
-        )}
-      >
+      <pre className={runLogPreClass(wrap)}>
         {text.length > 0
           ? text
           : <span className="text-muted-foreground">{logState.loading ? 'Loading output…' : 'No output yet.'}</span>}

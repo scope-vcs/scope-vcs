@@ -23,7 +23,7 @@ use crate::{
     state::AppState,
     use_cases::{
         github_check_results, github_pushes, github_setup_checks::publish_setup_check_change,
-        github_workflow_runs, run_inspection::require_repo_member,
+        github_workflow_jobs, github_workflow_runs, run_inspection::require_repo_member,
     },
 };
 use axum::{
@@ -429,6 +429,22 @@ pub(crate) async fn receive_github_webhook(
                     commit_oid,
                     error = %error.operator_diagnostic(),
                     "reading GitHub checks for a delivery failed"
+                );
+            }
+        }
+        GitHubWebhookEvent::WorkflowJobChanged {
+            github_repository_id,
+            job_id,
+        } => {
+            if let Err(error) =
+                github_workflow_jobs::refresh_job_for_delivery(&state, github_repository_id, job_id)
+                    .await
+            {
+                tracing::warn!(
+                    github_repository_id,
+                    job_id,
+                    error = %error.operator_diagnostic(),
+                    "reading a GitHub job for a delivery failed"
                 );
             }
         }

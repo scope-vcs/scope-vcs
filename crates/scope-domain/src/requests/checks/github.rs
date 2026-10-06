@@ -16,6 +16,20 @@ pub enum GitHubCheckStatus {
     Pending,
 }
 
+const STAGE_WAITING: u8 = 0;
+const STAGE_RUNNING: u8 = 1;
+const STAGE_COMPLETED: u8 = 2;
+
+impl GitHubCheckStatus {
+    pub fn stage(self) -> u8 {
+        match self {
+            Self::Completed => STAGE_COMPLETED,
+            Self::InProgress => STAGE_RUNNING,
+            Self::Queued | Self::Waiting | Self::Requested | Self::Pending => STAGE_WAITING,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GitHubCheckConclusion {

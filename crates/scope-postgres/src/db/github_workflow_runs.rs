@@ -6,7 +6,10 @@ use super::{
     },
 };
 use crate::error::PostgresError;
-use scope_domain::{github_workflow_runs::GitHubWorkflowRun, requests::GitHubBranch};
+use scope_domain::{
+    github_workflow_jobs::GitHubJobsRead, github_workflow_runs::GitHubWorkflowRun,
+    requests::GitHubBranch,
+};
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Value};
 
 const SELECT_RUN: &str = "run.github_run_id, run.workflow_name, run.head_branch, run.head_oid,
@@ -72,6 +75,24 @@ struct ListedRow {
     run: WorkflowRunRow,
     request_id: Option<String>,
 }
+
+#[derive(FromQueryResult)]
+struct DetailRow {
+    #[sea_orm(nested)]
+    listed: ListedRow,
+    jobs_read_attempt: Option<i32>,
+    jobs_read_at_unix: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubWorkflowRunDetailRead {
+    pub read: GitHubWorkflowRunRead,
+    pub jobs_read: Option<GitHubJobsRead>,
+}
+
+const REQUEST_JOIN: &str = "LEFT JOIN scope_requests request
+      ON request.repo_id = run.repo_id
+     AND run.head_branch = 'scope/requests/' || request.id";
 
 impl RepositoryStore {
     pub async fn save_github_workflow_run(
@@ -214,9 +235,7 @@ impl RepositoryStore {
             format!(
                 "SELECT {SELECT_RUN}, request.id AS request_id
                    FROM scope_github_workflow_runs run
-                   LEFT JOIN scope_requests request
-                     ON request.repo_id = run.repo_id
-                    AND run.head_branch = 'scope/requests/' || request.id
+                   {REQUEST_JOIN}
                   WHERE run.repo_id = $1 AND run.github_repository_id = $2{filters}
                   ORDER BY coalesce(run.run_started_at_unix, run.github_updated_at_unix) DESC,
                            run.github_run_id DESC
@@ -228,14 +247,130 @@ impl RepositoryStore {
         .await
         .map_err(PostgresError::internal)?
         .into_iter()
-        .map(|row| {
-            let run = row.run.into_domain()?;
-            let request_id = row
-                .request_id
-                .filter(|request_id| run.request_id().as_deref() == Some(request_id));
-            Ok(GitHubWorkflowRunRead { run, request_id })
-        })
+        .map(ListedRow::into_read)
         .collect()
+    }
+
+    pub async fn github_workflow_run(
+        &self,
+        repo_id: &str,
+        github_repository_id: u64,
+        github_run_id: u64,
+    ) -> Result<Option<GitHubWorkflowRunDetailRead>, PostgresError> {
+        DetailRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "SELECT {SELECT_RUN}, request.id AS request_id,
+                        run.jobs_read_attempt, run.jobs_read_at_unix
+                   FROM scope_github_workflow_runs run
+                   {REQUEST_JOIN}
+                  WHERE run.repo_id = $1 AND run.github_repository_id = $2
+                    AND run.github_run_id = $3"
+            ),
+            [
+                repo_id.into(),
+                u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
+                u64_to_i64(github_run_id, "GitHub workflow run id")?.into(),
+            ],
+        ))
+        .one(self.db.as_ref())
+        .await
+        .map_err(PostgresError::internal)?
+        .map(|row| {
+            let jobs_read = match (row.jobs_read_attempt, row.jobs_read_at_unix) {
+                (Some(attempt), Some(read_at)) => Some(GitHubJobsRead {
+                    run_attempt: i32_to_u32(attempt, "GitHub jobs read attempt")?,
+                    read_at_unix: i64_to_u64(read_at, "GitHub jobs read time")?,
+                }),
+                _ => None,
+            };
+            Ok(GitHubWorkflowRunDetailRead {
+                read: row.listed.into_read()?,
+                jobs_read,
+            })
+        })
+        .transpose()
+    }
+
+    pub async fn replace_github_jobs_read(
+        &self,
+        repo_id: &str,
+        github_run_id: u64,
+        expected: Option<GitHubJobsRead>,
+        next: Option<GitHubJobsRead>,
+    ) -> Result<bool, PostgresError> {
+        let attempt = |read: Option<GitHubJobsRead>| {
+            read.map(|read| u32_to_i32(read.run_attempt, "GitHub jobs read attempt"))
+                .transpose()
+        };
+        let read_at = |read: Option<GitHubJobsRead>| {
+            read.map(|read| u64_to_i64(read.read_at_unix, "GitHub jobs read time"))
+                .transpose()
+        };
+        let result = self
+            .db
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "UPDATE scope_github_workflow_runs
+                    SET jobs_read_attempt = $3, jobs_read_at_unix = $4
+                  WHERE repo_id = $1 AND github_run_id = $2
+                    AND jobs_read_attempt IS NOT DISTINCT FROM $5
+                    AND jobs_read_at_unix IS NOT DISTINCT FROM $6",
+                [
+                    repo_id.into(),
+                    u64_to_i64(github_run_id, "GitHub workflow run id")?.into(),
+                    attempt(next)?.into(),
+                    read_at(next)?.into(),
+                    attempt(expected)?.into(),
+                    read_at(expected)?.into(),
+                ],
+            ))
+            .await
+            .map_err(PostgresError::internal)?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    pub async fn github_workflow_runs_for_check_suites(
+        &self,
+        repo_id: &str,
+        github_repository_id: u64,
+        check_suite_ids: &[u64],
+    ) -> Result<Vec<(u64, u64)>, PostgresError> {
+        if check_suite_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let suites = check_suite_ids
+            .iter()
+            .map(|id| u64_to_i64(*id, "GitHub check suite id"))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.db
+            .query_all_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT check_suite_id, github_run_id FROM scope_github_workflow_runs
+                  WHERE repo_id = $1 AND github_repository_id = $2
+                    AND check_suite_id = ANY($3)",
+                [
+                    repo_id.into(),
+                    u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
+                    suites.into(),
+                ],
+            ))
+            .await
+            .map_err(PostgresError::internal)?
+            .into_iter()
+            .map(|row| {
+                let suite: i64 = row
+                    .try_get("", "check_suite_id")
+                    .map_err(PostgresError::internal)?;
+                let run: i64 = row
+                    .try_get("", "github_run_id")
+                    .map_err(PostgresError::internal)?;
+                Ok((
+                    i64_to_u64(suite, "GitHub check suite id")?,
+                    i64_to_u64(run, "GitHub workflow run id")?,
+                ))
+            })
+            .collect()
     }
 
     pub async fn github_workflow_names(
@@ -352,6 +487,16 @@ pub(super) async fn branch_workflow_runs<C: ConnectionTrait>(
     .into_iter()
     .map(WorkflowRunRow::into_domain)
     .collect()
+}
+
+impl ListedRow {
+    fn into_read(self) -> Result<GitHubWorkflowRunRead, PostgresError> {
+        let run = self.run.into_domain()?;
+        let request_id = self
+            .request_id
+            .filter(|request_id| run.request_id().as_deref() == Some(request_id));
+        Ok(GitHubWorkflowRunRead { run, request_id })
+    }
 }
 
 impl WorkflowRunRow {

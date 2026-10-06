@@ -269,6 +269,20 @@ impl crate::state::AppState {
         self.publish_repo_event(event, "GitHub workflow run").await;
     }
 
+    pub(crate) async fn publish_github_workflow_run_change(
+        &self,
+        incarnation: &RepositoryIncarnation,
+        github_run_id: u64,
+    ) {
+        let event = RepoChangeEvent {
+            repo_id: incarnation.repository_id().to_string(),
+            incarnation_id: incarnation.incarnation_id().to_string(),
+            version: 0,
+            kind: RepoChangeKind::GitHubWorkflowRunChanged { github_run_id },
+        };
+        self.publish_repo_event(event, "GitHub workflow job").await;
+    }
+
     pub(crate) async fn publish_run_change(
         &self,
         repo_id: &str,
