@@ -77,7 +77,7 @@ test('repository components retain drafts, previews and pending actions across r
     const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false }, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
     await page.evaluate((github) => window.setFixtureGitHub(github), becamePublic)
     await checks.getByText('This GitHub repository became public, so Scope stopped sending requests outside the Public view there.', { exact: false }).waitFor()
-    await checks.getByRole('button', { name: 'Allow them', exact: true }).click()
+    await checks.getByRole('button', { name: 'Allow these requests', exact: true }).click()
     await checks.getByText('Public on GitHub: everything Scope pushes here is public.', { exact: true }).waitFor()
     assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
       { confirmPublicGitHub: { owner: 'owner', repo: 'demo' } },

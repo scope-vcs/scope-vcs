@@ -164,7 +164,7 @@ export function RepoCiSection({
                 variant="secondary"
               >
                 {pending === 'confirm' && spinner}
-                <span>Allow them</span>
+                <span>Allow these requests</span>
               </Button>
             )}
           </div>
