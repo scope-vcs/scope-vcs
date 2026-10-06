@@ -5,16 +5,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct VisibilityHistoryPage {
-    pub audience: HistoryAudience,
+    pub view: ViewId,
     pub entries: Vec<HistoryEntrySummary>,
     pub next_cursor: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum HistoryAudience {
-    Private,
-    Public,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -38,8 +31,8 @@ pub enum HistoryEntryKind {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HistoryVisibilitySummary {
-    pub made_public_count: usize,
-    pub made_private_count: usize,
+    pub entered_count: usize,
+    pub left_count: usize,
 }
 
 pub fn visibility_history(

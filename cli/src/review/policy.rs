@@ -4,7 +4,7 @@ use scope_domain::{
     repo_visibility::{self, ToggleResult, VisibilityNodeKind, VisibilityTarget},
 };
 
-use scope_domain::repo_visibility::ReviewVisibility;
+use scope_domain::repo_visibility::ReviewLabel;
 
 pub fn toggle_node_visibility(
     config: &mut RepoConfig,
@@ -14,8 +14,8 @@ pub fn toggle_node_visibility(
     repo_visibility::toggle_visibility_target(config, target_for_node(tree, node_id))
 }
 
-pub fn tree_visibilities(config: &RepoConfig, tree: &ReviewTree) -> Vec<ReviewVisibility> {
-    let mut visibilities = vec![ReviewVisibility::Mixed; tree.nodes().len()];
+pub fn tree_visibilities(config: &RepoConfig, tree: &ReviewTree) -> Vec<ReviewLabel> {
+    let mut visibilities = vec![ReviewLabel::Mixed; tree.nodes().len()];
     for node in tree.nodes().iter().rev() {
         let children = if node.kind == ReviewNodeKind::File {
             &[][..]
@@ -24,8 +24,8 @@ pub fn tree_visibilities(config: &RepoConfig, tree: &ReviewTree) -> Vec<ReviewVi
         };
         visibilities[node.id] = children
             .iter()
-            .map(|child| visibilities[*child])
-            .reduce(ReviewVisibility::combine)
+            .map(|child| visibilities[*child].clone())
+            .reduce(ReviewLabel::combine)
             .unwrap_or_else(|| {
                 repo_visibility::target_visibility(
                     config,

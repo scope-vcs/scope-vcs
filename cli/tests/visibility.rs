@@ -1,7 +1,10 @@
 mod support;
 
 use scope_cli::repo_config::{repo_config_path, write_worktree_scope_repo_config_with_base};
-use scope_domain::repo_config::{ConfigVisibility, RepoConfig, RepoConfigVisibilityRule};
+use scope_domain::{
+    repo_config::{RepoConfig, RepoConfigFileRule},
+    views::ViewId,
+};
 use serde_json::Value;
 use std::{fs, path::Path};
 use support::*;
@@ -14,15 +17,15 @@ fn fixture() -> (TempDir, RepoConfig) {
     fs::write(dir.path().join("docs/guide.md"), "guide").unwrap();
     fs::write(dir.path().join("docs/private/key"), "private").unwrap();
     fs::write(dir.path().join(".scope/runs/check.yml"), "workflow").unwrap();
-    let mut config = RepoConfig::with_default_visibility(ConfigVisibility::Private);
-    config.visibility.rules = vec![
-        RepoConfigVisibilityRule {
+    let mut config = RepoConfig::with_default_view(ViewId::private());
+    config.files.rules = vec![
+        RepoConfigFileRule {
             path: "/docs/**".to_string(),
-            visibility: ConfigVisibility::Public,
+            view: ViewId::public(),
         },
-        RepoConfigVisibilityRule {
+        RepoConfigFileRule {
             path: "/docs/private/**".to_string(),
-            visibility: ConfigVisibility::Private,
+            view: ViewId::private(),
         },
     ];
     write_worktree_scope_repo_config_with_base(dir.path(), &config).unwrap();
@@ -52,20 +55,21 @@ fn show_explain_and_validate_agree_with_domain_and_preserve_local_state() {
     let before_state = fs::read(&state_path).unwrap();
     let show = json(dir.path(), &["visibility", "show"]);
     let paths = show["paths"].as_array().unwrap();
-    for (path, visibility, rule) in [
+    for (path, view, rule) in [
         ("/README.md", "private", "inherited default"),
         ("/docs/guide.md", "public", "inherited /docs/**"),
         ("/docs/private/key", "private", "inherited /docs/private/**"),
         ("/.scope/runs/check.yml", "private", "forced private"),
     ] {
         let shown = paths.iter().find(|entry| entry["path"] == path).unwrap();
-        assert_eq!(shown["visibility"], visibility);
+        assert_eq!(shown["view"], view);
         assert_eq!(shown["rule"], rule);
         let explained = json(dir.path(), &["visibility", "explain", path]);
         assert_eq!(explained["path"], *shown);
     }
     let directory = json(dir.path(), &["visibility", "explain", "docs"]);
-    assert_eq!(directory["path"]["visibility"], "mixed");
+    assert_eq!(directory["path"]["mixed"], true);
+    assert!(directory["path"].get("view").is_none());
     let validated = json(dir.path(), &["visibility", "validate"]);
     assert_eq!(validated["valid"], true);
     assert_eq!(fs::read(config_path).unwrap(), before_config);
@@ -102,7 +106,7 @@ fn inspection_and_noninteractive_edit_do_not_initialize_missing_state() {
 #[test]
 fn preview_compares_proposed_policy_without_saving_or_changing_managed_paths() {
     let (dir, mut candidate) = fixture();
-    candidate.visibility.default = ConfigVisibility::Public;
+    candidate.files.default = ViewId::public();
     let candidate_dir = TempDir::new("visibility-proposal");
     let candidate_path = candidate_dir.path().join("repo.json");
     fs::write(&candidate_path, serde_json::to_vec(&candidate).unwrap()).unwrap();
@@ -127,8 +131,8 @@ fn preview_compares_proposed_policy_without_saving_or_changing_managed_paths() {
     let changes = result["changes"].as_array().unwrap();
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0]["path"], "/README.md");
-    assert_eq!(changes[0]["before"], "private");
-    assert_eq!(changes[0]["after"], "public");
+    assert_eq!(changes[0]["before_view"], "private");
+    assert_eq!(changes[0]["after_view"], "public");
     assert_eq!(fs::read(config_path).unwrap(), original);
 }
 
@@ -136,7 +140,7 @@ fn preview_compares_proposed_policy_without_saving_or_changing_managed_paths() {
 fn validate_reports_invalid_configuration_as_usage_without_rewriting_it() {
     let (dir, _) = fixture();
     let config_path = repo_config_path(dir.path()).unwrap();
-    let invalid = b"{\"visibility\":{\"default\":\"public\",\"rules\":[{\"path\":\"../secret\",\"visibility\":\"private\"}]}}";
+    let invalid = b"{\"kind\":\"scope.repo-config\",\"version\":2,\"views\":[{\"id\":\"public\",\"name\":\"Public\",\"includes\":[],\"readers\":\"anyone\"},{\"id\":\"private\",\"name\":\"Private\",\"includes\":\"all\",\"readers\":\"members\"}],\"files\":{\"default\":\"public\",\"rules\":[{\"path\":\"../secret\",\"view\":\"private\"}]}}";
     fs::write(&config_path, invalid).unwrap();
     let output = scope_command(dir.path())
         .args(["--json", "visibility", "validate"])
@@ -154,7 +158,7 @@ fn show_and_explain_preserve_filename_identity_and_escape_terminal_control_chara
     fs::write(dir.path().join(name), "private").unwrap();
     let result = json(dir.path(), &["visibility", "explain", name]);
     assert_eq!(result["path"]["path"], format!("/{name}"));
-    assert_eq!(result["path"]["visibility"], "private");
+    assert_eq!(result["path"]["view"], "private");
     assert_eq!(result["present_in_worktree"], true);
     let output = scope_command(dir.path())
         .args(["visibility", "explain", name])
@@ -187,12 +191,11 @@ fn log_lists_the_visibility_feed_without_a_checkout_and_passes_the_cursor() {
                 get(|Query(query): Query<HashMap<String, String>>| async move {
                     assert_eq!(query.get("feed").unwrap(), "visibility");
                     assert_eq!(query.get("before").unwrap(), "cursor-1");
-                    assert!(!query.contains_key("audience"));
+                    assert!(!query.contains_key("view"));
                     Json(serde_json::json!({
                         "feed": "visibility",
-                        "audience": "public",
+                        "view": "public",
                         "repo_id": "repo-1",
-                        "view_key": "public",
                         "generation": "g1",
                         "head_oid": null,
                         "entries": [{
@@ -204,7 +207,7 @@ fn log_lists_the_visibility_feed_without_a_checkout_and_passes_the_cursor() {
                             "author": null,
                             "message": "Made 3 files public",
                             "file_change_count": 3,
-                            "visibility_summary": {"made_public_count": 3, "made_private_count": 0}
+                            "visibility_summary": {"entered_count": 3, "left_count": 0}
                         }],
                         "next_cursor": "cursor-2"
                     }))
@@ -237,7 +240,7 @@ fn log_lists_the_visibility_feed_without_a_checkout_and_passes_the_cursor() {
     assert_success(&output, "visibility log --json");
     let document: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(document["command"], "visibility.log");
-    assert_eq!(document["result"]["audience"], "public");
+    assert_eq!(document["result"]["view"], "public");
     assert_eq!(document["result"]["entries"][0]["author"], Value::Null);
     assert_eq!(document["result"]["next_cursor"], "cursor-2");
 }
