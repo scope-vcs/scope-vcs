@@ -25,6 +25,7 @@ export function VisibilityLogSection({ params }: { params: RepoParams }) {
                 entries={page.entries}
                 params={params}
                 search={updateViewSearch('private', repo.access.view)}
+                view="private"
               />
               <div className="flex justify-end text-xs">
                 <HistoryMenu

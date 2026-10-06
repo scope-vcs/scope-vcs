@@ -5,9 +5,8 @@ use crate::error::PostgresError;
 use scope_domain::content::SourceBlob;
 use scope_domain::{
     policy::ScopePath,
-    projection::{
-        FileChange, LogicalCommit, Projection, ProjectionViewKey, SourceGraph, project_graph,
-    },
+    projection::{FileChange, LogicalCommit, Projection, SourceGraph, project_graph},
+    views::{ViewId, Views},
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 use sea_orm::{
@@ -34,8 +33,8 @@ pub struct RepositoryProjectionSource {
 }
 
 impl RepositoryProjectionSource {
-    pub fn project(&self, view_key: ProjectionViewKey) -> Projection {
-        project_graph(&self.graph, &self.visibility_change_sets, view_key)
+    pub fn project(&self, views: &Views, view: &ViewId) -> Projection {
+        project_graph(&self.graph, &self.visibility_change_sets, views, view)
     }
 }
 

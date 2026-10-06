@@ -6,7 +6,7 @@ use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
     content_ref::ContentRef,
-    policy::{ScopePath, Visibility},
+    policy::ScopePath,
     projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repository::{
         RepoLifecycleState, Repository, RepositoryIncarnation,
@@ -15,6 +15,7 @@ use scope_domain::{
         credentials::GitPushToken,
         git::GitHead,
     },
+    views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseTransaction, TransactionTrait};
 use std::time::Duration;
@@ -37,7 +38,7 @@ async fn fixture() -> MetadataStore {
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let owner = user("owner");
     let member = user("member");
-    let mut repo = Repository::new(&owner, "repo", Visibility::Public, "repoi_repo").unwrap();
+    let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_repo").unwrap();
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
     for index in 0..COMMITS {
         let oid = format!("{:040x}", index + 1);
@@ -59,7 +60,7 @@ async fn fixture() -> MetadataStore {
                     git_file_mode: "100644".into(),
                     size_bytes: 100,
                 }),
-                visibility: Visibility::Public,
+                label: ViewId::public(),
             }],
         });
     }

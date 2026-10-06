@@ -8,9 +8,7 @@ use crate::{
     persistence::ensure_private_dir,
     state::AppState,
 };
-use scope_domain::{
-    repository::{RepoLifecycleState, RepositoryIncarnation},
-};
+use scope_domain::repository::{RepoLifecycleState, RepositoryIncarnation};
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{
     fs,
