@@ -4872,10 +4872,10 @@ Repository: {"type": "git", "url": "http://github.com/mozilla/source-map.git"}
 LICENSE: text 6ead954f967233375b98f6d8363bdb27ddc7d945a83f88c20952e7ca0fa8675d
 
 ==============================================================================
-source-map-js 1.2.1
+source-map-js 1.2.2
 Declared license: BSD-3-Clause
 Selected license: BSD-3-Clause
-Source: https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz
+Source: https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.2.tgz
 
 Published author metadata: "Valentin 7rulnik Semirulnik <v7rulnik@gmail.com>"
 Repository: "7rulnik/source-map-js"
