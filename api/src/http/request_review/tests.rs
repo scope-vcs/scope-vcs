@@ -424,6 +424,7 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
     let files = request_revision_commit_files(
         raw_repo,
         &repo.policy,
+        repo.repo_config.views(),
         owner_access.clone(),
         &revision,
         &root,
@@ -436,9 +437,15 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
     assert_eq!(file.new_oid.as_deref(), Some(blob.as_str()));
     assert_eq!(file.kind, scope_api_contract::FileChangeKind::Added);
     let public = RepositoryAccess::public();
-    let public_files =
-        request_revision_commit_files(raw_repo, &repo.policy, public.clone(), &revision, &root)
-            .unwrap();
+    let public_files = request_revision_commit_files(
+        raw_repo,
+        &repo.policy,
+        repo.repo_config.views(),
+        public.clone(),
+        &revision,
+        &root,
+    )
+    .unwrap();
     assert_eq!(public_files.commit.files[0].path, "root.txt");
 
     repo.policy
@@ -458,13 +465,21 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
         assert!(!listing.visible.iter().any(|commit| commit.oid == root));
     }
     assert!(
-        request_revision_commit_files(raw_repo, &repo.policy, public.clone(), &revision, &root)
-            .is_err()
+        request_revision_commit_files(
+            raw_repo,
+            &repo.policy,
+            repo.repo_config.views(),
+            public.clone(),
+            &revision,
+            &root,
+        )
+        .is_err()
     );
     assert!(
         request_revision_commit_files(
             raw_repo,
             &repo.policy,
+            repo.repo_config.views(),
             owner_access.clone(),
             &revision,
             &root

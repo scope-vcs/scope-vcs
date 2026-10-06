@@ -264,6 +264,7 @@ pub(crate) async fn get_request_revision_commit_file_diff(
             let inspected = request_revision_commit_files(
                 raw_repo,
                 &repo_for_inspection.policy,
+                repo_for_inspection.repo_config.views(),
                 access,
                 revision,
                 &commit_oid,
@@ -340,8 +341,13 @@ fn request_revision_commits(
             identity_only_indexes.push(index);
             continue;
         }
-        let commit =
-            inspect_request_commit(raw_repo, &repo.policy, access.clone(), &commit_oids[index])?;
+        let commit = inspect_request_commit(
+            raw_repo,
+            &repo.policy,
+            repo.repo_config.views(),
+            access.clone(),
+            &commit_oids[index],
+        )?;
         metadata_incomplete |= commit.inspection == RequestRevisionInspectionState::Incomplete;
         if let Some(mut summary) = commit.commit {
             file_budget_incomplete |= truncate_commit_files(&mut summary, &mut remaining_files);
@@ -356,6 +362,7 @@ fn request_revision_commits(
         let identity_only = inspect_request_commits_identity_only(
             raw_repo,
             &repo.policy,
+            repo.repo_config.views(),
             access.clone(),
             &identity_only_oids,
         )?;
