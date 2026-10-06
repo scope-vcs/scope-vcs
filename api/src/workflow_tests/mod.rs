@@ -57,6 +57,7 @@ mod cli_auth;
 mod clone_access;
 mod cloud_runs;
 mod custom_views;
+mod custom_views_requests;
 mod dependencies;
 mod device_login;
 mod fake_github;
@@ -793,6 +794,7 @@ fn push_intent_request_json_with_base(
         "head_oid": head_oid,
         "base_config_hash": base_config_hash,
         "config": config,
+        "view": "private",
     })
     .to_string()
 }

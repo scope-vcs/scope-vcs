@@ -15,15 +15,15 @@ const FILES: &[(&str, &str)] = &[
     ("ops/run.sh", "echo run\n"),
 ];
 
-fn member_id() -> String {
+pub(super) fn member_id() -> String {
     scope_postgres::db::scope_user_id_for_auth_identity("clerk", MEMBER_SUBJECT)
 }
 
-fn member_bearer() -> String {
+pub(super) fn member_bearer() -> String {
     bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL)
 }
 
-fn view(id: &str) -> ViewId {
+pub(super) fn view(id: &str) -> ViewId {
     ViewId::parse(id).unwrap()
 }
 
@@ -68,7 +68,7 @@ fn agent_and_ops_config() -> RepoConfig {
     )
 }
 
-async fn stored_repo(state: &AppState) -> Repository {
+pub(super) async fn stored_repo(state: &AppState) -> Repository {
     find_repo(state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap()
@@ -102,7 +102,7 @@ async fn member_request(state: &AppState, method: &str, uri: &str) -> StatusCode
     .status()
 }
 
-async fn fixture(label: &str) -> (AppState, String, TempGitRepo) {
+pub(super) async fn fixture(label: &str) -> (AppState, String, TempGitRepo) {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
     let source = temp_git_repo(label);
@@ -152,7 +152,12 @@ async fn fixture(label: &str) -> (AppState, String, TempGitRepo) {
     (state, head, source)
 }
 
-fn git_with_member(repo: Option<&FsPath>, remote: &str, args: &[&str], action: &str) -> String {
+pub(super) fn git_with_member(
+    repo: Option<&FsPath>,
+    remote: &str,
+    args: &[&str],
+    action: &str,
+) -> String {
     let header = format!(
         "http.{remote}.extraHeader=Authorization: {}",
         member_bearer()
@@ -303,6 +308,7 @@ async fn custom_views_define_label_assign_and_read_through_git() {
                 "head_oid": head,
                 "base_config_hash": repo_config_fingerprint(&agent_and_ops_config()).unwrap(),
                 "config": crowded,
+                "view": "private",
             })
             .to_string(),
         ),
@@ -465,7 +471,7 @@ async fn a_member_on_a_narrower_view_cannot_read_or_push_through_the_full_view()
     assert!(!private_read.status.success());
     for (git_view, expected) in [
         ("private", StatusCode::NOT_FOUND),
-        ("agent", StatusCode::FORBIDDEN),
+        ("agent", StatusCode::NOT_FOUND),
     ] {
         assert_eq!(
             member_request(

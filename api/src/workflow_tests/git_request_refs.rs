@@ -22,7 +22,7 @@ const PRIVATE_REQUEST_REF: &str = "refs/heads/private-request";
 mod cache;
 mod checks;
 mod cleanup;
-mod github_checks;
+pub(super) mod github_checks;
 mod github_setup_and_runs;
 mod http;
 mod landed;
