@@ -377,10 +377,14 @@ impl ViewFold<'_> {
             match (old_visible, new_visible) {
                 (false, true)
                     if !source_update.is_some_and(|commit| {
-                        commit
-                            .changes
-                            .iter()
-                            .any(|source_change| source_change.path == change.path)
+                        commit.changes.iter().any(|source_change| {
+                            source_change.path == change.path
+                                && before.shows(
+                                    self.view,
+                                    &source_change.path,
+                                    &source_change.label,
+                                )
+                        })
                     }) =>
                 {
                     if let Some(content) = &change.current_content {

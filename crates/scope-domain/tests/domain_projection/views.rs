@@ -346,3 +346,59 @@ fn removing_a_view_waits_until_its_members_and_files_are_reassigned() {
     assert_eq!(set.views.as_ref().unwrap().after, Views::builtin());
     assert_eq!(member_paths(&repo), ["/README.md"]);
 }
+
+#[test]
+fn a_relabel_hidden_from_its_push_still_enters_when_the_view_starts_including_its_label() {
+    let mut first = commit(
+        "rv1",
+        "first",
+        added("/README.md", ViewId::public(), "readme"),
+    );
+    first
+        .changes
+        .push(added("/tool.rs", ViewId::private(), "tool"));
+    let source = graph(vec![
+        first,
+        commit(
+            "rv2",
+            "second",
+            added("/tool.rs", view_id("ops"), "tool v2"),
+        ),
+    ]);
+    let before = views_with(&[("ops", "Ops", &[]), ("agent", "Agent", &["public"])]);
+    let after = views_with(&[("ops", "Ops", &[]), ("agent", "Agent", &["public", "ops"])]);
+    let push = VisibilityChangeSet::new(
+        "relabel".to_string(),
+        Some("rv2".to_string()),
+        Some("rv2".to_string()),
+        "owner".to_string(),
+        vec![scope_domain::visibility_changes::VisibilityChange {
+            path: path("/tool.rs"),
+            old_label: ViewId::private(),
+            new_label: view_id("ops"),
+            current_content: Some(blob("tool v2")),
+        }],
+        Some(ViewsTransition {
+            before: before.clone(),
+            after: after.clone(),
+        }),
+    )
+    .unwrap();
+
+    let projection = project_graph(&source, &[push], &before, &view_id("agent"));
+
+    let boundary = projection
+        .commits
+        .iter()
+        .find(|commit| commit.visibility_change_set_id.as_deref() == Some("relabel"))
+        .expect("the push's boundary commit");
+    assert_eq!(
+        boundary
+            .changes
+            .iter()
+            .map(|change| (change.path.as_str(), change.new_content.clone()))
+            .collect::<Vec<_>>(),
+        [("/tool.rs", Some(blob("tool v2")))]
+    );
+    assert_eq!(projection.visible_paths(), ["/README.md", "/tool.rs"]);
+}
