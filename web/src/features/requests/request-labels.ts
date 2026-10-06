@@ -1,4 +1,5 @@
 import type { BadgeVariant } from '@/components/ui/badge'
+import { viewName } from '../../api/repo-views'
 import { shortOid } from '../../lib/short-oid'
 import type {
   RequestCheckEvaluationState,
@@ -62,8 +63,12 @@ export function requestAuthorRoleLabel(request: RequestLabelSource) {
   }
 }
 
-export function requestAudienceLabel(request: RequestLabelSource) {
-  return request.audience === 'Private' ? 'Private request' : 'Public request'
+export function requestViewLabel(request: RequestLabelSource) {
+  return `${viewName(request.view)} request`
+}
+
+export function requestMainLabel(request: RequestLabelSource) {
+  return `${viewName(request.view).toLowerCase()} main`
 }
 
 export function eventKindLabel(kind: RequestEventKind) {
