@@ -4,7 +4,7 @@ use crate::{
         GitRepo, branch_config_value, current_branch, git_remote_fetch_url, git_remote_names,
         git_remote_push_url, scope_api_url_from_git_config, scope_git_origin,
     },
-    git_transport::{DEFAULT_SCOPE_REMOTE, GitAccess, ScopeRemote, scope_path_origin},
+    git_transport::{DEFAULT_SCOPE_REMOTE, ScopeRemote, scope_path_origin},
 };
 use anyhow::Context;
 use std::{env, path::PathBuf, process::Command};
@@ -152,9 +152,10 @@ fn resolve(
             {
                 return Err(CliError::usage(format!("remote {name} fetches and pushes different Scope repositories; correct its URLs before pushing")).into());
             }
-            if push.access != GitAccess::Permissioned {
+            if !push.view.is_private() {
                 return Err(CliError::usage(format!(
-                    "remote {name} must use a permissioned push URL"
+                    "remote {name} must push to the full view address {}",
+                    push.full_view_url()
                 ))
                 .into());
             }
@@ -226,7 +227,7 @@ fn resolve(
             .collect();
         if candidates.is_empty() {
             return Err(CliError::usage(
-                "no Scope Git remote has a permissioned push URL for the selected repository",
+                "no Scope Git remote pushes to the full view of the selected repository",
             )
             .into());
         }
@@ -243,7 +244,7 @@ fn target_for_repository(api_url: &str, owner: &str, repo: &str) -> anyhow::Resu
     let mut origin = reqwest::Url::parse(api_url)?;
     origin.set_path("");
     let url = origin.join(&scope_api_contract::routes::git_repo(
-        "permissioned",
+        scope_domain::views::ViewId::PRIVATE,
         owner,
         repo,
     ))?;
@@ -308,7 +309,7 @@ mod tests {
             "remote",
             "add",
             "origin",
-            "https://scope.example/git/permissioned/owner/two",
+            "https://scope.example/git/private/owner/two",
         ]);
         for push in [false, true] {
             let error =
@@ -331,7 +332,7 @@ mod tests {
             "remote",
             "add",
             "scope",
-            "https://token@old.scope.example/git/permissioned/owner/repo",
+            "https://token@old.scope.example/git/private/owner/repo",
         ]);
         let error = resolve(Some(&repo), "https://api.scope.example", None, None, false)
             .unwrap_err()
@@ -348,13 +349,13 @@ mod tests {
             "remote",
             "add",
             "scope",
-            "https://scope.example/git/permissioned/owner/one",
+            "https://scope.example/git/private/owner/one",
         ]);
         dir.run_git([
             "remote",
             "add",
             "origin",
-            "https://scope.example/git/permissioned/owner/two",
+            "https://scope.example/git/private/owner/two",
         ]);
         dir.run_git(["config", "branch.main.remote", "origin"]);
         assert_eq!(
@@ -420,7 +421,7 @@ mod tests {
             "remote",
             "add",
             "scope",
-            "https://git.staging.example/git/permissioned/owner/repo",
+            "https://git.staging.example/git/private/owner/repo",
         ]);
         assert!(
             resolve(

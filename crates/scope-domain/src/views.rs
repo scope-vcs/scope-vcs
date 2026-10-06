@@ -203,13 +203,19 @@ impl Views {
             )));
         }
         for definition in &definitions {
-            if let ViewIncludes::Some(included) = &definition.includes
-                && let Some(missing) = included.iter().find(|id| !ids.contains(id))
-            {
-                return Err(DomainError::invalid_input(format!(
-                    "view {} includes unknown view {missing}",
-                    definition.id
-                )));
+            if let ViewIncludes::Some(included) = &definition.includes {
+                if let Some(missing) = included.iter().find(|id| !ids.contains(id)) {
+                    return Err(DomainError::invalid_input(format!(
+                        "view {} includes unknown view {missing}",
+                        definition.id
+                    )));
+                }
+                if included.iter().any(ViewId::is_private) {
+                    return Err(DomainError::invalid_input(format!(
+                        "view {} cannot include the full view",
+                        definition.id
+                    )));
+                }
             }
         }
         let (builtin, custom): (Vec<_>, Vec<_>) = definitions
@@ -390,6 +396,10 @@ mod tests {
             (
                 "unknown include",
                 with(vec![custom("agent", "Agent", &["missing"])]),
+            ),
+            (
+                "includes the full view",
+                with(vec![custom("agent", "Agent", &["private"])]),
             ),
             ("second full view", {
                 let mut extra = custom("agent", "Agent", &[]);

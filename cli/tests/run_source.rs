@@ -90,7 +90,7 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
                 "remote",
                 "add",
                 "scope",
-                &format!("{}/git/permissioned/owner/repo", server.api_url),
+                &format!("{}/git/private/owner/repo", server.api_url),
             ],
         );
         let config = &server.config;
@@ -162,7 +162,7 @@ fn run_start_reports_why_scope_refuses_the_run() {
             "remote",
             "add",
             "scope",
-            &format!("{}/git/permissioned/owner/repo", server.api_url),
+            &format!("{}/git/private/owner/repo", server.api_url),
         ],
     );
     let output = server

@@ -1,3 +1,4 @@
+import { repoViews, type RepoViews } from '../../api/repo-views'
 import type { RepoLiveState } from '@/api/types'
 import type { RepoChangeEvent } from '@/api/types.generated'
 import {
@@ -12,6 +13,7 @@ import type { SubscribeToRepoChanges } from './repo-live-refresh'
 type RepoLayoutContextValue = {
   live: RepoLiveState
   subscribe: SubscribeToRepoChanges
+  views: RepoViews
 }
 
 const RepoLayoutContext = createContext<RepoLayoutContextValue | null>(null)
@@ -25,7 +27,8 @@ export function RepoLayoutProvider({
   live: RepoLiveState
   subscribe: SubscribeToRepoChanges
 }) {
-  const value = useMemo(() => ({ live, subscribe }), [live, subscribe])
+  const views = useMemo(() => repoViews(live.repo.views), [live.repo.views])
+  const value = useMemo(() => ({ live, subscribe, views }), [live, subscribe, views])
   return (
     <RepoLayoutContext.Provider value={value}>
       {children}
@@ -35,6 +38,10 @@ export function RepoLayoutProvider({
 
 export function useRepoLayout() {
   return useRepoLayoutContext().live
+}
+
+export function useRepoViews() {
+  return useRepoLayoutContext().views
 }
 
 export function useRepoChangeSubscription(

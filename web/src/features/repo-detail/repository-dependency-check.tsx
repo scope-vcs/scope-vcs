@@ -5,6 +5,7 @@ import { loadRepositoryDependencies } from '@/routes/-repo-dependency-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useCallback } from 'react'
 import { RepositoryDependencyCheckView } from './repository-dependency-check-view'
+import { useRepoViews } from './repo-layout-context'
 import { dependencyCheckPresentation } from './repository-dependency-model'
 import {
   repositoryDependencyIdentity,
@@ -21,6 +22,7 @@ export function RepositoryDependencyCheck({
   repo: RepoSummaryResponse
 }) {
   const { isLoaded, userId } = useAuth()
+  const views = useRepoViews()
   const { owner, repo: repoName } = params
   const identity = isLoaded && repo.lifecycle_state === 'Ready'
     ? repositoryDependencyIdentity(repo, userId ?? null)
@@ -46,6 +48,7 @@ export function RepositoryDependencyCheck({
         refreshing: resource.refreshing,
         response: resource.value,
       })}
+      views={views}
     />
   )
 }

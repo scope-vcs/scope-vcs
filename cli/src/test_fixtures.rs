@@ -36,6 +36,7 @@ pub fn repository_response(overrides: Value) -> Value {
             can_manage_members: false,
             can_delete_repo: false,
         },
+        views: scope_api_contract::view_definitions(&scope_domain::views::Views::builtin()),
         open_request_count: 0,
     })
     .unwrap();

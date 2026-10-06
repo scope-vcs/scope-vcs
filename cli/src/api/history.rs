@@ -21,14 +21,6 @@ pub struct HistoryEntrySummary {
     pub visibility_summary: HistoryVisibilitySummary,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum HistoryEntryKind {
-    Push,
-    MergedRequest,
-    VisibilityChange,
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HistoryVisibilitySummary {
     pub entered_count: usize,

@@ -428,7 +428,20 @@ fn inspect_remote(
             return;
         }
     };
-    if summary.access.actor != api::RepositoryActor::Public {
+    let reads_full_view = match crate::repository_views::reads_full_view(&summary) {
+        Ok(reads_full_view) => reads_full_view,
+        Err(error) => {
+            record(
+                report,
+                "repository views",
+                DiagnosticState::Problem,
+                format!("{error:#}"),
+                None,
+            );
+            false
+        }
+    };
+    if reads_full_view {
         match api::get_repo_config(session, &target.owner, &target.repo) {
             Ok(server) => {
                 if let Some(visibility) = report
@@ -472,11 +485,7 @@ fn inspect_remote(
             ),
         }
     }
-    if report
-        .repository
-        .as_ref()
-        .is_some_and(|repo| repo.access.actor == api::RepositoryActor::Public)
-    {
+    if !reads_full_view {
         record(
             report,
             "runs",
@@ -560,7 +569,7 @@ fn check_fetch_auth(
             "--local",
             "--get-urlmatch",
             "credential.helper",
-            &target.permissioned_url,
+            &target.url(),
         ],
     );
     if helper.as_deref() == Some("!scope git-credential") {
@@ -576,8 +585,8 @@ fn check_fetch_auth(
             report,
             "git_authentication",
             DiagnosticState::Problem,
-            "Scope credential helper is missing for the permissioned remote".into(),
-            Some("Use scope pull to configure permissioned fetch authentication".into()),
+            "Scope credential helper is missing for the Scope remote".into(),
+            Some("Use scope pull to configure fetch authentication".into()),
         );
     }
 }

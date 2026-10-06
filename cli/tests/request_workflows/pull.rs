@@ -23,19 +23,23 @@ fn pull_fast_forwards_a_checked_out_request_alias_and_preserves_divergence() {
     detail["mergeability"]["current_main_oid"] = head.clone().into();
     detail["mergeability"]["request_head_oid"] = head.clone().into();
     let server = FixtureServer::with_request(detail);
-    let permissioned = format!("{}/git/permissioned/owner/repo", server.server.api_url);
-    run_git(dir.path(), ["remote", "add", "scope", &permissioned]);
+    let private_remote = format!("{}/git/private/owner/repo", server.server.api_url);
+    run_git(dir.path(), ["remote", "add", "scope", &private_remote]);
 
     let shim = TempDir::new("pull-git-transport");
     let shim_path = shim.path().join("git");
-    fs::write(&shim_path, r#"#!/bin/bash
+    fs::write(
+        &shim_path,
+        r#"#!/bin/bash
 for arg in "$@"; do
   if [[ "$arg" == "fetch" ]]; then
-    exec "$SCOPE_TEST_REAL_GIT" -c "url.$SCOPE_TEST_FILE_URL.insteadOf=$SCOPE_TEST_PERMISSIONED_URL" "$@"
+    exec "$SCOPE_TEST_REAL_GIT" -c "url.$SCOPE_TEST_FILE_URL.insteadOf=$SCOPE_TEST_PRIVATE_URL" "$@"
   fi
 done
 exec "$SCOPE_TEST_REAL_GIT" "$@"
-"#).unwrap();
+"#,
+    )
+    .unwrap();
     fs::set_permissions(&shim_path, fs::Permissions::from_mode(0o700)).unwrap();
     let existing_path = std::env::var_os("PATH").unwrap();
     let real_git = std::env::split_paths(&existing_path)
@@ -54,7 +58,7 @@ exec "$SCOPE_TEST_REAL_GIT" "$@"
         command
             .env("PATH", &test_path)
             .env("SCOPE_TEST_REAL_GIT", &real_git)
-            .env("SCOPE_TEST_PERMISSIONED_URL", &permissioned)
+            .env("SCOPE_TEST_PRIVATE_URL", &private_remote)
             .env("SCOPE_TEST_FILE_URL", &file_url);
         command
     };
