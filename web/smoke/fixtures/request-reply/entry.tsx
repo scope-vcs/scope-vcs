@@ -11,7 +11,7 @@ const calls: CreateReplyInput[] = []
 Object.assign(window, { calls })
 
 const params = { owner: 'dev', repo: 'demo', request_id: 'request' }
-const live = { repo: { id: 'repo', owner_handle: 'dev', name: 'demo', access: { actor: 'Owner' } } } as RepoLiveState
+const live = { repo: { id: 'repo', owner_handle: 'dev', name: 'demo', views: [{ id: 'public', name: 'Public', includes: [], readers: 'anyone' as const }, { id: 'private', name: 'Private', includes: 'all' as const, readers: 'assigned' as const }], access: { actor: 'Owner', view: 'private' } } } as RepoLiveState
 const viewer = { handle: 'viewer', id: 'viewer' }
 const reply = (id: string, handle: string, body: string, position: number): RequestDiscussionReply => ({
   author: { handle, id: handle } as RequestDiscussionReply['author'],

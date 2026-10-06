@@ -588,7 +588,7 @@ impl FixtureServer {
 struct BareRepoTransport {
     shim: TempDir,
     public: String,
-    permissioned: String,
+    private_remote: String,
     file_url: String,
 }
 
@@ -597,11 +597,11 @@ impl BareRepoTransport {
     fn new(server: &FixtureServer, checkout: &std::path::Path, bare: &std::path::Path) -> Self {
         use std::os::unix::fs::PermissionsExt;
         let public = format!("{}/git/public/owner/repo", server.server.api_url);
-        let permissioned = format!("{}/git/permissioned/owner/repo", server.server.api_url);
+        let private_remote = format!("{}/git/private/owner/repo", server.server.api_url);
         run_git(checkout, ["remote", "add", "scope", &public]);
         run_git(
             checkout,
-            ["remote", "set-url", "--push", "scope", &permissioned],
+            ["remote", "set-url", "--push", "scope", &private_remote],
         );
         let shim = TempDir::new("request-git-transport");
         let shim_path = shim.path().join("git");
@@ -610,7 +610,7 @@ impl BareRepoTransport {
             r#"#!/bin/bash
 args=()
 for arg in "$@"; do
-  if [[ "$arg" == "$SCOPE_TEST_PUBLIC_URL" || "$arg" == "$SCOPE_TEST_PERMISSIONED_URL" ]]; then
+  if [[ "$arg" == "$SCOPE_TEST_PUBLIC_URL" || "$arg" == "$SCOPE_TEST_PRIVATE_URL" ]]; then
     args+=("$SCOPE_TEST_FILE_URL")
   else
     args+=("$arg")
@@ -624,7 +624,7 @@ exec "$SCOPE_TEST_REAL_GIT" "${args[@]}"
         Self {
             shim,
             public,
-            permissioned,
+            private_remote,
             file_url: reqwest::Url::from_directory_path(bare).unwrap().to_string(),
         }
     }
@@ -645,7 +645,7 @@ exec "$SCOPE_TEST_REAL_GIT" "${args[@]}"
             .env("PATH", test_path)
             .env("SCOPE_TEST_REAL_GIT", real_git)
             .env("SCOPE_TEST_PUBLIC_URL", &self.public)
-            .env("SCOPE_TEST_PERMISSIONED_URL", &self.permissioned)
+            .env("SCOPE_TEST_PRIVATE_URL", &self.private_remote)
             .env("SCOPE_TEST_FILE_URL", &self.file_url);
         command
     }

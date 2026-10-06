@@ -26,7 +26,7 @@ impl RepositoryStore {
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(None);
         };
-        if !access.access.is_maintainer() {
+        if !access.access.is_maintainer() || access.ensure_run_reader().is_err() {
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(None);
         }

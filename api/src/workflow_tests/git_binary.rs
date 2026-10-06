@@ -14,7 +14,7 @@ async fn real_git_binary_and_crlf_round_trip_across_first_and_published_pushes()
     commit_all(&source, "first binary push");
 
     let permissioned = |secret: &str| {
-        format!("{origin}/git/permissioned/{TEST_REPO_ID}").replacen(
+        format!("{origin}/git/private/{TEST_REPO_ID}").replacen(
             "http://",
             &format!("http://scope:{secret}@"),
             1,
@@ -48,7 +48,7 @@ async fn real_git_binary_and_crlf_round_trip_across_first_and_published_pushes()
 
     cache_test_jwks(&state);
     let bearer = bearer_header();
-    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     run_git(
         Some(&source),
         &["remote", "set-url", "scope", &remote],

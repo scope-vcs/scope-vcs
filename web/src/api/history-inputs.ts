@@ -1,5 +1,6 @@
 import { parseRepoParams } from './repo-params'
 import { parseFilePath } from './file-path-input'
+import { parseViewId } from './repo-views'
 import type {
   HistoryEntryDetailInput,
   HistoryEntryFileDiffInput,
@@ -39,21 +40,12 @@ export function parseHistoryEntryFileDiffInput(input: unknown): HistoryEntryFile
   }
 }
 
-export function parseHistoryView(
-  view: unknown,
-): ViewId {
-  if (typeof view === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(view)) {
-    return view
-  }
-  throw new Error(`Unsupported history view: ${String(view)}`)
-}
-
 function parseOptionalView(input: unknown): ViewId | null {
   const view = (input as { view?: unknown } | null)?.view
   if (view === undefined || view === null || view === '') {
     return null
   }
-  return parseHistoryView(view)
+  return parseViewId(view)
 }
 
 function parseOptionalBefore(input: unknown) {

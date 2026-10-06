@@ -29,6 +29,7 @@ pub struct RequestQueuePageQuery<'a> {
     pub section: RequestQueueSection,
     pub viewer_user_id: Option<&'a str>,
     pub access: RepositoryAccess,
+    pub request_views: Option<Vec<scope_domain::views::ViewId>>,
     pub search: Option<&'a str>,
     pub after: Option<&'a RequestQueueCursor>,
     pub limit: u64,
@@ -92,7 +93,11 @@ impl RequestStore {
             .transpose()?;
         let after_id = input.after.map(|cursor| cursor.request_id.clone());
         let limit = input.limit.min((REQUEST_LIST_MAX_PAGE_SIZE + 1) as u64);
-        let sql = queue_sql(input.access.clone(), input.viewer_user_id);
+        let sql = queue_sql(
+            input.access.clone(),
+            input.viewer_user_id,
+            input.request_views.as_deref(),
+        );
         let rows = QueueModel::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
@@ -292,12 +297,27 @@ fn escaped_search_pattern(value: &str) -> String {
     )
 }
 
-fn queue_sql(access: RepositoryAccess, viewer_user_id: Option<&str>) -> String {
+fn queue_sql(
+    access: RepositoryAccess,
+    viewer_user_id: Option<&str>,
+    request_views: Option<&[scope_domain::views::ViewId]>,
+) -> String {
+    let visible = request_queue_visibility_predicate(access, viewer_user_id);
+    let predicate = match request_views {
+        Some(views) => RequestListPredicate::All(vec![
+            visible,
+            RequestListPredicate::Any(
+                views
+                    .iter()
+                    .cloned()
+                    .map(RequestListPredicate::View)
+                    .collect(),
+            ),
+        ]),
+        None => visible,
+    };
     QUEUE_SQL
-        .replace(
-            "{request_visibility}",
-            &request_visibility_sql(&request_queue_visibility_predicate(access, viewer_user_id)),
-        )
+        .replace("{request_visibility}", &request_visibility_sql(&predicate))
         .replace("{queue_placement}", &queue_placement_sql())
 }
 

@@ -367,12 +367,16 @@ pub fn validate_start_request_view(
     view: ViewId,
 ) -> Result<(), DomainError> {
     if author_role == RequestActorRole::Public && view != ViewId::public() {
-        Err(DomainError::invalid_input(
+        return Err(DomainError::invalid_input(
             "public contributors can only create public requests",
-        ))
-    } else {
-        Ok(())
+        ));
     }
+    if !view.is_public() && !view.is_private() {
+        return Err(DomainError::invalid_input(
+            "requests target the public or private view until custom views accept requests",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_expected_head(request: &Request, expected: Option<&str>) -> Result<(), DomainError> {
@@ -436,6 +440,9 @@ mod tests {
             for view in [ViewId::public(), ViewId::private()] {
                 assert!(validate_start_request_view(role, view).is_ok());
             }
+            let error =
+                validate_start_request_view(role, ViewId::parse("agent").unwrap()).unwrap_err();
+            assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
         }
     }
 }

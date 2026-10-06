@@ -114,6 +114,7 @@ async fn start_request_for_author(
     let projection_repo = projection_bare_repo_for_state(
         state,
         &repo.incarnation(),
+        repo.repo_config.views(),
         &projection,
         repo.git_head.as_ref(),
         &repo.git_pack_spans,
@@ -280,7 +281,7 @@ async fn request_push_checkout(
         "clone public repo for request ref",
     )
     .unwrap();
-    let permissioned_remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let permissioned_remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     configure_bearer_header(
         &source,
         &permissioned_remote,

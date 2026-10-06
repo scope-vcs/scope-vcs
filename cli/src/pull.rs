@@ -1,19 +1,21 @@
 use crate::api::ApiSession;
 use crate::display::short_oid;
 use crate::{
-    api::{RepositoryActor, api_url, get_repo, get_repo_config, http_client},
+    api::{api_url, get_repo, http_client},
     git_repo::{
-        GitRepo, branch_config_value, current_branch, ensure_git_repo_ready, git_remote_fetch_url,
-        head_oid, install_scope_fetch_auth, run_git_in_repo, scope_git_origin,
+        GitRepo, branch_config_value, configure_scope_push_address, current_branch,
+        ensure_git_repo_ready, fetch_scope_remote_refs_with_bearer, git_remote_fetch_url, head_oid,
+        install_scope_fetch_auth, run_git_in_repo, scope_git_origin,
     },
     git_transport::{ScopeRemote, select_scope_fetch_remote},
     login::session_from_cache_or_browser,
     push::DEFAULT_SCOPE_BRANCH,
     repo_config::{
-        WorktreeRepoConfigPresence, WorktreeRepoConfigSync, default_scope_repo_config,
-        load_worktree_scope_repo_config, load_worktree_scope_repo_config_base_hash,
-        sync_missing_worktree_scope_repo_config, worktree_scope_repo_config_presence,
+        WorktreeRepoConfigPresence, WorktreeRepoConfigSync, load_worktree_scope_repo_config,
+        load_worktree_scope_repo_config_base_hash, sync_missing_worktree_scope_repo_config,
+        worktree_scope_repo_config_presence,
     },
+    repository_views::reader_repo_config,
 };
 use crate::{error::CliError, execution::emit};
 use anyhow::{Context, bail};
@@ -37,14 +39,12 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     )?;
 
     let result = (|| -> anyhow::Result<()> {
-        run_git_in_repo(
-            &repo,
-            &["remote", "set-url", &remote, &target.permissioned_url],
-        )?;
-        install_scope_fetch_auth(&repo.root, &target.permissioned_url, &api_url)?;
+        run_git_in_repo(&repo, &["remote", "set-url", &remote, &target.url()])?;
+        install_scope_fetch_auth(&repo.root, &target.url(), &api_url)?;
+        configure_scope_push_address(&repo.root, &remote, &target.url())?;
 
         let before = remote_refs(&repo, &remote)?;
-        run_git_in_repo(&repo, &["fetch", "--prune", &remote])?;
+        fetch_scope_remote_refs_with_bearer(&repo, &target.url(), &remote, &session.token)?;
         let after = remote_refs(&repo, &remote)?;
         let mut lines = ref_change_lines(&remote, &before, &after);
         if visibility_sync == WorktreeRepoConfigSync::Created {
@@ -120,12 +120,7 @@ fn sync_pull_visibility(
         return Ok(WorktreeRepoConfigSync::Unchanged);
     }
     let summary = get_repo(api, &target.owner, &target.repo)?;
-    let config = match summary.access.actor {
-        RepositoryActor::Public => default_scope_repo_config(),
-        RepositoryActor::Member | RepositoryActor::Owner => {
-            get_repo_config(api, &target.owner, &target.repo)?.config
-        }
-    };
+    let config = reader_repo_config(api, &target.owner, &target.repo, &summary)?;
     sync_missing_worktree_scope_repo_config(&repo.root, &config)
 }
 
@@ -201,6 +196,7 @@ fn ref_change_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repo_config::default_scope_repo_config;
     use crate::test_support::TempDir;
     use std::fs;
 
@@ -296,7 +292,7 @@ mod tests {
         let target = ScopeRemote::parse(
             "https://scope.example",
             "scope",
-            "https://scope.example/git/permissioned/owner/repo",
+            "https://scope.example/git/private/owner/repo",
         )
         .unwrap();
         let prior = json!({

@@ -1,7 +1,7 @@
 use crate::{
     FileChangeKind, FirstPushTokenStatus, GitOid, RepoConfig, RepoLifecycleState, RepositoryActor,
     RequestActorRole, RequestDiscussionStatus, RequestEventKind, RequestEventPayload,
-    RequestMergeabilityStatus, RequestState, SessionIdentity, ViewId,
+    RequestMergeabilityStatus, RequestState, SessionIdentity, ViewDefinition, ViewId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -134,6 +134,7 @@ pub struct RepoSummaryResponse {
     pub change_version: u64,
     pub content_version: u64,
     pub access: RepositoryAccessResponse,
+    pub views: Vec<ViewDefinition>,
     pub open_request_count: usize,
 }
 

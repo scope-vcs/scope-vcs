@@ -18,10 +18,11 @@ test('request inputs reject non-objects and missing required identifiers', () =>
 })
 
 test('files preserve significant whitespace and reject invalid path values', () => {
-  assert.equal(parsers.parseRepoFileInput({ ...request, path: '/ file ' }).path, '/ file ')
+  assert.equal(parsers.parseRepoFileInput({ ...request, view: 'agent', path: '/ file ' }).path, '/ file ')
   for (const path of ['', ' ', null, 10, '/file\0name', 'x'.repeat(4097)]) {
-    assert.throws(() => parsers.parseRepoFileInput({ ...request, path }))
+    assert.throws(() => parsers.parseRepoFileInput({ ...request, view: 'agent', path }))
   }
+  assert.throws(() => parsers.parseRepoFileInput({ ...request, path: '/file' }), /Unsupported view/)
   assert.equal(parsers.parseLoadRequestRevisionDiffInput({ ...request, revision_id: 'rev', commit_oid: 'oid', path: '/a' }).path, '/a')
 })
 

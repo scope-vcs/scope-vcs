@@ -24,6 +24,7 @@ const live: RepoLiveState = {
       actor: 'Public', view: 'public', can_push: false,
       can_change_file_visibility: false, can_manage_members: false, can_delete_repo: false,
     },
+    views: [{ id: 'public', name: 'Public', includes: [], readers: 'anyone' }],
   },
 }
 

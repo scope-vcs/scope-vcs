@@ -18,7 +18,6 @@ import type {
   RepositoryMemberResponse,
   RepoSummaryResponse,
 } from '@/api/types.generated'
-import { mayReadView } from '@/api/repo-views'
 import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { SectionRow, SectionRows } from '@/components/section-rows'
@@ -35,7 +34,8 @@ import { MemberAccessSummary } from './repo-member-permissions'
 import { RepoCiSection } from './repo-ci-section'
 import { RepositoryMetadataForm } from './repository-metadata-form'
 import { AccessSection, DangerZoneSection } from './repo-settings-sections'
-import { useRepoLayout } from './repo-layout-context'
+import { useRepoLayout, useRepoViews } from './repo-layout-context'
+import { RepositoryViewsSection } from './repo-views-section'
 import {
   initialRepoSettingsPageState,
   repoSettingsPageReducer,
@@ -94,6 +94,8 @@ export function RepoSettingsPage({
   const navigate = useNavigate()
   const router = useRouter()
   const { repo } = useRepoLayout()
+  const views = useRepoViews()
+  const readsFullView = views.full !== null && views.mayRead(repo.access.view, views.full)
   const [state, dispatch] = useReducer(
     repoSettingsPageReducer,
     initialRepoSettingsPageState,
@@ -175,9 +177,11 @@ export function RepoSettingsPage({
           />
         )}
 
-        {mayReadView(repo.access, 'private') && visibilityLog}
+        {repo.access.actor !== 'Public' && <RepositoryViewsSection views={views} />}
 
-        {repo.access.actor !== 'Public' && (
+        {readsFullView && visibilityLog}
+
+        {readsFullView && (
           <RepoCiSection
             confirmPublic={() => confirmPublicGitHub(params)}
             disconnect={() => disconnectGitHub(params)}
@@ -201,7 +205,7 @@ export function RepoSettingsPage({
               icon={<ShieldCheck className="size-4" />}
               title="Your access"
             >
-              <MemberAccessSummary permissions={repo.access} />
+              <MemberAccessSummary permissions={repo.access} viewName={views.name(repo.access.view)} />
             </SectionRow>
           </SectionRows>
         )}

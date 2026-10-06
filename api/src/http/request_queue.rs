@@ -41,6 +41,7 @@ pub(crate) struct RequestQueueQuery {
     cursor: Option<String>,
     limit: Option<usize>,
     search: Option<String>,
+    view: Option<scope_api_contract::ViewId>,
 }
 
 pub(crate) async fn request_queue(
@@ -51,6 +52,13 @@ pub(crate) async fn request_queue(
 ) -> Result<Json<RequestQueuePageResponse>, ApiError> {
     let (repo, access, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+    let request_views = match query.view.clone().map(scope_domain::views::ViewId::from) {
+        Some(view) if repo.can_read_view(&view) => {
+            Some(repo.views.labels(&view).into_iter().collect())
+        }
+        Some(_) => return Err(ApiError::forbidden("view access required")),
+        None => None,
+    };
     let after = query
         .cursor
         .as_deref()
@@ -84,6 +92,7 @@ pub(crate) async fn request_queue(
             section: query.section,
             viewer_user_id: viewer_user_id.as_deref(),
             access: access.clone(),
+            request_views,
             search,
             after: after.as_ref(),
             limit: (limit + 1) as u64,

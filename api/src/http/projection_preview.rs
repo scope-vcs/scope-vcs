@@ -9,7 +9,7 @@ pub(crate) fn ensure_projection_preview_access(
     view: &ViewId,
 ) -> Result<(), ApiError> {
     let access = repo.access_for_principal(requester);
-    if !repo.repo_config.views().may_read(&access.view, view) {
+    if !repo.can_read_view(&access, view) {
         return Err(ApiError::forbidden("view access required"));
     }
     if access.actor == RepositoryActor::Public {

@@ -60,6 +60,8 @@ pub mod visibility_change_set {
         pub anchor_commit_id: Option<String>,
         pub source_update_id: Option<String>,
         pub author_id: String,
+        pub views_before: Option<Json>,
+        pub views_after: Option<Json>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

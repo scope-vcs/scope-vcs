@@ -6,6 +6,8 @@ use std::{collections::BTreeSet, fmt};
 #[serde(try_from = "String", into = "String")]
 pub struct ViewId(String);
 
+const RESERVED_LEGACY_ADDRESS: &str = "permissioned";
+
 impl ViewId {
     pub const PUBLIC: &str = "public";
     pub const PRIVATE: &str = "private";
@@ -118,7 +120,6 @@ impl<'de> Deserialize<'de> for ViewIncludes {
 #[serde(rename_all = "lowercase")]
 pub enum ViewReaders {
     Anyone,
-    Members,
     Assigned,
 }
 
@@ -139,12 +140,20 @@ impl Views {
                 id: ViewId::private(),
                 name: "Private".into(),
                 includes: ViewIncludes::All,
-                readers: ViewReaders::Members,
+                readers: ViewReaders::Assigned,
             },
         ])
     }
 
+    pub const MAX_VIEWS: usize = 16;
+
     pub fn new(definitions: Vec<ViewDefinition>) -> Result<Self, DomainError> {
+        if definitions.is_empty() || definitions.len() > Self::MAX_VIEWS {
+            return Err(DomainError::invalid_input(format!(
+                "a repository has between 1 and {} views",
+                Self::MAX_VIEWS
+            )));
+        }
         let ids = definitions
             .iter()
             .map(|definition| &definition.id)
@@ -152,14 +161,34 @@ impl Views {
         if ids.len() != definitions.len() {
             return Err(DomainError::invalid_input("view ids must be unique"));
         }
-        if definitions
+        if ids.iter().any(|id| id.as_str() == RESERVED_LEGACY_ADDRESS) {
+            return Err(DomainError::invalid_input(format!(
+                "view id {RESERVED_LEGACY_ADDRESS} is reserved"
+            )));
+        }
+        let mut names = BTreeSet::new();
+        for definition in &definitions {
+            let name = definition.name.trim().to_lowercase();
+            if name.is_empty() {
+                return Err(DomainError::invalid_input(format!(
+                    "view {} needs a name",
+                    definition.id
+                )));
+            }
+            if !names.insert(name) {
+                return Err(DomainError::invalid_input(format!(
+                    "view name {} is used more than once",
+                    definition.name.trim()
+                )));
+            }
+        }
+        let full = definitions
             .iter()
             .filter(|definition| definition.includes == ViewIncludes::All)
-            .count()
-            != 1
-        {
+            .collect::<Vec<_>>();
+        if full.len() != 1 || !full[0].id.is_private() {
             return Err(DomainError::invalid_input(
-                "exactly one view must include all labels",
+                "exactly one view must include all labels and its id must be private",
             ));
         }
         if definitions
@@ -172,13 +201,37 @@ impl Views {
                 "at most one view may have anyone readers",
             ));
         }
-        let views = Self(definitions);
-        if views != Self::builtin() {
-            return Err(DomainError::invalid_input(
-                "phase 2 supports only the built-in views",
-            ));
+        if let Some(definition) = definitions.iter().find(|definition| {
+            definition.id.is_public() != (definition.readers == ViewReaders::Anyone)
+        }) {
+            return Err(DomainError::invalid_input(format!(
+                "view {} cannot change the readers of the built-in public view",
+                definition.id
+            )));
         }
-        Ok(views)
+        for definition in &definitions {
+            if let ViewIncludes::Some(included) = &definition.includes {
+                if let Some(missing) = included.iter().find(|id| !ids.contains(id)) {
+                    return Err(DomainError::invalid_input(format!(
+                        "view {} includes unknown view {missing}",
+                        definition.id
+                    )));
+                }
+                if included.iter().any(ViewId::is_private) {
+                    return Err(DomainError::invalid_input(format!(
+                        "view {} cannot include the full view",
+                        definition.id
+                    )));
+                }
+            }
+        }
+        let (builtin, custom): (Vec<_>, Vec<_>) = definitions
+            .into_iter()
+            .partition(|definition| definition.id.is_public() || definition.id.is_private());
+        let mut ordered = builtin;
+        ordered.sort_by_key(|definition| definition.id.is_private());
+        ordered.extend(custom);
+        Ok(Self(ordered))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &ViewDefinition> {
@@ -229,6 +282,28 @@ impl Views {
     pub fn may_read(&self, reader: &ViewId, target: &ViewId) -> bool {
         self.labels(reader).contains(target)
     }
+
+    pub fn readable_by(&self, reader: Option<&ViewId>) -> Vec<&ViewId> {
+        let Some(reader) = reader else {
+            return self.anyone().into_iter().collect();
+        };
+        let labels = self.labels(reader);
+        self.iter()
+            .map(|definition| &definition.id)
+            .filter(|id| labels.contains(*id))
+            .collect()
+    }
+
+    pub fn display_name<'a>(&'a self, id: &'a ViewId) -> &'a str {
+        self.get(id)
+            .map_or(id.as_str(), |definition| definition.name.as_str())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewsTransition {
+    pub before: Views,
+    pub after: Views,
 }
 
 impl TryFrom<Vec<ViewDefinition>> for Views {
@@ -264,6 +339,25 @@ mod tests {
         }
     }
 
+    fn id(value: &str) -> ViewId {
+        ViewId::parse(value).unwrap()
+    }
+
+    fn custom(value: &str, name: &str, includes: &[&str]) -> ViewDefinition {
+        ViewDefinition {
+            id: id(value),
+            name: name.into(),
+            includes: ViewIncludes::Some(includes.iter().map(|value| id(value)).collect()),
+            readers: ViewReaders::Assigned,
+        }
+    }
+
+    fn with(extra: Vec<ViewDefinition>) -> Vec<ViewDefinition> {
+        let mut definitions = Vec::<ViewDefinition>::from(Views::builtin());
+        definitions.extend(extra);
+        definitions
+    }
+
     #[test]
     fn builtins_serialize_and_validate_as_one_contract() {
         let views = Views::builtin();
@@ -271,30 +365,139 @@ mod tests {
             serde_json::to_value(&views).unwrap(),
             serde_json::json!([
                 {"id":"public","name":"Public","includes":[],"readers":"anyone"},
-                {"id":"private","name":"Private","includes":"all","readers":"members"}
+                {"id":"private","name":"Private","includes":"all","readers":"assigned"}
             ])
         );
         assert_eq!(
             serde_json::from_value::<Views>(serde_json::to_value(&views).unwrap()).unwrap(),
             views
         );
-        let mut duplicate = Vec::<ViewDefinition>::from(views.clone());
-        duplicate.push(duplicate[0].clone());
-        assert!(Views::new(duplicate).is_err());
-        let mut without_full = Vec::<ViewDefinition>::from(views.clone());
-        without_full[1].includes = ViewIncludes::Some(BTreeSet::new());
-        assert!(Views::new(without_full).is_err());
-        let mut extra_anyone = Vec::<ViewDefinition>::from(views.clone());
-        extra_anyone[1].readers = ViewReaders::Anyone;
-        assert!(Views::new(extra_anyone).is_err());
-        let mut extra_view = Vec::<ViewDefinition>::from(views);
-        extra_view.push(ViewDefinition {
-            id: ViewId::parse("review").unwrap(),
-            name: "Review".into(),
-            includes: ViewIncludes::Some(BTreeSet::new()),
-            readers: ViewReaders::Assigned,
-        });
-        assert!(Views::new(extra_view).is_err());
+        assert!(
+            serde_json::from_value::<Views>(serde_json::json!([
+                {"id":"private","name":"Private","includes":"all","readers":"members"}
+            ]))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn custom_views_validate_ids_names_includes_and_readers() {
+        let agent = custom("agent", "Agent", &["public"]);
+        let views = Views::new(with(vec![agent.clone()])).unwrap();
+        assert_eq!(views.get(&id("agent")), Some(&agent));
+        assert!(
+            Views::new(vec![
+                Vec::<ViewDefinition>::from(Views::builtin())[1].clone()
+            ])
+            .is_ok()
+        );
+        assert!(Views::new(Vec::new()).is_err());
+
+        let rejected = [
+            ("duplicate id", with(vec![custom("public", "Other", &[])])),
+            ("empty name", with(vec![custom("agent", "  ", &[])])),
+            (
+                "duplicate name",
+                with(vec![custom("agent", " public ", &[])]),
+            ),
+            (
+                "unknown include",
+                with(vec![custom("agent", "Agent", &["missing"])]),
+            ),
+            (
+                "includes the full view",
+                with(vec![custom("agent", "Agent", &["private"])]),
+            ),
+            (
+                "reserved legacy address",
+                with(vec![custom("permissioned", "Legacy", &[])]),
+            ),
+            ("second full view", {
+                let mut extra = custom("agent", "Agent", &[]);
+                extra.includes = ViewIncludes::All;
+                with(vec![extra])
+            }),
+            ("second anyone view", {
+                let mut extra = custom("agent", "Agent", &[]);
+                extra.readers = ViewReaders::Anyone;
+                with(vec![extra])
+            }),
+            ("full view not private", {
+                let mut definitions = with(vec![]);
+                definitions[1].includes = ViewIncludes::Some(BTreeSet::new());
+                let mut full = custom("everything", "Everything", &[]);
+                full.includes = ViewIncludes::All;
+                definitions.push(full);
+                definitions
+            }),
+            ("public view with assigned readers", {
+                let mut definitions = with(vec![]);
+                definitions[0].readers = ViewReaders::Assigned;
+                definitions
+            }),
+        ];
+        for (reason, definitions) in rejected {
+            assert!(Views::new(definitions).is_err(), "{reason}");
+        }
+    }
+
+    #[test]
+    fn a_seventeenth_view_is_refused() {
+        let extra = |count: usize| {
+            (0..count)
+                .map(|index| custom(&format!("view{index}"), &format!("View {index}"), &[]))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            Views::new(with(extra(14))).unwrap().iter().count(),
+            Views::MAX_VIEWS
+        );
+        assert!(Views::new(with(extra(15))).is_err());
+    }
+
+    #[test]
+    fn built_in_views_come_first_and_custom_views_keep_their_order() {
+        let mut definitions = vec![
+            custom("zeta", "Zeta", &[]),
+            custom("agent", "Agent", &["public"]),
+        ];
+        definitions.extend(
+            Vec::<ViewDefinition>::from(Views::builtin())
+                .into_iter()
+                .rev(),
+        );
+        let views = Views::new(definitions).unwrap();
+        assert_eq!(
+            views
+                .iter()
+                .map(|definition| definition.id.as_str())
+                .collect::<Vec<_>>(),
+            ["public", "private", "zeta", "agent"]
+        );
+    }
+
+    #[test]
+    fn readers_and_names_follow_the_definitions() {
+        let views = Views::new(with(vec![
+            custom("agent", "Agent", &["public"]),
+            custom("review", "Review", &["agent"]),
+        ]))
+        .unwrap();
+        assert_eq!(views.readable_by(None), [&ViewId::public()]);
+        assert_eq!(
+            views.readable_by(Some(&id("review"))),
+            [&ViewId::public(), &id("agent"), &id("review")]
+        );
+        assert_eq!(views.readable_by(Some(&ViewId::private())).len(), 4);
+        assert!(views.may_read(&id("review"), &ViewId::public()));
+        assert!(!views.may_read(&id("agent"), &id("review")));
+        assert_eq!(views.display_name(&id("agent")), "Agent");
+        assert_eq!(views.display_name(&id("gone")), "gone");
+        let private_only = Views::new(vec![
+            Vec::<ViewDefinition>::from(Views::builtin())[1].clone(),
+        ])
+        .unwrap();
+        assert!(private_only.readable_by(None).is_empty());
     }
 
     #[test]

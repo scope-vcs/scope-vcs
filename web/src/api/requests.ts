@@ -132,6 +132,9 @@ function requestQueuePath(data: LoadRequestQueueInput) {
   if (data.search) {
     search.set('search', data.search)
   }
+  if (data.view) {
+    search.set('view', data.view)
+  }
   return `${path}?${search}`
 }
 

@@ -65,7 +65,7 @@ async fn owner_request_push_with_native_runs(
         .to_string();
 
     let (origin, server) = spawn_test_server(&state).await;
-    let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     configure_bearer_header(&source, &remote, &bearer);
     fs::create_dir_all(source.join(".scope/runs")).unwrap();
     for (path, content) in workflows {

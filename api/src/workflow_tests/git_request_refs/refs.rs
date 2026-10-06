@@ -2,10 +2,11 @@ use super::*;
 use scope_domain::views::ViewId;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn permissioned_clone_fetches_named_public_requests_without_joining() {
+async fn public_view_clone_fetches_named_public_requests_without_joining() {
     let state = test_state_with_request().await;
-    let (_author_checkout, permissioned_remote, _server, _request_head) =
+    let (_author_checkout, private_remote, _server, _request_head) =
         request_checkout(&state, "published-request-clone-source").await;
+    let public_remote = private_remote.replace("/git/private/", "/git/public/");
     state
         .metadata
         .requests()
@@ -20,7 +21,7 @@ async fn permissioned_clone_fetches_named_public_requests_without_joining() {
     insert_public_contributor(&state).await;
     let checkout = TempGitRepo(unique_test_path("named-request-clone"));
     clone_with_bearer(
-        &permissioned_remote,
+        &public_remote,
         &checkout,
         &bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL),
         "clone all public request refs",
@@ -55,9 +56,10 @@ async fn closed_public_request_remains_fetchable_as_read_only_history() {
         .unwrap();
     let (origin, _server) = spawn_test_server(&state).await;
     let checkout = TempGitRepo(unique_test_path("closed-named-request-clone"));
-    let permissioned_remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let public_remote = format!("{origin}/git/public/{TEST_REPO_ID}");
+    let permissioned_remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     clone_with_bearer(
-        &permissioned_remote,
+        &public_remote,
         &checkout,
         &bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL),
         "clone closed public request ref",
@@ -270,7 +272,7 @@ async fn failed_request_snapshot_put_rolls_back_the_request_ref_cache() {
         readable: state.object_store.clone(),
     });
     let (origin, _server) = spawn_test_server(&state).await;
-    let permissioned_remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
+    let permissioned_remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     configure_bearer_header(
         &source,
         &permissioned_remote,

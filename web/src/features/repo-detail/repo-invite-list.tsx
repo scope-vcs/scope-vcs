@@ -12,6 +12,7 @@ import { toast } from 'sonner'
 import { RemovableRowList, RemoveButton, type RowActions } from './removable-row-list'
 import { emailActionLabel, invitationDetail, notEmailedNotice } from './repo-invite-model'
 import { permissionSummaryText } from './repo-member-permission-model'
+import { useRepoViews } from './repo-layout-context'
 
 export function InvitationList({
   createInviteLink,
@@ -30,6 +31,7 @@ export function InvitationList({
   }) => Promise<RepositoryInviteResponse>
 }) {
   const [uncopiedLink, setUncopiedLink] = useState<string | null>(null)
+  const views = useRepoViews()
 
   async function copyNewLink(inviteId: string) {
     setUncopiedLink(null)
@@ -79,7 +81,7 @@ export function InvitationList({
                 {invite.invited_email}
               </div>
               <div className="leading-5 text-muted-foreground">
-                {permissionSummaryText(invite.permissions)}
+                {permissionSummaryText(invite.permissions, views)}
               </div>
               <div className="leading-5 text-muted-foreground">
                 {invitationDetail(invite)}

@@ -33,14 +33,14 @@ impl<'a> PublicRequestPaths<'a> {
         let private_history_paths = history
             .file_change_labels
             .iter()
-            .filter(|(_, label)| label.is_private())
+            .filter(|(_, label)| !label.is_public())
             .map(|(path, _)| path)
             .chain(
                 history
                     .visibility_changes
                     .iter()
                     .filter(|(_, old_label, new_label)| {
-                        old_label.is_private() || new_label.is_private()
+                        !old_label.is_public() || !new_label.is_public()
                     })
                     .map(|(path, _, _)| path),
             )

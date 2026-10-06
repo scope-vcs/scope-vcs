@@ -26,6 +26,7 @@ pub mod projection_read_model {
         pub history_entries: i64,
         pub last_history_entry_id: Option<String>,
         pub history_generation: String,
+        pub views: Json,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -60,6 +61,7 @@ pub mod projection_read_model {
             Ok(ProjectionCursor {
                 commit_count: i64_to_usize(self.projected_commits, "projected commit count")?,
                 last_projected_id: self.last_projected_id.clone(),
+                views: decode_json(self.views.clone())?,
             })
         }
 

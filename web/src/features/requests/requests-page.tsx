@@ -5,9 +5,11 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { loadRequestQueuePage } from '@/routes/-request-workspace-actions'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
+import { RepoViewingAsPicker, useViewingAs } from '../repo-detail/use-viewing-as'
 import { REQUEST_QUEUE_SECTION_ORDER } from './request-list-model'
 import {
   loadMoreRequestQueue,
+  requestQueueIdentity,
   searchRequestQueue,
   type LoadRequestQueuePage,
 } from './request-queue-cache'
@@ -41,7 +43,7 @@ export function RequestsPage({ children, params }: { children: ReactNode; params
 
 function RequestWorkspaceContent({
   children,
-  identity,
+  identity: scope,
   maintainer,
   params,
   version,
@@ -53,6 +55,8 @@ function RequestWorkspaceContent({
   version: string
 }) {
   const selectedId = useParams({ strict: false, select: (value) => value.requestId })
+  const { options, view } = useViewingAs()
+  const identity = scope && requestQueueIdentity(scope, view)
   const [collapsed, setCollapsed] = useState(readRequestWorkspaceCollapsed)
   const [focus, setFocus] = useState(false)
   const [draft, setDraft] = useState<string | null>(null)
@@ -64,10 +68,10 @@ function RequestWorkspaceContent({
   const load = useCallback<LoadRequestQueuePage>(
     (section, cursor, search, signal) =>
       loadRequestQueuePage({
-        data: { owner: params.owner, repo: params.repo, section, cursor, search },
+        data: { owner: params.owner, repo: params.repo, section, cursor, search, view },
         signal,
       }),
-    [params.owner, params.repo],
+    [params.owner, params.repo, view],
   )
   const queue = useRequestQueue(identity, version, load)
   const loadedPages = queue.value?.pages
@@ -132,6 +136,7 @@ function RequestWorkspaceContent({
           pendingId={pendingId}
           query={query}
           selectedId={selectedId}
+          viewingAs={options.length > 1 ? <RepoViewingAsPicker compact /> : null}
         />
       }
     >

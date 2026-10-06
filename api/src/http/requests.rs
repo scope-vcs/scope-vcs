@@ -568,7 +568,7 @@ pub(crate) async fn current_main_oid_for_view(
     access: RepositoryAccess,
     view: ViewId,
 ) -> Result<Option<String>, ApiError> {
-    if !repo.repo_config.views().may_read(&access.view, &view) {
+    if !repo.can_read_view(&access, &view) {
         return Err(ApiError::forbidden("view access required"));
     }
     state
@@ -578,6 +578,7 @@ pub(crate) async fn current_main_oid_for_view(
             &RepositoryAccessContext {
                 record: repo.record.clone(),
                 access: access.clone(),
+                views: repo.repo_config.views().clone(),
             },
             &view,
         )

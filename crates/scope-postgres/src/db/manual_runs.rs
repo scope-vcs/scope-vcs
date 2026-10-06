@@ -27,7 +27,7 @@ impl RunStore {
         let context = repository_access(&tx, request.repository_id(), Some(request.user_id()))
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        request.require_access(context.access)?;
+        request.require_access(&context.access, &context.views)?;
         let run = request.create_run(
             &revision,
             RunSource::ephemeral_git_bundle(object)?,
@@ -49,7 +49,7 @@ impl RunStore {
         let context = git_push_context_for_id(&tx, request.repository_id(), request.user_id())
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        request.require_access(context.access)?;
+        request.require_access(&context.access, context.repo_config.views())?;
         if let Some(stored) = entities::run::Entity::find_by_id(request.run_id())
             .one(&tx)
             .await

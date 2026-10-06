@@ -10,7 +10,7 @@ use crate::{
         git_remote_push_url, head_oid, mark_scope_remote_pushed, push_head_with_bearer,
         scope_git_origin, scope_remote_head_oid, warn_if_dirty_working_tree,
     },
-    git_transport::{GitAccess, ScopeRemote, select_scope_push_remote},
+    git_transport::{ScopeRemote, select_scope_push_remote},
     login::session_from_cache_or_browser_with_progress,
     progress::PreparationProgress,
     repo_config::{
@@ -125,7 +125,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         progress.set_stage("Refreshing Scope main…")?;
         fetch_scope_remote_with_bearer_cancellable(
             &git_repo,
-            &target.permissioned_url,
+            &target.full_view_url(),
             &remote,
             DEFAULT_SCOPE_BRANCH,
             &session.token,
@@ -173,7 +173,7 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
     }
     ensure_review_base_matches_intent(
         &git_repo,
-        &target.permissioned_url,
+        &target.full_view_url(),
         &remote,
         &session.token,
         intent.base_head_oid.as_deref(),
@@ -370,10 +370,12 @@ pub fn load_scope_remote(
     let push_url = git_remote_push_url(git_repo, remote)?;
     let git_origin = scope_git_origin(git_repo, api_url)?;
     let target = ScopeRemote::parse(&git_origin, remote, &push_url)?;
-    if target.access != GitAccess::Permissioned {
-        return Err(
-            CliError::usage("Scope remote must have path /git/permissioned/owner/repo").into(),
-        );
+    if !target.view.is_private() {
+        return Err(CliError::usage(format!(
+            "Scope remote {remote} must push to the full view address {}",
+            target.full_view_url()
+        ))
+        .into());
     }
     Ok(target)
 }
@@ -385,7 +387,7 @@ pub fn push_reviewed_head_with_intent(
     push_intent_token: &str,
 ) -> anyhow::Result<()> {
     push_head_with_bearer(
-        &target.permissioned_url,
+        &target.full_view_url(),
         reviewed_head_oid,
         DEFAULT_SCOPE_BRANCH,
         session_token,

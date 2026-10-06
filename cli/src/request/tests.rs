@@ -166,7 +166,7 @@ fn tracking_a_request_keeps_an_upstream_on_another_remote() {
     let target = crate::git_transport::ScopeRemote::parse(
         "https://scope.example",
         "scope",
-        "https://scope.example/git/permissioned/owner/repo",
+        "https://scope.example/git/private/owner/repo",
     )
     .unwrap();
     let config = |key: &str| {

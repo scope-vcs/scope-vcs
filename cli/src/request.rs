@@ -186,7 +186,10 @@ fn show_request_status(
             &context.target.repo,
             &request_id,
         )?;
-        human_lines.extend(request_detail_lines(&detail.request));
+        human_lines.extend(request_detail_lines(
+            &detail.request,
+            &crate::repository_views::repository_views(&context.repo.views)?,
+        ));
         return Ok(RequestCommandOutcome::new(
             "request.status",
             RequestCommandResult::Detail(DetailResult {
@@ -349,7 +352,7 @@ fn start_view(
         .is_none()
     {
         return Err(crate::error::CliError::usage(format!(
-            "Unknown repository view {}",
+            "Requests target the public or private view until custom views accept requests; pass --view public instead of {}",
             view.as_str()
         ))
         .into());

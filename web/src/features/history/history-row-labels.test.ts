@@ -5,6 +5,7 @@ import {
   historyEntryLabels,
   historyRowLabels,
 } from './history-row-labels'
+import { repoViews } from '../../api/repo-views'
 
 test('distinguishes commits with duplicate messages and file counts', () => {
   const firstFullId = `rv_push_${'2f91a73cf8bd'.padEnd(40, '1')}`
@@ -59,19 +60,31 @@ test('labels repository history entries by their actual update kind', () => {
     parent_id: null,
     source_id: 'push-1',
     visibility_summary: { left_count: 1, entered_count: 1 },
+    views: null,
   }
 
-  assert.equal(historyEntryLabels({ ...base, kind: 'push' }, 'public').kind, null)
-  assert.equal(historyEntryLabels({ ...base, kind: 'merged_request' }, 'public').kind, 'Merged')
-  assert.deepEqual(historyEntryLabels({ ...base, kind: 'visibility_change' }, 'public'), {
+  const views = repoViews([
+    { id: 'public', name: 'Public', includes: [], readers: 'anyone' },
+    { id: 'private', name: 'Private', includes: 'all', readers: 'assigned' },
+    { id: 'agent', name: 'Agent', includes: ['public'], readers: 'assigned' },
+  ])
+
+  assert.equal(historyEntryLabels({ ...base, kind: 'push' }, 'public', views).kind, null)
+  assert.equal(historyEntryLabels({ ...base, kind: 'merged_request' }, 'public', views).kind, 'Merged')
+  assert.deepEqual(historyEntryLabels({ ...base, kind: 'visibility_change' }, 'public', views), {
     count: '1 entered the Public view, 1 left the Public view',
     kind: 'Visibility',
     title: 'Ship the history page',
   })
   assert.equal(
-    historyEntryLabels({ ...base, kind: 'visibility_change' }, 'private').count,
+    historyEntryLabels({ ...base, kind: 'visibility_change' }, 'private', views).count,
     '1 entered the Public view, 1 left the Public view',
   )
+  assert.deepEqual(historyEntryLabels({ ...base, kind: 'views_change' }, 'agent', views), {
+    count: '1 entered the Agent view, 1 left the Agent view',
+    kind: 'Views',
+    title: 'Ship the history page',
+  })
 })
 
 test('compacts reviewed push ids and keeps other source ids whole', () => {

@@ -13,6 +13,8 @@ import { RepositoryLatestActivity } from './repository-latest-activity'
 import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
 import { displayRouteFilePath } from '@/lib/route-file'
 import type { CachedResource } from '@/lib/use-cached-resource'
+import { useRepoViews } from './repo-layout-context'
+import { RepoViewingAsPicker, useViewingAs } from './use-viewing-as'
 
 export function RepoDetailPage({
   content,
@@ -30,6 +32,8 @@ export function RepoDetailPage({
   selectedPath: string | null
 }) {
   const workspaceTabs = useWorkspaceTabs({ activeId: selectedPath })
+  const { view } = useViewingAs()
+  const views = useRepoViews()
 
   function selectResource(path: string) {
     workspaceTabs.open(displayRouteFilePath(path), false)
@@ -42,10 +46,13 @@ export function RepoDetailPage({
         className="items-start border-b border-border"
         actions={(
           <>
+            <RepoViewingAsPicker />
             {content.value && repo.lifecycle_state === 'Ready' && (
               <RepoCloneDropdown
                 cloneRemoteUrl={content.value.clone_remote_url}
                 repo={repo}
+                view={view}
+                viewName={views.name(view)}
               />
             )}
             <RepoPrimaryActionButton
@@ -62,6 +69,7 @@ export function RepoDetailPage({
             contentLoading={content.status === 'loading'}
             onSelectFilePath={selectResource}
             repo={repo}
+            view={view}
           />
         )}
         title="Code"
