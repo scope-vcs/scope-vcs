@@ -20,6 +20,7 @@ pub struct RebuildCheckCommitCommand {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "rebuild_request_check_commit"))]
     pub async fn rebuild_request_check_commit(
         &self,
         command: RebuildCheckCommitCommand,
@@ -81,6 +82,7 @@ impl RequestStore {
         }))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requests_needing_new_check_commit"))]
     pub async fn requests_needing_new_check_commit(
         &self,
         repo_id: &str,

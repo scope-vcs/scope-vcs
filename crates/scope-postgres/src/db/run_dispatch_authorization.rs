@@ -4,6 +4,7 @@ use scope_domain::runs::dispatch_authorization::{self, DispatchAuthorization};
 use sea_orm::TransactionTrait;
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "authorize_dispatch_start"))]
     pub async fn authorize_dispatch_start(
         &self,
         attempt_id: &str,
@@ -24,6 +25,7 @@ impl RunStore {
         Ok(authorization)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "authorize_dispatch_stop"))]
     pub async fn authorize_dispatch_stop(
         &self,
         attempt_id: &str,

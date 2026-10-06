@@ -100,12 +100,14 @@ where
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_workflow_catalogs"))]
     pub async fn repository_workflow_catalogs(
         &self,
     ) -> Result<Vec<RepositoryWorkflowCatalog>, PostgresError> {
         load_repository_workflow_catalogs(self.db.as_ref()).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "current_repository_workflow_catalog"))]
     pub async fn current_repository_workflow_catalog(
         &self,
         repo_id: &str,
@@ -135,6 +137,7 @@ impl RepositoryStore {
         Ok(snapshot)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_workflow_catalog_backfill_candidates"))]
     pub async fn repository_workflow_catalog_backfill_candidates(
         &self,
     ) -> Result<Vec<RepositoryWorkflowCatalogBackfillCandidate>, PostgresError> {
@@ -184,6 +187,7 @@ impl RepositoryStore {
         Ok(candidates)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "store_backfilled_repository_workflow_catalog"))]
     pub async fn store_backfilled_repository_workflow_catalog(
         &self,
         catalog: &RepositoryWorkflowCatalog,

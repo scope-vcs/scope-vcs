@@ -204,13 +204,12 @@ async fn verify_uploaded_object(
         .presigner
         .presign("HEAD", &upload.object_key, SIGNED_URL_TTL_SECONDS)
         .map_err(|error| ServiceError::internal(error.to_string()))?;
-    let response = state
-        .http
-        .head(url)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await
-        .map_err(|error| ServiceError::unavailable(error.to_string()))?;
+    let response = scope_service_runtime::outbound_http::send_traced(
+        state.http.head(url).timeout(Duration::from_secs(30)),
+        "/{object_key}",
+    )
+    .await
+    .map_err(|error| ServiceError::unavailable(error.to_string()))?;
     if !response.status().is_success() {
         return Err(ServiceError::conflict(format!(
             "uploaded cache object is unavailable ({})",

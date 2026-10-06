@@ -43,6 +43,7 @@ pub struct RepositoryInviteEmailDelivery {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_repository_invite_email"))]
     pub async fn request_repository_invite_email(
         &self,
         command: RequestRepositoryInviteEmailCommand,
@@ -81,6 +82,7 @@ impl RepositoryStore {
         ))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_due_repository_invite_emails"))]
     pub async fn claim_due_repository_invite_emails(
         &self,
         claim_token: &str,
@@ -127,6 +129,7 @@ impl RepositoryStore {
         Ok(claimed)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "issue_repository_invite_email_link"))]
     pub async fn issue_repository_invite_email_link(
         &self,
         email_id: &str,
@@ -165,6 +168,7 @@ impl RepositoryStore {
         )))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "record_repository_invite_email_attempt"))]
     pub async fn record_repository_invite_email_attempt(
         &self,
         email_id: &str,

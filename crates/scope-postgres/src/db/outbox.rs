@@ -70,6 +70,7 @@ fn outbox_time(
 }
 
 impl JobStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_ready_outbox_jobs"))]
     pub async fn run_ready_outbox_jobs(
         &self,
         worker_id: &str,

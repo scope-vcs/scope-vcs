@@ -26,6 +26,7 @@ pub struct GitPushContext {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_repository_incarnation"))]
     pub async fn run_repository_incarnation(
         &self,
         run_id: &str,
@@ -55,6 +56,7 @@ impl RepositoryStore {
             .map_err(PostgresError::internal)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_push_context"))]
     pub async fn git_push_context(
         &self,
         owner: &str,

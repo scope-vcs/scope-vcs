@@ -45,10 +45,12 @@ pub enum GitHubRunImportOutcome {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_run_import_count"))]
     pub async fn github_run_import_count(&self, repo_id: &str) -> Result<u32, PostgresError> {
         run_import_count(self.db.as_ref(), repo_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "set_github_run_import_count"))]
     pub async fn set_github_run_import_count(
         &self,
         repo_id: &str,
@@ -67,6 +69,7 @@ impl RepositoryStore {
         Ok((count, context.incarnation()))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_github_run_import"))]
     pub async fn start_github_run_import(
         &self,
         repo_id: &str,
@@ -95,6 +98,7 @@ impl RepositoryStore {
         Ok((import, context.incarnation()))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_run_import"))]
     pub async fn github_run_import(
         &self,
         repo_id: &str,
@@ -102,6 +106,7 @@ impl RepositoryStore {
         load_import(self.db.as_ref(), repo_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_due_github_run_imports"))]
     pub async fn claim_due_github_run_imports(
         &self,
         claim_token: &str,
@@ -146,6 +151,7 @@ impl RepositoryStore {
         .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "store_github_run_import_page"))]
     pub async fn store_github_run_import_page(
         &self,
         repo_id: &str,
@@ -185,6 +191,7 @@ impl RepositoryStore {
         Ok(true)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_run_import"))]
     pub async fn finish_github_run_import(
         &self,
         repo_id: &str,

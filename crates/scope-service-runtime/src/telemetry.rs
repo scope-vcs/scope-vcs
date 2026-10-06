@@ -1,5 +1,8 @@
 use axum_tracing_opentelemetry::middleware::OtelAxumLayer;
-use opentelemetry::trace::Status;
+use opentelemetry::{
+    Context,
+    trace::{Link, SpanKind, Status, TraceId, TraceState},
+};
 use opentelemetry::{
     KeyValue, global,
     trace::{TraceContextExt as _, TracerProvider as _},
@@ -8,7 +11,10 @@ use opentelemetry_sdk::{
     Resource,
     error::OTelSdkResult,
     propagation::TraceContextPropagator,
-    trace::{SdkTracerProvider, SpanData, SpanEvents, SpanExporter},
+    trace::{
+        Sampler, SamplingDecision, SamplingResult, SdkTracerProvider, ShouldSample, SpanData,
+        SpanEvents, SpanExporter,
+    },
 };
 use std::{fmt, time::Duration};
 use tracing::{Event, Subscriber};
@@ -20,13 +26,21 @@ use tracing_subscriber::{
     util::SubscriberInitExt as _,
 };
 
-const EXPORTED_SPANS: &str = "off,otel::tracing=trace,api=info,worker=info,scope_=info";
+const EXPORTED_SPANS: &str =
+    "off,otel::tracing=trace,api=info,worker=info,scope_=info,aws_sdk_s3::operation=debug";
 const UNTRACED_PATHS: [&str; 2] = ["/healthz", "/readyz"];
-const EXPORTED_ATTRIBUTES: [&str; 7] = [
+const EXPORTED_ATTRIBUTES: [&str; 14] = [
+    "db.operation.name",
+    "db.system.name",
+    "git.subcommand",
     "http.request.method",
     "http.response.status_code",
     "http.route",
     "network.protocol.version",
+    "process.exit.code",
+    "rpc.method",
+    "rpc.service",
+    "rpc.system",
     "server.address",
     "server.port",
     "url.scheme",
@@ -91,12 +105,38 @@ fn tracer_provider() -> anyhow::Result<SdkTracerProvider> {
         resource = resource.with_attribute(KeyValue::new("service.version", version));
     }
     let provider = SdkTracerProvider::builder()
+        .with_sampler(Sampler::ParentBased(Box::new(RequestsAndJobs)))
         .with_batch_exporter(AllowedAttributes(exporter))
         .with_resource(resource.build())
         .build();
     global::set_text_map_propagator(TraceContextPropagator::new());
     global::set_tracer_provider(provider.clone());
     Ok(provider)
+}
+
+#[derive(Clone, Debug)]
+struct RequestsAndJobs;
+
+impl ShouldSample for RequestsAndJobs {
+    fn should_sample(
+        &self,
+        _parent_context: Option<&Context>,
+        _trace_id: TraceId,
+        _name: &str,
+        span_kind: &SpanKind,
+        _attributes: &[KeyValue],
+        _links: &[Link],
+    ) -> SamplingResult {
+        SamplingResult {
+            decision: if matches!(span_kind, SpanKind::Server | SpanKind::Consumer) {
+                SamplingDecision::RecordAndSample
+            } else {
+                SamplingDecision::Drop
+            },
+            attributes: Vec::new(),
+            trace_state: TraceState::default(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -228,6 +268,43 @@ mod tests {
         assert!(local.ends_with("handled\n"), "{local}");
     }
 
+    #[derive(Clone, Debug, Default)]
+    struct Collected(Arc<Mutex<Vec<String>>>);
+
+    impl SpanExporter for Collected {
+        async fn export(&self, batch: Vec<SpanData>) -> OTelSdkResult {
+            let mut names = self.0.lock().unwrap();
+            names.extend(batch.into_iter().map(|span| span.name.into_owned()));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn traces_start_only_at_requests_and_claimed_jobs() {
+        let collected = Collected::default();
+        let provider = SdkTracerProvider::builder()
+            .with_sampler(Sampler::ParentBased(Box::new(RequestsAndJobs)))
+            .with_simple_exporter(collected.clone())
+            .build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info_span!("claim", otel.kind = "client").in_scope(|| {
+                tracing::info_span!("lease", otel.kind = "client").in_scope(|| {});
+            });
+            tracing::info_span!("git", otel.kind = "internal").in_scope(|| {});
+            tracing::info_span!("request", otel.kind = "server").in_scope(|| {
+                tracing::info_span!("query", otel.kind = "client").in_scope(|| {});
+            });
+            tracing::info_span!("job", otel.kind = "consumer").in_scope(|| {
+                tracing::info_span!("lease", otel.kind = "client").in_scope(|| {});
+            });
+        });
+        let mut names = collected.0.lock().unwrap().clone();
+        names.sort();
+        assert_eq!(names, ["job", "lease", "query", "request"]);
+    }
+
     #[test]
     fn exported_spans_keep_only_reviewed_attributes() {
         let mut events = SpanEvents::default();
@@ -252,7 +329,14 @@ mod tests {
             start_time: SystemTime::UNIX_EPOCH,
             end_time: SystemTime::UNIX_EPOCH,
             attributes: vec![
+                KeyValue::new("db.operation.name", "repo_live_file_with_landing_content"),
+                KeyValue::new("db.system.name", "postgresql"),
+                KeyValue::new("git.subcommand", "show"),
                 KeyValue::new("http.route", "/repos/{owner}/{repo}"),
+                KeyValue::new("process.exit.code", 0),
+                KeyValue::new("rpc.method", "GetObject"),
+                KeyValue::new("rpc.service", "S3"),
+                KeyValue::new("rpc.system", "aws-api"),
                 KeyValue::new("url.path", "/repos/acme/private-app"),
                 KeyValue::new("url.query", "token=secret"),
                 KeyValue::new("user_agent.original", "scope/1.0"),
@@ -267,7 +351,16 @@ mod tests {
         keep_allowed_attributes(&mut span);
         assert_eq!(
             span.attributes,
-            vec![KeyValue::new("http.route", "/repos/{owner}/{repo}")]
+            vec![
+                KeyValue::new("db.operation.name", "repo_live_file_with_landing_content"),
+                KeyValue::new("db.system.name", "postgresql"),
+                KeyValue::new("git.subcommand", "show"),
+                KeyValue::new("http.route", "/repos/{owner}/{repo}"),
+                KeyValue::new("process.exit.code", 0),
+                KeyValue::new("rpc.method", "GetObject"),
+                KeyValue::new("rpc.service", "S3"),
+                KeyValue::new("rpc.system", "aws-api"),
+            ]
         );
         assert_eq!(span.status, Status::error(""));
         assert!(span.events.is_empty());

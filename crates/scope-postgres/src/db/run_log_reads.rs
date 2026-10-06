@@ -64,6 +64,7 @@ impl RunLogReadRow {
 }
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "attempt_step_logs"))]
     pub async fn attempt_step_logs(
         &self,
         run_id: &str,
@@ -167,6 +168,7 @@ impl RunStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_logs_after"))]
     pub async fn run_logs_after(
         &self,
         run_id: &str,
@@ -187,6 +189,7 @@ impl RunStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "next_attempt_log_sequence"))]
     pub async fn next_attempt_log_sequence(&self, attempt_id: &str) -> Result<u64, PostgresError> {
         let last = entities::run_log::Entity::find()
             .filter(entities::run_log::Column::AttemptId.eq(attempt_id))

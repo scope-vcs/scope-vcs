@@ -15,6 +15,7 @@ use sea_orm::{EntityTrait, TransactionTrait};
 mod tests;
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "enqueue_uploaded_manual_run"))]
     pub async fn enqueue_uploaded_manual_run(
         &self,
         request: &ManualRunRequest,
@@ -38,6 +39,7 @@ impl RunStore {
         Ok(enqueued)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "enqueue_known_manual_run"))]
     pub async fn enqueue_known_manual_run(
         &self,
         request: &ManualRunRequest,

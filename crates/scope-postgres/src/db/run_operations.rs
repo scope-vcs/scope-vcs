@@ -12,6 +12,7 @@ pub struct RunSnapshot {
 }
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_snapshot"))]
     pub async fn run_snapshot(&self, run_id: &str) -> Result<Option<RunSnapshot>, PostgresError> {
         let tx = super::begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let Some(run) = entities::run::Entity::find_by_id(run_id.to_string())
@@ -34,10 +35,12 @@ impl RunStore {
         }))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_jobs"))]
     pub async fn run_jobs(&self, run_id: &str) -> Result<Vec<RunJob>, PostgresError> {
         required_run_jobs(self.db.as_ref(), run_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_jobs_by_ids"))]
     pub async fn run_jobs_by_ids(
         &self,
         run_ids: &[String],
@@ -45,10 +48,12 @@ impl RunStore {
         run_jobs_by_ids(self.db.as_ref(), run_ids).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_has_truncated_logs"))]
     pub async fn run_has_truncated_logs(&self, run_id: &str) -> Result<bool, PostgresError> {
         run_has_truncated_logs_with(self.db.as_ref(), run_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_ids_with_truncated_logs"))]
     pub async fn run_ids_with_truncated_logs(
         &self,
         run_ids: &[String],

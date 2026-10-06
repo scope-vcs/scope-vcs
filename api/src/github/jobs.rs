@@ -120,6 +120,7 @@ impl GitHubApp {
             .pages::<JobsPage, _>(
                 &token,
                 &format!("/repos/{full_name}/actions/runs/{run_id}/attempts/{run_attempt}/jobs"),
+                "/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{run_attempt}/jobs",
                 |page| page.jobs,
             )
             .await?
@@ -141,7 +142,11 @@ impl GitHubApp {
                 &format!("/repos/{full_name}/actions/jobs/{job_id}"),
             )
             .bearer_auth(token);
-        Ok(send::<Job>(request).await?.and_then(Job::into_domain))
+        Ok(
+            send::<Job>(request, "/repos/{owner}/{repo}/actions/jobs/{job_id}")
+                .await?
+                .and_then(Job::into_domain),
+        )
     }
 
     pub(crate) async fn job_log(
@@ -155,18 +160,17 @@ impl GitHubApp {
                 "GitHub installation {installation_id} no longer exists"
             )));
         };
-        let mut response = self
-            .request(
+        let mut response = scope_service_runtime::outbound_http::send_traced(
+            self.request(
                 Method::GET,
                 &format!("/repos/{full_name}/actions/jobs/{job_id}/logs"),
             )
             .bearer_auth(token)
-            .timeout(LOG_DOWNLOAD_TIMEOUT)
-            .send()
-            .await
-            .map_err(|error| {
-                unavailable(format!("GitHub was unreachable: {}", error.without_url()))
-            })?;
+            .timeout(LOG_DOWNLOAD_TIMEOUT),
+            "/repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
+        )
+        .await
+        .map_err(|error| unavailable(format!("GitHub was unreachable: {}", error.without_url())))?;
         let status = response.status();
         if status == StatusCode::GONE {
             return Ok(GitHubJobLogState::Expired);
