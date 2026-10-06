@@ -13,6 +13,7 @@ use scope_domain::{
     policy::ScopePath,
     projection::NativePublicCommit,
     projection::ProjectionViewKey,
+    repo_config::RepoConfig,
     requests::{PathHistory, PublicRequestPathError, PublicRequestPaths},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
@@ -31,6 +32,7 @@ pub(crate) struct ValidatedPublicRequestRange {
 
 pub(super) async fn ensure_public_request_ref_is_public_safe(
     git: &RepositoryGit,
+    repo_config: &RepoConfig,
     state: &AppState,
     staging_repo: &FsPath,
     new_head_oid: &str,
@@ -42,7 +44,7 @@ pub(super) async fn ensure_public_request_ref_is_public_safe(
     validated_public_parent_oids(staging_repo, &commit_oids)?;
     let commits = validated_changed_paths_by_commit(staging_repo, commit_oids)?;
     let history = changed_path_history(git, state, &commits).await?;
-    let policy = PublicRequestPaths::new(&git.repo_config, &public_visible_paths, &history);
+    let policy = PublicRequestPaths::new(repo_config, &public_visible_paths, &history);
     for (_, paths) in &commits {
         ensure_public_request_commit_paths(&policy, paths)?;
     }
@@ -51,6 +53,7 @@ pub(super) async fn ensure_public_request_ref_is_public_safe(
 
 pub(crate) async fn validate_public_request_merge_range(
     git: &RepositoryGit,
+    repo_config: &RepoConfig,
     state: &AppState,
     staging_repo: &FsPath,
     request_head_oid: &str,
@@ -71,7 +74,7 @@ pub(crate) async fn validate_public_request_merge_range(
 
     let changed = validated_changed_paths_by_commit(staging_repo, commit_oids)?;
     let history = changed_path_history(git, state, &changed).await?;
-    let policy = PublicRequestPaths::new(&git.repo_config, &public_visible_paths, &history);
+    let policy = PublicRequestPaths::new(repo_config, &public_visible_paths, &history);
     let mut commits = Vec::with_capacity(changed.len());
     for (commit_oid, paths) in &changed {
         let changed_paths = ensure_public_request_commit_paths(&policy, paths)?;
@@ -163,17 +166,14 @@ async fn fetch_current_public_projection(
     state: &AppState,
     staging_repo: &FsPath,
 ) -> Result<(String, BTreeSet<String>), ApiError> {
-    let public_projection = git.projection(state, ProjectionViewKey::Public).await?;
-    if public_projection.commits.is_empty() {
+    let Some(public_head_oid) = git.view_head(state, ProjectionViewKey::Public).await? else {
         return Err(ApiError::conflict(
             "repo has no public main branch for public request",
         ));
-    }
-    let public_visible_paths = public_projection
-        .visible_paths()
-        .into_iter()
-        .collect::<BTreeSet<_>>();
-    let public_repo = git.projection_repo(state, &public_projection).await?;
+    };
+    let public_repo = git
+        .view_repo_at(state, ProjectionViewKey::Public, Some(&public_head_oid))
+        .await?;
     let refspec = format!("+refs/heads/{DEFAULT_GIT_BRANCH}:{PUBLIC_REQUEST_BASE_REF}");
     run_git(
         Some(staging_repo),
@@ -185,7 +185,35 @@ async fn fetch_current_public_projection(
         "fetching public request base",
     )?;
     let public_base_oid = git_commit_oid(staging_repo, PUBLIC_REQUEST_BASE_REF)?;
-    Ok((public_base_oid, public_visible_paths))
+    Ok((public_base_oid, public_tree_paths(staging_repo)?))
+}
+
+fn public_tree_paths(staging_repo: &FsPath) -> Result<BTreeSet<String>, ApiError> {
+    let action = "listing public request base paths";
+    let output = successful_git_output(
+        run_git_output(
+            Some(staging_repo),
+            &[
+                "ls-tree",
+                "-r",
+                "--name-only",
+                "-z",
+                PUBLIC_REQUEST_BASE_REF,
+            ],
+            action,
+        )?,
+        action,
+    )?;
+    output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .map(|path| {
+            String::from_utf8(path.to_vec())
+                .map(|path| format!("/{path}"))
+                .map_err(ApiError::internal)
+        })
+        .collect()
 }
 
 fn ensure_public_request_branch_is_based_on_public_main(

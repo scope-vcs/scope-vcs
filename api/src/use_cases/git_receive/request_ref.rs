@@ -232,8 +232,15 @@ pub(super) async fn persist_request_ref_revision(
         .old_head_oid
         .clone()
         .or_else(|| Some(request.head_oid.clone()));
-    let persisted =
-        persist_request_ref_to_store(state, &git, staging_repo, &request, &update).await?;
+    let persisted = persist_request_ref_to_store(
+        state,
+        &git,
+        &context.repo_config,
+        staging_repo,
+        &request,
+        &update,
+    )
+    .await?;
     let mutation = state
         .metadata
         .requests()

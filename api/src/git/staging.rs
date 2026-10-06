@@ -2,8 +2,8 @@ use crate::{
     config::EMPTY_GIT_OID,
     error::ApiError,
     git::{
-        command::run_git, projection_repo::projection_bare_repo_for_state,
-        request_refs::REQUEST_REF_COMMIT_ERROR, storage::receive_pack_staging_repo_path,
+        command::run_git, repository_git::RepositoryGit, request_refs::REQUEST_REF_COMMIT_ERROR,
+        storage::receive_pack_staging_repo_path,
     },
     persistence::ensure_private_dir,
     state::AppState,
@@ -86,19 +86,9 @@ pub(crate) async fn ensure_ready_receive_pack_staging_repo(
             .materialize_repository(state, incarnation, head, &repo.git_pack_spans)
             .await?
     } else {
-        let source = state
-            .metadata
-            .repositories()
-            .repository_projection_source(incarnation, repo.content_version)
-            .await?;
-        projection_bare_repo_for_state(
-            state,
-            incarnation,
-            &source.project(ProjectionViewKey::from_access(repo.access)),
-            None,
-            &repo.git_pack_spans,
-        )
-        .await?
+        RepositoryGit::of_push_context(&repo)
+            .view_repo(state, ProjectionViewKey::from_access(repo.access))
+            .await?
     };
     let state = state.clone();
     let incarnation = incarnation.clone();
