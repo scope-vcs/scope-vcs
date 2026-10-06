@@ -100,3 +100,30 @@ fn deleted_or_renamed_private_paths_cannot_be_recreated_under_public_defaults() 
     }
     assert_eq!(policy.ensure_editable(&path("/new.txt")), Ok(()));
 }
+
+#[test]
+fn paths_once_labelled_with_a_custom_view_are_hidden_history_too() {
+    let mut repo = repository(ViewId::public());
+    repo.graph.commits.push(LogicalCommit {
+        id: "commit".into(),
+        origin: LogicalCommitOrigin::CanonicalPush {
+            source_head_oid: "a".repeat(40),
+        },
+        author_id: "owner".into(),
+        message: "remove an ops file".into(),
+        occurred_at_unix: None,
+        changes: vec![FileChange {
+            path: path("/ops.txt"),
+            old_content: None,
+            new_content: None,
+            label: ViewId::parse("ops").unwrap(),
+        }],
+    });
+    let visible = BTreeSet::new();
+    let policy = PublicRequestPaths::new(&repo, &visible);
+    assert_eq!(
+        policy.ensure_editable(&path("/ops.txt")),
+        Err(PublicRequestPathError::PrivatePath)
+    );
+    assert_eq!(policy.ensure_editable(&path("/new.txt")), Ok(()));
+}

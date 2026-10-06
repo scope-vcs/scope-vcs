@@ -757,6 +757,22 @@ fn public_request_origin_expands_to_exact_native_commits_only_in_public_view() {
         private.commits[0].materialization,
         ProjectionMaterialization::Generate
     );
+
+    let mut definitions = Vec::<scope_domain::views::ViewDefinition>::from(Views::builtin());
+    definitions.push(scope_domain::views::ViewDefinition {
+        id: ViewId::parse("agent").unwrap(),
+        name: "Agent".into(),
+        includes: scope_domain::views::ViewIncludes::Some([ViewId::public()].into()),
+        readers: scope_domain::views::ViewReaders::Assigned,
+    });
+    let with_agent = Views::new(definitions).unwrap();
+    let agent = project_graph(&graph, &[], &with_agent, &ViewId::parse("agent").unwrap());
+    assert_eq!(agent.commits.len(), 1);
+    assert_eq!(
+        agent.commits[0].materialization,
+        ProjectionMaterialization::Generate
+    );
+    assert_eq!(agent.visible_paths(), vec!["/README.md"]);
 }
 
 #[test]

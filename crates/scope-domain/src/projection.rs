@@ -301,6 +301,7 @@ impl ViewFold<'_> {
         } = &logical.origin
             && !native.is_empty()
             && visible_content_count == logical.changes.len()
+            && self.views.anyone() == Some(self.view)
         {
             let native_len = native.len();
             for (index, native) in native.iter().enumerate() {

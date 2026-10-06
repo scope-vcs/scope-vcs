@@ -23,17 +23,14 @@ impl<'a> PublicRequestPaths<'a> {
             .commits
             .iter()
             .flat_map(|commit| &commit.changes)
-            .filter(|change| change.label == ViewId::private())
+            .filter(|change| !change.label.is_public())
             .map(|change| &change.path)
             .chain(
                 repository
                     .visibility_change_sets
                     .iter()
                     .flat_map(|set| &set.changes)
-                    .filter(|change| {
-                        change.old_label == ViewId::private()
-                            || change.new_label == ViewId::private()
-                    })
+                    .filter(|change| !change.old_label.is_public() || !change.new_label.is_public())
                     .map(|change| &change.path),
             )
             .collect();
