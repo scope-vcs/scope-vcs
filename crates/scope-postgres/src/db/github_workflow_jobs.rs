@@ -7,7 +7,9 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::{
-    github_workflow_jobs::{GitHubJobLog, GitHubWorkflowJob, GitHubWorkflowStep},
+    github_workflow_jobs::{
+        GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob, GitHubWorkflowStep,
+    },
     requests::{GitHubCheckConclusion, GitHubCheckStatus},
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
@@ -39,7 +41,7 @@ struct StoredStep {
 
 #[derive(FromQueryResult)]
 struct LogRow {
-    log_text: String,
+    log_text: Option<String>,
     truncated: bool,
 }
 
@@ -120,7 +122,7 @@ impl RepositoryStore {
     pub async fn github_workflow_job_log(
         &self,
         github_job_id: u64,
-    ) -> Result<Option<GitHubJobLog>, PostgresError> {
+    ) -> Result<Option<GitHubJobLogState>, PostgresError> {
         Ok(LogRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT log_text, truncated FROM scope_github_workflow_job_logs
@@ -130,18 +132,25 @@ impl RepositoryStore {
         .one(self.db.as_ref())
         .await
         .map_err(PostgresError::internal)?
-        .map(|row| GitHubJobLog {
-            text: row.log_text,
-            truncated: row.truncated,
+        .map(|row| match row.log_text {
+            Some(text) => GitHubJobLogState::Kept(GitHubJobLog {
+                text,
+                truncated: row.truncated,
+            }),
+            None => GitHubJobLogState::Expired,
         }))
     }
 
     pub async fn save_github_workflow_job_log(
         &self,
         github_job_id: u64,
-        log: &GitHubJobLog,
+        log: &GitHubJobLogState,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
+        let (text, truncated) = match log {
+            GitHubJobLogState::Kept(log) => (Some(log.text.clone()), log.truncated),
+            GitHubJobLogState::Expired => (None, false),
+        };
         self.db
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -151,8 +160,8 @@ impl RepositoryStore {
                  ON CONFLICT DO NOTHING",
                 [
                     u64_to_i64(github_job_id, "GitHub job id")?.into(),
-                    log.text.clone().into(),
-                    log.truncated.into(),
+                    text.into(),
+                    truncated.into(),
                     u64_to_i64(now_unix, "GitHub job log time")?.into(),
                 ],
             ))

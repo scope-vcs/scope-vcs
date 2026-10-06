@@ -3,7 +3,7 @@ use crate::{error::ApiError, state::AppState};
 use scope_domain::{
     github_connection::GitHubConnection,
     github_workflow_jobs::{
-        GitHubJobLog, GitHubJobsRead, GitHubWorkflowJob, github_jobs_need_read,
+        GitHubJobLogState, GitHubJobsRead, GitHubWorkflowJob, github_jobs_need_read,
     },
     github_workflow_runs::GitHubWorkflowRun,
 };
@@ -57,13 +57,22 @@ pub(crate) async fn run_jobs(
 ) -> Result<GitHubRunJobs, ApiError> {
     let run = &detail.read.run;
     let repositories = state.metadata.repositories();
+    let stored = || {
+        repositories.github_workflow_jobs(
+            &connection.repository_id,
+            connection.github_repository_id,
+            run.github_run_id,
+            run.run_attempt,
+        )
+    };
+    let mut jobs = stored().await?;
     let mut unavailable = None;
     let claimed = GitHubJobsRead {
         run_attempt: run.run_attempt,
         read_at_unix: now_unix,
     };
     if connection.is_connected()
-        && github_jobs_need_read(run, detail.jobs_read, now_unix)
+        && github_jobs_need_read(run, detail.jobs_read, !jobs.is_empty(), now_unix)
         && repositories
             .replace_github_jobs_read(
                 &connection.repository_id,
@@ -74,7 +83,10 @@ pub(crate) async fn run_jobs(
             .await?
     {
         match read_run_jobs(state, connection, run).await {
-            Ok(true) => publish(state, connection, run.github_run_id).await?,
+            Ok(true) => {
+                publish(state, connection, run.github_run_id).await?;
+                jobs = stored().await?;
+            }
             Ok(false) => {
                 unavailable = Some("GitHub no longer reports this run's jobs.".to_string())
             }
@@ -99,14 +111,6 @@ pub(crate) async fn run_jobs(
             }
         }
     }
-    let jobs = repositories
-        .github_workflow_jobs(
-            &connection.repository_id,
-            connection.github_repository_id,
-            run.github_run_id,
-            run.run_attempt,
-        )
-        .await?;
     Ok(GitHubRunJobs {
         unavailable: unavailable.filter(|_| jobs.is_empty()),
         jobs,
@@ -146,7 +150,7 @@ pub(crate) async fn job_log(
     connection: &GitHubConnection,
     job: &GitHubWorkflowJob,
     now_unix: u64,
-) -> Result<Option<GitHubJobLog>, ApiError> {
+) -> Result<GitHubJobLogState, ApiError> {
     if !job.is_completed() {
         return Err(ApiError::conflict(
             "This job's log is available once the job finishes.",
@@ -157,27 +161,24 @@ pub(crate) async fn job_log(
         .github_workflow_job_log(job.github_job_id)
         .await?
     {
-        return Ok(Some(log));
+        return Ok(log);
     }
     if !connection.is_connected() {
         return Err(ApiError::conflict(
             "This repository is no longer connected to GitHub, so the log cannot be read.",
         ));
     }
-    let Some(log) = configured_app(state)?
+    let log = configured_app(state)?
         .job_log(
             connection.installation_id,
             &connection.github_full_name,
             job.github_job_id,
         )
-        .await?
-    else {
-        return Ok(None);
-    };
+        .await?;
     repositories
         .save_github_workflow_job_log(job.github_job_id, &log, now_unix)
         .await?;
-    Ok(Some(log))
+    Ok(log)
 }
 
 async fn publish(

@@ -4,7 +4,8 @@ use crate::error::ApiError;
 use reqwest::{Method, StatusCode};
 use scope_domain::{
     github_workflow_jobs::{
-        GITHUB_JOB_LOG_LIMIT_BYTES, GitHubJobLog, GitHubWorkflowJob, GitHubWorkflowStep,
+        GITHUB_JOB_LOG_LIMIT_BYTES, GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob,
+        GitHubWorkflowStep,
     },
     requests::{GitHubCheckConclusion, GitHubCheckStatus},
 };
@@ -148,9 +149,11 @@ impl GitHubApp {
         installation_id: u64,
         full_name: &str,
         job_id: u64,
-    ) -> Result<Option<GitHubJobLog>, ApiError> {
+    ) -> Result<GitHubJobLogState, ApiError> {
         let Some(token) = self.installation_token(installation_id).await? else {
-            return Ok(None);
+            return Err(unavailable(format!(
+                "GitHub installation {installation_id} no longer exists"
+            )));
         };
         let mut response = self
             .request(
@@ -166,7 +169,7 @@ impl GitHubApp {
             })?;
         let status = response.status();
         if status == StatusCode::GONE {
-            return Ok(None);
+            return Ok(GitHubJobLogState::Expired);
         }
         if !status.is_success() {
             return Err(unavailable(format!(
@@ -187,7 +190,9 @@ impl GitHubApp {
                 dropped = true;
             }
         }
-        Ok(Some(GitHubJobLog::from_tail(&tail, dropped)))
+        Ok(GitHubJobLogState::Kept(GitHubJobLog::from_tail(
+            &tail, dropped,
+        )))
     }
 }
 

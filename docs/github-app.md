@@ -333,10 +333,12 @@ Jobs come from GitHub's Actions API and are stored in
 `scope_github_workflow_jobs`. A `workflow_job` delivery reads that job again
 and sends a `GitHubWorkflowRunChanged` repository event, which the run's open
 pages use to refresh in place. Opening a run reads all of its jobs when Scope
-never read them for the run's current attempt, when the run is still going and
-the last read is 30 seconds old, or when the run finished after the last read.
+never read them for the run's current attempt, when the run is still going or
+lists no jobs and the last read is 30 seconds old, or when the run finished
+after the last read.
 Only one reader claims each such read, so many viewers of one run ask GitHub
-once. A stored job only moves forward, like a stored run. A read GitHub does
+once, and a read that fails hands its claim back so the next visit tries
+again. A stored job only moves forward, like a stored run. A read GitHub does
 not answer leaves the page with what Scope has; with no jobs at all, the page
 says GitHub could not be reached. Pages that do not receive repository events
 check again every 15 seconds while the run or a job is unfinished.
@@ -345,8 +347,8 @@ GitHub serves a job's log only once the job finishes, so a running job shows
 its steps and says its log appears when it finishes. The first time someone
 opens a finished job, Scope reads its log and keeps the last 1 MB, from the
 first whole line, in `scope_github_workflow_job_logs`; the page says when a log
-is cut and links to the whole log on GitHub. A log GitHub has let expire reads
-as gone, and one it has not published yet is asked for again.
+is cut and links to the whole log on GitHub. A log GitHub has let expire is
+kept as gone, and one it has not published yet is asked for again.
 
 Maintainers open every run. When the GitHub repository is public, everything
 its runs print is public on GitHub, so anyone who can see a request also opens

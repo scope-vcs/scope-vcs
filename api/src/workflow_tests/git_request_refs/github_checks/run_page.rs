@@ -145,10 +145,13 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
     }
     assert_eq!(fake.job_log_reads.load(Ordering::SeqCst), 2);
     fake.report_job_log(901, None);
-    assert_eq!(
-        expect_json(job_log(state, 901).await, StatusCode::OK).await,
-        serde_json::json!({ "text": null, "truncated": false })
-    );
+    for _ in 0..2 {
+        assert_eq!(
+            expect_json(job_log(state, 901).await, StatusCode::OK).await,
+            serde_json::json!({ "text": null, "truncated": false })
+        );
+    }
+    assert_eq!(fake.job_log_reads.load(Ordering::SeqCst), 3);
     assert_eq!(job_log(state, 903).await.status(), StatusCode::NOT_FOUND);
     assert_eq!(
         open_run(state, 999, Some(&bearer_header())).await.status(),

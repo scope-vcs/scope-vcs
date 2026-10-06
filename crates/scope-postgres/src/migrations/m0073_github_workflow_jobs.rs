@@ -61,14 +61,17 @@ impl MigrationTrait for Migration {
                     );
 
                 -- The end of a finished job's log, read from GitHub the first
-                -- time someone opens it. A finished job's log does not change.
+                -- time someone opens it, or NULL once GitHub said it expired.
+                -- A finished job's log does not change.
                 CREATE TABLE scope_github_workflow_job_logs (
                     github_job_id bigint PRIMARY KEY
                         REFERENCES scope_github_workflow_jobs(github_job_id) ON DELETE CASCADE,
-                    log_text text NOT NULL,
+                    log_text text,
                     truncated boolean NOT NULL,
                     stored_at_unix bigint NOT NULL,
-                    CONSTRAINT scope_github_workflow_job_log_values CHECK (stored_at_unix >= 0)
+                    CONSTRAINT scope_github_workflow_job_log_values CHECK (
+                        stored_at_unix >= 0 AND (log_text IS NOT NULL OR NOT truncated)
+                    )
                 );
 
                 -- When Scope last read a run's jobs from GitHub, and for which

@@ -13,7 +13,10 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
-use scope_domain::{github_connection::GitHubConnection, github_workflow_jobs::github_run_visible};
+use scope_domain::{
+    github_connection::GitHubConnection,
+    github_workflow_jobs::{GitHubJobLogState, github_run_visible},
+};
 use scope_postgres::db::GitHubWorkflowRunDetailRead;
 
 pub(crate) async fn get_github_workflow_run(
@@ -54,8 +57,11 @@ pub(crate) async fn get_github_workflow_job_log(
         .ok_or_else(|| ApiError::not_found("job not found"))?;
     let log = github_workflow_jobs::job_log(&state, &connection, &job, unix_now()?).await?;
     Ok(Json(GitHubWorkflowJobLogResponse {
-        truncated: log.as_ref().is_some_and(|log| log.truncated),
-        text: log.map(|log| log.text),
+        truncated: matches!(&log, GitHubJobLogState::Kept(log) if log.truncated),
+        text: match log {
+            GitHubJobLogState::Kept(log) => Some(log.text),
+            GitHubJobLogState::Expired => None,
+        },
     }))
 }
 

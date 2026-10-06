@@ -69,12 +69,13 @@ pub struct GitHubJobsRead {
 pub fn github_jobs_need_read(
     run: &GitHubWorkflowRun,
     last_read: Option<GitHubJobsRead>,
+    has_jobs: bool,
     now_unix: u64,
 ) -> bool {
     let Some(read) = last_read.filter(|read| read.run_attempt == run.run_attempt) else {
         return true;
     };
-    if run.is_completed() {
+    if run.is_completed() && has_jobs {
         read.read_at_unix < run.updated_at_unix
     } else {
         now_unix
@@ -82,6 +83,12 @@ pub fn github_jobs_need_read(
                 .read_at_unix
                 .saturating_add(GITHUB_JOBS_READ_INTERVAL_SECS)
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitHubJobLogState {
+    Kept(GitHubJobLog),
+    Expired,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -177,21 +184,29 @@ mod tests {
     }
 
     #[test]
-    fn jobs_are_read_for_a_new_attempt_a_stale_running_run_and_a_run_finished_since() {
+    fn jobs_are_read_for_a_new_attempt_a_stale_unfinished_or_jobless_run_and_a_run_finished_since()
+    {
         let running = run(GitHubCheckStatus::InProgress, 100);
-        assert!(github_jobs_need_read(&running, None, 100));
+        assert!(github_jobs_need_read(&running, None, true, 100));
         let read = |run_attempt, read_at_unix| {
             Some(GitHubJobsRead {
                 run_attempt,
                 read_at_unix,
             })
         };
-        assert!(github_jobs_need_read(&running, read(1, 100), 100));
-        assert!(!github_jobs_need_read(&running, read(2, 100), 129));
-        assert!(github_jobs_need_read(&running, read(2, 100), 130));
+        assert!(github_jobs_need_read(&running, read(1, 100), true, 100));
+        assert!(!github_jobs_need_read(&running, read(2, 100), true, 129));
+        assert!(github_jobs_need_read(&running, read(2, 100), true, 130));
         let completed = run(GitHubCheckStatus::Completed, 200);
-        assert!(github_jobs_need_read(&completed, read(2, 150), 1_000));
-        assert!(!github_jobs_need_read(&completed, read(2, 200), 1_000));
+        assert!(github_jobs_need_read(&completed, read(2, 150), true, 1_000));
+        assert!(!github_jobs_need_read(
+            &completed,
+            read(2, 200),
+            true,
+            1_000
+        ));
+        assert!(!github_jobs_need_read(&completed, read(2, 200), false, 229));
+        assert!(github_jobs_need_read(&completed, read(2, 200), false, 230));
     }
 
     #[test]

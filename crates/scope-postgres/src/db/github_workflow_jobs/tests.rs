@@ -130,28 +130,35 @@ async fn a_finished_jobs_first_stored_log_is_kept() {
         repositories.github_workflow_job_log(12).await.unwrap(),
         None
     );
-    let first = GitHubJobLog {
+    let first = GitHubJobLogState::Kept(GitHubJobLog {
         text: "first\n".into(),
         truncated: true,
-    };
+    });
     repositories
         .save_github_workflow_job_log(12, &first, 100)
         .await
         .unwrap();
     repositories
-        .save_github_workflow_job_log(
-            12,
-            &GitHubJobLog {
-                text: "second\n".into(),
-                truncated: false,
-            },
-            200,
-        )
+        .save_github_workflow_job_log(12, &GitHubJobLogState::Expired, 200)
         .await
         .unwrap();
     assert_eq!(
         repositories.github_workflow_job_log(12).await.unwrap(),
         Some(first)
+    );
+
+    let expired = job(13, 1, GitHubCheckStatus::Completed, vec![]);
+    repositories
+        .save_github_workflow_jobs(REPO, 42, &[expired])
+        .await
+        .unwrap();
+    repositories
+        .save_github_workflow_job_log(13, &GitHubJobLogState::Expired, 100)
+        .await
+        .unwrap();
+    assert_eq!(
+        repositories.github_workflow_job_log(13).await.unwrap(),
+        Some(GitHubJobLogState::Expired)
     );
 }
 
