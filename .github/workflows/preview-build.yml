@@ -8,7 +8,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: scope-preview-build-${{ github.event.pull_request.number }}
+  group: >-
+    ${{ github.event.action == 'labeled' && github.event.label.name != 'preview'
+    && format('scope-preview-build-ignored-{0}', github.run_id)
+    || format('scope-preview-build-{0}', github.event.pull_request.number) }}
   cancel-in-progress: true
 
 jobs:
@@ -28,6 +31,32 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           echo "Building preview images of $SOURCE_SHA for pull request #$PULL_REQUEST."
+
+  role-grants:
+    name: Role grants
+    needs: select
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: Checkout merge revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+
+      - name: Render the revision's runtime role grants
+        run: node deploy/postgres/runtime-roles.mjs --grants-only > preview-role-grants.sql
+
+      - name: Upload role grants
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preview-role-grants-${{ github.sha }}
+          path: preview-role-grants.sql
+          if-no-files-found: error
 
   backend:
     name: Backend artifacts
@@ -57,7 +86,7 @@ jobs:
 
   prepare:
     name: Prepare preview images
-    needs: [backend, web, media-worker]
+    needs: [backend, web, media-worker, role-grants]
     permissions:
       actions: read
       contents: read

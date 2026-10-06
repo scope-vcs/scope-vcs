@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { createPublicKey, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { renderPolicy } from '../../deploy/postgres/runtime-roles.mjs';
 
 const PREVIEW_NAME = /^pr-[1-9][0-9]{0,8}$/;
@@ -102,10 +102,15 @@ export function previewVariables({ manifest, domains, current, secrets, clerk })
   const variables = Object.fromEntries(Object.values(ids).map((id) => [id, {}]));
   const set = (component, values) => Object.assign(variables[ids[component]], values);
   const has = (component, name) => Boolean(current[ids[component]]?.[name]);
-  const group = (members, values) => {
-    if (members.some(([component, name]) => !has(component, name))) {
-      for (const [component, name] of members) set(component, { [name]: values[name] });
-    }
+  const shared = (components, name, generated) => {
+    const retained = [...new Set(components.map((component) => current[ids[component]]?.[name]).filter(Boolean))];
+    if (retained.length > 1) throw new Error(`Preview ${name} differs between services; repair it by hand.`);
+    for (const component of components) set(component, { [name]: retained[0] ?? generated });
+  };
+  const signingPair = ([privateComponent, privateName], [publicComponent, publicName], generated) => {
+    const privateKey = current[ids[privateComponent]]?.[privateName] || generated.privateKey;
+    set(privateComponent, { [privateName]: privateKey });
+    set(publicComponent, { [publicName]: createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }) });
   };
 
   set('postgres', {
@@ -149,19 +154,11 @@ export function previewVariables({ manifest, domains, current, secrets, clerk })
     SCOPE_BUCKET_SECRET_ACCESS_KEY: blobs('SECRET_ACCESS_KEY'),
   });
 
-  group([['api', 'SCOPE_OBJECT_ENCRYPTION_KEY'], ['run-worker', 'SCOPE_OBJECT_ENCRYPTION_KEY'],
-    ['maintenance', 'SCOPE_OBJECT_ENCRYPTION_KEY']], { SCOPE_OBJECT_ENCRYPTION_KEY: secrets.objectEncryptionKey });
-  group([['media-api', 'SCOPE_MEDIA_ENCRYPTION_KEY'], ['media-worker', 'SCOPE_MEDIA_ENCRYPTION_KEY']],
-    { SCOPE_MEDIA_ENCRYPTION_KEY: secrets.mediaEncryptionKey });
-  group([['api', 'SCOPE_CACHE_GRANT_PRIVATE_KEY'], ['cache', 'SCOPE_CACHE_GRANT_PUBLIC_KEY']], {
-    SCOPE_CACHE_GRANT_PRIVATE_KEY: secrets.cacheGrant.privateKey,
-    SCOPE_CACHE_GRANT_PUBLIC_KEY: secrets.cacheGrant.publicKey,
-  });
-  group([['api', 'SCOPE_MEDIA_GRANT_PRIVATE_KEY'], ['media-api', 'SCOPE_MEDIA_GRANT_PUBLIC_KEY']], {
-    SCOPE_MEDIA_GRANT_PRIVATE_KEY: secrets.mediaGrant.privateKey,
-    SCOPE_MEDIA_GRANT_PUBLIC_KEY: secrets.mediaGrant.publicKey,
-  });
-  group([['api', 'SCOPE_OPERATOR_TOKEN']], { SCOPE_OPERATOR_TOKEN: secrets.operatorToken });
+  shared(['api', 'run-worker', 'maintenance'], 'SCOPE_OBJECT_ENCRYPTION_KEY', secrets.objectEncryptionKey);
+  shared(['media-api', 'media-worker'], 'SCOPE_MEDIA_ENCRYPTION_KEY', secrets.mediaEncryptionKey);
+  shared(['api'], 'SCOPE_OPERATOR_TOKEN', secrets.operatorToken);
+  signingPair(['api', 'SCOPE_CACHE_GRANT_PRIVATE_KEY'], ['cache', 'SCOPE_CACHE_GRANT_PUBLIC_KEY'], secrets.cacheGrant);
+  signingPair(['api', 'SCOPE_MEDIA_GRANT_PRIVATE_KEY'], ['media-api', 'SCOPE_MEDIA_GRANT_PUBLIC_KEY'], secrets.mediaGrant);
 
   return Object.fromEntries(Object.entries(variables).filter(([, values]) => Object.keys(values).length > 0));
 }

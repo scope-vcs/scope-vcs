@@ -147,17 +147,23 @@ export function ensurePreviewEnvironment({ manifest, pullRequest, clerk, registr
   const { staging } = releaseEnvironmentIds(manifest);
   const ids = serviceIds(manifest);
   const name = previewEnvironmentName(pullRequest);
-  if (!findEnvironment(railway, projectId, name)) {
+  const existing = findEnvironment(railway, projectId, name);
+  if (!existing) {
     railway.mutate('mutation PreviewCreate($input:EnvironmentCreateInput!){environmentCreate(input:$input){id}}', {
       input: { projectId, name, sourceEnvironmentId: staging, ephemeral: true, skipInitialDeploys: true },
     });
   }
   const environmentId = assertPreviewEnvironment(manifest, waitFor(railway, `${name} creation`,
     () => findEnvironment(railway, projectId, name)), name);
-  const config = waitFor(railway, `${name} services`, () => {
-    const candidate = environmentConfig(railway, environmentId);
-    return Object.values(ids).every((id) => candidate?.services?.[id]) ? candidate : null;
-  });
+  const hasServices = (candidate) => Object.values(ids).every((id) => candidate?.services?.[id]);
+  const config = existing ? environmentConfig(railway, environmentId)
+    : waitFor(railway, `${name} services`, () => {
+      const candidate = environmentConfig(railway, environmentId);
+      return hasServices(candidate) ? candidate : null;
+    });
+  if (!hasServices(config)) {
+    throw new Error(`${name} predates a service the deployment manifest requires; remove and re-add the preview label to recreate it.`);
+  }
   const domains = previewDomains(manifest, config);
   ensurePostgresVolume(railway, projectId, environmentId, ids.postgres);
   enableTracing(railway, environmentId, ids);
@@ -185,7 +191,10 @@ export function bootstrapPreviewDatabase({ manifest, environmentId, railway, run
   const { production, staging } = releaseEnvironmentIds(manifest);
   if (environmentId === production || environmentId === staging) throw new Error('Database bootstrap only runs in preview environments.');
   const variables = currentVariables(railway, projectId, environmentId, ids);
-  if (!databaseBootstrapPending(variables[ids.maintenance].DATABASE_URL)) return { bootstrapped: false };
+  if (!databaseBootstrapPending(variables[ids.maintenance].DATABASE_URL)) {
+    deployService(railway, environmentId, ids.maintenance, 'preview maintenance');
+    return { bootstrapped: false };
+  }
   const rolePasswords = Object.fromEntries(Object.entries(RUNTIME_ROLES)
     .map(([component, role]) => [role, rolePassword(variables[ids[component]].DATABASE_URL, role)]));
   const { sql, migratorDatabaseUrl } = databaseBootstrap(rolePasswords, migratorPassword);

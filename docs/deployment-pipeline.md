@@ -119,13 +119,23 @@ environment with its database volume and bucket instances. Staging remains the
 release gate; previews never replace its production baseline or smoke checks.
 
 `Preview build` runs on the pull request without Railway credentials. It builds
-the backend binaries, web runtime, and media worker image for the merge commit
-and prepares digest-pinned images. `Preview environment` runs the reviewed
-orchestration from `main` through `workflow_run` and `pull_request_target`, so
-the account Railway token and SSH key stay in the main-only `preview` GitHub
-environment. Before deploying, it confirms the build is the merge of the
-pull request's current head into `main` and that the label is still present. It
-never executes pull request code on the runner.
+the backend binaries, web runtime, and media worker image for the merge commit,
+prepares digest-pinned images, and renders the revision's runtime role grants.
+Label events for other labels run in their own concurrency group so they never
+cancel a preview build.
+
+`Preview environment` runs the reviewed orchestration from `main` through
+`workflow_run` and `pull_request_target`, so the account Railway token and SSH
+key stay in the main-only `preview` GitHub environment and pull request code
+never runs on its runner. A planning job without secrets decides what to do: a
+build that prepared images deploys if it is the merge of the pull request's
+current head into `main` and the pull request still qualifies, and deletes the
+preview if the pull request was closed or unlabeled meanwhile; runs that built
+nothing are skipped. Every close attempts deletion, and deletion first checks
+that the pull request has not been reopened or relabeled. Deploy and delete jobs
+share one queue per pull request and check the pull request again once they hold
+it, so a deployment that outlived its label deletes the preview instead. A separate job revokes the run's project token
+even when deployment times out, and the pull request comment reports failures.
 
 The first deployment copies staging with `skipInitialDeploys`. Railway does not
 copy sealed variables, so the workflow generates the Postgres administrator
@@ -137,14 +147,21 @@ deploys. Railway also copies staging's unsealed variables. The preview keeps
 only the settings reviewed in `KEPT_STAGING_SETTINGS` and its own variables and
 deletes the rest, so pull request code cannot read staging credentials; add a new
 non-secret staging setting to that list before previews need it. Clerk uses the
-repository's development key pair. Existing
-keys and passwords are never regenerated once set. The private maintenance
-service applies `runtime-roles.mjs --roles-only` with the administrator login,
-sets each role's password, and switches itself to `scope_migrator`. Every later
-deployment uses the staging path: stop writers, migrate as `scope_migrator`,
-refresh grants, then activate cache, media, worker, API, router, and web.
-Deployment and SSH use a project token scoped to the preview environment and
-deleted when the job ends.
+repository's development key pair. Generated keys and passwords are never
+regenerated once set; repairing a partial group reuses the value other services
+still hold, and a signing public key is always derived from its private key.
+
+The private maintenance service applies `runtime-roles.mjs --roles-only` with
+the administrator login, sets each role's password, and switches itself to
+`scope_migrator`. Every deployment then redeploys maintenance so it runs with
+its stored login, and follows the staging path: stop writers, migrate as
+`scope_migrator`, refresh grants from the revision's own role policy, then
+activate cache, media, worker, API, router, and web. Deployment and SSH use a
+project token scoped to the preview environment.
+
+Railway copies staging only once. A preview that predates a service the
+deployment manifest now requires fails with a message; remove and re-add the
+label to recreate it.
 
 The `preview` GitHub environment must allow only `main` and hold
 `RAILWAY_API_TOKEN` and `SCOPE_RAILWAY_SSH_PRIVATE_KEY`.

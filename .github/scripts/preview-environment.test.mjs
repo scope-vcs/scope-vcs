@@ -212,10 +212,13 @@ test('creates, configures, and bootstraps a preview copy of staging once', () =>
   const before = structuredClone(railway.state.copy.variables);
   const calls = railway.state.calls.length;
   ensure(railway);
+  const deploymentsBefore = railway.state.deployments.length;
   assert.deepEqual(bootstrap(railway), { bootstrapped: false });
+  assert.deepEqual(railway.state.deployments.slice(deploymentsBefore), [ids.maintenance]);
   assert.deepEqual(railway.state.copy.variables, before);
   assert.equal(railway.state.bootstraps.length, 1);
-  assert.deepEqual([...new Set(railway.state.calls.slice(calls).map(([name]) => name))], ['mutation PreviewTracing', 'mutation PreviewRegistry']);
+  assert.deepEqual([...new Set(railway.state.calls.slice(calls).map(([name]) => name))],
+    ['mutation PreviewTracing', 'mutation PreviewRegistry', 'mutation PreviewDeploy']);
 });
 
 test('refuses release and persistent environments that share the preview name', () => {
@@ -261,4 +264,29 @@ test('stops provisioning when Railway cannot list a service variables', () => {
   railway.query = (text, variables) => text.startsWith('query PreviewVariables') ? { variables: null } : query(text, variables);
   assert.throws(() => ensure(railway), /did not return preview variables/);
   assert.ok(!railway.state.calls.some(([name]) => name.startsWith('mutation PreviewVariable')));
+});
+
+test('repairing a partial secret group reuses the value services still hold', () => {
+  const domains = { api: 'a', web: 'w', cache: 'c', 'git-router': 'g', 'media-api': 'm' };
+  const original = generatePreviewSecrets();
+  const first = previewVariables({ manifest, domains, current: stagingCopy().variables, secrets: original, clerk });
+  const current = Object.fromEntries(Object.values(ids).map((id) => [id, { ...stagingCopy().variables[id], ...first[id] }]));
+  delete current[ids.maintenance].SCOPE_OBJECT_ENCRYPTION_KEY;
+  current[ids.cache].SCOPE_CACHE_GRANT_PUBLIC_KEY = 'stale';
+  const repaired = changedVariables(previewVariables({ manifest, domains, current, secrets: generatePreviewSecrets(), clerk }), current);
+  assert.deepEqual(repaired, {
+    [ids.maintenance]: { SCOPE_OBJECT_ENCRYPTION_KEY: original.objectEncryptionKey },
+    [ids.cache]: { SCOPE_CACHE_GRANT_PUBLIC_KEY: original.cacheGrant.publicKey },
+  });
+
+  current[ids.maintenance].SCOPE_OBJECT_ENCRYPTION_KEY = generatePreviewSecrets().objectEncryptionKey;
+  assert.throws(() => previewVariables({ manifest, domains, current, secrets: generatePreviewSecrets(), clerk }),
+    /SCOPE_OBJECT_ENCRYPTION_KEY differs between services/);
+});
+
+test('an existing preview missing a required service fails fast with recreate instructions', () => {
+  const railway = fakeRailway({ environments: [{ id: preview, name: 'pr-7', isEphemeral: true }] });
+  delete railway.state.copy.services[ids['media-worker']];
+  assert.throws(() => ensure(railway), /remove and re-add the preview label/);
+  assert.equal(railway.state.clock, 0);
 });

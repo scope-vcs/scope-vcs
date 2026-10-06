@@ -190,6 +190,21 @@ test('apply refreshes runtime grants and surfaces grant failures', t => {
   assert.notEqual(f.run([production, 'apply'], { TEST_GRANT_FAILURE: '1' }).status, 0);
 });
 
+test('preview apply refreshes grants from the prepared preview policy only in that preview', t => {
+  const f = fixture(t);
+  const preview = '55555555-5555-4555-8555-555555555555';
+  const policy = join(f.dir, 'preview-grants.sql');
+  writeFileSync(policy, 'GRANT preview;\n');
+  const result = f.run([preview, 'apply'], { SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID: preview, SCOPE_ROLE_GRANTS_SQL: policy });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(f.env.TEST_GRANTS, 'utf8'), 'GRANT preview;\n');
+  const attempts = readFileSync(f.env.TEST_ATTEMPTS, 'utf8');
+  const refused = f.run([staging, 'apply'], { SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID: preview, SCOPE_ROLE_GRANTS_SQL: policy });
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /only to the preview environment/);
+  assert.equal(readFileSync(f.env.TEST_ATTEMPTS, 'utf8'), attempts);
+});
+
 test('maintenance image pins PostgreSQL clients and runs only the non-root maintenance server', () => {
   const dockerfile = readFileSync(new URL('../../deploy/railway/maintenance.Dockerfile', import.meta.url), 'utf8');
   assert.match(dockerfile, /^FROM postgres:18\.[0-9]+@sha256:[a-f0-9]{64}$/m);
