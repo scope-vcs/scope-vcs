@@ -68,6 +68,12 @@ pub struct RequestDiscussionsPageQuery<'a> {
     pub limit: u64,
 }
 
+pub type DiscussionWithUsers = (RequestDiscussionReadModel, BTreeMap<String, UserAccount>);
+pub type ReplyWithUsers = (
+    RequestDiscussionReplyReadModel,
+    BTreeMap<String, UserAccount>,
+);
+
 impl RequestStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_revision_window"))]
     pub async fn request_revision_window(
@@ -108,8 +114,7 @@ impl RequestStore {
         request_id: &str,
         discussion_id: &str,
         viewer_user_id: Option<&str>,
-    ) -> Result<Option<(RequestDiscussionReadModel, BTreeMap<String, UserAccount>)>, PostgresError>
-    {
+    ) -> Result<Option<DiscussionWithUsers>, PostgresError> {
         let discussion = match discussion_by_id(self.db.as_ref(), discussion_id).await? {
             Some(discussion) if discussion.request_id == request_id => discussion,
             _ => return Ok(None),
@@ -263,13 +268,7 @@ impl RequestStore {
         &self,
         discussion_id: &str,
         reply_id: &str,
-    ) -> Result<
-        Option<(
-            RequestDiscussionReplyReadModel,
-            BTreeMap<String, UserAccount>,
-        )>,
-        PostgresError,
-    > {
+    ) -> Result<Option<ReplyWithUsers>, PostgresError> {
         let Some(reply) = reply_by_id(self.db.as_ref(), reply_id).await? else {
             return Ok(None);
         };
