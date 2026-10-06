@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[tokio::test]
 async fn public_request_reads_and_start_use_current_head_before_projection_rebuild() {
@@ -10,13 +11,13 @@ async fn public_request_reads_and_start_use_current_head_before_projection_rebui
     fs::write(source.join("internal/notes.md"), "private\n").unwrap();
     run_git(Some(&source), &["add", "."], "stage publication fixture").unwrap();
     commit_all(&source, "initial public and private content");
-    let mut config = repo_config(Visibility::Public);
+    let mut config = repo_config(ViewId::public());
     config
-        .visibility
+        .files
         .rules
-        .push(scope_domain::repo_config::RepoConfigVisibilityRule {
+        .push(scope_domain::repo_config::RepoConfigFileRule {
             path: "/internal".into(),
-            visibility: ConfigVisibility::Private,
+            view: ViewId::private(),
         });
     let first = clone_test_repo(&source, "request-publication-first", true);
     apply_first_push_from_staging_repo(&state, &first, config.clone()).await;
@@ -65,7 +66,8 @@ async fn public_request_reads_and_start_use_current_head_before_projection_rebui
     let public_projection = scope_domain::projection::project_graph(
         &repo.graph,
         &repo.visibility_change_sets,
-        scope_domain::projection::ProjectionViewKey::Public,
+        repo.repo_config.views(),
+        &ViewId::public(),
     );
     let expected_public_head = scope_git::projection_head_oid(&public_projection)
         .unwrap()
@@ -124,7 +126,7 @@ async fn public_request_reads_and_start_use_current_head_before_projection_rebui
         "POST",
         "/v1/repos/owner/repo/requests",
         Some(&bearer_header()),
-        Some(r#"{"name":"after-publication","audience":"Public"}"#),
+        Some(r#"{"name":"after-publication","view":"public"}"#),
     )
     .await;
     assert_eq!(started.status(), StatusCode::OK);

@@ -1,5 +1,6 @@
 use super::*;
 use crate::git::import::git_snapshot_from_ref;
+use scope_domain::views::ViewId;
 
 #[tokio::test]
 async fn private_request_run_source_supplies_its_old_main_base_before_runner_checkout() {
@@ -138,7 +139,7 @@ async fn private_request_full_projection_snapshot_survives_later_git_main() {
         };
         let mut catalog = scope_postgres::db::CatalogFixture::default();
         catalog
-            .create_repository(&owner, "repo", Visibility::Private)
+            .create_repository(&owner, "repo", ViewId::private())
             .unwrap();
         catalog.users.insert(owner.id.clone(), owner);
         state

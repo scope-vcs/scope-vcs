@@ -1,14 +1,15 @@
 use super::*;
 use scope_domain::requests::{
-    RecordWorkingRequestUploadInput, RequestActorRole, RequestAudience, StartRequestInput,
+    RecordWorkingRequestUploadInput, RequestActorRole, StartRequestInput,
 };
+use scope_domain::views::ViewId;
 
 pub(crate) async fn create_owner_request(state: &AppState, request_id: &str, head_oid: &str) {
     create_request(
         state,
         request_id,
         test_owner_id(),
-        RequestAudience::Private,
+        ViewId::private(),
         head_oid,
     )
     .await;
@@ -24,7 +25,7 @@ pub(crate) async fn create_public_request(
         state,
         request_id,
         author_user_id,
-        RequestAudience::Public,
+        ViewId::public(),
         head_oid,
     )
     .await;
@@ -34,20 +35,21 @@ async fn create_request(
     state: &AppState,
     request_id: &str,
     author_user_id: String,
-    audience: RequestAudience,
+    view: ViewId,
     head_oid: &str,
 ) {
-    let (role, title, snapshot) = match audience {
-        RequestAudience::Private => (
+    let (role, title, snapshot) = if view.is_private() {
+        (
             RequestActorRole::Owner,
             "Owner request",
             "owner request git snapshot",
-        ),
-        RequestAudience::Public => (
+        )
+    } else {
+        (
             RequestActorRole::Public,
             "Public request",
             "public request git snapshot",
-        ),
+        )
     };
     drain_outbox(state, "request-read-test").await;
     let requests = state.metadata.requests();
@@ -59,7 +61,7 @@ async fn create_request(
             author_user_id: author_user_id.clone(),
             title: Some(title.to_string()),
             author_role: role,
-            audience,
+            view,
             base_main_oid: REQUEST_HEAD.to_string(),
             event_id: format!("event_{request_id}_started"),
             now_unix: 2,

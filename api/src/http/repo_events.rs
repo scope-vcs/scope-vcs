@@ -197,7 +197,7 @@ async fn stream_event_for_user(
         };
         if !request_policy(
             &request,
-            RequestViewer::new(repo.access, user_id, is_invitee),
+            RequestViewer::new(repo.access.clone(), user_id, is_invitee),
         )
         .activity_stream_visible
         {
@@ -242,10 +242,10 @@ fn event_for_access(
         return None;
     }
 
-    if let RepoChangeKind::RequestTimelineChanged { audience, .. }
-    | RepoChangeKind::RequestAttachmentChanged { audience, .. } = &event.kind
+    if let RepoChangeKind::RequestTimelineChanged { view, .. }
+    | RepoChangeKind::RequestAttachmentChanged { view, .. } = &event.kind
     {
-        if matches!(audience, scope_api_contract::RequestAudience::Public) {
+        if scope_domain::views::Views::builtin().may_read(&repo.access.view, &view.clone().into()) {
             return Some(RepoChangeEvent {
                 version: 0,
                 ..event

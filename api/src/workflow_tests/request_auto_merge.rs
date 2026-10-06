@@ -1,9 +1,10 @@
 use super::*;
 use scope_domain::requests::{
-    NativeRequestCheck, RecordRequestRevisionInput, RequestActorRole, RequestAudience,
-    RequestCheck, RequestCheckEvaluation, RequestRevisionGitFacts, StartRequestInput,
+    NativeRequestCheck, RecordRequestRevisionInput, RequestActorRole, RequestCheck,
+    RequestCheckEvaluation, RequestRevisionGitFacts, StartRequestInput,
 };
 use scope_domain::runs::run::RunState;
+use scope_domain::views::ViewId;
 use scope_postgres::db::{RecordRequestChecksCommand, SubmitRequestCommand};
 
 const AUTO_REQUEST_ID: &str = "req_auto_merge";
@@ -22,7 +23,7 @@ async fn open_request_with_revision(
     request_id: &str,
     author_user_id: String,
     author_role: RequestActorRole,
-    audience: RequestAudience,
+    view: ViewId,
 ) -> (AppState, String) {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
@@ -50,7 +51,7 @@ async fn open_request_with_revision(
             author_user_id: author_user_id.clone(),
             title: Some("Auto merge request".to_string()),
             author_role,
-            audience,
+            view,
             base_main_oid: FIRST_HEAD.to_string(),
             event_id: format!("event_{request_id}_started"),
             now_unix: 2,
@@ -78,7 +79,7 @@ async fn open_owner_request(request_id: &str) -> (AppState, String) {
         request_id,
         test_owner_id(),
         RequestActorRole::Owner,
-        RequestAudience::Private,
+        ViewId::private(),
     )
     .await
 }
@@ -265,11 +266,11 @@ fn push_head(repo: &FsPath, remote: &str, branch: &str, label: &str) {
 
 async fn native_open_request(
     label: &str,
-    audience: RequestAudience,
+    view: ViewId,
 ) -> (AppState, TempGitRepo, String, String, String, TestServer) {
     let (state, source, _main_head) =
         super::push_intent_completion::published_git_fixture(label).await;
-    if audience == RequestAudience::Public {
+    if view == ViewId::public() {
         drain_outbox(&state, &format!("{label}-initial-public-projection")).await;
     }
     let app = router(state.clone());
@@ -283,7 +284,7 @@ async fn native_open_request(
             Some(
                 &serde_json::json!({
                     "name": AUTO_REQUEST_NAME,
-                    "audience": audience,
+                    "view": view,
                 })
                 .to_string(),
             ),
@@ -295,7 +296,7 @@ async fn native_open_request(
     let request_id = started["request"]["id"].as_str().unwrap().to_string();
     let (origin, server) = spawn_test_server(&state).await;
     let remote = format!("{origin}/git/permissioned/{TEST_REPO_ID}");
-    let public_request_source = if audience == RequestAudience::Public {
+    let public_request_source = if view == ViewId::public() {
         let request_source = TempGitRepo(unique_test_path(&format!("{label}-public-request")));
         let public_remote = format!("{origin}/git/public/{TEST_REPO_ID}");
         run_git(
@@ -407,7 +408,7 @@ async fn public_authors_cannot_authorize_auto_merge() {
         "req_public_auto_merge",
         author_user_id,
         RequestActorRole::Public,
-        RequestAudience::Public,
+        ViewId::public(),
     )
     .await;
     let response = api_request(
@@ -615,7 +616,7 @@ async fn an_old_heads_terminal_run_cannot_stop_the_current_authorization() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn manual_merge_fulfills_an_active_authorization() {
     let (state, _source, _remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-manual", RequestAudience::Private).await;
+        native_open_request("request-auto-merge-manual", ViewId::private()).await;
     let app = router(state);
     let bearer = bearer_header();
     let (_, active) = current_authorization(app.clone(), &request_id, &request_head).await;
@@ -645,7 +646,7 @@ mod reconciliation;
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn successful_reconciliation_merges_the_authorized_head_once() {
     let (state, _source, _remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-native", RequestAudience::Private).await;
+        native_open_request("request-auto-merge-native", ViewId::private()).await;
     let app = router(state.clone());
     let (ready, scheduled) = current_authorization(app.clone(), &request_id, &request_head).await;
     assert_eq!(ready["head_oid"], request_head);
@@ -696,11 +697,8 @@ async fn successful_reconciliation_merges_the_authorized_head_once() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn public_main_advance_stops_authorization_as_merge_conflict() {
-    let (state, source, remote, request_id, request_head, _server) = native_open_request(
-        "request-auto-merge-public-main-advance",
-        RequestAudience::Public,
-    )
-    .await;
+    let (state, source, remote, request_id, request_head, _server) =
+        native_open_request("request-auto-merge-public-main-advance", ViewId::public()).await;
     drain_outbox(&state, "request-auto-merge-public-ready").await;
     let app = router(state.clone());
     let bearer = bearer_header();
@@ -735,7 +733,7 @@ async fn public_main_advance_stops_authorization_as_merge_conflict() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_replica() {
     let (state, source, remote, request_id, _head, _server) =
-        native_open_request("thin-private-snapshot", RequestAudience::Private).await;
+        native_open_request("thin-private-snapshot", ViewId::private()).await;
     let request = state
         .metadata
         .requests()

@@ -72,7 +72,7 @@ pub(crate) async fn list_request_revisions(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -126,6 +126,7 @@ pub(crate) async fn list_request_revisions(
                 .then(|| selected_commit.clone())
                 .flatten();
             let file_limit = work_budget.remaining_files;
+            let inspection_access = access.clone();
             let inspected = with_request_revision_store_repo(
                 &state,
                 &repo.incarnation(),
@@ -135,7 +136,7 @@ pub(crate) async fn list_request_revisions(
                     request_revision_commits(
                         raw_repo,
                         &repo_for_inspection,
-                        access,
+                        inspection_access,
                         revision,
                         selected_commit.as_deref(),
                         commit_limit,
@@ -149,7 +150,7 @@ pub(crate) async fn list_request_revisions(
         } else {
             (Vec::new(), RequestRevisionInspectionState::Unavailable)
         };
-        let (old_head_oid, new_head_oid) = if access.can_read_private_files {
+        let (old_head_oid, new_head_oid) = if access.view.is_private() {
             (
                 Some(revision.old_head_oid.clone()),
                 Some(revision.new_head_oid.clone()),
@@ -239,7 +240,7 @@ pub(crate) async fn get_request_revision_commit_file_diff(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
-        access,
+        access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
@@ -339,7 +340,8 @@ fn request_revision_commits(
             identity_only_indexes.push(index);
             continue;
         }
-        let commit = inspect_request_commit(raw_repo, &repo.policy, access, &commit_oids[index])?;
+        let commit =
+            inspect_request_commit(raw_repo, &repo.policy, access.clone(), &commit_oids[index])?;
         metadata_incomplete |= commit.inspection == RequestRevisionInspectionState::Incomplete;
         if let Some(mut summary) = commit.commit {
             file_budget_incomplete |= truncate_commit_files(&mut summary, &mut remaining_files);
@@ -354,7 +356,7 @@ fn request_revision_commits(
         let identity_only = inspect_request_commits_identity_only(
             raw_repo,
             &repo.policy,
-            access,
+            access.clone(),
             &identity_only_oids,
         )?;
         for (index, commit) in identity_only_indexes.into_iter().zip(identity_only) {
@@ -439,7 +441,7 @@ fn request_file_response(file: InspectedRequestChange) -> CommitFileResponse {
         new_mode: file.new_mode,
         old_oid: file.old_oid,
         new_oid: file.new_oid,
-        visibility: file.visibility.into(),
+        label: file.label.into(),
     }
 }
 

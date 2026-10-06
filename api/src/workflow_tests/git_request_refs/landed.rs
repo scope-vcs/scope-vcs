@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn main_push_carrying_an_open_request_head_merges_only_that_request() {
@@ -21,7 +22,7 @@ async fn main_push_carrying_an_open_request_head_merges_only_that_request() {
             "POST",
             &format!("/v1/repos/{TEST_REPO_ID}/requests"),
             Some(&bearer),
-            Some(&serde_json::json!({ "name": name, "audience": "Private" }).to_string()),
+            Some(&serde_json::json!({ "name": name, "view": "private" }).to_string()),
         )
         .await;
         assert_eq!(started.status(), StatusCode::OK);
@@ -135,7 +136,7 @@ async fn main_push_carrying_an_open_request_head_merges_only_that_request() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn landed_request_is_complete_when_main_push_persistence_returns() {
-    for visibility in [Visibility::Public, Visibility::Private] {
+    for visibility in [ViewId::public(), ViewId::private()] {
         let (state, source, base_head) =
             super::super::push_intent_completion::published_git_fixture("atomic-landed").await;
         state
@@ -147,7 +148,7 @@ async fn landed_request_is_complete_when_main_push_persistence_returns() {
                 name: REQUEST_NAME.into(),
                 author_user_id: test_owner_id(),
                 author_role: RequestActorRole::Owner,
-                audience: RequestAudience::Private,
+                view: ViewId::private(),
                 base_main_oid: base_head,
                 title: Some("Atomic landed request".into()),
                 event_id: "event_atomic_landed_started".into(),

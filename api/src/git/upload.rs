@@ -25,7 +25,7 @@ use axum::{
 };
 use scope_domain::policy::Principal;
 use scope_domain::{
-    projection::{ProjectionViewKey, project_graph},
+    projection::project_graph,
     repository::access::RepositoryActor,
     repository::{RepoLifecycleState, RepositoryIncarnation},
     requests::{Request, RequestViewer, request_policy},
@@ -92,7 +92,14 @@ pub(crate) async fn git_upload_pack_repo_for_request(
 ) -> Result<GitRepoHandle, ApiError> {
     let (repo, access, viewer_user_id) =
         authorized_git_read(state, headers, owner, repo_name, mode).await?;
-    let private_view = ProjectionViewKey::from_access(access) == ProjectionViewKey::Private;
+    let views = repo.repo_config.views();
+    let view = match mode {
+        GitRemoteMode::Public => views
+            .anyone()
+            .ok_or_else(|| ApiError::not_found("public Git view not found"))?,
+        GitRemoteMode::Permissioned => &access.view,
+    };
+    let private_view = view == views.full();
     let base_repo = if private_view {
         match repo.git_head.as_ref() {
             Some(head) => {
@@ -102,11 +109,8 @@ pub(crate) async fn git_upload_pack_repo_for_request(
                     .await?
             }
             None => {
-                let projection = project_graph(
-                    &repo.graph,
-                    &repo.visibility_change_sets,
-                    ProjectionViewKey::Private,
-                );
+                let projection =
+                    project_graph(&repo.graph, &repo.visibility_change_sets, views, view);
                 projection_bare_repo_for_state(
                     state,
                     &repo.incarnation(),
@@ -118,11 +122,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
             }
         }
     } else {
-        let projection = project_graph(
-            &repo.graph,
-            &repo.visibility_change_sets,
-            ProjectionViewKey::Public,
-        );
+        let projection = project_graph(&repo.graph, &repo.visibility_change_sets, views, view);
         projection_bare_repo_for_state(
             state,
             &repo.incarnation(),
@@ -141,7 +141,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     {
         let decision = request_policy(
             &request,
-            RequestViewer::new(access, viewer_user_id.as_deref(), is_invitee),
+            RequestViewer::new(access.clone(), viewer_user_id.as_deref(), is_invitee),
         );
         if decision.exact_visible {
             requests.push(request);
@@ -150,13 +150,16 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     requests.sort_by(|left, right| left.name.cmp(&right.name));
     let public_base_repo = if private_view
         && requests.iter().any(|request| {
-            request.audience == scope_domain::requests::RequestAudience::Public
-                && request.git_snapshot.is_none()
+            request.view == scope_domain::views::ViewId::public() && request.git_snapshot.is_none()
         }) {
+        let public_view = views
+            .anyone()
+            .ok_or_else(|| ApiError::not_found("public Git view not found"))?;
         let projection = project_graph(
             &repo.graph,
             &repo.visibility_change_sets,
-            ProjectionViewKey::Public,
+            views,
+            public_view,
         );
         Some(
             projection_bare_repo_for_state(

@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[test]
 fn request_names_come_from_top_level_branches_other_than_main() {
@@ -276,18 +277,12 @@ fn snapshot_only_omits_a_base_reachable_from_accepted_git_main() {
     let projected_head = commit("projection request");
 
     assert_eq!(
-        thin_snapshot_base(
-            RequestAudience::Private,
-            &git_base,
-            Some(&accepted_main),
-            &source,
-        )
-        .unwrap(),
+        thin_snapshot_base(ViewId::private(), &git_base, Some(&accepted_main), &source,).unwrap(),
         Some(git_base.as_str())
     );
     assert_eq!(
         thin_snapshot_base(
-            RequestAudience::Private,
+            ViewId::private(),
             &projection_base,
             Some(&accepted_main),
             &source,
@@ -296,18 +291,12 @@ fn snapshot_only_omits_a_base_reachable_from_accepted_git_main() {
         None
     );
     assert_eq!(
-        thin_snapshot_base(
-            RequestAudience::Public,
-            &git_base,
-            Some(&accepted_main),
-            &source,
-        )
-        .unwrap(),
+        thin_snapshot_base(ViewId::public(), &git_base, Some(&accepted_main), &source,).unwrap(),
         None
     );
 
     let base = thin_snapshot_base(
-        RequestAudience::Private,
+        ViewId::private(),
         &projection_base,
         Some(&accepted_main),
         &source,

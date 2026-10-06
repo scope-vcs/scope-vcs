@@ -2,16 +2,17 @@ use crate::{
     error::ApiError,
     git::command::{git_is_ancestor, run_git_output},
 };
-use scope_domain::requests::{RequestAudience, RequestRevisionGitFacts};
+use scope_domain::requests::RequestRevisionGitFacts;
+use scope_domain::views::ViewId;
 use std::path::Path as FsPath;
 
 pub(super) fn thin_snapshot_base<'a>(
-    audience: RequestAudience,
+    view: ViewId,
     base_oid: &'a str,
     accepted_main_oid: Option<&str>,
     staging_repo: &FsPath,
 ) -> Result<Option<&'a str>, ApiError> {
-    if audience != RequestAudience::Private {
+    if view != ViewId::private() {
         return Ok(None);
     }
     let Some(main_oid) = accepted_main_oid else {

@@ -1,7 +1,8 @@
 use super::{public_repositories::make_github_repository_public, *};
 use crate::use_cases::public_check_commits::public_tested_commit;
+use scope_domain::views::ViewId;
 use scope_domain::{
-    repo_config::RepoConfigVisibilityRule,
+    repo_config::RepoConfigFileRule,
     requests::{GitHubTestedCommit, PRIVATE_CODE_CONFLICT_MESSAGE},
 };
 
@@ -17,10 +18,10 @@ async fn private_file_repository(label: &str) -> (AppState, Arc<FakeGitHub>, Tem
     run_git(Some(&source), &["add", "."], "add files").unwrap();
     commit_all(&source, "initial");
     let bare = clone_test_repo(&source, &format!("{label}-bare"), true);
-    let mut config = repo_config(Visibility::Public);
-    config.visibility.rules.push(RepoConfigVisibilityRule {
+    let mut config = repo_config(ViewId::public());
+    config.files.rules.push(RepoConfigFileRule {
         path: format!("/{PRIVATE_FILE}"),
-        visibility: ConfigVisibility::Private,
+        view: ViewId::private(),
     });
     apply_first_push_from_staging_repo(&state, &bare, config).await;
     state

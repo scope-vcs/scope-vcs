@@ -2,6 +2,7 @@ use super::*;
 use crate::use_cases::request_merge::{
     PreparedRequestMerge, persist_prepared_merge_for_tests, prepare_request_merge,
 };
+use scope_domain::views::ViewId;
 use std::time::Duration;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -246,7 +247,8 @@ async fn merge_route_persists_git_content_once() {
     let public_projection = project_graph(
         &repo.graph,
         &repo.visibility_change_sets,
-        ProjectionViewKey::Public,
+        repo.repo_config.views(),
+        &ViewId::public(),
     );
     let public_repo = projection_bare_repo_for_state(
         &state,
@@ -289,7 +291,7 @@ async fn merge_route_persists_git_content_once() {
         .oneshot(
             axum::http::Request::builder()
                 .uri(format!(
-                    "/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/history?audience=public"
+                    "/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/history?view=public"
                 ))
                 .body(Body::empty())
                 .unwrap(),
@@ -307,7 +309,7 @@ async fn merge_route_persists_git_content_once() {
     let detail = public_get_json(
         &app,
         format!(
-            "/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/history/{}?audience=public",
+            "/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/history/{}?view=public",
             entry["source_id"].as_str().unwrap()
         ),
     )
@@ -331,14 +333,14 @@ async fn merge_route_persists_git_content_once() {
         .find(|file| file["path"] == "/README.md")
         .unwrap();
     assert_ne!(upstream_file["old_oid"], upstream_file["new_oid"]);
-    let diff = public_get_json(&app, format!("/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/history/{}/file-diff?audience=public&commit_oid={}&path=/README.md", entry["source_id"].as_str().unwrap(), merge_commit["oid"].as_str().unwrap())).await;
+    let diff = public_get_json(&app, format!("/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/history/{}/file-diff?view=public&commit_oid={}&path=/README.md", entry["source_id"].as_str().unwrap(), merge_commit["oid"].as_str().unwrap())).await;
     assert_eq!(diff["path"], "/README.md");
     let public_preview = app
         .clone()
         .oneshot(
             axum::http::Request::builder()
                 .uri(format!(
-                    "/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/projection-preview?audience=public"
+                    "/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/projection-preview?view=public"
                 ))
                 .body(Body::empty())
                 .unwrap(),
@@ -444,12 +446,13 @@ async fn public_merge_rejects_path_made_private_after_request_push() {
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.repo_config.visibility.rules.push(
-                scope_domain::repo_config::RepoConfigVisibilityRule {
+            repo.repo_config
+                .files
+                .rules
+                .push(scope_domain::repo_config::RepoConfigFileRule {
                     path: private_path.as_str().to_string(),
-                    visibility: ConfigVisibility::Private,
-                },
-            );
+                    view: ViewId::private(),
+                });
             repo.bump_content_version();
         })
         .await

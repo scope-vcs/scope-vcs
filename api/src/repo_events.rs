@@ -1,7 +1,7 @@
 use scope_api_contract::RepoChangeNotification;
 pub(crate) use scope_api_contract::{RepoChangeEvent, RepoChangeKind, RunChangeKind};
 use scope_domain::repository::RepositoryIncarnation;
-use scope_domain::requests::RequestAudience as DomainRequestAudience;
+use scope_domain::views::ViewId;
 use scope_postgres::db::MetadataStore;
 use std::{
     collections::BTreeMap,
@@ -190,7 +190,7 @@ pub(crate) fn request_timeline_change_event(
     request_id: String,
     discussion_id: String,
     through_position: u64,
-    audience: DomainRequestAudience,
+    view: ViewId,
 ) -> RepoChangeEvent {
     RepoChangeEvent {
         repo_id: incarnation.repository_id().to_string(),
@@ -200,7 +200,7 @@ pub(crate) fn request_timeline_change_event(
             request_id,
             discussion_id,
             through_position,
-            audience: audience.into(),
+            view: view.into(),
         },
     }
 }
@@ -244,14 +244,14 @@ impl crate::state::AppState {
         request_id: String,
         discussion_id: String,
         through_position: u64,
-        audience: scope_domain::requests::RequestAudience,
+        view: scope_domain::views::ViewId,
     ) {
         let event = request_timeline_change_event(
             incarnation,
             request_id,
             discussion_id,
             through_position,
-            audience,
+            view,
         );
         self.publish_repo_event(event, "request discussion").await;
     }

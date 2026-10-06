@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 use serde_json::json;
 
 async fn mutate_repo(state: &AppState, configure: impl FnOnce(&mut Repository)) {
@@ -14,11 +15,11 @@ async fn mutate_repo(state: &AppState, configure: impl FnOnce(&mut Repository)) 
 }
 
 fn set_private(repo: &mut Repository, public_path: Option<&str>) {
-    repo.repo_config = repo_config(Visibility::Private);
-    repo.policy = Policy::new(Visibility::Private);
+    repo.repo_config = repo_config(ViewId::private());
+    repo.policy = Policy::new(ViewId::private());
     if let Some(path) = public_path {
         repo.policy
-            .add_rule(VisibilityRule::public(ScopePath::parse(path).unwrap()))
+            .add_rule(LabelRule::public(ScopePath::parse(path).unwrap()))
             .unwrap();
     }
 }
@@ -30,13 +31,13 @@ fn add_mixed_commit(state: &AppState, repo: &mut Repository) {
         vec![
             history_change(
                 "/README.md",
-                Visibility::Public,
+                ViewId::public(),
                 None,
                 Some(source_blob(state, "hello")),
             ),
             history_change(
                 "/secret.txt",
-                Visibility::Private,
+                ViewId::private(),
                 None,
                 Some(source_blob(state, "secret")),
             ),
@@ -56,7 +57,7 @@ async fn public_files_follow_the_projection_not_the_live_tree() {
                 "public version",
                 vec![history_change(
                     "/README.md",
-                    Visibility::Public,
+                    ViewId::public(),
                     None,
                     Some(public.clone()),
                 )],
@@ -66,7 +67,7 @@ async fn public_files_follow_the_projection_not_the_live_tree() {
                 "private draft",
                 vec![history_change(
                     "/README.md",
-                    Visibility::Private,
+                    ViewId::private(),
                     Some(public.clone()),
                     Some(source_blob(&state, "private draft")),
                 )],
@@ -80,8 +81,8 @@ async fn public_files_follow_the_projection_not_the_live_tree() {
                 test_owner_id(),
                 vec![scope_domain::visibility_changes::VisibilityChange {
                     path: ScopePath::parse("/README.md").unwrap(),
-                    old_visibility: Visibility::Public,
-                    new_visibility: Visibility::Private,
+                    old_label: ViewId::public(),
+                    new_label: ViewId::private(),
                     current_content: Some(public),
                 }],
             )
@@ -157,7 +158,7 @@ async fn file_content_hides_unpublished_repo_during_projection_rebuild() {
             "private version",
             vec![history_change(
                 "/secret.txt",
-                Visibility::Private,
+                ViewId::private(),
                 None,
                 Some(source_blob(&state, "secret")),
             )],
@@ -200,7 +201,7 @@ async fn published_repo_projection_preview_serves_public_file_subset() {
             "private notes",
             vec![history_change(
                 "/notes/private.md",
-                Visibility::Private,
+                ViewId::private(),
                 None,
                 Some(source_blob(&state, "private notes")),
             )],
@@ -212,14 +213,14 @@ async fn published_repo_projection_preview_serves_public_file_subset() {
     let public = api_request(
         router(state.clone()),
         "GET",
-        "/v1/repos/owner/repo/projection-preview?audience=public",
+        "/v1/repos/owner/repo/projection-preview?view=public",
         None,
         None,
     )
     .await;
     assert_eq!(public.status(), StatusCode::OK);
     let public = response_json(public).await;
-    assert_eq!(public["audience"], "public");
+    assert_eq!(public["view"], "public");
     assert_eq!(public["summary"]["visible_files"], 1);
     assert_eq!(public["summary"]["hidden_files"], 0);
     assert_eq!(public["summary"]["hidden_commits"], 0);
@@ -228,7 +229,7 @@ async fn published_repo_projection_preview_serves_public_file_subset() {
     let owner = api_request(
         router(state),
         "GET",
-        "/v1/repos/owner/repo/projection-preview?audience=public",
+        "/v1/repos/owner/repo/projection-preview?view=public",
         Some(&bearer_header()),
         None,
     )
@@ -251,13 +252,13 @@ async fn canonical_rules_alone_do_not_publish_a_repository() {
             vec![
                 history_change(
                     "/.scope/RULES.md",
-                    Visibility::Public,
+                    ViewId::public(),
                     None,
                     Some(source_blob(&state, "")),
                 ),
                 history_change(
                     "/secret.txt",
-                    Visibility::Private,
+                    ViewId::private(),
                     None,
                     Some(source_blob(&state, "secret")),
                 ),
@@ -360,11 +361,7 @@ async fn owner_profile_lists_only_repositories_visible_to_the_viewer() {
     let profile = response_json(anonymous).await;
     assert_eq!(profile["handle"], "owner");
     assert_eq!(profile["repositories"][0]["id"], TEST_REPO_ID);
-    assert!(
-        profile["repositories"][0]
-            .get("default_visibility")
-            .is_none()
-    );
+    assert!(profile["repositories"][0].get("default_view").is_none());
 
     let unknown = api_request(router(state), "GET", "/v1/users/missing/repos", None, None).await;
     assert_eq!(unknown.status(), StatusCode::NOT_FOUND);

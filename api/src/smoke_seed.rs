@@ -251,7 +251,7 @@ mod tests {
 
     #[tokio::test]
     async fn grant_only_preserves_existing_catalog_and_issues_redeemable_login() {
-        use scope_domain::{account::UserAccount, policy::Visibility, repository::Repository};
+        use scope_domain::{account::UserAccount, repository::Repository, views::ViewId};
         use scope_postgres::db::{CatalogFixture, TestDatabaseTarget};
 
         let target = TestDatabaseTarget::required().unwrap();
@@ -262,13 +262,8 @@ mod tests {
             email: "keep@example.test".into(),
             email_verified: true,
         };
-        let repository = Repository::new(
-            &owner,
-            "keep-repo",
-            Visibility::Private,
-            "repoi_keep_catalog",
-        )
-        .unwrap();
+        let repository =
+            Repository::new(&owner, "keep-repo", ViewId::private(), "repoi_keep_catalog").unwrap();
         let mut fixture = CatalogFixture::default();
         fixture.users.insert(owner.id.clone(), owner.clone());
         let smoke_user = seed_user_account(DevSeedUser {

@@ -15,10 +15,9 @@ use scope_api_contract::RunChangeKind;
 use scope_domain::{
     repository::{RepoRecord, Repository, RepositoryIncarnation},
     requests::{
-        GitHubCheckTarget, GitHubTestedCommit, Request, RequestAudience, RequestCheckEvaluation,
-        RequestCheckPlan, RequestCheckProvider, RequestCheckResults, RequestChecksOutcome,
-        RequestRevision, changes_github_workflows, request_checks_outcome,
-        request_head_awaits_evaluation,
+        GitHubCheckTarget, GitHubTestedCommit, Request, RequestCheckEvaluation, RequestCheckPlan,
+        RequestCheckProvider, RequestCheckResults, RequestChecksOutcome, RequestRevision,
+        changes_github_workflows, request_checks_outcome, request_head_awaits_evaluation,
     },
     runs::{availability::NativeRunsAvailability, workflow::revision::WorkflowRevision},
 };
@@ -141,19 +140,18 @@ async fn evaluate_saved_head(
         None => None,
     };
     let native_revisions = async {
-        Ok(match request.audience {
-            RequestAudience::Public => public_request_workflow_revisions(state, request).await?,
-            RequestAudience::Private => {
-                let files = with_request_revision_store_repo(
-                    state,
-                    &repo.incarnation(),
-                    request,
-                    &revision,
-                    |path, revision| read_repository_workflow_files(path, &revision.new_head_oid),
-                )
-                .await?;
-                request_workflow_revisions(request, files)
-            }
+        Ok(if request.view.is_public() {
+            public_request_workflow_revisions(state, request).await?
+        } else {
+            let files = with_request_revision_store_repo(
+                state,
+                &repo.incarnation(),
+                request,
+                &revision,
+                |path, revision| read_repository_workflow_files(path, &revision.new_head_oid),
+            )
+            .await?;
+            request_workflow_revisions(request, files)
         })
     };
     let check_commit = async {
@@ -227,15 +225,13 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     let path = staging_repo.to_path_buf();
     let head_oid = request.head_oid.clone();
     let native_revisions = async {
-        Ok(match request.audience {
-            RequestAudience::Public => public_request_workflow_revisions(state, request).await?,
-            RequestAudience::Private => {
-                let files = crate::git::blocking::run(move || {
-                    read_repository_workflow_files(&path, &head_oid)
-                })
-                .await?;
-                request_workflow_revisions(request, files)
-            }
+        Ok(if request.view.is_public() {
+            public_request_workflow_revisions(state, request).await?
+        } else {
+            let files =
+                crate::git::blocking::run(move || read_repository_workflow_files(&path, &head_oid))
+                    .await?;
+            request_workflow_revisions(request, files)
         })
     };
     let check_commit = Box::pin(public_tested_commit(state, repo, request, revision));

@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 use std::process::Command;
 
 const LARGE_REPOSITORY_FILE_BYTES: u64 = 24 * 1024 * 1024;
@@ -129,7 +130,7 @@ async fn receive_pack_rejects_nested_windows_device_path_before_durable_side_eff
         TEST_REPO_NAME,
         &repo,
         &test_owner_id(),
-        repo_config(Visibility::Public),
+        repo_config(ViewId::public()),
         ReviewedUpdateMode::ReadyPush,
     )
     .await
@@ -173,7 +174,7 @@ async fn receive_pack_rejects_windows_device_path_removed_before_the_new_head() 
         TEST_REPO_NAME,
         &repo,
         &test_owner_id(),
-        repo_config(Visibility::Public),
+        repo_config(ViewId::public()),
         ReviewedUpdateMode::ReadyPush,
     )
     .await
@@ -265,7 +266,7 @@ async fn pushed_delta_does_not_cap_total_changed_bytes() {
         TEST_REPO_NAME,
         &staging_repo,
         &test_owner_id(),
-        repo_config(Visibility::Public),
+        repo_config(ViewId::public()),
         ReviewedUpdateMode::ReadyPush,
     )
     .await

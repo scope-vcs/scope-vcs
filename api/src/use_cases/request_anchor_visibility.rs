@@ -26,7 +26,7 @@ pub(crate) async fn visible_commits<'a>(
     if commits_by_revision.is_empty() {
         return BTreeSet::new();
     }
-    if repo.access.can_read_private_files {
+    if repo.access.view == *scope_domain::views::Views::builtin().full() {
         return flatten(commits_by_revision);
     }
     let policy = match state.metadata.repositories().repository_policy(repo).await {
@@ -47,7 +47,7 @@ pub(crate) async fn visible_commits<'a>(
             state,
             &incarnation,
             &policy,
-            repo.access,
+            repo.access.clone(),
             request,
             &revision_id,
             commit_oids,
@@ -125,8 +125,13 @@ async fn visible_commits_in_revision(
                 if !commit_belongs_to_revision(raw_repo, revision, commit_oid)? {
                     continue;
                 }
-                let (_, hidden) =
-                    request_commit_visible_paths(raw_repo, &policy, access, commit_oid)?;
+                let (_, hidden) = request_commit_visible_paths(
+                    raw_repo,
+                    &policy,
+                    &scope_domain::views::Views::builtin(),
+                    &access,
+                    commit_oid,
+                )?;
                 if !hidden {
                     visible.insert(commit_oid.clone());
                 }

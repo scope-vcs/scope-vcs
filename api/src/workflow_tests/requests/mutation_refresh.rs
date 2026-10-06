@@ -81,7 +81,7 @@ async fn request_mutations_refresh_once_after_commit_and_never_after_rejection()
     assert_eq!(rejected.status(), StatusCode::CONFLICT);
     assert!(events.try_recv().is_err());
 
-    let start_body = r#"{"name":"refresh-once","audience":"Private"}"#;
+    let start_body = r#"{"name":"refresh-once","view":"private"}"#;
     let started = api_request(
         app.clone(),
         "POST",

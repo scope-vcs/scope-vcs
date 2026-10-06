@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[derive(Clone, Copy)]
 enum PrivacyHistory {
@@ -132,12 +133,13 @@ async fn configured_private_intermediate_path_cannot_enter_public_request_histor
         .metadata
         .repositories()
         .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.repo_config.visibility.rules.push(
-                scope_domain::repo_config::RepoConfigVisibilityRule {
+            repo.repo_config
+                .files
+                .rules
+                .push(scope_domain::repo_config::RepoConfigFileRule {
                     path: "/secret/**".to_string(),
-                    visibility: ConfigVisibility::Private,
-                },
-            );
+                    view: ViewId::private(),
+                });
             repo.repo_config.validate().unwrap();
             repo.bump_content_version();
         })
@@ -290,10 +292,10 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
             "rv1",
             "rv1",
             vec![
-                history_change(state, Visibility::Public, "/README.md", None, Some("hello")),
+                history_change(state, ViewId::public(), "/README.md", None, Some("hello")),
                 history_change(
                     state,
-                    Visibility::Private,
+                    ViewId::private(),
                     "/SECRET.md",
                     None,
                     Some("private\n"),
@@ -301,11 +303,9 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
             ],
         )],
         PrivacyHistory::Revealed => {
-            repo.policy = Policy::new(Visibility::Private);
+            repo.policy = Policy::new(ViewId::private());
             repo.policy
-                .add_rule(VisibilityRule::public(
-                    ScopePath::parse("/README.md").unwrap(),
-                ))
+                .add_rule(LabelRule::public(ScopePath::parse("/README.md").unwrap()))
                 .unwrap();
             vec![
                 logical_commit(
@@ -313,7 +313,7 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
                     "rv1",
                     vec![history_change(
                         state,
-                        Visibility::Private,
+                        ViewId::private(),
                         "/README.md",
                         None,
                         Some("private draft"),
@@ -324,7 +324,7 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
                     "rv2",
                     vec![history_change(
                         state,
-                        Visibility::Public,
+                        ViewId::public(),
                         "/README.md",
                         Some("private draft"),
                         Some("public release"),
@@ -337,10 +337,10 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
                 "rv1",
                 "rv1",
                 vec![
-                    history_change(state, Visibility::Public, "/README.md", None, Some("hello")),
+                    history_change(state, ViewId::public(), "/README.md", None, Some("hello")),
                     history_change(
                         state,
-                        Visibility::Private,
+                        ViewId::private(),
                         "/OLD_SECRET.md",
                         None,
                         Some("deleted private\n"),
@@ -352,7 +352,7 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
                 "rv2",
                 vec![history_change(
                     state,
-                    Visibility::Private,
+                    ViewId::private(),
                     "/OLD_SECRET.md",
                     Some("deleted private\n"),
                     None,
@@ -362,16 +362,14 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
     };
     repo.graph.commits[0].changes.push(history_change(
         state,
-        Visibility::Public,
+        ViewId::public(),
         "/.scope/RULES.md",
         None,
         Some(""),
     ));
     let rules_path = ScopePath::parse("/.scope/RULES.md").unwrap();
-    if repo.policy.effective_visibility(&rules_path) != Visibility::Public {
-        repo.policy
-            .add_rule(VisibilityRule::public(rules_path))
-            .unwrap();
+    if repo.policy.label(&rules_path, repo.repo_config.views()) != ViewId::public() {
+        repo.policy.add_rule(LabelRule::public(rules_path)).unwrap();
     }
     populate_test_live_files(&mut repo);
     repo
@@ -379,7 +377,7 @@ fn privacy_repo(state: &AppState, history: PrivacyHistory) -> Repository {
 
 fn history_change(
     state: &AppState,
-    visibility: Visibility,
+    visibility: ViewId,
     path: &str,
     old_content: Option<&str>,
     new_content: Option<&str>,

@@ -1,6 +1,7 @@
 use super::*;
 use crate::runtime_budgets::RuntimeBudgets;
 use scope_domain::policy::Policy;
+use scope_domain::views::ViewId;
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout, truncated_stderr};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -43,7 +44,8 @@ pub(super) fn inspect_request_commit(
     let changes = inspect_request_changes(
         &request_commit_changes(raw_repo, commit_oid)?,
         policy,
-        access,
+        &scope_domain::views::Views::builtin(),
+        &access,
     )?;
     if changes.hidden {
         return Ok(InspectedRequestCommit {
@@ -55,7 +57,7 @@ pub(super) fn inspect_request_commit(
     Ok(InspectedRequestCommit {
         commit: Some(RequestRevisionCommitResponse {
             oid: commit_oid.to_string(),
-            parent_oids: if access.can_read_private_files {
+            parent_oids: if access.view.is_private() {
                 identity.parent_oids
             } else {
                 Vec::new()
@@ -85,7 +87,8 @@ pub(super) fn inspect_request_commits_identity_only(
     access: RepositoryAccess,
     commit_oids: &[String],
 ) -> Result<Vec<InspectedRequestCommit>, ApiError> {
-    let mut changes = request_commit_change_summaries(raw_repo, policy, access, commit_oids)?;
+    let mut changes =
+        request_commit_change_summaries(raw_repo, policy, access.clone(), commit_oids)?;
     commit_oids
         .iter()
         .map(|commit_oid| {
@@ -103,7 +106,7 @@ pub(super) fn inspect_request_commits_identity_only(
             Ok(InspectedRequestCommit {
                 commit: Some(RequestRevisionCommitResponse {
                     oid: commit_oid.clone(),
-                    parent_oids: if access.can_read_private_files {
+                    parent_oids: if access.view.is_private() {
                         identity.parent_oids
                     } else {
                         Vec::new()
@@ -171,7 +174,7 @@ fn request_commit_change_summaries(
             parse_request_commit_change_summaries(
                 stdout,
                 &policy,
-                access.can_read_private_files,
+                access.view.is_private(),
                 &expected,
             )
         },
@@ -265,7 +268,11 @@ fn request_path_is_public(
 ) -> Result<bool, ApiError> {
     let path = std::str::from_utf8(raw_path).map_err(ApiError::bad_request)?;
     let scope_path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
-    Ok(policy.can_read(&scope_path, false))
+    Ok(policy.can_read(
+        &scope_path,
+        &ViewId::public(),
+        &scope_domain::views::Views::builtin(),
+    ))
 }
 
 struct BoundedNulField {
@@ -415,8 +422,9 @@ mod tests {
     };
     use crate::{error::ErrorKind, http::request_review::tests::git};
     use scope_domain::{
-        policy::{Policy, ScopePath, Visibility, VisibilityRule},
+        policy::{LabelRule, Policy, ScopePath},
         repository::access::RepositoryAccess,
+        views::ViewId,
     };
 
     #[test]
@@ -501,15 +509,17 @@ mod tests {
             ],
             None,
         );
-        let mut policy = Policy::new(Visibility::Public);
+        let mut policy = Policy::new(ViewId::public());
         policy
-            .add_rule(VisibilityRule::private(
-                ScopePath::parse("/hidden.txt").unwrap(),
-            ))
+            .add_rule(LabelRule::private(ScopePath::parse("/hidden.txt").unwrap()))
             .unwrap();
         for can_read_private_files in [false, true] {
             let access = RepositoryAccess {
-                can_read_private_files,
+                view: if can_read_private_files {
+                    ViewId::private()
+                } else {
+                    ViewId::public()
+                },
                 ..RepositoryAccess::public()
             };
             let inspected = inspect_request_commit(repo, &policy, access, &merge).unwrap();

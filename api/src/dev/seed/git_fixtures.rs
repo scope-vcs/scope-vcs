@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[derive(Clone, Copy)]
 pub(super) struct SeedGitCommit<'a> {
@@ -143,7 +144,7 @@ pub(super) fn update_demo_git_snapshot(
                 description_markdown: Some("A private working draft for the request author."),
                 revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Draft,
-                audience: RequestAudience::Public,
+                view: ViewId::public(),
                 now_unix: 1_800_000_050,
             },
             SeedRequest {
@@ -156,7 +157,7 @@ pub(super) fn update_demo_git_snapshot(
                 description_markdown: Some(request_discussions::READY_REQUEST_DESCRIPTION),
                 revisions: ready_revisions,
                 outcome: SeedRequestOutcome::Open,
-                audience: RequestAudience::Public,
+                view: ViewId::public(),
                 now_unix: 1_800_000_100,
             },
             SeedRequest {
@@ -169,7 +170,7 @@ pub(super) fn update_demo_git_snapshot(
                 description_markdown: None,
                 revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Open,
-                audience: RequestAudience::Private,
+                view: ViewId::private(),
                 now_unix: 1_800_000_200,
             },
             SeedRequest {
@@ -182,7 +183,7 @@ pub(super) fn update_demo_git_snapshot(
                 description_markdown: None,
                 revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Merged,
-                audience: RequestAudience::Private,
+                view: ViewId::private(),
                 now_unix: 1_800_000_300,
             },
             SeedRequest {
@@ -195,7 +196,7 @@ pub(super) fn update_demo_git_snapshot(
                 description_markdown: None,
                 revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Closed,
-                audience: RequestAudience::Private,
+                view: ViewId::private(),
                 now_unix: 1_800_000_400,
             },
             SeedRequest {
@@ -208,7 +209,7 @@ pub(super) fn update_demo_git_snapshot(
                 description_markdown: Some("A public request kept as closed history."),
                 revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Closed,
-                audience: RequestAudience::Public,
+                view: ViewId::public(),
                 now_unix: 1_800_000_500,
             },
         ];

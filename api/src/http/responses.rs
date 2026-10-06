@@ -12,7 +12,7 @@ pub(crate) use scope_api_contract::CommitFileResponse;
 use scope_api_contract::{
     DeviceLoginStatus, FileChangeKind, FirstPushTokenResponse, GitOid, GitPushTokenResponse,
     RepoInitResponse, RepoSummaryResponse, RepositoryAccessResponse, RequestActorSummaryResponse,
-    UserResponse, Visibility,
+    UserResponse, ViewId,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 
@@ -26,6 +26,7 @@ use scope_domain::{
     repository::access::{RepositoryAccess, RepositoryActor, can_read_repository},
     repository::credentials::{FirstPushToken, GitPushToken},
     repository::{RepoRecord, Repository},
+    views::Views,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -163,14 +164,14 @@ impl From<HistoryFeed> for scope_domain::history::HistoryFeed {
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryPageRequest {
     pub(crate) feed: Option<HistoryFeed>,
-    pub(crate) audience: Option<ProjectionPreviewAudience>,
+    pub(crate) view: Option<ViewId>,
     pub(crate) before: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryEntryRequest {
-    pub(crate) audience: Option<ProjectionPreviewAudience>,
+    pub(crate) view: Option<ViewId>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -178,7 +179,7 @@ pub(crate) struct HistoryEntryRequest {
 pub(crate) struct HistoryEntryFileDiffRequest {
     pub(crate) commit_oid: Option<String>,
     pub(crate) visibility_change: Option<String>,
-    pub(crate) audience: Option<ProjectionPreviewAudience>,
+    pub(crate) view: Option<ViewId>,
     pub(crate) path: String,
 }
 
@@ -200,9 +201,8 @@ pub(crate) use scope_api_contract::{ReviewFileContentResponse, ReviewFileDiffRes
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryPageResponse {
     pub(crate) feed: HistoryFeed,
-    pub(crate) audience: ProjectionPreviewAudience,
+    pub(crate) view: ViewId,
     pub(crate) repo_id: String,
-    pub(crate) view_key: String,
     pub(crate) generation: String,
     pub(crate) head_oid: Option<String>,
     pub(crate) entries: Vec<HistoryEntrySummaryResponse>,
@@ -237,9 +237,8 @@ pub(crate) enum HistoryEntryKind {
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryEntryDetailResponse {
     pub(crate) native_commits: Vec<NativeHistoryCommitResponse>,
-    pub(crate) audience: ProjectionPreviewAudience,
+    pub(crate) view: ViewId,
     pub(crate) repo_id: String,
-    pub(crate) view_key: String,
     pub(crate) occurred_at_unix: Option<i64>,
     pub(crate) id: String,
     pub(crate) source_id: String,
@@ -270,8 +269,8 @@ pub(crate) struct NativeHistoryCommitResponse {
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryVisibilitySummaryResponse {
-    pub(crate) made_public_count: usize,
-    pub(crate) made_private_count: usize,
+    pub(crate) entered_count: usize,
+    pub(crate) left_count: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -280,8 +279,8 @@ pub(crate) struct HistoryVisibilityChangeResponse {
     pub(crate) id: String,
     pub(crate) file: Option<HistoryEntryFileResponse>,
     pub(crate) path: String,
-    pub(crate) old_visibility: Visibility,
-    pub(crate) new_visibility: Visibility,
+    pub(crate) old_label: ViewId,
+    pub(crate) new_label: ViewId,
 }
 
 #[derive(Debug, Serialize)]
@@ -293,7 +292,7 @@ pub(crate) struct HistoryEntryFileResponse {
     pub(crate) new_mode: Option<String>,
     pub(crate) old_oid: Option<String>,
     pub(crate) new_oid: Option<String>,
-    pub(crate) visibility: Visibility,
+    pub(crate) label: ViewId,
 }
 
 pub(crate) fn repo_summary_for_user(
@@ -316,7 +315,7 @@ pub(crate) fn repo_summary_for_access(
     open_request_count: usize,
     git_origin: &str,
 ) -> Option<RepoSummaryResponse> {
-    if !access.is_maintainer() || !can_read_repository(record.lifecycle_state, access, false) {
+    if !access.is_maintainer() || !can_read_repository(record.lifecycle_state, &access, false) {
         return None;
     }
 
@@ -343,7 +342,7 @@ pub(crate) fn repo_summary_for_access(
 pub(crate) fn repository_access_response(access: RepositoryAccess) -> RepositoryAccessResponse {
     RepositoryAccessResponse {
         actor: access.actor.into(),
-        can_read_private_files: access.can_read_private_files,
+        view: access.view.clone().into(),
         can_push: access.can_push,
         can_change_file_visibility: access.can_change_file_visibility,
         can_manage_members: access.can_manage_members,
@@ -446,8 +445,8 @@ pub(crate) fn git_push_token_response(
 
 pub(crate) fn history_page_response(
     feed: HistoryFeed,
-    audience: ProjectionPreviewAudience,
-    view: &HistoryView,
+    history: &HistoryView,
+    views: &Views,
     entries: &[HistoryEntry],
     next_cursor: Option<String>,
     head_oid: Option<String>,
@@ -455,22 +454,21 @@ pub(crate) fn history_page_response(
 ) -> Result<HistoryPageResponse, ApiError> {
     Ok(HistoryPageResponse {
         feed,
-        audience,
-        repo_id: view.repo_id.clone(),
-        view_key: view.view_key.clone(),
-        generation: view.generation.clone(),
+        view: history.view.clone().into(),
+        repo_id: history.repo_id.clone(),
+        generation: history.generation.clone(),
         head_oid,
         entries: entries
             .iter()
-            .map(|entry| history_entry_summary_response(entry, users))
+            .map(|entry| history_entry_summary_response(entry, views, &history.view, users))
             .collect::<Result<_, _>>()?,
         next_cursor,
     })
 }
 
 pub(crate) fn history_entry_detail_response(
-    audience: ProjectionPreviewAudience,
-    view: &HistoryView,
+    history: &HistoryView,
+    views: &Views,
     entry: &HistoryEntry,
     neighbors: scope_postgres::db::RepositoryHistoryNeighbors,
     users: &BTreeMap<String, UserAccount>,
@@ -500,9 +498,8 @@ pub(crate) fn history_entry_detail_response(
         .collect::<Result<Vec<_>, ApiError>>()?;
     Ok(HistoryEntryDetailResponse {
         native_commits,
-        audience,
-        repo_id: view.repo_id.clone(),
-        view_key: view.view_key.clone(),
+        view: history.view.clone().into(),
+        repo_id: history.repo_id.clone(),
         occurred_at_unix: entry.occurred_at_unix,
         id: entry.id.clone(),
         source_id: entry.source_id.clone(),
@@ -512,7 +509,7 @@ pub(crate) fn history_entry_detail_response(
         author: history_author_handle(entry.author.as_deref(), users),
         message: entry.message.clone(),
         file_change_count: entry.files.len(),
-        visibility_summary: history_visibility_summary_response(entry),
+        visibility_summary: history_visibility_summary_response(entry, views, &history.view),
         files: entry
             .files
             .iter()
@@ -538,12 +535,14 @@ pub(crate) fn native_history_file(
         },
         old_content: change.old_content.clone(),
         new_content: change.new_content.clone(),
-        visibility: change.visibility,
+        label: change.label.clone(),
     }
 }
 
 fn history_entry_summary_response(
     entry: &HistoryEntry,
+    views: &Views,
+    view: &scope_domain::views::ViewId,
     users: &BTreeMap<String, UserAccount>,
 ) -> Result<HistoryEntrySummaryResponse, ApiError> {
     Ok(HistoryEntrySummaryResponse {
@@ -555,7 +554,7 @@ fn history_entry_summary_response(
         author: history_author_handle(entry.author.as_deref(), users),
         message: entry.message.clone(),
         file_change_count: entry.files.len(),
-        visibility_summary: history_visibility_summary_response(entry),
+        visibility_summary: history_visibility_summary_response(entry, views, view),
     })
 }
 
@@ -568,15 +567,30 @@ fn history_author_handle(
         .map(|user| user.handle.clone())
 }
 
-fn history_visibility_summary_response(entry: &HistoryEntry) -> HistoryVisibilitySummaryResponse {
-    let made_public_count = entry
+fn history_visibility_summary_response(
+    entry: &HistoryEntry,
+    views: &Views,
+    view: &scope_domain::views::ViewId,
+) -> HistoryVisibilitySummaryResponse {
+    let entered_count = entry
         .visibility_changes
         .iter()
-        .filter(|change| change.new_visibility == scope_domain::policy::Visibility::Public)
+        .filter(|change| {
+            !views.shows(view, &change.path, &change.old_label)
+                && views.shows(view, &change.path, &change.new_label)
+        })
+        .count();
+    let left_count = entry
+        .visibility_changes
+        .iter()
+        .filter(|change| {
+            views.shows(view, &change.path, &change.old_label)
+                && !views.shows(view, &change.path, &change.new_label)
+        })
         .count();
     HistoryVisibilitySummaryResponse {
-        made_public_count,
-        made_private_count: entry.visibility_changes.len() - made_public_count,
+        entered_count,
+        left_count,
     }
 }
 
@@ -587,8 +601,8 @@ fn history_visibility_change_response(
         id: change.id.clone(),
         file: change.file.as_ref().map(history_entry_file_response),
         path: change.path.as_str().to_string(),
-        old_visibility: change.old_visibility.into(),
-        new_visibility: change.new_visibility.into(),
+        old_label: change.old_label.clone().into(),
+        new_label: change.new_label.clone().into(),
     }
 }
 
@@ -616,7 +630,7 @@ fn history_entry_file_response(file: &HistoryEntryFile) -> HistoryEntryFileRespo
             .map(|blob| blob.git_file_mode.clone()),
         old_oid: file.old_content.as_ref().map(|blob| blob.git_oid.clone()),
         new_oid: file.new_content.as_ref().map(|blob| blob.git_oid.clone()),
-        visibility: file.visibility.into(),
+        label: file.label.clone().into(),
     }
 }
 

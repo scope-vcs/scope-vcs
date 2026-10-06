@@ -10,9 +10,9 @@ use crate::{
 };
 use scope_domain::{
     content_ref::ContentRef,
-    policy::Visibility,
     projection::{Projection, ProjectionMaterialization},
     repository::RepositoryIncarnation,
+    views::ViewId,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::ProcessLimits;
@@ -521,7 +521,11 @@ fn projection_cache_key(
     incarnation: Option<&RepositoryIncarnation>,
     projection: &Projection,
 ) -> String {
-    projection_cache_keys(incarnation, projection, projection.view_key.labels())
+    let labels = scope_domain::views::Views::builtin()
+        .labels(&projection.view_key)
+        .into_iter()
+        .collect::<Vec<_>>();
+    projection_cache_keys(incarnation, projection, &labels)
         .pop()
         .expect("empty projection has a cache key")
 }
@@ -529,7 +533,7 @@ fn projection_cache_key(
 fn projection_cache_keys(
     incarnation: Option<&RepositoryIncarnation>,
     projection: &Projection,
-    labels: &[Visibility],
+    labels: &[ViewId],
 ) -> Vec<String> {
     let mut hasher = Sha1::new();
     hash_field(
@@ -547,10 +551,7 @@ fn projection_cache_keys(
     hash_field(&mut hasher, b"repo", projection.repo_id.as_bytes());
     let mut labels = labels
         .iter()
-        .map(|label| match label {
-            Visibility::Private => b"private".as_slice(),
-            Visibility::Public => b"public".as_slice(),
-        })
+        .map(|label| label.as_str().as_bytes())
         .collect::<Vec<_>>();
     labels.sort_unstable();
     labels.dedup();
@@ -605,7 +606,11 @@ fn cached_projection_prefix(
     incarnation: &RepositoryIncarnation,
     projection: &Projection,
 ) -> Result<Option<ProjectionPrefix>, ApiError> {
-    let keys = projection_cache_keys(Some(incarnation), projection, projection.view_key.labels());
+    let labels = scope_domain::views::Views::builtin()
+        .labels(&projection.view_key)
+        .into_iter()
+        .collect::<Vec<_>>();
+    let keys = projection_cache_keys(Some(incarnation), projection, &labels);
     for count in (1..projection.commits.len()).rev() {
         if matches!(
             projection.commits[count - 1].materialization,

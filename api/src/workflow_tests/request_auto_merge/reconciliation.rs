@@ -1,12 +1,10 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reconciliation_evaluates_a_saved_intent_after_restart_without_a_viewer() {
-    let (state, _source, _remote, request_id, request_head, _server) = native_open_request(
-        "request-auto-merge-recover-checks",
-        RequestAudience::Private,
-    )
-    .await;
+    let (state, _source, _remote, request_id, request_head, _server) =
+        native_open_request("request-auto-merge-recover-checks", ViewId::private()).await;
     let revision = state
         .metadata
         .requests()
@@ -67,7 +65,7 @@ async fn reconciliation_evaluates_a_saved_intent_after_restart_without_a_viewer(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reconciliation_retries_a_transient_check_evaluation_failure() {
     let (state, _source, _remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-retry-checks", RequestAudience::Public).await;
+        native_open_request("request-auto-merge-retry-checks", ViewId::public()).await;
     allow_native_runs(&state).await;
     let revision = state
         .metadata
@@ -149,7 +147,7 @@ async fn reconciliation_retries_a_transient_check_evaluation_failure() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reconciliation_stops_when_the_authorizing_member_loses_access() {
     let (state, _source, _remote, request_id, request_head, _server) =
-        native_open_request("request-auto-merge-revoked", RequestAudience::Private).await;
+        native_open_request("request-auto-merge-revoked", ViewId::private()).await;
     let member_id = "user_auto_merge_member";
     state
         .metadata

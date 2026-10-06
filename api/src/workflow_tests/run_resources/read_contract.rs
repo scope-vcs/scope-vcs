@@ -497,13 +497,7 @@ async fn run_history_filters_source_revisions_before_pagination() {
         .unwrap();
     let head = repo.git_head.unwrap();
     let matching_oid = head.head_oid.clone();
-    let accepted = RunSource::accepted_git_head(
-        TEST_REPO_ID,
-        head,
-        repo.git_pack_spans,
-        ProjectionViewKey::Private,
-    )
-    .unwrap();
+    let accepted = RunSource::accepted_git_head(TEST_REPO_ID, head, repo.git_pack_spans).unwrap();
     let other_oid = "c".repeat(40);
     for (id, source) in [
         ("matching_old", history_bundle(&matching_oid)),

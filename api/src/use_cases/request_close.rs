@@ -46,8 +46,8 @@ pub(crate) async fn close_request(
             user_id,
             repo.incarnation().incarnation_id(),
             &request.id,
-            request.audience,
-            request_actor_role(repo.access),
+            request.view.clone(),
+            request_actor_role(repo.access.clone()),
             outcome,
         ));
     state

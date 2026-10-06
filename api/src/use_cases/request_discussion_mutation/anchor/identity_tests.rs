@@ -1,9 +1,12 @@
-use super::{request_commit_visible_paths, visible_commit_paths};
+use super::{
+    request_commit_visible_paths as request_commit_visible_paths_with_views, visible_commit_paths,
+};
 use axum::http::StatusCode;
+use scope_domain::views::ViewId;
 use scope_domain::{
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     content_ref::ContentRef,
-    policy::{Policy, ScopePath, Visibility, VisibilityRule},
+    policy::{LabelRule, Policy, ScopePath},
     repository::access::RepositoryAccess,
     requests::RequestRevision,
 };
@@ -12,6 +15,21 @@ use std::{
     path::Path,
     process::{Command, Stdio},
 };
+
+fn request_commit_visible_paths(
+    repo: &Path,
+    policy: &Policy,
+    access: RepositoryAccess,
+    commit_oid: &str,
+) -> Result<(std::collections::BTreeSet<ScopePath>, bool), crate::error::ApiError> {
+    request_commit_visible_paths_with_views(
+        repo,
+        policy,
+        &scope_domain::views::Views::builtin(),
+        &access,
+        commit_oid,
+    )
+}
 
 #[test]
 fn commit_paths_use_the_first_parent_of_a_wide_merge() {
@@ -25,7 +43,7 @@ fn commit_paths_use_the_first_parent_of_a_wide_merge() {
 
     let (paths, hidden) = request_commit_visible_paths(
         fixture.directory.path(),
-        &Policy::new(Visibility::Public),
+        &Policy::new(ViewId::public()),
         RepositoryAccess::public(),
         &fixture.commit,
     )
@@ -47,7 +65,7 @@ fn commit_paths_accept_a_root_commit() {
 
     let (paths, hidden) = request_commit_visible_paths(
         fixture.directory.path(),
-        &Policy::new(Visibility::Public),
+        &Policy::new(ViewId::public()),
         RepositoryAccess::public(),
         &fixture.base,
     )
@@ -78,7 +96,7 @@ fn visible_commit_paths_requires_revision_membership_and_full_visibility() {
         },
         created_at_unix: 1,
     };
-    let public_policy = Policy::new(Visibility::Public);
+    let public_policy = Policy::new(ViewId::public());
 
     let paths = visible_commit_paths(
         fixture.directory.path(),
@@ -108,11 +126,9 @@ fn visible_commit_paths_requires_revision_membership_and_full_visibility() {
         .unwrap(),
     );
 
-    let mut private_policy = Policy::new(Visibility::Public);
+    let mut private_policy = Policy::new(ViewId::public());
     private_policy
-        .add_rule(VisibilityRule::private(
-            ScopePath::parse("/public.txt").unwrap(),
-        ))
+        .add_rule(LabelRule::private(ScopePath::parse("/public.txt").unwrap()))
         .unwrap();
     assert_not_found(
         visible_commit_paths(

@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 
 const GALLERY_README: &str = r#"# Dependency warning gallery
 
@@ -75,11 +76,11 @@ impl SeedFile {
         format!("/{}", self.path)
     }
 
-    fn visibility(self) -> Visibility {
+    fn label(self) -> ViewId {
         if self.path.starts_with("internal/") {
-            Visibility::Private
+            ViewId::private()
         } else {
-            Visibility::Public
+            ViewId::public()
         }
     }
 }
@@ -249,19 +250,21 @@ fn dependency_repository(
     name: &str,
     files: &[SeedFile],
 ) -> Result<(Repository, GitSegmentUpload), ApiError> {
-    let mut repository = repo(owner, name, Visibility::Public)?;
+    let mut repository = repo(owner, name, ViewId::public())?;
     repository
         .policy
-        .add_rule(VisibilityRule::private(
+        .add_rule(LabelRule::private(
             ScopePath::parse("/internal").map_err(ApiError::internal)?,
         ))
         .map_err(ApiError::internal)?;
-    repository.repo_config.visibility.rules.push(
-        scope_domain::repo_config::RepoConfigVisibilityRule {
+    repository
+        .repo_config
+        .files
+        .rules
+        .push(scope_domain::repo_config::RepoConfigFileRule {
             path: "/internal/**".into(),
-            visibility: scope_domain::repo_config::ConfigVisibility::Private,
-        },
-    );
+            view: ViewId::private(),
+        });
 
     let changes = files
         .iter()
@@ -269,7 +272,7 @@ fn dependency_repository(
             add_change(
                 &file.scope_path(),
                 blob(object_store, file.content)?,
-                file.visibility(),
+                file.label(),
             )
         })
         .collect::<Result<Vec<_>, ApiError>>()?;

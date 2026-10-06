@@ -11,7 +11,7 @@ use crate::{
 };
 use scope_domain::{
     policy::Principal,
-    projection::{ProjectionViewKey, project_graph},
+    projection::project_graph,
     repository::{RepoLifecycleState, RepositoryIncarnation},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
@@ -93,8 +93,13 @@ pub(crate) async fn ensure_ready_receive_pack_staging_repo(
             id: author_id.to_string(),
             kind: scope_domain::policy::PrincipalKind::User,
         };
-        let view_key = ProjectionViewKey::from_access(repo.access_for_principal(&principal));
-        let projection = project_graph(&repo.graph, &repo.visibility_change_sets, view_key);
+        let view = repo.access_for_principal(&principal).view;
+        let projection = project_graph(
+            &repo.graph,
+            &repo.visibility_change_sets,
+            repo.repo_config.views(),
+            &view,
+        );
         projection_bare_repo_for_state(
             state,
             incarnation,

@@ -1,9 +1,9 @@
 use super::*;
 use crate::repo_events::RepoChangeKind;
 use scope_domain::{
-    policy::Visibility,
     repository::RepoLifecycleState,
-    requests::{RequestActorRole, RequestAudience, StartRequestInput},
+    requests::{RequestActorRole, StartRequestInput},
+    views::ViewId,
 };
 use scope_postgres::db::{CatalogFixture, CloseRequestCommand};
 
@@ -18,7 +18,7 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
     };
     let mut catalog = CatalogFixture::default();
     catalog
-        .create_repository(&user, "repo", Visibility::Private)
+        .create_repository(&user, "repo", ViewId::private())
         .unwrap();
     catalog
         .repositories
@@ -41,7 +41,7 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
             author_user_id: "owner".to_string(),
             title: None,
             author_role: RequestActorRole::Owner,
-            audience: RequestAudience::Private,
+            view: ViewId::private(),
             base_main_oid: "a".repeat(40),
             event_id: "event_request_reply".to_string(),
             now_unix: 1,
@@ -111,7 +111,7 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
             request_id: "request_reply".to_string(),
             discussion_id: "discussion_reply".to_string(),
             through_position: position,
-            audience: RequestAudience::Private.into(),
+            view: ViewId::private().into(),
         }
     );
 }

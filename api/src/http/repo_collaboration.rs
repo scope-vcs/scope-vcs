@@ -327,10 +327,14 @@ pub(crate) async fn accept_repository_invite(
         AcceptRepositoryInviteOutcome::AlreadyAccepted(member) => member,
     };
     let open_request_count =
-        open_request_count_for_access(&state, &repo.record.id, repo.access).await?;
-    let summary =
-        repo_summary_for_access(&repo.record, repo.access, open_request_count, &git_origin)
-            .ok_or_else(|| ApiError::internal_message("accepted invite member cannot read repo"))?;
+        open_request_count_for_access(&state, &repo.record.id, repo.access.clone()).await?;
+    let summary = repo_summary_for_access(
+        &repo.record,
+        repo.access.clone(),
+        open_request_count,
+        &git_origin,
+    )
+    .ok_or_else(|| ApiError::internal_message("accepted invite member cannot read repo"))?;
     Ok(Json(AcceptRepositoryInviteResponse {
         repo: summary,
         member: repository_member_response(&member, &user),
@@ -376,7 +380,7 @@ async fn open_request_count_for_access(
         .requests_by_repo_id(repo_id)
         .await?
         .into_iter()
-        .filter(|request| request_counts_for_access(request, access))
+        .filter(|request| request_counts_for_access(request, access.clone()))
         .count())
 }
 

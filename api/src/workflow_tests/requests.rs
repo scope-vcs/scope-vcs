@@ -171,7 +171,7 @@ async fn public_readers_do_not_see_private_request_branches() {
     assert_eq!(owner_response.status(), StatusCode::OK);
     let owner_body = response_json(owner_response).await;
     assert_eq!(owner_body["requests"].as_array().unwrap().len(), 1);
-    assert_eq!(owner_body["requests"][0]["audience"], "Private");
+    assert_eq!(owner_body["requests"][0]["view"], "private");
     assert!(
         owner_body["requests"][0]
             .get("description_markdown")

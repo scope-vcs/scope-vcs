@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::views::ViewId;
 use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend};
 use std::{process::Command, time::Duration};
 
@@ -84,7 +85,8 @@ async fn cold_git_backed_projection_succeeds_with_one_build_permit() {
     let projection = project_graph(
         &stored.graph,
         &stored.visibility_change_sets,
-        ProjectionViewKey::Public,
+        stored.repo_config.views(),
+        &ViewId::public(),
     );
     assert!(projection.commits.iter().any(|commit| {
         commit.changes.iter().any(|change| {

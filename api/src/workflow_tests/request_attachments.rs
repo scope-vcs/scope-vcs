@@ -331,7 +331,7 @@ async fn request_attachment_events_hide_unbound_uploads_from_other_maintainers()
         kind: scope_api_contract::RepoChangeKind::RequestAttachmentChanged {
             request_id: "req_media".into(),
             attachment_id: prepared.attachment.id.clone(),
-            audience: scope_api_contract::RequestAudience::Private,
+            view: scope_api_contract::ViewId::private(),
         },
     };
     state.repo_events.publish_event(event.clone());

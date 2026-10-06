@@ -140,8 +140,8 @@ pub(crate) async fn create_discussion(
                 context.repo.incarnation().incarnation_id(),
                 &context.request.id,
                 &mutation.discussion.id,
-                context.request.audience,
-                request_actor_role(context.access),
+                context.request.view.clone(),
+                request_actor_role(context.access.clone()),
                 mutation.discussion.anchor.is_some(),
             ));
     }
@@ -187,8 +187,8 @@ pub(crate) async fn create_reply(
                 context.repo.incarnation().incarnation_id(),
                 &context.request.id,
                 &discussion_id,
-                context.request.audience,
-                request_actor_role(context.access),
+                context.request.view.clone(),
+                request_actor_role(context.access.clone()),
             ));
     }
     reply_mutation_result(
@@ -237,8 +237,8 @@ pub(crate) async fn transition_discussion(
                 context.repo.incarnation().incarnation_id(),
                 &context.request.id,
                 &command.discussion_id,
-                context.request.audience,
-                request_actor_role(context.access),
+                context.request.view.clone(),
+                request_actor_role(context.access.clone()),
             ));
     }
     let through_position = discussion.last_activity_position;
@@ -297,8 +297,8 @@ pub(crate) async fn reopen_and_reply(
                 context.repo.incarnation().incarnation_id(),
                 &context.request.id,
                 &discussion_id,
-                context.request.audience,
-                request_actor_role(context.access),
+                context.request.view.clone(),
+                request_actor_role(context.access.clone()),
             ));
     }
     reply_mutation_result(
@@ -347,7 +347,7 @@ async fn mutation_context(
     actor_user_id: &str,
 ) -> Result<MutationContext, ApiError> {
     let repo = find_read_access(state, owner, repo_name, Some(actor_user_id)).await?;
-    let access = repo.access;
+    let access = repo.access.clone();
     let request = state
         .metadata
         .requests()
@@ -362,7 +362,7 @@ async fn mutation_context(
     if request.repo_id != repo.record.id
         || !request_policy(
             &request,
-            RequestViewer::new(access, Some(actor_user_id), is_invitee),
+            RequestViewer::new(access.clone(), Some(actor_user_id), is_invitee),
         )
         .exact_visible
     {
@@ -434,7 +434,7 @@ async fn publish_timeline_change(
             context.request.id.clone(),
             discussion_id,
             through_position,
-            context.request.audience,
+            context.request.view.clone(),
         )
         .await;
 }

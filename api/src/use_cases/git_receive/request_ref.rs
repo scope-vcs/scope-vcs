@@ -16,15 +16,14 @@ use crate::{
     repo_events::RepoChangeReason,
     state::AppState,
 };
+use scope_domain::views::ViewId;
 use scope_domain::{
-    projection::{ProjectionViewKey, project_graph},
+    projection::project_graph,
     repository::{
         RepoLifecycleState, Repository, RepositoryIncarnation,
         access::{RepositoryAccess, RepositoryActor},
     },
-    requests::{
-        RecordRequestRevisionInput, Request, RequestAudience, RequestViewer, request_policy,
-    },
+    requests::{RecordRequestRevisionInput, Request, RequestViewer, request_policy},
 };
 use scope_product_analytics::ProductEvent;
 use std::path::{Path, PathBuf};
@@ -41,7 +40,7 @@ pub(super) async fn actor_has_open_editable_request(
         .requests_with_invitee_status(repo_id, Some(actor_user_id))
         .await?
     {
-        if request_actor_can_edit_ref(&request, actor_user_id, access, is_invitee) {
+        if request_actor_can_edit_ref(&request, actor_user_id, access.clone(), is_invitee) {
             return Ok(true);
         }
     }
@@ -74,7 +73,7 @@ pub(crate) async fn prepare_request_staging_repo(
         .await?;
     if access.actor == RepositoryActor::Public
         && !candidates.iter().any(|(request, is_invitee)| {
-            request_actor_can_edit_ref(request, actor_user_id, access, *is_invitee)
+            request_actor_can_edit_ref(request, actor_user_id, access.clone(), *is_invitee)
         })
     {
         return Err(ApiError::not_found(format!(
@@ -95,7 +94,8 @@ pub(crate) async fn prepare_request_staging_repo(
                 let projection = project_graph(
                     &repo.graph,
                     &repo.visibility_change_sets,
-                    ProjectionViewKey::from_access(repo.access_for_principal(&principal)),
+                    repo.repo_config.views(),
+                    &repo.access_for_principal(&principal).view,
                 );
                 projection_bare_repo_for_state(
                     state,
@@ -174,16 +174,17 @@ async fn seed_editable_request_refs_for_repo(
     for (request, is_invitee) in candidates {
         let decision = request_policy(
             &request,
-            RequestViewer::new(access, Some(actor_user_id), is_invitee),
+            RequestViewer::new(access.clone(), Some(actor_user_id), is_invitee),
         );
         if decision.branch_mutable {
             requests.push(request);
         }
     }
     let public_base_repo = if access.actor != RepositoryActor::Public
-        && requests.iter().any(|request| {
-            request.audience == RequestAudience::Public && request.git_snapshot.is_none()
-        }) {
+        && requests
+            .iter()
+            .any(|request| request.view == ViewId::public() && request.git_snapshot.is_none())
+    {
         Some(public_projection_repo(state, repo).await?)
     } else {
         None
@@ -205,10 +206,16 @@ async fn public_projection_repo(
     state: &AppState,
     repo: &Repository,
 ) -> Result<GitRepoHandle, ApiError> {
+    let view = repo
+        .repo_config
+        .views()
+        .anyone()
+        .ok_or_else(|| ApiError::not_found("public view not found"))?;
     let projection = project_graph(
         &repo.graph,
         &repo.visibility_change_sets,
-        ProjectionViewKey::Public,
+        repo.repo_config.views(),
+        view,
     );
     projection_bare_repo_for_state(
         state,
@@ -245,7 +252,7 @@ pub(super) async fn persist_request_ref_revision(
     }
     let update_lock =
         acquire_request_ref_update_lock_async(state, &incarnation, &update.request_ref).await?;
-    let request_audience = request.audience;
+    let request_view = request.view.clone();
     let now_unix = unix_now()?;
     let expected_old_head_oid = update
         .old_head_oid
@@ -281,7 +288,7 @@ pub(super) async fn persist_request_ref_revision(
                     actor_user_id,
                     incarnation.incarnation_id(),
                     &request.id,
-                    request_audience,
+                    request_view,
                 ));
             state
                 .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestRevised)

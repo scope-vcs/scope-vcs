@@ -7,9 +7,10 @@ use crate::{
     },
     state::AppState,
 };
+use scope_domain::views::ViewId;
 use scope_domain::{
     repository::RepositoryIncarnation,
-    requests::{Request, RequestAudience, RequestRevision, canonical_request_ref},
+    requests::{Request, RequestRevision, canonical_request_ref},
 };
 use sha2::{Digest, Sha256};
 use std::future::Future;
@@ -29,16 +30,16 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     revision: &RequestRevision,
     action: impl FnOnce(&Path, &RequestRevision) -> Result<T, ApiError> + Send + 'static,
 ) -> Result<T, ApiError> {
-    let base_repo = request_base_repo(state.clone(), incarnation.clone(), request.audience);
+    let base_repo = request_base_repo(state.clone(), incarnation.clone(), request.view.clone());
     with_revision_repo(state, incarnation, request, revision, base_repo, action).await
 }
 
 async fn request_base_repo(
     state: AppState,
     incarnation: RepositoryIncarnation,
-    audience: RequestAudience,
+    view: ViewId,
 ) -> Result<Option<GitRepoHandle>, ApiError> {
-    if audience == RequestAudience::Public {
+    if view == ViewId::public() {
         return Ok(None);
     }
     let (Some(head), spans) = state
@@ -196,7 +197,7 @@ fn build_revision(
 mod tests {
     use super::*;
     use crate::git::{command::run_git_output, import::git_snapshot_from_ref};
-    use scope_domain::requests::{RequestActorRole, RequestAudience};
+    use scope_domain::requests::RequestActorRole;
     use std::sync::{Arc, atomic::AtomicUsize};
 
     fn fixture(root: &Path) -> (RequestRevision, Vec<u8>) {
@@ -260,7 +261,7 @@ mod tests {
             name: "topic".into(),
             author_user_id: Some("owner".into()),
             author_role: RequestActorRole::Owner,
-            audience: RequestAudience::Private,
+            view: ViewId::private(),
             base_main_oid: "a".repeat(40),
             head_oid: "b".repeat(40),
             git_snapshot: None,

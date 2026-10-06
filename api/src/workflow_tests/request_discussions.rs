@@ -15,7 +15,7 @@ async fn threaded_discussion_http_workflow_preserves_activity_and_read_contracts
         "POST",
         "/v1/repos/owner/repo/requests",
         Some(&bearer),
-        Some(r#"{"name":"fix-parser-crash","audience":"Public"}"#),
+        Some(r#"{"name":"fix-parser-crash","view":"public"}"#),
     )
     .await;
     assert_eq!(started.status(), StatusCode::OK);
@@ -669,7 +669,7 @@ async fn timeline_cursor_is_stable_during_concurrent_thread_creation_and_changes
         "POST",
         "/v1/repos/owner/repo/requests",
         Some(&bearer),
-        Some(r#"{"name":"stable-discussion-pages","audience":"Public"}"#),
+        Some(r#"{"name":"stable-discussion-pages","view":"public"}"#),
     )
     .await;
     let started = response_json(started).await;
@@ -808,7 +808,7 @@ async fn discussion_changes_report_complete_pages_without_skipping_the_extra_row
         "POST",
         "/v1/repos/owner/repo/requests",
         Some(&bearer),
-        Some(r#"{"name":"complete-discussion-changes","audience":"Public"}"#),
+        Some(r#"{"name":"complete-discussion-changes","view":"public"}"#),
     )
     .await;
     assert_eq!(started.status(), StatusCode::OK);

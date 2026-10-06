@@ -4,6 +4,7 @@ use scope_domain::{
     repository::Repository,
     repository::collaboration::{RepositoryMember, RepositoryMemberPermissions},
     requests::RequestDiscussionAnchor,
+    views::ViewId,
 };
 use scope_postgres::db::{
     CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand, DiscussionTransition,
@@ -58,6 +59,7 @@ pub(super) fn add_maintainer(repo: &mut Repository) {
         permissions: RepositoryMemberPermissions {
             can_push: true,
             can_change_file_visibility: true,
+            view: ViewId::private(),
         },
         created_at_unix: 1_800_000_000,
         updated_at_unix: 1_800_000_000,

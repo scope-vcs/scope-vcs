@@ -1,9 +1,10 @@
 use super::*;
+use scope_domain::views::ViewId;
 use scope_domain::{
     dependency_analysis::{
         AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION, DependencyEdge, DependencyEdgeKind,
     },
-    repo_config::RepoConfigVisibilityRule,
+    repo_config::RepoConfigFileRule,
 };
 use scope_postgres::db::DependencyCompletion;
 
@@ -22,10 +23,10 @@ async fn dependency_fixture() -> AppState {
     run_git(Some(&source), &["add", "."], "stage dependency fixture").unwrap();
     commit_all(&source, "add dependency fixture");
     let bare = clone_test_repo(&source, "dependency-report-access-bare", true);
-    let mut config = repo_config(Visibility::Public);
-    config.visibility.rules.push(RepoConfigVisibilityRule {
+    let mut config = repo_config(ViewId::public());
+    config.files.rules.push(RepoConfigFileRule {
         path: "/internal/**".to_string(),
-        visibility: ConfigVisibility::Private,
+        view: ViewId::private(),
     });
     apply_first_push_from_staging_repo(&state, &bare, config).await;
     state

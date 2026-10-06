@@ -1,6 +1,7 @@
 use super::*;
 use scope_api_contract::routes::{repo_request_checks, repo_request_checks_approve};
 use scope_domain::runs::{run::RunState, source::RunTrigger};
+use scope_domain::views::ViewId;
 
 fn request_workflow() -> String {
     WORKFLOW.replacen("  manual: true", "  manual: true\n  request: true", 1)
@@ -16,7 +17,7 @@ async fn native_repo_with_public_request(label: &str, workflow: &str) -> AppStat
     run_git(Some(&source), &["add", "."], "stage trusted main").unwrap();
     commit_all(&source, "publish trusted main workflow");
     let bare = clone_test_repo(&source, &format!("{label}-bare"), true);
-    apply_first_push_from_staging_repo(&state, &bare, repo_config(Visibility::Public)).await;
+    apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::public())).await;
     allow_native_runs(&state).await;
     state
         .metadata

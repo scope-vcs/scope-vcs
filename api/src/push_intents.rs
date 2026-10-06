@@ -185,9 +185,7 @@ mod tests {
     fn issued_push_intents_encode_the_frontier_directly() {
         let key = [7_u8; 32];
         let digest = "b".repeat(64);
-        let config = RepoConfig::with_default_visibility(
-            scope_domain::repo_config::ConfigVisibility::Private,
-        );
+        let config = RepoConfig::with_default_view(scope_domain::views::ViewId::private());
         let config = serde_json::to_string(&config).unwrap();
         let payload = format!(
             r#"{{"kind":"scope.push-intent","repo_id":"owner/repo","user_id":"owner","head_oid":"next-head","config":{config},"base_config_hash":"config-hash","base_git_frontier":"{digest}","expires_at_unix":4000000000}}"#

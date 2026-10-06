@@ -1,5 +1,6 @@
 use super::*;
 use crate::auth::cli::CliAuthService;
+use scope_domain::views::ViewId;
 use scope_postgres::db::EditRequestIdentityCommand;
 
 async fn advance_reconciliation() {
@@ -36,7 +37,7 @@ async fn a_reader_reconciles_a_committed_request_change_without_its_notification
             author_user_id: test_owner_id(),
             title: Some("Before".to_string()),
             author_role: RequestActorRole::Owner,
-            audience: RequestAudience::Private,
+            view: ViewId::private(),
             base_main_oid: "a".repeat(40),
             event_id: "event_request_missed_notification".to_string(),
             now_unix: unix_now(),

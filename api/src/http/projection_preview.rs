@@ -1,30 +1,20 @@
-use crate::{
-    error::ApiError, http::responses::ProjectionPreviewAudience, repo_access::ensure_repo_read,
-};
+use crate::{error::ApiError, repo_access::ensure_repo_read};
 use scope_domain::{
-    policy::Principal, repository::Repository, repository::access::RepositoryActor,
+    policy::Principal, repository::Repository, repository::access::RepositoryActor, views::ViewId,
 };
 
 pub(crate) fn ensure_projection_preview_access(
     repo: &Repository,
     requester: &Principal,
-    audience: ProjectionPreviewAudience,
+    view: &ViewId,
 ) -> Result<(), ApiError> {
-    match audience {
-        ProjectionPreviewAudience::Private => {
-            ensure_repo_read(repo, requester)?;
-            if repo.access_for_principal(requester).actor != RepositoryActor::Public {
-                Ok(())
-            } else {
-                Err(ApiError::forbidden("repo membership required"))
-            }
-        }
-        ProjectionPreviewAudience::Public => {
-            if repo.access_for_principal(requester).actor != RepositoryActor::Public {
-                ensure_repo_read(repo, requester)
-            } else {
-                ensure_repo_read(repo, &Principal::public())
-            }
-        }
+    let access = repo.access_for_principal(requester);
+    if !repo.repo_config.views().may_read(&access.view, view) {
+        return Err(ApiError::forbidden("view access required"));
+    }
+    if access.actor == RepositoryActor::Public {
+        ensure_repo_read(repo, &Principal::public())
+    } else {
+        ensure_repo_read(repo, requester)
     }
 }

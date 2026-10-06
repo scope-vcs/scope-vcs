@@ -83,7 +83,7 @@ pub(crate) async fn request_queue(
             repo_id: &repo.record.id,
             section: query.section,
             viewer_user_id: viewer_user_id.as_deref(),
-            access,
+            access: access.clone(),
             search,
             after: after.as_ref(),
             limit: (limit + 1) as u64,
@@ -136,7 +136,7 @@ pub(crate) async fn request_queue(
                 attention_at_unix: row.cursor.updated_at_unix,
                 request: request_list_item_response(
                     row.request,
-                    access,
+                    access.clone(),
                     current_main_oid.clone(),
                     checks
                         .get(&request_id)

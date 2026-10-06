@@ -5,6 +5,7 @@ use super::*;
 use crate::AppState;
 use crate::git::command::git_stdout_text;
 use crate::git::restore::restore_git_pack_spans;
+use scope_domain::views::ViewId;
 use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend, source_blob_bytes};
 use std::sync::Arc;
 
@@ -58,10 +59,11 @@ async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
             .repository("dev", fixture.name)
             .unwrap_or_else(|| panic!("missing seeded repository {}", fixture.name));
         assert_eq!(
-            repository
-                .policy
-                .effective_visibility(&ScopePath::parse("/internal/example.ts").unwrap()),
-            Visibility::Private
+            repository.policy.label(
+                &ScopePath::parse("/internal/example.ts").unwrap(),
+                repository.repo_config.views()
+            ),
+            ViewId::private()
         );
         assert_eq!(
             repository.graph.commits[0].changes.len(),
@@ -75,12 +77,14 @@ async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
                 .find(|change| change.path == path)
                 .unwrap_or_else(|| panic!("missing logical manifest path {path}"));
             assert_eq!(
-                change.visibility,
-                repository.policy.effective_visibility(&path)
+                change.label,
+                repository
+                    .policy
+                    .label(&path, repository.repo_config.views())
             );
             assert_eq!(
-                change.visibility,
-                repository.repo_config.visibility_for_path(&path),
+                change.label,
+                repository.repo_config.label_for_path(&path),
                 "seeded dependency policy and persisted config must agree for {path}"
             );
             assert_eq!(

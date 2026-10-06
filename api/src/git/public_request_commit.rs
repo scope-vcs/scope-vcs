@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, path::Path, time::Instant};
 
 use scope_domain::{
-    policy::Visibility,
     projection::{FileChange, NativePublicCommit, NativePublicCommitDetails},
+    views::ViewId,
 };
 use scope_git::git_blob_reference;
 
@@ -80,7 +80,7 @@ pub(crate) fn inspect_native_public_commit(
                     .map(|entry| git_blob_reference(entry.oid, entry.mode, entry.size_bytes)),
                 new_content: new_entry
                     .map(|entry| git_blob_reference(entry.oid, entry.mode, entry.size_bytes)),
-                visibility: Visibility::Public,
+                label: ViewId::public(),
             }
         })
         .collect();

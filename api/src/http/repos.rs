@@ -24,10 +24,8 @@ use scope_api_contract::{
 use scope_domain::repo_config::{
     is_repo_config_fingerprint, repo_config_fingerprint as domain_repo_config_fingerprint,
 };
-use scope_domain::{
-    error::DomainError,
-    policy::{ScopePath, Visibility},
-};
+use scope_domain::views::ViewId;
+use scope_domain::{error::DomainError, policy::ScopePath};
 use scope_domain::{
     landing_file::{MAX_REPOSITORY_LANDING_FILE_BYTES, REPOSITORY_LANDING_FILE_PATH},
     repo_actions::reviewed_update_domain_error,
@@ -71,10 +69,10 @@ pub(crate) async fn create_repo(
     Json(input): Json<CreateRepoRequest>,
 ) -> Result<Json<CreateRepoResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let default_visibility = input
-        .file_default_visibility
+    let default_view = input
+        .file_default_view
         .map(Into::into)
-        .unwrap_or(Visibility::Private);
+        .unwrap_or(ViewId::private());
     let git_origin = public_git_origin(&state);
     let cleanup_state = state.clone();
     let (secret, token) = generate_first_push_token(&user.id)?;
@@ -88,7 +86,7 @@ pub(crate) async fn create_repo(
             scope_postgres::db::CreateRepositoryCommand {
                 owner_user_id: user.id.clone(),
                 name: input.name.clone(),
-                default_visibility,
+                default_view,
                 init_tokens: (token, push_token),
                 now_unix: now,
             },
@@ -204,7 +202,7 @@ pub(crate) async fn create_push_intent(
     Path((owner, repo_name)): Path<(String, String)>,
     Json(input): Json<CreatePushIntentRequest>,
 ) -> Result<Json<CreatePushIntentResponse>, ApiError> {
-    let input_config: scope_domain::repo_config::RepoConfig = input.config.into();
+    let input_config: scope_domain::repo_config::RepoConfig = input.config.try_into()?;
     let user = require_scope_user(&state, &headers).await?;
     let repo = state
         .metadata
@@ -356,14 +354,16 @@ pub(crate) async fn get_projection_preview(
     let repo = find_repo(&state, &owner, &repo_name).await?;
     let user = optional_scope_user(&state, &headers).await?;
     let requester = principal_for_scope_user(&repo, user.as_ref());
-    ensure_projection_preview_access(&repo, &requester, input.audience)?;
+    let view: ViewId = input.view.into();
+    ensure_projection_preview_access(&repo, &requester, &view)?;
     let include_private_counts =
         repo.access_for_principal(&requester).actor != RepositoryActor::Public;
 
     let projection = scope_domain::projection::project_graph(
         &repo.graph,
         &repo.visibility_change_sets,
-        scope_domain::projection_views::ProjectionAudience::from(input.audience).into(),
+        repo.repo_config.views(),
+        &view,
     );
     let commits = projection
         .commits
@@ -391,7 +391,7 @@ pub(crate) async fn get_projection_preview(
 
     Ok(Json(projection_preview_response(
         &repo,
-        input.audience,
+        &view,
         include_private_counts,
         &native_details,
     )?))
@@ -494,7 +494,7 @@ pub(crate) async fn get_file_content(
     Ok(Json(RepoFileContentResponse {
         path: projected.projected.file.path.as_str().to_string(),
         oid: projected.projected.file.oid,
-        visibility: projected.projected.file.visibility.into(),
+        label: projected.projected.file.label.into(),
         size_bytes: projected.projected.blob.size_bytes,
         content,
     }))

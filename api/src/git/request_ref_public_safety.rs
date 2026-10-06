@@ -12,7 +12,7 @@ use crate::{
 use scope_domain::{
     policy::ScopePath,
     projection::NativePublicCommit,
-    projection::{ProjectionViewKey, project_graph},
+    projection::project_graph,
     repository::Repository,
     requests::{PublicRequestPathError, PublicRequestPaths},
 };
@@ -165,10 +165,16 @@ async fn fetch_current_public_projection(
     state: &AppState,
     staging_repo: &FsPath,
 ) -> Result<(String, BTreeSet<String>), ApiError> {
+    let public_view = repo
+        .repo_config
+        .views()
+        .anyone()
+        .ok_or_else(|| ApiError::not_found("public view not found"))?;
     let public_projection = project_graph(
         &repo.graph,
         &repo.visibility_change_sets,
-        ProjectionViewKey::Public,
+        repo.repo_config.views(),
+        public_view,
     );
     if public_projection.commits.is_empty() {
         return Err(ApiError::conflict(
