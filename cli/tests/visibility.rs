@@ -187,6 +187,10 @@ fn log_lists_the_visibility_feed_without_a_checkout_and_passes_the_cursor() {
                 }),
             )
             .route(
+                "/v1/repos/owner/repo",
+                get(|| async { Json(repository_response(serde_json::json!({}))) }),
+            )
+            .route(
                 "/v1/repos/owner/repo/history",
                 get(|Query(query): Query<HashMap<String, String>>| async move {
                     assert_eq!(query.get("feed").unwrap(), "visibility");
