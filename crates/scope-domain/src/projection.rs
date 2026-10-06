@@ -103,6 +103,14 @@ pub enum ProjectionViewKey {
 }
 
 impl ProjectionViewKey {
+    /// The file labels this view shows.
+    pub fn labels(self) -> &'static [Visibility] {
+        match self {
+            Self::Private => &[Visibility::Private, Visibility::Public],
+            Self::Public => &[Visibility::Public],
+        }
+    }
+
     pub fn from_access(access: RepositoryAccess) -> Self {
         match access.actor {
             RepositoryActor::Owner => Self::Private,

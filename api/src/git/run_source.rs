@@ -104,7 +104,7 @@ fn run_source_cache_key(
     incarnation: &RepositoryIncarnation,
     source: &RunSource,
 ) -> Result<String, ApiError> {
-    let RunSource::AcceptedGitHead { head, audience, .. } = source else {
+    let RunSource::AcceptedGitHead { head, .. } = source else {
         return Err(ApiError::internal_message(
             "run bundle cache requires an accepted Git head",
         ));
@@ -114,7 +114,6 @@ fn run_source_cache_key(
         incarnation.repository_id(),
         incarnation.incarnation_id(),
         &head.head_oid,
-        audience,
     ))
     .map_err(ApiError::internal)?;
     Ok(format!(

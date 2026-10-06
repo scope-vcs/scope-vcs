@@ -10,6 +10,7 @@ use crate::{
 };
 use scope_domain::{
     content_ref::ContentRef,
+    policy::Visibility,
     projection::{Projection, ProjectionMaterialization},
     repository::RepositoryIncarnation,
 };
@@ -27,7 +28,7 @@ use std::{
 mod index;
 use index::ProjectionIndex;
 
-const PROJECTION_CACHE_SEMANTICS_VERSION: &str = "shared-projection-view-v2-native-commits";
+const PROJECTION_CACHE_SEMANTICS_VERSION: &str = "shared-projection-labels-v3-alternates";
 static PROJECTION_CACHE_ATTEMPT: AtomicU64 = AtomicU64::new(1);
 
 struct ProjectionBuildArtifacts {
@@ -513,7 +514,7 @@ fn projection_cache_key(
     incarnation: Option<&RepositoryIncarnation>,
     projection: &Projection,
 ) -> String {
-    projection_cache_keys(incarnation, projection)
+    projection_cache_keys(incarnation, projection, projection.view_key.labels())
         .pop()
         .expect("empty projection has a cache key")
 }
@@ -521,6 +522,7 @@ fn projection_cache_key(
 fn projection_cache_keys(
     incarnation: Option<&RepositoryIncarnation>,
     projection: &Projection,
+    labels: &[Visibility],
 ) -> Vec<String> {
     let mut hasher = Sha1::new();
     hash_field(
@@ -536,18 +538,21 @@ fn projection_cache_keys(
         );
     }
     hash_field(&mut hasher, b"repo", projection.repo_id.as_bytes());
-    hash_field(
-        &mut hasher,
-        b"view",
-        projection.view_key.as_str().as_bytes(),
-    );
+    let mut labels = labels
+        .iter()
+        .map(|label| match label {
+            Visibility::Private => b"private".as_slice(),
+            Visibility::Public => b"public".as_slice(),
+        })
+        .collect::<Vec<_>>();
+    labels.sort_unstable();
+    labels.dedup();
+    for label in labels {
+        hash_field(&mut hasher, b"label", label);
+    }
     let mut keys = vec![hex::encode(hasher.clone().finalize())];
     for commit in &projection.commits {
-        hash_field(&mut hasher, b"commit", commit.projected_id.as_bytes());
         hash_field(&mut hasher, b"logical", commit.logical_commit_id.as_bytes());
-        if let Some(parent) = &commit.parent_projected_id {
-            hash_field(&mut hasher, b"parent", parent.as_bytes());
-        }
         hash_field(&mut hasher, b"message", commit.message.as_bytes());
         match &commit.materialization {
             ProjectionMaterialization::Generate => {
@@ -593,7 +598,7 @@ fn cached_projection_prefix(
     incarnation: &RepositoryIncarnation,
     projection: &Projection,
 ) -> Result<Option<ProjectionPrefix>, ApiError> {
-    let keys = projection_cache_keys(Some(incarnation), projection);
+    let keys = projection_cache_keys(Some(incarnation), projection, projection.view_key.labels());
     for count in (1..projection.commits.len()).rev() {
         if matches!(
             projection.commits[count - 1].materialization,
