@@ -93,7 +93,7 @@ export function RepositoryFileNavigator({
                   <span className="min-w-0 flex-1 break-all font-mono">
                     {displayRouteFilePath(file.path)}
                   </span>
-                  <VisibilityBadge compact visibility={file.visibility} />
+                  <VisibilityBadge compact visibility={file.label} />
                 </button>
               </li>
             ))}

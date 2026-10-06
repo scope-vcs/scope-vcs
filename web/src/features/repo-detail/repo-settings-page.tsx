@@ -18,6 +18,7 @@ import type {
   RepositoryMemberResponse,
   RepoSummaryResponse,
 } from '@/api/types.generated'
+import { mayReadView } from '@/api/repo-views'
 import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { SectionRow, SectionRows } from '@/components/section-rows'
@@ -174,7 +175,7 @@ export function RepoSettingsPage({
           />
         )}
 
-        {repo.access.can_read_private_files && visibilityLog}
+        {mayReadView(repo.access, 'private') && visibilityLog}
 
         {repo.access.actor !== 'Public' && (
           <RepoCiSection

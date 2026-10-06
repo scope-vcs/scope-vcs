@@ -70,8 +70,8 @@ export function InviteMemberDialog({
               Invite a member
             </Dialog.Title>
             <Dialog.Description className="text-sm leading-5 text-muted-foreground">
-              Give someone access to {repoLabel}. Members can read all files,
-              including private files, and take part in maintainer reviews.
+              Give someone access to {repoLabel}. Choose the view they can read
+              and whether they can push changes or update file labels.
             </Dialog.Description>
           </div>
 

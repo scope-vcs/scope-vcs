@@ -7,15 +7,15 @@ import {
   normalizeFilePath,
 } from './file-system-tree-model'
 
-type TestFile = { path: string; visibility: 'Private' | 'Public' }
+type TestFile = { path: string; label: 'private' | 'public' }
 
 test('file tree normalizes, nests, sorts, and summarizes paths', () => {
   const tree = buildFileSystemTree<TestFile>([
-    { path: '/src/zeta.ts', visibility: 'Public' },
-    { path: 'README.md', visibility: 'Public' },
-    { path: String.raw`src\components\Button.tsx`, visibility: 'Private' },
-    { path: './docs//guide.md', visibility: 'Public' },
-    { path: '/src/components/Alert.tsx', visibility: 'Private' },
+    { path: '/src/zeta.ts', label: 'public' },
+    { path: 'README.md', label: 'public' },
+    { path: String.raw`src\components\Button.tsx`, label: 'private' },
+    { path: './docs//guide.md', label: 'public' },
+    { path: '/src/components/Alert.tsx', label: 'private' },
   ])
 
   assert.deepEqual(tree.children.map(({ type, name }) => [type, name]), [
@@ -34,8 +34,8 @@ test('file tree normalizes, nests, sorts, and summarizes paths', () => {
     'folder:/src/components',
   ])
   assert.equal(folderVisibility(src.files), 'Mixed')
-  assert.equal(folderVisibility([{ path: 'a', visibility: 'Public' }]), 'Public')
-  assert.equal(folderVisibility([{ path: 'a', visibility: 'Private' }]), 'Private')
+  assert.equal(folderVisibility([{ path: 'a', label: 'public' }]), 'public')
+  assert.equal(folderVisibility([{ path: 'a', label: 'private' }]), 'private')
   assert.equal(
     normalizeFilePath(String.raw`.\src\\..\components/Button.tsx`),
     'src/components/Button.tsx',
