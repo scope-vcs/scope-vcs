@@ -3,6 +3,7 @@ import test from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { RepositoryDependencyCheckView } from './repository-dependency-check-view'
+import { repoViews } from '../../api/repo-views'
 import type { DependencyCheckPresentation } from './repository-dependency-model'
 
 const presentation: DependencyCheckPresentation = {
@@ -28,6 +29,10 @@ test('starts collapsed with navigable findings and a non-navigable repository ga
   const html = renderToStaticMarkup(createElement(RepositoryDependencyCheckView, {
     onSelectFilePath: () => undefined,
     presentation,
+    views: repoViews([
+      { id: 'public', name: 'Public', includes: [], readers: 'anyone' },
+      { id: 'private', name: 'Private', includes: 'all', readers: 'assigned' },
+    ]),
   }))
 
   assert.match(html, /^<details(?![^>]* open)/)

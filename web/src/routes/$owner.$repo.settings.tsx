@@ -37,7 +37,7 @@ import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useCallback, useEffect } from 'react'
-import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
+import { useRepoLayout, useRepoViews } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import {
   refreshWhenNextInviteExpires,
@@ -116,6 +116,7 @@ export const Route = createFileRoute('/$owner/$repo/settings')({
 function RepoSettingsRoute() {
   const params = Route.useParams()
   const { repo } = useRepoLayout()
+  const views = useRepoViews()
   const { isLoaded, userId } = useAuth()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
   const { owner, repo: repoName } = params
@@ -156,7 +157,7 @@ function RepoSettingsRoute() {
       {!resource.error || resource.value ? (
         <RepoSettingsPage
           key={scope}
-          visibilityLog={<VisibilityLogSection params={params} />}
+          visibilityLog={views.full && <VisibilityLogSection params={params} view={views.full} />}
           createInvite={(data) => retainResult(
             createRepoInvite({ data }),
             (invite) => ({ type: 'inviteUpdated', invite }),

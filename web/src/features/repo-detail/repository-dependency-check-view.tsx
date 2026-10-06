@@ -1,13 +1,15 @@
 import { ChevronRight } from 'lucide-react'
-import { viewName } from '../../api/repo-views'
+import type { RepoViews } from '../../api/repo-views'
 import type { DependencyCheckPresentation } from './repository-dependency-model'
 
 export function RepositoryDependencyCheckView({
   onSelectFilePath,
   presentation,
+  views,
 }: {
   onSelectFilePath: (path: string) => void
   presentation: DependencyCheckPresentation
+  views: Pick<RepoViews, 'name'>
 }) {
   if (presentation.kind === 'plain') {
     return (
@@ -47,12 +49,14 @@ export function RepositoryDependencyCheckView({
                   visibility="public"
                   onSelectFilePath={onSelectFilePath}
                   path={finding.source_path}
+                  viewName={views.name('public')}
                 />
                 <span aria-label="imports" className="text-center text-muted-foreground">→</span>
                 <DependencyPath
                   visibility="private"
                   onSelectFilePath={onSelectFilePath}
                   path={finding.target_path}
+                  viewName={views.name('private')}
                 />
               </li>
             ))}
@@ -93,10 +97,12 @@ function DependencyPath({
   visibility,
   onSelectFilePath,
   path,
+  viewName,
 }: {
   visibility: 'public' | 'private'
   onSelectFilePath: (path: string) => void
   path: string
+  viewName: string
 }) {
   return (
     <button
@@ -104,7 +110,7 @@ function DependencyPath({
       onClick={() => onSelectFilePath(path)}
       type="button"
     >
-      <span className="mb-0.5 block font-sans text-[10px] text-muted-foreground">{viewName(visibility)} file</span>
+      <span className="mb-0.5 block font-sans text-[10px] text-muted-foreground">{viewName} file</span>
       <span className={`block break-all ${visibility === 'public' ? 'text-success-strong' : 'text-danger-strong'}`}>{path}</span>
     </button>
   )

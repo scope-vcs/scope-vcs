@@ -173,7 +173,7 @@ function OpenInviteLanding({
               Access starts after you accept.
             </p>
           </div>
-          <MemberAccessSummary permissions={invite.permissions} />
+          <MemberAccessSummary permissions={invite.permissions} viewName={invite.permissions.view} />
         </section>
 
         <section className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">

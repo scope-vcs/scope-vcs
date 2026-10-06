@@ -79,6 +79,7 @@
   .request-workspace-sidebar[data-closing] .request-workspace-sidebar-tools > search,
   .request-workspace-sidebar[data-closing] .request-workspace-needs-you > h2 > span:first-child,
   .request-workspace-sidebar[data-closing] .request-workspace-open,
+  .request-workspace-sidebar[data-closing] .request-workspace-viewing-as,
   .request-workspace-sidebar[data-closing] .request-workspace-disclosures {
     opacity: 0;
     transition: opacity 150ms ease;
@@ -122,6 +123,7 @@
   }
 
   .request-workspace-sidebar[data-state="closed"] .request-workspace-open,
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-viewing-as,
   .request-workspace-sidebar[data-state="closed"] .request-workspace-disclosures,
   .request-workspace-sidebar[data-state="closed"] .request-workspace-rows > :not(.request-workspace-row),
   .request-workspace-sidebar[data-state="closed"] .request-workspace-row::before,
@@ -209,6 +211,11 @@
   align-items: center;
   gap: 8px;
   padding: 14px 12px 12px;
+}
+
+.request-workspace-viewing-as {
+  flex: none;
+  padding: 0 12px 10px;
 }
 
 .request-workspace-scroll {
@@ -463,6 +470,10 @@ html[data-focus] .application-topbar {
 
   .request-workspace-sidebar-tools {
     padding: 13px 15px;
+  }
+
+  .request-workspace-viewing-as {
+    padding: 0 15px 10px;
   }
 
   .request-workspace-sidebar-tools > button {

@@ -9,17 +9,21 @@ import { loadRepositoryLatestActivity } from '@/routes/-repo-activity-actions'
 import { Link } from '@tanstack/react-router'
 import { useCallback } from 'react'
 import { repoResourceScope } from './repo-resource-scope'
-import { repositoryActivityResource } from './repository-activity-resource'
+import { repositoryActivityIdentity, repositoryActivityResource } from './repository-activity-resource'
 import { HistoryMenu } from '@/features/history/history-menu'
-import { updateViewSearch } from '@/features/history/update-search'
+import { useViewingAs } from './use-viewing-as'
+import { viewingAsSearch } from './viewing-as'
 
 export function RepositoryLatestActivity({ params, repo }: { params: RepoParams; repo: RepoSummaryResponse }) {
   const { isLoaded, userId } = useAuth()
   const ready = repo.lifecycle_state === 'Ready'
-  const identity = ready && isLoaded ? repoResourceScope(repo, userId ?? null) : null
+  const { reader, view: selectedView } = useViewingAs()
+  const identity = ready && isLoaded
+    ? repositoryActivityIdentity(repoResourceScope(repo, userId ?? null), selectedView)
+    : null
   const load = useCallback((signal: AbortSignal) => loadRepositoryLatestActivity({
-    data: { owner: params.owner, repo: params.repo }, signal,
-  }), [params.owner, params.repo])
+    data: { owner: params.owner, repo: params.repo, view: selectedView }, signal,
+  }), [params.owner, params.repo, selectedView])
   const current = useCachedResource({
     identity,
     load,
@@ -42,7 +46,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       </div>
     )
   }
-  const { view, entry, head_oid: headOid } = current.value
+  const { entry, head_oid: headOid } = current.value
   if (!entry) return null
   const message = entry.message.split('\n', 1)[0] || 'Repository updated'
   return (
@@ -50,7 +54,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       <Link
         className="min-w-0 basis-full truncate rounded font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring sm:flex-1 sm:basis-auto"
         params={{ ...params, entryId: entry.source_id }}
-        search={updateViewSearch(view, repo.access.view)}
+        search={viewingAsSearch(selectedView, reader)}
         title={message}
         to="/$owner/$repo/updates/$entryId"
       >
@@ -65,7 +69,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
           </span>
         )}
       </div>
-      <HistoryMenu access={repo.access} params={params} />
+      <HistoryMenu params={params} />
       {current.error && <button className="basis-full text-left underline" onClick={current.retry} type="button">Could not refresh latest change. Retry</button>}
     </div>
   )

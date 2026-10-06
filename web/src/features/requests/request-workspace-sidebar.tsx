@@ -68,6 +68,7 @@ export function RequestWorkspaceSidebar({
   selectedId,
   focus,
   onFocusToggle,
+  viewingAs,
 }: Pick<
   RequestWorkspaceListProps,
   'loading' | 'skeleton' | 'error' | 'onRetry' | 'onAction' | 'pendingId' | 'selectedId'
@@ -83,6 +84,7 @@ export function RequestWorkspaceSidebar({
   maintainer: boolean | null
   onLoadMore: (section: RequestQueueSection) => void
   params: RepoParams
+  viewingAs?: ReactNode
 }) {
   const aside = useRef<HTMLElement>(null)
   const [open, setOpen] = useState(false)
@@ -269,6 +271,7 @@ export function RequestWorkspaceSidebar({
             {state === 'closed' ? <ChevronRight aria-hidden="true" /> : <ChevronLeft aria-hidden="true" />}
           </Button>
         </div>
+        {viewingAs && <div className="request-workspace-viewing-as">{viewingAs}</div>}
         {actionError && (
           <p className="px-4 py-2 text-[11px] text-danger-strong" role="alert">
             {actionError}

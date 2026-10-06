@@ -51,7 +51,7 @@ export function FileSystemTreeSkeleton({ metaColumnLabel }: { metaColumnLabel: R
           </li>
         ))}
       </ul>
-      <div className="px-3 pt-4 pb-2"><VisibilityLegend /></div>
+      <div className="px-3 pt-4 pb-2"><TextSkeleton length="medium" size="meta" /></div>
     </div>
   )
 }

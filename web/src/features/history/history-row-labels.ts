@@ -2,9 +2,7 @@ import type { CommitSummary } from '@/api/types'
 import type {
   HistoryEntryKind,
   HistoryEntrySummaryResponse,
-  ViewId,
 } from '@/api/types.generated'
-import { viewName } from '../../api/repo-views'
 
 type HistoryRowCommit = Pick<
   CommitSummary,
@@ -32,9 +30,9 @@ export function historyCommitTitle(commit: Pick<CommitSummary, 'message'>) {
   return commit.message.split(/\r?\n/, 1)[0]?.trim() || '(no message)'
 }
 
-export function historyEntryLabels(entry: HistoryEntrySummaryResponse, view: ViewId) {
+export function historyEntryLabels(entry: HistoryEntrySummaryResponse, viewName: string) {
   return {
-    count: historyEntryCountLabel(entry, view),
+    count: historyEntryCountLabel(entry, viewName),
     kind: entry.kind === 'push' ? null : historyEntryKindLabel(entry.kind),
     title: historyCommitTitle(entry),
   }
@@ -48,6 +46,8 @@ export function historyEntryKindLabel(kind: HistoryEntryKind) {
       return 'Merged'
     case 'visibility_change':
       return 'Visibility'
+    case 'views_change':
+      return 'Views'
   }
 }
 
@@ -56,10 +56,10 @@ export function compactHistorySourceId(sourceId: string) {
   return reviewedPush ? reviewedPush[1].slice(0, 12) : sourceId
 }
 
-export function historyEntryCountLabel(entry: Pick<HistoryEntrySummaryResponse, 'file_change_count' | 'kind' | 'visibility_summary'>, view: ViewId) {
-  const files = entry.kind === 'visibility_change' ? 0 : entry.file_change_count
+export function historyEntryCountLabel(entry: Pick<HistoryEntrySummaryResponse, 'file_change_count' | 'kind' | 'visibility_summary'>, viewName: string) {
+  const files = entry.kind === 'push' || entry.kind === 'merged_request' ? entry.file_change_count : 0
   const { entered_count: entered, left_count: left } = entry.visibility_summary
-  const name = viewName(view).toLowerCase()
+  const name = viewName.toLowerCase()
   return [
     files > 0 ? `${files} ${files === 1 ? 'file' : 'files'}` : null,
     entered > 0 ? `${entered} entered ${name} view` : null,

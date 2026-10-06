@@ -14,10 +14,12 @@ import {
   loadRepoRouteState,
   type RepoRouteLoadResult,
 } from '@/features/repo-detail/repo-route-recovery'
+import { parseViewingAsSearch } from '@/features/repo-detail/viewing-as'
 import {
   Outlet,
   createFileRoute,
   notFound,
+  retainSearchParams,
   useRouter,
 } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
@@ -38,6 +40,8 @@ const loadRepoLiveState = createServerFn({ method: 'GET' })
   })
 
 export const Route = createFileRoute('/$owner/$repo')({
+  validateSearch: parseViewingAsSearch,
+  search: { middlewares: [retainSearchParams(['view'])] },
   staleTime: Infinity,
   loader: ({ params, cause, abortController }) => loadRepoRouteState({
     load: () => loadRepoLiveState({

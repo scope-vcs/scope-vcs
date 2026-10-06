@@ -1,5 +1,5 @@
-import type { RepositoryMemberPermissions } from '../../api/types.generated'
-import { viewName } from '../../api/repo-views'
+import type { RepositoryMemberPermissions, ViewId } from '../../api/types.generated'
+import type { RepoViews } from '../../api/repo-views'
 
 export const defaultPermissions: RepositoryMemberPermissions = {
   can_change_file_visibility: false,
@@ -20,8 +20,24 @@ export const permissionLabels = [
   },
 ] as const
 
-export function permissionSummaryText(permissions: RepositoryMemberPermissions) {
+export function actionsNeedFullView(view: ViewId, views: Pick<RepoViews, 'full'>) {
+  return view !== views.full
+}
+
+export function permissionsWithView(
+  permissions: RepositoryMemberPermissions,
+  view: ViewId,
+  views: Pick<RepoViews, 'full'>,
+): RepositoryMemberPermissions {
+  if (!actionsNeedFullView(view, views)) return { ...permissions, view }
+  return { can_change_file_visibility: false, can_push: false, view }
+}
+
+export function permissionSummaryText(
+  permissions: RepositoryMemberPermissions,
+  views: Pick<RepoViews, 'name'>,
+) {
   const enabled = permissionLabels.flatMap(({ key, label }) =>
     permissions[key] ? [label.toLowerCase()] : [])
-  return [`${viewName(permissions.view)} view`, enabled.length === 0 ? 'No extra actions' : `Also allowed: ${enabled.join(', ')}`].join(' · ')
+  return [`${views.name(permissions.view)} view`, enabled.length === 0 ? 'No extra actions' : `Also allowed: ${enabled.join(', ')}`].join(' · ')
 }

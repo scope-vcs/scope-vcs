@@ -58,6 +58,7 @@ function entry(index: number): HistoryEntrySummaryResponse {
     message: `Update ${index}`,
     parent_id: index === 0 ? null : `entry-${index - 1}`,
     source_id: `source-${index}`,
+    views: null,
     visibility_summary: { left_count: 0, entered_count: 0 },
   }
 }

@@ -47,7 +47,7 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, 
     historyFeedResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     historyEntryResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestAttachmentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-    repositoryActivityResource.invalidate(scope)
+    repositoryActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     repositoryDependencyResource.invalidate(scope)
     runWorkflowsResource.invalidate(scope)
     requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))

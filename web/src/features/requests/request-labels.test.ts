@@ -9,16 +9,22 @@ import {
   requestPublicGitHubNote,
   requestViewLabel,
 } from './request-labels'
+import { repoViews } from '../../api/repo-views'
 import type {
   RequestChecksResponse,
   RequestEventResponse,
   RequestListItemResponse,
 } from '@/api/types.generated'
 
-test('request labels follow the wire view id', () => {
+test('request labels name the request view from the repository views', () => {
   const request = (view: string) => ({ view }) as RequestListItemResponse
-  assert.equal(requestViewLabel(request('private')), 'Private request')
-  assert.equal(requestViewLabel(request('public')), 'Public request')
+  const views = repoViews([
+    { id: 'public', name: 'Public', includes: [], readers: 'anyone' },
+    { id: 'private', name: 'Private', includes: 'all', readers: 'assigned' },
+    { id: 'agent', name: 'Agent', includes: ['public'], readers: 'assigned' },
+  ])
+  assert.equal(requestViewLabel(request('private'), views), 'Private request')
+  assert.equal(requestViewLabel(request('agent'), views), 'Agent request')
 })
 
 test('a head nobody evaluated says so instead of claiming it asks for no checks', () => {
