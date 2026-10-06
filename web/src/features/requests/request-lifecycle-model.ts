@@ -4,6 +4,7 @@ import type {
   RequestMergeabilityStatus,
   RequestSummaryResponse,
 } from '@/api/types.generated'
+import type { RepoViews } from '../../api/repo-views'
 
 const NOT_OPEN = new Set<RequestMergeabilityStatus>(['Draft', 'Closed', 'Merged'])
 
@@ -39,4 +40,15 @@ export function hasRequestAutoMergeActions(
   return dialogOpen || (
     status !== null && (status.can_enable || status.intent?.status === 'Active')
   )
+}
+
+export function requestSubmitsForReview(request: Pick<RequestSummaryResponse, 'author_role'>) {
+  return request.author_role === 'Public'
+}
+
+export function requestShowsInvitees(
+  request: Pick<RequestSummaryResponse, 'invitees' | 'view'>,
+  views: Pick<RepoViews, 'anyone'>,
+) {
+  return request.view === views.anyone || request.invitees.length > 0
 }

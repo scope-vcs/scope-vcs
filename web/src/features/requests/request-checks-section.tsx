@@ -18,16 +18,18 @@ export function RequestChecksSection({
   checks,
   error,
   params,
+  requestViewName,
 }: {
   checks: RequestChecksResponse | null
   error: string | null
   params: RepoParams
+  requestViewName: string
 }) {
   if (!checks && !error) return <RequestChecksPending />
   const note = checks ? requestCheckEvaluationNote(checks) : null
   const warning = checks ? requestChecksWorkflowWarning(checks) : null
   const push = requestGitHubPushNote(checks?.github_push ?? null)
-  const publicOnGitHub = checks ? requestPublicGitHubNote(checks) : null
+  const publicOnGitHub = checks ? requestPublicGitHubNote(checks, requestViewName) : null
 
   return (
     <section
