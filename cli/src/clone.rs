@@ -2,7 +2,7 @@ use crate::api::ApiSession;
 use crate::{
     api::{api_url, get_repo, http_client},
     auth::read_stored_session_token,
-    git_repo::{clone_with_bearer, install_scope_fetch_auth},
+    git_repo::{clone_with_bearer, configure_scope_push_address, install_scope_fetch_auth},
     git_transport::ScopeRemote,
     repo_config::write_worktree_scope_repo_config_with_base,
     repository_views::reader_repo_config,
@@ -93,6 +93,7 @@ fn clone_and_configure(
 ) -> anyhow::Result<()> {
     clone_with_bearer(remote_url, session_token, Some(checkout_dir))?;
     install_scope_fetch_auth(checkout_dir, remote_url, api_url)
+        .and_then(|_| configure_scope_push_address(checkout_dir, "origin", remote_url))
         .and_then(|_| write_worktree_scope_repo_config_with_base(checkout_dir, config))
         .map_err(|error| CliError::partial(
             format!("Clone completed at {}, but local Scope setup failed: {error:#}", checkout_dir.display()),

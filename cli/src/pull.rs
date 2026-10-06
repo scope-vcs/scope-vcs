@@ -3,8 +3,9 @@ use crate::display::short_oid;
 use crate::{
     api::{api_url, get_repo, http_client},
     git_repo::{
-        GitRepo, branch_config_value, current_branch, ensure_git_repo_ready, git_remote_fetch_url,
-        head_oid, install_scope_fetch_auth, run_git_in_repo, scope_git_origin,
+        GitRepo, branch_config_value, configure_scope_push_address, current_branch,
+        ensure_git_repo_ready, fetch_scope_remote_refs_with_bearer, git_remote_fetch_url, head_oid,
+        install_scope_fetch_auth, run_git_in_repo, scope_git_origin,
     },
     git_transport::{ScopeRemote, select_scope_fetch_remote},
     login::session_from_cache_or_browser,
@@ -40,9 +41,10 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     let result = (|| -> anyhow::Result<()> {
         run_git_in_repo(&repo, &["remote", "set-url", &remote, &target.url()])?;
         install_scope_fetch_auth(&repo.root, &target.url(), &api_url)?;
+        configure_scope_push_address(&repo.root, &remote, &target.url())?;
 
         let before = remote_refs(&repo, &remote)?;
-        run_git_in_repo(&repo, &["fetch", "--prune", &remote])?;
+        fetch_scope_remote_refs_with_bearer(&repo, &target.url(), &remote, &session.token)?;
         let after = remote_refs(&repo, &remote)?;
         let mut lines = ref_change_lines(&remote, &before, &after);
         if visibility_sync == WorktreeRepoConfigSync::Created {

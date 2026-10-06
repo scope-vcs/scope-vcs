@@ -405,3 +405,52 @@ fn a_relabel_hidden_from_its_push_still_enters_when_the_view_starts_including_it
     );
     assert_eq!(projection.visible_paths(), ["/README.md", "/tool.rs"]);
 }
+
+#[test]
+fn a_views_transition_survives_a_public_history_redaction() {
+    let mut repo = repo_with_files();
+    let separate = views_with(&[("ops", "Ops", &[]), ("agent", "Agent", &["public"])]);
+    update(
+        &mut repo,
+        config_with(separate, &[("/README.md", "public")]),
+    )
+    .unwrap();
+    let joined = views_with(&[("ops", "Ops", &[]), ("agent", "Agent", &["public", "ops"])]);
+    update(
+        &mut repo,
+        config_with(joined.clone(), &[("/README.md", "public")]),
+    )
+    .unwrap();
+    let transitions = |repo: &Repository| {
+        repo.visibility_change_sets
+            .iter()
+            .filter(|set| set.views.is_some())
+            .count()
+    };
+    assert_eq!(transitions(&repo), 2);
+    assert!(
+        repo.visibility_change_sets
+            .last()
+            .is_some_and(|set| set.changes.is_empty() && set.views.is_some())
+    );
+
+    let mut redacting = config_with(joined.clone(), &[]);
+    redacting.history.rewrites = vec![scope_domain::repo_config::HistoryRewriteRequest {
+        path: "/README.md".to_string(),
+        action: scope_domain::repo_config::HistoryRewriteAction::RedactPublicHistory,
+    }];
+    update(&mut repo, redacting).unwrap();
+
+    assert_eq!(transitions(&repo), 2);
+    assert_eq!(
+        agent_projection(&repo).len(),
+        project_graph(
+            &repo.graph,
+            &repo.visibility_change_sets,
+            &Views::builtin(),
+            &view_id("agent")
+        )
+        .commits
+        .len()
+    );
+}

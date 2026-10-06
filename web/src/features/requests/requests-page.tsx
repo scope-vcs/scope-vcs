@@ -3,12 +3,13 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { loadRequestQueuePage } from '@/routes/-request-workspace-actions'
-import { useRepoLayout, useRepoViews } from '../repo-detail/repo-layout-context'
+import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { RepoViewingAsPicker, useViewingAs } from '../repo-detail/use-viewing-as'
-import { REQUEST_QUEUE_SECTION_ORDER, requestQueueReadableBy } from './request-list-model'
+import { REQUEST_QUEUE_SECTION_ORDER } from './request-list-model'
 import {
   loadMoreRequestQueue,
+  requestQueueIdentity,
   searchRequestQueue,
   type LoadRequestQueuePage,
 } from './request-queue-cache'
@@ -42,7 +43,7 @@ export function RequestsPage({ children, params }: { children: ReactNode; params
 
 function RequestWorkspaceContent({
   children,
-  identity,
+  identity: scope,
   maintainer,
   params,
   version,
@@ -54,8 +55,8 @@ function RequestWorkspaceContent({
   version: string
 }) {
   const selectedId = useParams({ strict: false, select: (value) => value.requestId })
-  const views = useRepoViews()
-  const { options, reader, view } = useViewingAs()
+  const { options, view } = useViewingAs()
+  const identity = scope && requestQueueIdentity(scope, view)
   const [collapsed, setCollapsed] = useState(readRequestWorkspaceCollapsed)
   const [focus, setFocus] = useState(false)
   const [draft, setDraft] = useState<string | null>(null)
@@ -67,10 +68,10 @@ function RequestWorkspaceContent({
   const load = useCallback<LoadRequestQueuePage>(
     (section, cursor, search, signal) =>
       loadRequestQueuePage({
-        data: { owner: params.owner, repo: params.repo, section, cursor, search },
+        data: { owner: params.owner, repo: params.repo, section, cursor, search, view },
         signal,
       }),
-    [params.owner, params.repo],
+    [params.owner, params.repo, view],
   )
   const queue = useRequestQueue(identity, version, load)
   const loadedPages = queue.value?.pages
@@ -84,12 +85,6 @@ function RequestWorkspaceContent({
   const pages = useMemo(
     () => loadedPages && applyAttentionMoves(loadedPages, moves),
     [loadedPages, moves],
-  )
-  const sidebarPages = useMemo(
-    () => pages && view !== reader
-      ? requestQueueReadableBy(pages, (requestView) => views.mayRead(view, requestView))
-      : pages,
-    [pages, reader, view, views],
   )
   const selected =
     REQUEST_QUEUE_SECTION_ORDER.flatMap((section) => pages?.[section].requests ?? []).find(
@@ -136,7 +131,7 @@ function RequestWorkspaceContent({
             else queue.retry()
           }}
           onSearch={search}
-          pages={sidebarPages}
+          pages={pages}
           params={params}
           pendingId={pendingId}
           query={query}

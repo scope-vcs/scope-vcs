@@ -3,16 +3,17 @@ import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { RepoViewingAsPicker } from '@/features/repo-detail/use-viewing-as'
 
 export function UpdateNavigation({
   newer,
   older,
   params,
+  viewingAs,
 }: {
   newer: string | null
   older: string | null
   params: RepoParams
+  viewingAs?: ReactNode
 }) {
   return (
     <nav aria-label="Update navigation" className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-5 py-2 text-xs sm:px-6">
@@ -24,7 +25,7 @@ export function UpdateNavigation({
         <ArrowLeft aria-hidden="true" className="size-3.5" /> Code
       </Link>
       <span className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
-        <RepoViewingAsPicker compact />
+        {viewingAs}
         <span className="flex items-center gap-1">
           <NeighborLink entryId={older} params={params}>
             <ChevronLeft aria-hidden="true" className="size-3.5" /> Older

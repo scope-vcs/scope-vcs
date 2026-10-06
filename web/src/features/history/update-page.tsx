@@ -24,6 +24,7 @@ import { historyFileSelection } from './history-selection'
 import { resourceToDiffState, type CommitFileDiffState } from './history-state'
 import type { HistoryVisibilityChange } from './history-visibility-changes'
 import { UpdateNavigation } from './update-navigation'
+import { RepoViewingAsPicker } from '../repo-detail/use-viewing-as'
 import type { UpdateSearch } from './update-search'
 import { useViewingAs } from '@/features/repo-detail/use-viewing-as'
 
@@ -53,6 +54,7 @@ export function UpdatePage(props: UpdatePageProps) {
   return (
     <WorkbenchPane>
       <UpdateNavigation
+        viewingAs={<RepoViewingAsPicker compact />}
         newer={detail?.newer_source_id ?? null}
         older={detail?.older_source_id ?? null}
         params={repoParams}

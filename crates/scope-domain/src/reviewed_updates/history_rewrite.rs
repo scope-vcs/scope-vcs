@@ -122,7 +122,7 @@ pub(super) fn apply_history_rewrites(
         });
     }
     repo.visibility_change_sets
-        .retain(|set| !set.changes.is_empty());
+        .retain(|set| !set.changes.is_empty() || set.views.is_some());
 
     let mut visibility_changes = Vec::new();
     for path in &redacted_paths {

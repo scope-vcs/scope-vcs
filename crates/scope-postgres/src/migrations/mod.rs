@@ -33,6 +33,7 @@ mod m0073_github_workflow_jobs;
 mod m0074_incremental_projection_read_models;
 mod m0075_view_ids;
 mod m0076_custom_views;
+mod m0077_repo_config_version;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -214,6 +215,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0076_custom_views::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0077_repo_config_version::Migration),
             metadata_restore_safe: true,
         },
     ]
