@@ -1,7 +1,6 @@
 use scope_domain::{
     account::SessionIdentity as DomainSessionIdentity,
     history::FileChangeKind as DomainFileChangeKind,
-    policy::Visibility as DomainVisibility,
     repository::RepoLifecycleState as DomainRepoLifecycleState,
     repository::access::RepositoryActor as DomainRepositoryActor,
     repository::collaboration::{
@@ -13,7 +12,6 @@ use scope_domain::{
         RequestActorRole as DomainRequestActorRole,
         RequestAttentionReason as DomainRequestAttentionReason,
         RequestAttentionState as DomainRequestAttentionState,
-        RequestAudience as DomainRequestAudience,
         RequestCheckEvaluationState as DomainRequestCheckEvaluationState,
         RequestDiscussionStatus as DomainRequestDiscussionStatus,
         RequestEventKind as DomainRequestEventKind,
@@ -83,7 +81,56 @@ impl From<SessionIdentity> for DomainSessionIdentity {
     }
 }
 
-wire_enum!(Visibility => DomainVisibility { Public, Private });
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(try_from = "String", into = "String")]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(type = "string"))]
+pub struct ViewId(String);
+
+impl ViewId {
+    pub fn parse(value: &str) -> Result<Self, scope_domain::error::DomainError> {
+        scope_domain::views::ViewId::parse(value)?;
+        Ok(Self(value.to_string()))
+    }
+
+    pub fn public() -> Self {
+        Self("public".into())
+    }
+
+    pub fn private() -> Self {
+        Self("private".into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for ViewId {
+    type Error = scope_domain::error::DomainError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(&value)
+    }
+}
+
+impl From<ViewId> for String {
+    fn from(value: ViewId) -> Self {
+        value.0
+    }
+}
+
+impl From<scope_domain::views::ViewId> for ViewId {
+    fn from(value: scope_domain::views::ViewId) -> Self {
+        Self(value.into())
+    }
+}
+
+impl From<ViewId> for scope_domain::views::ViewId {
+    fn from(value: ViewId) -> Self {
+        scope_domain::views::ViewId::try_from(value.0).expect("wire view ids are validated")
+    }
+}
 wire_enum!(RepositoryActor => DomainRepositoryActor { Public, Member, Owner });
 wire_enum!(RepositoryInviteState => DomainRepositoryInviteState {
     Pending,
@@ -95,11 +142,22 @@ wire_enum!(RepoLifecycleState => DomainRepoLifecycleState { AwaitingFirstPush, R
 wire_enum!(FirstPushTokenStatus => DomainFirstPushTokenStatus { Active, Expired, Used });
 wire_enum!(FileChangeKind => DomainFileChangeKind { Added, Modified, Deleted });
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RepositoryMemberPermissions {
     pub can_push: bool,
     pub can_change_file_visibility: bool,
+    pub view: ViewId,
+}
+
+impl Default for RepositoryMemberPermissions {
+    fn default() -> Self {
+        Self {
+            can_push: false,
+            can_change_file_visibility: false,
+            view: ViewId::private(),
+        }
+    }
 }
 
 impl From<DomainRepositoryMemberPermissions> for RepositoryMemberPermissions {
@@ -107,6 +165,7 @@ impl From<DomainRepositoryMemberPermissions> for RepositoryMemberPermissions {
         Self {
             can_push: value.can_push,
             can_change_file_visibility: value.can_change_file_visibility,
+            view: value.view.into(),
         }
     }
 }
@@ -116,12 +175,13 @@ impl From<RepositoryMemberPermissions> for DomainRepositoryMemberPermissions {
         Self {
             can_push: value.can_push,
             can_change_file_visibility: value.can_change_file_visibility,
+            view: value.view.into(),
         }
     }
 }
 
 wire_enum!(RequestActorRole => DomainRequestActorRole { Public, Member, Owner });
-wire_enum!(RequestAudience => DomainRequestAudience { Public, Private });
+
 wire_enum!(RequestState => DomainRequestState { Draft, Open, Closed, Merged });
 wire_enum!(RequestEventKind => DomainRequestEventKind {
     Started,
@@ -390,12 +450,12 @@ pub enum RepoChangeKind {
         request_id: String,
         discussion_id: String,
         through_position: u64,
-        audience: RequestAudience,
+        view: ViewId,
     },
     RequestAttachmentChanged {
         request_id: String,
         attachment_id: String,
-        audience: RequestAudience,
+        view: ViewId,
     },
     RunChanged {
         run_id: String,
@@ -406,6 +466,27 @@ pub enum RepoChangeKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn view_id_is_a_validated_string_on_the_wire() {
+        let view = ViewId::parse("review_2").unwrap();
+        assert_eq!(serde_json::to_value(&view).unwrap(), "review_2");
+        assert_eq!(
+            serde_json::from_str::<ViewId>("\"review_2\"").unwrap(),
+            view
+        );
+        assert!(serde_json::from_str::<ViewId>("\"Review\"").is_err());
+    }
+
+    #[cfg(feature = "ts")]
+    #[test]
+    fn view_id_exports_as_a_typescript_string() {
+        use ts_rs::TS;
+        assert_eq!(
+            ViewId::decl(&ts_rs::Config::from_env()),
+            "type ViewId = string;"
+        );
+    }
 
     #[test]
     fn run_change_uses_the_repo_event_envelope() {
@@ -433,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn attachment_change_identifies_the_request_attachment_and_audience() {
+    fn attachment_change_identifies_the_request_attachment_and_view() {
         let event = RepoChangeEvent {
             repo_id: "owner/repo".to_string(),
             incarnation_id: "inc_1".to_string(),
@@ -441,7 +522,7 @@ mod tests {
             kind: RepoChangeKind::RequestAttachmentChanged {
                 request_id: "request_1".to_string(),
                 attachment_id: "attachment_1".to_string(),
-                audience: RequestAudience::Private,
+                view: ViewId::private(),
             },
         };
 
@@ -451,7 +532,7 @@ mod tests {
                 "RequestAttachmentChanged": {
                     "request_id": "request_1",
                     "attachment_id": "attachment_1",
-                    "audience": "Private"
+                    "view": "private"
                 }
             })
         );

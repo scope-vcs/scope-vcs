@@ -1,4 +1,5 @@
-use scope_domain::requests::{RequestActorRole, RequestAudience};
+use scope_domain::requests::RequestActorRole;
+use scope_domain::views::ViewId;
 use serde_json::{Map, Value};
 use transport::ProductEventContext;
 
@@ -59,7 +60,7 @@ impl ProductEvent {
         actor_user_id: &str,
         repository_id: &str,
         request_id: &str,
-        audience: RequestAudience,
+        view: ViewId,
         actor_role: RequestActorRole,
     ) -> Self {
         Self::request_event(
@@ -67,7 +68,7 @@ impl ProductEvent {
             actor_user_id,
             repository_id,
             request_id,
-            audience,
+            view,
             actor_role,
         )
     }
@@ -76,7 +77,7 @@ impl ProductEvent {
         actor_user_id: &str,
         repository_id: &str,
         request_id: &str,
-        audience: RequestAudience,
+        view: ViewId,
         actor_role: RequestActorRole,
     ) -> Self {
         Self::request_event(
@@ -84,7 +85,7 @@ impl ProductEvent {
             actor_user_id,
             repository_id,
             request_id,
-            audience,
+            view,
             actor_role,
         )
     }
@@ -93,7 +94,7 @@ impl ProductEvent {
         actor_user_id: &str,
         repository_id: &str,
         request_id: &str,
-        audience: RequestAudience,
+        view: ViewId,
         actor_role: RequestActorRole,
     ) -> Self {
         Self::request_event(
@@ -101,7 +102,7 @@ impl ProductEvent {
             actor_user_id,
             repository_id,
             request_id,
-            audience,
+            view,
             actor_role,
         )
     }
@@ -110,12 +111,12 @@ impl ProductEvent {
         actor_user_id: &str,
         repository_id: &str,
         request_id: &str,
-        audience: RequestAudience,
+        view: ViewId,
     ) -> Self {
         let mut event = Self::new("request:revision_create", ProductActor::User(actor_user_id));
         event.insert_repository_id(repository_id);
         event.insert_string("request_id", request_id);
-        event.insert_request_audience(audience);
+        event.insert_request_view(view);
         event.with_source(EventSource::Git)
     }
 
@@ -123,13 +124,13 @@ impl ProductEvent {
         actor_user_id: &str,
         repository_id: &str,
         request_id: &str,
-        audience: RequestAudience,
+        view: ViewId,
         score: u8,
     ) -> Self {
         let mut event = Self::new("request:rating_create", ProductActor::User(actor_user_id));
         event.insert_repository_id(repository_id);
         event.insert_string("request_id", request_id);
-        event.insert_request_audience(audience);
+        event.insert_request_view(view);
         event.insert_number("score", score.into());
         event
     }
@@ -139,7 +140,7 @@ impl ProductEvent {
         repository_id: &str,
         request_id: &str,
         discussion_id: &str,
-        audience: RequestAudience,
+        view: ViewId,
         actor_role: RequestActorRole,
         anchored: bool,
     ) -> Self {
@@ -149,7 +150,7 @@ impl ProductEvent {
             repository_id,
             request_id,
             discussion_id,
-            audience,
+            view,
             actor_role,
         );
         event.insert_bool("anchored", anchored);
@@ -161,7 +162,7 @@ impl ProductEvent {
         repository_id: &str,
         request_id: &str,
         discussion_id: &str,
-        audience: RequestAudience,
+        view: ViewId,
         actor_role: RequestActorRole,
     ) -> Self {
         Self::discussion_event(
@@ -170,7 +171,7 @@ impl ProductEvent {
             repository_id,
             request_id,
             discussion_id,
-            audience,
+            view,
             actor_role,
         )
     }
@@ -180,7 +181,7 @@ impl ProductEvent {
         repository_id: &str,
         request_id: &str,
         discussion_id: &str,
-        audience: RequestAudience,
+        view: ViewId,
         actor_role: RequestActorRole,
     ) -> Self {
         Self::discussion_event(
@@ -189,7 +190,7 @@ impl ProductEvent {
             repository_id,
             request_id,
             discussion_id,
-            audience,
+            view,
             actor_role,
         )
     }
@@ -198,7 +199,7 @@ impl ProductEvent {
         actor_user_id: &str,
         repository_id: &str,
         request_id: &str,
-        audience: RequestAudience,
+        view: ViewId,
         actor_role: RequestActorRole,
         outcome: RequestCloseOutcome,
     ) -> Self {
@@ -207,7 +208,7 @@ impl ProductEvent {
             actor_user_id,
             repository_id,
             request_id,
-            audience,
+            view,
             actor_role,
         );
         event.insert_string("outcome", outcome.as_str());
@@ -253,12 +254,12 @@ impl ProductEvent {
         actor_user_id: &str,
         repository_id: &str,
         request_id: &str,
-        audience: RequestAudience,
+        view: ViewId,
         actor_role: RequestActorRole,
     ) -> Self {
         let mut event = Self::repository_event(name, actor_user_id, repository_id);
         event.insert_string("request_id", request_id);
-        event.insert_request_audience(audience);
+        event.insert_request_view(view);
         event.insert_string("actor_role", request_actor_role_name(actor_role));
         event
     }
@@ -270,7 +271,7 @@ impl ProductEvent {
         repository_id: &str,
         request_id: &str,
         discussion_id: &str,
-        audience: RequestAudience,
+        view: ViewId,
         actor_role: RequestActorRole,
     ) -> Self {
         let mut event = Self::request_event(
@@ -278,7 +279,7 @@ impl ProductEvent {
             actor_user_id,
             repository_id,
             request_id,
-            audience,
+            view,
             actor_role,
         );
         event.insert_string("discussion_id", discussion_id);
@@ -289,8 +290,8 @@ impl ProductEvent {
         self.insert_string("repository_id", repository_id);
     }
 
-    fn insert_request_audience(&mut self, audience: RequestAudience) {
-        self.insert_string("request_audience", request_audience_name(audience));
+    fn insert_request_view(&mut self, view: ViewId) {
+        self.insert_string("request_audience", view.as_str());
     }
 
     fn insert_string(&mut self, name: &str, value: &str) {
@@ -481,13 +482,6 @@ fn is_opaque_id(value: &str, prefix: &str) -> bool {
     })
 }
 
-fn request_audience_name(audience: RequestAudience) -> &'static str {
-    match audience {
-        RequestAudience::Public => "public",
-        RequestAudience::Private => "private",
-    }
-}
-
 fn request_actor_role_name(role: RequestActorRole) -> &'static str {
     match role {
         RequestActorRole::Public => "public",
@@ -511,7 +505,7 @@ mod tests {
             "scope_usr_test",
             "repoi_private",
             "req_private",
-            RequestAudience::Private,
+            ViewId::private(),
             RequestActorRole::Owner,
         ));
 
