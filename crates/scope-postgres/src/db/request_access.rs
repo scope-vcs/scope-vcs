@@ -28,11 +28,14 @@ pub(super) fn authorize_start_request(
                     "ready repository required",
                 ));
             }
-            input.view = scope_domain::views::ViewId::public();
+            if let Some(anyone) = repo.views.anyone() {
+                input.view = anyone.clone();
+            }
             RequestActorRole::Public
         }
     };
     input.author_role = author_role;
+    input.author_view = repo.access.view.clone();
     Ok(input)
 }
 
@@ -50,6 +53,7 @@ where
     Ok(request_policy(
         request,
         RequestViewer::new(repo.access.clone(), Some(user_id), is_invitee),
+        &repo.views,
     ))
 }
 

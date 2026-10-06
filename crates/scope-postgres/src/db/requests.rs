@@ -106,10 +106,8 @@ impl RequestStore {
         acquire_aggregate_lock(&tx, "repository", &input.repo_id).await?;
         acquire_aggregate_lock(&tx, "request", &input.id).await?;
         ensure_user_exists(&tx, &input.author_user_id).await?;
-        let input = authorize_start_request(
-            &repo_by_id(&tx, &input.repo_id, &input.author_user_id).await?,
-            input,
-        )?;
+        let repo = repo_by_id(&tx, &input.repo_id, &input.author_user_id).await?;
+        let input = authorize_start_request(&repo, input)?;
 
         let facts = StartRequestFacts {
             request_id_exists: request_by_id(&tx, &input.id).await?.is_some(),
@@ -123,7 +121,7 @@ impl RequestStore {
             )
             .await?,
         };
-        let mutation = start_request(facts, input)?;
+        let mutation = start_request(facts, input, &repo.views)?;
         insert_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         tx.commit().await.map_err(PostgresError::internal)?;

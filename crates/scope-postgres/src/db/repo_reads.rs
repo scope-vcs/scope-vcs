@@ -598,6 +598,7 @@ async fn load_open_request_counts<C: ConnectionTrait>(
                         &scope_domain::requests::request_list_predicate(
                             summary.access.clone(),
                             None,
+                            &summary.views,
                         ),
                     )?,
                 ),

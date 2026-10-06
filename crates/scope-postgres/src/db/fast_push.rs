@@ -95,14 +95,15 @@ impl RepositoryStore {
             .map(entities::repository_member::Model::try_into_domain)
             .transpose()?
             .map(|member| member.permissions);
+        let current_config: RepoConfig = serde_json::from_value(repo_row.repo_config.clone())
+            .map_err(PostgresError::internal)?;
         let push_policy = repository_push_policy_for_user_id(
             &repo_row.owner_user_id,
             publication_state,
             member_permissions,
             &author_id,
+            current_config.views(),
         );
-        let current_config: RepoConfig = serde_json::from_value(repo_row.repo_config.clone())
-            .map_err(PostgresError::internal)?;
         authorize_reviewed_update(ReviewedUpdateAuthorization {
             access: push_policy.access,
             push_mode: push_policy.mode,
