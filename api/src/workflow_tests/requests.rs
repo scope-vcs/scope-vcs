@@ -709,7 +709,7 @@ fn request_ids(body: &serde_json::Value) -> Vec<&str> {
 }
 
 async fn start_private_request(app: &axum::Router, name: &str) -> Response {
-    let body = format!(r#"{{"name":"{name}","title":null,"audience":"Private"}}"#);
+    let body = format!(r#"{{"name":"{name}","view":"private"}}"#);
     api_request(
         app.clone(),
         "POST",
