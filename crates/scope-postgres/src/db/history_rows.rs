@@ -5,7 +5,9 @@ use crate::error::PostgresError;
 use scope_domain::content::SourceBlob;
 use scope_domain::{
     policy::ScopePath,
-    projection::{FileChange, LogicalCommit, SourceGraph},
+    projection::{
+        FileChange, LogicalCommit, Projection, ProjectionViewKey, SourceGraph, project_graph,
+    },
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 use sea_orm::{
@@ -20,6 +22,18 @@ pub struct RepositoryHistory {
     pub graph: SourceGraph,
     pub visibility_change_sets: Vec<VisibilityChangeSet>,
     pub live_files: BTreeMap<ScopePath, SourceBlob>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RepositoryProjectionSource {
+    pub graph: SourceGraph,
+    pub visibility_change_sets: Vec<VisibilityChangeSet>,
+}
+
+impl RepositoryProjectionSource {
+    pub fn project(&self, view_key: ProjectionViewKey) -> Projection {
+        project_graph(&self.graph, &self.visibility_change_sets, view_key)
+    }
 }
 
 pub async fn insert_repository_history<C>(
@@ -126,17 +140,15 @@ pub async fn load_repository_histories<C>(
 where
     C: ConnectionTrait,
 {
-    let mut histories = repo_ids
-        .iter()
-        .map(|repo_id| {
+    let mut histories = load_repository_projection_sources(conn, repo_ids)
+        .await?
+        .into_iter()
+        .map(|(repo_id, source)| {
             (
-                repo_id.clone(),
+                repo_id,
                 RepositoryHistory {
-                    graph: SourceGraph {
-                        repo_id: repo_id.clone(),
-                        commits: Vec::new(),
-                    },
-                    visibility_change_sets: Vec::new(),
+                    graph: source.graph,
+                    visibility_change_sets: source.visibility_change_sets,
                     live_files: BTreeMap::new(),
                 },
             )
@@ -144,6 +156,49 @@ where
         .collect::<BTreeMap<_, _>>();
     if repo_ids.is_empty() {
         return Ok(histories);
+    }
+    for row in entities::live_file::Entity::find()
+        .filter(entities::live_file::Column::RepoId.is_in(repo_ids.to_vec()))
+        .order_by_asc(entities::live_file::Column::RepoId)
+        .order_by_asc(entities::live_file::Column::Path)
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?
+    {
+        if let Some(history) = histories.get_mut(&row.repo_id) {
+            history.live_files.insert(
+                ScopePath::parse(row.path).map_err(PostgresError::internal)?,
+                serde_json::from_value(row.content).map_err(PostgresError::internal)?,
+            );
+        }
+    }
+    Ok(histories)
+}
+
+pub(super) async fn load_repository_projection_sources<C>(
+    conn: &C,
+    repo_ids: &[String],
+) -> Result<BTreeMap<String, RepositoryProjectionSource>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let mut sources = repo_ids
+        .iter()
+        .map(|repo_id| {
+            (
+                repo_id.clone(),
+                RepositoryProjectionSource {
+                    graph: SourceGraph {
+                        repo_id: repo_id.clone(),
+                        commits: Vec::new(),
+                    },
+                    visibility_change_sets: Vec::new(),
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    if repo_ids.is_empty() {
+        return Ok(sources);
     }
 
     let commits = entities::logical_commit::Entity::find()
@@ -176,8 +231,8 @@ where
         }
     }
     for row in commits {
-        if let Some(history) = histories.get_mut(&row.repo_id) {
-            history.graph.commits.push(LogicalCommit {
+        if let Some(source) = sources.get_mut(&row.repo_id) {
+            source.graph.commits.push(LogicalCommit {
                 occurred_at_unix: row.occurred_at_unix,
                 id: row.id.clone(),
                 origin: serde_json::from_value(row.origin).map_err(PostgresError::internal)?,
@@ -220,9 +275,9 @@ where
         }
     }
     for row in set_rows {
-        if let Some(history) = histories.get_mut(&row.repo_id) {
+        if let Some(source) = sources.get_mut(&row.repo_id) {
             let key = (row.repo_id.clone(), row.id.clone());
-            history.visibility_change_sets.push(VisibilityChangeSet {
+            source.visibility_change_sets.push(VisibilityChangeSet {
                 occurred_at_unix: row.occurred_at_unix,
                 id: row.id,
                 anchor_commit_id: row.anchor_commit_id,
@@ -232,22 +287,7 @@ where
             });
         }
     }
-    for row in entities::live_file::Entity::find()
-        .filter(entities::live_file::Column::RepoId.is_in(repo_ids.to_vec()))
-        .order_by_asc(entities::live_file::Column::RepoId)
-        .order_by_asc(entities::live_file::Column::Path)
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
-    {
-        if let Some(history) = histories.get_mut(&row.repo_id) {
-            history.live_files.insert(
-                ScopePath::parse(row.path).map_err(PostgresError::internal)?,
-                serde_json::from_value(row.content).map_err(PostgresError::internal)?,
-            );
-        }
-    }
-    Ok(histories)
+    Ok(sources)
 }
 
 pub async fn insert_repository_live_files<C>(

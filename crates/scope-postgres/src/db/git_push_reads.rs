@@ -1,5 +1,6 @@
 use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities, git_segments::load_git_pack_spans,
+    repository_access::load_repo_record,
 };
 use sea_orm::{ConnectionTrait, EntityTrait};
 use {
@@ -7,8 +8,9 @@ use {
     scope_domain::{
         repo_config::RepoConfig,
         repository::access::{RepositoryAccess, repository_access_for_user_id},
+        repository::credentials::{FirstPushToken, GitPushToken},
         repository::git::{GitHead, GitPackSpan},
-        repository::{RepoLifecycleState, RepositoryIncarnation, repo_id},
+        repository::{RepoLifecycleState, RepoRecord, RepositoryIncarnation, repo_id},
     },
 };
 
@@ -23,6 +25,14 @@ pub struct GitPushContext {
     pub git_head: Option<GitHead>,
     pub git_pack_spans: Vec<GitPackSpan>,
     pub change_version: u64,
+    pub content_version: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct GitPushCredentials {
+    pub record: RepoRecord,
+    pub first_push_token: Option<FirstPushToken>,
+    pub git_push_token: Option<GitPushToken>,
 }
 
 impl RepositoryStore {
@@ -68,6 +78,39 @@ impl RepositoryStore {
         let context = git_push_context_for_id(&tx, &id, user_id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(context)
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_push_credentials"))]
+    pub async fn git_push_credentials(
+        &self,
+        owner: &str,
+        name: &str,
+    ) -> Result<Option<GitPushCredentials>, PostgresError> {
+        let id = repo_id(owner, name);
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let Some(record) = load_repo_record(&tx, &id).await? else {
+            tx.commit().await.map_err(PostgresError::internal)?;
+            return Ok(None);
+        };
+        let first_push_token =
+            entities::repository_first_push_token::Entity::find_by_id(id.clone())
+                .one(&tx)
+                .await
+                .map_err(PostgresError::internal)?
+                .map(entities::repository_first_push_token::Model::try_into_domain)
+                .transpose()?;
+        let git_push_token = entities::repository_git_push_token::Entity::find_by_id(id)
+            .one(&tx)
+            .await
+            .map_err(PostgresError::internal)?
+            .map(entities::repository_git_push_token::Model::try_into_domain)
+            .transpose()?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(Some(GitPushCredentials {
+            record,
+            first_push_token,
+            git_push_token,
+        }))
     }
 }
 
@@ -120,6 +163,10 @@ pub(super) async fn git_push_context_for_id<C: ConnectionTrait>(
         change_version: super::integer_columns::i64_to_u64(
             repo_row.change_version,
             "repository change version",
+        )?,
+        content_version: super::integer_columns::i64_to_u64(
+            repo_row.content_version,
+            "repository content version",
         )?,
     };
     Ok(Some(context))
