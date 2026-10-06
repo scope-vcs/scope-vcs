@@ -2,7 +2,7 @@ use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities,
     git_segments::load_git_pack_spans,
     history_rows::{RepositoryProjectionSource, load_repository_projection_sources},
-    projection_read_models::live_projection_read_model,
+    projection_read_models::{live_projection_read_model, repository_views},
     repository_access::load_repo_record,
 };
 use crate::error::PostgresError;
@@ -15,7 +15,7 @@ use scope_domain::{
         repo_id,
     },
     requests::PathHistory,
-    views::ViewId,
+    views::{ViewId, Views},
 };
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect};
 
@@ -106,6 +106,19 @@ impl RepositoryStore {
             .ok_or_else(|| PostgresError::internal_message("repository history missing"))?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(source)
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_views"))]
+    pub async fn repository_views(
+        &self,
+        incarnation: &RepositoryIncarnation,
+        content_version: u64,
+    ) -> Result<Views, PostgresError> {
+        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let record = load_record_at_version(&tx, incarnation, content_version).await?;
+        let views = repository_views(&tx, &record.id).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(views)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_view_head"))]

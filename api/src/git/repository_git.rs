@@ -85,6 +85,14 @@ impl RepositoryGit {
             .project(views, view))
     }
 
+    pub(crate) async fn views(&self, state: &AppState) -> Result<Views, ApiError> {
+        Ok(state
+            .metadata
+            .repositories()
+            .repository_views(&self.incarnation, self.content_version)
+            .await?)
+    }
+
     pub(crate) async fn view_head(
         &self,
         state: &AppState,

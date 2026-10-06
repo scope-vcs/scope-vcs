@@ -244,6 +244,34 @@ async fn projection_source_reads_no_live_files_and_rejects_a_changed_version() {
 }
 
 #[tokio::test]
+async fn views_read_no_history_and_reject_a_changed_version() {
+    let store = fixture().await;
+    let version = content_version(&store).await;
+    let held = lock(
+        &store,
+        &format!("{PROJECTION_HISTORY_TABLES}, scope_live_files"),
+    )
+    .await;
+
+    let views = within_lock(
+        store
+            .repositories()
+            .repository_views(&incarnation(), version),
+    )
+    .await
+    .unwrap();
+    held.rollback().await.unwrap();
+
+    assert_eq!(views, scope_domain::views::Views::builtin());
+    let stale = store
+        .repositories()
+        .repository_views(&incarnation(), version + 1)
+        .await
+        .unwrap_err();
+    assert_eq!(stale.kind, PostgresErrorKind::Conflict);
+}
+
+#[tokio::test]
 async fn path_history_reads_only_the_requested_paths() {
     let store = fixture().await;
     let version = content_version(&store).await;
