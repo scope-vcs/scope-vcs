@@ -7,7 +7,8 @@ import { RequestInvitees } from './request-invitees'
 import { RequestRatingsSection } from './request-ratings-section'
 import type { RateRequestInput } from '@/api/requests'
 import {
-  requestAudienceLabel,
+  requestViewLabel,
+  requestMainLabel,
   requestAuthorRoleLabel,
 } from './request-labels'
 import { AbsoluteTimestamp } from '@/components/timestamp'
@@ -41,7 +42,7 @@ export function RequestDetails({ placement }: { placement: RequestDetailsPlaceme
         <div className="grid min-w-0 gap-x-12 gap-y-8 @3xl:grid-cols-2">
           <DetailsSection title="lifecycle">
             <DetailsValue label="Author" value={requestAuthorRoleLabel(request)} />
-            <DetailsValue label="Audience" value={requestAudienceLabel(request)} />
+            <DetailsValue label="View" value={requestViewLabel(request)} />
             <DetailsValue
               label="Submitted"
               value={<AbsoluteTimestamp value={request.submitted_at_unix} />}
@@ -65,7 +66,7 @@ export function RequestDetails({ placement }: { placement: RequestDetailsPlaceme
           <RequestRatingsSection initial={ratings} onRate={onRate} params={params} />
 
           <DetailsSection title="git state">
-            <DetailsValue label="Base" value={shortOid(request.base_main_oid)} />
+            <DetailsValue label={`Base on ${requestMainLabel(request)}`} value={shortOid(request.base_main_oid)} />
             <DetailsValue label="Head" value={shortOid(request.head_oid)} />
             <pre className="mt-1 min-w-0 whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 text-[11px] leading-5"><code>{`git fetch origin\ngit switch --track origin/${request.name}`}</code></pre>
           </DetailsSection>
@@ -74,5 +75,3 @@ export function RequestDetails({ placement }: { placement: RequestDetailsPlaceme
     </div>
   )
 }
-
-

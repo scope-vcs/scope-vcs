@@ -1,5 +1,5 @@
 import type { RepoParams } from '@/api/types'
-import type { HistoryFeed, ProjectionPreviewAudience } from '@/api/types.generated'
+import type { HistoryFeed, ViewId } from '@/api/types.generated'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { resourceErrorMessage, useCachedResource } from '@/lib/use-cached-resource'
@@ -10,12 +10,12 @@ import { appendHistoryPage } from './history-pagination'
 import { historyFeedResource } from './history-resource-cache'
 
 export function useHistoryFeed({
-  audience,
+  view,
   enabled = true,
   feed,
   params,
 }: {
-  audience: ProjectionPreviewAudience
+  view: ViewId
   enabled?: boolean
   feed: HistoryFeed
   params: RepoParams
@@ -23,16 +23,16 @@ export function useHistoryFeed({
   const { isLoaded, userId } = useAuth()
   const { repo } = useRepoLayout()
   const identity = isLoaded
-    ? [repoResourceScope(repo, userId ?? null), audience, feed].join('\0')
+    ? [repoResourceScope(repo, userId ?? null), view, feed].join('\0')
     : null
   const version = String(repo.content_version)
   const { owner, repo: repoName } = params
   const load = useCallback(
     (signal: AbortSignal) => loadHistoryPage({
-      data: { audience, before: null, feed, owner, repo: repoName },
+      data: { view, before: null, feed, owner, repo: repoName },
       signal,
     }).then(({ entries, next_cursor }) => ({ entries, next_cursor })),
-    [audience, feed, owner, repoName],
+    [view, feed, owner, repoName],
   )
   const resource = useCachedResource({
     enabled,
@@ -55,7 +55,7 @@ export function useHistoryFeed({
     setOlder({ identity, error: null, loading: true })
     try {
       const page = await loadHistoryPage({
-        data: { audience, before, feed, owner, repo: repoName },
+        data: { view, before, feed, owner, repo: repoName },
       })
       historyFeedResource.writeIfUnchanged(
         identity,
@@ -67,16 +67,13 @@ export function useHistoryFeed({
     } catch (error) {
       setOlder({ identity, error: resourceErrorMessage(error, 'Older history is unavailable.'), loading: false })
     }
-  }, [audience, feed, identity, owner, repoName, version])
+  }, [view, feed, identity, owner, repoName, version])
 
   return {
     loadOlder,
     loadOlderError: olderState.error,
     loadingOlder: olderState.loading,
     resource,
+    view,
   }
-}
-
-export function defaultHistoryAudience(canReadPrivateFiles: boolean): ProjectionPreviewAudience {
-  return canReadPrivateFiles ? 'private' : 'public'
 }

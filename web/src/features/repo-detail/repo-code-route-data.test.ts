@@ -14,7 +14,7 @@ const readme: RepoFileContentResponse = {
   oid: 'readme-oid',
   path: '/README.html',
   size_bytes: 14,
-  visibility: 'Public',
+  label: 'public',
 }
 
 test('retries a rebuilding projection before returning the primary file', async () => {

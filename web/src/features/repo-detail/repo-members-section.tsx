@@ -16,7 +16,7 @@ import { InviteMemberDialog } from './repo-invite-dialog'
 import { InvitationList } from './repo-invite-list'
 import { visibleInvitations } from './repo-invite-model'
 import { AccessSection } from './repo-settings-sections'
-import { AlwaysOnPrivateRead, PermissionEditor } from './repo-member-permissions'
+import { MemberViewRead, PermissionEditor } from './repo-member-permissions'
 
 export function RepositoryMembersSection({
   collaboration,
@@ -125,7 +125,7 @@ function MemberList({
             </div>
             <RemoveButton label="Remove" onClick={actions.remove} pending={actions.pending} />
           </div>
-          <AlwaysOnPrivateRead />
+          <MemberViewRead view={member.permissions.view} />
           <PermissionEditor
             disabled={actions.pending}
             onChange={(permissions) =>

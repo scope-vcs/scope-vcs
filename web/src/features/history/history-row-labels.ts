@@ -2,7 +2,9 @@ import type { CommitSummary } from '@/api/types'
 import type {
   HistoryEntryKind,
   HistoryEntrySummaryResponse,
+  ViewId,
 } from '@/api/types.generated'
+import { viewName } from '../../api/repo-views'
 
 type HistoryRowCommit = Pick<
   CommitSummary,
@@ -30,9 +32,9 @@ export function historyCommitTitle(commit: Pick<CommitSummary, 'message'>) {
   return commit.message.split(/\r?\n/, 1)[0]?.trim() || '(no message)'
 }
 
-export function historyEntryLabels(entry: HistoryEntrySummaryResponse) {
+export function historyEntryLabels(entry: HistoryEntrySummaryResponse, view: ViewId) {
   return {
-    count: historyEntryCountLabel(entry),
+    count: historyEntryCountLabel(entry, view),
     kind: entry.kind === 'push' ? null : historyEntryKindLabel(entry.kind),
     title: historyCommitTitle(entry),
   }
@@ -54,12 +56,13 @@ export function compactHistorySourceId(sourceId: string) {
   return reviewedPush ? reviewedPush[1].slice(0, 12) : sourceId
 }
 
-export function historyEntryCountLabel(entry: Pick<HistoryEntrySummaryResponse, 'file_change_count' | 'kind' | 'visibility_summary'>) {
+export function historyEntryCountLabel(entry: Pick<HistoryEntrySummaryResponse, 'file_change_count' | 'kind' | 'visibility_summary'>, view: ViewId) {
   const files = entry.kind === 'visibility_change' ? 0 : entry.file_change_count
-  const { made_public_count: madePublic, made_private_count: madePrivate } = entry.visibility_summary
+  const { entered_count: entered, left_count: left } = entry.visibility_summary
+  const name = viewName(view).toLowerCase()
   return [
     files > 0 ? `${files} ${files === 1 ? 'file' : 'files'}` : null,
-    madePublic > 0 ? `${madePublic} made public` : null,
-    madePrivate > 0 ? `${madePrivate} made private` : null,
+    entered > 0 ? `${entered} entered ${name} view` : null,
+    left > 0 ? `${left} left ${name} view` : null,
   ].filter(Boolean).join(', ')
 }

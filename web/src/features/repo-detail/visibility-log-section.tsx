@@ -5,7 +5,7 @@ import { useHistoryFeed } from '@/features/history/history-feed'
 import { Eye } from 'lucide-react'
 
 export function VisibilityLogSection({ params }: { params: RepoParams }) {
-  const history = useHistoryFeed({ audience: 'private', feed: 'visibility', params })
+  const history = useHistoryFeed({ view: 'private', feed: 'visibility', params })
   return (
     <SectionRows>
       <SectionRow

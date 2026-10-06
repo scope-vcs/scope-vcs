@@ -178,8 +178,8 @@ function resourceValue(state: 'Processing'): RequestAttachmentResourceValue {
 }
 
 for (const kind of [
-  { RequestAttachmentChanged: { request_id: 'request', attachment_id: 'attachment', audience: 'Public' as const } },
-  { RequestTimelineChanged: { request_id: 'request', discussion_id: 'discussion', through_position: 2, audience: 'Public' as const } },
+  { RequestAttachmentChanged: { request_id: 'request', attachment_id: 'attachment', view: 'public' as const } },
+  { RequestTimelineChanged: { request_id: 'request', discussion_id: 'discussion', through_position: 2, view: 'public' as const } },
   'Lagged' as const,
   { RepositoryChanged: { reason: 'recovery' } },
 ]) {

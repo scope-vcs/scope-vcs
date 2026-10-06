@@ -194,7 +194,11 @@ test('repository components retain drafts, previews and pending actions across r
     await page.evaluate(() => window.finishAction('bob'))
     assert.equal(await alice.getByRole('switch').first().isDisabled(), true)
     await page.evaluate(() => window.finishAction('alice'))
-    assert.deepEqual(await page.evaluate(() => window.calls.filter(call => call.member_user_id === 'alice').at(-1).permissions), { can_push: true, can_change_file_visibility: true })
+    assert.deepEqual(await page.evaluate(() => window.calls.filter(call => call.member_user_id === 'alice').at(-1).permissions), { can_push: true, can_change_file_visibility: true, view: 'private' })
+    await bob.getByRole('combobox', { name: 'View' }).selectOption('public')
+    await page.evaluate(() => window.finishAction('bob'))
+    await bob.locator('[data-slot="badge"]').filter({ hasText: 'Public' }).waitFor()
+    assert.equal(await page.evaluate(() => window.calls.filter(call => call.member_user_id === 'bob').at(-1).permissions.view), 'public')
 
     await page.getByRole('button', { name: 'Create login command', exact: true }).click()
     await page.getByRole('button', { name: 'Revoke session-a', exact: true }).click()
@@ -217,7 +221,7 @@ test('repository components retain drafts, previews and pending actions across r
     await invitation.getByText(/^Email sent · Expires /).waitFor()
     assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), {
       email: 'new@example.com', owner: 'owner', repo: 'demo',
-      permissions: { can_push: false, can_change_file_visibility: false },
+      permissions: { can_push: false, can_change_file_visibility: false, view: 'private' },
     })
     await invitation.getByRole('button', { name: 'Copy link', exact: true }).click()
     await page.getByText('https://example.com/invites/new-token', { exact: true }).waitFor()

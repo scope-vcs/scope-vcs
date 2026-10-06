@@ -14,6 +14,7 @@ import {
 import type { RequestActionController } from './use-request-actions'
 import type { RequestAutoMergeController } from './use-request-auto-merge'
 import type { RequestSummaryResponse } from '@/api/types.generated'
+import { requestMainLabel } from './request-labels'
 
 type Dialog = 'merge' | 'submit' | null
 
@@ -107,9 +108,9 @@ export function RequestLifecycleActions({
         pending={actions.pending === 'merge'}
         title="Merge this request?"
       >
-        <p>This completes “{request.title}” and merges its current head into main.</p>
+        <p>This completes “{request.title}” and merges its current head into {requestMainLabel(request)}.</p>
         <p className="font-mono text-xs">
-          {shortOid(mergeHead)} → main
+          {shortOid(mergeHead)} → {requestMainLabel(request)}
         </p>
       </RequestConfirmDialog>
     </>

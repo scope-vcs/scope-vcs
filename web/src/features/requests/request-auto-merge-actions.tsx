@@ -7,6 +7,7 @@ import { RequestConfirmDialog } from './request-confirm-dialog'
 import { autoMergeAuthorizer } from './request-auto-merge-model'
 import { canMergeRequest } from './request-lifecycle-model'
 import type { RequestAutoMergeController } from './use-request-auto-merge'
+import { requestMainLabel } from './request-labels'
 
 type Dialog =
   | {
@@ -150,7 +151,7 @@ export function RequestAutoMergeActions({
           <p>
             Passing checks will leave this request open. Checks that are already running will continue.
           </p>
-          <p className="font-mono text-xs">{shortOid(dialog.headOid)} → main</p>
+          <p className="font-mono text-xs">{shortOid(dialog.headOid)} → {requestMainLabel(request)}</p>
         </RequestConfirmDialog>
       ) : null}
     </>
