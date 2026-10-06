@@ -158,9 +158,17 @@ export type CreateRepoResponse = { repo: RepoSummaryResponse, init: RepoInitResp
 
 export type DeleteRepoResponse = { id: string, deleted: boolean, };
 
-export type CreatePushIntentRequest = { head_oid: string, base_config_hash: string, config: RepoConfig, };
+export type CreatePushIntentRequest = { head_oid: string, base_config_hash: string, config: RepoConfig, 
+/**
+ * The view of the remote the push goes through.
+ */
+view: ViewId, };
 
-export type CreatePushIntentResponse = { token: string, base_head_oid: GitOid | null, expires_at_unix: number, };
+export type CreatePushIntentResponse = { token: string, base_head_oid: GitOid | null, expires_at_unix: number, 
+/**
+ * True when the view is narrower than the full view, so the push lands as an auto-merged request in that view.
+ */
+lands_as_request: boolean, };
 
 export type RepoInitResponse = { repo: RepoSummaryResponse, git_remote_url: string, remote_name: string, push_branch: string, token: FirstPushTokenResponse | null, push_token: GitPushTokenResponse | null, };
 

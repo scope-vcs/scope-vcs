@@ -6,8 +6,11 @@ import {
   checksHoldRequestMerge,
   hasRequestAutoMergeActions,
   hasRequestLifecycleActions,
+  requestShowsInvitees,
+  requestSubmitsForReview,
   withCurrentMergeability,
 } from './request-lifecycle-model'
+import { repoViews } from '../../api/repo-views'
 
 test('only a ready request merges, and checks hold the merge from a viewer who can merge instead of hiding it', () => {
   assert.equal(canMergeRequest(request('Ready')), true)
@@ -51,3 +54,23 @@ function request(
     permissions: { can_close: false, can_merge: canMerge, can_submit: false },
   } as RequestSummaryResponse
 }
+
+test('a public contributor asks for review and a member of any view marks ready', () => {
+  assert.equal(requestSubmitsForReview({ author_role: 'Public' }), true)
+  assert.equal(requestSubmitsForReview({ author_role: 'Member' }), false)
+  assert.equal(requestSubmitsForReview({ author_role: 'Owner' }), false)
+})
+
+test('invitees show only on requests in the anonymous view', () => {
+  const views = repoViews([
+    { id: 'public', name: 'Public', includes: [], readers: 'anyone' },
+    { id: 'private', name: 'Private', includes: 'all', readers: 'assigned' },
+    { id: 'agent', name: 'Agent', includes: ['public'], readers: 'assigned' },
+  ])
+  const inView = (view: string) => ({ view, invitees: [] })
+  assert.equal(requestShowsInvitees(inView('public'), views), true)
+  assert.equal(requestShowsInvitees(inView('agent'), views), false)
+  assert.equal(requestShowsInvitees(inView('private'), views), false)
+  const noAnyone = repoViews([{ id: 'private', name: 'Private', includes: 'all', readers: 'assigned' }])
+  assert.equal(requestShowsInvitees(inView('private'), noAnyone), false)
+})
