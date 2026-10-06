@@ -78,9 +78,17 @@ digest="$(jq -er '."containerimage.digest"' "$metadata")"
 [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Build did not publish an immutable image digest.' >&2; exit 1; }
 image="$image_repository@$digest"
 
-printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" |
-  DOCKER_CONFIG="$pull_config" docker login "${image_repository%%/*}" \
-    --username "$SCOPE_RAILWAY_REGISTRY_USERNAME" --password-stdin >/dev/null
+for attempt in 1 2 3; do
+  printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" |
+    DOCKER_CONFIG="$pull_config" docker login "${image_repository%%/*}" \
+      --username "$SCOPE_RAILWAY_REGISTRY_USERNAME" --password-stdin >/dev/null && break
+  if ((attempt == 3)); then
+    echo "Registry login failed after 3 attempts: ${image_repository%%/*}" >&2
+    exit 1
+  fi
+  echo "Registry login failed; retrying ($attempt/3)." >&2
+  sleep $((attempt * 5))
+done
 DOCKER_CONFIG="$pull_config" docker manifest inspect "$image" >/dev/null || {
   echo 'Prepared private image is not pullable with the durable Railway registry credentials.' >&2
   exit 1
