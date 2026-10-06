@@ -39,6 +39,7 @@ fn current_public_paths_override_private_history_but_never_protected_paths() {
                 new_label: ViewId::public(),
                 current_content: None,
             }],
+            None,
         )
         .unwrap(),
     );
@@ -85,6 +86,7 @@ fn deleted_or_renamed_private_paths_cannot_be_recreated_under_public_defaults() 
                 new_label: ViewId::private(),
                 current_content: None,
             }],
+            None,
         )
         .unwrap(),
     );

@@ -26,6 +26,7 @@ pub(super) fn history_generation_after(generation: &str, entry: &HistoryEntry) -
             HistoryEntryKind::Push => b"push",
             HistoryEntryKind::MergedRequest => b"merged_request",
             HistoryEntryKind::VisibilityChange => b"visibility_change",
+            HistoryEntryKind::ViewsChange => b"views_change",
         },
     );
     hash_optional_field(&mut hasher, b"parent", entry.parent_id.as_deref());
@@ -73,6 +74,15 @@ pub(super) fn history_generation_after(generation: &str, entry: &HistoryEntry) -
             b"new_label",
             change.new_label.as_str().as_bytes(),
         );
+    }
+    if let Some(transition) = &entry.views {
+        for (label, views) in [
+            (b"views_before".as_slice(), &transition.before),
+            (b"views_after".as_slice(), &transition.after),
+        ] {
+            let json = serde_json::to_vec(views).expect("views serialize to JSON");
+            hash_field(&mut hasher, label, &json);
+        }
     }
     hex::encode(hasher.finalize())
 }

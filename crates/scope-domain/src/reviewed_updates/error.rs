@@ -1,4 +1,4 @@
-use crate::policy::PolicyError;
+use crate::{error::DomainError, policy::PolicyError};
 
 pub type ReviewedUpdateResult<T> = Result<T, ReviewedUpdateError>;
 
@@ -7,4 +7,5 @@ pub enum ReviewedUpdateError {
     BadRequest(&'static str),
     Conflict(&'static str),
     InvalidPolicy(PolicyError),
+    Domain(DomainError),
 }
