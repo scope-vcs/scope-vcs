@@ -153,7 +153,7 @@ pub fn request_policy(
         views.get(&request.view).is_some() && views.may_read(&viewer.access.view, &request.view);
     let merges_into_canonical_main = maintainer
         && (views.may_read(&viewer.access.view, views.full())
-            || (author && viewer.access.can_push));
+            || (author && viewer.access.can_push && viewer.access.view == request.view));
     let submitted = request.is_submitted();
     let terminal = request.is_terminal();
     let open = request.state() == RequestState::Open;

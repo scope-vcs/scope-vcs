@@ -7,7 +7,10 @@ use super::{
 use crate::{
     content::SourceBlob,
     error::DomainError,
-    repository::access::{MainPushMode, RepositoryPushPolicy},
+    repository::{
+        RepoLifecycleState,
+        access::{MainPushMode, RepositoryAccess},
+    },
     views::Views,
 };
 
@@ -48,16 +51,28 @@ pub fn main_push_request_title(pusher_handle: &str) -> String {
 
 pub fn start_main_push_request(
     facts: StartRequestFacts,
-    push_policy: &RepositoryPushPolicy,
+    access: &RepositoryAccess,
+    lifecycle_state: RepoLifecycleState,
     input: StartMainPushRequestInput,
     views: &Views,
 ) -> Result<MainPushRequestMutation, DomainError> {
-    let MainPushMode::ThroughView(view) = &push_policy.mode else {
-        return Err(DomainError::forbidden(
-            "only pushes to main through a narrower view land as requests",
-        ));
+    let view = match access.main_push_mode(lifecycle_state, views) {
+        MainPushMode::ThroughView(view)
+            if view == access.view
+                && &view != views.full()
+                && views.may_read(&access.view, &view) =>
+        {
+            view
+        }
+        MainPushMode::Denied => {
+            return Err(DomainError::forbidden("push permission required"));
+        }
+        MainPushMode::FirstPush | MainPushMode::Ready | MainPushMode::ThroughView(_) => {
+            return Err(DomainError::forbidden(
+                "only pushes to main through a narrower view land as requests",
+            ));
+        }
     };
-    let access = &push_policy.access;
     let started = start_request(
         facts,
         StartRequestInput {
@@ -68,7 +83,7 @@ pub fn start_main_push_request(
             title: Some(main_push_request_title(&input.pusher_handle)),
             author_role: request_actor_role(access.clone()),
             author_view: access.view.clone(),
-            view: view.clone(),
+            view,
             base_main_oid: input.base_main_oid,
             event_id: input.started_event_id,
             now_unix: input.now_unix,

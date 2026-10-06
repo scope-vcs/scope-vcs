@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     error::DomainErrorKind,
     repository::{
-        RepoLifecycleState, access::repository_push_policy_for_user_id,
+        access::{RepositoryActor, repository_access_for_user_id},
         collaboration::RepositoryMemberPermissions,
     },
     requests::{
@@ -16,17 +16,16 @@ use crate::{
 const BASE: &str = "1111111111111111111111111111111111111111";
 const HEAD: &str = "2222222222222222222222222222222222222222";
 
-fn push_policy(view: ViewId) -> RepositoryPushPolicy {
-    repository_push_policy_for_user_id(
+fn member(view: ViewId, can_push: bool) -> RepositoryAccess {
+    repository_access_for_user_id(
         "owner",
         RepoLifecycleState::Ready,
         Some(RepositoryMemberPermissions {
-            can_push: true,
+            can_push,
             can_change_file_visibility: false,
             view,
         }),
         "pusher",
-        &views_with_agent(),
     )
 }
 
@@ -54,13 +53,28 @@ fn input() -> StartMainPushRequestInput {
     }
 }
 
+fn start(
+    access: &RepositoryAccess,
+    lifecycle_state: RepoLifecycleState,
+) -> Result<MainPushRequestMutation, DomainError> {
+    start_main_push_request(
+        StartRequestFacts::default(),
+        access,
+        lifecycle_state,
+        input(),
+        &views_with_agent(),
+    )
+}
+
 #[test]
 fn a_narrower_main_push_lands_as_an_auto_merged_request_in_the_pushers_view() {
     let views = views_with_agent();
-    let policy = push_policy(agent());
-    assert_eq!(policy.mode, MainPushMode::ThroughView(agent()));
-    let mutation =
-        start_main_push_request(StartRequestFacts::default(), &policy, input(), &views).unwrap();
+    let access = member(agent(), true);
+    assert_eq!(
+        access.main_push_mode(RepoLifecycleState::Ready, &views),
+        MainPushMode::ThroughView(agent())
+    );
+    let mutation = start(&access, RepoLifecycleState::Ready).unwrap();
 
     let request = &mutation.request;
     assert_eq!(request.view, agent());
@@ -91,18 +105,69 @@ fn a_narrower_main_push_lands_as_an_auto_merged_request_in_the_pushers_view() {
 
     let pusher = request_policy(
         request,
-        RequestViewer::new(policy.access.clone(), Some("pusher"), false),
+        RequestViewer::new(access, Some("pusher"), false),
         &views,
     );
     assert!(pusher.permissions.can_merge);
 }
 
 #[test]
-fn only_pushes_through_a_narrower_view_land_as_requests() {
+fn a_main_push_request_always_lands_in_the_pushers_own_view() {
+    for view in [agent(), ViewId::public()] {
+        let mutation = start(&member(view.clone(), true), RepoLifecycleState::Ready).unwrap();
+        assert_eq!(mutation.request.view, view);
+    }
+}
+
+#[test]
+fn only_narrower_members_with_push_permission_start_main_push_requests() {
     let views = views_with_agent();
-    let policy = push_policy(ViewId::private());
-    assert_eq!(policy.mode, MainPushMode::Ready);
-    let error = start_main_push_request(StartRequestFacts::default(), &policy, input(), &views)
-        .unwrap_err();
-    assert_eq!(error.kind, DomainErrorKind::Forbidden);
+    let owner = repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "owner");
+    let mut forged_agent_view = member(agent(), true);
+    forged_agent_view.view = ViewId::parse("ops").unwrap();
+    let mut forged_public_actor = member(agent(), true);
+    forged_public_actor.actor = RepositoryActor::Public;
+    for (access, lifecycle_state, mode, message) in [
+        (
+            member(agent(), false),
+            RepoLifecycleState::Ready,
+            MainPushMode::Denied,
+            "push permission required",
+        ),
+        (
+            member(agent(), true),
+            RepoLifecycleState::AwaitingFirstPush,
+            MainPushMode::Denied,
+            "push permission required",
+        ),
+        (
+            forged_agent_view,
+            RepoLifecycleState::Ready,
+            MainPushMode::Denied,
+            "push permission required",
+        ),
+        (
+            forged_public_actor,
+            RepoLifecycleState::Ready,
+            MainPushMode::Denied,
+            "push permission required",
+        ),
+        (
+            member(ViewId::private(), true),
+            RepoLifecycleState::Ready,
+            MainPushMode::Ready,
+            "only pushes to main through a narrower view land as requests",
+        ),
+        (
+            owner,
+            RepoLifecycleState::Ready,
+            MainPushMode::Ready,
+            "only pushes to main through a narrower view land as requests",
+        ),
+    ] {
+        assert_eq!(access.main_push_mode(lifecycle_state, &views), mode);
+        let error = start(&access, lifecycle_state).unwrap_err();
+        assert_eq!(error.kind, DomainErrorKind::Forbidden);
+        assert_eq!(error.message, message);
+    }
 }

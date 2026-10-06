@@ -116,6 +116,13 @@ fn merging_needs_the_full_view_unless_the_author_may_push_through_the_request_vi
             .permissions
             .can_merge
     );
+    let mut public_request = request;
+    public_request.view = ViewId::public();
+    assert!(
+        !policy(&public_request, member(agent(), true), Some("author"))
+            .permissions
+            .can_merge
+    );
 }
 
 #[test]

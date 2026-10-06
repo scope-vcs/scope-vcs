@@ -269,10 +269,6 @@ impl Repository {
         }
     }
 
-    pub fn can_push(&self, principal: &Principal) -> bool {
-        self.access_for_principal(principal).can_push
-    }
-
     pub fn push_policy_for_user_id(&self, user_id: &str) -> RepositoryPushPolicy {
         repository_push_policy_for_user_id(
             &self.record.owner_user_id,
