@@ -1,0 +1,102 @@
+name: Preview build
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: >-
+    ${{ github.event.action == 'labeled' && github.event.label.name != 'preview'
+    && format('scope-preview-build-ignored-{0}', github.run_id)
+    || format('scope-preview-build-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: true
+
+jobs:
+  select:
+    name: Select labeled pull request
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'preview') &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'main' &&
+      (github.event.action != 'labeled' || github.event.label.name == 'preview')
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: Report preview build
+        env:
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          echo "Building preview images of $SOURCE_SHA for pull request #$PULL_REQUEST."
+
+  role-grants:
+    name: Role grants
+    needs: select
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: Checkout merge revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+
+      - name: Render the revision's runtime role grants
+        run: node deploy/postgres/runtime-roles.mjs --grants-only > preview-role-grants.sql
+
+      - name: Upload role grants
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preview-role-grants-${{ github.sha }}
+          path: preview-role-grants.sql
+          if-no-files-found: error
+
+  backend:
+    name: Backend artifacts
+    needs: select
+    uses: ./.github/workflows/scope-api-ci.yml
+    with:
+      build_release_artifact: true
+      run_checks: false
+
+  web:
+    name: Web artifacts
+    needs: select
+    uses: ./.github/workflows/scope-web-ci.yml
+    with:
+      build_release_artifact: true
+
+  media-worker:
+    name: Media worker image
+    needs: select
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/scope-media-worker-image.yml
+    with:
+      publish: true
+      source_sha: ${{ github.sha }}
+
+  prepare:
+    name: Prepare preview images
+    needs: [backend, web, media-worker, role-grants]
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+      deployments: read
+    uses: ./.github/workflows/prepare-release.yml
+    with:
+      source_sha: ${{ github.sha }}
+      prepare_backend: true
+      prepare_router: true
+      prepare_web: true
+      media_worker_image: ${{ needs.media-worker.outputs.image_ref }}
+    secrets: inherit
