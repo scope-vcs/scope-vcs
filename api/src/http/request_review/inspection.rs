@@ -424,7 +424,7 @@ mod tests {
     use scope_domain::{
         policy::{LabelRule, Policy, ScopePath},
         repository::access::RepositoryAccess,
-        views::ViewId,
+        views::{ViewId, Views},
     };
 
     #[test]
