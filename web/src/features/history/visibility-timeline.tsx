@@ -4,6 +4,7 @@ import { RelativeTimestamp } from '@/components/timestamp'
 import { formatUnixMonthDay } from '@/lib/date-format'
 import { useHydrated } from '@/lib/use-hydrated'
 import { barY, defineChart, ruleY, text } from '@tanstack/charts'
+import { decorative } from '@tanstack/charts/mark/decorative'
 import { Chart } from '@tanstack/charts/react/tooltip'
 import { scaleBand } from '@tanstack/charts/scales/band'
 import { tooltip } from '@tanstack/charts/tooltip'
@@ -12,7 +13,12 @@ import { scaleSqrt } from 'd3-scale'
 import { useMemo } from 'react'
 import { historyCommitTitle, historyEntryCountLabel, historyEntryKindLabel } from './history-row-labels'
 import type { UpdateSearch } from './update-search'
-import { visibilityTimelineBars, type VisibilityDirection, type VisibilityTimelineBar } from './visibility-timeline-rows'
+import {
+  VISIBILITY_TIMELINE_ENTRY_LIMIT,
+  visibilityTimelineBars,
+  type VisibilityDirection,
+  type VisibilityTimelineBar,
+} from './visibility-timeline-rows'
 
 const BAR_FILL: Record<VisibilityDirection, string> = {
   private: 'var(--border-strong)',
@@ -44,10 +50,11 @@ export function VisibilityTimeline({
     () => visibilityTimelineDefinition(visibilityTimelineBars(entries), hydrated),
     [entries, hydrated],
   )
+  const shown = Math.min(entries.length, VISIBILITY_TIMELINE_ENTRY_LIMIT)
 
   return (
     <Chart
-      ariaLabel={`${entries.length} visibility ${entries.length === 1 ? 'change' : 'changes'}, oldest to newest`}
+      ariaLabel={`${shown} most recent visibility ${shown === 1 ? 'change' : 'changes'}, oldest to newest`}
       className={CHART_CLASS}
       definition={definition}
       height={136}
@@ -73,7 +80,7 @@ function visibilityTimelineDefinition(bars: readonly VisibilityTimelineBar[], hy
 
   return defineChart({
     marks: [
-      ruleY([0], { stroke: 'var(--border-strong)' }),
+      decorative(ruleY([0], { stroke: 'var(--border-strong)' })),
       barY(bars, {
         fill: (bar) => BAR_FILL[bar.direction],
         key: (bar) => `${bar.entry.id}:${bar.direction}`,
@@ -82,7 +89,7 @@ function visibilityTimelineDefinition(bars: readonly VisibilityTimelineBar[], hy
         x: entryId,
         y: 'signedCount',
       }),
-      text(bars.filter((bar) => bar.label !== null), {
+      decorative(text(bars.filter((bar) => bar.label !== null), {
         dy: (bar) => bar.signedCount < 0 ? 10 : -8,
         fill: 'var(--foreground)',
         fontSize: 11,
@@ -90,7 +97,7 @@ function visibilityTimelineDefinition(bars: readonly VisibilityTimelineBar[], hy
         text: 'label',
         x: entryId,
         y: 'signedCount',
-      }),
+      })),
     ],
     scales: {
       x: {
