@@ -1,5 +1,6 @@
 use scope_domain::{
     account::UserAccount,
+    error::DomainErrorKind,
     repo_collaboration::{
         AcceptRepositoryInviteOutcome, CreateRepositoryInviteCommand,
         REPOSITORY_INVITE_RETENTION_SECS, REPOSITORY_INVITE_TTL_SECS,
@@ -282,4 +283,36 @@ fn an_invite_is_pruned_once_it_has_been_over_for_the_retention_period() {
     assert!(repo.collaboration.invitations.is_empty());
     assert_eq!(repo.collaboration.members, kept.1);
     assert_eq!(repo.record.change_version, kept.2 + 1);
+}
+
+#[test]
+fn members_and_invites_read_the_full_view_until_views_can_be_assigned() {
+    let mut repo = repo_with_invite();
+    for view in [ViewId::public(), ViewId::parse("agent").unwrap()] {
+        let error = create_repository_invite(
+            &mut repo,
+            CreateRepositoryInviteCommand {
+                id: invite_id(),
+                owner: &owner(),
+                invited_email: "other@example.com".to_string(),
+                invitee: None,
+                permissions: RepositoryMemberPermissions {
+                    view,
+                    ..RepositoryMemberPermissions::default()
+                },
+                now_unix: CREATED_AT,
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.kind, DomainErrorKind::InvalidInput);
+    }
+    assert!(
+        Repository::new(
+            &owner(),
+            "other",
+            ViewId::parse("agent").unwrap(),
+            "repoi_other"
+        )
+        .is_err()
+    );
 }

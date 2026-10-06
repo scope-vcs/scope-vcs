@@ -219,10 +219,10 @@ function operationFor(name, context) {
     };
   };
   if (name === 'repo-read') return (worker, iteration, scheduledAt) => { const fixture = read(); return apiRead(context.config, repoPath(fixture), scheduledAt, fixture, routeKey(worker, iteration)); };
-  if (name === 'projection-read') return (worker, iteration, scheduledAt) => { const fixture = read(); return apiRead(context.config, `${repoPath(fixture)}/projection-preview?audience=public&source=live`, scheduledAt, fixture, routeKey(worker, iteration)); };
+  if (name === 'projection-read') return (worker, iteration, scheduledAt) => { const fixture = read(); return apiRead(context.config, `${repoPath(fixture)}/projection-preview?view=public&source=live`, scheduledAt, fixture, routeKey(worker, iteration)); };
   if (name === 'tree-read') return (worker, iteration, scheduledAt) => { const fixture = read(); return apiRead(context.config, `${repoPath(fixture)}/files`, scheduledAt, fixture, routeKey(worker, iteration)); };
   if (name === 'blob-read') return (worker, iteration, scheduledAt) => { const fixture = read(); return apiRead(context.config, `${repoPath(fixture)}/files/content?path=load-update.txt`, scheduledAt, fixture, routeKey(worker, iteration)); };
-  if (name === 'history-read') return (worker, iteration, scheduledAt) => { const fixture = read(); return apiRead(context.config, `${repoPath(fixture)}/commits?audience=public`, scheduledAt, fixture, routeKey(worker, iteration)); };
+  if (name === 'history-read') return (worker, iteration, scheduledAt) => { const fixture = read(); return apiRead(context.config, `${repoPath(fixture)}/commits?view=public`, scheduledAt, fixture, routeKey(worker, iteration)); };
   if (name === 'cold-churn') return (worker, iteration, scheduledAt) => clone(
     context.config, context.runRoot, churn(), scheduledAt, routeKey(worker, iteration),
   );
@@ -395,7 +395,7 @@ function printStage(stage) {
 }
 
 export async function seedRepository(config, cleanup, runRoot, label, bytes, historyDepth, writeDeltaBytes = 0, landingFileBytes = 0, changedFileCount = 0, attempt = 1) {
-  const created = await apiJson(config, '/v1/repos', { method: 'POST', body: { name: `loadtest-${label}-${Date.now()}-${randomBytes(3).toString('hex')}`, file_default_visibility: 'Public' } });
+  const created = await apiJson(config, '/v1/repos', { method: 'POST', body: { name: `loadtest-${label}-${Date.now()}-${randomBytes(3).toString('hex')}`, file_default_view: 'public' } });
   const fixture = cleanup.repository({ owner: created.repo.owner_handle, repo: created.repo.name });
   const issuedPushToken = created.init.token ?? created.init.push_token;
   Object.assign(fixture, {
@@ -718,9 +718,9 @@ function sample(ok, started, status, bytes, error, ttfbMs = null) {
 export function toggleBenchmarkVisibilityRule(repoConfig) {
   const config = structuredClone(repoConfig);
   const path = '/load-files/**';
-  const index = config.visibility.rules.findIndex((rule) => rule.path === path);
-  if (index === -1) config.visibility.rules.push({ path, visibility: config.visibility.default });
-  else config.visibility.rules.splice(index, 1);
+  const index = config.files.rules.findIndex((rule) => rule.path === path);
+  if (index === -1) config.files.rules.push({ path, view: config.files.default });
+  else config.files.rules.splice(index, 1);
   return config;
 }
 

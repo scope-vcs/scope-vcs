@@ -16,7 +16,7 @@ use crate::{
         credentials::{FirstPushToken, GitPushToken},
         git::{GitHead, GitPackSpan},
     },
-    views::ViewId,
+    views::{ViewId, Views},
     visibility_changes::VisibilityChangeSet,
 };
 use serde::{Deserialize, Serialize};
@@ -105,6 +105,9 @@ impl Repository {
         let name = validate_repo_name(name)?;
         let id = repo_id(&owner.handle, &name);
         let incarnation = RepositoryIncarnation::new(id.clone(), incarnation_id)?;
+        if Views::builtin().get(&default_visibility).is_none() {
+            return Err(CatalogError::UnknownView(default_visibility));
+        }
         let config_default = default_visibility.clone();
         Ok(Self {
             record: RepoRecord {
@@ -256,4 +259,6 @@ pub enum CatalogError {
     InvalidRepositoryName(String),
     #[error("{0}")]
     InvalidRepositoryIdentity(String),
+    #[error("unknown view {0}")]
+    UnknownView(ViewId),
 }

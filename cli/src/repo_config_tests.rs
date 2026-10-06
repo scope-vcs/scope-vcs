@@ -178,3 +178,27 @@ fn invalid_partial_worktree_state_is_preserved() {
     );
     assert!(!paths.config.exists());
 }
+
+#[test]
+fn a_config_from_an_older_release_is_replaced_by_the_server_config() {
+    let dir = TempDir::git_repo("outdated-config", "main");
+    let server = default_scope_repo_config();
+    write_worktree_scope_repo_config_with_base(&dir.path, &server).unwrap();
+    let paths = repo_state_paths(&dir.path).unwrap();
+    fs::write(
+        &paths.config,
+        r#"{"kind":"scope.repo-config","version":1,"visibility":{"default":"public","rules":[]},"history":{"rewrites":[]}}"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        worktree_scope_repo_config_presence(&dir.path).unwrap(),
+        WorktreeRepoConfigPresence::Absent
+    );
+    assert!(!paths.state.exists());
+    assert_eq!(
+        sync_missing_worktree_scope_repo_config(&dir.path, &server).unwrap(),
+        WorktreeRepoConfigSync::Created
+    );
+    assert_eq!(load_worktree_scope_repo_config(&dir.path).unwrap(), server);
+}

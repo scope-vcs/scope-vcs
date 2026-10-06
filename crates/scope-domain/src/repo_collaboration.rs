@@ -5,7 +5,7 @@ use super::{
         RepositoryMemberPermissions, normalize_repository_invite_email,
     },
 };
-use crate::error::DomainError;
+use crate::{error::DomainError, views::Views};
 
 pub const REPOSITORY_INVITE_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 pub const REPOSITORY_INVITE_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
@@ -65,6 +65,7 @@ pub fn create_repository_invite(
         ));
     }
 
+    command.permissions.validate(&Views::builtin())?;
     let invite = RepositoryInvite {
         id: command.id,
         repo_id: repo.record.id.clone(),
@@ -268,6 +269,7 @@ pub fn update_repository_member_permissions(
     now_unix: u64,
 ) -> Result<RepositoryMember, DomainError> {
     ensure_can_manage_members(repo, owner_user_id)?;
+    permissions.validate(&Views::builtin())?;
     let member = repo
         .collaboration
         .members

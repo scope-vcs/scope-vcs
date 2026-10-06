@@ -102,6 +102,9 @@ pub fn catalog_error(error: CatalogError) -> DomainError {
     match error {
         CatalogError::InvalidRepositoryName(message)
         | CatalogError::InvalidRepositoryIdentity(message) => DomainError::invalid_input(message),
+        CatalogError::UnknownView(view) => {
+            DomainError::invalid_input(format!("unknown view {view}"))
+        }
     }
 }
 

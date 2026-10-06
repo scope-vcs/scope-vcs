@@ -2,7 +2,10 @@ use super::{
     RepoRecord, RepositoryIncarnation,
     access::{RepositoryAccess, repository_access_for_user_id},
 };
-use crate::views::ViewId;
+use crate::{
+    error::DomainError,
+    views::{ViewId, Views},
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -10,6 +13,23 @@ pub struct RepositoryMemberPermissions {
     pub can_push: bool,
     pub can_change_file_visibility: bool,
     pub view: ViewId,
+}
+
+impl RepositoryMemberPermissions {
+    pub fn validate(&self, views: &Views) -> Result<(), DomainError> {
+        if views.get(&self.view).is_none() {
+            return Err(DomainError::invalid_input(format!(
+                "unknown view {}",
+                self.view
+            )));
+        }
+        if &self.view != views.full() {
+            return Err(DomainError::invalid_input(
+                "members read the full view until views can be assigned",
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl Default for RepositoryMemberPermissions {

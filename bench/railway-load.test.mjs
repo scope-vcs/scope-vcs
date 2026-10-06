@@ -219,11 +219,11 @@ test('changed-file slope reports p95 cost per file', () => {
 });
 
 test('aggregate benchmark pushes toggle an equivalent visibility rule', () => {
-  const original = { visibility: { default: 'public', rules: [] } };
+  const original = { files: { default: 'public', rules: [] } };
   const added = toggleBenchmarkVisibilityRule(original);
-  assert.deepEqual(original.visibility.rules, []);
-  assert.deepEqual(added.visibility.rules, [{ path: '/load-files/**', visibility: 'public' }]);
-  assert.deepEqual(toggleBenchmarkVisibilityRule(added).visibility.rules, []);
+  assert.deepEqual(original.files.rules, []);
+  assert.deepEqual(added.files.rules, [{ path: '/load-files/**', view: 'public' }]);
+  assert.deepEqual(toggleBenchmarkVisibilityRule(added).files.rules, []);
 });
 
 test('consistency statistics expose projection convergence instead of hiding polls', () => {
