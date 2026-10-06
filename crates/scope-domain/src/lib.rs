@@ -33,4 +33,5 @@ pub mod requests;
 mod requests_tests;
 pub mod reviewed_updates;
 pub mod runs;
+pub mod views;
 pub mod visibility_changes;

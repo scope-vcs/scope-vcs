@@ -1,8 +1,8 @@
 use super::{HISTORY_GENERATION_VERSION, HistoryEntry, HistoryEntryKind};
-use crate::{content::SourceBlob, policy::Visibility, projection::ProjectionViewKey};
+use crate::{content::SourceBlob, views::ViewId};
 use sha2::{Digest, Sha256};
 
-pub(super) fn history_generation_start(repo_id: &str, view_key: ProjectionViewKey) -> String {
+pub(super) fn history_generation_start(repo_id: &str, view: &ViewId) -> String {
     let mut hasher = Sha256::new();
     hash_field(
         &mut hasher,
@@ -10,7 +10,7 @@ pub(super) fn history_generation_start(repo_id: &str, view_key: ProjectionViewKe
         HISTORY_GENERATION_VERSION.as_bytes(),
     );
     hash_field(&mut hasher, b"repo", repo_id.as_bytes());
-    hash_field(&mut hasher, b"view", view_key.as_str().as_bytes());
+    hash_field(&mut hasher, b"view", view.as_str().as_bytes());
     hex::encode(hasher.finalize())
 }
 
@@ -48,11 +48,7 @@ pub(super) fn history_generation_after(generation: &str, entry: &HistoryEntry) -
     }
     for file in &entry.files {
         hash_field(&mut hasher, b"path", file.path.as_str().as_bytes());
-        hash_field(
-            &mut hasher,
-            b"visibility",
-            visibility_bytes(file.visibility),
-        );
+        hash_field(&mut hasher, b"visibility", file.label.as_str().as_bytes());
         hash_optional_blob(&mut hasher, b"old", file.old_content.as_ref());
         hash_optional_blob(&mut hasher, b"new", file.new_content.as_ref());
     }
@@ -69,23 +65,16 @@ pub(super) fn history_generation_after(generation: &str, entry: &HistoryEntry) -
         );
         hash_field(
             &mut hasher,
-            b"old_visibility",
-            visibility_bytes(change.old_visibility),
+            b"old_label",
+            change.old_label.as_str().as_bytes(),
         );
         hash_field(
             &mut hasher,
-            b"new_visibility",
-            visibility_bytes(change.new_visibility),
+            b"new_label",
+            change.new_label.as_str().as_bytes(),
         );
     }
     hex::encode(hasher.finalize())
-}
-
-fn visibility_bytes(visibility: Visibility) -> &'static [u8] {
-    match visibility {
-        Visibility::Public => b"public",
-        Visibility::Private => b"private",
-    }
 }
 
 fn hash_optional_blob(hasher: &mut Sha256, label: &[u8], blob: Option<&SourceBlob>) {

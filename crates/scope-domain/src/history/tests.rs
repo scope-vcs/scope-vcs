@@ -21,10 +21,10 @@ fn path(value: &str) -> ScopePath {
     ScopePath::parse(value).unwrap()
 }
 
-fn file(name: &str, visibility: Visibility, old: Option<&str>, new: Option<&str>) -> FileChange {
+fn file(name: &str, visibility: ViewId, old: Option<&str>, new: Option<&str>) -> FileChange {
     FileChange {
         path: path(name),
-        visibility,
+        label: visibility,
         old_content: old.map(blob),
         new_content: new.map(blob),
     }
@@ -55,7 +55,7 @@ fn visibility(
     anchor: Option<&str>,
     source: Option<&str>,
     name: &str,
-    new_visibility: Visibility,
+    new_label: ViewId,
     content: Option<&str>,
 ) -> VisibilityChangeSet {
     VisibilityChangeSet::new(
@@ -65,12 +65,12 @@ fn visibility(
         "maintainer".into(),
         vec![VisibilityChange {
             path: path(name),
-            old_visibility: if new_visibility == Visibility::Public {
-                Visibility::Private
+            old_label: if new_label == ViewId::public() {
+                ViewId::private()
             } else {
-                Visibility::Public
+                ViewId::public()
             },
-            new_visibility,
+            new_label,
             current_content: content.map(blob),
         }],
     )
@@ -89,13 +89,13 @@ fn separated_visibility_and_content_fragments_are_one_action_with_exact_diff_bas
     let graph = graph(vec![
         commit(
             "first",
-            vec![file("/doc", Visibility::Public, None, Some("first public"))],
+            vec![file("/doc", ViewId::public(), None, Some("first public"))],
         ),
         commit(
             "intervening",
             vec![file(
                 "/doc",
-                Visibility::Public,
+                ViewId::public(),
                 Some("first public"),
                 Some("second public"),
             )],
@@ -103,10 +103,10 @@ fn separated_visibility_and_content_fragments_are_one_action_with_exact_diff_bas
         commit(
             "push",
             vec![
-                file("/other", Visibility::Public, None, Some("public addition")),
+                file("/other", ViewId::public(), None, Some("public addition")),
                 file(
                     "/doc",
-                    Visibility::Private,
+                    ViewId::private(),
                     Some("second public"),
                     Some("private edit"),
                 ),
@@ -118,10 +118,10 @@ fn separated_visibility_and_content_fragments_are_one_action_with_exact_diff_bas
         Some("first"),
         Some("push"),
         "/doc",
-        Visibility::Private,
+        ViewId::private(),
         Some("private edit"),
     )];
-    let public = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let public = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     assert_eq!(sources(&public), ["push", "intervening", "first"]);
     let push = &public.entries[0];
     assert_eq!(push.parent_id.as_deref(), Some("intervening"));
@@ -145,7 +145,7 @@ fn separated_visibility_and_content_fragments_are_one_action_with_exact_diff_bas
             .contains("private edit")
     );
 
-    let private = history_view(&graph, &sets, ProjectionViewKey::Private);
+    let private = history_view(&graph, &sets, &Views::builtin(), &ViewId::private());
     assert_eq!(sources(&private), ["push", "intervening", "first"]);
     assert_eq!(private.entries[0].files.len(), 2);
     assert!(private.entries[0].visibility_changes[0].file.is_none());
@@ -160,11 +160,11 @@ fn repeated_path_transitions_are_not_collapsed_to_a_net_change() {
     let graph = graph(vec![
         commit(
             "private-base",
-            vec![file("/doc", Visibility::Private, None, Some("baseline"))],
+            vec![file("/doc", ViewId::private(), None, Some("baseline"))],
         ),
         commit(
             "push",
-            vec![file("/other", Visibility::Public, None, Some("code"))],
+            vec![file("/other", ViewId::public(), None, Some("code"))],
         ),
     ]);
     let sets = vec![
@@ -173,7 +173,7 @@ fn repeated_path_transitions_are_not_collapsed_to_a_net_change() {
             Some("private-base"),
             Some("push"),
             "/doc",
-            Visibility::Public,
+            ViewId::public(),
             Some("baseline"),
         ),
         visibility(
@@ -181,11 +181,11 @@ fn repeated_path_transitions_are_not_collapsed_to_a_net_change() {
             Some("private-base"),
             Some("push"),
             "/doc",
-            Visibility::Private,
+            ViewId::private(),
             Some("baseline"),
         ),
     ];
-    let view = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let view = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     assert_eq!(sources(&view), ["push"]);
     let entry = &view.entries[0];
     assert_eq!(entry.files.len(), 1);
@@ -202,7 +202,7 @@ fn repeated_path_transitions_are_not_collapsed_to_a_net_change() {
         hidden.file.as_ref().unwrap().old_content,
         Some(blob("baseline"))
     );
-    assert_eq!(hidden.new_visibility, Visibility::Private);
+    assert_eq!(hidden.new_label, ViewId::private());
 }
 
 #[test]
@@ -210,11 +210,11 @@ fn standalone_actions_stay_between_their_source_anchors_even_when_the_anchor_is_
     let graph = graph(vec![
         commit(
             "private-base",
-            vec![file("/doc", Visibility::Private, None, Some("baseline"))],
+            vec![file("/doc", ViewId::private(), None, Some("baseline"))],
         ),
         commit(
             "push",
-            vec![file("/other", Visibility::Public, None, Some("code"))],
+            vec![file("/other", ViewId::public(), None, Some("code"))],
         ),
     ]);
     let sets = vec![visibility(
@@ -222,10 +222,10 @@ fn standalone_actions_stay_between_their_source_anchors_even_when_the_anchor_is_
         Some("private-base"),
         None,
         "/doc",
-        Visibility::Public,
+        ViewId::public(),
         Some("baseline"),
     )];
-    let public = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let public = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     assert_eq!(sources(&public), ["push", "publish"]);
     assert_eq!(public.entries[0].parent_id.as_deref(), Some("publish"));
     assert_eq!(public.entries[1].parent_id, None);
@@ -239,7 +239,7 @@ fn standalone_actions_stay_between_their_source_anchors_even_when_the_anchor_is_
         FileChangeKind::Added
     );
 
-    let private = history_view(&graph, &sets, ProjectionViewKey::Private);
+    let private = history_view(&graph, &sets, &Views::builtin(), &ViewId::private());
     assert_eq!(sources(&private), ["push", "publish", "private-base"]);
     assert_eq!(private.entries[1].author.as_deref(), Some("maintainer"));
     assert!(private.entries[1].visibility_changes[0].file.is_none());
@@ -250,11 +250,11 @@ fn a_push_can_have_visibility_effects_without_any_visible_content_changes() {
     let mut graph = graph(vec![
         commit(
             "base",
-            vec![file("/doc", Visibility::Private, None, Some("baseline"))],
+            vec![file("/doc", ViewId::private(), None, Some("baseline"))],
         ),
         commit(
             "private-push",
-            vec![file("/private", Visibility::Private, None, Some("hidden"))],
+            vec![file("/private", ViewId::private(), None, Some("hidden"))],
         ),
     ]);
     graph.commits[1].occurred_at_unix = Some(1_700_000_000);
@@ -263,17 +263,17 @@ fn a_push_can_have_visibility_effects_without_any_visible_content_changes() {
         Some("base"),
         Some("private-push"),
         "/doc",
-        Visibility::Public,
+        ViewId::public(),
         Some("baseline"),
     )];
-    let view = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let view = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     assert_eq!(sources(&view), ["private-push"]);
     assert!(view.entries[0].files.is_empty());
     assert_eq!(view.entries[0].kind, HistoryEntryKind::Push);
     assert_eq!(view.entries[0].message, "Projected public update");
     assert_eq!(view.entries[0].author, None);
     assert_eq!(view.entries[0].occurred_at_unix, None);
-    let private = history_view(&graph, &sets, ProjectionViewKey::Private);
+    let private = history_view(&graph, &sets, &Views::builtin(), &ViewId::private());
     assert_eq!(private.entries[0].occurred_at_unix, Some(1_700_000_000));
     assert!(view.entries[0].visibility_changes[0].file.is_some());
 }
@@ -283,13 +283,13 @@ fn a_file_changed_and_made_public_keeps_its_content_diff_and_transition() {
     let graph = graph(vec![
         commit(
             "base",
-            vec![file("/doc", Visibility::Private, None, Some("old private"))],
+            vec![file("/doc", ViewId::private(), None, Some("old private"))],
         ),
         commit(
             "push",
             vec![file(
                 "/doc",
-                Visibility::Public,
+                ViewId::public(),
                 Some("old private"),
                 Some("new public"),
             )],
@@ -300,10 +300,10 @@ fn a_file_changed_and_made_public_keeps_its_content_diff_and_transition() {
         Some("base"),
         Some("push"),
         "/doc",
-        Visibility::Public,
+        ViewId::public(),
         Some("new public"),
     )];
-    let view = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let view = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     assert_eq!(sources(&view), ["push"]);
     let entry = &view.entries[0];
     assert_eq!(entry.files.len(), 1);
@@ -322,19 +322,19 @@ fn a_file_changed_and_made_public_keeps_its_content_diff_and_transition() {
 fn private_events_and_empty_public_deletions_do_not_disclose_paths() {
     let graph = graph(vec![commit(
         "base",
-        vec![file("/private", Visibility::Private, None, Some("secret"))],
+        vec![file("/private", ViewId::private(), None, Some("secret"))],
     )]);
     let sets = vec![visibility(
         "hide",
         Some("base"),
         None,
         "/private",
-        Visibility::Private,
+        ViewId::private(),
         Some("secret"),
     )];
-    let public = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let public = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     assert!(public.entries.is_empty());
-    let private = history_view(&graph, &sets, ProjectionViewKey::Private);
+    let private = history_view(&graph, &sets, &Views::builtin(), &ViewId::private());
     assert_eq!(sources(&private), ["hide", "base"]);
     assert_eq!(private.entries[0].visibility_changes.len(), 1);
 }
@@ -343,17 +343,17 @@ fn private_events_and_empty_public_deletions_do_not_disclose_paths() {
 fn unresolved_sources_are_standalone_actions_and_missing_anchors_precede_the_graph() {
     let graph = graph(vec![commit(
         "push",
-        vec![file("/doc", Visibility::Public, None, Some("code"))],
+        vec![file("/doc", ViewId::public(), None, Some("code"))],
     )]);
     let sets = vec![visibility(
         "publish",
         Some("missing"),
         Some("missing"),
         "/baseline",
-        Visibility::Public,
+        ViewId::public(),
         Some("baseline"),
     )];
-    let view = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let view = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     assert_eq!(sources(&view), ["push", "publish"]);
     assert_eq!(view.entries[1].kind, HistoryEntryKind::VisibilityChange);
     assert_eq!(view.entries[1].parent_id, None);
@@ -363,25 +363,25 @@ fn unresolved_sources_are_standalone_actions_and_missing_anchors_precede_the_gra
 fn preview_identity_survives_unrelated_earlier_projection_insertions() {
     let mut graph = graph(vec![commit(
         "base",
-        vec![file("/doc", Visibility::Private, None, Some("baseline"))],
+        vec![file("/doc", ViewId::private(), None, Some("baseline"))],
     )]);
     let sets = vec![visibility(
         "publish",
         Some("base"),
         None,
         "/doc",
-        Visibility::Public,
+        ViewId::public(),
         Some("baseline"),
     )];
-    let before = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let before = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     graph.commits.insert(
         0,
         commit(
             "earlier",
-            vec![file("/other", Visibility::Public, None, Some("earlier"))],
+            vec![file("/other", ViewId::public(), None, Some("earlier"))],
         ),
     );
-    let after = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let after = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     assert_eq!(
         before.entries[0].visibility_changes[0].id,
         after.entries[0].visibility_changes[0].id
@@ -397,12 +397,12 @@ fn generation_includes_visibility_preview_content() {
         None,
         None,
         "/doc",
-        Visibility::Public,
+        ViewId::public(),
         Some("one"),
     )];
-    let before = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let before = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     sets[0].changes[0].current_content = Some(blob("two"));
-    let after = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let after = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     assert_ne!(before.generation, after.generation);
 }
 
@@ -410,21 +410,16 @@ fn generation_includes_visibility_preview_content() {
 fn same_blob_with_a_mode_change_is_a_content_change() {
     let mut executable = blob("script");
     executable.git_file_mode = "100755".into();
-    let mut second = file(
-        "/script",
-        Visibility::Public,
-        Some("script"),
-        Some("script"),
-    );
+    let mut second = file("/script", ViewId::public(), Some("script"), Some("script"));
     second.new_content = Some(executable.clone());
     let graph = graph(vec![
         commit(
             "base",
-            vec![file("/script", Visibility::Public, None, Some("script"))],
+            vec![file("/script", ViewId::public(), None, Some("script"))],
         ),
         commit("mode", vec![second]),
     ]);
-    let view = history_view(&graph, &[], ProjectionViewKey::Public);
+    let view = history_view(&graph, &[], &Views::builtin(), &ViewId::public());
     assert_eq!(sources(&view), ["mode", "base"]);
     assert_eq!(view.entries[0].files[0].new_content, Some(executable));
 }
@@ -433,18 +428,21 @@ fn same_blob_with_a_mode_change_is_a_content_change() {
 fn visible_occurrence_time_changes_history_generation_without_changing_projection() {
     let mut graph = graph(vec![commit(
         "push",
-        vec![file("/doc", Visibility::Public, None, Some("body"))],
+        vec![file("/doc", ViewId::public(), None, Some("body"))],
     )]);
     graph.commits[0].occurred_at_unix = Some(1_700_000_000);
-    for audience in [ProjectionViewKey::Public, ProjectionViewKey::Private] {
-        let before = history_view(&graph, &[], audience);
-        let projection = project_graph(&graph, &[], audience);
+    for audience in [ViewId::public(), ViewId::private()] {
+        let before = history_view(&graph, &[], &Views::builtin(), &audience);
+        let projection = project_graph(&graph, &[], &Views::builtin(), &audience);
         assert_eq!(before.entries[0].occurred_at_unix, Some(1_700_000_000));
         graph.commits[0].occurred_at_unix = Some(1_800_000_000);
-        let after = history_view(&graph, &[], audience);
+        let after = history_view(&graph, &[], &Views::builtin(), &audience);
         assert_eq!(after.entries[0].occurred_at_unix, Some(1_800_000_000));
         assert_ne!(before.generation, after.generation);
-        assert_eq!(project_graph(&graph, &[], audience), projection);
+        assert_eq!(
+            project_graph(&graph, &[], &Views::builtin(), &audience),
+            projection
+        );
         graph.commits[0].occurred_at_unix = Some(1_700_000_000);
     }
 }
@@ -453,31 +451,31 @@ fn visible_occurrence_time_changes_history_generation_without_changing_projectio
 fn standalone_visibility_time_is_recorded_privately_and_redacted_publicly() {
     let graph = graph(vec![commit(
         "push",
-        vec![file("/doc", Visibility::Private, None, Some("body"))],
+        vec![file("/doc", ViewId::private(), None, Some("body"))],
     )]);
     let mut sets = vec![visibility(
         "publish",
         Some("push"),
         None,
         "/doc",
-        Visibility::Public,
+        ViewId::public(),
         Some("body"),
     )];
     sets[0].occurred_at_unix = Some(1_700_000_000);
-    let public = history_view(&graph, &sets, ProjectionViewKey::Public);
+    let public = history_view(&graph, &sets, &Views::builtin(), &ViewId::public());
     assert_eq!(sources(&public), ["publish"]);
     assert_eq!(public.entries[0].author, None);
     assert_eq!(public.entries[0].occurred_at_unix, None);
-    let private = history_view(&graph, &sets, ProjectionViewKey::Private);
+    let private = history_view(&graph, &sets, &Views::builtin(), &ViewId::private());
     assert_eq!(sources(&private), ["publish", "push"]);
     assert_eq!(private.entries[0].occurred_at_unix, Some(1_700_000_000));
     sets[0].occurred_at_unix = Some(1_800_000_000);
     assert_eq!(
-        history_view(&graph, &sets, ProjectionViewKey::Public),
+        history_view(&graph, &sets, &Views::builtin(), &ViewId::public()),
         public
     );
     assert_ne!(
-        history_view(&graph, &sets, ProjectionViewKey::Private).generation,
+        history_view(&graph, &sets, &Views::builtin(), &ViewId::private()).generation,
         private.generation
     );
 }
@@ -487,17 +485,20 @@ fn partial_public_push_does_not_disclose_its_occurrence_time() {
     let mut graph = graph(vec![commit(
         "push",
         vec![
-            file("/public", Visibility::Public, None, Some("visible")),
-            file("/secret", Visibility::Private, None, Some("hidden")),
+            file("/public", ViewId::public(), None, Some("visible")),
+            file("/secret", ViewId::private(), None, Some("hidden")),
         ],
     )]);
     graph.commits[0].occurred_at_unix = Some(1_700_000_000);
-    let public = history_view(&graph, &[], ProjectionViewKey::Public);
+    let public = history_view(&graph, &[], &Views::builtin(), &ViewId::public());
     assert_eq!(sources(&public), ["push"]);
     assert_eq!(public.entries[0].author, None);
     assert_eq!(public.entries[0].occurred_at_unix, None);
     graph.commits[0].occurred_at_unix = Some(1_800_000_000);
-    assert_eq!(history_view(&graph, &[], ProjectionViewKey::Public), public);
+    assert_eq!(
+        history_view(&graph, &[], &Views::builtin(), &ViewId::public()),
+        public
+    );
 }
 
 #[test]
@@ -506,31 +507,21 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
         commit(
             "first",
             vec![
-                file("/doc", Visibility::Public, None, Some("doc")),
-                file("/secret", Visibility::Private, None, Some("secret")),
+                file("/doc", ViewId::public(), None, Some("doc")),
+                file("/secret", ViewId::private(), None, Some("secret")),
             ],
         ),
         commit(
             "second",
-            vec![file(
-                "/doc",
-                Visibility::Public,
-                Some("doc"),
-                Some("doc two"),
-            )],
+            vec![file("/doc", ViewId::public(), Some("doc"), Some("doc two"))],
         ),
         commit(
             "third",
             vec![
-                file(
-                    "/secret",
-                    Visibility::Public,
-                    Some("secret"),
-                    Some("shared"),
-                ),
+                file("/secret", ViewId::public(), Some("secret"), Some("shared")),
                 file(
                     "/doc",
-                    Visibility::Private,
+                    ViewId::private(),
                     Some("doc two"),
                     Some("doc three"),
                 ),
@@ -538,7 +529,7 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
         ),
         commit(
             "fourth",
-            vec![file("/new", Visibility::Public, None, Some("new"))],
+            vec![file("/new", ViewId::public(), None, Some("new"))],
         ),
     ];
     let sets = vec![
@@ -547,7 +538,7 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
             Some("second"),
             Some("third"),
             "/doc",
-            Visibility::Private,
+            ViewId::private(),
             Some("doc three"),
         ),
         visibility(
@@ -555,7 +546,7 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
             Some("fourth"),
             None,
             "/doc",
-            Visibility::Public,
+            ViewId::public(),
             Some("doc three"),
         ),
     ];
@@ -566,17 +557,21 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
     assert!(projection_delta_appends(
         Some("second"),
         &rest.commits,
-        &sets
+        &sets,
+        &Views::builtin(),
+        &ViewId::public()
     ));
     assert!(!projection_delta_appends(
         Some("first"),
         &rest.commits,
-        &sets
+        &sets,
+        &Views::builtin(),
+        &ViewId::public()
     ));
 
-    for view_key in [ProjectionViewKey::Private, ProjectionViewKey::Public] {
-        let at_once = project_graph(&whole, &sets, view_key);
-        let prefix = project_graph(&first, &[], view_key);
+    for view_key in [ViewId::private(), ViewId::public()] {
+        let at_once = project_graph(&whole, &sets, &Views::builtin(), &view_key);
+        let prefix = project_graph(&first, &[], &Views::builtin(), &view_key);
         let cursor = ProjectionCursor {
             commit_count: prefix.commits.len(),
             last_projected_id: prefix
@@ -584,23 +579,34 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
                 .last()
                 .map(|commit| commit.projected_id.clone()),
         };
-        let suffix = project_graph_after(&cursor, &rest, &sets, view_key);
+        let suffix = project_graph_after(&cursor, &rest, &sets, &Views::builtin(), &view_key);
         assert_eq!(
             [prefix.commits.clone(), suffix.commits.clone()].concat(),
             at_once.commits
         );
 
-        let expected = history_view_from_projection(at_once, &whole, &sets);
-        let mut history = HistoryCursor::start("owner/repo", view_key);
+        let expected =
+            history_view_from_projection(at_once, &whole, &sets, &Views::builtin(), &view_key);
+        let mut history = HistoryCursor::start("owner/repo", &Views::builtin(), &view_key);
         let mut tree = BTreeMap::new();
         prefix.apply_to(&mut tree);
-        let mut entries = history_entries_after(&mut history, BTreeMap::new(), prefix, &first, &[]);
+        let mut entries = history_entries_after(
+            &mut history,
+            BTreeMap::new(),
+            prefix,
+            &first,
+            &[],
+            &Views::builtin(),
+            &view_key,
+        );
         entries.extend(history_entries_after(
             &mut history,
             tree,
             suffix,
             &rest,
             &sets,
+            &Views::builtin(),
+            &view_key,
         ));
         entries.reverse();
         assert_eq!(entries, expected.entries);

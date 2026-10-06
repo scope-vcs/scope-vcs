@@ -359,11 +359,12 @@ fn git_tree_name_cmp(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use scope_domain::views::ViewId;
     use scope_domain::{
         content::SourceBlob,
         content_ref::ContentRef,
-        policy::{ScopePath, Visibility},
-        projection::{ProjectedChange, ProjectedCommit, ProjectionViewKey},
+        policy::ScopePath,
+        projection::{ProjectedChange, ProjectedCommit},
     };
     use std::{
         fs,
@@ -381,7 +382,7 @@ mod tests {
         let replacement = blob(b"replacement", "100644");
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 generated_commit(
                     "one",
@@ -412,7 +413,18 @@ mod tests {
                 (&replacement, b"replacement"),
             ],
         );
-        assert_eq!(projection_head_oid(&projection).unwrap(), Some(expected));
+        assert_eq!(
+            projection_head_oid(&projection).unwrap(),
+            Some(expected.clone())
+        );
+        let private_projection = Projection {
+            view_key: ViewId::private(),
+            ..projection
+        };
+        assert_eq!(
+            projection_head_oid(&private_projection).unwrap(),
+            Some(expected)
+        );
     }
 
     #[test]
@@ -434,12 +446,12 @@ mod tests {
         );
         let generated_native_projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![base.clone(), native_as_generated],
         };
         let base_oid = projection_head_oid(&Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![base.clone()],
         })
         .unwrap()
@@ -464,7 +476,7 @@ mod tests {
         };
         let preserved = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![base.clone(), native.clone()],
         };
         let blobs = [
@@ -480,7 +492,7 @@ mod tests {
 
         let mixed = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 base,
                 native,
@@ -505,7 +517,7 @@ mod tests {
         let replacement = blob(b"replacement", "100644");
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 generated_commit(
                     "base",
@@ -553,7 +565,7 @@ mod tests {
         );
         let base_oid = projection_head_oid(&Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![base.clone()],
         })
         .unwrap()
@@ -561,7 +573,7 @@ mod tests {
         let merge_oid = "1111111111111111111111111111111111111111";
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 base,
                 ProjectedCommit {
@@ -594,7 +606,7 @@ mod tests {
     fn empty_projection_has_no_canonical_head() {
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: Vec::new(),
         };
 
@@ -607,14 +619,14 @@ mod tests {
         let base = generated_commit("base", None, "Base", vec![change("/file", Some(content))]);
         let base_oid = projection_head_oid(&Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![base.clone()],
         })
         .unwrap()
         .unwrap();
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 base,
                 ProjectedCommit {
@@ -652,7 +664,7 @@ mod tests {
         let second = generated_commit("second", Some("first"), "Second", Vec::new());
         let first_oid = projection_head_oid(&Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![first.clone()],
         })
         .unwrap()
@@ -660,7 +672,7 @@ mod tests {
         let skipped_head = "3333333333333333333333333333333333333333";
         let projection = Projection {
             repo_id: "owner/repo".to_string(),
-            view_key: ProjectionViewKey::Public,
+            view_key: ViewId::public(),
             commits: vec![
                 first,
                 second,
@@ -702,7 +714,7 @@ mod tests {
         ProjectedChange {
             path: ScopePath::parse(path).unwrap(),
             new_content,
-            visibility: Visibility::Public,
+            label: ViewId::public(),
         }
     }
 

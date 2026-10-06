@@ -1,6 +1,7 @@
+use crate::views::ViewId;
 use crate::{
     content::SourceBlob,
-    policy::{ScopePath, Visibility},
+    policy::ScopePath,
     projection::LogicalCommitOrigin,
     repo_config::{HistoryRewriteAction, HistoryRewriteRequest, RepoConfig},
     repository::Repository,
@@ -64,7 +65,7 @@ pub(super) fn apply_history_rewrites(
         let logical_history_matches = commit
             .changes
             .iter()
-            .any(|change| change.visibility == Visibility::Public && should_redact(&change.path));
+            .any(|change| change.label == ViewId::public() && should_redact(&change.path));
         if native_history_matches || logical_history_matches {
             invalidate_preservation_from = Some(
                 invalidate_preservation_from.map_or(index, |current: usize| current.min(index)),
@@ -104,8 +105,8 @@ pub(super) fn apply_history_rewrites(
             }
         }
         for change in &mut commit.changes {
-            if change.visibility == Visibility::Public && should_redact(&change.path) {
-                change.visibility = Visibility::Private;
+            if change.label == ViewId::public() && should_redact(&change.path) {
+                change.label = ViewId::private();
                 redacted_paths.insert(change.path.clone());
             }
         }
@@ -125,7 +126,7 @@ pub(super) fn apply_history_rewrites(
 
     let mut visibility_changes = Vec::new();
     for path in &redacted_paths {
-        if changed_paths.contains(path) || config.visibility_for_path(path) != Visibility::Public {
+        if changed_paths.contains(path) || config.label_for_path(path) != ViewId::public() {
             continue;
         }
         let Some(current_content) = live_tree.get(path) else {
@@ -134,8 +135,8 @@ pub(super) fn apply_history_rewrites(
 
         visibility_changes.push(VisibilityChange {
             path: path.clone(),
-            old_visibility: Visibility::Private,
-            new_visibility: Visibility::Public,
+            old_label: ViewId::private(),
+            new_label: ViewId::public(),
             current_content: Some(current_content.clone()),
         });
     }

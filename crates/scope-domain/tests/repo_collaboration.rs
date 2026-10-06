@@ -1,6 +1,5 @@
 use scope_domain::{
     account::UserAccount,
-    policy::Visibility,
     repo_collaboration::{
         AcceptRepositoryInviteOutcome, CreateRepositoryInviteCommand,
         REPOSITORY_INVITE_RETENTION_SECS, REPOSITORY_INVITE_TTL_SECS,
@@ -18,6 +17,7 @@ use scope_domain::{
             RepositoryMemberPermissions,
         },
     },
+    views::ViewId,
 };
 
 const OWNER_ID: &str = "user_owner";
@@ -63,7 +63,7 @@ fn invite(repo: &mut CollaborationState, link_hash: &str, now_unix: u64) -> Resu
 }
 
 fn repo_with_invite() -> CollaborationState {
-    let created = Repository::new(&owner(), "repo", Visibility::Private, "repoi_test").unwrap();
+    let created = Repository::new(&owner(), "repo", ViewId::private(), "repoi_test").unwrap();
     let mut repo = CollaborationState {
         record: created.record,
         collaboration: created.collaboration,

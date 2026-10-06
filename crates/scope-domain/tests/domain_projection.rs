@@ -1,16 +1,14 @@
+use scope_domain::views::{ViewId, Views};
 use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
-    policy::{ScopePath, Visibility, VisibilityRule},
+    policy::{LabelRule, ScopePath},
     projection::{
-        FileChange, LogicalCommit, ProjectionMaterialization, ProjectionViewKey, SourceGraph,
-        project_graph,
+        FileChange, LogicalCommit, ProjectionMaterialization, SourceGraph, project_graph,
     },
     projection::{LogicalCommitOrigin, NativePublicCommit},
-    repo_config::{
-        ConfigVisibility, HistoryRewriteAction, HistoryRewriteRequest, RepoConfig,
-        RepoConfigVisibilityRule,
-    },
+    projection_views::{ProjectionPreviewCommitVisibility, projection_preview},
+    repo_config::{HistoryRewriteAction, HistoryRewriteRequest, RepoConfig, RepoConfigFileRule},
     repository::updates::RequestMergeOrigin,
     repository::{RepoLifecycleState, Repository},
     reviewed_updates::{
@@ -47,19 +45,19 @@ fn path(value: &str) -> ScopePath {
 
 fn change(
     path_value: &str,
-    visibility: Visibility,
+    visibility: ViewId,
     old_content: Option<SourceBlob>,
     new_content: Option<SourceBlob>,
 ) -> FileChange {
     FileChange {
-        visibility,
+        label: visibility,
         path: path(path_value),
         old_content,
         new_content,
     }
 }
 
-fn added(path_value: &str, visibility: Visibility, content: &str) -> FileChange {
+fn added(path_value: &str, visibility: ViewId, content: &str) -> FileChange {
     change(path_value, visibility, None, Some(blob(content)))
 }
 
@@ -88,7 +86,7 @@ fn visibility_event(
     after_commit_id: Option<&str>,
     source_commit_id: Option<&str>,
     path_value: &str,
-    new_visibility: Visibility,
+    new_label: ViewId,
     current_content: SourceBlob,
 ) -> VisibilityChangeSet {
     VisibilityChangeSet {
@@ -99,27 +97,22 @@ fn visibility_event(
         author_id: "owner".to_string(),
         changes: vec![VisibilityChange {
             path: path(path_value),
-            old_visibility: match new_visibility {
-                Visibility::Public => Visibility::Private,
-                Visibility::Private => Visibility::Public,
+            old_label: if new_label.is_public() {
+                ViewId::private()
+            } else {
+                ViewId::public()
             },
-            new_visibility,
+            new_label,
             current_content: Some(current_content),
         }],
     }
 }
 
-type EventSpec<'a> = (
-    &'a str,
-    Option<&'a str>,
-    Option<&'a str>,
-    Visibility,
-    &'a str,
-);
+type EventSpec<'a> = (&'a str, Option<&'a str>, Option<&'a str>, ViewId, &'a str);
 
 fn project_timeline(
     path_value: &str,
-    versions: &[(&str, Visibility, &str)],
+    versions: &[(&str, ViewId, &str)],
     event_specs: &[EventSpec<'_>],
 ) -> scope_domain::projection::Projection {
     let commits = versions
@@ -132,7 +125,7 @@ fn project_timeline(
                 content,
                 change(
                     path_value,
-                    *visibility,
+                    visibility.clone(),
                     previous_content,
                     Some(blob(content)),
                 ),
@@ -143,13 +136,20 @@ fn project_timeline(
     let events = event_specs
         .iter()
         .map(|(id, after, source, visibility, content)| {
-            visibility_event(id, *after, *source, path_value, *visibility, blob(content))
+            visibility_event(
+                id,
+                *after,
+                *source,
+                path_value,
+                visibility.clone(),
+                blob(content),
+            )
         })
         .collect::<Vec<_>>();
-    project_graph(&graph, &events, ProjectionViewKey::Public)
+    project_graph(&graph, &events, &Views::builtin(), &ViewId::public())
 }
 
-fn published_test_repo(default_visibility: Visibility) -> Repository {
+fn published_test_repo(default_visibility: ViewId) -> Repository {
     let owner = UserAccount {
         id: "owner".to_string(),
         handle: "owner".to_string(),
@@ -162,28 +162,24 @@ fn published_test_repo(default_visibility: Visibility) -> Repository {
 }
 
 fn published_repo_with_public_file(message: &str, path: &str, content: &str) -> Repository {
-    let mut repo = published_test_repo(Visibility::Public);
+    let mut repo = published_test_repo(ViewId::public());
     let content = blob(content);
     repo.graph.commits.push(commit(
         "rv1",
         message,
-        change(path, Visibility::Public, None, Some(content.clone())),
+        change(path, ViewId::public(), None, Some(content.clone())),
     ));
     repo.live_files.insert(self::path(path), content);
     repo
 }
 
-fn config(
-    default: Visibility,
-    rule: Option<(&str, Visibility)>,
-    rewrite_path: Option<&str>,
-) -> RepoConfig {
-    let mut config = RepoConfig::with_default_visibility(ConfigVisibility::from(default));
-    config.visibility.rules = rule
+fn config(default: ViewId, rule: Option<(&str, ViewId)>, rewrite_path: Option<&str>) -> RepoConfig {
+    let mut config = RepoConfig::with_default_view(default);
+    config.files.rules = rule
         .into_iter()
-        .map(|(path, visibility)| RepoConfigVisibilityRule {
+        .map(|(path, visibility)| RepoConfigFileRule {
             path: path.to_string(),
-            visibility: ConfigVisibility::from(visibility),
+            view: visibility,
         })
         .collect();
     config.history.rewrites = rewrite_path
@@ -197,11 +193,56 @@ fn config(
     config
 }
 
-fn project_repo(
-    repo: &Repository,
-    view_key: ProjectionViewKey,
-) -> scope_domain::projection::Projection {
-    project_graph(&repo.graph, &repo.visibility_change_sets, view_key)
+fn project_repo(repo: &Repository, view_key: ViewId) -> scope_domain::projection::Projection {
+    project_graph(
+        &repo.graph,
+        &repo.visibility_change_sets,
+        &Views::builtin(),
+        &view_key,
+    )
+}
+
+#[test]
+fn built_in_view_ids_keep_existing_projected_commit_ids() {
+    let source = graph(vec![commit(
+        "rv1",
+        "Initial update",
+        added("/README.md", ViewId::public(), "readme"),
+    )]);
+    for (view, expected) in [
+        (ViewId::public(), "pv_public_rv1_1"),
+        (ViewId::private(), "pv_private_rv1_1"),
+    ] {
+        let projection = project_graph(&source, &[], &Views::builtin(), &view);
+        assert_eq!(projection.commits[0].projected_id, expected);
+    }
+}
+
+#[test]
+fn preview_commit_labels_are_relative_to_the_requested_view() {
+    let mut repo = published_test_repo(ViewId::private());
+    let mut mixed = commit(
+        "rv1",
+        "Mixed update",
+        added("/README.md", ViewId::public(), "readme"),
+    );
+    mixed
+        .changes
+        .push(added("/secret.md", ViewId::private(), "secret"));
+    repo.graph.commits.push(mixed);
+    let views = Views::builtin();
+    let native = std::collections::BTreeMap::new();
+    let public = projection_preview(&repo, &views, &ViewId::public(), true, &native).unwrap();
+    let private = projection_preview(&repo, &views, &ViewId::private(), false, &native).unwrap();
+    assert_eq!(
+        public.commits[0].visibility,
+        ProjectionPreviewCommitVisibility::SomeInView
+    );
+    assert_eq!(
+        private.commits[0].visibility,
+        ProjectionPreviewCommitVisibility::AllInView
+    );
+    assert_eq!(public.summary.hidden_files, 1);
 }
 
 fn reviewed_change(path_value: &str, content: Option<&str>) -> ReviewedContentChange {
@@ -315,8 +356,8 @@ fn reviewed_push_rejects_a_pack_span_that_does_not_advance_the_current_frontier(
 fn content_push_command_returns_normalized_effects_without_previous_config() {
     let repo = published_repo_with_public_file("initial", "/README.md", "hello");
     let config = config(
-        Visibility::Public,
-        Some(("/secret.txt", Visibility::Private)),
+        ViewId::public(),
+        Some(("/secret.txt", ViewId::private())),
         None,
     );
     let accepted = accept_content_push(
@@ -348,8 +389,10 @@ fn content_push_command_returns_normalized_effects_without_previous_config() {
     );
     assert_eq!(accepted.logical_commit.changes.len(), 1);
     assert_eq!(
-        accepted.policy.effective_visibility(&path("/secret.txt")),
-        Visibility::Private
+        accepted
+            .policy
+            .label(&path("/secret.txt"), &Views::builtin()),
+        ViewId::private()
     );
     assert_eq!(repo.record.change_version, 1);
     assert_eq!(repo.graph.commits.len(), 1);
@@ -484,8 +527,8 @@ fn public_request_merge_rejects_private_paths() {
     for (case, private_rule, changed_path, message, include_reviewed_change) in cases {
         let repo = published_repo_with_public_file("initial", "/README.md", "hello");
         let config = config(
-            Visibility::Public,
-            Some((private_rule, Visibility::Private)),
+            ViewId::public(),
+            Some((private_rule, ViewId::private())),
             None,
         );
         let changes = include_reviewed_change
@@ -530,8 +573,8 @@ fn public_request_merge_rejects_private_paths() {
 fn content_only_updates_keep_policy_and_commit_identity_in_sync() {
     let mut repo = published_repo_with_public_file("initial", "/README.md", "hello");
     let config = config(
-        Visibility::Public,
-        Some(("/secret.txt", Visibility::Private)),
+        ViewId::public(),
+        Some(("/secret.txt", ViewId::private())),
         None,
     );
     repo.repo_config = config.clone();
@@ -554,8 +597,8 @@ fn content_only_updates_keep_policy_and_commit_identity_in_sync() {
     );
 
     assert_eq!(
-        repo.policy.effective_visibility(&path("/secret.txt")),
-        Visibility::Private
+        repo.policy.label(&path("/secret.txt"), &Views::builtin()),
+        ViewId::private()
     );
     assert_eq!(
         repo.graph.commits[repo.graph.commits.len() - 2].id,
@@ -571,7 +614,7 @@ fn content_only_updates_keep_policy_and_commit_identity_in_sync() {
 fn content_only_update_preserves_existing_visibility_override() {
     let mut repo = published_repo_with_public_file("initial", "/README.md", "hello");
     repo.policy
-        .add_rule(VisibilityRule::private(path("/README.md")))
+        .add_rule(LabelRule::private(path("/README.md")))
         .unwrap();
     let config = repo.repo_config.clone();
 
@@ -584,23 +627,23 @@ fn content_only_update_preserves_existing_visibility_override() {
     );
 
     assert_eq!(
-        repo.policy.effective_visibility(&path("/README.md")),
-        Visibility::Private
+        repo.policy.label(&path("/README.md"), &Views::builtin()),
+        ViewId::private()
     );
     assert_eq!(
-        repo.graph.commits.last().unwrap().changes[0].visibility,
-        Visibility::Private
+        repo.graph.commits.last().unwrap().changes[0].label,
+        ViewId::private()
     );
     assert!(repo.visibility_change_sets.is_empty());
 }
 
 #[test]
 fn config_only_update_changes_policy_without_content_commit() {
-    let mut repo = published_test_repo(Visibility::Private);
+    let mut repo = published_test_repo(ViewId::private());
     repo.graph.commits.push(commit(
         "rv1",
         "initial",
-        added("/README.md", Visibility::Private, "hello"),
+        added("/README.md", ViewId::private(), "hello"),
     ));
     repo.live_files.insert(path("/README.md"), blob("hello"));
 
@@ -610,8 +653,8 @@ fn config_only_update_changes_policy_without_content_commit() {
             occurred_at_unix: 1_788_700_000,
             author_id: "owner".to_string(),
             config: config(
-                Visibility::Private,
-                Some(("/README.md", Visibility::Public)),
+                ViewId::private(),
+                Some(("/README.md", ViewId::public())),
                 None,
             ),
         },
@@ -621,8 +664,8 @@ fn config_only_update_changes_policy_without_content_commit() {
     assert!(changed);
     assert_eq!(repo.graph.commits.len(), 1);
     assert_eq!(
-        repo.policy.effective_visibility(&path("/README.md")),
-        Visibility::Public
+        repo.policy.label(&path("/README.md"), &Views::builtin()),
+        ViewId::public()
     );
     assert_eq!(repo.visibility_change_sets.len(), 1);
     assert_eq!(repo.visibility_change_sets[0].source_update_id, None);
@@ -631,8 +674,8 @@ fn config_only_update_changes_policy_without_content_commit() {
         Some(1_788_700_000)
     );
     assert_eq!(
-        repo.repo_config.visibility_for_path(&path("/README.md")),
-        Visibility::Public
+        repo.repo_config.label_for_path(&path("/README.md")),
+        ViewId::public()
     );
 }
 
@@ -641,14 +684,14 @@ fn public_projection_contains_only_visible_paths_from_mixed_commit() {
     let mut mixed = commit(
         "rv1",
         "mixed",
-        added("/README.md", Visibility::Public, "hello"),
+        added("/README.md", ViewId::public(), "hello"),
     );
     mixed
         .changes
-        .push(added("/internal/model.rs", Visibility::Private, "secret"));
+        .push(added("/internal/model.rs", ViewId::private(), "secret"));
     let graph = graph(vec![mixed]);
 
-    let projection = project_graph(&graph, &[], ProjectionViewKey::Public);
+    let projection = project_graph(&graph, &[], &Views::builtin(), &ViewId::public());
 
     assert_eq!(projection.commits.len(), 1);
     assert_eq!(projection.visible_paths(), vec!["/README.md"]);
@@ -661,7 +704,7 @@ fn public_request_origin_expands_to_exact_native_commits_only_in_public_view() {
     let mut request_merge = commit(
         "rv_merge_canonical",
         "merge public request",
-        added("/README.md", Visibility::Public, "contributor version"),
+        added("/README.md", ViewId::public(), "contributor version"),
     );
     request_merge.origin = LogicalCommitOrigin::PublicRequestMerge {
         request_id: "request-1".to_string(),
@@ -685,7 +728,7 @@ fn public_request_origin_expands_to_exact_native_commits_only_in_public_view() {
         ],
     };
     let graph = graph(vec![request_merge]);
-    let public = project_graph(&graph, &[], ProjectionViewKey::Public);
+    let public = project_graph(&graph, &[], &Views::builtin(), &ViewId::public());
     assert_eq!(
         public
             .commits
@@ -705,7 +748,7 @@ fn public_request_origin_expands_to_exact_native_commits_only_in_public_view() {
         ProjectionMaterialization::PreserveGitCommit { oid, .. } if oid == "r2"
     ));
 
-    let private = project_graph(&graph, &[], ProjectionViewKey::Private);
+    let private = project_graph(&graph, &[], &Views::builtin(), &ViewId::private());
     assert_eq!(private.commits.len(), 1);
     assert_eq!(
         private.commits[0].materialization,
@@ -719,21 +762,21 @@ fn public_projection_keeps_public_history_when_a_later_edit_is_private() {
         commit(
             "rv1",
             "public readme",
-            added("/README.md", Visibility::Public, "public readme"),
+            added("/README.md", ViewId::public(), "public readme"),
         ),
         commit(
             "rv2",
             "private readme",
             change(
                 "/README.md",
-                Visibility::Private,
+                ViewId::private(),
                 Some(blob("public readme")),
                 Some(blob("private readme")),
             ),
         ),
     ]);
 
-    let projection = project_graph(&graph, &[], ProjectionViewKey::Public);
+    let projection = project_graph(&graph, &[], &Views::builtin(), &ViewId::public());
 
     assert_eq!(projection.commits.len(), 1);
     assert_eq!(projection.commits[0].logical_commit_id, "rv1");
@@ -745,10 +788,10 @@ fn public_projection_never_contains_tracked_workflow_definitions() {
     let graph = graph(vec![commit(
         "rv1",
         "add workflow",
-        added("/.scope/runs/test.yml", Visibility::Public, "name: Test"),
+        added("/.scope/runs/test.yml", ViewId::public(), "name: Test"),
     )]);
 
-    let projection = project_graph(&graph, &[], ProjectionViewKey::Public);
+    let projection = project_graph(&graph, &[], &Views::builtin(), &ViewId::public());
 
     assert!(projection.visible_paths().is_empty());
 }
@@ -759,7 +802,7 @@ fn redacting_intermediate_native_path_invalidates_descendant_commit_preservation
     let mut request_merge = commit(
         "rv_request_merge",
         "merge public request",
-        added("/kept.txt", Visibility::Public, "kept"),
+        added("/kept.txt", ViewId::public(), "kept"),
     );
     request_merge.origin = LogicalCommitOrigin::PublicRequestMerge {
         request_id: "request-1".to_string(),
@@ -782,7 +825,7 @@ fn redacting_intermediate_native_path_invalidates_descendant_commit_preservation
     let mut later_request_merge = commit(
         "rv_later_request_merge",
         "merge later public request",
-        added("/later.txt", Visibility::Public, "later"),
+        added("/later.txt", ViewId::public(), "later"),
     );
     later_request_merge.origin = LogicalCommitOrigin::PublicRequestMerge {
         request_id: "request-2".to_string(),
@@ -805,10 +848,10 @@ fn redacting_intermediate_native_path_invalidates_descendant_commit_preservation
         "redact transient path",
         vec![reviewed_change("/.scope/runs/test.yml", Some("name: Test"))],
         None,
-        config(Visibility::Public, None, Some("/transient-leak.txt")),
+        config(ViewId::public(), None, Some("/transient-leak.txt")),
     );
 
-    let projection = project_repo(&repo, ProjectionViewKey::Public);
+    let projection = project_repo(&repo, ViewId::public());
     assert!(
         projection
             .commits
@@ -837,7 +880,7 @@ fn redacting_intermediate_native_path_invalidates_descendant_commit_preservation
 
 #[test]
 fn unchanged_history_rewrite_is_not_reapplied_on_later_push() {
-    let config = config(Visibility::Public, None, Some("/leaked.txt"));
+    let config = config(ViewId::public(), None, Some("/leaked.txt"));
     let mut repo = published_repo_with_public_file(
         "existing public history",
         "/leaked.txt",
@@ -852,7 +895,7 @@ fn unchanged_history_rewrite_is_not_reapplied_on_later_push() {
         config,
     );
 
-    let public_projection = project_repo(&repo, ProjectionViewKey::Public);
+    let public_projection = project_repo(&repo, ViewId::public());
 
     assert_eq!(public_projection.commits.len(), 1);
     assert_eq!(public_projection.commits[0].logical_commit_id, "rv1");
@@ -864,34 +907,34 @@ fn public_projection_handles_reveal_and_private_gap_timelines() {
     let cases = [
         (
             vec![
-                ("rv1", Visibility::Private, "draft"),
-                ("rv2", Visibility::Public, "release"),
+                ("rv1", ViewId::private(), "draft"),
+                ("rv2", ViewId::public(), "release"),
             ],
             vec![],
             vec!["rv2"],
         ),
         (
-            vec![("rv1", Visibility::Private, "draft")],
-            vec![("vis_1", Some("rv1"), None, Visibility::Public, "draft")],
+            vec![("rv1", ViewId::private(), "draft")],
+            vec![("vis_1", Some("rv1"), None, ViewId::public(), "draft")],
             vec!["vis_1"],
         ),
         (
             vec![
-                ("rv1", Visibility::Public, "v1"),
-                ("rv2", Visibility::Private, "v2"),
-                ("rv3", Visibility::Public, "v3"),
+                ("rv1", ViewId::public(), "v1"),
+                ("rv2", ViewId::private(), "v2"),
+                ("rv3", ViewId::public(), "v3"),
             ],
             vec![
-                ("vis_1", Some("rv1"), Some("rv2"), Visibility::Private, "v2"),
-                ("vis_2", None, Some("rv3"), Visibility::Public, "v3"),
+                ("vis_1", Some("rv1"), Some("rv2"), ViewId::private(), "v2"),
+                ("vis_2", None, Some("rv3"), ViewId::public(), "v3"),
             ],
             vec!["rv1", "rv2", "rv3"],
         ),
         (
-            vec![("rv1", Visibility::Public, "readme")],
+            vec![("rv1", ViewId::public(), "readme")],
             vec![
-                ("vis_1", Some("rv1"), None, Visibility::Private, "readme"),
-                ("vis_2", Some("rv1"), None, Visibility::Public, "readme"),
+                ("vis_1", Some("rv1"), None, ViewId::private(), "readme"),
+                ("vis_2", Some("rv1"), None, ViewId::public(), "readme"),
             ],
             vec!["rv1", "vis_1", "vis_2"],
         ),

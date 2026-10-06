@@ -84,6 +84,6 @@ fn apply_change(
         kind,
         old_content,
         new_content,
-        visibility: change.visibility,
+        label: change.label,
     })
 }

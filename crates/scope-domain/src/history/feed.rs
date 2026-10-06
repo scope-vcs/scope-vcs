@@ -17,9 +17,9 @@ impl HistoryFeed {
         }
     }
 
-    pub fn generation(self, history_generation: &str, repo_id: &str, audience: &str) -> String {
+    pub fn generation(self, history_generation: &str, repo_id: &str, view: &str) -> String {
         let mut hash = Sha256::new();
-        for value in [history_generation, repo_id, audience, self.as_str()] {
+        for value in [history_generation, repo_id, view, self.as_str()] {
             hash.update((value.len() as u64).to_be_bytes());
             hash.update(value.as_bytes());
         }

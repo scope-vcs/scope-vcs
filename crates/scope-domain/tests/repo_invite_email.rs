@@ -1,6 +1,5 @@
 use scope_domain::{
     account::UserAccount,
-    policy::Visibility,
     repo_collaboration::{
         CreateRepositoryInviteCommand, create_repository_invite, revoke_repository_invite,
     },
@@ -11,6 +10,7 @@ use scope_domain::{
         record_invite_email_attempt, request_repository_invite_email,
     },
     repository::{RepoLifecycleState, Repository, collaboration::CollaborationState},
+    views::ViewId,
 };
 
 const OWNER_ID: &str = "user_owner";
@@ -24,7 +24,7 @@ fn repo_with_invite() -> CollaborationState {
         email: "owner@example.com".to_string(),
         email_verified: true,
     };
-    let created = Repository::new(&owner, "repo", Visibility::Private, "repoi_test").unwrap();
+    let created = Repository::new(&owner, "repo", ViewId::private(), "repoi_test").unwrap();
     let mut repo = CollaborationState {
         record: created.record,
         collaboration: created.collaboration,

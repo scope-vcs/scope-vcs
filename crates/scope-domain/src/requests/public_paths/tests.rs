@@ -5,7 +5,7 @@ use crate::{
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 
-fn repository(visibility: Visibility) -> Repository {
+fn repository(label: ViewId) -> Repository {
     Repository::new(
         &UserAccount {
             id: "owner".into(),
@@ -14,7 +14,7 @@ fn repository(visibility: Visibility) -> Repository {
             email_verified: true,
         },
         "repo",
-        visibility,
+        label,
         "incarnation",
     )
     .unwrap()
@@ -26,7 +26,7 @@ fn path(value: &str) -> ScopePath {
 
 #[test]
 fn current_public_paths_override_private_history_but_never_protected_paths() {
-    let mut repo = repository(Visibility::Private);
+    let mut repo = repository(ViewId::private());
     repo.visibility_change_sets.push(
         VisibilityChangeSet::new(
             "visibility".into(),
@@ -35,8 +35,8 @@ fn current_public_paths_override_private_history_but_never_protected_paths() {
             "owner".into(),
             vec![VisibilityChange {
                 path: path("/visible.txt"),
-                old_visibility: Visibility::Private,
-                new_visibility: Visibility::Public,
+                old_label: ViewId::private(),
+                new_label: ViewId::public(),
                 current_content: None,
             }],
         )
@@ -57,7 +57,7 @@ fn current_public_paths_override_private_history_but_never_protected_paths() {
 
 #[test]
 fn deleted_or_renamed_private_paths_cannot_be_recreated_under_public_defaults() {
-    let mut repo = repository(Visibility::Public);
+    let mut repo = repository(ViewId::public());
     repo.graph.commits.push(LogicalCommit {
         id: "commit".into(),
         origin: LogicalCommitOrigin::CanonicalPush {
@@ -70,7 +70,7 @@ fn deleted_or_renamed_private_paths_cannot_be_recreated_under_public_defaults() 
             path: path("/old-private.txt"),
             old_content: None,
             new_content: None,
-            visibility: Visibility::Private,
+            label: ViewId::private(),
         }],
     });
     repo.visibility_change_sets.push(
@@ -81,8 +81,8 @@ fn deleted_or_renamed_private_paths_cannot_be_recreated_under_public_defaults() 
             "owner".into(),
             vec![VisibilityChange {
                 path: path("/hidden.txt"),
-                old_visibility: Visibility::Public,
-                new_visibility: Visibility::Private,
+                old_label: ViewId::public(),
+                new_label: ViewId::private(),
                 current_content: None,
             }],
         )

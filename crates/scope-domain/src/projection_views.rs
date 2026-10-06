@@ -1,35 +1,18 @@
 use super::{
     content::SourceBlob,
-    policy::{Principal, ScopePath, Visibility},
-    projection::{
-        NativePublicCommitDetails, Projection, ProjectionMaterialization, ProjectionViewKey,
-        project_graph,
-    },
+    policy::ScopePath,
+    projection::{NativePublicCommitDetails, Projection, ProjectionMaterialization, project_graph},
     repository::{Repository, repo_relative_scope_path},
+    views::{ViewId, Views},
 };
 use crate::error::DomainError;
 use crate::repo_control::is_repo_control_path;
 use std::collections::{BTreeMap, HashSet};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ProjectionAudience {
-    Private,
-    Public,
-}
-
-impl From<ProjectionAudience> for ProjectionViewKey {
-    fn from(audience: ProjectionAudience) -> Self {
-        match audience {
-            ProjectionAudience::Private => Self::Private,
-            ProjectionAudience::Public => Self::Public,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectionPreviewView {
     pub repo_id: String,
-    pub view_key: String,
+    pub view: ViewId,
     pub files: Vec<ProjectionPreviewFile>,
     pub commits: Vec<ProjectionPreviewCommit>,
     pub summary: ProjectionPreviewSummary,
@@ -39,7 +22,7 @@ pub struct ProjectionPreviewView {
 pub struct ProjectionPreviewFile {
     pub path: ScopePath,
     pub oid: String,
-    pub visibility: Visibility,
+    pub label: ViewId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,9 +38,9 @@ pub struct ProjectionPreviewCommit {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProjectionPreviewCommitVisibility {
-    FullyPublic,
-    Mixed,
-    FullyPrivate,
+    AllInView,
+    SomeInView,
+    NoneInView,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,7 +56,7 @@ pub struct ProjectionViewFile {
     pub path: ScopePath,
     pub oid: String,
     pub tracked: bool,
-    pub visibility: Visibility,
+    pub label: ViewId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,13 +67,13 @@ pub struct ProjectionViewFileContent {
 
 pub fn projection_preview(
     repo: &Repository,
-    audience: ProjectionAudience,
+    views: &Views,
+    view: &ViewId,
     include_private_counts: bool,
     native_details: &BTreeMap<String, NativePublicCommitDetails>,
 ) -> Result<ProjectionPreviewView, DomainError> {
-    let view_key = ProjectionViewKey::from(audience);
-    let projection = project_graph(&repo.graph, &repo.visibility_change_sets, view_key);
-    let files = projection_preview_files(repo, &projection);
+    let projection = project_graph(&repo.graph, &repo.visibility_change_sets, views, view);
+    let files = projection_preview_files(repo, &projection, views);
     let logical_commit_visibility = repo
         .graph
         .commits
@@ -98,7 +81,7 @@ pub fn projection_preview(
         .map(|commit| {
             (
                 commit.id.as_str(),
-                projection_preview_commit_visibility(commit),
+                projection_preview_commit_visibility(commit, views, view),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -134,7 +117,7 @@ pub fn projection_preview(
                 visibility: logical_commit_visibility
                     .get(commit.logical_commit_id.as_str())
                     .copied()
-                    .unwrap_or(ProjectionPreviewCommitVisibility::FullyPublic),
+                    .unwrap_or(ProjectionPreviewCommitVisibility::AllInView),
                 change_count: native
                     .map(|details| details.changes.len())
                     .unwrap_or(commit.changes.len()),
@@ -143,25 +126,25 @@ pub fn projection_preview(
         .collect::<Result<Vec<_>, DomainError>>()?;
     let visible_files = files.len();
     let visible_commits = commits.len();
-    let (hidden_files, hidden_commits) =
-        if audience == ProjectionAudience::Public && include_private_counts {
-            let private_projection = project_graph(
-                &repo.graph,
-                &repo.visibility_change_sets,
-                ProjectionViewKey::Private,
-            );
-            let private_files = projection_preview_files(repo, &private_projection);
-            (
-                private_files.len().saturating_sub(visible_files),
-                hidden_logical_commit_count(&private_projection, &projection),
-            )
-        } else {
-            (0, 0)
-        };
+    let (hidden_files, hidden_commits) = if view != views.full() && include_private_counts {
+        let private_projection = project_graph(
+            &repo.graph,
+            &repo.visibility_change_sets,
+            views,
+            views.full(),
+        );
+        let private_files = projection_preview_files(repo, &private_projection, views);
+        (
+            private_files.len().saturating_sub(visible_files),
+            hidden_logical_commit_count(&private_projection, &projection),
+        )
+    } else {
+        (0, 0)
+    };
 
     Ok(ProjectionPreviewView {
         repo_id: repo.record.id.clone(),
-        view_key: projection.view_key.as_str().to_string(),
+        view: projection.view_key.clone(),
         files,
         commits,
         summary: ProjectionPreviewSummary {
@@ -175,37 +158,32 @@ pub fn projection_preview(
 
 fn projection_preview_commit_visibility(
     commit: &super::projection::LogicalCommit,
+    views: &Views,
+    view: &ViewId,
 ) -> ProjectionPreviewCommitVisibility {
-    if !commit.changes.is_empty()
-        && commit
-            .changes
-            .iter()
-            .all(|change| change.visibility == Visibility::Private)
-    {
-        return ProjectionPreviewCommitVisibility::FullyPrivate;
-    }
-
     if commit
         .changes
         .iter()
-        .all(|change| change.visibility == Visibility::Public)
+        .all(|change| views.shows(view, &change.path, &change.label))
     {
-        return ProjectionPreviewCommitVisibility::FullyPublic;
+        return ProjectionPreviewCommitVisibility::AllInView;
     }
-
-    ProjectionPreviewCommitVisibility::Mixed
+    if commit
+        .changes
+        .iter()
+        .all(|change| !views.shows(view, &change.path, &change.label))
+    {
+        return ProjectionPreviewCommitVisibility::NoneInView;
+    }
+    ProjectionPreviewCommitVisibility::SomeInView
 }
 
 pub fn projected_file_contents(
     repo: &Repository,
-    principal: &Principal,
+    views: &Views,
+    view: &ViewId,
 ) -> Vec<ProjectionViewFileContent> {
-    let access = repo.access_for_principal(principal);
-    let projection = project_graph(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        ProjectionViewKey::from_access(access),
-    );
+    let projection = project_graph(&repo.graph, &repo.visibility_change_sets, views, view);
     let mut live_files = BTreeMap::new();
     projection.apply_to(&mut live_files);
 
@@ -213,7 +191,7 @@ pub fn projected_file_contents(
         .into_iter()
         .map(|(path, blob)| ProjectionViewFileContent {
             file: ProjectionViewFile {
-                visibility: repo.policy.effective_visibility(&path),
+                label: repo.policy.label(&path, views),
                 path,
                 oid: blob.git_oid.clone(),
                 tracked: true,
@@ -223,8 +201,8 @@ pub fn projected_file_contents(
         .collect()
 }
 
-pub fn projected_files(repo: &Repository, principal: &Principal) -> Vec<ProjectionViewFile> {
-    projected_file_contents(repo, principal)
+pub fn projected_files(repo: &Repository, views: &Views, view: &ViewId) -> Vec<ProjectionViewFile> {
+    projected_file_contents(repo, views, view)
         .into_iter()
         .map(|content| content.file)
         .collect()
@@ -232,14 +210,11 @@ pub fn projected_files(repo: &Repository, principal: &Principal) -> Vec<Projecti
 
 pub fn projected_file_content(
     repo: &Repository,
-    principal: &Principal,
+    views: &Views,
+    view: &ViewId,
     path: &ScopePath,
 ) -> Option<ProjectionViewFileContent> {
-    let projection = project_graph(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        ProjectionViewKey::from_access(repo.access_for_principal(principal)),
-    );
+    let projection = project_graph(&repo.graph, &repo.visibility_change_sets, views, view);
     let blob = projection
         .commits
         .iter()
@@ -254,7 +229,7 @@ pub fn projected_file_content(
             path: path.clone(),
             oid: blob.git_oid.clone(),
             tracked: true,
-            visibility: repo.policy.effective_visibility(path),
+            label: repo.policy.label(path, views),
         },
         blob,
     })
@@ -264,12 +239,12 @@ pub fn repo_scope_path(path: &str) -> Result<ScopePath, DomainError> {
     repo_relative_scope_path(path).map_err(DomainError::invalid_input)
 }
 
-pub fn has_visible_projected_non_control_files(repo: &Repository, principal: &Principal) -> bool {
-    let projection = project_graph(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        ProjectionViewKey::from_access(repo.access_for_principal(principal)),
-    );
+pub fn has_visible_projected_non_control_files(
+    repo: &Repository,
+    views: &Views,
+    view: &ViewId,
+) -> bool {
+    let projection = project_graph(&repo.graph, &repo.visibility_change_sets, views, view);
     projection_tree(&projection)
         .keys()
         .any(|path| !is_repo_control_path(path))
@@ -278,11 +253,12 @@ pub fn has_visible_projected_non_control_files(repo: &Repository, principal: &Pr
 fn projection_preview_files(
     repo: &Repository,
     projection: &Projection,
+    views: &Views,
 ) -> Vec<ProjectionPreviewFile> {
     projection_tree(projection)
         .into_iter()
         .map(|(path, oid)| ProjectionPreviewFile {
-            visibility: repo.policy.effective_visibility(&path),
+            label: repo.policy.label(&path, views),
             path,
             oid,
         })

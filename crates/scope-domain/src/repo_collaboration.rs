@@ -197,7 +197,7 @@ pub fn accept_repository_invite(
     let member = RepositoryMember {
         repo_id: repo.record.id.clone(),
         user_id: user.id.clone(),
-        permissions: invite.permissions,
+        permissions: invite.permissions.clone(),
         created_at_unix: now_unix,
         updated_at_unix: now_unix,
     };

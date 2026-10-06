@@ -78,8 +78,8 @@ pub fn clerk_user_deletion_retry_at(attempts: u32, now_unix: u64) -> u64 {
 mod tests {
     use super::*;
     use crate::{
-        policy::Visibility,
         repository::collaboration::{RepositoryInvite, RepositoryMember},
+        views::ViewId,
     };
 
     fn user(id: &str) -> UserAccount {
@@ -92,7 +92,7 @@ mod tests {
     }
 
     fn repo(owner: &UserAccount, name: &str, members: &[&str]) -> Repository {
-        let mut repo = Repository::new(owner, name, Visibility::Private, "repoi_test").unwrap();
+        let mut repo = Repository::new(owner, name, ViewId::private(), "repoi_test").unwrap();
         repo.collaboration.members = members
             .iter()
             .map(|id| RepositoryMember {

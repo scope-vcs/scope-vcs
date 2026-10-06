@@ -1,11 +1,12 @@
 use super::{
-    Request, RequestActorRole, RequestAudience, RequestState, checks::RequestChecksOutcome,
+    Request, RequestActorRole, RequestState, checks::RequestChecksOutcome,
     lifecycle::ensure_request_close_allowed,
 };
 use crate::repository::access::{RepositoryAccess, RepositoryActor};
+use crate::views::{ViewId, Views};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestViewer<'a> {
     pub access: RepositoryAccess,
     pub user_id: Option<&'a str>,
@@ -74,7 +75,7 @@ pub struct RequestMergeability {
 pub enum RequestListPredicate<'a> {
     All(Vec<RequestListPredicate<'a>>),
     Any(Vec<RequestListPredicate<'a>>),
-    Audience(RequestAudience),
+    View(ViewId),
     Submitted,
     Author(&'a str),
     Invitee(&'a str),
@@ -90,14 +91,11 @@ pub fn request_list_predicate<'a>(
         public_access.push(RequestListPredicate::Invitee(viewer_user_id));
     }
     let mut visible = vec![RequestListPredicate::All(vec![
-        RequestListPredicate::Audience(RequestAudience::Public),
+        RequestListPredicate::View(ViewId::public()),
         RequestListPredicate::Any(public_access),
     ])];
-    if matches!(
-        access.actor,
-        RepositoryActor::Owner | RepositoryActor::Member
-    ) {
-        visible.push(RequestListPredicate::Audience(RequestAudience::Private));
+    if access.is_maintainer() && Views::builtin().may_read(&access.view, &ViewId::private()) {
+        visible.push(RequestListPredicate::View(ViewId::private()));
     }
     RequestListPredicate::Any(visible)
 }
@@ -111,7 +109,7 @@ impl RequestListPredicate<'_> {
             Self::Any(predicates) => predicates
                 .iter()
                 .any(|predicate| predicate.matches(request, viewer_is_invitee)),
-            Self::Audience(audience) => request.audience == *audience,
+            Self::View(view) => request.view == *view,
             Self::Submitted => request.is_submitted(),
             Self::Author(viewer_user_id) => request.is_author(viewer_user_id),
             Self::Invitee(_) => viewer_is_invitee,
@@ -137,14 +135,15 @@ pub fn request_policy(request: &Request, viewer: RequestViewer<'_>) -> RequestPo
         .user_id
         .is_some_and(|user_id| request.is_author(user_id));
     let invitee = viewer.is_invitee;
-    let public = request.audience == RequestAudience::Public;
-    let private = request.audience == RequestAudience::Private;
+    let public = request.view == ViewId::public();
+    let private = request.view == ViewId::private();
+    let can_read_view = Views::builtin().may_read(&viewer.access.view, &request.view);
     let submitted = request.is_submitted();
     let terminal = request.is_terminal();
     let open = request.state() == RequestState::Open;
 
     let exact_visible = if private {
-        maintainer
+        maintainer && can_read_view
     } else if submitted {
         true
     } else {

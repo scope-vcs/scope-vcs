@@ -1,7 +1,6 @@
+use crate::views::ViewId;
 use crate::{
-    policy::{ScopePath, Visibility},
-    repo_control::is_public_request_protected_path,
-    repository::Repository,
+    policy::ScopePath, repo_control::is_public_request_protected_path, repository::Repository,
 };
 use std::collections::BTreeSet;
 
@@ -24,7 +23,7 @@ impl<'a> PublicRequestPaths<'a> {
             .commits
             .iter()
             .flat_map(|commit| &commit.changes)
-            .filter(|change| change.visibility == Visibility::Private)
+            .filter(|change| change.label == ViewId::private())
             .map(|change| &change.path)
             .chain(
                 repository
@@ -32,8 +31,8 @@ impl<'a> PublicRequestPaths<'a> {
                     .iter()
                     .flat_map(|set| &set.changes)
                     .filter(|change| {
-                        change.old_visibility == Visibility::Private
-                            || change.new_visibility == Visibility::Private
+                        change.old_label == ViewId::private()
+                            || change.new_label == ViewId::private()
                     })
                     .map(|change| &change.path),
             )
@@ -55,7 +54,7 @@ impl<'a> PublicRequestPaths<'a> {
         if self.repository.live_file_exists(path) || self.private_history_paths.contains(path) {
             return Err(PublicRequestPathError::PrivatePath);
         }
-        if self.repository.repo_config.visibility_for_path(path) == Visibility::Public {
+        if self.repository.repo_config.label_for_path(path) == ViewId::public() {
             Ok(())
         } else {
             Err(PublicRequestPathError::PrivatePath)

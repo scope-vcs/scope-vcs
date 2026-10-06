@@ -8,14 +8,15 @@ pub mod updates;
 use crate::{
     account::UserAccount,
     content::SourceBlob,
-    policy::{Policy, ScopePath, ScopePathError, Visibility},
+    policy::{Policy, ScopePath, ScopePathError},
     projection::SourceGraph,
-    repo_config::{ConfigVisibility, RepoConfig},
+    repo_config::RepoConfig,
     repository::{
         collaboration::{RepositoryCollaboration, RepositoryMember},
         credentials::{FirstPushToken, GitPushToken},
         git::{GitHead, GitPackSpan},
     },
+    views::ViewId,
     visibility_changes::VisibilityChangeSet,
 };
 use serde::{Deserialize, Serialize};
@@ -98,13 +99,13 @@ impl Repository {
     pub fn new(
         owner: &UserAccount,
         name: &str,
-        default_visibility: Visibility,
+        default_visibility: ViewId,
         incarnation_id: impl Into<String>,
     ) -> Result<Self, CatalogError> {
         let name = validate_repo_name(name)?;
         let id = repo_id(&owner.handle, &name);
         let incarnation = RepositoryIncarnation::new(id.clone(), incarnation_id)?;
-        let config_default = ConfigVisibility::from(default_visibility);
+        let config_default = default_visibility.clone();
         Ok(Self {
             record: RepoRecord {
                 id: id.clone(),
@@ -118,7 +119,7 @@ impl Repository {
                 change_version: 1,
                 content_version: 1,
             },
-            repo_config: RepoConfig::with_default_visibility(config_default),
+            repo_config: RepoConfig::with_default_view(config_default),
             first_push_token: None,
             git_push_token: None,
             policy: Policy::new(default_visibility),

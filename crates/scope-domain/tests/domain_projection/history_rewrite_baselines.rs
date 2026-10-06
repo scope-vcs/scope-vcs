@@ -4,11 +4,11 @@ use super::*;
 fn config_only_rewrite_coalesces_its_visibility_baseline() {
     let mut repo = published_repo_with_public_file("initial", "/README.md", "hello");
     repo.policy
-        .add_rule(VisibilityRule::private(path("/README.md")))
+        .add_rule(LabelRule::private(path("/README.md")))
         .unwrap();
     repo.repo_config = config(
-        Visibility::Public,
-        Some(("/README.md", Visibility::Private)),
+        ViewId::public(),
+        Some(("/README.md", ViewId::private())),
         None,
     );
 
@@ -17,7 +17,7 @@ fn config_only_rewrite_coalesces_its_visibility_baseline() {
         ReviewedConfigUpdateInput {
             occurred_at_unix: 1_788_700_000,
             author_id: "owner".to_string(),
-            config: config(Visibility::Public, None, Some("/README.md")),
+            config: config(ViewId::public(), None, Some("/README.md")),
         },
     )
     .unwrap();
@@ -29,12 +29,12 @@ fn config_only_rewrite_coalesces_its_visibility_baseline() {
         path("/README.md")
     );
     assert_eq!(
-        repo.visibility_change_sets[0].changes[0].old_visibility,
-        Visibility::Private
+        repo.visibility_change_sets[0].changes[0].old_label,
+        ViewId::private()
     );
     assert_eq!(
-        repo.visibility_change_sets[0].changes[0].new_visibility,
-        Visibility::Public
+        repo.visibility_change_sets[0].changes[0].new_label,
+        ViewId::public()
     );
 }
 
@@ -42,12 +42,12 @@ fn config_only_rewrite_coalesces_its_visibility_baseline() {
 fn push_rewrite_coalesces_its_visibility_baseline() {
     let mut repo = published_repo_with_public_file("initial", "/README.md", "hello");
     let previous_config = config(
-        Visibility::Public,
-        Some(("/README.md", Visibility::Private)),
+        ViewId::public(),
+        Some(("/README.md", ViewId::private())),
         None,
     );
     repo.policy
-        .add_rule(VisibilityRule::private(path("/README.md")))
+        .add_rule(LabelRule::private(path("/README.md")))
         .unwrap();
     repo.repo_config = previous_config.clone();
 
@@ -56,7 +56,7 @@ fn push_rewrite_coalesces_its_visibility_baseline() {
         "redact and reveal",
         vec![reviewed_change("/.scope/runs/test.yml", Some("name: Test"))],
         Some(previous_config),
-        config(Visibility::Public, None, Some("/README.md")),
+        config(ViewId::public(), None, Some("/README.md")),
     );
     update.occurred_at_unix = Some(1_788_700_000);
     apply_reviewed_update_to_repo(&mut repo, update).unwrap();
@@ -104,13 +104,13 @@ fn destructive_rewrite_rebuilds_each_public_boundary_safely() {
             changes,
             None,
             config(
-                Visibility::Private,
-                stays_public.then_some((path, Visibility::Public)),
+                ViewId::private(),
+                stays_public.then_some((path, ViewId::public())),
                 Some(path),
             ),
         );
 
-        let projection = project_repo(&repo, ProjectionViewKey::Public);
+        let projection = project_repo(&repo, ViewId::public());
         assert_eq!(
             projection
                 .commits

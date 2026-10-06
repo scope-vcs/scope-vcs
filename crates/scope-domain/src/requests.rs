@@ -53,8 +53,7 @@ pub use lifecycle::{
     RecordWorkingRequestUploadInput, RequestRevisionGitFacts, RequestRevisionMutation,
     StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
     close_request, record_request_revision, record_working_request_upload,
-    request_base_after_revision, start_request, validate_request_name,
-    validate_start_request_audience,
+    request_base_after_revision, start_request, validate_request_name, validate_start_request_view,
 };
 mod invitees;
 pub use invitees::{
@@ -71,9 +70,9 @@ pub use limits::{
 pub(super) use limits::{validate_body_size, validate_required};
 mod model;
 pub use model::{
-    Request, RequestActorRole, RequestAudience, RequestEvent, RequestEventKind,
-    RequestEventPayload, RequestIdentityAuditFact, RequestInvitee, RequestState,
-    RequestTimelineMutation, validate_request_facts,
+    Request, RequestActorRole, RequestEvent, RequestEventKind, RequestEventPayload,
+    RequestIdentityAuditFact, RequestInvitee, RequestState, RequestTimelineMutation,
+    validate_request_facts,
 };
 mod queue;
 pub use queue::{
