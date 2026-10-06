@@ -11,217 +11,242 @@ use crate::{
 };
 use scope_domain::{
     policy::ScopePath,
-    projection::NativePublicCommit,
-    projection::project_graph,
+    projection::{NativeRequestCommit, project_graph},
     repository::Repository,
-    requests::{PublicRequestPathError, PublicRequestPaths},
+    requests::{RequestViewPathError, RequestViewPaths},
+    views::ViewId,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{collections::BTreeSet, path::Path as FsPath};
 
-const PUBLIC_REQUEST_BASE_REF: &str = "refs/scope/internal/public-request-base";
-const PUBLIC_MAIN_MOVED_ERROR: &str =
-    "Public main moved. Rebase onto it or merge it, then run scope request push.";
+const VIEW_REQUEST_BASE_REF: &str = "refs/scope/internal/view-request-base";
+const VIEW_MAIN_MOVED_ERROR: &str =
+    "Request view main moved. Rebase onto it or merge it, then run scope request push.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ValidatedPublicRequestRange {
-    pub(crate) public_base_oid: String,
-    pub(crate) public_parent_oids: Vec<String>,
-    pub(crate) commits: Vec<NativePublicCommit>,
+pub(crate) struct ValidatedViewRequestRange {
+    pub(crate) base_oid: String,
+    pub(crate) parent_oids: Vec<String>,
+    pub(crate) commits: Vec<NativeRequestCommit>,
 }
 
-pub(super) async fn ensure_public_request_ref_is_public_safe(
-    repo: &Repository,
+#[derive(Clone, Copy)]
+pub(crate) struct RequestView<'a> {
+    repo: &'a Repository,
+    view: &'a ViewId,
+}
+
+impl<'a> RequestView<'a> {
+    pub(crate) fn new(repo: &'a Repository, view: &'a ViewId) -> Self {
+        Self { repo, view }
+    }
+
+    fn name(&self) -> &'a str {
+        self.repo.repo_config.views().display_name(self.view)
+    }
+}
+
+pub(crate) async fn ensure_request_ref_is_view_safe(
+    request_view: RequestView<'_>,
     state: &AppState,
     staging_repo: &FsPath,
     new_head_oid: &str,
 ) -> Result<String, ApiError> {
-    let (public_main_oid, public_visible_paths) =
-        fetch_current_public_projection(repo, state, staging_repo).await?;
-    ensure_public_request_branch_is_based_on_public_main(staging_repo, new_head_oid)?;
-    let commit_oids = commits_after(staging_repo, PUBLIC_REQUEST_BASE_REF, new_head_oid)?;
-    validated_public_parent_oids(staging_repo, &commit_oids)?;
+    let (view_main_oid, visible_paths) =
+        fetch_current_view_projection(request_view, state, staging_repo).await?;
+    ensure_request_branch_is_based_on_view_main(request_view, staging_repo, new_head_oid)?;
+    let commit_oids = commits_after(staging_repo, VIEW_REQUEST_BASE_REF, new_head_oid)?;
+    validated_view_parent_oids(request_view.name(), staging_repo, &commit_oids)?;
     for commit_oid in commit_oids {
         validate_pushed_tree(staging_repo, &commit_oid)?;
-        ensure_public_request_commit_paths(repo, &public_visible_paths, staging_repo, &commit_oid)?;
+        ensure_view_request_commit_paths(request_view, &visible_paths, staging_repo, &commit_oid)?;
     }
-    Ok(public_main_oid)
+    Ok(view_main_oid)
 }
 
-pub(crate) async fn validate_public_request_merge_range(
-    repo: &Repository,
+pub(crate) async fn validate_view_request_merge_range(
+    request_view: RequestView<'_>,
     state: &AppState,
     staging_repo: &FsPath,
     request_head_oid: &str,
-) -> Result<ValidatedPublicRequestRange, ApiError> {
-    let (public_base_oid, public_visible_paths) =
-        fetch_current_public_projection(repo, state, staging_repo).await?;
-    ensure_public_head_is_request_ancestor(staging_repo, request_head_oid)?;
-    let commit_oids = commits_after(staging_repo, PUBLIC_REQUEST_BASE_REF, request_head_oid)?;
+) -> Result<ValidatedViewRequestRange, ApiError> {
+    let (base_oid, visible_paths) =
+        fetch_current_view_projection(request_view, state, staging_repo).await?;
+    ensure_view_head_is_request_ancestor(staging_repo, request_head_oid)?;
+    let commit_oids = commits_after(staging_repo, VIEW_REQUEST_BASE_REF, request_head_oid)?;
+    let view_name = request_view.name();
     if commit_oids.is_empty() {
-        return Err(ApiError::conflict(
-            "public request contains no commits after current public main",
-        ));
+        return Err(ApiError::conflict(format!(
+            "{view_name} request contains no commits after current {view_name} main"
+        )));
     }
-    let public_parent_oids = validated_public_parent_oids(staging_repo, &commit_oids)?;
-    if !public_parent_oids.contains(&public_base_oid) {
-        return Err(ApiError::conflict(PUBLIC_MAIN_MOVED_ERROR));
+    let parent_oids = validated_view_parent_oids(view_name, staging_repo, &commit_oids)?;
+    if !parent_oids.contains(&base_oid) {
+        return Err(ApiError::conflict(VIEW_MAIN_MOVED_ERROR));
     }
 
     let mut commits = Vec::with_capacity(commit_oids.len());
     for commit_oid in commit_oids {
         validate_pushed_tree(staging_repo, &commit_oid)?;
-        let changed_paths = ensure_public_request_commit_paths(
-            repo,
-            &public_visible_paths,
+        let changed_paths = ensure_view_request_commit_paths(
+            request_view,
+            &visible_paths,
             staging_repo,
             &commit_oid,
         )?;
-        commits.push(public_request_commit_fact(
+        commits.push(native_request_commit(
             staging_repo,
             &commit_oid,
             changed_paths,
         )?);
     }
 
-    Ok(ValidatedPublicRequestRange {
-        public_base_oid,
-        public_parent_oids,
+    Ok(ValidatedViewRequestRange {
+        base_oid,
+        parent_oids,
         commits,
     })
 }
 
-pub(crate) async fn public_contribution_base(
-    repo: &Repository,
+pub(crate) async fn view_contribution_base(
+    request_view: RequestView<'_>,
     state: &AppState,
     staging_repo: &FsPath,
     request_head_oid: &str,
 ) -> Result<String, ApiError> {
-    fetch_current_public_projection(repo, state, staging_repo).await?;
+    fetch_current_view_projection(request_view, state, staging_repo).await?;
     git_stdout_text(
         staging_repo,
-        &["merge-base", PUBLIC_REQUEST_BASE_REF, request_head_oid],
-        "finding the public contribution base",
+        &["merge-base", VIEW_REQUEST_BASE_REF, request_head_oid],
+        "finding the request view contribution base",
     )
     .map(|oid| oid.trim().to_string())
 }
 
-fn validated_public_parent_oids(
+fn validated_view_parent_oids(
+    view_name: &str,
     staging_repo: &FsPath,
     commit_oids: &[String],
 ) -> Result<Vec<String>, ApiError> {
+    let based_on_view_main = || {
+        ApiError::conflict(format!(
+            "{view_name} request history must be based on {view_name} main"
+        ))
+    };
     let range_oids = commit_oids
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
     let mut seen = BTreeSet::new();
-    let mut public_parent_oids = BTreeSet::new();
+    let mut view_parent_oids = BTreeSet::new();
     for commit_oid in commit_oids {
         let parent_oids = git_stdout_text(
             staging_repo,
             &["show", "-s", "--format=%P", commit_oid],
-            "reading public request commit parents",
+            "reading request commit parents",
         )?
         .split_ascii_whitespace()
         .map(ToString::to_string)
         .collect::<Vec<_>>();
         if parent_oids.is_empty() {
-            return Err(ApiError::conflict(
-                "public request history must be based on public main",
-            ));
+            return Err(based_on_view_main());
         }
         for parent_oid in parent_oids {
             if range_oids.contains(parent_oid.as_str()) {
                 if !seen.contains(parent_oid.as_str()) {
-                    return Err(ApiError::conflict(
-                        "public request commits are not ordered ancestor-first",
-                    ));
+                    return Err(ApiError::conflict(format!(
+                        "{view_name} request commits are not ordered ancestor-first"
+                    )));
                 }
             } else if git_is_ancestor(
                 staging_repo,
                 &parent_oid,
-                PUBLIC_REQUEST_BASE_REF,
-                "checking public request parent ancestry",
+                VIEW_REQUEST_BASE_REF,
+                "checking request parent ancestry",
             )? {
-                public_parent_oids.insert(parent_oid);
+                view_parent_oids.insert(parent_oid);
             } else {
-                return Err(ApiError::conflict(
-                    "public request contains a parent outside public history",
-                ));
+                return Err(ApiError::conflict(format!(
+                    "{view_name} request contains a parent outside {view_name} history"
+                )));
             }
         }
         seen.insert(commit_oid.as_str());
     }
-    if public_parent_oids.is_empty() {
-        return Err(ApiError::conflict(
-            "public request history must be based on public main",
-        ));
+    if view_parent_oids.is_empty() {
+        return Err(based_on_view_main());
     }
-    Ok(public_parent_oids.into_iter().collect())
+    Ok(view_parent_oids.into_iter().collect())
 }
 
-async fn fetch_current_public_projection(
-    repo: &Repository,
+async fn fetch_current_view_projection(
+    request_view: RequestView<'_>,
     state: &AppState,
     staging_repo: &FsPath,
 ) -> Result<(String, BTreeSet<String>), ApiError> {
-    let public_view = repo
-        .repo_config
-        .views()
-        .anyone()
-        .ok_or_else(|| ApiError::not_found("public view not found"))?;
-    let public_projection = project_graph(
+    let repo = request_view.repo;
+    let views = repo.repo_config.views();
+    if views.get(request_view.view).is_none() {
+        return Err(ApiError::not_found(format!(
+            "view {} not found",
+            request_view.view
+        )));
+    }
+    let projection = project_graph(
         &repo.graph,
         &repo.visibility_change_sets,
-        repo.repo_config.views(),
-        public_view,
+        views,
+        request_view.view,
     );
-    if public_projection.commits.is_empty() {
-        return Err(ApiError::conflict(
-            "repo has no public main branch for public request",
-        ));
+    if projection.commits.is_empty() {
+        return Err(ApiError::conflict(format!(
+            "repo has no {} main branch for this request",
+            request_view.name()
+        )));
     }
-    let public_visible_paths = public_projection
+    let visible_paths = projection
         .visible_paths()
         .into_iter()
         .collect::<BTreeSet<_>>();
-    let public_repo = projection_bare_repo_for_state(
+    let view_repo = projection_bare_repo_for_state(
         state,
         &repo.incarnation(),
-        &public_projection,
+        &projection,
         repo.git_head.as_ref(),
         &repo.git_pack_spans,
     )
     .await?;
-    let refspec = format!("+refs/heads/{DEFAULT_GIT_BRANCH}:{PUBLIC_REQUEST_BASE_REF}");
+    let refspec = format!("+refs/heads/{DEFAULT_GIT_BRANCH}:{VIEW_REQUEST_BASE_REF}");
     run_git(
         Some(staging_repo),
         &[
             "fetch",
-            public_repo.to_string_lossy().as_ref(),
+            view_repo.to_string_lossy().as_ref(),
             refspec.as_str(),
         ],
-        "fetching public request base",
+        "fetching the request view base",
     )?;
-    let public_base_oid = git_commit_oid(staging_repo, PUBLIC_REQUEST_BASE_REF)?;
-    Ok((public_base_oid, public_visible_paths))
+    let base_oid = git_commit_oid(staging_repo, VIEW_REQUEST_BASE_REF)?;
+    Ok((base_oid, visible_paths))
 }
 
-fn ensure_public_request_branch_is_based_on_public_main(
+fn ensure_request_branch_is_based_on_view_main(
+    request_view: RequestView<'_>,
     staging_repo: &FsPath,
     new_head_oid: &str,
 ) -> Result<(), ApiError> {
     let output = run_git_output(
         Some(staging_repo),
-        &["merge-base", PUBLIC_REQUEST_BASE_REF, new_head_oid],
-        "checking public request branch base",
+        &["merge-base", VIEW_REQUEST_BASE_REF, new_head_oid],
+        "checking request branch base",
     )?;
     if output.status.success() {
         return Ok(());
     }
-    Err(ApiError::conflict(
-        "public request branch must be based on public main",
-    ))
+    let view_name = request_view.name();
+    Err(ApiError::conflict(format!(
+        "{view_name} request branch must be based on {view_name} main"
+    )))
 }
 
 fn commits_after(
@@ -239,7 +264,7 @@ fn commits_after(
             new_head_oid,
             exclude_base.as_str(),
         ],
-        "reading public request branch commits",
+        "reading request branch commits",
     )?
     .lines()
     .filter(|line| !line.trim().is_empty())
@@ -247,39 +272,39 @@ fn commits_after(
     .collect())
 }
 
-fn ensure_public_head_is_request_ancestor(
+fn ensure_view_head_is_request_ancestor(
     staging_repo: &FsPath,
     request_head_oid: &str,
 ) -> Result<(), ApiError> {
     if git_is_ancestor(
         staging_repo,
-        PUBLIC_REQUEST_BASE_REF,
+        VIEW_REQUEST_BASE_REF,
         request_head_oid,
-        "checking current public main ancestry",
+        "checking current request view main ancestry",
     )? {
         return Ok(());
     }
-    Err(ApiError::conflict(PUBLIC_MAIN_MOVED_ERROR))
+    Err(ApiError::conflict(VIEW_MAIN_MOVED_ERROR))
 }
 
-fn public_request_commit_fact(
+fn native_request_commit(
     staging_repo: &FsPath,
     commit_oid: &str,
     changed_paths: Vec<ScopePath>,
-) -> Result<NativePublicCommit, ApiError> {
+) -> Result<NativeRequestCommit, ApiError> {
     let tree_oid = git_stdout_text(
         staging_repo,
         &["show", "-s", "--format=%T", commit_oid],
-        "reading public request commit tree",
+        "reading request commit tree",
     )?
     .trim()
     .to_string();
     let parents = git_stdout_text(
         staging_repo,
         &["show", "-s", "--format=%P", commit_oid],
-        "reading public request commit parents",
+        "reading request commit parents",
     )?;
-    Ok(NativePublicCommit {
+    Ok(NativeRequestCommit {
         oid: commit_oid.to_string(),
         parent_oids: parents
             .split_ascii_whitespace()
@@ -294,27 +319,33 @@ fn git_commit_oid(staging_repo: &FsPath, revision: &str) -> Result<String, ApiEr
     git_stdout_text(
         staging_repo,
         &["rev-parse", "--verify", &format!("{revision}^{{commit}}")],
-        "reading current public main",
+        "reading current request view main",
     )
     .map(|oid| oid.trim().to_string())
 }
 
-fn ensure_public_request_commit_paths(
-    repo: &Repository,
-    public_visible_paths: &BTreeSet<String>,
+fn ensure_view_request_commit_paths(
+    request_view: RequestView<'_>,
+    visible_paths: &BTreeSet<String>,
     staging_repo: &FsPath,
     commit_oid: &str,
 ) -> Result<Vec<ScopePath>, ApiError> {
-    let policy = PublicRequestPaths::new(repo, public_visible_paths);
+    let repo = request_view.repo;
+    let policy = RequestViewPaths::new(
+        repo,
+        repo.repo_config.views(),
+        request_view.view,
+        visible_paths,
+    );
     let mut changed_paths = BTreeSet::new();
-    for path in public_request_changed_paths(staging_repo, commit_oid)? {
+    for path in request_changed_paths(staging_repo, commit_oid)? {
         let scope_path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
         policy
             .ensure_editable(&scope_path)
             .map_err(|error| match error {
-                PublicRequestPathError::ProtectedPath => ApiError::protected_paths(vec![path]),
-                PublicRequestPathError::PrivatePath => {
-                    ApiError::conflict("public request cannot change a private path")
+                RequestViewPathError::ProtectedPath => ApiError::protected_paths(vec![path]),
+                RequestViewPathError::HiddenPath => {
+                    ApiError::conflict(policy.rejection(&scope_path, error))
                 }
             })?;
         changed_paths.insert(scope_path);
@@ -322,25 +353,22 @@ fn ensure_public_request_commit_paths(
     Ok(changed_paths.into_iter().collect())
 }
 
-fn public_request_changed_paths(
-    staging_repo: &FsPath,
-    commit_oid: &str,
-) -> Result<Vec<String>, ApiError> {
-    let public_base_oid = git_commit_oid(staging_repo, PUBLIC_REQUEST_BASE_REF)?;
+fn request_changed_paths(staging_repo: &FsPath, commit_oid: &str) -> Result<Vec<String>, ApiError> {
+    let view_base_oid = git_commit_oid(staging_repo, VIEW_REQUEST_BASE_REF)?;
     let parents = git_stdout_text(
         staging_repo,
         &["show", "-s", "--format=%P", commit_oid],
-        "reading public request commit parents",
+        "reading request commit parents",
     )?
     .split_ascii_whitespace()
     .map(ToString::to_string)
     .collect::<Vec<_>>();
     let diff_base = parents
         .iter()
-        .find(|parent| parent.as_str() == public_base_oid)
+        .find(|parent| parent.as_str() == view_base_oid)
         .or_else(|| parents.first())
-        .ok_or_else(|| ApiError::conflict("public request commit must have a parent"))?;
-    let action = "reading public request commit paths";
+        .ok_or_else(|| ApiError::conflict("request commit must have a parent"))?;
+    let action = "reading request commit paths";
     let output = successful_git_output(
         run_git_output(
             Some(staging_repo),
@@ -378,33 +406,32 @@ mod tests {
     };
 
     #[test]
-    fn public_request_range_is_oldest_first_with_exact_git_facts() {
+    fn view_request_range_is_oldest_first_with_exact_git_facts() {
         let repo = initialized_repo("exact-range");
-        fs::write(repo.join("public.txt"), "base\n").unwrap();
-        commit_all(&repo, "public base");
-        let public_base = oid(&repo, "HEAD");
+        fs::write(repo.join("agent.txt"), "base\n").unwrap();
+        commit_all(&repo, "view base");
+        let view_base = oid(&repo, "HEAD");
         run_git(
             Some(&repo),
-            &["update-ref", PUBLIC_REQUEST_BASE_REF, &public_base],
-            "recording public request base",
+            &["update-ref", VIEW_REQUEST_BASE_REF, &view_base],
+            "recording view request base",
         )
         .unwrap();
 
-        fs::write(repo.join("public.txt"), "first\n").unwrap();
+        fs::write(repo.join("agent.txt"), "first\n").unwrap();
         commit_all(&repo, "first request commit");
         let first = oid(&repo, "HEAD");
         fs::write(repo.join("second.txt"), "second\n").unwrap();
         commit_all(&repo, "second request commit");
         let second = oid(&repo, "HEAD");
 
-        let commits = commits_after(&repo, PUBLIC_REQUEST_BASE_REF, &second).unwrap();
+        let commits = commits_after(&repo, VIEW_REQUEST_BASE_REF, &second).unwrap();
         assert_eq!(commits, [first.clone(), second.clone()]);
 
-        let first_path = ScopePath::parse("/public.txt").unwrap();
-        let first_fact =
-            public_request_commit_fact(&repo, &first, vec![first_path.clone()]).unwrap();
+        let first_path = ScopePath::parse("/agent.txt").unwrap();
+        let first_fact = native_request_commit(&repo, &first, vec![first_path.clone()]).unwrap();
         assert_eq!(first_fact.oid, first);
-        assert_eq!(first_fact.parent_oids, [public_base]);
+        assert_eq!(first_fact.parent_oids, [view_base]);
         assert_eq!(first_fact.changed_paths, [first_path]);
         assert_eq!(
             first_fact.tree_oid,
@@ -412,8 +439,7 @@ mod tests {
         );
 
         let second_path = ScopePath::parse("/second.txt").unwrap();
-        let second_fact =
-            public_request_commit_fact(&repo, &second, vec![second_path.clone()]).unwrap();
+        let second_fact = native_request_commit(&repo, &second, vec![second_path.clone()]).unwrap();
         assert_eq!(second_fact.oid, second);
         assert_eq!(second_fact.parent_oids, [first_fact.oid]);
         assert_eq!(second_fact.changed_paths, [second_path]);
@@ -426,15 +452,15 @@ mod tests {
     }
 
     #[test]
-    fn public_request_range_rejects_parent_outside_public_history_or_range() {
+    fn view_request_range_rejects_parent_outside_view_history_or_range() {
         let repo = initialized_repo("external-parent");
-        fs::write(repo.join("public.txt"), "base\n").unwrap();
-        commit_all(&repo, "public base");
-        let public_base = oid(&repo, "HEAD");
+        fs::write(repo.join("agent.txt"), "base\n").unwrap();
+        commit_all(&repo, "view base");
+        let view_base = oid(&repo, "HEAD");
         run_git(
             Some(&repo),
-            &["update-ref", PUBLIC_REQUEST_BASE_REF, &public_base],
-            "recording public request base",
+            &["update-ref", VIEW_REQUEST_BASE_REF, &view_base],
+            "recording view request base",
         )
         .unwrap();
 
@@ -449,7 +475,7 @@ mod tests {
 
         run_git(
             Some(&repo),
-            &["switch", "--create", "request", &public_base],
+            &["switch", "--create", "request", &view_base],
             "creating request branch",
         )
         .unwrap();
@@ -470,22 +496,22 @@ mod tests {
         .unwrap();
         let request_head = oid(&repo, "HEAD");
 
-        let error =
-            validated_public_parent_oids(&repo, &[request_commit, request_head]).unwrap_err();
+        let error = validated_view_parent_oids("Agent", &repo, &[request_commit, request_head])
+            .unwrap_err();
         assert!(
             error
                 .public_message()
-                .contains("parent outside public history")
+                .contains("Agent request contains a parent outside Agent history")
         );
 
         let _ = fs::remove_dir_all(repo);
     }
 
     #[test]
-    fn merge_validation_rejects_request_without_current_public_head() {
-        let repo = initialized_repo("stale-public-head");
-        fs::write(repo.join("public.txt"), "base\n").unwrap();
-        commit_all(&repo, "public base");
+    fn merge_validation_rejects_request_without_current_view_head() {
+        let repo = initialized_repo("stale-view-head");
+        fs::write(repo.join("agent.txt"), "base\n").unwrap();
+        commit_all(&repo, "view base");
         let original_base = oid(&repo, "HEAD");
 
         run_git(
@@ -498,32 +524,32 @@ mod tests {
         commit_all(&repo, "request change");
         let request_head = oid(&repo, "HEAD");
 
-        run_git(Some(&repo), &["switch", "main"], "returning to public main").unwrap();
+        run_git(Some(&repo), &["switch", "main"], "returning to view main").unwrap();
         fs::write(repo.join("main.txt"), "advanced\n").unwrap();
-        commit_all(&repo, "advance public main");
-        let current_public_head = oid(&repo, "HEAD");
+        commit_all(&repo, "advance view main");
+        let current_view_head = oid(&repo, "HEAD");
         run_git(
             Some(&repo),
-            &["update-ref", PUBLIC_REQUEST_BASE_REF, &current_public_head],
-            "recording advanced public request base",
+            &["update-ref", VIEW_REQUEST_BASE_REF, &current_view_head],
+            "recording advanced view request base",
         )
         .unwrap();
 
         assert_eq!(
-            ensure_public_head_is_request_ancestor(&repo, &request_head)
+            ensure_view_head_is_request_ancestor(&repo, &request_head)
                 .unwrap_err()
                 .public_message(),
-            PUBLIC_MAIN_MOVED_ERROR
+            VIEW_MAIN_MOVED_ERROR
         );
 
         let _ = fs::remove_dir_all(repo);
     }
 
     #[test]
-    fn merge_path_validation_ignores_rules_inherited_from_current_public_main() {
-        let repo = initialized_repo("inherited-public-rules");
-        fs::write(repo.join("public.txt"), "base\n").unwrap();
-        commit_all(&repo, "public base");
+    fn merge_path_validation_ignores_rules_inherited_from_current_view_main() {
+        let repo = initialized_repo("inherited-view-rules");
+        fs::write(repo.join("agent.txt"), "base\n").unwrap();
+        commit_all(&repo, "view base");
         let original_base = oid(&repo, "HEAD");
 
         run_git(
@@ -535,14 +561,14 @@ mod tests {
         fs::write(repo.join("request.txt"), "request\n").unwrap();
         commit_all(&repo, "request change");
 
-        run_git(Some(&repo), &["switch", "main"], "returning to public main").unwrap();
+        run_git(Some(&repo), &["switch", "main"], "returning to view main").unwrap();
         fs::write(repo.join(".scope/RULES.md"), "maintainer rules\n").unwrap();
         commit_all(&repo, "update maintainer rules");
-        let current_public_head = oid(&repo, "HEAD");
+        let current_view_head = oid(&repo, "HEAD");
         run_git(
             Some(&repo),
-            &["update-ref", PUBLIC_REQUEST_BASE_REF, &current_public_head],
-            "recording advanced public request base",
+            &["update-ref", VIEW_REQUEST_BASE_REF, &current_view_head],
+            "recording advanced view request base",
         )
         .unwrap();
 
@@ -554,19 +580,13 @@ mod tests {
         .unwrap();
         run_git(
             Some(&repo),
-            &[
-                "merge",
-                "--no-ff",
-                "main",
-                "-m",
-                "merge current public main",
-            ],
-            "merging current public main",
+            &["merge", "--no-ff", "main", "-m", "merge current view main"],
+            "merging current view main",
         )
         .unwrap();
         let merge_oid = oid(&repo, "HEAD");
 
-        let paths = public_request_changed_paths(&repo, &merge_oid).unwrap();
+        let paths = request_changed_paths(&repo, &merge_oid).unwrap();
 
         assert_eq!(paths, ["request.txt"]);
 
@@ -586,7 +606,7 @@ mod tests {
         let amended_merge_oid = oid(&repo, "HEAD");
 
         assert_eq!(
-            public_request_changed_paths(&repo, &amended_merge_oid).unwrap(),
+            request_changed_paths(&repo, &amended_merge_oid).unwrap(),
             [".scope/RULES.md", "request.txt"]
         );
 
@@ -602,7 +622,7 @@ mod tests {
                 "--initial-branch=main",
                 repo.to_string_lossy().as_ref(),
             ],
-            "initializing public request safety test repository",
+            "initializing view request safety test repository",
         )
         .unwrap();
         run_git(
@@ -645,7 +665,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "scope-vcs-public-request-safety-{label}-{}-{nonce}",
+            "scope-vcs-view-request-safety-{label}-{}-{nonce}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&path);

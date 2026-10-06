@@ -51,6 +51,7 @@ async fn open_request_with_revision(
             author_user_id: author_user_id.clone(),
             title: Some("Auto merge request".to_string()),
             author_role,
+            author_view: scope_domain::views::ViewId::private(),
             view,
             base_main_oid: FIRST_HEAD.to_string(),
             event_id: format!("event_{request_id}_started"),

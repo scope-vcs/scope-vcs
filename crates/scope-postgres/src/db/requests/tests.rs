@@ -782,6 +782,7 @@ fn public_start_input() -> StartRequestInput {
         author_user_id: "user_public".to_string(),
         title: Some("Fix parser crash".to_string()),
         author_role: RequestActorRole::Public,
+        author_view: ViewId::public(),
         view: ViewId::public(),
         base_main_oid: "base".to_string(),
         event_id: "event_started".to_string(),

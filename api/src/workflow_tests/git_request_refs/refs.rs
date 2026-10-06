@@ -175,6 +175,7 @@ async fn request_ref_completion_cannot_cross_repository_recreation() {
         ReceivePackAccess::RequestContributor {
             author_id: public_user_id(),
             incarnation: test_repo_incarnation(),
+            view: scope_domain::views::ViewId::public(),
         },
         false,
     )

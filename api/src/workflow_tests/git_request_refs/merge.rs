@@ -11,9 +11,10 @@ async fn merge_route_persists_git_content_once() {
     insert_member_user(&state).await;
     let (source, remote, _server, first_request_head) =
         request_checkout(&state, "request-http-merge").await;
+    let main_remote = remote.replace("/git/public/", "/git/private/");
     configure_bearer_header(
         &owner_source,
-        &remote,
+        &main_remote,
         &bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL),
     );
     fs::write(owner_source.join("README.md"), "upstream public change\n").unwrap();
@@ -30,18 +31,18 @@ async fn merge_route_persists_git_content_once() {
     )
     .unwrap();
     commit_all(&owner_source, "advance public main");
-    configure_push_intent_header(&state, &owner_source, &remote, &test_owner_id()).await;
+    configure_push_intent_header(&state, &owner_source, &main_remote, &test_owner_id()).await;
     run_git(
         Some(&owner_source),
         &[
             "push",
-            &remote,
+            &main_remote,
             &format!("HEAD:refs/heads/{DEFAULT_GIT_BRANCH}"),
         ],
         "advance public main",
     )
     .unwrap();
-    let public_remote = remote.replace("/git/private/", "/git/public/");
+    let public_remote = remote.clone();
     run_git(
         Some(&source),
         &[
@@ -315,7 +316,8 @@ async fn merge_route_persists_git_content_once() {
         ),
     )
     .await;
-    let native = detail["native_commits"].as_array().unwrap();
+    assert_eq!(detail["native_commits"]["view"], "public");
+    let native = detail["native_commits"]["commits"].as_array().unwrap();
     assert!(native.len() >= 3);
     assert_eq!(native.last().unwrap()["oid"], request_head);
     let merge_commit = native
@@ -373,12 +375,14 @@ async fn merge_route_persists_git_content_once() {
         logical_commit_count_before + 1
     );
     match &committed_repo.graph.commits.last().unwrap().origin {
-        LogicalCommitOrigin::PublicRequestMerge {
+        LogicalCommitOrigin::RequestMerge {
             request_id,
+            view,
             request_head_oid,
             commits,
             ..
         } => {
+            assert_eq!(view, &scope_domain::views::ViewId::public());
             assert_eq!(request_id, REQUEST_ID);
             assert_eq!(request_head_oid, &request_head);
             assert_eq!(

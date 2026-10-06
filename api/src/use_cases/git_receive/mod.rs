@@ -1,27 +1,25 @@
+mod authorization;
 mod landed_requests;
 pub(crate) mod main_push;
 pub(crate) mod request_ref;
+mod view_main_push;
 
 use crate::{
-    auth::scope::principal_for_user_id,
-    config::GIT_PUSH_TOKEN_PREFIX,
     error::ApiError,
     git::{
-        InitialPushCredential, ReceivePackAuthorization, authorize_git_push_token_for_repo,
-        authorize_initial_push_for_repo, find_repo_after_git_scope_token, git_credential_error,
         import::PreparedReceivePackUpdate,
-        invalid_git_credentials,
         request_refs::{non_request_refs_changed, receive_pack_refs, request_ref_update_from_refs},
         staging::{
             ensure_first_push_receive_pack_staging_repo, ensure_ready_receive_pack_staging_repo,
         },
     },
     push_intents::ValidatedPushIntent,
-    repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
 };
-use scope_domain::repository::{RepoLifecycleState, RepositoryIncarnation, access::MainPushMode};
+pub(crate) use authorization::authorize;
+use request_ref::RequestStagingKind;
+use scope_domain::{repository::RepositoryIncarnation, views::ViewId};
 use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -39,9 +37,16 @@ pub(crate) enum ReceivePackAccess {
         incarnation: RepositoryIncarnation,
         push_intent: ValidatedPushIntent,
     },
+    ViewMainPusher {
+        author_id: String,
+        incarnation: RepositoryIncarnation,
+        view: ViewId,
+        push_intent: ValidatedPushIntent,
+    },
     RequestContributor {
         author_id: String,
         incarnation: RepositoryIncarnation,
+        view: ViewId,
     },
 }
 
@@ -50,6 +55,7 @@ impl ReceivePackAccess {
         match self {
             Self::FirstPush { author_id, .. }
             | Self::ReadyMember { author_id, .. }
+            | Self::ViewMainPusher { author_id, .. }
             | Self::RequestContributor { author_id, .. } => author_id,
         }
     }
@@ -58,7 +64,15 @@ impl ReceivePackAccess {
         match self {
             Self::FirstPush { incarnation, .. }
             | Self::ReadyMember { incarnation, .. }
+            | Self::ViewMainPusher { incarnation, .. }
             | Self::RequestContributor { incarnation, .. } => incarnation,
+        }
+    }
+
+    fn request_ref_view(&self) -> Option<&ViewId> {
+        match self {
+            Self::FirstPush { .. } | Self::ReadyMember { .. } => None,
+            Self::ViewMainPusher { view, .. } | Self::RequestContributor { view, .. } => Some(view),
         }
     }
 }
@@ -74,130 +88,7 @@ pub(crate) enum ReceiveCompletion {
     NoChange,
     RequestRevision,
     MainPush,
-}
-
-pub(crate) async fn authorize(
-    state: &AppState,
-    owner: &str,
-    repo_name: &str,
-    authorization: ReceivePackAuthorization,
-    push_intent_secret: Option<&str>,
-) -> Result<ReceivePackAccess, ApiError> {
-    match authorization {
-        ReceivePackAuthorization::ScopeToken { secret } => {
-            let push_intent = required_push_intent(state, push_intent_secret)?;
-            let repo = find_repo_after_git_scope_token(state, owner, repo_name).await?;
-            let credential = if secret.starts_with(GIT_PUSH_TOKEN_PREFIX) {
-                InitialPushCredential::GitPushToken { secret }
-            } else {
-                InitialPushCredential::FirstPushToken { secret }
-            };
-            if repo.is_waiting_for_first_push() {
-                authorize_initial_push_for_repo(&repo, &credential)
-                    .map_err(git_credential_error)?;
-                let author_id = repo.record.owner_user_id.clone();
-                push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
-                return Ok(ReceivePackAccess::FirstPush {
-                    author_id,
-                    incarnation: repo.incarnation(),
-                    push_intent,
-                });
-            }
-            match repo.record.lifecycle_state {
-                RepoLifecycleState::AwaitingFirstPush => Err(ApiError::conflict(
-                    "repo is awaiting its first push and cannot receive another push",
-                )),
-                RepoLifecycleState::Ready => match credential {
-                    InitialPushCredential::GitPushToken { secret } => {
-                        let author_id = authorize_git_push_token_for_repo(&repo, &secret)
-                            .map_err(git_credential_error)?;
-                        push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
-                        Ok(ReceivePackAccess::ReadyMember {
-                            author_id,
-                            incarnation: repo.incarnation(),
-                            push_intent,
-                        })
-                    }
-                    InitialPushCredential::FirstPushToken { .. } => Err(invalid_git_credentials()),
-                },
-            }
-        }
-        ReceivePackAuthorization::ScopeUser(user) => {
-            if let Some(secret) = push_intent_secret
-                && let Ok(push_intent) = state.validate_push_intent_secret(secret)
-                && let Some(context) = state
-                    .metadata
-                    .repositories()
-                    .git_push_context(owner, repo_name, &user.id)
-                    .await?
-                && context.lifecycle_state == RepoLifecycleState::Ready
-                && context.access.can_push
-            {
-                push_intent.ensure_repo_user(&context.repo_id, &user.id)?;
-                return Ok(ReceivePackAccess::ReadyMember {
-                    author_id: user.id,
-                    incarnation: context.incarnation,
-                    push_intent,
-                });
-            }
-            let repo = find_repo(state, owner, repo_name).await?;
-            let principal = principal_for_user_id(&repo, &user.id);
-            let push_policy = repo.push_policy_for_user_id(&user.id);
-            let author_id = user.id.clone();
-            if push_policy.mode == MainPushMode::FirstPush {
-                let push_intent = required_push_intent(state, push_intent_secret)?;
-                push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
-                return Ok(ReceivePackAccess::FirstPush {
-                    author_id,
-                    incarnation: repo.incarnation(),
-                    push_intent,
-                });
-            }
-            let rejection = if push_policy.mode == MainPushMode::Denied {
-                ApiError::not_found(format!("repo {owner}/{repo_name} not found"))
-            } else {
-                if repo.record.lifecycle_state == RepoLifecycleState::AwaitingFirstPush {
-                    return Err(ApiError::conflict(
-                        "repo is awaiting its first push and cannot receive another push",
-                    ));
-                }
-                match push_intent_secret {
-                    Some(secret) => match state.validate_push_intent_secret(secret) {
-                        Ok(push_intent) => {
-                            push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
-                            return Ok(ReceivePackAccess::ReadyMember {
-                                author_id,
-                                incarnation: repo.incarnation(),
-                                push_intent,
-                            });
-                        }
-                        Err(error) => error,
-                    },
-                    None => ApiError::forbidden("valid Scope push intent required"),
-                }
-            };
-            let narrower_member = push_policy.access.is_maintainer()
-                && !repo.can_read_view(&push_policy.access, repo.repo_config.views().full());
-            if repo.record.lifecycle_state == RepoLifecycleState::Ready
-                && !narrower_member
-                && actor_can_receive_request_push(
-                    state,
-                    &repo,
-                    &principal,
-                    &author_id,
-                    push_policy.access,
-                )
-                .await?
-            {
-                Ok(ReceivePackAccess::RequestContributor {
-                    author_id,
-                    incarnation: repo.incarnation(),
-                })
-            } else {
-                Err(rejection)
-            }
-        }
-    }
+    MainPushRequest,
 }
 
 pub(crate) async fn prepare(
@@ -231,13 +122,31 @@ pub(crate) async fn prepare(
             }
             staging
         }
-        ReceivePackAccess::RequestContributor { author_id, .. } => {
+        ReceivePackAccess::ViewMainPusher {
+            author_id, view, ..
+        } => {
             request_ref::prepare_request_staging_repo(
                 state,
                 &incarnation,
                 owner,
                 repo_name,
                 author_id,
+                view,
+                RequestStagingKind::WithViewMain,
+            )
+            .await?
+        }
+        ReceivePackAccess::RequestContributor {
+            author_id, view, ..
+        } => {
+            request_ref::prepare_request_staging_repo(
+                state,
+                &incarnation,
+                owner,
+                repo_name,
+                author_id,
+                view,
+                RequestStagingKind::RequestRefsOnly,
             )
             .await?
         }
@@ -325,21 +234,16 @@ async fn complete_inner(
                 "Scope accepts either one request ref update or one main update",
             ));
         }
-        let author_id = match &preparation.access {
-            ReceivePackAccess::FirstPush { .. } => {
-                return Err(ApiError::bad_request(
-                    "request refs cannot be pushed during first push",
-                ));
-            }
-            ReceivePackAccess::ReadyMember { author_id, .. }
-            | ReceivePackAccess::RequestContributor { author_id, .. } => author_id,
-        };
+        if matches!(&preparation.access, ReceivePackAccess::FirstPush { .. }) {
+            return Err(ApiError::bad_request(
+                "request refs cannot be pushed during first push",
+            ));
+        }
         request_ref::persist_request_ref_revision(
             state,
             owner,
             repo_name,
-            preparation.access.incarnation(),
-            author_id,
+            &preparation.access,
             staging_repo,
             update,
         )
@@ -353,13 +257,42 @@ async fn complete_inner(
         return Ok(ReceiveCompletion::RequestRevision);
     }
 
-    if matches!(
-        &preparation.access,
-        ReceivePackAccess::RequestContributor { .. }
-    ) {
-        return Err(ApiError::bad_request(
-            "public contributors can only push named request branches",
-        ));
+    match preparation.access {
+        ReceivePackAccess::RequestContributor { .. } => {
+            return Err(ApiError::bad_request(
+                "this push can only update named request branches",
+            ));
+        }
+        ReceivePackAccess::ViewMainPusher {
+            author_id,
+            incarnation,
+            view,
+            push_intent,
+        } => {
+            view_main_push::complete_view_main_push(
+                state,
+                owner,
+                repo_name,
+                staging_repo,
+                view_main_push::ViewMainPush {
+                    author_id,
+                    incarnation,
+                    view,
+                    push_intent,
+                    refs_before,
+                    refs_after,
+                },
+            )
+            .await?;
+            tracing::info!(
+                owner,
+                repo = repo_name,
+                receive_ms = receive_elapsed.as_millis(),
+                "git receive-pack main push landed as a request"
+            );
+            return Ok(ReceiveCompletion::MainPushRequest);
+        }
+        ReceivePackAccess::FirstPush { .. } | ReceivePackAccess::ReadyMember { .. } => {}
     }
     complete_main_push(
         state,
@@ -573,23 +506,4 @@ async fn best_effort_sync_cache(
             "push committed but post-commit context refresh failed"
         ),
     }
-}
-
-fn required_push_intent(
-    state: &AppState,
-    secret: Option<&str>,
-) -> Result<ValidatedPushIntent, ApiError> {
-    let secret = secret.ok_or_else(|| ApiError::forbidden("valid Scope push intent required"))?;
-    state.validate_push_intent_secret(secret)
-}
-
-async fn actor_can_receive_request_push(
-    state: &AppState,
-    repo: &scope_domain::repository::Repository,
-    principal: &scope_domain::policy::Principal,
-    author_id: &str,
-    access: scope_domain::repository::access::RepositoryAccess,
-) -> Result<bool, ApiError> {
-    ensure_repo_read(repo, principal)?;
-    request_ref::actor_has_open_editable_request(state, &repo.record.id, author_id, access).await
 }

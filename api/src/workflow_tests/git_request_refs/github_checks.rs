@@ -16,9 +16,12 @@ mod public;
 mod public_repositories;
 mod run_page;
 
-const REQUIRED_CHECK: &str = "ci / test";
+pub(in crate::workflow_tests) const REQUIRED_CHECK: &str = "ci / test";
 
-pub(super) async fn connect_github(state: &mut AppState, required: &[&str]) -> Arc<FakeGitHub> {
+pub(in crate::workflow_tests) async fn connect_github(
+    state: &mut AppState,
+    required: &[&str],
+) -> Arc<FakeGitHub> {
     let fake = FakeGitHub::install(state).await;
     let repositories = state.metadata.repositories();
     repositories
@@ -135,7 +138,7 @@ async fn checks(state: &AppState, request_id: &str, bearer: &str) -> serde_json:
     .await
 }
 
-pub(super) async fn push_pass(state: &AppState, now_unix: u64) -> usize {
+pub(in crate::workflow_tests) async fn push_pass(state: &AppState, now_unix: u64) -> usize {
     github_pushes::push_due_github_branches(state, now_unix)
         .await
         .unwrap()

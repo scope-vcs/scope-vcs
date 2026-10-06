@@ -103,6 +103,7 @@ impl RequestStore {
                 .is_maintainer(),
                 now_unix: command.now_unix,
             },
+            &repo.views,
         )?;
         insert_request_invitee(&tx, &invitee).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -135,6 +136,7 @@ impl RequestStore {
                 target_user_id: target.id.clone(),
                 actor_can_manage_invitees: decision.permissions.can_manage_invitees,
             },
+            &repo.views,
         )?;
         delete_request_invitee(&tx, &invitee.request_id, &invitee.user_id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -165,6 +167,7 @@ impl RequestStore {
                 actor_user_id: command.actor_user_id,
                 actor_can_leave_request: decision.permissions.can_leave_request,
             },
+            &repo.views,
         )?;
         delete_request_invitee(&tx, &invitee.request_id, &invitee.user_id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
@@ -609,6 +612,7 @@ mod tests {
                 author_user_id: "user_author".to_string(),
                 title: None,
                 author_role: RequestActorRole::Public,
+                author_view: ViewId::public(),
                 view: ViewId::public(),
                 base_main_oid: "base".to_string(),
                 event_id: format!("event_{request_id}"),

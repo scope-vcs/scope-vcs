@@ -9,7 +9,7 @@ use crate::{
     repo_access::find_repo,
     repo_events::RepoChangeReason,
     state::AppState,
-    use_cases::{public_check_commits::public_tested_commit, repository_workflows},
+    use_cases::{repository_workflows, view_check_commits::view_tested_commit},
 };
 use scope_api_contract::RunChangeKind;
 use scope_domain::{
@@ -20,6 +20,7 @@ use scope_domain::{
         changes_github_workflows, request_checks_outcome, request_head_awaits_evaluation,
     },
     runs::{availability::NativeRunsAvailability, workflow::revision::WorkflowRevision},
+    views::Views,
 };
 use scope_postgres::db::{
     RebuildCheckCommitCommand, RecordRequestChecksCommand, RequestChecksMutation, RequestListRow,
@@ -42,7 +43,7 @@ pub(crate) async fn checks_view(
     let view = recorded_checks_view(state, request).await?;
     if let Some(evaluation) = view.evaluation.as_ref().filter(|evaluation| {
         !request.is_terminal()
-            && evaluation.needs_new_check_commit(view.results.private_main_oid.as_deref())
+            && evaluation.needs_new_check_commit(view.results.canonical_main_oid.as_deref())
     }) {
         let repo = find_repo(state, &repo.owner_handle, &repo.name).await?;
         Box::pin(renew_check_commit(
@@ -139,10 +140,10 @@ async fn evaluate_saved_head(
             .then_some(pusher),
         None => None,
     };
+    let repository = find_repo(state, &repo.owner_handle, &repo.name).await?;
+    let views = repository.repo_config.views();
     let native_revisions = async {
-        Ok(if request.view.is_public() {
-            public_request_workflow_revisions(state, request).await?
-        } else {
+        Ok(if &request.view == views.full() {
             let files = with_request_revision_store_repo(
                 state,
                 &repo.incarnation(),
@@ -152,15 +153,15 @@ async fn evaluate_saved_head(
             )
             .await?;
             request_workflow_revisions(request, files)
+        } else {
+            trusted_main_workflow_revisions(state, request).await?
         })
     };
-    let check_commit = async {
-        let repo = find_repo(state, &repo.owner_handle, &repo.name).await?;
-        Box::pin(public_tested_commit(state, &repo, request, &revision)).await
-    };
+    let check_commit = Box::pin(view_tested_commit(state, &repository, request, &revision));
     Box::pin(evaluate_request_checks(
         state,
         request,
+        views,
         maintainer_pusher,
         native_revisions,
         check_commit,
@@ -224,21 +225,23 @@ pub(crate) async fn best_effort_evaluate_request_checks(
 ) {
     let path = staging_repo.to_path_buf();
     let head_oid = request.head_oid.clone();
+    let views = repo.repo_config.views();
     let native_revisions = async {
-        Ok(if request.view.is_public() {
-            public_request_workflow_revisions(state, request).await?
-        } else {
+        Ok(if &request.view == views.full() {
             let files =
                 crate::git::blocking::run(move || read_repository_workflow_files(&path, &head_oid))
                     .await?;
             request_workflow_revisions(request, files)
+        } else {
+            trusted_main_workflow_revisions(state, request).await?
         })
     };
-    let check_commit = Box::pin(public_tested_commit(state, repo, request, revision));
+    let check_commit = Box::pin(view_tested_commit(state, repo, request, revision));
     let maintainer_pusher = actor_is_maintainer.then_some(actor_user_id);
     let evaluated = evaluate_request_checks(
         state,
         request,
+        views,
         maintainer_pusher,
         native_revisions,
         check_commit,
@@ -264,7 +267,7 @@ async fn renew_check_commit(
         .request_revision_with_head(&request.id, &request.head_oid)
         .await?
         .ok_or_else(|| ApiError::conflict("request head has no saved revision"))?;
-    let tested = Box::pin(public_tested_commit(state, repo, request, &revision)).await?;
+    let tested = Box::pin(view_tested_commit(state, repo, request, &revision)).await?;
     let mutation = state
         .metadata
         .requests()
@@ -394,6 +397,7 @@ fn warn_evaluation_failed(request: &Request, error: &ApiError) {
 async fn evaluate_request_checks(
     state: &AppState,
     request: &Request,
+    views: &Views,
     maintainer_pusher: Option<&str>,
     native_revisions: impl Future<Output = Result<NativeRevisions, ApiError>>,
     check_commit: impl Future<Output = Result<GitHubTestedCommit, ApiError>>,
@@ -409,13 +413,14 @@ async fn evaluate_request_checks(
             let required = repositories
                 .github_required_checks(&request.repo_id)
                 .await?;
-            let tested = match GitHubCheckTarget::for_request(request) {
+            let tested = match GitHubCheckTarget::for_request(request, views) {
                 GitHubCheckTarget::Head => GitHubTestedCommit::Head,
                 GitHubCheckTarget::CheckCommit => check_commit.await?,
             };
             (
                 RequestCheckPlan::evaluate_github(
                     request,
+                    views,
                     tested,
                     &required,
                     maintainer_pusher,
@@ -455,14 +460,14 @@ async fn evaluate_request_checks(
     .await
 }
 
-async fn public_request_workflow_revisions(
+async fn trusted_main_workflow_revisions(
     state: &AppState,
     request: &Request,
 ) -> Result<NativeRevisions, ApiError> {
     let catalog = repository_workflows::current_catalog(state, &request.repo_id)
         .await?
         .ok_or_else(|| {
-            ApiError::internal_message("public request has no accepted main workflow catalog")
+            ApiError::internal_message("the repository has no accepted main workflow catalog")
         })?;
     Ok(
         scope_run_config::parse_repository_workflow_catalog(&catalog)

@@ -297,7 +297,7 @@ pub(super) async fn complete_landed_requests(
     let repo = repository_access(tx, repo_id, Some(&completion.actor_user_id))
         .await?
         .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-    if !repo.access.is_maintainer() {
+    if !repo.access.is_maintainer() || !repo.access.reads_full_view(&repo.views) {
         return Ok(0);
     }
     let mut completed = 0;

@@ -42,6 +42,7 @@ pub(crate) async fn get_request_checks(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
@@ -72,6 +73,7 @@ pub(crate) async fn approve_request_checks(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         Some(&user.id),
         &request_id,
@@ -130,7 +132,7 @@ pub(crate) async fn checks_response(
         .github_connection(&request.repo_id)
         .await?
         .map(|read| read.connection);
-    let private_request_on_public_github = !request.view.is_public()
+    let private_request_on_public_github = views.anyone() != Some(&request.view)
         && github_connection.as_ref().is_some_and(|connection| {
             connection.is_connected()
                 && connection.visibility != GitHubRepositoryVisibility::Private

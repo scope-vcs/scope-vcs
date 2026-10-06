@@ -137,3 +137,18 @@ fn sql_text(value: Option<&str>) -> String {
 fn sql_u64(value: Option<u64>) -> String {
     value.map_or_else(|| "NULL".into(), |value| value.to_string())
 }
+
+#[test]
+fn a_viewer_without_readable_request_views_sees_no_queue_rows() {
+    assert_eq!(
+        request_visibility_sql(&RequestListPredicate::Any(Vec::new())),
+        "FALSE"
+    );
+    assert_eq!(
+        request_visibility_sql(&RequestListPredicate::All(vec![
+            RequestListPredicate::Submitted,
+            RequestListPredicate::Any(Vec::new()),
+        ])),
+        "(r.submitted_at_unix IS NOT NULL AND FALSE)"
+    );
+}

@@ -92,6 +92,7 @@ pub(crate) async fn request_queue(
             section: query.section,
             viewer_user_id: viewer_user_id.as_deref(),
             access: access.clone(),
+            views: &repo.views,
             request_views,
             search,
             after: after.as_ref(),

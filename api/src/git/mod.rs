@@ -8,10 +8,10 @@ mod credentials;
 pub(crate) mod http_backend;
 pub(crate) mod import;
 pub(crate) mod projection_repo;
-pub(crate) mod public_request_commit;
 pub(crate) mod repository_engine;
+pub(crate) mod request_commit;
 pub(crate) mod request_merge_tree;
-pub(crate) mod request_ref_public_safety;
+pub(crate) mod request_ref_view_safety;
 pub(crate) mod request_refs;
 pub(crate) mod restore;
 pub(crate) mod run_source;
@@ -114,16 +114,6 @@ fn git_view(view: &str) -> Result<ViewId, ApiError> {
     ViewId::parse(view).map_err(|_| ApiError::not_found(format!("Git view {view} not found")))
 }
 
-fn ensure_receive_view(view: &ViewId) -> Result<(), ApiError> {
-    if view.is_private() {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden(format!(
-            "Git view {view} cannot receive pushes; push to the full view"
-        )))
-    }
-}
-
 const PUSH_INTENT_HEADER: &str = "x-scope-push-intent";
 
 pub(crate) fn git_error_response(error: ApiError) -> Response {
@@ -150,9 +140,6 @@ pub(crate) async fn git_info_refs(
     };
     match query.service.as_deref() {
         Some(GIT_RECEIVE_PACK) => {
-            if let Err(error) = ensure_receive_view(&view) {
-                return git_error_response(error);
-            }
             let (authorization, push_intent) =
                 match receive_pack_credentials(&state, &headers).await {
                     Ok(credentials) => credentials,
@@ -162,6 +149,7 @@ pub(crate) async fn git_info_refs(
                 &state,
                 &org,
                 &repo,
+                &view,
                 authorization,
                 push_intent.as_deref(),
             )
@@ -232,21 +220,28 @@ pub(crate) async fn git_receive_pack(
     Path((view, org, repo)): Path<(String, String, String)>,
     request: Request,
 ) -> Response {
-    if let Err(error) = git_view(&view).and_then(|view| ensure_receive_view(&view)) {
-        return git_error_response(error);
-    }
+    let view = match git_view(&view) {
+        Ok(view) => view,
+        Err(error) => return git_error_response(error),
+    };
     let headers = request.headers().clone();
     let (authorization, push_intent) = match receive_pack_credentials(&state, &headers).await {
         Ok(credentials) => credentials,
         Err(error) => return git_error_response(error),
     };
-    let access =
-        match git_receive::authorize(&state, &org, &repo, authorization, push_intent.as_deref())
-            .await
-        {
-            Ok(access) => access,
-            Err(error) => return git_error_response(error),
-        };
+    let access = match git_receive::authorize(
+        &state,
+        &org,
+        &repo,
+        &view,
+        authorization,
+        push_intent.as_deref(),
+    )
+    .await
+    {
+        Ok(access) => access,
+        Err(error) => return git_error_response(error),
+    };
     let permit = match state.runtime_budgets.try_receive_pack() {
         Ok(permit) => permit,
         Err(error) => return git_error_response(error),

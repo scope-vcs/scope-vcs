@@ -4,7 +4,7 @@ use crate::{
         cache::GitRepoHandle,
         check_commit::write_check_commit,
         command::{git_stdout_text, run_git},
-        request_ref_public_safety::public_contribution_base,
+        request_ref_view_safety::{RequestView, view_contribution_base},
         request_refs::with_request_revision_store_repo,
         storage::{receive_pack_staging_repo_path, remove_dir_if_exists},
     },
@@ -24,7 +24,7 @@ use std::{
 
 const CHECK_HEAD_REF: &str = "refs/scope/internal/check-head";
 
-pub(crate) async fn public_tested_commit(
+pub(crate) async fn view_tested_commit(
     state: &AppState,
     repo: &Repository,
     request: &Request,
@@ -32,9 +32,14 @@ pub(crate) async fn public_tested_commit(
 ) -> Result<GitHubTestedCommit, ApiError> {
     let staging = CheckStaging::open(state, &repo.incarnation(), request, revision).await?;
     let built = async {
-        let public_base_oid =
-            public_contribution_base(repo, state, &staging.path, &revision.new_head_oid).await?;
-        let base = CheckCommitBase::new(staging.private_main_oid.clone(), public_base_oid)?;
+        let view_base_oid = view_contribution_base(
+            RequestView::new(repo, &request.view),
+            state,
+            &staging.path,
+            &revision.new_head_oid,
+        )
+        .await?;
+        let base = CheckCommitBase::new(staging.canonical_main_oid.clone(), view_base_oid)?;
         let path = staging.path.clone();
         let request_id = request.id.clone();
         let head_oid = revision.new_head_oid.clone();
@@ -87,8 +92,8 @@ pub(crate) async fn with_check_commit<T: Send + 'static>(
 
 struct CheckStaging {
     path: PathBuf,
-    private_main_oid: String,
-    private: GitRepoHandle,
+    canonical_main_oid: String,
+    canonical: GitRepoHandle,
 }
 
 impl CheckStaging {
@@ -106,18 +111,18 @@ impl CheckStaging {
         else {
             return Err(ApiError::conflict("repo has no accepted Git head"));
         };
-        let private = state
+        let canonical = state
             .repository_engine
             .materialize_repository(state, incarnation, &head, &spans)
             .await?;
         let staging = Self {
             path: receive_pack_staging_repo_path(state, incarnation)?,
-            private_main_oid: head.head_oid,
-            private,
+            canonical_main_oid: head.head_oid,
+            canonical,
         };
         let initialized = {
             let path = staging.path.clone();
-            let private_objects = staging.private.join("objects");
+            let canonical_objects = staging.canonical.join("objects");
             crate::git::blocking::run(move || {
                 if let Some(parent) = path.parent() {
                     ensure_private_dir(parent)?;
@@ -127,11 +132,11 @@ impl CheckStaging {
                     &["init", "--quiet", "--bare", path.to_string_lossy().as_ref()],
                     "initializing check commit repository",
                 )?;
-                let private_objects =
-                    fs::canonicalize(private_objects).map_err(ApiError::internal)?;
+                let canonical_objects =
+                    fs::canonicalize(canonical_objects).map_err(ApiError::internal)?;
                 fs::write(
                     path.join("objects/info/alternates"),
-                    format!("{}\n", private_objects.display()),
+                    format!("{}\n", canonical_objects.display()),
                 )
                 .map_err(ApiError::internal)
             })

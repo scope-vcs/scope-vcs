@@ -13,6 +13,7 @@ use scope_domain::{
         RequestQueuePredicateAtom, RequestQueueSection, RequestState, classify_request_queue_item,
         request_queue_visibility_predicate,
     },
+    views::Views,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 use std::{collections::BTreeMap, fmt::Write as _};
@@ -29,6 +30,7 @@ pub struct RequestQueuePageQuery<'a> {
     pub section: RequestQueueSection,
     pub viewer_user_id: Option<&'a str>,
     pub access: RepositoryAccess,
+    pub views: &'a Views,
     pub request_views: Option<Vec<scope_domain::views::ViewId>>,
     pub search: Option<&'a str>,
     pub after: Option<&'a RequestQueueCursor>,
@@ -95,6 +97,7 @@ impl RequestStore {
         let sql = queue_sql(
             input.access.clone(),
             input.viewer_user_id,
+            input.views,
             input.request_views.as_deref(),
         );
         let rows = QueueModel::find_by_statement(Statement::from_sql_and_values(
@@ -299,9 +302,10 @@ fn escaped_search_pattern(value: &str) -> String {
 fn queue_sql(
     access: RepositoryAccess,
     viewer_user_id: Option<&str>,
+    views: &Views,
     request_views: Option<&[scope_domain::views::ViewId]>,
 ) -> String {
-    let visible = request_queue_visibility_predicate(access, viewer_user_id);
+    let visible = request_queue_visibility_predicate(access, viewer_user_id, views);
     let predicate = match request_views {
         Some(views) => RequestListPredicate::All(vec![
             visible,
@@ -322,8 +326,8 @@ fn queue_sql(
 
 fn request_visibility_sql(predicate: &RequestListPredicate<'_>) -> String {
     match predicate {
-        RequestListPredicate::All(predicates) => join_sql_predicates(predicates, " AND "),
-        RequestListPredicate::Any(predicates) => join_sql_predicates(predicates, " OR "),
+        RequestListPredicate::All(predicates) => join_sql_predicates(predicates, " AND ", "TRUE"),
+        RequestListPredicate::Any(predicates) => join_sql_predicates(predicates, " OR ", "FALSE"),
         RequestListPredicate::View(view) => format!("r.audience = '{}'", view.as_str()),
         RequestListPredicate::Submitted => "r.submitted_at_unix IS NOT NULL".into(),
         RequestListPredicate::Author(_) => "r.author_user_id = $2".into(),
@@ -335,7 +339,14 @@ fn request_visibility_sql(predicate: &RequestListPredicate<'_>) -> String {
     }
 }
 
-fn join_sql_predicates(predicates: &[RequestListPredicate<'_>], operator: &str) -> String {
+fn join_sql_predicates(
+    predicates: &[RequestListPredicate<'_>],
+    operator: &str,
+    identity: &str,
+) -> String {
+    if predicates.is_empty() {
+        return identity.into();
+    }
     let predicates = predicates
         .iter()
         .map(request_visibility_sql)

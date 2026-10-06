@@ -123,7 +123,7 @@ impl RequestStore {
     }
 }
 
-pub(super) async fn private_main_oid<C: ConnectionTrait>(
+pub(super) async fn canonical_main_oid<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
 ) -> Result<Option<String>, PostgresError> {

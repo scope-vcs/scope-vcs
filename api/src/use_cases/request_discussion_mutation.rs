@@ -363,6 +363,7 @@ async fn mutation_context(
         || !request_policy(
             &request,
             RequestViewer::new(access.clone(), Some(actor_user_id), is_invitee),
+            &repo.views,
         )
         .exact_visible
     {

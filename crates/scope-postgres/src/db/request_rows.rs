@@ -13,7 +13,7 @@ use {
         REQUEST_LIST_MAX_PAGE_SIZE, Request, RequestActorRole, RequestEvent, RequestListPredicate,
         RequestState, request_list_predicate,
     },
-    scope_domain::views::ViewId,
+    scope_domain::views::{ViewId, Views},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,6 +39,7 @@ pub struct RequestListPageQuery<'a> {
     pub repo_id: &'a str,
     pub viewer_user_id: Option<&'a str>,
     pub access: RepositoryAccess,
+    pub views: &'a Views,
     pub after_id: Option<&'a str>,
     pub limit: u64,
 }
@@ -142,6 +143,7 @@ fn request_list_select(
     query = query.filter(request_list_condition(&request_list_predicate(
         input.access.clone(),
         input.viewer_user_id,
+        input.views,
     ))?);
     Ok(query)
 }
@@ -521,6 +523,7 @@ mod request_list_tests {
             repo_id: "repo-1",
             viewer_user_id: Some("viewer-1"),
             access: RepositoryAccess::public(),
+            views: &Views::builtin(),
             after_id: Some("request-10"),
             limit: u64::MAX,
         })

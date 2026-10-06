@@ -72,6 +72,7 @@ pub(crate) async fn list_request_revisions(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        repo.repo_config.views(),
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
@@ -240,6 +241,7 @@ pub(crate) async fn get_request_revision_commit_file_diff(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        repo.repo_config.views(),
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,

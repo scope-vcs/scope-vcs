@@ -7,7 +7,10 @@ use crate::{
         command::{git_command_output, git_command_output_with_timeout, truncated_git_stderr},
         git_read_scope_user,
         projection_repo::projection_bare_repo_for_state,
-        request_refs::attach_visible_request_refs,
+        request_refs::{
+            RequestViewBases, attach_visible_request_refs, request_view_bases,
+            share_request_view_bases,
+        },
         storage::repository_storage_key,
     },
     repo_access::{ensure_repo_read, find_repo},
@@ -144,61 +147,33 @@ pub(crate) async fn git_upload_pack_repo_for_request(
         let decision = request_policy(
             &request,
             RequestViewer::new(access.clone(), viewer_user_id.as_deref(), is_invitee),
+            views,
         );
         if decision.exact_visible && views.may_read(view, &request.view) {
             requests.push(request);
         }
     }
     requests.sort_by(|left, right| left.name.cmp(&right.name));
-    let public_base_repo = if private_view
-        && requests.iter().any(|request| {
-            request.view == scope_domain::views::ViewId::public() && request.git_snapshot.is_none()
-        }) {
-        let public_view = views
-            .anyone()
-            .ok_or_else(|| ApiError::not_found("public Git view not found"))?;
-        let projection = project_graph(
-            &repo.graph,
-            &repo.visibility_change_sets,
-            views,
-            public_view,
-        );
-        Some(
-            projection_bare_repo_for_state(
-                state,
-                &repo.incarnation(),
-                &projection,
-                repo.git_head.as_ref(),
-                &repo.git_pack_spans,
-            )
-            .await?,
-        )
-    } else {
-        None
-    };
-    git_read_view_repo(
-        state,
-        &repo.incarnation(),
-        base_repo,
-        public_base_repo,
-        &requests,
-    )
-    .await
+    let view_bases = request_view_bases(state, &repo, &requests, view).await?;
+    git_read_view_repo(state, &repo.incarnation(), base_repo, view_bases, &requests).await
 }
 
 async fn git_read_view_repo(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     base_repo: GitRepoHandle,
-    public_base_repo: Option<GitRepoHandle>,
+    view_bases: RequestViewBases,
     requests: &[Request],
 ) -> Result<GitRepoHandle, ApiError> {
     if requests.is_empty() {
         return Ok(base_repo);
     }
     let base_repo_path = base_repo.as_ref().to_path_buf();
-    let public_base_repo_path = public_base_repo.as_deref().map(FsPath::to_path_buf);
-    let (main_oid, public_main_oid) = tokio::task::spawn_blocking(move || {
+    let view_base_paths = view_bases
+        .iter()
+        .map(|(view, base)| (view.clone(), base.as_ref().to_path_buf()))
+        .collect::<Vec<_>>();
+    let (main_oid, view_main_oids) = tokio::task::spawn_blocking(move || {
         let head = |path: &FsPath| {
             git_command_output(
                 Command::new("git")
@@ -211,7 +186,10 @@ async fn git_read_view_repo(
         };
         Ok::<_, ApiError>((
             head(&base_repo_path)?,
-            public_base_repo_path.as_deref().map(head).transpose()?,
+            view_base_paths
+                .into_iter()
+                .map(|(view, path)| Ok((view, head(&path)?)))
+                .collect::<Result<Vec<_>, ApiError>>()?,
         ))
     })
     .await
@@ -221,7 +199,7 @@ async fn git_read_view_repo(
     let cache_key = GitReadViewIdentity::from_authorized_output(
         incarnation,
         &main_oid,
-        public_main_oid.as_deref(),
+        &view_main_oids,
         requests,
     )
     .cache_key();
@@ -233,10 +211,7 @@ async fn git_read_view_repo(
     let is_ready = move || repo_path_for_ready.join("objects").is_dir();
     let state_for_build = state.clone();
     let base_repo_for_build = base_repo.share()?;
-    let public_base_repo_for_build = public_base_repo
-        .as_ref()
-        .map(GitRepoHandle::share)
-        .transpose()?;
+    let view_bases_for_build = share_request_view_bases(&view_bases)?;
     let requests_for_build = requests.to_vec();
     let cache_root_for_build = cache_root.clone();
     let repo_path_for_build = repo_path.clone();
@@ -294,7 +269,7 @@ async fn git_read_view_repo(
                         &state_for_build,
                         &unattached,
                         &temp_path,
-                        public_base_repo_for_build.as_deref(),
+                        &view_bases_for_build,
                     )?;
                     match fs::rename(&temp_path, &repo_path_for_build) {
                         Ok(()) => Ok(()),
@@ -317,11 +292,11 @@ async fn git_read_view_repo(
         },
     )
     .await?;
-    let read_view = read_view.with_dependency(base_repo);
-    Ok(match public_base_repo {
-        Some(public_base_repo) => read_view.with_dependency(public_base_repo),
-        None => read_view,
-    })
+    Ok(view_bases
+        .into_values()
+        .fold(read_view.with_dependency(base_repo), |read_view, base| {
+            read_view.with_dependency(base)
+        }))
 }
 
 async fn git_read_principal_for_request(

@@ -9,8 +9,8 @@ use crate::{
         },
         projection_repo::verify_projection_materialization,
         request_merge_tree::{MergedTree, merge_request_tree},
-        request_ref_public_safety::validate_public_request_merge_range,
-        request_refs::attach_visible_request_refs,
+        request_ref_view_safety::{RequestView, validate_view_request_merge_range},
+        request_refs::{RequestViewBases, attach_visible_request_refs},
         storage::{receive_pack_staging_repo_path, remove_dir_if_exists},
     },
     operation_analytics::ObservedOperation,
@@ -121,6 +121,7 @@ pub(crate) async fn merge_request_inner(
     let policy = request_policy(
         &request,
         RequestViewer::new(access.clone(), Some(&command.actor_user_id), is_invitee),
+        repo.repo_config.views(),
     );
     if request.repo_id != repo.record.id || !policy.exact_visible {
         return Err(ApiError::not_found("request not found").into());
@@ -343,7 +344,7 @@ async fn prepare_request_merge_for_execution(
                     &state,
                     std::slice::from_ref(&request),
                     &staging_repo,
-                    None,
+                    &RequestViewBases::new(),
                 )
             })
         };
@@ -355,29 +356,35 @@ async fn prepare_request_merge_for_execution(
             }
         })?;
         let request_ref = canonical_request_ref(&request.name);
-        let (origin, merge_base_oid) = if request.view.is_public() {
-            let validated =
-                validate_public_request_merge_range(repo, state, &staging_repo, &request.head_oid)
-                    .await
-                    .map_err(RequestMergeFailure::public_range)?;
-            let merge_base_oid = validated.public_base_oid.clone();
+        let views = repo.repo_config.views();
+        let (origin, merge_base_oid) = if &request.view == views.full() {
             (
-                RequestMergeOrigin::Public {
-                    request_id: request.id.clone(),
-                    public_base_oid: validated.public_base_oid,
-                    public_parent_oids: validated.public_parent_oids,
-                    request_head_oid: request.head_oid.clone(),
-                    commits: validated.commits,
-                },
-                merge_base_oid,
-            )
-        } else {
-            (
-                RequestMergeOrigin::Private {
+                RequestMergeOrigin::Canonical {
                     request_id: request.id.clone(),
                     request_head_oid: request.head_oid.clone(),
                 },
                 request.base_main_oid.clone(),
+            )
+        } else {
+            let validated = validate_view_request_merge_range(
+                RequestView::new(repo, &request.view),
+                state,
+                &staging_repo,
+                &request.head_oid,
+            )
+            .await
+            .map_err(RequestMergeFailure::view_range)?;
+            let merge_base_oid = validated.base_oid.clone();
+            (
+                RequestMergeOrigin::View {
+                    request_id: request.id.clone(),
+                    view: request.view.clone(),
+                    base_oid: validated.base_oid,
+                    parent_oids: validated.parent_oids,
+                    request_head_oid: request.head_oid.clone(),
+                    commits: validated.commits,
+                },
+                merge_base_oid,
             )
         };
         let merged_main_oid = merge_main_oid_for_execution(
@@ -418,7 +425,7 @@ async fn prepare_request_merge_for_execution(
         )
         .await
         .map_err(RequestMergeFailure::from)?;
-        let public_projection = (|| -> Result<_, ApiError> {
+        let preflight_projections = (|| -> Result<_, ApiError> {
             let mut proposed_repo = repo.clone();
             apply_request_merge_to_repo(
                 &mut proposed_repo,
@@ -427,23 +434,27 @@ async fn prepare_request_merge_for_execution(
             )
             .map_err(reviewed_update_domain_error)
             .map_err(ApiError::from)?;
-            Ok(project_graph(
-                &proposed_repo.graph,
-                &proposed_repo.visibility_change_sets,
-                proposed_repo.repo_config.views(),
-                proposed_repo
-                    .repo_config
-                    .views()
-                    .anyone()
-                    .ok_or_else(|| ApiError::not_found("public view not found"))?,
-            ))
+            let proposed_views = proposed_repo.repo_config.views();
+            Ok(merge_preflight_views(proposed_views, &request.view)
+                .into_iter()
+                .map(|view| {
+                    project_graph(
+                        &proposed_repo.graph,
+                        &proposed_repo.visibility_change_sets,
+                        proposed_views,
+                        view,
+                    )
+                })
+                .collect::<Vec<_>>())
         })();
-        let preflight = match public_projection {
-            Ok(projection) => {
+        let preflight = match preflight_projections {
+            Ok(projections) => {
                 let state = state.clone();
                 let staging_repo = staging_repo.clone();
                 crate::git::blocking::run(move || {
-                    verify_projection_materialization(&state, &projection, &staging_repo)
+                    projections.iter().try_for_each(|projection| {
+                        verify_projection_materialization(&state, projection, &staging_repo)
+                    })
                 })
                 .await
             }
@@ -489,6 +500,17 @@ async fn prepare_request_merge_for_execution(
             Err(error.into())
         }
     }
+}
+
+fn merge_preflight_views<'a>(
+    views: &'a scope_domain::views::Views,
+    request_view: &'a scope_domain::views::ViewId,
+) -> Vec<&'a scope_domain::views::ViewId> {
+    let mut preflight = views.anyone().into_iter().collect::<Vec<_>>();
+    if request_view != views.full() && !preflight.contains(&request_view) {
+        preflight.push(request_view);
+    }
+    preflight
 }
 
 async fn cleanup_prepared_merge(state: &AppState, prepared: PreparedRequestMerge) {

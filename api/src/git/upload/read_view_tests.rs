@@ -162,7 +162,7 @@ fn base_repo(cache: &std::sync::Arc<RepositoryGitCache>, name: &str) -> GitRepoH
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn public_base_head_change_rebuilds_read_view_and_attaches_newly_available_ref() {
+async fn view_base_head_change_rebuilds_read_view_and_attaches_newly_available_ref() {
     let state = AppState::test_state();
     let source_dir = tempfile::tempdir().unwrap();
     let cache = RepositoryGitCache::new(source_dir.path().to_path_buf(), usize::MAX).unwrap();
@@ -183,9 +183,15 @@ async fn public_base_head_change_rebuilds_read_view_and_attaches_newly_available
     let requests = vec![request("topic", &head, None)];
     let incarnation = RepositoryIncarnation::new("repo", "incarnation").unwrap();
     let primary_path = primary.as_ref().to_path_buf();
-    let first = git_read_view_repo(&state, &incarnation, primary, Some(public_first), &requests)
-        .await
-        .unwrap();
+    let first = git_read_view_repo(
+        &state,
+        &incarnation,
+        primary,
+        RequestViewBases::from([(ViewId::public(), public_first)]),
+        &requests,
+    )
+    .await
+    .unwrap();
     let missing = git_process_output(
         Command::new("git")
             .arg("--git-dir")
@@ -202,7 +208,7 @@ async fn public_base_head_change_rebuilds_read_view_and_attaches_newly_available
         &state,
         &incarnation,
         cache.lease_derived(primary_path).unwrap(),
-        Some(public_second),
+        RequestViewBases::from([(ViewId::public(), public_second)]),
         &requests,
     )
     .await
@@ -238,7 +244,7 @@ async fn unchanged_request_refs_are_copied_from_earlier_read_views() {
         &state,
         &incarnation,
         primary,
-        None,
+        RequestViewBases::new(),
         std::slice::from_ref(&alpha),
     )
     .await
@@ -255,7 +261,7 @@ async fn unchanged_request_refs_are_copied_from_earlier_read_views() {
         &state,
         &incarnation,
         cache.lease_derived(primary_path).unwrap(),
-        None,
+        RequestViewBases::new(),
         &requests,
     )
     .await
@@ -282,7 +288,7 @@ async fn earlier_read_views_only_seed_the_exact_request_head() {
         &state,
         &incarnation,
         primary,
-        None,
+        RequestViewBases::new(),
         &[request("alpha", &first_head, Some(first_snapshot))],
     )
     .await
@@ -295,7 +301,7 @@ async fn earlier_read_views_only_seed_the_exact_request_head() {
         &state,
         &incarnation,
         cache.lease_derived(primary_path).unwrap(),
-        None,
+        RequestViewBases::new(),
         &[request("alpha", &second_head, Some(second_snapshot))],
     )
     .await

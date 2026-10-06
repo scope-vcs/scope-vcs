@@ -198,6 +198,7 @@ async fn stream_event_for_user(
         if !request_policy(
             &request,
             RequestViewer::new(repo.access.clone(), user_id, is_invitee),
+            &repo.views,
         )
         .activity_stream_visible
         {

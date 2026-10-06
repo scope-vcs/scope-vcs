@@ -198,8 +198,12 @@ pub struct RepoConfigResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct CreatePushIntentRequest {
     pub head_oid: String,
-    pub base_config_hash: String,
-    pub config: RepoConfig,
+    /// The fingerprint of the config the pusher reviewed; required when pushing through the full view and ignored otherwise.
+    #[serde(default)]
+    pub base_config_hash: Option<String>,
+    /// The reviewed config; required when pushing through the full view and ignored otherwise.
+    #[serde(default)]
+    pub config: Option<RepoConfig>,
     /// The view of the remote the push goes through.
     pub view: ViewId,
 }

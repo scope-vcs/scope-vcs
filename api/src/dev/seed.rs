@@ -1,4 +1,4 @@
-use scope_domain::views::ViewId;
+use scope_domain::views::{ViewId, Views};
 #[path = "seed/git_fixtures.rs"]
 mod git_fixtures;
 use git_fixtures::*;
@@ -479,11 +479,13 @@ fn seed_owner_request(
             name: name.to_string(),
             title: Some(title.to_string()),
             author_role: RequestActorRole::Owner,
+            author_view: ViewId::private(),
             view,
             base_main_oid: base_oid.clone(),
             event_id: format!("event_{id}_started"),
             now_unix,
         },
+        &Views::builtin(),
     )?;
     catalog
         .request_events
