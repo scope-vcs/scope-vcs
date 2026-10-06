@@ -13,6 +13,7 @@ use scope_domain::{
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "dependency_check"))]
     pub async fn dependency_check(
         &self,
         owner: &str,

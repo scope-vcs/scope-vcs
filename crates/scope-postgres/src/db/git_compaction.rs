@@ -76,6 +76,7 @@ where
 }
 
 impl JobStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_git_compaction"))]
     pub async fn claim_git_compaction(
         &self,
         worker_id: &str,
@@ -171,6 +172,7 @@ impl JobStore {
         }))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_git_compaction_claim"))]
     pub async fn complete_git_compaction_claim(
         &self,
         claim: &GitCompactionClaim,
@@ -217,6 +219,7 @@ impl JobStore {
         tx.commit().await.map_err(PostgresError::internal)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "renew_git_compaction_claim"))]
     pub async fn renew_git_compaction_claim(
         &self,
         claim: &GitCompactionClaim,
@@ -257,6 +260,7 @@ impl JobStore {
         Ok(result.rows_affected() == 1)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "continue_git_compaction_claim"))]
     pub async fn continue_git_compaction_claim(
         &self,
         claim: &GitCompactionClaim,
@@ -288,6 +292,7 @@ impl JobStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "fail_git_compaction_claim"))]
     pub async fn fail_git_compaction_claim(
         &self,
         claim: &GitCompactionClaim,
@@ -326,6 +331,7 @@ impl JobStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "replace_git_pack_spans_with_compaction"))]
     pub async fn replace_git_pack_spans_with_compaction(
         &self,
         repo_id: &str,

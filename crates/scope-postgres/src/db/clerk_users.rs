@@ -20,6 +20,7 @@ pub struct ClerkUserResolution {
 }
 
 impl AuthStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "resolve_existing_clerk_user"))]
     pub async fn resolve_existing_clerk_user(
         &self,
         identity: &ExternalIdentity,
@@ -28,6 +29,7 @@ impl AuthStore {
         existing_identity_user(self.db.as_ref(), identity, &verified_email).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "resolve_clerk_user"))]
     pub async fn resolve_clerk_user(
         &self,
         identity: &ExternalIdentity,

@@ -17,6 +17,7 @@ pub struct RepositoryGitWriteLease {
 }
 
 impl RepositoryGitWriteLease {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "release"))]
     pub async fn release(mut self) {
         if let Err(error) = sqlx::query("SELECT pg_advisory_unlock($1)")
             .bind(self.key)
@@ -32,6 +33,7 @@ impl RepositoryGitWriteLease {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "acquire_git_write_lease"))]
     pub async fn acquire_git_write_lease(
         &self,
         repo_id: &str,

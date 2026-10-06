@@ -1,5 +1,6 @@
 mod bootstrap;
 pub mod http;
+pub mod outbound_http;
 pub mod readiness;
 mod telemetry;
 

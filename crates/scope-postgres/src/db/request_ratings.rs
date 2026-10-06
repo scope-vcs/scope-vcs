@@ -12,6 +12,7 @@ use sea_orm::{
 };
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_ratings"))]
     pub async fn request_ratings(
         &self,
         request_id: &str,
@@ -19,6 +20,7 @@ impl RequestStore {
         ratings_for_request(self.db.as_ref(), request_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "create_request_rating"))]
     pub async fn create_request_rating(
         &self,
         input: CreateRequestRatingInput,
@@ -38,6 +40,7 @@ impl RequestStore {
         Ok(rating)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_reputation"))]
     pub async fn request_reputation(
         &self,
         user_id: &str,

@@ -4,7 +4,7 @@ use scope_git_process::{
 };
 use std::{
     path::Path as FsPath,
-    process::{Command, Output},
+    process::{Command, ExitStatus, Output},
     time::{Duration, Instant},
 };
 
@@ -13,13 +13,96 @@ pub(crate) fn git_process_output(
     stdin: Option<Vec<u8>>,
     limits: ProcessLimits,
 ) -> Result<Output, ApiError> {
-    run_process(command, stdin, limits, "Git command").map_err(|error| {
-        if error.is_stdout_limit() {
-            ApiError::payload_too_large(error.to_string())
-        } else {
-            ApiError::infrastructure_unavailable(error.to_string())
+    let span = git_subprocess_span(command);
+    let _entered = span.enter();
+    run_process(command, stdin, limits, "Git command")
+        .inspect(|output| record_git_exit(&span, output.status))
+        .map_err(|error| {
+            if error.is_stdout_limit() {
+                ApiError::payload_too_large(error.to_string())
+            } else {
+                ApiError::infrastructure_unavailable(error.to_string())
+            }
+        })
+}
+
+pub(crate) fn git_subprocess_span(command: &Command) -> tracing::Span {
+    let subcommand = git_subcommand(command);
+    tracing::info_span!(
+        "git subprocess",
+        otel.name = %format!("git {subcommand}"),
+        otel.kind = "internal",
+        git.subcommand = subcommand,
+        process.exit.code = tracing::field::Empty,
+    )
+}
+
+pub(crate) fn record_git_exit(span: &tracing::Span, status: ExitStatus) {
+    if let Some(code) = status.code() {
+        span.record("process.exit.code", code);
+    }
+}
+
+fn git_subcommand(command: &Command) -> &'static str {
+    const GIT_SUBCOMMANDS: [&str; 38] = [
+        "add",
+        "branch",
+        "bundle",
+        "cat-file",
+        "check-ref-format",
+        "checkout",
+        "clone",
+        "commit",
+        "config",
+        "diff",
+        "fetch",
+        "for-each-ref",
+        "fsck",
+        "hash-object",
+        "http-backend",
+        "index-pack",
+        "init",
+        "log",
+        "ls-tree",
+        "merge",
+        "merge-base",
+        "mktree",
+        "pack-objects",
+        "push",
+        "read-tree",
+        "receive-pack",
+        "reset",
+        "rev-list",
+        "rev-parse",
+        "show",
+        "show-ref",
+        "symbolic-ref",
+        "tag",
+        "update-index",
+        "update-ref",
+        "upload-pack",
+        "verify-pack",
+        "write-tree",
+    ];
+    let mut args = command.get_args();
+    while let Some(arg) = args.next().and_then(|value| value.to_str()) {
+        if matches!(
+            arg,
+            "-C" | "-c" | "--git-dir" | "--work-tree" | "--config-env"
+        ) {
+            args.next();
+            continue;
         }
-    })
+        if arg.starts_with('-') {
+            continue;
+        }
+        return GIT_SUBCOMMANDS
+            .iter()
+            .copied()
+            .find(|name| *name == arg)
+            .unwrap_or("other");
+    }
+    "other"
 }
 
 pub(crate) fn git_command_output_with_timeout(

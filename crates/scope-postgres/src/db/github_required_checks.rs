@@ -9,6 +9,7 @@ use scope_domain::{
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_required_checks"))]
     pub async fn github_required_checks(
         &self,
         repo_id: &str,
@@ -16,6 +17,7 @@ impl RepositoryStore {
         required_check_names(self.db.as_ref(), repo_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "set_github_required_checks"))]
     pub async fn set_github_required_checks(
         &self,
         repo_id: &str,

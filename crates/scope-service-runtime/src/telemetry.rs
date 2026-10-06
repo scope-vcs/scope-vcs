@@ -20,13 +20,21 @@ use tracing_subscriber::{
     util::SubscriberInitExt as _,
 };
 
-const EXPORTED_SPANS: &str = "off,otel::tracing=trace,api=info,worker=info,scope_=info";
+const EXPORTED_SPANS: &str =
+    "off,otel::tracing=trace,api=info,worker=info,scope_=info,aws_sdk_s3::operation=debug";
 const UNTRACED_PATHS: [&str; 2] = ["/healthz", "/readyz"];
-const EXPORTED_ATTRIBUTES: [&str; 7] = [
+const EXPORTED_ATTRIBUTES: [&str; 14] = [
+    "db.operation.name",
+    "db.system.name",
+    "git.subcommand",
     "http.request.method",
     "http.response.status_code",
     "http.route",
     "network.protocol.version",
+    "process.exit.code",
+    "rpc.method",
+    "rpc.service",
+    "rpc.system",
     "server.address",
     "server.port",
     "url.scheme",
@@ -252,7 +260,14 @@ mod tests {
             start_time: SystemTime::UNIX_EPOCH,
             end_time: SystemTime::UNIX_EPOCH,
             attributes: vec![
+                KeyValue::new("db.operation.name", "repo_live_file_with_landing_content"),
+                KeyValue::new("db.system.name", "postgresql"),
+                KeyValue::new("git.subcommand", "show"),
                 KeyValue::new("http.route", "/repos/{owner}/{repo}"),
+                KeyValue::new("process.exit.code", 0),
+                KeyValue::new("rpc.method", "GetObject"),
+                KeyValue::new("rpc.service", "S3"),
+                KeyValue::new("rpc.system", "aws-api"),
                 KeyValue::new("url.path", "/repos/acme/private-app"),
                 KeyValue::new("url.query", "token=secret"),
                 KeyValue::new("user_agent.original", "scope/1.0"),
@@ -267,7 +282,16 @@ mod tests {
         keep_allowed_attributes(&mut span);
         assert_eq!(
             span.attributes,
-            vec![KeyValue::new("http.route", "/repos/{owner}/{repo}")]
+            vec![
+                KeyValue::new("db.operation.name", "repo_live_file_with_landing_content"),
+                KeyValue::new("db.system.name", "postgresql"),
+                KeyValue::new("git.subcommand", "show"),
+                KeyValue::new("http.route", "/repos/{owner}/{repo}"),
+                KeyValue::new("process.exit.code", 0),
+                KeyValue::new("rpc.method", "GetObject"),
+                KeyValue::new("rpc.service", "S3"),
+                KeyValue::new("rpc.system", "aws-api"),
+            ]
         );
         assert_eq!(span.status, Status::error(""));
         assert!(span.events.is_empty());

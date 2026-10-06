@@ -70,6 +70,7 @@ pub struct ExclusiveWriterFence {
 }
 
 impl ExclusiveWriterFence {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "acquire"))]
     pub async fn acquire(database_url: &str) -> anyhow::Result<Self> {
         let mut connection = PgConnection::connect(database_url).await?;
         let acquired: bool = sqlx::query_scalar(AssertSqlSafe(writer_fence_statement(
@@ -85,6 +86,7 @@ impl ExclusiveWriterFence {
         Ok(Self { connection })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "release"))]
     pub async fn release(mut self) -> anyhow::Result<()> {
         sqlx::query(AssertSqlSafe(writer_fence_statement("pg_advisory_unlock")))
             .execute(&mut self.connection)

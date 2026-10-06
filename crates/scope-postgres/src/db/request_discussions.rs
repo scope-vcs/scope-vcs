@@ -69,6 +69,7 @@ pub struct RequestDiscussionsPageQuery<'a> {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_revision_window"))]
     pub async fn request_revision_window(
         &self,
         request_id: &str,
@@ -78,6 +79,7 @@ impl RequestStore {
         revision_window_for_request(self.db.as_ref(), request_id, selected_revision_id, limit).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_discussions_page"))]
     pub async fn request_discussions_page(
         &self,
         query: RequestDiscussionsPageQuery<'_>,
@@ -100,6 +102,7 @@ impl RequestStore {
             .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_discussion"))]
     pub async fn request_discussion(
         &self,
         request_id: &str,
@@ -120,6 +123,7 @@ impl RequestStore {
             .map(|discussion| (discussion, batch.users)))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "changed_request_discussions"))]
     pub async fn changed_request_discussions(
         &self,
         request_id: &str,
@@ -221,6 +225,7 @@ impl RequestStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_discussion_replies"))]
     pub async fn request_discussion_replies(
         &self,
         discussion_id: &str,
@@ -253,6 +258,7 @@ impl RequestStore {
         Ok((replies, users))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_discussion_reply"))]
     pub async fn request_discussion_reply(
         &self,
         discussion_id: &str,
@@ -275,6 +281,7 @@ impl RequestStore {
             .map(Some)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_discussion_reply_read_model"))]
     pub async fn request_discussion_reply_read_model(
         &self,
         reply: scope_domain::requests::RequestDiscussionReply,
@@ -325,6 +332,7 @@ impl RequestStore {
         Ok((RequestDiscussionReplyReadModel { reply, reply_to }, users))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_revision"))]
     pub async fn request_revision(
         &self,
         request_id: &str,
@@ -335,6 +343,7 @@ impl RequestStore {
             .filter(|revision| revision.request_id == request_id))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "create_request_discussion"))]
     pub async fn create_request_discussion(
         &self,
         command: CreateRequestDiscussionCommand,
@@ -419,6 +428,7 @@ impl RequestStore {
         Ok(mutation)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "create_request_discussion_reply"))]
     pub async fn create_request_discussion_reply(
         &self,
         command: CreateRequestDiscussionReplyCommand,
@@ -426,6 +436,7 @@ impl RequestStore {
         self.persist_request_discussion_reply(command, None).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "transition_request_discussion"))]
     pub async fn transition_request_discussion(
         &self,
         command: TransitionRequestDiscussionCommand,
@@ -494,6 +505,7 @@ impl RequestStore {
         Ok(mutation.discussion)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "reopen_and_reply_to_request_discussion"))]
     pub async fn reopen_and_reply_to_request_discussion(
         &self,
         command: ReopenAndReplyToRequestDiscussionCommand,
@@ -668,6 +680,7 @@ impl RequestStore {
         Ok(mutation)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mark_request_discussion_read"))]
     pub async fn mark_request_discussion_read(
         &self,
         input: MarkRequestDiscussionReadInput,

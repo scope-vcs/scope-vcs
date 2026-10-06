@@ -13,6 +13,7 @@ use {
 };
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "submit_request"))]
     pub async fn submit_request(
         &self,
         command: SubmitRequestCommand,

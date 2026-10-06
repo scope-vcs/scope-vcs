@@ -13,6 +13,7 @@ use sea_orm::{
 };
 
 impl AuthStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_due_clerk_user_deletions"))]
     pub async fn claim_due_clerk_user_deletions(
         &self,
         claim_token: &str,
@@ -49,6 +50,7 @@ impl AuthStore {
         Ok(claimed)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_clerk_user_deletion"))]
     pub async fn complete_clerk_user_deletion(
         &self,
         clerk_user_id: &str,
@@ -67,6 +69,7 @@ impl AuthStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "purge_completed_clerk_user_deletions"))]
     pub async fn purge_completed_clerk_user_deletions(
         &self,
         now_unix: u64,
@@ -82,6 +85,7 @@ impl AuthStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "retry_clerk_user_deletion"))]
     pub async fn retry_clerk_user_deletion(
         &self,
         clerk_user_id: &str,
