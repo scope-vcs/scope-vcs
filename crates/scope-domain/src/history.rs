@@ -77,6 +77,42 @@ pub struct HistoryEntryVisibilityChange {
     pub file: Option<HistoryEntryFile>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HistoryVisibilitySummary {
+    pub entered: usize,
+    pub left: usize,
+}
+
+impl HistoryEntry {
+    pub fn visibility_summary(&self, views: &Views, view: &ViewId) -> HistoryVisibilitySummary {
+        let Some(measured) = visibility_summary_view(views, view) else {
+            return HistoryVisibilitySummary::default();
+        };
+        let (views_before, views_after) =
+            self.views.as_ref().map_or((views, views), |transition| {
+                (&transition.before, &transition.after)
+            });
+        self.visibility_changes.iter().fold(
+            HistoryVisibilitySummary::default(),
+            |mut summary, change| {
+                let before = views_before.shows(measured, &change.path, &change.old_label);
+                let after = views_after.shows(measured, &change.path, &change.new_label);
+                summary.entered += usize::from(!before && after);
+                summary.left += usize::from(before && !after);
+                summary
+            },
+        )
+    }
+}
+
+fn visibility_summary_view<'a>(views: &'a Views, view: &'a ViewId) -> Option<&'a ViewId> {
+    if view == views.full() {
+        views.anyone()
+    } else {
+        Some(view)
+    }
+}
+
 pub fn history_view(
     graph: &SourceGraph,
     visibility_change_sets: &[VisibilityChangeSet],

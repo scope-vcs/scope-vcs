@@ -11,6 +11,7 @@ pub struct ContentRefFence {
 }
 
 impl ContentRefFence {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "release"))]
     pub async fn release(mut self) {
         for key in self.keys.iter().rev() {
             if let Err(error) = sqlx::query("SELECT pg_advisory_unlock($1)")
@@ -29,6 +30,7 @@ impl ContentRefFence {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "with_repo_storage_lock"))]
     pub async fn with_repo_storage_lock<R, F, Fut, E>(&self, repo_id: &str, op: F) -> Result<R, E>
     where
         F: FnOnce() -> Fut,
@@ -55,6 +57,7 @@ impl RepositoryStore {
         result
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_exists"))]
     pub async fn repository_exists(&self, repo_id: &str) -> Result<bool, PostgresError> {
         entities::repository::Entity::find_by_id(repo_id.to_string())
             .one(self.db.as_ref())

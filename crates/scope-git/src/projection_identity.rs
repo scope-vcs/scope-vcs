@@ -40,9 +40,13 @@ pub enum ProjectionIdentityError {
 pub fn projection_head_oid(
     projection: &Projection,
 ) -> Result<Option<String>, ProjectionIdentityError> {
-    let mut head = ProjectionHead::default();
-    head.apply(&projection.commits)?;
-    Ok(head.oid)
+    Ok(projection_commit_oids(projection)?.pop())
+}
+
+pub fn projection_commit_oids(
+    projection: &Projection,
+) -> Result<Vec<String>, ProjectionIdentityError> {
+    ProjectionHead::default().apply_each(&projection.commits)
 }
 
 #[derive(Default)]
@@ -68,10 +72,18 @@ impl ProjectionHead {
     }
 
     pub fn apply(&mut self, commits: &[ProjectedCommit]) -> Result<(), ProjectionIdentityError> {
+        self.apply_each(commits).map(|_| ())
+    }
+
+    pub fn apply_each(
+        &mut self,
+        commits: &[ProjectedCommit],
+    ) -> Result<Vec<String>, ProjectionIdentityError> {
         let Self {
             tree,
             oid: parent_oid,
         } = self;
+        let mut commit_oids = Vec::with_capacity(commits.len());
         let mut native_range: Option<NativeRange> = None;
         for commit in commits {
             if native_range.as_ref().is_some_and(|range: &NativeRange| {
@@ -152,11 +164,12 @@ impl ProjectionHead {
                     oid
                 }
             });
+            commit_oids.extend(parent_oid.clone());
         }
         if let Some(range) = native_range {
             validate_native_range(range, &tree.oid()?)?;
         }
-        Ok(())
+        Ok(commit_oids)
     }
 }
 
@@ -507,6 +520,16 @@ mod tests {
         assert_eq!(
             projection_head_oid(&mixed).unwrap(),
             Some(materialize_with_git(&mixed, &blobs))
+        );
+        let commit_oids = projection_commit_oids(&mixed).unwrap();
+        assert_eq!(
+            commit_oids[..2],
+            projection_commit_oids(&preserved).unwrap()
+        );
+        assert_eq!(commit_oids[1], native_oid);
+        assert_eq!(
+            commit_oids.last().cloned(),
+            projection_head_oid(&mixed).unwrap()
         );
     }
 

@@ -59,6 +59,7 @@ pub struct DispatchOffer {
 
 impl RunStore {
     #[cfg(any(test, feature = "seeding"))]
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "enqueue_run"))]
     pub async fn enqueue_run(
         &self,
         run: Run,
@@ -70,6 +71,7 @@ impl RunStore {
         Ok(stored)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "heartbeat_attempt"))]
     pub async fn heartbeat_attempt(
         &self,
         attempt_id: &str,
@@ -87,6 +89,7 @@ impl RunStore {
         Ok(cancellation_requested)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_attempt"))]
     pub async fn complete_attempt(
         &self,
         attempt_id: &str,
@@ -116,6 +119,7 @@ impl RunStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "reject_capacity_attempt"))]
     pub async fn reject_capacity_attempt(
         &self,
         attempt_id: &str,
@@ -136,6 +140,7 @@ impl RunStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "abandon_attempt"))]
     pub async fn abandon_attempt(
         &self,
         attempt_id: &str,
@@ -155,6 +160,7 @@ impl RunStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "confirm_provider_cancellation"))]
     pub async fn confirm_provider_cancellation(
         &self,
         attempt_id: &str,
@@ -176,6 +182,7 @@ impl RunStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "expire_attempt"))]
     pub async fn expire_attempt(
         &self,
         attempt_id: &str,
@@ -231,6 +238,7 @@ impl RunStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "expired_attempt_ids"))]
     pub async fn expired_attempt_ids(
         &self,
         now_unix: u64,
@@ -260,6 +268,7 @@ impl RunStore {
             .collect())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_run_cancellation"))]
     pub async fn request_run_cancellation(
         &self,
         actor_user_id: &str,
@@ -283,6 +292,7 @@ impl RunStore {
         Ok(run)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "retry_run"))]
     pub async fn retry_run(
         &self,
         actor_user_id: &str,
@@ -308,6 +318,7 @@ impl RunStore {
         Ok(run)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run"))]
     pub async fn run(&self, run_id: &str) -> Result<Option<Run>, PostgresError> {
         entities::run::Entity::find_by_id(run_id.to_string())
             .one(self.db.as_ref())

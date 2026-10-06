@@ -80,6 +80,7 @@ pub(crate) async fn get_history_page(
     Ok(Json(history_page_response(
         feed,
         &history,
+        &repo.views,
         entries,
         next_cursor,
         page.head_oid,
@@ -124,6 +125,7 @@ pub(crate) async fn get_history_entry(
     .await?;
     Ok(Json(history_entry_detail_response(
         &history,
+        &repo.views,
         entry,
         neighbors,
         &users,

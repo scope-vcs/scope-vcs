@@ -4,6 +4,7 @@ use crate::{
         cache::GitRepoHandle,
         check_commit::write_check_commit,
         command::{git_stdout_text, run_git},
+        repository_git::RepositoryGit,
         request_ref_public_safety::public_contribution_base,
         request_refs::with_request_revision_store_repo,
         storage::{receive_pack_staging_repo_path, remove_dir_if_exists},
@@ -12,10 +13,11 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    repository::{Repository, RepositoryIncarnation},
+    repository::RepositoryIncarnation,
     requests::{
         CheckCommitBase, GitHubTestedCommit, Request, RequestRevision, canonical_request_ref,
     },
+    views::Views,
 };
 use std::{
     fs,
@@ -26,14 +28,20 @@ const CHECK_HEAD_REF: &str = "refs/scope/internal/check-head";
 
 pub(crate) async fn public_tested_commit(
     state: &AppState,
-    repo: &Repository,
+    git: &RepositoryGit,
     request: &Request,
     revision: &RequestRevision,
 ) -> Result<GitHubTestedCommit, ApiError> {
-    let staging = CheckStaging::open(state, &repo.incarnation(), request, revision).await?;
+    let staging = CheckStaging::open(state, &git.incarnation, request, revision).await?;
     let built = async {
-        let public_base_oid =
-            public_contribution_base(repo, state, &staging.path, &revision.new_head_oid).await?;
+        let public_base_oid = public_contribution_base(
+            git,
+            &Views::builtin(),
+            state,
+            &staging.path,
+            &revision.new_head_oid,
+        )
+        .await?;
         let base = CheckCommitBase::new(staging.private_main_oid.clone(), public_base_oid)?;
         let path = staging.path.clone();
         let request_id = request.id.clone();

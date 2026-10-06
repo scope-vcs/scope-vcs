@@ -15,9 +15,17 @@ const FEEDS: { value: HistoryFeed; label: string; empty: string }[] = [
   { value: 'visibility', label: 'Visibility', empty: 'No visibility changes yet.' },
 ]
 
-export function HistoryMenu({ params }: { params: RepoParams }) {
+export function HistoryMenu({
+  initialFeed = 'all',
+  label = 'History',
+  params,
+}: {
+  initialFeed?: HistoryFeed
+  label?: string
+  params: RepoParams
+}) {
   const { view } = useViewingAs()
-  const [feed, setFeed] = useState<HistoryFeed>('all')
+  const [feed, setFeed] = useState<HistoryFeed>(initialFeed)
 
   return (
     <Popover
@@ -38,7 +46,7 @@ export function HistoryMenu({ params }: { params: RepoParams }) {
           type="button"
           {...props}
         >
-          <History aria-hidden="true" className="size-3.5" /> History
+          <History aria-hidden="true" className="size-3.5" /> {label}
           <ChevronDown aria-hidden="true" className="size-3.5" />
         </button>
       )}

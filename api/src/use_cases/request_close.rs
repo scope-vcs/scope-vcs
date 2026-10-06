@@ -12,6 +12,7 @@ use scope_domain::{
 use scope_postgres::db::CloseRequestCommand;
 use scope_product_analytics::{ProductEvent, RequestCloseOutcome};
 
+#[tracing::instrument(skip_all, name = "use_case.request.close")]
 pub(crate) async fn close_request(
     state: &AppState,
     repo: &RepositoryAccessContext,

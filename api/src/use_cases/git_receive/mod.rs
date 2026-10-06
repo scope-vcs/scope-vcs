@@ -3,12 +3,12 @@ pub(crate) mod main_push;
 pub(crate) mod request_ref;
 
 use crate::{
-    auth::scope::principal_for_user_id,
     config::GIT_PUSH_TOKEN_PREFIX,
     error::ApiError,
     git::{
         InitialPushCredential, ReceivePackAuthorization, authorize_git_push_token_for_repo,
-        authorize_initial_push_for_repo, find_repo_after_git_scope_token, git_credential_error,
+        authorize_initial_push_for_repo, git_credential_error,
+        git_push_credentials_after_scope_token,
         import::PreparedReceivePackUpdate,
         invalid_git_credentials,
         request_refs::{non_request_refs_changed, receive_pack_refs, request_ref_update_from_refs},
@@ -17,7 +17,6 @@ use crate::{
         },
     },
     push_intents::ValidatedPushIntent,
-    repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
 };
@@ -86,27 +85,24 @@ pub(crate) async fn authorize(
     match authorization {
         ReceivePackAuthorization::ScopeToken { secret } => {
             let push_intent = required_push_intent(state, push_intent_secret)?;
-            let repo = find_repo_after_git_scope_token(state, owner, repo_name).await?;
+            let repo = git_push_credentials_after_scope_token(state, owner, repo_name).await?;
             let credential = if secret.starts_with(GIT_PUSH_TOKEN_PREFIX) {
                 InitialPushCredential::GitPushToken { secret }
             } else {
                 InitialPushCredential::FirstPushToken { secret }
             };
-            if repo.is_waiting_for_first_push() {
-                authorize_initial_push_for_repo(&repo, &credential)
-                    .map_err(git_credential_error)?;
-                let author_id = repo.record.owner_user_id.clone();
-                push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
-                return Ok(ReceivePackAccess::FirstPush {
-                    author_id,
-                    incarnation: repo.incarnation(),
-                    push_intent,
-                });
-            }
             match repo.record.lifecycle_state {
-                RepoLifecycleState::AwaitingFirstPush => Err(ApiError::conflict(
-                    "repo is awaiting its first push and cannot receive another push",
-                )),
+                RepoLifecycleState::AwaitingFirstPush => {
+                    authorize_initial_push_for_repo(&repo, &credential)
+                        .map_err(git_credential_error)?;
+                    let author_id = repo.record.owner_user_id.clone();
+                    push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
+                    Ok(ReceivePackAccess::FirstPush {
+                        author_id,
+                        incarnation: repo.record.incarnation(),
+                        push_intent,
+                    })
+                }
                 RepoLifecycleState::Ready => match credential {
                     InitialPushCredential::GitPushToken { secret } => {
                         let author_id = authorize_git_push_token_for_repo(&repo, &secret)
@@ -114,7 +110,7 @@ pub(crate) async fn authorize(
                         push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
                         Ok(ReceivePackAccess::ReadyMember {
                             author_id,
-                            incarnation: repo.incarnation(),
+                            incarnation: repo.record.incarnation(),
                             push_intent,
                         })
                     }
@@ -140,23 +136,31 @@ pub(crate) async fn authorize(
                     push_intent,
                 });
             }
-            let repo = find_repo(state, owner, repo_name).await?;
-            let principal = principal_for_user_id(&repo, &user.id);
-            let push_policy = repo.push_policy_for_user_id(&user.id);
+            let context = state
+                .metadata
+                .repositories()
+                .repository_read_access(owner, repo_name, Some(&user.id))
+                .await?
+                .ok_or_else(|| {
+                    ApiError::not_found(format!("repo {owner}/{repo_name} not found"))
+                })?;
+            let repo = &context.record;
+            let access = context.access;
+            let push_mode = access.main_push_mode(repo.lifecycle_state);
             let author_id = user.id.clone();
-            if push_policy.mode == MainPushMode::FirstPush {
+            if push_mode == MainPushMode::FirstPush {
                 let push_intent = required_push_intent(state, push_intent_secret)?;
-                push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
+                push_intent.ensure_repo_user(&repo.id, &author_id)?;
                 return Ok(ReceivePackAccess::FirstPush {
                     author_id,
                     incarnation: repo.incarnation(),
                     push_intent,
                 });
             }
-            let rejection = if push_policy.mode == MainPushMode::Denied {
+            let rejection = if push_mode == MainPushMode::Denied {
                 ApiError::not_found(format!("repo {owner}/{repo_name} not found"))
             } else {
-                if repo.record.lifecycle_state == RepoLifecycleState::AwaitingFirstPush {
+                if repo.lifecycle_state == RepoLifecycleState::AwaitingFirstPush {
                     return Err(ApiError::conflict(
                         "repo is awaiting its first push and cannot receive another push",
                     ));
@@ -164,7 +168,7 @@ pub(crate) async fn authorize(
                 match push_intent_secret {
                     Some(secret) => match state.validate_push_intent_secret(secret) {
                         Ok(push_intent) => {
-                            push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
+                            push_intent.ensure_repo_user(&repo.id, &author_id)?;
                             return Ok(ReceivePackAccess::ReadyMember {
                                 author_id,
                                 incarnation: repo.incarnation(),
@@ -176,18 +180,12 @@ pub(crate) async fn authorize(
                     None => ApiError::forbidden("valid Scope push intent required"),
                 }
             };
-            let narrower_member = push_policy.access.is_maintainer()
-                && !repo.can_read_view(&push_policy.access, repo.repo_config.views().full());
-            if repo.record.lifecycle_state == RepoLifecycleState::Ready
+            let narrower_member = access.is_maintainer()
+                && !access.can_read_view(&context.views, context.views.full());
+            if repo.lifecycle_state == RepoLifecycleState::Ready
                 && !narrower_member
-                && actor_can_receive_request_push(
-                    state,
-                    &repo,
-                    &principal,
-                    &author_id,
-                    push_policy.access,
-                )
-                .await?
+                && request_ref::actor_has_open_editable_request(state, &repo.id, &author_id, access)
+                    .await?
             {
                 Ok(ReceivePackAccess::RequestContributor {
                     author_id,
@@ -261,6 +259,7 @@ pub(crate) async fn prepare(
     })
 }
 
+#[tracing::instrument(skip_all, name = "use_case.git_receive.complete")]
 pub(crate) async fn complete(
     state: &AppState,
     owner: &str,
@@ -373,6 +372,7 @@ async fn complete_inner(
     Ok(ReceiveCompletion::MainPush)
 }
 
+#[tracing::instrument(skip_all, name = "use_case.git_receive.main_push", fields(scope.change.count = tracing::field::Empty, scope.landed_request.count = tracing::field::Empty))]
 async fn complete_main_push(
     state: &AppState,
     owner: &str,
@@ -387,6 +387,7 @@ async fn complete_main_push(
     let import_started_at = Instant::now();
     let (prepared, change_count): (PreparedReceivePackUpdate, usize) =
         main_push::prepare_main_push(state, owner, repo_name, staging_repo, &access).await?;
+    tracing::Span::current().record("scope.change.count", change_count);
     let landed_request_candidates = if first_push {
         Vec::new()
     } else {
@@ -411,6 +412,10 @@ async fn complete_main_push(
             }
         }
     };
+    tracing::Span::current().record(
+        "scope.landed_request.count",
+        landed_request_candidates.len(),
+    );
     let persisted = main_push::persist_main_push(
         state,
         owner,
@@ -581,15 +586,4 @@ fn required_push_intent(
 ) -> Result<ValidatedPushIntent, ApiError> {
     let secret = secret.ok_or_else(|| ApiError::forbidden("valid Scope push intent required"))?;
     state.validate_push_intent_secret(secret)
-}
-
-async fn actor_can_receive_request_push(
-    state: &AppState,
-    repo: &scope_domain::repository::Repository,
-    principal: &scope_domain::policy::Principal,
-    author_id: &str,
-    access: scope_domain::repository::access::RepositoryAccess,
-) -> Result<bool, ApiError> {
-    ensure_repo_read(repo, principal)?;
-    request_ref::actor_has_open_editable_request(state, &repo.record.id, author_id, access).await
 }

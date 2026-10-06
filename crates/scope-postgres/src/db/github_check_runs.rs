@@ -43,6 +43,7 @@ impl GitHubCheckCommit {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_github_check_read"))]
     pub async fn start_github_check_read(
         &self,
         commit: &GitHubCheckCommit,
@@ -69,6 +70,7 @@ impl RequestStore {
         )
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "apply_github_check_read"))]
     pub async fn apply_github_check_read(
         &self,
         commit: &GitHubCheckCommit,
@@ -156,6 +158,7 @@ impl RequestStore {
         Ok(true)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "settled_github_check_read_started_at"))]
     pub async fn settled_github_check_read_started_at(
         &self,
         commit: &GitHubCheckCommit,
@@ -181,6 +184,7 @@ impl RequestStore {
         )
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "current_github_evaluations_testing"))]
     pub async fn current_github_evaluations_testing(
         &self,
         repo_id: &str,
@@ -220,6 +224,7 @@ impl RequestStore {
         self.request_check_evaluations(&heads).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_commit_is_watched"))]
     pub async fn github_commit_is_watched(
         &self,
         repo_id: &str,
@@ -248,6 +253,7 @@ impl RequestStore {
             .map_err(PostgresError::internal)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_check_refresh_candidates"))]
     pub async fn github_check_refresh_candidates(
         &self,
         now_unix: u64,
@@ -303,6 +309,7 @@ impl RequestStore {
         .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_github_check_refresh"))]
     pub async fn claim_github_check_refresh(
         &self,
         commit: &GitHubCheckCommit,
@@ -332,6 +339,7 @@ impl RequestStore {
             .is_some())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "schedule_github_check_refresh"))]
     pub async fn schedule_github_check_refresh(
         &self,
         commit: &GitHubCheckCommit,

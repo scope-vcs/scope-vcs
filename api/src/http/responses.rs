@@ -19,8 +19,7 @@ use scope_git::DEFAULT_GIT_BRANCH;
 
 use crate::error::ApiError;
 use scope_domain::history::{
-    FileChangeKind as DomainFileChangeKind, HistoryEntry, HistoryEntryFile,
-    HistoryEntryVisibilityChange, HistoryView,
+    HistoryEntry, HistoryEntryFile, HistoryEntryVisibilityChange, HistoryView,
 };
 use scope_domain::{
     account::UserAccount,
@@ -445,6 +444,7 @@ pub(crate) fn git_push_token_response(
 pub(crate) fn history_page_response(
     feed: HistoryFeed,
     history: &HistoryView,
+    views: &Views,
     entries: &[HistoryEntry],
     next_cursor: Option<String>,
     head_oid: Option<String>,
@@ -458,7 +458,7 @@ pub(crate) fn history_page_response(
         head_oid,
         entries: entries
             .iter()
-            .map(|entry| history_entry_summary_response(entry, users))
+            .map(|entry| history_entry_summary_response(entry, views, &history.view, users))
             .collect::<Result<_, _>>()?,
         next_cursor,
     })
@@ -466,6 +466,7 @@ pub(crate) fn history_page_response(
 
 pub(crate) fn history_entry_detail_response(
     history: &HistoryView,
+    views: &Views,
     entry: &HistoryEntry,
     neighbors: scope_postgres::db::RepositoryHistoryNeighbors,
     users: &BTreeMap<String, UserAccount>,
@@ -506,7 +507,7 @@ pub(crate) fn history_entry_detail_response(
         author: history_author_handle(entry.author.as_deref(), users),
         message: entry.message.clone(),
         file_change_count: entry.files.len(),
-        visibility_summary: history_visibility_summary_response(entry),
+        visibility_summary: history_visibility_summary_response(entry, views, &history.view),
         files: entry
             .files
             .iter()
@@ -539,6 +540,8 @@ pub(crate) fn native_history_file(
 
 fn history_entry_summary_response(
     entry: &HistoryEntry,
+    views: &Views,
+    view: &scope_domain::views::ViewId,
     users: &BTreeMap<String, UserAccount>,
 ) -> Result<HistoryEntrySummaryResponse, ApiError> {
     Ok(HistoryEntrySummaryResponse {
@@ -550,7 +553,7 @@ fn history_entry_summary_response(
         author: history_author_handle(entry.author.as_deref(), users),
         message: entry.message.clone(),
         file_change_count: entry.files.len(),
-        visibility_summary: history_visibility_summary_response(entry),
+        visibility_summary: history_visibility_summary_response(entry, views, view),
         views: entry.views.as_ref().map(ViewsTransition::from),
     })
 }
@@ -564,17 +567,15 @@ fn history_author_handle(
         .map(|user| user.handle.clone())
 }
 
-fn history_visibility_summary_response(entry: &HistoryEntry) -> HistoryVisibilitySummaryResponse {
-    let boundary_count = |kind| {
-        entry
-            .visibility_changes
-            .iter()
-            .filter(|change| change.file.as_ref().is_some_and(|file| file.kind == kind))
-            .count()
-    };
+fn history_visibility_summary_response(
+    entry: &HistoryEntry,
+    views: &Views,
+    view: &scope_domain::views::ViewId,
+) -> HistoryVisibilitySummaryResponse {
+    let summary = entry.visibility_summary(views, view);
     HistoryVisibilitySummaryResponse {
-        entered_count: boundary_count(DomainFileChangeKind::Added),
-        left_count: boundary_count(DomainFileChangeKind::Deleted),
+        entered_count: summary.entered,
+        left_count: summary.left,
     }
 }
 

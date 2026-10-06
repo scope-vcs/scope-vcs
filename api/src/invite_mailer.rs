@@ -67,21 +67,22 @@ impl InviteMailer {
 
 impl ResendMailer {
     async fn send(&self, message: &InviteEmailMessage) -> InviteEmailOutcome {
-        let response = self
-            .client
-            .post(RESEND_EMAILS_URL)
-            .bearer_auth(&self.api_key)
-            .header("Idempotency-Key", &message.idempotency_key)
-            .json(&serde_json::json!({
+        let response = scope_service_runtime::outbound_http::send_traced(
+            self.client
+                .post(RESEND_EMAILS_URL)
+                .bearer_auth(&self.api_key)
+                .header("Idempotency-Key", &message.idempotency_key)
+                .json(&serde_json::json!({
                 "from": self.from,
                 "to": [message.to],
                 "reply_to": message.reply_to,
                 "subject": message.subject,
                 "text": message.text,
                 "html": message.html,
-            }))
-            .send()
-            .await;
+                })),
+            "/emails",
+        )
+        .await;
         let response = match response {
             Ok(response) => response,
             Err(error) => {

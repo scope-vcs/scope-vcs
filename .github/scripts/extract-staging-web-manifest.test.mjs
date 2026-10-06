@@ -76,6 +76,47 @@ test('copies a manifest from a stopped container without executing the image', (
   }
 });
 
+function copyWithLoginFailures(failures) {
+  const directory = mkdtempSync(join(tmpdir(), 'scope-web-manifest-test-'));
+  const commands = [];
+  const pauses = [];
+  try {
+    let error;
+    try {
+      copyWebManifest(image, join(directory, 'ssr.mjs'), {
+        registryUsername: 'reader', registryPassword: 'secret',
+        pause: milliseconds => pauses.push(milliseconds),
+        execute: (_command, args) => {
+          commands.push(args[0]);
+          if (args[0] === 'login' && commands.length <= failures) {
+            throw new Error('Get "https://ghcr.io/v2/": context deadline exceeded');
+          }
+          if (args[0] === 'cp') writeFileSync(args[2], 'export const manifest = {};\n');
+        },
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    return { commands, pauses, error };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+test('retries a transient registry login with backoff before pulling', () => {
+  const { commands, pauses, error } = copyWithLoginFailures(2);
+  assert.ifError(error);
+  assert.deepEqual(commands, ['login', 'login', 'login', 'pull', 'create', 'cp', 'container']);
+  assert.deepEqual(pauses, [5_000, 10_000]);
+});
+
+test('fails with the registry error after three login attempts without pulling', () => {
+  const { commands, pauses, error } = copyWithLoginFailures(3);
+  assert.match(error.message, /Registry login failed after 3 attempts: ghcr\.io\n.*context deadline exceeded/);
+  assert.deepEqual(commands, ['login', 'login', 'login', 'container']);
+  assert.deepEqual(pauses, [5_000, 10_000]);
+});
+
 test('fails if the image does not contain the compiled manifest', () => {
   const directory = mkdtempSync(join(tmpdir(), 'scope-web-manifest-test-'));
   try {

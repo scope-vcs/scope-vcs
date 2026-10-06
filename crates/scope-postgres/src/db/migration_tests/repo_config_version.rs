@@ -5,7 +5,7 @@ async fn version_two_repo_configs_become_version_three() {
     let (_target, db, _lease) = isolated_database().await;
     let previous_count = migrations::Migrator::migrations()
         .iter()
-        .position(|migration| migration.name() == "m0077_repo_config_version")
+        .position(|migration| migration.name() == "m0078_repo_config_version")
         .unwrap();
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await

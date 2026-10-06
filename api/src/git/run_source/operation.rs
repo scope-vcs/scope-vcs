@@ -1,6 +1,7 @@
 use super::TemporarySourceDirectory;
 use crate::{error::ApiError, runtime_budgets::RuntimePermit, state::AppState};
 use std::{future::Future, sync::Arc};
+use tracing::Instrument as _;
 
 pub(crate) struct RunSourceOperation {
     repository: TemporarySourceDirectory,
@@ -28,9 +29,11 @@ pub(super) fn repository(owner: &RunSourceOperation) -> std::path::PathBuf {
 pub(super) async fn supervise<T: Send + 'static>(
     work: impl Future<Output = Result<T, ApiError>> + Send + 'static,
 ) -> Result<T, ApiError> {
-    tokio::spawn(work).await.map_err(|error| {
-        ApiError::internal_message(format!("run source materialization task failed: {error}"))
-    })?
+    tokio::spawn(work.in_current_span())
+        .await
+        .map_err(|error| {
+            ApiError::internal_message(format!("run source materialization task failed: {error}"))
+        })?
 }
 
 pub(crate) fn spawn_blocking<F, T>(
@@ -42,7 +45,9 @@ where
     T: Send + 'static,
 {
     let owner = owner.clone();
+    let span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
+        let _entered = span.enter();
         let _owner = owner;
         #[cfg(test)]
         if let Some(hook) = _owner.hook.as_ref() {

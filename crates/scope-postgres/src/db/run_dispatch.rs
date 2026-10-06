@@ -28,6 +28,7 @@ pub struct CloudTaskStop {
 }
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_cloud_attempt_aborts"))]
     pub async fn claim_cloud_attempt_aborts(
         &self,
         now_unix: u64,
@@ -51,6 +52,7 @@ impl RunStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_terminal_cloud_task_stops"))]
     pub async fn claim_terminal_cloud_task_stops(
         &self,
         now_unix: u64,
@@ -114,6 +116,7 @@ impl RunStore {
             .collect()
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "release_cloud_task_stop_claim"))]
     pub async fn release_cloud_task_stop_claim(
         &self,
         attempt_id: &str,
@@ -129,6 +132,7 @@ impl RunStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_cloud_task_stop"))]
     pub async fn complete_cloud_task_stop(
         &self,
         attempt_id: &str,
@@ -160,6 +164,7 @@ impl RunStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_cloud_task_absence"))]
     pub async fn complete_cloud_task_absence(
         &self,
         attempt_id: &str,
@@ -193,6 +198,7 @@ impl RunStore {
     }
 
     #[cfg(any(test, feature = "seeding"))]
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "next_dispatchable_job"))]
     pub async fn next_dispatchable_job(
         &self,
     ) -> Result<Option<super::runs::DispatchOffer>, PostgresError> {
@@ -252,6 +258,7 @@ impl RunStore {
 
     #[cfg(any(test, feature = "seeding"))]
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "dispatch_job"))]
     pub async fn dispatch_job(
         &self,
         run_id: &str,
@@ -358,6 +365,7 @@ impl RunStore {
         })
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "record_external_run_id"))]
     pub async fn record_external_run_id(
         &self,
         attempt_id: &str,

@@ -2,7 +2,9 @@ import type { CommitSummary } from '@/api/types'
 import type {
   HistoryEntryKind,
   HistoryEntrySummaryResponse,
+  ViewId,
 } from '@/api/types.generated'
+import type { RepoViews } from '@/api/repo-views'
 
 type HistoryRowCommit = Pick<
   CommitSummary,
@@ -30,9 +32,9 @@ export function historyCommitTitle(commit: Pick<CommitSummary, 'message'>) {
   return commit.message.split(/\r?\n/, 1)[0]?.trim() || '(no message)'
 }
 
-export function historyEntryLabels(entry: HistoryEntrySummaryResponse, viewName: string) {
+export function historyEntryLabels(entry: HistoryEntrySummaryResponse, view: ViewId, views: RepoViews) {
   return {
-    count: historyEntryCountLabel(entry, viewName),
+    count: historyEntryCountLabel(entry, view, views),
     kind: entry.kind === 'push' ? null : historyEntryKindLabel(entry.kind),
     title: historyCommitTitle(entry),
   }
@@ -56,13 +58,21 @@ export function compactHistorySourceId(sourceId: string) {
   return reviewedPush ? reviewedPush[1].slice(0, 12) : sourceId
 }
 
-export function historyEntryCountLabel(entry: Pick<HistoryEntrySummaryResponse, 'file_change_count' | 'kind' | 'visibility_summary'>, viewName: string) {
+export function historyEntryCountLabel(
+  entry: Pick<HistoryEntrySummaryResponse, 'file_change_count' | 'kind' | 'visibility_summary'>,
+  view: ViewId,
+  views: RepoViews,
+) {
   const files = entry.kind === 'push' || entry.kind === 'merged_request' ? entry.file_change_count : 0
   const { entered_count: entered, left_count: left } = entry.visibility_summary
-  const name = viewName.toLowerCase()
+  const name = views.name(visibilitySummaryView(view, views))
   return [
     files > 0 ? `${files} ${files === 1 ? 'file' : 'files'}` : null,
-    entered > 0 ? `${entered} entered ${name} view` : null,
-    left > 0 ? `${left} left ${name} view` : null,
+    entered > 0 ? `${entered} entered the ${name} view` : null,
+    left > 0 ? `${left} left the ${name} view` : null,
   ].filter(Boolean).join(', ')
+}
+
+function visibilitySummaryView(view: ViewId, views: RepoViews) {
+  return view === views.full ? views.anyone ?? view : view
 }

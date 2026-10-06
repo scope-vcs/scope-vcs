@@ -37,7 +37,6 @@ pub(crate) mod runtime_budgets;
 #[cfg(feature = "smoke-seed")]
 pub mod smoke_seed;
 mod storage_runtime;
-pub(crate) mod telemetry;
 pub(crate) mod use_cases;
 mod workflow_catalog_backfill;
 

@@ -5,6 +5,7 @@ use scope_domain::{
 };
 use scope_product_analytics::ProductEvent;
 
+#[tracing::instrument(skip_all, name = "use_case.request.start")]
 pub(crate) async fn start_request(
     state: &AppState,
     repo: &Repository,

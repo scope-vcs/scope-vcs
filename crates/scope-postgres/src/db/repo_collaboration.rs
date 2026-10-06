@@ -79,6 +79,7 @@ pub struct UpdateRepositoryMemberPermissionsCommand {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_collaboration"))]
     pub async fn repository_collaboration(
         &self,
         owner: &str,
@@ -122,10 +123,12 @@ impl RepositoryStore {
         }))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "user"))]
     pub async fn user(&self, user_id: &str) -> Result<UserAccount, PostgresError> {
         load_user_by_id(self.db.as_ref(), user_id).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "create_repository_invite"))]
     pub async fn create_repository_invite(
         &self,
         command: CreateRepositoryInviteMutation,
@@ -171,6 +174,7 @@ impl RepositoryStore {
         ))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "issue_repository_invite_link"))]
     pub async fn issue_repository_invite_link(
         &self,
         command: IssueRepositoryInviteLinkCommand,
@@ -189,6 +193,7 @@ impl RepositoryStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "update_repository_member_permissions"))]
     pub async fn update_repository_member_permissions(
         &self,
         command: UpdateRepositoryMemberPermissionsCommand,
@@ -213,6 +218,7 @@ impl RepositoryStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "revoke_repository_invite"))]
     pub async fn revoke_repository_invite(
         &self,
         owner: &str,
@@ -227,6 +233,7 @@ impl RepositoryStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "remove_repository_member"))]
     pub async fn remove_repository_member(
         &self,
         owner: &str,
@@ -256,6 +263,7 @@ impl RepositoryStore {
         ))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_invite_by_link_hash"))]
     pub async fn repository_invite_by_link_hash(
         &self,
         link_hash: &str,
@@ -275,6 +283,7 @@ impl RepositoryStore {
         Ok(invite.map(|invite| (repo, invite)))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "accept_repository_invite"))]
     pub async fn accept_repository_invite(
         &self,
         link_hash: &str,

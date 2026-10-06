@@ -69,6 +69,7 @@ pub struct NativeRunsStore {
 }
 
 impl MetadataStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "acquire_content_ref_fence"))]
     pub async fn acquire_content_ref_fence(
         &self,
         content_refs: &[ContentRef],
@@ -142,11 +143,13 @@ impl MetadataStore {
         }
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "connect"))]
     pub async fn connect(database_url: String) -> anyhow::Result<Self> {
         connect_postgres_store(database_url).await
     }
 
     #[cfg(feature = "local-dev")]
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "connect_local_dev"))]
     pub async fn connect_local_dev(
         target: crate::local_dev_database::LocalDevDatabase,
     ) -> anyhow::Result<Self> {

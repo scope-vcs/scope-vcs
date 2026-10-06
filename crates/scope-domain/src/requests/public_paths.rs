@@ -1,6 +1,6 @@
-use crate::views::ViewId;
 use crate::{
-    policy::ScopePath, repo_control::is_public_request_protected_path, repository::Repository,
+    policy::ScopePath, repo_config::RepoConfig, repo_control::is_public_request_protected_path,
+    views::ViewId,
 };
 use std::collections::BTreeSet;
 
@@ -10,33 +10,45 @@ pub enum PublicRequestPathError {
     PrivatePath,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PathHistory {
+    pub live_paths: BTreeSet<ScopePath>,
+    pub file_change_labels: Vec<(ScopePath, ViewId)>,
+    pub visibility_changes: Vec<(ScopePath, ViewId, ViewId)>,
+}
+
 pub struct PublicRequestPaths<'a> {
-    repository: &'a Repository,
+    repo_config: &'a RepoConfig,
     public_visible_paths: &'a BTreeSet<String>,
+    live_paths: &'a BTreeSet<ScopePath>,
     private_history_paths: BTreeSet<&'a ScopePath>,
 }
 
 impl<'a> PublicRequestPaths<'a> {
-    pub fn new(repository: &'a Repository, public_visible_paths: &'a BTreeSet<String>) -> Self {
-        let private_history_paths = repository
-            .graph
-            .commits
+    pub fn new(
+        repo_config: &'a RepoConfig,
+        public_visible_paths: &'a BTreeSet<String>,
+        history: &'a PathHistory,
+    ) -> Self {
+        let private_history_paths = history
+            .file_change_labels
             .iter()
-            .flat_map(|commit| &commit.changes)
-            .filter(|change| !change.label.is_public())
-            .map(|change| &change.path)
+            .filter(|(_, label)| !label.is_public())
+            .map(|(path, _)| path)
             .chain(
-                repository
-                    .visibility_change_sets
+                history
+                    .visibility_changes
                     .iter()
-                    .flat_map(|set| &set.changes)
-                    .filter(|change| !change.old_label.is_public() || !change.new_label.is_public())
-                    .map(|change| &change.path),
+                    .filter(|(_, old_label, new_label)| {
+                        !old_label.is_public() || !new_label.is_public()
+                    })
+                    .map(|(path, _, _)| path),
             )
             .collect();
         Self {
-            repository,
+            repo_config,
             public_visible_paths,
+            live_paths: &history.live_paths,
             private_history_paths,
         }
     }
@@ -48,10 +60,10 @@ impl<'a> PublicRequestPaths<'a> {
         if self.public_visible_paths.contains(path.as_str()) {
             return Ok(());
         }
-        if self.repository.live_file_exists(path) || self.private_history_paths.contains(path) {
+        if self.live_paths.contains(path) || self.private_history_paths.contains(path) {
             return Err(PublicRequestPathError::PrivatePath);
         }
-        if self.repository.repo_config.label_for_path(path) == ViewId::public() {
+        if self.repo_config.label_for_path(path).is_public() {
             Ok(())
         } else {
             Err(PublicRequestPathError::PrivatePath)

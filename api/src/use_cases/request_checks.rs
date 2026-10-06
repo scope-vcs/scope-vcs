@@ -3,17 +3,17 @@ use crate::{
     git::{
         command::{run_git_output, successful_git_output},
         import::{ReadWorkflowFiles, read_repository_workflow_files},
+        repository_git::RepositoryGit,
         request_refs::with_request_revision_store_repo,
     },
     persistence::unix_now,
-    repo_access::find_repo,
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{public_check_commits::public_tested_commit, repository_workflows},
 };
 use scope_api_contract::RunChangeKind;
 use scope_domain::{
-    repository::{RepoRecord, Repository, RepositoryIncarnation},
+    repository::{RepoRecord, RepositoryIncarnation},
     requests::{
         GitHubCheckTarget, GitHubTestedCommit, Request, RequestCheckEvaluation, RequestCheckPlan,
         RequestCheckProvider, RequestCheckResults, RequestChecksOutcome, RequestRevision,
@@ -44,10 +44,10 @@ pub(crate) async fn checks_view(
         !request.is_terminal()
             && evaluation.needs_new_check_commit(view.results.private_main_oid.as_deref())
     }) {
-        let repo = find_repo(state, &repo.owner_handle, &repo.name).await?;
+        let git = RepositoryGit::load(state, &repo.incarnation()).await?;
         Box::pin(renew_check_commit(
             state,
-            &repo,
+            &git,
             request,
             &evaluation.tested_oid,
         ))
@@ -155,8 +155,8 @@ async fn evaluate_saved_head(
         })
     };
     let check_commit = async {
-        let repo = find_repo(state, &repo.owner_handle, &repo.name).await?;
-        Box::pin(public_tested_commit(state, &repo, request, &revision)).await
+        let git = RepositoryGit::load(state, &repo.incarnation()).await?;
+        Box::pin(public_tested_commit(state, &git, request, &revision)).await
     };
     Box::pin(evaluate_request_checks(
         state,
@@ -215,7 +215,7 @@ pub(crate) async fn checks_outcomes(
 
 pub(crate) async fn best_effort_evaluate_request_checks(
     state: &AppState,
-    repo: &Repository,
+    git: &RepositoryGit,
     request: &Request,
     revision: &RequestRevision,
     actor_user_id: &str,
@@ -234,7 +234,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
             request_workflow_revisions(request, files)
         })
     };
-    let check_commit = Box::pin(public_tested_commit(state, repo, request, revision));
+    let check_commit = Box::pin(public_tested_commit(state, git, request, revision));
     let maintainer_pusher = actor_is_maintainer.then_some(actor_user_id);
     let evaluated = evaluate_request_checks(
         state,
@@ -246,7 +246,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     .await;
     match evaluated {
         Ok(mutation) => {
-            publish_request_checks_change(state, &repo.incarnation(), &mutation).await;
+            publish_request_checks_change(state, &git.incarnation, &mutation).await;
         }
         Err(error) => warn_evaluation_failed(request, &error),
     }
@@ -254,7 +254,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
 
 async fn renew_check_commit(
     state: &AppState,
-    repo: &Repository,
+    git: &RepositoryGit,
     request: &Request,
     replaced_tested_oid: &str,
 ) -> Result<Option<RequestChecksMutation>, ApiError> {
@@ -264,7 +264,7 @@ async fn renew_check_commit(
         .request_revision_with_head(&request.id, &request.head_oid)
         .await?
         .ok_or_else(|| ApiError::conflict("request head has no saved revision"))?;
-    let tested = Box::pin(public_tested_commit(state, repo, request, &revision)).await?;
+    let tested = Box::pin(public_tested_commit(state, git, request, &revision)).await?;
     let mutation = state
         .metadata
         .requests()
@@ -277,7 +277,7 @@ async fn renew_check_commit(
         })
         .await?;
     if let Some(mutation) = &mutation {
-        publish_request_checks_change(state, &repo.incarnation(), mutation).await;
+        publish_request_checks_change(state, &git.incarnation, mutation).await;
     }
     Ok(mutation)
 }
@@ -286,12 +286,22 @@ pub(crate) fn renew_stale_check_commits_in_background(state: &AppState, owner: &
     let (state, owner, name) = (state.clone(), owner.to_string(), name.to_string());
     tokio::spawn(async move {
         let renewed = async {
-            let repo = find_repo(&state, &owner, &name).await?;
+            let repo = state
+                .metadata
+                .repositories()
+                .repository_access(&owner, &name, None)
+                .await?
+                .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{name} not found")))?
+                .record;
             let requests = state
                 .metadata
                 .requests()
-                .requests_needing_new_check_commit(&repo.record.id)
+                .requests_needing_new_check_commit(&repo.id)
                 .await?;
+            if requests.is_empty() {
+                return Ok(());
+            }
+            let git = RepositoryGit::load(&state, &repo.incarnation()).await?;
             for request in requests {
                 let Some(evaluation) = state
                     .metadata
@@ -302,7 +312,7 @@ pub(crate) fn renew_stale_check_commits_in_background(state: &AppState, owner: &
                     continue;
                 };
                 if let Err(error) =
-                    renew_check_commit(&state, &repo, &request, &evaluation.tested_oid).await
+                    renew_check_commit(&state, &git, &request, &evaluation.tested_oid).await
                 {
                     tracing::warn!(
                         request_id = request.id,

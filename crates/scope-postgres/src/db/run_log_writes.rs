@@ -15,6 +15,7 @@ pub struct AppendRunLogResult {
 }
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "append_attempt_log"))]
     pub async fn append_attempt_log(
         &self,
         chunk: RunLogChunk,

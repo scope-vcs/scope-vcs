@@ -1,35 +1,130 @@
-import type { RequestCheckResponse } from '@/api/types.generated'
+import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.generated'
 import { githubRunResult } from '../runs/github-run-status'
-import { runStatus } from '../runs/run-status'
+import { runJobPanelId } from '../runs/run-job-ids'
+import { type RunTone, runStatus } from '../runs/run-status'
 
 export type RequestCheckRow = {
   key: string
   name: string
-  provider: 'Scope' | 'GitHub'
+  leaf: string
+  parents: string[]
   state: string
+  tone: RunTone
   label: string
-  logs: { runId: string } | { href: string } | null
+  run: { id: string; hash?: string } | null
 }
 
-export function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
+export type RequestChecksSummary = {
+  lead: { state: 'failed' | 'running' | 'succeeded'; text: string } | null
+  counts: string | null
+  startError: { text: string; failed: boolean } | null
+  attention: RequestCheckRow[]
+  all: RequestCheckRow[]
+}
+
+const ATTENTION_ORDER: Partial<Record<RunTone, number>> = { danger: 0, running: 1, waiting: 2 }
+
+function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
   if (check.provider === 'native') {
-    return {
-      key: `native:${check.workflow_path}`,
-      name: check.workflow_name,
-      provider: 'Scope',
-      state: check.run_state ?? 'pending',
-      label: check.run_state ? runStatus(check.run_state).label : 'not started',
-      logs: check.run_id ? { runId: check.run_id } : null,
-    }
+    return row(
+      `native:${check.workflow_path}`,
+      check.workflow_name,
+      check.run_state === 'canceled' ? 'failed' : check.run_state ?? 'pending',
+      check.run_state ? runStatus(check.run_state).label : 'not started',
+      check.run_id ? { id: check.run_id } : null,
+    )
   }
   const result = check.status
     ? githubRunResult(check.status, check.conclusion)
-    : { state: 'pending', label: 'no run yet' }
-  return {
-    key: `github:${check.name}`,
-    name: check.name,
-    provider: 'GitHub',
-    ...result,
-    logs: check.details_url ? { href: check.details_url } : null,
+    : { state: 'pending', label: 'waiting' }
+  return row(
+    `github:${check.name}`,
+    check.name,
+    result.state,
+    result.label,
+    check.run ? { id: check.run.run_id, hash: runJobPanelId(check.run.job_id) } : null,
+  )
+}
+
+export function requestChecksSummary(checks: RequestChecksResponse): RequestChecksSummary {
+  const all = checks.checks
+    .map(requestCheckRow)
+    .sort(byWorkflowPath)
+  const attention = all
+    .filter((check) => check.tone in ATTENTION_ORDER)
+    .sort((a, b) => ATTENTION_ORDER[a.tone]! - ATTENTION_ORDER[b.tone]!)
+  const count = (tone: RunTone) => all.filter((check) => check.tone === tone).length
+  const failed = count('danger')
+  const left = count('running') + count('waiting')
+  const passed = count('success')
+  const skipped = count('inert')
+
+  const push = checks.github_push
+  const lead: RequestChecksSummary['lead'] = push?.state === 'failed'
+    ? { state: 'failed', text: 'Checks couldn’t start' }
+    : push?.state === 'sending'
+      ? { state: 'running', text: 'Starting checks' }
+      : failed
+        ? { state: 'failed', text: `${failed} failed` }
+        : left
+          ? { state: 'running', text: `${left} of ${all.length - skipped} left` }
+          : passed
+            ? { state: 'succeeded', text: `All ${passed} passed` }
+            : null
+  const counts = [
+    failed && left ? `${left} left` : null,
+    lead && lead.state !== 'succeeded' && passed ? `${passed} passed` : null,
+    skipped ? `${skipped} skipped` : null,
+  ].filter(Boolean)
+  const startError = push?.error && (push.state === 'failed' || push.state === 'sending')
+    ? push.state === 'failed'
+      ? { text: push.error, failed: true }
+      : { text: `The last attempt failed: ${push.error}`, failed: false }
+    : null
+
+  return { lead, counts: counts.length ? counts.join(' · ') : null, startError, attention, all }
+}
+
+export type RequestCheckTreeLine =
+  | { kind: 'group'; key: string; name: string; depth: number }
+  | { kind: 'check'; row: RequestCheckRow; depth: number }
+
+export function requestCheckTree(rows: RequestCheckRow[]): RequestCheckTreeLine[] {
+  const lines: RequestCheckTreeLine[] = []
+  let open: string[] = []
+  for (const row of rows) {
+    let shared = 0
+    while (shared < open.length && shared < row.parents.length && open[shared] === row.parents[shared]) {
+      shared += 1
+    }
+    for (let depth = shared; depth < row.parents.length; depth += 1) {
+      const path = row.parents.slice(0, depth + 1).join(' / ')
+      lines.push({ kind: 'group', key: `group:${path}`, name: row.parents[depth]!, depth })
+    }
+    open = row.parents
+    lines.push({ kind: 'check', row, depth: row.parents.length })
   }
+  return lines
+}
+
+function byWorkflowPath(a: RequestCheckRow, b: RequestCheckRow) {
+  const left = [...a.parents, a.leaf]
+  const right = [...b.parents, b.leaf]
+  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+    const [x, y] = [left[index]!, right[index]!]
+    if (x !== y) return x.localeCompare(y) || (x < y ? -1 : 1)
+  }
+  return left.length - right.length
+}
+
+function row(
+  key: string,
+  name: string,
+  state: string,
+  label: string,
+  run: RequestCheckRow['run'],
+): RequestCheckRow {
+  const parts = name.split(' / ')
+  const leaf = parts.pop()!
+  return { key, name, leaf, parents: parts, state, tone: runStatus(state).tone, label, run }
 }

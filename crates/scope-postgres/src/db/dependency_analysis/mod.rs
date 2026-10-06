@@ -70,6 +70,7 @@ pub(super) async fn enqueue_dependency_analysis_for_repository<C: ConnectionTrai
 }
 
 impl JobStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_dependency_analysis"))]
     pub async fn claim_dependency_analysis(
         &self,
         worker_id: &str,
@@ -209,6 +210,7 @@ impl JobStore {
         Ok(Some(claim))
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "renew_dependency_analysis_claim"))]
     pub async fn renew_dependency_analysis_claim(
         &self,
         claim: &DependencyAnalysisClaim,
@@ -236,6 +238,7 @@ impl JobStore {
         Ok(result.rows_affected() == 1)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_dependency_analysis_claim"))]
     pub async fn complete_dependency_analysis_claim(
         &self,
         claim: &DependencyAnalysisClaim,
@@ -253,6 +256,7 @@ impl JobStore {
             .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_reused_dependency_analysis_claim"))]
     pub async fn complete_reused_dependency_analysis_claim(
         &self,
         claim: &DependencyAnalysisClaim,
@@ -367,6 +371,7 @@ impl JobStore {
         Ok(DependencyCompletion::Completed)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "fail_dependency_analysis_claim"))]
     pub async fn fail_dependency_analysis_claim(
         &self,
         claim: &DependencyAnalysisClaim,

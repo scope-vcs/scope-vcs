@@ -14,7 +14,7 @@ async fn views_transitions_and_cursor_views_are_stored_and_member_readers_become
     let (_target, db, _lease) = isolated_database().await;
     let previous_count = migrations::Migrator::migrations()
         .iter()
-        .position(|migration| migration.name() == "m0076_custom_views")
+        .position(|migration| migration.name() == "m0077_custom_views")
         .unwrap();
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await

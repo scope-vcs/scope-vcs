@@ -8,6 +8,7 @@ use scope_domain::runs::{job::reconcile_run, run::Run};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait};
 
 impl RunStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "expire_capacity_retries"))]
     pub async fn expire_capacity_retries(
         &self,
         now_unix: u64,

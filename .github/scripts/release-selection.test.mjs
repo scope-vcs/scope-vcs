@@ -172,7 +172,7 @@ test('source reuse rejects changed staging inputs but permits receipt-only repai
     'dev/check-git-version.mjs',
     'dev/media-smoke.mjs',
     '.github/scripts/staging-resume.mjs',
-    '.github/scripts/stop-staging-writers.sh',
+    '.github/scripts/stop-railway-writers.sh',
     '.github/scripts/verify-staging-target.mjs',
     '.github/scripts/deploy-railway-image.mjs',
     '.github/workflows/prepare-smoke-tools.yml',

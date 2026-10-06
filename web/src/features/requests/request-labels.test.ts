@@ -5,8 +5,7 @@ import {
   requestCheckEvaluationNote,
   requestChecksWorkflowWarning,
   requestEventBody,
-  requestGitHubPushNote,
-  requestPublicGitHubNote,
+  requestPublicChecksNote,
   requestViewLabel,
 } from './request-labels'
 import { repoViews } from '../../api/repo-views'
@@ -40,26 +39,19 @@ test('a head nobody evaluated says so instead of claiming it asks for no checks'
   )
 })
 
-test('the approval note says where approving sends the checks', () => {
-  const awaiting = (github_push: RequestChecksResponse['github_push']) =>
-    ({ state: 'awaiting-approval', message: null, checks: [], github_push }) as unknown as RequestChecksResponse
+test('checks awaiting approval wait for a maintainer, after any reason they cannot pass', () => {
+  const awaiting = { state: 'awaiting-approval', message: null } as RequestChecksResponse
   assert.equal(
-    requestCheckEvaluationNote(awaiting(null)),
+    requestCheckEvaluationNote(awaiting),
     'These checks wait for a maintainer to start them.',
-  )
-  assert.equal(
-    requestCheckEvaluationNote(
-      awaiting({ state: 'awaiting_approval', branch: 'scope/requests/req_1', error: null }),
-    ),
-    'These checks wait for a maintainer. Approving sends this revision to GitHub Actions.',
   )
   const disconnected = 'This repository is no longer connected to GitHub.'
   assert.equal(
-    requestCheckEvaluationNote({ ...awaiting(null), message: disconnected }),
+    requestCheckEvaluationNote({ ...awaiting, message: disconnected }),
     disconnected,
   )
   assert.equal(
-    requestCheckEvaluationNote({ ...awaiting(null), state: 'started', message: disconnected }),
+    requestCheckEvaluationNote({ ...awaiting, state: 'started', message: disconnected }),
     disconnected,
   )
 })
@@ -75,39 +67,14 @@ test('approving workflow changes warns only the maintainer who can approve', () 
   assert.equal(requestChecksWorkflowWarning(checks(true, false)), null)
 })
 
-test('a private request checked in a public GitHub repository says it is public there', () => {
+test('a private request checked in a public repository says it is public', () => {
   const checks = (private_request_on_public_github: boolean) =>
     ({ private_request_on_public_github }) as RequestChecksResponse
-  assert.equal(requestPublicGitHubNote(checks(false)), null)
+  assert.equal(requestPublicChecksNote(checks(false)), null)
   assert.equal(
-    requestPublicGitHubNote(checks(true)),
-    'This private request’s checks run in a public GitHub repository, so its changes are public on GitHub.',
+    requestPublicChecksNote(checks(true)),
+    'Checks run publicly, so this private request’s changes are public.',
   )
-})
-
-test('the push note follows the tested commit on its way to GitHub', () => {
-  const push = (
-    state: NonNullable<RequestChecksResponse['github_push']>['state'],
-    error: string | null = null,
-  ) => ({ state, branch: 'scope/requests/req_1', error })
-  assert.equal(requestGitHubPushNote(null), null)
-  assert.equal(requestGitHubPushNote(push('awaiting_approval')), null)
-  assert.deepEqual(requestGitHubPushNote(push('sending')), {
-    text: 'Sending this revision to GitHub.',
-    failed: false,
-  })
-  assert.deepEqual(requestGitHubPushNote(push('sending', 'remote rejected')), {
-    text: 'Sending to GitHub again. The last attempt failed: remote rejected',
-    failed: false,
-  })
-  assert.deepEqual(requestGitHubPushNote(push('sent')), {
-    text: 'Sent to GitHub as scope/requests/req_1.',
-    failed: false,
-  })
-  assert.deepEqual(requestGitHubPushNote(push('failed', 'remote rejected')), {
-    text: 'Sending to GitHub failed: remote rejected',
-    failed: true,
-  })
 })
 
 test('activity describes submission', () => {
