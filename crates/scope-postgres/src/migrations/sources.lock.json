@@ -35,5 +35,6 @@
   "m0075_incremental_projection_read_models.rs": "24a99d97d38eb619f450d264843a7458e52942278a51ca71e30fcc2121c75c9e",
   "m0076_view_ids.rs": "890c30380e5bfaa0cd5df34e7b67193c0d31a6f19d656c0a2dbbd4e0418eabc0",
   "m0077_custom_views.rs": "529ce208263b34cd3fe3b34370c3aaf94c7b58509b7dfddf5755cb550603cb5e",
-  "m0078_repo_config_version.rs": "2da2c583e6fde0b930e00140d169a20d61525f7f4c1a6d8fb17c5a5ed1eaf411"
+  "m0078_repo_config_version.rs": "2da2c583e6fde0b930e00140d169a20d61525f7f4c1a6d8fb17c5a5ed1eaf411",
+  "m0079_request_views.rs": "24c444f119a216311660b922d225e58b0fa72df2a556163188c85357633cd909"
 }

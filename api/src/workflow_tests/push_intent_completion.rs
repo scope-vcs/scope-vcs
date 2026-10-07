@@ -260,6 +260,7 @@ async fn content_push_rejects_stale_reviewed_config() {
                     occurred_at_unix: 1_788_700_000,
                     author_id: test_owner_id(),
                     config: newer_config.clone(),
+                    open_requests_by_view: Default::default(),
                 },
             )
             .unwrap();

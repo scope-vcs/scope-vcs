@@ -53,7 +53,7 @@ fn request_merge_accepts_unchanged_tree_without_weakening_push_rules() {
     let accepted = accept_request_merge(
         state,
         update,
-        RequestMergeOrigin::Private {
+        RequestMergeOrigin::Canonical {
             request_id: "request-1".to_string(),
             request_head_oid: "2222222222222222222222222222222222222222".to_string(),
         },

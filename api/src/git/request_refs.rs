@@ -5,7 +5,7 @@ use crate::{
         command::{git_ref_listing, run_git, run_git_output},
         import::{git_snapshot_from_ref, validate_pushed_commit_range},
         repository_git::RepositoryGit,
-        request_ref_public_safety::ensure_public_request_ref_is_public_safe,
+        request_ref_view_safety::{RequestView, ensure_request_ref_is_view_safe},
         staging::write_receive_pack_hook,
         storage::{
             receive_pack_staging_repo_path, remove_dir_if_exists, request_ref_store_repo_path,
@@ -34,6 +34,7 @@ pub(crate) use cleanup::cleanup_deleted_request_ref;
 mod locks;
 mod revision;
 mod snapshot;
+mod view_bases;
 #[cfg(test)]
 use crate::persistence::unix_now;
 use ancestry::{
@@ -46,6 +47,7 @@ pub(crate) use revision::with_request_revision_store_repo;
 #[cfg(test)]
 use snapshot::bundle_prerequisites;
 use snapshot::{download_snapshot, fetch_bundle_into, fetch_snapshot_into};
+pub(crate) use view_bases::{RequestViewBases, request_view_bases, share_request_view_bases};
 
 pub(crate) const REQUEST_REF_DELETE_ERROR: &str = "Scope does not accept request branch deletes";
 pub(crate) const REQUEST_REF_SINGLE_UPDATE_ERROR: &str =
@@ -179,7 +181,7 @@ pub(crate) fn attach_visible_request_refs(
     state: &AppState,
     requests: &[Request],
     target_repo: &FsPath,
-    public_base_repo: Option<&FsPath>,
+    view_bases: &RequestViewBases,
 ) -> Result<(), ApiError> {
     for request in requests {
         let request_ref = canonical_request_ref(&request.name);
@@ -194,23 +196,19 @@ pub(crate) fn attach_visible_request_refs(
             )?;
         } else {
             if !request_ref_oid_is_commit(target_repo, &request.head_oid)?
-                && let Some(public_base_repo) = public_base_repo
+                && let Some(view_base) = view_bases.get(&request.view)
             {
-                let temporary_ref = "refs/scope/internal/public-request-base";
+                let temporary_ref = "refs/scope/internal/request-view-base";
                 let refspec = format!("+refs/heads/{DEFAULT_GIT_BRANCH}:{temporary_ref}");
                 run_git(
                     Some(target_repo),
-                    &[
-                        "fetch",
-                        public_base_repo.to_string_lossy().as_ref(),
-                        &refspec,
-                    ],
-                    "attaching public request base to Git read view",
+                    &["fetch", view_base.to_string_lossy().as_ref(), &refspec],
+                    "attaching request view base to Git read view",
                 )?;
                 run_git(
                     Some(target_repo),
                     &["update-ref", "-d", temporary_ref],
-                    "removing temporary public request base ref",
+                    "removing temporary request view base ref",
                 )?;
             }
             if !request_ref_oid_is_commit(target_repo, &request.head_oid)? {
@@ -304,10 +302,13 @@ pub(crate) async fn persist_request_ref_to_store(
     })
     .await?;
     let accepted_main_oid = git.git_head.as_ref().map(|head| head.head_oid.clone());
-    let main_oid = if request.view.is_public() {
+    let views = repo_config.views();
+    let main_oid = if &request.view == views.full() {
+        accepted_main_oid.clone()
+    } else {
         Some(
-            ensure_public_request_ref_is_public_safe(
-                git,
+            ensure_request_ref_is_view_safe(
+                RequestView::new(git, views, &request.view),
                 repo_config,
                 state,
                 staging_repo,
@@ -315,8 +316,6 @@ pub(crate) async fn persist_request_ref_to_store(
             )
             .await?,
         )
-    } else {
-        accepted_main_oid.clone()
     };
     let incarnation = git.incarnation.clone();
     let prepared = {

@@ -37,6 +37,7 @@ async fn a_reader_reconciles_a_committed_request_change_without_its_notification
             author_user_id: test_owner_id(),
             title: Some("Before".to_string()),
             author_role: RequestActorRole::Owner,
+            author_view: scope_domain::views::ViewId::private(),
             view: ViewId::private(),
             base_main_oid: "a".repeat(40),
             event_id: "event_request_missed_notification".to_string(),

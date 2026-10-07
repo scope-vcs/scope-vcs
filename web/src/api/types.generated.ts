@@ -158,9 +158,25 @@ export type CreateRepoResponse = { repo: RepoSummaryResponse, init: RepoInitResp
 
 export type DeleteRepoResponse = { id: string, deleted: boolean, };
 
-export type CreatePushIntentRequest = { head_oid: string, base_config_hash: string, config: RepoConfig, };
+export type CreatePushIntentRequest = { head_oid: string, 
+/**
+ * The fingerprint of the config the pusher reviewed; required when pushing through the full view and ignored otherwise.
+ */
+base_config_hash: string | null, 
+/**
+ * The reviewed config; required when pushing through the full view and ignored otherwise.
+ */
+config: RepoConfig | null, 
+/**
+ * The view of the remote the push goes through.
+ */
+view: ViewId, };
 
-export type CreatePushIntentResponse = { token: string, base_head_oid: GitOid | null, expires_at_unix: number, };
+export type CreatePushIntentResponse = { token: string, base_head_oid: GitOid | null, expires_at_unix: number, 
+/**
+ * True when the view is narrower than the full view, so the push lands as an auto-merged request in that view.
+ */
+lands_as_request: boolean, };
 
 export type RepoInitResponse = { repo: RepoSummaryResponse, git_remote_url: string, remote_name: string, push_branch: string, token: FirstPushTokenResponse | null, push_token: GitPushTokenResponse | null, };
 
@@ -409,13 +425,19 @@ export type HistoryEntryKind = "push" | "merged_request" | "visibility_change" |
 
 export type HistoryFeed = "updates" | "all" | "visibility";
 
-export type HistoryEntryDetailResponse = { native_commits: Array<NativeHistoryCommitResponse>, view: ViewId, repo_id: string, occurred_at_unix: number | null, id: string, source_id: string, 
+export type HistoryEntryDetailResponse = { native_commits: HistoryNativeCommitsResponse | null, view: ViewId, repo_id: string, occurred_at_unix: number | null, id: string, source_id: string, 
 /**
  * Adjacent entries in all activity, addressed by source id.
  */
 older_source_id: string | null, newer_source_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, files: Array<HistoryEntryFileResponse>, visibility_changes: Array<HistoryVisibilityChangeResponse>, views: ViewsTransition | null, };
 
 export type HistoryEntryFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, label: ViewId, };
+
+export type HistoryNativeCommitsResponse = { 
+/**
+ * The view the request that made these commits was merged through.
+ */
+view: ViewId, commits: Array<NativeHistoryCommitResponse>, };
 
 export type NativeHistoryCommitResponse = { oid: string, parent_oids: Array<string>, tree_oid: string, author: string, message: string, occurred_at_unix: number, files: Array<HistoryEntryFileResponse>, };
 
@@ -481,7 +503,11 @@ export type RequestRatingsResponse = { ratings: Array<RequestRatingResponse>, el
 
 export type RequestMutationResponse = { request: RequestSummaryResponse, };
 
-export type RequestListItemResponse = { id: string, name: string, title: string, author_role: RequestActorRole, view: ViewId, head_oid: GitOid, state: RequestState, submitted_at_unix: number | null, updated_at_unix: number, mergeability: RequestMergeabilityResponse, };
+export type RequestListItemResponse = { id: string, name: string, title: string, 
+/**
+ * Null once that account is deleted; clients show a deleted user.
+ */
+author_user_id: string | null, author_role: RequestActorRole, view: ViewId, head_oid: GitOid, state: RequestState, submitted_at_unix: number | null, updated_at_unix: number, mergeability: RequestMergeabilityResponse, };
 
 export type RequestSummaryResponse = { id: string, name: string, title: string, description_markdown: string, 
 /**

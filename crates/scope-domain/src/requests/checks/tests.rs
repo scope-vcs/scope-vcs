@@ -27,7 +27,7 @@ fn native_results(runs: &[(&str, RunState)]) -> RequestCheckResults {
             .collect(),
         github: GitHubCheckResults::Connected(Vec::new()),
         withheld_from_github: Vec::new(),
-        private_main_oid: None,
+        canonical_main_oid: None,
     }
 }
 
@@ -227,7 +227,7 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Connected(runs),
                 withheld_from_github: Vec::new(),
-                private_main_oid: None,
+                canonical_main_oid: None,
             },
         )
     };
@@ -279,7 +279,7 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Disconnected,
                 withheld_from_github: Vec::new(),
-                private_main_oid: None,
+                canonical_main_oid: None,
             },
         ),
         RequestChecksOutcome::ConfigurationError
@@ -300,7 +300,7 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Disconnected,
                 withheld_from_github: Vec::new(),
-                private_main_oid: None,
+                canonical_main_oid: None,
             },
         ),
         RequestChecksOutcome::ConfigurationError
@@ -324,7 +324,7 @@ fn github_conclusions_pass_or_fail_a_completed_run() {
                 native_runs: Vec::new(),
                 github: GitHubCheckResults::Connected(vec![run]),
                 withheld_from_github: Vec::new(),
-                private_main_oid: None,
+                canonical_main_oid: None,
             },
         )
     };
@@ -373,7 +373,7 @@ fn a_disconnected_github_provider_leaves_native_only_heads_alone() {
                 native_runs: vec![("run_a".to_string(), RunState::Succeeded)],
                 github: GitHubCheckResults::Disconnected,
                 withheld_from_github: Vec::new(),
-                private_main_oid: None,
+                canonical_main_oid: None,
             },
         ),
         RequestChecksOutcome::Clear
@@ -528,7 +528,7 @@ fn a_request_withheld_from_a_public_github_repository_cannot_pass_and_says_why()
             Some(GitHubCheckConclusion::Success),
         )]),
         withheld_from_github: Vec::new(),
-        private_main_oid: None,
+        canonical_main_oid: None,
     };
     assert_eq!(
         request_checks_outcome("req_1", HEAD, Some(&started), &results),
@@ -715,7 +715,7 @@ fn a_check_commit_counts_only_while_private_main_is_the_one_it_was_built_on() {
             Some(GitHubCheckConclusion::Success),
         )]),
         withheld_from_github: Vec::new(),
-        private_main_oid: Some(private_main.to_string()),
+        canonical_main_oid: Some(private_main.to_string()),
     };
     let outcome = |private_main: &str| {
         request_checks_outcome("req_1", HEAD, Some(&evaluation), &results(private_main))

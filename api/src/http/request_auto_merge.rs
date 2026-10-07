@@ -16,8 +16,11 @@ use scope_api_contract::{
     RequestAutoMergeIntentResponse, RequestAutoMergeResponse,
 };
 use scope_domain::{
-    repository::access::RepositoryAccess,
-    requests::{Request, request_auto_merge_can_cancel, request_auto_merge_can_enable},
+    requests::{
+        Request, RequestViewer, request_auto_merge_can_cancel, request_auto_merge_can_enable,
+        request_policy,
+    },
+    views::Views,
 };
 
 pub(crate) async fn get(
@@ -27,15 +30,18 @@ pub(crate) async fn get(
 ) -> Result<Json<RequestAutoMergeResponse>, ApiError> {
     let (repo, access, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) = visible_request(
+    let (request, viewer) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
     )
     .await?;
-    response(&state, &request, access).await.map(Json)
+    response(&state, &request, viewer, &repo.views)
+        .await
+        .map(Json)
 }
 
 pub(crate) async fn authorize(
@@ -46,9 +52,10 @@ pub(crate) async fn authorize(
 ) -> Result<Json<RequestAutoMergeResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) = visible_request(
+    let (request, viewer) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         Some(&user.id),
         &request_id,
@@ -62,7 +69,9 @@ pub(crate) async fn authorize(
         input.expected_head_oid.as_str().to_string(),
     )
     .await?;
-    response(&state, &request, access).await.map(Json)
+    response(&state, &request, viewer, &repo.views)
+        .await
+        .map(Json)
 }
 
 pub(crate) async fn cancel(
@@ -73,33 +82,43 @@ pub(crate) async fn cancel(
 ) -> Result<Json<RequestAutoMergeResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) = visible_request(
+    let (request, viewer) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         Some(&user.id),
         &request_id,
     )
     .await?;
     request_auto_merge::cancel(&state, &request.id, &user.id, input.expected_intent_id).await?;
-    response(&state, &request, access).await.map(Json)
+    response(&state, &request, viewer, &repo.views)
+        .await
+        .map(Json)
 }
 
 async fn response(
     state: &AppState,
     request: &Request,
-    access: RepositoryAccess,
+    viewer: RequestViewer<'_>,
+    views: &Views,
 ) -> Result<RequestAutoMergeResponse, ApiError> {
     let view = request_auto_merge::view(state, &request.id).await?;
+    let can_merge = request_policy(&view.request, viewer.clone(), views)
+        .permissions
+        .can_merge;
     let can_enable = request_auto_merge_can_enable(
         &view.request,
         view.revision.as_ref(),
         view.intent.as_ref(),
         view.readiness,
-        access.is_maintainer(),
+        can_merge,
     );
-    let can_cancel =
-        request_auto_merge_can_cancel(&view.request, view.intent.as_ref(), access.is_maintainer());
+    let can_cancel = request_auto_merge_can_cancel(
+        &view.request,
+        view.intent.as_ref(),
+        viewer.access.is_maintainer(),
+    );
     let waiting_reason = view
         .intent
         .as_ref()

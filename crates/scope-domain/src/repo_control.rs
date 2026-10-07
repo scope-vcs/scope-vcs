@@ -40,7 +40,7 @@ pub fn is_repo_rules_path(path: &ScopePath) -> bool {
     path.as_str() == LEGACY_REPO_RULES_PATH
 }
 
-pub fn is_public_request_protected_path(path: &ScopePath) -> bool {
+pub fn is_request_protected_path(path: &ScopePath) -> bool {
     is_case_folded_repo_control_path(path) || is_agent_context_path(path)
 }
 
@@ -140,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn public_requests_cannot_change_native_agent_context() {
+    fn narrower_view_requests_cannot_change_native_agent_context() {
         for protected in [
             "/AGENTS.md",
             "/src/AGENTS.md",
@@ -162,16 +162,10 @@ mod tests {
             "/.AGENTS/skills/review/SKILL.md",
             "/.MCP.JSON",
         ] {
-            assert!(
-                is_public_request_protected_path(&path(protected)),
-                "{protected}"
-            );
+            assert!(is_request_protected_path(&path(protected)), "{protected}");
         }
         for ordinary in ["/README.md", "/src/agent-notes.md", "/notes/CLAUDE.txt"] {
-            assert!(
-                !is_public_request_protected_path(&path(ordinary)),
-                "{ordinary}"
-            );
+            assert!(!is_request_protected_path(&path(ordinary)), "{ordinary}");
         }
     }
 

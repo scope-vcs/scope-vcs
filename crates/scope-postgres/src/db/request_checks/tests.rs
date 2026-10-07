@@ -80,6 +80,7 @@ async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) 
             author_user_id: "user_public".into(),
             title: None,
             author_role: RequestActorRole::Public,
+            author_view: ViewId::public(),
             view: ViewId::public(),
             base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             event_id: event_id.into(),

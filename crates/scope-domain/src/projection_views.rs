@@ -2,7 +2,7 @@ use super::{
     content::SourceBlob,
     policy::{Policy, ScopePath},
     projection::{
-        NativePublicCommitDetails, Projection, ProjectionMaterialization, SourceGraph,
+        NativeRequestCommitDetails, Projection, ProjectionMaterialization, SourceGraph,
         project_graph,
     },
     repository::{Repository, repo_relative_scope_path},
@@ -81,7 +81,7 @@ pub fn projection_preview(
     views: &Views,
     view: &ViewId,
     include_private_counts: bool,
-    native_details: &BTreeMap<String, NativePublicCommitDetails>,
+    native_details: &BTreeMap<String, NativeRequestCommitDetails>,
 ) -> Result<ProjectionPreviewView, DomainError> {
     let projection = project_graph(source.graph, source.visibility_change_sets, views, view);
     let files = projection_preview_files(source.policy, &projection, views);

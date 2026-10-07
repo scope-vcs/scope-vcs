@@ -1,5 +1,5 @@
 use super::requests::*;
-use crate::views::ViewId;
+use crate::views::{ViewId, Views};
 use crate::{
     error::DomainErrorKind,
     repository::access::{RepositoryAccess, RepositoryActor},
@@ -11,6 +11,7 @@ fn new_request_is_an_unsubmitted_draft() {
     let mutation = start_request(
         StartRequestFacts::default(),
         start_input(RequestActorRole::Public),
+        &Views::builtin(),
     )
     .unwrap();
 
@@ -53,12 +54,13 @@ fn request_name_rules_and_repository_uniqueness_remain_domain_owned() {
     ] {
         let mut input = start_input(RequestActorRole::Public);
         input.name = invalid.to_string();
-        assert!(start_request(StartRequestFacts::default(), input).is_err());
+        assert!(start_request(StartRequestFacts::default(), input, &Views::builtin()).is_err());
     }
 
     start_request(
         StartRequestFacts::default(),
         start_input(RequestActorRole::Public),
+        &Views::builtin(),
     )
     .unwrap();
     let mut duplicate = start_input(RequestActorRole::Public);
@@ -69,7 +71,8 @@ fn request_name_rules_and_repository_uniqueness_remain_domain_owned() {
                 request_name_exists: true,
                 ..Default::default()
             },
-            duplicate
+            duplicate,
+            &Views::builtin()
         )
         .is_err()
     );
@@ -284,6 +287,7 @@ fn close_permission_and_mutation_agree_for_roles_and_terminal_states() {
                     Some(actor),
                     false,
                 ),
+                &Views::builtin(),
             )
             .permissions
             .can_close
@@ -422,7 +426,11 @@ fn policy_for(request: &Request, viewer: ViewerKind) -> RequestPolicyDecision {
         ViewerKind::Author => request.author_user_id.as_deref(),
         ViewerKind::Maintainer => Some("maintainer"),
     };
-    request_policy(request, RequestViewer::new(access, user_id, false))
+    request_policy(
+        request,
+        RequestViewer::new(access, user_id, false),
+        &Views::builtin(),
+    )
 }
 
 fn pushed_draft() -> Request {
@@ -459,6 +467,7 @@ fn public_view_member_cannot_read_private_request_metadata() {
     let decision = request_policy(
         &request,
         RequestViewer::new(access, Some("maintainer"), false),
+        &Views::builtin(),
     );
     assert!(!decision.listable);
     assert!(!decision.exact_visible);
@@ -474,30 +483,49 @@ fn request_creation_checks_id_then_name_then_public_working_limit() {
         public_working_request_count: PUBLIC_WORKING_REQUEST_LIMIT,
     };
     assert_eq!(
-        start_request(facts, start_input(RequestActorRole::Public))
-            .unwrap_err()
-            .message,
+        start_request(
+            facts,
+            start_input(RequestActorRole::Public),
+            &Views::builtin()
+        )
+        .unwrap_err()
+        .message,
         "request already exists"
     );
     facts.request_id_exists = false;
     assert_eq!(
-        start_request(facts, start_input(RequestActorRole::Public))
-            .unwrap_err()
-            .message,
+        start_request(
+            facts,
+            start_input(RequestActorRole::Public),
+            &Views::builtin()
+        )
+        .unwrap_err()
+        .message,
         "request name already exists"
     );
     facts.request_name_exists = false;
     assert!(
-        start_request(facts, start_input(RequestActorRole::Public))
-            .unwrap_err()
-            .message
-            .contains("Working requests")
+        start_request(
+            facts,
+            start_input(RequestActorRole::Public),
+            &Views::builtin()
+        )
+        .unwrap_err()
+        .message
+        .contains("Working requests")
     );
     let mut maintainer = start_input(RequestActorRole::Public);
     maintainer.author_role = RequestActorRole::Member;
-    assert!(start_request(facts, maintainer).is_ok());
+    assert!(start_request(facts, maintainer, &Views::builtin()).is_ok());
     facts.public_working_request_count -= 1;
-    assert!(start_request(facts, start_input(RequestActorRole::Public)).is_ok());
+    assert!(
+        start_request(
+            facts,
+            start_input(RequestActorRole::Public),
+            &Views::builtin()
+        )
+        .is_ok()
+    );
 }
 
 #[test]

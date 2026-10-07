@@ -29,6 +29,7 @@ pub(crate) async fn list_request_ratings(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
@@ -48,6 +49,7 @@ pub(crate) async fn create_request_rating(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         Some(&user.id),
         &request_id,
