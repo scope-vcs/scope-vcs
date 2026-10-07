@@ -180,6 +180,22 @@ pub(crate) async fn persist_main_push(
         });
     }
 
+    let open_requests_by_view = match state
+        .metadata
+        .requests()
+        .open_request_counts_by_view(incarnation.repository_id())
+        .await
+    {
+        Ok(counts) => counts,
+        Err(error) => {
+            cleanup_failed_persist(state, &repository_id, &staged_segment, write_lease).await;
+            return Err(error.into());
+        }
+    };
+    let update = ReceivePackUpdate {
+        open_requests_by_view,
+        ..update
+    };
     let transaction_started = Instant::now();
     let expected_incarnation = incarnation.clone();
     let git_head = state

@@ -817,4 +817,5 @@ fn source_blob(git_oid: &str) -> SourceBlob {
 mod authorization_locks;
 
 mod draft_count;
+mod open_counts;
 mod replay_authorization;

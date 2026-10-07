@@ -27,7 +27,7 @@ pub(super) fn view(id: &str) -> ViewId {
     ViewId::parse(id).unwrap()
 }
 
-fn custom_view(id: &str, name: &str, includes: &[&str]) -> ViewDefinition {
+pub(super) fn custom_view(id: &str, name: &str, includes: &[&str]) -> ViewDefinition {
     ViewDefinition {
         id: view(id),
         name: name.to_string(),
@@ -36,7 +36,7 @@ fn custom_view(id: &str, name: &str, includes: &[&str]) -> ViewDefinition {
     }
 }
 
-fn config_with(custom: Vec<ViewDefinition>, rules: &[(&str, &str)]) -> RepoConfig {
+pub(super) fn config_with(custom: Vec<ViewDefinition>, rules: &[(&str, &str)]) -> RepoConfig {
     let mut config = repo_config(ViewId::private());
     let mut definitions = Vec::<ViewDefinition>::from(Views::builtin());
     definitions.extend(custom);
@@ -74,7 +74,7 @@ pub(super) async fn stored_repo(state: &AppState) -> Repository {
         .unwrap()
 }
 
-async fn push_config(state: &AppState, head_oid: &str, config: &RepoConfig) -> Response {
+pub(super) async fn push_config(state: &AppState, head_oid: &str, config: &RepoConfig) -> Response {
     let base = repo_config_fingerprint(&stored_repo(state).await.repo_config).unwrap();
     api_request(
         router(state.clone()),

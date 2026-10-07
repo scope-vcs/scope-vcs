@@ -15,9 +15,9 @@ use super::{
     request_revision_rows::{insert_revision, revisions_for_request_ids},
     request_rows::{
         delete_request_rows, insert_request_event_row, insert_request_row, latest_request_events,
-        public_draft_count, request_by_id, request_by_name, request_event_by_id,
-        request_events_after_position, request_events_by_request_id, request_list_page,
-        requests_by_repo_author, requests_by_repo_id, save_request_row,
+        open_request_counts_by_view, public_draft_count, request_by_id, request_by_name,
+        request_event_by_id, request_events_after_position, request_events_by_request_id,
+        request_list_page, requests_by_repo_author, requests_by_repo_id, save_request_row,
     },
 };
 use sea_orm::TransactionTrait;
@@ -32,7 +32,8 @@ use {
         record_request_revision, record_working_request_upload, start_request,
         stop_request_auto_merge,
     },
-    scope_domain::{content::SourceBlob, repository::RepositoryIncarnation},
+    scope_domain::{content::SourceBlob, repository::RepositoryIncarnation, views::ViewId},
+    std::collections::BTreeMap,
 };
 
 impl RequestStore {
@@ -59,6 +60,14 @@ impl RequestStore {
         let repo_id = repo_id.to_string();
         let request_name = request_name.to_string();
         request_by_name(self.db.as_ref(), &repo_id, &request_name).await
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "open_request_counts_by_view"))]
+    pub async fn open_request_counts_by_view(
+        &self,
+        repo_id: &str,
+    ) -> Result<BTreeMap<ViewId, usize>, PostgresError> {
+        open_request_counts_by_view(self.db.as_ref(), repo_id).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requests_by_repo_id"))]

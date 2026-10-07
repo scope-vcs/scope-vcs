@@ -333,6 +333,7 @@ fn reviewed_update(
         },
         changes,
         previous_config,
+        open_requests_by_view: Default::default(),
         config,
     }
 }
@@ -669,6 +670,7 @@ fn config_only_update_changes_policy_without_content_commit() {
         ReviewedConfigUpdateInput {
             occurred_at_unix: 1_788_700_000,
             author_id: "owner".to_string(),
+            open_requests_by_view: Default::default(),
             config: config(
                 ViewId::private(),
                 Some(("/README.md", ViewId::public())),

@@ -39,6 +39,7 @@ pub struct ReviewedUpdateInput {
     pub changes: Vec<ReviewedContentChange>,
     pub previous_config: Option<RepoConfig>,
     pub config: RepoConfig,
+    pub open_requests_by_view: BTreeMap<ViewId, usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -133,7 +134,8 @@ pub fn apply_reviewed_update_to_repo(
     {
         return apply_content_only_update(repo, update);
     }
-    let views = views_transition(repo, &update.config).map_err(ReviewedUpdateError::Domain)?;
+    let views = views_transition(repo, &update.config, &update.open_requests_by_view)
+        .map_err(ReviewedUpdateError::Domain)?;
     let old_tree = repo.live_files.clone();
     let mut file_changes = build_file_changes(
         &old_tree,

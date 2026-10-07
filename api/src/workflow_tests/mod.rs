@@ -777,6 +777,7 @@ fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> 
         previous_config: None,
         base_config_hash: repo_config_fingerprint(&config).unwrap(),
         config,
+        open_requests_by_view: Default::default(),
         changes: changes
             .into_iter()
             .map(|(path, content)| ReceivePackFileChange {

@@ -10,13 +10,14 @@ use crate::{
     views::ViewId,
     visibility_changes::{VisibilityChange, VisibilityChangeSet, visibility_change_set_id},
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug)]
 pub struct ReviewedConfigUpdateInput {
     pub occurred_at_unix: i64,
     pub author_id: String,
     pub config: RepoConfig,
+    pub open_requests_by_view: BTreeMap<ViewId, usize>,
 }
 
 pub fn apply_reviewed_config_to_repo(
@@ -26,7 +27,8 @@ pub fn apply_reviewed_config_to_repo(
     if repo.repo_config == update.config {
         return Ok(false);
     }
-    let views = views_transition(repo, &update.config).map_err(ReviewedUpdateError::Domain)?;
+    let views = views_transition(repo, &update.config, &update.open_requests_by_view)
+        .map_err(ReviewedUpdateError::Domain)?;
     let live_tree = repo.live_files.clone();
     let after_commit_id = repo.graph.commits.last().map(|commit| commit.id.clone());
     let history_rewrites = update

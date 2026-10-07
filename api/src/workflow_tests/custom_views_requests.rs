@@ -1,4 +1,7 @@
-use super::custom_views::{fixture, git_with_member, member_bearer, member_id, stored_repo, view};
+use super::custom_views::{
+    config_with, custom_view, fixture, git_with_member, member_bearer, member_id, push_config,
+    stored_repo, view,
+};
 use super::git_request_refs::github_checks::{REQUIRED_CHECK, checks, connect_github, push_pass};
 use super::*;
 use scope_domain::{
@@ -452,4 +455,88 @@ async fn an_agent_request_push_touching_a_path_the_agent_view_never_showed_is_re
         .unwrap()
         .unwrap();
     assert!(request.git_snapshot.is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_view_cannot_be_removed_while_a_request_is_open_in_it() {
+    let (state, head, _source) = fixture("agent-view-removal-request").await;
+    let started = expect_json(
+        api_request(
+            router(state.clone()),
+            "POST",
+            &format!("/v1/repos/{TEST_REPO_ID}/requests"),
+            Some(&bearer_header()),
+            Some(&serde_json::json!({ "name": "agent-pending", "view": "agent" }).to_string()),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let request_id = started["request"]["id"].as_str().unwrap();
+    let reassigned = api_request(
+        router(state.clone()),
+        "PATCH",
+        &format!("/v1/repos/owner/repo/members/{}", member_id()),
+        Some(&bearer_header()),
+        Some(r#"{"permissions":{"can_push":false,"can_change_file_visibility":false,"view":"public"}}"#),
+    )
+    .await;
+    expect_json(reassigned, StatusCode::OK).await;
+    expect_json(
+        push_config(
+            &state,
+            &head,
+            &config_with(vec![custom_view("agent", "Agent", &["public"])], &[]),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let without_agent = config_with(Vec::new(), &[]);
+
+    let refused = expect_json(
+        push_config(&state, &head, &without_agent).await,
+        StatusCode::CONFLICT,
+    )
+    .await;
+    assert!(
+        refused
+            .to_string()
+            .contains("view Agent cannot be removed because requests are still open in it"),
+        "{refused}"
+    );
+    assert!(
+        stored_repo(&state)
+            .await
+            .repo_config
+            .views()
+            .get(&view("agent"))
+            .is_some()
+    );
+
+    expect_json(
+        api_request(
+            router(state.clone()),
+            "DELETE",
+            &format!("/v1/repos/{TEST_REPO_ID}/requests/{request_id}"),
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    expect_json(
+        push_config(&state, &head, &without_agent).await,
+        StatusCode::OK,
+    )
+    .await;
+    assert!(
+        stored_repo(&state)
+            .await
+            .repo_config
+            .views()
+            .get(&view("agent"))
+            .is_none()
+    );
 }

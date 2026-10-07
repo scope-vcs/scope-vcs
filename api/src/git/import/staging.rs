@@ -4,6 +4,7 @@ use scope_domain::reviewed_updates::content::{
     ReviewedContentChange, ReviewedUpdateInput, apply_reviewed_update_to_repo,
 };
 use scope_domain::runs::catalog::RepositoryWorkflowCatalog;
+use scope_domain::views::ViewId;
 use scope_domain::{
     content::SourceBlob,
     repository::Repository,
@@ -13,6 +14,7 @@ use scope_domain::{
     error::DomainError, policy::ScopePath, repo_actions::reviewed_update_domain_error,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReceivePackFileChange {
@@ -50,6 +52,7 @@ pub(crate) struct ReceivePackUpdate {
     pub(crate) previous_config: Option<RepoConfig>,
     pub(crate) base_config_hash: String,
     pub(crate) config: RepoConfig,
+    pub(crate) open_requests_by_view: BTreeMap<ViewId, usize>,
 }
 
 pub(crate) fn apply_receive_pack_update(
@@ -80,6 +83,7 @@ impl ReceivePackUpdate {
                 .collect(),
             previous_config: self.previous_config,
             config: self.config,
+            open_requests_by_view: self.open_requests_by_view,
         }
     }
 }

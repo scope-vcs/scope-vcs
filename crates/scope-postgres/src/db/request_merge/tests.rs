@@ -392,6 +392,7 @@ fn reviewed_update(
         }],
         previous_config: Some(repo.repo_config.clone()),
         config: repo.repo_config.clone(),
+        open_requests_by_view: Default::default(),
     }
 }
 

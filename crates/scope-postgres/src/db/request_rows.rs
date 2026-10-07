@@ -14,6 +14,7 @@ use {
         RequestState, request_list_predicate,
     },
     scope_domain::views::{ViewId, Views},
+    std::collections::BTreeMap,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -275,6 +276,32 @@ pub(super) async fn public_draft_count<C: ConnectionTrait>(
         .await
         .map_err(PostgresError::internal)?;
     usize::try_from(count).map_err(PostgresError::internal)
+}
+
+pub(super) async fn open_request_counts_by_view<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<BTreeMap<ViewId, usize>, PostgresError> {
+    entities::request::Entity::find()
+        .select_only()
+        .column(entities::request::Column::Audience)
+        .column_as(entities::request::Column::Id.count(), "open_requests")
+        .filter(entities::request::Column::RepoId.eq(repo_id))
+        .filter(entities::request::Column::ClosedAtUnix.is_null())
+        .filter(entities::request::Column::MergedAtUnix.is_null())
+        .group_by(entities::request::Column::Audience)
+        .into_tuple::<(String, i64)>()
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(|(view, count)| {
+            Ok((
+                ViewId::parse(&view).map_err(PostgresError::internal)?,
+                usize::try_from(count).map_err(PostgresError::internal)?,
+            ))
+        })
+        .collect()
 }
 
 pub async fn requests_by_repo_author<C>(

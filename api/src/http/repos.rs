@@ -315,10 +315,9 @@ async fn create_canonical_push_intent(
             state,
             owner,
             repo_name,
+            &repo,
             user_id,
             input_config.clone(),
-            base_config_hash.clone(),
-            base_git_frontier.clone(),
         )
         .await?;
     }
@@ -351,14 +350,20 @@ async fn apply_reviewed_config_before_push(
     state: &AppState,
     owner: &str,
     repo_name: &str,
+    observed: &scope_postgres::db::GitPushContext,
     user_id: &str,
     config: scope_domain::repo_config::RepoConfig,
-    expected_config_hash: String,
-    expected_git_frontier: Option<scope_domain::repository::git::GitFrontier>,
 ) -> Result<(), ApiError> {
+    let expected_config_hash = repo_config_fingerprint(&observed.repo_config)?;
+    let expected_git_frontier = observed.git_head.as_ref().map(|head| head.frontier());
     let now = unix_now()?;
     let occurred_at_unix = i64::try_from(now).map_err(ApiError::internal)?;
     let author_id = user_id.to_string();
+    let open_requests_by_view = state
+        .metadata
+        .requests()
+        .open_request_counts_by_view(&observed.repo_id)
+        .await?;
     let changed = state
         .metadata
         .repositories()
@@ -396,6 +401,7 @@ async fn apply_reviewed_config_before_push(
                         author_id,
                         config,
                         occurred_at_unix,
+                        open_requests_by_view,
                     },
                 )
                 .map_err(reviewed_update_domain_error)?;
