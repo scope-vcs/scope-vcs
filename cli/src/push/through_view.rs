@@ -94,7 +94,8 @@ pub(super) fn push(
         target.owner, target.repo
     );
     push_head_with_intent(&session.token, target, head_oid, &intent)?;
-    let request = landed_request(api, target, &session.user.id, head_oid)?;
+    let request = landed_request(api, target, &session.user.id, head_oid)
+        .map_err(|error| landed_without_receipt(target, head_oid, error))?;
     emit(
         "push",
         &json!({
@@ -128,6 +129,7 @@ fn landed_request(
             let generated = names.iter().position(|name| *name == request.name);
             let Some(position) = generated.filter(|_| {
                 request.author_user_id.as_deref() == Some(pusher_user_id)
+                    && request.view.as_str() == target.view.as_str()
                     && request.head_oid.as_str() == head_oid
             }) else {
                 continue;
@@ -141,14 +143,29 @@ fn landed_request(
             None => break,
         }
     }
-    newest.map(|(_, request)| request).ok_or_else(|| {
-        CliError::partial(
-            format!(
-                "the push to {}/{} landed, but Scope lists no main push request for {head_oid}; run scope request list",
-                target.owner, target.repo
-            ),
-            json!({"commit": head_oid, "view": target.view, "landed": true}),
-        )
-        .into()
-    })
+    newest
+        .map(|(_, request)| request)
+        .ok_or_else(|| anyhow::anyhow!("Scope lists no main push request for {head_oid}"))
+}
+
+fn landed_without_receipt(
+    target: &ScopeRemote,
+    head_oid: &str,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    CliError::partial(
+        format!(
+            "the push to {}/{} landed as a request in the {} view, but Scope could not report which one: {error:#}",
+            target.owner, target.repo, target.view
+        ),
+        json!({
+            "repository": format!("{}/{}", target.owner, target.repo),
+            "commit": head_oid,
+            "view": target.view,
+            "landed": true,
+            "recovery": "Do not push again; inspect the existing main push request instead:",
+            "recovery_commands": [["scope", "request", "list"]],
+        }),
+    )
+    .into()
 }

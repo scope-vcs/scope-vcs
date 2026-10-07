@@ -21,6 +21,7 @@ use std::{
 struct FakeScope {
     git_root: PathBuf,
     access_view: &'static str,
+    request_list_fails: bool,
     seen: Arc<Mutex<Vec<String>>>,
     intents: Arc<Mutex<Vec<Value>>>,
 }
@@ -120,6 +121,50 @@ fn pushing_the_view_main_again_lands_nothing_and_invents_no_request() {
 }
 
 #[test]
+fn a_landed_push_whose_request_lookup_fails_says_not_to_push_again() {
+    let workspace = TempDir::new("landed-lookup-failure");
+    let (scope, server) = start_fake_scope_with(&workspace, "agent", true);
+    let checkout = checkout_with_new_commit(&workspace, &server, "agent");
+    let head = git_stdout(&checkout, ["rev-parse", "HEAD"]);
+
+    let output = server
+        .command(&checkout)
+        .args(["--json", "push", "--main"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(5), "{output:?}");
+    let failure: Value = serde_json::from_str(
+        String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .last()
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        failure["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("the push to owner/repo landed as a request in the agent view"),
+        "{failure}"
+    );
+    assert_eq!(failure["recovery"]["landed"], true, "{failure}");
+    assert_eq!(failure["recovery"]["commit"], head, "{failure}");
+    assert_eq!(failure["recovery"]["view"], "agent", "{failure}");
+    assert_eq!(
+        failure["recovery"]["recovery_commands"],
+        json!([["scope", "request", "list"]])
+    );
+    assert_eq!(
+        git_stdout(
+            &scope.git_root.join("owner/repo"),
+            ["rev-parse", "refs/heads/main"]
+        ),
+        head
+    );
+}
+
+#[test]
 fn a_full_view_member_cannot_push_main_through_a_narrower_remote() {
     let workspace = TempDir::new("full-member-narrower-remote");
     let (scope, server) = start_fake_scope(&workspace, "private");
@@ -144,6 +189,14 @@ fn a_full_view_member_cannot_push_main_through_a_narrower_remote() {
 }
 
 fn start_fake_scope(workspace: &TempDir, access_view: &'static str) -> (FakeScope, TestServer) {
+    start_fake_scope_with(workspace, access_view, false)
+}
+
+fn start_fake_scope_with(
+    workspace: &TempDir,
+    access_view: &'static str,
+    request_list_fails: bool,
+) -> (FakeScope, TestServer) {
     let git_root = workspace.path().join("server");
     let bare = git_root.join("owner/repo");
     std::fs::create_dir_all(&bare).unwrap();
@@ -151,6 +204,7 @@ fn start_fake_scope(workspace: &TempDir, access_view: &'static str) -> (FakeScop
     let scope = FakeScope {
         git_root,
         access_view,
+        request_list_fails,
         seen: Arc::default(),
         intents: Arc::default(),
     };
@@ -222,7 +276,7 @@ async fn create_intent(State(scope): State<FakeScope>, Json(body): Json<Value>) 
 async fn list_requests(
     State(scope): State<FakeScope>,
     Query(query): Query<HashMap<String, String>>,
-) -> Json<Value> {
+) -> Response {
     let cursor = query.get("cursor").cloned();
     scope.seen.lock().unwrap().push(
         format!(
@@ -232,6 +286,13 @@ async fn list_requests(
         .trim_end()
         .to_string(),
     );
+    if scope.request_list_fails {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"code": "internal", "message": "request list unavailable"})),
+        )
+            .into_response();
+    }
     let head = git_stdout(
         &scope.git_root.join("owner/repo"),
         ["rev-parse", "refs/heads/main"],
@@ -241,30 +302,33 @@ async fn list_requests(
     match cursor.as_deref() {
         None => Json(json!({
             "requests": [
-                list_item("req_closed", &format!("main-push-{short}"), "usr_agent", &head, "Closed"),
-                list_item("req_other_author", &format!("main-push-{short}-3"), "usr_other", &head, "Open"),
-                list_item("req_other_head", &format!("main-push-{short}-4"), "usr_agent", &other_head, "Open"),
+                list_item("req_closed", &format!("main-push-{short}"), "usr_agent", "agent", &head, "Closed"),
+                list_item("req_other_author", &format!("main-push-{short}-3"), "usr_other", "agent", &head, "Open"),
+                list_item("req_other_head", &format!("main-push-{short}-4"), "usr_agent", "agent", &other_head, "Open"),
+                list_item("req_other_view", &format!("main-push-{short}-5"), "usr_agent", "public", &head, "Open"),
             ],
             "next_cursor": "page-2",
-        })),
+        }))
+        .into_response(),
         Some(_) => Json(json!({
             "requests": [
-                list_item("req_landed", &format!("main-push-{short}-2"), "usr_agent", &head, "Open"),
-                list_item("req_branch", "agent-feature", "usr_agent", &head, "Open"),
+                list_item("req_landed", &format!("main-push-{short}-2"), "usr_agent", "agent", &head, "Open"),
+                list_item("req_branch", "agent-feature", "usr_agent", "agent", &head, "Open"),
             ],
             "next_cursor": null,
-        })),
+        }))
+        .into_response(),
     }
 }
 
-fn list_item(id: &str, name: &str, author: &str, head: &str, state: &str) -> Value {
+fn list_item(id: &str, name: &str, author: &str, view: &str, head: &str, state: &str) -> Value {
     json!({
         "id": id,
         "name": name,
         "title": "Main push from agent",
         "author_user_id": author,
         "author_role": "Member",
-        "view": "agent",
+        "view": view,
         "head_oid": head,
         "state": state,
         "submitted_at_unix": 1,
