@@ -16,7 +16,7 @@ const repo = {
     can_change_file_visibility: true, can_manage_members: true, can_delete_repo: true },
 } satisfies RepoLiveState['repo']
 const server = { ids: [] as string[], summaryReads: 0, queueReads: 0, connections: 0, streams: new Set<ReadableStreamDefaultController<Uint8Array>>() }
-const live = (): RepoLiveState => ({ repo: { ...repo, open_request_count: server.ids.length }, event_stream_url: '/events', clerk_token_template: 'scope' })
+const live = (): RepoLiveState => ({ repo: { ...repo, open_request_count: server.ids.length }, api_url: '', event_stream_url: '/events', clerk_token_template: 'scope' })
 const summary = () => loadRepoRouteState({ load: async () => { server.summaryReads++; return { live: live() } }, refresh: true, signal: new AbortController().signal })
 const originalFetch = window.fetch
 window.fetch = async (input, init) => {

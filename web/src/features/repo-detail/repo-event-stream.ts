@@ -247,7 +247,7 @@ async function cancelBody(body: ReadableStream<Uint8Array>) {
   } catch {}
 }
 
-function normalizeSseLineEndings(buffer: string) {
+export function normalizeSseLineEndings(buffer: string) {
   return buffer.replace(/\r\n/g, '\n').replace(/\r(?!$)/g, '\n')
 }
 

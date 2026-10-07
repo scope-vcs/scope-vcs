@@ -26,10 +26,11 @@ export function invalidateRepoSummaryResources(scope: string) {
 
 export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, summaryPending = false) {
   const changed = event && typeof event.kind === 'object' && 'RunChanged' in event.kind ? event.kind.RunChanged : null
+  if (changed?.change === 'LogsAppended') return
   const repositoryChanged = event && typeof event.kind === 'object' && 'RepositoryChanged' in event.kind
   const recovery = !event || event.kind === 'Connected'
   const prefix = `${JSON.stringify([scope]).slice(0, -1)},`
-  if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed && changed.change !== 'LogsAppended') {
+  if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed) {
     invalidateRunHistoryScope(scope, recovery)
   }
   if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed?.change === 'StatusChanged') {

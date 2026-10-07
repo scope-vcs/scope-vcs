@@ -4,14 +4,74 @@ use scope_domain::repository::RepositoryIncarnation;
 use scope_domain::views::ViewId;
 use scope_postgres::db::MetadataStore;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::broadcast;
 
 const REPO_CHANGE_CHANNEL_CAPACITY: usize = 128;
+const RUN_LOG_NOTIFY_WINDOW: Duration = Duration::from_millis(250);
 pub(crate) const REQUEST_SUMMARY_REFRESH_VERSION: u64 = 0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LogNotifyAction {
+    Publish,
+    Schedule(Duration),
+    Pending,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct LogNotifyWindow {
+    last_published: Option<Instant>,
+    trailing_due: Option<Instant>,
+}
+
+#[derive(Debug)]
+struct LogNotifyRegistry {
+    windows: HashMap<String, LogNotifyWindow>,
+    prune_after: Instant,
+}
+
+impl Default for LogNotifyRegistry {
+    fn default() -> Self {
+        Self {
+            windows: HashMap::new(),
+            prune_after: Instant::now() + Duration::from_secs(30),
+        }
+    }
+}
+
+impl LogNotifyWindow {
+    fn on_append(&mut self, now: Instant) -> LogNotifyAction {
+        match self.last_published {
+            Some(last) if now < last + RUN_LOG_NOTIFY_WINDOW => {
+                if self.trailing_due.is_some() {
+                    LogNotifyAction::Pending
+                } else {
+                    let due = last + RUN_LOG_NOTIFY_WINDOW;
+                    self.trailing_due = Some(due);
+                    LogNotifyAction::Schedule(due - now)
+                }
+            }
+            _ => {
+                self.last_published = Some(now);
+                self.trailing_due = None;
+                LogNotifyAction::Publish
+            }
+        }
+    }
+
+    fn on_deadline(&mut self, now: Instant) -> bool {
+        if self.trailing_due.is_some_and(|due| now >= due) {
+            self.last_published = Some(now);
+            self.trailing_due = None;
+            true
+        } else {
+            false
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RepoChangeReason {
@@ -87,6 +147,7 @@ impl RepoChangeReason {
 #[derive(Clone, Debug)]
 pub(crate) struct RepoChangeBus {
     channels: Arc<Mutex<BTreeMap<String, broadcast::Sender<RepoChangeEvent>>>>,
+    log_notifications: Arc<Mutex<LogNotifyRegistry>>,
     origin_id: Arc<str>,
 }
 
@@ -94,12 +155,46 @@ impl Default for RepoChangeBus {
     fn default() -> Self {
         Self {
             channels: Arc::new(Mutex::new(BTreeMap::new())),
+            log_notifications: Arc::new(Mutex::new(LogNotifyRegistry::default())),
             origin_id: Arc::from(new_origin_id()),
         }
     }
 }
 
 impl RepoChangeBus {
+    fn on_log_append(&self, run_id: &str, now: Instant) -> LogNotifyAction {
+        let mut registry = self
+            .log_notifications
+            .lock()
+            .expect("run log notification lock must not be poisoned");
+        if now >= registry.prune_after {
+            registry.windows.retain(|_, window| {
+                window.trailing_due.is_some()
+                    || window
+                        .last_published
+                        .is_some_and(|last| now < last + RUN_LOG_NOTIFY_WINDOW)
+            });
+            registry.prune_after = now + Duration::from_secs(30);
+        }
+        registry
+            .windows
+            .entry(run_id.to_owned())
+            .or_insert(LogNotifyWindow {
+                last_published: None,
+                trailing_due: None,
+            })
+            .on_append(now)
+    }
+
+    fn on_log_deadline(&self, run_id: &str, now: Instant) -> bool {
+        self.log_notifications
+            .lock()
+            .expect("run log notification lock must not be poisoned")
+            .windows
+            .get_mut(run_id)
+            .is_some_and(|window| window.on_deadline(now))
+    }
+
     pub(crate) fn origin_id(&self) -> &str {
         &self.origin_id
     }
@@ -289,6 +384,33 @@ impl crate::state::AppState {
         run_id: String,
         change: RunChangeKind,
     ) {
+        if change == RunChangeKind::LogsAppended {
+            match self.repo_events.on_log_append(&run_id, Instant::now()) {
+                LogNotifyAction::Publish => {}
+                LogNotifyAction::Pending => return,
+                LogNotifyAction::Schedule(delay) => {
+                    let state = self.clone();
+                    let repo_id = repo_id.to_owned();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(delay).await;
+                        if state.repo_events.on_log_deadline(&run_id, Instant::now()) {
+                            state
+                                .publish_run_change_now(
+                                    &repo_id,
+                                    run_id,
+                                    RunChangeKind::LogsAppended,
+                                )
+                                .await;
+                        }
+                    });
+                    return;
+                }
+            }
+        }
+        self.publish_run_change_now(repo_id, run_id, change).await;
+    }
+
+    async fn publish_run_change_now(&self, repo_id: &str, run_id: String, change: RunChangeKind) {
         let incarnation = match self
             .metadata
             .repositories()
@@ -349,6 +471,55 @@ fn new_origin_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_notifications_publish_at_most_four_times_per_second_and_keep_the_trailing_edge() {
+        let start = Instant::now();
+        let mut window = LogNotifyWindow {
+            last_published: None,
+            trailing_due: None,
+        };
+        let mut published = Vec::new();
+        for tick in 0..100 {
+            let now = start + Duration::from_millis(tick * 10);
+            if window.on_deadline(now) {
+                published.push(now);
+            }
+            if window.on_append(now) == LogNotifyAction::Publish {
+                published.push(now);
+            }
+        }
+        assert_eq!(published.len(), 4);
+        assert!(
+            published
+                .windows(2)
+                .all(|times| times[1] - times[0] >= RUN_LOG_NOTIFY_WINDOW)
+        );
+        assert!(window.on_deadline(start + Duration::from_secs(1)));
+        assert_eq!(window.last_published, Some(start + Duration::from_secs(1)));
+        assert!(!window.on_deadline(start + Duration::from_millis(1_250)));
+    }
+
+    #[test]
+    fn log_notification_windows_are_per_run_and_a_stale_timer_cannot_duplicate_a_publish() {
+        let bus = RepoChangeBus::default();
+        let start = Instant::now();
+        assert_eq!(bus.on_log_append("first", start), LogNotifyAction::Publish);
+        assert_eq!(bus.on_log_append("second", start), LogNotifyAction::Publish);
+        assert_eq!(
+            bus.on_log_append("first", start + Duration::from_millis(100)),
+            LogNotifyAction::Schedule(Duration::from_millis(150))
+        );
+        assert_eq!(
+            bus.on_log_append("first", start + Duration::from_millis(200)),
+            LogNotifyAction::Pending
+        );
+        assert_eq!(
+            bus.on_log_append("first", start + Duration::from_millis(250)),
+            LogNotifyAction::Publish
+        );
+        assert!(!bus.on_log_deadline("first", start + Duration::from_millis(250)));
+    }
 
     fn incarnation(repo_id: &str) -> RepositoryIncarnation {
         RepositoryIncarnation::new(repo_id, format!("repoi_{repo_id}"))

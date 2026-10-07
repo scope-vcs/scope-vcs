@@ -683,6 +683,8 @@ export type RunState = "queued" | "dispatching" | "running" | "succeeded" | "fai
 
 export type RunResponse = { id: string, repository_id: string, workflow_name: string, git_oid: string, state: RunState, cancellation_requested: boolean, logs_truncated: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, };
 
+export type RunLogResponse = { attempt_id: string, job_key: string, step_index: number, position: number, sequence: number, text: string, created_at_unix: number, };
+
 export type RepositoryRunTrigger = "manual" | "push-main" | "request";
 
 export type RepositoryRunSummaryResponse = { id: string, workflow_name: string, git_oid: string, trigger: RepositoryRunTrigger, state: RunState, cancellation_requested: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, can_cancel: boolean, can_retry: boolean, };
@@ -758,6 +760,7 @@ export const ApiRouteTemplates = {
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",
   repoRuns: "/v1/repos/{owner}/{repo}/runs",
   repoRunDetail: "/v1/repos/{owner}/{repo}/runs/{run_id}/detail",
+  repoRunEvents: "/v1/repos/{owner}/{repo}/runs/{run_id}/events",
   repoRunStepLogs: "/v1/repos/{owner}/{repo}/runs/{run_id}/attempts/{attempt_id}/steps/{step_index}/logs",
   repoRunCancel: "/v1/repos/{owner}/{repo}/runs/{run_id}/cancel",
   repoRunRetry: "/v1/repos/{owner}/{repo}/runs/{run_id}/retry",
