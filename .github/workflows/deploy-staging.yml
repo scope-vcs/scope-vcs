@@ -320,7 +320,7 @@ jobs:
         env:
           GITHUB_SHA: ${{ inputs.source_sha }}
           SCOPE_CLI_BINARY: ${{ github.workspace }}/candidate/cli/target/release/scope
-          SCOPE_MEDIA_SMOKE_SCRIPT: ${{ github.workspace }}/candidate/dev/media-smoke.mjs
+          SCOPE_MEDIA_SMOKE_SCRIPT: ${{ github.workspace }}/dev/media-smoke.mjs
           SCOPE_MEDIA_SMOKE_RECEIPT: ${{ github.workspace }}/staging-media-smoke.json
           SCOPE_MEDIA_SMOKE_SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
