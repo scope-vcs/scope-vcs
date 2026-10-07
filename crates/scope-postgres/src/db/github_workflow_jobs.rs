@@ -137,40 +137,40 @@ impl RepositoryStore {
         retry_at_unix: Option<u64>,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let key: Vec<Value> = vec![
-            job.repo_id.clone().into(),
-            u64_to_i64(job.github_repository_id, "GitHub repository id")?.into(),
-            u64_to_i64(job.github_run_id, "GitHub workflow run id")?.into(),
-        ];
-        let mut values = key;
-        values.push(u32_to_i32(job.attempts, "GitHub jobs read attempts")?.into());
-        values.push(u64_to_i64(job.generation, "GitHub jobs read generation")?.into());
-        values.push(u64_to_i64(job.read_id, "GitHub jobs read id")?.into());
+        let claim = || -> Result<Vec<Value>, PostgresError> {
+            Ok(vec![
+                job.repo_id.clone().into(),
+                u64_to_i64(job.github_repository_id, "GitHub repository id")?.into(),
+                u64_to_i64(job.github_run_id, "GitHub workflow run id")?.into(),
+                u32_to_i32(job.attempts, "GitHub jobs read attempts")?.into(),
+                u64_to_i64(job.read_id, "GitHub jobs read id")?.into(),
+            ])
+        };
         if retry_at_unix.is_none() {
+            let mut values = claim()?;
+            values.push(u64_to_i64(job.generation, "GitHub jobs read generation")?.into());
             self.db
                 .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     "DELETE FROM scope_github_workflow_job_reads
-                  WHERE repo_id = $1 AND github_repository_id = $2 AND github_run_id = $3
-                    AND attempts = $4 AND generation = $5 AND read_id = $6",
-                    values.clone(),
+                      WHERE repo_id = $1 AND github_repository_id = $2 AND github_run_id = $3
+                        AND attempts = $4 AND read_id = $5 AND generation = $6",
+                    values,
                 ))
                 .await
                 .map_err(PostgresError::internal)?;
         }
+        let mut values = claim()?;
         values
             .push(u64_to_i64(retry_at_unix.unwrap_or(now_unix), "GitHub jobs retry time")?.into());
-        values.push(u64_to_i64(now_unix, "GitHub jobs read time")?.into());
-        let statement = Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "UPDATE scope_github_workflow_job_reads
-                SET next_attempt_at_unix = CASE WHEN generation = $5 THEN $7 ELSE $8 END
-              WHERE repo_id = $1 AND github_repository_id = $2 AND github_run_id = $3
-                AND attempts = $4 AND read_id = $6",
-            values,
-        );
         self.db
-            .execute_raw(statement)
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "UPDATE scope_github_workflow_job_reads SET next_attempt_at_unix = $6
+                  WHERE repo_id = $1 AND github_repository_id = $2 AND github_run_id = $3
+                    AND attempts = $4 AND read_id = $5",
+                values,
+            ))
             .await
             .map_err(PostgresError::internal)?;
         Ok(())

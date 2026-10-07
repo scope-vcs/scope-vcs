@@ -305,6 +305,48 @@ async fn a_newer_jobs_read_survives_completion_of_an_active_read() {
 }
 
 #[tokio::test]
+async fn a_failed_jobs_read_keeps_its_backoff_when_the_run_is_queued_again() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    repositories
+        .save_github_workflow_run(REPO, 42, &run("main"))
+        .await
+        .unwrap();
+    repositories
+        .queue_github_workflow_job_read(REPO, 42, 9, 100)
+        .await
+        .unwrap();
+    let failing = repositories
+        .claim_due_github_workflow_job_reads(100, 400, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    repositories
+        .queue_github_workflow_job_read(REPO, 42, 9, 140)
+        .await
+        .unwrap();
+    repositories
+        .finish_github_workflow_job_read(&failing, Some(260), 150)
+        .await
+        .unwrap();
+    assert!(
+        repositories
+            .claim_due_github_workflow_job_reads(259, 600, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        repositories
+            .claim_due_github_workflow_job_reads(260, 600, 10)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn a_stale_reader_cannot_finish_a_recreated_jobs_read() {
     let store = postgres_store();
     let repositories = store.repositories();

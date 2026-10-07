@@ -77,9 +77,9 @@ pub(crate) async fn run_jobs(
             run.run_attempt,
         )
         .await?;
-    if connection.is_connected()
-        && github_jobs_need_read(run, detail.jobs_read, !jobs.is_empty(), now_unix)
-    {
+    let queued = connection.is_connected()
+        && github_jobs_need_read(run, detail.jobs_read, !jobs.is_empty(), now_unix);
+    if queued {
         repositories
             .queue_github_workflow_job_read(
                 &connection.repository_id,
@@ -96,7 +96,7 @@ pub(crate) async fn run_jobs(
             detail.jobs_read,
             !jobs.is_empty(),
             connection.is_connected(),
-            detail.jobs_read_queued,
+            detail.jobs_read_queued || queued,
         ),
         jobs,
     })
@@ -107,15 +107,22 @@ pub(crate) async fn retry_github_workflow_job_reads_once(
     now_unix: u64,
 ) -> Result<usize, ApiError> {
     let repositories = state.metadata.repositories();
-    let jobs = repositories
-        .claim_due_github_workflow_job_reads(
-            now_unix,
-            now_unix.saturating_add(READ_LEASE_SECS),
-            READ_BATCH_SIZE,
-        )
-        .await?;
+    let started = std::time::Instant::now();
+    let clock = || now_unix.saturating_add(started.elapsed().as_secs());
     let mut answered = 0;
-    for job in jobs {
+    for _ in 0..READ_BATCH_SIZE {
+        let claimed_at = clock();
+        let Some(job) = repositories
+            .claim_due_github_workflow_job_reads(
+                claimed_at,
+                claimed_at.saturating_add(READ_LEASE_SECS),
+                1,
+            )
+            .await?
+            .pop()
+        else {
+            break;
+        };
         let connection = repositories
             .github_connection(&job.repo_id)
             .await?
@@ -125,26 +132,34 @@ pub(crate) async fn retry_github_workflow_job_reads_once(
                     && connection.github_repository_id == job.github_repository_id
             });
         let mut publish_for = None;
-        let retry_at = if let Some(connection) = connection.as_ref() {
-            match read_queued_jobs(state, connection, job.github_run_id, now_unix).await {
-                Ok(QueuedJobsRead::Saved) => {
-                    publish_for = Some(connection);
-                    None
-                }
-                Ok(QueuedJobsRead::Missing) => None,
-                Ok(QueuedJobsRead::ClaimLost) => Some(github_jobs_retry_at(job.attempts, now_unix)),
-                Err(error) => {
-                    let retry_at = Some(github_jobs_retry_at(job.attempts, now_unix));
-                    tracing::warn!(run_id = job.github_run_id, attempts = job.attempts,
-                        error = %error.operator_diagnostic(), "reading a GitHub workflow run's jobs failed");
-                    retry_at
-                }
+        let outcome = match connection.as_ref() {
+            Some(connection) => {
+                Some(read_queued_jobs(state, connection, job.github_run_id, claimed_at).await)
             }
-        } else {
-            None
+            None => None,
+        };
+        let finished_at = clock();
+        let retry_at = match outcome {
+            None | Some(Ok(QueuedJobsRead::Missing)) => None,
+            Some(Ok(QueuedJobsRead::Saved)) => {
+                publish_for = connection.as_ref();
+                None
+            }
+            Some(Ok(QueuedJobsRead::ClaimLost)) => {
+                Some(github_jobs_retry_at(job.attempts, finished_at))
+            }
+            Some(Err(error)) => {
+                tracing::warn!(
+                    run_id = job.github_run_id,
+                    attempts = job.attempts,
+                    error = %error.operator_diagnostic(),
+                    "reading a GitHub workflow run's jobs failed"
+                );
+                Some(github_jobs_retry_at(job.attempts, finished_at))
+            }
         };
         repositories
-            .finish_github_workflow_job_read(&job, retry_at, now_unix)
+            .finish_github_workflow_job_read(&job, retry_at, finished_at)
             .await?;
         if let Some(connection) = publish_for {
             publish(state, connection, job.github_run_id).await?;
