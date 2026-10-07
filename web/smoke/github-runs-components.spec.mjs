@@ -111,6 +111,7 @@ test('GitHub workflow runs open on Scope, keep their list across navigation and 
   await filter.selectOption('')
   await page.getByText('Showing 5', { exact: true }).waitFor()
   assert.deepEqual(await page.evaluate(() => window.loads), ['all after page-2', 'lint'])
+  assert.deepEqual(await page.evaluate(() => window.nameLoads), [])
 
   await page.evaluate(() => window.clearLoads())
   await page.evaluate(() => window.setNextRuns({
@@ -120,7 +121,6 @@ test('GitHub workflow runs open on Scope, keep their list across navigation and 
       status: 'queued', conclusion: null, html_url: 'https://github.com/octo/demo/actions/runs/9',
       run_started_at_unix: null, updated_at_unix: Math.floor(Date.now() / 1000), request_id: null,
     }],
-    workflows: ['lint'],
     next_cursor: null,
   }))
   await page.evaluate(() => window.emitRunsChanged())

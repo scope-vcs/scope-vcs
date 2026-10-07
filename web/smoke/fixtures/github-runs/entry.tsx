@@ -35,8 +35,13 @@ const initialRuns: GitHubWorkflowRunListResponse = {
     run(2, { workflow_name: 'Release images and publish the container manifests for every platform', conclusion: 'failure' }),
     run(3, { branch: 'scope/setup-check' }),
   ],
-  workflows: ['ci', 'lint', 'Release images and publish the container manifests for every platform'],
   next_cursor: 'page-2',
+}
+const initialNames = { workflows: ['ci', 'lint', 'Release images and publish the container manifests for every platform'] }
+const nameLoads: string[] = []
+async function loadNames() {
+  nameLoads.push('names')
+  return initialNames
 }
 const olderRuns = [run(4, {}), run(5, { workflow_name: 'lint' })]
 let nextRuns = initialRuns
@@ -52,6 +57,7 @@ const live = { repo: repoSummary('Owner') } as RepoLiveState
 Object.assign(window, {
   authorizeCalls,
   loads,
+  nameLoads,
   setNextRuns: (runs: GitHubWorkflowRunListResponse) => { nextRuns = runs },
   clearLoads: () => { loads.length = 0 },
   finishLoad: () => resolvers.shift()?.(),
@@ -178,9 +184,11 @@ function EmptyRuns() {
 
 function ConnectedNoRuns() {
   const { owner, repo } = useParams({ strict: false })
-  const none = { actions_url: 'https://github.com/octo/demo/actions', workflow_runs: [], workflows: [], next_cursor: null }
+  const none = { actions_url: 'https://github.com/octo/demo/actions', workflow_runs: [], next_cursor: null }
   return <GitHubWorkflowRunsPage
+    initialNames={{ workflows: [] }}
     initialRuns={none}
+    loadNames={async () => ({ workflows: [] })}
     loadRuns={async () => ({ configured: true, github: none })}
     params={{ owner: owner!, repo: repo! }}
   />
@@ -188,7 +196,13 @@ function ConnectedNoRuns() {
 
 function Runs() {
   const { owner, repo } = useParams({ strict: false })
-  return <GitHubWorkflowRunsPage initialRuns={initialRuns} loadRuns={loadRuns} params={{ owner: owner!, repo: repo! }} />
+  return <GitHubWorkflowRunsPage
+    initialNames={initialNames}
+    initialRuns={initialRuns}
+    loadNames={loadNames}
+    loadRuns={loadRuns}
+    params={{ owner: owner!, repo: repo! }}
+  />
 }
 
 function Run() {

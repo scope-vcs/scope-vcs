@@ -14,7 +14,7 @@ export const detail: RepositoryRunDetailResponse = { run, jobs: [{
     completed_at_unix: null, terminal_reason: null, cache_setup: null, caches: [], steps: [{ index: 0, name: 'Build', command: 'make build', state: 'running', started_at_unix: now, completed_at_unix: null, exit_code: null }] }],
 }] }
 export const workflows = { workflows: [], native_runs_available: true }
-export const initialPage = { kind: 'native' as const, githubConfigured: false, history, workflows, workflowsError: null }
+export const initialPage = { kind: 'native' as const, history, workflows, workflowsError: null }
 export const seeded = typeof location === 'undefined' || !new URLSearchParams(location.search).has('client')
 export const loads = { ...(handoff?.loads ?? { history: seeded ? 1 : 0, detail: seeded ? 1 : 0, workflows: seeded ? 1 : 0, logs: 0 }) }
 let hold = false
@@ -39,5 +39,6 @@ export async function loadDetail() { loads.detail++; await wait(); if (!permitte
 export async function loadLogs() { loads.logs++; await wait(); return { logs: [{ position: 1, sequence: 1, text: 'retained build output', byte_length: 21, created_at_unix: now }], next_after: 1, has_earlier: false, has_more: false, logs_truncated: false } }
 export async function cancelRun() { nextDetail = { ...detail, run: { ...run, state: 'cancelled', can_cancel: false, can_retry: true, completed_at_unix: now + 1, updated_at_unix: now + 1 } } }
 export async function loadRepoGitHubWorkflowRuns() { return { configured: false, github: null } }
+export async function loadRepoGitHubWorkflowNames() { return { workflows: [] } }
 export async function loadRepoSettingsData() { throw new Error('Unused fixture settings') }
 export async function startRepoGitHubAuthorization() { throw new Error('Unused fixture authorization') }
