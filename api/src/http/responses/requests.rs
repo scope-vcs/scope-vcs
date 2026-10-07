@@ -62,6 +62,7 @@ pub(crate) fn request_list_item_response(
         id: request.id,
         name: request.name,
         title: request.title,
+        author_user_id: request.author_user_id,
         author_role: request.author_role.into(),
         view: request.view.into(),
         head_oid: request_head_oid.clone(),

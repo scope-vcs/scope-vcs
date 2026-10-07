@@ -348,6 +348,8 @@ pub struct RequestListItemResponse {
     pub id: String,
     pub name: String,
     pub title: String,
+    /// Null once that account is deleted; clients show a deleted user.
+    pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
     pub view: ViewId,
     pub head_oid: GitOid,

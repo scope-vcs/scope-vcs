@@ -3,7 +3,10 @@ use super::{
     main_push_denied, main_push_mode, push_head_with_intent, remote_view_mismatch,
 };
 use crate::{
-    api::{ApiSession, CreatePushIntentParams, create_push_intent, get_repo, http_client},
+    api::{
+        ApiSession, CreatePushIntentParams, RequestListItemResponse, create_push_intent, get_repo,
+        http_client, list_requests,
+    },
     error::CliError,
     execution::emit,
     git_transport::ScopeRemote,
@@ -11,7 +14,7 @@ use crate::{
     progress::PreparationProgress,
     repository_views::repository_views,
 };
-use scope_domain::{repository::access::MainPushMode, requests::main_push_request_name};
+use scope_domain::{repository::access::MainPushMode, requests::main_push_request_names};
 use serde_json::json;
 
 pub(super) fn push(
@@ -68,7 +71,7 @@ pub(super) fn push(
         target.owner, target.repo
     );
     push_head_with_intent(&session.token, target, head_oid, &intent)?;
-    let request = main_push_request_name(head_oid);
+    let request = landed_request(api, target, &session.user.id, head_oid)?;
     emit(
         "push",
         &json!({
@@ -77,10 +80,52 @@ pub(super) fn push(
             "ref": format!("refs/heads/{DEFAULT_SCOPE_BRANCH}"),
             "commit": head_oid,
             "view": target.view,
-            "request": request,
+            "landed": true,
+            "request": {"id": request.id, "name": request.name},
         }),
         vec![format!(
-            "Landed as request {request} in the {view_name} view"
+            "Landed as request {} ({}) in the {view_name} view",
+            request.name, request.id
         )],
     )
+}
+
+fn landed_request(
+    api: ApiSession<'_>,
+    target: &ScopeRemote,
+    pusher_user_id: &str,
+    head_oid: &str,
+) -> anyhow::Result<RequestListItemResponse> {
+    let names = main_push_request_names(head_oid).collect::<Vec<_>>();
+    let mut newest: Option<(usize, RequestListItemResponse)> = None;
+    let mut cursor = None;
+    loop {
+        let page = list_requests(api, &target.owner, &target.repo, cursor.as_deref())?;
+        for request in page.requests {
+            let generated = names.iter().position(|name| *name == request.name);
+            let Some(position) = generated.filter(|_| {
+                request.author_user_id.as_deref() == Some(pusher_user_id)
+                    && request.head_oid.as_str() == head_oid
+            }) else {
+                continue;
+            };
+            if newest.as_ref().is_none_or(|(latest, _)| position > *latest) {
+                newest = Some((position, request));
+            }
+        }
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+    }
+    newest.map(|(_, request)| request).ok_or_else(|| {
+        CliError::partial(
+            format!(
+                "the push to {}/{} landed, but Scope lists no main push request for {head_oid}; run scope request list",
+                target.owner, target.repo
+            ),
+            json!({"commit": head_oid, "view": target.view, "landed": true}),
+        )
+        .into()
+    })
 }

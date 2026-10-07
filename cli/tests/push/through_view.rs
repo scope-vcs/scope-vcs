@@ -2,13 +2,14 @@ use super::support::*;
 use axum::{
     Json, Router,
     body::Bytes,
-    extract::{OriginalUri, State},
+    extract::{OriginalUri, Query, State},
     http::{HeaderMap, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::{any, get, post},
 };
 use serde_json::{Value, json};
 use std::{
+    collections::HashMap,
     io::Write,
     path::PathBuf,
     process::{Command, Stdio},
@@ -41,7 +42,7 @@ fn a_narrower_member_pushes_main_through_their_view_and_lands_as_a_request() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(
         stdout.contains(&format!(
-            "Landed as request main-push-{} in the Agent view",
+            "Landed as request main-push-{}-2 (req_landed) in the Agent view",
             &head[..12]
         )),
         "{stdout}"
@@ -57,6 +58,15 @@ fn a_narrower_member_pushes_main_through_their_view_and_lands_as_a_request() {
         "{seen:?}"
     );
     assert!(!seen.iter().any(|entry| entry.contains("/git/private/")));
+    assert_eq!(
+        seen.iter()
+            .filter(|entry| entry.starts_with("GET /v1/repos/owner/repo/requests"))
+            .collect::<Vec<_>>(),
+        [
+            "GET /v1/repos/owner/repo/requests",
+            "GET /v1/repos/owner/repo/requests page-2",
+        ]
+    );
     assert!(!seen.iter().any(|entry| entry.ends_with("/config")));
     assert_eq!(
         git_stdout(
@@ -128,6 +138,7 @@ fn start_fake_scope(workspace: &TempDir, access_view: &'static str) -> (FakeScop
             )
             .route("/v1/repos/owner/repo/config", get(forbidden_config))
             .route("/v1/repos/owner/repo/push-intents", post(create_intent))
+            .route("/v1/repos/owner/repo/requests", get(list_requests))
             .route("/git/{*path}", any(git_http_backend))
             .with_state(scope.clone())
     });
@@ -160,6 +171,65 @@ async fn create_intent(State(scope): State<FakeScope>, Json(body): Json<Value>) 
         "expires_at_unix": expires_at_unix,
         "lands_as_request": true,
     }))
+}
+
+async fn list_requests(
+    State(scope): State<FakeScope>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Json<Value> {
+    let cursor = query.get("cursor").cloned();
+    scope.seen.lock().unwrap().push(
+        format!(
+            "GET /v1/repos/owner/repo/requests {}",
+            cursor.clone().unwrap_or_default()
+        )
+        .trim_end()
+        .to_string(),
+    );
+    let head = git_stdout(
+        &scope.git_root.join("owner/repo"),
+        ["rev-parse", "refs/heads/main"],
+    );
+    let short = &head[..12];
+    let other_head = "1".repeat(40);
+    match cursor.as_deref() {
+        None => Json(json!({
+            "requests": [
+                list_item("req_closed", &format!("main-push-{short}"), "usr_agent", &head, "Closed"),
+                list_item("req_other_author", &format!("main-push-{short}-3"), "usr_other", &head, "Open"),
+                list_item("req_other_head", &format!("main-push-{short}-4"), "usr_agent", &other_head, "Open"),
+            ],
+            "next_cursor": "page-2",
+        })),
+        Some(_) => Json(json!({
+            "requests": [
+                list_item("req_landed", &format!("main-push-{short}-2"), "usr_agent", &head, "Open"),
+                list_item("req_branch", "agent-feature", "usr_agent", &head, "Open"),
+            ],
+            "next_cursor": null,
+        })),
+    }
+}
+
+fn list_item(id: &str, name: &str, author: &str, head: &str, state: &str) -> Value {
+    json!({
+        "id": id,
+        "name": name,
+        "title": "Main push from agent",
+        "author_user_id": author,
+        "author_role": "Member",
+        "view": "agent",
+        "head_oid": head,
+        "state": state,
+        "submitted_at_unix": 1,
+        "updated_at_unix": 2,
+        "mergeability": {
+            "status": "ChecksPending",
+            "current_main_oid": head,
+            "request_head_oid": head,
+            "reason": null,
+        },
+    })
 }
 
 async fn git_http_backend(

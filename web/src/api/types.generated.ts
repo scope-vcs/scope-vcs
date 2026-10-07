@@ -503,7 +503,11 @@ export type RequestRatingsResponse = { ratings: Array<RequestRatingResponse>, el
 
 export type RequestMutationResponse = { request: RequestSummaryResponse, };
 
-export type RequestListItemResponse = { id: string, name: string, title: string, author_role: RequestActorRole, view: ViewId, head_oid: GitOid, state: RequestState, submitted_at_unix: number | null, updated_at_unix: number, mergeability: RequestMergeabilityResponse, };
+export type RequestListItemResponse = { id: string, name: string, title: string, 
+/**
+ * Null once that account is deleted; clients show a deleted user.
+ */
+author_user_id: string | null, author_role: RequestActorRole, view: ViewId, head_oid: GitOid, state: RequestState, submitted_at_unix: number | null, updated_at_unix: number, mergeability: RequestMergeabilityResponse, };
 
 export type RequestSummaryResponse = { id: string, name: string, title: string, description_markdown: string, 
 /**
