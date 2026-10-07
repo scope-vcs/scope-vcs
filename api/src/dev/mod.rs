@@ -83,6 +83,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
         clerk_user_deletion_wakeup: Arc::new(tokio::sync::Notify::new()),
         clerk_users: crate::clerk_users::ClerkUsers::from_env(),
         github: crate::github::GitHubApp::from_env()?.map(Arc::new),
+        github_job_log_wakeup: Arc::new(tokio::sync::Notify::new()),
         github_push_wakeup: Arc::new(tokio::sync::Notify::new()),
         github_run_import_wakeup: Arc::new(tokio::sync::Notify::new()),
         github_job_read_wakeup: Arc::new(tokio::sync::Notify::new()),
@@ -116,6 +117,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
     state.start_github_pushes();
     state.start_github_run_imports();
     state.start_github_job_reads();
+    state.start_github_job_log_reads();
     state.start_github_check_reconciliation();
     state.start_clerk_user_deletion();
     state.start_git_segment_recovery();

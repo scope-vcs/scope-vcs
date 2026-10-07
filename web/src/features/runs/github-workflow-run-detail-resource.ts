@@ -32,6 +32,12 @@ export function invalidateGitHubWorkflowRunDetails(scope: string, runId?: number
   } else {
     githubWorkflowRunDetailResource.invalidate(githubWorkflowRunDetailIdentity(scope, String(runId)))
   }
+  const logs = runId === undefined ? `${scope}\0` : `${scope}\0${runId}\0`
+  githubWorkflowJobLogResource.invalidateMatching((identity) => {
+    if (!identity.startsWith(logs)) return false
+    const log = githubWorkflowJobLogResource.getSnapshot(identity)
+    return log.pending || log.value?.state === 'pending'
+  })
 }
 
 export const githubWorkflowJobLogResource = createCachedResource<GitHubWorkflowJobLogResponse>({

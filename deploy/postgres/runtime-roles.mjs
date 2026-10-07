@@ -17,7 +17,7 @@ const repositoryTables = names(`file_changes git_compaction_jobs git_heads git_s
   visibility_changes workflow_revisions dependency_analyses dependency_reports dependency_analysis_jobs
   request_ref_cleanup_jobs github_connections github_required_checks github_pushes
   github_setup_checks github_workflow_runs github_workflow_run_reads github_run_import_counts
-  github_run_imports github_workflow_jobs github_workflow_job_logs github_workflow_job_reads`);
+  github_run_imports github_workflow_jobs github_workflow_job_logs github_workflow_job_reads github_workflow_job_log_reads`);
 const runTables = names(`run_attempt_cache_setups run_attempt_caches run_attempt_steps run_attempts
   runs run_jobs run_logs`);
 const nativeRunsTables = names('native_runs_accounts');

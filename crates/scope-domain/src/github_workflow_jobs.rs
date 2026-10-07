@@ -50,6 +50,15 @@ impl GitHubWorkflowJob {
         self.conclusion != Some(GitHubCheckConclusion::Skipped) && !self.steps.is_empty()
     }
 
+    pub fn log_is_prefetched(&self) -> bool {
+        self.is_completed()
+            && self.ran()
+            && matches!(
+                self.conclusion,
+                Some(GitHubCheckConclusion::Failure | GitHubCheckConclusion::TimedOut)
+            )
+    }
+
     pub fn missing_log_is_final(&self, now_unix: u64) -> bool {
         self.completed_at_unix.is_some_and(|completed_at_unix| {
             now_unix >= completed_at_unix.saturating_add(GITHUB_JOB_LOG_PUBLISH_GRACE_SECS)
@@ -253,6 +262,22 @@ mod tests {
             ..job(Completed, vec![])
         };
         assert!(!cancelled_before_a_runner.ran());
+    }
+
+    #[test]
+    fn only_failed_jobs_that_ran_have_their_logs_read_when_they_finish() {
+        use GitHubCheckStatus::{Completed, InProgress};
+        let with = |conclusion, steps| GitHubWorkflowJob {
+            conclusion: Some(conclusion),
+            ..job(Completed, steps)
+        };
+        let ran = || vec![step(1, Completed)];
+        assert!(with(GitHubCheckConclusion::Failure, ran()).log_is_prefetched());
+        assert!(with(GitHubCheckConclusion::TimedOut, ran()).log_is_prefetched());
+        assert!(!with(GitHubCheckConclusion::Success, ran()).log_is_prefetched());
+        assert!(!with(GitHubCheckConclusion::Cancelled, ran()).log_is_prefetched());
+        assert!(!with(GitHubCheckConclusion::Failure, vec![]).log_is_prefetched());
+        assert!(!job(InProgress, ran()).log_is_prefetched());
     }
 
     #[test]

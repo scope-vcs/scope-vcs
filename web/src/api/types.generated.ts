@@ -399,7 +399,7 @@ export type GitHubWorkflowJobLogResponse = { "state": "kept", text: string,
 /**
  * Whether `text` is only the end of a longer log.
  */
-truncated: boolean, } | { "state": "expired" } | { "state": "not_run" };
+truncated: boolean, } | { "state": "expired" } | { "state": "not_run" } | { "state": "pending" };
 
 export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null, };
 

@@ -9,7 +9,10 @@ use crate::{
     error::ApiError,
     persistence::unix_now,
     state::AppState,
-    use_cases::github_workflow_jobs::{self, GitHubJobLogRead},
+    use_cases::{
+        github_job_logs::{self, GitHubJobLogRead},
+        github_workflow_jobs,
+    },
 };
 use axum::{
     Json,
@@ -58,9 +61,10 @@ pub(crate) async fn get_github_workflow_job_log(
         )
         .await?
         .ok_or_else(|| ApiError::not_found("job not found"))?;
-    let log = github_workflow_jobs::job_log(&state, &connection, &job, unix_now()?).await?;
+    let log = github_job_logs::job_log(&state, &connection, &job, unix_now()?).await?;
     Ok(Json(match log {
         GitHubJobLogRead::NotRun => GitHubWorkflowJobLogResponse::NotRun,
+        GitHubJobLogRead::Pending => GitHubWorkflowJobLogResponse::Pending,
         GitHubJobLogRead::Read(GitHubJobLogState::Expired) => GitHubWorkflowJobLogResponse::Expired,
         GitHubJobLogRead::Read(GitHubJobLogState::Kept(log)) => {
             GitHubWorkflowJobLogResponse::Kept {

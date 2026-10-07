@@ -76,6 +76,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0078_repo_config_version",
     "m0079_request_views",
     "m0080_github_workflow_job_reads",
+    "m0081_github_job_log_reads",
 ];
 
 pub(super) async fn isolated_database() -> (

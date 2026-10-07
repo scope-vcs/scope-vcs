@@ -23,6 +23,7 @@ pub struct AppState {
     pub(crate) clerk_user_deletion_wakeup: Arc<tokio::sync::Notify>,
     pub(crate) clerk_users: crate::clerk_users::ClerkUsers,
     pub(crate) github: Option<Arc<crate::github::GitHubApp>>,
+    pub(crate) github_job_log_wakeup: Arc<tokio::sync::Notify>,
     pub(crate) github_push_wakeup: Arc<tokio::sync::Notify>,
     pub(crate) github_run_import_wakeup: Arc<tokio::sync::Notify>,
     pub(crate) github_job_read_wakeup: Arc<tokio::sync::Notify>,
@@ -69,6 +70,7 @@ impl AppState {
             clerk_user_deletion_wakeup: Arc::new(tokio::sync::Notify::new()),
             clerk_users: crate::clerk_users::ClerkUsers::from_env(),
             github: crate::github::GitHubApp::from_env()?.map(Arc::new),
+            github_job_log_wakeup: Arc::new(tokio::sync::Notify::new()),
             github_push_wakeup: Arc::new(tokio::sync::Notify::new()),
             github_run_import_wakeup: Arc::new(tokio::sync::Notify::new()),
             github_job_read_wakeup: Arc::new(tokio::sync::Notify::new()),
@@ -101,6 +103,7 @@ impl AppState {
         state.start_github_pushes();
         state.start_github_run_imports();
         state.start_github_job_reads();
+        state.start_github_job_log_reads();
         state.start_github_check_reconciliation();
         state.start_clerk_user_deletion();
         state.start_git_segment_recovery();
@@ -124,6 +127,7 @@ impl AppState {
             clerk_user_deletion_wakeup: Arc::new(tokio::sync::Notify::new()),
             clerk_users: crate::clerk_users::ClerkUsers::Scripted(Default::default()),
             github: None,
+            github_job_log_wakeup: Arc::new(tokio::sync::Notify::new()),
             github_push_wakeup: Arc::new(tokio::sync::Notify::new()),
             github_run_import_wakeup: Arc::new(tokio::sync::Notify::new()),
             github_job_read_wakeup: Arc::new(tokio::sync::Notify::new()),
