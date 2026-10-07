@@ -34,10 +34,10 @@ use scope_api_contract::{
 };
 use scope_domain::{
     policy::ScopePath,
-    repository::Repository,
     repository::access::RepositoryAccess,
     requests::{RequestRevision, select_request_review_revision},
 };
+use scope_postgres::db::RepositoryReadPolicy;
 use serde::Deserialize;
 use std::{path::Path as FsPath, sync::Arc};
 
@@ -66,12 +66,12 @@ pub(crate) async fn list_request_revisions(
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Query(input): Query<RequestRevisionListRequest>,
 ) -> Result<Json<RequestRevisionListResponse>, ApiError> {
-    let (repo, access, viewer_user_id) =
-        repo_and_access(&state, &headers, &owner, &repo_name).await?;
+    let (repo, viewer_user_id) = repo_and_access(&state, &headers, &owner, &repo_name).await?;
+    let access = repo.context.access.clone();
     let repo = Arc::new(repo);
     let (request, _) = visible_request(
         &state,
-        &repo.record.id,
+        &repo.context.record.id,
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
@@ -129,7 +129,7 @@ pub(crate) async fn list_request_revisions(
             let inspection_access = access.clone();
             let inspected = with_request_revision_store_repo(
                 &state,
-                &repo.incarnation(),
+                &repo.context.incarnation(),
                 &request,
                 revision,
                 move |raw_repo, revision| {
@@ -234,12 +234,12 @@ pub(crate) async fn get_request_revision_commit_file_diff(
     )>,
     Query(input): Query<RequestFileDiffRequest>,
 ) -> Result<Json<ReviewFileDiffResponse>, ApiError> {
-    let (repo, access, viewer_user_id) =
-        repo_and_access(&state, &headers, &owner, &repo_name).await?;
+    let (repo, viewer_user_id) = repo_and_access(&state, &headers, &owner, &repo_name).await?;
+    let access = repo.context.access.clone();
     let repo = Arc::new(repo);
     let (request, _) = visible_request(
         &state,
-        &repo.record.id,
+        &repo.context.record.id,
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
@@ -257,14 +257,14 @@ pub(crate) async fn get_request_revision_commit_file_diff(
     let path_for_inspection = path.clone();
     let (file, old_content, new_content) = with_request_revision_store_repo(
         &state,
-        &repo.incarnation(),
+        &repo.context.incarnation(),
         &request,
         &revision,
         move |raw_repo, revision| {
             let inspected = request_revision_commit_files(
                 raw_repo,
                 &repo_for_inspection.policy,
-                repo_for_inspection.repo_config.views(),
+                &repo_for_inspection.context.views,
                 access,
                 revision,
                 &commit_oid,
@@ -301,7 +301,7 @@ pub(crate) async fn get_request_revision_commit_file_diff(
 
 fn request_revision_commits(
     raw_repo: &FsPath,
-    repo: &Repository,
+    repo: &RepositoryReadPolicy,
     access: RepositoryAccess,
     revision: &RequestRevision,
     selected_commit: Option<&str>,
@@ -344,7 +344,7 @@ fn request_revision_commits(
         let commit = inspect_request_commit(
             raw_repo,
             &repo.policy,
-            repo.repo_config.views(),
+            &repo.context.views,
             access.clone(),
             &commit_oids[index],
         )?;
@@ -362,7 +362,7 @@ fn request_revision_commits(
         let identity_only = inspect_request_commits_identity_only(
             raw_repo,
             &repo.policy,
-            repo.repo_config.views(),
+            &repo.context.views,
             access.clone(),
             &identity_only_oids,
         )?;

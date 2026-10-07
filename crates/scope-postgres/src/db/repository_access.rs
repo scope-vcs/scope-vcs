@@ -28,6 +28,12 @@ struct AccessRow {
     content_version: i64,
 }
 
+#[derive(Clone, Debug)]
+pub struct RepositoryReadPolicy {
+    pub context: RepositoryAccessContext,
+    pub policy: scope_domain::policy::Policy,
+}
+
 impl RepositoryStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_read_access"))]
     pub async fn repository_read_access(
@@ -44,6 +50,24 @@ impl RepositoryStore {
         };
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(Some(context))
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_read_policy"))]
+    pub async fn repository_read_policy(
+        &self,
+        owner: &str,
+        name: &str,
+        viewer_user_id: Option<&str>,
+    ) -> Result<Option<RepositoryReadPolicy>, PostgresError> {
+        let Some((tx, context)) = self
+            .begin_read_access_snapshot(&repo_id(owner, name), viewer_user_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let policy = load_policy(&tx, &context.record.id).await?;
+        tx.commit().await.map_err(PostgresError::internal)?;
+        Ok(Some(RepositoryReadPolicy { context, policy }))
     }
 
     pub(super) async fn begin_read_access_snapshot(
@@ -153,16 +177,9 @@ impl RepositoryStore {
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
         ensure_current_context(context, &current)?;
-        let policy = entities::repository::Entity::find_by_id(&context.record.id)
-            .select_only()
-            .column(entities::repository::Column::Policy)
-            .into_tuple::<serde_json::Value>()
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        let policy = load_policy(&tx, &context.record.id).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        serde_json::from_value(policy).map_err(PostgresError::internal)
+        Ok(policy)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_main_oid"))]
@@ -259,6 +276,21 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
         access,
         views,
     }))
+}
+
+async fn load_policy<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<scope_domain::policy::Policy, PostgresError> {
+    let policy = entities::repository::Entity::find_by_id(repo_id)
+        .select_only()
+        .column(entities::repository::Column::Policy)
+        .into_tuple::<serde_json::Value>()
+        .one(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+    serde_json::from_value(policy).map_err(PostgresError::internal)
 }
 
 pub(super) async fn load_repo_record<C: ConnectionTrait>(

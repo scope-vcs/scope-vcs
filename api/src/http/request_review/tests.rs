@@ -10,14 +10,29 @@ use scope_domain::{
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     content_ref::ContentRef,
     policy::{LabelRule, Policy, ScopePath},
-    repository::{Repository, access::RepositoryAccess},
+    repository::{
+        Repository,
+        access::{RepositoryAccess, RepositoryAccessContext},
+    },
     requests::RequestRevision,
 };
+use scope_postgres::db::RepositoryReadPolicy;
 use std::{
     io::Write,
     path::Path,
     process::{Command, Stdio},
 };
+
+fn read_policy(repo: &Repository) -> RepositoryReadPolicy {
+    RepositoryReadPolicy {
+        context: RepositoryAccessContext {
+            record: repo.record.clone(),
+            access: RepositoryAccess::public(),
+            views: repo.repo_config.views().clone(),
+        },
+        policy: repo.policy.clone(),
+    }
+}
 
 fn inspect_request_changes(
     changes: &[u8],
@@ -167,7 +182,7 @@ fn revision_response_keeps_oversized_commit_identity_and_prioritizes_selection()
 
     let default = request_revision_commits(
         directory.path(),
-        &repo,
+        &read_policy(&repo),
         access.clone(),
         &revision,
         None,
@@ -187,7 +202,7 @@ fn revision_response_keeps_oversized_commit_identity_and_prioritizes_selection()
 
     let selected = request_revision_commits(
         directory.path(),
-        &repo,
+        &read_policy(&repo),
         access.clone(),
         &revision,
         Some(&oversized),
@@ -263,7 +278,7 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
 
     let response = request_revision_commits(
         directory.path(),
-        &repo,
+        &read_policy(&repo),
         repo.access_for_user_id(&owner.id),
         &revision,
         None,
@@ -284,7 +299,7 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
         .unwrap();
     let public_response = request_revision_commits(
         directory.path(),
-        &repo,
+        &read_policy(&repo),
         RepositoryAccess::public(),
         &revision,
         None,
@@ -404,7 +419,7 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
     for file_budget in [0, 100] {
         let listing = request_revision_commits(
             raw_repo,
-            &repo,
+            &read_policy(&repo),
             owner_access.clone(),
             &revision,
             None,
@@ -454,7 +469,7 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
     for file_budget in [0, 100] {
         let listing = request_revision_commits(
             raw_repo,
-            &repo,
+            &read_policy(&repo),
             public.clone(),
             &revision,
             None,
