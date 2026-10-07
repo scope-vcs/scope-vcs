@@ -1,5 +1,4 @@
 use crate::{
-    auth::scope::principal_for_user_id,
     error::ApiError,
     git::{
         command::{run_git, run_git_output},
@@ -16,7 +15,6 @@ use crate::{
     },
     operation_analytics::ObservedOperation,
     persistence::{ensure_private_dir, unix_now},
-    repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
 };
@@ -56,7 +54,7 @@ pub(crate) struct MergeRequestCommand {
 }
 
 pub(crate) struct MergeRequestResult {
-    pub(crate) repo: Repository,
+    pub(crate) main_oid: Option<String>,
     pub(crate) access: RepositoryAccess,
     pub(crate) actor_user_id: String,
     pub(crate) request: Request,
@@ -65,6 +63,7 @@ pub(crate) struct MergeRequestResult {
 struct PersistedRequestMerge {
     request: Request,
     repo_change_version: u64,
+    main_oid: String,
 }
 
 pub(crate) struct PreparedRequestMerge {
@@ -105,10 +104,14 @@ pub(crate) async fn merge_request_inner(
     state: &AppState,
     command: &MergeRequestCommand,
 ) -> Result<MergeRequestResult, RequestMergeFailure> {
-    let repo = find_repo(state, &command.owner, &command.repo_name).await?;
-    let principal = principal_for_user_id(&repo, &command.actor_user_id);
-    ensure_repo_read(&repo, &principal)?;
-    let access = repo.access_for_principal(&principal);
+    let context = crate::repo_access::find_read_access(
+        state,
+        &command.owner,
+        &command.repo_name,
+        Some(&command.actor_user_id),
+    )
+    .await?;
+    let access = context.access.clone();
     let request = state
         .metadata
         .requests()
@@ -124,7 +127,7 @@ pub(crate) async fn merge_request_inner(
         &request,
         RequestViewer::new(access.clone(), Some(&command.actor_user_id), is_invitee),
     );
-    if request.repo_id != repo.record.id || !policy.exact_visible {
+    if request.repo_id != context.record.id || !policy.exact_visible {
         return Err(ApiError::not_found("request not found").into());
     }
     if !policy.permissions.can_merge {
@@ -144,7 +147,7 @@ pub(crate) async fn merge_request_inner(
     }
     crate::use_cases::github_check_results::confirm_recent_github_checks(state, &request).await?;
     let checks =
-        crate::use_cases::request_checks::checks_outcome(state, &repo.record, &request).await?;
+        crate::use_cases::request_checks::checks_outcome(state, &context.record, &request).await?;
     if checks != RequestChecksOutcome::Clear {
         let decision = request_mergeability(&request, access.clone(), checks);
         return Err(ApiError::conflict(
@@ -155,11 +158,29 @@ pub(crate) async fn merge_request_inner(
 
     let analytics_event = ProductEvent::request_merged(
         &command.actor_user_id,
-        &repo.record.incarnation_id,
+        &context.record.incarnation_id,
         &request.id,
         request.view.clone(),
         request_actor_role(access.clone()),
     );
+    let repo = state
+        .metadata
+        .repositories()
+        .repository(&command.owner, &command.repo_name)
+        .await?
+        .ok_or_else(|| {
+            ApiError::not_found(format!(
+                "repo {}/{} not found",
+                command.owner, command.repo_name
+            ))
+        })?;
+    if repo.incarnation() != context.incarnation()
+        || repo.record.change_version != context.record.change_version
+    {
+        return Err(
+            ApiError::conflict("repository changed while the merge was checked; retry").into(),
+        );
+    }
     let prepared = prepare_request_merge_for_execution(
         state,
         &command.owner,
@@ -189,19 +210,24 @@ pub(crate) async fn merge_request_inner(
         .map_err(RequestMergeFailure::Other)?;
 
     state.product_analytics.capture(analytics_event);
+    let incarnation = repo.incarnation();
+    let main_oid = if &access.view == repo.repo_config.views().full() {
+        Some(mutation.main_oid)
+    } else {
+        RepositoryGit::load(state, &incarnation)
+            .await?
+            .view_head(state, &access.view)
+            .await?
+    };
     state
         .publish_repo_change(
-            &repo.incarnation(),
+            &incarnation,
             mutation.repo_change_version,
             RepoChangeReason::RequestMerged,
         )
         .await;
-    let committed_repo = find_repo(state, &command.owner, &command.repo_name).await?;
     state
-        .publish_request_summary_refresh(
-            &committed_repo.incarnation(),
-            RepoChangeReason::RequestMerged,
-        )
+        .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged)
         .await;
     crate::use_cases::request_checks::renew_stale_check_commits_in_background(
         state,
@@ -209,7 +235,7 @@ pub(crate) async fn merge_request_inner(
         &command.repo_name,
     );
     Ok(MergeRequestResult {
-        repo: committed_repo,
+        main_oid,
         access,
         actor_user_id: command.actor_user_id.clone(),
         request: mutation.request,
@@ -276,6 +302,7 @@ async fn persist_prepared_merge(
             Ok(PersistedRequestMerge {
                 request: mutation.request.request,
                 repo_change_version: mutation.git_head.change_version,
+                main_oid: mutation.git_head.head_oid,
             })
         }
         Err(error) => {

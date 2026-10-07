@@ -5,13 +5,12 @@ pub(crate) use scope_api_contract::{
 };
 use scope_domain::{
     policy::ScopePath,
-    projection::project_graph,
     projection_views::{
-        ProjectionPreviewCommit, ProjectionPreviewFile, ProjectionViewFile, projection_preview,
-        repo_scope_path as domain_repo_scope_path,
+        ProjectionPreviewCommit, ProjectionPreviewFile, ProjectionPreviewSource,
+        ProjectionViewFile, projection_preview, repo_scope_path as domain_repo_scope_path,
     },
-    repository::Repository,
 };
+use scope_postgres::db::{RepositoryProjectionSource, RepositoryReadPolicy};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -71,7 +70,8 @@ pub(crate) struct RepoFileContentResponse {
 }
 
 pub(crate) fn projection_preview_response(
-    repo: &Repository,
+    repo: &RepositoryReadPolicy,
+    source: &RepositoryProjectionSource,
     view: &scope_domain::views::ViewId,
     include_private_counts: bool,
     native_details: &std::collections::BTreeMap<
@@ -79,9 +79,20 @@ pub(crate) fn projection_preview_response(
         scope_domain::projection::NativePublicCommitDetails,
     >,
 ) -> Result<ProjectionPreviewResponse, ApiError> {
-    let views = repo.repo_config.views();
-    let projection = project_graph(&repo.graph, &repo.visibility_change_sets, views, view);
-    let preview = projection_preview(repo, views, view, include_private_counts, native_details)?;
+    let views = &repo.context.views;
+    let projection = source.project(views, view);
+    let preview = projection_preview(
+        ProjectionPreviewSource {
+            repo_id: &repo.context.record.id,
+            policy: &repo.policy,
+            graph: &source.graph,
+            visibility_change_sets: &source.visibility_change_sets,
+        },
+        views,
+        view,
+        include_private_counts,
+        native_details,
+    )?;
     let head_oid = scope_git::projection_head_oid(&projection).map_err(ApiError::internal)?;
 
     Ok(ProjectionPreviewResponse {

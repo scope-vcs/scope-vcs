@@ -1,14 +1,14 @@
 use crate::{
     auth::{
-        scope::{optional_scope_user, principal_for_scope_user, require_scope_user},
+        scope::{optional_scope_user, require_scope_user},
         tokens::{generate_first_push_token, generate_git_push_token},
     },
     error::ApiError,
+    git::repository_git::RepositoryGit,
+    http::origins::public_git_origin,
     http::responses::*,
-    http::{origins::public_git_origin, projection_preview::ensure_projection_preview_access},
     persistence::unix_now,
     push_intents::repo_config_fingerprint,
-    repo_access::find_repo,
     repo_events::RepoChangeReason,
     state::AppState,
 };
@@ -141,7 +141,12 @@ pub(crate) async fn delete_repo(
     Path((owner, repo_name)): Path<(String, String)>,
 ) -> Result<Json<DeleteRepoResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let repo = find_repo(&state, &owner, &repo_name).await?;
+    let repo = state
+        .metadata
+        .repositories()
+        .repository_access(&owner, &repo_name, None)
+        .await?
+        .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
     let incarnation = repo.incarnation();
     let delete_version = repo.record.change_version.saturating_add(1);
     let repo_id = state
@@ -181,9 +186,7 @@ pub(crate) async fn get_repo_config(
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
     if repo.access.actor == RepositoryActor::Public {
-        let full_repo = find_repo(&state, &owner, &repo_name).await?;
-        let principal = principal_for_scope_user(&full_repo, Some(&user));
-        crate::repo_access::ensure_repo_read(&full_repo, &principal)?;
+        crate::repo_access::find_read_access(&state, &owner, &repo_name, Some(&user.id)).await?;
         return Err(ApiError::forbidden("repo membership required"));
     }
     let views = repo.repo_config.views();
@@ -357,22 +360,29 @@ pub(crate) async fn get_projection_preview(
     Path((owner, repo_name)): Path<(String, String)>,
     Query(input): Query<ProjectionPreviewRequest>,
 ) -> Result<Json<ProjectionPreviewResponse>, ApiError> {
-    let repo = find_repo(&state, &owner, &repo_name).await?;
     let user = optional_scope_user(&state, &headers).await?;
-    let requester = principal_for_scope_user(&repo, user.as_ref());
+    let repo = state
+        .metadata
+        .repositories()
+        .repository_read_policy(
+            &owner,
+            &repo_name,
+            user.as_ref().map(|user| user.id.as_str()),
+        )
+        .await?
+        .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
     let view: ViewId = input.view.into();
-    ensure_projection_preview_access(&repo, &requester, &view)?;
-    let include_private_counts = repo.can_read_view(
-        &repo.access_for_principal(&requester),
-        repo.repo_config.views().full(),
-    );
-
-    let projection = scope_domain::projection::project_graph(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        repo.repo_config.views(),
-        &view,
-    );
+    if !repo.context.can_read_view(&view) {
+        return Err(ApiError::forbidden("view access required"));
+    }
+    let include_private_counts = repo.context.reads_full_view();
+    let incarnation = repo.context.incarnation();
+    let source = state
+        .metadata
+        .repositories()
+        .repository_projection_source(&incarnation, repo.context.record.content_version)
+        .await?;
+    let projection = source.project(&repo.context.views, &view);
     let commits = projection
         .commits
         .iter()
@@ -392,13 +402,14 @@ pub(crate) async fn get_projection_preview(
         .collect::<Vec<_>>();
     let native_details = crate::use_cases::native_commit_details::native_commit_details(
         &state,
-        &repo.incarnation(),
+        &incarnation,
         &commits,
     )
     .await?;
 
     Ok(Json(projection_preview_response(
         &repo,
+        &source,
         &view,
         include_private_counts,
         &native_details,
@@ -492,13 +503,20 @@ pub(crate) async fn get_file_content(
             )
         }
     } else {
-        let repo = find_repo(&state, &owner, &repo_name).await?;
+        let incarnation = state
+            .metadata
+            .repositories()
+            .repository_access(&owner, &repo_name, None)
+            .await?
+            .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?
+            .incarnation();
+        let git = RepositoryGit::load(&state, &incarnation).await?;
         crate::http::file_diffs::review_content_response_for_blob(
             &state,
             &projected.projected.blob,
-            repo.git_head
+            git.git_head
                 .as_ref()
-                .map(|head| (repo.incarnation(), head, repo.git_pack_spans.as_slice())),
+                .map(|head| (git.incarnation.clone(), head, git.git_pack_spans.as_slice())),
         )
         .instrument(span)
         .await?

@@ -1,0 +1,148 @@
+use super::*;
+use std::time::Duration;
+
+async fn state_with_docs() -> AppState {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    let mut repo = repo_with_readme(&state);
+    let path = ScopePath::parse("/docs.txt").unwrap();
+    let content = source_blob(&state, "docs");
+    repo.graph.commits[0].changes.push(FileChange {
+        label: ViewId::public(),
+        path: path.clone(),
+        old_content: None,
+        new_content: Some(content.clone()),
+    });
+    repo.live_files.insert(path, content);
+    replace_test_repo(&state, repo).await;
+    drain_outbox(&state, "repo-route-reads").await;
+    state
+}
+
+async fn get(app: &axum::Router, uri: &str, authorization: Option<&str>) -> Response {
+    api_request(app.clone(), "GET", uri, authorization, None).await
+}
+
+async fn within_lock(response: impl std::future::Future<Output = Response>) -> Response {
+    tokio::time::timeout(Duration::from_secs(2), response)
+        .await
+        .expect("the route must not wait on locked tables")
+}
+
+#[tokio::test]
+async fn file_content_and_config_routes_read_no_commit_history() {
+    let state = state_with_docs().await;
+    let app = router(state.clone());
+    let owner = bearer_header();
+    let outsider = bearer_header_for("user_outsider", "outsider@example.com");
+    let content = "/v1/repos/owner/repo/files/content?path=docs.txt";
+    assert_eq!(
+        get(&app, content, Some(&owner)).await.status(),
+        StatusCode::OK
+    );
+
+    let held = state
+        .metadata
+        .admin()
+        .lock_tables_for_tests(&[
+            "scope_logical_commits",
+            "scope_file_changes",
+            "scope_visibility_change_sets",
+            "scope_visibility_changes",
+        ])
+        .await
+        .unwrap();
+    let file = within_lock(get(&app, content, Some(&owner))).await;
+    let config = within_lock(get(&app, "/v1/repos/owner/repo/config", Some(&outsider))).await;
+    held.rollback().await.unwrap();
+
+    assert_eq!(file.status(), StatusCode::OK);
+    assert_eq!(response_json(file).await["content"]["text"], "docs");
+    assert_eq!(config.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn projection_preview_reads_history_but_no_live_files() {
+    let state = state_with_docs().await;
+    let app = router(state.clone());
+    let preview = "/v1/repos/owner/repo/projection-preview?view=public";
+    assert_eq!(get(&app, preview, None).await.status(), StatusCode::OK);
+
+    let held = state
+        .metadata
+        .admin()
+        .lock_tables_for_tests(&["scope_live_files", "scope_repository_invites"])
+        .await
+        .unwrap();
+    let public = within_lock(get(&app, preview, None)).await;
+    let private = within_lock(get(
+        &app,
+        "/v1/repos/owner/repo/projection-preview?view=private",
+        None,
+    ))
+    .await;
+    held.rollback().await.unwrap();
+
+    assert_eq!(public.status(), StatusCode::OK);
+    let public = response_json(public).await;
+    let paths = public["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["path"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(paths, ["/README.md", "/docs.txt"]);
+    assert_eq!(private.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn git_backed_file_content_reads_no_commit_history() {
+    let (state, source, _server, _) = super::git_http::first_push_fixture(
+        "git-backed-file-content",
+        "hello\n",
+        Some(("script.sh", "#!/bin/sh\necho hi\n")),
+    )
+    .await;
+    run_git(
+        Some(&source),
+        &["push", "-u", "scope", "HEAD:main"],
+        "push git-backed files",
+    )
+    .unwrap();
+    drain_outbox(&state, "git-backed-file-content").await;
+    let stored = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    assert!(matches!(
+        stored.live_files[&ScopePath::parse("/script.sh").unwrap()].content_ref,
+        scope_domain::content_ref::ContentRef::GitBlob { .. }
+    ));
+    let app = router(state.clone());
+    let owner = bearer_header();
+    let content = "/v1/repos/owner/repo/files/content?path=script.sh";
+    cache_test_jwks(&state);
+    assert_eq!(
+        get(&app, content, Some(&owner)).await.status(),
+        StatusCode::OK
+    );
+
+    let held = state
+        .metadata
+        .admin()
+        .lock_tables_for_tests(&[
+            "scope_logical_commits",
+            "scope_file_changes",
+            "scope_visibility_change_sets",
+            "scope_visibility_changes",
+        ])
+        .await
+        .unwrap();
+    let file = within_lock(get(&app, content, Some(&owner))).await;
+    held.rollback().await.unwrap();
+
+    assert_eq!(file.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(file).await["content"]["text"],
+        "#!/bin/sh\necho hi\n"
+    );
+}

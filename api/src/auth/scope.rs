@@ -9,11 +9,7 @@ use crate::{
     state::AppState,
 };
 use axum::http::HeaderMap;
-use scope_domain::{
-    account::UserAccount,
-    policy::{Principal, PrincipalKind},
-    repository::Repository,
-};
+use scope_domain::account::UserAccount;
 use scope_product_analytics::ProductEvent;
 
 pub(crate) async fn optional_scope_user(
@@ -100,23 +96,5 @@ async fn resolve_clerk_scope_user(
     {
         Some(user) => Ok(user),
         None => reconcile_clerk_scope_user(state, identity).await,
-    }
-}
-
-pub(crate) fn principal_for_scope_user(repo: &Repository, user: Option<&UserAccount>) -> Principal {
-    let Some(user) = user else {
-        return Principal::public();
-    };
-    principal_for_user_id(repo, &user.id)
-}
-
-pub(crate) fn principal_for_user_id(repo: &Repository, user_id: &str) -> Principal {
-    if repo.is_owner_user(user_id) || repo.member_for_user(user_id).is_some() {
-        Principal {
-            id: user_id.to_string(),
-            kind: PrincipalKind::User,
-        }
-    } else {
-        Principal::public()
     }
 }

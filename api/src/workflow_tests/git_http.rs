@@ -559,7 +559,7 @@ async fn first_push_unsupported_control_file_displays_rejection_without_persisti
     assert_eq!(recording.event_names(), ["operation:failure"]);
 }
 
-async fn first_push_fixture(
+pub(super) async fn first_push_fixture(
     label: &str,
     readme: &str,
     executable: Option<(&str, &str)>,

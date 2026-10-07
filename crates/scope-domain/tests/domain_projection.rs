@@ -7,7 +7,9 @@ use scope_domain::{
         FileChange, LogicalCommit, ProjectionMaterialization, SourceGraph, project_graph,
     },
     projection::{LogicalCommitOrigin, NativePublicCommit},
-    projection_views::{ProjectionPreviewCommitVisibility, projection_preview},
+    projection_views::{
+        ProjectionPreviewCommitVisibility, ProjectionPreviewSource, projection_preview,
+    },
     repo_config::{HistoryRewriteAction, HistoryRewriteRequest, RepoConfig, RepoConfigFileRule},
     repository::updates::RequestMergeOrigin,
     repository::{RepoLifecycleState, Repository},
@@ -235,8 +237,14 @@ fn preview_commit_labels_are_relative_to_the_requested_view() {
     repo.graph.commits.push(mixed);
     let views = Views::builtin();
     let native = std::collections::BTreeMap::new();
-    let public = projection_preview(&repo, &views, &ViewId::public(), true, &native).unwrap();
-    let private = projection_preview(&repo, &views, &ViewId::private(), false, &native).unwrap();
+    let source = || ProjectionPreviewSource {
+        repo_id: &repo.record.id,
+        policy: &repo.policy,
+        graph: &repo.graph,
+        visibility_change_sets: &repo.visibility_change_sets,
+    };
+    let public = projection_preview(source(), &views, &ViewId::public(), true, &native).unwrap();
+    let private = projection_preview(source(), &views, &ViewId::private(), false, &native).unwrap();
     assert_eq!(
         public.commits[0].visibility,
         ProjectionPreviewCommitVisibility::SomeInView
