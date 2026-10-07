@@ -50,8 +50,9 @@ use scope_api_contract::{
     RequestRatingResponse, RequestRatingsResponse, RequestRevisionCommitResponse,
     RequestRevisionInspectionState, RequestRevisionListResponse, RequestRevisionResponse,
     RequestState, RequestSummaryResponse, RetryRequestAttachmentRequest, RunChangeKind,
-    RunResponse, RunState, SessionIdentity, StartRequestRequest, StepState, SubmitRequestRequest,
-    UpdateRepoMetadataRequest, UserResponse, ViewDefinition, ViewId, ViewIncludes, ViewReaders,
+    RunLogResponse, RunResponse, RunState, SessionIdentity, StartRequestRequest, StepState,
+    SubmitRequestRequest, UpdateRepoMetadataRequest, UserResponse, ViewDefinition, ViewId,
+    ViewIncludes, ViewReaders,
 };
 use scope_api_contract::{
     RepositoryDependencyCheckResponse, RepositoryDependencyCheckStatus,
@@ -305,6 +306,7 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         RunChangeKind,
         RunState,
         RunResponse,
+        RunLogResponse,
         RepositoryRunTrigger,
         RepositoryRunSummaryResponse,
         RepositoryRunListItemResponse,
@@ -364,6 +366,7 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         LeaveRequestResponse,
         OwnerProfileResponse,
         RepoChangeEvent,
+        RunLogResponse,
         RepoFileContentResponse,
         RepoFileResponse,
         RepoSummaryResponse,

@@ -74,6 +74,7 @@ export type RepoContent = {
 }
 
 export type RepoLiveState = {
+  api_url: string
   clerk_token_template: string
   event_stream_url: string
   repo: RepoSummaryResponse
