@@ -141,6 +141,17 @@ export function GitHubWorkflowRunsPage({
                 </div>
               </PageErrorAlert>
             </div>
+          ) : names.error ? (
+            <div className="pt-5">
+              <PageErrorAlert title="Workflow filter could not refresh">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span>{names.error}</span>
+                  <Button onClick={names.retry} size="sm" variant="secondary">
+                    Retry now
+                  </Button>
+                </div>
+              </PageErrorAlert>
+            </div>
           ) : null}
           <div className="pt-7">
             {!runs ? (

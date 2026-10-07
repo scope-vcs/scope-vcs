@@ -140,7 +140,7 @@ test('a viewer change prevents late log responses from restoring discarded data'
 
 test('pagination survives navigation; queued refresh reloads full depth without losing earlier rows', async () => {
   const scope = 'viewer/repo/access'
-  const key = runHistoryCacheKey(scope)
+  const key = runHistoryCacheKey(scope, 'native')
   const first = history(['first'], 'older')
   initializeRunHistory(key, first)
   const older = deferred<RepositoryRunHistoryPageResponse>()
@@ -179,7 +179,7 @@ test('history errors retain valid rows and a retry refreshes; revoked access cle
 test('navigation and recovery share freshness, retained depth, and one in-flight history read', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: 100_000 })
   const scope = 'viewer/repo/access'
-  const historyKey = runHistoryCacheKey(scope)
+  const historyKey = runHistoryCacheKey(scope, 'native')
   const page = { kind: 'native' as const, history: history(['first'], 'older'), workflows: { workflows: [], native_runs_available: true }, workflowsError: null }
   let pageReads = 0
   const pending = deferred<typeof page>()
@@ -209,7 +209,7 @@ test('navigation and recovery share freshness, retained depth, and one in-flight
 
 test('events invalidate unmounted run resources in scope and navigation ignores obsolete responses', async () => {
   const scope = 'viewer/repo/access'
-  const historyKey = runHistoryCacheKey(scope)
+  const historyKey = runHistoryCacheKey(scope, 'native')
   const detailKey = JSON.stringify([scope, 'run'])
   runHistoryResource.seed(historyKey, runPageSnapshot({ kind: 'native', history: history(['first']), workflows: { workflows: [], native_runs_available: true }, workflowsError: null }))
   initializeRunDetail(detailKey, detail)
@@ -233,7 +233,7 @@ test('events invalidate unmounted run resources in scope and navigation ignores 
 
 test('a native refresh reads one history page per retained page and keeps the workflow catalog', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: 100_000 })
-  const historyKey = runHistoryCacheKey('viewer/repo/access')
+  const historyKey = runHistoryCacheKey('viewer/repo/access', 'native')
   const workflows = { workflows: [], native_runs_available: true }
   runHistoryResource.seed(historyKey, runPageSnapshot({ kind: 'native', history: history(['old-native'], 'older'), workflows, workflowsError: null }))
   await loadMoreRunHistory({ key: historyKey, input: params, loadHistory: async () => history(['old-older']) })

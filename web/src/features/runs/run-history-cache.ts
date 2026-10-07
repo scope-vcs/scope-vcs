@@ -26,8 +26,8 @@ export const runHistoryResource = createCachedResource<RetainedRunHistory>({
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
-export function runHistoryCacheKey(scope: string, workflow?: string) {
-  return JSON.stringify([scope, workflow ?? null])
+export function runHistoryCacheKey(scope: string, kind: RunPageResources['kind'], workflow?: string) {
+  return JSON.stringify([scope, kind, workflow ?? null])
 }
 
 export function initializeRunHistory(key: string, history: RepositoryRunHistoryPageResponse | null) {
@@ -84,13 +84,12 @@ export function runPageSnapshot(page: RunPageResources | null): RetainedRunHisto
 
 export type RunPageLoader = (input: RepoRunHistoryInput, signal?: AbortSignal) => Promise<RunPageResources | null>
 
-export async function loadRunPageSnapshot({ key, input, loadPage, loadHistory, expectedKind, signal }: HistoryRequest & {
+export async function loadRunPageSnapshot({ key, input, loadPage, loadHistory, signal }: HistoryRequest & {
   loadPage: RunPageLoader
-  expectedKind?: RunPageResources['kind']
   signal: AbortSignal
 }): Promise<RetainedRunHistory> {
   const current = runHistoryResource.peek(key)
-  if (current?.history && (current.page?.kind === 'native' || !current.page) && expectedKind !== 'github') {
+  if (current?.history && (current.page?.kind === 'native' || !current.page)) {
     const history = await reloadRunHistoryPages(current.pageCount, (after) => loadHistory(
       { ...input, ...(after ? { after } : {}) },
       AbortSignal.any([signal, AbortSignal.timeout(15_000)]),

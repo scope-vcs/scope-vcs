@@ -23,7 +23,7 @@ export function RepositoryRunsRoute(props: { initialResources: RunPageHandoff | 
   const { userId, isLoaded } = useAuth()
   const { repo, githubRuns, githubConfigured } = useRepoLayout()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
-  return <RunRouteContent {...props} githubRuns={githubRuns} githubConfigured={githubConfigured} scope={scope} key={scope ? runHistoryCacheKey(scope, props.workflow) : 'auth-pending'} />
+  return <RunRouteContent {...props} githubRuns={githubRuns} githubConfigured={githubConfigured} scope={scope} key={scope ? runHistoryCacheKey(scope, githubRuns ? 'github' : 'native', props.workflow) : 'auth-pending'} />
 }
 
 function RunRouteContent({
@@ -57,7 +57,7 @@ function RunRouteContent({
     [],
   )
 
-  const identity = scope ? runHistoryCacheKey(scope, workflow) : null
+  const identity = scope ? runHistoryCacheKey(scope, githubRuns ? 'github' : 'native', workflow) : null
   const initialValue = useMemo<RetainedRunHistory | null>(() => {
     if (!scope || initialResources?.scope !== scope) return null
     return runPageSnapshot(initialResources.resources)
@@ -66,10 +66,10 @@ function RunRouteContent({
   const load = useCallback(async (signal: AbortSignal): Promise<RetainedRunHistory> => {
     if (!identity) throw new Error('Run history scope is unavailable.')
     return loadRunPageSnapshot({
-      key: identity, input: { owner, repo, workflow }, loadHistory, expectedKind: githubRuns ? 'github' : 'native', signal,
+      key: identity, input: { owner, repo, workflow }, loadHistory, signal,
       loadPage,
     })
-  }, [identity, owner, repo, workflow, loadHistory, loadPage, githubRuns])
+  }, [identity, owner, repo, workflow, loadHistory, loadPage])
   const loadWorkflows = useCallback((input: RepoParams, signal?: AbortSignal) => loadRepoRunWorkflows({ data: input, signal }), [])
   const resource = useRunResource({ identity, initialValue, load, resource: runHistoryResource, refreshVersion: 'refresh' })
   const page = resource.value?.page
