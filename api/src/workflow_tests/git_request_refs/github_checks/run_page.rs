@@ -430,6 +430,70 @@ fn stored_run(id: u64, branch: &str) -> GitHubWorkflowRun {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn github_run_pages_leave_workflow_names_to_the_catalog_endpoint() {
+    let request = owner_request("github-run-list-catalog", &[REQUIRED_CHECK]).await;
+    let state = &request.state;
+    for id in 1..=52 {
+        state
+            .metadata
+            .repositories()
+            .save_github_workflow_run(
+                TEST_REPO_ID,
+                GITHUB_REPOSITORY_ID,
+                &GitHubWorkflowRun {
+                    workflow_name: if id % 2 == 0 { "ci" } else { "lint" }.into(),
+                    run_started_at_unix: Some(id),
+                    ..stored_run(id, "main")
+                },
+            )
+            .await
+            .unwrap();
+    }
+    let path = format!("/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/github/workflow-runs");
+    let first = expect_json(
+        api_request(
+            router(state.clone()),
+            "GET",
+            &path,
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert!(first["github"].get("workflows").is_none());
+    let cursor = first["github"]["next_cursor"].as_str().unwrap();
+    let next = expect_json(
+        api_request(
+            router(state.clone()),
+            "GET",
+            &format!("{path}?after={cursor}"),
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert!(next["github"].get("workflows").is_none());
+    assert_eq!(next["github"]["workflow_runs"].as_array().unwrap().len(), 2);
+    let names = expect_json(
+        api_request(
+            router(state.clone()),
+            "GET",
+            &format!("/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/github/workflow-names"),
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(names["workflows"], serde_json::json!(["ci", "lint"]));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_viewers_open_its_github_runs_only_once_the_github_repository_is_public() {
     let (state, fake, _source) = private_file_repository("github-run-page-access").await;
     let repositories = state.metadata.repositories();

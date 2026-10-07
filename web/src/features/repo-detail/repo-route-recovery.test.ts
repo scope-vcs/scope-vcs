@@ -14,6 +14,8 @@ const originalFetch = globalThis.fetch
 afterEach(() => { globalThis.fetch = originalFetch })
 
 const live: RepoLiveState = {
+  githubRuns: false,
+  githubConfigured: false,
   clerk_token_template: 'scope',
   event_stream_url: 'https://scope.test/events',
   repo: {

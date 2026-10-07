@@ -1,4 +1,6 @@
-use scope_api_contract::{RepositoryRunSummaryResponse, RunResponse};
+use scope_api_contract::{
+    RepositoryRunListItemResponse, RepositoryRunSummaryResponse, RunResponse,
+};
 use scope_domain::runs::{
     availability::NativeRunsAvailability,
     job::{RunJob, can_retry_run},
@@ -37,5 +39,19 @@ pub(super) fn repository_run_summary(
         completed_at_unix: run.completed_at_unix,
         can_cancel: run.can_request_cancellation(),
         can_retry: native_runs.is_available() && can_retry_run(run, jobs),
+    }
+}
+
+pub(super) fn repository_run_list_item(run: &Run) -> RepositoryRunListItemResponse {
+    RepositoryRunListItemResponse {
+        id: run.id.clone(),
+        workflow_name: run.workflow.path().name().to_string(),
+        git_oid: run.source.git_oid().to_string(),
+        trigger: run.trigger.into(),
+        state: run.state.into(),
+        cancellation_requested: run.cancellation_requested,
+        created_at_unix: run.created_at_unix,
+        updated_at_unix: run.updated_at_unix,
+        completed_at_unix: run.completed_at_unix,
     }
 }

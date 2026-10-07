@@ -72,7 +72,7 @@ struct Report {
     target: Option<String>,
     main_push_target: Option<String>,
     request: Option<api::RequestSummaryResponse>,
-    recent_matching_runs: Vec<api::RepositoryRunSummaryResponse>,
+    recent_matching_runs: Vec<api::RepositoryRunListItemResponse>,
     diagnostics: Vec<Diagnostic>,
     next_actions: Vec<String>,
 }

@@ -162,6 +162,10 @@ pub fn router(state: AppState) -> Router {
             get(http::github::get_github_workflow_runs),
         )
         .route(
+            routes::REPO_GITHUB_WORKFLOW_NAMES,
+            get(http::github::get_github_workflow_names),
+        )
+        .route(
             routes::REPO_GITHUB_WORKFLOW_RUN,
             get(http::github_runs::get_github_workflow_run),
         )

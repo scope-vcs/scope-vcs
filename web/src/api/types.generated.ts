@@ -336,6 +336,8 @@ configured: boolean,
  */
 github: GitHubWorkflowRunListResponse | null, };
 
+export type GitHubWorkflowNamesResponse = { workflows: Array<string>, };
+
 export type GitHubWorkflowRunListResponse = { 
 /**
  * The repository's Actions page, which has every run and its logs.
@@ -345,11 +347,6 @@ actions_url: string,
  * A page of runs, newest first.
  */
 workflow_runs: Array<GitHubWorkflowRunResponse>, 
-/**
- * The names of the workflows with stored runs, which the list can be
- * narrowed to.
- */
-workflows: Array<string>, 
 /**
  * Continues the list after this page, while there is more.
  */
@@ -657,6 +654,8 @@ export type RepositoryRunTrigger = "manual" | "push-main" | "request";
 
 export type RepositoryRunSummaryResponse = { id: string, workflow_name: string, git_oid: string, trigger: RepositoryRunTrigger, state: RunState, cancellation_requested: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, can_cancel: boolean, can_retry: boolean, };
 
+export type RepositoryRunListItemResponse = { id: string, workflow_name: string, git_oid: string, trigger: RepositoryRunTrigger, state: RunState, cancellation_requested: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, };
+
 export type RepositoryRunJobState = "blocked" | "queued" | "dispatching" | "running" | "succeeded" | "failed" | "skipped" | "canceled" | "lost";
 
 export type RepositoryRunJobResponse = { key: string, needs: Array<string>, pinned_container_image: string, state: RepositoryRunJobState, created_at_unix: number, started_at_unix: number | null, updated_at_unix: number, completed_at_unix: number | null, };
@@ -693,7 +692,7 @@ export type RepositoryRunWorkflowListResponse = { workflows: Array<RepositoryRun
  */
 native_runs_available: boolean, };
 
-export type RepositoryRunHistoryPageResponse = { runs: Array<RepositoryRunSummaryResponse>, next_cursor: string | null, };
+export type RepositoryRunHistoryPageResponse = { runs: Array<RepositoryRunListItemResponse>, next_cursor: string | null, };
 
 export type RepositoryRunLogResponse = { byte_length: number, position: number, sequence: number, text: string, created_at_unix: number, };
 
@@ -720,6 +719,7 @@ export const ApiRouteTemplates = {
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
   repoGitHubSetupCheck: "/v1/repos/{owner}/{repo}/github/setup-check",
   repoGitHubWorkflowRuns: "/v1/repos/{owner}/{repo}/github/workflow-runs",
+  repoGitHubWorkflowNames: "/v1/repos/{owner}/{repo}/github/workflow-names",
   repoGitHubWorkflowRun: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}",
   repoGitHubWorkflowJobLog: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}/jobs/{job_id}/log",
   repoGitHubRunImport: "/v1/repos/{owner}/{repo}/github/run-import",

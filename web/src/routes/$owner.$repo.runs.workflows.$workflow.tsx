@@ -12,7 +12,7 @@ export const Route = createFileRoute('/$owner/$repo/runs/workflows/$workflow')({
     if (typeof window !== 'undefined') return null
     const live = (await parentMatchPromise).loaderData as RepoLiveState
     const { userId } = await auth()
-    return { scope: repoResourceScope(live.repo, userId), resources: await loadRepoRunPage({ data: params }) }
+    return { scope: repoResourceScope(live.repo, userId), resources: await loadRepoRunPage({ data: { ...params, githubRuns: live.githubRuns } }) }
   },
   errorComponent: RunsPageError,
   pendingComponent: RunsPagePending,

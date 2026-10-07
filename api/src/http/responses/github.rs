@@ -101,11 +101,14 @@ pub(crate) struct GitHubWorkflowRunListResponse {
     pub(crate) actions_url: String,
     /// A page of runs, newest first.
     pub(crate) workflow_runs: Vec<GitHubWorkflowRunResponse>,
-    /// The names of the workflows with stored runs, which the list can be
-    /// narrowed to.
-    pub(crate) workflows: Vec<String>,
     /// Continues the list after this page, while there is more.
     pub(crate) next_cursor: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubWorkflowNamesResponse {
+    pub(crate) workflows: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

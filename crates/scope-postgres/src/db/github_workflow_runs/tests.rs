@@ -1,6 +1,7 @@
 use super::*;
 use crate::db::requests::tests::{postgres_store, start_public_request};
 use scope_domain::requests::{GitHubCheckConclusion, GitHubCheckStatus};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
 const REPO: &str = "owner/repo";
 
@@ -139,6 +140,45 @@ async fn pages_continue_after_their_last_run_and_keep_to_one_workflow() {
         repositories.github_workflow_names(REPO, 42).await.unwrap(),
         ["ci", "lint"]
     );
+}
+
+#[tokio::test]
+async fn filtered_pages_use_the_workflow_recent_index() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    for id in 1..=30 {
+        repositories
+            .save_github_workflow_run(REPO, 42, &run(id, "main", id, id))
+            .await
+            .unwrap();
+    }
+    let tx = store.db.begin().await.unwrap();
+    tx.execute_unprepared("SET LOCAL enable_seqscan = off")
+        .await
+        .unwrap();
+    let query = format!(
+        "EXPLAIN (ANALYZE) SELECT {SELECT_RUN}, request.id AS request_id
+           FROM scope_github_workflow_runs run
+           {REQUEST_JOIN}
+          WHERE run.repo_id = 'owner/repo' AND run.github_repository_id = 42
+            AND run.workflow_name = 'ci'
+          ORDER BY coalesce(run.run_started_at_unix, run.github_updated_at_unix) DESC,
+                   run.github_run_id DESC
+          LIMIT 21"
+    );
+    let plan = tx
+        .query_all_raw(Statement::from_string(DatabaseBackend::Postgres, query))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|line| line.try_get::<String>("", "QUERY PLAN").unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        plan.contains("Index Scan using idx_scope_github_workflow_runs_workflow_recent"),
+        "{plan}"
+    );
+    tx.rollback().await.unwrap();
 }
 
 #[tokio::test]

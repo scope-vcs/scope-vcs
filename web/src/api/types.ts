@@ -77,6 +77,8 @@ export type RepoLiveState = {
   clerk_token_template: string
   event_stream_url: string
   repo: RepoSummaryResponse
+  githubRuns: boolean
+  githubConfigured: boolean
 }
 
 export type RepoParams = {

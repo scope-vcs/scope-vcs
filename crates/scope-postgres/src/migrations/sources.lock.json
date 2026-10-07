@@ -37,5 +37,6 @@
   "m0077_custom_views.rs": "529ce208263b34cd3fe3b34370c3aaf94c7b58509b7dfddf5755cb550603cb5e",
   "m0078_repo_config_version.rs": "2da2c583e6fde0b930e00140d169a20d61525f7f4c1a6d8fb17c5a5ed1eaf411",
   "m0079_github_workflow_job_reads.rs": "9c2df0e5517051cf61eb2ed09885842b6ae9af3a28b3181148180f8a92b114d4",
-  "m0080_github_job_log_reads.rs": "491af4e45eede2e2f11725a0a9c56ed892f2e9f4a34b869793783b4dfe34bf2d"
+  "m0080_github_job_log_reads.rs": "491af4e45eede2e2f11725a0a9c56ed892f2e9f4a34b869793783b4dfe34bf2d",
+  "m0081_github_workflow_run_list.rs": "3512cd8481c7b6ed81490847ffa0013508f5ffe9bc3b1b4dd78a7d793a6bc90e"
 }

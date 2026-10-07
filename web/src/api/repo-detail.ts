@@ -9,6 +9,7 @@ import type { RepoContent, RepoLiveState, RepoParams } from './types'
 import type { RepoSummaryResponse, RepositoryDependencyCheckResponse, ViewId } from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import { apiValidators } from './validators.generated'
+import { loadRepoGitHubConnectionForRequest } from './github'
 
 export async function loadRepoContentForRequest(
   data: RepoParams & { view: ViewId },
@@ -40,7 +41,10 @@ export async function loadRepoLiveStateForRequest(data: RepoParams) {
     apiValidators.RepoSummaryResponse,
     { auth: 'optional' },
   )
-  return repoLiveState(data, repo)
+  const github = repo.access.actor === 'Public'
+    ? null
+    : await loadRepoGitHubConnectionForRequest(data)
+  return repoLiveState(data, repo, Boolean(github?.configured && github.connection), github?.configured ?? false)
 }
 
 export async function loadRepoFileForRequest(
@@ -66,11 +70,13 @@ export async function loadRepoDependenciesForRequest(
   )
 }
 
-function repoLiveState(data: RepoParams, repo: RepoSummaryResponse): RepoLiveState {
+function repoLiveState(data: RepoParams, repo: RepoSummaryResponse, githubRuns: boolean, githubConfigured: boolean): RepoLiveState {
   const publicApi = stripTrailingSlash(getPublicApiConnection('building repo event stream URL'))
   return {
     clerk_token_template: clerkApiTokenTemplate(),
     event_stream_url: `${publicApi}${repoRoute(ApiRouteTemplates.repoEvents, data)}`,
     repo,
+    githubRuns,
+    githubConfigured,
   }
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { beforeEach, test } from 'node:test'
+import { beforeEach, mock, test } from 'node:test'
 import type { RepoRunHistoryInput, RunStepLogsInput } from '@/api/types'
 import type {
   RepositoryRunDetailResponse,
@@ -39,7 +39,7 @@ function logs(positions: number[], hasMore = false): RepositoryRunStepLogPageRes
 function historyOptions(loadHistory: (input: RepoRunHistoryInput) => Promise<RepositoryRunHistoryPageResponse | null>, historyKey = key) {
   return { key: historyKey, input: params, loadHistory, loadPage: async (input: RepoRunHistoryInput) => {
     const page = await loadHistory(input)
-    return page ? { kind: 'native' as const, githubConfigured: false, history: page, workflows: { workflows: [], native_runs_available: true }, workflowsError: null } : null
+    return page ? { kind: 'native' as const, history: page, workflows: { workflows: [], native_runs_available: true }, workflowsError: null } : null
   } }
 }
 function history(ids: string[], next_cursor: string | null = null): RepositoryRunHistoryPageResponse {
@@ -180,7 +180,7 @@ test('navigation and recovery share freshness, retained depth, and one in-flight
   t.mock.timers.enable({ apis: ['Date'], now: 100_000 })
   const scope = 'viewer/repo/access'
   const historyKey = runHistoryCacheKey(scope)
-  const page = { kind: 'native' as const, githubConfigured: false, history: history(['first'], 'older'), workflows: { workflows: [], native_runs_available: true }, workflowsError: null }
+  const page = { kind: 'native' as const, history: history(['first'], 'older'), workflows: { workflows: [], native_runs_available: true }, workflowsError: null }
   let pageReads = 0
   const pending = deferred<typeof page>()
   const loadPage = async () => { pageReads++; return pending.promise }
@@ -195,16 +195,14 @@ test('navigation and recovery share freshness, retained depth, and one in-flight
   assert.equal(pageReads, 1)
   await loadMoreRunHistory({ key: historyKey, input: params, loadHistory })
   t.mock.timers.tick(30_001)
-  const after = deferred<typeof page>()
   const inputs: Array<string | undefined> = []
-  const reload = (signal: AbortSignal) => loadRunPageSnapshot({ key: historyKey, input: params, loadPage: async () => { pageReads++; return after.promise },
-    loadHistory: async ({ after: cursor }) => { inputs.push(cursor); return history(['updated-older']) }, signal })
+  const reload = (signal: AbortSignal) => loadRunPageSnapshot({ key: historyKey, input: params, loadPage: async () => { pageReads++; return page },
+    loadHistory: async ({ after: cursor }) => { inputs.push(cursor); return cursor ? history(['updated-older']) : history(['updated-first'], 'next') }, signal })
   const refreshing = ensureRunResource(runHistoryResource, historyKey, reload)
   assert.deepEqual(runHistoryResource.peek(historyKey)?.history?.runs.map(({ id }) => id), ['first', 'older'])
-  after.resolve({ ...page, history: history(['updated-first'], 'next') })
   await refreshing
-  assert.deepEqual(inputs, ['next'])
-  assert.equal(pageReads, 2)
+  assert.deepEqual(inputs, [undefined, 'next'])
+  assert.equal(pageReads, 1)
   assert.equal(runHistoryResource.peek(historyKey)?.pageCount, 2)
   assert.deepEqual(runHistoryResource.peek(historyKey)?.history?.runs.map(({ id }) => id), ['updated-first', 'updated-older'])
 })
@@ -213,7 +211,7 @@ test('events invalidate unmounted run resources in scope and navigation ignores 
   const scope = 'viewer/repo/access'
   const historyKey = runHistoryCacheKey(scope)
   const detailKey = JSON.stringify([scope, 'run'])
-  runHistoryResource.seed(historyKey, runPageSnapshot({ kind: 'native', githubConfigured: false, history: history(['first']), workflows: { workflows: [], native_runs_available: true }, workflowsError: null }))
+  runHistoryResource.seed(historyKey, runPageSnapshot({ kind: 'native', history: history(['first']), workflows: { workflows: [], native_runs_available: true }, workflowsError: null }))
   initializeRunDetail(detailKey, detail)
   const otherKey = JSON.stringify(['other-viewer/repo/access', 'run'])
   initializeRunDetail(otherKey, completed)
@@ -233,18 +231,27 @@ test('events invalidate unmounted run resources in scope and navigation ignores 
   assert.equal(runHistoryResource.peek(historyKey), null)
 })
 
-test('mounted recovery refreshes page-mode metadata before navigation can reuse it', async (t) => {
+test('a native refresh reads one history page per retained page and keeps the workflow catalog', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: 100_000 })
   const historyKey = runHistoryCacheKey('viewer/repo/access')
-  runHistoryResource.seed(historyKey, runPageSnapshot({ kind: 'native', githubConfigured: false, history: history(['old-native']), workflows: { workflows: [], native_runs_available: true }, workflowsError: null }))
+  const workflows = { workflows: [], native_runs_available: true }
+  runHistoryResource.seed(historyKey, runPageSnapshot({ kind: 'native', history: history(['old-native'], 'older'), workflows, workflowsError: null }))
+  await loadMoreRunHistory({ key: historyKey, input: params, loadHistory: async () => history(['old-older']) })
   t.mock.timers.tick(30_001)
-  let pageReads = 0
+  const loadPage = mock.fn(async () => ({ kind: 'native' as const, history: history(['wrong']), workflows, workflowsError: null }))
+  const loadHistory = mock.fn(async ({ after }: RepoRunHistoryInput) => after
+    ? history(['new-older']) : history(['new-first'], 'new-cursor'))
   const options = { key: historyKey, input: params,
-    loadHistory: async () => history(['old-native']),
-    loadPage: async () => { pageReads++; return { kind: 'github' as const, github: { actions_url: 'https://github.com/owner/repo/actions', workflow_runs: [], workflows: [], next_cursor: null } } },
+    loadHistory,
+    loadPage,
   }
   await refreshRunHistory(options, true)
-  assert.equal(runHistoryResource.peek(historyKey)?.page?.kind, 'github')
+  assert.equal(loadHistory.mock.callCount(), 2)
+  assert.equal(loadPage.mock.callCount(), 0)
+  assert.deepEqual(runHistoryResource.peek(historyKey)?.history?.runs.map(({ id }) => id), ['new-first', 'new-older'])
   await ensureRunResource(runHistoryResource, historyKey, (signal) => loadRunPageSnapshot({ ...options, signal }))
-  assert.equal(pageReads, 1)
+  assert.equal(loadPage.mock.callCount(), 0)
+  const page = runHistoryResource.peek(historyKey)?.page
+  assert.equal(page?.kind, 'native')
+  if (page?.kind === 'native') assert.deepEqual(page.workflows, workflows)
 })
