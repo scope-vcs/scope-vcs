@@ -1,8 +1,9 @@
 use super::{
     AuthorizeRequestAutoMergeInput, RecordRequestRevisionInput, Request, RequestAutoMergeIntent,
-    RequestEvent, RequestRevision, RequestRevisionGitFacts, StartRequestFacts, StartRequestInput,
-    StartRequestMutation, SubmitRequestInput, authorize_request_auto_merge,
-    lifecycle::open_request, record_request_revision, request_actor_role, submit_request,
+    RequestEvent, RequestRevision, RequestRevisionGitFacts, RequestViewer, StartRequestFacts,
+    StartRequestInput, StartRequestMutation, SubmitRequestInput, authorize_request_auto_merge,
+    lifecycle::open_request, record_request_revision, request_actor_role, request_policy,
+    submit_request,
 };
 use crate::{
     content::SourceBlob,
@@ -225,6 +226,13 @@ pub fn start_main_push_request(
             now_unix: input.now_unix,
         },
     )?;
+    let pusher_can_merge = request_policy(
+        &submitted.request,
+        RequestViewer::new(access.clone(), Some(&input.pusher_user_id), false),
+        views,
+    )
+    .permissions
+    .can_merge;
     let auto_merge = authorize_request_auto_merge(
         &submitted.request,
         &revised.revision,
@@ -235,7 +243,7 @@ pub fn start_main_push_request(
             repository_incarnation_id: input.repository_incarnation_id,
             request_id: input.id,
             actor_user_id: input.pusher_user_id,
-            actor_is_maintainer: access.is_maintainer(),
+            actor_can_merge: pusher_can_merge,
             expected_revision_id: revised.revision.id.clone(),
             expected_head_oid: input.head_oid,
             event_id: input.auto_merge_event_id,
