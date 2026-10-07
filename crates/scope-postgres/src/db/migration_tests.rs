@@ -17,6 +17,7 @@ mod github_connections;
 mod github_request_checks;
 mod github_run_imports;
 mod github_setup_checks_and_workflow_runs;
+mod github_workflow_run_list;
 mod maintenance_cutover;
 mod native_runs_accounts;
 mod provider_neutral_request_checks;
@@ -77,6 +78,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0079_request_views",
     "m0080_github_workflow_job_reads",
     "m0081_github_job_log_reads",
+    "m0082_github_workflow_run_list",
 ];
 
 pub(super) async fn isolated_database() -> (

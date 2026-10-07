@@ -94,7 +94,7 @@ pub struct GitHubWorkflowRunDetailRead {
 
 const REQUEST_JOIN: &str = "LEFT JOIN scope_requests request
       ON request.repo_id = run.repo_id
-     AND run.head_branch = 'scope/requests/' || request.id";
+     AND request.id = run.request_id";
 
 impl RepositoryStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "save_github_workflow_run"))]
@@ -429,6 +429,7 @@ pub(super) async fn save_workflow_run<C: ConnectionTrait>(
         u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
         run.workflow_name.clone().into(),
         run.head_branch.clone().into(),
+        run.request_id().into(),
         run.head_oid.clone().into(),
         run.event.clone().into(),
         encode_enum(run.status)?.into(),
@@ -443,15 +444,16 @@ pub(super) async fn save_workflow_run<C: ConnectionTrait>(
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_github_workflow_runs (github_run_id, repo_id,
-                github_repository_id, workflow_name, head_branch, head_oid, event, status,
+                github_repository_id, workflow_name, head_branch, request_id, head_oid, event, status,
                 conclusion, html_url, check_suite_id, run_started_at_unix,
                 github_updated_at_unix, run_attempt, stage)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
              ON CONFLICT (github_run_id) DO UPDATE SET
                 repo_id = EXCLUDED.repo_id,
                 github_repository_id = EXCLUDED.github_repository_id,
                 workflow_name = EXCLUDED.workflow_name,
-                head_branch = EXCLUDED.head_branch, head_oid = EXCLUDED.head_oid,
+                head_branch = EXCLUDED.head_branch, request_id = EXCLUDED.request_id,
+                head_oid = EXCLUDED.head_oid,
                 event = EXCLUDED.event, status = EXCLUDED.status,
                 conclusion = EXCLUDED.conclusion, html_url = EXCLUDED.html_url,
                 check_suite_id = EXCLUDED.check_suite_id,

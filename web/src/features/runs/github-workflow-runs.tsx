@@ -1,6 +1,7 @@
 import type { RepoGitHubWorkflowRunsInput, RepoParams } from '@/api/types'
 import type {
   GitHubWorkflowRunListResponse,
+  GitHubWorkflowNamesResponse,
   GitHubWorkflowRunsResponse,
 } from '@/api/types.generated'
 import { EmptyState } from '@/components/empty-state'
@@ -30,6 +31,7 @@ import {
   loadMoreGitHubWorkflowRuns,
 } from './github-workflow-runs-resource'
 import { RunStatusIcon } from './run-status-icon'
+import { githubWorkflowNamesResource } from './github-workflow-names-resource'
 import { RUN_ROW_CLASS, RUN_ROW_TIMESTAMP_CLASS } from './run-row-layout'
 
 const LINK_CLASS = 'underline-offset-2 hover:text-foreground hover:underline'
@@ -37,11 +39,15 @@ const SELECT_CLASS = 'h-8 max-w-44 rounded-md border border-input bg-secondary p
 
 export function GitHubWorkflowRunsPage({
   initialRuns,
+  initialNames,
   loadRuns,
+  loadNames,
   params,
 }: {
   initialRuns: GitHubWorkflowRunListResponse
+  initialNames: GitHubWorkflowNamesResponse
   loadRuns: (input: RepoGitHubWorkflowRunsInput, signal: AbortSignal) => Promise<GitHubWorkflowRunsResponse>
+  loadNames: (input: RepoParams, signal: AbortSignal) => Promise<GitHubWorkflowNamesResponse>
   params: RepoParams
 }) {
   const { isLoaded, userId } = useAuth()
@@ -76,7 +82,14 @@ export function GitHubWorkflowRunsPage({
   })
   const runs = resource.value?.list ?? initialValue?.list ?? null
   const rows = useMemo(() => runs?.workflow_runs.map(githubWorkflowRunRow) ?? [], [runs])
-  const workflows = githubWorkflowFilterOptions((runs ?? initialRuns).workflows, workflow)
+  const names = useCachedResource({
+    fallbackError: 'Workflow names could not refresh.',
+    identity: scope,
+    initialValue: initialNames,
+    load: useCallback((signal: AbortSignal) => loadNames({ owner, repo: repoName }, signal), [loadNames, owner, repoName]),
+    resource: githubWorkflowNamesResource,
+  })
+  const workflows = githubWorkflowFilterOptions((names.value ?? initialNames).workflows, workflow)
 
   async function loadMore() {
     if (!identity) return
@@ -123,6 +136,17 @@ export function GitHubWorkflowRunsPage({
                 <div className="flex flex-wrap items-center gap-3">
                   <span>{resource.error}</span>
                   <Button onClick={resource.retry} size="sm" variant="secondary">
+                    Retry now
+                  </Button>
+                </div>
+              </PageErrorAlert>
+            </div>
+          ) : names.error ? (
+            <div className="pt-5">
+              <PageErrorAlert title="Workflow filter could not refresh">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span>{names.error}</span>
+                  <Button onClick={names.retry} size="sm" variant="secondary">
                     Retry now
                   </Button>
                 </div>

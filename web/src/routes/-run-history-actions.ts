@@ -1,8 +1,11 @@
 import { createApiClient } from '@/api/client'
+import { parseRepoParams } from '@/api/repo-params'
+import type { RepoRunHistoryInput } from '@/api/types'
 import {
   loadRepoGitHubWorkflowJobLogForRequest,
   loadRepoGitHubWorkflowRunForRequest,
   loadRepoGitHubWorkflowRunsForRequest,
+  loadRepoGitHubWorkflowNamesForRequest,
 } from '@/api/github'
 import {
   parseRepoGitHubWorkflowJobLogInput,
@@ -10,6 +13,7 @@ import {
   parseRepoGitHubWorkflowRunsInput,
 } from '@/api/github-inputs'
 import { loadOptionalResource } from '@/api/http'
+import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import {
   loadRepoRunDetailForRequest,
   loadRepoRunHistoryForRequest,
@@ -17,35 +21,40 @@ import {
   parseRunActionInput,
   parseRepoRunHistoryInput,
 } from '@/api/runs'
-import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { createServerFn } from '@tanstack/react-start'
 
 export const loadRepoRunPage = createServerFn({ method: 'GET' })
-  .validator(parseRepoRunHistoryInput)
+  .validator((data: RepoRunHistoryInput & { githubRuns: boolean }) => ({ ...parseRepoRunHistoryInput(data), githubRuns: data.githubRuns }))
   .handler(({ data }) => loadOptionalResource(async () => {
     const api = createApiClient()
-    const { configured, github } = await loadRepoGitHubWorkflowRunsForRequest(
-      { owner: data.owner, repo: data.repo },
-      api,
-    )
-    if (github) return { kind: 'github' as const, github }
-    const [history, workflowResource] = await Promise.all([
+    if (data.githubRuns) {
+      const [{ github }, names] = await Promise.all([
+        loadRepoGitHubWorkflowRunsForRequest({ owner: data.owner, repo: data.repo }, api),
+        loadRepoGitHubWorkflowNamesForRequest(data, api),
+      ])
+      if (!github) throw new Error('This repository no longer runs its checks on GitHub.')
+      return { kind: 'github' as const, github, names }
+    }
+    const [history, catalog] = await Promise.all([
       loadRepoRunHistoryForRequest(data, api),
       loadRepoRunWorkflowsForRequest(data, api)
-        .then((workflows) => ({ error: null, workflows }))
+        .then((workflows) => ({ workflows, error: null }))
         .catch((error: unknown) => ({
-          error: resourceErrorMessage(error, 'Workflow catalog unavailable.'),
           workflows: { workflows: [], native_runs_available: true },
+          error: resourceErrorMessage(error, 'Workflow catalog unavailable.'),
         })),
     ])
     return {
       kind: 'native' as const,
-      githubConfigured: configured,
       history,
-      workflows: workflowResource.workflows,
-      workflowsError: workflowResource.error,
+      workflows: catalog.workflows,
+      workflowsError: catalog.error,
     }
   }))
+
+export const loadRepoGitHubWorkflowNames = createServerFn({ method: 'GET' })
+  .validator(parseRepoParams)
+  .handler(({ data }) => loadRepoGitHubWorkflowNamesForRequest(data))
 
 export const loadRepoRunWorkflows = createServerFn({ method: 'GET' })
   .validator(parseRepoRunHistoryInput)

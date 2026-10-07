@@ -76,6 +76,20 @@ pub struct RepositoryRunSummaryResponse {
     pub can_retry: bool,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RepositoryRunListItemResponse {
+    pub id: String,
+    pub workflow_name: String,
+    pub git_oid: String,
+    pub trigger: RepositoryRunTrigger,
+    pub state: RunState,
+    pub cancellation_requested: bool,
+    pub created_at_unix: u64,
+    pub updated_at_unix: u64,
+    pub completed_at_unix: Option<u64>,
+}
+
 wire_enum!(
     #[serde(rename_all = "kebab-case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
@@ -261,7 +275,7 @@ pub struct RepositoryRunWorkflowListResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RepositoryRunHistoryPageResponse {
-    pub runs: Vec<RepositoryRunSummaryResponse>,
+    pub runs: Vec<RepositoryRunListItemResponse>,
     pub next_cursor: Option<String>,
 }
 

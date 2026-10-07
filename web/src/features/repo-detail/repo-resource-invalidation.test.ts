@@ -9,6 +9,7 @@ import { repositoryDependencyResource } from './repository-dependency-resource'
 import { historyFeedResource } from '../history/history-resource-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { githubWorkflowRunsIdentity, githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
+import { githubWorkflowNamesResource } from '../runs/github-workflow-names-resource'
 import {
   githubWorkflowJobLogIdentity,
   githubWorkflowJobLogResource,
@@ -111,24 +112,31 @@ test('GitHub workflow runs refresh only the retained GitHub run lists', () => {
   seed()
   githubWorkflowRunsResource.clear()
   const runs = {
-    list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], workflows: [], next_cursor: null },
+    list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], next_cursor: null },
     pages: 1,
   }
   const all = githubWorkflowRunsIdentity('viewer-a', null)
   const lint = githubWorkflowRunsIdentity('viewer-a', 'lint')
   const other = githubWorkflowRunsIdentity('viewer-b', null)
   for (const identity of [all, lint, other]) githubWorkflowRunsResource.write(identity, runs)
+  githubWorkflowNamesResource.write('viewer-a', { workflows: ['ci'] })
+  githubWorkflowNamesResource.write('viewer-b', { workflows: ['ci'] })
   invalidateRepoResources('viewer-a', event('GitHubWorkflowRunsChanged'))
   assert.equal(githubWorkflowRunsResource.getSnapshot(all).stale, true)
   assert.equal(githubWorkflowRunsResource.getSnapshot(lint).stale, true)
   assert.equal(githubWorkflowRunsResource.peek(all), runs)
   assert.equal(githubWorkflowRunsResource.getSnapshot(other).stale, false)
+  assert.equal(githubWorkflowNamesResource.getSnapshot('viewer-a').stale, true)
+  assert.equal(githubWorkflowNamesResource.peek('viewer-a')?.workflows[0], 'ci')
+  assert.equal(githubWorkflowNamesResource.getSnapshot('viewer-b').stale, false)
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
 
   githubWorkflowRunsResource.write(all, runs)
+  githubWorkflowNamesResource.write('viewer-a', { workflows: ['ci'] })
   invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'github-connection-changed' } }))
   assert.equal(githubWorkflowRunsResource.getSnapshot(all).stale, true)
+  assert.equal(githubWorkflowNamesResource.getSnapshot('viewer-a').stale, true)
 })
 
 test('a GitHub job report refreshes only its run, keeping what the run shows', () => {
@@ -142,7 +150,7 @@ test('a GitHub job report refreshes only its run, keeping what the run shows', (
   const list = githubWorkflowRunsIdentity('viewer-a', null)
   for (const identity of [reported, sibling, otherScope]) githubWorkflowRunDetailResource.write(identity, detail)
   githubWorkflowRunsResource.write(list, {
-    list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], workflows: [], next_cursor: null },
+    list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], next_cursor: null },
     pages: 1,
   })
   invalidateRepoResources('viewer-a', event({ GitHubWorkflowRunChanged: { github_run_id: 7 } }))

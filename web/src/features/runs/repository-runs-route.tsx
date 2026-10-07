@@ -3,6 +3,7 @@ import { GitHubWorkflowRunsPage } from '@/features/runs/github-workflow-runs'
 import { RepositoryRunsPage } from '@/features/runs/repository-runs-page'
 import {
   loadRepoGitHubWorkflowRuns,
+  loadRepoGitHubWorkflowNames,
   loadRepoRunHistory,
   loadRepoRunPage,
   loadRepoRunWorkflows,
@@ -14,15 +15,15 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { loadRunPageSnapshot, runPageSnapshot, runHistoryCacheKey, runHistoryResource, type RetainedRunHistory, type RunPageHandoff } from './run-history-cache'
-import { ensureRunResource, useRunResource } from './run-resource'
+import { useRunResource } from './run-resource'
 import { RunsPagePending } from './runs-page-pending'
 import { RunsPageError } from './runs-page-error'
 
 export function RepositoryRunsRoute(props: { initialResources: RunPageHandoff | null; params: RepoParams; workflow?: string }) {
   const { userId, isLoaded } = useAuth()
-  const { repo } = useRepoLayout()
+  const { repo, githubRuns, githubConfigured } = useRepoLayout()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
-  return <RunRouteContent {...props} scope={scope} key={scope ? runHistoryCacheKey(scope, props.workflow) : 'auth-pending'} />
+  return <RunRouteContent {...props} githubRuns={githubRuns} githubConfigured={githubConfigured} scope={scope} key={scope ? runHistoryCacheKey(scope, githubRuns ? 'github' : 'native', props.workflow) : 'auth-pending'} />
 }
 
 function RunRouteContent({
@@ -30,13 +31,17 @@ function RunRouteContent({
   params,
   workflow,
   scope,
+  githubRuns,
+  githubConfigured,
 }: {
   initialResources: RunPageHandoff | null
   scope: string | null
+  githubRuns: boolean
+  githubConfigured: boolean
   params: RepoParams
   workflow?: string
 }) {
-  const loadPage = useCallback((input: RepoRunHistoryInput, signal?: AbortSignal) => loadRepoRunPage({ data: input, signal }), [])
+  const loadPage = useCallback((input: RepoRunHistoryInput, signal?: AbortSignal) => loadRepoRunPage({ data: { ...input, githubRuns }, signal }), [githubRuns])
   const loadHistory = useCallback(
     (input: RepoRunHistoryInput, signal?: AbortSignal) =>
       loadRepoRunHistory({ data: input, signal }),
@@ -47,8 +52,12 @@ function RunRouteContent({
       loadRepoGitHubWorkflowRuns({ data, signal }),
     [],
   )
+  const loadGitHubNames = useCallback(
+    (data: RepoParams, signal: AbortSignal) => loadRepoGitHubWorkflowNames({ data, signal }),
+    [],
+  )
 
-  const identity = scope ? runHistoryCacheKey(scope, workflow) : null
+  const identity = scope ? runHistoryCacheKey(scope, githubRuns ? 'github' : 'native', workflow) : null
   const initialValue = useMemo<RetainedRunHistory | null>(() => {
     if (!scope || initialResources?.scope !== scope) return null
     return runPageSnapshot(initialResources.resources)
@@ -61,24 +70,14 @@ function RunRouteContent({
       loadPage,
     })
   }, [identity, owner, repo, workflow, loadHistory, loadPage])
-  const loadWorkflows = useCallback(async (input: RepoParams, signal?: AbortSignal) => {
-    const snapshot = identity ? runHistoryResource.getSnapshot(identity) : null
-    if (identity && (snapshot?.stale || snapshot?.pending && snapshot.version !== 'more')) {
-      const current = await ensureRunResource(runHistoryResource, identity, load, 'refresh')
-      if (current.page?.kind !== 'native') return null
-      if (current.page.workflowsError) throw new Error(current.page.workflowsError)
-      return current.page.workflows
-    }
-    return loadRepoRunWorkflows({ data: input, signal })
-  }, [identity, load])
+  const loadWorkflows = useCallback((input: RepoParams, signal?: AbortSignal) => loadRepoRunWorkflows({ data: input, signal }), [])
   const resource = useRunResource({ identity, initialValue, load, resource: runHistoryResource, refreshVersion: 'refresh' })
   const page = resource.value?.page
-  const configured = page?.kind === 'native' && page.githubConfigured
   const github = useMemo(() => ({
-    configured,
+    configured: githubConfigured,
     loadSettings: loadRepoSettingsData,
     startAuthorization: startRepoGitHubAuthorization,
-  }), [configured])
+  }), [githubConfigured])
 
   if (!resource.value) return resource.error ? <RunsPageError error={resource.error} /> : <RunsPagePending />
 
@@ -86,8 +85,10 @@ function RunRouteContent({
     return (
       <GitHubWorkflowRunsPage
         initialRuns={page.github}
+        initialNames={page.names}
         key={`${params.owner}/${params.repo}`}
         loadRuns={loadGitHubRuns}
+        loadNames={loadGitHubNames}
         params={params}
       />
     )

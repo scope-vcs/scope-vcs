@@ -6,7 +6,7 @@ use crate::{
             RepositoryRunHistoryPageResponse, RepositoryRunWorkflowListResponse,
             RepositoryRunWorkflowResponse,
         },
-        run_response::repository_run_summary,
+        run_response::repository_run_list_item,
     },
     state::AppState,
     use_cases::{
@@ -70,11 +70,6 @@ pub(crate) async fn get_repository_run_history(
 ) -> Result<Json<RepositoryRunHistoryPageResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let repo = require_full_view_member(&state, &user.id, &owner, &repo_name).await?;
-    let native_runs = state
-        .metadata
-        .native_runs()
-        .repository_availability(&repo.record.id)
-        .await?;
     let workflow = query
         .workflow
         .as_deref()
@@ -127,7 +122,7 @@ pub(crate) async fn get_repository_run_history(
     });
     let runs = entries
         .iter()
-        .map(|entry| repository_run_summary(&entry.run, &entry.jobs, native_runs))
+        .map(|entry| repository_run_list_item(&entry.run))
         .collect::<Vec<_>>();
     Ok(Json(RepositoryRunHistoryPageResponse { runs, next_cursor }))
 }

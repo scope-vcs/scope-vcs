@@ -55,7 +55,6 @@ function page(ids: number[], next_cursor: string | null): GitHubWorkflowRunListR
   return {
     actions_url: 'https://github.com/octo/repo/actions',
     workflow_runs: ids.map((id) => run({ id })),
-    workflows: ['ci', 'lint'],
     next_cursor,
   }
 }

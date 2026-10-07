@@ -17,6 +17,7 @@ import type {
   GitHubWorkflowJobLogResponse,
   GitHubWorkflowRunDetailResponse,
   GitHubWorkflowRunsResponse,
+  GitHubWorkflowNamesResponse,
 } from './types.generated'
 import { repoRoute } from './paths'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
@@ -149,6 +150,17 @@ export async function loadRepoGitHubWorkflowRunsForRequest(
   return api.get(
     `${repoRoute(ApiRouteTemplates.repoGitHubWorkflowRuns, data)}${suffix}`,
     apiValidators.GitHubWorkflowRunsResponse,
+    { auth: 'optional' },
+  )
+}
+
+export async function loadRepoGitHubWorkflowNamesForRequest(
+  data: RepoParams,
+  api: ApiClient = createApiClient(),
+): Promise<GitHubWorkflowNamesResponse> {
+  return api.get(
+    repoRoute(ApiRouteTemplates.repoGitHubWorkflowNames, data),
+    apiValidators.GitHubWorkflowNamesResponse,
     { auth: 'optional' },
   )
 }
