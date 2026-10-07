@@ -29,6 +29,7 @@ use scope_domain::{
     landing_file::{MAX_REPOSITORY_LANDING_FILE_BYTES, REPOSITORY_LANDING_FILE_PATH},
     repo_actions::reviewed_update_domain_error,
 };
+use scope_domain::{projection::NativeCommitLabels, views::ViewId};
 use scope_domain::{
     repository::access::{MainPushMode, RepositoryActor},
     reviewed_updates::config::{ReviewedConfigUpdateInput, apply_reviewed_config_to_repo},
@@ -484,7 +485,7 @@ pub(crate) async fn get_projection_preview(
     let native_details = crate::use_cases::native_commit_details::native_commit_details(
         &state,
         &incarnation,
-        &view,
+        NativeCommitLabels::new([], repo.policy.clone(), repo.context.views.clone()),
         &commits,
     )
     .await?;

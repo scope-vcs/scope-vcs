@@ -9,9 +9,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 mod labelled_tree;
+mod native_labels;
 
 use labelled_tree::{FoldStep, fold_steps};
 pub use labelled_tree::{LabelledFiles, LabelledTree};
+pub use native_labels::NativeCommitLabels;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NativeRequestCommit {

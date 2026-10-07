@@ -240,9 +240,26 @@ async fn an_agent_request_merge_keeps_its_commits_only_in_the_agent_view() {
 
     let agent_native = merged_request_native_view(&state, "agent").await;
     assert_eq!(agent_native["view"], "agent", "{agent_native}");
+    let native_commit = agent_native["commits"].as_array().unwrap().last().unwrap();
+    assert_eq!(native_commit["oid"], native_head);
+    let mut native_labels = native_commit["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| {
+            (
+                file["path"].as_str().unwrap().to_string(),
+                file["label"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect::<Vec<_>>();
+    native_labels.sort();
     assert_eq!(
-        agent_native["commits"].as_array().unwrap().last().unwrap()["oid"],
-        native_head
+        native_labels,
+        [
+            ("/README.md".to_string(), "public".to_string()),
+            ("/src/lib.rs".to_string(), "agent".to_string()),
+        ]
     );
     assert!(merged_request_native_view(&state, "public").await.is_null());
 }

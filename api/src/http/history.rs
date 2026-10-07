@@ -20,6 +20,7 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use scope_domain::{
     history::{HistoryEntry, HistoryEntryFile},
+    projection::NativeCommitLabels,
     repository::access::RepositoryAccessContext,
     views::ViewId,
 };
@@ -122,7 +123,7 @@ pub(crate) async fn get_history_entry(
             crate::use_cases::native_commit_details::native_commit_details(
                 &state,
                 &repo.incarnation(),
-                &native.view,
+                native_commit_labels(&state, &repo, entry).await?,
                 &native.commits,
             )
             .await?
@@ -181,7 +182,7 @@ pub(crate) async fn get_history_entry_file_diff(
         let details = crate::use_cases::native_commit_details::native_commit_details(
             &state,
             &repo.incarnation(),
-            &native.view,
+            native_commit_labels(&state, &repo, entry).await?,
             std::slice::from_ref(commit),
         )
         .await?;
@@ -280,6 +281,26 @@ fn parse_history_cursor(
         generation: cursor.generation,
         position: cursor.boundary_position,
     })
+}
+
+async fn native_commit_labels(
+    state: &AppState,
+    repo: &RepositoryAccessContext,
+    entry: &HistoryEntry,
+) -> Result<NativeCommitLabels, ApiError> {
+    let policy = state
+        .metadata
+        .repositories()
+        .repository_policy(repo)
+        .await?;
+    Ok(NativeCommitLabels::new(
+        entry
+            .files
+            .iter()
+            .map(|file| (file.path.clone(), file.label.clone())),
+        policy,
+        repo.views.clone(),
+    ))
 }
 
 fn history_entry_for_id<'a>(

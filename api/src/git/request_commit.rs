@@ -1,8 +1,7 @@
 use std::{collections::BTreeMap, path::Path, time::Instant};
 
-use scope_domain::{
-    projection::{FileChange, NativeRequestCommit, NativeRequestCommitDetails},
-    views::ViewId,
+use scope_domain::projection::{
+    FileChange, NativeCommitLabels, NativeRequestCommit, NativeRequestCommitDetails,
 };
 use scope_git::git_blob_reference;
 
@@ -16,7 +15,7 @@ use crate::{
 
 pub(crate) fn inspect_native_request_commit(
     repo: &Path,
-    view: &ViewId,
+    labels: &NativeCommitLabels,
     native: &NativeRequestCommit,
     deadline: Instant,
 ) -> Result<NativeRequestCommitDetails, ApiError> {
@@ -76,12 +75,12 @@ pub(crate) fn inspect_native_request_commit(
         .map(|(path, new_entry)| {
             let old_entry = old_entries.remove(&path).flatten();
             FileChange {
+                label: labels.label(&path),
                 path,
                 old_content: old_entry
                     .map(|entry| git_blob_reference(entry.oid, entry.mode, entry.size_bytes)),
                 new_content: new_entry
                     .map(|entry| git_blob_reference(entry.oid, entry.mode, entry.size_bytes)),
-                label: view.clone(),
             }
         })
         .collect();
