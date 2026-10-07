@@ -10,6 +10,8 @@ import { historyFeedResource } from '../history/history-resource-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { githubWorkflowRunsIdentity, githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
 import {
+  githubWorkflowJobLogIdentity,
+  githubWorkflowJobLogResource,
   githubWorkflowRunDetailIdentity,
   githubWorkflowRunDetailResource,
 } from '../runs/github-workflow-run-detail-resource'
@@ -153,6 +155,20 @@ test('a GitHub job report refreshes only its run, keeping what the run shows', (
   invalidateRepoResources('viewer-a', event('GitHubWorkflowRunsChanged'))
   assert.equal(githubWorkflowRunDetailResource.getSnapshot(sibling).stale, true)
   assert.equal(githubWorkflowRunDetailResource.getSnapshot(otherScope).stale, false)
+})
+
+test('a GitHub run report asks again only for its logs still being read', () => {
+  githubWorkflowJobLogResource.clear()
+  const pending = githubWorkflowJobLogIdentity('viewer-a', '7', '70')
+  const kept = githubWorkflowJobLogIdentity('viewer-a', '7', '71')
+  const otherRun = githubWorkflowJobLogIdentity('viewer-a', '8', '80')
+  githubWorkflowJobLogResource.write(pending, { state: 'pending' })
+  githubWorkflowJobLogResource.write(kept, { state: 'kept', text: 'done', truncated: false })
+  githubWorkflowJobLogResource.write(otherRun, { state: 'pending' })
+  invalidateRepoResources('viewer-a', event({ GitHubWorkflowRunChanged: { github_run_id: 7 } }))
+  assert.equal(githubWorkflowJobLogResource.getSnapshot(pending).stale, true)
+  assert.equal(githubWorkflowJobLogResource.getSnapshot(kept).stale, false)
+  assert.equal(githubWorkflowJobLogResource.getSnapshot(otherRun).stale, false)
 })
 
 test('connection and lag recovery invalidate retained resources only in their scope', () => {

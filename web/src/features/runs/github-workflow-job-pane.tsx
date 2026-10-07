@@ -99,7 +99,7 @@ export function GitHubWorkflowJobPane({
                 Retry
               </Button>
             </p>
-          ) : !log.value ? (
+          ) : !log.value || log.value.state === 'pending' ? (
             <p className="pb-4 font-sans text-muted-foreground">Loading log…</p>
           ) : log.value.state !== 'kept' ? (
             <p className="pb-4 font-sans text-muted-foreground">{githubJobLogAbsence(log.value, job)}</p>

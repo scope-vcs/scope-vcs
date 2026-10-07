@@ -163,7 +163,8 @@ pub(crate) struct GitHubWorkflowStepResponse {
 }
 
 /// A finished job's log. GitHub offers it only once the job completes. A job
-/// that was skipped or ran no steps never wrote one.
+/// that was skipped or ran no steps never wrote one. `pending` means Scope is
+/// reading the log from GitHub; the run's change event says when it is stored.
 #[derive(Debug, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -176,6 +177,7 @@ pub(crate) enum GitHubWorkflowJobLogResponse {
     },
     Expired,
     NotRun,
+    Pending,
 }
 
 /// How many of GitHub's most recent workflow runs the repository imports.

@@ -41,7 +41,7 @@ export function stripLogTimestamps(text: string) {
 }
 
 export function githubJobLogAbsence(
-  log: Exclude<GitHubWorkflowJobLogResponse, { state: 'kept' }>,
+  log: Exclude<GitHubWorkflowJobLogResponse, { state: 'kept' | 'pending' }>,
   job: Pick<GitHubWorkflowJobResponse, 'conclusion'>,
 ) {
   if (log.state === 'expired') return 'This log is no longer available.'

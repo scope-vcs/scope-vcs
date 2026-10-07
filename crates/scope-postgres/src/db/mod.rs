@@ -31,6 +31,7 @@ mod github_pushes;
 mod github_required_checks;
 mod github_run_imports;
 mod github_setup_checks;
+mod github_workflow_job_log_reads;
 mod github_workflow_jobs;
 pub use github_workflow_jobs::GitHubWorkflowJobReadJob;
 mod github_workflow_runs;
@@ -139,6 +140,7 @@ pub use github_connections::GitHubConnectionRead;
 pub use github_pushes::{GitHubPushOutcome, GitHubPushStanding};
 pub use github_run_imports::GitHubRunImportOutcome;
 pub use github_setup_checks::GitHubSetupCheckRead;
+pub use github_workflow_job_log_reads::GitHubJobLogReadJob;
 pub use github_workflow_runs::{
     GitHubWorkflowRunCursor, GitHubWorkflowRunDetailRead, GitHubWorkflowRunPageQuery,
     GitHubWorkflowRunRead, GitHubWorkflowRunReadJob,

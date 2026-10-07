@@ -71,6 +71,7 @@ pub(super) struct FakeGitHub {
     pub(super) job_list_unavailable: AtomicBool,
     job_logs: Mutex<HashMap<u64, Option<String>>>,
     pub(super) job_log_reads: AtomicUsize,
+    pub(super) job_log_bytes_served: AtomicUsize,
     pub(super) run_list_reads: AtomicUsize,
     pub(super) run_list_unavailable: AtomicBool,
     git_root: tempfile::TempDir,
@@ -232,6 +233,7 @@ impl FakeGitHub {
             job_list_unavailable: AtomicBool::new(false),
             job_logs: Mutex::default(),
             job_log_reads: AtomicUsize::new(0),
+            job_log_bytes_served: AtomicUsize::new(0),
             run_list_reads: AtomicUsize::new(0),
             run_list_unavailable: AtomicBool::new(false),
             git_root: tempfile::tempdir().unwrap(),
@@ -587,10 +589,42 @@ impl FakeGitHub {
                 "/job-logs/{id}",
                 get(
                     |AxumState(fake): AxumState<Arc<FakeGitHub>>,
-                     AxumPath(id): AxumPath<u64>| async move {
+                     AxumPath(id): AxumPath<u64>,
+                     headers: axum::http::HeaderMap| async move {
                         fake.job_log_reads.fetch_add(1, Ordering::SeqCst);
+                        let range = headers
+                            .get(axum::http::header::RANGE)
+                            .and_then(|range| range.to_str().ok())
+                            .and_then(|range| range.strip_prefix("bytes="))
+                            .and_then(|range| range.split_once('-'))
+                            .map(|(start, end)| {
+                                (start.parse::<usize>().unwrap(), end.parse::<usize>().ok())
+                            });
                         match fake.job_logs.lock().unwrap().get(&id).cloned() {
-                            Some(Some(log)) => log.into_response(),
+                            Some(Some(log)) => {
+                                let bytes = log.into_bytes();
+                                let Some((start, end)) = range else {
+                                    fake.job_log_bytes_served
+                                        .fetch_add(bytes.len(), Ordering::SeqCst);
+                                    return bytes.into_response();
+                                };
+                                if start >= bytes.len() {
+                                    return StatusCode::RANGE_NOT_SATISFIABLE.into_response();
+                                }
+                                let last = end.unwrap_or(bytes.len() - 1).min(bytes.len() - 1);
+                                let part = bytes[start..=last].to_vec();
+                                fake.job_log_bytes_served
+                                    .fetch_add(part.len(), Ordering::SeqCst);
+                                (
+                                    StatusCode::PARTIAL_CONTENT,
+                                    [(
+                                        axum::http::header::CONTENT_RANGE,
+                                        format!("bytes {start}-{last}/{}", bytes.len()),
+                                    )],
+                                    part,
+                                )
+                                    .into_response()
+                            }
                             Some(None) => StatusCode::GONE.into_response(),
                             None => StatusCode::NOT_FOUND.into_response(),
                         }
