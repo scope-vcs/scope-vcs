@@ -165,6 +165,7 @@ pub use repo_invite_emails::{RepositoryInviteEmailDelivery, RequestRepositoryInv
 pub use repo_lifecycle::{CreateRepositoryCommand, RepositoryCreationError};
 pub use repo_mutation::{RepositoryMutation, RepositoryMutationError, RepositoryMutationResult};
 pub use repo_reads::{RepoLiveFileWithLandingContent, RepoSummaryRead};
+pub use repository_access::RepositoryReadPolicy;
 use repository_rows::repository_from_model;
 pub use request_attention::{ApplyRequestAttentionCommand, RequestAttentionResult};
 pub use request_auto_merge::{

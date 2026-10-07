@@ -1,9 +1,8 @@
 use crate::{
-    auth::scope::{optional_scope_user, principal_for_scope_user, require_scope_user},
+    auth::scope::{optional_scope_user, require_scope_user},
     error::ApiError,
     http::responses::*,
     persistence::unix_now,
-    repo_access::{ensure_repo_read, find_repo},
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
@@ -27,16 +26,14 @@ use scope_api_contract::{
 };
 use scope_domain::views::{ViewId, Views};
 use scope_domain::{
-    projection::project_graph,
-    repository::Repository,
-    repository::access::{RepositoryAccess, RepositoryAccessContext, RepositoryActor},
+    repository::access::{RepositoryAccess, RepositoryAccessContext},
     requests::{
         CloseRequestMutation, REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, Request,
         RequestChecksOutcome, RequestViewer, StartRequestInput, request_actor_role,
         request_mergeability, request_policy, validate_start_request_view,
     },
 };
-use scope_postgres::db::EditRequestIdentityCommand;
+use scope_postgres::db::{EditRequestIdentityCommand, RepositoryReadPolicy};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -202,7 +199,7 @@ async fn merge_response(
     state: &AppState,
     result: MergeRequestResult,
 ) -> Result<Json<RequestMutationResponse>, ApiError> {
-    let current_main_oid = committed_main_oid_for_access(&result.repo, &result.access)?;
+    let current_main_oid = result.main_oid;
     let viewer = request_viewer(
         state,
         &result.request.id,
@@ -214,30 +211,11 @@ async fn merge_response(
         state,
         result.request,
         viewer,
-        result.repo.repo_config.views(),
+        &result.views,
         current_main_oid,
     )
     .await?;
     Ok(Json(RequestMutationResponse { request }))
-}
-
-fn committed_main_oid_for_access(
-    repo: &Repository,
-    access: &RepositoryAccess,
-) -> Result<Option<String>, ApiError> {
-    if access.actor != RepositoryActor::Public
-        && &access.view == repo.repo_config.views().full()
-        && let Some(head) = repo.git_head.as_ref()
-    {
-        return Ok(Some(head.head_oid.clone()));
-    }
-    let projection = project_graph(
-        &repo.graph,
-        &repo.visibility_change_sets,
-        repo.repo_config.views(),
-        &access.view,
-    );
-    scope_git::projection_head_oid(&projection).map_err(ApiError::internal)
 }
 
 pub(crate) async fn close_request(
@@ -285,29 +263,28 @@ pub(crate) async fn start_request(
     Json(input): Json<StartRequestRequest>,
 ) -> Result<Json<RequestMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let repo = find_repo(&state, &owner, &repo_name).await?;
-    let principal = principal_for_scope_user(&repo, Some(&user));
-    ensure_repo_read(&repo, &principal)?;
-    let access = repo.access_for_principal(&principal);
+    let repo = read_policy(&state, &owner, &repo_name, Some(&user.id)).await?;
+    let access = repo.context.access.clone();
     let view: ViewId = input.view.into();
     validate_start_request_view(
         request_actor_role(access.clone()),
         &access.view,
         &view,
-        repo.repo_config.views(),
+        &repo.context.views,
     )
     .map_err(|error| ApiError::forbidden(error.message))?;
-    let base_main_oid = current_main_oid_for_view(&state, &repo, access.clone(), view.clone())
+    let base_main_oid = current_main_oid_for_view(&state, &repo, view.clone())
         .await?
         .ok_or_else(|| ApiError::conflict("repo has no main branch to base a request on"))?;
+    let current_main_oid = current_main_oid_for_context(&state, &repo.context).await?;
     let request_id = crate::persistence_ids::generate_prefixed_id("req")?;
     let now_unix = unix_now()?;
     let mutation = request_start::start_request(
         &state,
-        &repo,
+        &repo.context.incarnation(),
         StartRequestInput {
             id: request_id.clone(),
-            repo_id: repo.record.id.clone(),
+            repo_id: repo.context.record.id.clone(),
             name: input.name,
             author_user_id: user.id.clone(),
             title: input.title,
@@ -320,14 +297,13 @@ pub(crate) async fn start_request(
         },
     )
     .await?;
-    let current_main_oid = committed_main_oid_for_access(&repo, &access)?;
     let viewer =
         request_viewer(&state, &mutation.request.id, access.clone(), Some(&user.id)).await?;
     let request = request_response_for_viewer(
         &state,
         mutation.request,
         viewer,
-        repo.repo_config.views(),
+        &repo.context.views,
         current_main_oid,
     )
     .await?;
@@ -523,16 +499,25 @@ pub(crate) async fn repo_and_access(
     headers: &HeaderMap,
     owner: &str,
     repo_name: &str,
-) -> Result<(Repository, RepositoryAccess, Option<String>), ApiError> {
-    let repo = find_repo(state, owner, repo_name).await?;
+) -> Result<(RepositoryReadPolicy, Option<String>), ApiError> {
     let user = optional_scope_user(state, headers).await?;
-    let principal = user
-        .as_ref()
-        .map(|user| principal_for_scope_user(&repo, Some(user)))
-        .unwrap_or_else(scope_domain::policy::Principal::public);
-    ensure_repo_read(&repo, &principal)?;
-    let access = repo.access_for_principal(&principal);
-    Ok((repo, access.clone(), user.map(|user| user.id)))
+    let user_id = user.map(|user| user.id);
+    let repo = read_policy(state, owner, repo_name, user_id.as_deref()).await?;
+    Ok((repo, user_id))
+}
+
+async fn read_policy(
+    state: &AppState,
+    owner: &str,
+    repo_name: &str,
+    viewer_user_id: Option<&str>,
+) -> Result<RepositoryReadPolicy, ApiError> {
+    state
+        .metadata
+        .repositories()
+        .repository_read_policy(owner, repo_name, viewer_user_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))
 }
 
 pub(crate) async fn visible_request<'a>(
@@ -606,26 +591,18 @@ async fn request_response_for_viewer(
     request_summary_response(request, invitees, permissions, mergeability)
 }
 
-pub(crate) async fn current_main_oid_for_view(
+async fn current_main_oid_for_view(
     state: &AppState,
-    repo: &Repository,
-    access: RepositoryAccess,
+    repo: &RepositoryReadPolicy,
     view: ViewId,
 ) -> Result<Option<String>, ApiError> {
-    if !repo.can_read_view(&access, &view) {
+    if !repo.context.can_read_view(&view) {
         return Err(ApiError::forbidden("view access required"));
     }
     state
         .metadata
         .repositories()
-        .repository_main_oid_for_view(
-            &RepositoryAccessContext {
-                record: repo.record.clone(),
-                access: access.clone(),
-                views: repo.repo_config.views().clone(),
-            },
-            &view,
-        )
+        .repository_main_oid_for_view(&repo.context, &view)
         .await
         .map_err(Into::into)
 }

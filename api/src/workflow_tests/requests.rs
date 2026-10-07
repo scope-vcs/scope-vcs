@@ -707,3 +707,90 @@ fn request_ids(body: &serde_json::Value) -> Vec<&str> {
         })
         .collect()
 }
+
+async fn start_private_request(app: &axum::Router, name: &str) -> Response {
+    let body = format!(r#"{{"name":"{name}","view":"private"}}"#);
+    api_request(
+        app.clone(),
+        "POST",
+        "/v1/repos/owner/repo/requests",
+        Some(&bearer_header()),
+        Some(&body),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn starting_and_reviewing_a_request_reads_no_repository_history() {
+    let state = test_state_with_readme().await;
+    cache_test_jwks(&state);
+    let app = router(state.clone());
+    assert_eq!(
+        start_private_request(&app, "warm-history-view")
+            .await
+            .status(),
+        StatusCode::OK
+    );
+
+    let held = state
+        .metadata
+        .admin()
+        .lock_repository_history_for_tests()
+        .await
+        .unwrap();
+    let started = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        start_private_request(&app, "without-history"),
+    )
+    .await
+    .expect("starting a request must not wait on history tables");
+    assert_eq!(started.status(), StatusCode::OK);
+    let request_id = response_json(started).await["request"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let changes = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        api_request(
+            app.clone(),
+            "GET",
+            &format!("/v1/repos/owner/repo/requests/{request_id}/changes"),
+            Some(&bearer_header()),
+            None,
+        ),
+    )
+    .await
+    .expect("listing request changes must not wait on history tables");
+    held.rollback().await.unwrap();
+    assert_eq!(changes.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn starting_a_request_succeeds_when_the_repository_changes_as_it_is_created() {
+    let state = test_state_with_readme().await;
+    cache_test_jwks(&state);
+    state
+        .metadata
+        .admin()
+        .execute_for_tests(
+            "CREATE FUNCTION bump_repository_version() RETURNS trigger AS $$
+             BEGIN
+                 UPDATE scope_repositories SET change_version = change_version + 1
+                 WHERE id = NEW.repo_id;
+                 RETURN NEW;
+             END $$ LANGUAGE plpgsql;
+             CREATE TRIGGER bump_repository_version AFTER INSERT ON scope_requests
+             FOR EACH ROW EXECUTE FUNCTION bump_repository_version();",
+        )
+        .await
+        .unwrap();
+    let app = router(state.clone());
+
+    let started = start_private_request(&app, "concurrent-change").await;
+
+    assert_eq!(started.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(started).await["request"]["name"],
+        "concurrent-change"
+    );
+}

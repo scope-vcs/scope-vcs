@@ -48,7 +48,7 @@ jobs:
     outputs:
       web_activated: ${{ steps.receipt.outputs.web_activated }}
       maintenance_warning: ${{ steps.warning.outputs.maintenance_warning }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     environment: production
     env:

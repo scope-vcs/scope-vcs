@@ -53,7 +53,7 @@ permissions:
 jobs:
   plan:
     name: Plan selected components
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       release_sha: ${{ steps.release.outputs.sha }}
@@ -146,7 +146,7 @@ jobs:
 
   policy:
     name: Check repository policy
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -161,7 +161,7 @@ jobs:
 
   ops:
     name: Check operations
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -220,7 +220,7 @@ jobs:
     if: >-
       needs.plan.outputs.recover_cutover_id == '' &&
       (needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true' || inputs.replace_redeployed_component != '')
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: production
     outputs:
@@ -294,7 +294,7 @@ jobs:
       !cancelled() && needs.plan.outputs.prepared_run_id == '' &&
       needs.release-preparation.result == 'success' &&
       (needs.plan.outputs.backend_selected == 'true')
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: production
     steps:
@@ -450,7 +450,7 @@ jobs:
       (needs.plan.outputs.web != 'true' && needs.web-deploy.result == 'skipped')) &&
       ((needs.plan.outputs.cli == 'true' && (needs.cli-deploy.result == 'success' || needs.plan.outputs.prepared_run_id != '')) ||
       (needs.plan.outputs.cli != 'true' && needs.cli-deploy.result == 'skipped'))
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read

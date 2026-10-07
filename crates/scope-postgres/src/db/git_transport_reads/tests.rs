@@ -446,3 +446,40 @@ async fn git_state_reads_no_history() {
         .unwrap_err();
     assert_eq!(error.kind, PostgresErrorKind::Conflict);
 }
+
+#[tokio::test]
+async fn read_policy_reads_no_history_and_hides_unreadable_repositories() {
+    let store = fixture().await;
+    let held = lock(
+        &store,
+        &format!("{PROJECTION_HISTORY_TABLES}, scope_live_files"),
+    )
+    .await;
+
+    let read = within_lock(store.repositories().repository_read_policy(
+        "owner",
+        "repo",
+        Some("member"),
+    ))
+    .await
+    .unwrap()
+    .unwrap();
+    held.rollback().await.unwrap();
+    assert_eq!(read.context.access.actor, RepositoryActor::Member);
+    assert_eq!(
+        read.policy,
+        store
+            .repositories()
+            .repository_policy(&read.context)
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .repositories()
+            .repository_read_policy("owner", "missing", None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}

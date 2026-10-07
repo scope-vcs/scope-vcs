@@ -55,7 +55,7 @@ case "$1" in
     mkdir -p "$destination/internal"
     printf 'initial\n' > "$destination/README.md"
     printf 'private\n' > "$destination/internal/notes.md"
-    printf '%s/git/permissioned/%s\n' "$SCOPE_GIT_ROUTER_URL" "$2" > "$destination/.origin"
+    printf '%s/git/private/%s\n' "$SCOPE_GIT_ROUTER_URL" "$2" > "$destination/.origin"
     printf 'scope-clone\n' >> "$TRACE_PATH"
     ;;
   push)
@@ -99,7 +99,7 @@ case "$1" in
         printf '3333333333333333333333333333333333333333\n'
       fi
     else
-      if [[ "$2" = FETCH_HEAD && "${FAKE_PERMISSIONED_STALE:-0}" = 1 ]]; then
+      if [[ "$2" = FETCH_HEAD && "${FAKE_PRIVATE_VIEW_STALE:-0}" = 1 ]]; then
         printf '4444444444444444444444444444444444444444\n'
       else
         printf '1111111111111111111111111111111111111111\n'
@@ -110,7 +110,7 @@ case "$1" in
     if [[ "${FAKE_PUBLIC_MISSING_MARKER:-0}" = 1 ]]; then
       printf 'initial\n'
     else
-      cat "$directory/../permissioned/README.md"
+      cat "$directory/../private-view/README.md"
     fi
     ;;
   cat-file)
@@ -202,14 +202,14 @@ grep -Fq 'did not serve Git discovery directly' "$test_root/redirect-output"
 test -f "$redirect_token"
 test -z "$(find "$redirect_dir" -maxdepth 1 -name 'invocation.*' -print)"
 
-for failure in stale leak permissioned marker; do
+for failure in stale leak private-view marker; do
   case_dir="$test_root/$failure-smoke"
   mkdir -m 0700 "$case_dir"
   printf '%s\n' 'scope_otc_test' > "$case_dir/exchange-token"
   chmod 0600 "$case_dir/exchange-token"
   if FAKE_PUBLIC_STALE="$([[ "$failure" = stale ]] && echo 1 || echo 0)" \
     FAKE_PUBLIC_LEAK="$([[ "$failure" = leak ]] && echo 1 || echo 0)" \
-    FAKE_PERMISSIONED_STALE="$([[ "$failure" = permissioned ]] && echo 1 || echo 0)" \
+    FAKE_PRIVATE_VIEW_STALE="$([[ "$failure" = private-view ]] && echo 1 || echo 0)" \
     FAKE_PUBLIC_MISSING_MARKER="$([[ "$failure" = marker ]] && echo 1 || echo 0)" \
     SCOPE_API_URL='https://api-staging.example.test' \
     SCOPE_GIT_ROUTER_URL='https://router-staging.example.test' \
@@ -225,8 +225,8 @@ for failure in stale leak permissioned marker; do
     grep -Fq 'public projection did not advance' "$test_root/$failure-output"
   elif [[ "$failure" = leak ]]; then
     grep -Fq 'public projection exposed a private file' "$test_root/$failure-output"
-  elif [[ "$failure" = permissioned ]]; then
-    grep -Fq 'permissioned remote did not retain' "$test_root/$failure-output"
+  elif [[ "$failure" = private-view ]]; then
+    grep -Fq 'private view remote did not retain' "$test_root/$failure-output"
   fi
   test -d "$case_dir/config/scope/sessions"
   test ! -e "$case_dir/exchange-token"

@@ -654,3 +654,44 @@ async fn removing_the_owner_stops_admission_and_ends_the_wait_on_checks() {
         scope_postgres::db::DispatchAdmission::Empty
     ));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_merge_rejects_main_that_moved_after_authorization() {
+    let (state, request_id, _server) = owner_request_push(
+        "request-merge-moved-main",
+        &[(".scope/runs/manual.yml", WORKFLOW.to_string())],
+    )
+    .await;
+    forget_evaluations(&state, &request_id).await;
+    state
+        .metadata
+        .admin()
+        .execute_for_tests(
+            "CREATE FUNCTION bump_repository_version() RETURNS trigger AS $$
+             BEGIN
+                 UPDATE scope_repositories SET change_version = change_version + 1
+                 WHERE id = (SELECT repo_id FROM scope_requests WHERE id = NEW.request_id);
+                 RETURN NEW;
+             END $$ LANGUAGE plpgsql;
+             CREATE TRIGGER bump_repository_version
+             AFTER INSERT ON scope_request_check_evaluations
+             FOR EACH ROW EXECUTE FUNCTION bump_repository_version();",
+        )
+        .await
+        .unwrap();
+
+    let merge = api_request(
+        router(state.clone()),
+        "POST",
+        &merge_route(&request_id),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+
+    assert_eq!(
+        expect_json(merge, StatusCode::CONFLICT).await["message"],
+        "repository changed while the merge was checked; retry"
+    );
+    assert_eq!(listed_status(&state, &request_id).await, "Ready");
+}
