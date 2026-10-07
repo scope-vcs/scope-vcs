@@ -133,8 +133,8 @@ pub(crate) struct GitHubWorkflowRunDetailResponse {
     pub(crate) run: GitHubWorkflowRunResponse,
     /// In the order GitHub created them.
     pub(crate) jobs: Vec<GitHubWorkflowJobResponse>,
-    /// Set when Scope has no jobs for the run because GitHub could not be read.
-    pub(crate) jobs_unavailable: Option<String>,
+    /// True until Scope first reads the current run attempt's jobs from GitHub.
+    pub(crate) jobs_not_read_yet: bool,
 }
 
 #[derive(Debug, Serialize)]

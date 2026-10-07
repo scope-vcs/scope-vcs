@@ -250,3 +250,169 @@ async fn one_reader_claims_each_jobs_read_and_a_run_names_its_request_and_check_
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn a_newer_jobs_read_survives_completion_of_an_active_read() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    repositories
+        .save_github_workflow_run(REPO, 42, &run("main"))
+        .await
+        .unwrap();
+    repositories
+        .queue_github_workflow_job_read(REPO, 42, 9, 100)
+        .await
+        .unwrap();
+    let first = repositories
+        .claim_due_github_workflow_job_reads(100, 400, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    repositories
+        .queue_github_workflow_job_read(REPO, 42, 9, 101)
+        .await
+        .unwrap();
+    repositories
+        .finish_github_workflow_job_read(&first, None, 101)
+        .await
+        .unwrap();
+    assert!(
+        repositories
+            .github_workflow_run(REPO, 42, 9)
+            .await
+            .unwrap()
+            .unwrap()
+            .jobs_read_queued
+    );
+    let second = repositories
+        .claim_due_github_workflow_job_reads(101, 500, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    assert_ne!(first.generation, second.generation);
+    repositories
+        .finish_github_workflow_job_read(&second, None, 101)
+        .await
+        .unwrap();
+    assert!(
+        !repositories
+            .github_workflow_run(REPO, 42, 9)
+            .await
+            .unwrap()
+            .unwrap()
+            .jobs_read_queued
+    );
+}
+
+#[tokio::test]
+async fn a_stale_reader_cannot_finish_a_recreated_jobs_read() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    repositories
+        .queue_github_workflow_job_read(REPO, 42, 9, 100)
+        .await
+        .unwrap();
+    let stale = repositories
+        .claim_due_github_workflow_job_reads(100, 200, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    let finished = repositories
+        .claim_due_github_workflow_job_reads(200, 300, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    repositories
+        .finish_github_workflow_job_read(&finished, None, 200)
+        .await
+        .unwrap();
+    repositories
+        .queue_github_workflow_job_read(REPO, 42, 9, 201)
+        .await
+        .unwrap();
+    let current = repositories
+        .claim_due_github_workflow_job_reads(201, 301, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(
+        (stale.attempts, stale.generation),
+        (current.attempts, current.generation)
+    );
+    assert_ne!(stale.read_id, current.read_id);
+    repositories
+        .finish_github_workflow_job_read(&stale, None, 201)
+        .await
+        .unwrap();
+    repositories
+        .finish_github_workflow_job_read(&current, Some(230), 201)
+        .await
+        .unwrap();
+    assert_eq!(
+        repositories
+            .claim_due_github_workflow_job_reads(230, 330, 10)
+            .await
+            .unwrap()
+            .remove(0)
+            .read_id,
+        current.read_id
+    );
+}
+
+#[tokio::test]
+async fn an_expired_reader_cannot_release_a_newer_generation_claim() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    repositories
+        .queue_github_workflow_job_read(REPO, 42, 9, 100)
+        .await
+        .unwrap();
+    let expired = repositories
+        .claim_due_github_workflow_job_reads(100, 200, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    let second = repositories
+        .claim_due_github_workflow_job_reads(200, 300, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    repositories
+        .queue_github_workflow_job_read(REPO, 42, 9, 201)
+        .await
+        .unwrap();
+    repositories
+        .finish_github_workflow_job_read(&second, None, 201)
+        .await
+        .unwrap();
+    let current = repositories
+        .claim_due_github_workflow_job_reads(201, 301, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(current.attempts, 3);
+    repositories
+        .finish_github_workflow_job_read(&expired, None, 201)
+        .await
+        .unwrap();
+    assert!(
+        repositories
+            .claim_due_github_workflow_job_reads(201, 401, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    repositories
+        .finish_github_workflow_job_read(&current, Some(230), 201)
+        .await
+        .unwrap();
+    assert_eq!(
+        repositories
+            .claim_due_github_workflow_job_reads(230, 330, 10)
+            .await
+            .unwrap()
+            .remove(0)
+            .attempts,
+        4
+    );
+}

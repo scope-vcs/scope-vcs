@@ -37,7 +37,7 @@ pub(crate) async fn get_github_workflow_run(
             .into_iter()
             .map(github_workflow_job_response)
             .collect(),
-        jobs_unavailable: jobs.unavailable,
+        jobs_not_read_yet: jobs.not_read_yet,
     }))
 }
 

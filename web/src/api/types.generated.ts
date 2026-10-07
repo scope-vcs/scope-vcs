@@ -367,9 +367,9 @@ export type GitHubWorkflowRunDetailResponse = { run: GitHubWorkflowRunResponse,
  */
 jobs: Array<GitHubWorkflowJobResponse>, 
 /**
- * Set when Scope has no jobs for the run because GitHub could not be read.
+ * True until Scope first reads the current run attempt's jobs from GitHub.
  */
-jobs_unavailable: string | null, };
+jobs_not_read_yet: boolean, };
 
 export type GitHubWorkflowJobResponse = { id: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null, 
 /**

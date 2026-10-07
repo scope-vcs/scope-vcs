@@ -40,7 +40,7 @@ function detail(
       run_started_at_unix: 100, updated_at_unix: 200, request_id: null, ...run,
     },
     jobs,
-    jobs_unavailable: null,
+    jobs_not_read_yet: false,
   }
 }
 

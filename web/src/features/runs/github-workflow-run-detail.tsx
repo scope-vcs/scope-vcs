@@ -126,8 +126,8 @@ function GitHubWorkflowRunView({
         run={detail.run}
       />
       {detail.jobs.length === 0 ? (
-        <p className="border-t border-border px-4 py-6 text-sm text-muted-foreground">
-          {detail.jobs_unavailable ?? 'Jobs appear here once the run starts.'}
+        <p aria-busy={detail.jobs_not_read_yet} className="border-t border-border px-4 py-6 text-sm text-muted-foreground">
+          {detail.jobs_not_read_yet ? 'Loading jobs…' : 'Jobs appear here once the run starts.'}
         </p>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col border-t border-border lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">

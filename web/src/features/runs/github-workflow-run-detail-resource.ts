@@ -1,6 +1,7 @@
 import type {
   GitHubWorkflowJobLogResponse,
   GitHubWorkflowRunDetailResponse,
+  GitHubWorkflowRunResponse,
 } from '@/api/types.generated'
 import { useEffect, useRef } from 'react'
 import { createCachedResource } from '../../lib/cached-resource'
@@ -15,6 +16,14 @@ export const githubWorkflowRunDetailResource = createCachedResource<GitHubWorkfl
 
 export function githubWorkflowRunDetailIdentity(scope: string, runId: string) {
   return `${scope}\0${runId}`
+}
+
+export function seedGitHubWorkflowRunDetail(scope: string, run: GitHubWorkflowRunResponse) {
+  githubWorkflowRunDetailResource.seed(
+    githubWorkflowRunDetailIdentity(scope, String(run.id)),
+    { run, jobs: [], jobs_not_read_yet: true },
+    'row',
+  )
 }
 
 export function invalidateGitHubWorkflowRunDetails(scope: string, runId?: number) {

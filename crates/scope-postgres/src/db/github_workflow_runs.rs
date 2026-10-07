@@ -82,12 +82,14 @@ struct DetailRow {
     listed: ListedRow,
     jobs_read_attempt: Option<i32>,
     jobs_read_at_unix: Option<i64>,
+    jobs_read_queued: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubWorkflowRunDetailRead {
     pub read: GitHubWorkflowRunRead,
     pub jobs_read: Option<GitHubJobsRead>,
+    pub jobs_read_queued: bool,
 }
 
 const REQUEST_JOIN: &str = "LEFT JOIN scope_requests request
@@ -267,7 +269,11 @@ impl RepositoryStore {
             DatabaseBackend::Postgres,
             format!(
                 "SELECT {SELECT_RUN}, request.id AS request_id,
-                        run.jobs_read_attempt, run.jobs_read_at_unix
+                        run.jobs_read_attempt, run.jobs_read_at_unix,
+                        EXISTS (SELECT 1 FROM scope_github_workflow_job_reads queued
+                                 WHERE queued.repo_id = run.repo_id
+                                   AND queued.github_repository_id = run.github_repository_id
+                                   AND queued.github_run_id = run.github_run_id) AS jobs_read_queued
                    FROM scope_github_workflow_runs run
                    {REQUEST_JOIN}
                   WHERE run.repo_id = $1 AND run.github_repository_id = $2
@@ -293,6 +299,7 @@ impl RepositoryStore {
             Ok(GitHubWorkflowRunDetailRead {
                 read: row.listed.into_read()?,
                 jobs_read,
+                jobs_read_queued: row.jobs_read_queued,
             })
         })
         .transpose()

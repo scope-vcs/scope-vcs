@@ -23,6 +23,7 @@ import {
   githubWorkflowRunRow,
   reloadGitHubWorkflowRunPages,
 } from './github-workflow-run-model'
+import { seedGitHubWorkflowRunDetail } from './github-workflow-run-detail-resource'
 import {
   githubWorkflowRunsIdentity,
   githubWorkflowRunsResource,
@@ -156,7 +157,14 @@ export function GitHubWorkflowRunsPage({
             ) : (
               <>
                 <ul className="divide-y divide-border">
-                  {rows.map((row) => <GitHubWorkflowRunItem key={row.key} params={params} row={row} />)}
+                  {rows.map((row, index) => <GitHubWorkflowRunItem
+                    key={row.key}
+                    params={params}
+                    row={row}
+                    onOpen={() => {
+                      if (scope && runs) seedGitHubWorkflowRunDetail(scope, runs.workflow_runs[index])
+                    }}
+                  />)}
                 </ul>
                 <div className="flex items-center justify-center gap-3 pt-5">
                   {runs.next_cursor ? (
@@ -195,13 +203,16 @@ function GitHubWorkflowRunsSkeleton() {
   )
 }
 
-function GitHubWorkflowRunItem({ params, row }: { params: RepoParams; row: GitHubWorkflowRunRow }) {
+function GitHubWorkflowRunItem({ params, row, onOpen }: {
+  params: RepoParams; row: GitHubWorkflowRunRow; onOpen: () => void
+}) {
   return (
     <li className={cn(RUN_ROW_CLASS, row.state === 'running' && 'bg-info-soft/40')}>
       <RunStatusIcon state={row.state} />
       <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2">
         <Link
           className={cn('truncate text-sm font-medium', LINK_CLASS)}
+          onClick={onOpen}
           params={{ ...params, runId: row.key }}
           to="/$owner/$repo/runs/$runId"
         >
