@@ -51,7 +51,7 @@ impl GitHubWorkflowJob {
     }
 
     pub fn missing_log_is_final(&self, now_unix: u64) -> bool {
-        self.completed_at_unix.is_none_or(|completed_at_unix| {
+        self.completed_at_unix.is_some_and(|completed_at_unix| {
             now_unix >= completed_at_unix.saturating_add(GITHUB_JOB_LOG_PUBLISH_GRACE_SECS)
         })
     }
@@ -248,6 +248,11 @@ mod tests {
         let grace_ends = 1_000 + GITHUB_JOB_LOG_PUBLISH_GRACE_SECS;
         assert!(!finished.missing_log_is_final(grace_ends - 1));
         assert!(finished.missing_log_is_final(grace_ends));
+        let completion_unknown = GitHubWorkflowJob {
+            completed_at_unix: None,
+            ..finished
+        };
+        assert!(!completion_unknown.missing_log_is_final(u64::MAX));
     }
 
     #[test]
