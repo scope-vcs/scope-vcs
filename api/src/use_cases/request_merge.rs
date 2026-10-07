@@ -126,11 +126,8 @@ pub(crate) async fn merge_request_inner(
         .requests()
         .request_is_invitee(&request.id, &command.actor_user_id)
         .await?;
-    let policy = request_policy(
-        &request,
-        RequestViewer::new(access.clone(), Some(&command.actor_user_id), is_invitee),
-        &context.views,
-    );
+    let viewer = RequestViewer::new(access.clone(), Some(&command.actor_user_id), is_invitee);
+    let policy = request_policy(&request, viewer.clone(), &context.views);
     if request.repo_id != context.record.id || !policy.exact_visible {
         return Err(ApiError::not_found("request not found").into());
     }
@@ -153,7 +150,7 @@ pub(crate) async fn merge_request_inner(
     let checks =
         crate::use_cases::request_checks::checks_outcome(state, &context.record, &request).await?;
     if checks != RequestChecksOutcome::Clear {
-        let decision = request_mergeability(&request, access.clone(), checks);
+        let decision = request_mergeability(&request, &viewer, &context.views, checks);
         return Err(ApiError::conflict(
             decision.reason.unwrap_or("request checks have not cleared"),
         )

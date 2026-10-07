@@ -25,7 +25,7 @@ use scope_domain::{
     repository::{RepoRecord, access::RepositoryAccess},
     requests::{
         GitHubBranch, GitHubPushStatus, Request, RequestCheck, RequestCheckResults,
-        RequestCheckReviewer, request_checks_message, request_mergeability,
+        RequestCheckReviewer, RequestViewer, request_checks_message, request_mergeability,
     },
     views::Views,
 };
@@ -54,7 +54,7 @@ pub(crate) async fn get_request_checks(
         &repo.record,
         &repo.views,
         &request,
-        access,
+        RequestViewer::new(access, viewer_user_id.as_deref(), false),
         current_main_oid,
         unix_now()?,
     )
@@ -97,7 +97,7 @@ pub(crate) async fn approve_request_checks(
         &repo.record,
         &repo.views,
         &request,
-        access,
+        RequestViewer::new(access, Some(&user.id), false),
         current_main_oid,
         unix_now()?,
     )
@@ -110,16 +110,17 @@ pub(crate) async fn checks_response(
     repo: &RepoRecord,
     views: &Views,
     request: &Request,
-    access: RepositoryAccess,
+    viewer: RequestViewer<'_>,
     current_main_oid: Option<String>,
     now_unix: u64,
 ) -> Result<RequestChecksResponse, ApiError> {
+    let access = viewer.access.clone();
     let RequestChecksView {
         evaluation,
         results,
         outcome,
     } = request_checks::readable_checks_view(state, repo, request).await?;
-    let decision = request_mergeability(request, access.clone(), outcome);
+    let decision = request_mergeability(request, &viewer, views, outcome);
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
         current_main_oid: current_main_oid.map(git_oid_response).transpose()?,

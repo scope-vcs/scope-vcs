@@ -23,7 +23,7 @@ use scope_api_contract::{
 };
 use scope_domain::requests::{
     REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, RequestQueueClassification,
-    RequestQueueSection, request_queue_group,
+    RequestQueueSection, RequestViewer, request_queue_group,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -146,7 +146,8 @@ pub(crate) async fn request_queue(
                 attention_at_unix: row.cursor.updated_at_unix,
                 request: request_list_item_response(
                     row.request,
-                    access.clone(),
+                    &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
+                    &repo.views,
                     current_main_oid.clone(),
                     checks
                         .get(&request_id)

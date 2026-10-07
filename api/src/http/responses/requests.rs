@@ -4,8 +4,11 @@ use scope_api_contract::{
     RequestSummaryResponse,
 };
 use scope_domain::{
-    repository::access::RepositoryAccess,
-    requests::{Request, RequestChecksOutcome, RequestEvent, request_list_mergeability},
+    requests::{
+        Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject, RequestViewer,
+        request_list_mergeability,
+    },
+    views::Views,
 };
 use scope_postgres::db::RequestListRow;
 
@@ -51,12 +54,22 @@ pub(crate) fn request_summary_response(
 
 pub(crate) fn request_list_item_response(
     request: RequestListRow,
-    access: RepositoryAccess,
+    viewer: &RequestViewer<'_>,
+    views: &Views,
     current_main_oid: Option<String>,
     checks: RequestChecksOutcome,
 ) -> Result<RequestListItemResponse, crate::error::ApiError> {
-    let decision =
-        request_list_mergeability(request.state, request.has_git_snapshot, access, checks);
+    let decision = request_list_mergeability(
+        RequestMergeSubject {
+            author_user_id: request.author_user_id.as_deref(),
+            view: &request.view,
+            state: request.state,
+            has_git_snapshot: request.has_git_snapshot,
+        },
+        viewer,
+        views,
+        checks,
+    );
     let request_head_oid = super::git_oid_response(request.head_oid)?;
     Ok(RequestListItemResponse {
         id: request.id,

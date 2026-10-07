@@ -151,9 +151,12 @@ pub fn request_policy(
     let full_view = &request.view == views.full();
     let reads_request_view =
         views.get(&request.view).is_some() && views.may_read(&viewer.access.view, &request.view);
-    let merges_into_canonical_main = maintainer
-        && (views.may_read(&viewer.access.view, views.full())
-            || (author && viewer.access.can_push && viewer.access.view == request.view));
+    let merges_into_canonical_main = request_merger(
+        &viewer,
+        request.author_user_id.as_deref(),
+        &request.view,
+        views,
+    );
     let submitted = request.is_submitted();
     let terminal = request.is_terminal();
     let open = request.state() == RequestState::Open;
@@ -201,31 +204,63 @@ pub fn request_policy(
     }
 }
 
+fn request_merger(
+    viewer: &RequestViewer<'_>,
+    author_user_id: Option<&str>,
+    request_view: &ViewId,
+    views: &Views,
+) -> bool {
+    let author = viewer.user_id.is_some() && viewer.user_id == author_user_id;
+    viewer.access.is_maintainer()
+        && (views.may_read(&viewer.access.view, views.full())
+            || (author && viewer.access.can_push && &viewer.access.view == request_view))
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RequestMergeSubject<'a> {
+    pub author_user_id: Option<&'a str>,
+    pub view: &'a ViewId,
+    pub state: RequestState,
+    pub has_git_snapshot: bool,
+}
+
+impl<'a> From<&'a Request> for RequestMergeSubject<'a> {
+    fn from(request: &'a Request) -> Self {
+        Self {
+            author_user_id: request.author_user_id.as_deref(),
+            view: &request.view,
+            state: request.state(),
+            has_git_snapshot: request.git_snapshot.is_some(),
+        }
+    }
+}
+
 pub fn request_list_mergeability(
-    state: RequestState,
-    has_git_snapshot: bool,
-    access: RepositoryAccess,
+    subject: RequestMergeSubject<'_>,
+    viewer: &RequestViewer<'_>,
+    views: &Views,
     checks: RequestChecksOutcome,
 ) -> RequestMergeability {
-    let (status, reason) = match state {
+    let (status, reason) = match subject.state {
         RequestState::Closed => (RequestMergeabilityStatus::Closed, Some("request is closed")),
         RequestState::Merged => (RequestMergeabilityStatus::Merged, Some("request is merged")),
         RequestState::Draft => (
             RequestMergeabilityStatus::Draft,
             Some("request is not submitted"),
         ),
+        RequestState::Open if !viewer.access.is_maintainer() => (
+            RequestMergeabilityStatus::NotMaintainer,
+            Some("repo maintainer required"),
+        ),
         RequestState::Open
-            if !matches!(
-                access.actor,
-                RepositoryActor::Owner | RepositoryActor::Member
-            ) =>
+            if !request_merger(viewer, subject.author_user_id, subject.view, views) =>
         {
             (
                 RequestMergeabilityStatus::NotMaintainer,
-                Some("repo maintainer required"),
+                Some("merging needs a maintainer who reads the full view"),
             )
         }
-        RequestState::Open if !has_git_snapshot => (
+        RequestState::Open if !subject.has_git_snapshot => (
             RequestMergeabilityStatus::MissingRequestBranch,
             Some("request branch has not been pushed"),
         ),
@@ -258,13 +293,9 @@ pub fn request_list_mergeability(
 
 pub fn request_mergeability(
     request: &Request,
-    access: RepositoryAccess,
+    viewer: &RequestViewer<'_>,
+    views: &Views,
     checks: RequestChecksOutcome,
 ) -> RequestMergeability {
-    request_list_mergeability(
-        request.state(),
-        request.git_snapshot.is_some(),
-        access,
-        checks,
-    )
+    request_list_mergeability(request.into(), viewer, views, checks)
 }

@@ -95,7 +95,13 @@ pub(crate) async fn list_requests(
                 .get(&request.id)
                 .copied()
                 .unwrap_or(RequestChecksOutcome::NotEvaluated);
-            request_list_item_response(request, access.clone(), current_main_oid.clone(), checks)
+            request_list_item_response(
+                request,
+                &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
+                &repo.views,
+                current_main_oid.clone(),
+                checks,
+            )
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
 
@@ -581,7 +587,7 @@ async fn request_response_for_viewer(
     let checks = crate::use_cases::request_checks::recorded_checks_view(state, &request)
         .await?
         .outcome;
-    let decision = request_mergeability(&request, viewer.access.clone(), checks);
+    let decision = request_mergeability(&request, &viewer, views, checks);
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
         current_main_oid: current_main_oid.map(git_oid_response).transpose()?,

@@ -933,7 +933,11 @@ async fn a_pushed_head_without_any_run_says_no_workflow_started_after_ten_minute
             &context.record,
             &context.views,
             &scope_request,
-            context.access,
+            scope_domain::requests::RequestViewer::new(
+                context.access,
+                Some(&test_owner_id()),
+                false,
+            ),
             None,
             now_unix,
         )

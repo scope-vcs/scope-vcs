@@ -7,9 +7,9 @@ pub use view_paths::{PathHistory, RequestViewPathError, RequestViewPaths};
 
 mod access;
 pub use access::{
-    RequestListPredicate, RequestMergeability, RequestMergeabilityStatus, RequestPermissions,
-    RequestPolicyDecision, RequestViewer, request_actor_role, request_list_mergeability,
-    request_list_predicate, request_mergeability, request_policy,
+    RequestListPredicate, RequestMergeSubject, RequestMergeability, RequestMergeabilityStatus,
+    RequestPermissions, RequestPolicyDecision, RequestViewer, request_actor_role,
+    request_list_mergeability, request_list_predicate, request_mergeability, request_policy,
 };
 mod auto_merge;
 pub use auto_merge::{

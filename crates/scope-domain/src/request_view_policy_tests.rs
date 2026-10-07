@@ -177,3 +177,41 @@ fn members_list_every_view_they_read_and_the_anyone_view_by_its_participation_ru
         RequestListPredicate::Any(vec![RequestListPredicate::View(ViewId::private())])
     );
 }
+
+#[test]
+fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
+    let request = agent_request();
+    let views = views_with_agent();
+    for (access, user_id) in [
+        (member(ViewId::private(), false), "owner"),
+        (member(agent(), true), "other-agent"),
+        (member(agent(), false), "author"),
+        (member(agent(), true), "author"),
+    ] {
+        let viewer = RequestViewer::new(access, Some(user_id), false);
+        let can_merge = request_policy(&request, viewer.clone(), &views)
+            .permissions
+            .can_merge;
+        let mergeability =
+            request_mergeability(&request, &viewer, &views, RequestChecksOutcome::Clear);
+        assert_eq!(
+            mergeability.status == RequestMergeabilityStatus::Ready,
+            can_merge,
+            "{user_id}: {mergeability:?}"
+        );
+        assert_eq!(
+            request_list_mergeability(
+                (&request).into(),
+                &viewer,
+                &views,
+                RequestChecksOutcome::Clear
+            ),
+            mergeability
+        );
+    }
+    let narrower = RequestViewer::new(member(agent(), true), Some("other-agent"), false);
+    assert_eq!(
+        request_mergeability(&request, &narrower, &views, RequestChecksOutcome::Clear).reason,
+        Some("merging needs a maintainer who reads the full view")
+    );
+}
