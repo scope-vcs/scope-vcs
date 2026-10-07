@@ -188,6 +188,9 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
   await page.locator('main li').first().getByRole('link', { name: 'ci', exact: true }).click()
   await page.waitForURL('**/octo/demo/runs/1')
   await page.locator('h1', { hasText: 'ci' }).waitFor()
+  await page.getByText('Loading jobs…').waitFor()
+  assert.deepEqual(await page.evaluate(() => window.runLoads), ['1'])
+  await page.evaluate(() => window.finishRunLoad())
   const failed = job('test (ubuntu-latest, node 24)')
   assert.equal(await failed.getAttribute('aria-pressed'), 'true')
   await page.getByText('at Run the unit and integration test suites').waitFor()
@@ -233,7 +236,7 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
     window.finishBuild()
     window.emitRunChanged(1)
   })
-  await page.waitForFunction(() => window.runLoads.length === 1)
+  await page.waitForFunction(() => window.runLoads.length === 2)
   assert.equal(await job('lint').count(), 1)
   await log.getByText('The log appears when this job finishes.').waitFor()
   await page.evaluate(() => window.finishRunLoad())
@@ -266,11 +269,11 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
   if (shots) await screenshot(page, { fullPage: true, path: `${shots}.run-skipped-job.png` })
 
   await page.goto(new URL('/octo/demo/runs/2', base).href)
-  await page.getByText('The jobs could not be read.', { exact: false }).waitFor()
+  await page.getByText('Loading jobs…').waitFor()
   if (shots) {
     for (const [width, height, name] of [[1280, 900, 'desktop'], [390, 844, 'phone']]) {
       await page.setViewportSize({ width, height })
-      await screenshot(page, { fullPage: true, path: `${shots}.run-unavailable-${name}.png` })
+      await screenshot(page, { fullPage: true, path: `${shots}.run-jobs-loading-${name}.png` })
     }
   }
   assert.deepEqual(errors, [])
