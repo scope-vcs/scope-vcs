@@ -96,14 +96,19 @@ async function clerkSessionToken(page) {
   page.on('requestfailed', recordFailure)
   try {
     for (let attempt = 1; ; attempt += 1) {
+      let failure
       try {
-        return await page.evaluate((template) => window.Clerk.session.getToken({ template }), webDefaultTokenTemplate)
+        const token = await page.evaluate((template) => window.Clerk.session.getToken({ template }), webDefaultTokenTemplate)
+        if (token) return token
+        failure = 'Clerk returned no session token'
       } catch (error) {
-        if (attempt === CLERK_TOKEN_ATTEMPTS || !error.message.includes('clerk_offline')) {
-          throw new Error(`${error.message} after ${attempt} token attempts; failed Clerk requests: ${failed.join(', ') || 'none'}`)
-        }
-        await page.waitForTimeout(attempt * CLERK_TOKEN_RETRY_STEP_MS)
+        if (!error.message.includes('clerk_offline')) throw error
+        failure = error.message
       }
+      if (attempt === CLERK_TOKEN_ATTEMPTS) {
+        throw new Error(`${failure} after ${attempt} token attempts; failed Clerk requests: ${failed.join(', ') || 'none'}`)
+      }
+      await page.waitForTimeout(attempt * CLERK_TOKEN_RETRY_STEP_MS)
     }
   } finally {
     page.off('requestfailed', recordFailure)
