@@ -93,7 +93,7 @@ let runDetail: GitHubWorkflowRunDetailResponse = {
     }),
     job(105, 'revoke preview token', { conclusion: 'skipped', started_at_unix: null }),
   ],
-  jobs_unavailable: null,
+  jobs_not_read_yet: false,
 }
 const stamp = '2026-10-05T12:00:00.1234567Z '
 const logs: Record<string, GitHubWorkflowJobLogResponse> = {
@@ -196,7 +196,7 @@ function Run() {
   const initialDetail = runId === '1' ? runDetail : {
     run: initialRuns.workflow_runs[1]!,
     jobs: [],
-    jobs_unavailable: 'The jobs could not be read. They appear once the repository can be read again.',
+    jobs_not_read_yet: true,
   }
   return <GitHubWorkflowRunDetailPage
     initialDetail={initialDetail}

@@ -133,7 +133,7 @@ test('a GitHub job report refreshes only its run, keeping what the run shows', (
   seed()
   githubWorkflowRunsResource.clear()
   githubWorkflowRunDetailResource.clear()
-  const detail = { run: {}, jobs: [], jobs_unavailable: null } as unknown as GitHubWorkflowRunDetailResponse
+  const detail = { run: {}, jobs: [], jobs_not_read_yet: false } as unknown as GitHubWorkflowRunDetailResponse
   const reported = githubWorkflowRunDetailIdentity('viewer-a', '7')
   const sibling = githubWorkflowRunDetailIdentity('viewer-a', '8')
   const otherScope = githubWorkflowRunDetailIdentity('viewer-b', '7')

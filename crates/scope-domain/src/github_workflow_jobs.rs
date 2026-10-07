@@ -2,7 +2,7 @@ use crate::{
     github_connection::GitHubRepositoryVisibility,
     github_workflow_runs::GitHubWorkflowRun,
     repository::access::RepositoryAccess,
-    requests::{GitHubCheckConclusion, GitHubCheckStatus},
+    requests::{GitHubCheckConclusion, GitHubCheckStatus, github_retry_at},
     views::Views,
 };
 
@@ -95,6 +95,22 @@ pub fn github_jobs_need_read(
                 .read_at_unix
                 .saturating_add(GITHUB_JOBS_READ_INTERVAL_SECS)
     }
+}
+
+pub fn github_jobs_not_read_yet(
+    run: &GitHubWorkflowRun,
+    last_read: Option<GitHubJobsRead>,
+    has_jobs: bool,
+    connected: bool,
+    read_queued: bool,
+) -> bool {
+    connected
+        && !has_jobs
+        && (read_queued || !last_read.is_some_and(|read| read.run_attempt == run.run_attempt))
+}
+
+pub fn github_jobs_retry_at(attempts: u32, now_unix: u64) -> u64 {
+    github_retry_at(attempts.clamp(1, 4), now_unix).unwrap_or(now_unix.saturating_add(30 * 60))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -253,6 +269,50 @@ mod tests {
             ..finished
         };
         assert!(!completion_unknown.missing_log_is_final(u64::MAX));
+    }
+
+    #[test]
+    fn an_empty_attempt_is_pending_until_its_first_successful_read() {
+        let run = run(GitHubCheckStatus::Completed, 200);
+        assert!(github_jobs_not_read_yet(&run, None, false, true, false));
+        assert!(github_jobs_not_read_yet(
+            &run,
+            Some(GitHubJobsRead {
+                run_attempt: 1,
+                read_at_unix: 200
+            }),
+            false,
+            true,
+            false
+        ));
+        assert!(!github_jobs_not_read_yet(
+            &run,
+            Some(GitHubJobsRead {
+                run_attempt: 2,
+                read_at_unix: 200
+            }),
+            false,
+            true,
+            false
+        ));
+        assert!(!github_jobs_not_read_yet(&run, None, true, true, false));
+        assert!(!github_jobs_not_read_yet(&run, None, false, false, false));
+        assert!(github_jobs_not_read_yet(
+            &run,
+            Some(GitHubJobsRead {
+                run_attempt: 2,
+                read_at_unix: 200
+            }),
+            false,
+            true,
+            true
+        ));
+    }
+
+    #[test]
+    fn a_pending_jobs_read_keeps_retrying_after_the_normal_github_limit() {
+        assert_eq!(github_jobs_retry_at(1, 100), 130);
+        assert_eq!(github_jobs_retry_at(5, 100), 1900);
     }
 
     #[test]
