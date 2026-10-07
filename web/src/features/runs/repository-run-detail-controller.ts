@@ -24,6 +24,7 @@ import {
 import { useRunJobHash } from './run-job-hash'
 import { jobKeyForHash } from './run-job-ids'
 import { useRunLiveRefresh, type RunRefresh } from './run-live-refresh'
+import { useRunLogStream } from './use-run-log-stream'
 import {
   canReuseRunLogs,
   completedRunLogVersion,
@@ -41,7 +42,7 @@ import { initializeRunDetail, refreshRunDetail, runDetailResource } from './run-
 export type { StepSelection } from './repository-run-detail-model'
 export type { StepLogState } from './run-log-cache'
 
-const DETAIL_CHANGES = ['StatusChanged', 'LogsAppended'] as const
+const DETAIL_CHANGES = ['StatusChanged'] as const
 const RUN_ERROR_FALLBACK = 'Run operation failed.'
 
 export type StepLogs = {
@@ -95,6 +96,7 @@ export function useRepositoryRunDetailController({
   params: RunActionInput
 }) {
   const [key] = useState(() => cacheKey ?? crypto.randomUUID())
+  useRunLogStream(cacheKey, params)
   useState(() => {
     initializeRunDetail(key, initialDetail)
     runLogsResource.read(key)
@@ -164,7 +166,7 @@ export function useRepositoryRunDetailController({
       reasons.has('StatusChanged')
     if (refreshMetadata) await refreshRunDetail(key, loadDetail, reasons.has('StatusChanged'), reasons.size === 1 && reasons.has('Recovery'))
     const selection = selectionRef.current
-    if (selection && (refreshMetadata || reasons.has('LogsAppended'))) {
+    if (selection && refreshMetadata) {
       if (!await refreshLogsAfterInFlight(selection)) {
         throw new Error('Selected run logs could not refresh.')
       }
