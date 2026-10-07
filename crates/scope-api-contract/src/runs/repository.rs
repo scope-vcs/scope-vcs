@@ -222,6 +222,7 @@ pub struct PushTriggerEvaluationResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RunLogResponse {
     pub attempt_id: String,
     pub job_key: String,

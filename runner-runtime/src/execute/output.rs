@@ -265,8 +265,32 @@ fn set_nonblocking(stream: &impl AsRawFd) -> anyhow::Result<()> {
     Ok(())
 }
 
-const LOG_FLUSH_INTERVAL: Duration = Duration::from_millis(50);
+const LOG_BATCH_DEADLINE: Duration = Duration::from_millis(250);
 const LOG_UPLOAD_BYTES: usize = scope_domain::runs::log::MAX_RUN_LOG_CHUNK_BYTES;
+const LOG_LINE_CUT_LOOKBACK_BYTES: usize = 4 * 1024;
+
+#[derive(Default)]
+struct LogBatchDeadline(Option<Instant>);
+
+impl LogBatchDeadline {
+    fn received(&mut self, now: Instant) {
+        self.0.get_or_insert(now + LOG_BATCH_DEADLINE);
+    }
+
+    fn timeout(&self, now: Instant) -> Duration {
+        self.0.map_or(Duration::from_secs(60), |deadline| {
+            deadline.saturating_duration_since(now)
+        })
+    }
+
+    fn due(&self, now: Instant) -> bool {
+        self.0.is_some_and(|deadline| now >= deadline)
+    }
+
+    fn settled(&mut self) {
+        self.0 = None;
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 fn upload_output<S: ExecutionSink>(
@@ -291,14 +315,15 @@ fn upload_output<S: ExecutionSink>(
         pending: String::new(),
     };
     let mut pending_utf8 = [Vec::new(), Vec::new()];
-    let mut flush_at = Instant::now() + LOG_FLUSH_INTERVAL;
+    let mut deadline = LogBatchDeadline::default();
     let mut discarding = logs_truncated;
     if discarding {
         spool.discard_output();
     }
     loop {
-        match spool.recv_timeout(flush_at.saturating_duration_since(Instant::now())) {
+        match spool.recv_timeout(deadline.timeout(Instant::now())) {
             Ok(ReaderEvent::Chunk { stream, bytes }) => {
+                deadline.received(Instant::now());
                 let (text, pending) = decode_utf8_chunk(
                     std::mem::take(&mut pending_utf8[stream.pending_index()]),
                     bytes,
@@ -306,6 +331,9 @@ fn upload_output<S: ExecutionSink>(
                 pending_utf8[stream.pending_index()] = pending;
                 upload.pending.push_str(&text);
                 upload.flush(false)?;
+                if upload.pending.is_empty() && pending_utf8.iter().all(Vec::is_empty) {
+                    deadline.settled();
+                }
             }
             Ok(ReaderEvent::Failed { stream, error }) => {
                 return Err(error).with_context(|| format!("read step {}", stream.name()));
@@ -313,9 +341,13 @@ fn upload_output<S: ExecutionSink>(
             Err(RecvTimeoutError::Disconnected) => break,
             Err(RecvTimeoutError::Timeout) => {}
         }
-        if Instant::now() >= flush_at {
+        if deadline.due(Instant::now()) {
+            for pending in &mut pending_utf8 {
+                upload.pending.push_str(&decode_lossy(pending));
+                pending.clear();
+            }
             upload.flush(true)?;
-            flush_at = Instant::now() + LOG_FLUSH_INTERVAL;
+            deadline.settled();
         }
         if upload.logs_truncated && !discarding {
             discarding = true;
@@ -357,6 +389,14 @@ impl<S: ExecutionSink> LogUpload<'_, S> {
             let mut end = self.pending.len().min(LOG_UPLOAD_BYTES);
             while !self.pending.is_char_boundary(end) {
                 end -= 1;
+            }
+            if self.pending.len() >= LOG_UPLOAD_BYTES {
+                let near_end = end.saturating_sub(LOG_LINE_CUT_LOOKBACK_BYTES);
+                if let Some(line_end) = self.pending[..end].rfind('\n')
+                    && line_end + 1 >= near_end
+                {
+                    end = line_end + 1;
+                }
             }
             match append_with_retry(
                 self.sink,
@@ -446,8 +486,115 @@ mod tests {
     use super::*;
     use std::{
         io::{Cursor, Error},
-        sync::mpsc::RecvTimeoutError,
+        sync::{Mutex, mpsc::RecvTimeoutError},
     };
+
+    #[derive(Default)]
+    struct RecordingSink(Mutex<Vec<(u64, String)>>);
+
+    impl ExecutionSink for RecordingSink {
+        fn start_step(&self, _: u32) -> anyhow::Result<bool> {
+            Ok(false)
+        }
+        fn append_log(
+            &self,
+            _: u32,
+            sequence: u64,
+            text: &str,
+        ) -> Result<AppendLogOutcome, AppendLogError> {
+            self.0.lock().unwrap().push((sequence, text.to_owned()));
+            Ok(AppendLogOutcome::Accepted)
+        }
+        fn heartbeat(&self) -> anyhow::Result<bool> {
+            Ok(false)
+        }
+        fn complete_step(&self, _: u32, _: i32, _: bool) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn complete_timeout(&self, _: bool) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn complete_canceled(&self, _: bool) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn abandon(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn hundred_lines_per_second_batch_within_deadline() {
+        let sink = RecordingSink::default();
+        let (notices, _) = mpsc::channel();
+        let stop = AtomicBool::new(false);
+        let mut upload = LogUpload {
+            sink: &sink,
+            step: 0,
+            next_sequence: 0,
+            logs_truncated: false,
+            policy: UploadPolicy::default(),
+            stop_uploading: &stop,
+            notices: &notices,
+            pending: String::new(),
+        };
+        let mut deadline = LogBatchDeadline::default();
+        let start = Instant::now();
+        let mut first_upload_after = None;
+        for line in 0..1_000 {
+            let now = start + Duration::from_millis(line * 10);
+            deadline.received(now);
+            upload.pending.push_str("line\n");
+            upload.flush(false).unwrap();
+            if deadline.due(now) {
+                upload.flush(true).unwrap();
+                first_upload_after.get_or_insert(now - start);
+                deadline.settled();
+            }
+        }
+        upload.flush(true).unwrap();
+        let uploads = sink.0.lock().unwrap();
+        assert!(uploads.len() <= 45, "{} uploads", uploads.len());
+        assert_eq!(first_upload_after, Some(LOG_BATCH_DEADLINE));
+        assert_eq!(
+            uploads
+                .iter()
+                .map(|(_, text)| text.as_str())
+                .collect::<String>(),
+            "line\n".repeat(1_000)
+        );
+        assert!(
+            uploads
+                .iter()
+                .enumerate()
+                .all(|(index, (sequence, _))| *sequence == index as u64)
+        );
+    }
+
+    #[test]
+    fn size_cut_prefers_a_nearby_complete_line() {
+        let sink = RecordingSink::default();
+        let (notices, _) = mpsc::channel();
+        let stop = AtomicBool::new(false);
+        let mut upload = LogUpload {
+            sink: &sink,
+            step: 0,
+            next_sequence: 0,
+            logs_truncated: false,
+            policy: UploadPolicy::default(),
+            stop_uploading: &stop,
+            notices: &notices,
+            pending: format!(
+                "{}\n{}",
+                "a".repeat(LOG_UPLOAD_BYTES - 512),
+                "b".repeat(1_024)
+            ),
+        };
+        upload.flush(false).unwrap();
+        let uploads = sink.0.lock().unwrap();
+        assert_eq!(uploads.len(), 1);
+        assert!(uploads[0].1.ends_with('\n'));
+        assert_eq!(upload.pending, "b".repeat(1_024));
+    }
 
     struct FailingReader {
         returned_bytes: bool,
