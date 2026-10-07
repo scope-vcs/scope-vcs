@@ -71,8 +71,9 @@ export function writeRunLogCache(
 
 export function appendStreamRunLog(key: string, log: RunLogResponse) {
   const selection = { jobKey: log.job_key, attemptId: log.attempt_id, stepIndex: log.step_index }
-  const current = runLogsResource.peek(key)?.[stepKey(selection)] ?? EMPTY_LOG_STATE
-  if (current.viewingEarlier || log.position <= (current.logs.at(-1)?.position ?? 0)) return
+  const current = runLogsResource.peek(key)?.[stepKey(selection)]
+  if (!current || current.viewingEarlier) return
+  if (log.position <= (current.logs.at(-1)?.position ?? 0)) return
   const entry: RepositoryRunLogResponse = {
     position: log.position,
     sequence: log.sequence,
@@ -81,11 +82,9 @@ export function appendStreamRunLog(key: string, log: RunLogResponse) {
     created_at_unix: log.created_at_unix,
   }
   const merged = mergeStepLogs(current.logs, [entry])
-  writeRunLogCache(key, selection, {
-    ...current,
-    logs: merged.logs,
-    hasEarlier: current.hasEarlier || merged.truncated,
-    nextAfter: Math.max(current.nextAfter, log.position),
+  runLogsResource.write(key, {
+    ...runLogsResource.peek(key),
+    [stepKey(selection)]: { ...current, logs: merged.logs, hasEarlier: current.hasEarlier || merged.truncated },
   })
 }
 
@@ -188,8 +187,7 @@ export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = '
       ...retained, error: null, loading: false, initialized: true,
       logsTruncated: page.logs_truncated, hasMore: page.has_more,
       viewingEarlier: before !== undefined, failedPage: null,
-      nextAfter: mode === 'earlier' || previous.viewingEarlier
-        ? page.next_after : Math.max(page.next_after, previous.nextAfter),
+      nextAfter: page.next_after,
       completedVersion,
     })
     return true

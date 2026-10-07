@@ -75,3 +75,23 @@ test('viewer reset aborts the stream before late output can restore the old cach
   assert.equal(runLogsResource.peek(key), null)
   cleanup()
 })
+
+test('a server error reconnects from the last position and only lost access stops the stream', async () => {
+  const requests: string[] = []
+  globalThis.fetch = async (input) => {
+    requests.push(String(input))
+    return requests.length === 1
+      ? stream(['log', log(2)], ['error', { code: 'internal', message: 'database unavailable', retryable: false }])
+      : requests.length === 2
+        ? stream(['error', { code: 'forbidden', message: 'run access changed', retryable: false }])
+        : stream(['status', finished])
+  }
+  const onLog = mock.fn()
+  await watchRunLogs({
+    url: 'https://api.scope.test/v1/repos/owner/repo/runs/run-1/events',
+    tokenTemplate: 'scope_api', getToken: async () => null, initialCursor: 1, onLog,
+    signal: AbortSignal.timeout(10_000),
+  })
+  assert.deepEqual(requests.map((url) => new URL(url).searchParams.get('after')), ['1', '2'])
+  assert.equal(onLog.mock.callCount(), 1)
+})

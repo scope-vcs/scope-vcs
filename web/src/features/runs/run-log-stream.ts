@@ -83,7 +83,7 @@ async function streamRunLogs({ url, tokenTemplate, getToken, cursor, onLog, sign
         } else if (name === 'error') {
           const payload: unknown = JSON.parse(data)
           if (!apiValidators.ErrorResponse(payload)) throw new Error('Invalid run stream error.')
-          return { stop: !payload.retryable && payload.code !== 'unauthorized' }
+          return { stop: payload.code === 'forbidden' || payload.code === 'not_found' }
         }
       }
     }

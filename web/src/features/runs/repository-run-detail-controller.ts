@@ -96,7 +96,6 @@ export function useRepositoryRunDetailController({
   params: RunActionInput
 }) {
   const [key] = useState(() => cacheKey ?? crypto.randomUUID())
-  useRunLogStream(cacheKey, params)
   useState(() => {
     initializeRunDetail(key, initialDetail)
     runLogsResource.read(key)
@@ -112,6 +111,7 @@ export function useRepositoryRunDetailController({
     runLogsResource.getServerSnapshot,
   )
   const detail = detailSnapshot.value?.detail ?? initialDetail
+  useRunLogStream(cacheKey, params, runCanChange(detail.run.state))
   const [view, updateView] = useState(() => createDetailViewState(detail))
   const selectionRef = useRef(view.selection)
   useEffect(() => { selectionRef.current = view.selection }, [view.selection])

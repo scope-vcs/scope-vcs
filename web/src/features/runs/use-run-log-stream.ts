@@ -5,13 +5,13 @@ import { useEffect } from 'react'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { startRunLogStream } from './run-log-cache'
 
-export function useRunLogStream(key: string | null, params: RunActionInput) {
+export function useRunLogStream(key: string | null, params: RunActionInput, live: boolean) {
   const { getToken } = useAuth()
   const { api_url, clerk_token_template } = useRepoLayout()
   const url = `${api_url}${buildApiPath(ApiRouteTemplates.repoRunEvents, params)}`
 
   useEffect(() => {
-    if (!key) return
+    if (!key || !live) return
     return startRunLogStream(key, url, clerk_token_template, getToken)
-  }, [clerk_token_template, getToken, key, url])
+  }, [clerk_token_template, getToken, key, live, url])
 }

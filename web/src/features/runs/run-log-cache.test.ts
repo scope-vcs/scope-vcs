@@ -120,21 +120,42 @@ test('an in-flight initial page keeps newer streamed output', async () => {
   assert.deepEqual(readRunLogCache(key)[stepKey(selection)]?.logs.map(({ position }) => position), [6, 7, 8])
 })
 
-test('stream output received before the first page is merged by position', async () => {
-  appendStreamRunLog(key, {
-    attempt_id: selection.attemptId, job_key: selection.jobKey, step_index: selection.stepIndex,
-    position: 2, sequence: 2, text: 'line 2\n', created_at_unix: 2,
-  })
+const streamed = (position: number, stepIndex = selection.stepIndex) => ({
+  attempt_id: selection.attemptId, job_key: selection.jobKey, step_index: stepIndex,
+  position, sequence: position, text: `line ${position}\n`, created_at_unix: 2,
+})
+
+test('stream output for a step no page has asked for is not cached', () => {
+  writeRunLogCache(key, selection, loaded)
+  appendStreamRunLog(key, streamed(5, 3))
+  assert.deepEqual(Object.keys(readRunLogCache(key)), [stepKey(selection)])
+})
+
+test('stream output received while the first page loads is merged by position', async () => {
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
   const request = refreshRunLogs({
     key, target: selection, detail,
     params: { owner: 'owner', repo: 'repo', run_id: 'run-1' },
-    loadLogs: async () => ({
-      logs: [log(1)], has_earlier: false, has_more: false,
-      logs_truncated: false, next_after: 1,
-    }),
+    loadLogs: async () => {
+      await held
+      return { logs: [log(1)], has_earlier: false, has_more: false, logs_truncated: false, next_after: 1 }
+    },
   })
+  appendStreamRunLog(key, streamed(2))
+  release()
   assert.equal(await request, true)
-  assert.deepEqual(readRunLogCache(key)[stepKey(selection)]?.logs.map(({ position }) => position), [1, 2])
+  const state = readRunLogCache(key)[stepKey(selection)]
+  assert.deepEqual(state?.logs.map(({ position }) => position), [1, 2])
+  assert.equal(state?.nextAfter, 1)
+})
+
+test('streamed output never moves the page cursor past rows still to fetch', () => {
+  writeRunLogCache(key, selection, loaded)
+  appendStreamRunLog(key, streamed(9))
+  const state = readRunLogCache(key)[stepKey(selection)]
+  assert.deepEqual(state?.logs.map(({ position }) => position), [1, 9])
+  assert.equal(state?.nextAfter, 1)
 })
 
 test('a changed completion revision, incomplete page or failed page still needs refresh', () => {
