@@ -84,18 +84,29 @@ pub enum RequestListPredicate<'a> {
 pub fn request_list_predicate<'a>(
     access: RepositoryAccess,
     viewer_user_id: Option<&'a str>,
+    views: &Views,
 ) -> RequestListPredicate<'a> {
-    let mut public_access = vec![RequestListPredicate::Submitted];
-    if let Some(viewer_user_id) = viewer_user_id {
-        public_access.push(RequestListPredicate::Author(viewer_user_id));
-        public_access.push(RequestListPredicate::Invitee(viewer_user_id));
+    let anyone = views.anyone();
+    let mut visible = Vec::new();
+    if let Some(anyone) = anyone {
+        let mut anyone_access = vec![RequestListPredicate::Submitted];
+        if let Some(viewer_user_id) = viewer_user_id {
+            anyone_access.push(RequestListPredicate::Author(viewer_user_id));
+            anyone_access.push(RequestListPredicate::Invitee(viewer_user_id));
+        }
+        visible.push(RequestListPredicate::All(vec![
+            RequestListPredicate::View(anyone.clone()),
+            RequestListPredicate::Any(anyone_access),
+        ]));
     }
-    let mut visible = vec![RequestListPredicate::All(vec![
-        RequestListPredicate::View(ViewId::public()),
-        RequestListPredicate::Any(public_access),
-    ])];
-    if access.is_maintainer() && Views::builtin().may_read(&access.view, &ViewId::private()) {
-        visible.push(RequestListPredicate::View(ViewId::private()));
+    if access.is_maintainer() {
+        visible.extend(
+            views
+                .readable_by(Some(&access.view))
+                .into_iter()
+                .filter(|view| Some(*view) != anyone)
+                .map(|view| RequestListPredicate::View(view.clone())),
+        );
     }
     RequestListPredicate::Any(visible)
 }
@@ -125,58 +136,61 @@ pub fn request_actor_role(access: RepositoryAccess) -> RequestActorRole {
     }
 }
 
-pub fn request_policy(request: &Request, viewer: RequestViewer<'_>) -> RequestPolicyDecision {
-    let maintainer = matches!(
-        viewer.access.actor,
-        RepositoryActor::Owner | RepositoryActor::Member
-    );
+pub fn request_policy(
+    request: &Request,
+    viewer: RequestViewer<'_>,
+    views: &Views,
+) -> RequestPolicyDecision {
+    let maintainer = viewer.access.is_maintainer();
     let authenticated = viewer.user_id.is_some();
     let author = viewer
         .user_id
         .is_some_and(|user_id| request.is_author(user_id));
     let invitee = viewer.is_invitee;
-    let public = request.view == ViewId::public();
-    let private = request.view == ViewId::private();
-    let can_read_view = Views::builtin().may_read(&viewer.access.view, &request.view);
+    let anyone_view = views.anyone() == Some(&request.view);
+    let full_view = &request.view == views.full();
+    let reads_request_view =
+        views.get(&request.view).is_some() && views.may_read(&viewer.access.view, &request.view);
+    let merges_into_canonical_main = request_merger(
+        &viewer,
+        request.author_user_id.as_deref(),
+        &request.view,
+        views,
+    );
     let submitted = request.is_submitted();
     let terminal = request.is_terminal();
     let open = request.state() == RequestState::Open;
 
-    let exact_visible = if private {
-        maintainer && can_read_view
-    } else if submitted {
-        true
+    let exact_visible = if anyone_view {
+        submitted || author || invitee
     } else {
-        author || invitee
+        maintainer && reads_request_view
     };
-    let listable =
-        request_list_predicate(viewer.access, viewer.user_id).matches(request, viewer.is_invitee);
-    let branch_actor = if private {
-        maintainer
-    } else {
-        author || invitee || maintainer
-    };
+    let listable = request_list_predicate(viewer.access.clone(), viewer.user_id, views)
+        .matches(request, viewer.is_invitee);
+    let branch_actor = author || (anyone_view && invitee) || (maintainer && reads_request_view);
     let branch_mutable = exact_visible && branch_actor && !terminal;
     let discussion_visible = exact_visible;
     let activity_stream_visible = discussion_visible && listable;
-    let can_discuss = discussion_visible && authenticated && (public || (maintainer && !terminal));
+    let can_discuss =
+        discussion_visible && authenticated && (!full_view || (maintainer && !terminal));
 
     let permissions = RequestPermissions {
         can_open_discussion: can_discuss,
         can_reply_to_discussion: can_discuss,
         can_wait_after_reply: can_discuss && maintainer && open,
-        can_transition_discussion: discussion_visible && authenticated && (public || !terminal),
+        can_transition_discussion: discussion_visible && authenticated && (!full_view || !terminal),
         can_edit_identity: exact_visible && !terminal && (author || maintainer),
         can_pull_branch: exact_visible,
         can_push_branch: branch_mutable,
         can_submit: exact_visible && !submitted && author,
-        can_manage_invitees: exact_visible && public && !terminal && (author || maintainer),
-        can_leave_request: exact_visible && public && invitee && !terminal,
+        can_manage_invitees: exact_visible && anyone_view && !terminal && (author || maintainer),
+        can_leave_request: exact_visible && anyone_view && invitee && !terminal,
         can_close: exact_visible
             && viewer.user_id.is_some_and(|user_id| {
                 ensure_request_close_allowed(request, user_id, maintainer).is_ok()
             }),
-        can_merge: exact_visible && maintainer && open,
+        can_merge: exact_visible && merges_into_canonical_main && open,
     };
 
     RequestPolicyDecision {
@@ -190,31 +204,63 @@ pub fn request_policy(request: &Request, viewer: RequestViewer<'_>) -> RequestPo
     }
 }
 
+fn request_merger(
+    viewer: &RequestViewer<'_>,
+    author_user_id: Option<&str>,
+    request_view: &ViewId,
+    views: &Views,
+) -> bool {
+    let author = viewer.user_id.is_some() && viewer.user_id == author_user_id;
+    viewer.access.is_maintainer()
+        && (views.may_read(&viewer.access.view, views.full())
+            || (author && viewer.access.can_push && &viewer.access.view == request_view))
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RequestMergeSubject<'a> {
+    pub author_user_id: Option<&'a str>,
+    pub view: &'a ViewId,
+    pub state: RequestState,
+    pub has_git_snapshot: bool,
+}
+
+impl<'a> From<&'a Request> for RequestMergeSubject<'a> {
+    fn from(request: &'a Request) -> Self {
+        Self {
+            author_user_id: request.author_user_id.as_deref(),
+            view: &request.view,
+            state: request.state(),
+            has_git_snapshot: request.git_snapshot.is_some(),
+        }
+    }
+}
+
 pub fn request_list_mergeability(
-    state: RequestState,
-    has_git_snapshot: bool,
-    access: RepositoryAccess,
+    subject: RequestMergeSubject<'_>,
+    viewer: &RequestViewer<'_>,
+    views: &Views,
     checks: RequestChecksOutcome,
 ) -> RequestMergeability {
-    let (status, reason) = match state {
+    let (status, reason) = match subject.state {
         RequestState::Closed => (RequestMergeabilityStatus::Closed, Some("request is closed")),
         RequestState::Merged => (RequestMergeabilityStatus::Merged, Some("request is merged")),
         RequestState::Draft => (
             RequestMergeabilityStatus::Draft,
             Some("request is not submitted"),
         ),
+        RequestState::Open if !viewer.access.is_maintainer() => (
+            RequestMergeabilityStatus::NotMaintainer,
+            Some("repo maintainer required"),
+        ),
         RequestState::Open
-            if !matches!(
-                access.actor,
-                RepositoryActor::Owner | RepositoryActor::Member
-            ) =>
+            if !request_merger(viewer, subject.author_user_id, subject.view, views) =>
         {
             (
                 RequestMergeabilityStatus::NotMaintainer,
-                Some("repo maintainer required"),
+                Some("merging needs a maintainer who reads the full view"),
             )
         }
-        RequestState::Open if !has_git_snapshot => (
+        RequestState::Open if !subject.has_git_snapshot => (
             RequestMergeabilityStatus::MissingRequestBranch,
             Some("request branch has not been pushed"),
         ),
@@ -247,13 +293,9 @@ pub fn request_list_mergeability(
 
 pub fn request_mergeability(
     request: &Request,
-    access: RepositoryAccess,
+    viewer: &RequestViewer<'_>,
+    views: &Views,
     checks: RequestChecksOutcome,
 ) -> RequestMergeability {
-    request_list_mergeability(
-        request.state(),
-        request.git_snapshot.is_some(),
-        access,
-        checks,
-    )
+    request_list_mergeability(request.into(), viewer, views, checks)
 }

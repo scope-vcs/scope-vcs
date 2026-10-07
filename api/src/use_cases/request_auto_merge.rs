@@ -13,7 +13,7 @@ use scope_domain::{
     repository::{RepoRecord, RepositoryIncarnation},
     requests::{
         Request, RequestAutoMergeIntent, RequestAutoMergeReadiness, RequestAutoMergeStopReason,
-        RequestRevision, RequestState, request_auto_merge_readiness,
+        RequestRevision, RequestState, RequestViewer, request_auto_merge_readiness, request_policy,
     },
 };
 use scope_postgres::db::{AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand};
@@ -240,7 +240,7 @@ async fn authorized_request(
         .repositories()
         .repository_read_access(&claim.owner, &claim.name, Some(&claim.intent.actor_user_id))
         .await?;
-    let Some(access) = access.filter(|access| access.access.is_maintainer()) else {
+    let Some(access) = access else {
         stop(
             state,
             claim,
@@ -259,6 +259,27 @@ async fn authorized_request(
             state,
             claim,
             RequestAutoMergeStopReason::RequestClosed,
+            now_unix,
+        )
+        .await?;
+        return Ok(None);
+    }
+    let actor_can_merge = request_policy(
+        &request,
+        RequestViewer::new(
+            access.access.clone(),
+            Some(&claim.intent.actor_user_id),
+            false,
+        ),
+        &access.views,
+    )
+    .permissions
+    .can_merge;
+    if !actor_can_merge {
+        stop(
+            state,
+            claim,
+            RequestAutoMergeStopReason::AccessRevoked,
             now_unix,
         )
         .await?;

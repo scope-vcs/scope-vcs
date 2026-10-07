@@ -16,9 +16,12 @@ mod public;
 mod public_repositories;
 mod run_page;
 
-const REQUIRED_CHECK: &str = "ci / test";
+pub(in crate::workflow_tests) const REQUIRED_CHECK: &str = "ci / test";
 
-pub(super) async fn connect_github(state: &mut AppState, required: &[&str]) -> Arc<FakeGitHub> {
+pub(in crate::workflow_tests) async fn connect_github(
+    state: &mut AppState,
+    required: &[&str],
+) -> Arc<FakeGitHub> {
     let fake = FakeGitHub::install(state).await;
     let repositories = state.metadata.repositories();
     repositories
@@ -120,7 +123,11 @@ impl OwnerRequest {
     }
 }
 
-async fn checks(state: &AppState, request_id: &str, bearer: &str) -> serde_json::Value {
+pub(in crate::workflow_tests) async fn checks(
+    state: &AppState,
+    request_id: &str,
+    bearer: &str,
+) -> serde_json::Value {
     expect_json(
         api_request(
             router(state.clone()),
@@ -135,7 +142,7 @@ async fn checks(state: &AppState, request_id: &str, bearer: &str) -> serde_json:
     .await
 }
 
-pub(super) async fn push_pass(state: &AppState, now_unix: u64) -> usize {
+pub(in crate::workflow_tests) async fn push_pass(state: &AppState, now_unix: u64) -> usize {
     github_pushes::push_due_github_branches(state, now_unix)
         .await
         .unwrap()
@@ -926,7 +933,11 @@ async fn a_pushed_head_without_any_run_says_no_workflow_started_after_ten_minute
             &context.record,
             &context.views,
             &scope_request,
-            context.access,
+            scope_domain::requests::RequestViewer::new(
+                context.access,
+                Some(&test_owner_id()),
+                false,
+            ),
             None,
             now_unix,
         )

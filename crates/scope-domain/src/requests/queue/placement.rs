@@ -1,6 +1,7 @@
 use super::{RequestAttentionState, RequestQueueFacts, RequestQueueSection};
 use crate::repository::access::RepositoryAccess;
 use crate::requests::{RequestListPredicate, RequestState, request_list_predicate};
+use crate::views::Views;
 
 impl RequestQueueSection {
     pub const fn as_str(self) -> &'static str {
@@ -174,6 +175,7 @@ impl RequestQueueRule {
 pub fn request_queue_visibility_predicate<'a>(
     access: RepositoryAccess,
     viewer_user_id: Option<&'a str>,
+    views: &Views,
 ) -> RequestListPredicate<'a> {
     let mut participant_or_submitted = vec![RequestListPredicate::Submitted];
     if let Some(viewer_user_id) = viewer_user_id {
@@ -181,7 +183,7 @@ pub fn request_queue_visibility_predicate<'a>(
         participant_or_submitted.push(RequestListPredicate::Invitee(viewer_user_id));
     }
     RequestListPredicate::All(vec![
-        request_list_predicate(access, viewer_user_id),
+        request_list_predicate(access, viewer_user_id, views),
         RequestListPredicate::Any(participant_or_submitted),
     ])
 }

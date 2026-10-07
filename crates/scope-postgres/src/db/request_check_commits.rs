@@ -37,11 +37,11 @@ impl RequestStore {
         else {
             return Ok(None);
         };
-        let private_main = private_main_oid(&tx, &request.repo_id).await?;
+        let canonical_main = canonical_main_oid(&tx, &request.repo_id).await?;
         if request.is_terminal()
             || request.head_oid != command.head_oid
             || evaluation.tested_oid != command.replaced_tested_oid
-            || !evaluation.needs_new_check_commit(private_main.as_deref())
+            || !evaluation.needs_new_check_commit(canonical_main.as_deref())
         {
             return Ok(None);
         }
@@ -127,7 +127,7 @@ impl RequestStore {
     }
 }
 
-pub(super) async fn private_main_oid<C: ConnectionTrait>(
+pub(super) async fn canonical_main_oid<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
 ) -> Result<Option<String>, PostgresError> {

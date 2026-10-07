@@ -37,12 +37,24 @@ fn config_with(views: Views, rules: &[(&str, &str)]) -> RepoConfig {
 }
 
 fn update(repo: &mut Repository, config: RepoConfig) -> Result<bool, ReviewedUpdateError> {
+    update_with_open_requests(repo, config, &[])
+}
+
+fn update_with_open_requests(
+    repo: &mut Repository,
+    config: RepoConfig,
+    open_requests: &[(&str, usize)],
+) -> Result<bool, ReviewedUpdateError> {
     apply_reviewed_config_to_repo(
         repo,
         ReviewedConfigUpdateInput {
             occurred_at_unix: 1_788_700_000,
             author_id: "owner".to_string(),
             config,
+            open_requests_by_view: open_requests
+                .iter()
+                .map(|(view, count)| (view_id(view), *count))
+                .collect(),
         },
     )
 }
@@ -216,7 +228,10 @@ fn an_agent_member_reads_exactly_the_public_and_agent_files() {
     assigned.permissions.validate(&agent_views).unwrap();
     let mut pushing = assigned.permissions.clone();
     pushing.can_push = true;
-    assert!(pushing.validate(&agent_views).is_err());
+    pushing.validate(&agent_views).unwrap();
+    let mut relabelling = assigned.permissions.clone();
+    relabelling.can_change_file_visibility = true;
+    assert!(relabelling.validate(&agent_views).is_err());
     repo.collaboration.members.push(assigned);
 
     let access = repo.access_for_user_id("member");
@@ -345,6 +360,28 @@ fn removing_a_view_waits_until_its_members_and_files_are_reassigned() {
     let set = repo.visibility_change_sets.last().unwrap();
     assert_eq!(set.views.as_ref().unwrap().after, Views::builtin());
     assert_eq!(member_paths(&repo), ["/README.md"]);
+}
+
+#[test]
+fn removing_a_view_waits_until_no_request_is_open_in_it() {
+    let mut repo = repo_with_files();
+    let agent_views = views_with(&[("agent", "Agent", &["public"])]);
+    update(
+        &mut repo,
+        config_with(agent_views, &[("/README.md", "public")]),
+    )
+    .unwrap();
+    let removed = config_with(Views::builtin(), &[("/README.md", "public")]);
+
+    assert_eq!(
+        refusal(update_with_open_requests(
+            &mut repo,
+            removed.clone(),
+            &[("public", 3), ("agent", 1)],
+        )),
+        "view Agent cannot be removed because requests are still open in it"
+    );
+    assert!(update_with_open_requests(&mut repo, removed, &[("public", 3), ("agent", 0)]).unwrap());
 }
 
 #[test]

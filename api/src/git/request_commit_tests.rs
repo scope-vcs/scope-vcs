@@ -1,9 +1,21 @@
-use scope_domain::views::ViewId;
+use scope_domain::{
+    policy::Policy,
+    projection::NativeCommitLabels,
+    views::{ViewId, Views},
+};
 use std::{fs, path::Path, process::Command};
 
 use scope_domain::{content_ref::ContentRef, policy::ScopePath};
 
 use super::*;
+
+fn agent() -> ViewId {
+    ViewId::parse("agent").unwrap()
+}
+
+fn labels() -> NativeCommitLabels {
+    NativeCommitLabels::new([], Policy::new(agent()), Views::builtin())
+}
 
 fn deadline() -> Instant {
     Instant::now() + crate::runtime_budgets::RuntimeBudgets::default_git_command_timeout()
@@ -38,8 +50,8 @@ fn init_repo() -> tempfile::TempDir {
     repo
 }
 
-fn native(repo: &Path, oid: String, changed_paths: &[&str]) -> NativePublicCommit {
-    NativePublicCommit {
+fn native(repo: &Path, oid: String, changed_paths: &[&str]) -> NativeRequestCommit {
+    NativeRequestCommit {
         tree_oid: git(repo, &["show", "-s", "--format=%T", &oid]),
         parent_oids: git(repo, &["show", "-s", "--format=%P", &oid])
             .split_ascii_whitespace()
@@ -68,14 +80,15 @@ fn reads_original_author_time_message_and_root_blob() {
         &["commit-tree", &tree, "-m", "  leading subject\n\nbody  "],
     );
     let commit = native(repo.path(), oid.clone(), &["root.txt"]);
-    let details = inspect_native_public_commit(repo.path(), &commit, deadline()).unwrap();
+    let details =
+        inspect_native_request_commit(repo.path(), &labels(), &commit, deadline()).unwrap();
     assert_eq!(details.author, "Original Author <original@example.test>");
     assert_eq!(details.message, "  leading subject\n\nbody  ");
     assert_eq!(details.occurred_at_unix, 1_015_218_367);
     assert_eq!(details.changes.len(), 1);
     let change = &details.changes[0];
     assert!(change.old_content.is_none());
-    assert_eq!(change.label, ViewId::public());
+    assert_eq!(change.label, agent());
     let blob = change.new_content.as_ref().unwrap();
     let expected_oid = blob_oid(repo.path(), &oid, "root.txt");
     assert_eq!(blob.git_oid, expected_oid);
@@ -129,7 +142,20 @@ fn merge_uses_first_parent_blobs_independently_of_safety_paths() {
         &["edit.txt", "gone.txt", "tool.sh"],
     );
     assert_eq!(commit.parent_oids, vec![first.clone(), side]);
-    let details = inspect_native_public_commit(repo.path(), &commit, deadline()).unwrap();
+    let mut tool_is_public = Policy::new(agent());
+    tool_is_public
+        .add_rule(scope_domain::policy::LabelRule::public(
+            ScopePath::parse("/tool.sh").unwrap(),
+        ))
+        .unwrap();
+    let agent_request_labels = NativeCommitLabels::new(
+        [(ScopePath::parse("/edit.txt").unwrap(), ViewId::public())],
+        tool_is_public,
+        Views::builtin(),
+    );
+    let details =
+        inspect_native_request_commit(repo.path(), &agent_request_labels, &commit, deadline())
+            .unwrap();
     assert_eq!(details.changes.len(), 4);
     let changes = details
         .changes
@@ -175,11 +201,18 @@ fn merge_uses_first_parent_blobs_independently_of_safety_paths() {
             .size_bytes,
         5
     );
-    assert!(
+    assert_eq!(
         details
             .changes
             .iter()
-            .all(|change| change.label == ViewId::public())
+            .map(|change| (change.path.as_str(), change.label.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("/edit.txt", "public"),
+            ("/gone.txt", "agent"),
+            ("/side.txt", "agent"),
+            ("/tool.sh", "public"),
+        ]
     );
 }
 
@@ -190,20 +223,26 @@ fn rejects_changed_recorded_tree_parents_or_commit_identity() {
     let oid = git(repo.path(), &["commit-tree", &tree, "-m", "empty"]);
     let commit = native(repo.path(), oid.clone(), &[]);
     assert!(
-        inspect_native_public_commit(repo.path(), &commit, deadline())
+        inspect_native_request_commit(repo.path(), &labels(), &commit, deadline())
             .unwrap()
             .changes
             .is_empty()
     );
     let mut wrong_tree = commit.clone();
     wrong_tree.tree_oid = "0".repeat(40);
-    assert!(inspect_native_public_commit(repo.path(), &wrong_tree, deadline()).is_err());
+    assert!(
+        inspect_native_request_commit(repo.path(), &labels(), &wrong_tree, deadline()).is_err()
+    );
     let mut wrong_parents = commit.clone();
     wrong_parents.parent_oids.push(oid.clone());
-    assert!(inspect_native_public_commit(repo.path(), &wrong_parents, deadline()).is_err());
+    assert!(
+        inspect_native_request_commit(repo.path(), &labels(), &wrong_parents, deadline()).is_err()
+    );
     let mut abbreviated = commit;
     abbreviated.oid.truncate(12);
-    assert!(inspect_native_public_commit(repo.path(), &abbreviated, deadline()).is_err());
+    assert!(
+        inspect_native_request_commit(repo.path(), &labels(), &abbreviated, deadline()).is_err()
+    );
 }
 
 #[test]
@@ -218,7 +257,8 @@ fn reads_non_utf8_author_and_message_from_native_git_object() {
         &["hash-object", "-t", "commit", "-w", "commit-object"],
     );
     let commit = native(repo.path(), oid, &[]);
-    let details = inspect_native_public_commit(repo.path(), &commit, deadline()).unwrap();
+    let details =
+        inspect_native_request_commit(repo.path(), &labels(), &commit, deadline()).unwrap();
     assert_eq!(details.author, "Original � <original@example.test>");
     assert_eq!(details.message, "  Subject �\n\nbody  ");
     assert_eq!(details.occurred_at_unix, 1_700_000_001);
@@ -234,7 +274,9 @@ fn exhausted_request_deadline_stops_further_commit_inspection() {
     let started = Instant::now();
     let shared_deadline = started + std::time::Duration::from_millis(100);
     let error = (0..10_000)
-        .find_map(|_| inspect_native_public_commit(repo.path(), &commit, shared_deadline).err())
+        .find_map(|_| {
+            inspect_native_request_commit(repo.path(), &labels(), &commit, shared_deadline).err()
+        })
         .expect("the shared deadline must stop the commit loop");
     assert_eq!(error.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
     assert!(started.elapsed() < std::time::Duration::from_secs(2));

@@ -30,6 +30,7 @@ async fn request_viewer(
     visible_request(
         state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         viewer.as_deref(),
         request_id,

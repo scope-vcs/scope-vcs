@@ -35,8 +35,9 @@ mod m0075_incremental_projection_read_models;
 mod m0076_view_ids;
 mod m0077_custom_views;
 mod m0078_repo_config_version;
-mod m0079_github_workflow_job_reads;
-mod m0080_github_job_log_reads;
+mod m0079_request_views;
+mod m0080_github_workflow_job_reads;
+mod m0081_github_job_log_reads;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -229,11 +230,15 @@ fn migration_registry() -> Vec<RegisteredMigration> {
             metadata_restore_safe: true,
         },
         RegisteredMigration {
-            migration: Box::new(m0079_github_workflow_job_reads::Migration),
+            migration: Box::new(m0079_request_views::Migration),
             metadata_restore_safe: true,
         },
         RegisteredMigration {
-            migration: Box::new(m0080_github_job_log_reads::Migration),
+            migration: Box::new(m0080_github_workflow_job_reads::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0081_github_job_log_reads::Migration),
             metadata_restore_safe: true,
         },
     ]

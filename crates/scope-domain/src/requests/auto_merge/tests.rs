@@ -21,7 +21,7 @@ fn results(native_runs: &[(&str, RunState)]) -> RequestCheckResults {
             .collect(),
         github: GitHubCheckResults::Connected(Vec::new()),
         withheld_from_github: Vec::new(),
-        private_main_oid: None,
+        canonical_main_oid: None,
     }
 }
 
@@ -88,7 +88,7 @@ fn authorize_input() -> AuthorizeRequestAutoMergeInput {
         repository_incarnation_id: "incarnation_1".into(),
         request_id: "request_1".into(),
         actor_user_id: "maintainer".into(),
-        actor_is_maintainer: true,
+        actor_can_merge: true,
         expected_revision_id: "revision_1".into(),
         expected_head_oid: HEAD.into(),
         event_id: "event_auto_merge_enabled".into(),

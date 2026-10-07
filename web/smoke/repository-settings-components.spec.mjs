@@ -76,8 +76,8 @@ test('repository components retain drafts, previews and pending actions across r
     await page.evaluate(() => window.calls.splice(0))
     const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false }, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
     await page.evaluate((github) => window.setFixtureGitHub(github), becamePublic)
-    await checks.getByText('This GitHub repository became public, so Scope stopped sending private requests there.', { exact: false }).waitFor()
-    await checks.getByRole('button', { name: 'Allow private requests', exact: true }).click()
+    await checks.getByText('This GitHub repository became public, so Scope stopped sending requests outside the Public view there.', { exact: false }).waitFor()
+    await checks.getByRole('button', { name: 'Allow these requests', exact: true }).click()
     await checks.getByText('Public on GitHub: everything Scope pushes here is public.', { exact: true }).waitFor()
     assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
       { confirmPublicGitHub: { owner: 'owner', repo: 'demo' } },
@@ -198,8 +198,11 @@ test('repository components retain drafts, previews and pending actions across r
     await bob.getByRole('combobox', { name: 'View' }).selectOption('public')
     await page.evaluate(() => window.finishAction('bob'))
     await page.waitForFunction(() => [...document.querySelectorAll('li')].find(node => node.textContent.includes('bob@example.com')).querySelector('select').value === 'public')
-    assert.equal(await bob.getByRole('switch', { name: 'Push changes' }).isDisabled(), true)
-    assert.deepEqual(await page.evaluate(() => window.calls.filter(call => call.member_user_id === 'bob').at(-1).permissions), { can_push: false, can_change_file_visibility: false, view: 'public' })
+    assert.equal(await bob.getByRole('switch', { name: 'Push changes' }).isDisabled(), false)
+    assert.equal(await bob.getByRole('switch', { name: 'Change file visibility' }).isDisabled(), true)
+    await bob.getByText('Pushes to main land as an auto-merged request in this view.', { exact: false }).waitFor()
+    await bob.getByText('Changing file visibility needs the Private view.', { exact: true }).waitFor()
+    assert.deepEqual(await page.evaluate(() => window.calls.filter(call => call.member_user_id === 'bob').at(-1).permissions), { can_push: true, can_change_file_visibility: false, view: 'public' })
 
     await page.getByRole('button', { name: 'Create login command', exact: true }).click()
     await page.getByRole('button', { name: 'Revoke session-a', exact: true }).click()

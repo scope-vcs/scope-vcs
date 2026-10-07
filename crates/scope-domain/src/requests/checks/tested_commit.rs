@@ -1,5 +1,5 @@
 use super::Request;
-use crate::{error::DomainError, runs::validation::validate_git_oid};
+use crate::{error::DomainError, runs::validation::validate_git_oid, views::Views};
 use serde::{Deserialize, Serialize};
 
 pub const PRIVATE_CODE_CONFLICT_MESSAGE: &str = "This contribution conflicts with private code, so its checks cannot run. A maintainer must resolve the conflict.";
@@ -11,8 +11,8 @@ pub enum GitHubCheckTarget {
 }
 
 impl GitHubCheckTarget {
-    pub fn for_request(request: &Request) -> Self {
-        if request.view.is_private() {
+    pub fn for_request(request: &Request, views: &Views) -> Self {
+        if &request.view == views.full() {
             Self::Head
         } else {
             Self::CheckCommit
@@ -22,21 +22,21 @@ impl GitHubCheckTarget {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CheckCommitBase {
-    pub private_main_oid: String,
-    pub public_base_oid: String,
+    pub canonical_main_oid: String,
+    pub view_base_oid: String,
 }
 
 impl CheckCommitBase {
     pub fn new(
-        private_main_oid: impl Into<String>,
-        public_base_oid: impl Into<String>,
+        canonical_main_oid: impl Into<String>,
+        view_base_oid: impl Into<String>,
     ) -> Result<Self, DomainError> {
         let base = Self {
-            private_main_oid: private_main_oid.into(),
-            public_base_oid: public_base_oid.into(),
+            canonical_main_oid: canonical_main_oid.into(),
+            view_base_oid: view_base_oid.into(),
         };
-        validate_git_oid("check commit private main", &base.private_main_oid)?;
-        validate_git_oid("check commit public base", &base.public_base_oid)?;
+        validate_git_oid("check commit canonical main", &base.canonical_main_oid)?;
+        validate_git_oid("check commit view base", &base.view_base_oid)?;
         Ok(base)
     }
 }

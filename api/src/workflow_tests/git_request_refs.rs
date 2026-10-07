@@ -22,7 +22,7 @@ const PRIVATE_REQUEST_REF: &str = "refs/heads/private-request";
 mod cache;
 mod checks;
 mod cleanup;
-mod github_checks;
+pub(super) mod github_checks;
 mod github_setup_and_runs;
 mod http;
 mod landed;
@@ -43,6 +43,8 @@ async fn assert_restored_request_head(state: &AppState, expected: &str) -> PathB
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &public_user_id(),
+        &scope_domain::views::ViewId::public(),
+        crate::use_cases::git_receive::request_ref::RequestStagingKind::RequestRefsOnly,
     )
     .await
     .unwrap();
@@ -140,6 +142,7 @@ async fn start_request_for_author(
             author_user_id,
             title: Some("Request branch".to_string()),
             author_role,
+            author_view: scope_domain::views::ViewId::private(),
             view: ViewId::public(),
             base_main_oid,
             event_id: "event_request_branch_started".to_string(),
@@ -251,11 +254,11 @@ async fn request_checkout(
     state: &AppState,
     label: &str,
 ) -> (TempGitRepo, String, TestServer, String) {
-    let (source, permissioned_remote, server) =
+    let (source, request_remote, server) =
         request_push_checkout(state, label, PUBLIC_SUBJECT, PUBLIC_EMAIL).await;
     push_change(
         &source,
-        &permissioned_remote,
+        &request_remote,
         REQUEST_REF,
         "request.txt",
         "request branch content\n",
@@ -263,7 +266,7 @@ async fn request_checkout(
     )
     .unwrap();
     let first_request_head = git_head_oid(&source);
-    (source, permissioned_remote, server, first_request_head)
+    (source, request_remote, server, first_request_head)
 }
 
 async fn request_push_checkout(
@@ -281,13 +284,8 @@ async fn request_push_checkout(
         "clone public repo for request ref",
     )
     .unwrap();
-    let permissioned_remote = format!("{origin}/git/private/{TEST_REPO_ID}");
-    configure_bearer_header(
-        &source,
-        &permissioned_remote,
-        &bearer_header_for(subject, email),
-    );
-    (source, permissioned_remote, server)
+    configure_bearer_header(&source, &public_remote, &bearer_header_for(subject, email));
+    (source, public_remote, server)
 }
 
 fn configure_bearer_header(repo: &FsPath, remote: &str, bearer: &str) {

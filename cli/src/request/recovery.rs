@@ -96,6 +96,7 @@ mod tests {
                     "can_manage_members":false, "can_delete_repo":false}
             }))
             .unwrap(),
+            views: scope_domain::views::Views::builtin(),
         };
         let head = "a".repeat(40);
         let request: RequestSummaryResponse = serde_json::from_value(json!({

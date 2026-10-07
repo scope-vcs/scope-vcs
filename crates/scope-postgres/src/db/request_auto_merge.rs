@@ -11,8 +11,8 @@ use crate::error::PostgresError;
 use scope_domain::requests::{
     AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, RequestAutoMergeIntent,
     RequestAutoMergeMutation, RequestAutoMergeStopReason, RequestCheckEvaluation,
-    RequestCheckResults, authorize_request_auto_merge, cancel_request_auto_merge,
-    stop_request_auto_merge, stop_request_auto_merge_for_check_run,
+    RequestCheckResults, RequestViewer, authorize_request_auto_merge, cancel_request_auto_merge,
+    request_policy, stop_request_auto_merge, stop_request_auto_merge_for_check_run,
 };
 use sea_orm::{
     ActiveModelTrait,
@@ -106,8 +106,14 @@ impl RequestStore {
                 repo_id: request.repo_id.clone(),
                 repository_incarnation_id: repo.record.incarnation_id.clone(),
                 request_id: command.request_id,
+                actor_can_merge: request_policy(
+                    &request,
+                    RequestViewer::new(repo.access.clone(), Some(&command.actor_user_id), false),
+                    &repo.views,
+                )
+                .permissions
+                .can_merge,
                 actor_user_id: command.actor_user_id,
-                actor_is_maintainer: repo.access.is_maintainer(),
                 expected_revision_id: command.expected_revision_id,
                 expected_head_oid: command.expected_head_oid,
                 event_id: command.event_id,

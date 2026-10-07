@@ -10,9 +10,11 @@ use crate::{
     },
     git_transport::ScopeRemote,
     push::DEFAULT_SCOPE_BRANCH,
+    repository_views::repository_views,
 };
 use anyhow::{Context, bail};
 use scope_api_contract::{ErrorCode, ErrorResponse, ViewId};
+use scope_domain::views::Views;
 
 const REQUEST_REMOTE_KEY: &str = "scopeRequestRemote";
 const REQUEST_ID_KEY: &str = "scopeRequestId";
@@ -24,6 +26,7 @@ const REQUEST_VIEW_KEY: &str = "scopeRequestView";
 pub(super) struct RequestContext {
     pub(super) target: ScopeRemote,
     pub(super) repo: RepoSummaryResponse,
+    pub(super) views: Views,
 }
 
 pub(super) fn load_context(
@@ -33,7 +36,12 @@ pub(super) fn load_context(
 ) -> anyhow::Result<RequestContext> {
     let target = crate::context::resolve_repository(git_repo, remote)?;
     let repo = get_repo(api, &target.owner, &target.repo)?;
-    Ok(RequestContext { target, repo })
+    let views = repository_views(&repo.views)?;
+    Ok(RequestContext {
+        target,
+        repo,
+        views,
+    })
 }
 
 pub(super) fn load_context_and_request_id(
@@ -82,6 +90,7 @@ const STALE_REQUEST_PUSH_ERROR: &str = "Someone else updated this request. Fetch
 
 pub(super) fn push_request_head(
     target: &ScopeRemote,
+    request_view: &ViewId,
     session_token: &str,
     request_head_oid: &str,
     expected_head_oid: &str,
@@ -90,7 +99,7 @@ pub(super) fn push_request_head(
 ) -> anyhow::Result<()> {
     let request_ref = format!("refs/heads/{request_name}");
     push_head_to_ref_with_bearer(
-        &target.full_view_url(),
+        &target.url_for_view(&request_view.clone().into()),
         request_head_oid,
         &request_ref,
         expected_head_oid,

@@ -24,8 +24,8 @@ async fn advertisement_and_exact_fetch_follow_viewer_and_publication_policy() {
         .insert_user_for_tests(test_user(unrelated_user_id(), "unrelated", UNRELATED_EMAIL))
         .await
         .unwrap();
-    let private_remote = permissioned_remote;
-    let public_remote = private_remote.replace("/git/private/", "/git/public/");
+    let public_remote = permissioned_remote;
+    let private_remote = public_remote.replace("/git/public/", "/git/private/");
     let author = bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL);
     let invitee = bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL);
     let maintainer = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
