@@ -180,33 +180,17 @@ pub(crate) async fn persist_main_push(
         });
     }
 
-    let open_requests_by_view = match state
-        .metadata
-        .requests()
-        .open_request_counts_by_view(incarnation.repository_id())
-        .await
-    {
-        Ok(counts) => counts,
-        Err(error) => {
-            cleanup_failed_persist(state, &repository_id, &staged_segment, write_lease).await;
-            return Err(error.into());
-        }
-    };
-    let update = ReceivePackUpdate {
-        open_requests_by_view,
-        ..update
-    };
     let transaction_started = Instant::now();
     let expected_incarnation = incarnation.clone();
     let git_head = state
         .metadata
         .repositories()
-        .mutate_repository(
+        .mutate_repository_with_open_requests(
             owner,
             repo_name,
             now_unix,
             &crate::persistence_ids::generate_persistence_id,
-            move |repo| {
+            move |repo, open_requests_by_view| {
                 if repo.incarnation() != expected_incarnation {
                     return Err(DomainError::conflict(
                         "repository was recreated since push preparation",
@@ -231,6 +215,7 @@ pub(crate) async fn persist_main_push(
                     proposed_config: &update.config,
                 })?;
                 update.previous_config = Some(repo.repo_config.clone());
+                update.open_requests_by_view = open_requests_by_view;
                 ensure_receive_pack_base_matches(repo, &update)?;
                 let landing_file_mutation = update.landing_file_mutation.clone();
                 apply_receive_pack_update(repo, update)?;

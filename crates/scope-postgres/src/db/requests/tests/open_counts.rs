@@ -1,4 +1,7 @@
 use super::*;
+use crate::db::RepositoryMutation;
+use sea_orm::TransactionTrait;
+use std::collections::BTreeMap;
 
 #[tokio::test]
 async fn open_request_counts_group_unfinished_requests_by_view() {
@@ -40,19 +43,64 @@ async fn open_request_counts_group_unfinished_requests_by_view() {
     }
 
     assert_eq!(
-        store
-            .requests()
-            .open_request_counts_by_view("owner/repo")
-            .await
-            .unwrap(),
+        open_counts_under_lock(&store).await,
         [(agent, 2), (ViewId::public(), 1)].into_iter().collect()
     );
     assert!(
-        store
-            .requests()
-            .open_request_counts_by_view("other/repo")
+        crate::db::request_rows::open_request_counts_by_view(store.db.as_ref(), "other/repo")
             .await
             .unwrap()
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn a_repository_mutation_counts_requests_started_while_it_waited_for_the_lock() {
+    let store = postgres_store();
+    let initial = store
+        .requests()
+        .start_request(public_start_input())
+        .await
+        .unwrap()
+        .request;
+    let starting = store.db.begin().await.unwrap();
+    crate::db::acquire_aggregate_lock(&starting, "repository", "owner/repo")
+        .await
+        .unwrap();
+    let mutation = tokio::spawn({
+        let store = store.clone();
+        async move { open_counts_under_lock(&store).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(!mutation.is_finished());
+    let mut started = initial.clone();
+    started.id = "req_started_meanwhile".into();
+    started.name = "started-meanwhile".into();
+    started.view = ViewId::parse("agent").unwrap();
+    crate::db::request_rows::insert_request_row(&starting, &started)
+        .await
+        .unwrap();
+    starting.commit().await.unwrap();
+
+    assert_eq!(
+        mutation.await.unwrap(),
+        [(ViewId::parse("agent").unwrap(), 1), (ViewId::public(), 1)]
+            .into_iter()
+            .collect()
+    );
+}
+
+async fn open_counts_under_lock(store: &MetadataStore) -> BTreeMap<ViewId, usize> {
+    store
+        .repositories()
+        .mutate_repository_with_open_requests(
+            "owner",
+            "repo",
+            5,
+            &crate::db::generated_ids::test_generated_id,
+            |_, open_requests_by_view| Ok(RepositoryMutation::new(open_requests_by_view)),
+        )
+        .await
+        .unwrap()
+        .result
 }

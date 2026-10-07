@@ -24,7 +24,6 @@ use scope_api_contract::{
 use scope_domain::repo_config::{
     is_repo_config_fingerprint, repo_config_fingerprint as domain_repo_config_fingerprint,
 };
-use scope_domain::views::ViewId;
 use scope_domain::{error::DomainError, policy::ScopePath};
 use scope_domain::{
     landing_file::{MAX_REPOSITORY_LANDING_FILE_BYTES, REPOSITORY_LANDING_FILE_PATH},
@@ -359,20 +358,15 @@ async fn apply_reviewed_config_before_push(
     let now = unix_now()?;
     let occurred_at_unix = i64::try_from(now).map_err(ApiError::internal)?;
     let author_id = user_id.to_string();
-    let open_requests_by_view = state
-        .metadata
-        .requests()
-        .open_request_counts_by_view(&observed.repo_id)
-        .await?;
     let changed = state
         .metadata
         .repositories()
-        .mutate_repository(
+        .mutate_repository_with_open_requests(
             owner,
             repo_name,
             now,
             &crate::persistence_ids::generate_persistence_id,
-            move |repo| {
+            move |repo, open_requests_by_view| {
                 if repo.push_policy_for_user_id(&author_id).mode != MainPushMode::Ready {
                     return Err(DomainError::forbidden("push permission required"));
                 }
