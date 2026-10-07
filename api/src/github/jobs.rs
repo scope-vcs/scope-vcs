@@ -190,7 +190,7 @@ impl GitHubApp {
             }
             _ => {}
         }
-        let (mut response, mut dropped) = match ranged_length(&probe) {
+        let (mut response, mut dropped) = match ranged_length(&probe)? {
             None => (probe, false),
             Some(length) => {
                 let start = length.saturating_sub(GITHUB_JOB_LOG_LIMIT_BYTES as u64);
@@ -236,24 +236,41 @@ impl GitHubApp {
     }
 }
 
-fn ranged_length(response: &reqwest::Response) -> Option<u64> {
+fn ranged_length(response: &reqwest::Response) -> Result<Option<u64>, ApiError> {
     if response.status() != StatusCode::PARTIAL_CONTENT {
-        return None;
+        return Ok(None);
     }
     response
         .headers()
-        .get(CONTENT_RANGE)?
-        .to_str()
-        .ok()?
-        .rsplit_once('/')?
-        .1
-        .parse()
-        .ok()
+        .get(CONTENT_RANGE)
+        .and_then(|range| range.to_str().ok())
+        .and_then(|range| range.rsplit_once('/'))
+        .and_then(|(_, length)| length.parse().ok())
+        .map(Some)
+        .ok_or_else(|| unavailable("GitHub answered part of a log without its length".to_string()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_partial_log_answer_must_name_the_full_length() {
+        let answer = |status: u16, range: Option<&str>| {
+            let mut response = axum::http::Response::builder().status(status);
+            if let Some(range) = range {
+                response = response.header(CONTENT_RANGE, range);
+            }
+            reqwest::Response::from(response.body("x").unwrap())
+        };
+        assert_eq!(
+            ranged_length(&answer(206, Some("bytes 0-0/6377"))).unwrap(),
+            Some(6377)
+        );
+        assert_eq!(ranged_length(&answer(200, None)).unwrap(), None);
+        assert!(ranged_length(&answer(206, None)).is_err());
+        assert!(ranged_length(&answer(206, Some("bytes 0-0/*"))).is_err());
+    }
 
     #[test]
     fn unreadable_steps_are_dropped_and_a_job_needs_a_matching_conclusion() {

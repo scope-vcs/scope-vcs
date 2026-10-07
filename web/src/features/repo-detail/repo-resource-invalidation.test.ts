@@ -171,6 +171,22 @@ test('a GitHub run report asks again only for its logs still being read', () => 
   assert.equal(githubWorkflowJobLogResource.getSnapshot(otherRun).stale, false)
 })
 
+test('a GitHub run report during a log\'s first request asks for the log again', async () => {
+  githubWorkflowJobLogResource.clear()
+  const identity = githubWorkflowJobLogIdentity('viewer-a', '7', '72')
+  let answer!: () => void
+  const answered = new Promise<void>((resolve) => { answer = resolve })
+  const first = githubWorkflowJobLogResource.ensure(identity, '', async () => {
+    await answered
+    return { state: 'pending' as const }
+  })
+  invalidateRepoResources('viewer-a', event({ GitHubWorkflowRunChanged: { github_run_id: 7 } }))
+  answer()
+  assert.equal(await first, null)
+  assert.equal(githubWorkflowJobLogResource.getSnapshot(identity).stale, true)
+  assert.equal(githubWorkflowJobLogResource.peek(identity), null)
+})
+
 test('connection and lag recovery invalidate retained resources only in their scope', () => {
   for (const kind of ['Connected', 'Lagged'] as const) {
     seed()

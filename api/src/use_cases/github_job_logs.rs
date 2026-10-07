@@ -2,8 +2,7 @@ use super::{github_workflow_jobs::publish, github_workflow_runs::configured_app}
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use scope_domain::{
     github_connection::GitHubConnection,
-    github_workflow_jobs::{GitHubJobLogState, GitHubWorkflowJob},
-    requests::github_retry_at,
+    github_workflow_jobs::{GitHubJobLogState, GitHubWorkflowJob, github_jobs_retry_at},
 };
 use scope_postgres::db::GitHubJobLogReadJob;
 use std::time::Duration;
@@ -80,32 +79,42 @@ pub(crate) async fn read_due_github_job_logs_once(
     now_unix: u64,
 ) -> Result<usize, ApiError> {
     let repositories = state.metadata.repositories();
-    let reads = repositories
-        .claim_due_github_job_log_reads(
-            now_unix,
-            now_unix.saturating_add(READ_LEASE_SECS),
-            READ_BATCH_SIZE,
-        )
-        .await?;
-    let claimed = reads.len();
-    for read in reads {
-        let retry_at = match read_log(state, &read, now_unix).await {
+    let started = std::time::Instant::now();
+    let clock = || now_unix.saturating_add(started.elapsed().as_secs());
+    let mut claimed = 0;
+    while claimed < READ_BATCH_SIZE as usize {
+        let claimed_at = clock();
+        let Some(read) = repositories
+            .claim_due_github_job_log_reads(
+                claimed_at,
+                claimed_at.saturating_add(READ_LEASE_SECS),
+                1,
+            )
+            .await?
+            .pop()
+        else {
+            break;
+        };
+        claimed += 1;
+        let outcome = read_log(state, &read, claimed_at).await;
+        let finished_at = clock();
+        let retry_at = match outcome {
             Ok(LogReadOutcome::Settled) => None,
-            Ok(LogReadOutcome::Unpublished) => github_retry_at(read.attempts, now_unix),
+            Ok(LogReadOutcome::Unpublished) => {
+                Some(github_jobs_retry_at(read.attempts, finished_at))
+            }
             Err(error) => {
-                let retry_at = github_retry_at(read.attempts, now_unix);
                 tracing::warn!(
                     job_id = read.github_job_id,
                     attempts = read.attempts,
-                    gives_up = retry_at.is_none(),
                     error = %error.operator_diagnostic(),
                     "reading a GitHub job's log failed"
                 );
-                retry_at
+                Some(github_jobs_retry_at(read.attempts, finished_at))
             }
         };
         repositories
-            .finish_github_job_log_read(read.github_job_id, retry_at)
+            .finish_github_job_log_read(&read, retry_at)
             .await?;
     }
     Ok(claimed)
