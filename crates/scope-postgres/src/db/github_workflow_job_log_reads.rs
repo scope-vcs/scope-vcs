@@ -1,9 +1,9 @@
 use super::{
     RepositoryStore,
-    integer_columns::{i32_to_u32, i64_to_u64, u64_to_i64},
+    integer_columns::{i32_to_u32, i64_to_u64, u32_to_i32, u64_to_i64},
 };
 use crate::error::PostgresError;
-use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Value};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubJobLogReadJob {
@@ -96,25 +96,30 @@ impl RepositoryStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_job_log_read"))]
     pub async fn finish_github_job_log_read(
         &self,
-        github_job_id: u64,
+        read: &GitHubJobLogReadJob,
         retry_at_unix: Option<u64>,
     ) -> Result<(), PostgresError> {
-        let job_id = u64_to_i64(github_job_id, "GitHub job id")?;
+        let claim: Vec<Value> = vec![
+            u64_to_i64(read.github_job_id, "GitHub job id")?.into(),
+            u32_to_i32(read.attempts, "GitHub job log read attempts")?.into(),
+        ];
         let statement = match retry_at_unix {
             None => Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "DELETE FROM scope_github_workflow_job_log_reads WHERE github_job_id = $1",
-                [job_id.into()],
+                "DELETE FROM scope_github_workflow_job_log_reads
+                  WHERE github_job_id = $1 AND attempts = $2",
+                claim,
             ),
-            Some(retry_at) => Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "UPDATE scope_github_workflow_job_log_reads SET next_attempt_at_unix = $2
-                  WHERE github_job_id = $1",
-                [
-                    job_id.into(),
-                    u64_to_i64(retry_at, "GitHub job log read time")?.into(),
-                ],
-            ),
+            Some(retry_at) => {
+                let mut values = claim;
+                values.push(u64_to_i64(retry_at, "GitHub job log read time")?.into());
+                Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "UPDATE scope_github_workflow_job_log_reads SET next_attempt_at_unix = $3
+                      WHERE github_job_id = $1 AND attempts = $2",
+                    values,
+                )
+            }
         };
         self.db
             .execute_raw(statement)

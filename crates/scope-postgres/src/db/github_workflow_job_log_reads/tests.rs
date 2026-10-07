@@ -64,7 +64,7 @@ async fn a_queued_log_read_is_claimed_once_retried_when_due_and_skipped_once_sto
     );
 
     repositories
-        .finish_github_job_log_read(12, Some(130))
+        .finish_github_job_log_read(&claimed[0], Some(130))
         .await
         .unwrap();
     let retried = repositories
@@ -74,7 +74,7 @@ async fn a_queued_log_read_is_claimed_once_retried_when_due_and_skipped_once_sto
     assert_eq!(retried[0].attempts, 2);
 
     repositories
-        .finish_github_job_log_read(12, None)
+        .finish_github_job_log_read(&retried[0], None)
         .await
         .unwrap();
     assert!(
@@ -83,5 +83,58 @@ async fn a_queued_log_read_is_claimed_once_retried_when_due_and_skipped_once_sto
             .await
             .unwrap()
             .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn a_worker_whose_lease_lapsed_cannot_finish_the_next_claim() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    repositories
+        .save_github_workflow_jobs(REPO, 42, &[failed(12)])
+        .await
+        .unwrap();
+    repositories
+        .queue_github_job_log_read(12, 100)
+        .await
+        .unwrap();
+    let lapsed = repositories
+        .claim_due_github_job_log_reads(100, 400, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    let current = repositories
+        .claim_due_github_job_log_reads(400, 700, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(current.attempts, lapsed.attempts + 1);
+
+    repositories
+        .finish_github_job_log_read(&lapsed, None)
+        .await
+        .unwrap();
+    repositories
+        .finish_github_job_log_read(&lapsed, Some(450))
+        .await
+        .unwrap();
+    assert!(
+        repositories
+            .claim_due_github_job_log_reads(699, 1_000, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    repositories
+        .finish_github_job_log_read(&current, Some(800))
+        .await
+        .unwrap();
+    assert_eq!(
+        repositories
+            .claim_due_github_job_log_reads(800, 1_100, 10)
+            .await
+            .unwrap()
+            .len(),
+        1
     );
 }
