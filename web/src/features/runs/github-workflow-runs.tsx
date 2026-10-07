@@ -86,7 +86,7 @@ export function GitHubWorkflowRunsPage({
     fallbackError: 'Workflow names could not refresh.',
     identity: scope,
     initialValue: initialNames,
-    load: useCallback((signal: AbortSignal) => loadNames(params, signal), [loadNames, params.owner, params.repo]),
+    load: useCallback((signal: AbortSignal) => loadNames({ owner, repo: repoName }, signal), [loadNames, owner, repoName]),
     resource: githubWorkflowNamesResource,
   })
   const workflows = githubWorkflowFilterOptions((names.value ?? initialNames).workflows, workflow)
