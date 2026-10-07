@@ -180,6 +180,7 @@ async fn public_git_read_view_physically_excludes_private_objects() {
             author_user_id: reader_id,
             title: None,
             author_role: RequestActorRole::Public,
+            author_view: scope_domain::views::ViewId::private(),
             view: ViewId::public(),
             base_main_oid,
             event_id: "event_req_public_read_view_started".to_string(),

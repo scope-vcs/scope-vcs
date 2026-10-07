@@ -8,10 +8,10 @@ pub(super) fn start_request_branch(
 ) -> anyhow::Result<RequestCommandOutcome> {
     let context = load_context(Some(git_repo), api, args.remote.as_deref())?;
     local::require_git_remote(&context)?;
-    let view = start_view(&context.repo.access, args.view)?;
+    let view = start_view(&context.repo.access, &context.views, args.view)?;
     let base_oid = refresh_main_projection(git_repo, &context.target, &view, api.token)?;
     let name = args.name.trim().to_string();
-    scope_domain::requests::validate_request_name(&name)
+    scope_domain::requests::validate_chosen_request_name(&name)
         .map_err(|error| crate::error::CliError::usage(error.message))?;
     let branch = if args.current_branch {
         local::adoptable_current_branch(git_repo, &base_oid)?
@@ -75,6 +75,7 @@ pub(super) fn start_request_branch(
     let request_head_oid = head_oid(git_repo).map_err(|error| recover("read_local_head", error))?;
     push_request_head(
         &context.target,
+        &view,
         api.token,
         &request_head_oid,
         response.request.head_oid.as_str(),
@@ -106,10 +107,7 @@ pub(super) fn start_request_branch(
             "Started request {} ({}) on branch {branch} from {} ({})",
             response.request.name,
             response.request.id,
-            view_label(
-                &view,
-                &crate::repository_views::repository_views(&context.repo.views)?
-            ),
+            view_label(&context.views, &view),
             short_oid(&base_oid)
         ),
         "Next: commit changes, then run scope request push".to_string(),
@@ -165,7 +163,13 @@ pub(super) fn push_request_branch(
     let request_head_oid = head_oid(git_repo)?;
     let current_main_oid =
         refresh_main_projection(git_repo, &context.target, &detail.request.view, api.token)?;
-    ensure_public_request_paths_allowed(git_repo, &detail, &current_main_oid, &request_head_oid)?;
+    ensure_request_paths_allowed(
+        git_repo,
+        &context.views,
+        &detail.request,
+        &current_main_oid,
+        &request_head_oid,
+    )?;
     let expected_head_oid = last_seen_request_head(
         git_repo,
         &context.target,
@@ -175,6 +179,7 @@ pub(super) fn push_request_branch(
     )?;
     push_request_head(
         &context.target,
+        &detail.request.view,
         api.token,
         &request_head_oid,
         &expected_head_oid,
@@ -199,10 +204,7 @@ pub(super) fn push_request_branch(
     )
     .map_err(|error| recover("refresh_request", error))?;
     let mut human_lines = repo_access_lines(&context.repo);
-    human_lines.extend(request_detail_lines(
-        &detail.request,
-        &crate::repository_views::repository_views(&context.repo.views)?,
-    ));
+    human_lines.extend(request_detail_lines(&detail.request, &context.views));
     let result = DetailResult {
         repo: context.repo,
         request: detail.request,
@@ -216,18 +218,20 @@ pub(super) fn push_request_branch(
     ))
 }
 
-pub(super) fn ensure_public_request_paths_allowed(
+pub(super) fn ensure_request_paths_allowed(
     git_repo: &GitRepo,
-    detail: &crate::api::RequestDetailResponse,
+    views: &Views,
+    request: &crate::api::RequestSummaryResponse,
     current_main_oid: &str,
     request_head_oid: &str,
 ) -> anyhow::Result<()> {
-    if !scope_domain::views::ViewId::from(detail.request.view.clone()).is_public() {
+    let view = scope_domain::views::ViewId::from(request.view.clone());
+    if &view == views.full() {
         return Ok(());
     }
     let changed_paths = request_side_changed_file_paths(
         git_repo,
-        detail.request.base_main_oid.as_str(),
+        request.base_main_oid.as_str(),
         current_main_oid,
         request_head_oid,
     )?;
@@ -235,7 +239,7 @@ pub(super) fn ensure_public_request_paths_allowed(
         .into_iter()
         .filter_map(|path| {
             let scope_path = ScopePath::parse(format!("/{path}")).ok()?;
-            is_public_request_protected_path(&scope_path).then_some(path)
+            is_request_protected_path(&scope_path).then_some(path)
         })
         .collect::<Vec<_>>();
     if protected_paths.is_empty() {
@@ -243,7 +247,8 @@ pub(super) fn ensure_public_request_paths_allowed(
     }
 
     let message = format!(
-        "public request cannot change maintainer-controlled paths: {}",
+        "{} requests cannot change maintainer-controlled paths: {}",
+        views.display_name(&view),
         protected_paths.join(", ")
     );
     let response = ErrorResponse::new(ErrorCode::ProtectedPath, message)

@@ -1,5 +1,5 @@
 use crate::git::projection_repo::hash_field;
-use scope_domain::{repository::RepositoryIncarnation, requests::Request};
+use scope_domain::{repository::RepositoryIncarnation, requests::Request, views::ViewId};
 use sha1::{Digest, Sha1};
 
 const SEMANTICS_VERSION: &str = "named-request-read-view-v4";
@@ -7,7 +7,7 @@ const SEMANTICS_VERSION: &str = "named-request-read-view-v4";
 pub(super) struct GitReadViewIdentity<'a> {
     incarnation: &'a RepositoryIncarnation,
     primary_head: &'a [u8],
-    public_base_head: Option<&'a [u8]>,
+    view_base_heads: &'a [(ViewId, Vec<u8>)],
     refs: Vec<RequestRefIdentity<'a>>,
 }
 
@@ -22,7 +22,7 @@ impl<'a> GitReadViewIdentity<'a> {
     pub(super) fn from_authorized_output(
         incarnation: &'a RepositoryIncarnation,
         primary_head: &'a [u8],
-        public_base_head: Option<&'a [u8]>,
+        view_base_heads: &'a [(ViewId, Vec<u8>)],
         requests: &'a [Request],
     ) -> Self {
         let mut refs: Vec<_> = requests
@@ -40,7 +40,7 @@ impl<'a> GitReadViewIdentity<'a> {
         Self {
             incarnation,
             primary_head,
-            public_base_head,
+            view_base_heads,
             refs,
         }
     }
@@ -58,8 +58,9 @@ impl<'a> GitReadViewIdentity<'a> {
         ] {
             hash_field(&mut hasher, tag, value);
         }
-        if let Some(head) = self.public_base_head {
-            hash_field(&mut hasher, b"public-base", head);
+        for (view, head) in self.view_base_heads {
+            hash_field(&mut hasher, b"view-base", view.as_str().as_bytes());
+            hash_field(&mut hasher, b"view-base-head", head);
         }
         for request in &self.refs {
             hash_field(&mut hasher, b"name", request.name.as_bytes());
@@ -83,7 +84,7 @@ mod tests {
         let mut identity = GitReadViewIdentity {
             incarnation: &incarnation,
             primary_head: b"primary",
-            public_base_head: None,
+            view_base_heads: &[],
             refs: vec![RequestRefIdentity {
                 name: "request",
                 head: "tip",
@@ -91,9 +92,14 @@ mod tests {
             }],
         };
         let mut keys = std::collections::HashSet::from([identity.cache_key()]);
-        identity.public_base_head = Some(b"public-first");
+        let public_first = [(ViewId::public(), b"public-first".to_vec())];
+        identity.view_base_heads = &public_first;
         assert!(keys.insert(identity.cache_key()));
-        identity.public_base_head = Some(b"public-second");
+        let public_second = [(ViewId::public(), b"public-second".to_vec())];
+        identity.view_base_heads = &public_second;
+        assert!(keys.insert(identity.cache_key()));
+        let agent_second = [(ViewId::parse("agent").unwrap(), b"public-second".to_vec())];
+        identity.view_base_heads = &agent_second;
         assert!(keys.insert(identity.cache_key()));
         identity.primary_head = b"primary-second";
         assert!(keys.insert(identity.cache_key()));

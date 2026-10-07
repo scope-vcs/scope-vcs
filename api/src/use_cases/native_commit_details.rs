@@ -1,6 +1,6 @@
 use crate::{error::ApiError, state::AppState};
 use scope_domain::{
-    projection::{NativePublicCommit, NativePublicCommitDetails},
+    projection::{NativeCommitLabels, NativeRequestCommit, NativeRequestCommitDetails},
     repository::RepositoryIncarnation,
 };
 use std::{collections::BTreeMap, time::Instant};
@@ -8,8 +8,9 @@ use std::{collections::BTreeMap, time::Instant};
 pub(crate) async fn native_commit_details(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    commits: &[NativePublicCommit],
-) -> Result<BTreeMap<String, NativePublicCommitDetails>, ApiError> {
+    labels: NativeCommitLabels,
+    commits: &[NativeRequestCommit],
+) -> Result<BTreeMap<String, NativeRequestCommitDetails>, ApiError> {
     if commits.is_empty() {
         return Ok(BTreeMap::new());
     }
@@ -32,8 +33,9 @@ pub(crate) async fn native_commit_details(
         commits
             .iter()
             .map(|commit| {
-                crate::git::public_request_commit::inspect_native_public_commit(
+                crate::git::request_commit::inspect_native_request_commit(
                     repo.as_ref(),
+                    &labels,
                     commit,
                     deadline,
                 )

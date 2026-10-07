@@ -20,17 +20,19 @@ export function RequestChecksSection({
   checks,
   error,
   params,
+  requestViewName,
 }: {
   checks: RequestChecksResponse | null
   error: string | null
   params: RepoParams
+  requestViewName: string
 }) {
   const [expanded, setExpanded] = useState(false)
   const listId = useId()
   if (!checks && !error) return <RequestChecksPending />
   const note = checks ? requestCheckEvaluationNote(checks) : null
   const warning = checks ? requestChecksWorkflowWarning(checks) : null
-  const publicNote = checks ? requestPublicChecksNote(checks) : null
+  const publicNote = checks ? requestPublicChecksNote(checks, requestViewName) : null
   const summary = checks ? requestChecksSummary(checks) : null
   const folded = summary ? summary.all.length - summary.attention.length : 0
 

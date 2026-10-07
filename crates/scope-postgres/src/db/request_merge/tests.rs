@@ -392,6 +392,7 @@ fn reviewed_update(
         }],
         previous_config: Some(repo.repo_config.clone()),
         config: repo.repo_config.clone(),
+        open_requests_by_view: Default::default(),
     }
 }
 
@@ -419,7 +420,7 @@ fn merge_command(actor_user_id: &str, prepared: MergePreparation) -> MergeReques
         update: prepared.update,
         landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
         workflow_catalog: prepared.workflow_catalog,
-        origin: RequestMergeOrigin::Private {
+        origin: RequestMergeOrigin::Canonical {
             request_id: "req_1".to_string(),
             request_head_oid: REQUEST_HEAD.to_string(),
         },

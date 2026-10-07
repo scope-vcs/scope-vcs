@@ -10,6 +10,7 @@ import {
   checksHoldRequestMerge,
   hasRequestAutoMergeActions,
   hasRequestLifecycleActions,
+  requestSubmitsForReview,
 } from './request-lifecycle-model'
 import type { RequestActionController } from './use-request-actions'
 import type { RequestAutoMergeController } from './use-request-auto-merge'
@@ -39,7 +40,7 @@ export function RequestLifecycleActions({
   const permissions = request.permissions
   const canMerge = canMergeRequest(request)
   const checksHoldMerge = checksHoldRequestMerge(request)
-  const publicRequest = request.author_role === 'Public'
+  const publicRequest = requestSubmitsForReview(request)
   const submitLabel = publicRequest ? 'Request review' : 'Mark ready'
 
   const hasAutoMergeAction = hasRequestAutoMergeActions(

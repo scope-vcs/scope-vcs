@@ -70,7 +70,6 @@ fn create_repository_makes_private_owner_repo_pending_first_push() {
 
     let principal = user_principal(TEST_OWNER_ID);
     assert!(repo.can_read_path(&principal, &root));
-    assert!(!repo.can_push(&principal));
     assert!(!repo.can_read_path(&Principal::public(), &root));
     for (user, mode) in [
         (TEST_OWNER_ID, MainPushMode::FirstPush),

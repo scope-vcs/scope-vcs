@@ -97,6 +97,15 @@ pub(crate) fn select_remote(
     explicit_remote: Option<&str>,
     push: bool,
 ) -> anyhow::Result<String> {
+    select_scope_remote(repo, api_url, explicit_remote, push).map(|target| target.remote)
+}
+
+pub(crate) fn select_scope_remote(
+    repo: &GitRepo,
+    api_url: &str,
+    explicit_remote: Option<&str>,
+    push: bool,
+) -> anyhow::Result<ScopeRemote> {
     let target = resolve(
         Some(repo),
         api_url,
@@ -110,7 +119,7 @@ pub(crate) fn select_remote(
         )
         .into());
     }
-    Ok(target.remote)
+    Ok(target)
 }
 
 fn resolve(
@@ -152,10 +161,12 @@ fn resolve(
             {
                 return Err(CliError::usage(format!("remote {name} fetches and pushes different Scope repositories; correct its URLs before pushing")).into());
             }
-            if !push.view.is_private() {
+            if push.view != fetch.view {
                 return Err(CliError::usage(format!(
-                    "remote {name} must push to the full view address {}",
-                    push.full_view_url()
+                    "remote {name} fetches the {} view but pushes to the {} view; run scope pull to push through {}",
+                    fetch.view,
+                    push.view,
+                    fetch.url()
                 ))
                 .into());
             }
@@ -227,15 +238,20 @@ fn resolve(
             .collect();
         if candidates.is_empty() {
             return Err(CliError::usage(
-                "no Scope Git remote pushes to the full view of the selected repository",
+                "no Scope Git remote of the selected repository pushes through the view it fetches; run scope pull",
             )
             .into());
         }
     }
-    candidates.sort_by_key(|target| match target.remote.as_str() {
-        DEFAULT_SCOPE_REMOTE => 0,
-        "origin" => 1,
-        _ => 2,
+    candidates.sort_by_key(|target| {
+        (
+            push && !target.view.is_private(),
+            match target.remote.as_str() {
+                DEFAULT_SCOPE_REMOTE => 0,
+                "origin" => 1,
+                _ => 2,
+            },
+        )
     });
     Ok(candidates.remove(0))
 }

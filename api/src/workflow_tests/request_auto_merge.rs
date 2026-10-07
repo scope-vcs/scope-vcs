@@ -51,6 +51,7 @@ async fn open_request_with_revision(
             author_user_id: author_user_id.clone(),
             title: Some("Auto merge request".to_string()),
             author_role,
+            author_view: scope_domain::views::ViewId::private(),
             view,
             base_main_oid: FIRST_HEAD.to_string(),
             event_id: format!("event_{request_id}_started"),
@@ -815,4 +816,88 @@ async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_r
     .await
     .unwrap();
     assert_eq!(content, "second revision\n");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn only_someone_who_may_merge_can_enable_auto_merge() {
+    let request_id = "req_auto_merge_narrower";
+    let (state, revision_id) = open_request_with_revision(
+        request_id,
+        test_owner_id(),
+        RequestActorRole::Owner,
+        ViewId::public(),
+    )
+    .await;
+    let narrower_member =
+        scope_postgres::db::scope_user_id_for_auth_identity("clerk", PUBLIC_AUTO_SUBJECT);
+    state
+        .metadata
+        .auth()
+        .insert_user_for_tests(test_user(
+            &narrower_member,
+            "auto-merge-member",
+            PUBLIC_AUTO_EMAIL,
+        ))
+        .await
+        .unwrap();
+    state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+            repo.collaboration.members.push(test_repository_member(
+                TEST_REPO_ID,
+                narrower_member.clone(),
+                RepositoryMemberPermissions {
+                    can_push: true,
+                    can_change_file_visibility: false,
+                    view: ViewId::public(),
+                },
+            ));
+        })
+        .await
+        .unwrap();
+    let app = router(state.clone());
+    let member_bearer = bearer_header_for(PUBLIC_AUTO_SUBJECT, PUBLIC_AUTO_EMAIL);
+    let body = serde_json::json!({
+        "expected_revision_id": revision_id,
+        "expected_head_oid": SECOND_HEAD,
+    })
+    .to_string();
+
+    let member_view = expect_json(
+        api_request(
+            app.clone(),
+            "GET",
+            &auto_merge_route(request_id),
+            Some(&member_bearer),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(member_view["can_enable"], false);
+    let refused = api_request(
+        app.clone(),
+        "POST",
+        &auto_merge_route(request_id),
+        Some(&member_bearer),
+        Some(&body),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+    assert!(
+        state
+            .metadata
+            .requests()
+            .request_auto_merge_intent(request_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let owner_view = auto_merge_json(app.clone(), "GET", request_id, None, StatusCode::OK).await;
+    assert_eq!(owner_view["can_enable"], true);
+    let authorized = authorize(app, request_id, &revision_id, SECOND_HEAD).await;
+    assert_eq!(authorized["intent"]["status"], "Active");
 }

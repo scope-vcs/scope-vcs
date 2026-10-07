@@ -23,9 +23,9 @@ impl RepositoryMemberPermissions {
                 self.view
             )));
         }
-        if (self.can_push || self.can_change_file_visibility) && &self.view != views.full() {
+        if self.can_change_file_visibility && &self.view != views.full() {
             return Err(DomainError::invalid_input(format!(
-                "members who push or change file visibility are assigned the {} view",
+                "members who change file visibility are assigned the {} view",
                 views.display_name(views.full())
             )));
         }

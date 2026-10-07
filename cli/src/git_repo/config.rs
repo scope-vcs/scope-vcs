@@ -102,34 +102,21 @@ fn credential_config_key(remote_url: &str, name: &str) -> anyhow::Result<String>
     Ok(format!("credential.{remote_url}.{name}"))
 }
 
-pub fn configure_scope_push_address(
-    repo_root: &Path,
-    remote: &str,
-    fetch_url: &str,
-) -> anyhow::Result<()> {
-    let Ok(scope_remote) = crate::git_transport::ScopeRemote::from_url(fetch_url) else {
-        return Ok(());
-    };
-    let push_url_key = format!("remote.{remote}.pushurl");
-    if scope_remote.view.is_private() {
-        let unset = Command::new("git")
-            .current_dir(repo_root)
-            .args(["config", "--local", "--unset-all", &push_url_key])
-            .status()
-            .context("clear Scope push address")?;
-        if !unset.success() && unset.code() != Some(5) {
-            bail!("clear Scope push address failed");
-        }
-        return Ok(());
+pub fn clear_scope_push_address(repo_root: &Path, remote: &str) -> anyhow::Result<()> {
+    let unset = Command::new("git")
+        .current_dir(repo_root)
+        .args([
+            "config",
+            "--local",
+            "--unset-all",
+            &format!("remote.{remote}.pushurl"),
+        ])
+        .status()
+        .context("clear Scope push address")?;
+    if !unset.success() && unset.code() != Some(5) {
+        bail!("clear Scope push address failed");
     }
-    run_git_config(
-        repo_root,
-        &[
-            "--replace-all",
-            &push_url_key,
-            &scope_remote.full_view_url(),
-        ],
-    )
+    Ok(())
 }
 
 pub fn git_remote_push_url(repo: &GitRepo, remote: &str) -> anyhow::Result<String> {

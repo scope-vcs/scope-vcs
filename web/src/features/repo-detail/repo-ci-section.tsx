@@ -6,7 +6,12 @@ import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { LoaderCircle, Plug, Unplug } from 'lucide-react'
 import { useState } from 'react'
 import { openGitHubAuthorization } from '../github/github-authorization'
-import { githubConnectionView, githubVisibilityView } from './repo-github-connection-model'
+import {
+  githubConnectionView,
+  githubVisibilityView,
+  githubWithheldRequestsText,
+} from './repo-github-connection-model'
+import { useRepoViews } from './repo-layout-context'
 import { RepoGitHubRunImport } from './repo-github-run-import'
 import { RepoGitHubSetupCheck } from './repo-github-setup-check'
 import { RepoRequiredChecks } from './repo-required-checks'
@@ -32,6 +37,7 @@ export function RepoCiSection({
   startSetupCheck: () => Promise<GitHubConnectionResponse>
 }) {
   const [pending, setPending] = useState<'connect' | 'disconnect' | 'confirm' | null>(null)
+  const withheldRequests = githubWithheldRequestsText(useRepoViews())
   const [error, setError] = useState<{ title: string; message: string } | null>(null)
 
   async function connect() {
@@ -144,9 +150,9 @@ export function RepoCiSection({
         {visibility?.kind === 'unconfirmed' && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="min-w-0 flex-1 leading-5 text-warning-strong" role="note">
-              This GitHub repository became public, so Scope stopped sending private requests there.
+              This GitHub repository became public, so Scope stopped sending {withheldRequests} there.
               {visibility.canConfirm
-                ? ' Allowing them makes their changes and private files public on GitHub.'
+                ? ' Allowing them makes their changes and the files they show public on GitHub.'
                 : ' A maintainer who can change file visibility can allow them.'}
             </p>
             {visibility.canConfirm && (
@@ -158,7 +164,7 @@ export function RepoCiSection({
                 variant="secondary"
               >
                 {pending === 'confirm' && spinner}
-                <span>Allow private requests</span>
+                <span>Allow these requests</span>
               </Button>
             )}
           </div>

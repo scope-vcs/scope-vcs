@@ -57,12 +57,13 @@ pub(super) async fn prepare_main_push(
             push_intent,
             ..
         } => (author_id, push_intent, false),
-        ReceivePackAccess::RequestContributor { .. } => {
+        ReceivePackAccess::ViewMainPusher { .. } | ReceivePackAccess::RequestContributor { .. } => {
             return Err(ApiError::bad_request(
-                "public contributors can only push named request branches",
+                "only pushes through the full view update main directly",
             ));
         }
     };
+    let canonical_intent = push_intent.canonical()?;
     let mut prepared = if first_push {
         reviewed_update_from_staging_repo(
             state,
@@ -70,7 +71,7 @@ pub(super) async fn prepare_main_push(
             repo_name,
             staging_repo,
             author_id,
-            push_intent.config.clone(),
+            canonical_intent.config.clone(),
             ReviewedUpdateMode::FirstPush,
         )
         .await?
@@ -81,26 +82,28 @@ pub(super) async fn prepare_main_push(
             repo_name,
             staging_repo,
             author_id,
-            push_intent.config.clone(),
+            canonical_intent.config.clone(),
             ReviewedUpdateMode::ReadyPush,
         )
         .await?
     };
-    prepared.base_git_frontier = Some(match push_intent.base_for_head(&prepared.head_oid) {
-        Ok(base) => base,
-        Err(error) => {
-            let repository_id = scope_domain::repository::repo_id(owner, repo_name);
-            crate::git::import::best_effort_delete_staged_git_segment(
-                state,
-                &repository_id,
-                &prepared.staged_segment,
-            )
-            .await;
-            prepared.write_lease.release().await;
-            return Err(error);
-        }
-    });
-    prepared.base_config_hash = push_intent.base_config_hash.clone();
+    prepared.base_git_frontier = Some(
+        match canonical_intent.base_for_head(push_intent, &prepared.head_oid) {
+            Ok(base) => base,
+            Err(error) => {
+                let repository_id = scope_domain::repository::repo_id(owner, repo_name);
+                crate::git::import::best_effort_delete_staged_git_segment(
+                    state,
+                    &repository_id,
+                    &prepared.staged_segment,
+                )
+                .await;
+                prepared.write_lease.release().await;
+                return Err(error);
+            }
+        },
+    );
+    prepared.base_config_hash = canonical_intent.base_config_hash.to_string();
     let change_count = prepared.changes.len();
     Ok((prepared, change_count))
 }
@@ -182,12 +185,12 @@ pub(crate) async fn persist_main_push(
     let git_head = state
         .metadata
         .repositories()
-        .mutate_repository(
+        .mutate_repository_with_open_requests(
             owner,
             repo_name,
             now_unix,
             &crate::persistence_ids::generate_persistence_id,
-            move |repo| {
+            move |repo, open_requests_by_view| {
                 if repo.incarnation() != expected_incarnation {
                     return Err(DomainError::conflict(
                         "repository was recreated since push preparation",
@@ -198,7 +201,7 @@ pub(crate) async fn persist_main_push(
                 let push_policy = repo.push_policy_for_user_id(&author_id);
                 authorize_reviewed_update(ReviewedUpdateAuthorization {
                     access: push_policy.access.clone(),
-                    push_mode: push_policy.mode,
+                    push_mode: push_policy.mode.clone(),
                     current_config: &repo.repo_config,
                     proposed_config: &repo.repo_config,
                 })?;
@@ -212,6 +215,7 @@ pub(crate) async fn persist_main_push(
                     proposed_config: &update.config,
                 })?;
                 update.previous_config = Some(repo.repo_config.clone());
+                update.open_requests_by_view = open_requests_by_view;
                 ensure_receive_pack_base_matches(repo, &update)?;
                 let landing_file_mutation = update.landing_file_mutation.clone();
                 apply_receive_pack_update(repo, update)?;

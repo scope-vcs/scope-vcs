@@ -661,11 +661,11 @@ pub mod request_check_evaluation {
                 check_private_main_oid: value
                     .check_commit_base
                     .as_ref()
-                    .map(|base| base.private_main_oid.clone()),
+                    .map(|base| base.canonical_main_oid.clone()),
                 check_public_base_oid: value
                     .check_commit_base
                     .as_ref()
-                    .map(|base| base.public_base_oid.clone()),
+                    .map(|base| base.view_base_oid.clone()),
             })
         }
 
@@ -675,8 +675,8 @@ pub mod request_check_evaluation {
                 head_oid: self.head_oid,
                 tested_oid: self.tested_oid,
                 check_commit_base: match (self.check_private_main_oid, self.check_public_base_oid) {
-                    (Some(private_main_oid), Some(public_base_oid)) => {
-                        Some(CheckCommitBase::new(private_main_oid, public_base_oid)?)
+                    (Some(canonical_main_oid), Some(view_base_oid)) => {
+                        Some(CheckCommitBase::new(canonical_main_oid, view_base_oid)?)
                     }
                     (None, None) => None,
                     _ => {

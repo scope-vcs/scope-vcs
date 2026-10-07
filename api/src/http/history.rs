@@ -20,6 +20,7 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use scope_domain::{
     history::{HistoryEntry, HistoryEntryFile},
+    projection::NativeCommitLabels,
     repository::access::RepositoryAccessContext,
     views::ViewId,
 };
@@ -117,12 +118,18 @@ pub(crate) async fn get_history_entry(
         .auth()
         .users_by_ids(entry.author.iter().cloned())
         .await?;
-    let native_details = crate::use_cases::native_commit_details::native_commit_details(
-        &state,
-        &repo.incarnation(),
-        &entry.native_commits,
-    )
-    .await?;
+    let native_details = match &entry.native_commits {
+        Some(native) => {
+            crate::use_cases::native_commit_details::native_commit_details(
+                &state,
+                &repo.incarnation(),
+                native_commit_labels(&state, &repo, entry).await?,
+                &native.commits,
+            )
+            .await?
+        }
+        None => Default::default(),
+    };
     Ok(Json(history_entry_detail_response(
         &history,
         &repo.views,
@@ -163,14 +170,19 @@ pub(crate) async fn get_history_entry_file_diff(
     }
     let native_file;
     let file = if let Some(oid) = input.commit_oid.as_deref() {
-        let commit = entry
+        let native = entry
             .native_commits
+            .as_ref()
+            .ok_or_else(|| ApiError::not_found("native commit not found in history entry"))?;
+        let commit = native
+            .commits
             .iter()
             .find(|commit| commit.oid == oid)
             .ok_or_else(|| ApiError::not_found("native commit not found in history entry"))?;
         let details = crate::use_cases::native_commit_details::native_commit_details(
             &state,
             &repo.incarnation(),
+            native_commit_labels(&state, &repo, entry).await?,
             std::slice::from_ref(commit),
         )
         .await?;
@@ -269,6 +281,26 @@ fn parse_history_cursor(
         generation: cursor.generation,
         position: cursor.boundary_position,
     })
+}
+
+async fn native_commit_labels(
+    state: &AppState,
+    repo: &RepositoryAccessContext,
+    entry: &HistoryEntry,
+) -> Result<NativeCommitLabels, ApiError> {
+    let policy = state
+        .metadata
+        .repositories()
+        .repository_policy(repo)
+        .await?;
+    Ok(NativeCommitLabels::new(
+        entry
+            .files
+            .iter()
+            .map(|file| (file.path.clone(), file.label.clone())),
+        policy,
+        repo.views.clone(),
+    ))
 }
 
 fn history_entry_for_id<'a>(

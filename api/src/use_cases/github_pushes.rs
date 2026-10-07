@@ -2,7 +2,7 @@ use crate::{
     auth::tokens::random_token, error::ApiError,
     git::request_refs::with_request_revision_store_repo, github::GitHubApp, persistence::unix_now,
     repo_events::RepoChangeReason, state::AppState,
-    use_cases::public_check_commits::with_check_commit,
+    use_cases::view_check_commits::with_check_commit,
 };
 use scope_domain::views::ViewId;
 use scope_domain::{
