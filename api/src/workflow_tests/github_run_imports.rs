@@ -102,6 +102,15 @@ async fn runs_page(state: &AppState, query: &str) -> serde_json::Value {
     listed["github"].clone()
 }
 
+async fn workflow_names(state: &AppState) -> serde_json::Value {
+    expect_json(
+        github(state, "GET", "/workflow-names", &bearer_header(), None).await,
+        StatusCode::OK,
+    )
+    .await["workflows"]
+        .clone()
+}
+
 fn ids(page: &serde_json::Value) -> Vec<u64> {
     page["workflow_runs"]
         .as_array()
@@ -141,7 +150,10 @@ async fn connecting_imports_recent_runs_page_by_page_and_the_runs_page_pages_thr
 
     let first = runs_page(&state, "").await;
     assert_eq!(ids(&first), (201..=250).rev().collect::<Vec<_>>());
-    assert_eq!(first["workflows"], serde_json::json!(["ci", "lint"]));
+    assert_eq!(
+        workflow_names(&state).await,
+        serde_json::json!(["ci", "lint"])
+    );
     let cursor = first["next_cursor"].as_str().unwrap().to_string();
     let second = runs_page(&state, &format!("?after={cursor}")).await;
     assert_eq!(ids(&second), (151..=200).rev().collect::<Vec<_>>());
@@ -373,7 +385,8 @@ async fn the_workflow_filter_matches_names_exactly_as_github_reports_them() {
     connect(&state, GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME, 50).await;
     import_pass(&state, unix_now()).await;
 
-    let mut workflows = runs_page(&state, "").await["workflows"]
+    let mut workflows = workflow_names(&state)
+        .await
         .as_array()
         .unwrap()
         .iter()
