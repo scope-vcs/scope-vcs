@@ -76,9 +76,9 @@ export PATH="$cli_directory:$PATH"
 
 repo="dev/update-demo"
 public_url="$SCOPE_GIT_ROUTER_URL/git/public/$repo"
-permissioned_url="$SCOPE_GIT_ROUTER_URL/git/permissioned/$repo"
+private_view_url="$SCOPE_GIT_ROUTER_URL/git/private/$repo"
 public_checkout="$scratch_dir/public"
-permissioned_checkout="$scratch_dir/permissioned"
+private_view_checkout="$scratch_dir/private-view"
 
 discovery_headers="$scratch_dir/router-headers"
 discovery_body="$scratch_dir/router-body"
@@ -125,27 +125,27 @@ if [[ -n "${SCOPE_MEDIA_SMOKE_SCRIPT:-}" ]]; then
       --require-video \
       --receipt "$SCOPE_MEDIA_SMOKE_RECEIPT"
 fi
-SCOPE_API_URL="$SCOPE_API_URL" "$cli_binary" clone "$repo" "$permissioned_checkout"
-test "$(git -C "$permissioned_checkout" remote get-url origin)" = "$permissioned_url"
-test -f "$permissioned_checkout/internal/notes.md"
-GIT_TERMINAL_PROMPT=0 git -C "$permissioned_checkout" fetch --quiet --prune origin
+SCOPE_API_URL="$SCOPE_API_URL" "$cli_binary" clone "$repo" "$private_view_checkout"
+test "$(git -C "$private_view_checkout" remote get-url origin)" = "$private_view_url"
+test -f "$private_view_checkout/internal/notes.md"
+GIT_TERMINAL_PROMPT=0 git -C "$private_view_checkout" fetch --quiet --prune origin
 
 marker="Scope staging router smoke ${GITHUB_SHA:-manual} $(basename "$scratch_dir")"
-printf '\n%s\n' "$marker" >> "$permissioned_checkout/README.md"
-git -C "$permissioned_checkout" add README.md
-git -C "$permissioned_checkout" \
+printf '\n%s\n' "$marker" >> "$private_view_checkout/README.md"
+git -C "$private_view_checkout" add README.md
+git -C "$private_view_checkout" \
   -c user.name='Scope staging smoke' \
   -c user.email='smoke@example.test' \
   commit --quiet -m 'Exercise the staging Git router'
-expected_head="$(git -C "$permissioned_checkout" rev-parse HEAD)"
+expected_head="$(git -C "$private_view_checkout" rev-parse HEAD)"
 (
-  cd "$permissioned_checkout"
+  cd "$private_view_checkout"
   SCOPE_API_URL="$SCOPE_API_URL" "$cli_binary" push --main --no-review --remote origin
 )
 
-GIT_TERMINAL_PROMPT=0 git -C "$permissioned_checkout" fetch --quiet origin main
-if [[ "$(git -C "$permissioned_checkout" rev-parse FETCH_HEAD)" != "$expected_head" ]]; then
-  echo "The permissioned remote did not retain the accepted staging commit." >&2
+GIT_TERMINAL_PROMPT=0 git -C "$private_view_checkout" fetch --quiet origin main
+if [[ "$(git -C "$private_view_checkout" rev-parse FETCH_HEAD)" != "$expected_head" ]]; then
+  echo "The private view remote did not retain the accepted staging commit." >&2
   exit 1
 fi
 

@@ -51,7 +51,7 @@ try {
   const request = await api(`${repoPath}/requests`, {
     name: `media-smoke-${randomUUID()}`,
     title: 'Request media integration fixture',
-    audience: 'Private',
+    view: 'private',
   })
   receipt.request_id = request.request.id
   const requestPath = `${repoPath}/requests/${encodeURIComponent(receipt.request_id)}`
@@ -214,9 +214,7 @@ async function api(path, body, method = body === undefined ? 'GET' : 'POST') {
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(30000),
   })
-  const result = await response.json()
-  assert(response.ok, `${method} ${path}: HTTP ${response.status}: ${result.message ?? 'request failed'}`)
-  return result
+  return responseJson(response, `${method} ${path}`)
 }
 
 async function putPart(transfer, number, bytes) {
@@ -224,8 +222,18 @@ async function putPart(transfer, number, bytes) {
     method: 'PUT', headers: { Authorization: `Bearer ${transfer.grant}`, 'Content-Type': 'application/octet-stream' },
     body: bytes, signal: AbortSignal.timeout(60000),
   })
-  const result = await response.json()
-  assert(response.ok, `part ${number}: HTTP ${response.status}: ${result.message ?? 'transfer failed'}`)
+  return responseJson(response, `part ${number}`)
+}
+
+async function responseJson(response, operation) {
+  const text = await response.text()
+  let result
+  try {
+    result = JSON.parse(text)
+  } catch {
+    throw new Error(`${operation}: HTTP ${response.status}: ${text.slice(0, 500)}`)
+  }
+  assert(response.ok, `${operation}: HTTP ${response.status}: ${result.message ?? text.slice(0, 500)}`)
   return result
 }
 
