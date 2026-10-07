@@ -8,6 +8,7 @@ use crate::{
 
 pub const GITHUB_JOBS_READ_INTERVAL_SECS: u64 = 30;
 pub const GITHUB_JOB_LOG_LIMIT_BYTES: usize = 1024 * 1024;
+pub const GITHUB_JOB_LOG_PUBLISH_GRACE_SECS: u64 = 10 * 60;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubWorkflowJob {
@@ -43,6 +44,16 @@ pub struct GitHubWorkflowJobProgress {
 impl GitHubWorkflowJob {
     pub fn is_completed(&self) -> bool {
         self.status == GitHubCheckStatus::Completed
+    }
+
+    pub fn ran(&self) -> bool {
+        self.conclusion != Some(GitHubCheckConclusion::Skipped) && !self.steps.is_empty()
+    }
+
+    pub fn missing_log_is_final(&self, now_unix: u64) -> bool {
+        self.completed_at_unix.is_some_and(|completed_at_unix| {
+            now_unix >= completed_at_unix.saturating_add(GITHUB_JOB_LOG_PUBLISH_GRACE_SECS)
+        })
     }
 
     pub fn progress(&self) -> GitHubWorkflowJobProgress {
@@ -209,6 +220,39 @@ mod tests {
         ));
         assert!(!github_jobs_need_read(&completed, read(2, 200), false, 229));
         assert!(github_jobs_need_read(&completed, read(2, 200), false, 230));
+    }
+
+    #[test]
+    fn a_job_that_was_skipped_or_ran_no_steps_wrote_no_log() {
+        use GitHubCheckStatus::Completed;
+        let finished = job(Completed, vec![step(1, Completed)]);
+        assert!(finished.ran());
+        let skipped = GitHubWorkflowJob {
+            conclusion: Some(GitHubCheckConclusion::Skipped),
+            ..finished.clone()
+        };
+        assert!(!skipped.ran());
+        let cancelled_before_a_runner = GitHubWorkflowJob {
+            conclusion: Some(GitHubCheckConclusion::Cancelled),
+            ..job(Completed, vec![])
+        };
+        assert!(!cancelled_before_a_runner.ran());
+    }
+
+    #[test]
+    fn github_gets_a_grace_period_to_publish_a_finished_jobs_log() {
+        let finished = GitHubWorkflowJob {
+            completed_at_unix: Some(1_000),
+            ..job(GitHubCheckStatus::Completed, vec![])
+        };
+        let grace_ends = 1_000 + GITHUB_JOB_LOG_PUBLISH_GRACE_SECS;
+        assert!(!finished.missing_log_is_final(grace_ends - 1));
+        assert!(finished.missing_log_is_final(grace_ends));
+        let completion_unknown = GitHubWorkflowJob {
+            completed_at_unix: None,
+            ..finished
+        };
+        assert!(!completion_unknown.missing_log_is_final(u64::MAX));
     }
 
     #[test]

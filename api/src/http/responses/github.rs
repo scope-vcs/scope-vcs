@@ -162,14 +162,20 @@ pub(crate) struct GitHubWorkflowStepResponse {
     pub(crate) completed_at_unix: Option<u64>,
 }
 
-/// A finished job's log. GitHub offers it only once the job completes.
+/// A finished job's log. GitHub offers it only once the job completes. A job
+/// that was skipped or ran no steps never wrote one.
 #[derive(Debug, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-pub(crate) struct GitHubWorkflowJobLogResponse {
-    /// `None` when GitHub no longer keeps the log.
-    pub(crate) text: Option<String>,
-    /// Whether `text` is only the end of a longer log.
-    pub(crate) truncated: bool,
+#[cfg_attr(feature = "type-export", ts(tag = "state", rename_all = "snake_case"))]
+pub(crate) enum GitHubWorkflowJobLogResponse {
+    Kept {
+        text: String,
+        /// Whether `text` is only the end of a longer log.
+        truncated: bool,
+    },
+    Expired,
+    NotRun,
 }
 
 /// How many of GitHub's most recent workflow runs the repository imports.

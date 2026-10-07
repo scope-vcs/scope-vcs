@@ -259,6 +259,12 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
   if (shots) await screenshot(page, { fullPage: true, path: `${shots}.run-linked-queued-phone.png` })
   await page.setViewportSize({ width: 1280, height: 900 })
 
+  await job('revoke preview token').click()
+  await page.getByText('No steps ran.').waitFor()
+  await log.getByText('This job was skipped, so it has no log.').waitFor()
+  assert.equal(await log.getByRole('button', { name: 'Retry' }).count(), 0)
+  if (shots) await screenshot(page, { fullPage: true, path: `${shots}.run-skipped-job.png` })
+
   await page.goto(new URL('/octo/demo/runs/2', base).href)
   await page.getByText('The jobs could not be read.', { exact: false }).waitFor()
   if (shots) {

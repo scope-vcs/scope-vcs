@@ -28,7 +28,7 @@ export function invalidateGitHubWorkflowRunDetails(scope: string, runId?: number
 export const githubWorkflowJobLogResource = createCachedResource<GitHubWorkflowJobLogResponse>({
   maxEntries: 24,
   maxWeight: 16 * 1024 * 1024,
-  weightOf: (value) => (value.text?.length ?? 0) * 2,
+  weightOf: (value) => value.state === 'kept' ? value.text.length * 2 : 0,
 })
 
 export function githubWorkflowJobLogIdentity(scope: string, runId: string, jobKey: string) {

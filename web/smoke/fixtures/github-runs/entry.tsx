@@ -91,18 +91,20 @@ let runDetail: GitHubWorkflowRunDetailResponse = {
     job(104, 'deploy preview environment to the staging cluster', {
       status: 'queued', conclusion: null, started_at_unix: null, completed_at_unix: null,
     }),
+    job(105, 'revoke preview token', { conclusion: 'skipped', started_at_unix: null }),
   ],
   jobs_unavailable: null,
 }
 const stamp = '2026-10-05T12:00:00.1234567Z '
 const logs: Record<string, GitHubWorkflowJobLogResponse> = {
-  101: { text: `\uFEFF${stamp}##[group]Run pnpm lint\n${stamp}$ oxlint src\n${stamp}Found 0 warnings and 0 errors.\n`, truncated: false },
+  101: { state: 'kept', text: `\uFEFF${stamp}##[group]Run pnpm lint\n${stamp}$ oxlint src\n${stamp}Found 0 warnings and 0 errors.\n`, truncated: false },
   102: {
+    state: 'kept',
     text: Array.from({ length: 40 }, (_, index) => `${stamp}  ✔ suite ${index} passes every case it was given, including the long-running integration fixtures (${index * 3}ms)`).join('\n')
       + `\n${stamp}  ✖ request queue keeps its order (12ms)\n${stamp}##[error]Process completed with exit code 1.\n`,
     truncated: true,
   },
-  103: { text: `${stamp}Build finished.\n`, truncated: false },
+  103: { state: 'kept', text: `${stamp}Build finished.\n`, truncated: false },
 }
 const runLoads: string[] = []
 const logLoads: string[] = []
@@ -127,7 +129,7 @@ async function loadRunDetail(runId: string) {
 }
 async function loadJobLog(jobId: string) {
   logLoads.push(jobId)
-  return logs[jobId] ?? { text: null, truncated: false }
+  return logs[jobId] ?? { state: 'not_run' }
 }
 
 async function loadRuns({ after, workflow }: RepoGitHubWorkflowRunsInput) {

@@ -145,40 +145,57 @@ async fn read_run_jobs(
     Ok(true)
 }
 
+pub(crate) enum GitHubJobLogRead {
+    NotRun,
+    Read(GitHubJobLogState),
+}
+
 pub(crate) async fn job_log(
     state: &AppState,
     connection: &GitHubConnection,
     job: &GitHubWorkflowJob,
     now_unix: u64,
-) -> Result<GitHubJobLogState, ApiError> {
+) -> Result<GitHubJobLogRead, ApiError> {
     if !job.is_completed() {
         return Err(ApiError::conflict(
             "This job's log is available once the job finishes.",
         ));
+    }
+    if !job.ran() {
+        return Ok(GitHubJobLogRead::NotRun);
     }
     let repositories = state.metadata.repositories();
     if let Some(log) = repositories
         .github_workflow_job_log(job.github_job_id)
         .await?
     {
-        return Ok(log);
+        return Ok(GitHubJobLogRead::Read(log));
     }
     if !connection.is_connected() {
         return Err(ApiError::conflict(
             "This repository is no longer connected to GitHub, so the log cannot be read.",
         ));
     }
-    let log = configured_app(state)?
+    let log = match configured_app(state)?
         .job_log(
             connection.installation_id,
             &connection.github_full_name,
             job.github_job_id,
         )
-        .await?;
+        .await?
+    {
+        Some(log) => log,
+        None if job.missing_log_is_final(now_unix) => GitHubJobLogState::Expired,
+        None => {
+            return Err(ApiError::conflict(
+                "GitHub hasn't published this job's log yet. Try again shortly.",
+            ));
+        }
+    };
     repositories
         .save_github_workflow_job_log(job.github_job_id, &log, now_unix)
         .await?;
-    Ok(log)
+    Ok(GitHubJobLogRead::Read(log))
 }
 
 async fn publish(
