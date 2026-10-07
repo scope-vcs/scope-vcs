@@ -21,7 +21,7 @@ const subscribe = (listener: (event: RepoChangeEvent) => void) => { listeners.ad
 function Repository() {
   const [actor, setActor] = useState('Owner')
   const [viewer, setViewer] = useState('adam')
-  const live = { repo: repoSummary(actor) } as RepoLiveState
+  const live = { api_url: '', repo: repoSummary(actor) } as RepoLiveState
   if (typeof window !== 'undefined') Object.assign(window, {
     setActor,
     setViewer: (value: string) => { resetViewerState(); setViewer(value) },
