@@ -17,6 +17,7 @@ fn config_only_rewrite_coalesces_its_visibility_baseline() {
         ReviewedConfigUpdateInput {
             occurred_at_unix: 1_788_700_000,
             author_id: "owner".to_string(),
+            open_requests_by_view: Default::default(),
             config: config(ViewId::public(), None, Some("/README.md")),
         },
     )

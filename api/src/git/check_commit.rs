@@ -16,8 +16,8 @@ pub(crate) fn write_check_commit(
 ) -> Result<Option<String>, ApiError> {
     let tree_oid = match merge_request_tree(
         repo,
-        &base.public_base_oid,
-        &base.private_main_oid,
+        &base.view_base_oid,
+        &base.canonical_main_oid,
         head_oid,
     )? {
         MergedTree::Clean(tree_oid) => tree_oid,
@@ -25,7 +25,7 @@ pub(crate) fn write_check_commit(
     };
     let mut commit = format!(
         "tree {tree_oid}\nparent {}\nparent {head_oid}\n",
-        base.private_main_oid
+        base.canonical_main_oid
     )
     .into_bytes();
     commit.extend_from_slice(&head_identity(repo, head_oid)?);

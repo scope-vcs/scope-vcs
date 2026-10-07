@@ -13,6 +13,7 @@ import {
 import { AbsoluteTimestamp } from '@/components/timestamp'
 import type { RequestActionController } from './use-request-actions'
 import { useRepoViews } from '../repo-detail/repo-layout-context'
+import { requestShowsInvitees } from './request-lifecycle-model'
 
 export type RequestDetailsPlacement = 'drawer' | 'rail'
 
@@ -62,7 +63,9 @@ export function RequestDetails({ placement }: { placement: RequestDetailsPlaceme
             )}
           </DetailsSection>
 
-          <RequestInvitees actions={actions} request={request} />
+          {requestShowsInvitees(request, views) ? (
+            <RequestInvitees actions={actions} request={request} />
+          ) : null}
 
           <RequestRatingsSection initial={ratings} onRate={onRate} params={params} />
 

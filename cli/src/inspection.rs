@@ -243,6 +243,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
         );
     }
     let mut comparison_main_remote = None;
+    let mut main_push_remote = None;
     let target = if valid_endpoint {
         match context::resolve_repository(checkout.as_ref(), remote) {
             Ok(target) => {
@@ -255,11 +256,17 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                     None,
                 );
                 if let Some(repo) = &checkout {
-                    let push_remote = context::select_remote(repo, &endpoint, remote, true).ok();
-                    comparison_main_remote =
-                        Some(push_remote.clone().unwrap_or_else(|| target.remote.clone()));
-                    report.main_push_target =
-                        push_remote.as_ref().map(|remote| format!("{remote}/main"));
+                    main_push_remote =
+                        context::select_scope_remote(repo, &endpoint, remote, true).ok();
+                    comparison_main_remote = Some(
+                        main_push_remote
+                            .as_ref()
+                            .map_or_else(|| target.remote.clone(), |push| push.remote.clone()),
+                    );
+                    report.main_push_target = main_push_remote
+                        .as_ref()
+                        .filter(|push| push.view.is_private())
+                        .map(main_push_target);
                     check_fetch_auth(&mut report, repo, &target);
                 }
                 Some(target)
@@ -281,7 +288,12 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
             None,
         );
     } else if valid_endpoint {
-        inspect_remote(&mut report, checkout.as_ref(), target.as_ref());
+        inspect_remote(
+            &mut report,
+            checkout.as_ref(),
+            target.as_ref(),
+            main_push_remote.as_ref(),
+        );
     }
     let mut request_comparison_unavailable = false;
     if let (Some(repo), Some(target), Some(main_remote), Some(local)) = (
@@ -331,10 +343,15 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
     report
 }
 
+fn main_push_target(remote: &crate::git_transport::ScopeRemote) -> String {
+    format!("{}/main", remote.remote)
+}
+
 fn inspect_remote(
     report: &mut Report,
     checkout: Option<&GitRepo>,
     target: Option<&crate::git_transport::ScopeRemote>,
+    main_push_remote: Option<&crate::git_transport::ScopeRemote>,
 ) {
     let endpoint = report.api_url.clone();
     let token = match crate::auth::read_stored_session_token(&endpoint) {
@@ -468,9 +485,18 @@ fn inspect_remote(
             ),
         }
     }
-    if !summary.access.can_push {
-        report.main_push_target = None;
-    }
+    report.main_push_target = main_push_remote
+        .filter(|push| {
+            crate::repository_views::repository_views(&summary.views).is_ok_and(|views| {
+                crate::push::pushes_main_through(
+                    &summary.access,
+                    summary.lifecycle_state,
+                    &views,
+                    &push.view,
+                )
+            })
+        })
+        .map(main_push_target);
     report.repository = Some(summary);
     if let Some(checkout) = checkout {
         let remote = (!target.remote.is_empty()).then_some(target.remote.as_str());

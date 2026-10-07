@@ -29,6 +29,8 @@ mod request_rating_tests;
 mod request_revision_tests;
 #[cfg(test)]
 mod request_submission_tests;
+#[cfg(test)]
+mod request_view_policy_tests;
 pub mod requests;
 #[cfg(test)]
 mod requests_tests;

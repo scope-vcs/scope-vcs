@@ -40,10 +40,11 @@ fn persisted_domain_shapes_roundtrip_the_recorded_json() {
         "size_bytes": 42,
     }));
     persisted_roundtrip::<LogicalCommitOrigin>(json!({
-        "PublicRequestMerge": {
+        "RequestMerge": {
             "request_id": "request-7",
-            "public_base_oid": "1111111111111111111111111111111111111111",
-            "public_parent_oids": ["2222222222222222222222222222222222222222"],
+            "view": "agent",
+            "base_oid": "1111111111111111111111111111111111111111",
+            "parent_oids": ["2222222222222222222222222222222222222222"],
             "request_head_oid": "3333333333333333333333333333333333333333",
             "commits": [{
                 "oid": "4444444444444444444444444444444444444444",
@@ -51,7 +52,7 @@ fn persisted_domain_shapes_roundtrip_the_recorded_json() {
                 "tree_oid": "5555555555555555555555555555555555555555",
                 "changed_paths": ["/src/lib.rs"],
             }],
-            "preserve_public_commits": true,
+            "preserve_commits": true,
         }
     }));
     persisted_roundtrip::<RepoLifecycleState>(json!("AwaitingFirstPush"));

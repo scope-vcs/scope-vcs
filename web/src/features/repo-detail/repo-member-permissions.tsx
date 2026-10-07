@@ -3,7 +3,7 @@ import type { RepoViews } from '@/api/repo-views'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Eye } from 'lucide-react'
-import { actionsNeedFullView, permissionLabels } from './repo-member-permission-model'
+import { permissionAvailable, permissionDescription, permissionLabels } from './repo-member-permission-model'
 import { MemberViewField } from './repo-member-view-field'
 
 export function MemberAccessSummary({
@@ -32,7 +32,6 @@ export function PermissionEditor({
   permissions: RepositoryMemberPermissions
   views: Pick<RepoViews, 'definitions' | 'full' | 'name'>
 }) {
-  const narrowView = actionsNeedFullView(permissions.view, views)
   return (
     <div className="space-y-2">
       <MemberViewField disabled={disabled} onChange={onChange} permissions={permissions} views={views} />
@@ -40,11 +39,13 @@ export function PermissionEditor({
         <label className="flex items-start justify-between gap-4 text-sm" key={permission.key}>
           <span className="min-w-0">
             <span className="block font-medium leading-5">{permission.label}</span>
-            <span className="block leading-5 text-muted-foreground">{permission.description}</span>
+            <span className="block leading-5 text-muted-foreground">
+              {permissionDescription(permission.key, permissions.view, views)}
+            </span>
           </span>
           <Switch
             checked={permissions[permission.key]}
-            disabled={disabled || narrowView}
+            disabled={disabled || !permissionAvailable(permission.key, permissions.view, views)}
             onCheckedChange={(checked) => onChange({ ...permissions, [permission.key]: checked })}
             type="button"
           />

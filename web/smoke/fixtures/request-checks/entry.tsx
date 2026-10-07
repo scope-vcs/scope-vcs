@@ -49,7 +49,7 @@ function Request() {
       checks: current.checks.map((check, index) => index ? check : { ...check as GitHubCheck, status: 'completed', conclusion: 'success' }),
     })),
   })
-  return <main className="mx-auto max-w-3xl"><RequestChecksSection checks={checks} error={null} params={{ owner: owner!, repo: repo! }} /></main>
+  return <main className="mx-auto max-w-3xl"><RequestChecksSection checks={checks} error={null} params={{ owner: owner!, repo: repo! }} requestViewName="Agent" /></main>
 }
 
 function Run() {

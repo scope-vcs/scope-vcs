@@ -7,7 +7,7 @@ pub(crate) enum RequestMergeFailure {
 }
 
 impl RequestMergeFailure {
-    pub(super) fn public_range(error: ApiError) -> Self {
+    pub(super) fn view_range(error: ApiError) -> Self {
         if error.kind == ErrorKind::Conflict {
             Self::MergeConflict(error)
         } else {
@@ -49,13 +49,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn public_range_conflicts_stop_but_infrastructure_failures_retry() {
+    fn view_range_conflicts_stop_but_infrastructure_failures_retry() {
         for error in [
-            ApiError::conflict("public main advanced"),
+            ApiError::conflict("request view main advanced"),
             ApiError::protected_paths(vec![".scope/RULES.md".to_string()]),
         ] {
             assert!(matches!(
-                RequestMergeFailure::public_range(error),
+                RequestMergeFailure::view_range(error),
                 RequestMergeFailure::MergeConflict(_)
             ));
         }
@@ -65,7 +65,7 @@ mod tests {
             ApiError::too_many_requests("storage throttled"),
         ] {
             assert!(matches!(
-                RequestMergeFailure::public_range(error),
+                RequestMergeFailure::view_range(error),
                 RequestMergeFailure::Other(_)
             ));
         }

@@ -1,4 +1,6 @@
 mod support;
+#[path = "push/through_view.rs"]
+mod through_view;
 
 #[cfg(unix)]
 use axum::{Json, Router, routing::get};
@@ -37,22 +39,24 @@ fn push_stops_at_repository_preconditions_before_login() {
 }
 
 #[test]
-fn push_creates_missing_config_before_remote_lookup() {
+fn push_creates_missing_config_before_login() {
     let dir = TempDir::new("missing-config");
     create_repo_with_head(dir.path());
+    add_unreachable_remote(dir.path(), "private");
     let stderr = scope_failure(
         dir.path(),
-        ["push", "--main", "--no-review"],
-        "no Scope Git remote found; pass --remote <name> or run scope init",
+        ["push", "--main"],
+        "scope push review requires an interactive terminal",
     );
     assert!(repo_config_path(dir.path()).unwrap().is_file());
     assert!(!stderr.contains("Working tree has uncommitted changes."));
 }
 
 #[test]
-fn push_validates_config_before_remote_lookup() {
+fn push_validates_config_before_login() {
     let dir = TempDir::new("invalid-config");
     create_repo_with_head(dir.path());
+    add_unreachable_remote(dir.path(), "private");
     let config_path = repo_config_path(dir.path()).unwrap();
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
     let mut invalid =
@@ -70,6 +74,31 @@ fn push_validates_config_before_remote_lookup() {
 }
 
 #[test]
+fn push_through_a_narrower_view_refuses_wait_before_touching_local_config() {
+    let dir = TempDir::new("narrower-push-preconditions");
+    create_repo_with_head(dir.path());
+    add_unreachable_remote(dir.path(), "agent");
+    scope_failure(
+        dir.path(),
+        ["push", "--main", "--wait"],
+        "--wait follows workflows on main, but pushes through the agent view land as a request",
+    );
+    assert!(!repo_config_path(dir.path()).unwrap().exists());
+}
+
+fn add_unreachable_remote(cwd: &std::path::Path, view: &str) {
+    run_git(
+        cwd,
+        [
+            "remote",
+            "add",
+            "scope",
+            &format!("http://127.0.0.1:9/git/{view}/owner/repo"),
+        ],
+    );
+}
+
+#[test]
 fn push_warns_about_dirty_state_before_remote_lookup() {
     let dir = configured_repo("dirty");
     fs::write(dir.path().join("README.md"), "uncommitted\n").unwrap();
@@ -83,8 +112,9 @@ fn push_warns_about_dirty_state_before_remote_lookup() {
 }
 
 #[test]
-fn push_requires_review_tty_before_remote_lookup() {
+fn push_requires_review_tty_before_login() {
     let dir = configured_repo("review-non-tty");
+    add_unreachable_remote(dir.path(), "private");
     scope_failure(
         dir.path(),
         ["push", "--main"],
@@ -96,6 +126,7 @@ fn push_requires_review_tty_before_remote_lookup() {
 #[test]
 fn json_push_rejects_review_even_with_a_terminal() {
     let dir = configured_repo("review-json-tty");
+    add_unreachable_remote(dir.path(), "private");
     let mut command = scope_command(dir.path());
     command.args(["--json", "push", "--main"]);
     let (terminal_output, mut child) = spawn_in_terminal(command);

@@ -25,9 +25,14 @@ pub fn reader_repo_config(
     if reads_full_view(summary)? {
         return Ok(get_repo_config(api, owner, repo)?.config);
     }
-    let mut config = default_scope_repo_config();
-    config.views = repository_views(&summary.views)?;
-    Ok(config)
+    Ok(summary_repo_config(repository_views(&summary.views)?))
+}
+
+pub fn summary_repo_config(views: Views) -> RepoConfig {
+    RepoConfig {
+        views,
+        ..default_scope_repo_config()
+    }
 }
 
 #[cfg(test)]

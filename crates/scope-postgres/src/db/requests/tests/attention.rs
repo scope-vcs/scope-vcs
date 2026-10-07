@@ -94,6 +94,7 @@ async fn queue(
             section,
             viewer_user_id: Some("user_owner"),
             access: repo.access,
+            views: &repo.views,
             request_views: None,
             search: None,
             after: None,
@@ -450,15 +451,15 @@ async fn reactivated_and_expired_requests_sort_before_older_active_pages() {
         })
         .await
         .unwrap();
-    let access = repo_by_id(store.db.as_ref(), "owner/repo", "user_owner")
+    let repo = repo_by_id(store.db.as_ref(), "owner/repo", "user_owner")
         .await
-        .unwrap()
-        .access;
+        .unwrap();
     let input = RequestQueuePageQuery {
         repo_id: "owner/repo",
         section: RequestQueueSection::Active,
         viewer_user_id: Some("user_owner"),
-        access,
+        access: repo.access.clone(),
+        views: &repo.views,
         request_views: None,
         search: None,
         after: None,

@@ -46,7 +46,7 @@ test('request checks lead with what is left, fold the rest, and only link Scope 
 
     await checks.getByText('3 of 8 left', { exact: true }).waitFor()
     await checks.getByText('· 5 passed · 4 skipped', { exact: true }).waitFor()
-    await checks.getByText('Checks run publicly, so this private request’s changes are public.', { exact: true }).waitFor()
+    await checks.getByText('Checks run publicly, so this Agent request’s changes are public.', { exact: true }).waitFor()
     assert.equal(await checks.getByText(/GitHub|scope\/requests/).count(), 0)
     assert.deepEqual(
       await checks.getByRole('listitem').evaluateAll((items) => items.map((item) => item.textContent)),

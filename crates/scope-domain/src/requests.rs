@@ -2,14 +2,14 @@ use crate::error::DomainError;
 
 #[cfg(test)]
 pub(crate) mod fixtures;
-mod public_paths;
-pub use public_paths::{PathHistory, PublicRequestPathError, PublicRequestPaths};
+mod view_paths;
+pub use view_paths::{PathHistory, RequestViewPathError, RequestViewPaths};
 
 mod access;
 pub use access::{
-    RequestListPredicate, RequestMergeability, RequestMergeabilityStatus, RequestPermissions,
-    RequestPolicyDecision, RequestViewer, request_actor_role, request_list_mergeability,
-    request_list_predicate, request_mergeability, request_policy,
+    RequestListPredicate, RequestMergeSubject, RequestMergeability, RequestMergeabilityStatus,
+    RequestPermissions, RequestPolicyDecision, RequestViewer, request_actor_role,
+    request_list_mergeability, request_list_predicate, request_mergeability, request_policy,
 };
 mod auto_merge;
 pub use auto_merge::{
@@ -28,9 +28,9 @@ pub use checks::{
     GitHubPushDestination, GitHubPushState, GitHubPushStatus, GitHubTestedCommit,
     NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck,
     RequestCheckEvaluation, RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider,
-    RequestCheckResults, RequestChecksOutcome, changes_github_workflows, check_commit_message,
-    ensure_approving_reviewed_head, github_push_retry_at, github_retry_at, request_checks_message,
-    request_checks_outcome, request_checks_start_immediately, request_head_awaits_evaluation,
+    RequestCheckResults, RequestCheckReviewer, RequestChecksOutcome, changes_github_workflows,
+    check_commit_message, ensure_approving_reviewed_head, github_push_retry_at, github_retry_at,
+    request_checks_message, request_checks_outcome, request_head_awaits_evaluation,
 };
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};
@@ -53,12 +53,20 @@ pub use lifecycle::{
     RecordWorkingRequestUploadInput, RequestRevisionGitFacts, RequestRevisionMutation,
     StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
     close_request, record_request_revision, record_working_request_upload,
-    request_base_after_revision, start_request, validate_request_name, validate_start_request_view,
+    request_base_after_revision, start_request, validate_chosen_request_name,
+    validate_request_name, validate_start_request_view,
 };
 mod invitees;
 pub use invitees::{
     AddRequestInviteeInput, LeaveRequestInput, REQUEST_ACTIVE_INVITEE_LIMIT,
     RemoveRequestInviteeInput, add_request_invitee, leave_request, remove_request_invitee,
+};
+mod main_push;
+pub use main_push::{
+    MAIN_PUSH_REQUEST_NAME_PREFIX, MainPushRequestFacts, MainPushRequestMutation,
+    MainPushRequestName, MainPushRequestOutcome, StartMainPushRequestInput,
+    is_main_push_request_name, main_push_request_attempt, main_push_request_names,
+    main_push_request_title, start_main_push_draft, start_main_push_request,
 };
 mod limits;
 pub use limits::{

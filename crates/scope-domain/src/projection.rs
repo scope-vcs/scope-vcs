@@ -9,12 +9,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 mod labelled_tree;
+mod native_labels;
 
 use labelled_tree::{FoldStep, fold_steps};
 pub use labelled_tree::{LabelledFiles, LabelledTree};
+pub use native_labels::NativeCommitLabels;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NativePublicCommit {
+pub struct NativeRequestCommit {
     pub oid: String,
     pub parent_oids: Vec<String>,
     pub tree_oid: String,
@@ -22,7 +24,7 @@ pub struct NativePublicCommit {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NativePublicCommitDetails {
+pub struct NativeRequestCommitDetails {
     pub author: String,
     pub message: String,
     pub occurred_at_unix: i64,
@@ -38,13 +40,14 @@ pub enum LogicalCommitOrigin {
         request_id: String,
         request_head_oid: String,
     },
-    PublicRequestMerge {
+    RequestMerge {
         request_id: String,
-        public_base_oid: String,
-        public_parent_oids: Vec<String>,
+        view: ViewId,
+        base_oid: String,
+        parent_oids: Vec<String>,
         request_head_oid: String,
-        commits: Vec<NativePublicCommit>,
-        preserve_public_commits: bool,
+        preserve_commits: bool,
+        commits: Vec<NativeRequestCommit>,
     },
 }
 
@@ -294,14 +297,15 @@ impl ViewFold<'_> {
             .collect::<Vec<_>>();
         let visible_content_count = visible_changes.len();
 
-        if let LogicalCommitOrigin::PublicRequestMerge {
+        if let LogicalCommitOrigin::RequestMerge {
+            view: origin_view,
             commits: native,
-            preserve_public_commits: true,
+            preserve_commits: true,
             ..
         } = &logical.origin
             && !native.is_empty()
             && visible_content_count == logical.changes.len()
-            && self.views.anyone() == Some(self.view)
+            && origin_view == self.view
         {
             let native_len = native.len();
             for (index, native) in native.iter().enumerate() {
@@ -315,7 +319,7 @@ impl ViewFold<'_> {
                     message: if is_head {
                         logical.message.clone()
                     } else {
-                        "Preserved public request commit".to_string()
+                        "Preserved request commit".to_string()
                     },
                     changes: if is_head {
                         std::mem::take(&mut visible_changes)

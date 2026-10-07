@@ -97,6 +97,7 @@ async fn push_only_member_cannot_restore_stale_public_config_after_visibility_ch
             author_id: test_owner_id(),
             occurred_at_unix: 10,
             config: config_with_rules(ViewId::public(), &[("/README.md", ViewId::private())]),
+            open_requests_by_view: Default::default(),
         },
     )
     .unwrap();

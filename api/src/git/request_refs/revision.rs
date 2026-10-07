@@ -39,7 +39,7 @@ async fn request_base_repo(
     incarnation: RepositoryIncarnation,
     view: ViewId,
 ) -> Result<Option<GitRepoHandle>, ApiError> {
-    if view.is_public() {
+    if !view.is_private() {
         return Ok(None);
     }
     let (Some(head), spans) = state

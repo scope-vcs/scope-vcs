@@ -50,6 +50,7 @@ import { useRequestChecks } from './use-request-checks'
 import { useRequestAutoMerge } from './use-request-auto-merge'
 import { requestActivityIdentity } from './request-activity-resource'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
+import { useRepoViews } from '../repo-detail/repo-layout-context'
 import { RequestChangesMenu } from './request-changes-menu'
 import { RequestSideDrawer } from './request-side-drawer'
 import {
@@ -150,6 +151,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   const liveRequest = withCurrentMergeability(request, checks.checks)
   const requestActions = useRequestActions(performAction)
   const workspace = useRequestWorkspace()
+  const requestViewName = useRepoViews().name(request.view)
   const [descriptionOverride, setDescriptionOverride] = useState<{
     server: string
     value: string
@@ -257,6 +259,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
             </>
           }
           request={liveRequest}
+          viewName={requestViewName}
         />
         <div className="request-detail-actions px-5 py-2.5 min-[701px]:hidden">
           <Button asChild size="icon-sm" variant="secondary">
@@ -281,6 +284,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           checks={checks.checks}
           error={checks.error}
           params={params}
+          requestViewName={requestViewName}
         />
         <RequestDetailsProvider value={{
           actions: requestActions,

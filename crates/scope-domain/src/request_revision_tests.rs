@@ -11,9 +11,11 @@ fn uploaded_request() -> Request {
             id: "request_change".to_string(),
             name: "change".to_string(),
             title: Some("Change".to_string()),
+            author_view: ViewId::private(),
             view: ViewId::private(),
             ..start_input(RequestActorRole::Owner)
         },
+        &crate::views::Views::builtin(),
     )
     .unwrap();
     record_working_request_upload(

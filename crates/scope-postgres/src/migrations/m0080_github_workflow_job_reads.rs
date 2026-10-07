@@ -5,7 +5,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m0079_github_workflow_job_reads"
+        "m0080_github_workflow_job_reads"
     }
 }
 

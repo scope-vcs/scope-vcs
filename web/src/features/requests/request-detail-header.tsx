@@ -12,9 +12,11 @@ import { actorHandle } from './request-actor'
 export function RequestDetailHeader({
   actions,
   request,
+  viewName,
 }: {
   actions?: ReactNode
   request: RequestSummaryResponse
+  viewName: string
 }) {
   const workspace = useRequestWorkspace()
   const queueItem = workspace?.selected ?? null
@@ -33,6 +35,7 @@ export function RequestDetailHeader({
             <span className="truncate font-mono text-xs">{request.name}</span>
             <CopyBranchButton branch={request.name} />
           </span>
+          <span className="min-w-0 truncate">{viewName} view</span>
           {queueItem ? (
             <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
               <span className="font-medium text-foreground">{actorHandle(queueItem.author)}</span>

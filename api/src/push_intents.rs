@@ -4,6 +4,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use scope_domain::{
     repo_config::{RepoConfig, repo_config_fingerprint as domain_repo_config_fingerprint},
     repository::git::GitFrontier,
+    views::ViewId,
 };
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -15,15 +16,26 @@ const PUSH_INTENT_KIND: &str = "scope.push-intent";
 const PUSH_INTENT_KEY_DERIVATION_CONTEXT: &[u8] = b"scope.push-intent.signing-key.v1";
 type HmacSha256 = Hmac<Sha256>;
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PushIntentTarget {
+    Canonical {
+        config: RepoConfig,
+        base_config_hash: String,
+        base_git_frontier: Option<GitFrontier>,
+    },
+    View {
+        view: ViewId,
+    },
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct PushIntentClaims {
     kind: String,
     repo_id: String,
     user_id: String,
     head_oid: String,
-    config: RepoConfig,
-    base_config_hash: String,
-    base_git_frontier: Option<GitFrontier>,
+    target: PushIntentTarget,
     expires_at_unix: u64,
 }
 
@@ -32,10 +44,14 @@ pub(crate) struct ValidatedPushIntent {
     pub(crate) repo_id: String,
     pub(crate) user_id: String,
     pub(crate) head_oid: String,
-    pub(crate) config: RepoConfig,
-    pub(crate) base_config_hash: String,
-    pub(crate) base_git_frontier: Option<GitFrontier>,
+    pub(crate) target: PushIntentTarget,
     pub(crate) expires_at_unix: u64,
+}
+
+pub(crate) struct CanonicalPushIntent<'a> {
+    pub(crate) config: &'a RepoConfig,
+    pub(crate) base_config_hash: &'a str,
+    base_git_frontier: &'a Option<GitFrontier>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,14 +71,49 @@ impl ValidatedPushIntent {
         }
     }
 
-    pub(crate) fn base_for_head(&self, head_oid: &str) -> Result<Option<GitFrontier>, ApiError> {
+    pub(crate) fn ensure_head(&self, head_oid: &str) -> Result<(), ApiError> {
         if self.head_oid == head_oid {
-            Ok(self.base_git_frontier.clone())
+            Ok(())
         } else {
             Err(ApiError::forbidden(
                 "Scope push intent does not match received Git push",
             ))
         }
+    }
+
+    pub(crate) fn canonical(&self) -> Result<CanonicalPushIntent<'_>, ApiError> {
+        match &self.target {
+            PushIntentTarget::Canonical {
+                config,
+                base_config_hash,
+                base_git_frontier,
+            } => Ok(CanonicalPushIntent {
+                config,
+                base_config_hash,
+                base_git_frontier,
+            }),
+            PushIntentTarget::View { view } => Err(ApiError::forbidden(format!(
+                "Scope push intent goes through the {view} view, not the full view"
+            ))),
+        }
+    }
+
+    pub(crate) fn through_view(&self) -> Option<&ViewId> {
+        match &self.target {
+            PushIntentTarget::View { view } => Some(view),
+            PushIntentTarget::Canonical { .. } => None,
+        }
+    }
+}
+
+impl CanonicalPushIntent<'_> {
+    pub(crate) fn base_for_head(
+        &self,
+        intent: &ValidatedPushIntent,
+        head_oid: &str,
+    ) -> Result<Option<GitFrontier>, ApiError> {
+        intent.ensure_head(head_oid)?;
+        Ok(self.base_git_frontier.clone())
     }
 }
 
@@ -72,9 +123,7 @@ impl AppState {
         repo_id: &str,
         user_id: &str,
         head_oid: &str,
-        config: RepoConfig,
-        base_config_hash: String,
-        base_git_frontier: Option<GitFrontier>,
+        target: PushIntentTarget,
     ) -> Result<CreatedPushIntent, ApiError> {
         let expires_at_unix = unix_now()?.saturating_add(PUSH_INTENT_TTL_SECS);
         let intent = PushIntentClaims {
@@ -82,9 +131,7 @@ impl AppState {
             repo_id: repo_id.to_string(),
             user_id: user_id.to_string(),
             head_oid: head_oid.to_string(),
-            config,
-            base_config_hash,
-            base_git_frontier,
+            target,
             expires_at_unix,
         };
         let token = encode_push_intent(&self.push_intent_signing_key, &intent)?;
@@ -128,9 +175,7 @@ fn validated_push_intent_from_claims(intent: PushIntentClaims) -> ValidatedPushI
         repo_id: intent.repo_id,
         user_id: intent.user_id,
         head_oid: intent.head_oid,
-        config: intent.config,
-        base_config_hash: intent.base_config_hash,
-        base_git_frontier: intent.base_git_frontier,
+        target: intent.target,
         expires_at_unix: intent.expires_at_unix,
     }
 }
@@ -188,7 +233,7 @@ mod tests {
         let config = RepoConfig::with_default_view(scope_domain::views::ViewId::private());
         let config = serde_json::to_string(&config).unwrap();
         let payload = format!(
-            r#"{{"kind":"scope.push-intent","repo_id":"owner/repo","user_id":"owner","head_oid":"next-head","config":{config},"base_config_hash":"config-hash","base_git_frontier":"{digest}","expires_at_unix":4000000000}}"#
+            r#"{{"kind":"scope.push-intent","repo_id":"owner/repo","user_id":"owner","head_oid":"next-head","target":{{"canonical":{{"config":{config},"base_config_hash":"config-hash","base_git_frontier":"{digest}"}}}},"expires_at_unix":4000000000}}"#
         );
         let encoded = URL_SAFE_NO_PAD.encode(payload);
         let signature = sign_push_intent(&key, encoded.as_bytes()).unwrap();
@@ -196,11 +241,46 @@ mod tests {
         let claims = decode_push_intent(&key, &token).unwrap();
         assert_eq!(encode_push_intent(&key, &claims).unwrap(), token);
         let validated = validated_push_intent_from_claims(claims);
+        let canonical = validated.canonical().unwrap();
         assert_eq!(
-            validated.base_for_head("next-head").unwrap(),
+            canonical.base_for_head(&validated, "next-head").unwrap(),
             Some(GitFrontier::from_digest(digest)),
         );
-        assert!(validated.base_for_head("different-head").is_err());
+        assert!(
+            canonical
+                .base_for_head(&validated, "different-head")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn view_push_intents_carry_only_their_view() {
+        let key = [7_u8; 32];
+        let agent = ViewId::parse("agent").unwrap();
+        let claims = PushIntentClaims {
+            kind: PUSH_INTENT_KIND.to_string(),
+            repo_id: "owner/repo".to_string(),
+            user_id: "member".to_string(),
+            head_oid: "next-head".to_string(),
+            target: PushIntentTarget::View {
+                view: agent.clone(),
+            },
+            expires_at_unix: 4_000_000_000,
+        };
+        let token = encode_push_intent(&key, &claims).unwrap();
+        let payload = token
+            .strip_prefix(PUSH_INTENT_TOKEN_PREFIX)
+            .and_then(|token| token.split_once('.'))
+            .map(|(payload, _)| URL_SAFE_NO_PAD.decode(payload).unwrap())
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&payload).unwrap()["target"],
+            serde_json::json!({"view": {"view": "agent"}})
+        );
+        let validated =
+            validated_push_intent_from_claims(decode_push_intent(&key, &token).unwrap());
+        assert_eq!(validated.through_view(), Some(&agent));
+        assert!(validated.canonical().is_err());
     }
 
     #[test]

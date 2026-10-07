@@ -327,7 +327,8 @@ pub(crate) async fn accept_repository_invite(
         AcceptRepositoryInviteOutcome::AlreadyAccepted(member) => member,
     };
     let open_request_count =
-        open_request_count_for_access(&state, &repo.record.id, repo.access.clone()).await?;
+        open_request_count_for_access(&state, &repo.record.id, repo.access.clone(), &repo.views)
+            .await?;
     let summary = repo_summary_for_access(
         &repo.record,
         repo.access.clone(),
@@ -374,6 +375,7 @@ async fn open_request_count_for_access(
     state: &AppState,
     repo_id: &str,
     access: RepositoryAccess,
+    views: &scope_domain::views::Views,
 ) -> Result<usize, ApiError> {
     Ok(state
         .metadata
@@ -381,10 +383,14 @@ async fn open_request_count_for_access(
         .requests_by_repo_id(repo_id)
         .await?
         .into_iter()
-        .filter(|request| request_counts_for_access(request, access.clone()))
+        .filter(|request| request_counts_for_access(request, access.clone(), views))
         .count())
 }
 
-fn request_counts_for_access(request: &Request, access: RepositoryAccess) -> bool {
-    request_policy(request, RequestViewer::new(access, None, false)).counts_as_open
+fn request_counts_for_access(
+    request: &Request,
+    access: RepositoryAccess,
+    views: &scope_domain::views::Views,
+) -> bool {
+    request_policy(request, RequestViewer::new(access, None, false), views).counts_as_open
 }
