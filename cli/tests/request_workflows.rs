@@ -211,7 +211,7 @@ fn invalid_request_audience_fails_before_git_fetch() {
     let error: scope_api_contract::ErrorResponse = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(
         error.message,
-        "public contributors can only create public requests"
+        "public contributors can only create requests in the Public view"
     );
     let git_trace = fs::read_to_string(trace).unwrap();
     assert!(

@@ -1,5 +1,5 @@
 use super::{public_repositories::make_github_repository_public, *};
-use crate::use_cases::public_check_commits::public_tested_commit;
+use crate::use_cases::view_check_commits::view_tested_commit;
 use scope_domain::views::ViewId;
 use scope_domain::{
     repo_config::RepoConfigFileRule,
@@ -69,6 +69,7 @@ async fn push_main_change(
     path: &str,
     content: &str,
 ) {
+    let remote = &remote.replace("/git/public/", "/git/private/");
     fs::write(owner_source.join(path), content).unwrap();
     run_git(Some(owner_source), &["add", path], "stage main change").unwrap();
     commit_all(owner_source, "change main");
@@ -169,7 +170,7 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
     .unwrap();
     assert_eq!(
         parents.split_whitespace().collect::<Vec<_>>(),
-        [base.private_main_oid.as_str(), head.as_str()]
+        [base.canonical_main_oid.as_str(), head.as_str()]
     );
 
     let git = crate::git::repository_git::RepositoryGit::load(&state, &test_repo_incarnation())
@@ -191,7 +192,7 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
         .unwrap();
     let rebuilt = tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        public_tested_commit(&state, &git, &request, &revision),
+        view_tested_commit(&state, &git, &request, &revision),
     )
     .await
     .expect("rebuilding a check commit must not wait on history tables");
@@ -231,7 +232,7 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
     )
     .await;
     for view in [&contributor_view, &request_view] {
-        for private_oid in [&tested, &base.private_main_oid] {
+        for private_oid in [&tested, &base.canonical_main_oid] {
             assert!(!view.to_string().contains(private_oid.as_str()), "{view}");
         }
     }

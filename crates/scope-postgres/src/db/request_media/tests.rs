@@ -66,6 +66,7 @@ async fn start_request(fixture: &Fixture, request_id: &str, name: &str, now_unix
             author_user_id: OWNER_ID.to_string(),
             title: Some(format!("Request {name}")),
             author_role: RequestActorRole::Owner,
+            author_view: ViewId::private(),
             view: ViewId::public(),
             base_main_oid: "base".to_string(),
             event_id: format!("event_start_{request_id}"),

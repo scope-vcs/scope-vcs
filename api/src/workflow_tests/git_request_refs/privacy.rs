@@ -225,7 +225,7 @@ async fn assert_private_history_push_rejected(history: PrivacyHistory, source_la
 
     let private_source = TempGitRepo(unique_test_path(&format!("{source_label}-private-source")));
     clone_with_bearer(
-        &permissioned_remote,
+        &permissioned_remote.replace("/git/public/", "/git/private/"),
         &private_source,
         &bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL),
         "clone private history source",
@@ -278,7 +278,7 @@ async fn assert_private_history_push_rejected(history: PrivacyHistory, source_la
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{source_label}: {stderr}");
     assert!(
-        stderr.contains("public request history must be based on public main"),
+        stderr.contains("Public request history must be based on Public main"),
         "{source_label}: expected private ancestry rejection, got: {stderr}",
     );
     assert_eq!(stored_request(&state, REQUEST_ID).await, request_before);

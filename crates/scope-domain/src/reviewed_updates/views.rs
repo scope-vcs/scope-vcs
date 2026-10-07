@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 pub(super) fn views_transition(
     repo: &Repository,
     next: &RepoConfig,
+    open_requests_by_view: &BTreeMap<ViewId, usize>,
 ) -> Result<Option<ViewsTransition>, DomainError> {
     let before = repo.repo_config.views();
     let after = next.views();
@@ -20,7 +21,7 @@ pub(super) fn views_transition(
         .map(|definition| &definition.id)
         .filter(|id| after.get(id).is_none())
     {
-        ensure_view_removable(repo, next, before, removed)?;
+        ensure_view_removable(repo, next, before, removed, open_requests_by_view)?;
     }
     Ok(Some(ViewsTransition {
         before: before.clone(),
@@ -40,6 +41,7 @@ fn ensure_view_removable(
     next: &RepoConfig,
     before: &Views,
     removed: &ViewId,
+    open_requests_by_view: &BTreeMap<ViewId, usize>,
 ) -> Result<(), DomainError> {
     let name = before.display_name(removed);
     let refusal = if removed == before.full() {
@@ -51,6 +53,11 @@ fn ensure_view_removable(
         .any(|member| &member.permissions.view == removed)
     {
         Some("members are still assigned to it")
+    } else if open_requests_by_view
+        .get(removed)
+        .is_some_and(|count| *count > 0)
+    {
+        Some("requests are still open in it")
     } else if repo
         .live_files
         .keys()

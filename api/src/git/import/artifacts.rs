@@ -164,6 +164,7 @@ pub(crate) async fn reviewed_update_from_staging_repo(
             previous_config: Some(repo.repo_config.clone()),
             base_config_hash,
             config,
+            open_requests_by_view: Default::default(),
         },
         staged_segment,
         upload_heartbeat,

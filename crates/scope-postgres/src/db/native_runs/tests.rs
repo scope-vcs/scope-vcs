@@ -228,6 +228,7 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
                 author_user_id: "user_public".into(),
                 title: None,
                 author_role: RequestActorRole::Public,
+                author_view: ViewId::public(),
                 view: ViewId::public(),
                 base_main_oid: head_oid.clone(),
                 event_id: format!("{request_id}-event"),

@@ -41,6 +41,7 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
             author_user_id: "owner".to_string(),
             title: None,
             author_role: RequestActorRole::Owner,
+            author_view: scope_domain::views::ViewId::private(),
             view: ViewId::private(),
             base_main_oid: "a".repeat(40),
             event_id: "event_request_reply".to_string(),

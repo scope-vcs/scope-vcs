@@ -5,8 +5,9 @@ use crate::{
         request_refs::{
             RequestRefUpdate, acquire_request_ref_update_lock_async, attach_visible_request_refs,
             create_request_receive_pack_staging_repo, install_request_receive_pack_hook,
-            persist_request_ref_to_store, rollback_request_ref,
+            persist_request_ref_to_store, request_view_bases, rollback_request_ref,
         },
+        staging::install_ready_pre_receive_hook,
         storage::remove_dir_if_exists,
     },
     persistence::unix_now,
@@ -14,22 +15,28 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    repository::{
-        RepoLifecycleState, RepositoryIncarnation,
-        access::{RepositoryAccess, RepositoryActor},
+    repository::{RepoLifecycleState, access::RepositoryAccess},
+    requests::{
+        RecordRequestRevisionInput, Request, RequestCheckReviewer, RequestViewer, request_policy,
     },
-    requests::{RecordRequestRevisionInput, Request, RequestViewer, request_policy},
-    views::Views,
+    views::{ViewId, Views},
 };
 use scope_postgres::db::GitPushContext;
 use scope_product_analytics::ProductEvent;
 use std::path::{Path, PathBuf};
+
+pub(crate) enum RequestStagingKind {
+    RequestRefsOnly,
+    WithViewMain,
+}
 
 pub(super) async fn actor_has_open_editable_request(
     state: &AppState,
     repo_id: &str,
     actor_user_id: &str,
     access: RepositoryAccess,
+    views: &Views,
+    address_view: &ViewId,
 ) -> Result<bool, ApiError> {
     for (request, is_invitee) in state
         .metadata
@@ -37,7 +44,15 @@ pub(super) async fn actor_has_open_editable_request(
         .requests_with_invitee_status(repo_id, Some(actor_user_id))
         .await?
     {
-        if request_actor_can_edit_ref(&request, actor_user_id, access.clone(), is_invitee) {
+        if views.may_read(address_view, &request.view)
+            && request_actor_can_edit_ref(
+                &request,
+                actor_user_id,
+                access.clone(),
+                is_invitee,
+                views,
+            )
+        {
             return Ok(true);
         }
     }
@@ -50,6 +65,8 @@ pub(crate) async fn prepare_request_staging_repo(
     owner: &str,
     repo_name: &str,
     actor_user_id: &str,
+    address_view: &ViewId,
+    kind: RequestStagingKind,
 ) -> Result<PathBuf, ApiError> {
     let context = git_push_context(state, owner, repo_name, actor_user_id).await?;
     if context.incarnation != *incarnation {
@@ -63,14 +80,27 @@ pub(crate) async fn prepare_request_staging_repo(
         )));
     }
     let access = context.access.clone();
+    let views = context.repo_config.views();
+    if !access.can_read_view(views, address_view) {
+        return Err(ApiError::not_found(format!(
+            "repo {owner}/{repo_name} not found"
+        )));
+    }
     let candidates = state
         .metadata
         .requests()
         .requests_with_invitee_status(&context.repo_id, Some(actor_user_id))
         .await?;
-    if access.actor == RepositoryActor::Public
+    if matches!(kind, RequestStagingKind::RequestRefsOnly)
         && !candidates.iter().any(|(request, is_invitee)| {
-            request_actor_can_edit_ref(request, actor_user_id, access.clone(), *is_invitee)
+            views.may_read(address_view, &request.view)
+                && request_actor_can_edit_ref(
+                    request,
+                    actor_user_id,
+                    access.clone(),
+                    *is_invitee,
+                    views,
+                )
         })
     {
         return Err(ApiError::not_found(format!(
@@ -79,18 +109,15 @@ pub(crate) async fn prepare_request_staging_repo(
     }
 
     let git = RepositoryGit::of_push_context(&context);
-    let views = context.repo_config.views();
-    let seed_repo = match (
-        access.can_read_view(views, views.full()),
-        git.git_head.as_ref(),
-    ) {
+    let seeds_canonical_main = address_view == views.full() && access.reads_full_view(views);
+    let seed_repo = match (seeds_canonical_main, git.git_head.as_ref()) {
         (true, Some(head)) => {
             state
                 .repository_engine
                 .materialize_repository(state, &git.incarnation, head, &git.git_pack_spans)
                 .await?
         }
-        _ => git.view_repo(state, views, &access.view).await?,
+        _ => git.view_repo(state, views, address_view).await?,
     };
     let staging_repo = {
         let state = state.clone();
@@ -102,17 +129,19 @@ pub(crate) async fn prepare_request_staging_repo(
     };
     let seeded = seed_editable_request_refs_for_repo(
         state,
-        &git,
-        context.repo_config.views(),
+        &context,
         actor_user_id,
-        access,
+        address_view,
         &staging_repo,
         candidates,
     )
     .await;
     let path = staging_repo.clone();
     crate::git::blocking::run(move || {
-        let result = seeded.and_then(|()| install_request_receive_pack_hook(&path));
+        let result = seeded.and_then(|()| match kind {
+            RequestStagingKind::RequestRefsOnly => install_request_receive_pack_hook(&path),
+            RequestStagingKind::WithViewMain => install_ready_pre_receive_hook(&path),
+        });
         if result.is_err() {
             let _ = remove_dir_if_exists(&path);
         }
@@ -137,10 +166,9 @@ pub(super) async fn seed_editable_request_refs(
         .await?;
     seed_editable_request_refs_for_repo(
         state,
-        &RepositoryGit::of_push_context(&context),
-        context.repo_config.views(),
+        &context,
         actor_user_id,
-        context.access.clone(),
+        context.repo_config.views().full(),
         staging_repo,
         candidates,
     )
@@ -149,49 +177,39 @@ pub(super) async fn seed_editable_request_refs(
 
 async fn seed_editable_request_refs_for_repo(
     state: &AppState,
-    git: &RepositoryGit,
-    views: &Views,
+    context: &GitPushContext,
     actor_user_id: &str,
-    access: RepositoryAccess,
+    address_view: &ViewId,
     staging_repo: &Path,
     candidates: Vec<(Request, bool)>,
 ) -> Result<(), ApiError> {
-    let mut requests = Vec::new();
-    for (request, is_invitee) in candidates {
-        let decision = request_policy(
-            &request,
-            RequestViewer::new(access.clone(), Some(actor_user_id), is_invitee),
-        );
-        if decision.branch_mutable {
-            requests.push(request);
-        }
-    }
-    let public_base_repo = if access.actor != RepositoryActor::Public
-        && requests
-            .iter()
-            .any(|request| request.view.is_public() && request.git_snapshot.is_none())
-    {
-        let public_view = views
-            .anyone()
-            .ok_or_else(|| ApiError::not_found("public view not found"))?;
-        Some(git.view_repo(state, views, public_view).await?)
-    } else {
-        None
-    };
+    let views = context.repo_config.views();
+    let access = &context.access;
+    let requests = candidates
+        .into_iter()
+        .filter(|(request, is_invitee)| {
+            views.may_read(address_view, &request.view)
+                && request_actor_can_edit_ref(
+                    request,
+                    actor_user_id,
+                    access.clone(),
+                    *is_invitee,
+                    views,
+                )
+        })
+        .map(|(request, _)| request)
+        .collect::<Vec<_>>();
+    let git = RepositoryGit::of_push_context(context);
+    let view_bases = request_view_bases(state, &git, views, &requests, address_view).await?;
     let state = state.clone();
     let staging_repo = staging_repo.to_path_buf();
     crate::git::blocking::run(move || {
-        attach_visible_request_refs(
-            &state,
-            &requests,
-            &staging_repo,
-            public_base_repo.as_deref(),
-        )
+        attach_visible_request_refs(&state, &requests, &staging_repo, &view_bases)
     })
     .await
 }
 
-async fn git_push_context(
+pub(super) async fn git_push_context(
     state: &AppState,
     owner: &str,
     repo_name: &str,
@@ -210,16 +228,19 @@ pub(super) async fn persist_request_ref_revision(
     state: &AppState,
     owner: &str,
     repo_name: &str,
-    expected_incarnation: &RepositoryIncarnation,
-    actor_user_id: &str,
+    access: &super::ReceivePackAccess,
     staging_repo: &Path,
     update: RequestRefUpdate,
 ) -> Result<(), ApiError> {
+    let expected_incarnation = access.incarnation();
+    let actor_user_id = access.author_id();
+    let address_view = access.request_ref_view();
     let (context, request) = ensure_request_ref_update_allowed(
         state,
         owner,
         repo_name,
         actor_user_id,
+        address_view,
         &update.request_name,
     )
     .await?;
@@ -284,10 +305,14 @@ pub(super) async fn persist_request_ref_revision(
             crate::use_cases::request_checks::best_effort_evaluate_request_checks(
                 state,
                 &git,
+                context.repo_config.views(),
                 &mutation.request,
                 &mutation.revision,
-                actor_user_id,
-                context.access.is_maintainer(),
+                RequestCheckReviewer::for_actor(
+                    actor_user_id,
+                    &context.access,
+                    context.repo_config.views(),
+                ),
                 staging_repo,
             )
             .await;
@@ -324,10 +349,13 @@ async fn ensure_request_ref_update_allowed(
     owner: &str,
     repo_name: &str,
     actor_user_id: &str,
+    address_view: Option<&ViewId>,
     request_name: &str,
 ) -> Result<(GitPushContext, Request), ApiError> {
     let context = git_push_context(state, owner, repo_name, actor_user_id).await?;
     let access = context.access.clone();
+    let views = context.repo_config.views();
+    let address_view = address_view.unwrap_or(views.full());
     let request = state
         .metadata
         .requests()
@@ -339,7 +367,9 @@ async fn ensure_request_ref_update_allowed(
         .requests()
         .request_is_invitee(&request.id, actor_user_id)
         .await?;
-    if !request_actor_can_edit_ref(&request, actor_user_id, access, is_invitee) {
+    if !views.may_read(address_view, &request.view)
+        || !request_actor_can_edit_ref(&request, actor_user_id, access, is_invitee, views)
+    {
         return Err(ApiError::not_found("request not found"));
     }
     Ok((context, request))
@@ -350,10 +380,12 @@ fn request_actor_can_edit_ref(
     actor_user_id: &str,
     access: RepositoryAccess,
     is_invitee: bool,
+    views: &Views,
 ) -> bool {
     request_policy(
         request,
         RequestViewer::new(access, Some(actor_user_id), is_invitee),
+        views,
     )
     .branch_mutable
 }

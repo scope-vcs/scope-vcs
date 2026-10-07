@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 mod github;
 mod github_push;
 mod planning;
+mod reviewer;
 mod tested_commit;
 pub use github::{
     GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun,
@@ -27,6 +28,7 @@ pub use github_push::{
     changes_github_workflows, github_push_retry_at, github_retry_at,
 };
 pub use planning::RequestCheckPlan;
+pub use reviewer::RequestCheckReviewer;
 pub use tested_commit::{
     CheckCommitBase, GitHubCheckTarget, GitHubTestedCommit, PRIVATE_CODE_CONFLICT_MESSAGE,
     check_commit_message,
@@ -333,15 +335,15 @@ impl RequestCheckEvaluation {
         self.check_commit_base.is_some()
     }
 
-    pub fn check_commit_is_current(&self, private_main_oid: Option<&str>) -> bool {
+    pub fn check_commit_is_current(&self, canonical_main_oid: Option<&str>) -> bool {
         self.check_commit_base
             .as_ref()
-            .is_none_or(|base| Some(base.private_main_oid.as_str()) == private_main_oid)
+            .is_none_or(|base| Some(base.canonical_main_oid.as_str()) == canonical_main_oid)
     }
 
-    pub fn needs_new_check_commit(&self, private_main_oid: Option<&str>) -> bool {
+    pub fn needs_new_check_commit(&self, canonical_main_oid: Option<&str>) -> bool {
         self.state == RequestCheckEvaluationState::Started
-            && !self.check_commit_is_current(private_main_oid)
+            && !self.check_commit_is_current(canonical_main_oid)
     }
 
     pub fn tested_code_view(&self, request_view: ViewId) -> ViewId {
@@ -432,7 +434,7 @@ pub struct RequestCheckResults {
     pub native_runs: Vec<(String, RunState)>,
     pub github: GitHubCheckResults,
     pub withheld_from_github: Vec<String>,
-    pub private_main_oid: Option<String>,
+    pub canonical_main_oid: Option<String>,
 }
 
 impl RequestCheckResults {
@@ -469,7 +471,7 @@ pub fn request_checks_outcome(
         RequestCheckEvaluationState::AwaitingApproval => RequestChecksOutcome::AwaitingApproval,
         RequestCheckEvaluationState::ConfigurationError => RequestChecksOutcome::ConfigurationError,
         RequestCheckEvaluationState::Started
-            if !evaluation.check_commit_is_current(results.private_main_oid.as_deref()) =>
+            if !evaluation.check_commit_is_current(results.canonical_main_oid.as_deref()) =>
         {
             RequestChecksOutcome::Pending
         }
@@ -555,10 +557,6 @@ pub fn ensure_approving_reviewed_head(
         ));
     }
     Ok(())
-}
-
-pub fn request_checks_start_immediately(request: &Request, actor_is_maintainer: bool) -> bool {
-    actor_is_maintainer && request.state() != RequestState::Merged
 }
 
 #[cfg(test)]

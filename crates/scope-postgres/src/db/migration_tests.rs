@@ -30,6 +30,7 @@ mod repository_landing_files;
 mod repository_workflow_catalogs;
 mod request_revision_rewrites;
 mod request_run_source_base;
+mod request_views;
 mod run_attempt_active_indexes;
 mod run_execution_invariants;
 mod run_state_constraints;
@@ -73,7 +74,8 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0076_view_ids",
     "m0077_custom_views",
     "m0078_repo_config_version",
-    "m0079_github_workflow_job_reads",
+    "m0079_request_views",
+    "m0080_github_workflow_job_reads",
 ];
 
 pub(super) async fn isolated_database() -> (

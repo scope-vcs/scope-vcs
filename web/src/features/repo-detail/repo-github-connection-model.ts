@@ -2,6 +2,7 @@ import type {
   GitHubConnectionResponse,
   GitHubDisconnectReasonResponse,
 } from '../../api/types.generated'
+import type { RepoViews } from '../../api/repo-views'
 import { formatUnixDateUtc } from '../../lib/date-format'
 
 export type GitHubConnectionView =
@@ -40,6 +41,10 @@ export function githubVisibilityView(github: GitHubConnectionResponse): GitHubVi
   return connection.public_confirmed
     ? { kind: 'public' }
     : { kind: 'unconfirmed', canConfirm: github.can_confirm_public }
+}
+
+export function githubWithheldRequestsText(views: Pick<RepoViews, 'anyone' | 'name'>) {
+  return views.anyone ? `requests outside the ${views.name(views.anyone)} view` : 'requests'
 }
 
 function disconnectReason(reason: GitHubDisconnectReasonResponse) {

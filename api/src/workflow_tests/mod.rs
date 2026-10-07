@@ -56,6 +56,8 @@ mod cli_auth;
 mod clone_access;
 mod cloud_runs;
 mod custom_views;
+mod custom_views_main_push;
+mod custom_views_requests;
 mod dependencies;
 mod device_login;
 mod fake_github;
@@ -347,9 +349,11 @@ async fn create_test_push_intent(state: &AppState, user_id: &str, head_oid: &str
             TEST_REPO_ID,
             user_id,
             head_oid,
-            config.clone(),
-            repo_config_fingerprint(&config).unwrap(),
-            repo.git_head.as_ref().map(|head| head.frontier()),
+            PushIntentTarget::Canonical {
+                base_config_hash: repo_config_fingerprint(&config).unwrap(),
+                config,
+                base_git_frontier: repo.git_head.as_ref().map(|head| head.frontier()),
+            },
         )
         .unwrap()
         .token
@@ -568,6 +572,7 @@ async fn receive_pack_access(
         state,
         owner,
         repo_name,
+        &ViewId::private(),
         authorization,
         push_intent.as_deref(),
     )
@@ -773,6 +778,7 @@ fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> 
         previous_config: None,
         base_config_hash: repo_config_fingerprint(&config).unwrap(),
         config,
+        open_requests_by_view: Default::default(),
         changes: changes
             .into_iter()
             .map(|(path, content)| ReceivePackFileChange {
@@ -804,6 +810,7 @@ fn push_intent_request_json_with_base(
         "head_oid": head_oid,
         "base_config_hash": base_config_hash,
         "config": config,
+        "view": "private",
     })
     .to_string()
 }

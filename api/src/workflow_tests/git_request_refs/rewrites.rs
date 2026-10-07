@@ -1,7 +1,7 @@
 use super::*;
 
 const PUBLIC_MAIN_MOVED: &str =
-    "Public main moved. Rebase onto it or merge it, then run scope request push.";
+    "Request view main moved. Rebase onto it or merge it, then run scope request push.";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
@@ -9,9 +9,10 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
     insert_member_user(&state).await;
     let (source, remote, _server, first_head) =
         request_checkout(&state, "request-rebase-contributor").await;
+    let main_remote = remote.replace("/git/public/", "/git/private/");
     configure_bearer_header(
         &owner_source,
-        &remote,
+        &main_remote,
         &bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL),
     );
     fs::write(owner_source.join("README.md"), "upstream public change\n").unwrap();
@@ -22,12 +23,12 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
     )
     .unwrap();
     commit_all(&owner_source, "advance public main");
-    configure_push_intent_header(&state, &owner_source, &remote, &test_owner_id()).await;
+    configure_push_intent_header(&state, &owner_source, &main_remote, &test_owner_id()).await;
     run_git(
         Some(&owner_source),
         &[
             "push",
-            &remote,
+            &main_remote,
             &format!("HEAD:refs/heads/{DEFAULT_GIT_BRANCH}"),
         ],
         "advance public main",
@@ -58,7 +59,7 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
     assert_eq!(blocked.status(), StatusCode::CONFLICT);
     assert_eq!(response_json(blocked).await["message"], PUBLIC_MAIN_MOVED);
 
-    let public_remote = remote.replace("/git/private/", "/git/public/");
+    let public_remote = remote.clone();
     run_git(
         Some(&source),
         &[

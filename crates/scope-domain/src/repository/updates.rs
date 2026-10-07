@@ -1,44 +1,50 @@
-use crate::projection::{LogicalCommitOrigin, NativePublicCommit};
+use crate::{
+    projection::{LogicalCommitOrigin, NativeRequestCommit},
+    views::ViewId,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RequestMergeOrigin {
-    Private {
+    Canonical {
         request_id: String,
         request_head_oid: String,
     },
-    Public {
+    View {
         request_id: String,
-        public_base_oid: String,
-        public_parent_oids: Vec<String>,
+        view: ViewId,
+        base_oid: String,
+        parent_oids: Vec<String>,
         request_head_oid: String,
-        commits: Vec<NativePublicCommit>,
+        commits: Vec<NativeRequestCommit>,
     },
 }
 
 impl RequestMergeOrigin {
     pub fn into_logical_origin(self) -> LogicalCommitOrigin {
         match self {
-            Self::Private {
+            Self::Canonical {
                 request_id,
                 request_head_oid,
             } => LogicalCommitOrigin::PrivateRequestMerge {
                 request_id,
                 request_head_oid,
             },
-            Self::Public {
+            Self::View {
                 request_id,
-                public_base_oid,
-                public_parent_oids,
+                view,
+                base_oid,
+                parent_oids,
                 request_head_oid,
                 commits,
-            } => LogicalCommitOrigin::PublicRequestMerge {
+            } => LogicalCommitOrigin::RequestMerge {
                 request_id,
-                public_base_oid,
-                public_parent_oids,
+                view,
+                base_oid,
+                parent_oids,
                 request_head_oid,
+                preserve_commits: true,
                 commits,
-                preserve_public_commits: true,
             },
         }
     }

@@ -287,9 +287,9 @@ fn an_invite_is_pruned_once_it_has_been_over_for_the_retention_period() {
 }
 
 #[test]
-fn invites_name_an_existing_view_and_writers_need_the_full_view() {
+fn invites_name_an_existing_view_and_relabellers_need_the_full_view() {
     let mut repo = repo_with_invite();
-    let mut invite = |view: &str, can_push: bool| {
+    let mut invite = |view: &str, can_push: bool, can_change_file_visibility: bool| {
         create_repository_invite(
             &mut repo,
             CreateRepositoryInviteCommand {
@@ -300,19 +300,23 @@ fn invites_name_an_existing_view_and_writers_need_the_full_view() {
                 permissions: RepositoryMemberPermissions {
                     view: ViewId::parse(view).unwrap(),
                     can_push,
-                    ..RepositoryMemberPermissions::default()
+                    can_change_file_visibility,
                 },
                 now_unix: CREATED_AT,
             },
         )
     };
-    for (view, can_push) in [("agent", false), ("public", true)] {
+    for (view, can_push, can_change_file_visibility) in
+        [("agent", false, false), ("public", false, true)]
+    {
         assert_eq!(
-            invite(view, can_push).unwrap_err().kind,
+            invite(view, can_push, can_change_file_visibility)
+                .unwrap_err()
+                .kind,
             DomainErrorKind::InvalidInput
         );
     }
-    assert!(invite("public", false).is_ok());
+    assert!(invite("public", true, false).is_ok());
     assert!(
         Repository::new(
             &owner(),

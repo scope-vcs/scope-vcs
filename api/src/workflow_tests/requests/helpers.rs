@@ -61,6 +61,7 @@ async fn create_request(
             author_user_id: author_user_id.clone(),
             title: Some(title.to_string()),
             author_role: role,
+            author_view: scope_domain::views::ViewId::private(),
             view,
             base_main_oid: REQUEST_HEAD.to_string(),
             event_id: format!("event_{request_id}_started"),

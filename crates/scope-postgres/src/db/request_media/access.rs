@@ -49,6 +49,7 @@ impl MediaStore {
         let policy = request_policy(
             &request,
             RequestViewer::new(repo.access, viewer_user_id, is_invitee),
+            &repo.views,
         );
         if !policy.exact_visible {
             return Ok(Vec::new());
@@ -152,6 +153,7 @@ where
     let policy = request_policy(
         &request,
         RequestViewer::new(repo.access, viewer_user_id, is_invitee),
+        &repo.views,
     );
     if !policy.exact_visible {
         return Ok(None);

@@ -648,7 +648,7 @@ async fn history_entries_report_their_update_kind() {
     .await;
     assert_eq!(detail.status(), StatusCode::OK);
     let detail = response_json(detail).await;
-    assert_eq!(detail["message"], "Made 1 file private");
+    assert_eq!(detail["message"], "1 file left the Public view");
     assert!(detail["files"].as_array().unwrap().is_empty());
     assert_eq!(detail["visibility_changes"][0]["path"], "/README.md");
     assert_eq!(detail["visibility_changes"][0]["old_label"], "public");

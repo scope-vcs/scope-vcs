@@ -1,7 +1,8 @@
 use super::{
-    ensure_public_request_paths_allowed, new_client_mutation_id, text::discussion_body_with_stdin,
+    ensure_request_paths_allowed, new_client_mutation_id, text::discussion_body_with_stdin,
 };
 use crate::{error::CliError, git_repo::GitRepo, test_support::TempDir};
+use scope_domain::views::Views;
 use std::{fs, io::Cursor, path::PathBuf};
 
 #[test]
@@ -42,7 +43,7 @@ fn discussion_body_reads_files_without_rewriting_content() {
 }
 
 #[test]
-fn public_request_preflight_rejects_protected_add_edit_delete_and_rename() {
+fn request_preflight_rejects_protected_add_edit_delete_and_rename_outside_the_full_view() {
     let dir = TempDir::git_repo("request-protected-path-operations", "main");
     dir.run_git(["config", "user.email", "scope@example.test"]);
     dir.run_git(["config", "user.name", "Scope Test"]);
@@ -63,30 +64,41 @@ fn public_request_preflight_rejects_protected_add_edit_delete_and_rename() {
     dir.run_git(["add", "-A"]);
     dir.run_git(["commit", "-m", "change protected paths"]);
     let head_oid = git_oid(&dir);
-    let detail = request_detail(&base_oid, &head_oid);
     let repo = GitRepo {
         root: dir.path().to_path_buf(),
     };
+    let views = agent_views();
 
-    let error =
-        ensure_public_request_paths_allowed(&repo, &detail, &base_oid, &head_oid).unwrap_err();
-    let structured = error.downcast_ref::<CliError>().unwrap();
+    for (view, name) in [("public", "Public"), ("agent", "Agent")] {
+        let request = request_summary(view, &base_oid, &head_oid);
+        let error = ensure_request_paths_allowed(&repo, &views, &request, &base_oid, &head_oid)
+            .unwrap_err();
+        let structured = error.downcast_ref::<CliError>().unwrap();
 
-    assert_eq!(
-        structured.response().code,
-        scope_api_contract::ErrorCode::ProtectedPath
-    );
-    assert_eq!(
-        structured.response().fields.paths,
-        [
-            ".scope/added.md",
-            ".scope/deleted.md",
-            ".scope/edited.md",
-            ".scope/renamed.md",
-        ]
-    );
-    assert!(error.to_string().contains(".scope/renamed.md"));
-    assert_eq!(crate::error::exit_code(&error), 4);
+        assert_eq!(
+            structured.response().code,
+            scope_api_contract::ErrorCode::ProtectedPath
+        );
+        assert_eq!(
+            structured.response().fields.paths,
+            [
+                ".scope/added.md",
+                ".scope/deleted.md",
+                ".scope/edited.md",
+                ".scope/renamed.md",
+            ]
+        );
+        assert!(
+            error.to_string().starts_with(&format!(
+                "{name} requests cannot change maintainer-controlled paths: "
+            )),
+            "{error}"
+        );
+        assert!(error.to_string().contains(".scope/renamed.md"));
+        assert_eq!(crate::error::exit_code(&error), 4);
+    }
+    let private = request_summary("private", &base_oid, &head_oid);
+    ensure_request_paths_allowed(&repo, &views, &private, &base_oid, &head_oid).unwrap();
 }
 
 #[test]
@@ -111,12 +123,19 @@ fn public_request_preflight_excludes_main_only_protected_paths_after_true_diverg
     dir.run_git(["add", "README.md"]);
     dir.run_git(["commit", "-m", "request change"]);
     let head_oid = git_oid(&dir);
-    let detail = request_detail(&original_base_oid, &head_oid);
+    let request = request_summary("public", &original_base_oid, &head_oid);
     let repo = GitRepo {
         root: dir.path().to_path_buf(),
     };
 
-    ensure_public_request_paths_allowed(&repo, &detail, &current_main_oid, &head_oid).unwrap();
+    ensure_request_paths_allowed(
+        &repo,
+        &agent_views(),
+        &request,
+        &current_main_oid,
+        &head_oid,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -194,12 +213,25 @@ fn git_oid(dir: &TempDir) -> String {
         .to_string()
 }
 
-fn request_detail(base_oid: &str, head_oid: &str) -> crate::api::RequestDetailResponse {
-    serde_json::from_value(serde_json::json!({
+fn agent_views() -> Views {
+    serde_json::from_value(serde_json::json!([
+        {"id": "public", "name": "Public", "includes": [], "readers": "anyone"},
+        {"id": "private", "name": "Private", "includes": "all", "readers": "assigned"},
+        {"id": "agent", "name": "Agent", "includes": ["public"], "readers": "assigned"},
+    ]))
+    .unwrap()
+}
+
+fn request_summary(
+    view: &str,
+    base_oid: &str,
+    head_oid: &str,
+) -> crate::api::RequestSummaryResponse {
+    let detail: crate::api::RequestDetailResponse = serde_json::from_value(serde_json::json!({
         "request": {
             "id":"req_one","name":"change","title":"Change",
             "description_markdown":"","author_user_id":"scope_usr_author",
-            "author_role":"Public","view":"public",
+            "author_role":"Member","view":view,
             "base_main_oid":base_oid,"head_oid":head_oid,"state":"Draft",
             "activity_version":1,"submitted_at_unix":null,"closed_at_unix":null,
             "closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,
@@ -214,5 +246,6 @@ fn request_detail(base_oid: &str, head_oid: &str) -> crate::api::RequestDetailRe
                 "request_head_oid":head_oid,"reason":null}
         }
     }))
-    .unwrap()
+    .unwrap();
+    detail.request
 }
