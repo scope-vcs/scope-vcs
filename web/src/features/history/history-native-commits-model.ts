@@ -16,7 +16,7 @@ export function historyNativeCommitsHeading(
   views: Pick<RepoViews, 'name'>,
 ) {
   return detail.native_commits
-    ? `Request commits preserved in the ${views.name(detail.native_commits.view)} view`
+    ? `Original request commits from the ${views.name(detail.native_commits.view)} view`
     : 'Request commits'
 }
 

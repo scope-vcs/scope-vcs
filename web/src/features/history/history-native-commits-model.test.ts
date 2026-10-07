@@ -11,8 +11,8 @@ const views = repoViews([
 ])
 
 test('the heading names the view that preserved the request commits', () => {
-  assert.equal(historyNativeCommitsHeading({ native_commits: { view: 'agent', commits: [] } }, views), 'Request commits preserved in the Agent view')
-  assert.equal(historyNativeCommitsHeading({ native_commits: { view: 'public', commits: [] } }, views), 'Request commits preserved in the Public view')
+  assert.equal(historyNativeCommitsHeading({ native_commits: { view: 'agent', commits: [] } }, views), 'Original request commits from the Agent view')
+  assert.equal(historyNativeCommitsHeading({ native_commits: { view: 'public', commits: [] } }, views), 'Original request commits from the Public view')
   assert.equal(historyNativeCommitsHeading({ native_commits: null }, views), 'Request commits')
 })
 
