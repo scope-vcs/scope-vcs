@@ -69,6 +69,7 @@ export async function loadRepoDependenciesForRequest(
 function repoLiveState(data: RepoParams, repo: RepoSummaryResponse): RepoLiveState {
   const publicApi = stripTrailingSlash(getPublicApiConnection('building repo event stream URL'))
   return {
+    api_url: publicApi,
     clerk_token_template: clerkApiTokenTemplate(),
     event_stream_url: `${publicApi}${repoRoute(ApiRouteTemplates.repoEvents, data)}`,
     repo,
