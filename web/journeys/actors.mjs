@@ -14,6 +14,8 @@ const clerkApi = 'https://api.clerk.com/v1'
 const webDefaultTokenTemplate = 'scope_api'
 const COLD_DEV_SERVER_TIMEOUT_MS = 120_000
 const CLERK_TEST_EMAIL_VERIFICATION_CODE = '424242'
+const CLERK_TOKEN_ATTEMPTS = 5
+const CLERK_TOKEN_RETRY_STEP_MS = 2_000
 
 export const collaborators = {
   contributor: { handle: 'river-contributor', email: 'river.contributor+clerk_test@example.com' },
@@ -81,9 +83,31 @@ export async function closeSession({ context }) {
 
 async function expectSignedIn(page, { handle, email }) {
   await page.waitForFunction(() => window.Clerk?.user)
-  const token = await page.evaluate((template) => window.Clerk.session.getToken({ template }), webDefaultTokenTemplate)
+  const token = await clerkSessionToken(page)
   const session = await apiFetch(token, '/v1/session')
   assert.equal(session.user?.handle, handle, `${email} did not resolve to ${handle}`)
+}
+
+async function clerkSessionToken(page) {
+  const failed = []
+  const recordFailure = (request) => {
+    if (request.url().includes('clerk')) failed.push(`${request.failure()?.errorText ?? 'failed'} ${new URL(request.url()).pathname}`)
+  }
+  page.on('requestfailed', recordFailure)
+  try {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await page.evaluate((template) => window.Clerk.session.getToken({ template }), webDefaultTokenTemplate)
+      } catch (error) {
+        if (attempt === CLERK_TOKEN_ATTEMPTS || !error.message.includes('clerk_offline')) {
+          throw new Error(`${error.message} after ${attempt} token attempts; failed Clerk requests: ${failed.join(', ') || 'none'}`)
+        }
+        await page.waitForTimeout(attempt * CLERK_TOKEN_RETRY_STEP_MS)
+      }
+    }
+  } finally {
+    page.off('requestfailed', recordFailure)
+  }
 }
 
 export async function signIn(browser, collaborator) {
