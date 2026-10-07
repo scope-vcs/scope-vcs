@@ -32,7 +32,7 @@ concurrency:
 jobs:
   prove:
     name: Deploy and smoke staging
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     outputs:
       writers_fenced: ${{ steps.close.outcome == 'success' }}
@@ -384,7 +384,7 @@ jobs:
     name: Revoke staging access
     needs: prove
     if: always()
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: staging
     env:

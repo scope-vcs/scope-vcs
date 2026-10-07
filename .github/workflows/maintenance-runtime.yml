@@ -27,7 +27,7 @@ concurrency:
 jobs:
   publish:
     if: github.ref == 'refs/heads/main'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
     permissions:
@@ -67,7 +67,7 @@ jobs:
 
   staging:
     needs: publish
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: staging
     steps:
@@ -94,7 +94,7 @@ jobs:
 
   production:
     needs: staging
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: production
     steps:
