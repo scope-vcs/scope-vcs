@@ -154,7 +154,7 @@ impl GitHubApp {
         installation_id: u64,
         full_name: &str,
         job_id: u64,
-    ) -> Result<GitHubJobLogState, ApiError> {
+    ) -> Result<Option<GitHubJobLogState>, ApiError> {
         let Some(token) = self.installation_token(installation_id).await? else {
             return Err(unavailable(format!(
                 "GitHub installation {installation_id} no longer exists"
@@ -172,8 +172,11 @@ impl GitHubApp {
         .await
         .map_err(|error| unavailable(format!("GitHub was unreachable: {}", error.without_url())))?;
         let status = response.status();
+        if status == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
         if status == StatusCode::GONE {
-            return Ok(GitHubJobLogState::Expired);
+            return Ok(Some(GitHubJobLogState::Expired));
         }
         if !status.is_success() {
             return Err(unavailable(format!(
@@ -194,9 +197,9 @@ impl GitHubApp {
                 dropped = true;
             }
         }
-        Ok(GitHubJobLogState::Kept(GitHubJobLog::from_tail(
+        Ok(Some(GitHubJobLogState::Kept(GitHubJobLog::from_tail(
             &tail, dropped,
-        )))
+        ))))
     }
 }
 

@@ -11,6 +11,7 @@ import { githubRunResult } from './github-run-status'
 import {
   githubJobFailedStep,
   githubJobKey,
+  githubJobLogAbsence,
   stripLogTimestamps,
 } from './github-workflow-run-detail-model'
 import {
@@ -40,7 +41,7 @@ export function GitHubWorkflowJobPane({
   const finished = job.status === 'completed'
   const load = useCallback(async (signal: AbortSignal) => {
     const log = await loadLog(key, signal)
-    return log.text === null ? log : { ...log, text: stripLogTimestamps(log.text) }
+    return log.state === 'kept' ? { ...log, text: stripLogTimestamps(log.text) } : log
   }, [key, loadLog])
   const log = useCachedResource({
     fallbackError: 'The log could not load.',
@@ -52,7 +53,7 @@ export function GitHubWorkflowJobPane({
   const [wrap, setWrap] = useState(true)
   const result = githubRunResult(job.status, job.conclusion)
   const failedStep = githubJobFailedStep(job)
-  const logText = log.value?.text ?? null
+  const logText = log.value?.state === 'kept' ? log.value.text : null
 
   return (
     <>
@@ -100,8 +101,8 @@ export function GitHubWorkflowJobPane({
             </p>
           ) : !log.value ? (
             <p className="pb-4 font-sans text-muted-foreground">Loading log…</p>
-          ) : log.value.text === null ? (
-            <p className="pb-4 font-sans text-muted-foreground">This log is no longer available.</p>
+          ) : log.value.state !== 'kept' ? (
+            <p className="pb-4 font-sans text-muted-foreground">{githubJobLogAbsence(log.value, job)}</p>
           ) : (
             <>
               {log.value.truncated ? (

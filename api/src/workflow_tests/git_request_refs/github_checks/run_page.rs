@@ -132,26 +132,22 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
     assert_eq!(finished["jobs"][0]["steps"][1]["status"], "completed");
     assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 1);
 
-    assert_eq!(
-        job_log(state, 902).await.status(),
-        StatusCode::SERVICE_UNAVAILABLE
-    );
     fake.report_job_log(902, Some("2026-10-05T12:00:01.0000000Z lint passed\n"));
     for _ in 0..2 {
         assert_eq!(
             expect_json(job_log(state, 902).await, StatusCode::OK).await,
-            serde_json::json!({ "text": "2026-10-05T12:00:01.0000000Z lint passed\n", "truncated": false })
+            serde_json::json!({ "state": "kept", "text": "2026-10-05T12:00:01.0000000Z lint passed\n", "truncated": false })
         );
     }
-    assert_eq!(fake.job_log_reads.load(Ordering::SeqCst), 2);
+    assert_eq!(fake.job_log_reads.load(Ordering::SeqCst), 1);
     fake.report_job_log(901, None);
     for _ in 0..2 {
         assert_eq!(
             expect_json(job_log(state, 901).await, StatusCode::OK).await,
-            serde_json::json!({ "text": null, "truncated": false })
+            serde_json::json!({ "state": "expired" })
         );
     }
-    assert_eq!(fake.job_log_reads.load(Ordering::SeqCst), 3);
+    assert_eq!(fake.job_log_reads.load(Ordering::SeqCst), 2);
     assert_eq!(job_log(state, 903).await.status(), StatusCode::NOT_FOUND);
     assert_eq!(
         open_run(state, 999, Some(&bearer_header())).await.status(),
@@ -200,6 +196,65 @@ async fn a_finished_runs_jobs_are_read_again_after_github_could_not_answer() {
     .await;
     assert_eq!(answered["jobs"][0]["id"], 901);
     assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_job_without_a_log_is_answered_once_and_never_asked_about_again() {
+    let request = owner_request("github-run-page-no-log", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+    fake.report_workflow_runs(vec![workflow_run(
+        RUN_ID,
+        &request.branch(),
+        &head,
+        Some("success"),
+    )]);
+    deliver(
+        state,
+        "workflow_run",
+        serde_json::json!({ "id": RUN_ID, "head_sha": head }),
+    )
+    .await;
+    let mut just_finished = workflow_job(906, RUN_ID, "publish", Some("success"), &["Publish"]);
+    just_finished["completed_at"] = serde_json::json!(
+        time::OffsetDateTime::from_unix_timestamp(unix_now() as i64)
+            .unwrap()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap()
+    );
+    fake.report_workflow_jobs(vec![
+        workflow_job(904, RUN_ID, "deploy", Some("skipped"), &[]),
+        workflow_job(905, RUN_ID, "test", Some("success"), &["Run tests"]),
+        just_finished,
+    ]);
+    expect_json(
+        open_run(state, RUN_ID, Some(&bearer_header())).await,
+        StatusCode::OK,
+    )
+    .await;
+
+    for _ in 0..2 {
+        assert_eq!(
+            expect_json(job_log(state, 904).await, StatusCode::OK).await,
+            serde_json::json!({ "state": "not_run" })
+        );
+    }
+    assert_eq!(fake.job_log_reads.load(Ordering::SeqCst), 0);
+
+    for _ in 0..2 {
+        assert_eq!(
+            expect_json(job_log(state, 905).await, StatusCode::OK).await,
+            serde_json::json!({ "state": "expired" })
+        );
+    }
+    assert_eq!(fake.job_log_reads.load(Ordering::SeqCst), 1);
+
+    assert_eq!(job_log(state, 906).await.status(), StatusCode::CONFLICT);
+    fake.report_job_log(906, Some("published\n"));
+    assert_eq!(
+        expect_json(job_log(state, 906).await, StatusCode::OK).await,
+        serde_json::json!({ "state": "kept", "text": "published\n", "truncated": false })
+    );
+    assert_eq!(fake.job_log_reads.load(Ordering::SeqCst), 3);
 }
 
 fn stored_run(id: u64, branch: &str) -> GitHubWorkflowRun {

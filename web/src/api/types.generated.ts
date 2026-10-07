@@ -379,15 +379,11 @@ html_url: string, steps: Array<GitHubWorkflowStepResponse>, };
 
 export type GitHubWorkflowStepResponse = { number: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null, };
 
-export type GitHubWorkflowJobLogResponse = { 
-/**
- * `None` when GitHub no longer keeps the log.
- */
-text: string | null, 
+export type GitHubWorkflowJobLogResponse = { "state": "kept", text: string, 
 /**
  * Whether `text` is only the end of a longer log.
  */
-truncated: boolean, };
+truncated: boolean, } | { "state": "expired" } | { "state": "not_run" };
 
 export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null, };
 
