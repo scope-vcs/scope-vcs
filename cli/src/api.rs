@@ -10,7 +10,7 @@ pub use scope_api_contract::routes::{
     cli_device_login_poll as cli_device_login_poll_path,
 };
 pub use scope_api_contract::*;
-use scope_domain::repo_config::RepoConfig as DomainRepoConfig;
+use scope_domain::{repo_config::RepoConfig as DomainRepoConfig, views::ViewId as DomainViewId};
 use serde::de::DeserializeOwned;
 use std::time::Duration;
 
@@ -61,8 +61,9 @@ pub struct CreatePushIntentParams<'a> {
     pub owner: &'a str,
     pub repo: &'a str,
     pub head_oid: &'a str,
-    pub base_config_hash: &'a str,
-    pub config: &'a DomainRepoConfig,
+    pub base_config_hash: Option<&'a str>,
+    pub config: Option<&'a DomainRepoConfig>,
+    pub view: &'a DomainViewId,
 }
 
 pub struct RepoConfigContext {
@@ -303,8 +304,9 @@ pub fn create_push_intent(
         )
         .json(&CreatePushIntentRequest {
             head_oid: params.head_oid.to_string(),
-            base_config_hash: params.base_config_hash.to_string(),
-            config: params.config.clone().into(),
+            base_config_hash: params.base_config_hash.map(str::to_string),
+            config: params.config.cloned().map(Into::into),
+            view: params.view.clone().into(),
         })
         .send()
         .with_context(|| format!("create push intent for {}/{}", params.owner, params.repo))?;

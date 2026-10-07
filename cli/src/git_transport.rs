@@ -78,10 +78,6 @@ impl ScopeRemote {
         self.url_for_view(&self.view)
     }
 
-    pub fn full_view_url(&self) -> String {
-        self.url_for_view(&ViewId::private())
-    }
-
     pub fn url_for_view(&self, view: &ViewId) -> String {
         let mut url = self.origin.clone();
         url.set_path(&format!("/git/{view}/{}/{}", self.owner, self.repo));
@@ -164,7 +160,7 @@ mod tests {
         assert_eq!(remote.repo, "repo");
         assert_eq!(remote.url(), "https://scope.example/git/agent/adam/repo");
         assert_eq!(
-            remote.full_view_url(),
+            remote.url_for_view(&ViewId::private()),
             "https://scope.example/git/private/adam/repo"
         );
         assert_eq!(
@@ -307,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn push_discovery_skips_public_and_mismatched_fetch_remotes() {
+    fn push_discovery_prefers_the_full_view_and_skips_mismatched_fetch_remotes() {
         let dir = TempDir::git_repo("scope-push-safe-discovery", "main");
         dir.run_git([
             "remote",
@@ -336,6 +332,39 @@ mod tests {
         assert_eq!(
             select_scope_push_remote(&repo, "https://scope.example", None).unwrap(),
             "upstream"
+        );
+    }
+
+    #[test]
+    fn narrower_remotes_push_through_the_view_they_fetch() {
+        let dir = TempDir::git_repo("scope-push-narrower-view", "main");
+        dir.run_git([
+            "remote",
+            "add",
+            "origin",
+            "https://scope.example/git/agent/adam/repo",
+        ]);
+        let repo = GitRepo {
+            root: dir.path().to_path_buf(),
+        };
+        assert_eq!(
+            select_scope_push_remote(&repo, "https://scope.example", None).unwrap(),
+            "origin"
+        );
+
+        dir.run_git([
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "https://scope.example/git/private/adam/repo",
+        ]);
+        let error = select_scope_push_remote(&repo, "https://scope.example", Some("origin"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("remote origin fetches the agent view but pushes to the private view; run scope pull to push through https://scope.example/git/agent/adam/repo"),
+            "{error}"
         );
     }
 }

@@ -13,7 +13,8 @@ use {
         REQUEST_LIST_MAX_PAGE_SIZE, Request, RequestActorRole, RequestEvent, RequestListPredicate,
         RequestState, request_list_predicate,
     },
-    scope_domain::views::ViewId,
+    scope_domain::views::{ViewId, Views},
+    std::collections::BTreeMap,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,6 +40,7 @@ pub struct RequestListPageQuery<'a> {
     pub repo_id: &'a str,
     pub viewer_user_id: Option<&'a str>,
     pub access: RepositoryAccess,
+    pub views: &'a Views,
     pub after_id: Option<&'a str>,
     pub limit: u64,
 }
@@ -142,6 +144,7 @@ fn request_list_select(
     query = query.filter(request_list_condition(&request_list_predicate(
         input.access.clone(),
         input.viewer_user_id,
+        input.views,
     ))?);
     Ok(query)
 }
@@ -273,6 +276,32 @@ pub(super) async fn public_draft_count<C: ConnectionTrait>(
         .await
         .map_err(PostgresError::internal)?;
     usize::try_from(count).map_err(PostgresError::internal)
+}
+
+pub(super) async fn open_request_counts_by_view<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<BTreeMap<ViewId, usize>, PostgresError> {
+    entities::request::Entity::find()
+        .select_only()
+        .column(entities::request::Column::Audience)
+        .column_as(entities::request::Column::Id.count(), "open_requests")
+        .filter(entities::request::Column::RepoId.eq(repo_id))
+        .filter(entities::request::Column::ClosedAtUnix.is_null())
+        .filter(entities::request::Column::MergedAtUnix.is_null())
+        .group_by(entities::request::Column::Audience)
+        .into_tuple::<(String, i64)>()
+        .all(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(|(view, count)| {
+            Ok((
+                ViewId::parse(&view).map_err(PostgresError::internal)?,
+                usize::try_from(count).map_err(PostgresError::internal)?,
+            ))
+        })
+        .collect()
 }
 
 pub async fn requests_by_repo_author<C>(
@@ -521,6 +550,7 @@ mod request_list_tests {
             repo_id: "repo-1",
             viewer_user_id: Some("viewer-1"),
             access: RepositoryAccess::public(),
+            views: &Views::builtin(),
             after_id: Some("request-10"),
             limit: u64::MAX,
         })

@@ -88,11 +88,12 @@ pub fn can_read_repository(
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MainPushMode {
     Denied,
     FirstPush,
     Ready,
+    ThroughView(ViewId),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,13 +103,24 @@ pub struct RepositoryPushPolicy {
 }
 
 impl RepositoryAccess {
-    pub fn main_push_mode(&self, lifecycle_state: RepoLifecycleState) -> MainPushMode {
+    pub fn main_push_mode(
+        &self,
+        lifecycle_state: RepoLifecycleState,
+        views: &Views,
+    ) -> MainPushMode {
         if lifecycle_state == RepoLifecycleState::AwaitingFirstPush
             && self.actor == RepositoryActor::Owner
         {
             MainPushMode::FirstPush
-        } else if lifecycle_state == RepoLifecycleState::Ready && self.can_push {
+        } else if lifecycle_state != RepoLifecycleState::Ready
+            || !self.can_push
+            || !self.is_maintainer()
+        {
+            MainPushMode::Denied
+        } else if &self.view == views.full() {
             MainPushMode::Ready
+        } else if views.get(&self.view).is_some() {
+            MainPushMode::ThroughView(self.view.clone())
         } else {
             MainPushMode::Denied
         }
@@ -202,10 +214,11 @@ pub fn repository_push_policy_for_user_id(
     lifecycle_state: RepoLifecycleState,
     member_permissions: Option<RepositoryMemberPermissions>,
     user_id: &str,
+    views: &Views,
 ) -> RepositoryPushPolicy {
     let access =
         repository_access_for_user_id(owner_user_id, lifecycle_state, member_permissions, user_id);
-    let mode = access.main_push_mode(lifecycle_state);
+    let mode = access.main_push_mode(lifecycle_state, views);
     RepositoryPushPolicy { access, mode }
 }
 
@@ -256,10 +269,6 @@ impl Repository {
         }
     }
 
-    pub fn can_push(&self, principal: &Principal) -> bool {
-        self.access_for_principal(principal).can_push
-    }
-
     pub fn push_policy_for_user_id(&self, user_id: &str) -> RepositoryPushPolicy {
         repository_push_policy_for_user_id(
             &self.record.owner_user_id,
@@ -267,6 +276,7 @@ impl Repository {
             self.member_for_user(user_id)
                 .map(|member| member.permissions.clone()),
             user_id,
+            self.repo_config.views(),
         )
     }
 }
@@ -365,6 +375,8 @@ mod tests {
 
     #[test]
     fn main_push_policy_keeps_first_push_owner_only_and_honors_member_permissions() {
+        let views = crate::requests::fixtures::views_with_agent();
+        let agent = crate::requests::fixtures::agent();
         for (state, user, permissions, expected) in [
             (
                 RepoLifecycleState::AwaitingFirstPush,
@@ -393,30 +405,49 @@ mod tests {
             (
                 RepoLifecycleState::AwaitingFirstPush,
                 "member",
-                Some(true),
+                Some((true, ViewId::private())),
                 MainPushMode::Denied,
             ),
             (
                 RepoLifecycleState::Ready,
                 "member",
-                Some(true),
+                Some((true, ViewId::private())),
                 MainPushMode::Ready,
             ),
             (
                 RepoLifecycleState::Ready,
                 "member",
-                Some(false),
+                Some((false, ViewId::private())),
+                MainPushMode::Denied,
+            ),
+            (
+                RepoLifecycleState::AwaitingFirstPush,
+                "member",
+                Some((true, agent.clone())),
+                MainPushMode::Denied,
+            ),
+            (
+                RepoLifecycleState::Ready,
+                "member",
+                Some((true, agent.clone())),
+                MainPushMode::ThroughView(agent.clone()),
+            ),
+            (
+                RepoLifecycleState::Ready,
+                "member",
+                Some((false, agent.clone())),
                 MainPushMode::Denied,
             ),
         ] {
-            let permissions = permissions.map(|can_push| RepositoryMemberPermissions {
+            let permissions = permissions.map(|(can_push, view)| RepositoryMemberPermissions {
                 can_push,
                 can_change_file_visibility: false,
-                view: ViewId::private(),
+                view,
             });
-            let policy = repository_push_policy_for_user_id("owner", state, permissions, user);
+            let policy =
+                repository_push_policy_for_user_id("owner", state, permissions, user, &views);
             assert_eq!(policy.mode, expected, "{state:?} {user}");
-            assert_eq!(policy.access.main_push_mode(state), expected);
+            assert_eq!(policy.access.main_push_mode(state, &views), expected);
         }
     }
 }

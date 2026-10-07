@@ -25,7 +25,7 @@ use scope_domain::{
     repository::{RepoRecord, access::RepositoryAccess},
     requests::{
         GitHubBranch, GitHubPushStatus, Request, RequestCheck, RequestCheckResults,
-        request_checks_message, request_mergeability,
+        RequestCheckReviewer, RequestViewer, request_checks_message, request_mergeability,
     },
     views::Views,
 };
@@ -42,6 +42,7 @@ pub(crate) async fn get_request_checks(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         viewer_user_id.as_deref(),
         &request_id,
@@ -53,7 +54,7 @@ pub(crate) async fn get_request_checks(
         &repo.record,
         &repo.views,
         &request,
-        access,
+        RequestViewer::new(access, viewer_user_id.as_deref(), false),
         current_main_oid,
         unix_now()?,
     )
@@ -72,6 +73,7 @@ pub(crate) async fn approve_request_checks(
     let (request, _) = visible_request(
         &state,
         &repo.record.id,
+        &repo.views,
         access.clone(),
         Some(&user.id),
         &request_id,
@@ -95,7 +97,7 @@ pub(crate) async fn approve_request_checks(
         &repo.record,
         &repo.views,
         &request,
-        access,
+        RequestViewer::new(access, Some(&user.id), false),
         current_main_oid,
         unix_now()?,
     )
@@ -108,16 +110,17 @@ pub(crate) async fn checks_response(
     repo: &RepoRecord,
     views: &Views,
     request: &Request,
-    access: RepositoryAccess,
+    viewer: RequestViewer<'_>,
     current_main_oid: Option<String>,
     now_unix: u64,
 ) -> Result<RequestChecksResponse, ApiError> {
+    let access = viewer.access.clone();
     let RequestChecksView {
         evaluation,
         results,
         outcome,
     } = request_checks::readable_checks_view(state, repo, request).await?;
-    let decision = request_mergeability(request, access.clone(), outcome);
+    let decision = request_mergeability(request, &viewer, views, outcome);
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
         current_main_oid: current_main_oid.map(git_oid_response).transpose()?,
@@ -130,7 +133,7 @@ pub(crate) async fn checks_response(
         .github_connection(&request.repo_id)
         .await?
         .map(|read| read.connection);
-    let private_request_on_public_github = !request.view.is_public()
+    let private_request_on_public_github = views.anyone() != Some(&request.view)
         && github_connection.as_ref().is_some_and(|connection| {
             connection.is_connected()
                 && connection.visibility != GitHubRepositoryVisibility::Private
@@ -149,7 +152,8 @@ pub(crate) async fn checks_response(
             mergeability,
         });
     };
-    let can_approve = evaluation.awaits_approval() && access.is_maintainer();
+    let can_approve =
+        evaluation.awaits_approval() && RequestCheckReviewer::may_review(&access, views);
     let latest_push = state
         .metadata
         .requests()

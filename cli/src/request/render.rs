@@ -8,6 +8,7 @@ use crate::api::{
     RequestPermissionsResponse, RequestState, RequestSummaryResponse, ViewId,
 };
 use crate::display::{short_oid, terminal_text};
+use scope_domain::views::Views;
 
 mod auto_merge;
 use auto_merge::activity_line as auto_merge_activity_line;
@@ -154,10 +155,7 @@ pub(super) fn wait_label(submitted_at_unix: Option<u64>, now_unix: u64) -> Strin
     }
 }
 
-pub(super) fn request_detail_lines(
-    request: &RequestSummaryResponse,
-    views: &scope_domain::views::Views,
-) -> Vec<String> {
+pub(super) fn request_detail_lines(request: &RequestSummaryResponse, views: &Views) -> Vec<String> {
     let mut lines = vec![
         request_line(request),
         format!(
@@ -172,7 +170,7 @@ pub(super) fn request_detail_lines(
         format!(
             "  branch: {} · base {} {} · head {}",
             request.name,
-            view_label(&request.view, views),
+            view_label(views, &request.view),
             short_oid(&request.base_main_oid),
             short_oid(&request.head_oid)
         ),
@@ -337,7 +335,7 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
     }
     if checks.private_request_on_public_github {
         lines.push(
-            "GitHub: the checks run in a public GitHub repository, so this private request is public there."
+            "GitHub: the checks run in a public GitHub repository, so this request is public there."
                 .to_string(),
         );
     }
@@ -495,7 +493,7 @@ fn access_label(actor: RepositoryActor) -> &'static str {
     }
 }
 
-pub(super) fn view_label(view: &ViewId, views: &scope_domain::views::Views) -> String {
+pub(super) fn view_label(views: &Views, view: &ViewId) -> String {
     format!(
         "{} main",
         terminal_text(views.display_name(&view.clone().into()))

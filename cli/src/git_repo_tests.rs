@@ -101,33 +101,26 @@ fn assert_auth_plan(plan: GitCommandPlan, args: &[&str], inherited_count: usize,
 }
 
 #[test]
-fn narrower_fetch_addresses_push_to_the_full_view() {
+fn scope_remotes_push_through_the_view_they_fetch() {
     let dir = TempDir::git_repo("scope-push-address", "main");
     let root = dir.path();
-    std::process::Command::new("git")
-        .current_dir(root)
-        .args([
-            "remote",
-            "add",
-            "scope",
-            "https://scope.example/git/agent/adam/random",
-        ])
-        .status()
-        .unwrap();
-
-    configure_scope_push_address(root, "scope", "https://scope.example/git/agent/adam/random")
-        .unwrap();
-    assert_eq!(
-        git_config(root, &["--get", "remote.scope.pushurl"]),
-        "https://scope.example/git/private/adam/random"
-    );
-
-    configure_scope_push_address(
-        root,
+    dir.run_git([
+        "remote",
+        "add",
+        "scope",
+        "https://scope.example/git/agent/adam/random",
+    ]);
+    dir.run_git([
+        "remote",
+        "set-url",
+        "--push",
         "scope",
         "https://scope.example/git/private/adam/random",
-    )
-    .unwrap();
+    ]);
+
+    clear_scope_push_address(root, "scope").unwrap();
+    clear_scope_push_address(root, "scope").unwrap();
+
     let status = std::process::Command::new("git")
         .current_dir(root)
         .args(["config", "--get", "remote.scope.pushurl"])

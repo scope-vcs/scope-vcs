@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { GitHubConnectionDetailsResponse } from '../../api/types.generated'
-import { githubConnectionView, githubVisibilityView } from './repo-github-connection-model'
+import type { GitHubConnectionDetailsResponse, ViewDefinition } from '../../api/types.generated'
+import { repoViews } from '../../api/repo-views'
+import {
+  githubConnectionView,
+  githubVisibilityView,
+  githubWithheldRequestsText,
+} from './repo-github-connection-model'
 
 const connection: GitHubConnectionDetailsResponse = {
   github_full_name: 'octo/checks',
@@ -69,4 +74,11 @@ test('a public GitHub repository is shown, and one that became public waits for 
     })),
     null,
   )
+})
+
+test('a public GitHub repository withholds the requests outside the anonymous view by name', () => {
+  const full: ViewDefinition = { id: 'private', name: 'Private', includes: 'all', readers: 'assigned' }
+  const open: ViewDefinition = { id: 'public', name: 'Open', includes: [], readers: 'anyone' }
+  assert.equal(githubWithheldRequestsText(repoViews([open, full])), 'requests outside the Open view')
+  assert.equal(githubWithheldRequestsText(repoViews([full])), 'requests')
 })

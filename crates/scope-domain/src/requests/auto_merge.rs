@@ -170,7 +170,7 @@ pub struct AuthorizeRequestAutoMergeInput {
     pub repository_incarnation_id: String,
     pub request_id: String,
     pub actor_user_id: String,
-    pub actor_is_maintainer: bool,
+    pub actor_can_merge: bool,
     pub expected_revision_id: String,
     pub expected_head_oid: String,
     pub event_id: String,
@@ -199,10 +199,10 @@ pub fn request_auto_merge_can_enable(
     revision: Option<&RequestRevision>,
     current_intent: Option<&RequestAutoMergeIntent>,
     readiness: RequestAutoMergeReadiness,
-    actor_is_maintainer: bool,
+    actor_can_merge: bool,
 ) -> bool {
     readiness.waiting_reason().is_some()
-        && request_auto_merge_eligibility(request, revision, current_intent, actor_is_maintainer)
+        && request_auto_merge_eligibility(request, revision, current_intent, actor_can_merge)
             .is_ok()
 }
 
@@ -254,7 +254,7 @@ pub fn authorize_request_auto_merge(
         request,
         Some(revision),
         current_intent,
-        input.actor_is_maintainer,
+        input.actor_can_merge,
     )?;
     if revision.id != input.expected_revision_id || request.head_oid != input.expected_head_oid {
         return Err(DomainError::conflict(
@@ -385,10 +385,12 @@ fn request_auto_merge_eligibility(
     request: &Request,
     revision: Option<&RequestRevision>,
     current_intent: Option<&RequestAutoMergeIntent>,
-    actor_is_maintainer: bool,
+    actor_can_merge: bool,
 ) -> Result<(), DomainError> {
-    if !actor_is_maintainer {
-        return Err(DomainError::forbidden("repo maintainer required"));
+    if !actor_can_merge {
+        return Err(DomainError::forbidden(
+            "auto-merge needs someone who may merge this request",
+        ));
     }
     if request.state() != RequestState::Open {
         return Err(DomainError::conflict(

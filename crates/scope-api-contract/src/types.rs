@@ -198,8 +198,14 @@ pub struct RepoConfigResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct CreatePushIntentRequest {
     pub head_oid: String,
-    pub base_config_hash: String,
-    pub config: RepoConfig,
+    /// The fingerprint of the config the pusher reviewed; required when pushing through the full view and ignored otherwise.
+    #[serde(default)]
+    pub base_config_hash: Option<String>,
+    /// The reviewed config; required when pushing through the full view and ignored otherwise.
+    #[serde(default)]
+    pub config: Option<RepoConfig>,
+    /// The view of the remote the push goes through.
+    pub view: ViewId,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -208,6 +214,8 @@ pub struct CreatePushIntentResponse {
     pub token: String,
     pub base_head_oid: Option<GitOid>,
     pub expires_at_unix: u64,
+    /// True when the view is narrower than the full view, so the push lands as an auto-merged request in that view.
+    pub lands_as_request: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -340,6 +348,8 @@ pub struct RequestListItemResponse {
     pub id: String,
     pub name: String,
     pub title: String,
+    /// Null once that account is deleted; clients show a deleted user.
+    pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
     pub view: ViewId,
     pub head_oid: GitOid,

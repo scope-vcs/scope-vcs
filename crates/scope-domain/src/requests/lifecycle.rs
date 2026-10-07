@@ -1,10 +1,10 @@
 use super::{
-    PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request, RequestActorRole, RequestEvent,
-    RequestEventKind, RequestEventPayload, RequestRevision, RequestState, advance_request_activity,
-    ensure_event_id_available, ensure_request_matches, request_identity_audit_fact,
-    validate_body_size, validate_required,
+    MAIN_PUSH_REQUEST_NAME_PREFIX, PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request,
+    RequestActorRole, RequestEvent, RequestEventKind, RequestEventPayload, RequestRevision,
+    RequestState, advance_request_activity, ensure_event_id_available, ensure_request_matches,
+    request_identity_audit_fact, validate_body_size, validate_required,
 };
-use crate::views::ViewId;
+use crate::views::{ViewId, Views};
 use crate::{content::SourceBlob, error::DomainError};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -22,6 +22,7 @@ pub struct StartRequestInput {
     pub author_user_id: String,
     pub title: Option<String>,
     pub author_role: RequestActorRole,
+    pub author_view: ViewId,
     pub view: ViewId,
     pub base_main_oid: String,
     pub event_id: String,
@@ -106,8 +107,18 @@ pub enum CloseRequestMutation {
 pub fn start_request(
     facts: StartRequestFacts,
     input: StartRequestInput,
+    views: &Views,
 ) -> Result<StartRequestMutation, DomainError> {
-    validate_start_request_input(&input)?;
+    validate_chosen_request_name(&input.name)?;
+    open_request(facts, input, views)
+}
+
+pub(super) fn open_request(
+    facts: StartRequestFacts,
+    input: StartRequestInput,
+    views: &Views,
+) -> Result<StartRequestMutation, DomainError> {
+    validate_start_request_input(&input, views)?;
     if facts.request_id_exists {
         return Err(DomainError::conflict("request already exists"));
     }
@@ -347,7 +358,10 @@ pub(super) fn ensure_request_close_allowed(
     Ok(())
 }
 
-fn validate_start_request_input(input: &StartRequestInput) -> Result<(), DomainError> {
+fn validate_start_request_input(
+    input: &StartRequestInput,
+    views: &Views,
+) -> Result<(), DomainError> {
     validate_required("request id", &input.id)?;
     validate_required("repo id", &input.repo_id)?;
     validate_required("author user id", &input.author_user_id)?;
@@ -358,23 +372,38 @@ fn validate_start_request_input(input: &StartRequestInput) -> Result<(), DomainE
     }
     validate_required("base main oid", &input.base_main_oid)?;
     validate_required("event id", &input.event_id)?;
-    validate_start_request_view(input.author_role, input.view.clone())?;
+    validate_start_request_view(input.author_role, &input.author_view, &input.view, views)?;
     Ok(())
 }
 
 pub fn validate_start_request_view(
     author_role: RequestActorRole,
-    view: ViewId,
+    author_view: &ViewId,
+    view: &ViewId,
+    views: &Views,
 ) -> Result<(), DomainError> {
-    if author_role == RequestActorRole::Public && view != ViewId::public() {
-        return Err(DomainError::invalid_input(
-            "public contributors can only create public requests",
-        ));
+    if views.get(view).is_none() {
+        return Err(DomainError::invalid_input(format!(
+            "this repository has no {view} view"
+        )));
     }
-    if !view.is_public() && !view.is_private() {
-        return Err(DomainError::invalid_input(
-            "requests target the public or private view until custom views accept requests",
-        ));
+    if author_role == RequestActorRole::Public {
+        return match views.anyone() {
+            Some(anyone) if anyone == view => Ok(()),
+            Some(anyone) => Err(DomainError::invalid_input(format!(
+                "public contributors can only create requests in the {} view",
+                views.display_name(anyone)
+            ))),
+            None => Err(DomainError::invalid_input(
+                "this repository has no view public contributors can read",
+            )),
+        };
+    }
+    if !views.may_read(author_view, view) {
+        return Err(DomainError::invalid_input(format!(
+            "requests in the {} view need an author who can read it",
+            views.display_name(view)
+        )));
     }
     Ok(())
 }
@@ -418,31 +447,87 @@ pub fn validate_request_name(name: &str) -> Result<(), DomainError> {
     Ok(())
 }
 
+pub fn validate_chosen_request_name(name: &str) -> Result<(), DomainError> {
+    validate_request_name(name)?;
+    if name.starts_with(MAIN_PUSH_REQUEST_NAME_PREFIX) {
+        return Err(DomainError::invalid_input("request name is reserved"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use crate::requests::fixtures::{agent, views_with_agent};
+
     #[test]
-    fn public_contributors_can_only_start_public_requests() {
-        assert!(validate_start_request_view(RequestActorRole::Public, ViewId::public()).is_ok());
-        let error =
-            validate_start_request_view(RequestActorRole::Public, ViewId::private()).unwrap_err();
-        assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
-        assert_eq!(
-            error.message,
-            "public contributors can only create public requests"
+    fn public_contributors_can_only_start_requests_in_the_anyone_view() {
+        let views = views_with_agent();
+        let contributor = ViewId::public();
+        assert!(
+            validate_start_request_view(
+                RequestActorRole::Public,
+                &contributor,
+                &ViewId::public(),
+                &views
+            )
+            .is_ok()
         );
+        for view in [ViewId::private(), agent()] {
+            let error =
+                validate_start_request_view(RequestActorRole::Public, &contributor, &view, &views)
+                    .unwrap_err();
+            assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
+            assert_eq!(
+                error.message,
+                "public contributors can only create requests in the Public view"
+            );
+        }
     }
 
     #[test]
-    fn maintainers_can_start_public_or_private_requests() {
-        for role in [RequestActorRole::Member, RequestActorRole::Owner] {
-            for view in [ViewId::public(), ViewId::private()] {
-                assert!(validate_start_request_view(role, view).is_ok());
+    fn members_can_start_requests_in_any_view_they_read() {
+        let views = views_with_agent();
+        for (role, author_view, readable, unreadable) in [
+            (
+                RequestActorRole::Owner,
+                ViewId::private(),
+                vec![ViewId::public(), ViewId::private(), agent()],
+                vec![],
+            ),
+            (
+                RequestActorRole::Member,
+                agent(),
+                vec![ViewId::public(), agent()],
+                vec![ViewId::private()],
+            ),
+            (
+                RequestActorRole::Member,
+                ViewId::public(),
+                vec![ViewId::public()],
+                vec![ViewId::private(), agent()],
+            ),
+        ] {
+            for view in readable {
+                assert!(
+                    validate_start_request_view(role, &author_view, &view, &views).is_ok(),
+                    "{author_view} {view}"
+                );
             }
-            let error =
-                validate_start_request_view(role, ViewId::parse("agent").unwrap()).unwrap_err();
-            assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
+            for view in unreadable {
+                let error =
+                    validate_start_request_view(role, &author_view, &view, &views).unwrap_err();
+                assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
+            }
         }
+        let error = validate_start_request_view(
+            RequestActorRole::Owner,
+            &ViewId::private(),
+            &ViewId::parse("ops").unwrap(),
+            &views,
+        )
+        .unwrap_err();
+        assert_eq!(error.message, "this repository has no ops view");
     }
 }

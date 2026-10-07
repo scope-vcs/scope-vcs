@@ -7,15 +7,17 @@ use super::{
     repository_from_model,
     repository_rows::save_repository_delta,
     request_merge::{LandedRequestCompletion, complete_landed_requests},
+    request_rows::open_request_counts_by_view,
     workflow_catalogs::apply_repository_workflow_catalog,
 };
-use sea_orm::{EntityTrait, TransactionTrait};
-use std::fmt;
+use sea_orm::{DatabaseTransaction, EntityTrait, TransactionTrait};
+use std::{collections::BTreeMap, fmt};
 use {
     crate::error::PostgresError,
     scope_domain::content::SourceBlob,
     scope_domain::repository::{Repository, repo_id},
     scope_domain::runs::catalog::RepositoryWorkflowCatalog,
+    scope_domain::views::ViewId,
     scope_domain::{error::DomainError, landing_file::RepositoryLandingFileMutation},
 };
 
@@ -104,6 +106,38 @@ impl RepositoryStore {
     where
         F: FnOnce(&mut Repository) -> Result<RepositoryMutation<R>, DomainError>,
     {
+        let (tx, repo) = self.lock_repository(owner, name).await?;
+        save_repository_mutation(tx, repo, now_unix, generated_ids, op).await
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mutate_repository_with_open_requests"))]
+    pub async fn mutate_repository_with_open_requests<R, F>(
+        &self,
+        owner: &str,
+        name: &str,
+        now_unix: u64,
+        generated_ids: &dyn GeneratedIdSource,
+        op: F,
+    ) -> Result<RepositoryMutationResult<R>, RepositoryMutationError>
+    where
+        F: FnOnce(
+            &mut Repository,
+            BTreeMap<ViewId, usize>,
+        ) -> Result<RepositoryMutation<R>, DomainError>,
+    {
+        let (tx, repo) = self.lock_repository(owner, name).await?;
+        let open_requests_by_view = open_request_counts_by_view(&tx, &repo.record.id).await?;
+        save_repository_mutation(tx, repo, now_unix, generated_ids, |repo| {
+            op(repo, open_requests_by_view)
+        })
+        .await
+    }
+
+    async fn lock_repository(
+        &self,
+        owner: &str,
+        name: &str,
+    ) -> Result<(DatabaseTransaction, Repository), PostgresError> {
         let repo_id = repo_id(owner, name);
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
@@ -112,73 +146,75 @@ impl RepositoryStore {
             .await
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
-        let mut repo = repository_from_model(&tx, repo).await?;
-        let before = repo.clone();
-        let mutation = op(&mut repo)?;
-        if let Some(catalog) = &mutation.workflow_catalog {
-            let head = repo.git_head.as_ref().ok_or_else(|| {
-                PostgresError::internal_message(
-                    "repository workflow catalog requires an accepted Git head",
-                )
-            })?;
-            catalog
-                .verify_source(&repo.record.id, &head.head_oid, head.change_version)
-                .map_err(PostgresError::internal)?;
-        }
-        save_repository_delta(&tx, &before, &repo, now_unix, generated_ids).await?;
-        apply_repository_landing_file_mutation(
+        let repo = repository_from_model(&tx, repo).await?;
+        Ok((tx, repo))
+    }
+}
+
+async fn save_repository_mutation<R, F>(
+    tx: DatabaseTransaction,
+    mut repo: Repository,
+    now_unix: u64,
+    generated_ids: &dyn GeneratedIdSource,
+    op: F,
+) -> Result<RepositoryMutationResult<R>, RepositoryMutationError>
+where
+    F: FnOnce(&mut Repository) -> Result<RepositoryMutation<R>, DomainError>,
+{
+    let before = repo.clone();
+    let mutation = op(&mut repo)?;
+    if let Some(catalog) = &mutation.workflow_catalog {
+        let head = repo.git_head.as_ref().ok_or_else(|| {
+            PostgresError::internal_message(
+                "repository workflow catalog requires an accepted Git head",
+            )
+        })?;
+        catalog
+            .verify_source(&repo.record.id, &head.head_oid, head.change_version)
+            .map_err(PostgresError::internal)?;
+    }
+    save_repository_delta(&tx, &before, &repo, now_unix, generated_ids).await?;
+    apply_repository_landing_file_mutation(&tx, &repo.record.id, mutation.landing_file_mutation)
+        .await?;
+    if let Some(catalog) = &mutation.workflow_catalog {
+        apply_repository_workflow_catalog(&tx, catalog).await?;
+    }
+    if let Some(input) = mutation.push_trigger_input {
+        let head = repo.git_head.as_ref().ok_or_else(|| {
+            PostgresError::internal_message("push trigger evaluation requires an accepted Git head")
+        })?;
+        enqueue_push_main_trigger_evaluation(
             &tx,
             &repo.record.id,
-            mutation.landing_file_mutation,
-        )
-        .await?;
-        if let Some(catalog) = &mutation.workflow_catalog {
-            apply_repository_workflow_catalog(&tx, catalog).await?;
-        }
-        if let Some(input) = mutation.push_trigger_input {
-            let head = repo.git_head.as_ref().ok_or_else(|| {
-                PostgresError::internal_message(
-                    "push trigger evaluation requires an accepted Git head",
-                )
-            })?;
-            enqueue_push_main_trigger_evaluation(
-                &tx,
-                &repo.record.id,
-                head,
-                &repo.git_pack_spans,
-                &input,
-                now_unix,
-                generated_ids,
-            )
-            .await?;
-        }
-        let completed_landed_requests = if let Some(completion) = mutation.landed_requests {
-            let head = repo.git_head.as_ref().ok_or_else(|| {
-                PostgresError::internal_message("landed requests require an accepted Git head")
-            })?;
-            complete_landed_requests(
-                &tx,
-                &repo.record.id,
-                &head.head_oid,
-                completion,
-                now_unix,
-                generated_ids,
-            )
-            .await?
-        } else {
-            0
-        };
-        queue_pending_source_blob_deletion_rows(
-            &tx,
-            mutation.orphan_objects,
+            head,
+            &repo.git_pack_spans,
+            &input,
             now_unix,
             generated_ids,
         )
         .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(RepositoryMutationResult {
-            result: mutation.result,
-            completed_landed_requests,
-        })
     }
+    let completed_landed_requests = if let Some(completion) = mutation.landed_requests {
+        let head = repo.git_head.as_ref().ok_or_else(|| {
+            PostgresError::internal_message("landed requests require an accepted Git head")
+        })?;
+        complete_landed_requests(
+            &tx,
+            &repo.record.id,
+            &head.head_oid,
+            completion,
+            now_unix,
+            generated_ids,
+        )
+        .await?
+    } else {
+        0
+    };
+    queue_pending_source_blob_deletion_rows(&tx, mutation.orphan_objects, now_unix, generated_ids)
+        .await?;
+    tx.commit().await.map_err(PostgresError::internal)?;
+    Ok(RepositoryMutationResult {
+        result: mutation.result,
+        completed_landed_requests,
+    })
 }

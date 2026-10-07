@@ -2,7 +2,7 @@ import type { RepositoryMemberPermissions } from '@/api/types.generated'
 import type { RepoViews } from '@/api/repo-views'
 import { ViewSelect } from '../../components/view-select'
 import { useId } from 'react'
-import { actionsNeedFullView, permissionsWithView } from './repo-member-permission-model'
+import { isNarrowerView, permissionsWithView } from './repo-member-permission-model'
 
 export function MemberViewField({
   disabled,
@@ -29,9 +29,9 @@ export function MemberViewField({
           views={views.definitions}
         />
       </div>
-      {actionsNeedFullView(permissions.view, views) && views.full && (
+      {isNarrowerView(permissions.view, views) && views.full && (
         <p className="text-xs leading-5 text-muted-foreground">
-          Pushing and changing file visibility need the {views.name(views.full)} view.
+          Changing file visibility needs the {views.name(views.full)} view.
         </p>
       )}
     </div>
