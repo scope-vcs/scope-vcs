@@ -53,7 +53,7 @@ export function RepositoryRunsPage(props: RepositoryRunsPageProps) {
   const scope = isLoaded && props.initialResources
     ? repoResourceScope(repo, userId ?? null)
     : null
-  const cacheKey = scope ? runHistoryCacheKey(scope, props.workflow) : null
+  const cacheKey = scope ? runHistoryCacheKey(scope, 'native', props.workflow) : null
   return <RepositoryRunsPageContent github={props.github} initialResources={props.initialResources} loadPage={props.loadPage} loadHistory={props.loadHistory} loadWorkflows={props.loadWorkflows} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} scope={scope} />
 }
 

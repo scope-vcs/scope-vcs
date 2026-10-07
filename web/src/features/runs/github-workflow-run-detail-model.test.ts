@@ -7,6 +7,7 @@ import type {
 } from '@/api/types.generated'
 import {
   githubJobFailedStep,
+  githubJobLogAbsence,
   githubRunCanChange,
   isGitHubRunId,
   selectGitHubJob,
@@ -39,7 +40,7 @@ function detail(
       run_started_at_unix: 100, updated_at_unix: 200, request_id: null, ...run,
     },
     jobs,
-    jobs_unavailable: null,
+    jobs_not_read_yet: false,
   }
 }
 
@@ -95,5 +96,20 @@ test('log lines lose the timestamps GitHub stamps on them', () => {
       'printed 2026-10-05T12:00:03.0000000Z mid-line\n',
     ),
     '##[group]Run tests\r\n  ok 1 - adds\n\nprinted 2026-10-05T12:00:03.0000000Z mid-line\n',
+  )
+})
+
+test('a job without a log says why instead of offering a retry', () => {
+  assert.equal(
+    githubJobLogAbsence({ state: 'not_run' }, { conclusion: 'skipped' }),
+    'This job was skipped, so it has no log.',
+  )
+  assert.equal(
+    githubJobLogAbsence({ state: 'not_run' }, { conclusion: 'cancelled' }),
+    'This job didn\'t run, so it has no log.',
+  )
+  assert.equal(
+    githubJobLogAbsence({ state: 'expired' }, { conclusion: 'success' }),
+    'This log is no longer available.',
   )
 })

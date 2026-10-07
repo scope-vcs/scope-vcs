@@ -9,9 +9,9 @@ function page(ids: string[], next_cursor: string | null = null): RepositoryRunHi
 
 test('run retention isolates repository access and workflow filters', () => {
   runHistoryResource.clear()
-  const key = runHistoryCacheKey('viewer/repo/access')
+  const key = runHistoryCacheKey('viewer/repo/access', 'native')
   runHistoryResource.write(key, { history: page(['first', 'older']), pageCount: 2 })
-  for (const other of [runHistoryCacheKey('other-viewer/repo/access'), runHistoryCacheKey('viewer/other-repo/access'), runHistoryCacheKey('viewer/repo/access', 'checks')]) {
+  for (const other of [runHistoryCacheKey('other-viewer/repo/access', 'native'), runHistoryCacheKey('viewer/other-repo/access', 'native'), runHistoryCacheKey('viewer/repo/access', 'native', 'checks'), runHistoryCacheKey('viewer/repo/access', 'github')]) {
     assert.equal(runHistoryResource.read(other), null)
   }
 })

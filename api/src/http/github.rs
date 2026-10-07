@@ -1,9 +1,9 @@
 use super::responses::{
     ConnectGitHubRepositoryRequest, GitHubAuthorizeRequest, GitHubAuthorizeResponse,
     GitHubConnectionParts, GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse,
-    GitHubWorkflowRunListResponse, GitHubWorkflowRunsResponse, SetGitHubRequiredChecksRequest,
-    SetGitHubRunImportCountRequest, github_connection_response, github_repository_response,
-    github_workflow_run_response,
+    GitHubWorkflowNamesResponse, GitHubWorkflowRunListResponse, GitHubWorkflowRunsResponse,
+    SetGitHubRequiredChecksRequest, SetGitHubRunImportCountRequest, github_connection_response,
+    github_repository_response, github_workflow_run_response,
 };
 use crate::{
     auth::scope::require_scope_user,
@@ -341,18 +341,37 @@ pub(crate) async fn get_github_workflow_runs(
         .last()
         .filter(|_| has_more)
         .map(|last| encode_workflow_run_cursor(last.run.listed_at_unix(), last.run.github_run_id));
-    let workflows = repositories
-        .github_workflow_names(&context.record.id, connection.github_repository_id)
-        .await?;
     Ok(Json(GitHubWorkflowRunsResponse {
         configured: true,
         github: Some(GitHubWorkflowRunListResponse {
             actions_url: format!("https://github.com/{}/actions", connection.github_full_name),
             workflow_runs: runs.into_iter().map(github_workflow_run_response).collect(),
-            workflows,
             next_cursor,
         }),
     }))
+}
+
+pub(crate) async fn get_github_workflow_names(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+) -> Result<Json<GitHubWorkflowNamesResponse>, ApiError> {
+    let user = require_scope_user(&state, &headers).await?;
+    let context = require_full_view_member(&state, &user.id, &owner, &repo).await?;
+    let repositories = state.metadata.repositories();
+    let connection = repositories
+        .github_connection(&context.record.id)
+        .await?
+        .map(|read| read.connection);
+    let Some(connection) = connection else {
+        return Ok(Json(GitHubWorkflowNamesResponse {
+            workflows: Vec::new(),
+        }));
+    };
+    let workflows = repositories
+        .github_workflow_names(&context.record.id, connection.github_repository_id)
+        .await?;
+    Ok(Json(GitHubWorkflowNamesResponse { workflows }))
 }
 
 fn encode_workflow_run_cursor(listed_at_unix: u64, github_run_id: u64) -> String {

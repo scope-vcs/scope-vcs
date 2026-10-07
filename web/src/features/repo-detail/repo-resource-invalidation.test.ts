@@ -9,7 +9,10 @@ import { repositoryDependencyResource } from './repository-dependency-resource'
 import { historyFeedResource } from '../history/history-resource-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { githubWorkflowRunsIdentity, githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
+import { githubWorkflowNamesResource } from '../runs/github-workflow-names-resource'
 import {
+  githubWorkflowJobLogIdentity,
+  githubWorkflowJobLogResource,
   githubWorkflowRunDetailIdentity,
   githubWorkflowRunDetailResource,
 } from '../runs/github-workflow-run-detail-resource'
@@ -109,38 +112,45 @@ test('GitHub workflow runs refresh only the retained GitHub run lists', () => {
   seed()
   githubWorkflowRunsResource.clear()
   const runs = {
-    list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], workflows: [], next_cursor: null },
+    list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], next_cursor: null },
     pages: 1,
   }
   const all = githubWorkflowRunsIdentity('viewer-a', null)
   const lint = githubWorkflowRunsIdentity('viewer-a', 'lint')
   const other = githubWorkflowRunsIdentity('viewer-b', null)
   for (const identity of [all, lint, other]) githubWorkflowRunsResource.write(identity, runs)
+  githubWorkflowNamesResource.write('viewer-a', { workflows: ['ci'] })
+  githubWorkflowNamesResource.write('viewer-b', { workflows: ['ci'] })
   invalidateRepoResources('viewer-a', event('GitHubWorkflowRunsChanged'))
   assert.equal(githubWorkflowRunsResource.getSnapshot(all).stale, true)
   assert.equal(githubWorkflowRunsResource.getSnapshot(lint).stale, true)
   assert.equal(githubWorkflowRunsResource.peek(all), runs)
   assert.equal(githubWorkflowRunsResource.getSnapshot(other).stale, false)
+  assert.equal(githubWorkflowNamesResource.getSnapshot('viewer-a').stale, true)
+  assert.equal(githubWorkflowNamesResource.peek('viewer-a')?.workflows[0], 'ci')
+  assert.equal(githubWorkflowNamesResource.getSnapshot('viewer-b').stale, false)
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
 
   githubWorkflowRunsResource.write(all, runs)
+  githubWorkflowNamesResource.write('viewer-a', { workflows: ['ci'] })
   invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'github-connection-changed' } }))
   assert.equal(githubWorkflowRunsResource.getSnapshot(all).stale, true)
+  assert.equal(githubWorkflowNamesResource.getSnapshot('viewer-a').stale, true)
 })
 
 test('a GitHub job report refreshes only its run, keeping what the run shows', () => {
   seed()
   githubWorkflowRunsResource.clear()
   githubWorkflowRunDetailResource.clear()
-  const detail = { run: {}, jobs: [], jobs_unavailable: null } as unknown as GitHubWorkflowRunDetailResponse
+  const detail = { run: {}, jobs: [], jobs_not_read_yet: false } as unknown as GitHubWorkflowRunDetailResponse
   const reported = githubWorkflowRunDetailIdentity('viewer-a', '7')
   const sibling = githubWorkflowRunDetailIdentity('viewer-a', '8')
   const otherScope = githubWorkflowRunDetailIdentity('viewer-b', '7')
   const list = githubWorkflowRunsIdentity('viewer-a', null)
   for (const identity of [reported, sibling, otherScope]) githubWorkflowRunDetailResource.write(identity, detail)
   githubWorkflowRunsResource.write(list, {
-    list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], workflows: [], next_cursor: null },
+    list: { actions_url: 'https://github.com/octo/repo/actions', workflow_runs: [], next_cursor: null },
     pages: 1,
   })
   invalidateRepoResources('viewer-a', event({ GitHubWorkflowRunChanged: { github_run_id: 7 } }))
@@ -153,6 +163,36 @@ test('a GitHub job report refreshes only its run, keeping what the run shows', (
   invalidateRepoResources('viewer-a', event('GitHubWorkflowRunsChanged'))
   assert.equal(githubWorkflowRunDetailResource.getSnapshot(sibling).stale, true)
   assert.equal(githubWorkflowRunDetailResource.getSnapshot(otherScope).stale, false)
+})
+
+test('a GitHub run report asks again only for its logs still being read', () => {
+  githubWorkflowJobLogResource.clear()
+  const pending = githubWorkflowJobLogIdentity('viewer-a', '7', '70')
+  const kept = githubWorkflowJobLogIdentity('viewer-a', '7', '71')
+  const otherRun = githubWorkflowJobLogIdentity('viewer-a', '8', '80')
+  githubWorkflowJobLogResource.write(pending, { state: 'pending' })
+  githubWorkflowJobLogResource.write(kept, { state: 'kept', text: 'done', truncated: false })
+  githubWorkflowJobLogResource.write(otherRun, { state: 'pending' })
+  invalidateRepoResources('viewer-a', event({ GitHubWorkflowRunChanged: { github_run_id: 7 } }))
+  assert.equal(githubWorkflowJobLogResource.getSnapshot(pending).stale, true)
+  assert.equal(githubWorkflowJobLogResource.getSnapshot(kept).stale, false)
+  assert.equal(githubWorkflowJobLogResource.getSnapshot(otherRun).stale, false)
+})
+
+test('a GitHub run report during a log\'s first request asks for the log again', async () => {
+  githubWorkflowJobLogResource.clear()
+  const identity = githubWorkflowJobLogIdentity('viewer-a', '7', '72')
+  let answer!: () => void
+  const answered = new Promise<void>((resolve) => { answer = resolve })
+  const first = githubWorkflowJobLogResource.ensure(identity, '', async () => {
+    await answered
+    return { state: 'pending' as const }
+  })
+  invalidateRepoResources('viewer-a', event({ GitHubWorkflowRunChanged: { github_run_id: 7 } }))
+  answer()
+  assert.equal(await first, null)
+  assert.equal(githubWorkflowJobLogResource.getSnapshot(identity).stale, true)
+  assert.equal(githubWorkflowJobLogResource.peek(identity), null)
 })
 
 test('connection and lag recovery invalidate retained resources only in their scope', () => {

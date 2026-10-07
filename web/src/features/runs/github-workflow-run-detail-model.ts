@@ -1,4 +1,5 @@
 import type {
+  GitHubWorkflowJobLogResponse,
   GitHubWorkflowJobResponse,
   GitHubWorkflowRunDetailResponse,
 } from '@/api/types.generated'
@@ -37,4 +38,14 @@ const LOG_LINE_TIMESTAMP = /^﻿?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z 
 
 export function stripLogTimestamps(text: string) {
   return text.replace(LOG_LINE_TIMESTAMP, '')
+}
+
+export function githubJobLogAbsence(
+  log: Exclude<GitHubWorkflowJobLogResponse, { state: 'kept' | 'pending' }>,
+  job: Pick<GitHubWorkflowJobResponse, 'conclusion'>,
+) {
+  if (log.state === 'expired') return 'This log is no longer available.'
+  return job.conclusion === 'skipped'
+    ? 'This job was skipped, so it has no log.'
+    : 'This job didn\'t run, so it has no log.'
 }

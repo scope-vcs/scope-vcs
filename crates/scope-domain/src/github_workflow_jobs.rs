@@ -2,12 +2,13 @@ use crate::{
     github_connection::GitHubRepositoryVisibility,
     github_workflow_runs::GitHubWorkflowRun,
     repository::access::RepositoryAccess,
-    requests::{GitHubCheckConclusion, GitHubCheckStatus},
+    requests::{GitHubCheckConclusion, GitHubCheckStatus, github_retry_at},
     views::Views,
 };
 
 pub const GITHUB_JOBS_READ_INTERVAL_SECS: u64 = 30;
 pub const GITHUB_JOB_LOG_LIMIT_BYTES: usize = 1024 * 1024;
+pub const GITHUB_JOB_LOG_PUBLISH_GRACE_SECS: u64 = 10 * 60;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubWorkflowJob {
@@ -43,6 +44,25 @@ pub struct GitHubWorkflowJobProgress {
 impl GitHubWorkflowJob {
     pub fn is_completed(&self) -> bool {
         self.status == GitHubCheckStatus::Completed
+    }
+
+    pub fn ran(&self) -> bool {
+        self.conclusion != Some(GitHubCheckConclusion::Skipped) && !self.steps.is_empty()
+    }
+
+    pub fn log_is_prefetched(&self) -> bool {
+        self.is_completed()
+            && self.ran()
+            && matches!(
+                self.conclusion,
+                Some(GitHubCheckConclusion::Failure | GitHubCheckConclusion::TimedOut)
+            )
+    }
+
+    pub fn missing_log_is_final(&self, now_unix: u64) -> bool {
+        self.completed_at_unix.is_some_and(|completed_at_unix| {
+            now_unix >= completed_at_unix.saturating_add(GITHUB_JOB_LOG_PUBLISH_GRACE_SECS)
+        })
     }
 
     pub fn progress(&self) -> GitHubWorkflowJobProgress {
@@ -84,6 +104,22 @@ pub fn github_jobs_need_read(
                 .read_at_unix
                 .saturating_add(GITHUB_JOBS_READ_INTERVAL_SECS)
     }
+}
+
+pub fn github_jobs_not_read_yet(
+    run: &GitHubWorkflowRun,
+    last_read: Option<GitHubJobsRead>,
+    has_jobs: bool,
+    connected: bool,
+    read_queued: bool,
+) -> bool {
+    connected
+        && !has_jobs
+        && (read_queued || !last_read.is_some_and(|read| read.run_attempt == run.run_attempt))
+}
+
+pub fn github_jobs_retry_at(attempts: u32, now_unix: u64) -> u64 {
+    github_retry_at(attempts.clamp(1, 4), now_unix).unwrap_or(now_unix.saturating_add(30 * 60))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -209,6 +245,99 @@ mod tests {
         ));
         assert!(!github_jobs_need_read(&completed, read(2, 200), false, 229));
         assert!(github_jobs_need_read(&completed, read(2, 200), false, 230));
+    }
+
+    #[test]
+    fn a_job_that_was_skipped_or_ran_no_steps_wrote_no_log() {
+        use GitHubCheckStatus::Completed;
+        let finished = job(Completed, vec![step(1, Completed)]);
+        assert!(finished.ran());
+        let skipped = GitHubWorkflowJob {
+            conclusion: Some(GitHubCheckConclusion::Skipped),
+            ..finished.clone()
+        };
+        assert!(!skipped.ran());
+        let cancelled_before_a_runner = GitHubWorkflowJob {
+            conclusion: Some(GitHubCheckConclusion::Cancelled),
+            ..job(Completed, vec![])
+        };
+        assert!(!cancelled_before_a_runner.ran());
+    }
+
+    #[test]
+    fn only_failed_jobs_that_ran_have_their_logs_read_when_they_finish() {
+        use GitHubCheckStatus::{Completed, InProgress};
+        let with = |conclusion, steps| GitHubWorkflowJob {
+            conclusion: Some(conclusion),
+            ..job(Completed, steps)
+        };
+        let ran = || vec![step(1, Completed)];
+        assert!(with(GitHubCheckConclusion::Failure, ran()).log_is_prefetched());
+        assert!(with(GitHubCheckConclusion::TimedOut, ran()).log_is_prefetched());
+        assert!(!with(GitHubCheckConclusion::Success, ran()).log_is_prefetched());
+        assert!(!with(GitHubCheckConclusion::Cancelled, ran()).log_is_prefetched());
+        assert!(!with(GitHubCheckConclusion::Failure, vec![]).log_is_prefetched());
+        assert!(!job(InProgress, ran()).log_is_prefetched());
+    }
+
+    #[test]
+    fn github_gets_a_grace_period_to_publish_a_finished_jobs_log() {
+        let finished = GitHubWorkflowJob {
+            completed_at_unix: Some(1_000),
+            ..job(GitHubCheckStatus::Completed, vec![])
+        };
+        let grace_ends = 1_000 + GITHUB_JOB_LOG_PUBLISH_GRACE_SECS;
+        assert!(!finished.missing_log_is_final(grace_ends - 1));
+        assert!(finished.missing_log_is_final(grace_ends));
+        let completion_unknown = GitHubWorkflowJob {
+            completed_at_unix: None,
+            ..finished
+        };
+        assert!(!completion_unknown.missing_log_is_final(u64::MAX));
+    }
+
+    #[test]
+    fn an_empty_attempt_is_pending_until_its_first_successful_read() {
+        let run = run(GitHubCheckStatus::Completed, 200);
+        assert!(github_jobs_not_read_yet(&run, None, false, true, false));
+        assert!(github_jobs_not_read_yet(
+            &run,
+            Some(GitHubJobsRead {
+                run_attempt: 1,
+                read_at_unix: 200
+            }),
+            false,
+            true,
+            false
+        ));
+        assert!(!github_jobs_not_read_yet(
+            &run,
+            Some(GitHubJobsRead {
+                run_attempt: 2,
+                read_at_unix: 200
+            }),
+            false,
+            true,
+            false
+        ));
+        assert!(!github_jobs_not_read_yet(&run, None, true, true, false));
+        assert!(!github_jobs_not_read_yet(&run, None, false, false, false));
+        assert!(github_jobs_not_read_yet(
+            &run,
+            Some(GitHubJobsRead {
+                run_attempt: 2,
+                read_at_unix: 200
+            }),
+            false,
+            true,
+            true
+        ));
+    }
+
+    #[test]
+    fn a_pending_jobs_read_keeps_retrying_after_the_normal_github_limit() {
+        assert_eq!(github_jobs_retry_at(1, 100), 130);
+        assert_eq!(github_jobs_retry_at(5, 100), 1900);
     }
 
     #[test]

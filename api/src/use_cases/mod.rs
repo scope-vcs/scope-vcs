@@ -3,6 +3,7 @@ pub(crate) mod clerk_user_deletion;
 pub(crate) mod content_cleanup;
 pub(crate) mod git_receive;
 pub(crate) mod github_check_results;
+pub(crate) mod github_job_logs;
 pub(crate) mod github_pushes;
 pub(crate) mod github_run_imports;
 pub(crate) mod github_setup_checks;

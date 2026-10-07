@@ -1,7 +1,10 @@
 use super::GitHubApp;
 use super::client::{parse_enum, parse_time, send, unavailable};
 use crate::error::ApiError;
-use reqwest::{Method, StatusCode};
+use reqwest::{
+    Method, StatusCode,
+    header::{CONTENT_RANGE, RANGE},
+};
 use scope_domain::{
     github_workflow_jobs::{
         GITHUB_JOB_LOG_LIMIT_BYTES, GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob,
@@ -154,34 +157,67 @@ impl GitHubApp {
         installation_id: u64,
         full_name: &str,
         job_id: u64,
-    ) -> Result<GitHubJobLogState, ApiError> {
+    ) -> Result<Option<GitHubJobLogState>, ApiError> {
         let Some(token) = self.installation_token(installation_id).await? else {
             return Err(unavailable(format!(
                 "GitHub installation {installation_id} no longer exists"
             )));
         };
-        let mut response = scope_service_runtime::outbound_http::send_traced(
+        let probe = scope_service_runtime::outbound_http::send_traced(
             self.request(
                 Method::GET,
                 &format!("/repos/{full_name}/actions/jobs/{job_id}/logs"),
             )
             .bearer_auth(token)
+            .header(RANGE, "bytes=0-0")
             .timeout(LOG_DOWNLOAD_TIMEOUT),
             "/repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
         )
         .await
         .map_err(|error| unavailable(format!("GitHub was unreachable: {}", error.without_url())))?;
-        let status = response.status();
-        if status == StatusCode::GONE {
-            return Ok(GitHubJobLogState::Expired);
+        match probe.status() {
+            StatusCode::NOT_FOUND => return Ok(None),
+            StatusCode::GONE => return Ok(Some(GitHubJobLogState::Expired)),
+            StatusCode::RANGE_NOT_SATISFIABLE => {
+                return Ok(Some(GitHubJobLogState::Kept(GitHubJobLog::from_tail(
+                    b"", false,
+                ))));
+            }
+            status if !status.is_success() => {
+                return Err(unavailable(format!(
+                    "GitHub answered {status} for job {job_id}'s log"
+                )));
+            }
+            _ => {}
         }
-        if !status.is_success() {
-            return Err(unavailable(format!(
-                "GitHub answered {status} for job {job_id}'s log"
-            )));
-        }
+        let (mut response, mut dropped) = match ranged_length(&probe)? {
+            None => (probe, false),
+            Some(length) => {
+                let start = length.saturating_sub(GITHUB_JOB_LOG_LIMIT_BYTES as u64);
+                let tail = scope_service_runtime::outbound_http::send_traced(
+                    self.http
+                        .get(probe.url().clone())
+                        .header(RANGE, format!("bytes={start}-"))
+                        .timeout(LOG_DOWNLOAD_TIMEOUT),
+                    "GitHub job log tail",
+                )
+                .await
+                .map_err(|error| {
+                    unavailable(format!(
+                        "GitHub's log tail was unreachable: {}",
+                        error.without_url()
+                    ))
+                })?;
+                let status = tail.status();
+                if !status.is_success() {
+                    return Err(unavailable(format!(
+                        "GitHub answered {status} for the end of job {job_id}'s log"
+                    )));
+                }
+                (tail, start > 0 && status == StatusCode::PARTIAL_CONTENT)
+            }
+        };
         let mut tail = Vec::new();
-        let mut dropped = false;
         while let Some(chunk) = response.chunk().await.map_err(|error| {
             unavailable(format!(
                 "GitHub's log download failed: {}",
@@ -194,15 +230,47 @@ impl GitHubApp {
                 dropped = true;
             }
         }
-        Ok(GitHubJobLogState::Kept(GitHubJobLog::from_tail(
+        Ok(Some(GitHubJobLogState::Kept(GitHubJobLog::from_tail(
             &tail, dropped,
-        )))
+        ))))
     }
+}
+
+fn ranged_length(response: &reqwest::Response) -> Result<Option<u64>, ApiError> {
+    if response.status() != StatusCode::PARTIAL_CONTENT {
+        return Ok(None);
+    }
+    response
+        .headers()
+        .get(CONTENT_RANGE)
+        .and_then(|range| range.to_str().ok())
+        .and_then(|range| range.rsplit_once('/'))
+        .and_then(|(_, length)| length.parse().ok())
+        .map(Some)
+        .ok_or_else(|| unavailable("GitHub answered part of a log without its length".to_string()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_partial_log_answer_must_name_the_full_length() {
+        let answer = |status: u16, range: Option<&str>| {
+            let mut response = axum::http::Response::builder().status(status);
+            if let Some(range) = range {
+                response = response.header(CONTENT_RANGE, range);
+            }
+            reqwest::Response::from(response.body("x").unwrap())
+        };
+        assert_eq!(
+            ranged_length(&answer(206, Some("bytes 0-0/6377"))).unwrap(),
+            Some(6377)
+        );
+        assert_eq!(ranged_length(&answer(200, None)).unwrap(), None);
+        assert!(ranged_length(&answer(206, None)).is_err());
+        assert!(ranged_length(&answer(206, Some("bytes 0-0/*"))).is_err());
+    }
 
     #[test]
     fn unreadable_steps_are_dropped_and_a_job_needs_a_matching_conclusion() {

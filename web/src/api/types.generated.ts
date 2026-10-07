@@ -352,6 +352,8 @@ configured: boolean,
  */
 github: GitHubWorkflowRunListResponse | null, };
 
+export type GitHubWorkflowNamesResponse = { workflows: Array<string>, };
+
 export type GitHubWorkflowRunListResponse = { 
 /**
  * The repository's Actions page, which has every run and its logs.
@@ -361,11 +363,6 @@ actions_url: string,
  * A page of runs, newest first.
  */
 workflow_runs: Array<GitHubWorkflowRunResponse>, 
-/**
- * The names of the workflows with stored runs, which the list can be
- * narrowed to.
- */
-workflows: Array<string>, 
 /**
  * Continues the list after this page, while there is more.
  */
@@ -383,9 +380,9 @@ export type GitHubWorkflowRunDetailResponse = { run: GitHubWorkflowRunResponse,
  */
 jobs: Array<GitHubWorkflowJobResponse>, 
 /**
- * Set when Scope has no jobs for the run because GitHub could not be read.
+ * True until Scope first reads the current run attempt's jobs from GitHub.
  */
-jobs_unavailable: string | null, };
+jobs_not_read_yet: boolean, };
 
 export type GitHubWorkflowJobResponse = { id: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null, 
 /**
@@ -395,15 +392,11 @@ html_url: string, steps: Array<GitHubWorkflowStepResponse>, };
 
 export type GitHubWorkflowStepResponse = { number: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null, };
 
-export type GitHubWorkflowJobLogResponse = { 
-/**
- * `None` when GitHub no longer keeps the log.
- */
-text: string | null, 
+export type GitHubWorkflowJobLogResponse = { "state": "kept", text: string, 
 /**
  * Whether `text` is only the end of a longer log.
  */
-truncated: boolean, };
+truncated: boolean, } | { "state": "expired" } | { "state": "not_run" } | { "state": "pending" };
 
 export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null, };
 
@@ -683,9 +676,13 @@ export type RunState = "queued" | "dispatching" | "running" | "succeeded" | "fai
 
 export type RunResponse = { id: string, repository_id: string, workflow_name: string, git_oid: string, state: RunState, cancellation_requested: boolean, logs_truncated: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, };
 
+export type RunLogResponse = { attempt_id: string, job_key: string, step_index: number, position: number, sequence: number, text: string, created_at_unix: number, };
+
 export type RepositoryRunTrigger = "manual" | "push-main" | "request";
 
 export type RepositoryRunSummaryResponse = { id: string, workflow_name: string, git_oid: string, trigger: RepositoryRunTrigger, state: RunState, cancellation_requested: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, can_cancel: boolean, can_retry: boolean, };
+
+export type RepositoryRunListItemResponse = { id: string, workflow_name: string, git_oid: string, trigger: RepositoryRunTrigger, state: RunState, cancellation_requested: boolean, created_at_unix: number, updated_at_unix: number, completed_at_unix: number | null, };
 
 export type RepositoryRunJobState = "blocked" | "queued" | "dispatching" | "running" | "succeeded" | "failed" | "skipped" | "canceled" | "lost";
 
@@ -723,7 +720,7 @@ export type RepositoryRunWorkflowListResponse = { workflows: Array<RepositoryRun
  */
 native_runs_available: boolean, };
 
-export type RepositoryRunHistoryPageResponse = { runs: Array<RepositoryRunSummaryResponse>, next_cursor: string | null, };
+export type RepositoryRunHistoryPageResponse = { runs: Array<RepositoryRunListItemResponse>, next_cursor: string | null, };
 
 export type RepositoryRunLogResponse = { byte_length: number, position: number, sequence: number, text: string, created_at_unix: number, };
 
@@ -750,6 +747,7 @@ export const ApiRouteTemplates = {
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
   repoGitHubSetupCheck: "/v1/repos/{owner}/{repo}/github/setup-check",
   repoGitHubWorkflowRuns: "/v1/repos/{owner}/{repo}/github/workflow-runs",
+  repoGitHubWorkflowNames: "/v1/repos/{owner}/{repo}/github/workflow-names",
   repoGitHubWorkflowRun: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}",
   repoGitHubWorkflowJobLog: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}/jobs/{job_id}/log",
   repoGitHubRunImport: "/v1/repos/{owner}/{repo}/github/run-import",
@@ -758,6 +756,7 @@ export const ApiRouteTemplates = {
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",
   repoRuns: "/v1/repos/{owner}/{repo}/runs",
   repoRunDetail: "/v1/repos/{owner}/{repo}/runs/{run_id}/detail",
+  repoRunEvents: "/v1/repos/{owner}/{repo}/runs/{run_id}/events",
   repoRunStepLogs: "/v1/repos/{owner}/{repo}/runs/{run_id}/attempts/{attempt_id}/steps/{step_index}/logs",
   repoRunCancel: "/v1/repos/{owner}/{repo}/runs/{run_id}/cancel",
   repoRunRetry: "/v1/repos/{owner}/{repo}/runs/{run_id}/retry",

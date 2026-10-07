@@ -6,7 +6,13 @@ use super::{
     },
 };
 use crate::{
-    error::ApiError, persistence::unix_now, state::AppState, use_cases::github_workflow_jobs,
+    error::ApiError,
+    persistence::unix_now,
+    state::AppState,
+    use_cases::{
+        github_job_logs::{self, GitHubJobLogRead},
+        github_workflow_jobs,
+    },
 };
 use axum::{
     Json,
@@ -34,7 +40,7 @@ pub(crate) async fn get_github_workflow_run(
             .into_iter()
             .map(github_workflow_job_response)
             .collect(),
-        jobs_unavailable: jobs.unavailable,
+        jobs_not_read_yet: jobs.not_read_yet,
     }))
 }
 
@@ -55,13 +61,17 @@ pub(crate) async fn get_github_workflow_job_log(
         )
         .await?
         .ok_or_else(|| ApiError::not_found("job not found"))?;
-    let log = github_workflow_jobs::job_log(&state, &connection, &job, unix_now()?).await?;
-    Ok(Json(GitHubWorkflowJobLogResponse {
-        truncated: matches!(&log, GitHubJobLogState::Kept(log) if log.truncated),
-        text: match log {
-            GitHubJobLogState::Kept(log) => Some(log.text),
-            GitHubJobLogState::Expired => None,
-        },
+    let log = github_job_logs::job_log(&state, &connection, &job, unix_now()?).await?;
+    Ok(Json(match log {
+        GitHubJobLogRead::NotRun => GitHubWorkflowJobLogResponse::NotRun,
+        GitHubJobLogRead::Pending => GitHubWorkflowJobLogResponse::Pending,
+        GitHubJobLogRead::Read(GitHubJobLogState::Expired) => GitHubWorkflowJobLogResponse::Expired,
+        GitHubJobLogRead::Read(GitHubJobLogState::Kept(log)) => {
+            GitHubWorkflowJobLogResponse::Kept {
+                text: log.text,
+                truncated: log.truncated,
+            }
+        }
     }))
 }
 

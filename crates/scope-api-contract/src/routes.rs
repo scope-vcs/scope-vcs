@@ -50,6 +50,8 @@ routes! {
             => "repoGitHubSetupCheck";
         REPO_GITHUB_WORKFLOW_RUNS = "/v1/repos/{owner}/{repo}/github/workflow-runs"
             => "repoGitHubWorkflowRuns";
+        REPO_GITHUB_WORKFLOW_NAMES = "/v1/repos/{owner}/{repo}/github/workflow-names"
+            => "repoGitHubWorkflowNames";
         REPO_GITHUB_WORKFLOW_RUN = "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}"
             => "repoGitHubWorkflowRun";
         REPO_GITHUB_WORKFLOW_JOB_LOG = "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}/jobs/{job_id}/log"
@@ -67,6 +69,9 @@ routes! {
         REPO_RUN_DETAIL = "/v1/repos/{owner}/{repo}/runs/{run_id}/detail"
             => "repoRunDetail",
             repo_run_detail(owner: &str, repo: &str, run_id: &str);
+        REPO_RUN_EVENTS = "/v1/repos/{owner}/{repo}/runs/{run_id}/events"
+            => "repoRunEvents",
+            repo_run_events(owner: &str, repo: &str, run_id: &str);
         REPO_RUN_STEP_LOGS = "/v1/repos/{owner}/{repo}/runs/{run_id}/attempts/{attempt_id}/steps/{step_index}/logs"
             => "repoRunStepLogs",
             repo_run_step_logs(owner: &str, repo: &str, run_id: &str, attempt_id: &str, step_index: u32);
@@ -240,8 +245,6 @@ routes! {
             repo_run_resolve(owner: &str, repo: &str);
         REPO_RUN = "/v1/repos/{owner}/{repo}/runs/{run_id}",
             repo_run(owner: &str, repo: &str, run_id: &str);
-        REPO_RUN_EVENTS = "/v1/repos/{owner}/{repo}/runs/{run_id}/events",
-            repo_run_events(owner: &str, repo: &str, run_id: &str);
         REPO_PUSH_TRIGGER_EVALUATION = "/v1/repos/{owner}/{repo}/push-trigger-evaluations/{head_oid}",
             repo_push_trigger_evaluation(owner: &str, repo: &str, head_oid: &str);
         MEDIA_UPLOAD_PART = "/v1/uploads/{upload_id}/parts/{part_number}",

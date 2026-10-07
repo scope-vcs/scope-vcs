@@ -197,7 +197,13 @@ mod tests {
             .iter()
             .find(|entry| entry.run.id == "run_dev_seed_retried-lint")
             .expect("retried lint run is seeded");
-        assert_eq!(retried.jobs[0].last_attempt_number, 2);
+        let retried_detail = metadata
+            .runs()
+            .run_detail(&retried.run.id)
+            .await
+            .unwrap()
+            .expect("retried lint detail is seeded");
+        assert_eq!(retried_detail.jobs[0].last_attempt_number, 2);
 
         let running = page
             .iter()

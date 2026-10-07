@@ -35,8 +35,13 @@ const initialRuns: GitHubWorkflowRunListResponse = {
     run(2, { workflow_name: 'Release images and publish the container manifests for every platform', conclusion: 'failure' }),
     run(3, { branch: 'scope/setup-check' }),
   ],
-  workflows: ['ci', 'lint', 'Release images and publish the container manifests for every platform'],
   next_cursor: 'page-2',
+}
+const initialNames = { workflows: ['ci', 'lint', 'Release images and publish the container manifests for every platform'] }
+const nameLoads: string[] = []
+async function loadNames() {
+  nameLoads.push('names')
+  return initialNames
 }
 const olderRuns = [run(4, {}), run(5, { workflow_name: 'lint' })]
 let nextRuns = initialRuns
@@ -52,6 +57,7 @@ const live = { repo: repoSummary('Owner') } as RepoLiveState
 Object.assign(window, {
   authorizeCalls,
   loads,
+  nameLoads,
   setNextRuns: (runs: GitHubWorkflowRunListResponse) => { nextRuns = runs },
   clearLoads: () => { loads.length = 0 },
   finishLoad: () => resolvers.shift()?.(),
@@ -91,18 +97,20 @@ let runDetail: GitHubWorkflowRunDetailResponse = {
     job(104, 'deploy preview environment to the staging cluster', {
       status: 'queued', conclusion: null, started_at_unix: null, completed_at_unix: null,
     }),
+    job(105, 'revoke preview token', { conclusion: 'skipped', started_at_unix: null }),
   ],
-  jobs_unavailable: null,
+  jobs_not_read_yet: false,
 }
 const stamp = '2026-10-05T12:00:00.1234567Z '
 const logs: Record<string, GitHubWorkflowJobLogResponse> = {
-  101: { text: `\uFEFF${stamp}##[group]Run pnpm lint\n${stamp}$ oxlint src\n${stamp}Found 0 warnings and 0 errors.\n`, truncated: false },
+  101: { state: 'kept', text: `\uFEFF${stamp}##[group]Run pnpm lint\n${stamp}$ oxlint src\n${stamp}Found 0 warnings and 0 errors.\n`, truncated: false },
   102: {
+    state: 'kept',
     text: Array.from({ length: 40 }, (_, index) => `${stamp}  ✔ suite ${index} passes every case it was given, including the long-running integration fixtures (${index * 3}ms)`).join('\n')
       + `\n${stamp}  ✖ request queue keeps its order (12ms)\n${stamp}##[error]Process completed with exit code 1.\n`,
     truncated: true,
   },
-  103: { text: `${stamp}Build finished.\n`, truncated: false },
+  103: { state: 'kept', text: `${stamp}Build finished.\n`, truncated: false },
 }
 const runLoads: string[] = []
 const logLoads: string[] = []
@@ -127,7 +135,7 @@ async function loadRunDetail(runId: string) {
 }
 async function loadJobLog(jobId: string) {
   logLoads.push(jobId)
-  return logs[jobId] ?? { text: null, truncated: false }
+  return logs[jobId] ?? { state: 'not_run' }
 }
 
 async function loadRuns({ after, workflow }: RepoGitHubWorkflowRunsInput) {
@@ -176,9 +184,11 @@ function EmptyRuns() {
 
 function ConnectedNoRuns() {
   const { owner, repo } = useParams({ strict: false })
-  const none = { actions_url: 'https://github.com/octo/demo/actions', workflow_runs: [], workflows: [], next_cursor: null }
+  const none = { actions_url: 'https://github.com/octo/demo/actions', workflow_runs: [], next_cursor: null }
   return <GitHubWorkflowRunsPage
+    initialNames={{ workflows: [] }}
     initialRuns={none}
+    loadNames={async () => ({ workflows: [] })}
     loadRuns={async () => ({ configured: true, github: none })}
     params={{ owner: owner!, repo: repo! }}
   />
@@ -186,7 +196,13 @@ function ConnectedNoRuns() {
 
 function Runs() {
   const { owner, repo } = useParams({ strict: false })
-  return <GitHubWorkflowRunsPage initialRuns={initialRuns} loadRuns={loadRuns} params={{ owner: owner!, repo: repo! }} />
+  return <GitHubWorkflowRunsPage
+    initialNames={initialNames}
+    initialRuns={initialRuns}
+    loadNames={loadNames}
+    loadRuns={loadRuns}
+    params={{ owner: owner!, repo: repo! }}
+  />
 }
 
 function Run() {
@@ -194,7 +210,7 @@ function Run() {
   const initialDetail = runId === '1' ? runDetail : {
     run: initialRuns.workflow_runs[1]!,
     jobs: [],
-    jobs_unavailable: 'The jobs could not be read. They appear once the repository can be read again.',
+    jobs_not_read_yet: true,
   }
   return <GitHubWorkflowRunDetailPage
     initialDetail={initialDetail}

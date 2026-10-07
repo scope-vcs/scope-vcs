@@ -1,6 +1,7 @@
 import type { RepoGitHubWorkflowRunsInput, RepoParams } from '@/api/types'
 import type {
   GitHubWorkflowRunListResponse,
+  GitHubWorkflowNamesResponse,
   GitHubWorkflowRunsResponse,
 } from '@/api/types.generated'
 import { EmptyState } from '@/components/empty-state'
@@ -23,12 +24,14 @@ import {
   githubWorkflowRunRow,
   reloadGitHubWorkflowRunPages,
 } from './github-workflow-run-model'
+import { seedGitHubWorkflowRunDetail } from './github-workflow-run-detail-resource'
 import {
   githubWorkflowRunsIdentity,
   githubWorkflowRunsResource,
   loadMoreGitHubWorkflowRuns,
 } from './github-workflow-runs-resource'
 import { RunStatusIcon } from './run-status-icon'
+import { githubWorkflowNamesResource } from './github-workflow-names-resource'
 import { RUN_ROW_CLASS, RUN_ROW_TIMESTAMP_CLASS } from './run-row-layout'
 
 const LINK_CLASS = 'underline-offset-2 hover:text-foreground hover:underline'
@@ -36,11 +39,15 @@ const SELECT_CLASS = 'h-8 max-w-44 rounded-md border border-input bg-secondary p
 
 export function GitHubWorkflowRunsPage({
   initialRuns,
+  initialNames,
   loadRuns,
+  loadNames,
   params,
 }: {
   initialRuns: GitHubWorkflowRunListResponse
+  initialNames: GitHubWorkflowNamesResponse
   loadRuns: (input: RepoGitHubWorkflowRunsInput, signal: AbortSignal) => Promise<GitHubWorkflowRunsResponse>
+  loadNames: (input: RepoParams, signal: AbortSignal) => Promise<GitHubWorkflowNamesResponse>
   params: RepoParams
 }) {
   const { isLoaded, userId } = useAuth()
@@ -75,7 +82,14 @@ export function GitHubWorkflowRunsPage({
   })
   const runs = resource.value?.list ?? initialValue?.list ?? null
   const rows = useMemo(() => runs?.workflow_runs.map(githubWorkflowRunRow) ?? [], [runs])
-  const workflows = githubWorkflowFilterOptions((runs ?? initialRuns).workflows, workflow)
+  const names = useCachedResource({
+    fallbackError: 'Workflow names could not refresh.',
+    identity: scope,
+    initialValue: initialNames,
+    load: useCallback((signal: AbortSignal) => loadNames({ owner, repo: repoName }, signal), [loadNames, owner, repoName]),
+    resource: githubWorkflowNamesResource,
+  })
+  const workflows = githubWorkflowFilterOptions((names.value ?? initialNames).workflows, workflow)
 
   async function loadMore() {
     if (!identity) return
@@ -127,6 +141,17 @@ export function GitHubWorkflowRunsPage({
                 </div>
               </PageErrorAlert>
             </div>
+          ) : names.error ? (
+            <div className="pt-5">
+              <PageErrorAlert title="Workflow filter could not refresh">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span>{names.error}</span>
+                  <Button onClick={names.retry} size="sm" variant="secondary">
+                    Retry now
+                  </Button>
+                </div>
+              </PageErrorAlert>
+            </div>
           ) : null}
           <div className="pt-7">
             {!runs ? (
@@ -156,7 +181,14 @@ export function GitHubWorkflowRunsPage({
             ) : (
               <>
                 <ul className="divide-y divide-border">
-                  {rows.map((row) => <GitHubWorkflowRunItem key={row.key} params={params} row={row} />)}
+                  {rows.map((row, index) => <GitHubWorkflowRunItem
+                    key={row.key}
+                    params={params}
+                    row={row}
+                    onOpen={() => {
+                      if (scope && runs) seedGitHubWorkflowRunDetail(scope, runs.workflow_runs[index])
+                    }}
+                  />)}
                 </ul>
                 <div className="flex items-center justify-center gap-3 pt-5">
                   {runs.next_cursor ? (
@@ -195,13 +227,16 @@ function GitHubWorkflowRunsSkeleton() {
   )
 }
 
-function GitHubWorkflowRunItem({ params, row }: { params: RepoParams; row: GitHubWorkflowRunRow }) {
+function GitHubWorkflowRunItem({ params, row, onOpen }: {
+  params: RepoParams; row: GitHubWorkflowRunRow; onOpen: () => void
+}) {
   return (
     <li className={cn(RUN_ROW_CLASS, row.state === 'running' && 'bg-info-soft/40')}>
       <RunStatusIcon state={row.state} />
       <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2">
         <Link
           className={cn('truncate text-sm font-medium', LINK_CLASS)}
+          onClick={onOpen}
           params={{ ...params, runId: row.key }}
           to="/$owner/$repo/runs/$runId"
         >

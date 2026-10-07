@@ -440,7 +440,7 @@ async fn a_member_on_a_narrower_view_cannot_read_or_push_through_the_full_view()
     );
     assert_eq!(summary["views"][2]["id"], "agent");
 
-    for bearer in [member_bearer(), bearer_header()] {
+    for (bearer, sees_hidden_files) in [(member_bearer(), false), (bearer_header(), true)] {
         let preview = response_json(
             api_request(
                 router(state.clone()),
@@ -453,7 +453,7 @@ async fn a_member_on_a_narrower_view_cannot_read_or_push_through_the_full_view()
         )
         .await;
         let hidden = preview["summary"]["hidden_files"].as_u64().unwrap();
-        assert_eq!(hidden > 0, bearer == bearer_header(), "{preview}");
+        assert_eq!(hidden > 0, sees_hidden_files, "{preview}");
     }
 
     let (origin, _server) = spawn_test_server(&state).await;

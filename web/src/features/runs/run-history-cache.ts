@@ -1,16 +1,15 @@
 import type { RepoRunHistoryInput } from '@/api/types'
-import type { GitHubWorkflowRunListResponse, RepositoryRunWorkflowListResponse, RepositoryRunHistoryPageResponse } from '@/api/types.generated'
+import type { GitHubWorkflowNamesResponse, GitHubWorkflowRunListResponse, RepositoryRunWorkflowListResponse, RepositoryRunHistoryPageResponse } from '@/api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 import { runResourceNeedsRecovery } from './run-resource'
 import { mergeRunHistory, reloadRunHistoryPages } from './run-history-model'
 
 export type RunPageResources = {
   kind: 'native'
-  githubConfigured: boolean
   history: RepositoryRunHistoryPageResponse
   workflows: RepositoryRunWorkflowListResponse
   workflowsError: string | null
-} | { kind: 'github'; github: GitHubWorkflowRunListResponse }
+} | { kind: 'github'; github: GitHubWorkflowRunListResponse; names: GitHubWorkflowNamesResponse }
 
 export type RunPageHandoff = { scope: string; resources: RunPageResources | null }
 
@@ -27,8 +26,8 @@ export const runHistoryResource = createCachedResource<RetainedRunHistory>({
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
-export function runHistoryCacheKey(scope: string, workflow?: string) {
-  return JSON.stringify([scope, workflow ?? null])
+export function runHistoryCacheKey(scope: string, kind: RunPageResources['kind'], workflow?: string) {
+  return JSON.stringify([scope, kind, workflow ?? null])
 }
 
 export function initializeRunHistory(key: string, history: RepositoryRunHistoryPageResponse | null) {
@@ -90,13 +89,20 @@ export async function loadRunPageSnapshot({ key, input, loadPage, loadHistory, s
   signal: AbortSignal
 }): Promise<RetainedRunHistory> {
   const current = runHistoryResource.peek(key)
+  if (current?.history && (current.page?.kind === 'native' || !current.page)) {
+    const history = await reloadRunHistoryPages(current.pageCount, (after) => loadHistory(
+      { ...input, ...(after ? { after } : {}) },
+      AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+    ))
+    return {
+      ...current,
+      page: current.page?.kind === 'native' && history ? { ...current.page, history } : current.page,
+      history,
+      updatedAt: Date.now(),
+    }
+  }
   const page = await loadPage(input, AbortSignal.any([signal, AbortSignal.timeout(15_000)]))
-  const next = runPageSnapshot(page)
-  if (page?.kind !== 'native' || !current?.history || current.pageCount === 1) return next
-  const history = await reloadRunHistoryPages(current.pageCount, (after) => after
-    ? loadHistory({ ...input, after }, AbortSignal.any([signal, AbortSignal.timeout(15_000)]))
-    : Promise.resolve(page.history))
-  return { ...next, history, pageCount: current.pageCount }
+  return runPageSnapshot(page)
 }
 
 const pendingPaginationInvalidations = new WeakSet<object>()

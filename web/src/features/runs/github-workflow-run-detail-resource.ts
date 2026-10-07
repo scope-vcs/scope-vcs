@@ -1,6 +1,7 @@
 import type {
   GitHubWorkflowJobLogResponse,
   GitHubWorkflowRunDetailResponse,
+  GitHubWorkflowRunResponse,
 } from '@/api/types.generated'
 import { useEffect, useRef } from 'react'
 import { createCachedResource } from '../../lib/cached-resource'
@@ -17,18 +18,32 @@ export function githubWorkflowRunDetailIdentity(scope: string, runId: string) {
   return `${scope}\0${runId}`
 }
 
+export function seedGitHubWorkflowRunDetail(scope: string, run: GitHubWorkflowRunResponse) {
+  githubWorkflowRunDetailResource.seed(
+    githubWorkflowRunDetailIdentity(scope, String(run.id)),
+    { run, jobs: [], jobs_not_read_yet: true },
+    'row',
+  )
+}
+
 export function invalidateGitHubWorkflowRunDetails(scope: string, runId?: number) {
   if (runId === undefined) {
     githubWorkflowRunDetailResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
   } else {
     githubWorkflowRunDetailResource.invalidate(githubWorkflowRunDetailIdentity(scope, String(runId)))
   }
+  const logs = runId === undefined ? `${scope}\0` : `${scope}\0${runId}\0`
+  githubWorkflowJobLogResource.invalidateMatching((identity) => {
+    if (!identity.startsWith(logs)) return false
+    const log = githubWorkflowJobLogResource.getSnapshot(identity)
+    return log.pending || log.value?.state === 'pending'
+  })
 }
 
 export const githubWorkflowJobLogResource = createCachedResource<GitHubWorkflowJobLogResponse>({
   maxEntries: 24,
   maxWeight: 16 * 1024 * 1024,
-  weightOf: (value) => (value.text?.length ?? 0) * 2,
+  weightOf: (value) => value.state === 'kept' ? value.text.length * 2 : 0,
 })
 
 export function githubWorkflowJobLogIdentity(scope: string, runId: string, jobKey: string) {

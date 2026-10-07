@@ -18,6 +18,7 @@ import { repoFileResource } from './repo-file-cache'
 import { historyEntryResource, historyFeedResource } from '../history/history-resource-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { invalidateGitHubWorkflowRuns } from '../runs/github-workflow-runs-resource'
+import { githubWorkflowNamesResource } from '../runs/github-workflow-names-resource'
 import { invalidateGitHubWorkflowRunDetails } from '../runs/github-workflow-run-detail-resource'
 
 export function invalidateRepoSummaryResources(scope: string) {
@@ -26,10 +27,11 @@ export function invalidateRepoSummaryResources(scope: string) {
 
 export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, summaryPending = false) {
   const changed = event && typeof event.kind === 'object' && 'RunChanged' in event.kind ? event.kind.RunChanged : null
+  if (changed?.change === 'LogsAppended') return
   const repositoryChanged = event && typeof event.kind === 'object' && 'RepositoryChanged' in event.kind
   const recovery = !event || event.kind === 'Connected'
   const prefix = `${JSON.stringify([scope]).slice(0, -1)},`
-  if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed && changed.change !== 'LogsAppended') {
+  if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed) {
     invalidateRunHistoryScope(scope, recovery)
   }
   if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed?.change === 'StatusChanged') {
@@ -54,11 +56,13 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, 
     requestChecksResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestAutoMergeResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     invalidateGitHubWorkflowRuns(scope)
+    githubWorkflowNamesResource.invalidate(scope)
     invalidateGitHubWorkflowRunDetails(scope)
   } else if (event.kind === 'DependenciesChanged') {
     repositoryDependencyResource.invalidate(scope)
   } else if (event.kind === 'GitHubWorkflowRunsChanged') {
     invalidateGitHubWorkflowRuns(scope)
+    githubWorkflowNamesResource.invalidate(scope)
     invalidateGitHubWorkflowRunDetails(scope)
   } else if (typeof event.kind === 'object' && 'GitHubWorkflowRunChanged' in event.kind) {
     invalidateGitHubWorkflowRunDetails(scope, event.kind.GitHubWorkflowRunChanged.github_run_id)
