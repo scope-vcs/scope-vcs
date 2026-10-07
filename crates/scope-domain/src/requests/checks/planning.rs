@@ -1,7 +1,7 @@
 use super::{
     GitHubCheckTarget, GitHubTestedCommit, NativeRequestCheck, PRIVATE_CODE_CONFLICT_MESSAGE,
-    Request, RequestCheck, RequestCheckEvaluation, RequestCheckEvaluationState, Run,
-    WorkflowRevision, request_checks_start_immediately,
+    Request, RequestCheck, RequestCheckEvaluation, RequestCheckEvaluationState,
+    RequestCheckReviewer, RequestState, Run, WorkflowRevision,
 };
 use crate::{error::DomainError, runs::availability::NativeRunsAvailability, views::Views};
 
@@ -17,7 +17,7 @@ impl RequestCheckPlan {
         request: &Request,
         native_runs: NativeRunsAvailability,
         revisions: Result<&[WorkflowRevision], &str>,
-        maintainer_pusher: Option<&str>,
+        reviewing_pusher: Option<RequestCheckReviewer<'_>>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
         if !native_runs.is_available() {
@@ -50,9 +50,15 @@ impl RequestCheckPlan {
             .iter()
             .map(NativeRequestCheck::for_revision)
             .collect::<Vec<_>>();
-        let starter = maintainer_pusher.filter(|_| request_checks_start_immediately(request, true));
+        let starter = reviewing_pusher.filter(|_| checks_start_on_push(request));
         let (evaluation, runs) = if let Some(starter) = starter {
-            let runs = plan_runs(request, checks.iter(), revisions, starter, now_unix)?;
+            let runs = plan_runs(
+                request,
+                checks.iter(),
+                revisions,
+                starter.user_id(),
+                now_unix,
+            )?;
             for (check, run) in checks.iter_mut().zip(&runs) {
                 check.run_id = Some(run.id.clone());
             }
@@ -84,7 +90,7 @@ impl RequestCheckPlan {
         views: &Views,
         tested: GitHubTestedCommit,
         required_check_names: &[String],
-        maintainer_pusher: Option<&str>,
+        reviewing_pusher: Option<RequestCheckReviewer<'_>>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
         if tested.target() != GitHubCheckTarget::for_request(request, views) {
@@ -107,7 +113,7 @@ impl RequestCheckPlan {
                 ));
             }
         };
-        let starts = maintainer_pusher.is_some() && request_checks_start_immediately(request, true);
+        let starts = reviewing_pusher.is_some() && checks_start_on_push(request);
         let checks = required_check_names
             .iter()
             .map(|name| RequestCheck::GitHub { name: name.clone() })
@@ -187,7 +193,7 @@ impl RequestCheckPlan {
         request: &Request,
         mut evaluation: RequestCheckEvaluation,
         revisions: &[WorkflowRevision],
-        actor_user_id: &str,
+        approver: RequestCheckReviewer<'_>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
         evaluation.ensure_awaiting_approval()?;
@@ -200,7 +206,7 @@ impl RequestCheckPlan {
             request,
             evaluation.native_checks(),
             revisions,
-            actor_user_id,
+            approver.user_id(),
             now_unix,
         )?;
         evaluation.approve(runs.iter().map(|run| run.id.clone()).collect(), now_unix)?;
@@ -218,6 +224,10 @@ impl RequestCheckPlan {
             push_to_github: false,
         }
     }
+}
+
+fn checks_start_on_push(request: &Request) -> bool {
+    request.state() != RequestState::Merged
 }
 
 fn plan_runs<'a>(

@@ -18,9 +18,9 @@ use crate::{
 use scope_domain::{
     repository::RepositoryIncarnation,
     requests::{
-        MainPushRequestMutation, Request, StartMainPushRequestInput, StartRequestFacts,
-        StartRequestInput, canonical_request_ref, main_push_request_name, main_push_request_title,
-        request_actor_role, start_request,
+        MainPushRequestMutation, Request, RequestCheckReviewer, StartMainPushRequestInput,
+        StartRequestFacts, StartRequestInput, canonical_request_ref, main_push_request_name,
+        main_push_request_title, request_actor_role, start_request,
     },
     views::ViewId,
 };
@@ -191,7 +191,7 @@ pub(super) async fn complete_view_main_push(
         views,
         &mutation.request,
         &mutation.revision,
-        Some(&push.author_id),
+        RequestCheckReviewer::for_actor(&push.author_id, &context.access, views),
         staging_repo,
     )
     .await;

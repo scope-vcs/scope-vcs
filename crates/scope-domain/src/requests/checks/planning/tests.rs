@@ -22,6 +22,10 @@ use crate::{
 
 const AVAILABLE: NativeRunsAvailability = NativeRunsAvailability::Available;
 
+fn reviewer(user_id: &str) -> RequestCheckReviewer<'_> {
+    RequestCheckReviewer::trusted(user_id)
+}
+
 fn request() -> Request {
     let mut request = open_request();
     request.base_main_oid = "f".repeat(40);
@@ -91,7 +95,7 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
                 &request,
                 AVAILABLE,
                 Ok(&revisions),
-                maintainer.then_some("actor"),
+                maintainer.then_some(reviewer("actor")),
                 30,
             )
             .unwrap();
@@ -113,7 +117,7 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
                     &request,
                     AVAILABLE,
                     Ok(&revisions),
-                    Some("other"),
+                    Some(reviewer("other")),
                     40,
                 )
                 .unwrap();
@@ -156,7 +160,7 @@ fn empty_and_rejected_workflows_need_no_snapshot_or_runs() {
             &request,
             AVAILABLE,
             Ok(&[]),
-            maintainer.then_some("actor"),
+            maintainer.then_some(reviewer("actor")),
             30,
         )
         .unwrap();
@@ -169,7 +173,7 @@ fn empty_and_rejected_workflows_need_no_snapshot_or_runs() {
             &request,
             AVAILABLE,
             Err("invalid workflow"),
-            maintainer.then_some("actor"),
+            maintainer.then_some(reviewer("actor")),
             30,
         )
         .unwrap();
@@ -195,7 +199,7 @@ fn a_repository_without_native_runs_asks_for_no_checks() {
                 &request,
                 NativeRunsAvailability::Unavailable,
                 workflows,
-                maintainer.then_some("actor"),
+                maintainer.then_some(reviewer("actor")),
                 30,
             )
             .unwrap();
@@ -218,10 +222,16 @@ fn approval_after_closing_starts_the_recorded_workflows_in_order() {
         ..request.clone()
     };
     let approved =
-        RequestCheckPlan::approve(&closed, waiting, &revisions, "maintainer", 40).unwrap();
-    let immediate =
-        RequestCheckPlan::evaluate(&request, AVAILABLE, Ok(&revisions), Some("maintainer"), 40)
+        RequestCheckPlan::approve(&closed, waiting, &revisions, reviewer("maintainer"), 40)
             .unwrap();
+    let immediate = RequestCheckPlan::evaluate(
+        &request,
+        AVAILABLE,
+        Ok(&revisions),
+        Some(reviewer("maintainer")),
+        40,
+    )
+    .unwrap();
     assert_eq!(approved.runs, immediate.runs);
     assert_eq!(approved.evaluation.checks, immediate.evaluation.checks);
     assert_eq!(
@@ -231,8 +241,14 @@ fn approval_after_closing_starts_the_recorded_workflows_in_order() {
     assert_eq!(approved.evaluation.created_at_unix, 30);
     assert_eq!(approved.evaluation.updated_at_unix, 40);
     assert!(
-        RequestCheckPlan::approve(&closed, approved.evaluation, &revisions, "maintainer", 41)
-            .is_err()
+        RequestCheckPlan::approve(
+            &closed,
+            approved.evaluation,
+            &revisions,
+            reviewer("maintainer"),
+            41
+        )
+        .is_err()
     );
 }
 
@@ -261,9 +277,15 @@ fn approval_rejects_missing_or_mismatched_revisions_and_invalid_time() {
         ),
     ] {
         assert_eq!(
-            RequestCheckPlan::approve(&request, waiting.clone(), revisions, "actor", time)
-                .unwrap_err()
-                .message,
+            RequestCheckPlan::approve(
+                &request,
+                waiting.clone(),
+                revisions,
+                reviewer("actor"),
+                time
+            )
+            .unwrap_err()
+            .message,
             expected
         );
     }
@@ -289,13 +311,19 @@ fn both_start_paths_reject_missing_or_mismatched_snapshots() {
         (mismatched, "request snapshot does not match its head"),
     ] {
         assert_eq!(
-            RequestCheckPlan::evaluate(&request, AVAILABLE, Ok(&revisions), Some("actor"), 40)
-                .unwrap_err()
-                .message,
+            RequestCheckPlan::evaluate(
+                &request,
+                AVAILABLE,
+                Ok(&revisions),
+                Some(reviewer("actor")),
+                40
+            )
+            .unwrap_err()
+            .message,
             expected
         );
         assert_eq!(
-            RequestCheckPlan::approve(&request, waiting.clone(), &revisions, "actor", 40)
+            RequestCheckPlan::approve(&request, waiting.clone(), &revisions, reviewer("actor"), 40)
                 .unwrap_err()
                 .message,
             expected
@@ -320,7 +348,7 @@ fn approval_rejects_an_evaluation_from_another_request_or_head() {
             ..waiting.clone()
         };
         assert_eq!(
-            RequestCheckPlan::approve(&request, evaluation, &revisions, "actor", 40)
+            RequestCheckPlan::approve(&request, evaluation, &revisions, reviewer("actor"), 40)
                 .unwrap_err()
                 .message,
             "request check evaluation does not match the request head"
@@ -338,7 +366,7 @@ fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_a
         &Views::builtin(),
         GitHubTestedCommit::Head,
         &required,
-        Some("owner"),
+        Some(reviewer("owner")),
         30,
     )
     .unwrap();
@@ -376,9 +404,14 @@ fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_a
     );
     assert!(!contributor.push_to_github);
 
-    let approved =
-        RequestCheckPlan::approve(&request, contributor.evaluation.clone(), &[], "owner", 40)
-            .unwrap();
+    let approved = RequestCheckPlan::approve(
+        &request,
+        contributor.evaluation.clone(),
+        &[],
+        reviewer("owner"),
+        40,
+    )
+    .unwrap();
     assert_eq!(
         approved.evaluation.state,
         RequestCheckEvaluationState::Started
@@ -390,7 +423,8 @@ fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_a
         ..request.clone()
     };
     let approved_closed =
-        RequestCheckPlan::approve(&closed, contributor.evaluation, &[], "owner", 40).unwrap();
+        RequestCheckPlan::approve(&closed, contributor.evaluation, &[], reviewer("owner"), 40)
+            .unwrap();
     assert!(!approved_closed.push_to_github);
 }
 
@@ -402,7 +436,7 @@ fn with_no_required_checks_only_a_maintainers_head_still_runs_the_workflows() {
         &Views::builtin(),
         GitHubTestedCommit::Head,
         &[],
-        Some("owner"),
+        Some(reviewer("owner")),
         30,
     )
     .unwrap();
@@ -430,7 +464,7 @@ fn with_no_required_checks_only_a_maintainers_head_still_runs_the_workflows() {
             &request,
             AVAILABLE,
             Ok(&[revision("test")]),
-            Some("owner"),
+            Some(reviewer("owner")),
             30
         )
         .unwrap()
@@ -465,7 +499,8 @@ fn a_public_contribution_tests_its_check_commit_and_waits_for_approval_like_any_
     assert!(!contributor.push_to_github);
 
     let approved =
-        RequestCheckPlan::approve(&request, contributor.evaluation, &[], "owner", 40).unwrap();
+        RequestCheckPlan::approve(&request, contributor.evaluation, &[], reviewer("owner"), 40)
+            .unwrap();
     assert_eq!(approved.evaluation.tested_oid, "c".repeat(40));
     assert!(approved.push_to_github);
 
@@ -474,7 +509,7 @@ fn a_public_contribution_tests_its_check_commit_and_waits_for_approval_like_any_
         &Views::builtin(),
         check_commit(),
         &required,
-        Some("owner"),
+        Some(reviewer("owner")),
         30,
     )
     .unwrap();
@@ -485,7 +520,7 @@ fn a_public_contribution_tests_its_check_commit_and_waits_for_approval_like_any_
 #[test]
 fn a_contribution_that_conflicts_with_private_code_is_a_configuration_error_and_sends_nothing() {
     let request = request();
-    for maintainer in [None, Some("owner")] {
+    for maintainer in [None, Some(reviewer("owner"))] {
         let plan = RequestCheckPlan::evaluate_github(
             &request,
             &Views::builtin(),
@@ -558,7 +593,7 @@ fn the_tested_commit_must_fit_the_requests_view() {
                 &Views::builtin(),
                 tested,
                 &[],
-                Some("owner"),
+                Some(reviewer("owner")),
                 30
             )
             .unwrap_err()
@@ -577,7 +612,7 @@ fn the_tested_commit_must_fit_the_requests_view() {
             &Views::builtin(),
             head,
             &[],
-            Some("owner"),
+            Some(reviewer("owner")),
             30
         )
         .is_err()
@@ -644,7 +679,7 @@ fn started_checks_move_to_a_check_commit_on_new_private_main_and_send_it_at_once
         &Views::builtin(),
         check_commit(),
         &required,
-        Some("owner"),
+        Some(reviewer("owner")),
         30,
     )
     .unwrap()

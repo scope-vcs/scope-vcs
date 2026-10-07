@@ -28,9 +28,9 @@ pub use checks::{
     GitHubPushDestination, GitHubPushState, GitHubPushStatus, GitHubTestedCommit,
     NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck,
     RequestCheckEvaluation, RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider,
-    RequestCheckResults, RequestChecksOutcome, changes_github_workflows, check_commit_message,
-    ensure_approving_reviewed_head, github_push_retry_at, github_retry_at, request_checks_message,
-    request_checks_outcome, request_checks_start_immediately, request_head_awaits_evaluation,
+    RequestCheckResults, RequestCheckReviewer, RequestChecksOutcome, changes_github_workflows,
+    check_commit_message, ensure_approving_reviewed_head, github_push_retry_at, github_retry_at,
+    request_checks_message, request_checks_outcome, request_head_awaits_evaluation,
 };
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};

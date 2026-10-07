@@ -1,5 +1,5 @@
 use super::custom_views::{fixture, git_with_member, member_bearer, member_id, stored_repo, view};
-use super::git_request_refs::github_checks::{REQUIRED_CHECK, connect_github, push_pass};
+use super::git_request_refs::github_checks::{REQUIRED_CHECK, checks, connect_github, push_pass};
 use super::*;
 use scope_domain::{
     projection::LogicalCommitOrigin,
@@ -260,7 +260,8 @@ async fn an_agent_request_merge_keeps_its_commits_only_in_the_agent_view() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn github_tests_an_agent_request_on_a_check_commit_built_on_canonical_main() {
+async fn an_agent_request_reaches_github_on_a_canonical_check_commit_only_after_full_view_approval()
+{
     let (mut state, _head, source) = fixture("agent-request-github").await;
     let fake = connect_github(&mut state, &[REQUIRED_CHECK]).await;
     let request_id = start_agent_request(&state, "agent-checked").await;
@@ -291,8 +292,31 @@ async fn github_tests_an_agent_request_on_a_check_commit_built_on_canonical_main
     assert_eq!(base.view_base_oid, agent_main);
     assert_ne!(evaluation.tested_oid, head);
 
-    assert_eq!(push_pass(&state, unix_now()).await, 1);
     let branch = format!("scope/requests/{request_id}");
+    let waiting = checks(&state, &request_id, &member_bearer()).await;
+    assert_eq!(waiting["state"], "awaiting-approval");
+    assert_eq!(waiting["can_approve"], false);
+    assert_eq!(push_pass(&state, unix_now()).await, 0);
+    assert_eq!(fake.branch_head(&branch), None);
+    let approve = |bearer: String| {
+        let state = state.clone();
+        let body = serde_json::json!({ "expected_head_oid": head }).to_string();
+        let route =
+            scope_api_contract::routes::repo_request_checks_approve("owner", "repo", &request_id);
+        async move { api_request(router(state), "POST", &route, Some(&bearer), Some(&body)).await }
+    };
+    assert_eq!(
+        approve(member_bearer()).await.status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(push_pass(&state, unix_now()).await, 0);
+    assert_eq!(fake.branch_head(&branch), None);
+    let owner_view = checks(&state, &request_id, &bearer_header()).await;
+    assert_eq!(owner_view["can_approve"], true);
+    let approved = expect_json(approve(bearer_header()).await, StatusCode::OK).await;
+    assert_eq!(approved["state"], "started");
+
+    assert_eq!(push_pass(&state, unix_now()).await, 1);
     assert_eq!(
         fake.branch_head(&branch),
         Some(evaluation.tested_oid.clone())

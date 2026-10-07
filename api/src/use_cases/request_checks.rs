@@ -16,8 +16,9 @@ use scope_domain::{
     repository::{RepoRecord, RepositoryIncarnation},
     requests::{
         GitHubCheckTarget, GitHubTestedCommit, Request, RequestCheckEvaluation, RequestCheckPlan,
-        RequestCheckProvider, RequestCheckResults, RequestChecksOutcome, RequestRevision,
-        changes_github_workflows, request_checks_outcome, request_head_awaits_evaluation,
+        RequestCheckProvider, RequestCheckResults, RequestCheckReviewer, RequestChecksOutcome,
+        RequestRevision, changes_github_workflows, request_checks_outcome,
+        request_head_awaits_evaluation,
     },
     runs::{availability::NativeRunsAvailability, workflow::revision::WorkflowRevision},
     views::Views,
@@ -130,16 +131,18 @@ async fn evaluate_saved_head(
     else {
         return Ok(None);
     };
-    let maintainer_pusher = match revision.actor_user_id.as_deref() {
+    let pusher_access = match revision.actor_user_id.as_deref() {
         Some(pusher) => state
             .metadata
             .repositories()
             .repository_read_access(&repo.owner_handle, &repo.name, Some(pusher))
             .await?
-            .is_some_and(|access| access.access.is_maintainer())
-            .then_some(pusher),
+            .map(|context| (pusher, context)),
         None => None,
     };
+    let reviewing_pusher = pusher_access.as_ref().and_then(|(pusher, context)| {
+        RequestCheckReviewer::for_actor(pusher, &context.access, &context.views)
+    });
     let git = RepositoryGit::load(state, &repo.incarnation()).await?;
     let views = &git.views(state).await?;
     let native_revisions = async {
@@ -162,7 +165,7 @@ async fn evaluate_saved_head(
         state,
         request,
         views,
-        maintainer_pusher,
+        reviewing_pusher,
         native_revisions,
         check_commit,
     ))
@@ -220,7 +223,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     views: &Views,
     request: &Request,
     revision: &RequestRevision,
-    maintainer_pusher: Option<&str>,
+    reviewing_pusher: Option<RequestCheckReviewer<'_>>,
     staging_repo: &Path,
 ) {
     let path = staging_repo.to_path_buf();
@@ -240,7 +243,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
         state,
         request,
         views,
-        maintainer_pusher,
+        reviewing_pusher,
         native_revisions,
         check_commit,
     )
@@ -406,7 +409,7 @@ async fn evaluate_request_checks(
     state: &AppState,
     request: &Request,
     views: &Views,
-    maintainer_pusher: Option<&str>,
+    reviewing_pusher: Option<RequestCheckReviewer<'_>>,
     native_revisions: impl Future<Output = Result<NativeRevisions, ApiError>>,
     check_commit: impl Future<Output = Result<GitHubTestedCommit, ApiError>>,
 ) -> Result<RequestChecksMutation, ApiError> {
@@ -431,7 +434,7 @@ async fn evaluate_request_checks(
                     views,
                     tested,
                     &required,
-                    maintainer_pusher,
+                    reviewing_pusher,
                     now_unix,
                 )?,
                 Vec::new(),
@@ -449,7 +452,7 @@ async fn evaluate_request_checks(
                     request,
                     native_runs,
                     revisions.as_deref().map_err(String::as_str),
-                    maintainer_pusher,
+                    reviewing_pusher,
                     now_unix,
                 )?,
                 revisions.unwrap_or_default(),

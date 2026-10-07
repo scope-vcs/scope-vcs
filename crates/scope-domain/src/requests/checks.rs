@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 mod github;
 mod github_push;
 mod planning;
+mod reviewer;
 mod tested_commit;
 pub use github::{
     GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun,
@@ -27,6 +28,7 @@ pub use github_push::{
     changes_github_workflows, github_push_retry_at, github_retry_at,
 };
 pub use planning::RequestCheckPlan;
+pub use reviewer::RequestCheckReviewer;
 pub use tested_commit::{
     CheckCommitBase, GitHubCheckTarget, GitHubTestedCommit, PRIVATE_CODE_CONFLICT_MESSAGE,
     check_commit_message,
@@ -555,10 +557,6 @@ pub fn ensure_approving_reviewed_head(
         ));
     }
     Ok(())
-}
-
-pub fn request_checks_start_immediately(request: &Request, actor_is_maintainer: bool) -> bool {
-    actor_is_maintainer && request.state() != RequestState::Merged
 }
 
 #[cfg(test)]

@@ -16,7 +16,9 @@ use crate::{
 };
 use scope_domain::{
     repository::{RepoLifecycleState, access::RepositoryAccess},
-    requests::{RecordRequestRevisionInput, Request, RequestViewer, request_policy},
+    requests::{
+        RecordRequestRevisionInput, Request, RequestCheckReviewer, RequestViewer, request_policy,
+    },
     views::{ViewId, Views},
 };
 use scope_postgres::db::GitPushContext;
@@ -306,7 +308,11 @@ pub(super) async fn persist_request_ref_revision(
                 context.repo_config.views(),
                 &mutation.request,
                 &mutation.revision,
-                context.access.is_maintainer().then_some(actor_user_id),
+                RequestCheckReviewer::for_actor(
+                    actor_user_id,
+                    &context.access,
+                    context.repo_config.views(),
+                ),
                 staging_repo,
             )
             .await;

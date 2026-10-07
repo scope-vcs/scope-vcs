@@ -25,7 +25,7 @@ use scope_domain::{
     repository::{RepoRecord, access::RepositoryAccess},
     requests::{
         GitHubBranch, GitHubPushStatus, Request, RequestCheck, RequestCheckResults,
-        request_checks_message, request_mergeability,
+        RequestCheckReviewer, request_checks_message, request_mergeability,
     },
     views::Views,
 };
@@ -151,7 +151,8 @@ pub(crate) async fn checks_response(
             mergeability,
         });
     };
-    let can_approve = evaluation.awaits_approval() && access.is_maintainer();
+    let can_approve =
+        evaluation.awaits_approval() && RequestCheckReviewer::may_review(&access, views);
     let latest_push = state
         .metadata
         .requests()

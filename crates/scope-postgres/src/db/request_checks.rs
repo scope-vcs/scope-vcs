@@ -10,8 +10,8 @@ use crate::error::PostgresError;
 use scope_domain::{
     requests::{
         GitHubBranch, GitHubCheckResults, GitHubPushDestination, Request, RequestCheckEvaluation,
-        RequestCheckPlan, RequestCheckResults, RequestRevision, ensure_approving_reviewed_head,
-        stop_request_auto_merge_for_check_evaluation,
+        RequestCheckPlan, RequestCheckResults, RequestCheckReviewer, RequestRevision,
+        ensure_approving_reviewed_head, stop_request_auto_merge_for_check_evaluation,
     },
     runs::{
         run::Run,
@@ -120,9 +120,13 @@ impl RequestStore {
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         super::run_retention::lock_run_evidence_retention(&tx).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
-        if !repo.access.is_maintainer() {
-            return Err(PostgresError::permission_denied("repo maintainer required"));
-        }
+        let approver =
+            RequestCheckReviewer::for_actor(&command.actor_user_id, &repo.access, &repo.views)
+                .ok_or_else(|| {
+                    PostgresError::permission_denied(
+                        "approving checks needs a maintainer who reads the full view",
+                    )
+                })?;
         ensure_approving_reviewed_head(&request, &command.reviewed_head_oid)?;
         let evaluation = evaluation_for_head(&tx, &request.id, &request.head_oid)
             .await?
@@ -156,7 +160,7 @@ impl RequestStore {
             &request,
             evaluation,
             &revisions,
-            &command.actor_user_id,
+            approver,
             command.now_unix,
         )?;
         let created_runs = start_runs(&tx, &revisions, runs).await?;

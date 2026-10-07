@@ -123,7 +123,11 @@ impl OwnerRequest {
     }
 }
 
-async fn checks(state: &AppState, request_id: &str, bearer: &str) -> serde_json::Value {
+pub(in crate::workflow_tests) async fn checks(
+    state: &AppState,
+    request_id: &str,
+    bearer: &str,
+) -> serde_json::Value {
     expect_json(
         api_request(
             router(state.clone()),
