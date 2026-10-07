@@ -65,8 +65,8 @@ mod main_push;
 pub use main_push::{
     MAIN_PUSH_REQUEST_NAME_PREFIX, MainPushRequestFacts, MainPushRequestMutation,
     MainPushRequestName, MainPushRequestOutcome, StartMainPushRequestInput,
-    main_push_request_names, main_push_request_title, start_main_push_draft,
-    start_main_push_request,
+    is_main_push_request_name, main_push_request_attempt, main_push_request_names,
+    main_push_request_title, start_main_push_draft, start_main_push_request,
 };
 mod limits;
 pub use limits::{

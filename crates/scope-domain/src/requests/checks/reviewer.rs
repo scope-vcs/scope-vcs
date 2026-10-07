@@ -14,6 +14,16 @@ impl<'a> RequestCheckReviewer<'a> {
         access.is_maintainer() && access.reads_full_view(views)
     }
 
+    pub fn refusal(access: &RepositoryAccess, views: &Views) -> &'static str {
+        if !access.is_maintainer() {
+            "repo maintainer required"
+        } else if !access.reads_full_view(views) {
+            "approving checks needs a maintainer who reads the full view"
+        } else {
+            "checks may be approved"
+        }
+    }
+
     pub fn user_id(&self) -> &'a str {
         self.user_id
     }
@@ -64,6 +74,14 @@ mod tests {
         let outsider =
             repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "outsider");
         assert!(RequestCheckReviewer::for_actor("outsider", &outsider, &views).is_none());
+        assert_eq!(
+            RequestCheckReviewer::refusal(&outsider, &views),
+            "repo maintainer required"
+        );
+        assert_eq!(
+            RequestCheckReviewer::refusal(&member(agent()), &views),
+            "approving checks needs a maintainer who reads the full view"
+        );
         let owner =
             repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "owner");
         assert!(RequestCheckReviewer::for_actor("owner", &owner, &views).is_some());

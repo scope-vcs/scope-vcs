@@ -1,5 +1,6 @@
 use super::*;
 use crate::requests::RequestActorRole;
+use crate::requests::main_push::is_main_push_request_name;
 use crate::{
     error::DomainErrorKind,
     repository::{
@@ -214,7 +215,7 @@ fn a_main_push_checked_for_another_view_is_refused() {
 
 #[test]
 fn main_push_names_follow_the_head_and_count_up_after_the_first() {
-    let names = main_push_request_names(HEAD).collect::<Vec<_>>();
+    let names = main_push_request_names(HEAD).take(3).collect::<Vec<_>>();
     assert_eq!(names[0], "main-push-222222222222");
     assert_eq!(names[1], "main-push-222222222222-2");
     assert_eq!(names[2], "main-push-222222222222-3");
@@ -223,6 +224,22 @@ fn main_push_names_follow_the_head_and_count_up_after_the_first() {
             .iter()
             .all(|name| super::super::validate_request_name(name).is_ok())
     );
+    assert_eq!(
+        main_push_request_names(HEAD).nth(149).as_deref(),
+        Some("main-push-222222222222-150")
+    );
+    assert!(is_main_push_request_name(
+        "main-push-222222222222-150",
+        HEAD
+    ));
+    for rejected in [
+        "main-push-222222222222-1",
+        "main-push-222222222222-02",
+        "main-push-222222222222-",
+        "main-push-111111111111-2",
+    ] {
+        assert!(!is_main_push_request_name(rejected, HEAD), "{rejected}");
+    }
 
     let access = member(agent(), true);
     let suffixed = start_main_push_request(

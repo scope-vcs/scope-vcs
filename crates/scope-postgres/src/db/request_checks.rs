@@ -123,9 +123,10 @@ impl RequestStore {
         let approver =
             RequestCheckReviewer::for_actor(&command.actor_user_id, &repo.access, &repo.views)
                 .ok_or_else(|| {
-                    PostgresError::permission_denied(
-                        "approving checks needs a maintainer who reads the full view",
-                    )
+                    PostgresError::permission_denied(RequestCheckReviewer::refusal(
+                        &repo.access,
+                        &repo.views,
+                    ))
                 })?;
         ensure_approving_reviewed_head(&request, &command.reviewed_head_oid)?;
         let evaluation = evaluation_for_head(&tx, &request.id, &request.head_oid)

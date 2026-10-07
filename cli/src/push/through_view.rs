@@ -15,7 +15,7 @@ use crate::{
     progress::PreparationProgress,
     repository_views::repository_views,
 };
-use scope_domain::{repository::access::MainPushMode, requests::main_push_request_names};
+use scope_domain::{repository::access::MainPushMode, requests::main_push_request_attempt};
 use serde_json::json;
 
 pub(super) fn push(
@@ -120,13 +120,12 @@ fn landed_request(
     pusher_user_id: &str,
     head_oid: &str,
 ) -> anyhow::Result<RequestListItemResponse> {
-    let names = main_push_request_names(head_oid).collect::<Vec<_>>();
-    let mut newest: Option<(usize, RequestListItemResponse)> = None;
+    let mut newest: Option<(u64, RequestListItemResponse)> = None;
     let mut cursor = None;
     loop {
         let page = list_requests(api, &target.owner, &target.repo, cursor.as_deref())?;
         for request in page.requests {
-            let generated = names.iter().position(|name| *name == request.name);
+            let generated = main_push_request_attempt(&request.name, head_oid);
             let Some(position) = generated.filter(|_| {
                 request.author_user_id.as_deref() == Some(pusher_user_id)
                     && request.view.as_str() == target.view.as_str()

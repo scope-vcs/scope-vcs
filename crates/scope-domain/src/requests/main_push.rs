@@ -45,20 +45,38 @@ pub struct MainPushRequestMutation {
 }
 
 pub const MAIN_PUSH_REQUEST_NAME_PREFIX: &str = "main-push-";
-const MAIN_PUSH_REQUEST_NAMES_PER_HEAD: usize = 100;
 
-pub fn main_push_request_names(head_oid: &str) -> impl Iterator<Item = String> {
-    let first = format!(
+fn main_push_request_name_root(head_oid: &str) -> String {
+    format!(
         "{MAIN_PUSH_REQUEST_NAME_PREFIX}{}",
         head_oid.get(..12).unwrap_or(head_oid)
-    );
-    let suffixed = (2..).map({
+    )
+}
+
+pub fn main_push_request_names(head_oid: &str) -> impl Iterator<Item = String> {
+    let first = main_push_request_name_root(head_oid);
+    let suffixed = (2u64..).map({
         let first = first.clone();
         move |attempt| format!("{first}-{attempt}")
     });
-    std::iter::once(first)
-        .chain(suffixed)
-        .take(MAIN_PUSH_REQUEST_NAMES_PER_HEAD)
+    std::iter::once(first).chain(suffixed)
+}
+
+pub fn main_push_request_attempt(name: &str, head_oid: &str) -> Option<u64> {
+    let root = main_push_request_name_root(head_oid);
+    match name.strip_prefix(root.as_str()) {
+        Some("") => Some(1),
+        Some(suffix) => suffix
+            .strip_prefix('-')
+            .filter(|digits| !digits.starts_with('0'))
+            .and_then(|digits| digits.parse::<u64>().ok())
+            .filter(|attempt| *attempt >= 2),
+        None => None,
+    }
+}
+
+pub fn is_main_push_request_name(name: &str, head_oid: &str) -> bool {
+    main_push_request_attempt(name, head_oid).is_some()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,7 +114,7 @@ pub fn start_main_push_draft(
     head_oid: &str,
     views: &Views,
 ) -> Result<StartRequestMutation, DomainError> {
-    if !main_push_request_names(head_oid).any(|name| name == input.name) {
+    if !is_main_push_request_name(&input.name, head_oid) {
         return Err(DomainError::invalid_input(
             "main push requests are named after their head",
         ));

@@ -185,7 +185,7 @@ async fn a_retried_main_push_reuses_its_open_request_and_a_closed_one_moves_to_t
     grant_push(&state).await;
     let checkout = agent_checkout(&state, "agent-main-push-retry-clone").await;
     let head = checkout.commit(&[("src/main.rs", "fn main() { retry() }\n")], "agent main");
-    let names = main_push_request_names(&head).collect::<Vec<_>>();
+    let names = main_push_request_names(&head).take(2).collect::<Vec<_>>();
 
     push_main(&state, &checkout, &head).await;
     push_main(&state, &checkout, &head).await;
@@ -232,7 +232,7 @@ async fn the_request_transaction_refuses_a_duplicate_or_stale_main_push() {
     let checkout = agent_checkout(&state, "agent-main-push-race-clone").await;
     let agent_main_before = checkout.fetch_main();
     let head = checkout.commit(&[("src/main.rs", "fn main() { race() }\n")], "agent main");
-    let names = main_push_request_names(&head).collect::<Vec<_>>();
+    let names = main_push_request_names(&head).take(2).collect::<Vec<_>>();
     push_main(&state, &checkout, &head).await;
     let landed = main_push_requests(&state).await.remove(0);
     let incarnation_id = stored_repo_incarnation(&state).await;

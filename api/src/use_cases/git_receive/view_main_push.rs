@@ -251,7 +251,11 @@ async fn provisional_request(
     push: &ViewMainPush,
     provisional: ProvisionalMainPush<'_>,
 ) -> Result<Option<Request>, ApiError> {
-    for name in main_push_request_names(provisional.head_oid) {
+    let mut names = main_push_request_names(provisional.head_oid);
+    loop {
+        let name = names
+            .next()
+            .expect("generated main push names never run out");
         let request_with_name = state
             .metadata
             .requests()
@@ -292,7 +296,4 @@ async fn provisional_request(
         )?;
         return Ok(Some(started.request));
     }
-    Err(ApiError::conflict(
-        "too many main push requests share this head; close some and push again",
-    ))
 }
