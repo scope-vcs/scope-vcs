@@ -81,7 +81,8 @@ export async function closeSession({ context }) {
   await context.close()
 }
 
-async function expectSignedIn(page, { handle, email }) {
+export async function waitForSignedIn(page, { handle, email }) {
+  await clerk.loaded({ page })
   await page.waitForFunction(() => window.Clerk?.user)
   const token = await clerkSessionToken(page)
   const session = await apiFetch(token, '/v1/session')
@@ -130,7 +131,7 @@ export async function signIn(browser, collaborator) {
   } catch (error) {
     throw new Error(`${error.message} at ${session.page.url()}; failed Clerk calls: ${failures.join(', ') || 'none'}`)
   }
-  await expectSignedIn(session.page, collaborator)
+  await waitForSignedIn(session.page, collaborator)
   return session
 }
 
@@ -143,7 +144,7 @@ export async function signInThroughForm(browser, collaborator, contextOptions) {
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await codeSent
   await page.getByRole('textbox', { name: 'Enter verification code' }).fill(CLERK_TEST_EMAIL_VERIFICATION_CODE)
-  await expectSignedIn(page, collaborator)
+  await waitForSignedIn(page, collaborator)
   return session
 }
 
