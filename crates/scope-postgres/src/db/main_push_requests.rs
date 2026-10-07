@@ -1,5 +1,6 @@
 use super::{
     RequestStore, acquire_aggregate_lock, entities,
+    projection_read_models::live_projection_read_model,
     request_access::{ensure_user_exists, repo_by_id},
     request_revision_rows::insert_revision,
     request_rows::{
@@ -9,7 +10,7 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
-    MainPushRequestMutation, StartMainPushRequestInput, StartRequestFacts, main_push_request_name,
+    MainPushRequestFacts, MainPushRequestOutcome, StartMainPushRequestInput,
     start_main_push_request,
 };
 use sea_orm::{ActiveModelTrait, IntoActiveModel, TransactionTrait};
@@ -18,7 +19,7 @@ impl RequestStore {
     pub async fn start_main_push_request(
         &self,
         input: StartMainPushRequestInput,
-    ) -> Result<MainPushRequestMutation, PostgresError> {
+    ) -> Result<MainPushRequestOutcome, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &input.repo_id).await?;
         acquire_aggregate_lock(&tx, "request", &input.id).await?;
@@ -29,15 +30,17 @@ impl RequestStore {
                 "repository was recreated since the push started",
             ));
         }
-        let facts = StartRequestFacts {
+        let facts = MainPushRequestFacts {
             request_id_exists: request_by_id(&tx, &input.id).await?.is_some(),
-            request_name_exists: request_by_name(
+            request_with_name: request_by_name(&tx, &input.repo_id, &input.name).await?,
+            view_main_oid: live_projection_read_model(
                 &tx,
                 &input.repo_id,
-                &main_push_request_name(&input.head_oid),
+                repo.record.content_version,
+                &input.validated_view,
             )
             .await?
-            .is_some(),
+            .and_then(|read_model| read_model.head_oid),
             public_working_request_count: public_draft_count(
                 &tx,
                 &input.repo_id,
@@ -45,13 +48,19 @@ impl RequestStore {
             )
             .await?,
         };
-        let mutation = start_main_push_request(
+        let mutation = match start_main_push_request(
             facts,
             &repo.access,
             repo.record.lifecycle_state,
             input,
             &repo.views,
-        )?;
+        )? {
+            MainPushRequestOutcome::Started(mutation) => mutation,
+            already_open @ MainPushRequestOutcome::AlreadyOpen(_) => {
+                tx.rollback().await.map_err(PostgresError::internal)?;
+                return Ok(already_open);
+            }
+        };
         insert_request_row(&tx, &mutation.request).await?;
         for event in &mutation.events {
             insert_request_event_row(&tx, event).await?;
@@ -71,6 +80,6 @@ impl RequestStore {
         .await
         .map_err(PostgresError::internal)?;
         tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(mutation)
+        Ok(MainPushRequestOutcome::Started(mutation))
     }
 }

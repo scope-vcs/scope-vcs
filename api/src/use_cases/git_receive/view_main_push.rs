@@ -18,9 +18,10 @@ use crate::{
 use scope_domain::{
     repository::RepositoryIncarnation,
     requests::{
-        MainPushRequestMutation, Request, RequestCheckReviewer, StartMainPushRequestInput,
-        StartRequestFacts, StartRequestInput, canonical_request_ref, main_push_request_name,
-        main_push_request_title, request_actor_role, start_request,
+        MainPushRequestName, MainPushRequestOutcome, Request, RequestCheckReviewer,
+        StartMainPushRequestInput, StartRequestFacts, StartRequestInput, canonical_request_ref,
+        main_push_request_names, main_push_request_title, request_actor_role,
+        start_main_push_draft,
     },
     views::ViewId,
 };
@@ -37,13 +38,19 @@ pub(super) struct ViewMainPush {
     pub(super) refs_after: Vec<(String, String)>,
 }
 
+pub(super) enum ViewMainPushOutcome {
+    Landed,
+    AlreadyOpen,
+    NothingToPush,
+}
+
 pub(super) async fn complete_view_main_push(
     state: &AppState,
     owner: &str,
     repo_name: &str,
     staging_repo: &Path,
     push: ViewMainPush,
-) -> Result<MainPushRequestMutation, ApiError> {
+) -> Result<ViewMainPushOutcome, ApiError> {
     let head_oid = pushed_main_head(&push.refs_before, &push.refs_after)?;
     push.push_intent.ensure_head(&head_oid)?;
     let context =
@@ -63,6 +70,9 @@ pub(super) async fn complete_view_main_push(
         &head_oid,
     )
     .await?;
+    if view_main_oid == head_oid {
+        return Ok(ViewMainPushOutcome::NothingToPush);
+    }
     let view_name = views.display_name(&push.view).to_string();
     let descends = {
         let staging_repo = staging_repo.to_path_buf();
@@ -92,14 +102,22 @@ pub(super) async fn complete_view_main_push(
         .ok_or_else(|| ApiError::not_found("user not found"))?;
     let request_id = generate_prefixed_id("req")?;
     let now_unix = unix_now()?;
-    let request = provisional_request(
+    let Some(request) = provisional_request(
+        state,
         &context,
         &push,
-        &request_id,
-        &pusher_handle,
-        &view_main_oid,
-        now_unix,
-    )?;
+        ProvisionalMainPush {
+            request_id: &request_id,
+            pusher_handle: &pusher_handle,
+            head_oid: &head_oid,
+            view_main_oid: &view_main_oid,
+            now_unix,
+        },
+    )
+    .await?
+    else {
+        return Ok(ViewMainPushOutcome::AlreadyOpen);
+    };
     let update = RequestRefUpdate {
         request_ref: canonical_request_ref(&request.name),
         request_name: request.name.clone(),
@@ -140,6 +158,7 @@ pub(super) async fn complete_view_main_push(
             pusher_user_id: push.author_id.clone(),
             pusher_handle,
             validated_view: push.view.clone(),
+            name: request.name.clone(),
             base_main_oid: view_main_oid,
             head_oid,
             git_snapshot: persisted.git_snapshot.clone(),
@@ -153,12 +172,12 @@ pub(super) async fn complete_view_main_push(
         })
         .await;
     let mutation = match mutation {
-        Ok(mutation) => {
+        Ok(MainPushRequestOutcome::Started(mutation)) => {
             drop(update_lock);
             persisted.fence.release().await;
             mutation
         }
-        Err(error) => {
+        outcome => {
             let rollback_state = state.clone();
             let incarnation = push.incarnation.clone();
             let request_ref = update.request_ref.clone();
@@ -179,7 +198,10 @@ pub(super) async fn complete_view_main_push(
             )
             .await;
             persisted.fence.release().await;
-            return Err(error.into());
+            return match outcome {
+                Ok(_) => Ok(ViewMainPushOutcome::AlreadyOpen),
+                Err(error) => Err(error.into()),
+            };
         }
     };
     state
@@ -196,7 +218,7 @@ pub(super) async fn complete_view_main_push(
     )
     .await;
     state.auto_merge_wakeup.notify_one();
-    Ok(mutation)
+    Ok(ViewMainPushOutcome::Landed)
 }
 
 fn pushed_main_head(
@@ -219,35 +241,62 @@ fn pushed_main_head(
     Ok(head_oid)
 }
 
-fn provisional_request(
+struct ProvisionalMainPush<'a> {
+    request_id: &'a str,
+    pusher_handle: &'a str,
+    head_oid: &'a str,
+    view_main_oid: &'a str,
+    now_unix: u64,
+}
+
+async fn provisional_request(
+    state: &AppState,
     context: &GitPushContext,
     push: &ViewMainPush,
-    request_id: &str,
-    pusher_handle: &str,
-    view_main_oid: &str,
-    now_unix: u64,
-) -> Result<Request, ApiError> {
-    let access = &context.access;
-    Ok(start_request(
-        StartRequestFacts {
-            request_id_exists: false,
-            request_name_exists: false,
-            public_working_request_count: 0,
-        },
-        StartRequestInput {
-            id: request_id.to_string(),
-            repo_id: context.repo_id.clone(),
-            name: main_push_request_name(&push.push_intent.head_oid),
-            author_user_id: push.author_id.clone(),
-            title: Some(main_push_request_title(pusher_handle)),
-            author_role: request_actor_role(access.clone()),
-            author_view: access.view.clone(),
-            view: push.view.clone(),
-            base_main_oid: view_main_oid.to_string(),
-            event_id: generate_prefixed_id("event_request_started")?,
-            now_unix,
-        },
-        context.repo_config.views(),
-    )?
-    .request)
+    provisional: ProvisionalMainPush<'_>,
+) -> Result<Option<Request>, ApiError> {
+    for name in main_push_request_names(provisional.head_oid) {
+        let request_with_name = state
+            .metadata
+            .requests()
+            .request_by_name(&context.repo_id, &name)
+            .await?;
+        match MainPushRequestName::classify(
+            request_with_name.as_ref(),
+            &push.author_id,
+            &push.view,
+            provisional.head_oid,
+        ) {
+            MainPushRequestName::AlreadyOpen => return Ok(None),
+            MainPushRequestName::Taken => continue,
+            MainPushRequestName::Free => {}
+        }
+        let access = &context.access;
+        let started = start_main_push_draft(
+            StartRequestFacts {
+                request_id_exists: false,
+                request_name_exists: request_with_name.is_some(),
+                public_working_request_count: 0,
+            },
+            StartRequestInput {
+                id: provisional.request_id.to_string(),
+                repo_id: context.repo_id.clone(),
+                name,
+                author_user_id: push.author_id.clone(),
+                title: Some(main_push_request_title(provisional.pusher_handle)),
+                author_role: request_actor_role(access.clone()),
+                author_view: access.view.clone(),
+                view: push.view.clone(),
+                base_main_oid: provisional.view_main_oid.to_string(),
+                event_id: generate_prefixed_id("event_request_started")?,
+                now_unix: provisional.now_unix,
+            },
+            provisional.head_oid,
+            context.repo_config.views(),
+        )?;
+        return Ok(Some(started.request));
+    }
+    Err(ApiError::conflict(
+        "too many main push requests share this head; close some and push again",
+    ))
 }

@@ -4,18 +4,15 @@ use super::custom_views::{
 };
 use super::git_request_refs::github_checks::{REQUIRED_CHECK, checks, connect_github, push_pass};
 use super::*;
-use scope_domain::{
-    projection::LogicalCommitOrigin,
-    requests::{RequestState, main_push_request_name},
-};
+use scope_domain::projection::LogicalCommitOrigin;
 
-struct AgentCheckout {
-    path: TempGitRepo,
+pub(super) struct AgentCheckout {
+    pub(super) path: TempGitRepo,
     remote: String,
     _server: TestServer,
 }
 
-async fn agent_checkout(state: &AppState, label: &str) -> AgentCheckout {
+pub(super) async fn agent_checkout(state: &AppState, label: &str) -> AgentCheckout {
     let (origin, server) = spawn_test_server(state).await;
     let remote = format!("{origin}/git/agent/{TEST_REPO_ID}");
     let path = TempGitRepo(unique_test_path(label));
@@ -33,7 +30,7 @@ async fn agent_checkout(state: &AppState, label: &str) -> AgentCheckout {
 }
 
 impl AgentCheckout {
-    fn commit(&self, files: &[(&str, &str)], message: &str) -> String {
+    pub(super) fn commit(&self, files: &[(&str, &str)], message: &str) -> String {
         for (path, content) in files {
             let path = self.path.join(path);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -44,7 +41,7 @@ impl AgentCheckout {
         git_head_oid(&self.path)
     }
 
-    fn push(&self, target_ref: &str, extra_headers: &[String]) -> std::process::Output {
+    pub(super) fn push(&self, target_ref: &str, extra_headers: &[String]) -> std::process::Output {
         let mut args = vec![
             "-c".to_string(),
             format!(
@@ -66,7 +63,7 @@ impl AgentCheckout {
         run_git_output(Some(&self.path), &args, "push through the agent view").unwrap()
     }
 
-    fn fetch_main(&self) -> String {
+    pub(super) fn fetch_main(&self) -> String {
         git_with_member(
             Some(&self.path),
             &self.remote,
@@ -84,7 +81,7 @@ fn git_head_oid_of(repo: &FsPath, revision: &str) -> String {
         .to_string()
 }
 
-fn contains_commit(repo: &FsPath, ancestor: &str, descendant: &str) -> bool {
+pub(super) fn contains_commit(repo: &FsPath, ancestor: &str, descendant: &str) -> bool {
     run_git_output(
         Some(repo),
         &["merge-base", "--is-ancestor", ancestor, descendant],
@@ -119,18 +116,6 @@ async fn submit(state: &AppState, request_id: &str) {
     )
     .await;
     expect_json(submitted, StatusCode::OK).await;
-}
-
-async fn grant_push(state: &AppState) {
-    let granted = api_request(
-        router(state.clone()),
-        "PATCH",
-        &format!("/v1/repos/owner/repo/members/{}", member_id()),
-        Some(&bearer_header()),
-        Some(r#"{"permissions":{"can_push":true,"can_change_file_visibility":false,"view":"agent"}}"#),
-    )
-    .await;
-    expect_json(granted, StatusCode::OK).await;
 }
 
 async fn merged_request_native_view(state: &AppState, history_view: &str) -> serde_json::Value {
@@ -345,93 +330,6 @@ async fn an_agent_request_reaches_github_on_a_canonical_check_commit_only_after_
         secret,
         fs::read_to_string(source.join("secret.md")).unwrap()
     );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_main_push_through_the_agent_view_lands_as_an_auto_merged_request() {
-    let (state, _head, _source) = fixture("agent-main-push").await;
-    grant_push(&state).await;
-    let checkout = agent_checkout(&state, "agent-main-push-clone").await;
-    let agent_main = checkout.fetch_main();
-    let head = checkout.commit(&[("src/main.rs", "fn main() { run() }\n")], "agent main");
-
-    let intent = expect_json(
-        api_request(
-            router(state.clone()),
-            "POST",
-            "/v1/repos/owner/repo/push-intents",
-            Some(&member_bearer()),
-            Some(&serde_json::json!({ "head_oid": head, "view": "agent" }).to_string()),
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
-    assert_eq!(intent["lands_as_request"], true);
-    assert_eq!(intent["base_head_oid"], agent_main);
-    let full_view_intent = api_request(
-        router(state.clone()),
-        "POST",
-        "/v1/repos/owner/repo/push-intents",
-        Some(&member_bearer()),
-        Some(&serde_json::json!({ "head_oid": head, "view": "private" }).to_string()),
-    )
-    .await;
-    assert_eq!(full_view_intent.status(), StatusCode::FORBIDDEN);
-
-    let token = intent["token"].as_str().unwrap();
-    let pushed = checkout.push(
-        "refs/heads/main",
-        &[format!("X-Scope-Push-Intent: {token}")],
-    );
-    assert!(
-        pushed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&pushed.stderr)
-    );
-
-    let name = main_push_request_name(&head);
-    let request = state
-        .metadata
-        .requests()
-        .request_by_name(TEST_REPO_ID, &name)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(request.view, view("agent"));
-    assert_eq!(request.title, "Main push from agent-member");
-    assert_eq!(request.state(), RequestState::Open);
-    assert_eq!(request.head_oid, head);
-    assert!(
-        state
-            .metadata
-            .requests()
-            .request_auto_merge_intent(&request.id)
-            .await
-            .unwrap()
-            .is_some_and(|intent| intent.is_active())
-    );
-
-    crate::use_cases::request_auto_merge::reconcile_once(&state, unix_now())
-        .await
-        .unwrap();
-    let merged = state
-        .metadata
-        .requests()
-        .request_by_id(&request.id)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(merged.state(), RequestState::Merged);
-    assert_eq!(
-        live_file_content(&state, "/src/main.rs").await.as_deref(),
-        Some("fn main() { run() }\n")
-    );
-    assert!(contains_commit(
-        &checkout.path,
-        &head,
-        &checkout.fetch_main()
-    ));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

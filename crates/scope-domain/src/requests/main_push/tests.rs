@@ -1,4 +1,5 @@
 use super::*;
+use crate::requests::RequestActorRole;
 use crate::{
     error::DomainErrorKind,
     repository::{
@@ -37,6 +38,7 @@ fn input() -> StartMainPushRequestInput {
         pusher_user_id: "pusher".into(),
         pusher_handle: "ada".into(),
         validated_view: agent(),
+        name: "main-push-222222222222".into(),
         base_main_oid: BASE.into(),
         head_oid: HEAD.into(),
         git_snapshot: source_blob(HEAD),
@@ -59,7 +61,7 @@ fn start(
     lifecycle_state: RepoLifecycleState,
 ) -> Result<MainPushRequestMutation, DomainError> {
     start_main_push_request(
-        StartRequestFacts::default(),
+        facts(),
         access,
         lifecycle_state,
         StartMainPushRequestInput {
@@ -68,6 +70,23 @@ fn start(
         },
         &views_with_agent(),
     )
+    .map(started)
+}
+
+fn facts() -> MainPushRequestFacts {
+    MainPushRequestFacts {
+        view_main_oid: Some(BASE.into()),
+        ..MainPushRequestFacts::default()
+    }
+}
+
+fn started(outcome: MainPushRequestOutcome) -> MainPushRequestMutation {
+    match outcome {
+        MainPushRequestOutcome::Started(mutation) => *mutation,
+        MainPushRequestOutcome::AlreadyOpen(request) => {
+            panic!("expected a new request, found {}", request.name)
+        }
+    }
 }
 
 #[test]
@@ -183,7 +202,7 @@ fn a_main_push_checked_for_another_view_is_refused() {
     let mut reassigned = input();
     reassigned.validated_view = ViewId::public();
     let error = start_main_push_request(
-        StartRequestFacts::default(),
+        facts(),
         &access,
         RepoLifecycleState::Ready,
         reassigned,
@@ -191,4 +210,154 @@ fn a_main_push_checked_for_another_view_is_refused() {
     )
     .unwrap_err();
     assert_eq!(error.kind, crate::error::DomainErrorKind::Conflict);
+}
+
+#[test]
+fn main_push_names_follow_the_head_and_count_up_after_the_first() {
+    let names = main_push_request_names(HEAD).collect::<Vec<_>>();
+    assert_eq!(names[0], "main-push-222222222222");
+    assert_eq!(names[1], "main-push-222222222222-2");
+    assert_eq!(names[2], "main-push-222222222222-3");
+    assert!(
+        names
+            .iter()
+            .all(|name| super::super::validate_request_name(name).is_ok())
+    );
+
+    let access = member(agent(), true);
+    let suffixed = start_main_push_request(
+        facts(),
+        &access,
+        RepoLifecycleState::Ready,
+        StartMainPushRequestInput {
+            name: names[1].clone(),
+            ..input()
+        },
+        &views_with_agent(),
+    )
+    .map(started)
+    .unwrap();
+    assert_eq!(suffixed.request.name, "main-push-222222222222-2");
+
+    for name in ["main-push-111111111111", "release"] {
+        let error = start_main_push_request(
+            facts(),
+            &access,
+            RepoLifecycleState::Ready,
+            StartMainPushRequestInput {
+                name: name.into(),
+                ..input()
+            },
+            &views_with_agent(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.message,
+            "main push requests are named after their head"
+        );
+    }
+}
+
+#[test]
+fn people_cannot_choose_a_main_push_request_name() {
+    let error = super::super::start_request(
+        StartRequestFacts::default(),
+        StartRequestInput {
+            id: "request".into(),
+            repo_id: "owner/repo".into(),
+            name: "main-push-222222222222".into(),
+            author_user_id: "pusher".into(),
+            title: None,
+            author_role: RequestActorRole::Member,
+            author_view: agent(),
+            view: agent(),
+            base_main_oid: BASE.into(),
+            event_id: "event".into(),
+            now_unix: 40,
+        },
+        &views_with_agent(),
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, DomainErrorKind::InvalidInput);
+    assert_eq!(error.message, "request name is reserved");
+    assert!(super::super::validate_chosen_request_name("main-pusher").is_ok());
+    assert!(super::super::validate_request_name("main-push-222222222222").is_ok());
+}
+
+#[test]
+fn only_the_pushers_own_open_request_for_the_same_head_makes_a_push_a_retry() {
+    let access = member(agent(), true);
+    let open = start(&access, RepoLifecycleState::Ready).unwrap().request;
+    let classify =
+        |request: &Request| MainPushRequestName::classify(Some(request), "pusher", &agent(), HEAD);
+    assert_eq!(
+        MainPushRequestName::classify(None, "pusher", &agent(), HEAD),
+        MainPushRequestName::Free
+    );
+    assert_eq!(classify(&open), MainPushRequestName::AlreadyOpen);
+    for taken in [
+        Request {
+            closed_at_unix: Some(50),
+            closed_by_user_id: Some("pusher".into()),
+            ..open.clone()
+        },
+        Request {
+            author_user_id: Some("someone".into()),
+            ..open.clone()
+        },
+        Request {
+            view: ViewId::public(),
+            ..open.clone()
+        },
+        Request {
+            head_oid: BASE.into(),
+            ..open.clone()
+        },
+    ] {
+        assert_eq!(classify(&taken), MainPushRequestName::Taken);
+    }
+}
+
+#[test]
+fn the_request_transaction_decides_retries_collisions_and_stale_pushes() {
+    let views = views_with_agent();
+    let access = member(agent(), true);
+    let open = start(&access, RepoLifecycleState::Ready).unwrap().request;
+    let decide = |facts: MainPushRequestFacts| {
+        start_main_push_request(facts, &access, RepoLifecycleState::Ready, input(), &views)
+    };
+
+    assert_eq!(
+        decide(MainPushRequestFacts {
+            request_with_name: Some(open.clone()),
+            ..facts()
+        })
+        .unwrap(),
+        MainPushRequestOutcome::AlreadyOpen(Box::new(open.clone()))
+    );
+    let taken = decide(MainPushRequestFacts {
+        request_with_name: Some(Request {
+            author_user_id: Some("someone".into()),
+            ..open.clone()
+        }),
+        ..facts()
+    })
+    .unwrap_err();
+    assert_eq!(taken.kind, DomainErrorKind::Conflict);
+    assert_eq!(
+        taken.message,
+        "another push took the request name main-push-222222222222; push again"
+    );
+    for moved in [Some("3".repeat(40)), None] {
+        let stale = decide(MainPushRequestFacts {
+            view_main_oid: moved,
+            ..facts()
+        })
+        .unwrap_err();
+        assert_eq!(stale.kind, DomainErrorKind::Conflict);
+        assert_eq!(
+            stale.message,
+            "the Agent view's main moved; pull it, then push again"
+        );
+    }
 }

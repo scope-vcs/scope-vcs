@@ -89,6 +89,7 @@ pub(crate) enum ReceiveCompletion {
     RequestRevision,
     MainPush,
     MainPushRequest,
+    MainPushRequestAlreadyOpen,
 }
 
 pub(crate) async fn prepare(
@@ -270,7 +271,7 @@ async fn complete_inner(
             view,
             push_intent,
         } => {
-            view_main_push::complete_view_main_push(
+            let outcome = view_main_push::complete_view_main_push(
                 state,
                 owner,
                 repo_name,
@@ -285,13 +286,21 @@ async fn complete_inner(
                 },
             )
             .await?;
+            let completion = match outcome {
+                view_main_push::ViewMainPushOutcome::Landed => ReceiveCompletion::MainPushRequest,
+                view_main_push::ViewMainPushOutcome::AlreadyOpen => {
+                    ReceiveCompletion::MainPushRequestAlreadyOpen
+                }
+                view_main_push::ViewMainPushOutcome::NothingToPush => ReceiveCompletion::NoChange,
+            };
             tracing::info!(
                 owner,
                 repo = repo_name,
                 receive_ms = receive_elapsed.as_millis(),
-                "git receive-pack main push landed as a request"
+                ?completion,
+                "git receive-pack main push through a view completed"
             );
-            return Ok(ReceiveCompletion::MainPushRequest);
+            return Ok(completion);
         }
         ReceivePackAccess::FirstPush { .. } | ReceivePackAccess::ReadyMember { .. } => {}
     }

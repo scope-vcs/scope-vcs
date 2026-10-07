@@ -11,7 +11,7 @@ pub(super) fn start_request_branch(
     let view = start_view(&context.repo.access, &context.views, args.view)?;
     let base_oid = refresh_main_projection(git_repo, &context.target, &view, api.token)?;
     let name = args.name.trim().to_string();
-    scope_domain::requests::validate_request_name(&name)
+    scope_domain::requests::validate_chosen_request_name(&name)
         .map_err(|error| crate::error::CliError::usage(error.message))?;
     let branch = if args.current_branch {
         local::adoptable_current_branch(git_repo, &base_oid)?

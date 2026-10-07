@@ -1,8 +1,8 @@
 use super::{
-    PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request, RequestActorRole, RequestEvent,
-    RequestEventKind, RequestEventPayload, RequestRevision, RequestState, advance_request_activity,
-    ensure_event_id_available, ensure_request_matches, request_identity_audit_fact,
-    validate_body_size, validate_required,
+    MAIN_PUSH_REQUEST_NAME_PREFIX, PUBLIC_WORKING_REQUEST_LIMIT, REQUEST_TITLE_MAX_BYTES, Request,
+    RequestActorRole, RequestEvent, RequestEventKind, RequestEventPayload, RequestRevision,
+    RequestState, advance_request_activity, ensure_event_id_available, ensure_request_matches,
+    request_identity_audit_fact, validate_body_size, validate_required,
 };
 use crate::views::{ViewId, Views};
 use crate::{content::SourceBlob, error::DomainError};
@@ -105,6 +105,15 @@ pub enum CloseRequestMutation {
 }
 
 pub fn start_request(
+    facts: StartRequestFacts,
+    input: StartRequestInput,
+    views: &Views,
+) -> Result<StartRequestMutation, DomainError> {
+    validate_chosen_request_name(&input.name)?;
+    open_request(facts, input, views)
+}
+
+pub(super) fn open_request(
     facts: StartRequestFacts,
     input: StartRequestInput,
     views: &Views,
@@ -433,6 +442,14 @@ pub fn validate_request_name(name: &str) -> Result<(), DomainError> {
         ));
     }
     if matches!(name, "main" | "head" | "scope") {
+        return Err(DomainError::invalid_input("request name is reserved"));
+    }
+    Ok(())
+}
+
+pub fn validate_chosen_request_name(name: &str) -> Result<(), DomainError> {
+    validate_request_name(name)?;
+    if name.starts_with(MAIN_PUSH_REQUEST_NAME_PREFIX) {
         return Err(DomainError::invalid_input("request name is reserved"));
     }
     Ok(())
