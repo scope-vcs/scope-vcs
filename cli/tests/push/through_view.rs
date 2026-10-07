@@ -78,6 +78,48 @@ fn a_narrower_member_pushes_main_through_their_view_and_lands_as_a_request() {
 }
 
 #[test]
+fn pushing_the_view_main_again_lands_nothing_and_invents_no_request() {
+    let workspace = TempDir::new("unchanged-main-push");
+    let (scope, server) = start_fake_scope(&workspace, "agent");
+    let checkout = checkout_at_view_main(&workspace, &server, "agent");
+    let head = git_stdout(&checkout, ["rev-parse", "HEAD"]);
+
+    let human = server
+        .command(&checkout)
+        .args(["push", "--main"])
+        .output()
+        .unwrap();
+    assert_success(&human, "push an unchanged main through the agent view");
+    let stdout = String::from_utf8(human.stdout).unwrap();
+    assert_eq!(
+        stdout.trim(),
+        format!(
+            "The Agent view's main is already at {}; nothing to push",
+            &head[..7]
+        )
+    );
+
+    let json_output = server
+        .command(&checkout)
+        .args(["--json", "push", "--main"])
+        .output()
+        .unwrap();
+    assert_success(&json_output, "push an unchanged main as JSON");
+    let envelope: Value = serde_json::from_slice(&json_output.stdout).unwrap();
+    assert_eq!(envelope["result"]["landed"], false, "{envelope}");
+    assert_eq!(envelope["result"]["request"], Value::Null, "{envelope}");
+    assert_eq!(envelope["result"]["commit"], head, "{envelope}");
+
+    assert_eq!(scope.intents.lock().unwrap().len(), 2);
+    let seen = scope.seen.lock().unwrap();
+    assert!(
+        !seen.iter().any(|entry| entry.contains("git-receive-pack")
+            || entry.starts_with("GET /v1/repos/owner/repo/requests")),
+        "{seen:?}"
+    );
+}
+
+#[test]
 fn a_full_view_member_cannot_push_main_through_a_narrower_remote() {
     let workspace = TempDir::new("full-member-narrower-remote");
     let (scope, server) = start_fake_scope(&workspace, "private");
@@ -165,9 +207,13 @@ async fn create_intent(State(scope): State<FakeScope>, Json(body): Json<Value>) 
         .unwrap()
         .as_secs()
         + 600;
+    let view_main = git_stdout(
+        &scope.git_root.join("owner/repo"),
+        ["rev-parse", "refs/heads/main"],
+    );
     Json(json!({
         "token": "intent-token",
-        "base_head_oid": null,
+        "base_head_oid": view_main,
         "expires_at_unix": expires_at_unix,
         "lands_as_request": true,
     }))
@@ -308,6 +354,14 @@ fn cgi_response(output: &[u8]) -> Response {
 }
 
 fn checkout_with_new_commit(workspace: &TempDir, server: &TestServer, view: &str) -> PathBuf {
+    let checkout = checkout_at_view_main(workspace, server, view);
+    std::fs::write(checkout.join("agent.md"), "agent change\n").unwrap();
+    run_git(&checkout, ["add", "agent.md"]);
+    commit_all(&checkout, "Agent change");
+    checkout
+}
+
+fn checkout_at_view_main(workspace: &TempDir, server: &TestServer, view: &str) -> PathBuf {
     let checkout = workspace.path().join("checkout");
     std::fs::create_dir_all(&checkout).unwrap();
     create_repo_with_head(&checkout);
@@ -325,8 +379,5 @@ fn checkout_with_new_commit(workspace: &TempDir, server: &TestServer, view: &str
             &format!("{}/git/{view}/owner/repo", server.api_url),
         ],
     );
-    std::fs::write(checkout.join("agent.md"), "agent change\n").unwrap();
-    run_git(&checkout, ["add", "agent.md"]);
-    commit_all(&checkout, "Agent change");
     checkout
 }

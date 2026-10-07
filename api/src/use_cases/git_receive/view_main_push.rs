@@ -41,7 +41,6 @@ pub(super) struct ViewMainPush {
 pub(super) enum ViewMainPushOutcome {
     Landed,
     AlreadyOpen,
-    NothingToPush,
 }
 
 pub(super) async fn complete_view_main_push(
@@ -70,9 +69,6 @@ pub(super) async fn complete_view_main_push(
         &head_oid,
     )
     .await?;
-    if view_main_oid == head_oid {
-        return Ok(ViewMainPushOutcome::NothingToPush);
-    }
     let view_name = views.display_name(&push.view).to_string();
     let descends = {
         let staging_repo = staging_repo.to_path_buf();

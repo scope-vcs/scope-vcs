@@ -19,6 +19,19 @@ async fn grant_push(state: &AppState) {
 }
 
 async fn push_main(state: &AppState, checkout: &AgentCheckout, head: &str) {
+    let token = view_push_intent(state, head).await;
+    let pushed = checkout.push(
+        "refs/heads/main",
+        &[format!("X-Scope-Push-Intent: {token}")],
+    );
+    assert!(
+        pushed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&pushed.stderr)
+    );
+}
+
+async fn view_push_intent(state: &AppState, head: &str) -> String {
     let intent = expect_json(
         api_request(
             router(state.clone()),
@@ -31,16 +44,7 @@ async fn push_main(state: &AppState, checkout: &AgentCheckout, head: &str) {
         StatusCode::OK,
     )
     .await;
-    let token = intent["token"].as_str().unwrap();
-    let pushed = checkout.push(
-        "refs/heads/main",
-        &[format!("X-Scope-Push-Intent: {token}")],
-    );
-    assert!(
-        pushed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&pushed.stderr)
-    );
+    intent["token"].as_str().unwrap().to_string()
 }
 
 async fn main_push_requests(state: &AppState) -> Vec<Request> {
@@ -274,4 +278,93 @@ async fn stored_repo_incarnation(state: &AppState) -> String {
         .incarnation()
         .incarnation_id()
         .to_string()
+}
+
+async fn prepare_agent_main_push(
+    state: &AppState,
+    head: &str,
+) -> git_receive_use_case::ReceivePreparation {
+    let mut headers = HeaderMap::new();
+    headers.insert("authorization", member_bearer().parse().unwrap());
+    headers.insert(
+        "x-scope-push-intent",
+        view_push_intent(state, head).await.parse().unwrap(),
+    );
+    let (authorization, push_intent) = crate::git::receive_pack_credentials(state, &headers)
+        .await
+        .unwrap();
+    let access = git_receive_use_case::authorize(
+        state,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        &view("agent"),
+        authorization,
+        push_intent.as_deref(),
+    )
+    .await
+    .unwrap();
+    git_receive_use_case::prepare(state, TEST_REPO_OWNER, TEST_REPO_NAME, access, false)
+        .await
+        .unwrap()
+}
+
+async fn complete_agent_main_push(
+    state: &AppState,
+    preparation: git_receive_use_case::ReceivePreparation,
+) -> Result<git_receive_use_case::ReceiveCompletion, crate::error::ApiError> {
+    let staging_repo = preparation.staging_repo.clone();
+    let completion = git_receive_use_case::complete(
+        state,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        &staging_repo,
+        preparation,
+        std::time::Duration::ZERO,
+    )
+    .await;
+    let _ = fs::remove_dir_all(staging_repo);
+    completion
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_main_push_that_leaves_the_view_main_where_it_is_creates_no_request() {
+    let (state, _head, _source) = fixture("agent-main-push-unchanged").await;
+    grant_push(&state).await;
+    let checkout = agent_checkout(&state, "agent-main-push-unchanged-clone").await;
+    let agent_main = checkout.fetch_main();
+
+    let unchanged = prepare_agent_main_push(&state, &agent_main).await;
+    assert_eq!(
+        complete_agent_main_push(&state, unchanged).await.unwrap(),
+        git_receive_use_case::ReceiveCompletion::NoChange
+    );
+    assert!(main_push_requests(&state).await.is_empty());
+
+    let head = checkout.commit(&[("src/main.rs", "fn main() { same() }\n")], "agent main");
+    let overtaken = prepare_agent_main_push(&state, &head).await;
+    push_main(&state, &checkout, &head).await;
+    crate::use_cases::request_auto_merge::reconcile_once(&state, unix_now())
+        .await
+        .unwrap();
+    assert_eq!(checkout.fetch_main(), head);
+    for args in [
+        vec!["fetch", checkout.path.to_str().unwrap(), head.as_str()],
+        vec!["update-ref", "refs/heads/main", head.as_str()],
+    ] {
+        run_git(
+            Some(&overtaken.staging_repo),
+            &args,
+            "receive the landed head again",
+        )
+        .unwrap();
+    }
+    let refused = complete_agent_main_push(&state, overtaken)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refused.kind,
+        crate::error::ErrorKind::Conflict,
+        "{refused:?}"
+    );
+    assert_eq!(main_push_requests(&state).await.len(), 1);
 }

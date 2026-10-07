@@ -7,6 +7,7 @@ use crate::{
         ApiSession, CreatePushIntentParams, RequestListItemResponse, create_push_intent, get_repo,
         http_client, list_requests,
     },
+    display::short_oid,
     error::CliError,
     execution::emit,
     git_transport::ScopeRemote,
@@ -66,6 +67,28 @@ pub(super) fn push(
     ensure_intent_destination(&intent, true)?;
     ensure_push_intent_not_expired(intent.expires_at_unix)?;
     let view_name = views.display_name(&target.view);
+    if intent
+        .base_head_oid
+        .as_ref()
+        .is_some_and(|view_main| view_main.as_str() == head_oid)
+    {
+        return emit(
+            "push",
+            &json!({
+                "repository": format!("{}/{}", target.owner, target.repo),
+                "remote": target.remote,
+                "ref": format!("refs/heads/{DEFAULT_SCOPE_BRANCH}"),
+                "commit": head_oid,
+                "view": target.view,
+                "landed": false,
+                "request": null,
+            }),
+            vec![format!(
+                "The {view_name} view's main is already at {}; nothing to push",
+                short_oid(head_oid)
+            )],
+        );
+    }
     eprintln!(
         "Publish {}/{} refs/heads/{DEFAULT_SCOPE_BRANCH} at commit {head_oid} through the {view_name} view",
         target.owner, target.repo

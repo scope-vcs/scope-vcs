@@ -291,7 +291,6 @@ async fn complete_inner(
                 view_main_push::ViewMainPushOutcome::AlreadyOpen => {
                     ReceiveCompletion::MainPushRequestAlreadyOpen
                 }
-                view_main_push::ViewMainPushOutcome::NothingToPush => ReceiveCompletion::NoChange,
             };
             tracing::info!(
                 owner,
