@@ -51,7 +51,7 @@ test('failed production tracing prevents the monitored release command from acti
     'touch', activated], { env: { ...fixture.env, RAILWAY_TOKEN: 'private-project-auth' }, encoding: 'utf8', timeout: 15_000 });
   assert.equal(existsSync(fixture.calls), true, 'release must configure tracing before activation');
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /release activation blocked/);
+  assert.match(result.stderr, /failed after 3 attempts\. Release activation blocked/);
   assert.equal(existsSync(activated), false);
   const calls = readFileSync(fixture.calls, 'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(calls.length, 3);
@@ -64,5 +64,6 @@ test('wrong production target fails before configuring any service', (t) => {
   const result = spawnSync(process.execPath, ['.github/scripts/railway-tracing.mjs', 'production'],
     { env: { ...fixture.env, SCOPE_RAILWAY_ENVIRONMENT_ID: manifest.environments.staging.environmentId }, encoding: 'utf8' });
   assert.equal(result.status, 1);
+  assert.match(result.stderr, /requires the manifest production target/);
   assert.equal(existsSync(fixture.calls), false);
 });

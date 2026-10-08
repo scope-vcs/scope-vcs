@@ -28,8 +28,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }
     configureTracing(railwayClient(), manifest.environments.production.environmentId, serviceIds(manifest));
     console.log('Production application tracing configured; exporter activation requires deployment.');
-  } catch {
-    console.error('Production tracing configuration failed; release activation blocked.');
+  } catch (error) {
+    console.error(`Production tracing configuration failed: ${error.message} Release activation blocked.`);
     process.exitCode = 1;
   }
 }
