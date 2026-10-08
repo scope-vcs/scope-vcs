@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import test, { mock } from 'node:test'
 import {
   openRequestDiscussion,
+  loadRequestDiscussionSession,
   requestDiscussionResource,
 } from './request-discussion-cache'
 import { resetViewerState } from '../../lib/viewer-state'
@@ -82,4 +83,33 @@ test('evicted catch-up stops draining and cannot write into a replacement sessio
   await catchingUp
   assert.equal(loads, 1)
   assert.equal(requestDiscussionResource.peek('request')?.collection.byId.has('late'), false)
+})
+
+
+test('concurrent navigation loads the initial discussion page once and reopening preserves pagination', async () => {
+  resetViewerState()
+  const response = deferred<RequestDiscussionPage>()
+  const load = mock.fn(() => response.promise)
+  const options = { key: 'request', load, loadChanges: noChanges }
+  const first = loadRequestDiscussionSession(options)
+  const second = loadRequestDiscussionSession(options)
+  response.resolve(page(1))
+  await Promise.all([first, second])
+  const session = requestDiscussionResource.peek('request')!
+  await session.sync.paginate('older', async () => ({ discussions: [discussion('old', 0)], next_cursor: null, snapshot_version: 1 }))
+  const reopened = await loadRequestDiscussionSession(options)
+  assert.equal(load.mock.callCount(), 1)
+  assert.equal(reopened?.next_cursor, null)
+  assert.deepEqual(reopened?.discussions.map(({ id }) => id), ['discussion-0', 'old'])
+})
+
+test('a discussion first-page response cannot publish after the viewer changes', async () => {
+  resetViewerState()
+  const response = deferred<RequestDiscussionPage>()
+  const loading = loadRequestDiscussionSession({ key: 'request', load: () => response.promise, loadChanges: noChanges })
+  await Promise.resolve()
+  resetViewerState()
+  response.resolve(page(1))
+  await assert.rejects(async () => loading, /Resource is no longer available/)
+  assert.equal(requestDiscussionResource.peek('request'), null)
 })

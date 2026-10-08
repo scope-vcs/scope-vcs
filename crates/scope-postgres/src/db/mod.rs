@@ -69,6 +69,7 @@ mod request_access;
 mod request_attention;
 mod request_auto_merge;
 mod request_check_commits;
+mod request_check_recovery;
 mod request_checks;
 mod request_discussion_commands;
 mod request_discussion_rows;
@@ -82,6 +83,7 @@ mod request_queue;
 mod request_ratings;
 mod request_revision_rows;
 mod request_rows;
+mod request_state;
 mod request_submission_transactions;
 mod requests;
 mod run_admission;
@@ -209,6 +211,7 @@ pub use request_queue::{
     RequestQueueCursor, RequestQueuePage, RequestQueuePageQuery, RequestQueueRow,
 };
 pub use request_rows::{RequestListPageQuery, RequestListRow};
+pub use request_state::RequestStateSnapshot;
 pub use run_admission::DispatchAdmission;
 pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePreparationCommand};
 pub use run_details::{RunAttemptDetail, RunDetail};

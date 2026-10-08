@@ -7,7 +7,9 @@ import type {
   RequestAutoMergeResponse,
 } from '@/api/types.generated'
 import { ApiRouteTemplates } from '@/api/types.generated'
-import { apiValidators } from '@/api/validators.generated'
+import {
+  RequestAutoMergeResponseValidator,
+} from '@/api/validators.generated'
 
 export type AuthorizeRequestAutoMergeInput = RequestParams &
   AuthorizeRequestAutoMergeRequest
@@ -15,23 +17,12 @@ export type AuthorizeRequestAutoMergeInput = RequestParams &
 export type CancelRequestAutoMergeInput = RequestParams &
   CancelRequestAutoMergeRequest
 
-export async function loadRequestAutoMergeForRequest(
-  input: RequestParams,
-  signal?: AbortSignal,
-): Promise<RequestAutoMergeResponse> {
-  return createApiClient().get(
-    requestRoute(ApiRouteTemplates.repoRequestAutoMerge, input),
-    apiValidators.RequestAutoMergeResponse,
-    { auth: 'optional', signal },
-  )
-}
-
 export async function authorizeRequestAutoMergeForRequest(
   input: AuthorizeRequestAutoMergeInput,
 ): Promise<RequestAutoMergeResponse> {
   return createApiClient().post(
     requestRoute(ApiRouteTemplates.repoRequestAutoMerge, input),
-    apiValidators.RequestAutoMergeResponse,
+    RequestAutoMergeResponseValidator,
     {
       auth: 'required',
       body: {
@@ -47,7 +38,7 @@ export async function cancelRequestAutoMergeForRequest(
 ): Promise<RequestAutoMergeResponse> {
   return createApiClient().delete(
     requestRoute(ApiRouteTemplates.repoRequestAutoMerge, input),
-    apiValidators.RequestAutoMergeResponse,
+    RequestAutoMergeResponseValidator,
     {
       auth: 'required',
       body: {

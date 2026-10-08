@@ -486,6 +486,8 @@ export type RequestListResponse = { requests: Array<RequestListItemResponse>, ne
 
 export type RequestDetailResponse = { request: RequestSummaryResponse, };
 
+export type RequestStateResponse = { viewer: RequestActorSummaryResponse | null, detail: RequestDetailResponse, checks: RequestChecksResponse, auto_merge: RequestAutoMergeResponse, };
+
 export type CreateRequestRatingRequest = { score: number, reason: string, };
 
 export type RequestRatingParticipantResponse = { id: string, handle: string, rating_score_sum: number, rating_count: number, };
@@ -668,7 +670,7 @@ export type CreateRequestDiscussionReplyRequest = { body_markdown: string, clien
 
 export type MarkRequestDiscussionReadRequest = { through_position: number, };
 
-export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | { "GitHubWorkflowRunChanged": { github_run_id: number, } } | { "RepositoryChanged": { reason: string, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, view: ViewId, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, view: ViewId, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
+export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | { "GitHubWorkflowRunChanged": { github_run_id: number, } } | { "RepositoryChanged": { reason: string, } } | { "RequestStateChanged": { request_id: string, view: ViewId, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, view: ViewId, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, view: ViewId, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
 
 export type RunChangeKind = "Created" | "StatusChanged" | "LogsAppended";
 
@@ -765,6 +767,7 @@ export const ApiRouteTemplates = {
   repoRequestQueue: "/v1/repos/{owner}/{repo}/requests/queue",
   repoRequestAttention: "/v1/repos/{owner}/{repo}/requests/{request_id}/attention",
   repoRequest: "/v1/repos/{owner}/{repo}/requests/{request_id}",
+  repoRequestState: "/v1/repos/{owner}/{repo}/requests/{request_id}/state",
   repoRequestSubmit: "/v1/repos/{owner}/{repo}/requests/{request_id}/submit",
   repoRequestMerge: "/v1/repos/{owner}/{repo}/requests/{request_id}/merge",
   repoRequestAutoMerge: "/v1/repos/{owner}/{repo}/requests/{request_id}/auto-merge",

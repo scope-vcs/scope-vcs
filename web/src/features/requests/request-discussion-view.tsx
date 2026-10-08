@@ -1,6 +1,6 @@
 import type { RepoLiveState, RepoParams } from '@/api/types'
 import type {
-  AccountSessionResponse,
+  RequestActorSummaryResponse,
   RequestDetailResponse,
 } from '@/api/types.generated'
 import { useCallback, useMemo } from 'react'
@@ -25,7 +25,8 @@ import type {
 import { RequestDiscussionWorkbench } from './request-discussion-workbench'
 
 type RequestDiscussionViewProps = {
-  account: AccountSessionResponse | null
+  viewer: RequestActorSummaryResponse | null
+  viewerId: string | null
   createDiscussion: (input: CreateDiscussionInput) => Promise<RequestDiscussionMutation>
   createReply: (input: CreateReplyInput) => Promise<RequestDiscussionReplyMutation>
   detail: RequestDetailResponse
@@ -47,7 +48,8 @@ type RequestDiscussionViewProps = {
 }
 
 export function RequestDiscussionView({
-  account,
+  viewer,
+  viewerId,
   createDiscussion,
   createReply,
   detail,
@@ -64,9 +66,9 @@ export function RequestDiscussionView({
 }: RequestDiscussionViewProps) {
   const { request } = detail
   const actor = useMemo(() => ({
-    handle: account?.user?.handle ?? 'Anonymous',
-    id: account?.user?.id ?? 'anonymous',
-  }), [account?.user?.handle, account?.user?.id])
+    handle: viewer?.handle ?? 'Anonymous',
+    id: viewer?.id ?? 'anonymous',
+  }), [viewer?.handle, viewer?.id])
   const requestParams = useMemo(() => ({
     owner: params.owner,
     repo: params.repo,
@@ -112,7 +114,8 @@ export function RequestDiscussionView({
         canReply: request.permissions.can_reply_to_discussion,
         canWaitAfterReply: request.permissions.can_wait_after_reply,
       }}
-      repoId={repoResourceScope(live.repo, actor.id)}
+      repoId={repoResourceScope(live.repo, viewerId)}
+      viewerId={viewerId ?? 'anonymous'}
       request={request}
       threadActions={threadActions}
     />

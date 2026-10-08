@@ -159,6 +159,20 @@ async fn record_queued_request_check(state: &AppState, request_id: &str) -> Stri
         .metadata
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: state
+                .metadata
+                .requests()
+                .request_check_base(TEST_REPO_ID)
+                .await
+                .unwrap(),
+            repository_incarnation: state
+                .metadata
+                .repositories()
+                .repository_record(TEST_REPO_ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::started(&request.id, &request.head_oid, checks, 5)
                 .unwrap(),
             revisions,
@@ -485,6 +499,20 @@ async fn configuration_failure_stays_stopped_if_the_evaluation_later_clears() {
         .metadata
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: state
+                .metadata
+                .requests()
+                .request_check_base(TEST_REPO_ID)
+                .await
+                .unwrap(),
+            repository_incarnation: state
+                .metadata
+                .repositories()
+                .repository_record(TEST_REPO_ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
                 request_id,
                 SECOND_HEAD,
@@ -511,6 +539,20 @@ async fn configuration_failure_stays_stopped_if_the_evaluation_later_clears() {
         .metadata
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: state
+                .metadata
+                .requests()
+                .request_check_base(TEST_REPO_ID)
+                .await
+                .unwrap(),
+            repository_incarnation: state
+                .metadata
+                .repositories()
+                .repository_record(TEST_REPO_ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::no_checks(
                 request_id,
                 SECOND_HEAD,

@@ -4,7 +4,7 @@ use crate::{
     git::{
         cache::{GitDerivedCacheNamespace, GitRepoHandle},
         command::{
-            git_command_output, git_command_output_with_timeout, git_subprocess_span,
+            git_command_output, git_command_output_with_timeout, prepare_git_subprocess,
             record_git_exit, truncated_git_stderr,
         },
         git_read_scope_user,
@@ -305,6 +305,9 @@ pub(crate) async fn git_upload_pack_response(
             ApiError::internal_message(format!("Git upload-pack validation task failed: {error}"))
         })??;
     }
+    let mut command = git_upload_pack_command();
+    command.arg("--stateless-rpc").arg(repo_path);
+    let git_span = prepare_git_subprocess(&mut command)?;
     let (sender, receiver) = tokio::sync::mpsc::channel(2);
     let work = async move {
         let error_sender = sender.clone();
@@ -314,9 +317,6 @@ pub(crate) async fn git_upload_pack_response(
             let _permit = permit;
             let _repo = repo;
             let deadline = Instant::now() + timeout;
-            let mut command = git_upload_pack_command();
-            command.arg("--stateless-rpc").arg(repo_path);
-            let git_span = git_subprocess_span(&command);
             let _entered = git_span.enter();
             let output = run_with_stdout(
                 &mut command,
@@ -437,12 +437,15 @@ fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec
     if required.is_empty() && haves.is_empty() {
         return Ok(request.to_vec());
     }
+    let mut command = Command::new("git");
+    command
+        .arg("--git-dir")
+        .arg(repo_path)
+        .args(["rev-list", "--objects", "--all"]);
+    let git_span = prepare_git_subprocess(&mut command)?;
+    let _entered = git_span.enter();
     let reachable = run_with_stdout(
-        Command::new("git").arg("--git-dir").arg(repo_path).args([
-            "rev-list",
-            "--objects",
-            "--all",
-        ]),
+        &mut command,
         None,
         ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
         "checking Git upload-pack object reachability",
@@ -457,6 +460,7 @@ fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec
         },
     )
     .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
+    record_git_exit(&git_span, reachable.status);
     if !reachable.status.success() {
         return Err(ApiError::infrastructure_unavailable(format!(
             "checking Git upload-pack object reachability: {}",

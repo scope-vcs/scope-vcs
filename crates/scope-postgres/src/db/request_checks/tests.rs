@@ -93,7 +93,26 @@ async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) 
 async fn record_no_checks(store: &MetadataStore, request_id: &str, head_oid: &str, now_unix: u64) {
     store
         .requests()
+        .mutate_request_for_tests(request_id, |request| {
+            request.head_oid = head_oid.to_string()
+        })
+        .await
+        .unwrap();
+    store
+        .requests()
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::no_checks(request_id, head_oid, now_unix).unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
@@ -112,6 +131,18 @@ async fn the_first_evaluation_of_a_head_stands() {
     let replayed = store
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
                 "request-a",
                 HEAD_A_CURRENT,
@@ -159,6 +190,18 @@ async fn a_request_that_can_no_longer_merge_records_no_evaluation() {
     let refused = store
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::no_checks("request-a", HEAD_A_CURRENT, 10).unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
@@ -175,5 +218,165 @@ async fn a_request_that_can_no_longer_merge_records_no_evaluation() {
             .await
             .unwrap()
             .is_none()
+    );
+}
+
+#[tokio::test]
+async fn evaluation_completion_rejects_changed_head_incarnation_and_base() {
+    let store = postgres_store();
+    start_request(&store, "request-a", "request-a-event").await;
+    let request = store
+        .requests()
+        .request_by_id("request-a")
+        .await
+        .unwrap()
+        .unwrap();
+    let incarnation = store
+        .repositories()
+        .repository_record("owner/repo")
+        .await
+        .unwrap()
+        .unwrap()
+        .incarnation();
+    let base = store
+        .requests()
+        .request_check_base("owner/repo")
+        .await
+        .unwrap();
+    for (head_oid, expected_incarnation, expected_base) in [
+        (
+            HEAD_A_CURRENT.to_string(),
+            incarnation.clone(),
+            base.clone(),
+        ),
+        (
+            request.head_oid.clone(),
+            scope_domain::repository::RepositoryIncarnation::new("owner/repo", "replaced").unwrap(),
+            base.clone(),
+        ),
+        (
+            request.head_oid.clone(),
+            incarnation.clone(),
+            Some(HEAD_B_CURRENT.to_string()),
+        ),
+    ] {
+        let refused = store
+            .requests()
+            .record_request_checks(RecordRequestChecksCommand {
+                repository_incarnation: expected_incarnation,
+                expected_canonical_main_oid: expected_base,
+                evaluation: RequestCheckEvaluation::no_checks("request-a", &head_oid, 10).unwrap(),
+                revisions: Vec::new(),
+                runs: Vec::new(),
+                push_to_github: false,
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(refused.kind, crate::error::PostgresErrorKind::Conflict);
+        assert!(
+            store
+                .requests()
+                .request_check_evaluation("request-a", &head_oid)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn recovery_pages_advance_past_unrepaired_requests_and_restart_from_the_beginning() {
+    use crate::db::{generated_ids::test_generated_id, test_support::fixtures::source_blob};
+    use scope_domain::requests::{RecordRequestRevisionInput, RequestRevisionGitFacts};
+
+    let store = postgres_store();
+    for request_id in ["request-a", "request-b", "request-c"] {
+        start_request(&store, request_id, &format!("{request_id}-started")).await;
+        let request = store
+            .requests()
+            .request_by_id(request_id)
+            .await
+            .unwrap()
+            .unwrap();
+        store
+            .requests()
+            .record_request_revision(
+                RecordRequestRevisionInput {
+                    request_id: request_id.into(),
+                    actor_user_id: "user_public".into(),
+                    actor_can_edit: true,
+                    expected_old_head_oid: Some(request.head_oid),
+                    new_head_oid: HEAD_A_CURRENT.into(),
+                    git_snapshot: source_blob(HEAD_A_CURRENT, &"b".repeat(64), 1),
+                    git_facts: RequestRevisionGitFacts {
+                        contains_old_head: true,
+                        contained_main_oid: None,
+                        contained_main_descends_from_base: false,
+                    },
+                    event_id: format!("{request_id}-revision"),
+                    body: None,
+                    now_unix: 3,
+                },
+                &test_generated_id,
+            )
+            .await
+            .unwrap();
+    }
+    let first = store
+        .requests()
+        .requests_needing_check_recovery(None, 2)
+        .await
+        .unwrap();
+    assert_eq!(
+        first
+            .iter()
+            .map(|request| request.id.as_str())
+            .collect::<Vec<_>>(),
+        ["request-a", "request-b"]
+    );
+    let second = store
+        .requests()
+        .requests_needing_check_recovery(Some(&first.last().unwrap().id), 2)
+        .await
+        .unwrap();
+    assert_eq!(
+        second
+            .iter()
+            .map(|request| request.id.as_str())
+            .collect::<Vec<_>>(),
+        ["request-c"]
+    );
+    assert!(
+        store
+            .requests()
+            .requests_needing_check_recovery(Some(&second[0].id), 2)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let restarted = store
+        .requests()
+        .requests_needing_check_recovery(None, 2)
+        .await
+        .unwrap();
+    assert_eq!(
+        restarted
+            .iter()
+            .map(|request| request.id.as_str())
+            .collect::<Vec<_>>(),
+        ["request-a", "request-b"]
+    );
+    record_no_checks(&store, "request-a", HEAD_A_CURRENT, 4).await;
+    let remaining = store
+        .requests()
+        .requests_needing_check_recovery(None, 2)
+        .await
+        .unwrap();
+    assert_eq!(
+        remaining
+            .iter()
+            .map(|request| request.id.as_str())
+            .collect::<Vec<_>>(),
+        ["request-b", "request-c"]
     );
 }

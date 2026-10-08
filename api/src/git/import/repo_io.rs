@@ -6,8 +6,9 @@ use crate::{
     config::{MAX_PENDING_IMPORT_BLOB_BYTES, MAX_PENDING_IMPORT_FILES},
     error::ApiError,
     git::command::{
-        git_process_output, git_ref_listing, git_stdout_text, git_subprocess_span, record_git_exit,
-        remaining_git_time, run_git, run_git_output, run_git_output_until, truncated_git_stderr,
+        git_process_output, git_ref_listing, git_stdout_text, prepare_git_subprocess,
+        record_git_exit, remaining_git_time, run_git, run_git_output, run_git_output_until,
+        truncated_git_stderr,
     },
     runtime_budgets::RuntimeBudgets,
     state::AppState,
@@ -359,6 +360,11 @@ pub(crate) async fn git_push_from_repo(
         revisions.push_str(&previous.head_oid);
         revisions.push('\n');
     }
+    let mut command = Command::new("git");
+    command
+        .current_dir(repo)
+        .args(["pack-objects", "--revs", "--stdout"]);
+    let git_span = prepare_git_subprocess(&mut command)?;
     let (reservation, upload_heartbeat) = begin_git_segment_upload(state, repository_id).await?;
     let segment_id = reservation.segment_id.clone();
     let object_key = reservation.object_key.clone();
@@ -366,18 +372,12 @@ pub(crate) async fn git_push_from_repo(
     let pack_started = Instant::now();
     let segment_store = state.git_segment_store.clone();
     let repository_id_for_ingest = repository_id.to_string();
-    let repo = repo.to_path_buf();
     let timeout = state.runtime_budgets.git_command_timeout();
     let parent_span = tracing::Span::current();
     let output = tokio::task::spawn_blocking(move || {
         let _entered = parent_span.enter();
         let _ingest_permit = ingest_permit;
         let runtime = tokio::runtime::Handle::current();
-        let mut command = Command::new("git");
-        command
-            .current_dir(repo)
-            .args(["pack-objects", "--revs", "--stdout"]);
-        let git_span = git_subprocess_span(&command);
         let _entered = git_span.enter();
         let output = run_with_stdout(
             &mut command,

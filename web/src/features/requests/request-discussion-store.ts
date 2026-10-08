@@ -55,17 +55,19 @@ export function useRequestDiscussionStore({
   initialPage,
   params,
   repoId,
+  viewerId,
 }: {
   actions: RequestDiscussionActions
   actor: RequestActorSummary
   initialPage: RequestDiscussionPage
   params: RequestParams
   repoId: string
+  viewerId: string
 }) {
   const key = requestDiscussionCacheKey({
     repoId,
     requestId: params.request_id,
-    viewerId: actor.id,
+    viewerId,
   })
   const session = useMemo(
     () => openRequestDiscussion(key, initialPage, (after) => actions.loadChanges({ ...params, after })),

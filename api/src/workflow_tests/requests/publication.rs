@@ -76,6 +76,7 @@ async fn public_request_reads_and_start_use_current_head_before_projection_rebui
 
     let app = router(state);
     for uri in [
+        "/v1/repos/owner/repo/requests/req_publication_public/state",
         "/v1/repos/owner/repo/requests",
         "/v1/repos/owner/repo/requests/queue?section=active",
         "/v1/repos/owner/repo/requests/req_publication_public",
@@ -90,6 +91,9 @@ async fn public_request_reads_and_start_use_current_head_before_projection_rebui
             } else {
                 &body["requests"][0]["request"]
             }
+        } else if uri.ends_with("/state") {
+            assert_eq!(body["viewer"], serde_json::Value::Null);
+            &body["detail"]["request"]
         } else {
             &body["request"]
         };

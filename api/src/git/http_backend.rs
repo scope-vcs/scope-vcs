@@ -1,6 +1,6 @@
 use crate::{
     error::ApiError,
-    git::command::{git_command_output_with_timeout, git_subprocess_span, record_git_exit},
+    git::command::{git_command_output_with_timeout, prepare_git_subprocess, record_git_exit},
     runtime_budgets::RuntimeBudgets,
 };
 use axum::{body::Body, http::StatusCode, response::Response};
@@ -101,7 +101,7 @@ pub(crate) async fn git_http_backend_streaming(
         command.env("CONTENT_TYPE", content_type);
     }
 
-    let git_span = git_subprocess_span(command.as_std());
+    let git_span = prepare_git_subprocess(command.as_std_mut())?;
     let mut child = command.spawn().map_err(ApiError::internal)?;
     let mut process_group = GitProcessGroupGuard::new(child.id());
     let Some(mut stdin) = child.stdin.take() else {

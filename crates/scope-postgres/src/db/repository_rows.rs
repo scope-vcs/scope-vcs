@@ -12,6 +12,7 @@ use super::{
         load_repository_histories, save_repository_history_delta,
     },
     outbox::enqueue_projection_read_model_rebuild,
+    projection_read_models::fold_live_projection_read_models,
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel,
@@ -38,6 +39,7 @@ where
     insert_repository_history(conn, &repo.graph, &repo.visibility_change_sets).await?;
     insert_repository_live_files(conn, &repo.record.id, &repo.live_files).await?;
     insert_repository_collaboration(conn, &repo.collaboration).await?;
+    fold_live_projection_read_models(conn, &repo.record.id, repo.record.content_version).await?;
     enqueue_projection_read_model_rebuild(
         conn,
         &repo.record.id,
@@ -67,7 +69,7 @@ where
     }
     save_repository_rows(conn, before, after, now_unix).await?;
     if content_changed {
-        queue_content_rebuilds(conn, after, now_unix, generated_ids).await?;
+        refresh_content_read_models(conn, after, now_unix, generated_ids).await?;
     }
     Ok(())
 }
@@ -153,7 +155,7 @@ where
     .await
 }
 
-pub(super) async fn queue_content_rebuilds<C>(
+pub(super) async fn refresh_content_read_models<C>(
     conn: &C,
     repo: &Repository,
     now_unix: u64,
@@ -162,6 +164,7 @@ pub(super) async fn queue_content_rebuilds<C>(
 where
     C: ConnectionTrait,
 {
+    fold_live_projection_read_models(conn, &repo.record.id, repo.record.content_version).await?;
     enqueue_projection_read_model_rebuild(
         conn,
         &repo.record.id,

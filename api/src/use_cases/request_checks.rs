@@ -7,7 +7,6 @@ use crate::{
         request_refs::with_request_revision_store_repo,
     },
     persistence::unix_now,
-    repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{repository_workflows, view_check_commits::view_tested_commit},
 };
@@ -65,20 +64,6 @@ pub(crate) async fn checks_view(
             recorded_checks_view(state, request).await
         }
         None => Ok(view),
-    }
-}
-
-pub(crate) async fn readable_checks_view(
-    state: &AppState,
-    repo: &RepoRecord,
-    request: &Request,
-) -> Result<RequestChecksView, ApiError> {
-    match checks_view(state, repo, request).await {
-        Ok(view) => Ok(view),
-        Err(error) => {
-            warn_evaluation_failed(request, &error);
-            recorded_checks_view(state, request).await
-        }
     }
 }
 
@@ -163,6 +148,7 @@ async fn evaluate_saved_head(
     let check_commit = Box::pin(view_tested_commit(state, &git, request, &revision));
     Box::pin(evaluate_request_checks(
         state,
+        &git.incarnation,
         request,
         views,
         reviewing_pusher,
@@ -241,6 +227,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     let check_commit = Box::pin(view_tested_commit(state, git, request, revision));
     let evaluated = evaluate_request_checks(
         state,
+        &git.incarnation,
         request,
         views,
         reviewing_pusher,
@@ -268,14 +255,21 @@ async fn renew_check_commit(
         .request_revision_with_head(&request.id, &request.head_oid)
         .await?
         .ok_or_else(|| ApiError::conflict("request head has no saved revision"))?;
+    let expected_canonical_main_oid = state
+        .metadata
+        .requests()
+        .request_check_base(&request.repo_id)
+        .await?;
     let tested = Box::pin(view_tested_commit(state, git, request, &revision)).await?;
     let mutation = state
         .metadata
         .requests()
         .rebuild_request_check_commit(RebuildCheckCommitCommand {
+            repository_incarnation: git.incarnation.clone(),
             request_id: request.id.clone(),
             head_oid: request.head_oid.clone(),
             replaced_tested_oid: replaced_tested_oid.to_string(),
+            expected_canonical_main_oid,
             tested,
             now_unix: unix_now()?,
         })
@@ -338,11 +332,11 @@ pub(crate) fn renew_stale_check_commits_in_background(state: &AppState, owner: &
     });
 }
 
-pub(crate) async fn changes_github_workflow_files(
+async fn changes_github_workflow_files(
     state: &AppState,
     repo: &RepoRecord,
     request: &Request,
-) -> bool {
+) -> Result<bool, ApiError> {
     const ACTION: &str = "reading request workflow changes";
     let changed = async {
         let Some(revision) = state
@@ -386,14 +380,7 @@ pub(crate) async fn changes_github_workflow_files(
         )
         .await
     };
-    changed.await.unwrap_or_else(|error: ApiError| {
-        tracing::warn!(
-            request_id = request.id,
-            error = %error.operator_diagnostic(),
-            "could not read whether a request changes GitHub workflows"
-        );
-        true
-    })
+    changed.await
 }
 
 fn warn_evaluation_failed(request: &Request, error: &ApiError) {
@@ -407,6 +394,7 @@ fn warn_evaluation_failed(request: &Request, error: &ApiError) {
 
 async fn evaluate_request_checks(
     state: &AppState,
+    incarnation: &RepositoryIncarnation,
     request: &Request,
     views: &Views,
     reviewing_pusher: Option<RequestCheckReviewer<'_>>,
@@ -414,12 +402,26 @@ async fn evaluate_request_checks(
     check_commit: impl Future<Output = Result<GitHubTestedCommit, ApiError>>,
 ) -> Result<RequestChecksMutation, ApiError> {
     let repositories = state.metadata.repositories();
+    let repo = repositories
+        .repository_record(&request.repo_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("repo not found"))?;
     let connection = repositories
         .github_connection(&request.repo_id)
         .await?
         .map(|read| read.connection);
+    if repo.incarnation() != *incarnation {
+        return Err(ApiError::conflict(
+            "repository changed while evaluating checks",
+        ));
+    }
+    let expected_canonical_main_oid = state
+        .metadata
+        .requests()
+        .request_check_base(&request.repo_id)
+        .await?;
     let now_unix = unix_now()?;
-    let (plan, revisions) = match RequestCheckProvider::for_repository(connection.as_ref()) {
+    let (mut plan, revisions) = match RequestCheckProvider::for_repository(connection.as_ref()) {
         RequestCheckProvider::GitHub => {
             let required = repositories
                 .github_required_checks(&request.repo_id)
@@ -459,16 +461,23 @@ async fn evaluate_request_checks(
             )
         }
     };
-    record_checks(
-        state,
-        RecordRequestChecksCommand {
+    if plan.evaluation.asks_github() {
+        plan.evaluation.changes_github_workflows =
+            Some(changes_github_workflow_files(state, &repo, request).await?);
+    }
+    state
+        .metadata
+        .requests()
+        .record_request_checks(RecordRequestChecksCommand {
+            repository_incarnation: incarnation.clone(),
+            expected_canonical_main_oid,
             evaluation: plan.evaluation,
             revisions,
             runs: plan.runs,
             push_to_github: plan.push_to_github,
-        },
-    )
-    .await
+        })
+        .await
+        .map_err(Into::into)
 }
 
 async fn trusted_main_workflow_revisions(
@@ -512,18 +521,6 @@ fn request_workflow_revisions(request: &Request, files: ReadWorkflowFiles) -> Na
     }
 }
 
-async fn record_checks(
-    state: &AppState,
-    command: RecordRequestChecksCommand,
-) -> Result<RequestChecksMutation, ApiError> {
-    state
-        .metadata
-        .requests()
-        .record_request_checks(command)
-        .await
-        .map_err(Into::into)
-}
-
 pub(crate) async fn publish_request_checks_change(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -542,6 +539,66 @@ pub(crate) async fn publish_request_checks_change(
         state.github_push_wakeup.notify_one();
     }
     state
-        .publish_request_summary_refresh(incarnation, RepoChangeReason::RequestChecksUpdated)
+        .publish_request_state_refresh(incarnation, &mutation.evaluation.request_id)
         .await;
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct RequestCheckRecoveryCursor {
+    after_id: Option<String>,
+}
+
+const RECOVERY_BATCH_SIZE: u64 = 8;
+
+pub(crate) async fn reconcile_request_checks_once(
+    state: &AppState,
+    cursor: &mut RequestCheckRecoveryCursor,
+) -> Result<usize, ApiError> {
+    let store = state.metadata.requests();
+    let mut requests = store
+        .requests_needing_check_recovery(cursor.after_id.as_deref(), RECOVERY_BATCH_SIZE)
+        .await?;
+    if requests.is_empty() && cursor.after_id.take().is_some() {
+        requests = store
+            .requests_needing_check_recovery(None, RECOVERY_BATCH_SIZE)
+            .await?;
+    }
+    cursor.after_id = requests.last().map(|request| request.id.clone());
+    let mut recovered = 0;
+    for request in requests {
+        let attempt = async {
+            let Some(repo) = state
+                .metadata
+                .repositories()
+                .repository_record(&request.repo_id)
+                .await?
+            else {
+                return Ok(false);
+            };
+            let view = checks_view(state, &repo, &request).await?;
+            if view.evaluation.as_ref().is_some_and(|evaluation| {
+                evaluation.asks_github() && evaluation.changes_github_workflows.is_none()
+            }) {
+                let changed = changes_github_workflow_files(state, &repo, &request).await?;
+                if state
+                    .metadata
+                    .requests()
+                    .record_request_workflow_changes(&repo.incarnation(), &request, changed)
+                    .await?
+                {
+                    state
+                        .publish_request_state_refresh(&repo.incarnation(), &request.id)
+                        .await;
+                }
+            }
+            Ok::<_, ApiError>(view.evaluation.is_some())
+        }
+        .await;
+        match attempt {
+            Ok(true) => recovered += 1,
+            Ok(false) => {}
+            Err(error) => warn_evaluation_failed(&request, &error),
+        }
+    }
+    Ok(recovered)
 }

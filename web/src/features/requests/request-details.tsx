@@ -4,6 +4,9 @@ import { shortOid } from '@/lib/short-oid'
 import { DetailsSection, DetailsValue } from './request-details-layout'
 import { createContext, type ReactNode, use } from 'react'
 import { RequestInvitees } from './request-invitees'
+import { useCachedResource } from '@/lib/use-cached-resource'
+import { requestRatingsResource } from './request-ratings-resource'
+import { Button } from '@/components/ui/button'
 import { RequestRatingsSection } from './request-ratings-section'
 import type { RateRequestInput } from '@/api/requests'
 import {
@@ -15,29 +18,44 @@ import type { RequestActionController } from './use-request-actions'
 import { useRepoViews } from '../repo-detail/repo-layout-context'
 import { requestShowsInvitees } from './request-lifecycle-model'
 
-export type RequestDetailsPlacement = 'drawer' | 'rail'
-
 type RequestDetailsProps = {
   actions: RequestActionController
   onRate: (input: RateRequestInput) => Promise<RequestRatingResponse>
   params: RequestParams
-  placement: RequestDetailsPlacement
-  ratings: RequestRatingsResponse
+  active: boolean
+  loadRatings: (signal: AbortSignal) => Promise<RequestRatingsResponse>
+  ratingsIdentity: string
   request: RequestSummaryResponse
 }
 
-const RequestDetailsContext = createContext<RequestDetailsProps | null>(null)
-
-export function RequestDetailsProvider({ children, value }: { children: ReactNode; value: RequestDetailsProps }) {
-  return <RequestDetailsContext value={value}>{children}</RequestDetailsContext>
+type RequestDetailsContextValue = RequestDetailsProps & {
+  ratings: RequestRatingsResponse | null
+  ratingsError: string | null
+  retryRatings: () => void
 }
 
-export function RequestDetails({ placement }: { placement: RequestDetailsPlacement }) {
+const RequestDetailsContext = createContext<RequestDetailsContextValue | null>(null)
+
+export function RequestDetailsProvider({ children, value }: { children: ReactNode; value: RequestDetailsProps }) {
+  const ratings = useCachedResource({
+    enabled: value.active,
+    fallbackError: 'Participant ratings are unavailable.',
+    identity: value.ratingsIdentity,
+    load: value.loadRatings,
+    resource: requestRatingsResource,
+  })
+  return (
+    <RequestDetailsContext value={{ ...value, ratings: ratings.value, ratingsError: ratings.error, retryRatings: ratings.retry }}>
+      {children}
+    </RequestDetailsContext>
+  )
+}
+
+export function RequestDetails() {
   const context = use(RequestDetailsContext)
   const views = useRepoViews()
   if (!context) throw new Error('Request details context is unavailable')
-  if (context.placement !== placement) return null
-  const { actions, onRate, params, ratings, request } = context
+  const { actions, onRate, params, ratings, ratingsError, retryRatings, request } = context
   return (
     <div className="@container min-w-0">
       <section aria-label="Request details" className="min-w-0 px-5 py-6 @md:px-6 @3xl:px-8">
@@ -67,7 +85,14 @@ export function RequestDetails({ placement }: { placement: RequestDetailsPlaceme
             <RequestInvitees actions={actions} request={request} />
           ) : null}
 
-          <RequestRatingsSection initial={ratings} onRate={onRate} params={params} />
+          {ratings ? <RequestRatingsSection initial={ratings} onRate={onRate} params={params} /> : (
+            <DetailsSection title="participant ratings">
+              <p className="text-xs text-muted-foreground" role={ratingsError ? 'alert' : 'status'}>
+                {ratingsError ?? 'Loading participant ratings…'}
+              </p>
+              {ratingsError ? <Button onClick={retryRatings} size="sm" variant="secondary">Try again</Button> : null}
+            </DetailsSection>
+          )}
 
           <DetailsSection title="git state">
             <DetailsValue label="Base" value={shortOid(request.base_main_oid)} />

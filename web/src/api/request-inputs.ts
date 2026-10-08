@@ -16,7 +16,17 @@ import type {
   PrepareAttachmentInput,
   RetryAttachmentInput,
 } from '../features/requests/request-attachment-api'
-import { apiValidators, type ApiValidator } from './validators.generated'
+import {
+  ApproveRequestChecksRequestValidator,
+  AuthorizeRequestAutoMergeRequestValidator,
+  CancelRequestAutoMergeRequestValidator,
+  CreateRequestAttachmentMediaGrantRequestValidator,
+  FinishRequestAttachmentRequestValidator,
+  MergeRequestRequestValidator,
+  PrepareRequestAttachmentRequestValidator,
+  RetryRequestAttachmentRequestValidator,
+  type ApiValidator,
+} from './validators.generated'
 
 function object(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -167,7 +177,7 @@ export function parsePrepareAttachmentInput(input: unknown): PrepareAttachmentIn
     size_bytes: data.size_bytes,
     target: data.target,
   }
-  return { ...parseRequestParams(data), ...validated('attachment preparation', apiValidators.PrepareRequestAttachmentRequest, body) }
+  return { ...parseRequestParams(data), ...validated('attachment preparation', PrepareRequestAttachmentRequestValidator, body) }
 }
 
 export function parseFinishAttachmentInput(input: unknown): FinishAttachmentInput {
@@ -176,7 +186,7 @@ export function parseFinishAttachmentInput(input: unknown): FinishAttachmentInpu
   return {
     ...parseRequestParams(data),
     attachment_id: id(data.attachment_id, 'attachment_id'),
-    ...validated('attachment completion', apiValidators.FinishRequestAttachmentRequest, body),
+    ...validated('attachment completion', FinishRequestAttachmentRequestValidator, body),
   }
 }
 
@@ -186,7 +196,7 @@ export function parseRetryAttachmentInput(input: unknown): RetryAttachmentInput 
   return {
     ...parseRequestParams(data),
     attachment_id: id(data.attachment_id, 'attachment_id'),
-    ...validated('attachment retry', apiValidators.RetryRequestAttachmentRequest, body),
+    ...validated('attachment retry', RetryRequestAttachmentRequestValidator, body),
   }
 }
 
@@ -196,7 +206,7 @@ export function parseGrantAttachmentInput(input: unknown): GrantAttachmentInput 
   return {
     ...parseRequestParams(data),
     attachment_id: id(data.attachment_id, 'attachment_id'),
-    ...validated('attachment media grant', apiValidators.CreateRequestAttachmentMediaGrantRequest, body),
+    ...validated('attachment media grant', CreateRequestAttachmentMediaGrantRequestValidator, body),
   }
 }
 
@@ -222,7 +232,7 @@ export function parseRequestActionInput(input: unknown): RequestActionInput {
     case 'remove_invitee':
       return { ...params, action: data.action, handle: id(data.handle, 'handle') }
     case 'merge': {
-      const { expected_head_oid } = validated('merge', apiValidators.MergeRequestRequest, {
+      const { expected_head_oid } = validated('merge', MergeRequestRequestValidator, {
         expected_head_oid: id(data.expected_head_oid, 'expected_head_oid'),
       })
       return { ...params, action: data.action, expected_head_oid }
@@ -240,7 +250,7 @@ export function parseApproveRequestChecksInput(input: unknown): ApproveRequestCh
   const data = object(input)
   const body = validated(
     'check approval',
-    apiValidators.ApproveRequestChecksRequest,
+    ApproveRequestChecksRequestValidator,
     { expected_head_oid: id(data.expected_head_oid, 'expected_head_oid') },
   )
   return { ...parseRequestParams(data), ...body }
@@ -252,7 +262,7 @@ export function parseAuthorizeRequestAutoMergeInput(
   const data = object(input)
   const body = validated(
     'auto-merge authorization',
-    apiValidators.AuthorizeRequestAutoMergeRequest,
+    AuthorizeRequestAutoMergeRequestValidator,
     {
       expected_head_oid: id(data.expected_head_oid, 'expected_head_oid'),
       expected_revision_id: id(data.expected_revision_id, 'expected_revision_id'),
@@ -267,7 +277,7 @@ export function parseCancelRequestAutoMergeInput(
   const data = object(input)
   const body = validated(
     'auto-merge cancellation',
-    apiValidators.CancelRequestAutoMergeRequest,
+    CancelRequestAutoMergeRequestValidator,
     { expected_intent_id: id(data.expected_intent_id, 'expected_intent_id') },
   )
   return { ...parseRequestParams(data), ...body }

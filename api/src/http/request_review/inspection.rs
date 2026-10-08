@@ -170,7 +170,7 @@ fn request_commit_change_summaries(
         "--diff-merges=first-parent",
         "--always",
     ]);
-    let git_span = crate::git::command::git_subprocess_span(&command);
+    let git_span = crate::git::command::prepare_git_subprocess(&mut command)?;
     let _entered = git_span.enter();
     let output = run_with_stdout(
         &mut command,

@@ -1,23 +1,8 @@
 import type {
   RequestAutoMergeResponse,
-  RequestChecksResponse,
-  RequestMergeabilityStatus,
   RequestSummaryResponse,
 } from '@/api/types.generated'
 import type { RepoViews } from '../../api/repo-views'
-
-const NOT_OPEN = new Set<RequestMergeabilityStatus>(['Draft', 'Closed', 'Merged'])
-
-export function withCurrentMergeability(
-  request: RequestSummaryResponse,
-  checks: RequestChecksResponse | null,
-): RequestSummaryResponse {
-  const current = checks?.mergeability
-  return request.state === 'Open' && current?.request_head_oid === request.head_oid &&
-    !NOT_OPEN.has(current.status)
-    ? { ...request, mergeability: current }
-    : request
-}
 
 export function canMergeRequest(request: RequestSummaryResponse) {
   return request.permissions.can_merge && request.mergeability.status === 'Ready'

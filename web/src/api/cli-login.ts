@@ -6,7 +6,12 @@ import type {
   RevokeCliSessionInput,
 } from './cli-login-input'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
-import { apiValidators } from './validators.generated'
+import {
+  BrowserLoginCompleteResponseValidator,
+  CliExchangeGrantResponseValidator,
+  CliSessionsResponseValidator,
+  DeviceLoginCompleteResponseValidator,
+} from './validators.generated'
 
 export async function completeCliLoginForRequest(
   data: CompleteCliLoginInput,
@@ -15,7 +20,7 @@ export async function completeCliLoginForRequest(
     buildApiPath(ApiRouteTemplates.cliDeviceLoginComplete, {
       user_code: data.code,
     }),
-    apiValidators.DeviceLoginCompleteResponse,
+    DeviceLoginCompleteResponseValidator,
     { auth: 'required' },
   )
 }
@@ -27,7 +32,7 @@ export async function completeBrowserCliLoginForRequest(
     buildApiPath(ApiRouteTemplates.cliBrowserLoginComplete, {
       request_id: data.requestId,
     }),
-    apiValidators.BrowserLoginCompleteResponse,
+    BrowserLoginCompleteResponseValidator,
     { auth: 'required' },
   )
 }
@@ -35,7 +40,7 @@ export async function completeBrowserCliLoginForRequest(
 export async function createCliExchangeGrantForRequest() {
   return createApiClient().post(
     ApiRouteTemplates.cliExchangeGrants,
-    apiValidators.CliExchangeGrantResponse,
+    CliExchangeGrantResponseValidator,
     { auth: 'required' },
   )
 }
@@ -43,7 +48,7 @@ export async function createCliExchangeGrantForRequest() {
 export async function listCliSessionsForRequest() {
   return createApiClient().get(
     ApiRouteTemplates.cliSessions,
-    apiValidators.CliSessionsResponse,
+    CliSessionsResponseValidator,
     { auth: 'required' },
   )
 }

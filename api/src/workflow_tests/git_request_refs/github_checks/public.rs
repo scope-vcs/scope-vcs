@@ -446,6 +446,12 @@ async fn a_late_renewal_onto_the_same_private_main_queues_no_second_push() {
         "new private code\n",
     )
     .await;
+    crate::use_cases::request_checks::reconcile_request_checks_once(
+        &state,
+        &mut Default::default(),
+    )
+    .await
+    .unwrap();
     checks(
         &state,
         REQUEST_ID,
@@ -465,6 +471,21 @@ async fn a_late_renewal_onto_the_same_private_main_queues_no_second_push() {
         .metadata
         .requests()
         .rebuild_request_check_commit(RebuildCheckCommitCommand {
+            expected_canonical_main_oid: state
+                .metadata
+                .requests()
+                .request_check_results(TEST_REPO_ID, std::slice::from_ref(&renewed))
+                .await
+                .unwrap()
+                .canonical_main_oid,
+            repository_incarnation: state
+                .metadata
+                .repositories()
+                .repository_record(TEST_REPO_ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             request_id: REQUEST_ID.into(),
             head_oid: head.clone(),
             replaced_tested_oid: renewed.tested_oid.clone(),
@@ -512,6 +533,12 @@ async fn a_contribution_that_new_private_main_conflicts_with_reports_it() {
     )
     .await;
 
+    crate::use_cases::request_checks::reconcile_request_checks_once(
+        &state,
+        &mut Default::default(),
+    )
+    .await
+    .unwrap();
     let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
     let view = checks(&state, REQUEST_ID, &member).await;
     assert_eq!(view["state"], "configuration-error");
@@ -537,4 +564,141 @@ pub(super) async fn tested_commit(state: &AppState, head: &str) -> String {
         .unwrap()
         .unwrap()
         .tested_oid
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
+    let (mut state, _owner_source) =
+        test_state_with_mergeable_request("github-checks-contributor").await;
+    let fake = connect_github(&mut state, &[REQUIRED_CHECK]).await;
+    insert_member_user(&state).await;
+    let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
+    let public = bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL);
+    let (source, remote, _server) = request_push_checkout(
+        &state,
+        "github-checks-contributor-push",
+        PUBLIC_SUBJECT,
+        PUBLIC_EMAIL,
+    )
+    .await;
+    fs::create_dir_all(source.join(".github/workflows")).unwrap();
+    push_change(
+        &source,
+        &remote,
+        REQUEST_REF,
+        ".github/workflows/ci.yml",
+        "on: push\n",
+        "change the workflow",
+    )
+    .unwrap();
+    let head = git_head_oid(&source);
+    let branch = format!("scope/requests/{REQUEST_ID}");
+    let submitted = api_request(
+        router(state.clone()),
+        "POST",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests/{REQUEST_ID}/submit"),
+        Some(&public),
+        Some("{}"),
+    )
+    .await;
+    assert_eq!(submitted.status(), StatusCode::OK);
+
+    assert_eq!(push_pass(&state, unix_now()).await, 0);
+    assert_eq!(fake.branch_head(&branch), None);
+    let waiting = checks(&state, REQUEST_ID, &member).await;
+    assert_eq!(waiting["state"], "awaiting-approval");
+    assert_eq!(waiting["can_approve"], true);
+    assert_eq!(waiting["github_push"]["state"], "awaiting_approval");
+    assert_eq!(waiting["changes_github_workflows"], true);
+    assert_eq!(
+        state
+            .metadata
+            .requests()
+            .request_check_evaluation(REQUEST_ID, &head)
+            .await
+            .unwrap()
+            .unwrap()
+            .changes_github_workflows,
+        Some(true)
+    );
+    state
+        .metadata
+        .admin()
+        .execute_for_tests(
+            "UPDATE scope_request_check_evaluations SET changes_github_workflows = NULL",
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        checks(&state, REQUEST_ID, &member).await["changes_github_workflows"],
+        true
+    );
+    assert_eq!(
+        state
+            .metadata
+            .requests()
+            .request_check_evaluation(REQUEST_ID, &head)
+            .await
+            .unwrap()
+            .unwrap()
+            .changes_github_workflows,
+        None
+    );
+    assert_eq!(
+        crate::use_cases::request_checks::reconcile_request_checks_once(
+            &state,
+            &mut Default::default()
+        )
+        .await
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        state
+            .metadata
+            .requests()
+            .request_check_evaluation(REQUEST_ID, &head)
+            .await
+            .unwrap()
+            .unwrap()
+            .changes_github_workflows,
+        Some(true)
+    );
+    let contributor_view = checks(&state, REQUEST_ID, &public).await;
+    assert_eq!(contributor_view["can_approve"], false);
+    assert_eq!(contributor_view["changes_github_workflows"], false);
+
+    let approved = expect_json(
+        api_request(
+            router(state.clone()),
+            "POST",
+            &repo_request_checks_approve(TEST_REPO_OWNER, TEST_REPO_NAME, REQUEST_ID),
+            Some(&member),
+            Some(&reviewed_head_body(&state, REQUEST_ID).await),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(approved["state"], "started");
+    assert_eq!(approved["github_push"]["state"], "sending");
+    assert_eq!(push_pass(&state, unix_now()).await, 1);
+    let tested = tested_commit(&state, &head).await;
+    assert_ne!(tested, head);
+    assert_eq!(fake.branch_head(&branch), Some(tested));
+
+    expect_json(
+        api_request(
+            router(state.clone()),
+            "DELETE",
+            &scope_api_contract::routes::repo_request(TEST_REPO_OWNER, TEST_REPO_NAME, REQUEST_ID),
+            Some(&public),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(push_pass(&state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head(&branch), None);
 }

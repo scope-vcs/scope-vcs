@@ -89,7 +89,6 @@ pub(crate) enum RepoChangeReason {
     RequestInviteeLeft,
     RequestRevised,
     RequestChecksUpdated,
-    RequestAutoMergeUpdated,
     MemberAdded,
     InviteUpdated,
     MemberPermissionsChanged,
@@ -124,7 +123,6 @@ impl RepoChangeReason {
             Self::RequestInviteeLeft => "request-invitee-left",
             Self::RequestRevised => "request-revised",
             Self::RequestChecksUpdated => "request-checks-updated",
-            Self::RequestAutoMergeUpdated => "request-auto-merge-updated",
             Self::MemberAdded => "member-added",
             Self::InviteUpdated => "invite-updated",
             Self::MemberPermissionsChanged => "member-permissions-changed",
@@ -331,6 +329,40 @@ impl crate::state::AppState {
     ) {
         self.publish_repo_change(incarnation, REQUEST_SUMMARY_REFRESH_VERSION, reason)
             .await;
+    }
+
+    pub(crate) async fn publish_request_state_refresh(
+        &self,
+        incarnation: &RepositoryIncarnation,
+        request_id: &str,
+    ) {
+        let request = match self.metadata.requests().request_by_id(request_id).await {
+            Ok(Some(request)) if request.repo_id == incarnation.repository_id() => request,
+            Ok(_) => return,
+            Err(error) => {
+                tracing::warn!(request_id, error = %error, "reading request for state notification failed");
+                return;
+            }
+        };
+        self.publish_known_request_state_refresh(incarnation, &request)
+            .await;
+    }
+
+    pub(crate) async fn publish_known_request_state_refresh(
+        &self,
+        incarnation: &RepositoryIncarnation,
+        request: &scope_domain::requests::Request,
+    ) {
+        let event = RepoChangeEvent {
+            repo_id: incarnation.repository_id().to_string(),
+            incarnation_id: incarnation.incarnation_id().to_string(),
+            version: REQUEST_SUMMARY_REFRESH_VERSION,
+            kind: RepoChangeKind::RequestStateChanged {
+                request_id: request.id.clone(),
+                view: request.view.clone().into(),
+            },
+        };
+        self.publish_repo_event(event, "request state").await;
     }
 
     pub(crate) async fn publish_request_timeline_change(

@@ -331,7 +331,7 @@ async fn event_streams_isolate_missed_recreation_notifications() {
 }
 
 #[tokio::test]
-async fn public_repo_stream_drops_private_discussion_identifiers() {
+async fn public_repo_stream_drops_private_request_identifiers() {
     let state = test_state_with_readme().await;
     state
         .metadata
@@ -389,6 +389,9 @@ async fn public_repo_stream_drops_private_discussion_identifiers() {
     );
 
     state
+        .publish_request_state_refresh(&test_repo_incarnation(), "req_private_stream")
+        .await;
+    state
         .publish_request_timeline_change(
             &test_repo_incarnation(),
             "req_private_stream".to_string(),
@@ -402,6 +405,14 @@ async fn public_repo_stream_drops_private_discussion_identifiers() {
             .await
             .is_err()
     );
+
+    state
+        .publish_request_state_refresh(&test_repo_incarnation(), "req_public_stream")
+        .await;
+    let state_changed = next_event(&mut stream).await;
+    assert!(state_changed.contains(r#""RequestStateChanged":{"request_id":"req_public_stream""#));
+    assert!(state_changed.contains("req_public_stream"));
+    assert!(!state_changed.contains("req_private_stream"));
 
     state
         .publish_request_timeline_change(

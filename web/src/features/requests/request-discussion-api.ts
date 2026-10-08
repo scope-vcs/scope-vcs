@@ -2,7 +2,16 @@ import { createApiClient } from '@/api/client'
 import { requestRoute } from '@/api/paths'
 import type { RequestParams } from '@/api/types'
 import { ApiRouteTemplates, buildApiPath } from '@/api/types.generated'
-import { apiValidators } from '@/api/validators.generated'
+import {
+  RequestActivityPageResponseValidator,
+  RequestDiscussionChangesResponseValidator,
+  RequestDiscussionMutationResponseValidator,
+  RequestDiscussionPageResponseValidator,
+  RequestDiscussionReadResponseValidator,
+  RequestDiscussionRepliesPageResponseValidator,
+  RequestDiscussionReplyMutationResponseValidator,
+  RequestMutationResponseValidator,
+} from '@/api/validators.generated'
 import type {
   CreateRequestDiscussionInput,
   CreateRequestDiscussionReplyInput,
@@ -58,7 +67,7 @@ export async function loadRequestDiscussionsForRequest(
       limit: (data.limit ?? 25).toString(),
       revision: data.revision_id,
     })}`,
-    apiValidators.RequestDiscussionPageResponse,
+    RequestDiscussionPageResponseValidator,
     { auth: 'optional', ...options },
   )
 }
@@ -70,7 +79,7 @@ export async function loadRequestDiscussionRepliesForRequest(data: LoadRepliesIn
       limit: '50',
       reply: data.reply,
     })}`,
-    apiValidators.RequestDiscussionRepliesPageResponse,
+    RequestDiscussionRepliesPageResponseValidator,
     { auth: 'optional' },
   )
 }
@@ -83,7 +92,7 @@ export async function loadRequestDiscussionChangesForRequest(
       after: data.after.toString(),
       limit: '100',
     })}`,
-    apiValidators.RequestDiscussionChangesResponse,
+    RequestDiscussionChangesResponseValidator,
     { auth: 'optional' },
   )
 }
@@ -96,7 +105,7 @@ export async function loadRequestActivityForRequest(
       latest: 'true',
       limit: String(REQUEST_ACTIVITY_PAGE_SIZE),
     })}`,
-    apiValidators.RequestActivityPageResponse,
+    RequestActivityPageResponseValidator,
     { auth: 'optional' },
   )
 }
@@ -104,7 +113,7 @@ export async function loadRequestActivityForRequest(
 export async function createRequestDiscussionForRequest(data: CreateDiscussionInput) {
   return createApiClient().post(
     requestRoute(ApiRouteTemplates.repoRequestDiscussions, data),
-    apiValidators.RequestDiscussionMutationResponse,
+    RequestDiscussionMutationResponseValidator,
     {
       auth: 'required',
       body: {
@@ -123,7 +132,7 @@ export async function createRequestDiscussionReplyForRequest(data: CreateReplyIn
 export async function resolveRequestDiscussionForRequest(data: RequestDiscussionActionInput) {
   return createApiClient().post(
     requestDiscussionRoute(ApiRouteTemplates.repoRequestDiscussionResolve, data),
-    apiValidators.RequestDiscussionMutationResponse,
+    RequestDiscussionMutationResponseValidator,
     { auth: 'required' },
   )
 }
@@ -135,7 +144,7 @@ export async function reopenAndReplyToRequestDiscussionForRequest(data: CreateRe
 function postRequestDiscussionReply(data: CreateReplyInput, route: string) {
   return createApiClient().post(
     requestDiscussionRoute(route, data),
-    apiValidators.RequestDiscussionReplyMutationResponse,
+    RequestDiscussionReplyMutationResponseValidator,
     {
       auth: 'required',
       body: {
@@ -151,7 +160,7 @@ function postRequestDiscussionReply(data: CreateReplyInput, route: string) {
 export async function markRequestDiscussionReadForRequest(data: MarkDiscussionReadInput) {
   return createApiClient().put(
     requestDiscussionRoute(ApiRouteTemplates.repoRequestDiscussionRead, data),
-    apiValidators.RequestDiscussionReadResponse,
+    RequestDiscussionReadResponseValidator,
     {
       auth: 'required',
       body: { through_position: data.through_position },
@@ -162,7 +171,7 @@ export async function markRequestDiscussionReadForRequest(data: MarkDiscussionRe
 export async function updateRequestDescriptionForRequest(data: UpdateDescriptionInput) {
   return createApiClient().patch(
     requestRoute(ApiRouteTemplates.repoRequest, data),
-    apiValidators.RequestMutationResponse,
+    RequestMutationResponseValidator,
     {
       auth: 'required',
       body: {

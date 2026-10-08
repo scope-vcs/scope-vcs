@@ -15,12 +15,8 @@ use scope_api_contract::{
     AuthorizeRequestAutoMergeRequest, CancelRequestAutoMergeRequest,
     RequestAutoMergeIntentResponse, RequestAutoMergeResponse,
 };
-use scope_domain::{
-    requests::{
-        Request, RequestViewer, request_auto_merge_can_cancel, request_auto_merge_can_enable,
-        request_policy,
-    },
-    views::Views,
+use scope_domain::requests::{
+    RequestViewer, request_auto_merge_can_cancel, request_auto_merge_can_enable, request_policy,
 };
 
 pub(crate) async fn get(
@@ -28,20 +24,9 @@ pub(crate) async fn get(
     headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
 ) -> Result<Json<RequestAutoMergeResponse>, ApiError> {
-    let (repo, access, viewer_user_id) =
-        repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, viewer) = visible_request(
-        &state,
-        &repo.record.id,
-        &repo.views,
-        access.clone(),
-        viewer_user_id.as_deref(),
-        &request_id,
-    )
-    .await?;
-    response(&state, &request, viewer, &repo.views)
-        .await
-        .map(Json)
+    let snapshot =
+        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    snapshot_response(&snapshot, super::request_state::viewer(&snapshot)).map(Json)
 }
 
 pub(crate) async fn authorize(
@@ -52,7 +37,7 @@ pub(crate) async fn authorize(
 ) -> Result<Json<RequestAutoMergeResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, viewer) = visible_request(
+    let (request, _) = visible_request(
         &state,
         &repo.record.id,
         &repo.views,
@@ -69,9 +54,9 @@ pub(crate) async fn authorize(
         input.expected_head_oid.as_str().to_string(),
     )
     .await?;
-    response(&state, &request, viewer, &repo.views)
-        .await
-        .map(Json)
+    let snapshot =
+        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    snapshot_response(&snapshot, super::request_state::viewer(&snapshot)).map(Json)
 }
 
 pub(crate) async fn cancel(
@@ -82,7 +67,7 @@ pub(crate) async fn cancel(
 ) -> Result<Json<RequestAutoMergeResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
     let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, viewer) = visible_request(
+    let (request, _) = visible_request(
         &state,
         &repo.record.id,
         &repo.views,
@@ -92,63 +77,64 @@ pub(crate) async fn cancel(
     )
     .await?;
     request_auto_merge::cancel(&state, &request.id, &user.id, input.expected_intent_id).await?;
-    response(&state, &request, viewer, &repo.views)
-        .await
-        .map(Json)
+    let snapshot =
+        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    snapshot_response(&snapshot, super::request_state::viewer(&snapshot)).map(Json)
 }
 
-async fn response(
-    state: &AppState,
-    request: &Request,
+pub(crate) fn snapshot_response(
+    snapshot: &scope_postgres::db::RequestStateSnapshot,
     viewer: RequestViewer<'_>,
-    views: &Views,
 ) -> Result<RequestAutoMergeResponse, ApiError> {
-    let view = request_auto_merge::view(state, &request.id).await?;
-    let can_merge = request_policy(&view.request, viewer.clone(), views)
+    let readiness = scope_domain::requests::request_auto_merge_readiness(
+        &snapshot.request.id,
+        &snapshot.request.head_oid,
+        snapshot.evaluation.as_ref(),
+        &snapshot.results,
+    );
+    let views = &snapshot.repository.views;
+    let users = &snapshot.users;
+    let can_merge = request_policy(&snapshot.request, viewer.clone(), views)
         .permissions
         .can_merge;
     let can_enable = request_auto_merge_can_enable(
-        &view.request,
-        view.revision.as_ref(),
-        view.intent.as_ref(),
-        view.readiness,
+        &snapshot.request,
+        snapshot.revision.as_ref(),
+        snapshot.auto_merge.as_ref(),
+        readiness,
         can_merge,
     );
     let can_cancel = request_auto_merge_can_cancel(
-        &view.request,
-        view.intent.as_ref(),
+        &snapshot.request,
+        snapshot.auto_merge.as_ref(),
         viewer.access.is_maintainer(),
     );
-    let waiting_reason = view
-        .intent
+    let waiting_reason = snapshot
+        .auto_merge
         .as_ref()
         .filter(|intent| intent.is_active())
-        .and_then(|_| view.readiness.waiting_reason_message())
+        .and_then(|_| readiness.waiting_reason_message())
         .map(str::to_string);
-    let intent = match view.intent {
-        Some(intent) => {
-            let users = state
-                .metadata
-                .auth()
-                .users_by_ids([intent.actor_user_id.clone()])
-                .await?;
-            Some(RequestAutoMergeIntentResponse {
-                actor: request_actor_summary_response(&intent.actor_user_id, &users)?,
-                id: intent.id,
-                revision_id: intent.revision_id,
-                head_oid: git_oid_response(intent.head_oid)?,
-                status: intent.status.into(),
-                reason: intent.reason.map(Into::into),
-                created_at_unix: intent.created_at_unix,
-                updated_at_unix: intent.updated_at_unix,
-            })
-        }
+    let intent = match snapshot.auto_merge.as_ref() {
+        Some(intent) => Some(RequestAutoMergeIntentResponse {
+            actor: request_actor_summary_response(&intent.actor_user_id, users)?,
+            id: intent.id.clone(),
+            revision_id: intent.revision_id.clone(),
+            head_oid: git_oid_response(intent.head_oid.clone())?,
+            status: intent.status.into(),
+            reason: intent.reason.map(Into::into),
+            created_at_unix: intent.created_at_unix,
+            updated_at_unix: intent.updated_at_unix,
+        }),
         None => None,
     };
     Ok(RequestAutoMergeResponse {
-        request_id: view.request.id,
-        revision_id: view.revision.map(|revision| revision.id),
-        head_oid: git_oid_response(view.request.head_oid)?,
+        request_id: snapshot.request.id.clone(),
+        revision_id: snapshot
+            .revision
+            .as_ref()
+            .map(|revision| revision.id.clone()),
+        head_oid: git_oid_response(snapshot.request.head_oid.clone())?,
         intent,
         waiting_reason,
         can_enable,

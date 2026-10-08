@@ -19,14 +19,23 @@ import type {
 } from './types.generated'
 import { repoRoute } from './paths'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
-import { apiValidators } from './validators.generated'
+import {
+  AcceptRepositoryInviteResponseValidator,
+  DeleteRepoResponseValidator,
+  RepoSummaryResponseValidator,
+  RepositoryCollaborationResponseValidator,
+  RepositoryInviteLandingResponseValidator,
+  RepositoryInviteLinkResponseValidator,
+  RepositoryInviteResponseValidator,
+  RepositoryMemberResponseValidator,
+} from './validators.generated'
 
 export async function updateRepoMetadataForRequest(
   data: UpdateRepoMetadataInput,
 ): Promise<RepoSummaryResponse> {
   return createApiClient().patch(
     repoRoute(ApiRouteTemplates.repoMetadata, data),
-    apiValidators.RepoSummaryResponse,
+    RepoSummaryResponseValidator,
     {
       auth: 'required',
       body: { description: data.description, website_url: data.website_url },
@@ -37,7 +46,7 @@ export async function updateRepoMetadataForRequest(
 export async function deleteRepoForRequest(data: RepoParams) {
   return createApiClient().delete(
     repoRoute(ApiRouteTemplates.repo, data),
-    apiValidators.DeleteRepoResponse,
+    DeleteRepoResponseValidator,
     { auth: 'required' },
   )
 }
@@ -48,7 +57,7 @@ export async function loadRepoCollaborationForRequest(
 ): Promise<RepositoryCollaborationResponse> {
   return createApiClient().get(
     repoRoute(ApiRouteTemplates.repoMembers, data),
-    apiValidators.RepositoryCollaborationResponse,
+    RepositoryCollaborationResponseValidator,
     { auth: 'required', signal },
   )
 }
@@ -58,7 +67,7 @@ export async function createRepoInviteForRequest(
 ): Promise<RepositoryInviteResponse> {
   return createApiClient().post(
     repoRoute(ApiRouteTemplates.repoInvites, data),
-    apiValidators.RepositoryInviteResponse,
+    RepositoryInviteResponseValidator,
     {
       auth: 'required',
       body: {
@@ -78,7 +87,7 @@ export async function updateRepoMemberForRequest(
       repo: data.repo,
       member_user_id: data.member_user_id,
     }),
-    apiValidators.RepositoryMemberResponse,
+    RepositoryMemberResponseValidator,
     {
       auth: 'required',
       body: {
@@ -97,7 +106,7 @@ export async function deleteRepoMemberForRequest(
       repo: data.repo,
       member_user_id: data.member_user_id,
     }),
-    apiValidators.RepositoryMemberResponse,
+    RepositoryMemberResponseValidator,
     { auth: 'required' },
   )
 }
@@ -111,7 +120,7 @@ export async function deleteRepoInviteForRequest(
       repo: data.repo,
       invite_id: data.invite_id,
     }),
-    apiValidators.RepositoryInviteResponse,
+    RepositoryInviteResponseValidator,
     { auth: 'required' },
   )
 }
@@ -125,7 +134,7 @@ export async function createRepoInviteLinkForRequest(
       repo: data.repo,
       invite_id: data.invite_id,
     }),
-    apiValidators.RepositoryInviteLinkResponse,
+    RepositoryInviteLinkResponseValidator,
     { auth: 'required' },
   )
 }
@@ -139,7 +148,7 @@ export async function sendRepoInviteEmailForRequest(
       repo: data.repo,
       invite_id: data.invite_id,
     }),
-    apiValidators.RepositoryInviteResponse,
+    RepositoryInviteResponseValidator,
     { auth: 'required' },
   )
 }
@@ -149,7 +158,7 @@ export async function loadRepoInviteForRequest(
 ): Promise<RepositoryInviteLandingResponse> {
   return createApiClient().get(
     buildApiPath(ApiRouteTemplates.repositoryInvite, { token: data.token }),
-    apiValidators.RepositoryInviteLandingResponse,
+    RepositoryInviteLandingResponseValidator,
     { auth: 'optional' },
   )
 }
@@ -161,7 +170,7 @@ export async function acceptRepoInviteForRequest(
     buildApiPath(ApiRouteTemplates.repositoryInviteAccept, {
       token: data.token,
     }),
-    apiValidators.AcceptRepositoryInviteResponse,
+    AcceptRepositoryInviteResponseValidator,
     { auth: 'required' },
   )
 }

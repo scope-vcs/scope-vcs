@@ -19,7 +19,7 @@ use super::{
         queue_pending_repo_storage_cleanup_row,
     },
     repository_from_model,
-    repository_rows::{queue_content_rebuilds, save_repository_delta, save_repository_rows},
+    repository_rows::{refresh_content_read_models, save_repository_delta, save_repository_rows},
     request_rows::{request_by_id, save_request_row},
 };
 #[cfg(any(test, feature = "test-support"))]
@@ -363,7 +363,7 @@ impl RepositoryStore {
                     .await?;
                 }
                 save_repository_rows(&tx, &before, &repo, CATALOG_SEED_NOW_UNIX).await?;
-                queue_content_rebuilds(
+                refresh_content_read_models(
                     &tx,
                     &repo,
                     CATALOG_SEED_NOW_UNIX,

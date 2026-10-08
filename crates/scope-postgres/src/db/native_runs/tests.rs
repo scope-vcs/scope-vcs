@@ -252,6 +252,18 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
         store
             .requests()
             .record_request_checks(RecordRequestChecksCommand {
+                expected_canonical_main_oid: store
+                    .requests()
+                    .request_check_base("owner/repo")
+                    .await
+                    .unwrap(),
+                repository_incarnation: store
+                    .repositories()
+                    .repository_record("owner/repo")
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .incarnation(),
                 evaluation,
                 revisions: vec![revision.clone()],
                 runs: Vec::new(),
@@ -294,9 +306,29 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
         .unwrap();
     assert_eq!(settled.state, RequestCheckEvaluationState::NoChecks);
 
+    store
+        .requests()
+        .mutate_request_for_tests("settled", |request| {
+            request.head_oid = "c".repeat(40);
+        })
+        .await
+        .unwrap();
+
     let refused = store
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::awaiting_approval(
                 "settled",
                 "c".repeat(40),

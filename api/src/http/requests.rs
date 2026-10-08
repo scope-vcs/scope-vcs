@@ -128,22 +128,12 @@ pub(crate) async fn get_request(
     headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
 ) -> Result<Json<RequestDetailResponse>, ApiError> {
-    let (repo, access, viewer_user_id) =
-        repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, viewer) = visible_request(
-        &state,
-        &repo.record.id,
-        &repo.views,
-        access.clone().clone(),
-        viewer_user_id.as_deref(),
-        &request_id,
-    )
-    .await?;
-    let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
-    let request =
-        request_response_for_viewer(&state, request, viewer, &repo.views, current_main_oid).await?;
-
-    Ok(Json(RequestDetailResponse { request }))
+    let snapshot =
+        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    Ok(Json(super::request_state::detail_response(
+        &snapshot,
+        super::request_state::viewer(&snapshot),
+    )?))
 }
 
 pub(crate) async fn submit_request(
@@ -568,6 +558,21 @@ async fn request_response_for_viewer(
     } else {
         Vec::new()
     };
+    let checks = crate::use_cases::request_checks::recorded_checks_view(state, &request)
+        .await?
+        .outcome;
+    request_response(request, viewer, views, current_main_oid, invitees, checks)
+}
+
+pub(crate) fn request_response(
+    request: Request,
+    viewer: RequestViewer<'_>,
+    views: &Views,
+    current_main_oid: Option<String>,
+    invitees: Vec<RequestInviteeResponse>,
+    checks: scope_domain::requests::RequestChecksOutcome,
+) -> Result<RequestSummaryResponse, ApiError> {
+    let policy = request_policy(&request, viewer.clone(), views);
     let can_view_activity = policy.activity_stream_visible;
     let decision = policy.permissions;
     let permissions = RequestPermissionsResponse {
@@ -584,9 +589,6 @@ async fn request_response_for_viewer(
         can_close: decision.can_close,
         can_merge: decision.can_merge,
     };
-    let checks = crate::use_cases::request_checks::recorded_checks_view(state, &request)
-        .await?
-        .outcome;
     let decision = request_mergeability(&request, &viewer, views, checks);
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
@@ -642,7 +644,7 @@ pub(crate) async fn current_main_oid_for_context(
         .await?)
 }
 
-fn request_invitee_response(
+pub(crate) fn request_invitee_response(
     read: scope_postgres::db::RequestInviteeRead,
 ) -> RequestInviteeResponse {
     RequestInviteeResponse {

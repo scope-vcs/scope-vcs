@@ -245,21 +245,7 @@ impl RequestStore {
         &self,
         request_id: &str,
     ) -> Result<Option<GitHubPush>, PostgresError> {
-        PushRow::find_by_statement(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            format!(
-                "SELECT {SELECT_PUSH} FROM scope_github_pushes
-                  WHERE request_id = $1
-                  ORDER BY sequence DESC
-                  LIMIT 1"
-            ),
-            [request_id.into()],
-        ))
-        .one(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
-        .map(PushRow::into_domain)
-        .transpose()
+        latest_github_push(self.db.as_ref(), request_id).await
     }
 }
 
@@ -459,3 +445,24 @@ impl PushRow {
 
 #[cfg(test)]
 mod tests;
+
+pub(super) async fn latest_github_push<C: ConnectionTrait>(
+    conn: &C,
+    request_id: &str,
+) -> Result<Option<GitHubPush>, PostgresError> {
+    PushRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "SELECT {SELECT_PUSH} FROM scope_github_pushes
+                  WHERE request_id = $1
+                  ORDER BY sequence DESC
+                  LIMIT 1"
+        ),
+        [request_id.into()],
+    ))
+    .one(conn)
+    .await
+    .map_err(PostgresError::internal)?
+    .map(PushRow::into_domain)
+    .transpose()
+}

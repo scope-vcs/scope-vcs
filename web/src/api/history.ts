@@ -13,7 +13,11 @@ import type {
   HistoryPageResponse,
 } from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
-import { apiValidators } from './validators.generated'
+import {
+  HistoryEntryDetailResponseValidator,
+  HistoryPageResponseValidator,
+  ReviewFileDiffResponseValidator,
+} from './validators.generated'
 export {
   parseHistoryEntryDetailInput,
   parseHistoryEntryFileDiffInput,
@@ -34,7 +38,7 @@ export async function loadHistoryPageForRequest(
       owner: data.owner,
       repo: data.repo,
     })}?${query}`,
-    apiValidators.HistoryPageResponse,
+    HistoryPageResponseValidator,
     { auth: 'optional', signal },
   )
 }
@@ -51,7 +55,7 @@ export async function loadHistoryEntryForRequest(
       repo: data.repo,
       entry_id: data.entry,
     })}?${query}`,
-    apiValidators.HistoryEntryDetailResponse,
+    HistoryEntryDetailResponseValidator,
     { auth: 'optional' },
   )
 }
@@ -73,7 +77,7 @@ export async function loadHistoryEntryFileDiffForRequest(
       repo: data.repo,
       entry_id: data.entry,
     })}?${query}`,
-    apiValidators.ReviewFileDiffResponse,
+    ReviewFileDiffResponseValidator,
     { auth: 'optional', signal },
   )
 

@@ -233,6 +233,15 @@ pub struct RequestDetailResponse {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestStateResponse {
+    pub viewer: Option<RequestActorSummaryResponse>,
+    pub detail: RequestDetailResponse,
+    pub checks: crate::RequestChecksResponse,
+    pub auto_merge: crate::RequestAutoMergeResponse,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct CreateRequestRatingRequest {
     pub score: u8,
     pub reason: String,

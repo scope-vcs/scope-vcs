@@ -134,6 +134,20 @@ async fn a_maintainers_push_starts_the_request_workflows_at_its_head() {
         .metadata
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: state
+                .metadata
+                .requests()
+                .request_check_base(TEST_REPO_ID)
+                .await
+                .unwrap(),
+            repository_incarnation: state
+                .metadata
+                .repositories()
+                .repository_record(TEST_REPO_ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
                 &request_id,
                 "ffffffffffffffffffffffffffffffffffffffff",
@@ -146,7 +160,7 @@ async fn a_maintainers_push_starts_the_request_workflows_at_its_head() {
             push_to_github: false,
         })
         .await
-        .unwrap();
+        .unwrap_err();
     let app = router(state);
     let list = expect_json(
         api_request(
@@ -264,7 +278,7 @@ async fn listed_status(state: &AppState, request_id: &str) -> serde_json::Value 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_head_whose_evaluation_failed_is_held_until_someone_looks() {
+async fn a_head_whose_evaluation_failed_is_recovered_without_a_viewer() {
     let (state, request_id, _server) = owner_request_push(
         "request-checks-unevaluated",
         &[(".scope/runs/checks.yml", request_workflow())],
@@ -283,6 +297,37 @@ async fn a_head_whose_evaluation_failed_is_held_until_someone_looks() {
         "ChecksNotEvaluated"
     );
 
+    let read = checks(&state, &request_id, &member).await;
+    assert_eq!(read["state"], serde_json::Value::Null);
+    assert_eq!(read["mergeability"]["status"], "ChecksNotEvaluated");
+    assert!(
+        state
+            .metadata
+            .requests()
+            .request_check_evaluation(&request_id, read["head_oid"].as_str().unwrap())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let mut recovery_cursor = Default::default();
+    assert_eq!(
+        crate::use_cases::request_checks::reconcile_request_checks_once(
+            &state,
+            &mut recovery_cursor
+        )
+        .await
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        crate::use_cases::request_checks::reconcile_request_checks_once(
+            &state,
+            &mut recovery_cursor
+        )
+        .await
+        .unwrap(),
+        0
+    );
     let looked = checks(&state, &request_id, &member).await;
     assert_eq!(looked["state"], "started");
     assert_eq!(looked["mergeability"]["status"], "ChecksPending");
@@ -290,6 +335,51 @@ async fn a_head_whose_evaluation_failed_is_held_until_someone_looks() {
     let run = state.metadata.runs().run(&run_id).await.unwrap().unwrap();
     assert_eq!(run.requested_by_user_id.as_deref(), Some(&*test_owner_id()));
 
+    let state_response = expect_json(
+        api_request(
+            router(state.clone()),
+            "GET",
+            &scope_api_contract::routes::repo_request_state(
+                TEST_REPO_OWNER,
+                TEST_REPO_NAME,
+                &request_id,
+            ),
+            Some(&bearer_header()),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(state_response["viewer"]["id"], test_owner_id());
+    assert_eq!(
+        state_response["detail"]["request"]["head_oid"],
+        looked["head_oid"]
+    );
+    assert_eq!(state_response["checks"]["head_oid"], looked["head_oid"]);
+    assert_eq!(state_response["auto_merge"]["head_oid"], looked["head_oid"]);
+    assert_eq!(
+        state_response["detail"]["request"]["mergeability"],
+        state_response["checks"]["mergeability"]
+    );
+    assert_eq!(state_response["auto_merge"]["can_enable"], true);
+    assert_eq!(
+        state_response["checks"]["checks"][0]["run_id"],
+        run_id.as_str()
+    );
+    let hidden = api_request(
+        router(state.clone()),
+        "GET",
+        &scope_api_contract::routes::repo_request_state(
+            TEST_REPO_OWNER,
+            TEST_REPO_NAME,
+            &request_id,
+        ),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
     let again = checks(&state, &request_id, &member).await;
     assert_eq!(again["checks"][0]["run_id"], run_id.as_str());
     assert_eq!(again["checks"].as_array().unwrap().len(), 1);
@@ -345,6 +435,20 @@ async fn record_awaiting_approval(state: &AppState, request_id: &str) {
         .metadata
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: state
+                .metadata
+                .requests()
+                .request_check_base(TEST_REPO_ID)
+                .await
+                .unwrap(),
+            repository_incarnation: state
+                .metadata
+                .repositories()
+                .repository_record(TEST_REPO_ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation,
             revisions,
             runs: Vec::new(),

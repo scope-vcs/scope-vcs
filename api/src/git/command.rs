@@ -13,7 +13,7 @@ pub(crate) fn git_process_output(
     stdin: Option<Vec<u8>>,
     limits: ProcessLimits,
 ) -> Result<Output, ApiError> {
-    let span = git_subprocess_span(command);
+    let span = prepare_git_subprocess(command)?;
     let _entered = span.enter();
     run_process(command, stdin, limits, "Git command")
         .inspect(|output| record_git_exit(&span, output.status))
@@ -26,15 +26,49 @@ pub(crate) fn git_process_output(
         })
 }
 
-pub(crate) fn git_subprocess_span(command: &Command) -> tracing::Span {
+pub(crate) fn prepare_git_subprocess(command: &mut Command) -> Result<tracing::Span, ApiError> {
+    let configured_count = match command
+        .get_envs()
+        .find(|(key, _)| *key == "GIT_CONFIG_COUNT")
+    {
+        Some((_, value)) => value.map(std::ffi::OsString::from),
+        None => std::env::var_os("GIT_CONFIG_COUNT"),
+    };
+    let count = match configured_count {
+        Some(value) if value.is_empty() => 0,
+        Some(value) => value
+            .to_str()
+            .and_then(|value| {
+                value
+                    .trim_start_matches(|ch: char| ch.is_ascii_whitespace())
+                    .parse::<i64>()
+                    .ok()
+            })
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or_else(|| ApiError::infrastructure_unavailable("invalid Git config count"))?,
+        None => 0,
+    };
+    let next_count = count.checked_add(2).ok_or_else(|| {
+        ApiError::infrastructure_unavailable("Git config count exceeds supported range")
+    })?;
+    for (index, (key, value)) in [("maintenance.auto", "false"), ("gc.auto", "0")]
+        .into_iter()
+        .enumerate()
+    {
+        let index = count + index as u32;
+        command
+            .env(format!("GIT_CONFIG_KEY_{index}"), key)
+            .env(format!("GIT_CONFIG_VALUE_{index}"), value);
+    }
+    command.env("GIT_CONFIG_COUNT", next_count.to_string());
     let subcommand = git_subcommand(command);
-    tracing::info_span!(
+    Ok(tracing::info_span!(
         "git subprocess",
         otel.name = %format!("git {subcommand}"),
         otel.kind = "internal",
         git.subcommand = subcommand,
         process.exit.code = tracing::field::Empty,
-    )
+    ))
 }
 
 pub(crate) fn record_git_exit(span: &tracing::Span, status: ExitStatus) {
@@ -326,6 +360,114 @@ mod tests {
                 .operator_diagnostic()
                 .contains("reading Git version exceeded 1 bytes")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_git_commands_do_not_start_automatic_writers() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let repo = temp_repo("automatic-writers");
+        let head = commit(&repo, "first");
+        for (key, value) in [
+            ("gc.auto", "1"),
+            ("gc.autoPackLimit", "1"),
+            ("gc.autoDetach", "false"),
+            ("maintenance.incremental-repack.enabled", "true"),
+            ("maintenance.incremental-repack.auto", "1"),
+            ("maintenance.autoDetach", "false"),
+        ] {
+            run_git(
+                Some(&repo),
+                &["config", key, value],
+                "configure maintenance",
+            )
+            .unwrap();
+        }
+        for contents in [b"first pack".as_slice(), b"second pack".as_slice()] {
+            let oid = git_command_output(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&repo)
+                    .args(["hash-object", "-w", "--stdin"]),
+                Some(contents),
+            )
+            .unwrap();
+            git_command_output(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&repo)
+                    .arg("pack-objects")
+                    .arg(repo.join(".git/objects/pack/pack")),
+                Some(&oid),
+            )
+            .unwrap();
+        }
+        let marker = repo.join("gc-triggered");
+        let hook = repo.join(".git/hooks/pre-auto-gc");
+        fs::write(&hook, "#!/bin/sh\nprintf eligible > \"$SCOPE_GC_MARKER\"\n").unwrap();
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        let configured_command = || {
+            let mut command = Command::new("git");
+            command
+                .arg("-C")
+                .arg(&repo)
+                .env("GIT_CONFIG_COUNT", "2")
+                .env("GIT_CONFIG_KEY_0", "scope.identity")
+                .env("GIT_CONFIG_VALUE_0", "preserved caller value")
+                .env("GIT_CONFIG_KEY_1", "gc.autoDetach")
+                .env("GIT_CONFIG_VALUE_1", "false")
+                .env("SCOPE_GC_MARKER", &marker);
+            command
+        };
+        let identity = git_command_output(
+            configured_command().args(["config", "--get", "scope.identity"]),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(identity).unwrap().trim(),
+            "preserved caller value"
+        );
+
+        git_command_output(configured_command().args(["gc", "--auto"]), None).unwrap();
+        assert!(
+            !marker.exists(),
+            "managed Git launched automatic garbage collection"
+        );
+        for count in [Some(""), Some(" 0"), Some("-0"), None] {
+            let mut command = configured_command();
+            match count {
+                Some(value) => command.env("GIT_CONFIG_COUNT", value),
+                None => command.env_remove("GIT_CONFIG_COUNT"),
+            };
+            git_command_output(command.args(["gc", "--auto"]), None).unwrap();
+            assert!(
+                !marker.exists(),
+                "managed Git launched automatic garbage collection"
+            );
+        }
+        git_command_output(
+            configured_command().args(["fetch", ".", "refs/heads/main:refs/heads/copied"]),
+            None,
+        )
+        .unwrap();
+        assert!(
+            !repo.join(".git/objects/pack/multi-pack-index").exists(),
+            "managed Git launched automatic maintenance"
+        );
+        assert_eq!(
+            git_stdout_text(
+                &repo,
+                &["rev-parse", "refs/heads/copied"],
+                "read fetched head"
+            )
+            .unwrap()
+            .trim(),
+            head
+        );
+        fs::remove_dir_all(&repo).unwrap();
+        assert!(!repo.exists());
     }
 
     #[test]

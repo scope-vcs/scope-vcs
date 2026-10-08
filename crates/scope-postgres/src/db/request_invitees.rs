@@ -305,7 +305,7 @@ where
         .transpose()
 }
 
-async fn request_invitee_reads<C>(
+pub(super) async fn request_invitee_reads<C>(
     conn: &C,
     request_id: &str,
 ) -> Result<Vec<RequestInviteeRead>, PostgresError>

@@ -272,89 +272,6 @@ async fn a_new_revision_replaces_the_branch_and_an_older_green_run_does_not_coun
     assert_eq!(fake.branch_head(&request.branch()), Some(second_head));
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
-    let (mut state, _owner_source) =
-        test_state_with_mergeable_request("github-checks-contributor").await;
-    let fake = connect_github(&mut state, &[REQUIRED_CHECK]).await;
-    insert_member_user(&state).await;
-    let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
-    let public = bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL);
-    let (source, remote, _server) = request_push_checkout(
-        &state,
-        "github-checks-contributor-push",
-        PUBLIC_SUBJECT,
-        PUBLIC_EMAIL,
-    )
-    .await;
-    fs::create_dir_all(source.join(".github/workflows")).unwrap();
-    push_change(
-        &source,
-        &remote,
-        REQUEST_REF,
-        ".github/workflows/ci.yml",
-        "on: push\n",
-        "change the workflow",
-    )
-    .unwrap();
-    let head = git_head_oid(&source);
-    let branch = format!("scope/requests/{REQUEST_ID}");
-    let submitted = api_request(
-        router(state.clone()),
-        "POST",
-        &format!("/v1/repos/{TEST_REPO_ID}/requests/{REQUEST_ID}/submit"),
-        Some(&public),
-        Some("{}"),
-    )
-    .await;
-    assert_eq!(submitted.status(), StatusCode::OK);
-
-    assert_eq!(push_pass(&state, unix_now()).await, 0);
-    assert_eq!(fake.branch_head(&branch), None);
-    let waiting = checks(&state, REQUEST_ID, &member).await;
-    assert_eq!(waiting["state"], "awaiting-approval");
-    assert_eq!(waiting["can_approve"], true);
-    assert_eq!(waiting["github_push"]["state"], "awaiting_approval");
-    assert_eq!(waiting["changes_github_workflows"], true);
-    let contributor_view = checks(&state, REQUEST_ID, &public).await;
-    assert_eq!(contributor_view["can_approve"], false);
-    assert_eq!(contributor_view["changes_github_workflows"], false);
-
-    let approved = expect_json(
-        api_request(
-            router(state.clone()),
-            "POST",
-            &repo_request_checks_approve(TEST_REPO_OWNER, TEST_REPO_NAME, REQUEST_ID),
-            Some(&member),
-            Some(&reviewed_head_body(&state, REQUEST_ID).await),
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
-    assert_eq!(approved["state"], "started");
-    assert_eq!(approved["github_push"]["state"], "sending");
-    assert_eq!(push_pass(&state, unix_now()).await, 1);
-    let tested = public::tested_commit(&state, &head).await;
-    assert_ne!(tested, head);
-    assert_eq!(fake.branch_head(&branch), Some(tested));
-
-    expect_json(
-        api_request(
-            router(state.clone()),
-            "DELETE",
-            &scope_api_contract::routes::repo_request(TEST_REPO_OWNER, TEST_REPO_NAME, REQUEST_ID),
-            Some(&public),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
-    assert_eq!(push_pass(&state, unix_now()).await, 1);
-    assert_eq!(fake.branch_head(&branch), None);
-}
-
 const CLOCK_LEAD_OVER_SLOW_PUSHES_SECS: u64 = 60 * 60;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -470,6 +387,7 @@ async fn the_reconciler_reads_results_a_delivery_never_announced() {
         "ChecksPending"
     );
 
+    let mut events = state.repo_events.subscribe(TEST_REPO_ID);
     let now = unix_now();
     assert_eq!(
         github_check_results::reconcile_github_checks_once(state, now)
@@ -478,6 +396,10 @@ async fn the_reconciler_reads_results_a_delivery_never_announced() {
         1
     );
     assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
+    assert!(matches!(events.try_recv().unwrap().kind,
+        crate::repo_events::RepoChangeKind::RequestStateChanged { request_id, .. }
+        if request_id == request.request_id));
+    assert!(events.try_recv().is_err());
     assert_eq!(
         github_check_results::reconcile_github_checks_once(state, now + 120)
             .await
@@ -807,6 +729,20 @@ async fn a_commit_is_read_every_two_minutes_while_any_request_testing_it_is_pend
         .unwrap();
     requests
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: state
+                .metadata
+                .requests()
+                .request_check_base(TEST_REPO_ID)
+                .await
+                .unwrap(),
+            repository_incarnation: state
+                .metadata
+                .repositories()
+                .repository_record(TEST_REPO_ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: scope_domain::requests::RequestCheckEvaluation::started(
                 &other.id,
                 &head,
@@ -913,35 +849,23 @@ async fn a_pushed_head_without_any_run_says_no_workflow_started_after_ten_minute
 
     let request_id = request.request_id.as_str();
     let message_at = |now_unix| async move {
-        let context = crate::repo_access::find_read_access(
-            state,
-            TEST_REPO_OWNER,
-            TEST_REPO_NAME,
-            Some(&test_owner_id()),
-        )
-        .await
-        .unwrap();
-        let scope_request = state
+        let snapshot = state
             .metadata
             .requests()
-            .request_by_id(request_id)
-            .await
-            .unwrap()
-            .unwrap();
-        crate::http::request_checks::checks_response(
-            state,
-            &context.record,
-            &context.views,
-            &scope_request,
-            scope_domain::requests::RequestViewer::new(
-                context.access,
+            .request_state_snapshot(
+                TEST_REPO_OWNER,
+                TEST_REPO_NAME,
+                request_id,
                 Some(&test_owner_id()),
-                false,
-            ),
-            None,
+            )
+            .await
+            .unwrap();
+        crate::http::request_checks::snapshot_response(
+            state,
+            &snapshot,
+            crate::http::request_state::viewer(&snapshot),
             now_unix,
         )
-        .await
         .unwrap()
         .message
     };

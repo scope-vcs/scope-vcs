@@ -37,6 +37,18 @@ async fn recording_configuration_error_stops_matching_active_intent_immediately(
 
     requests
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
                 "req_1",
                 "a".repeat(40),
@@ -71,6 +83,18 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
     let requests = store.requests();
     requests
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
                 "req_1",
                 "a".repeat(40),
@@ -101,6 +125,18 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
         .unwrap();
     requests
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
                 "req_1",
                 "b".repeat(40),
@@ -113,7 +149,7 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
             push_to_github: false,
         })
         .await
-        .unwrap();
+        .unwrap_err();
     let active = requests
         .request_auto_merge_intent("req_1")
         .await
@@ -131,6 +167,18 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
         .unwrap();
     requests
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::no_checks("req_1", "a".repeat(40), 8).unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
@@ -140,6 +188,18 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
         .unwrap();
     let replayed = requests
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
                 "req_1",
                 "a".repeat(40),
@@ -552,6 +612,18 @@ jobs:
     store
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::started(
                 "req_1",
                 "a".repeat(40),

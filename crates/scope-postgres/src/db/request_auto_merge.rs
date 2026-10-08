@@ -160,16 +160,7 @@ impl RequestStore {
         &self,
         request_id: &str,
     ) -> Result<Option<RequestAutoMergeIntent>, PostgresError> {
-        entities::request_auto_merge_intent::Entity::find()
-            .filter(entities::request_auto_merge_intent::Column::RequestId.eq(request_id))
-            .order_by_desc(entities::request_auto_merge_intent::Column::CreatedPosition)
-            .order_by_desc(entities::request_auto_merge_intent::Column::CreatedAtUnix)
-            .order_by_desc(entities::request_auto_merge_intent::Column::Id)
-            .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
-            .map(|row| row.try_into_domain())
-            .transpose()
+        latest_intent(self.db.as_ref(), request_id).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_due_request_auto_merges"))]
@@ -555,3 +546,19 @@ pub(super) fn automatic_event_id(kind: &str, intent_id: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+pub(super) async fn latest_intent<C: ConnectionTrait>(
+    conn: &C,
+    request_id: &str,
+) -> Result<Option<RequestAutoMergeIntent>, PostgresError> {
+    entities::request_auto_merge_intent::Entity::find()
+        .filter(entities::request_auto_merge_intent::Column::RequestId.eq(request_id))
+        .order_by_desc(entities::request_auto_merge_intent::Column::CreatedPosition)
+        .order_by_desc(entities::request_auto_merge_intent::Column::CreatedAtUnix)
+        .order_by_desc(entities::request_auto_merge_intent::Column::Id)
+        .one(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .map(|row| row.try_into_domain())
+        .transpose()
+}

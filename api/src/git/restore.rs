@@ -2,7 +2,7 @@ use crate::{
     error::ApiError,
     git::{
         GitContext,
-        command::{git_subprocess_span, record_git_exit, run_git, truncated_git_stderr},
+        command::{prepare_git_subprocess, record_git_exit, run_git, truncated_git_stderr},
     },
 };
 use futures_util::{StreamExt as _, stream};
@@ -226,7 +226,7 @@ pub(super) fn install_verified_git_pack(
             .args(["index-pack", "--index-version=2", "-o"])
             .arg(temporary.path())
             .arg(pack);
-        let span = git_subprocess_span(&command);
+        let span = prepare_git_subprocess(&mut command)?;
         let _entered = span.enter();
         let output = run_process(
             &mut command,
