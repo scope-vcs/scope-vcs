@@ -9,6 +9,7 @@ import { PageErrorAlert } from '@/components/page-error-alert'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/select'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { cn } from '@/lib/utils'
@@ -35,7 +36,6 @@ import { githubWorkflowNamesResource } from './github-workflow-names-resource'
 import { RUN_ROW_CLASS, RUN_ROW_TIMESTAMP_CLASS } from './run-row-layout'
 
 const LINK_CLASS = 'underline-offset-2 hover:text-foreground hover:underline'
-const SELECT_CLASS = 'h-8 max-w-44 rounded-md border border-input bg-secondary px-2 text-sm text-foreground shadow-[var(--shadow-card)] outline-none transition-colors focus-visible:border-ring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 export function GitHubWorkflowRunsPage({
   initialRuns,
@@ -107,15 +107,15 @@ export function GitHubWorkflowRunsPage({
         actions={(
           <div className="flex flex-wrap items-center gap-2">
             {workflows.length > 0 || workflow !== null ? (
-              <select
+              <Select
                 aria-label="Filter by workflow"
-                className={SELECT_CLASS}
+                className="max-w-44"
                 onChange={(event) => setWorkflow(event.target.value === '' ? null : event.target.value)}
                 value={workflow ?? ''}
               >
                 <option value="">All workflows</option>
                 {workflows.map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
+              </Select>
             ) : null}
             <Button asChild size="sm" variant="secondary">
               <a href={(runs ?? initialRuns).actions_url} rel="noopener noreferrer" target="_blank">
