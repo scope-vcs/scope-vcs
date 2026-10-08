@@ -2,7 +2,7 @@
 set -euo pipefail
 stage="${1:?usage: deploy-monitored-railway.sh backend|web COMMAND [ARGS...]}"
 shift
-node .github/scripts/railway-tracing.mjs production
+env -u RAILWAY_TOKEN node .github/scripts/railway-tracing.mjs production
 output="$(realpath -m "release-evidence/$stage")"
 mkdir -p "$output"
 export SCOPE_RELEASE_DEPLOYMENTS_FILE="$output/deployments.json"

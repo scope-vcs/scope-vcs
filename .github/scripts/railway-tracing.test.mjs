@@ -14,7 +14,9 @@ function providerFixture(t, confirmed) {
   writeFileSync(join(directory, 'railway'), `#!/usr/bin/env node
 const fs = require('node:fs');
 const variables = JSON.parse(fs.readFileSync(0, 'utf8'));
-fs.appendFileSync(process.env.TRACING_CALLS, JSON.stringify(variables) + '\\n');
+const credentials = { account: Boolean(process.env.RAILWAY_API_TOKEN), project: Boolean(process.env.RAILWAY_TOKEN) };
+fs.appendFileSync(process.env.TRACING_CALLS, JSON.stringify({ ...variables, credentials }) + '\\n');
+if (!credentials.account || credentials.project) process.exit(1);
 process.stdout.write(JSON.stringify({ data: { serviceInstanceUpdate: ${confirmed} } }));
 `, { mode: 0o755 });
   return {
@@ -46,13 +48,15 @@ test('failed production tracing prevents the monitored release command from acti
   const fixture = providerFixture(t, false);
   const activated = join(fixture.directory, 'activated');
   const result = spawnSync('bash', ['.github/scripts/deploy-monitored-railway.sh', 'backend',
-    'touch', activated], { env: fixture.env, encoding: 'utf8', timeout: 15_000 });
+    'touch', activated], { env: { ...fixture.env, RAILWAY_TOKEN: 'private-project-auth' }, encoding: 'utf8', timeout: 15_000 });
   assert.equal(existsSync(fixture.calls), true, 'release must configure tracing before activation');
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /release activation blocked/);
   assert.equal(existsSync(activated), false);
-  assert.equal(readFileSync(fixture.calls, 'utf8').trim().split('\n').length, 3);
-  assert.doesNotMatch(result.stdout + result.stderr, /private-exporter-auth/);
+  const calls = readFileSync(fixture.calls, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls.map(({ credentials }) => credentials), Array(3).fill({ account: true, project: false }));
+  assert.doesNotMatch(result.stdout + result.stderr, /private-exporter-auth|private-project-auth/);
 });
 
 test('wrong production target fails before configuring any service', (t) => {
