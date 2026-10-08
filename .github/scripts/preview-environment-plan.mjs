@@ -1,5 +1,6 @@
 import { createPublicKey, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { renderPolicy } from '../../deploy/postgres/runtime-roles.mjs';
+import { serviceIds } from './deployment-components.mjs';
 
 const PREVIEW_NAME = /^pr-[1-9][0-9]{0,8}$/;
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
@@ -37,16 +38,6 @@ export function assertPreviewEnvironment(manifest, environment, name) {
     throw new Error(`Railway environment ${name} is not an ephemeral preview environment.`);
   }
   return environment.id;
-}
-
-export function serviceIds(manifest) {
-  const ids = Object.fromEntries(Object.entries(manifest.services).map(([component, service]) => [component, service.id]));
-  ids.postgres = manifest.railway.databaseServiceId;
-  ids.maintenance = manifest.railway.maintenanceServiceId;
-  for (const [component, id] of Object.entries(ids)) {
-    if (!UUID.test(id ?? '')) throw new Error(`Preview environments require the ${component} service ID.`);
-  }
-  return ids;
 }
 
 export function previewDomains(manifest, config) {

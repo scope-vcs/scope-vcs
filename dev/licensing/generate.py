@@ -38,15 +38,17 @@ def packages():
             source = package.get("source")
             if not source:
                 continue
-            if source != "registry+https://github.com/rust-lang/crates.io-index":
-                raise ValueError(f"Unsupported Cargo source: {source}")
             name, version = package["name"], package["version"]
             key = f"{name}@{version}"
-            entry = crates.setdefault(key, dict(ecosystem="rust", name=name, version=version,
-                url=f"https://static.crates.io/crates/{name}/{name}-{version}.crate",
-                integrity="sha256-" + base64.b64encode(bytes.fromhex(package["checksum"])).decode(), lockfiles=[]))
-            if entry["integrity"] != "sha256-" + base64.b64encode(bytes.fromhex(package["checksum"])).decode():
-                raise ValueError(f"Conflicting crate checksums: {key}")
+            if source == "registry+https://github.com/rust-lang/crates.io-index":
+                candidate = dict(ecosystem="rust", name=name, version=version,
+                    url=f"https://static.crates.io/crates/{name}/{name}-{version}.crate",
+                    integrity="sha256-" + base64.b64encode(bytes.fromhex(package["checksum"])).decode())
+            else:
+                candidate = reviewed_git_package(package)
+            entry = crates.setdefault(key, dict(**candidate, lockfiles=[]))
+            if {field: value for field, value in entry.items() if field != "lockfiles"} != candidate:
+                raise ValueError(f"Conflicting crate sources or checksums: {key}")
             entry["lockfiles"].append(lock)
     result = list(crates.values())
     lock = yaml.safe_load((ROOT / "web/pnpm-lock.yaml").read_text())
@@ -60,6 +62,21 @@ def packages():
             url=url, integrity=resolution["integrity"], lockfiles=["web/pnpm-lock.yaml"]))
     result.extend(npm_packages("dependency-analyzer/package-lock.json", "dependency-analyzer"))
     return sorted(result, key=lambda item: (item["ecosystem"], item["name"], item["version"]))
+
+
+def reviewed_git_package(package):
+    source = package["source"]
+    match = re.fullmatch(r"git\+https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\?rev=([a-f0-9]{40})#\2", source)
+    sources = json.loads((ROOT / "legal/git-sources.json").read_text())["sources"]
+    record = sources.get(source)
+    key = f"{package['name']}@{package['version']}"
+    if not match or not record or key not in record["packages"]:
+        raise ValueError(f"Unsupported Cargo source or unreviewed Git crate: {source} {key}")
+    if record["url"] != f"https://codeload.github.com/{match[1]}/tar.gz/{match[2]}" or not re.fullmatch(r"[a-f0-9]{64}", record["sha256"]):
+        raise ValueError(f"Git archive must match its immutable source: {source}")
+    return dict(ecosystem="rust", name=package["name"], version=package["version"], source=source,
+        url=record["url"], integrity="sha256-" + base64.b64encode(bytes.fromhex(record["sha256"])).decode(),
+        manifest_path=record["packages"][key], workspace_manifest=record["workspace_manifest"])
 
 
 def npm_packages(lockfile, ecosystem):
@@ -87,7 +104,14 @@ def archive(package):
         with urllib.request.urlopen(package["url"], timeout=120) as response:
             data = response.read()
         if hashlib.new(algorithm, data).digest() == expected:
-            cache.write_bytes(data)
+            downloaded = tempfile.NamedTemporaryFile(dir=CACHE, delete=False)
+            temporary = Path(downloaded.name)
+            try:
+                with downloaded:
+                    downloaded.write(data)
+                temporary.replace(cache)
+            finally:
+                temporary.unlink(missing_ok=True)
     if hashlib.new(algorithm, data).digest() != expected:
         raise ValueError(f"Archive checksum mismatch: {package['name']} {package['version']}")
     return data
@@ -97,15 +121,23 @@ def collect(package):
     data = archive(package)
     documents = []
     metadata = None
+    workspace = None
+    manifest_path = package.get("manifest_path", "Cargo.toml" if package["ecosystem"] == "rust" else "package.json")
+    license_roots = {str(Path(manifest_path).parent), str(Path(package.get("workspace_manifest", manifest_path)).parent)}
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as bundle:
         for member in bundle.getmembers():
             if not member.isfile():
                 continue
             path = member.name.split("/", 1)[-1]
-            if path == ("Cargo.toml" if package["ecosystem"] == "rust" else "package.json"):
+            if path == package.get("workspace_manifest"):
+                workspace = tomllib.loads(bundle.extractfile(member).read().decode("utf-8"))["workspace"]["package"]
+            if path == manifest_path:
                 raw = bundle.extractfile(member).read().decode("utf-8")
                 metadata = tomllib.loads(raw)["package"] if package["ecosystem"] == "rust" else json.loads(raw)
             is_document = Path(path).suffix.lower() not in {".rs", ".js", ".ts", ".c", ".h", ".cc", ".cpp", ".json", ".map"}
+            if package.get("source") and not (str(Path(path).parent) in license_roots or
+                    Path(path).is_relative_to(Path(manifest_path).parent)):
+                continue
             if is_document and (LICENSE_NAME.match(Path(path).name) or any(part.lower() == "licenses" for part in Path(path).parts[:-1])):
                 raw = bundle.extractfile(member).read()
                 text = raw.decode("utf-8-sig").replace("\r\n", "\n").strip()
@@ -113,6 +145,14 @@ def collect(package):
                     documents.append(dict(path=path, sha256=digest(raw), text=text))
     if metadata is None:
         raise ValueError(f"Missing package manifest: {package['name']}")
+    if package.get("source"):
+        for field in ["version", "license", "authors", "repository"]:
+            if metadata.get(field) == {"workspace": True}:
+                if workspace is None or field not in workspace:
+                    raise ValueError(f"Missing inherited Git crate metadata: {package['name']} {field}")
+                metadata[field] = workspace[field]
+        if metadata.get("name") != package["name"] or metadata.get("version") != package["version"]:
+            raise ValueError(f"Git crate manifest does not match locked package: {package['name']} {package['version']}")
     license_value = metadata.get("license", metadata.get("licenses"))
     if isinstance(license_value, (dict, list)):
         license_value = json.dumps(license_value, sort_keys=True)
@@ -373,7 +413,7 @@ def check():
 
 def input_files():
     paths = ["dev/licensing/generate.py", "dev/licensing/requirements.txt", "legal/license-selections.json",
-        "legal/rust-supplements.json", "legal/web-supplements.json", "legal/copied-sources.json"]
+        "legal/rust-supplements.json", "legal/web-supplements.json", "legal/copied-sources.json", "legal/git-sources.json"]
     paths.extend(path.relative_to(ROOT).as_posix() for path in (ROOT / "legal/upstream").glob("*"))
     paths.extend(path.relative_to(ROOT).as_posix() for path in (ROOT / "web/vendor").glob("*.tgz"))
     return sorted(paths)

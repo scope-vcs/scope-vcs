@@ -107,13 +107,17 @@ test('frontend errors retain only fixed classification and deployment context', 
       environment: 'test',
       error_kind: 'type_error',
       error_origin: 'route',
+      error_operation: 'private-operation',
       exception_message: 'private repository failed at /adam/secret',
+      exception_stack: 'private repository stack',
+      url: 'https://scopevcs.com/private-repository',
       release: 'web-abc123',
       route_name: 'request_changes',
       source: 'browser',
       token: 'phc_project',
     },
     uuid: 'event-id',
+    timestamp: '2026-10-08T18:00:00.000Z',
   }
 
   assert.deepEqual(sanitizeCapture(capture, siteOrigin), {
@@ -130,6 +134,7 @@ test('frontend errors retain only fixed classification and deployment context', 
       token: 'phc_project',
     },
     uuid: 'event-id',
+    timestamp: '2026-10-08T18:00:00.000Z',
   })
 })
 

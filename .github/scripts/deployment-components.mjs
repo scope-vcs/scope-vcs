@@ -36,6 +36,16 @@ export function backendSelected(selection) {
   return BACKEND_COMPONENTS.some(component => selection[component] === true);
 }
 
+export function serviceIds(manifest) {
+  const ids = Object.fromEntries(Object.entries(manifest.services).map(([component, service]) => [component, service.id]));
+  ids.postgres = manifest.railway.databaseServiceId;
+  ids.maintenance = manifest.railway.maintenanceServiceId;
+  for (const [component, id] of Object.entries(ids)) {
+    if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id ?? '')) throw new Error(`Railway deployment requires the ${component} service ID.`);
+  }
+  return ids;
+}
+
 function main() {
   const [command, component, field] = process.argv.slice(2);
   if (command === 'backend-prebuilt') {

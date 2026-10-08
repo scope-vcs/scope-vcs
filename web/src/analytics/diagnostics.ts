@@ -1,4 +1,4 @@
-import type { Metric } from 'web-vitals'
+import { analyticsRouteForPathname } from './routes'
 
 type FrontendErrorKind =
   | 'abort_error'
@@ -18,46 +18,43 @@ type FrontendErrorOrigin =
   | 'route'
   | 'window'
 
-type WebVitalMetric = 'CLS' | 'INP' | 'LCP'
-
 type FrontendErrorReport = {
   kind: FrontendErrorKind
   origin: FrontendErrorOrigin
+  occurredAt: string
+  routeName: string | null
+  release: string | null | undefined
 }
 
-type DiagnosticCapture = (
+export type DiagnosticCapture = (
   event: 'frontend_error' | 'web_vital',
-  properties: Record<string, number | string>,
+  properties: Record<string, number | string | null>,
+  occurredAt?: string,
 ) => boolean | void
 
-const errorSubscribers = new Set<(
-  report: FrontendErrorReport,
-) => boolean | void>()
+type DiagnosticInstallation = {
+  capture: DiagnosticCapture
+  routeName: string | null
+  release: string | null
+}
+
+const installations = new Set<DiagnosticInstallation>()
+let documentRelease: string | null | undefined
 const pendingErrors: FrontendErrorReport[] = []
-const vitalSubscribers = new Set<DiagnosticCapture>()
-const documentVitals = createDocumentVitalAttribution((event, properties) => {
-  let accepted = false
-  for (const subscriber of vitalSubscribers) {
-    accepted = subscriber(event, properties) !== false || accepted
-  }
-  return accepted
-})
-let webVitalsStarted = false
 
 export function reportFrontendError(
   error: unknown,
   origin: FrontendErrorOrigin,
 ) {
-  const report = { kind: classifyFrontendError(error), origin }
-  if (errorSubscribers.size === 0) {
-    retainPendingError(report)
-    return
+  const installation = currentInstallation()
+  const report: FrontendErrorReport = {
+    kind: classifyFrontendError(error),
+    origin,
+    occurredAt: new Date().toISOString(),
+    routeName: installation ? installation.routeName : documentRouteName(),
+    release: installation ? installation.release : documentRelease,
   }
-  let accepted = false
-  for (const subscriber of errorSubscribers) {
-    accepted = subscriber(report) !== false || accepted
-  }
-  if (!accepted) retainPendingError(report)
+  if (!installation || !captureError(installation, report)) retainPendingError(report)
 }
 
 export function classifyFrontendError(error: unknown): FrontendErrorKind {
@@ -74,87 +71,53 @@ export function classifyFrontendError(error: unknown): FrontendErrorKind {
   return 'unknown_error'
 }
 
-export function createDocumentVitalAttribution(capture: DiagnosticCapture) {
-  let initialRouteName: string | null | undefined
-  const pending = new Map<WebVitalMetric, number>()
+export function installFrontendDiagnostics({
+  capture,
+  release,
+  routeName,
+}: DiagnosticInstallation) {
+  const installation = { capture, release, routeName }
+  if (documentRelease === undefined) documentRelease = release
+  const firstInstallation = installations.size === 0
+  installations.add(installation)
+  flushPendingErrors()
 
   return {
-    activate(routeName: string | null) {
-      if (initialRouteName === undefined) initialRouteName = routeName
+    firstInstallation,
+    dispose() {
+      return installations.delete(installation) && installations.size === 0
     },
-    flush() {
-      if (!initialRouteName) return
-      for (const [metric, value] of pending) {
-        if (capture('web_vital', {
-          metric,
-          route_name: initialRouteName,
-          value,
-        }) !== false) {
-          pending.delete(metric)
-        }
-      }
-    },
-    report(metric: WebVitalMetric, value: number) {
-      if (!Number.isFinite(value) || value < 0) return
-      pending.set(metric, value)
-      this.flush()
+    flushErrors: flushPendingErrors,
+    setRoute(nextRouteName: string | null) {
+      installation.routeName = nextRouteName
     },
   }
 }
 
-export function installBrowserDiagnostics({
-  capture,
-  routeName,
-}: {
-  capture: DiagnosticCapture
-  routeName: string | null
-}) {
-  documentVitals.activate(routeName)
-  vitalSubscribers.add(capture)
-  startWebVitals()
+function documentRouteName() {
+  if (typeof window === 'undefined') return null
+  return analyticsRouteForPathname(window.location.pathname)?.name ?? null
+}
 
-  const captureError = ({ kind, origin }: FrontendErrorReport) => {
-    if (!routeName) return false
-    return capture('frontend_error', {
-      error_kind: kind,
-      error_origin: origin,
-      route_name: routeName,
-    })
-  }
-  errorSubscribers.add(captureError)
-  flushPendingErrors()
+function currentInstallation() {
+  return Array.from(installations).at(-1)
+}
 
-  const onWindowError = (event: ErrorEvent) => {
-    reportFrontendError(event.error, 'window')
-  }
-  const onUnhandledRejection = (event: PromiseRejectionEvent) => {
-    reportFrontendError(event.reason, 'promise')
-  }
+function captureError(installation: DiagnosticInstallation, report: FrontendErrorReport) {
+  if (!report.routeName) return true
+  return installation.capture('frontend_error', {
+    error_kind: report.kind,
+    error_origin: report.origin,
+    release: report.release === undefined ? documentRelease ?? null : report.release,
+    route_name: report.routeName,
+  }, report.occurredAt) !== false
+}
 
-  window.addEventListener('error', onWindowError)
-  window.addEventListener('unhandledrejection', onUnhandledRejection)
-
-  return {
-    dispose() {
-      errorSubscribers.delete(captureError)
-      vitalSubscribers.delete(capture)
-      window.removeEventListener('error', onWindowError)
-      window.removeEventListener('unhandledrejection', onUnhandledRejection)
-    },
-    flushVitals() {
-      documentVitals.flush()
-    },
-    flushErrors: flushPendingErrors,
-    setRoute(nextRouteName: string | null) {
-      routeName = nextRouteName
-      documentVitals.activate(nextRouteName)
-    },
-  }
-
-  function flushPendingErrors() {
-    for (const report of pendingErrors.splice(0)) {
-      if (captureError(report) === false) retainPendingError(report)
-    }
+function flushPendingErrors() {
+  const installation = currentInstallation()
+  if (!installation) return
+  for (const report of pendingErrors.splice(0)) {
+    if (!captureError(installation, report)) retainPendingError(report)
   }
 }
 
@@ -163,18 +126,7 @@ function retainPendingError(report: FrontendErrorReport) {
   pendingErrors.push(report)
 }
 
-function startWebVitals() {
-  if (webVitalsStarted) return
-  webVitalsStarted = true
-  void import('web-vitals').then(({ onCLS, onINP, onLCP }) => {
-    onCLS(reportWebVital)
-    onINP(reportWebVital)
-    onLCP(reportWebVital)
-  }).catch(() => {})
-}
-
-function reportWebVital(metric: Metric) {
-  if (metric.name === 'CLS' || metric.name === 'INP' || metric.name === 'LCP') {
-    documentVitals.report(metric.name, metric.value)
-  }
+export function captureWebVital(properties: Record<string, number | string | null>) {
+  const installation = currentInstallation()
+  return installation ? installation.capture('web_vital', properties) : false
 }

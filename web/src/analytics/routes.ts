@@ -84,3 +84,28 @@ export function analyticsRouteForId(routeId: string | undefined) {
 export function analyticsRouteForName(name: string) {
   return routesByName.get(name) ?? null
 }
+
+export function analyticsRouteForPathname(pathname: string) {
+  const segments = pathname.split('/').filter(Boolean)
+  let route: AnalyticsRoute | null = null
+  let specificity = -1
+  for (const [id, decision] of Object.entries(routeDecisions)) {
+    if (decision.kind !== 'tracked') continue
+    const pattern = id.split('/').filter((segment) => segment && !segment.startsWith('_'))
+    const wildcard = pattern.at(-1) === '$'
+    if (wildcard ? segments.length < pattern.length - 1 : segments.length !== pattern.length) {
+      continue
+    }
+    let matchedSpecificity = 0
+    const matches = pattern.every((segment, index) => {
+      if (segment.startsWith('$')) return true
+      matchedSpecificity += 1
+      return segment === segments[index]
+    })
+    if (matches && matchedSpecificity > specificity) {
+      route = decision.route
+      specificity = matchedSpecificity
+    }
+  }
+  return route
+}

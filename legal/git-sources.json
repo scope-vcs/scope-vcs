@@ -1,0 +1,13 @@
+{
+  "sources": {
+    "git+https://github.com/transact-rs/sqlx?rev=f1e94ec34dd5f11ad6488a3a8ac7988439a3f757#f1e94ec34dd5f11ad6488a3a8ac7988439a3f757": {
+      "url": "https://codeload.github.com/transact-rs/sqlx/tar.gz/f1e94ec34dd5f11ad6488a3a8ac7988439a3f757",
+      "sha256": "fa5cbd2e52bcc5bd9c9eb4c72d3673d461f49dd9cb2e29823d2b0aeee8158cf0",
+      "workspace_manifest": "Cargo.toml",
+      "packages": {
+        "sqlx-core@0.9.0": "sqlx-core/Cargo.toml",
+        "sqlx-postgres@0.9.0": "sqlx-postgres/Cargo.toml"
+      }
+    }
+  }
+}

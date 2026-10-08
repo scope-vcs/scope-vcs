@@ -24,6 +24,10 @@ members = [
 exclude = ["cli"]
 resolver = "3"
 
+[patch.crates-io]
+sqlx-core = { git = "https://github.com/transact-rs/sqlx", rev = "f1e94ec34dd5f11ad6488a3a8ac7988439a3f757" }
+sqlx-postgres = { git = "https://github.com/transact-rs/sqlx", rev = "f1e94ec34dd5f11ad6488a3a8ac7988439a3f757" }
+
 [profile.dev]
 debug = "line-tables-only"
 

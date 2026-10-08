@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { createPrivateKey, createPublicKey } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { serviceIds } from './deployment-components.mjs';
 import {
   KEPT_STAGING_SETTINGS, RUNTIME_ROLES, changedVariables, databaseBootstrap, generatePreviewSecrets, previewEnvironmentName,
-  previewVariables, rolePassword, serviceIds, unreviewedStagingVariables,
+  previewVariables, rolePassword, unreviewedStagingVariables,
 } from './preview-environment-plan.mjs';
 import { bootstrapPreviewDatabase, deletePreviewEnvironment, ensurePreviewEnvironment } from './preview-environment.mjs';
 
@@ -74,7 +75,7 @@ function fakeRailway({ environments = [] } = {}) {
         return { volumeCreate: { id: 'volume' } };
       }
       if (query.startsWith('mutation PreviewRegistry')) return { serviceInstanceUpdate: true };
-      if (query.startsWith('mutation PreviewTracing')) {
+      if (query.startsWith('mutation ConfigureTracing')) {
         assert.equal(variables.environmentId, preview);
         state.tracing[variables.serviceId] = variables.input;
         return { serviceInstanceUpdate: true };
@@ -218,7 +219,7 @@ test('creates, configures, and bootstraps a preview copy of staging once', () =>
   assert.deepEqual(railway.state.copy.variables, before);
   assert.equal(railway.state.bootstraps.length, 1);
   assert.deepEqual([...new Set(railway.state.calls.slice(calls).map(([name]) => name))],
-    ['mutation PreviewTracing', 'mutation PreviewRegistry', 'mutation PreviewDeploy']);
+    ['mutation ConfigureTracing', 'mutation PreviewRegistry', 'mutation PreviewDeploy']);
 });
 
 test('refuses release and persistent environments that share the preview name', () => {
