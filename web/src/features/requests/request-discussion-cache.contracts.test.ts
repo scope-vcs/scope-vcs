@@ -103,6 +103,19 @@ test('concurrent navigation loads the initial discussion page once and reopening
   assert.deepEqual(reopened?.discussions.map(({ id }) => id), ['discussion-0', 'old'])
 })
 
+test('focused navigation that joins an initial load still fetches its missing discussion', async () => {
+  resetViewerState()
+  const initial = deferred<RequestDiscussionPage>()
+  const focusedLoad = mock.fn(async () => ({ ...page(1), discussions: [discussion('focused', 1)] }))
+  const first = loadRequestDiscussionSession({ key: 'request', load: () => initial.promise, loadChanges: noChanges })
+  const focused = loadRequestDiscussionSession({ key: 'request', focusedDiscussionId: 'focused', load: focusedLoad, loadChanges: noChanges })
+  initial.resolve(page(1))
+  await first
+  const loaded = await focused
+  assert.equal(loaded?.discussions.some(({ id }) => id === 'focused'), true)
+  assert.equal(focusedLoad.mock.callCount(), 1)
+})
+
 test('focused navigation merges missing rows through the retained owner', async () => {
   resetViewerState()
   const catchUp = mock.fn(noChanges)

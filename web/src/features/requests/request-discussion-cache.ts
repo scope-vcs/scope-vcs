@@ -149,5 +149,9 @@ export function loadRequestDiscussionSession({
     const page = await load()
     if (!page) throw new Error('Discussion is unavailable.')
     return createDiscussionSession(key, page, loadChanges)
-  }).then(discussionSessionPage)
+  }).then((session) => {
+    const page = discussionSessionPage(session)
+    if (!focusedDiscussionId || page.discussions.some(({ id }) => id === focusedDiscussionId)) return page
+    return loadRequestDiscussionSession({ key, focusedDiscussionId, load, loadChanges })
+  })
 }
