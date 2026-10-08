@@ -7,7 +7,7 @@ import {
   loadJson,
   noContent,
 } from './http'
-import { apiValidators, type ApiValidator } from './validators.generated'
+import { ErrorResponseValidator, type ApiValidator } from './validators.generated'
 
 const originalFetch = globalThis.fetch
 afterEach(() => {
@@ -145,7 +145,7 @@ test('generated validators expose one bounded issue path', async () => {
       error.failureClass === 'schema' &&
       error.issuePath === '/retryable',
   )
-  assert.equal(apiValidators.ErrorResponse({
+  assert.equal(ErrorResponseValidator({
     code: 'internal',
     message: 'Scope hit an internal error.',
     retryable: false,

@@ -12,20 +12,31 @@ use super::request_checks::RequestChecksMutation;
 
 #[derive(Clone, Debug)]
 pub struct RebuildCheckCommitCommand {
+    pub repository_incarnation: scope_domain::repository::RepositoryIncarnation,
     pub request_id: String,
     pub head_oid: String,
     pub replaced_tested_oid: String,
+    pub expected_canonical_main_oid: Option<String>,
     pub tested: GitHubTestedCommit,
     pub now_unix: u64,
 }
 
 impl RequestStore {
+    pub async fn request_check_base(&self, repo_id: &str) -> Result<Option<String>, PostgresError> {
+        canonical_main_oid(self.db.as_ref(), repo_id).await
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "rebuild_request_check_commit"))]
     pub async fn rebuild_request_check_commit(
         &self,
         command: RebuildCheckCommitCommand,
     ) -> Result<Option<RequestChecksMutation>, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        super::locks::acquire_shared_repository_lock(
+            &tx,
+            command.repository_incarnation.repository_id(),
+        )
+        .await?;
         super::acquire_aggregate_lock(&tx, "request", &command.request_id).await?;
         let active_auto_merge =
             super::request_auto_merge::lock_active_intent_for_request(&tx, &command.request_id)
@@ -38,6 +49,20 @@ impl RequestStore {
             return Ok(None);
         };
         let canonical_main = canonical_main_oid(&tx, &request.repo_id).await?;
+        let repo = super::repository_access::load_repo_record(&tx, &request.repo_id)
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        if repo.incarnation() != command.repository_incarnation
+            || canonical_main != command.expected_canonical_main_oid
+        {
+            return Ok(None);
+        }
+        if let GitHubTestedCommit::CheckCommit { base, .. } = &command.tested
+            && canonical_main.as_deref() != Some(&base.canonical_main_oid)
+        {
+            return Ok(None);
+        }
+
         if request.is_terminal()
             || request.head_oid != command.head_oid
             || evaluation.tested_oid != command.replaced_tested_oid

@@ -9,7 +9,13 @@ import type {
   RunStepLogsInput,
 } from '@/api/types'
 import { ApiRouteTemplates, buildApiPath } from '@/api/types.generated'
-import { apiValidators } from '@/api/validators.generated'
+import {
+  RepositoryRunDetailResponseValidator,
+  RepositoryRunHistoryPageResponseValidator,
+  RepositoryRunStepLogPageResponseValidator,
+  RepositoryRunWorkflowListResponseValidator,
+  RunResponseValidator,
+} from '@/api/validators.generated'
 
 export async function loadRepoRunWorkflowsForRequest(
   data: RepoParams,
@@ -17,7 +23,7 @@ export async function loadRepoRunWorkflowsForRequest(
 ) {
   return api.get(
     repoRoute(ApiRouteTemplates.repoRunWorkflows, data),
-    apiValidators.RepositoryRunWorkflowListResponse,
+    RepositoryRunWorkflowListResponseValidator,
     { auth: 'optional' },
   )
 }
@@ -33,7 +39,7 @@ export async function loadRepoRunHistoryForRequest(
   const suffix = query.size ? `?${query}` : ''
   return api.get(
     `${repoRoute(ApiRouteTemplates.repoRuns, data)}${suffix}`,
-    apiValidators.RepositoryRunHistoryPageResponse,
+    RepositoryRunHistoryPageResponseValidator,
     { auth: 'optional' },
   )
 }
@@ -41,7 +47,7 @@ export async function loadRepoRunHistoryForRequest(
 export async function loadRepoRunDetailForRequest(data: RunActionInput) {
   return createApiClient().get(
     runPath(ApiRouteTemplates.repoRunDetail, data),
-    apiValidators.RepositoryRunDetailResponse,
+    RepositoryRunDetailResponseValidator,
     { auth: 'required' },
   )
 }
@@ -59,7 +65,7 @@ export async function loadRepoRunStepLogsForRequest(data: RunStepLogsInput) {
   if (data.before !== undefined) query.set('before', data.before.toString())
   return createApiClient().get(
     `${path}${query.size ? `?${query}` : ''}`,
-    apiValidators.RepositoryRunStepLogPageResponse,
+    RepositoryRunStepLogPageResponseValidator,
     { auth: 'required' },
   )
 }
@@ -67,7 +73,7 @@ export async function loadRepoRunStepLogsForRequest(data: RunStepLogsInput) {
 export async function cancelRepoRunForRequest(data: RunActionInput) {
   await createApiClient().post(
     runPath(ApiRouteTemplates.repoRunCancel, data),
-    apiValidators.RunResponse,
+    RunResponseValidator,
     { auth: 'required' },
   )
 }
@@ -75,7 +81,7 @@ export async function cancelRepoRunForRequest(data: RunActionInput) {
 export async function retryRepoRunForRequest(data: RunActionInput) {
   await createApiClient().post(
     runPath(ApiRouteTemplates.repoRunRetry, data),
-    apiValidators.RunResponse,
+    RunResponseValidator,
     { auth: 'required' },
   )
 }

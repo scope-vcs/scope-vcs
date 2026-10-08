@@ -28,11 +28,12 @@ import {
   requestChangeSelection,
   requestRevisionPin,
 } from '@/features/requests/request-changes-model'
+import { useRequestState } from '@/features/requests/request-state-context'
 import { requestParamsForRoute } from '@/features/requests/request-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { parseRouteFilePathSearch } from '@/lib/route-file'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
-import { Link, createFileRoute, getRouteApi } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
 import { GitCommit } from 'lucide-react'
@@ -40,7 +41,6 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { auth } from '@clerk/tanstack-react-start/server'
 import { useCallback, useEffect, useMemo } from 'react'
 
-const requestRoute = getRouteApi('/$owner/$repo/requests/$requestId')
 
 const loadChangesPage = createServerFn({ method: 'GET' })
   .validator(parseLoadRequestRevisionsInput)
@@ -109,7 +109,7 @@ export const Route = createFileRoute(
 })
 
 function RequestChangesRoute() {
-  const page = requestRoute.useLoaderData()
+  const page = useRequestState()
   const changes = Route.useLoaderData()
   const params = Route.useParams()
   const search = Route.useSearch()
@@ -163,14 +163,14 @@ function RequestChangesRoute() {
     })
   }, [navigate, params, pin, requestId, revisions, scope])
 
-  if (!page.detail) return null
+  if (!page.state) return null
 
   return (
     <RequestChangesScreen
       params={params}
       revisions={revisions}
       selectedRevisionId={selection?.revision?.id ?? null}
-      title={page.detail.request.title}
+      title={page.state.detail.request.title}
     >
       {revisions
         ? (

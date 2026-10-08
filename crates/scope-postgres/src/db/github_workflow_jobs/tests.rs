@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::github_workflow_runs::github_workflow_runs_for_check_suites;
 use crate::db::requests::tests::{postgres_store, start_public_request};
 use scope_domain::{github_workflow_jobs::GitHubJobsRead, github_workflow_runs::GitHubWorkflowRun};
 
@@ -236,15 +237,13 @@ async fn one_reader_claims_each_jobs_read_and_a_run_names_its_request_and_check_
     );
 
     assert_eq!(
-        repositories
-            .github_workflow_runs_for_check_suites(REPO, 42, &[77, 78])
+        github_workflow_runs_for_check_suites(repositories.db.as_ref(), REPO, 42, &[77, 78])
             .await
             .unwrap(),
         [(77, 9)]
     );
     assert!(
-        repositories
-            .github_workflow_runs_for_check_suites(REPO, 43, &[77])
+        github_workflow_runs_for_check_suites(repositories.db.as_ref(), REPO, 43, &[77])
             .await
             .unwrap()
             .is_empty()

@@ -460,6 +460,10 @@ pub enum RepoChangeKind {
     RepositoryChanged {
         reason: String,
     },
+    RequestStateChanged {
+        request_id: String,
+        view: ViewId,
+    },
     RequestTimelineChanged {
         request_id: String,
         discussion_id: String,

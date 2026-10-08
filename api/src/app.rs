@@ -242,6 +242,7 @@ pub fn router(state: AppState) -> Router {
                 .patch(http::requests::edit_request_identity)
                 .delete(http::requests::close_request),
         )
+        .route(routes::REPO_REQUEST_STATE, get(http::request_state::get))
         .route(
             routes::REPO_REQUEST_SUBMIT,
             post(http::requests::submit_request),

@@ -21,7 +21,15 @@ import type {
 } from './types.generated'
 import { repoRoute } from './paths'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
-import { apiValidators } from './validators.generated'
+import {
+  GitHubAuthorizeResponseValidator,
+  GitHubConnectionResponseValidator,
+  GitHubSetupResponseValidator,
+  GitHubWorkflowJobLogResponseValidator,
+  GitHubWorkflowNamesResponseValidator,
+  GitHubWorkflowRunDetailResponseValidator,
+  GitHubWorkflowRunsResponseValidator,
+} from './validators.generated'
 
 export async function loadRepoGitHubConnectionForRequest(
   data: RepoParams,
@@ -29,7 +37,7 @@ export async function loadRepoGitHubConnectionForRequest(
 ): Promise<GitHubConnectionResponse> {
   return createApiClient().get(
     repoRoute(ApiRouteTemplates.repoGitHub, data),
-    apiValidators.GitHubConnectionResponse,
+    GitHubConnectionResponseValidator,
     { auth: 'required', signal },
   )
 }
@@ -43,7 +51,7 @@ export async function startRepoGitHubAuthorizationForRequest(
 ): Promise<GitHubAuthorizeResponse> {
   return createApiClient().post(
     repoRoute(ApiRouteTemplates.repoGitHubAuthorize, data),
-    apiValidators.GitHubAuthorizeResponse,
+    GitHubAuthorizeResponseValidator,
     { auth: 'required', body: { web_origin: data.web_origin } },
   )
 }
@@ -53,7 +61,7 @@ export async function completeGitHubSetupForRequest(
 ): Promise<GitHubSetupResponse> {
   return createApiClient().post(
     ApiRouteTemplates.githubSetup,
-    apiValidators.GitHubSetupResponse,
+    GitHubSetupResponseValidator,
     {
       auth: 'required',
       body: { state: data.state, code: data.code },
@@ -66,7 +74,7 @@ export async function connectRepoGitHubForRequest(
 ): Promise<GitHubConnectionResponse> {
   return createApiClient().post(
     repoRoute(ApiRouteTemplates.repoGitHub, data),
-    apiValidators.GitHubConnectionResponse,
+    GitHubConnectionResponseValidator,
     {
       auth: 'required',
       body: {
@@ -84,7 +92,7 @@ export async function setRepoGitHubRequiredChecksForRequest(
 ): Promise<GitHubConnectionResponse> {
   return createApiClient().put(
     repoRoute(ApiRouteTemplates.repoGitHubRequiredChecks, data),
-    apiValidators.GitHubConnectionResponse,
+    GitHubConnectionResponseValidator,
     { auth: 'required', body: { names: data.names } },
   )
 }
@@ -94,7 +102,7 @@ export async function confirmRepoGitHubPublicForRequest(
 ): Promise<GitHubConnectionResponse> {
   return createApiClient().post(
     repoRoute(ApiRouteTemplates.repoGitHubPublicConfirmation, data),
-    apiValidators.GitHubConnectionResponse,
+    GitHubConnectionResponseValidator,
     { auth: 'required' },
   )
 }
@@ -104,7 +112,7 @@ export async function disconnectRepoGitHubForRequest(
 ): Promise<GitHubConnectionResponse> {
   return createApiClient().delete(
     repoRoute(ApiRouteTemplates.repoGitHub, data),
-    apiValidators.GitHubConnectionResponse,
+    GitHubConnectionResponseValidator,
     { auth: 'required' },
   )
 }
@@ -114,7 +122,7 @@ export async function startRepoGitHubSetupCheckForRequest(
 ): Promise<GitHubConnectionResponse> {
   return createApiClient().post(
     repoRoute(ApiRouteTemplates.repoGitHubSetupCheck, data),
-    apiValidators.GitHubConnectionResponse,
+    GitHubConnectionResponseValidator,
     { auth: 'required' },
   )
 }
@@ -124,7 +132,7 @@ export async function setRepoGitHubRunImportCountForRequest(
 ): Promise<GitHubConnectionResponse> {
   return createApiClient().put(
     repoRoute(ApiRouteTemplates.repoGitHubRunImport, data),
-    apiValidators.GitHubConnectionResponse,
+    GitHubConnectionResponseValidator,
     { auth: 'required', body: { count: data.count } },
   )
 }
@@ -134,7 +142,7 @@ export async function startRepoGitHubRunImportForRequest(
 ): Promise<GitHubConnectionResponse> {
   return createApiClient().post(
     repoRoute(ApiRouteTemplates.repoGitHubRunImport, data),
-    apiValidators.GitHubConnectionResponse,
+    GitHubConnectionResponseValidator,
     { auth: 'required' },
   )
 }
@@ -149,7 +157,7 @@ export async function loadRepoGitHubWorkflowRunsForRequest(
   const suffix = query.size ? `?${query}` : ''
   return api.get(
     `${repoRoute(ApiRouteTemplates.repoGitHubWorkflowRuns, data)}${suffix}`,
-    apiValidators.GitHubWorkflowRunsResponse,
+    GitHubWorkflowRunsResponseValidator,
     { auth: 'optional' },
   )
 }
@@ -160,7 +168,7 @@ export async function loadRepoGitHubWorkflowNamesForRequest(
 ): Promise<GitHubWorkflowNamesResponse> {
   return api.get(
     repoRoute(ApiRouteTemplates.repoGitHubWorkflowNames, data),
-    apiValidators.GitHubWorkflowNamesResponse,
+    GitHubWorkflowNamesResponseValidator,
     { auth: 'optional' },
   )
 }
@@ -174,7 +182,7 @@ export async function loadRepoGitHubWorkflowRunForRequest(
       repo: data.repo,
       run_id: data.run_id,
     }),
-    apiValidators.GitHubWorkflowRunDetailResponse,
+    GitHubWorkflowRunDetailResponseValidator,
     { auth: 'optional' },
   )
 }
@@ -189,7 +197,7 @@ export async function loadRepoGitHubWorkflowJobLogForRequest(
       run_id: data.run_id,
       job_id: data.job_id,
     }),
-    apiValidators.GitHubWorkflowJobLogResponse,
+    GitHubWorkflowJobLogResponseValidator,
     { auth: 'optional' },
   )
 }

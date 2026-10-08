@@ -103,6 +103,18 @@ async fn cancellation_after_preparation_fences_the_final_content_commit() {
     store
         .requests()
         .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
             evaluation: RequestCheckEvaluation::no_checks("req_1", REQUEST_HEAD, 6).unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
@@ -285,7 +297,10 @@ async fn merge_store() -> super::super::MetadataStore {
                 actor_can_edit: true,
                 expected_old_head_oid: Some("head".into()),
                 new_head_oid: REQUEST_HEAD.into(),
-                git_snapshot: source_blob(REQUEST_HEAD),
+                git_snapshot: SourceBlob {
+                    git_oid: REQUEST_HEAD.into(),
+                    ..source_blob(REQUEST_HEAD)
+                },
                 git_facts: RequestRevisionGitFacts {
                     contains_old_head: true,
                     contained_main_oid: None,
@@ -400,7 +415,7 @@ fn source_blob(label: &str) -> SourceBlob {
     SourceBlob {
         content_ref: ContentRef::git_bundle_sha256(format!("sha256-{label}")),
         sha256: format!("sha256-{label}"),
-        git_oid: label.to_string(),
+        git_oid: scope_domain::content_ref::git_blob_oid(label.as_bytes()),
         git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
         size_bytes: 1,
     }

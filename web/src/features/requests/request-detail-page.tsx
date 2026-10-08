@@ -1,7 +1,7 @@
 import type { RepoLiveState, RepoParams } from '@/api/types'
 import type {
   RequestChecksResponse,
-  RequestDetailResponse,
+  RequestStateResponse,
   RequestMutationResponse,
   RequestAutoMergeResponse,
   RequestRatingResponse,
@@ -11,7 +11,6 @@ import type { RateRequestInput } from '@/api/requests'
 import { EmptyState } from '@/components/empty-state'
 import { PageContent } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowLeft,
@@ -32,27 +31,23 @@ import type {
   CancelRequestAutoMergeInput,
 } from './request-auto-merge-api'
 import { RequestChecksSection } from './request-checks-section'
-import { requestChecksIdentity } from './request-checks-resource'
-import { requestAutoMergeIdentity } from './request-auto-merge-resource'
 import { RequestDetailHeader } from './request-detail-header'
 import { RequestDetails, RequestDetailsProvider } from './request-details'
+import { RequestDetailsSurface } from './request-details-surface'
 import type { RequestActivityPage } from './request-discussion-types'
 import { RequestDescription } from './request-description'
 import type { UpdateDescriptionInput } from './request-discussion-api'
 import { RequestLifecycleActions } from './request-lifecycle-actions'
-import { withCurrentMergeability } from './request-lifecycle-model'
 import { RequestMoreMenu } from './request-more-menu'
-import { useDetailPaneRail } from './use-detail-pane-rail'
+import { useRequestDetailsRailVisibility } from './use-request-details-rail-visibility'
 import { useElementHeight } from './use-element-height'
 import { useRequestActions } from './use-request-actions'
 import { useRequestActivityHistory } from './use-request-activity-history'
 import { useRequestChecks } from './use-request-checks'
 import { useRequestAutoMerge } from './use-request-auto-merge'
 import { requestActivityIdentity } from './request-activity-resource'
-import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { useRepoViews } from '../repo-detail/repo-layout-context'
 import { RequestChangesMenu } from './request-changes-menu'
-import { RequestSideDrawer } from './request-side-drawer'
 import {
   RequestAttachmentProvider,
   type RequestAttachmentActions,
@@ -87,18 +82,19 @@ type RequestDetailPageProps = {
   >) => Promise<RequestAutoMergeResponse>
   attachmentActions: RequestAttachmentActions
   children: ReactNode
-  detail: RequestDetailResponse
+  state: RequestStateResponse
+  stateError: string | null
+  identity: string
+  scope: string
   live: RepoLiveState
   loadActivity: (signal: AbortSignal) => Promise<RequestActivityPage>
-  loadChecks: (signal: AbortSignal) => Promise<RequestChecksResponse>
-  loadAutoMerge: (signal: AbortSignal) => Promise<RequestAutoMergeResponse>
+  loadRatings: (signal: AbortSignal) => Promise<RequestRatingsResponse>
   params: RepoParams
   performAction: (command: RequestActionCommand) => Promise<RequestActionResult>
   cancelAutoMerge: (input: Pick<
     CancelRequestAutoMergeInput,
     'expected_intent_id'
   >) => Promise<RequestAutoMergeResponse>
-  ratings: RequestRatingsResponse
   rateRequest: (input: RateRequestInput) => Promise<RequestRatingResponse>
   updateDescription: (input: UpdateDescriptionInput) => Promise<RequestMutationResponse>
   viewerId: string
@@ -111,24 +107,21 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     cancelAutoMerge,
     children,
     attachmentActions,
-    detail,
+    state,
+    stateError,
+    identity,
+    scope,
     live,
     loadActivity,
-    loadChecks,
-    loadAutoMerge,
+    loadRatings,
     params,
     performAction,
-    ratings,
     rateRequest,
     updateDescription,
     viewerId,
   } = props
-  const { request } = detail
+  const { request } = state.detail
   const serverDescription = request.description_markdown
-  const scope = repoResourceScope(
-    live.repo,
-    viewerId === 'anonymous' ? null : viewerId,
-  )
   const activity = {
     identity: request.permissions.can_view_activity
       ? requestActivityIdentity(scope, request.id)
@@ -139,16 +132,15 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   const history = useRequestActivityHistory(activity)
   const checks = useRequestChecks({
     approve: approveChecks,
-    identity: requestChecksIdentity(scope, request.id),
-    load: loadChecks,
+    identity,
+    checks: state.checks,
   })
   const autoMerge = useRequestAutoMerge({
     authorize: authorizeAutoMerge,
     cancel: cancelAutoMerge,
-    identity: requestAutoMergeIdentity(scope, request.id),
-    load: loadAutoMerge,
+    identity,
+    status: state.auto_merge,
   })
-  const liveRequest = withCurrentMergeability(request, checks.checks)
   const requestActions = useRequestActions(performAction)
   const workspace = useRequestWorkspace()
   const requestViewName = useRepoViews().name(request.view)
@@ -168,7 +160,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   const moreActions = useRef<HTMLButtonElement>(null)
   const detailsButton = useRef<HTMLButtonElement>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
-  const rail = useDetailPaneRail(paneRef)
+  const rail = useRequestDetailsRailVisibility(paneRef, detailsButton)
   if (rail && detailsOpen) setDetailsOpen(false)
   const [lifecycleBar, setLifecycleBar] = useState<HTMLDivElement | null>(null)
   const actionClearance = useElementHeight(lifecycleBar)
@@ -205,25 +197,24 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 activity={activity}
                 params={{ ...params, requestId: request.id }}
               />
-              {rail ? null : (
-                <Button
-                  onClick={() => setDetailsOpen(true)}
-                  ref={detailsButton}
-                  size="sm"
-                  type="button"
-                  variant="secondary"
-                >
-                  <SlidersHorizontal />
-                  Details
-                </Button>
-              )}
+              <Button
+                className="request-details-trigger"
+                onClick={() => setDetailsOpen(true)}
+                ref={detailsButton}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                <SlidersHorizontal />
+                Details
+              </Button>
               {canClaim ? (
                 <Button onClick={workspace?.claim} size="sm" type="button" variant="secondary">
                   <UserRound />
                   I’ll take this
                 </Button>
               ) : null}
-              {checks.checks?.can_approve ? (
+              {checks.checks.can_approve ? (
                 <Button
                   disabled={checks.approving}
                   onClick={() => void checks.approve()}
@@ -246,8 +237,8 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 autoMerge={autoMerge}
                 className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
                 ref={setLifecycleBar}
-                request={liveRequest}
-                viewerId={viewerId}
+                request={request}
+                viewerId={state.viewer?.id ?? 'anonymous'}
               />
               <RequestMoreMenu
                 actions={requestActions}
@@ -258,7 +249,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               />
             </>
           }
-          request={liveRequest}
+          request={request}
           viewName={requestViewName}
         />
         <div className="request-detail-actions px-5 py-2.5 min-[701px]:hidden">
@@ -282,7 +273,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
         ) : null}
         <RequestChecksSection
           checks={checks.checks}
-          error={checks.error}
+          error={checks.error ?? stateError}
           params={params}
           requestViewName={requestViewName}
         />
@@ -290,11 +281,12 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           actions: requestActions,
           onRate: rateRequest,
           params: requestParams,
-          placement: rail ? 'rail' : 'drawer',
-          ratings,
+          active: rail || detailsOpen,
+          loadRatings,
+          ratingsIdentity: identity,
           request,
         }}>
-          <div className={cn(rail && 'grid grid-cols-[minmax(0,1fr)_300px]')}>
+          <div className="request-detail-layout">
             <div
               className="request-detail-document pt-4"
               data-state={request.state}
@@ -306,22 +298,14 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               />
               <div className="min-w-0">{children}</div>
             </div>
-            {rail ? (
-              <aside className="min-w-0 border-l border-border">
-                <RequestDetails placement="rail" />
-              </aside>
-            ) : null}
+            <RequestDetailsSurface
+              onOpenChange={setDetailsOpen}
+              open={detailsOpen}
+              returnFocus={detailsButton}
+            >
+              <RequestDetails />
+            </RequestDetailsSurface>
           </div>
-          <RequestSideDrawer
-            description="Lifecycle, invitees, ratings and git state."
-            icon={<SlidersHorizontal />}
-            onOpenChange={setDetailsOpen}
-            open={detailsOpen}
-            returnFocus={detailsButton}
-            title="Details"
-          >
-            <RequestDetails placement="drawer" />
-          </RequestSideDrawer>
         </RequestDetailsProvider>
 
         <RequestActivityDrawer

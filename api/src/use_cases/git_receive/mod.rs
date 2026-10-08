@@ -195,14 +195,14 @@ pub(crate) async fn complete(
     }
     .run(
         state,
-        complete_inner(
+        Box::pin(complete_inner(
             state,
             owner,
             repo_name,
             staging_repo,
             preparation,
             receive_elapsed,
-        ),
+        )),
     )
     .await
 }

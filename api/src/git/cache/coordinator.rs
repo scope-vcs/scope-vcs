@@ -86,7 +86,7 @@ impl GitDerivedCacheCoordinator {
                 completed: false,
             };
             let is_ready = is_ready.clone();
-            let build_task = async move {
+            let build_task = Box::pin(async move {
                 let built = if is_ready() {
                     Ok(Ok(()))
                 } else {
@@ -94,7 +94,7 @@ impl GitDerivedCacheCoordinator {
                 };
                 leader.complete(cache_build_outcome(&built));
                 built
-            };
+            });
             let built = tokio::spawn(build_task.in_current_span())
                 .await
                 .map_err(|error| {

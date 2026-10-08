@@ -13,6 +13,7 @@ type ResourceAttempt<T> = {
   controller: AbortController
   promise: Promise<T | null>
   version: string
+  invalidated: boolean
 }
 
 const emptySnapshot: ResourceSnapshot<never> = {
@@ -21,8 +22,9 @@ const emptySnapshot: ResourceSnapshot<never> = {
 
 export type CachedResourceStore<T extends object> = ReturnType<typeof createCachedResource<T>>
 
-export function createCachedResource<T extends object>({ retainAcrossViewers = false, ...options }: BoundedCacheOptions<T> & {
+export function createCachedResource<T extends object>({ retainAcrossViewers = false, coalesceInvalidations = false, ...options }: BoundedCacheOptions<T> & {
   retainAcrossViewers?: boolean
+  coalesceInvalidations?: boolean
 }) {
   const entries = createBoundedCache<string, ResourceSnapshot<T>>({
     ...options,
@@ -52,6 +54,12 @@ export function createCachedResource<T extends object>({ retainAcrossViewers = f
 
   function invalidate(identity: string) {
     const current = getSnapshot(identity)
+    const attempt = attempts.get(identity)
+    if (coalesceInvalidations && attempt) {
+      attempt.invalidated = true
+      publish(identity, { ...current, error: null, stale: true })
+      return
+    }
     cancel(identity)
     if (current !== emptySnapshot) publish(identity, { ...current, error: null, stale: true, pending: false })
   }
@@ -64,23 +72,23 @@ export function createCachedResource<T extends object>({ retainAcrossViewers = f
     if (!snapshot.stale && snapshot.version === version) return Promise.resolve(snapshot.value)
     cancel(identity)
     const controller = new AbortController()
-    const attempt: ResourceAttempt<T> = { controller, promise: Promise.resolve(null), version }
+    const attempt: ResourceAttempt<T> = { controller, promise: Promise.resolve(null), version, invalidated: false }
     attempts.set(identity, attempt)
     publish(identity, { ...snapshot, error: null, version, stale: false, pending: true })
     attempt.promise = Promise.resolve().then(() => load(controller.signal)).then(
       (value) => {
         if (attempts.get(identity) !== attempt) return null
-        publish(identity, { value, error: null, version, stale: false, pending: false })
+        attempts.delete(identity)
+        publish(identity, { value, error: null, version, stale: attempt.invalidated, pending: false })
         return value
       },
       (error: unknown) => {
         if (attempts.get(identity) !== attempt) return null
-        publish(identity, { ...getSnapshot(identity), error: error ?? {}, stale: false, pending: false })
+        attempts.delete(identity)
+        publish(identity, { ...getSnapshot(identity), error: error ?? {}, stale: attempt.invalidated, pending: false })
         return null
       },
-    ).finally(() => {
-      if (attempts.get(identity) === attempt) attempts.delete(identity)
-    })
+    )
     return attempt.promise
   }
 

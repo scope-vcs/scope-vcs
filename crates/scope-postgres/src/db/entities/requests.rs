@@ -634,6 +634,7 @@ pub mod request_check_evaluation {
         #[sea_orm(primary_key, auto_increment = false)]
         pub head_oid: String,
         pub tested_oid: String,
+        pub changes_github_workflows: Option<bool>,
         pub state: String,
         pub message: Option<String>,
         pub checks: Json,
@@ -653,6 +654,7 @@ pub mod request_check_evaluation {
                 request_id: value.request_id.clone(),
                 head_oid: value.head_oid.clone(),
                 tested_oid: value.tested_oid.clone(),
+                changes_github_workflows: value.changes_github_workflows,
                 state: encode_enum(value.state)?,
                 message: value.message.clone(),
                 checks: encode_json(&value.checks)?,
@@ -674,6 +676,7 @@ pub mod request_check_evaluation {
                 request_id: self.request_id,
                 head_oid: self.head_oid,
                 tested_oid: self.tested_oid,
+                changes_github_workflows: self.changes_github_workflows,
                 check_commit_base: match (self.check_private_main_oid, self.check_public_base_oid) {
                     (Some(canonical_main_oid), Some(view_base_oid)) => {
                         Some(CheckCommitBase::new(canonical_main_oid, view_base_oid)?)

@@ -39,6 +39,16 @@ export function openRequestDiscussion(
   const cached = requestDiscussionResource.peek(key)
   if (cached) return cached
 
+  const session = createDiscussionSession(key, page, loadChanges)
+  requestDiscussionResource.write(key, session)
+  return session
+}
+
+function createDiscussionSession(
+  key: string,
+  page: RequestDiscussionPage,
+  loadChanges: (after: number) => Promise<RequestDiscussionChanges>,
+): DiscussionSession {
   const read = () => requestDiscussionResource.peek(key) ?? session
   const update = (patch: Partial<DiscussionSession>) => {
     if (requestDiscussionResource.peek(key)?.sync !== sync) return
@@ -85,7 +95,6 @@ export function openRequestDiscussion(
     setError: (error) => update({ error }),
     setLoadingMore: (loadingMore) => update({ loadingMore }),
   }
-  requestDiscussionResource.write(key, session)
   sync.reset(key)
   return session
 }
@@ -97,4 +106,52 @@ export function readRequestDiscussionScroll(key: string) {
 export function writeRequestDiscussionScroll(key: string, scrollTop: number) {
   const session = requestDiscussionResource.peek(key)
   if (session) requestDiscussionResource.write(key, { ...session, scrollTop })
+}
+
+function discussionSessionPage(session: DiscussionSession): RequestDiscussionPage {
+  const { collection } = session
+  return {
+    discussions: collection.order.flatMap((id) => {
+      const discussion = collection.byId.get(id)
+      return discussion ? [discussion] : []
+    }).reverse(),
+    next_cursor: collection.nextCursor,
+    snapshot_version: collection.snapshotVersion,
+  }
+}
+
+export function loadRequestDiscussionSession({
+  key,
+  focusedDiscussionId,
+  load,
+  loadChanges,
+}: {
+  key: string
+  focusedDiscussionId?: string
+  load: () => Promise<RequestDiscussionPage | null>
+  loadChanges: (after: number) => Promise<RequestDiscussionChanges>
+}): RequestDiscussionPage | null | Promise<RequestDiscussionPage | null> {
+  const cached = requestDiscussionResource.peek(key)
+  const retained = cached ? discussionSessionPage(cached) : null
+  if (retained && (!focusedDiscussionId || retained.discussions.some(({ id }) => id === focusedDiscussionId))) return retained
+  if (cached && retained) return load().then((incoming) => {
+    if (requestDiscussionResource.peek(key)?.sync !== cached.sync) throw new Error('Resource is no longer available.')
+    if (incoming) cached.updateCollection((current) => mergeRefreshedDiscussionPage(current, incoming, false))
+    const current = requestDiscussionResource.peek(key)
+    if (current?.sync !== cached.sync) throw new Error('Resource is no longer available.')
+    return discussionSessionPage(current)
+  }, () => {
+    const current = requestDiscussionResource.peek(key)
+    if (current?.sync !== cached.sync) throw new Error('Resource is no longer available.')
+    return discussionSessionPage(current)
+  })
+  return requestDiscussionResource.load(key, '', async () => {
+    const page = await load()
+    if (!page) throw new Error('Discussion is unavailable.')
+    return createDiscussionSession(key, page, loadChanges)
+  }).then((session) => {
+    const page = discussionSessionPage(session)
+    if (!focusedDiscussionId || page.discussions.some(({ id }) => id === focusedDiscussionId)) return page
+    return loadRequestDiscussionSession({ key, focusedDiscussionId, load, loadChanges })
+  })
 }

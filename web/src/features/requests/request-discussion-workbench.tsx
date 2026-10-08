@@ -31,6 +31,7 @@ export function RequestDiscussionWorkbench({
   params,
   permissions,
   repoId,
+  viewerId,
   request,
   threadActions,
 }: {
@@ -46,6 +47,7 @@ export function RequestDiscussionWorkbench({
     canWaitAfterReply: boolean
   }
   repoId: string
+  viewerId: string
   request: RequestSummaryResponse
   threadActions: RequestDiscussionThreadActions
 }) {
@@ -55,6 +57,7 @@ export function RequestDiscussionWorkbench({
     initialPage,
     params,
     repoId,
+    viewerId,
   })
   const [activeComposer, setActiveComposer] = useState<string | null>(null)
   const closeComposer = useCallback(() => setActiveComposer(null), [])

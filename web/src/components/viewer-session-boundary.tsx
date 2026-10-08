@@ -2,23 +2,19 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { useRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { activateRequestAttachmentDraftViewer } from '@/features/requests/request-attachment-drafts'
-import { resetViewerState } from '@/lib/viewer-state'
-
-let activeViewer: string | null = null
-
+import { activateViewer } from '@/lib/viewer-state'
 export function ViewerSessionBoundary() {
   const { isLoaded, userId } = useAuth()
   const router = useRouter()
   useEffect(() => {
     if (!isLoaded) return
     const viewerId = userId ?? 'anonymous'
-    const viewerChanged = activeViewer !== null && activeViewer !== viewerId
-    const firstSignedInViewer = activeViewer === null && userId !== null
+    const previous = activateViewer(userId ?? null)
+    const viewerChanged = previous !== undefined && previous !== (userId ?? null)
+    const firstSignedInViewer = previous === undefined && userId !== null
     if (viewerChanged) {
-      resetViewerState()
       activateRequestAttachmentDraftViewer(viewerId)
     }
-    activeViewer = viewerId
     if (!viewerChanged && !firstSignedInViewer) return
 
     let active = true

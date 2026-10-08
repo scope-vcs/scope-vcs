@@ -180,7 +180,9 @@ async fn stream_event_for_user(
     {
         return Ok(None);
     }
-    if let RepoChangeKind::RequestTimelineChanged { request_id, .. } = &event.kind {
+    if let RepoChangeKind::RequestTimelineChanged { request_id, .. }
+    | RepoChangeKind::RequestStateChanged { request_id, .. } = &event.kind
+    {
         let Some(request) = state.metadata.requests().request_by_id(request_id).await? else {
             return Ok(None);
         };
@@ -195,13 +197,16 @@ async fn stream_event_for_user(
             }
             None => false,
         };
-        if !request_policy(
+        let policy = request_policy(
             &request,
             RequestViewer::new(repo.access.clone(), user_id, is_invitee),
             &repo.views,
-        )
-        .activity_stream_visible
-        {
+        );
+        let visible = match &event.kind {
+            RepoChangeKind::RequestStateChanged { .. } => policy.exact_visible,
+            _ => policy.activity_stream_visible,
+        };
+        if !visible {
             return Ok(None);
         }
     }
@@ -244,7 +249,8 @@ fn event_for_access(
         return None;
     }
 
-    if let RepoChangeKind::RequestTimelineChanged { view, .. }
+    if let RepoChangeKind::RequestStateChanged { view, .. }
+    | RepoChangeKind::RequestTimelineChanged { view, .. }
     | RepoChangeKind::RequestAttachmentChanged { view, .. } = &event.kind
     {
         if repo.can_read_view(&view.clone().into()) {

@@ -8,6 +8,7 @@ use super::{
     integer_columns::{i64_to_u64, u64_to_i64},
     landing_files::apply_repository_landing_file_mutation,
     outbox::enqueue_projection_read_model_rebuild,
+    projection_read_models::fold_live_projection_read_models,
     push_triggers::enqueue_push_main_trigger_evaluation,
     workflow_catalogs::apply_repository_workflow_catalog,
 };
@@ -222,6 +223,7 @@ async fn accept_and_persist_content_update(
     .await?;
     apply_repository_landing_file_mutation(tx, &repo_id, landing_file_mutation).await?;
     apply_repository_workflow_catalog(tx, &workflow_catalog).await?;
+    fold_live_projection_read_models(tx, &repo_id, content_version).await?;
     enqueue_projection_read_model_rebuild(tx, &repo_id, content_version, now_unix, generated_ids)
         .await?;
     if let Some(input) = push_trigger_input {

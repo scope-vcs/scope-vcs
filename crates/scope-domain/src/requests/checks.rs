@@ -154,6 +154,7 @@ pub struct RequestCheckEvaluation {
     pub request_id: String,
     pub head_oid: String,
     pub tested_oid: String,
+    pub changes_github_workflows: Option<bool>,
     pub check_commit_base: Option<CheckCommitBase>,
     pub state: RequestCheckEvaluationState,
     pub message: Option<String>,
@@ -393,6 +394,7 @@ impl RequestCheckEvaluation {
         }
         Ok(Self {
             request_id,
+            changes_github_workflows: None,
             tested_oid: head_oid.clone(),
             check_commit_base: None,
             head_oid,

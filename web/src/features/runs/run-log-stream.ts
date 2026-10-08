@@ -1,5 +1,9 @@
 import type { RunLogResponse } from '@/api/types.generated'
-import { apiValidators } from '../../api/validators.generated'
+import {
+  ErrorResponseValidator,
+  RunLogResponseValidator,
+  RunResponseValidator,
+} from '../../api/validators.generated'
 import { normalizeSseLineEndings, reconnectDelay, takeSseMessages } from '../repo-detail/repo-event-stream'
 
 type StreamResult = { stop: boolean }
@@ -69,20 +73,20 @@ async function streamRunLogs({ url, tokenTemplate, getToken, cursor, onLog, sign
         if (!data) continue
         if (name === 'log') {
           const payload: unknown = JSON.parse(data)
-          if (!apiValidators.RunLogResponse(payload)) throw new Error('Invalid run log event.')
+          if (!RunLogResponseValidator(payload)) throw new Error('Invalid run log event.')
           if (payload.position > cursor) {
             onLog(payload)
             cursor = payload.position
           }
         } else if (name === 'status') {
           const payload: unknown = JSON.parse(data)
-          if (!apiValidators.RunResponse(payload)) throw new Error('Invalid run status event.')
+          if (!RunResponseValidator(payload)) throw new Error('Invalid run status event.')
           if (['succeeded', 'failed', 'canceled', 'lost'].includes(payload.state)) {
             return { stop: true }
           }
         } else if (name === 'error') {
           const payload: unknown = JSON.parse(data)
-          if (!apiValidators.ErrorResponse(payload)) throw new Error('Invalid run stream error.')
+          if (!ErrorResponseValidator(payload)) throw new Error('Invalid run stream error.')
           return { stop: payload.code === 'forbidden' || payload.code === 'not_found' }
         }
       }

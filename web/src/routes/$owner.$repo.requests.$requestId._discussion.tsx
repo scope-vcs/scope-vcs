@@ -9,14 +9,13 @@ import {
 } from '@/api/request-inputs'
 import {
   approveRequestChecks,
-  getRequestChecks,
   rateRequestForRequest,
+  loadRequestRatingsForRequest,
   type RateRequestInput,
 } from '@/api/requests'
 import {
   authorizeRequestAutoMergeForRequest,
   cancelRequestAutoMergeForRequest,
-  loadRequestAutoMergeForRequest,
 } from '@/features/requests/request-auto-merge-api'
 import {
   type RequestActionCommand,
@@ -26,32 +25,26 @@ import {
   loadRequestActivityForRequest,
   updateRequestDescriptionForRequest,
 } from '@/features/requests/request-discussion-api'
+import { useRequestState } from '@/features/requests/request-state-context'
+import { requestRatingsResource } from '@/features/requests/request-ratings-resource'
+import { reconcileRequestState, requestStateResource } from '@/features/requests/request-state-resource'
 import { RequestDetailPage } from '@/features/requests/request-detail-page'
 import { RequestDetailPagePending } from '@/features/requests/request-page-pending'
+import { loadRequestDiscussionRoutePage } from '@/routes/-request-discussion-loader'
 import { requestParamsForRoute } from '@/features/requests/request-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
-import { createFileRoute, getRouteApi, Outlet, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useCallback, useMemo } from 'react'
-
-const requestRoute = getRouteApi('/$owner/$repo/requests/$requestId')
 
 const loadActivity = createServerFn({ method: 'GET' })
   .validator(parseRequestParams)
   .handler(({ data }) => loadRequestActivityForRequest(data))
 
-const loadChecks = createServerFn({ method: 'GET' })
-  .validator(parseRequestParams)
-  .handler(({ data }) => getRequestChecks(data))
-
 const approveChecks = createServerFn({ method: 'POST' })
   .validator(parseApproveRequestChecksInput)
   .handler(({ data }) => approveRequestChecks(data))
-
-const loadAutoMerge = createServerFn({ method: 'GET' })
-  .validator(parseRequestParams)
-  .handler(({ data }) => loadRequestAutoMergeForRequest(data))
 
 const authorizeAutoMerge = createServerFn({ method: 'POST' })
   .validator(parseAuthorizeRequestAutoMergeInput)
@@ -69,18 +62,38 @@ const runRequestAction = createServerFn({ method: 'POST' })
   .validator(parseRequestActionInput)
   .handler(({ data }) => performRequestActionForRequest(data))
 
+const loadRatings = createServerFn({ method: 'GET' })
+  .validator(parseRequestParams)
+  .handler(({ data }) => loadRequestRatingsForRequest(data))
+
 const rateRequest = createServerFn({ method: 'POST' })
   .validator(parseRateRequestInput)
   .handler(({ data }) => rateRequestForRequest(data))
 
 export const Route = createFileRoute('/$owner/$repo/requests/$requestId/_discussion')({
+  loaderDeps: ({ search }) => ({ discussion: search.discussion }),
+  loader: async ({ deps, params, parentMatchPromise }) => {
+    const page = (await parentMatchPromise).loaderData
+    if (!page) throw new Error('Request state is unavailable.')
+    return {
+      discussionPage: page.discussionPage === undefined
+        ? loadRequestDiscussionRoutePage(
+            requestParamsForRoute(params),
+            typeof window === 'undefined' ? null : page.initial.scope,
+            page.initial.viewerId,
+            deps.discussion,
+          )
+        : page.discussionPage,
+      scope: page.initial.scope,
+    }
+  },
   pendingComponent: RequestDetailPagePending,
   component: RequestDiscussionLayout,
 })
 
 function RequestDiscussionLayout() {
   const params = Route.useParams()
-  const page = requestRoute.useLoaderData()
+  const page = useRequestState()
   const live = useRepoLayout()
   const router = useRouter()
   const navigate = Route.useNavigate()
@@ -101,13 +114,16 @@ function RequestDiscussionLayout() {
     try {
       result = await runRequestAction({ data: { ...requestParams, ...command } })
     } catch (error) {
+      requestStateResource.invalidate(page.identity)
       await router.invalidate({ sync: true }).catch(() => {})
       throw error
     }
     try {
       if (result.deleted) {
+        requestStateResource.removeMatching((identity) => identity === page.identity)
         await navigate({ params: repoParams, to: '/$owner/$repo/requests' })
       } else {
+        requestStateResource.invalidate(page.identity)
         await router.invalidate({ sync: true })
       }
       return result
@@ -117,14 +133,14 @@ function RequestDiscussionLayout() {
         synchronizationError: 'The update completed, but the latest request state could not be reloaded. Refresh this page.',
       }
     }
-  }, [navigate, repoParams, requestParams, router])
+  }, [navigate, repoParams, requestParams, router, page.identity])
   const rateParticipant = useCallback(async (input: RateRequestInput) => {
     const rating = await rateRequest({ data: input })
-    await router.invalidate()
+    requestRatingsResource.invalidate(page.identity)
     return rating
-  }, [router])
+  }, [page.identity])
 
-  if (!page.detail || !page.ratings) return null
+  if (!page.state) return null
 
   return (
     <RequestDetailPage
@@ -138,24 +154,30 @@ function RequestDiscussionLayout() {
       cancelAutoMerge={(input) => cancelAutoMerge({
         data: { ...requestParams, ...input },
       })}
-      detail={page.detail}
+      state={page.state}
+      stateError={page.error}
+      identity={page.identity}
+      scope={page.scope}
       live={live}
       loadActivity={(signal) => loadActivity({ data: requestParams, signal })}
-      loadChecks={(signal) => loadChecks({ data: requestParams, signal })}
-      loadAutoMerge={(signal) => loadAutoMerge({ data: requestParams, signal })}
+      loadRatings={(signal) => loadRatings({ data: requestParams, signal })}
       params={repoParams}
       performAction={performAction}
-      ratings={page.ratings}
       rateRequest={rateParticipant}
       updateDescription={async (data) => {
+        const snapshot = requestStateResource.getSnapshot(page.identity)
         try {
-          return await updateDescription({ data })
+          const result = await updateDescription({ data })
+          reconcileRequestState(page.identity, snapshot, (current) => ({ ...current, detail: { request: result.request } }))
+          requestStateResource.invalidate(page.identity)
+          return result
         } catch (error) {
+          requestStateResource.invalidate(page.identity)
           await router.invalidate().catch(() => {})
           throw error
         }
       }}
-      viewerId={page.account?.user?.id ?? 'anonymous'}
+      viewerId={page.viewerId ?? 'anonymous'}
     >
       <Outlet />
     </RequestDetailPage>

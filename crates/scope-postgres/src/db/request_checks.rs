@@ -26,6 +26,8 @@ use sea_orm::{
 
 #[derive(Clone, Debug)]
 pub struct RecordRequestChecksCommand {
+    pub repository_incarnation: scope_domain::repository::RepositoryIncarnation,
+    pub expected_canonical_main_oid: Option<String>,
     pub evaluation: RequestCheckEvaluation,
     pub revisions: Vec<WorkflowRevision>,
     pub runs: Vec<Run>,
@@ -54,6 +56,11 @@ impl RequestStore {
         command: RecordRequestChecksCommand,
     ) -> Result<RequestChecksMutation, PostgresError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        super::locks::acquire_shared_repository_lock(
+            &tx,
+            command.repository_incarnation.repository_id(),
+        )
+        .await?;
         super::acquire_aggregate_lock(&tx, "request", &command.evaluation.request_id).await?;
         super::run_retention::lock_run_evidence_retention(&tx).await?;
         let active_auto_merge = super::request_auto_merge::lock_active_intent_for_request(
@@ -64,6 +71,29 @@ impl RequestStore {
         let request = super::request_rows::request_by_id(&tx, &command.evaluation.request_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
+        let repo = super::repository_access::load_repo_record(&tx, &request.repo_id)
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        if repo.incarnation() != command.repository_incarnation
+            || request.head_oid != command.evaluation.head_oid
+        {
+            return Err(PostgresError::conflict(
+                "request changed while evaluating checks",
+            ));
+        }
+        let canonical_main_oid =
+            super::request_check_commits::canonical_main_oid(&tx, &request.repo_id).await?;
+        if canonical_main_oid != command.expected_canonical_main_oid
+            || command
+                .evaluation
+                .check_commit_base
+                .as_ref()
+                .is_some_and(|base| canonical_main_oid.as_deref() != Some(&base.canonical_main_oid))
+        {
+            return Err(PostgresError::conflict(
+                "main changed while evaluating checks",
+            ));
+        }
         if request.is_terminal() {
             return Err(PostgresError::conflict(
                 "request can no longer merge, so its checks are not evaluated",
@@ -456,6 +486,7 @@ pub(super) async fn save_evaluation(
             ])
             .update_columns([
                 entities::request_check_evaluation::Column::TestedOid,
+                entities::request_check_evaluation::Column::ChangesGithubWorkflows,
                 entities::request_check_evaluation::Column::State,
                 entities::request_check_evaluation::Column::Message,
                 entities::request_check_evaluation::Column::Checks,

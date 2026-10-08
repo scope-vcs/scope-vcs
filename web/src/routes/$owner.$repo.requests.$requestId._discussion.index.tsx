@@ -1,7 +1,6 @@
 import {
   parseLoadDiscussionsInput,
   parseLoadRepliesInput,
-  parseLoadDiscussionChangesInput,
   parseCreateDiscussionInput,
   parseCreateReplyInput,
   parseDiscussionActionInput,
@@ -10,41 +9,24 @@ import {
 import {
   createRequestDiscussionForRequest,
   createRequestDiscussionReplyForRequest,
-  loadRequestDiscussionChangesForRequest,
   loadRequestDiscussionRepliesForRequest,
   loadRequestDiscussionsForRequest,
   markRequestDiscussionReadForRequest,
   reopenAndReplyToRequestDiscussionForRequest,
   resolveRequestDiscussionForRequest,
 } from '@/features/requests/request-discussion-api'
-import { includeFocusedDiscussion } from '@/features/requests/request-discussion-model'
+import type { RequestDiscussionPage } from '@/features/requests/request-discussion-types'
 import { RequestDiscussionView } from '@/features/requests/request-discussion-view'
 import { RequestDiscussionPending } from '@/features/requests/request-page-pending'
-import { requestParamsForRoute } from '@/features/requests/request-route-data'
-import { loadOptionalResource } from '@/api/http'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
-import { createFileRoute, getRouteApi } from '@tanstack/react-router'
+import { Await, createFileRoute, getRouteApi } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
+import { Suspense } from 'react'
+import { useRequestState } from '@/features/requests/request-state-context'
+import { loadRequestDiscussionChanges } from '@/routes/-request-discussion-actions'
 import { MessageSquare } from 'lucide-react'
 
-const requestRoute = getRouteApi('/$owner/$repo/requests/$requestId')
-
-const loadDiscussionPage = createServerFn({ method: 'GET' })
-  .validator(parseLoadDiscussionsInput)
-  .handler(async ({ data }) => {
-    const requestParams = {
-      owner: data.owner,
-      repo: data.repo,
-      request_id: data.request_id,
-    }
-    const [discussionPage, focusedDiscussionPage] = await Promise.all([
-      loadOptionalResource(() => loadRequestDiscussionsForRequest(requestParams)),
-      data.discussion_id
-        ? loadOptionalResource(() => loadRequestDiscussionsForRequest(data))
-        : Promise.resolve(null),
-    ])
-    return includeFocusedDiscussion(discussionPage, focusedDiscussionPage)
-  })
+const discussionRoute = getRouteApi('/$owner/$repo/requests/$requestId/_discussion')
 
 const loadDiscussions = createServerFn({ method: 'GET' })
   .validator(parseLoadDiscussionsInput)
@@ -53,10 +35,6 @@ const loadDiscussions = createServerFn({ method: 'GET' })
 const loadReplies = createServerFn({ method: 'GET' })
   .validator(parseLoadRepliesInput)
   .handler(({ data }) => loadRequestDiscussionRepliesForRequest(data))
-
-const loadDiscussionChanges = createServerFn({ method: 'GET' })
-  .validator(parseLoadDiscussionChangesInput)
-  .handler(({ data }) => loadRequestDiscussionChangesForRequest(data))
 
 const createDiscussion = createServerFn({ method: 'POST' })
   .validator(parseCreateDiscussionInput)
@@ -79,53 +57,41 @@ const markDiscussionRead = createServerFn({ method: 'POST' })
   .handler(({ data }) => markRequestDiscussionReadForRequest(data))
 
 export const Route = createFileRoute('/$owner/$repo/requests/$requestId/_discussion/')({
-  validateSearch: (search: Record<string, unknown>): { discussion?: string } => ({
-    discussion: typeof search.discussion === 'string' && search.discussion.trim()
-      ? search.discussion.trim()
-      : undefined,
-  }),
-  loaderDeps: ({ search }) => ({ discussion: search.discussion }),
-  loader: ({ deps, params }) => loadDiscussionPage({
-    data: {
-      ...requestParamsForRoute(params),
-      discussion_id: deps.discussion,
-    },
-  }),
   pendingComponent: RequestDiscussionPending,
   component: RequestDiscussionRoute,
 })
 
 function RequestDiscussionRoute() {
-  const page = requestRoute.useLoaderData()
-  const initialPage = Route.useLoaderData()
+  const page = useRequestState()
+  const { discussionPage, scope } = discussionRoute.useLoaderData()
   const params = Route.useParams()
   const search = Route.useSearch()
   const live = useRepoLayout()
 
-  if (!page.detail) return null
-  if (!initialPage) {
-    return (
-      <section className="px-5 py-14 text-center lg:px-7">
-        <MessageSquare className="mx-auto size-5 text-muted-foreground" />
-        <h2 className="mt-3 text-sm font-semibold">Discussion is unavailable</h2>
-        <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-muted-foreground">
-          The request is still available. Reload the page to try loading its discussion again.
-        </p>
-      </section>
-    )
-  }
-
-  return (
+  if (!page.state) return null
+  const detail = page.state.detail
+  const viewer = page.state.viewer
+  if (scope !== page.scope) return <RequestDiscussionPending />
+  const renderDiscussion = (initialPage: RequestDiscussionPage | null) => !initialPage ? (
+    <section className="px-5 py-14 text-center lg:px-7">
+      <MessageSquare className="mx-auto size-5 text-muted-foreground" />
+      <h2 className="mt-3 text-sm font-semibold">Discussion is unavailable</h2>
+      <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-muted-foreground">
+        The request is still available. Reload the page to try loading its discussion again.
+      </p>
+    </section>
+  ) : (
     <RequestDiscussionView
-      account={page.account}
+      viewer={viewer}
+      viewerId={page.viewerId}
       createDiscussion={(data) => createDiscussion({ data })}
       createReply={(data) => createReply({ data })}
-      detail={page.detail}
+      detail={detail}
       focusedDiscussionId={search.discussion}
       initialPage={initialPage}
       live={live}
       loadDiscussions={(data) => loadDiscussions({ data })}
-      loadDiscussionChanges={(data) => loadDiscussionChanges({ data })}
+      loadDiscussionChanges={(data) => loadRequestDiscussionChanges({ data })}
       loadReplies={(data) => loadReplies({ data })}
       markDiscussionRead={(data) => markDiscussionRead({ data })}
       params={{ owner: params.owner, repo: params.repo }}
@@ -133,4 +99,9 @@ function RequestDiscussionRoute() {
       resolveDiscussion={(data) => resolveDiscussion({ data })}
     />
   )
+  return discussionPage instanceof Promise ? (
+    <Suspense fallback={<RequestDiscussionPending />}>
+      <Await promise={discussionPage}>{renderDiscussion}</Await>
+    </Suspense>
+  ) : renderDiscussion(discussionPage)
 }

@@ -96,6 +96,9 @@ routes! {
         REPO_REQUEST = "/v1/repos/{owner}/{repo}/requests/{request_id}"
             => "repoRequest",
             repo_request(owner: &str, repo: &str, request_id: &str);
+        REPO_REQUEST_STATE = "/v1/repos/{owner}/{repo}/requests/{request_id}/state"
+            => "repoRequestState",
+            repo_request_state(owner: &str, repo: &str, request_id: &str);
         REPO_REQUEST_SUBMIT = "/v1/repos/{owner}/{repo}/requests/{request_id}/submit"
             => "repoRequestSubmit",
             repo_request_submit(owner: &str, repo: &str, request_id: &str);

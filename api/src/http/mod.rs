@@ -21,6 +21,7 @@ pub(crate) mod request_discussions;
 pub(crate) mod request_queue;
 pub(crate) mod request_ratings;
 pub(crate) mod request_review;
+pub(crate) mod request_state;
 pub(crate) mod requests;
 pub(crate) mod responses;
 pub(crate) mod routes;

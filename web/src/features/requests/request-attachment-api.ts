@@ -9,7 +9,13 @@ import {
   type PrepareRequestAttachmentRequest,
   type RetryRequestAttachmentRequest,
 } from '@/api/types.generated'
-import { apiValidators } from '@/api/validators.generated'
+import {
+  CreateRequestAttachmentMediaGrantResponseValidator,
+  PrepareRequestAttachmentResponseValidator,
+  RequestAttachmentLimitsResponseValidator,
+  RequestAttachmentListResponseValidator,
+  RequestAttachmentResponseValidator,
+} from '@/api/validators.generated'
 
 type RequestAttachmentActionInput = RequestParams & {
   attachment_id: string
@@ -26,7 +32,7 @@ export function loadRequestAttachments(
 ) {
   return createApiClient().get(
     requestRoute(ApiRouteTemplates.repoRequestAttachments, input),
-    apiValidators.RequestAttachmentListResponse,
+    RequestAttachmentListResponseValidator,
     { auth: 'optional', signal },
   )
 }
@@ -37,7 +43,7 @@ export function loadRequestAttachmentLimits(
 ) {
   return createApiClient().get(
     requestRoute(ApiRouteTemplates.repoRequestAttachmentLimits, input),
-    apiValidators.RequestAttachmentLimitsResponse,
+    RequestAttachmentLimitsResponseValidator,
     { auth: 'optional', signal },
   )
 }
@@ -45,7 +51,7 @@ export function loadRequestAttachmentLimits(
 export function prepareRequestAttachment(input: PrepareAttachmentInput) {
   return createApiClient().post(
     requestRoute(ApiRouteTemplates.repoRequestAttachmentPrepare, input),
-    apiValidators.PrepareRequestAttachmentResponse,
+    PrepareRequestAttachmentResponseValidator,
     {
       auth: 'required',
       body: {
@@ -63,7 +69,7 @@ export function prepareRequestAttachment(input: PrepareAttachmentInput) {
 export function finishRequestAttachment(input: FinishAttachmentInput) {
   return createApiClient().post(
     attachmentRoute(ApiRouteTemplates.repoRequestAttachmentFinish, input),
-    apiValidators.RequestAttachmentResponse,
+    RequestAttachmentResponseValidator,
     {
       auth: 'required',
       body: { parts: input.parts, upload_id: input.upload_id },
@@ -74,7 +80,7 @@ export function finishRequestAttachment(input: FinishAttachmentInput) {
 export function retryRequestAttachment(input: RetryAttachmentInput) {
   return createApiClient().post(
     attachmentRoute(ApiRouteTemplates.repoRequestAttachmentRetry, input),
-    apiValidators.RequestAttachmentResponse,
+    RequestAttachmentResponseValidator,
     { auth: 'required', body: { operation_id: input.operation_id } },
   )
 }
@@ -82,7 +88,7 @@ export function retryRequestAttachment(input: RetryAttachmentInput) {
 export function grantRequestAttachmentMedia(input: GrantAttachmentInput) {
   return createApiClient().post(
     attachmentRoute(ApiRouteTemplates.repoRequestAttachmentMediaGrant, input),
-    apiValidators.CreateRequestAttachmentMediaGrantResponse,
+    CreateRequestAttachmentMediaGrantResponseValidator,
     { auth: 'optional', body: { target: input.target } },
   )
 }

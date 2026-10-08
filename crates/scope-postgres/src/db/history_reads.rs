@@ -10,8 +10,50 @@ use scope_domain::{
     repository::RepositoryIncarnation,
     views::ViewId,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, Statement, TransactionTrait};
+use sea_orm::{
+    ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, Statement, TransactionTrait,
+};
 use sha2::{Digest, Sha256};
+
+pub(super) async fn ensure_live_projection_read_models(
+    db: &DatabaseConnection,
+    incarnation: &RepositoryIncarnation,
+    view: &ViewId,
+) -> Result<(), PostgresError> {
+    let tx = db.begin().await.map_err(PostgresError::internal)?;
+    acquire_aggregate_lock(&tx, "repository", incarnation.repository_id()).await?;
+    let row = entities::repository::Entity::find_by_id(incarnation.repository_id())
+        .one(&tx)
+        .await
+        .map_err(PostgresError::internal)?
+        .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+    if row.incarnation_id != incarnation.incarnation_id() {
+        return Err(PostgresError::conflict(
+            "repository was recreated; retry the read",
+        ));
+    }
+    let version = integer_columns::i64_to_u64(row.content_version, "repository content version")?;
+    let views = super::projection_read_models::repository_views(&tx, &row.id).await?;
+    if views.get(view).is_none() {
+        return Err(PostgresError::not_found("repository view not found"));
+    }
+    let mut eager_missing = false;
+    for eager in eager_views(&tx, &row.id, &views).await? {
+        eager_missing |= live_projection_read_model(&tx, &row.id, version, &eager)
+            .await?
+            .is_none();
+    }
+    if eager_missing {
+        fold_live_projection_read_models(&tx, &row.id, version).await?;
+    }
+    if live_projection_read_model(&tx, &row.id, version, view)
+        .await?
+        .is_none()
+    {
+        build_projection_read_model(&tx, &row.id, version, view).await?;
+    }
+    tx.commit().await.map_err(PostgresError::internal)
+}
 
 pub struct RepositoryHistoryQuery<'a> {
     pub incarnation: &'a RepositoryIncarnation,
@@ -114,40 +156,7 @@ impl RepositoryStore {
         incarnation: &RepositoryIncarnation,
         view: &ViewId,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "repository", incarnation.repository_id()).await?;
-        let row = entities::repository::Entity::find_by_id(incarnation.repository_id())
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        if row.incarnation_id != incarnation.incarnation_id() {
-            return Err(PostgresError::conflict(
-                "repository was recreated; retry the read",
-            ));
-        }
-        let version =
-            integer_columns::i64_to_u64(row.content_version, "repository content version")?;
-        let views = super::projection_read_models::repository_views(&tx, &row.id).await?;
-        if views.get(view).is_none() {
-            return Err(PostgresError::not_found("repository view not found"));
-        }
-        let mut eager_missing = false;
-        for eager in eager_views(&tx, &row.id, &views).await? {
-            eager_missing |= live_projection_read_model(&tx, &row.id, version, &eager)
-                .await?
-                .is_none();
-        }
-        if eager_missing {
-            fold_live_projection_read_models(&tx, &row.id, version).await?;
-        }
-        if live_projection_read_model(&tx, &row.id, version, view)
-            .await?
-            .is_none()
-        {
-            build_projection_read_model(&tx, &row.id, version, view).await?;
-        }
-        tx.commit().await.map_err(PostgresError::internal)
+        ensure_live_projection_read_models(self.db.as_ref(), incarnation, view).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_history_page"))]

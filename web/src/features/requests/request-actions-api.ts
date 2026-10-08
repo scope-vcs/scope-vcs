@@ -2,7 +2,12 @@ import { createApiClient } from '@/api/client'
 import { requestRoute } from '@/api/paths'
 import type { RequestParams } from '@/api/types'
 import { ApiRouteTemplates } from '@/api/types.generated'
-import { apiValidators } from '@/api/validators.generated'
+import {
+  LeaveRequestResponseValidator,
+  RequestCloseResponseValidator,
+  RequestInviteeMutationResponseValidator,
+  RequestMutationResponseValidator,
+} from '@/api/validators.generated'
 
 export type RequestActionCommand =
   | { action: 'add_invitee'; handle: string }
@@ -29,21 +34,21 @@ export async function performRequestActionForRequest(
     case 'submit':
       await api.post(
         requestRoute(ApiRouteTemplates.repoRequestSubmit, input),
-        apiValidators.RequestMutationResponse,
+        RequestMutationResponseValidator,
         { ...mutationOptions, body: {} },
       )
       return { deleted: false }
     case 'merge':
       await api.post(
         requestRoute(ApiRouteTemplates.repoRequestMerge, input),
-        apiValidators.RequestMutationResponse,
+        RequestMutationResponseValidator,
         { ...mutationOptions, body: { expected_head_oid: input.expected_head_oid } },
       )
       return { deleted: false }
     case 'close': {
       const result = await api.delete(
         requestRoute(ApiRouteTemplates.repoRequest, input),
-        apiValidators.RequestCloseResponse,
+        RequestCloseResponseValidator,
         mutationOptions,
       )
       return { deleted: result.deleted }
@@ -51,21 +56,21 @@ export async function performRequestActionForRequest(
     case 'add_invitee':
       await api.put(
         requestRoute(ApiRouteTemplates.repoRequestInvitees, input),
-        apiValidators.RequestInviteeMutationResponse,
+        RequestInviteeMutationResponseValidator,
         { ...mutationOptions, body: { handle: input.handle } },
       )
       return { deleted: false }
     case 'remove_invitee':
       await api.delete(
         requestRoute(ApiRouteTemplates.repoRequestInvitees, input),
-        apiValidators.RequestInviteeMutationResponse,
+        RequestInviteeMutationResponseValidator,
         { ...mutationOptions, body: { handle: input.handle } },
       )
       return { deleted: false }
     case 'leave':
       await api.delete(
         requestRoute(ApiRouteTemplates.repoRequestInviteesMe, input),
-        apiValidators.LeaveRequestResponse,
+        LeaveRequestResponseValidator,
         mutationOptions,
       )
       return { deleted: false }

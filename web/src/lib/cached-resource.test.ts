@@ -310,3 +310,34 @@ test('late hydration never replaces an in-flight request', async () => {
   await pending
   assert.equal(store.peek('repo')?.text, 'fresh')
 })
+
+test('coalesced invalidations finish the active read and require one retained follow-up', async () => {
+  const store = createCachedResource<Value>({ maxEntries: 4, coalesceInvalidations: true })
+  store.write('request', value('before'))
+  store.invalidate('request')
+  const response = deferred<Value>()
+  let signal!: AbortSignal
+  const first = store.ensure('request', '', (attempt) => {
+    signal = attempt
+    return response.promise
+  })
+  await Promise.resolve()
+  store.invalidate('request')
+  store.invalidate('request')
+  assert.equal(signal.aborted, false)
+  assert.equal(store.getSnapshot('request').pending, true)
+  assert.equal(store.peek('request')?.text, 'before')
+  const duplicate = mock.fn(async () => value('unexpected'))
+  assert.equal(store.ensure('request', '', duplicate), first)
+  response.resolve(value('during'))
+  await first
+  assert.equal(duplicate.mock.callCount(), 0)
+  assert.equal(store.peek('request')?.text, 'during')
+  assert.equal(store.getSnapshot('request').stale, true)
+  const followUp = mock.fn(async () => value('after'))
+  await store.ensure('request', '', followUp)
+  await store.ensure('request', '', followUp)
+  assert.equal(followUp.mock.callCount(), 1)
+  assert.equal(store.peek('request')?.text, 'after')
+  assert.equal(store.getSnapshot('request').stale, false)
+})

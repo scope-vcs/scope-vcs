@@ -91,7 +91,7 @@ pub(crate) async fn run_claimed_push(
         .finish_github_push(&push.id, claim_token, outcome, now_unix)
         .await
     {
-        Ok(Some(_)) => publish_push_change(state, &push.repo_id).await,
+        Ok(Some(_)) => publish_push_change(state, push).await,
         Ok(None) => {}
         Err(error) => tracing::warn!(
             push_id = push.id,
@@ -372,7 +372,8 @@ async fn installation_token(app: &GitHubApp, installation_id: u64) -> Result<Str
         })
 }
 
-async fn publish_push_change(state: &AppState, repo_id: &str) {
+async fn publish_push_change(state: &AppState, push: &GitHubPush) {
+    let repo_id = &push.repo_id;
     match state
         .metadata
         .repositories()
@@ -380,6 +381,12 @@ async fn publish_push_change(state: &AppState, repo_id: &str) {
         .await
     {
         Ok(Some(record)) => {
+            if let GitHubBranch::Request(request_id) = &push.branch {
+                state
+                    .publish_request_state_refresh(&record.incarnation(), request_id)
+                    .await;
+                return;
+            }
             state
                 .publish_request_summary_refresh(
                     &record.incarnation(),

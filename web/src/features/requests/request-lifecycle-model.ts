@@ -1,23 +1,8 @@
 import type {
   RequestAutoMergeResponse,
-  RequestChecksResponse,
-  RequestMergeabilityStatus,
   RequestSummaryResponse,
 } from '@/api/types.generated'
 import type { RepoViews } from '../../api/repo-views'
-
-const NOT_OPEN = new Set<RequestMergeabilityStatus>(['Draft', 'Closed', 'Merged'])
-
-export function withCurrentMergeability(
-  request: RequestSummaryResponse,
-  checks: RequestChecksResponse | null,
-): RequestSummaryResponse {
-  const current = checks?.mergeability
-  return request.state === 'Open' && current?.request_head_oid === request.head_oid &&
-    !NOT_OPEN.has(current.status)
-    ? { ...request, mergeability: current }
-    : request
-}
 
 export function canMergeRequest(request: RequestSummaryResponse) {
   return request.permissions.can_merge && request.mergeability.status === 'Ready'
@@ -34,12 +19,10 @@ export function hasRequestLifecycleActions(request: RequestSummaryResponse) {
 }
 
 export function hasRequestAutoMergeActions(
-  status: Pick<RequestAutoMergeResponse, 'can_enable' | 'intent'> | null,
+  status: Pick<RequestAutoMergeResponse, 'can_enable' | 'intent'>,
   dialogOpen = false,
 ) {
-  return dialogOpen || (
-    status !== null && (status.can_enable || status.intent?.status === 'Active')
-  )
+  return dialogOpen || status.can_enable || status.intent?.status === 'Active'
 }
 
 export function requestSubmitsForReview(request: Pick<RequestSummaryResponse, 'author_role'>) {

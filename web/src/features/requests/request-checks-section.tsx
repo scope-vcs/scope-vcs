@@ -11,7 +11,7 @@ import {
   requestChecksWorkflowWarning,
   requestPublicChecksNote,
 } from './request-labels'
-import { CHECKS_SECTION_CLASS, RequestChecksPending } from './request-checks-pending'
+import { CHECKS_SECTION_CLASS } from './request-checks-pending'
 
 const ROW_CLASS = 'group -mx-1.5 flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-[13px]'
 const INDENT_PX = 14
@@ -22,19 +22,18 @@ export function RequestChecksSection({
   params,
   requestViewName,
 }: {
-  checks: RequestChecksResponse | null
+  checks: RequestChecksResponse
   error: string | null
   params: RepoParams
   requestViewName: string
 }) {
   const [expanded, setExpanded] = useState(false)
   const listId = useId()
-  if (!checks && !error) return <RequestChecksPending />
-  const note = checks ? requestCheckEvaluationNote(checks) : null
-  const warning = checks ? requestChecksWorkflowWarning(checks) : null
-  const publicNote = checks ? requestPublicChecksNote(checks, requestViewName) : null
-  const summary = checks ? requestChecksSummary(checks) : null
-  const folded = summary ? summary.all.length - summary.attention.length : 0
+  const note = requestCheckEvaluationNote(checks)
+  const warning = requestChecksWorkflowWarning(checks)
+  const publicNote = requestPublicChecksNote(checks, requestViewName)
+  const summary = requestChecksSummary(checks)
+  const folded = summary.all.length - summary.attention.length
 
   return (
     <section
@@ -53,7 +52,7 @@ export function RequestChecksSection({
           {warning}
         </p>
       ) : null}
-      {summary?.lead ? (
+      {summary.lead ? (
         <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px]">
           <span className="inline-flex items-center gap-1.5 font-medium">
             <RunStatusIcon state={summary.lead.state} />
@@ -64,7 +63,7 @@ export function RequestChecksSection({
           ) : null}
         </p>
       ) : null}
-      {summary?.startError ? (
+      {summary.startError ? (
         <p
           className={cn(
             'mt-1 break-words text-[13px]',
@@ -80,7 +79,7 @@ export function RequestChecksSection({
           {publicNote}
         </p>
       ) : null}
-      {summary && (expanded ? summary.all.length : summary.attention.length) ? (
+      {(expanded ? summary.all.length : summary.attention.length) ? (
         <ul className="mt-2 grid grid-cols-[minmax(0,1fr)]" id={listId}>
           {expanded
             ? requestCheckTree(summary.all).map((line) =>
@@ -105,7 +104,7 @@ export function RequestChecksSection({
               ))}
         </ul>
       ) : null}
-      {summary && folded ? (
+      {folded ? (
         <button
           aria-controls={expanded ? listId : undefined}
           aria-expanded={expanded}

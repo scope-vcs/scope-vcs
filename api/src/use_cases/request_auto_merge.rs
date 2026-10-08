@@ -2,7 +2,6 @@ use crate::{
     error::{ApiError, ErrorKind},
     persistence::unix_now,
     persistence_ids::{generate_persistence_id, generate_prefixed_id},
-    repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
         request_checks,
@@ -13,48 +12,10 @@ use scope_domain::{
     repository::{RepoRecord, RepositoryIncarnation},
     requests::{
         Request, RequestAutoMergeIntent, RequestAutoMergeReadiness, RequestAutoMergeStopReason,
-        RequestRevision, RequestState, RequestViewer, request_auto_merge_readiness, request_policy,
+        RequestState, RequestViewer, request_auto_merge_readiness, request_policy,
     },
 };
 use scope_postgres::db::{AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand};
-
-pub(crate) struct RequestAutoMergeView {
-    pub(crate) request: Request,
-    pub(crate) revision: Option<RequestRevision>,
-    pub(crate) intent: Option<RequestAutoMergeIntent>,
-    pub(crate) readiness: RequestAutoMergeReadiness,
-}
-
-pub(crate) async fn view(
-    state: &AppState,
-    request_id: &str,
-) -> Result<RequestAutoMergeView, ApiError> {
-    let store = state.metadata.requests();
-    let request = store
-        .request_by_id(request_id)
-        .await?
-        .ok_or_else(|| ApiError::not_found("request not found"))?;
-    let revision = store
-        .request_revision_window(request_id, None, 1)
-        .await?
-        .revisions
-        .into_iter()
-        .max_by_key(|revision| revision.position);
-    let intent = store.request_auto_merge_intent(request_id).await?;
-    let checks = request_checks::recorded_checks_view(state, &request).await?;
-    let readiness = request_auto_merge_readiness(
-        &request.id,
-        &request.head_oid,
-        checks.evaluation.as_ref(),
-        &checks.results,
-    );
-    Ok(RequestAutoMergeView {
-        request,
-        revision,
-        intent,
-        readiness,
-    })
-}
 
 pub(crate) async fn authorize(
     state: &AppState,
@@ -106,7 +67,7 @@ async fn publish_change(state: &AppState, intent: &RequestAutoMergeIntent) -> Re
         RepositoryIncarnation::new(&intent.repo_id, &intent.repository_incarnation_id)
             .map_err(ApiError::internal)?;
     state
-        .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestAutoMergeUpdated)
+        .publish_request_state_refresh(&incarnation, &intent.request_id)
         .await;
     Ok(())
 }

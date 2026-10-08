@@ -8,7 +8,13 @@ import { repoRoute } from './paths'
 import type { RepoContent, RepoLiveState, RepoParams } from './types'
 import type { RepoSummaryResponse, RepositoryDependencyCheckResponse, ViewId } from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
-import { apiValidators } from './validators.generated'
+import {
+  GitHubConnectionResponseValidator,
+  RepoFileContentResponseValidator,
+  RepoFileResponseValidator,
+  RepoSummaryResponseValidator,
+  RepositoryDependencyCheckResponseValidator,
+} from './validators.generated'
 
 export async function loadRepoContentForRequest(
   data: RepoParams & { view: ViewId },
@@ -17,7 +23,7 @@ export async function loadRepoContentForRequest(
   const api = createApiClient()
   const files = await api.get(
     `${repoRoute(ApiRouteTemplates.repoFiles, data)}?${new URLSearchParams({ view: data.view })}`,
-    arrayOf(apiValidators.RepoFileResponse),
+    arrayOf(RepoFileResponseValidator),
     { auth: 'optional', signal },
   )
 
@@ -38,12 +44,12 @@ export async function loadRepoLiveStateForRequest(data: RepoParams) {
   const [repo, github] = await Promise.all([
     api.get(
       repoRoute(ApiRouteTemplates.repo, data),
-      apiValidators.RepoSummaryResponse,
+      RepoSummaryResponseValidator,
       { auth: 'optional' },
     ),
     loadOptionalResource(() => api.get(
       repoRoute(ApiRouteTemplates.repoGitHub, data),
-      apiValidators.GitHubConnectionResponse,
+      GitHubConnectionResponseValidator,
       { auth: 'optional' },
     )),
   ])
@@ -57,7 +63,7 @@ export async function loadRepoFileForRequest(
   const api = createApiClient()
   return api.get(
     `${repoRoute(ApiRouteTemplates.repoFileContent, data)}?${new URLSearchParams({ path: data.path, view: data.view })}`,
-    apiValidators.RepoFileContentResponse,
+    RepoFileContentResponseValidator,
     { auth: 'optional', signal },
   )
 }
@@ -68,7 +74,7 @@ export async function loadRepoDependenciesForRequest(
 ): Promise<RepositoryDependencyCheckResponse> {
   return createApiClient().get(
     repoRoute(ApiRouteTemplates.repoDependencies, data),
-    apiValidators.RepositoryDependencyCheckResponse,
+    RepositoryDependencyCheckResponseValidator,
     { auth: 'required', maxResponseBytes: 8 * 1024 * 1024, signal },
   )
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useSyncExternalStore } from 'react'
 import type { CachedResourceStore } from './cached-resource'
 
 type CachedResourceState<T extends object> =
@@ -37,11 +37,14 @@ export function useCachedResource<T extends object>({
     : resource.getServerSnapshot(), [identity, resource])
   const snapshot = useSyncExternalStore(subscribe, read, resource.getServerSnapshot)
 
+  useLayoutEffect(() => {
+    if (enabled && identity && initialValue) resource.seed(identity, initialValue, version)
+  }, [enabled, identity, initialValue, resource, version])
+
   useEffect(() => {
     if (!enabled || !identity) return
-    if (initialValue) resource.seed(identity, initialValue, version)
     void resource.ensure(identity, version, load)
-  }, [enabled, identity, initialValue, load, resource, snapshot.stale, version])
+  }, [enabled, identity, load, resource, snapshot.pending, snapshot.stale, version])
 
   const retry = useCallback(() => {
     if (!identity) return

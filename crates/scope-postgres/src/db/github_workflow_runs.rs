@@ -344,50 +344,6 @@ impl RepositoryStore {
         Ok(result.rows_affected() == 1)
     }
 
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_runs_for_check_suites"))]
-    pub async fn github_workflow_runs_for_check_suites(
-        &self,
-        repo_id: &str,
-        github_repository_id: u64,
-        check_suite_ids: &[u64],
-    ) -> Result<Vec<(u64, u64)>, PostgresError> {
-        if check_suite_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let suites = check_suite_ids
-            .iter()
-            .map(|id| u64_to_i64(*id, "GitHub check suite id"))
-            .collect::<Result<Vec<_>, _>>()?;
-        self.db
-            .query_all_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT check_suite_id, github_run_id FROM scope_github_workflow_runs
-                  WHERE repo_id = $1 AND github_repository_id = $2
-                    AND check_suite_id = ANY($3)",
-                [
-                    repo_id.into(),
-                    u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
-                    suites.into(),
-                ],
-            ))
-            .await
-            .map_err(PostgresError::internal)?
-            .into_iter()
-            .map(|row| {
-                let suite: i64 = row
-                    .try_get("", "check_suite_id")
-                    .map_err(PostgresError::internal)?;
-                let run: i64 = row
-                    .try_get("", "github_run_id")
-                    .map_err(PostgresError::internal)?;
-                Ok((
-                    i64_to_u64(suite, "GitHub check suite id")?,
-                    i64_to_u64(run, "GitHub workflow run id")?,
-                ))
-            })
-            .collect()
-    }
-
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_names"))]
     pub async fn github_workflow_names(
         &self,
@@ -538,3 +494,45 @@ impl WorkflowRunRow {
 
 #[cfg(test)]
 mod tests;
+
+pub(super) async fn github_workflow_runs_for_check_suites<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    github_repository_id: u64,
+    check_suite_ids: &[u64],
+) -> Result<Vec<(u64, u64)>, PostgresError> {
+    if check_suite_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let suites = check_suite_ids
+        .iter()
+        .map(|id| u64_to_i64(*id, "GitHub check suite id"))
+        .collect::<Result<Vec<_>, _>>()?;
+    conn.query_all_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT check_suite_id, github_run_id FROM scope_github_workflow_runs
+                  WHERE repo_id = $1 AND github_repository_id = $2
+                    AND check_suite_id = ANY($3)",
+        [
+            repo_id.into(),
+            u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
+            suites.into(),
+        ],
+    ))
+    .await
+    .map_err(PostgresError::internal)?
+    .into_iter()
+    .map(|row| {
+        let suite: i64 = row
+            .try_get("", "check_suite_id")
+            .map_err(PostgresError::internal)?;
+        let run: i64 = row
+            .try_get("", "github_run_id")
+            .map_err(PostgresError::internal)?;
+        Ok((
+            i64_to_u64(suite, "GitHub check suite id")?,
+            i64_to_u64(run, "GitHub workflow run id")?,
+        ))
+    })
+    .collect()
+}

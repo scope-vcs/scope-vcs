@@ -166,6 +166,85 @@ async fn finished_test(state: &AppState, fake: &FakeGitHub, main: &str, run_id: 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn request_check_deliveries_refresh_a_running_setup_test_of_the_same_commit() {
+    let (state, fake, main) = connected_repository("github-setup-request-checks").await;
+    let request_id = "req_setup_commit";
+    super::super::requests::create_owner_request(&state, request_id, &main).await;
+    let requests = state.metadata.requests();
+    requests
+        .record_request_checks(scope_postgres::db::RecordRequestChecksCommand {
+            expected_canonical_main_oid: requests.request_check_base(TEST_REPO_ID).await.unwrap(),
+            repository_incarnation: state
+                .metadata
+                .repositories()
+                .repository_record(TEST_REPO_ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
+            evaluation: scope_domain::requests::RequestCheckEvaluation::started(
+                request_id,
+                &main,
+                vec![scope_domain::requests::RequestCheck::GitHub {
+                    name: "test".into(),
+                }],
+                unix_now(),
+            )
+            .unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+            push_to_github: false,
+        })
+        .await
+        .unwrap();
+    github_request(&state, "POST", "/setup-check", &bearer_header()).await;
+    push_pass(&state, unix_now()).await;
+    let running = workflow_run(11, SETUP_BRANCH, &main, None);
+    fake.report_workflow_runs(vec![running.clone()]);
+    deliver_workflow_run(&state, &running).await;
+    let before = setup_check(&state).await;
+    assert_eq!(before["state"], "waiting");
+    assert_eq!(before["check_names"], serde_json::json!([]));
+
+    fake.report_check_runs(&main, vec![suite_check_run(1, "test", &main, None, 11)]);
+    let mut events = state.repo_events.subscribe(TEST_REPO_ID);
+    let delivery = webhook(
+        &state,
+        "check_run",
+        serde_json::json!({
+            "action": "created",
+            "repository": { "id": GITHUB_REPOSITORY_ID, "full_name": GITHUB_FULL_NAME },
+            "check_run": { "id": 1, "head_sha": main },
+        }),
+        WEBHOOK_SECRET,
+    )
+    .await;
+    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
+    let after = setup_check(&state).await;
+    assert_eq!(after["state"], "waiting");
+    assert_eq!(after["check_names"], serde_json::json!(["test"]));
+    let mut request_refreshed = false;
+    let mut settings_refreshed = false;
+    while let Ok(event) = events.try_recv() {
+        match event.kind {
+            crate::repo_events::RepoChangeKind::RequestStateChanged {
+                request_id: changed,
+                ..
+            } if changed == request_id => request_refreshed = true,
+            crate::repo_events::RepoChangeKind::RepositoryChanged { .. } => {
+                settings_refreshed = true
+            }
+            _ => {}
+        }
+    }
+    assert!(request_refreshed, "the associated request must refresh");
+    assert!(
+        settings_refreshed,
+        "setup check names must refresh while workflows run"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn testing_unchanged_main_again_waits_for_its_own_runs() {
     let (state, fake, main) = connected_repository("github-setup-again").await;
     let earlier_run_started_at = finished_test(&state, &fake, &main, 11).await;

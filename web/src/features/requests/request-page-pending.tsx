@@ -6,16 +6,14 @@ import {
   type LineSkeletonLength,
   type TextSkeletonLength,
 } from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
-import { useRef } from 'react'
 import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'
 import { RequestChecksPending } from './request-checks-pending'
 import { RequestDetailsSkeleton } from './request-details-layout'
 import { ChildRoutesPending } from '@/components/child-routes-pending'
 import { RequestChangesScreen } from './request-changes-screen'
-import { useDetailPaneRail } from './use-detail-pane-rail'
+import './request-detail.css'
 import { DiffSkeleton } from '@/features/review/diff-skeleton'
 
 const PENDING_THREADS: { id: string; length: LineSkeletonLength }[] = [
@@ -32,11 +30,9 @@ const PENDING_CHANGES: { id: string; length: TextSkeletonLength }[] = [
 
 export function RequestDetailPagePending() {
   const { isSignedIn } = useAuth()
-  const paneRef = useRef<HTMLDivElement>(null)
-  const rail = useDetailPaneRail(paneRef)
   return (
     <PendingSurface label="Loading request">
-      <div className="request-detail-pane w-full" ref={paneRef}>
+      <div className="request-detail-pane w-full">
         <header className="request-detail-header border-b border-border px-5 pb-4 pt-6 sm:px-6 lg:px-8">
           <TextSkeleton length="xlong" size="heading" />
           <div className="request-detail-header-secondary mt-4">
@@ -47,7 +43,7 @@ export function RequestDetailPagePending() {
             </div>
             <div className="request-detail-header-actions flex min-w-0 items-center justify-end gap-2">
               <BlockSkeleton className="h-8 w-[6.5rem]" />
-              {rail ? null : <BlockSkeleton className="h-8 w-24" />}
+              <BlockSkeleton className="request-details-trigger h-8 w-24" />
               {isSignedIn ? (
                 <>
                   <BlockSkeleton className="hidden h-8 w-20 min-[701px]:block" />
@@ -61,7 +57,7 @@ export function RequestDetailPagePending() {
           <BlockSkeleton className="size-8" />
         </div>
         <RequestChecksPending />
-        <div className={cn(rail && 'grid grid-cols-[minmax(0,1fr)_300px]')}>
+        <div className="request-detail-layout">
           <div className="request-detail-document pt-4">
             <section className="min-w-0 border-b border-border px-5 pb-5 lg:px-7">
               <TextSkeleton className="h-6 py-1" length="xlong" />
@@ -73,11 +69,9 @@ export function RequestDetailPagePending() {
               />
             </div>
           </div>
-          {rail ? (
-            <aside className="min-w-0 border-l border-border">
-              <RequestDetailsSkeleton />
-            </aside>
-          ) : null}
+          <aside className="request-details-rail min-w-0 border-l border-border">
+            <RequestDetailsSkeleton />
+          </aside>
         </div>
         {isSignedIn ? (
           <div className="fixed inset-x-0 bottom-0 z-30 flex justify-end gap-2 border-t border-border bg-background px-3 py-3 min-[701px]:hidden">

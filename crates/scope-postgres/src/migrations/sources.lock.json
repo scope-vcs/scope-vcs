@@ -39,5 +39,6 @@
   "m0079_request_views.rs": "24c444f119a216311660b922d225e58b0fa72df2a556163188c85357633cd909",
   "m0080_github_workflow_job_reads.rs": "8d9167e21849721fad342545777ab76bc15170d7ee092b1b56f69d4515e70f79",
   "m0081_github_job_log_reads.rs": "ba13cdca3037087fefc8ca8c5ff8690c37778f116db3c92429333216f630e540",
-  "m0082_github_workflow_run_list.rs": "8a255831338dfe463e714ee0a58ac589ed7d7c2a584e76a7c63f1f96c95e120b"
+  "m0082_github_workflow_run_list.rs": "8a255831338dfe463e714ee0a58ac589ed7d7c2a584e76a7c63f1f96c95e120b",
+  "m0083_request_workflow_changes.rs": "8c10a361a8ba33c454685a236582e853f91dc76eb3ad37067991eacd98081b2a"
 }

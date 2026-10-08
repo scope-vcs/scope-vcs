@@ -4,7 +4,7 @@ use super::{
     integer_columns::{i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u64_to_i64},
 };
 use crate::error::PostgresError;
-use scope_domain::requests::{GitHubCheckRun, RequestCheckEvaluation};
+use scope_domain::requests::{GitHubCheckRun, Request, RequestCheckEvaluation};
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait, Value,
 };
@@ -182,6 +182,29 @@ impl RequestStore {
                 .map_err(PostgresError::internal)?,
             "GitHub check read time",
         )
+    }
+
+    pub async fn requests_testing_github_commit(
+        &self,
+        repo_id: &str,
+        commit_oid: &str,
+    ) -> Result<Vec<Request>, PostgresError> {
+        super::entities::request::Model::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT request.* FROM scope_requests request
+             JOIN scope_request_check_evaluations evaluation
+               ON request.id = evaluation.request_id AND request.head_oid = evaluation.head_oid
+             WHERE request.repo_id = $1 AND evaluation.tested_oid = $2
+               AND evaluation.checks @> '[{\"provider\":\"github\"}]'::jsonb
+             ORDER BY request.id",
+            [repo_id.into(), commit_oid.into()],
+        ))
+        .all(self.db.as_ref())
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(super::entities::request::Model::try_into_domain)
+        .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "current_github_evaluations_testing"))]

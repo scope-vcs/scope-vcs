@@ -4,14 +4,21 @@ import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerend
 import type { ApproveRequestChecksInput, ReviewFileDiff, RequestParams } from './types'
 import type {
   RequestChecksResponse,
-  RequestDetailResponse,
   RequestQueuePageResponse,
   RequestRatingResponse,
   RequestRatingsResponse,
   RequestRevisionListResponse,
 } from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
-import { apiValidators } from './validators.generated'
+import {
+  RequestChecksResponseValidator,
+  RequestQueuePageResponseValidator,
+  RequestRatingResponseValidator,
+  RequestRatingsResponseValidator,
+  RequestRevisionListResponseValidator,
+  RequestStateResponseValidator,
+  ReviewFileDiffResponseValidator,
+} from './validators.generated'
 import type { LoadRequestQueueInput } from './request-queue-input'
 
 export async function loadRequestQueueForRequest(
@@ -20,28 +27,7 @@ export async function loadRequestQueueForRequest(
 ): Promise<RequestQueuePageResponse> {
   return createApiClient().get(
     requestQueuePath(data),
-    apiValidators.RequestQueuePageResponse,
-    { auth: 'optional', signal },
-  )
-}
-
-export async function loadRequestForRequest(
-  data: RequestParams,
-): Promise<RequestDetailResponse> {
-  return createApiClient().get(
-    requestPath(data),
-    apiValidators.RequestDetailResponse,
-    { auth: 'optional' },
-  )
-}
-
-export async function getRequestChecks(
-  data: RequestParams,
-  signal?: AbortSignal,
-): Promise<RequestChecksResponse> {
-  return createApiClient().get(
-    requestRoute(ApiRouteTemplates.repoRequestChecks, data),
-    apiValidators.RequestChecksResponse,
+    RequestQueuePageResponseValidator,
     { auth: 'optional', signal },
   )
 }
@@ -51,7 +37,7 @@ export async function approveRequestChecks(
 ): Promise<RequestChecksResponse> {
   return createApiClient().post(
     requestRoute(ApiRouteTemplates.repoRequestChecksApprove, data),
-    apiValidators.RequestChecksResponse,
+    RequestChecksResponseValidator,
     { auth: 'required', body: { expected_head_oid: data.expected_head_oid } },
   )
 }
@@ -63,11 +49,12 @@ export type RateRequestInput = RequestParams & {
 
 export async function loadRequestRatingsForRequest(
   data: RequestParams,
+  signal?: AbortSignal,
 ): Promise<RequestRatingsResponse> {
   return createApiClient().get(
     requestRoute(ApiRouteTemplates.repoRequestRatings, data),
-    apiValidators.RequestRatingsResponse,
-    { auth: 'optional' },
+    RequestRatingsResponseValidator,
+    { auth: 'optional', signal },
   )
 }
 
@@ -76,7 +63,7 @@ export async function rateRequestForRequest(
 ): Promise<RequestRatingResponse> {
   return createApiClient().post(
     requestRoute(ApiRouteTemplates.repoRequestRatings, data),
-    apiValidators.RequestRatingResponse,
+    RequestRatingResponseValidator,
     {
       auth: 'required',
       body: { reason: data.reason, score: data.score },
@@ -93,7 +80,7 @@ export async function loadRequestRevisionsForRequest(
   const path = requestRoute(ApiRouteTemplates.repoRequestRevisions, data)
   return createApiClient().get(
     search.size > 0 ? `${path}?${search}` : path,
-    apiValidators.RequestRevisionListResponse,
+    RequestRevisionListResponseValidator,
     { auth: 'optional' },
   )
 }
@@ -113,7 +100,7 @@ export async function loadRequestRevisionCommitFileDiffForRequest(
   )
   const diff = await createApiClient().get(
     `${path}?path=${encodeURIComponent(data.path)}`,
-    apiValidators.ReviewFileDiffResponse,
+    ReviewFileDiffResponseValidator,
     { auth: 'optional', signal },
   )
 
@@ -138,10 +125,6 @@ function requestQueuePath(data: LoadRequestQueueInput) {
   return `${path}?${search}`
 }
 
-function requestPath(data: RequestParams) {
-  return requestRoute(ApiRouteTemplates.repoRequest, data)
-}
-
 function requestRevisionCommitRoute(
   template: string,
   data: LoadRequestRevisionCommitInput,
@@ -153,4 +136,15 @@ function requestRevisionCommitRoute(
     request_id: data.request_id,
     revision_id: data.revision_id,
   })
+}
+
+export async function loadRequestStateForRequest(
+  data: RequestParams,
+  signal?: AbortSignal,
+) {
+  return createApiClient().get(
+    requestRoute(ApiRouteTemplates.repoRequestState, data),
+    RequestStateResponseValidator,
+    { auth: 'optional', signal },
+  )
 }

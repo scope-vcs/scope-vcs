@@ -1,15 +1,11 @@
 import type { RequestAutoMergeResponse } from '@/api/types.generated'
-import {
-  resourceErrorMessage,
-  useCachedResource,
-  useRetryOnReconnect,
-} from '@/lib/use-cached-resource'
+import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { useCallback, useState } from 'react'
 import type {
   AuthorizeRequestAutoMergeInput,
   CancelRequestAutoMergeInput,
 } from './request-auto-merge-api'
-import { requestAutoMergeResource } from './request-auto-merge-resource'
+import { reconcileRequestState, requestStateResource } from './request-state-resource'
 
 type AuthorizeInput = Pick<
   AuthorizeRequestAutoMergeInput,
@@ -22,27 +18,20 @@ export type RequestAutoMergeController = {
   cancel: (input: CancelInput) => Promise<boolean>
   error: string | null
   pending: 'authorize' | 'cancel' | null
-  status: RequestAutoMergeResponse | null
+  status: RequestAutoMergeResponse
 }
 
 export function useRequestAutoMerge({
   authorize,
   cancel,
   identity,
-  load,
+  status,
 }: {
   authorize: (input: AuthorizeInput) => Promise<RequestAutoMergeResponse>
   cancel: (input: CancelInput) => Promise<RequestAutoMergeResponse>
   identity: string
-  load: (signal: AbortSignal) => Promise<RequestAutoMergeResponse>
+  status: RequestAutoMergeResponse
 }): RequestAutoMergeController {
-  const resource = useCachedResource({
-    fallbackError: 'Auto-merge status is unavailable.',
-    identity,
-    load,
-    resource: requestAutoMergeResource,
-  })
-  useRetryOnReconnect(resource)
   const [pending, setPending] = useState<'authorize' | 'cancel' | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
 
@@ -50,15 +39,12 @@ export function useRequestAutoMerge({
     action: 'authorize' | 'cancel',
     mutate: () => Promise<RequestAutoMergeResponse>,
   ) => {
-    const snapshot = requestAutoMergeResource.getSnapshot(identity)
+    const snapshot = requestStateResource.getSnapshot(identity)
     setPending(action)
     setMutationError(null)
     try {
-      requestAutoMergeResource.writeIfUnchanged(
-        identity,
-        snapshot,
-        await mutate(),
-      )
+      const result = await mutate()
+      reconcileRequestState(identity, snapshot, (state) => ({ ...state, auto_merge: result }))
       return true
     } catch (cause) {
       setMutationError(resourceErrorMessage(
@@ -69,6 +55,7 @@ export function useRequestAutoMerge({
       ))
       return false
     } finally {
+      requestStateResource.invalidate(identity)
       setPending(null)
     }
   }, [identity])
@@ -85,8 +72,8 @@ export function useRequestAutoMerge({
   return {
     authorize: runAuthorize,
     cancel: runCancel,
-    error: mutationError ?? resource.error,
+    error: mutationError,
     pending,
-    status: resource.value,
+    status,
   }
 }

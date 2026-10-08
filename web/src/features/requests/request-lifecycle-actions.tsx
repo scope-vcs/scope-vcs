@@ -74,8 +74,8 @@ export function RequestLifecycleActions({
           request={request}
           viewerId={viewerId}
         />
-        {checksHoldMerge && !autoMerge.status?.can_enable &&
-          autoMerge.status?.intent?.status !== 'Active' ? (
+        {checksHoldMerge && !autoMerge.status.can_enable &&
+          autoMerge.status.intent?.status !== 'Active' ? (
           <Button disabled size="sm" type="button" variant="success">
             Merge
           </Button>

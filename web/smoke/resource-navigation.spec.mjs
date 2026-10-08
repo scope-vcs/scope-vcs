@@ -53,6 +53,35 @@ test('request queue and summary are reused across actual child-route navigation'
   })
 })
 
+test('reopening a request renders its retained discussion in the first loaded frame', async () => {
+  await withPage(`${requestRepoPath}/requests/req_demo_ready`, async page => {
+    const discussion = page.locator('.request-detail-document article[id^="discussion-"]').first()
+    await discussion.waitFor()
+    const discussionId = await discussion.getAttribute('id')
+    const title = await page.locator('.request-detail-pane h1').textContent()
+    const neutral = page.locator(`a[href="${requestRepoPath}/requests/req_demo_neutral"]`).first()
+    if (!await neutral.count()) await page.getByRole('button', { name: /^Done/ }).click()
+    await neutral.evaluate(link => link.click())
+    await page.waitForFunction(() => document.querySelector('.request-detail-pane h1')?.textContent === 'Document the cache tradeoff')
+    await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
+    const firstFrame = await page.evaluate(({ discussionId, href, title }) => new Promise(resolve => {
+      function sample() {
+        if (document.querySelector('.request-detail-pane h1')?.textContent !== title) {
+          requestAnimationFrame(sample)
+          return
+        }
+        resolve({
+          loaded: Boolean(document.getElementById(discussionId)?.getClientRects().length),
+          pending: [...document.querySelectorAll('.request-detail-document output')].some(output => output.textContent === 'Loading request discussion'),
+        })
+      }
+      requestAnimationFrame(sample)
+      document.querySelector(`a[href="${href}"]`).click()
+    }), { discussionId, href: `${requestRepoPath}/requests/req_demo_ready`, title })
+    assert.deepEqual(firstFrame, { loaded: true, pending: false })
+  })
+})
+
 test('repository events received off-page refresh retained activity without blanking it', async () => {
   let requests = 0
   let originalMessage = ''
