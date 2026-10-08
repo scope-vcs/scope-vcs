@@ -7,7 +7,7 @@ import { after, afterEach, before, test } from 'node:test'
 import { chromium } from 'playwright'
 import { assertNoHorizontalOverflow, baseUrl, waitForClientHydration } from '../smoke/browser-smoke.mjs'
 import {
-  apiFetch, apiUrl, cliActor, closeSession, collaborators, devSessionToken, provisionClerkUsers, signIn, signInThroughForm,
+  apiFetch, apiUrl, cliActor, closeSession, collaborators, devSessionToken, provisionClerkUsers, signIn, signInThroughForm, waitForSignedIn,
 } from './actors.mjs'
 
 const runId = `${Date.now().toString(36)}-${process.pid}`
@@ -266,6 +266,7 @@ test('a revoked maintainer cannot approve checks from an open page', async () =>
   const { page } = web.maintainer
   await holdLiveUpdates(page)
   await openRequest(page, id)
+  await waitForSignedIn(page, collaborators.maintainer)
   const approve = page.getByRole('button', { name: 'Approve checks' })
   await waitForClientHydration(approve)
 
