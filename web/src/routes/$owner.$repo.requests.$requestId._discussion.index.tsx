@@ -16,12 +16,12 @@ import {
   resolveRequestDiscussionForRequest,
 } from '@/features/requests/request-discussion-api'
 import type { RequestDiscussionPage } from '@/features/requests/request-discussion-types'
+import { RequestDiscussionPageBoundary } from '@/features/requests/request-discussion-page-boundary'
 import { RequestDiscussionView } from '@/features/requests/request-discussion-view'
 import { RequestDiscussionPending } from '@/features/requests/request-page-pending'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
-import { Await, createFileRoute, getRouteApi } from '@tanstack/react-router'
+import { createFileRoute, getRouteApi } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { Suspense } from 'react'
 import { useRequestState } from '@/features/requests/request-state-context'
 import { loadRequestDiscussionChanges } from '@/routes/-request-discussion-actions'
 import { MessageSquare } from 'lucide-react'
@@ -99,9 +99,9 @@ function RequestDiscussionRoute() {
       resolveDiscussion={(data) => resolveDiscussion({ data })}
     />
   )
-  return discussionPage instanceof Promise ? (
-    <Suspense fallback={<RequestDiscussionPending />}>
-      <Await promise={discussionPage}>{renderDiscussion}</Await>
-    </Suspense>
-  ) : renderDiscussion(discussionPage)
+  return (
+    <RequestDiscussionPageBoundary fallback={<RequestDiscussionPending />} page={discussionPage}>
+      {renderDiscussion}
+    </RequestDiscussionPageBoundary>
+  )
 }
