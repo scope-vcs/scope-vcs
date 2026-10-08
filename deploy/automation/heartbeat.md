@@ -1,44 +1,51 @@
-# Deployment watcher alerts
+# Deployment supervision alerts
 
-After a complete successful poll, Surface writes a UTC timestamp to the repository
-Actions variable `SCOPE_DEPLOYMENT_WATCHER_HEARTBEAT` through its existing `gh`
-login. Failed or incomplete polls do not renew the heartbeat.
+The external GitHub observer runs Python every fifteen minutes. It checks main's
+dated daily Release independently and alerts after five minutes without a timely
+start. It also checks bounded-session progress, deadlines, retained repair
+ownership, and active or failed release attempts not admitted by supervision.
+An idle daytime is healthy even when its last progress is hours old. There is
+no all-day heartbeat requirement or recurring model poll.
 
-The `Deployment watcher heartbeat` workflow runs outside Surface every fifteen
-minutes. It opens one issue assigned to `adamblumoff` when the timestamp is missing,
-invalid, or more than twenty minutes old. A recent timestamp closes that outage
-issue. It also fails the workflow so GitHub Actions notifications can report the
-failure. GitHub controls delivery according to the recipient's notification
-settings. Scheduled Actions can be delayed or dropped, so this is a best-effort
-external alert, not a twenty-minute delivery guarantee.
+A completed session cycle publishes bounded JSON to
+`SCOPE_DEPLOYMENT_SESSION_STATUS`: lifecycle status, deadline, progress time,
+active releases and repair owners, activation date, daily audit boundary, and
+recent observed run attempts. Failed cycles save the failing operation locally
+and do not renew successful progress. A crash restart retains the deadline.
+A running session more than twenty minutes without completed progress, a deadline
+exceeded by more than five minutes, or an unconfirmed owner after escalation is
+unhealthy. The observer creates one assigned outage issue and closes it after a
+healthy check. Dated start issues remain open for investigation; a late run does
+not erase the failure. A main Release without supervision after twenty minutes
+also alerts, including a missed event for a completed failed run or new attempt.
+Recent forwarder run titles provide durable GitHub event receipts for completed
+retries whose original creation date lies outside the recent Release scan.
+The observer validates the forwarder identity and independently reads the Release.
 
-The workflow runs a Python check on a standard runner. It does not build the
-application, run CI after merges, or launch another deployment agent. Its schedule
-adds roughly 96 short runner jobs per day; actual billed time depends on GitHub's
-runner billing minimum and repository allowance.
+During installation, the existing minute timer keeps publishing
+`SCOPE_DEPLOYMENT_WATCHER_HEARTBEAT`. Until the first bounded session publishes its
+status, the external workflow checks that operating owner's timestamp. Rollback
+removes the session-status variable before restoring the timer. This transition
+keeps external observation available while tunnel and signing setup are pending.
 
-`heartbeat.alert(release_id, reason)` creates one assigned issue per release after
-bounded recovery fails. The watcher records the returned URL only after GitHub
-accepts the request and retries failed requests. Supported reason codes are
-`attempts_exhausted`, `deadline_exceeded`, `agent_unavailable`, `approval_required`,
-and `verification_failed`. Raw provider output is never copied into public issues.
-Release alerts link to the release and direct the maintainer to Surface's watcher
-state and T3 conversation for details. The optional `recoveries`, `thread_id`, and
-`provider` arguments include the number of recovery attempts and the exact
-conversation to inspect. They accept only bounded structured values. Closing a
-release issue does not create a new alert for that same release.
+The workflow runs no model, build, or post-merge CI. GitHub may delay scheduled
+jobs and controls notifications through the recipient's settings; alerts are
+best effort. Its schedule is roughly 96 short runner jobs per day, with billing
+subject to GitHub's runner minimum and repository allowance.
 
-Install `heartbeat.py` alongside `deployment_watcher.py` on Surface. The watcher
-needs its existing repository write access to update Actions variables and create
-assigned issues. The external workflow only needs repository content read and
-issue write permissions. No AWS credentials or new secrets are required. The
-existing AWS security email topic was considered, but the available AWS session
-only permits metadata audits; adding an alarm or a publisher would require an
-authenticated infrastructure administrator.
+Release escalation uses `heartbeat.alert` and one marker per release, even if
+its earlier issue was closed. Reasons include exhausted recovery, deadline,
+agent availability, approval, and failed verification. Context is restricted to
+recovery count, provider, numeric run ID, and T3 UUID. Raw provider output,
+credentials, and webhook signing values never appear in public issues.
 
-Validate locally with `python3 -m unittest discover -s deploy/automation -p 'test_heartbeat.py'`.
-After deploying the watcher and pushing the workflow to main, dispatch
-`deployment-watcher-heartbeat.yml` once and confirm it passes with a recent
-repository heartbeat. Watcher unit tests exercise outage creation, deduplication,
-recovery closure, failed publication, and provider-error redaction without sending
-test alerts to the maintainer.
+The host uses its existing GitHub login for dispatch, Actions-variable updates,
+and assigned issues. The observer requires content read and issue write only.
+The separate event forwarder requires Actions read and a shared HMAC secret.
+T3 Connect authenticates that signature before dispatching a task prompt; see
+[OPERATIONS.md](OPERATIONS.md) for secret setup and safe owner cutover.
+
+After installation, manually run the external heartbeat workflow and verify its
+actual GitHub result. Local tests cover idle and active health, missed starts,
+event gaps, deadlines, issue deduplication, recovery closure, and redaction with
+mocked GitHub calls, without sending test alerts.

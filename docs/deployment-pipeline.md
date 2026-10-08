@@ -104,10 +104,19 @@ never recorded as a release receipt. This option cannot be combined with
 
 ## Dispatch and supervision
 
-The deployment watcher is the sole daily scheduler; GitHub cron is removed.
-[The watcher operations guide](../deploy/automation/OPERATIONS.md) describes the
-dispatch intent, alerting, correction chains, and the machine cutover that
-keeps cron and the scheduler from running together.
+A native T3 daily task at 02:08 America/Chicago is the sole automatic Release
+scheduler; GitHub cron remains removed. A signed, code-only GitHub Actions
+forwarder delivers relevant main Release events to T3 Connect for manual and
+other releases. Each trigger starts or joins bounded deterministic Python
+supervision. Healthy releases need no repair agent; failures use one preserved
+repair owner, explicit corrective chains, and independently verified deployment
+receipts. A Monday 09:00 task handles image pins with durable release deferral.
+
+The external GitHub observer checks expected daily starts and active-session
+progress. Idle daytime needs no recurring heartbeat or model prompt. The
+[operations guide](../deploy/automation/OPERATIONS.md) describes signing,
+observable process deadlines, dispatch intents, failure diagnostics, and the
+verified single-owner cutover from the installed systemd minute timer.
 
 Validate the next staging transition and compare its per-job timing with the audit
 before claiming a production speedup. Local provider simulations cover failure and

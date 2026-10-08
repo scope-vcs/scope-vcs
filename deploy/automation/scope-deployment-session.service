@@ -1,0 +1,16 @@
+[Unit]
+Description=Bounded Scope deployment supervision
+After=network-online.target t3code.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+WorkingDirectory=%h/code/scope-vcs
+ExecStart=/usr/bin/python3 -B %h/.local/share/scope-automation/bounded-release-supervisor/deployment_session.py run
+RuntimeMaxSec=15000
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=30
+RestartPreventExitStatus=1 2 78
+UMask=0077

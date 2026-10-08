@@ -28,50 +28,60 @@ class ImagePinRefreshTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+    def poll(self, release_open, now, requested=False):
+        return refresh.poll(release_open, now, requested_weeks=(refresh.current_week(now)[0],) if requested else ())
+
     def weeks(self):
         return json.loads(self.path.read_text())["weeks"]
 
     def test_starts_one_agent_per_week_from_monday_morning_in_chicago(self):
-        refresh.poll(False, BEFORE_DUE)
+        self.poll(False, BEFORE_DUE, requested=True)
         self.start.assert_not_called()
-        refresh.poll(False, DUE)
-        refresh.poll(False, utc("2026-10-08T02:00:00Z"))
+        self.poll(False, DUE, requested=True)
+        self.poll(False, utc("2026-10-08T02:00:00Z"), requested=True)
         self.start.assert_called_once()
         week, intent = self.start.call_args.args
         self.assertEqual(week, "2026-W41")
         self.assertEqual(self.weeks()["2026-W41"]["started_at"], "2026-10-05T14:00:00Z")
-        refresh.poll(False, utc("2026-10-12T14:00:00Z"))
+        self.poll(False, utc("2026-10-12T14:00:00Z"), requested=True)
         self.assertEqual(self.start.call_count, 2)
         self.assertNotEqual(self.start.call_args.args[1]["thread_id"], intent["thread_id"])
 
     def test_waits_for_an_open_release_investigation_including_before_a_retry(self):
-        refresh.poll(True, DUE)
+        self.poll(True, DUE, requested=True)
         self.start.assert_not_called()
-        self.assertFalse(self.path.exists())
+        self.assertIn("deferred_at", self.weeks()["2026-W41"])
         self.start.side_effect = RuntimeError("T3 unavailable")
-        refresh.poll(False, utc("2026-10-05T16:30:00Z"))
-        refresh.poll(True, utc("2026-10-05T16:31:00Z"))
+        self.poll(False, utc("2026-10-05T16:30:00Z"), requested=True)
+        self.poll(True, utc("2026-10-05T16:31:00Z"), requested=True)
         self.start.assert_called_once()
-        refresh.poll(False, utc("2026-10-05T16:32:00Z"))
+        self.poll(False, utc("2026-10-05T16:32:00Z"), requested=True)
         self.assertEqual(self.start.call_count, 2)
 
     def test_failed_start_retries_the_same_thread_and_reports_once_after_the_grace_period(self):
         self.start.side_effect = RuntimeError("T3 unavailable")
-        refresh.poll(False, DUE)
-        refresh.poll(False, utc("2026-10-05T14:09:00Z"))
+        self.poll(False, DUE, requested=True)
+        self.poll(False, utc("2026-10-05T14:09:00Z"), requested=True)
         self.alert.assert_not_called()
         self.alert.side_effect = [RuntimeError("GitHub unavailable"), "issue-url"]
-        refresh.poll(False, utc("2026-10-05T14:10:00Z"))
-        refresh.poll(False, utc("2026-10-05T14:11:00Z"))
-        refresh.poll(False, utc("2026-10-05T14:11:30Z"))
+        with self.assertRaises(RuntimeError):
+            self.poll(False, utc("2026-10-05T14:10:00Z"), requested=True)
+        self.poll(False, utc("2026-10-05T14:11:00Z"), requested=True)
+        self.poll(False, utc("2026-10-05T14:11:30Z"), requested=True)
         self.assertEqual(self.alert.call_count, 2)
         self.assertEqual(self.weeks()["2026-W41"]["alert_url"], "issue-url")
         self.start.side_effect = None
-        refresh.poll(False, utc("2026-10-05T14:12:00Z"))
-        refresh.poll(False, utc("2026-10-05T14:13:00Z"))
-        self.assertEqual(self.start.call_count, 6)
+        self.poll(False, utc("2026-10-05T14:12:00Z"), requested=True)
+        self.poll(False, utc("2026-10-05T14:13:00Z"), requested=True)
+        self.assertEqual(self.start.call_count, 4)
         self.assertEqual(len({call.args[1]["thread_id"] for call in self.start.call_args_list}), 1)
-        self.assertEqual(self.weeks()["2026-W41"]["started_at"], "2026-10-05T14:12:00Z")
+        self.assertNotIn("started_at", self.weeks()["2026-W41"])
+
+    def test_deferral_survives_restart_and_drains_without_another_weekly_trigger(self):
+        self.poll(True, DUE, requested=True)
+        self.poll(False, utc("2026-10-06T14:00:00Z"))
+        self.start.assert_called_once()
+        self.assertEqual(self.weeks()["2026-W41"]["started_at"], "2026-10-06T14:00:00Z")
 
 
 class StartTests(unittest.TestCase):

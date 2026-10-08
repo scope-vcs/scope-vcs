@@ -89,7 +89,7 @@ class T3Tests(unittest.TestCase):
 
     def test_authentication_errors_do_not_expose_diagnostics(self):
         with patch.object(runtime.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "secret output", "secret error")):
-            with self.assertRaisesRegex(RuntimeError, "^Cannot authenticate to local T3$"):
+            with self.assertRaisesRegex(RuntimeError, "^t3.auth-session: RuntimeError$"):
                 runtime.T3Client().__enter__()
 
     def test_http_redirects_do_not_forward_bearer_credentials(self):
@@ -173,7 +173,7 @@ class T3Tests(unittest.TestCase):
                 client.dispatch(command)
             client.rpc.close()
             server.join(timeout=3)
-        self.assertEqual(str(failure.exception), "T3 rejected run.interrupt: OrchestrationV2DispatchCommandError")
+        self.assertEqual(str(failure.exception), "t3.run-interrupt: RuntimeError")
         self.assertIn("GET /ws?orchestrationProtocol=2 HTTP/1.1", received["upgrade"])
         self.assertIn("Authorization: Bearer test-secret", received["upgrade"])
         self.assertEqual(received["request"], {"_tag": "Request", "id": "1", "tag": "orchestration.dispatchCommand",
@@ -231,7 +231,7 @@ class GitHubTests(unittest.TestCase):
 
     def test_github_error_does_not_expose_cli_diagnostics(self):
         with patch.object(runtime.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "secret output", "secret error")):
-            with self.assertRaisesRegex(RuntimeError, "^GitHub API request failed$"):
+            with self.assertRaisesRegex(RuntimeError, "^github.release-list: RuntimeError$"):
                 runtime.github("actions/runs")
 
 

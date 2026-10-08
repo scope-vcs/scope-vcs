@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 
 import argparse
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import os
 import re
 import subprocess
+import urllib.parse
 
 
 REPO = "scope-vcs/scope-vcs"
 VARIABLE = "SCOPE_DEPLOYMENT_WATCHER_HEARTBEAT"
+SESSION_VARIABLE = "SCOPE_DEPLOYMENT_SESSION_STATUS"
 REPOSITORY_MAINTAINER = "adamblumoff"
 OUTAGE = "<!-- scope-deployment-watch:heartbeat -->"
 
@@ -23,7 +25,11 @@ def gh(*args):
     return result.stdout.strip()
 
 
-def heartbeat(repo=REPO):
+def heartbeat(repo=REPO, *, status=None):
+    if status is not None:
+        value = json.dumps(status, separators=(",", ":"))
+        gh("variable", "set", SESSION_VARIABLE, "--repo", repo, "--body", value)
+        return value
     now = datetime.now(timezone.utc).isoformat()
     gh("variable", "set", VARIABLE, "--repo", repo, "--body", now)
     return now
@@ -99,6 +105,115 @@ def check(value, repo=REPO, max_age=1200, now=None):
     return False
 
 
+def session_health(value, now, max_age):
+    state = json.loads(value)
+    if not isinstance(state, dict):
+        return False
+    if state.get("status") not in {"idle", "running", "escalated"} or state.get("failure"):
+        return False
+    progress = datetime.fromisoformat(state["progress_at"].replace("Z", "+00:00"))
+    if progress.tzinfo is None or (progress - now).total_seconds() > 300:
+        return False
+    if state["status"] == "running":
+        deadline = datetime.fromisoformat(state["deadline_at"])
+        return deadline.tzinfo is not None and now <= deadline + timedelta(minutes=5) and (now - progress).total_seconds() <= max_age
+    return not state.get("repair_owners") and not state.get("releases")
+
+
+def release_runs(repo, since):
+    from deployment_policy import trusted_run
+    runs = {}
+    for status in ("", "in_progress", "queued", "waiting"):
+        page = 1
+        while True:
+            query = f"branch=main&per_page=100&page={page}" + (f"&status={status}" if status else "")
+            batch = json.loads(gh("api", f"repos/{repo}/actions/workflows/release.yml/runs?{query}"))["workflow_runs"]
+            for run in batch:
+                if trusted_run(run) and (not status or run["status"] == status):
+                    runs[str(run["id"])] = run
+            if len(batch) < 100 or not status and datetime.fromisoformat(batch[-1]["created_at"].replace("Z", "+00:00")) <= since:
+                break
+            page += 1
+    page = 1
+    targets = {}
+    while True:
+        query = urllib.parse.urlencode({"branch": "main", "per_page": 100, "page": page, "created": ">=" + since.isoformat()})
+        batch = json.loads(gh("api", f"repos/{repo}/actions/workflows/deployment-supervision-event.yml/runs?{query}"))["workflow_runs"]
+        for event in batch:
+            match = re.fullmatch(r"Supervise Release / ([1-9][0-9]*) / attempt ([1-9][0-9]*)", event.get("display_title", ""))
+            if (match and event.get("head_branch") == "main" and event.get("event") == "workflow_run"
+                    and event.get("path", "").split("@")[0] == ".github/workflows/deployment-supervision-event.yml"
+                    and event.get("repository", {}).get("full_name") == repo):
+                key = (int(match[1]), int(match[2]))
+                targets[key] = min(targets.get(key, event["created_at"]), event["created_at"])
+        if len(batch) < 100:
+            break
+        page += 1
+    for (run_id, attempt), seen_at in targets.items():
+        run = json.loads(gh("api", f"repos/{repo}/actions/runs/{run_id}"))
+        if trusted_run(run) and run["run_attempt"] >= attempt:
+            if run["run_attempt"] == attempt:
+                run["event_seen_at"] = seen_at
+            runs[str(run_id)] = run
+    return list(runs.values())
+
+
+def observe(value, repo=REPO, now=None, max_age=1200):
+    from deployment_scheduler import START_GRACE, alert_missed, local_date, scheduled_at
+    now = now or datetime.now(timezone.utc)
+    state = {}
+    try:
+        state = json.loads(value)
+        if not isinstance(state, dict):
+            raise ValueError("Session status must be an object")
+        healthy = session_health(value, now, max_age)
+    except (KeyError, ValueError, TypeError):
+        healthy = False
+        state = {}
+    day = local_date(now)
+    try:
+        audited = date.fromisoformat(state.get("daily_audited_on", day.isoformat()))
+        activated = date.fromisoformat(state.get("activated_on", day.isoformat()))
+    except (ValueError, TypeError):
+        audited = activated = day
+        healthy = False
+    session_ok = healthy
+    first = max(activated, min(audited + timedelta(days=1), day))
+    since = min(scheduled_at(first), now - timedelta(hours=24))
+    runs = release_runs(repo, since)
+    expected = first
+    while expected <= day:
+        intended = scheduled_at(expected)
+        timely = any(run.get("display_title") == f"Release / daily {expected.isoformat()}"
+                     and intended - timedelta(seconds=5) <= datetime.fromisoformat(run["created_at"].replace("Z", "+00:00")) <= intended + START_GRACE
+                     for run in runs)
+        if now >= intended + START_GRACE and not timely:
+            alert_missed(expected.isoformat())
+            healthy = False
+        expected += timedelta(days=1)
+    unobserved = [run for run in runs if (run["status"] != "completed" or run.get("conclusion") != "success") and
+                  (state.get("observed", {}).get(str(run["id"]), {}).get("attempt") != run["run_attempt"] or
+                   run["status"] != "completed" and state.get("status") != "running") and
+                  (run["status"] != "completed" or datetime.fromisoformat(
+                      max(run["created_at"], run.get("run_started_at") or "", run.get("event_seen_at", "")).replace("Z", "+00:00")) >= since) and
+                  now - datetime.fromisoformat(max(run["created_at"], run.get("run_started_at") or "",
+                      run.get("event_seen_at", "")).replace("Z", "+00:00")) >= timedelta(minutes=20)]
+    if not session_ok or unobserved:
+        ensure_issue(repo, OUTAGE, "Scope deployment session needs attention",
+                     "The T3 deployment session is missing, failed, stalled, or has not admitted an expected Release. "
+                     "Inspect session.json, triggers.json, signed webhook deliveries, T3 task execution, "
+                     "and scope-deployment-session.service. Idle daytime is healthy. See "
+                     "\"While Surface is offline\" in "
+                     f"https://github.com/{repo}/blob/main/deploy/automation/OPERATIONS.md.")
+        healthy = False
+    else:
+        for issue in issues(repo):
+            if OUTAGE in issue["body"]:
+                gh("issue", "close", str(issue["number"]), "--repo", repo,
+                   "--comment", "Expected supervision is healthy; idle time needs no polling heartbeat.")
+    return healthy
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Watcher heartbeat and deduplicated GitHub alerts, using the existing gh login.")
     parser.add_argument("command", choices=["check", "publish"])
@@ -107,4 +222,6 @@ if __name__ == "__main__":
     if args.command == "publish":
         heartbeat(args.repo)
     else:
-        raise SystemExit(0 if check(os.environ.get(VARIABLE, ""), args.repo) else 1)
+        value = os.environ.get(SESSION_VARIABLE, "")
+        healthy = observe(value, args.repo) if value else check(os.environ.get(VARIABLE, ""), args.repo)
+        raise SystemExit(0 if healthy else 1)

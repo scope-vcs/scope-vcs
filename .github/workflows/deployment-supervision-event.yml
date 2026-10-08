@@ -1,0 +1,34 @@
+name: Deployment supervision event
+run-name: Supervise Release / ${{ github.event.workflow_run.id || inputs.run_id }} / attempt ${{ github.event.workflow_run.run_attempt || 'probe' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Existing main Release run to verify signed delivery; never dispatches a release
+        required: true
+        type: string
+  workflow_run:
+    workflows: [Release]
+    branches: [main]
+    types: [requested, in_progress, completed]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  forward:
+    if: vars.SCOPE_DEPLOYMENT_WEBHOOK_URL != '' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - name: Forward the verified Release event to T3 Connect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCOPE_DEPLOYMENT_WEBHOOK_URL: ${{ vars.SCOPE_DEPLOYMENT_WEBHOOK_URL }}
+          SCOPE_DEPLOYMENT_WEBHOOK_SECRET: ${{ secrets.SCOPE_DEPLOYMENT_WEBHOOK_SECRET }}
+        run: python3 -B deploy/automation/deployment_webhook.py

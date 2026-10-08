@@ -10,6 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from deployment_diagnostics import operation
 
 REPOSITORY = "scope-vcs/scope-vcs"
 CHECKOUT = Path.home() / "code/scope-vcs"
@@ -62,11 +63,13 @@ def save_json(path: Path, value: dict) -> None:
 
 
 def github(path: str) -> dict | list:
-    result = subprocess.run(["gh", "api", f"repos/{REPOSITORY}/{path}"],
-                            capture_output=True, text=True, timeout=30)
-    if result.returncode:
-        raise RuntimeError("GitHub API request failed")
-    return json.loads(result.stdout)
+    name = "github.release-jobs" if "/jobs?" in path else "github.release-run" if path.startswith("actions/runs/") else "github.release-list"
+    with operation(name):
+        result = subprocess.run(["gh", "api", f"repos/{REPOSITORY}/{path}"],
+                                capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            raise RuntimeError("GitHub API request failed")
+        return json.loads(result.stdout)
 
 
 def jobs(run: dict) -> list[dict]:
@@ -161,12 +164,13 @@ class T3Client:
         if not isinstance(version, str) or not version or version in {".", ".."} or Path(version).name != version:
             raise ValueError("Invalid T3 runtime version")
         self.cli = T3_HOME / "runtime/versions" / version / "t3"
-        result = subprocess.run([str(self.cli), "auth", "session", "issue", "--base-dir", str(T3_HOME),
-                                 "--ttl", "5m", "--label", "Scope release supervisor", "--json"],
-                                capture_output=True, text=True, timeout=30)
-        if result.returncode:
-            raise RuntimeError("Cannot authenticate to local T3")
-        self.session = json.loads(result.stdout)
+        with operation("t3.auth-session"):
+            result = subprocess.run([str(self.cli), "auth", "session", "issue", "--base-dir", str(T3_HOME),
+                                     "--ttl", "5m", "--label", "Scope release supervisor", "--json"],
+                                    capture_output=True, text=True, timeout=30)
+            if result.returncode:
+                raise RuntimeError("Cannot authenticate to local T3")
+            self.session = json.loads(result.stdout)
         self.rpc = None
         self.request_id = 0
         return self
@@ -190,9 +194,16 @@ class T3Client:
             raise RuntimeError(f"T3 request failed with HTTP {error.code}") from None
 
     def shell(self) -> dict:
-        return self.request("/api/orchestration/shell")
+        with operation("t3.shell-snapshot"):
+            return self.request("/api/orchestration/shell")
 
     def dispatch(self, command: dict) -> dict:
+        name = {"thread.create": "t3.thread-create", "message.dispatch": "t3.message-dispatch",
+                "run.interrupt": "t3.run-interrupt"}.get(command["type"], "t3.command")
+        with operation(name):
+            return self.dispatch_command(command)
+
+    def dispatch_command(self, command: dict) -> dict:
         if self.rpc is None:
             self.rpc = WebSocket(self.origin, f"/ws?orchestrationProtocol={PROTOCOL_VERSION}",
                                  {"Authorization": "Bearer " + self.session["token"]})
