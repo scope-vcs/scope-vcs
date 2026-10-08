@@ -1,13 +1,11 @@
 import type { RepoParams } from '@/api/types'
 import type { RepositoryRunWorkflowListResponse } from '@/api/types.generated'
-import { cn } from '@/lib/utils'
+import { Select } from '@/components/ui/select'
 import { useNavigate } from '@tanstack/react-router'
 import {
   RUN_STATUS_FILTER_OPTIONS,
   type RunStatusFilter,
 } from './runs-filter-model'
-
-const SELECT_CLASS = 'h-8 rounded-md border border-input bg-secondary px-2 text-sm text-foreground shadow-[var(--shadow-card)] outline-none transition-colors focus-visible:border-ring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 export function RunsFilterBar({
   onStatusFilterChange,
@@ -29,9 +27,9 @@ export function RunsFilterBar({
   return (
     <div className="flex flex-wrap items-center gap-2">
       {showWorkflowFilter ? (
-        <select
+        <Select
           aria-label="Filter by workflow"
-          className={cn(SELECT_CLASS, 'max-w-44')}
+          className="max-w-44"
           onChange={(event) => {
             const value = event.target.value
             if (value === '') {
@@ -51,11 +49,10 @@ export function RunsFilterBar({
               {item.name}
             </option>
           ))}
-        </select>
+        </Select>
       ) : null}
-      <select
+      <Select
         aria-label="Filter by status"
-        className={SELECT_CLASS}
         onChange={(event) => onStatusFilterChange(event.target.value as RunStatusFilter)}
         value={statusFilter}
       >
@@ -64,7 +61,7 @@ export function RunsFilterBar({
             {option.label}
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   )
 }
