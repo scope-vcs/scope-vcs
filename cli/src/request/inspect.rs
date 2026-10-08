@@ -52,6 +52,7 @@ pub(super) fn checkout_request(
         &context.target.remote,
         &detail.request.name,
         api.token,
+        "refresh Scope Git remote failed; the request was not changed",
     )?;
     let fetched = scope_remote_head_oid(git_repo, &context.target.remote, &detail.request.name)?
         .context("request fetch did not produce a remote ref")?;

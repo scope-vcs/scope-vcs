@@ -22,7 +22,7 @@ use crate::{
     review::{ensure_review_terminal_available, run_push_review},
 };
 use crate::{
-    error::CliError,
+    error::{CliError, GitRetrySafety},
     execution::{emit, json as json_output},
 };
 use anyhow::bail;
@@ -154,6 +154,7 @@ fn push_to_main(
             DEFAULT_SCOPE_BRANCH,
             &session.token,
             &progress.cancellation(),
+            "refresh Scope main before push review failed; main was not changed",
         )?;
     }
     progress.set_stage("Preparing review…")?;
@@ -343,6 +344,7 @@ fn ensure_review_base_matches_intent(
         remote,
         DEFAULT_SCOPE_BRANCH,
         session_token,
+        "refresh Scope main before push review failed; main was not changed",
     )?;
     if scope_remote_head_oid(git_repo, remote, DEFAULT_SCOPE_BRANCH)?.as_deref()
         == Some(intent_base_head_oid)
@@ -469,6 +471,11 @@ fn push_head_with_intent(
         DEFAULT_SCOPE_BRANCH,
         session_token,
         &intent.token,
+        if intent.lands_as_request {
+            GitRetrySafety::MayCreateRequest
+        } else {
+            GitRetrySafety::Idempotent
+        },
     ) {
         Err(_) if push_intent_expired(intent.expires_at_unix) => {
             Err(CliError::new(ErrorResponse::new(

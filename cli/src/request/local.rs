@@ -81,6 +81,7 @@ fn fetch_main_projection(
         remote,
         DEFAULT_SCOPE_BRANCH,
         session_token,
+        "refresh Scope Git remote failed; the request was not changed",
     )?;
     scope_remote_head_oid(git_repo, remote, DEFAULT_SCOPE_BRANCH)?
         .context("Scope main projection did not produce a local remote ref")
