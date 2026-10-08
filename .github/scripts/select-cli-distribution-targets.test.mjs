@@ -24,7 +24,7 @@ test("releases build every configured target with the pinned Node runtime", () =
     && /^[a-f0-9]{64}$/.test(node_sha256)));
 });
 
-test("pull requests build only the Linux and Windows x64 targets on Blacksmith runners", () => {
+test("pull requests build only the Linux and Windows x64 targets", () => {
   const plan = selectCliDistributionTargets(configuration, "pull-request");
 
   assert.deepEqual(
@@ -32,7 +32,10 @@ test("pull requests build only the Linux and Windows x64 targets on Blacksmith r
     ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"],
   );
   assert.ok(plan.include.every(({ smoke }) => smoke));
-  assert.ok(plan.include.every(({ runner }) => runner.startsWith("blacksmith-")));
+});
+
+test("every distribution target builds on a GitHub-hosted runner", () => {
+  assert.ok(configuration.targets.every(({ runner }) => !runner.startsWith("blacksmith-")));
 });
 
 test("configurations without targets, a pinned Node version, or a known mode fail", () => {

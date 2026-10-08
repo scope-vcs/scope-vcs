@@ -17,7 +17,7 @@ jobs:
       github.event_name == 'workflow_run' ||
       github.event.action == 'closed' ||
       github.event.label.name == 'preview'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       actions: read
@@ -244,7 +244,7 @@ jobs:
     name: Revoke preview-scoped Railway token
     needs: deploy
     if: always() && needs.deploy.outputs.environment_id != ''
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: preview
     env:
@@ -270,7 +270,7 @@ jobs:
     name: Delete preview environment
     needs: plan
     if: needs.plan.outputs.action == 'delete'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: preview
     concurrency:

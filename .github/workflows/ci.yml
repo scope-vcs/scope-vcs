@@ -16,8 +16,8 @@ jobs:
   pull-request:
     name: Find pull request at this commit
     if: ${{ github.event_name == 'push' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       actions: read
       contents: read
@@ -32,25 +32,27 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
-          number="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" --jq "[.[] | select(
-            .state == \"open\" and .head.sha == \"$SHA\" and .base.ref == \"main\" and
-            .head.repo.full_name == \"$REPOSITORY\" and .user.login != \"dependabot[bot]\")][0].number // empty")"
-          if [[ -n "$number" ]]; then
-            behind="$(gh api "repos/$REPOSITORY/compare/main...$SHA" --jq .behind_by)"
-            [[ "$behind" == 0 ]] || number=""
-          fi
-          if [[ -n "$number" ]]; then
+          number=""
+          for attempt in {1..8}; do
+            (( attempt == 1 )) || sleep 30
+            candidate="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" --jq "[.[] | select(
+              .state == \"open\" and .head.sha == \"$SHA\" and .base.ref == \"main\" and
+              .head.repo.full_name == \"$REPOSITORY\" and .user.login != \"dependabot[bot]\")][0].number // empty")"
+            [[ -n "$candidate" ]] || continue
             run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA" \
-              --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $number))][0].id // empty")"
-            [[ -n "$run" ]] || number=""
-          fi
+              --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $candidate))][0].id // empty")"
+            if [[ -n "$run" ]]; then
+              number="$candidate"
+              break
+            fi
+          done
           echo "number=$number" >> "$GITHUB_OUTPUT"
 
   plan:
     name: Plan selected components
     needs: pull-request
     if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       runner_image: ${{ steps.plan.outputs.runner_image }}
@@ -96,7 +98,7 @@ jobs:
     name: Check repository policy
     needs: pull-request
     if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,7 +115,7 @@ jobs:
     name: Check operations
     needs: pull-request
     if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -154,7 +156,7 @@ jobs:
     name: Required PR checks
     needs: [pull-request, plan, policy, ops, validation]
     if: ${{ always() }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 150
     permissions:
       actions: read

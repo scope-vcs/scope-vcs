@@ -98,7 +98,7 @@ jobs:
       - cli-validation
       - integration-validation
     if: ${{ always() }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Reject cancelled validation
