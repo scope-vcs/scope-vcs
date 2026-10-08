@@ -2,10 +2,9 @@ import assert from 'node:assert/strict'
 import test, { type TestContext } from 'node:test'
 import {
   classifyFrontendError,
-  createDocumentVitalAttribution,
-  installBrowserDiagnostics,
   reportFrontendError,
 } from './diagnostics'
+import { createDocumentVitalAttribution, installBrowserDiagnostics } from './browser-diagnostics'
 
 test('buffered frontend reports retain occurrence context through gating and reinstall', (t) => {
   const { browser, installations } = diagnosticBrowser(t)

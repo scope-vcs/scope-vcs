@@ -13,7 +13,7 @@ import {
   applyAnalyticsIdentityTransition,
   type AnalyticsEventContext,
 } from './client-identity'
-import { installBrowserDiagnostics } from './diagnostics'
+import { installBrowserDiagnostics } from './browser-diagnostics'
 import {
   expectedIdentityKey,
   resolveAnalyticsIdentity,

@@ -87,17 +87,25 @@ export function analyticsRouteForName(name: string) {
 
 export function analyticsRouteForPathname(pathname: string) {
   const segments = pathname.split('/').filter(Boolean)
-  const candidates = Object.entries(routeDecisions).flatMap(([id, decision]) => {
-    if (decision.kind !== 'tracked') return []
+  let route: AnalyticsRoute | null = null
+  let specificity = -1
+  for (const [id, decision] of Object.entries(routeDecisions)) {
+    if (decision.kind !== 'tracked') continue
     const pattern = id.split('/').filter((segment) => segment && !segment.startsWith('_'))
     const wildcard = pattern.at(-1) === '$'
     if (wildcard ? segments.length < pattern.length - 1 : segments.length !== pattern.length) {
-      return []
+      continue
     }
-    if (!pattern.every((segment, index) => segment.startsWith('$') || segment === segments[index])) {
-      return []
+    let matchedSpecificity = 0
+    const matches = pattern.every((segment, index) => {
+      if (segment.startsWith('$')) return true
+      matchedSpecificity += 1
+      return segment === segments[index]
+    })
+    if (matches && matchedSpecificity > specificity) {
+      route = decision.route
+      specificity = matchedSpecificity
     }
-    return [{ route: decision.route, specificity: pattern.filter((segment) => !segment.startsWith('$')).length }]
-  })
-  return candidates.sort((left, right) => right.specificity - left.specificity)[0]?.route ?? null
+  }
+  return route
 }

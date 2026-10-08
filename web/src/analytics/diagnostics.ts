@@ -1,4 +1,3 @@
-import type { Metric } from 'web-vitals'
 import { analyticsRouteForPathname } from './routes'
 
 type FrontendErrorKind =
@@ -19,8 +18,6 @@ type FrontendErrorOrigin =
   | 'route'
   | 'window'
 
-type WebVitalMetric = 'CLS' | 'INP' | 'LCP'
-
 type FrontendErrorReport = {
   kind: FrontendErrorKind
   origin: FrontendErrorOrigin
@@ -29,7 +26,7 @@ type FrontendErrorReport = {
   release: string | null | undefined
 }
 
-type DiagnosticCapture = (
+export type DiagnosticCapture = (
   event: 'frontend_error' | 'web_vital',
   properties: Record<string, number | string | null>,
   occurredAt?: string,
@@ -44,11 +41,6 @@ type DiagnosticInstallation = {
 const installations = new Set<DiagnosticInstallation>()
 let documentRelease: string | null | undefined
 const pendingErrors: FrontendErrorReport[] = []
-const documentVitals = createDocumentVitalAttribution((event, properties) => {
-  const installation = currentInstallation()
-  return installation ? installation.capture(event, properties) : false
-})
-let webVitalsStarted = false
 
 export function reportFrontendError(
   error: unknown,
@@ -79,66 +71,25 @@ export function classifyFrontendError(error: unknown): FrontendErrorKind {
   return 'unknown_error'
 }
 
-export function createDocumentVitalAttribution(capture: DiagnosticCapture) {
-  let initialRouteName: string | null | undefined
-  const pending = new Map<WebVitalMetric, number>()
-
-  return {
-    activate(routeName: string | null) {
-      if (initialRouteName === undefined) initialRouteName = routeName
-    },
-    flush() {
-      if (!initialRouteName) return
-      for (const [metric, value] of pending) {
-        if (capture('web_vital', {
-          metric,
-          route_name: initialRouteName,
-          value,
-        }) !== false) {
-          pending.delete(metric)
-        }
-      }
-    },
-    report(metric: WebVitalMetric, value: number) {
-      if (!Number.isFinite(value) || value < 0) return
-      pending.set(metric, value)
-      this.flush()
-    },
-  }
-}
-
-export function installBrowserDiagnostics({
+export function installFrontendDiagnostics({
   capture,
   release,
   routeName,
 }: DiagnosticInstallation) {
-  documentVitals.activate(routeName)
-  startWebVitals()
-
   const installation = { capture, release, routeName }
   if (documentRelease === undefined) documentRelease = release
-  if (installations.size === 0) {
-    window.addEventListener('error', onWindowError)
-    window.addEventListener('unhandledrejection', onUnhandledRejection)
-  }
+  const firstInstallation = installations.size === 0
   installations.add(installation)
   flushPendingErrors()
 
   return {
+    firstInstallation,
     dispose() {
-      if (!installations.delete(installation)) return
-      if (installations.size === 0) {
-        window.removeEventListener('error', onWindowError)
-        window.removeEventListener('unhandledrejection', onUnhandledRejection)
-      }
-    },
-    flushVitals() {
-      documentVitals.flush()
+      return installations.delete(installation) && installations.size === 0
     },
     flushErrors: flushPendingErrors,
     setRoute(nextRouteName: string | null) {
       installation.routeName = nextRouteName
-      documentVitals.activate(nextRouteName)
     },
   }
 }
@@ -170,31 +121,12 @@ function flushPendingErrors() {
   }
 }
 
-function onWindowError(event: ErrorEvent) {
-  reportFrontendError(event.error, 'window')
-}
-
-function onUnhandledRejection(event: PromiseRejectionEvent) {
-  reportFrontendError(event.reason, 'promise')
-}
-
 function retainPendingError(report: FrontendErrorReport) {
   if (pendingErrors.length === 10) pendingErrors.shift()
   pendingErrors.push(report)
 }
 
-function startWebVitals() {
-  if (webVitalsStarted) return
-  webVitalsStarted = true
-  void import('web-vitals').then(({ onCLS, onINP, onLCP }) => {
-    onCLS(reportWebVital)
-    onINP(reportWebVital)
-    onLCP(reportWebVital)
-  }).catch(() => {})
-}
-
-function reportWebVital(metric: Metric) {
-  if (metric.name === 'CLS' || metric.name === 'INP' || metric.name === 'LCP') {
-    documentVitals.report(metric.name, metric.value)
-  }
+export function captureWebVital(properties: Record<string, number | string | null>) {
+  const installation = currentInstallation()
+  return installation ? installation.capture('web_vital', properties) : false
 }
