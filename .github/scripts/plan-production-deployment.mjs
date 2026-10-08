@@ -39,6 +39,11 @@ export function classifyChanges(manifest, paths, requestedScope = "changed") {
   return selection;
 }
 
+function classifyDeploymentChanges(manifest, paths) {
+  if (paths.some((path) => matchesScope(path, manifest.changeScopes.release))) return classifyChanges(manifest, [], "all");
+  return classifyChanges(manifest, paths);
+}
+
 export function includeMigrationParticipants(selection, apiChanges) {
   if (!backendSelected(selection)) return selection;
   if (Array.isArray(apiChanges) && !apiChanges.some((path) => path.startsWith("crates/scope-postgres/src/migrations/"))) return selection;
@@ -51,11 +56,11 @@ export function planFromDeploymentProgress(manifest, pathsByComponent, requested
   const selection = Object.fromEntries(COMPONENTS.map((component) => {
     const paths = pathsByComponent[component];
     if (!Array.isArray(paths)) return [component, true];
-    return [component, classifyChanges(manifest, paths)[component]];
+    return [component, classifyDeploymentChanges(manifest, paths)[component]];
   }));
   const cliPaths = pathsByComponent["cli-downloads"];
   selection["cli-distribution"] = !Array.isArray(cliPaths)
-    || classifyChanges(manifest, cliPaths)["cli-distribution"];
+    || classifyDeploymentChanges(manifest, cliPaths)["cli-distribution"];
   return includeMigrationParticipants(selection, pathsByComponent.api);
 }
 

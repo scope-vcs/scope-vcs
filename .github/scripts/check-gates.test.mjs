@@ -156,7 +156,7 @@ test('gate inputs select a lane unless the always-on gates own them', () => {
   gateInputs.push('.github/source-size-audit.json', '.github/railway-experiments.json');
   const coveredScripts = scriptsCoveredByAlwaysOnGates();
   for (const path of gateInputs) {
-    const selected = Object.values(classifyChanges(manifest, [path])).some(Boolean);
+    const selected = Object.values(classifyChanges(manifest, [path])).some(Boolean) || manifest.changeScopes.release.files.includes(path);
     const alwaysOn = coveredScripts.has(path) || alwaysOnGateInputs.some((pattern) => pattern.test(path));
     assert.ok(selected || alwaysOn, `${path} must select a lane or be run, tested, or loaded by the operations or policy gates`);
   }
@@ -572,28 +572,32 @@ test("a Scope request revision that an open pull request tests reports that pull
   }
 });
 
-test('a Scope request revision reuses a pull request run only when that run tests the same tree', () => {
+test('a Scope request revision reuses an open pull request run, waiting briefly for GitHub to start it', () => {
   const ci = read('.github/workflows/ci.yml');
   const script = stepScript(ci.slice(ci.indexOf('\n  pull-request:\n')), 'Find a pull request run that tests this commit');
-  const find = ({ pulls = '7', behind = '0', runs = '123' }) => {
+  const find = ({ pulls = ['7'], runs = ['123'] }) => {
     const dir = mkdtempSync(resolve(tmpdir(), 'scope-ci-find-'));
     try {
-      writeFileSync(resolve(dir, 'gh'), `#!/bin/bash\ncase "$2" in\n  */pulls) echo "${pulls}" ;;\n  */compare/*) echo "${behind}" ;;\n  */runs*) echo "${runs}" ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
+      writeFileSync(resolve(dir, 'pulls'), pulls.join('\n') + '\n');
+      writeFileSync(resolve(dir, 'runs'), runs.join('\n') + '\n');
+      writeFileSync(resolve(dir, 'gh'), `#!/bin/bash\nanswer() { n=$(cat "${dir}/$1.count" 2>/dev/null || echo 0); echo $((n + 1)) > "${dir}/$1.count"; line=$((n + 1)); total=$(wc -l < "${dir}/$1"); sed -n "$(( line < total ? line : total ))p" "${dir}/$1"; }\ncase "$2" in\n  */pulls) answer pulls ;;\n  */runs*) answer runs ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
+      writeFileSync(resolve(dir, 'sleep'), `#!/bin/sh\necho "$1" >> "${dir}/slept"\n`, { mode: 0o755 });
       const output = resolve(dir, 'output');
       const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
         env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, REPOSITORY: 'o/r', SHA: 'a'.repeat(40), GITHUB_OUTPUT: output },
         encoding: 'utf8',
       });
       assert.equal(result.status, 0, result.stderr);
-      return readFileSync(output, 'utf8');
+      const slept = existsSync(resolve(dir, 'slept')) ? readFileSync(resolve(dir, 'slept'), 'utf8').trim().split('\n').length : 0;
+      return { output: readFileSync(output, 'utf8'), slept };
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   };
-  assert.equal(find({}), 'number=7\n');
-  assert.equal(find({ pulls: '' }), 'number=\n');
-  assert.equal(find({ behind: '2' }), 'number=\n', 'a head behind main was tested merged with code it lacks');
-  assert.equal(find({ runs: '' }), 'number=\n', 'a pull request with conflicts never gets a run to wait for');
+  assert.deepEqual(find({}), { output: 'number=7\n', slept: 0 });
+  assert.deepEqual(find({ pulls: ['', '7'], runs: ['', '123'] }), { output: 'number=7\n', slept: 2 }, 'the pull request and its run can appear after the push');
+  assert.deepEqual(find({ pulls: [''] }), { output: 'number=\n', slept: 7 });
+  assert.deepEqual(find({ runs: [''] }), { output: 'number=\n', slept: 7 }, 'a pull request with conflicts never gets a run to wait for');
 });
 
 test('validation gate allows unselected jobs and reused artifacts but fails selected jobs and cancellation', () => {

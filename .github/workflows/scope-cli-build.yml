@@ -21,7 +21,7 @@ jobs:
   prepare:
     name: Prepare distribution matrix
     if: inputs.validate_targets
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.targets.outputs.matrix }}

@@ -58,7 +58,7 @@ jobs:
     name: Server validation gate
     needs: [backend-validation, media-worker-image, web-validation]
     if: ${{ always() }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Reject cancelled validation

@@ -300,6 +300,15 @@ test("CLI deployment progress selects distribution builds only for binary inputs
   );
 });
 
+test("release orchestration changes redeploy every component without selecting pull request validation", () => {
+  const paths = [".github/workflows/release.yml", ".github/scripts/prepare-release-images.sh"];
+  for (const path of paths) {
+    assert.deepEqual(classifyChanges(manifest, [path]), deploymentSelection(), path);
+    const progress = Object.fromEntries(Object.keys(deploymentSelection()).map((component) => [component, [path]]));
+    assert.ok(Object.values(planFromDeploymentProgress(manifest, progress)).every(Boolean), path);
+  }
+});
+
 test("manual scopes ignore pending production components", () => {
   assert.deepEqual(planFromDeploymentProgress(manifest, {}, "web"), {
     "runner-image": false,
