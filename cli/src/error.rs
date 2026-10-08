@@ -67,10 +67,13 @@ impl CliError {
         {
             ErrorCode::Unauthorized
         } else if diagnostic.contains("requested url returned error: 403")
-            || diagnostic.contains("permission denied")
+            || diagnostic
+                .split(['\r', '\n'])
+                .any(|line| line.starts_with("remote:") && line.contains("permission denied"))
         {
             ErrorCode::Forbidden
         } else if [
+            "requested url returned error: 429",
             "requested url returned error: 502",
             "requested url returned error: 503",
             "requested url returned error: 504",
@@ -293,6 +296,26 @@ mod tests {
             let error: anyhow::Error =
                 CliError::git_failure("push failed", diagnostic, GitRetrySafety::Idempotent).into();
             assert!(!json_response(&error).error.retryable);
+        }
+    }
+
+    #[test]
+    fn git_permission_failures_distinguish_remote_authorization_from_local_io() {
+        for (diagnostic, code) in [
+            (
+                "fatal: could not create work tree dir 'repo': Permission denied",
+                ErrorCode::Internal,
+            ),
+            (
+                "error: cannot open '.git/FETCH_HEAD': Permission denied",
+                ErrorCode::Internal,
+            ),
+            ("remote: Permission denied", ErrorCode::Forbidden),
+            ("remote: error: Permission denied", ErrorCode::Forbidden),
+        ] {
+            let error = CliError::git_failure("git failed", diagnostic, GitRetrySafety::Idempotent);
+            assert_eq!(error.response().code, code, "{diagnostic}");
+            assert!(!error.response().retryable);
         }
     }
 

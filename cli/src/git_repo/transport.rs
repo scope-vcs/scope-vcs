@@ -99,6 +99,7 @@ pub fn fetch_scope_remote_with_bearer(
     remote: &str,
     branch: &str,
     bearer_token: &str,
+    failure: &str,
 ) -> anyhow::Result<()> {
     let plan = git_fetch_auth_plan(
         destination,
@@ -111,7 +112,7 @@ pub fn fetch_scope_remote_with_bearer(
         plan,
         Some(&repo.root),
         "refresh Scope Git remote before push review",
-        "refresh Scope Git remote before push review failed; the request was not changed",
+        failure,
         GitRetrySafety::Idempotent,
     )
 }
@@ -144,6 +145,7 @@ pub fn fetch_scope_remote_with_bearer_cancellable(
     branch: &str,
     bearer_token: &str,
     cancellation: &CancellationToken,
+    failure: &str,
 ) -> anyhow::Result<()> {
     let plan = git_fetch_auth_plan(
         destination,
@@ -161,11 +163,7 @@ pub fn fetch_scope_remote_with_bearer_cancellable(
         MAX_GIT_STDOUT_BYTES,
     )
     .context("refresh Scope Git remote before push review")?;
-    finish_git_plan_output(
-        output,
-        "refresh Scope Git remote before push review failed; the request was not changed",
-        GitRetrySafety::Idempotent,
-    )
+    finish_git_plan_output(output, failure, GitRetrySafety::Idempotent)
 }
 
 pub fn git_push_ref_auth_plan(
@@ -378,9 +376,16 @@ mod tests {
 
     fn fetch_error(destination: &str) -> anyhow::Error {
         let (_directory, repo) = test_repo();
-        fetch_scope_remote_with_bearer(&repo, destination, "scope", "main", "fixture-token")
-            .context("refresh request before publishing")
-            .unwrap_err()
+        fetch_scope_remote_with_bearer(
+            &repo,
+            destination,
+            "scope",
+            "main",
+            "fixture-token",
+            "refresh request before publishing failed; the request was not changed",
+        )
+        .context("refresh request before publishing")
+        .unwrap_err()
     }
 
     fn commit(repo: &GitRepo) {
@@ -421,7 +426,32 @@ mod tests {
         );
         let destination = remote.path().to_str().unwrap();
         let head = head_oid(&repo).unwrap();
-        for refname in ["refs/heads/main", "refs/heads/fix-fixture"] {
+        for refname in [
+            "refs/heads/main",
+            "refs/heads/fix-fixture",
+            "refs/heads/existing-request",
+        ] {
+            let expected_oid = if refname == "refs/heads/existing-request" {
+                let initial = git_command(
+                    git_push_ref_auth_plan(destination, &head, refname, "", "fixture-token", None),
+                    Some(&repo.root),
+                )
+                .output()
+                .unwrap();
+                assert!(initial.status.success(), "{initial:?}");
+                run_git_in_repo(
+                    &repo,
+                    &["update-ref", "refs/remotes/scope/existing-request", &head],
+                )
+                .unwrap();
+                commit(&repo);
+                scope_remote_head_oid(&repo, "scope", "existing-request")
+                    .unwrap()
+                    .unwrap()
+            } else {
+                String::new()
+            };
+            let head = head_oid(&repo).unwrap();
             let plan = || {
                 if refname == "refs/heads/main" {
                     git_push_auth_plan(
@@ -433,11 +463,27 @@ mod tests {
                         None,
                     )
                 } else {
-                    git_push_ref_auth_plan(destination, &head, refname, "", "fixture-token", None)
+                    git_push_ref_auth_plan(
+                        destination,
+                        &head,
+                        refname,
+                        &expected_oid,
+                        "fixture-token",
+                        None,
+                    )
                 }
             };
             let first = git_command(plan(), Some(&repo.root)).output().unwrap();
             assert!(first.status.success(), "{:?}", first);
+            if !expected_oid.is_empty() {
+                assert_ne!(expected_oid, head);
+                assert_eq!(
+                    scope_remote_head_oid(&repo, "scope", "existing-request")
+                        .unwrap()
+                        .unwrap(),
+                    expected_oid
+                );
+            }
             let retry = git_command(plan(), Some(&repo.root)).output().unwrap();
             assert!(retry.status.success(), "{:?}", retry);
             assert!(String::from_utf8_lossy(&retry.stderr).contains("Everything up-to-date"));
@@ -452,16 +498,49 @@ mod tests {
     }
 
     #[test]
-    fn refused_git_fetch_is_retryable_and_does_not_change_request() {
+    fn refused_git_fetch_preserves_caller_context_and_retryability() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         drop(listener);
-        let error = fetch_error(&format!("http://{address}/repo"));
-        let response = json_response(&error).error;
-        assert_eq!(response.code, ErrorCode::ServiceUnavailable);
-        assert!(response.retryable);
-        assert!(response.message.contains("the request was not changed"));
-        assert_eq!(exit_code(&error), ExitCategory::Temporary as u8);
+        let destination = format!("http://{address}/repo");
+        for failure in [
+            "refresh request failed; the request was not changed",
+            "refresh main failed; main was not changed",
+        ] {
+            for cancellable in [false, true] {
+                let (_directory, repo) = test_repo();
+                let error = if cancellable {
+                    fetch_scope_remote_with_bearer_cancellable(
+                        &repo,
+                        &destination,
+                        "scope",
+                        "main",
+                        "fixture-token",
+                        &CancellationToken::new(),
+                        failure,
+                    )
+                } else {
+                    fetch_scope_remote_with_bearer(
+                        &repo,
+                        &destination,
+                        "scope",
+                        "main",
+                        "fixture-token",
+                        failure,
+                    )
+                }
+                .unwrap_err();
+                let response = json_response(&error).error;
+                assert_eq!(response.code, ErrorCode::ServiceUnavailable);
+                assert!(response.retryable);
+                assert!(
+                    response.message.starts_with(&format!("{failure}: fatal:")),
+                    "{}",
+                    response.message
+                );
+                assert_eq!(exit_code(&error), ExitCategory::Temporary as u8);
+            }
+        }
     }
 
     #[test]
@@ -484,6 +563,12 @@ mod tests {
                 ErrorCode::Internal,
                 ExitCategory::Unexpected,
                 false,
+            ),
+            (
+                Some("429 Too Many Requests"),
+                ErrorCode::ServiceUnavailable,
+                ExitCategory::Temporary,
+                true,
             ),
             (
                 Some("502 Bad Gateway"),

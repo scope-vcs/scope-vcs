@@ -154,6 +154,7 @@ fn push_to_main(
             DEFAULT_SCOPE_BRANCH,
             &session.token,
             &progress.cancellation(),
+            "refresh Scope main before push review failed; main was not changed",
         )?;
     }
     progress.set_stage("Preparing review…")?;
@@ -343,6 +344,7 @@ fn ensure_review_base_matches_intent(
         remote,
         DEFAULT_SCOPE_BRANCH,
         session_token,
+        "refresh Scope main before push review failed; main was not changed",
     )?;
     if scope_remote_head_oid(git_repo, remote, DEFAULT_SCOPE_BRANCH)?.as_deref()
         == Some(intent_base_head_oid)
