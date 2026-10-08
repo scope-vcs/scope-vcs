@@ -48,6 +48,59 @@ impl CliError {
         Self::new(ErrorResponse::new(ErrorCode::Unauthorized, message))
     }
 
+    pub fn git_failure(failure: &str, stderr: &str) -> Self {
+        let message = if stderr.is_empty() {
+            failure.to_string()
+        } else {
+            format!("{failure}: {stderr}")
+        };
+        let diagnostic = stderr.to_ascii_lowercase();
+        let code = if diagnostic.contains("authentication failed")
+            || diagnostic.contains("requested url returned error: 401")
+            || diagnostic.contains("could not read username")
+        {
+            ErrorCode::Unauthorized
+        } else if diagnostic.contains("requested url returned error: 403")
+            || diagnostic.contains("permission denied")
+        {
+            ErrorCode::Forbidden
+        } else if [
+            "could not resolve host:",
+            "could not resolve proxy:",
+            "failed to connect to ",
+            "timed out",
+            "timeout was reached",
+            "connection timeout",
+            "connection refused",
+            "connection reset",
+            "connection was reset",
+            "operation too slow.",
+            "empty reply from server",
+        ]
+        .iter()
+        .any(|pattern| {
+            diagnostic
+                .split(['\r', '\n'])
+                .filter(|line| !line.starts_with("remote:"))
+                .any(|line| line.contains(pattern))
+        }) && !diagnostic.contains("fatal: remote error:")
+            && !diagnostic.contains("[remote rejected]")
+            && !diagnostic
+                .split(['\r', '\n'])
+                .any(|line| line.starts_with("remote: error:"))
+        {
+            ErrorCode::ServiceUnavailable
+        } else {
+            ErrorCode::Internal
+        };
+        let response = ErrorResponse::new(code, message);
+        Self::new(if code == ErrorCode::ServiceUnavailable {
+            response.retryable()
+        } else {
+            response
+        })
+    }
+
     pub fn response(&self) -> &ErrorResponse {
         &self.response
     }
@@ -181,6 +234,36 @@ mod tests {
         ] {
             let error = CliError::new(ErrorResponse::new(code, "fixture"));
             assert_eq!(error.exit_category(), expected);
+        }
+    }
+
+    #[test]
+    fn git_transport_diagnostics_preserve_retry_safety() {
+        for diagnostic in [
+            "fatal: unable to access 'https://fixture.invalid/': SSL connection timeout",
+            "fatal: unable to access 'https://fixture.invalid/': Could not resolve host: fixture.invalid",
+            "fatal: unable to access 'https://fixture.invalid/': Resolving timed out after 1000 milliseconds",
+            "fatal: unable to access 'https://fixture.invalid/': Timeout was reached",
+            "fatal: unable to access 'https://fixture.invalid/': Recv failure: Connection was reset",
+            "fatal: unable to access 'https://fixture.invalid/': Recv failure: Connection reset by peer",
+            "fatal: unable to access 'https://fixture.invalid/': Operation timed out after 1000 milliseconds",
+            "fatal: unable to access 'https://fixture.invalid/': Operation too slow. Less than 1 bytes/sec transferred the last 1 seconds",
+            "remote: Enumerating objects: 10, done.\nerror: RPC failed; curl 56 Recv failure: Connection reset by peer",
+            "remote: Checking objects...\rerror: RPC failed; curl 56 Recv failure: Connection reset by peer\n",
+        ] {
+            let error: anyhow::Error = CliError::git_failure("fetch failed", diagnostic).into();
+            let response = json_response(&error).error;
+            assert_eq!(response.code, ErrorCode::ServiceUnavailable);
+            assert!(response.retryable);
+        }
+        for diagnostic in [
+            "remote: connection timeout while applying policy\n! [remote rejected] HEAD -> main (pre-receive hook declined)",
+            "fatal: remote error: connection timeout while applying policy",
+            "remote: error: connection timeout while applying policy",
+            "remote: connection timeout while applying policy",
+        ] {
+            let error: anyhow::Error = CliError::git_failure("push failed", diagnostic).into();
+            assert!(!json_response(&error).error.retryable);
         }
     }
 

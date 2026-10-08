@@ -103,7 +103,7 @@ pub fn fetch_scope_remote_with_bearer(
         plan,
         Some(&repo.root),
         "refresh Scope Git remote before push review",
-        "refresh Scope Git remote before push review failed",
+        "refresh Scope Git remote before push review failed; the request was not changed",
     )
 }
 
@@ -151,7 +151,10 @@ pub fn fetch_scope_remote_with_bearer_cancellable(
         MAX_GIT_STDOUT_BYTES,
     )
     .context("refresh Scope Git remote before push review")?;
-    finish_git_plan_output(output, "refresh Scope Git remote before push review failed")
+    finish_git_plan_output(
+        output,
+        "refresh Scope Git remote before push review failed; the request was not changed",
+    )
 }
 
 pub fn git_push_ref_auth_plan(
@@ -295,6 +298,8 @@ fn git_command(plan: GitCommandPlan, cwd: Option<&Path>) -> Command {
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
+    command.env("LC_ALL", "C");
+    command.env("GIT_TERMINAL_PROMPT", "0");
     command.args(plan.args);
     command.envs(plan.env);
     command
@@ -316,10 +321,115 @@ fn finish_git_plan_output(output: Output, failure: &str) -> anyhow::Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr = stderr.trim();
-        if !stderr.is_empty() {
-            bail!("{failure}: {stderr}");
-        }
-        bail!("{failure}");
+        return Err(crate::error::CliError::git_failure(failure, stderr).into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::{ExitCategory, exit_code, json_response};
+    use scope_api_contract::ErrorCode;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
+
+    fn fetch_error(destination: &str) -> anyhow::Error {
+        let directory = tempfile::tempdir().unwrap();
+        let repo = GitRepo {
+            root: directory.path().to_path_buf(),
+        };
+        for args in [
+            vec!["init", "--quiet"],
+            vec!["config", "http.proxy", ""],
+            vec!["config", "credential.helper", ""],
+        ] {
+            assert!(
+                Command::new("git")
+                    .current_dir(&repo.root)
+                    .args(args)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        fetch_scope_remote_with_bearer(&repo, destination, "scope", "main", "fixture-token")
+            .context("refresh request before publishing")
+            .unwrap_err()
+    }
+
+    #[test]
+    fn refused_git_fetch_is_retryable_and_does_not_change_request() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let error = fetch_error(&format!("http://{address}/repo"));
+        let response = json_response(&error).error;
+        assert_eq!(response.code, ErrorCode::ServiceUnavailable);
+        assert!(response.retryable);
+        assert!(response.message.contains("the request was not changed"));
+        assert_eq!(exit_code(&error), ExitCategory::Temporary as u8);
+    }
+
+    #[test]
+    fn git_http_failures_preserve_response_classification() {
+        for (status, code, category, retryable) in [
+            (
+                Some("401 Unauthorized"),
+                ErrorCode::Unauthorized,
+                ExitCategory::Authentication,
+                false,
+            ),
+            (
+                Some("403 Forbidden"),
+                ErrorCode::Forbidden,
+                ExitCategory::Policy,
+                false,
+            ),
+            (
+                Some("500 Internal Server Error"),
+                ErrorCode::Internal,
+                ExitCategory::Unexpected,
+                false,
+            ),
+            (
+                None,
+                ErrorCode::ServiceUnavailable,
+                ExitCategory::Temporary,
+                true,
+            ),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0; 1024];
+                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                    let count = socket.read(&mut buffer).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                if let Some(status) = status {
+                    write!(
+                        socket,
+                        "HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    .unwrap();
+                }
+            });
+            let error = fetch_error(&format!("http://{address}/repo"));
+            server.join().unwrap();
+            let response = json_response(&error).error;
+            assert_eq!(response.code, code, "{status:?}: {error:#}");
+            assert_eq!(response.retryable, retryable);
+            assert_eq!(exit_code(&error), category as u8);
+        }
+    }
 }
