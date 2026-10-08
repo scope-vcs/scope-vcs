@@ -6,11 +6,10 @@ import { RequestDetailPagePending } from '@/features/requests/request-page-pendi
 import { RequestStateProvider, useRequestState } from '@/features/requests/request-state-context'
 import { requestParamsForRoute } from '@/features/requests/request-route-data'
 import { loadRequestStateValue, requestRouteState, requestStateIdentity } from '@/features/requests/request-state-resource'
-import { loadRequestDiscussionSession, requestDiscussionCacheKey } from '@/features/requests/request-discussion-cache'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { getCurrentViewerId } from '@/lib/viewer-state'
 import { loadRequestState } from '@/routes/-request-state-actions'
-import { loadRequestDiscussionPage, loadRequestDiscussionChanges } from '@/routes/-request-discussion-actions'
+import { loadRequestDiscussionRoutePage } from '@/routes/-request-discussion-loader'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { useMemo } from 'react'
 
@@ -27,16 +26,9 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
     const data = requestParamsForRoute(params)
     const viewerId = typeof window === 'undefined' ? undefined : getCurrentViewerId()
     const scope = viewerId === undefined ? null : repoResourceScope(live.repo, viewerId)
-    const loadDiscussion = () => loadRequestDiscussionPage({ data: { ...data, discussion_id: deps.discussion } })
-    const discussion = location.pathname.endsWith('/changes') ? null : scope
-      ? loadRequestDiscussionSession({
-          key: requestDiscussionCacheKey({ repoId: scope, requestId: data.request_id, viewerId: viewerId ?? 'anonymous' }),
-          focusedDiscussionId: deps.discussion,
-          load: loadDiscussion,
-          loadChanges: (after) => loadRequestDiscussionChanges({ data: { ...data, after } }),
-        })
-      : loadDiscussion()
-    const discussionPage = discussion instanceof Promise ? discussion.catch(() => null) : discussion
+    const discussionPage = location.pathname.endsWith('/changes')
+      ? undefined
+      : loadRequestDiscussionRoutePage(data, scope, viewerId ?? null, deps.discussion)
     const initial = scope
       ? requestRouteState(live, await loadRequestStateValue(requestStateIdentity(scope, data.request_id), async (signal) => {
           const loaded = await loadRequestState({ data, signal })

@@ -26,7 +26,7 @@ import { useRequestState } from '@/features/requests/request-state-context'
 import { loadRequestDiscussionChanges } from '@/routes/-request-discussion-actions'
 import { MessageSquare } from 'lucide-react'
 
-const requestRoute = getRouteApi('/$owner/$repo/requests/$requestId')
+const discussionRoute = getRouteApi('/$owner/$repo/requests/$requestId/_discussion')
 
 const loadDiscussions = createServerFn({ method: 'GET' })
   .validator(parseLoadDiscussionsInput)
@@ -63,7 +63,7 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId/_discuss
 
 function RequestDiscussionRoute() {
   const page = useRequestState()
-  const { discussionPage, initial } = requestRoute.useLoaderData()
+  const { discussionPage, scope } = discussionRoute.useLoaderData()
   const params = Route.useParams()
   const search = Route.useSearch()
   const live = useRepoLayout()
@@ -71,7 +71,7 @@ function RequestDiscussionRoute() {
   if (!page.state) return null
   const detail = page.state.detail
   const viewer = page.state.viewer
-  if (initial.scope !== page.scope) return <RequestDiscussionPending />
+  if (scope !== page.scope) return <RequestDiscussionPending />
   const renderDiscussion = (initialPage: RequestDiscussionPage | null) => !initialPage ? (
     <section className="px-5 py-14 text-center lg:px-7">
       <MessageSquare className="mx-auto size-5 text-muted-foreground" />

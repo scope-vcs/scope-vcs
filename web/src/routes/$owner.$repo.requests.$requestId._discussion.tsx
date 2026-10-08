@@ -30,6 +30,7 @@ import { requestRatingsResource } from '@/features/requests/request-ratings-reso
 import { reconcileRequestState, requestStateResource } from '@/features/requests/request-state-resource'
 import { RequestDetailPage } from '@/features/requests/request-detail-page'
 import { RequestDetailPagePending } from '@/features/requests/request-page-pending'
+import { loadRequestDiscussionRoutePage } from '@/routes/-request-discussion-loader'
 import { requestParamsForRoute } from '@/features/requests/request-route-data'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
@@ -70,6 +71,22 @@ const rateRequest = createServerFn({ method: 'POST' })
   .handler(({ data }) => rateRequestForRequest(data))
 
 export const Route = createFileRoute('/$owner/$repo/requests/$requestId/_discussion')({
+  loaderDeps: ({ search }) => ({ discussion: search.discussion }),
+  loader: async ({ deps, params, parentMatchPromise }) => {
+    const page = (await parentMatchPromise).loaderData
+    if (!page) throw new Error('Request state is unavailable.')
+    return {
+      discussionPage: page.discussionPage === undefined
+        ? loadRequestDiscussionRoutePage(
+            requestParamsForRoute(params),
+            typeof window === 'undefined' ? null : page.initial.scope,
+            page.initial.viewerId,
+            deps.discussion,
+          )
+        : page.discussionPage,
+      scope: page.initial.scope,
+    }
+  },
   pendingComponent: RequestDetailPagePending,
   component: RequestDiscussionLayout,
 })
