@@ -33,7 +33,7 @@ test('the member view picker offers every repository view by name', () => {
     ['agent', 'Agent'],
   ])
   assert.match(html, /<option[^>]*value="agent"[^>]*selected/)
-  assert.match(html, /<label[^>]*for="([^"]+)"[^>]*>View<\/label><select[^>]*id="\1"/)
+  assert.match(html, /<label[^>]*for="([^"]+)"[^>]*>View<\/label><span[^>]*><select[^>]*id="\1"/)
 })
 
 test('a narrower view explains that only changing file visibility needs the full view', () => {

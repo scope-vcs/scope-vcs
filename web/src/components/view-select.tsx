@@ -1,10 +1,9 @@
 import type { ViewDefinition, ViewId } from '@/api/types.generated'
-import { cn } from '../lib/utils'
-
-const VIEW_SELECT_CLASS = 'h-8 min-w-0 max-w-full truncate rounded-md border border-input bg-secondary px-2 text-sm text-foreground shadow-[var(--shadow-card)] outline-none transition-colors focus-visible:border-ring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-60'
+import { Select } from './ui/select'
 
 export function ViewSelect({
   className,
+  compact,
   disabled,
   id,
   label,
@@ -13,6 +12,7 @@ export function ViewSelect({
   views,
 }: {
   className?: string
+  compact?: boolean
   disabled?: boolean
   id?: string
   label?: string
@@ -21,15 +21,16 @@ export function ViewSelect({
   views: readonly ViewDefinition[]
 }) {
   return (
-    <select
+    <Select
       aria-label={label}
-      className={cn(VIEW_SELECT_CLASS, className)}
+      className={className}
+      compact={compact}
       disabled={disabled}
       id={id}
       onChange={(event) => onChange(event.target.value)}
       value={value}
     >
       {views.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
-    </select>
+    </Select>
   )
 }

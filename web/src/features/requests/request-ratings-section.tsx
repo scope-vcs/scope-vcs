@@ -5,6 +5,7 @@ import type {
 } from '@/api/types.generated'
 import type { RateRequestInput } from '@/api/requests'
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/select'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { type FormEvent, useReducer } from 'react'
 
@@ -97,8 +98,7 @@ export function RequestRatingsSection({
         <form className="mt-4 grid gap-3 border-t border-border pt-4" onSubmit={submit}>
           <label className="grid gap-1 text-xs font-medium">
             Rating for @{eligibleSubject.handle}
-            <select
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            <Select
               disabled={submitting}
               onChange={(event) => dispatch({
                 type: 'score_changed',
@@ -109,7 +109,7 @@ export function RequestRatingsSection({
               {[5, 4, 3, 2, 1].map((value) => (
                 <option key={value} value={value}>{value} / 5</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="grid gap-1 text-xs font-medium">
             Reason
