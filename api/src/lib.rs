@@ -26,11 +26,10 @@ pub(crate) mod operation_analytics;
 pub(crate) mod persistence;
 pub(crate) mod persistence_ids;
 pub(crate) mod push_intents;
+mod reconciler_runtime;
 pub(crate) mod repo_access;
 pub(crate) mod repo_events;
 mod repository_backfill;
-mod request_auto_merge_runtime;
-mod request_checks_runtime;
 pub(crate) mod retention;
 pub(crate) mod run_attempt_effects;
 pub(crate) mod run_recovery;
@@ -45,8 +44,7 @@ mod workflow_catalog_backfill;
 mod workflow_tests;
 
 pub use app::router;
-pub use request_auto_merge_runtime::RequestAutoMergeRuntime;
-pub use request_checks_runtime::RequestChecksRuntime;
+pub use reconciler_runtime::ReconcilerRuntime;
 pub use state::AppState;
 pub use workflow_catalog_backfill::{
     backfill_repository_workflow_catalogs_for_maintenance,

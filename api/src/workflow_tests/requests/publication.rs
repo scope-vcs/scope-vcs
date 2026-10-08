@@ -74,7 +74,7 @@ async fn public_request_reads_and_start_use_current_head_before_projection_rebui
         .unwrap();
     assert_ne!(expected_public_head, accepted.head_oid);
 
-    let app = router(state);
+    let app = router(state.clone());
     for uri in [
         "/v1/repos/owner/repo/requests/req_publication_public/state",
         "/v1/repos/owner/repo/requests",
@@ -102,6 +102,25 @@ async fn public_request_reads_and_start_use_current_head_before_projection_rebui
             expected_public_head
         );
     }
+    state
+        .metadata
+        .admin()
+        .execute_for_tests("DELETE FROM scope_projection_read_models")
+        .await
+        .unwrap();
+    let rebuilt = api_request(
+        app.clone(),
+        "GET",
+        "/v1/repos/owner/repo/requests/req_publication_public/state",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(rebuilt.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(rebuilt).await["detail"]["request"]["mergeability"]["current_main_oid"],
+        expected_public_head
+    );
     let hidden = api_request(
         app.clone(),
         "GET",
