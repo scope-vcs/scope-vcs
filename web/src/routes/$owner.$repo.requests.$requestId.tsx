@@ -8,7 +8,7 @@ import { requestParamsForRoute } from '@/features/requests/request-route-data'
 import { loadRequestStateValue, requestRouteState, requestStateIdentity } from '@/features/requests/request-state-resource'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { getCurrentViewerId } from '@/lib/viewer-state'
-import { loadRequestState } from '@/routes/-request-state-actions'
+import { loadRequestState, loadRequestStateForViewer } from '@/routes/-request-state-actions'
 import { loadRequestDiscussionRoutePage } from '@/routes/-request-discussion-loader'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { useMemo } from 'react'
@@ -29,13 +29,12 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
     const discussionPage = location.pathname.endsWith('/changes')
       ? undefined
       : loadRequestDiscussionRoutePage(data, scope, viewerId ?? null, deps.discussion)
-    const initial = scope
-      ? requestRouteState(live, await loadRequestStateValue(requestStateIdentity(scope, data.request_id), async (signal) => {
-          const loaded = await loadRequestState({ data, signal })
-          if (loaded.viewerId !== viewerId) throw new Error('The account changed while loading this request.')
-          return { state: loaded.state }
-        }), viewerId ?? null)
-      : await loadRequestState({ data }).then((loaded) => requestRouteState(live, loaded, loaded.viewerId))
+    const initial = viewerId === undefined
+      ? await loadRequestState({ data }).then((loaded) => requestRouteState(live, loaded, loaded.viewerId))
+      : requestRouteState(live, await loadRequestStateValue(
+          requestStateIdentity(repoResourceScope(live.repo, viewerId), data.request_id),
+          (signal) => loadRequestStateForViewer(data, viewerId, signal),
+        ), viewerId)
     return { initial, discussionPage }
   },
   pendingComponent: RequestRoutePending,

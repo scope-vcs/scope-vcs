@@ -3,7 +3,7 @@ import type { RequestStateResponse } from '@/api/types.generated'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { useCachedResource, useRetryOnReconnect } from '@/lib/use-cached-resource'
-import { loadRequestState } from '@/routes/-request-state-actions'
+import { loadRequestStateForViewer } from '@/routes/-request-state-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { createContext, use, useCallback, useMemo, type ReactNode } from 'react'
 import { requestStateIdentity, requestStateResource, type RequestRouteState } from './request-state-resource'
@@ -31,11 +31,7 @@ export function RequestStateProvider({ children, initial, params }: {
   const scope = repoResourceScope(live.repo, viewerId)
   const identity = requestStateIdentity(scope, params.request_id)
   const initialValue = useMemo(() => scope === initial.scope ? { state: initial.state } : null, [initial.scope, initial.state, scope])
-  const load = useCallback(async (signal: AbortSignal) => {
-    const loaded = await loadRequestState({ data: params, signal })
-    if (loaded.viewerId !== viewerId) throw new Error('The account changed while loading this request.')
-    return { state: loaded.state }
-  }, [params, viewerId])
+  const load = useCallback((signal: AbortSignal) => loadRequestStateForViewer(params, viewerId, signal), [params, viewerId])
   const resource = useCachedResource({
     fallbackError: 'Request state is unavailable.',
     identity,

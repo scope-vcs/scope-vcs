@@ -107,7 +107,7 @@ impl RequestStore {
                             .latest(&evaluation.tested_oid, name)?
                             .check_suite_id
                     }
-                    _ => None,
+                    scope_domain::requests::RequestCheck::Native(_) => None,
                 })
             })
             .collect::<Vec<_>>();

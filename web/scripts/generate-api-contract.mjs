@@ -59,10 +59,6 @@ async function generateApiContract() {
         .replace(/export const validate = ([^;]+);export default [^;]+;/, 'const validate = $1;')
       return `export const ${name}Validator = /*#__PURE__*/ (() => {${code}return validate;})() as ApiValidator<ApiTypes.${name}>`
     }).join('\n\n')
-    const validatorProperties = entries
-      .map(([name]) =>
-        `  ${name}: ${name}Validator as ApiValidator<ApiTypes.${name}>,`)
-      .join('\n')
 
     const generatedHeader = [
       '// This file is generated from the Rust API response schemas by Ajv.',
@@ -86,10 +82,6 @@ export type ApiValidator<T> = ((value: unknown) => value is T) & {
 }
 
 ${generatedCode}
-
-export const apiValidators = {
-${validatorProperties}
-} as const
 `
 
     await writeFile(validatorsPath, output)

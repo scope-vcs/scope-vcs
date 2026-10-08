@@ -344,22 +344,6 @@ impl RepositoryStore {
         Ok(result.rows_affected() == 1)
     }
 
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_runs_for_check_suites"))]
-    pub async fn github_workflow_runs_for_check_suites(
-        &self,
-        repo_id: &str,
-        github_repository_id: u64,
-        check_suite_ids: &[u64],
-    ) -> Result<Vec<(u64, u64)>, PostgresError> {
-        github_workflow_runs_for_check_suites(
-            self.db.as_ref(),
-            repo_id,
-            github_repository_id,
-            check_suite_ids,
-        )
-        .await
-    }
-
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_names"))]
     pub async fn github_workflow_names(
         &self,

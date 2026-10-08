@@ -44,13 +44,9 @@ export function useRequestAutoMerge({
     setMutationError(null)
     try {
       const result = await mutate()
-      if (result.head_oid === snapshot.value?.state?.detail.request.head_oid) {
-        reconcileRequestState(identity, snapshot, (state) => ({ ...state, auto_merge: result }))
-      }
-      requestStateResource.invalidate(identity)
+      reconcileRequestState(identity, snapshot, (state) => ({ ...state, auto_merge: result }))
       return true
     } catch (cause) {
-      requestStateResource.invalidate(identity)
       setMutationError(resourceErrorMessage(
         cause,
         action === 'authorize'
@@ -59,6 +55,7 @@ export function useRequestAutoMerge({
       ))
       return false
     } finally {
+      requestStateResource.invalidate(identity)
       setPending(null)
     }
   }, [identity])

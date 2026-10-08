@@ -20,7 +20,7 @@ impl RequestStore {
                     OR (evaluation.state = 'started' AND evaluation.check_private_main_oid IS NOT NULL AND evaluation.check_private_main_oid IS DISTINCT FROM head.head_oid)
                     OR (evaluation.changes_github_workflows IS NULL AND evaluation.checks @> '[{"provider":"github"}]'::jsonb))
              ORDER BY request.id LIMIT $2"#,
-             [after_id.map(str::to_string).into(), u64_to_i64(limit.min(20), "request check recovery page size")?.into()]
+             [after_id.map(str::to_string).into(), u64_to_i64(limit, "request check recovery page size")?.into()]
         )).all(self.db.as_ref()).await.map_err(PostgresError::internal)?
           .into_iter().map(entities::request::Model::try_into_domain).collect()
     }

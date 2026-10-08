@@ -214,7 +214,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                   I’ll take this
                 </Button>
               ) : null}
-              {checks.checks?.can_approve ? (
+              {checks.checks.can_approve ? (
                 <Button
                   disabled={checks.approving}
                   onClick={() => void checks.approve()}

@@ -1,6 +1,6 @@
 import { ApiRouteTemplates, type ErrorResponse } from './types.generated'
 import {
-  ErrorResponseValidator as validateErrorResponse,
+  ErrorResponseValidator,
   type ApiValidationIssue,
   type ApiValidator,
 } from './validators.generated'
@@ -138,11 +138,11 @@ export async function throwApiResponseError(
   }
 
   const payload = await readJsonResponse(response, context, maxResponseBytes)
-  if (!validateErrorResponse(payload)) {
+  if (!ErrorResponseValidator(payload)) {
     throw invalidResponse(
       context,
       'schema',
-      validationIssuePath(validateErrorResponse.errors?.[0]),
+      validationIssuePath(ErrorResponseValidator.errors?.[0]),
     )
   }
   throw new HttpError(response.status, payload)

@@ -83,13 +83,12 @@ impl RequestStore {
         }
         let canonical_main_oid =
             super::request_check_commits::canonical_main_oid(&tx, &request.repo_id).await?;
-        if canonical_main_oid != command.expected_canonical_main_oid {
-            return Err(PostgresError::conflict(
-                "main changed while evaluating checks",
-            ));
-        }
-        if let Some(base) = &command.evaluation.check_commit_base
-            && canonical_main_oid.as_deref() != Some(&base.canonical_main_oid)
+        if canonical_main_oid != command.expected_canonical_main_oid
+            || command
+                .evaluation
+                .check_commit_base
+                .as_ref()
+                .is_some_and(|base| canonical_main_oid.as_deref() != Some(&base.canonical_main_oid))
         {
             return Err(PostgresError::conflict(
                 "main changed while evaluating checks",

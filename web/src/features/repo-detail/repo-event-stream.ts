@@ -6,7 +6,7 @@ import {
 } from '../../api/http'
 import type { RepoLiveState } from '../../api/types'
 import type { ErrorResponse, RepoChangeEvent } from '../../api/types.generated'
-import { ErrorResponseValidator as validateErrorResponse, RepoChangeEventValidator as validateRepoChangeEvent } from '../../api/validators.generated'
+import { ErrorResponseValidator, RepoChangeEventValidator } from '../../api/validators.generated'
 
 const INITIAL_RECONNECT_DELAY_MS = 2_000
 const MAX_RECONNECT_DELAY_MS = 30_000
@@ -193,20 +193,20 @@ export function parseRepoStreamMessage(message: string): RepoStreamParseOutcome 
   }
 
   if (eventName === 'repo-change') {
-    if (!validateRepoChangeEvent(payload)) {
+    if (!RepoChangeEventValidator(payload)) {
       return {
         type: 'protocol-error',
         failureClass: 'schema',
-        issuePath: validationIssuePath(validateRepoChangeEvent.errors?.[0]),
+        issuePath: validationIssuePath(RepoChangeEventValidator.errors?.[0]),
       }
     }
     return { type: 'event', event: payload }
   }
-  if (!validateErrorResponse(payload)) {
+  if (!ErrorResponseValidator(payload)) {
     return {
       type: 'protocol-error',
       failureClass: 'schema',
-      issuePath: validationIssuePath(validateErrorResponse.errors?.[0]),
+      issuePath: validationIssuePath(ErrorResponseValidator.errors?.[0]),
     }
   }
   return { type: 'stream-error', error: payload }

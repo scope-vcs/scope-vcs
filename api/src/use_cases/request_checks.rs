@@ -463,7 +463,17 @@ async fn evaluate_request_checks(
     };
     if plan.evaluation.asks_github() {
         plan.evaluation.changes_github_workflows =
-            Some(changes_github_workflow_files(state, &repo, request).await?);
+            match changes_github_workflow_files(state, &repo, request).await {
+                Ok(changed) => Some(changed),
+                Err(error) => {
+                    tracing::warn!(
+                        request_id = request.id,
+                        error = %error.operator_diagnostic(),
+                        "could not read whether a request changes GitHub workflows"
+                    );
+                    None
+                }
+            };
     }
     state
         .metadata
@@ -587,7 +597,7 @@ pub(crate) async fn reconcile_request_checks_once(
                     .await?
                 {
                     state
-                        .publish_request_state_refresh(&repo.incarnation(), &request.id)
+                        .publish_known_request_state_refresh(&repo.incarnation(), &request)
                         .await;
                 }
             }

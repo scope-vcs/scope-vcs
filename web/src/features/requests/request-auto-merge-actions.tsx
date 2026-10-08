@@ -36,11 +36,11 @@ export function RequestAutoMergeActions({
 }) {
   const [dialog, setDialog] = useState<Dialog>(null)
   const { status } = autoMerge
-  const intent = status?.intent ?? null
-  const revisionId = status?.revision_id ?? null
+  const intent = status.intent
+  const revisionId = status.revision_id
   const active = intent?.status === 'Active'
   const pending = autoMerge.pending !== null
-  const canOffer = status?.can_enable === true && !canMergeRequest(request)
+  const canOffer = status.can_enable && !canMergeRequest(request)
 
   function openDialog(next: Exclude<Dialog, null>) {
     setDialog(next)
@@ -52,8 +52,6 @@ export function RequestAutoMergeActions({
     setDialog(null)
     onDialogOpenChange(false)
   }
-
-  if (!status) return null
 
   return (
     <>

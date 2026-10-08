@@ -19,12 +19,10 @@ export function hasRequestLifecycleActions(request: RequestSummaryResponse) {
 }
 
 export function hasRequestAutoMergeActions(
-  status: Pick<RequestAutoMergeResponse, 'can_enable' | 'intent'> | null,
+  status: Pick<RequestAutoMergeResponse, 'can_enable' | 'intent'>,
   dialogOpen = false,
 ) {
-  return dialogOpen || (
-    status !== null && (status.can_enable || status.intent?.status === 'Active')
-  )
+  return dialogOpen || status.can_enable || status.intent?.status === 'Active'
 }
 
 export function requestSubmitsForReview(request: Pick<RequestSummaryResponse, 'author_role'>) {
