@@ -86,8 +86,9 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, 
     }
     const runId = event.kind.RunChanged.run_id
     requestStateResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`) &&
-      Boolean(requestStateResource.peek(identity)?.state?.checks.checks.some((check) =>
-        check.provider === 'native' && check.run_id === runId)))
+      (requestStateResource.getSnapshot(identity).pending ||
+        Boolean(requestStateResource.peek(identity)?.state?.checks.checks.some((check) =>
+          check.provider === 'native' && check.run_id === runId))))
   } else if (typeof event.kind === 'object' && 'RequestAttachmentChanged' in event.kind) {
     requestAttachmentResource.invalidate(requestAttachmentResourceIdentity(scope, event.kind.RequestAttachmentChanged.request_id))
   }

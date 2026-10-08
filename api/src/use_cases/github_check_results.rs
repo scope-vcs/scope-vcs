@@ -143,19 +143,29 @@ pub(crate) async fn refresh_commit_checks(
         let associated = requests
             .requests_testing_github_commit(&connection.repository_id, commit_oid)
             .await?;
-        if associated.is_empty() {
+        if associated.is_empty()
+            || state
+                .metadata
+                .repositories()
+                .github_setup_check(&connection.repository_id)
+                .await?
+                .is_some_and(|read| {
+                    read.check.is_running()
+                        && read.check.is_of(connection)
+                        && read.check.commit_oid == commit_oid
+                })
+        {
             state
                 .publish_request_summary_refresh(
                     &record.incarnation(),
                     RepoChangeReason::RequestChecksUpdated,
                 )
                 .await;
-        } else {
-            for request in associated {
-                state
-                    .publish_known_request_state_refresh(&record.incarnation(), &request)
-                    .await;
-            }
+        }
+        for request in associated {
+            state
+                .publish_known_request_state_refresh(&record.incarnation(), &request)
+                .await;
         }
     }
     state.auto_merge_wakeup.notify_one();

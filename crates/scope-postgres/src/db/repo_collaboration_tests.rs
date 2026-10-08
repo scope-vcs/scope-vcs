@@ -19,7 +19,7 @@ use scope_domain::{
         collaboration::{RepositoryMember, RepositoryMemberPermissions},
         git::GitHead,
     },
-    views::ViewId,
+    views::{ViewDefinition, ViewId, ViewIncludes, ViewReaders, Views},
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
@@ -41,12 +41,17 @@ fn user(id: &str) -> UserAccount {
 }
 
 async fn fixture() -> MetadataStore {
+    fixture_with_views(Views::builtin()).await
+}
+
+async fn fixture_with_views(views: Views) -> MetadataStore {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let owner = user("owner");
     let member = user("member");
     let invitee = user("invitee");
     let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_repo").unwrap();
+    repo.repo_config.views = views;
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
     for index in 0..20 {
         let oid = format!("{:040x}", index + 1);
@@ -84,6 +89,7 @@ async fn fixture() -> MetadataStore {
     catalog.users.insert(owner.id.clone(), owner.clone());
     catalog.users.insert(member.id.clone(), member);
     catalog.users.insert(invitee.id.clone(), invitee);
+    catalog.users.insert("agent".into(), user("agent"));
     catalog.repositories.insert(repo.record.id.clone(), repo);
     store.admin().seed_catalog_for_tests(catalog).unwrap();
     store
@@ -167,6 +173,122 @@ async fn only_the_owner_reads_collaboration() {
 
 const REPO_ID: &str = "owner/repo";
 const NOW: u64 = 200;
+
+#[tokio::test]
+async fn granting_unused_views_publishes_their_heads_before_reads() {
+    let mut definitions = Vec::<ViewDefinition>::from(Views::builtin());
+    for id in ["docs", "agent"] {
+        definitions.push(ViewDefinition {
+            id: ViewId::parse(id).unwrap(),
+            name: id.into(),
+            includes: ViewIncludes::Some([ViewId::public()].into()),
+            readers: ViewReaders::Assigned,
+        });
+    }
+    let store = fixture_with_views(Views::new(definitions).unwrap()).await;
+    let repositories = store.repositories();
+    let before = repositories
+        .repository_read_access("owner", "repo", Some("owner"))
+        .await
+        .unwrap()
+        .unwrap();
+    let canonical_head = repositories.repository_main_oid(&before).await.unwrap();
+    for id in ["docs", "agent"] {
+        assert!(
+            entities::projection_read_model::Entity::find_by_id((REPO_ID.into(), id.into()))
+                .one(store.db.as_ref())
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    repositories
+        .update_repository_member_permissions(UpdateRepositoryMemberPermissionsCommand {
+            owner: "owner".into(),
+            name: "repo".into(),
+            owner_user_id: "owner".into(),
+            member_user_id: "member".into(),
+            permissions: RepositoryMemberPermissions {
+                view: ViewId::parse("docs").unwrap(),
+                ..RepositoryMemberPermissions::default()
+            },
+            now_unix: NOW,
+        })
+        .await
+        .unwrap();
+    repositories
+        .create_repository_invite(CreateRepositoryInviteMutation {
+            owner: "owner".into(),
+            name: "repo".into(),
+            owner_user: user("owner"),
+            invited_email: "agent@example.com".into(),
+            permissions: RepositoryMemberPermissions {
+                view: ViewId::parse("agent").unwrap(),
+                ..RepositoryMemberPermissions::default()
+            },
+            invite_id: "invite_agent".into(),
+            email_id: "invite_email_agent".into(),
+            now_unix: NOW,
+        })
+        .await
+        .unwrap();
+    repositories
+        .issue_repository_invite_link(IssueRepositoryInviteLinkCommand {
+            owner: "owner".into(),
+            name: "repo".into(),
+            owner_user_id: "owner".into(),
+            invite_id: "invite_agent".into(),
+            link_hash: "sha256:agent".into(),
+            now_unix: NOW,
+        })
+        .await
+        .unwrap();
+    let (_, accepted) = repositories
+        .accept_repository_invite("sha256:agent", user("agent"), NOW)
+        .await
+        .unwrap();
+    assert!(matches!(
+        accepted,
+        AcceptRepositoryInviteOutcome::Accepted(_)
+    ));
+    for (user_id, id) in [("member", "docs"), ("agent", "agent")] {
+        let projection =
+            entities::projection_read_model::Entity::find_by_id((REPO_ID.into(), id.into()))
+                .one(store.db.as_ref())
+                .await
+                .unwrap()
+                .expect("granting a view must publish its projection before any read");
+        assert!(projection.current());
+        assert_eq!(
+            projection.repo_version as u64,
+            before.record.content_version
+        );
+        assert_eq!(projection.file_count, 20);
+        assert!(projection.head_oid.is_some());
+        let access = repositories
+            .repository_read_access("owner", "repo", Some(user_id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            access.access.actor,
+            scope_domain::repository::access::RepositoryActor::Member
+        );
+        assert_eq!(access.access.view, ViewId::parse(id).unwrap());
+        assert!(access.can_read_view(&ViewId::parse(id).unwrap()));
+        assert!(!access.can_read_view(access.views.full()));
+    }
+    let after = repositories
+        .repository_read_access("owner", "repo", Some("owner"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.record.content_version, before.record.content_version);
+    assert_eq!(
+        repositories.repository_main_oid(&after).await.unwrap(),
+        canonical_head
+    );
+}
 
 async fn lock_history(store: &MetadataStore) -> DatabaseTransaction {
     let held = store.db.begin().await.unwrap();

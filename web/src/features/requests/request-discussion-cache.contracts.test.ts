@@ -103,6 +103,45 @@ test('concurrent navigation loads the initial discussion page once and reopening
   assert.deepEqual(reopened?.discussions.map(({ id }) => id), ['discussion-0', 'old'])
 })
 
+test('focused navigation merges missing rows through the retained owner', async () => {
+  resetViewerState()
+  const catchUp = mock.fn(noChanges)
+  const session = openRequestDiscussion('request', page(1), catchUp)
+  await session.sync.paginate('older', async () => ({ discussions: [discussion('old', 0)], next_cursor: null, snapshot_version: 1 }))
+  const focused = await loadRequestDiscussionSession({
+    key: 'request', focusedDiscussionId: 'focused',
+    load: async () => ({ ...page(1), discussions: [discussion('focused', 1)] }), loadChanges: noChanges,
+  })
+  assert.equal(requestDiscussionResource.peek('request')?.collection.byId.has('focused'), true)
+  assert.equal(focused?.next_cursor, null)
+  assert.equal(catchUp.mock.callCount(), 0)
+})
+
+for (const [failure, load] of [
+  ['unavailable', async () => null],
+  ['offline', async () => { throw new Error('offline') }],
+] as const) {
+  test(`a failed focused load retains loaded discussions and pagination: ${failure}`, async () => {
+    resetViewerState()
+    const session = openRequestDiscussion('request', page(1), noChanges)
+    await session.sync.paginate('older', async () => ({ discussions: [discussion('old', 0)], next_cursor: null, snapshot_version: 1 }))
+    const retained = await loadRequestDiscussionSession({ key: 'request', focusedDiscussionId: 'missing', load, loadChanges: noChanges })
+    assert.deepEqual(retained?.discussions.map(({ id }) => id), ['discussion-0', 'old'])
+    assert.equal(retained?.next_cursor, null)
+  })
+}
+
+test('a focused response cannot return a prior viewer timeline after reset', async () => {
+  resetViewerState()
+  openRequestDiscussion('request', page(1), noChanges)
+  const response = deferred<RequestDiscussionPage>()
+  const loading = loadRequestDiscussionSession({ key: 'request', focusedDiscussionId: 'missing', load: () => response.promise, loadChanges: noChanges })
+  resetViewerState()
+  response.resolve({ ...page(1), discussions: [discussion('missing', 1)] })
+  await assert.rejects(async () => loading, /Resource is no longer available/)
+  assert.equal(requestDiscussionResource.peek('request'), null)
+})
+
 test('a discussion first-page response cannot publish after the viewer changes', async () => {
   resetViewerState()
   const response = deferred<RequestDiscussionPage>()

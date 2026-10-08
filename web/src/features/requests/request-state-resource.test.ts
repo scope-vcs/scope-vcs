@@ -56,6 +56,28 @@ test('native run changes leave requests with different runs reusable', () => {
   assert.equal(requestStateResource.getSnapshot(other).stale, false)
 })
 
+for (const retained of [false, true]) {
+  test(`a native completion during a pending snapshot load triggers recovery with retained data: ${retained}`, async () => {
+    if (retained) requestStateResource.write(identity, { state: state() })
+    requestStateResource.invalidate(identity)
+    const response = deferred<{ state: RequestStateResponse }>()
+    const first = loadRequestStateValue(identity, () => response.promise)
+    await Promise.resolve()
+    invalidateRepoResources('viewer-access', event({ RunChanged: { run_id: 'new-run', change: 'StatusChanged' } }))
+    const incoming = state()
+    incoming.checks.checks = [{ provider: 'native', run_id: 'new-run', run_state: 'running', workflow_name: 'checks', workflow_path: '/.scope/runs/checks.yml' }]
+    response.resolve({ state: incoming })
+    await first
+    assert.equal(requestStateResource.getSnapshot(identity).stale, true)
+    const recovered = state()
+    recovered.checks.checks = [{ provider: 'native', run_id: 'new-run', run_state: 'succeeded', workflow_name: 'checks', workflow_path: '/.scope/runs/checks.yml' }]
+    await loadRequestStateValue(identity, async () => ({ state: recovered }))
+    const check = requestStateResource.peek(identity)?.state?.checks.checks[0]
+    assert.equal(check?.provider === 'native' ? check.run_state : null, 'succeeded')
+    assert.equal(requestStateResource.getSnapshot(identity).stale, false)
+  })
+}
+
 test('a mutation receipt cannot mix requests or heads or replace an event-triggered snapshot', async () => {
   requestStateResource.write(identity, { state: state() })
   const receipt = requestStateResource.getSnapshot(identity)

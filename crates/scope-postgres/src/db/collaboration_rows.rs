@@ -84,6 +84,38 @@ where
             "repository changed under its lock during a collaboration change",
         ));
     }
+    let previously_assigned = before
+        .collaboration
+        .members
+        .iter()
+        .map(|member| &member.permissions.view)
+        .collect::<std::collections::BTreeSet<_>>();
+    let newly_assigned = after
+        .collaboration
+        .members
+        .iter()
+        .map(|member| &member.permissions.view)
+        .filter(|view| !previously_assigned.contains(view))
+        .collect::<std::collections::BTreeSet<_>>();
+    for view in newly_assigned {
+        if super::projection_read_models::live_projection_read_model(
+            conn,
+            &after.record.id,
+            after.record.content_version,
+            view,
+        )
+        .await?
+        .is_none()
+        {
+            super::projection_read_models::build_projection_read_model(
+                conn,
+                &after.record.id,
+                after.record.content_version,
+                view,
+            )
+            .await?;
+        }
+    }
     Ok(())
 }
 
