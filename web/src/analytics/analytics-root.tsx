@@ -106,16 +106,17 @@ function AnalyticsRuntime({
 
   useEffect(() => {
     const installed = installBrowserDiagnostics({
-      capture: (event, properties) => {
+      capture: (event, properties, occurredAt) => {
         if (
           expectedKey.current === null
           || appliedKey.current !== expectedKey.current
         ) {
           return false
         }
-        safely(() => client.capture(event, properties))
+        safely(() => client.capture(event, properties, occurredAt))
         return true
       },
+      release: eventContext.release,
       routeName: documentRouteName.current,
     })
     diagnostics.current = installed
@@ -123,7 +124,7 @@ function AnalyticsRuntime({
       diagnostics.current = null
       installed.dispose()
     }
-  }, [client])
+  }, [client, eventContext.release])
 
   useEffect(() => {
     diagnostics.current?.setRoute(routeName)

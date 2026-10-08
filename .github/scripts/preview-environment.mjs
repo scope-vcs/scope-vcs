@@ -3,42 +3,19 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { serviceIds } from './deployment-components.mjs';
 import { loadDeploymentManifest } from './railway-artifact.mjs';
-import { readRailway } from './railway-read.mjs';
-import { RAILWAY_MUTATION_TIMEOUT_MS, retryRailway } from './railway-retry.mjs';
+import { railwayClient } from './railway-client.mjs';
+import { configureTracing } from './railway-tracing.mjs';
+import { retryRailway } from './railway-retry.mjs';
 import {
   RUNTIME_ROLES, assertPreviewEnvironment, changedVariables, unreviewedStagingVariables, databaseBootstrap, databaseBootstrapPending,
   generatePreviewSecrets, previewDomains, previewEnvironmentName, previewVariables, releaseEnvironmentIds,
-  rolePassword, serviceIds,
+  rolePassword,
 } from './preview-environment-plan.mjs';
 
 const POSTGRES_MOUNT = '/var/lib/postgresql/data';
 const DEPLOYMENT_TIMEOUT_MS = 900_000;
-
-export function railwayClient() {
-  return {
-    query(query, variables) {
-      return readRailway(['api', query, '--variables', '@-'], { input: JSON.stringify(variables) }).data;
-    },
-    mutate(query, variables) {
-      let result;
-      try {
-        result = JSON.parse(execFileSync('railway', ['api', query, '--variables', '@-'], {
-          input: JSON.stringify(variables), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-          timeout: RAILWAY_MUTATION_TIMEOUT_MS, killSignal: 'SIGKILL',
-        }));
-      } catch {
-        throw new Error(`Railway ${query.split('(')[0]} failed.`);
-      }
-      if (result.errors?.length) throw new Error(`Railway ${query.split('(')[0]} failed.`);
-      return result.data;
-    },
-    pause(milliseconds) {
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
-    },
-    now: () => Date.now(),
-  };
-}
 
 function findEnvironment(railway, projectId, name) {
   const edges = railway.query('query Environments($projectId:String!){project(id:$projectId){environments{edges{node{id name isEphemeral}}}}}',
@@ -113,18 +90,6 @@ function configureMaintenanceRegistry(railway, environmentId, serviceId, credent
   });
 }
 
-function enableTracing(railway, environmentId, ids) {
-  for (const [component, serviceId] of Object.entries(ids)) {
-    if (component === 'postgres') continue;
-    const input = component === 'web' ? { tracingEnabled: true, autoInstrumentationEnabled: true } : { tracingEnabled: true };
-    retryRailway(() => {
-      const data = railway.mutate('mutation PreviewTracing($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}',
-        { serviceId, environmentId, input });
-      if (data?.serviceInstanceUpdate !== true) throw new Error(`Railway did not confirm preview tracing for ${component}.`);
-    });
-  }
-}
-
 function latestDeploymentStatus(railway, environmentId, serviceId) {
   return railway.query('query PreviewLatest($environmentId:String!,$serviceId:String!){serviceInstance(environmentId:$environmentId,serviceId:$serviceId){latestDeployment{status}}}',
     { environmentId, serviceId }).serviceInstance?.latestDeployment?.status ?? null;
@@ -166,7 +131,7 @@ export function ensurePreviewEnvironment({ manifest, pullRequest, clerk, registr
   }
   const domains = previewDomains(manifest, config);
   ensurePostgresVolume(railway, projectId, environmentId, ids.postgres);
-  enableTracing(railway, environmentId, ids);
+  configureTracing(railway, environmentId, ids);
   configureMaintenanceRegistry(railway, environmentId, ids.maintenance, registryCredentials);
 
   const current = currentVariables(railway, projectId, environmentId, ids);

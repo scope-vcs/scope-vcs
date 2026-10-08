@@ -84,3 +84,20 @@ export function analyticsRouteForId(routeId: string | undefined) {
 export function analyticsRouteForName(name: string) {
   return routesByName.get(name) ?? null
 }
+
+export function analyticsRouteForPathname(pathname: string) {
+  const segments = pathname.split('/').filter(Boolean)
+  const candidates = Object.entries(routeDecisions).flatMap(([id, decision]) => {
+    if (decision.kind !== 'tracked') return []
+    const pattern = id.split('/').filter((segment) => segment && !segment.startsWith('_'))
+    const wildcard = pattern.at(-1) === '$'
+    if (wildcard ? segments.length < pattern.length - 1 : segments.length !== pattern.length) {
+      return []
+    }
+    if (!pattern.every((segment, index) => segment.startsWith('$') || segment === segments[index])) {
+      return []
+    }
+    return [{ route: decision.route, specificity: pattern.filter((segment) => !segment.startsWith('$')).length }]
+  })
+  return candidates.sort((left, right) => right.specificity - left.specificity)[0]?.route ?? null
+}

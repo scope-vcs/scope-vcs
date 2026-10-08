@@ -54,6 +54,7 @@ jobs:
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
           RAILWAY_DEPLOY_MESSAGE: ${{ github.event.head_commit.message || github.workflow }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           SCOPE_DEPLOYMENT_COMPONENT: web
           SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
@@ -64,7 +65,7 @@ jobs:
           SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.environments.production.environmentId' "$manifest")"
           export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
           service_id="$(jq -r '.services.web.id' "$manifest")"
-          bash .github/scripts/deploy-monitored-railway.sh web bash .github/scripts/deploy-railway.sh "$service_id"
+          bash .github/scripts/deploy-monitored-railway.sh web env -u RAILWAY_API_TOKEN bash .github/scripts/deploy-railway.sh "$service_id"
 
       - name: Record successful Railway deployment
         if: steps.transition.outcome == 'success'

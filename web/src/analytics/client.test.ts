@@ -11,7 +11,7 @@ const homePageView = () => pageViewProperties(
 
 test('real client preserves event identities and stores nothing on the device', async () => {
   const storage = new Map<string, string>()
-  const captured: Array<{ event: string; properties: Record<string, unknown> }> = []
+  const captured: Array<{ event: string; properties: Record<string, unknown>; timestamp: string }> = []
   const restore = browserGlobals(storage, { doNotTrack: '0' }, async (_input, init) => {
     captured.push(JSON.parse(init?.body as string))
     return Response.json({ status: 1 })
@@ -41,6 +41,15 @@ test('real client preserves event identities and stores nothing on the device', 
     assert.equal(captured[2].properties.environment, 'test')
     assert.equal(captured[2].properties.release, 'web-abc123')
     assert.equal(captured[2].properties.source, 'browser')
+    client.capture('frontend_error', {
+      error_kind: 'abort_error',
+      error_origin: 'promise',
+      release: 'web-original',
+      route_name: 'request_changes',
+    }, '2026-10-08T18:00:00.000Z')
+    await until(() => captured.length === 4)
+    assert.equal(captured[3].timestamp, '2026-10-08T18:00:00.000Z')
+    assert.equal(captured[3].properties.release, 'web-original')
     assert.equal(storage.size, 0)
   } finally {
     restore()

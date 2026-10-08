@@ -2504,6 +2504,16 @@ Repository: "https://github.com/rust-lang/compiler-builtins"
 LICENSE.txt: text 5f5535fee8ec2ca694194338af28838569d643911d535632f8fcdfa748851a0c
 
 ==============================================================================
+libredox 0.1.25
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/libredox/libredox-0.1.25.crate
+
+Published author metadata: ["4lDO2 <4lDO2@protonmail.com>"]
+Repository: "https://gitlab.redox-os.org/redox-os/libredox.git"
+LICENSE: text 7dbbefcddfaa1e0748935e84fe8f3ad29bb21b7556a02e423b47ac48706b5d02
+
+==============================================================================
 libsqlite3-sys 0.37.0
 Declared license: MIT
 Selected license: MIT
@@ -2911,6 +2921,20 @@ legal/upstream/madsmtm-objc2-7b1abfd750a2-LICENSE.md: text 1aa0a34224480ff916817
 legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml: text ee0379dcbdf96649f2129f95f9aae9ec42b4ef2e19b11473cf9cd465ea0e62b1
 legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt: text c435050845f96340bfb02c18e46653138e73475492f519b7e6e381853bdfbace
 Published package license and author metadata: text 73c681f28fe43f90ebcd0519b7e0ab65b88ba8ec49b8041969ecf1bdf01bb196
+
+==============================================================================
+objc2-system-configuration 0.3.2
+Declared license: Zlib OR Apache-2.0 OR MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/objc2-system-configuration/objc2-system-configuration-0.3.2.crate
+
+Repository: "https://github.com/madsmtm/objc2"
+The checksum-verified objc2-system-configuration 0.3.2 archive (SHA-256 7216bd11cbda54ccabcab84d523dc93b858ec75ecfb3a7d89513fa22464da396) identifies objc2 revision 7b1abfd750a2cacaea71d6a56ecfb83cb7de560b and framework-crates/objc2-system-configuration in .cargo_vcs_info.json. Its published manifest declares Zlib OR Apache-2.0 OR MIT; Cargo.toml.orig inherits the workspace license. The pinned workspace license declaration and contributor attribution, together with the MIT permission terms, supply the selected MIT license text omitted from the crate archive.
+
+legal/upstream/madsmtm-objc2-7b1abfd750a2-LICENSE.md: text 1aa0a34224480ff916817aafd48263c880fe53a1d116261a7bb8c952ee0173ab
+legal/upstream/madsmtm-objc2-7b1abfd750a2-workspace-Cargo.toml: text ee0379dcbdf96649f2129f95f9aae9ec42b4ef2e19b11473cf9cd465ea0e62b1
+legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt: text c435050845f96340bfb02c18e46653138e73475492f519b7e6e381853bdfbace
+Published package license and author metadata: text 455e226fb5ab68990c9d4a032c6a45200e8f7e1145669e13abffdf2eddba68b7
 
 ==============================================================================
 once_cell 1.21.4
@@ -4368,12 +4392,14 @@ LICENSE-MIT: text 215ac3dd4434b7c4b4c0fb2b6bb1e7273d30815059226695a287bc7d5e8580
 sqlx-core 0.9.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/sqlx-core/sqlx-core-0.9.0.crate
+Source: https://codeload.github.com/transact-rs/sqlx/tar.gz/f1e94ec34dd5f11ad6488a3a8ac7988439a3f757
 
 Published author metadata: ["Ryan Leckey <leckey.ryan@gmail.com>", "Austin Bonander <austin.bonander@gmail.com>", "Chloe Ross <orangesnowfox@gmail.com>", "Daniel Akhterov <akhterovd@gmail.com>"]
 Repository: "https://github.com/launchbadge/sqlx"
-LICENSE-APACHE: text 154397a08d0cb342110281129971868cd562542d0780b0d10722788cd11a1399
-LICENSE-MIT: text 72af89a828df52a9dcc42512ed64663b3b8d7961dd7a5586d44478eede82bc7a
+LICENSE-APACHE: text 73167a4e1b0151033249ac05c679def97f249397924785b23e7065a67330f07d
+LICENSE-MIT: text 215ac3dd4434b7c4b4c0fb2b6bb1e7273d30815059226695a287bc7d5e858015
+sqlx-core/LICENSE-APACHE: text 73167a4e1b0151033249ac05c679def97f249397924785b23e7065a67330f07d
+sqlx-core/LICENSE-MIT: text 215ac3dd4434b7c4b4c0fb2b6bb1e7273d30815059226695a287bc7d5e858015
 
 ==============================================================================
 sqlx-macros 0.9.0
@@ -4412,12 +4438,14 @@ LICENSE-MIT: text 72af89a828df52a9dcc42512ed64663b3b8d7961dd7a5586d44478eede82bc
 sqlx-postgres 0.9.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/sqlx-postgres/sqlx-postgres-0.9.0.crate
+Source: https://codeload.github.com/transact-rs/sqlx/tar.gz/f1e94ec34dd5f11ad6488a3a8ac7988439a3f757
 
 Published author metadata: ["Ryan Leckey <leckey.ryan@gmail.com>", "Austin Bonander <austin.bonander@gmail.com>", "Chloe Ross <orangesnowfox@gmail.com>", "Daniel Akhterov <akhterovd@gmail.com>"]
 Repository: "https://github.com/launchbadge/sqlx"
-LICENSE-APACHE: text 154397a08d0cb342110281129971868cd562542d0780b0d10722788cd11a1399
-LICENSE-MIT: text 72af89a828df52a9dcc42512ed64663b3b8d7961dd7a5586d44478eede82bc7a
+LICENSE-APACHE: text 73167a4e1b0151033249ac05c679def97f249397924785b23e7065a67330f07d
+LICENSE-MIT: text 215ac3dd4434b7c4b4c0fb2b6bb1e7273d30815059226695a287bc7d5e858015
+sqlx-postgres/LICENSE-APACHE: text 73167a4e1b0151033249ac05c679def97f249397924785b23e7065a67330f07d
+sqlx-postgres/LICENSE-MIT: text 215ac3dd4434b7c4b4c0fb2b6bb1e7273d30815059226695a287bc7d5e858015
 
 ==============================================================================
 sqlx-sqlite 0.9.0
@@ -7347,6 +7375,14 @@ Copyright (c) Individual contributors
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 455e226fb5ab68990c9d4a032c6a45200e8f7e1145669e13abffdf2eddba68b7 ---
+{
+  "name": "objc2-system-configuration",
+  "version": "0.3.2",
+  "license": "Zlib OR Apache-2.0 OR MIT",
+  "authors": null
+}
+
 --- text 45917412d41c582d2db45d37ae425ee0fd921fcf98df194ca1a05beb59845c73 ---
 > The `strum` module is adapted from https://github.com/Peternator7/strum
 
@@ -8723,6 +8759,13 @@ according to those terms.
 
 --- text 7d9f551458e84cf849649d2659dff470445dd14e1a9a37098da9eca6f7a13f62 ---
 Copyright (c) 2018-2023 RustCrypto Developers
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 7dbbefcddfaa1e0748935e84fe8f3ad29bb21b7556a02e423b47ac48706b5d02 ---
+MIT License
+
+Copyright (c) 2023 4lDO2
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 

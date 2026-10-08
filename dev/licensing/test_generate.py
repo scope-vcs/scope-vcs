@@ -80,6 +80,64 @@ class LicensingChecks(unittest.TestCase):
             ["COPYRIGHT", "LICENSE", "LICENSES/Apache-2.0.txt", "LICENSES/MIT.txt"])
         self.assertEqual(entry["documents"][0]["text"], "Copyright Example")
 
+    def test_git_lock_collection_requires_reviewed_source_integrity_and_matching_crate(self):
+        source = "git+https://github.com/example/database?rev=" + "a" * 40 + "#" + "a" * 40
+        contents = {
+            "Cargo.toml": '[workspace.package]\nversion = "1.2.3"\nlicense = "MIT OR Apache-2.0"\nauthors = ["Database Authors"]\nrepository = "https://github.com/example/database"\n',
+            "driver/Cargo.toml": '[package]\nname = "driver"\nversion.workspace = true\nlicense.workspace = true\nauthors.workspace = true\nrepository.workspace = true\n',
+            "LICENSE-MIT": "Copyright Workspace Authors\nMIT license terms",
+            "driver/LICENSE-APACHE": "Apache license terms for driver",
+            "unrelated/LICENSE": "Unrelated package terms",
+            "unrelated/Cargo.toml": '[package]\nname = "unrelated"\nversion = "1.2.3"\nlicense = "MIT"\n',
+        }
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as bundle:
+            for name, text in contents.items():
+                raw = text.encode()
+                member = tarfile.TarInfo("database-" + "a" * 40 + "/" + name)
+                member.size = len(raw)
+                bundle.addfile(member, io.BytesIO(raw))
+        data = buffer.getvalue()
+        checksum = generate.digest(data)
+        cache = self.root / "archives"
+        cache.mkdir()
+        (cache / checksum).write_bytes(data)
+        record = dict(url="https://codeload.github.com/example/database/tar.gz/" + "a" * 40,
+            sha256=checksum, workspace_manifest="Cargo.toml", packages={"driver@1.2.3": "driver/Cargo.toml"})
+        self.write("legal/git-sources.json", json.dumps(dict(sources={source: record})))
+        locked = f'[[package]]\nname = "driver"\nversion = "1.2.3"\nsource = "{source}"\n'
+        self.write("Cargo.lock", locked)
+        self.write("cli/Cargo.lock", "package = []\n")
+        self.write("web/pnpm-lock.yaml", "packages: {}\n")
+        self.write("dependency-analyzer/package-lock.json", '{"packages": {}}')
+        with patch.object(generate, "CACHE", cache):
+            entry = generate.collect(generate.packages()[0])
+            self.assertEqual(entry["source"], source)
+            self.assertEqual(entry["license"], "MIT OR Apache-2.0")
+            self.assertEqual(entry["authors"], ["Database Authors"])
+            self.assertEqual(entry["repository"], "https://github.com/example/database")
+            self.assertEqual([document["path"] for document in entry["documents"]],
+                ["LICENSE-MIT", "driver/LICENSE-APACHE"])
+            self.assertIn("Copyright Workspace Authors", entry["documents"][0]["text"])
+            (cache / checksum).write_bytes(b"tampered archive")
+            with self.assertRaisesRegex(ValueError, "Archive checksum mismatch"):
+                generate.collect(generate.packages()[0])
+            (cache / checksum).write_bytes(data)
+            for changed, lock in [
+                ({"packages": {"driver@1.2.3": "unrelated/Cargo.toml"}}, locked),
+                ({"packages": {"driver@9.0.0": "driver/Cargo.toml"}}, locked.replace('"1.2.3"', '"9.0.0"')),
+                ({"url": "https://example.invalid/mutable-archive.tar.gz"}, locked),
+            ]:
+                with self.subTest(changed=changed):
+                    self.write("Cargo.lock", lock)
+                    self.write("legal/git-sources.json", json.dumps(dict(sources={source: {**record, **changed}})))
+                    with self.assertRaisesRegex(ValueError, "match locked package|unreviewed Git crate|immutable source"):
+                        generate.collect(generate.packages()[0])
+            self.write("legal/git-sources.json", json.dumps(dict(sources={source: record})))
+            self.write("Cargo.lock", locked.replace("a" * 40, "b" * 40))
+            with self.assertRaisesRegex(ValueError, "Unsupported Cargo source"):
+                generate.packages()
+
     def test_changed_lockfile_or_generator_input_invalidates_notice_check(self):
         files = {"Cargo.lock": "locked packages\n", "dev/licensing/generate.py": "audited generator\n",
             "legal/third-party-rust.txt": "license texts\n"}

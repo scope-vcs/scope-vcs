@@ -168,3 +168,22 @@ label to recreate it.
 
 The `preview` GitHub environment must allow only `main` and hold
 `RAILWAY_API_TOKEN` and `SCOPE_RAILWAY_SSH_PRIVATE_KEY`.
+
+## Production tracing activation
+
+The monitored production deployment wrapper configures application tracing
+through `.github/scripts/railway-tracing.mjs` before invoking either the backend
+transition or web deployment. Preview provisioning reuses that owner.
+PostgreSQL is excluded; web also enables runtime auto-instrumentation.
+An unconfirmed provider mutation stops the release before service activation.
+Configuration runs under the existing Release concurrency lock, without a
+separate deployment path. Railway injects exporter variables on the subsequent
+service deployment; it does not retrofit a running deployment.
+
+Choose Release scope `all` for the initial rollout so the application services
+are actually replaced. A selective release leaves carried deployments pending
+exporter activation. Follow the [deployed coverage verification](tracing.md#deployed-coverage-verification)
+after release: real API/database spans with matching log trace IDs, claimed-job
+consumer spans, and useful web runtime spans. Preserve normal forward recovery
+if a transition fails. At actual release completion, create T3 checks for one
+hour and 24 hours later as described in [tracing follow-up](tracing.md#follow-up-after-release).

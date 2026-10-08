@@ -50,7 +50,7 @@ export class AnalyticsClient {
     this.anonymousEventQueued = false
   }
 
-  capture(event: string, properties: Properties = {}) {
+  capture(event: string, properties: Properties = {}, occurredAt?: string) {
     if (this.disabled) return
     const capture = this.sanitize({
       event,
@@ -62,7 +62,7 @@ export class AnalyticsClient {
         $process_person_profile: Boolean(this.properties.$user_id),
       },
       uuid: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
+      timestamp: occurredAt ?? new Date().toISOString(),
     })
     if (capture && this.delivery.enqueue(capture) && !this.properties.$user_id) {
       this.anonymousEventQueued = true
