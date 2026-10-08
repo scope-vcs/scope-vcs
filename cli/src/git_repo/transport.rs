@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::GitRetrySafety;
 use crate::progress::{CancellationToken, run_cancellable};
 use std::time::Duration;
 
@@ -12,6 +13,7 @@ pub fn push_head_with_bearer(
     branch: &str,
     bearer_token: &str,
     push_intent_token: &str,
+    retry_safety: GitRetrySafety,
 ) -> anyhow::Result<()> {
     let plan = git_push_auth_plan(
         destination,
@@ -26,6 +28,7 @@ pub fn push_head_with_bearer(
         None,
         "run authenticated Scope git push",
         "git push to Scope failed",
+        retry_safety,
     )
 }
 
@@ -63,7 +66,11 @@ pub fn push_head_to_ref_with_bearer(
     {
         return Err(StaleRefLease.into());
     }
-    finish_git_plan_output(output, "git push to Scope request ref failed")
+    finish_git_plan_output(
+        output,
+        "git push to Scope request ref failed",
+        GitRetrySafety::Idempotent,
+    )
 }
 
 pub fn clone_with_bearer(
@@ -82,6 +89,7 @@ pub fn clone_with_bearer(
         None,
         "run authenticated Scope git clone",
         "git clone from Scope failed",
+        GitRetrySafety::Idempotent,
     )
 }
 
@@ -104,6 +112,7 @@ pub fn fetch_scope_remote_with_bearer(
         Some(&repo.root),
         "refresh Scope Git remote before push review",
         "refresh Scope Git remote before push review failed; the request was not changed",
+        GitRetrySafety::Idempotent,
     )
 }
 
@@ -124,6 +133,7 @@ pub fn fetch_scope_remote_refs_with_bearer(
         Some(&repo.root),
         "fetch Scope refs",
         "git fetch from Scope failed",
+        GitRetrySafety::Idempotent,
     )
 }
 
@@ -154,6 +164,7 @@ pub fn fetch_scope_remote_with_bearer_cancellable(
     finish_git_plan_output(
         output,
         "refresh Scope Git remote before push review failed; the request was not changed",
+        GitRetrySafety::Idempotent,
     )
 }
 
@@ -310,18 +321,23 @@ fn run_git_plan_output(
     cwd: Option<&Path>,
     context: &str,
     failure: &str,
+    retry_safety: GitRetrySafety,
 ) -> anyhow::Result<()> {
     let output = git_command(plan, cwd)
         .output()
         .with_context(|| context.to_string())?;
-    finish_git_plan_output(output, failure)
+    finish_git_plan_output(output, failure, retry_safety)
 }
 
-fn finish_git_plan_output(output: Output, failure: &str) -> anyhow::Result<()> {
+fn finish_git_plan_output(
+    output: Output,
+    failure: &str,
+    retry_safety: GitRetrySafety,
+) -> anyhow::Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr = stderr.trim();
-        return Err(crate::error::CliError::git_failure(failure, stderr).into());
+        return Err(crate::error::CliError::git_failure(failure, stderr, retry_safety).into());
     }
     Ok(())
 }
@@ -329,6 +345,7 @@ fn finish_git_plan_output(output: Output, failure: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::GitRetrySafety;
     use crate::error::{ExitCategory, exit_code, json_response};
     use scope_api_contract::ErrorCode;
     use std::{
@@ -337,7 +354,7 @@ mod tests {
         thread,
     };
 
-    fn fetch_error(destination: &str) -> anyhow::Error {
+    fn test_repo() -> (tempfile::TempDir, GitRepo) {
         let directory = tempfile::tempdir().unwrap();
         let repo = GitRepo {
             root: directory.path().to_path_buf(),
@@ -356,9 +373,82 @@ mod tests {
                     .success()
             );
         }
+        (directory, repo)
+    }
+
+    fn fetch_error(destination: &str) -> anyhow::Error {
+        let (_directory, repo) = test_repo();
         fetch_scope_remote_with_bearer(&repo, destination, "scope", "main", "fixture-token")
             .context("refresh request before publishing")
             .unwrap_err()
+    }
+
+    fn commit(repo: &GitRepo) {
+        assert!(
+            Command::new("git")
+                .current_dir(&repo.root)
+                .args([
+                    "-c",
+                    "user.name=Fixture",
+                    "-c",
+                    "user.email=fixture@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "--allow-empty",
+                    "-m",
+                    "fixture"
+                ])
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+
+    #[test]
+    fn applied_push_retries_leave_main_and_leased_request_refs_unchanged() {
+        let (_directory, repo) = test_repo();
+        commit(&repo);
+        let remote = tempfile::tempdir().unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "--bare", "--quiet"])
+                .arg(remote.path())
+                .status()
+                .unwrap()
+                .success()
+        );
+        let destination = remote.path().to_str().unwrap();
+        let head = head_oid(&repo).unwrap();
+        for refname in ["refs/heads/main", "refs/heads/fix-fixture"] {
+            let plan = || {
+                if refname == "refs/heads/main" {
+                    git_push_auth_plan(
+                        destination,
+                        &head,
+                        "main",
+                        "fixture-token",
+                        "fixture-intent",
+                        None,
+                    )
+                } else {
+                    git_push_ref_auth_plan(destination, &head, refname, "", "fixture-token", None)
+                }
+            };
+            let first = git_command(plan(), Some(&repo.root)).output().unwrap();
+            assert!(first.status.success(), "{:?}", first);
+            let retry = git_command(plan(), Some(&repo.root)).output().unwrap();
+            assert!(retry.status.success(), "{:?}", retry);
+            assert!(String::from_utf8_lossy(&retry.stderr).contains("Everything up-to-date"));
+            let remote_head = Command::new("git")
+                .arg("--git-dir")
+                .arg(remote.path())
+                .args(["rev-parse", refname])
+                .output()
+                .unwrap();
+            assert_eq!(String::from_utf8_lossy(&remote_head.stdout).trim(), head);
+        }
     }
 
     #[test]
@@ -396,40 +486,95 @@ mod tests {
                 false,
             ),
             (
+                Some("502 Bad Gateway"),
+                ErrorCode::ServiceUnavailable,
+                ExitCategory::Temporary,
+                true,
+            ),
+            (
+                Some("503 Service Unavailable"),
+                ErrorCode::ServiceUnavailable,
+                ExitCategory::Temporary,
+                true,
+            ),
+            (
+                Some("504 Gateway Timeout"),
+                ErrorCode::ServiceUnavailable,
+                ExitCategory::Temporary,
+                true,
+            ),
+            (
                 None,
                 ErrorCode::ServiceUnavailable,
                 ExitCategory::Temporary,
                 true,
             ),
         ] {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let address = listener.local_addr().unwrap();
-            let server = thread::spawn(move || {
-                let (mut socket, _) = listener.accept().unwrap();
-                socket
-                    .set_read_timeout(Some(Duration::from_secs(5)))
-                    .unwrap();
-                let mut request = Vec::new();
-                let mut buffer = [0; 1024];
-                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
-                    let count = socket.read(&mut buffer).unwrap();
-                    assert!(count > 0);
-                    request.extend_from_slice(&buffer[..count]);
+            for push_safety in [
+                None,
+                Some(GitRetrySafety::Idempotent),
+                Some(GitRetrySafety::MayCreateRequest),
+            ] {
+                let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+                let address = listener.local_addr().unwrap();
+                let server = thread::spawn(move || {
+                    let (mut socket, _) = listener.accept().unwrap();
+                    socket
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut request = Vec::new();
+                    let mut buffer = [0; 1024];
+                    while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                        let count = socket.read(&mut buffer).unwrap();
+                        assert!(count > 0);
+                        request.extend_from_slice(&buffer[..count]);
+                    }
+                    if let Some(status) = status {
+                        write!(
+                            socket,
+                            "HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        )
+                        .unwrap();
+                    }
+                });
+                let destination = format!("http://{address}/repo");
+                let error = match push_safety {
+                    None => fetch_error(&destination),
+                    Some(safety) => {
+                        let (_directory, repo) = test_repo();
+                        commit(&repo);
+                        run_git_plan_output(
+                            git_push_auth_plan(
+                                &destination,
+                                "HEAD",
+                                "main",
+                                "fixture-token",
+                                "fixture-intent",
+                                None,
+                            ),
+                            Some(&repo.root),
+                            "push fixture",
+                            "git push to Scope failed",
+                            safety,
+                        )
+                        .unwrap_err()
+                    }
+                };
+                server.join().unwrap();
+                let response = json_response(&error).error;
+                if retryable && matches!(push_safety, Some(GitRetrySafety::MayCreateRequest)) {
+                    assert_eq!(response.code, ErrorCode::Conflict, "{status:?}: {error:#}");
+                    assert!(!response.retryable);
+                    assert!(response.message.contains("the push may have been applied"));
+                    assert!(response.message.contains("scope request list"));
+                    assert!(response.message.contains("scope request show"));
+                    assert_eq!(exit_code(&error), ExitCategory::StateConflict as u8);
+                    continue;
                 }
-                if let Some(status) = status {
-                    write!(
-                        socket,
-                        "HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                    )
-                    .unwrap();
-                }
-            });
-            let error = fetch_error(&format!("http://{address}/repo"));
-            server.join().unwrap();
-            let response = json_response(&error).error;
-            assert_eq!(response.code, code, "{status:?}: {error:#}");
-            assert_eq!(response.retryable, retryable);
-            assert_eq!(exit_code(&error), category as u8);
+                assert_eq!(response.code, code, "{status:?}: {error:#}");
+                assert_eq!(response.retryable, retryable);
+                assert_eq!(exit_code(&error), category as u8);
+            }
         }
     }
 }

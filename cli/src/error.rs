@@ -12,6 +12,12 @@ pub enum ExitCategory {
     Temporary = 6,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum GitRetrySafety {
+    Idempotent,
+    MayCreateRequest,
+}
+
 #[derive(Debug)]
 pub struct CliError {
     response: ErrorResponse,
@@ -48,7 +54,7 @@ impl CliError {
         Self::new(ErrorResponse::new(ErrorCode::Unauthorized, message))
     }
 
-    pub fn git_failure(failure: &str, stderr: &str) -> Self {
+    pub fn git_failure(failure: &str, stderr: &str, retry_safety: GitRetrySafety) -> Self {
         let message = if stderr.is_empty() {
             failure.to_string()
         } else {
@@ -65,6 +71,9 @@ impl CliError {
         {
             ErrorCode::Forbidden
         } else if [
+            "requested url returned error: 502",
+            "requested url returned error: 503",
+            "requested url returned error: 504",
             "could not resolve host:",
             "could not resolve proxy:",
             "failed to connect to ",
@@ -93,6 +102,16 @@ impl CliError {
         } else {
             ErrorCode::Internal
         };
+        if code == ErrorCode::ServiceUnavailable
+            && matches!(retry_safety, GitRetrySafety::MayCreateRequest)
+        {
+            return Self::new(ErrorResponse::new(
+                ErrorCode::Conflict,
+                format!(
+                    "{message}; the push may have been applied as a request. Do not push again before checking `scope request list` and `scope request show`"
+                ),
+            ));
+        }
         let response = ErrorResponse::new(code, message);
         Self::new(if code == ErrorCode::ServiceUnavailable {
             response.retryable()
@@ -251,10 +270,19 @@ mod tests {
             "remote: Enumerating objects: 10, done.\nerror: RPC failed; curl 56 Recv failure: Connection reset by peer",
             "remote: Checking objects...\rerror: RPC failed; curl 56 Recv failure: Connection reset by peer\n",
         ] {
-            let error: anyhow::Error = CliError::git_failure("fetch failed", diagnostic).into();
+            let error: anyhow::Error =
+                CliError::git_failure("fetch failed", diagnostic, GitRetrySafety::Idempotent)
+                    .into();
             let response = json_response(&error).error;
             assert_eq!(response.code, ErrorCode::ServiceUnavailable);
             assert!(response.retryable);
+            let error: anyhow::Error =
+                CliError::git_failure("push failed", diagnostic, GitRetrySafety::MayCreateRequest)
+                    .into();
+            let response = json_response(&error).error;
+            assert_eq!(response.code, ErrorCode::Conflict);
+            assert!(!response.retryable);
+            assert!(response.message.contains("the push may have been applied"));
         }
         for diagnostic in [
             "remote: connection timeout while applying policy\n! [remote rejected] HEAD -> main (pre-receive hook declined)",
@@ -262,7 +290,8 @@ mod tests {
             "remote: error: connection timeout while applying policy",
             "remote: connection timeout while applying policy",
         ] {
-            let error: anyhow::Error = CliError::git_failure("push failed", diagnostic).into();
+            let error: anyhow::Error =
+                CliError::git_failure("push failed", diagnostic, GitRetrySafety::Idempotent).into();
             assert!(!json_response(&error).error.retryable);
         }
     }
