@@ -346,11 +346,7 @@ mod tests {
     use crate::error::GitRetrySafety;
     use crate::error::{ExitCategory, exit_code, json_response};
     use scope_api_contract::ErrorCode;
-    use std::{
-        io::{Read, Write},
-        net::TcpListener,
-        thread,
-    };
+    use std::{io::Write, net::TcpListener, thread};
 
     fn test_repo() -> (tempfile::TempDir, GitRepo) {
         let directory = tempfile::tempdir().unwrap();
@@ -604,16 +600,7 @@ mod tests {
                 let address = listener.local_addr().unwrap();
                 let server = thread::spawn(move || {
                     let (mut socket, _) = listener.accept().unwrap();
-                    socket
-                        .set_read_timeout(Some(Duration::from_secs(5)))
-                        .unwrap();
-                    let mut request = Vec::new();
-                    let mut buffer = [0; 1024];
-                    while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
-                        let count = socket.read(&mut buffer).unwrap();
-                        assert!(count > 0);
-                        request.extend_from_slice(&buffer[..count]);
-                    }
+                    crate::test_support::read_http_request(&mut socket).unwrap();
                     if let Some(status) = status {
                         write!(
                             socket,
