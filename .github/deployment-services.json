@@ -30,7 +30,7 @@
           "dockerfile": "deploy/railway/prebuilt.Dockerfile",
           "installGit": false,
           "sourceBinary": "scope-cache-service",
-          "maxBytes": 33554432
+          "maxBytes": 24117248
         }
       }
     },
@@ -51,7 +51,7 @@
           "dockerfile": "deploy/railway/worker.Dockerfile",
           "installGit": true,
           "sourceBinary": "worker",
-          "maxBytes": 50331648
+          "maxBytes": 34603008
         }
       }
     },
@@ -70,7 +70,7 @@
           "dockerfile": "deploy/railway/prebuilt.Dockerfile",
           "installGit": false,
           "sourceBinary": "scope-repo-router",
-          "maxBytes": 11534336
+          "maxBytes": 9437184
         }
       }
     },
@@ -89,7 +89,7 @@
           "dockerfile": "deploy/railway/prebuilt.Dockerfile",
           "installGit": false,
           "sourceBinary": "scope-media-service",
-          "maxBytes": 34603008
+          "maxBytes": 27262976
         },
         "reconcile": {
           "replicas": 1,
@@ -139,10 +139,10 @@
           "dockerfile": "deploy/railway/prebuilt.Dockerfile",
           "installGit": true,
           "sourceBinary": "api",
-          "maxBytes": 71303168,
+          "maxBytes": 60817408,
           "maintenance": {
             "binary": "scope-maintenance",
-            "maxBytes": 36700160
+            "maxBytes": 27262976
           }
         }
       }
