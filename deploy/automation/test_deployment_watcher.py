@@ -78,6 +78,18 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
         self.assertEqual(len(self.starts()), 1)
 
+    def test_escalation_keeps_a_running_release_active_until_github_confirms_completion(self):
+        self.runs = [release(status="in_progress", conclusion=None)]
+        watcher.poll()
+        watcher.stop_owned("deadline_exceeded")
+        self.runs = []
+        self.by_id[123] = release(status="in_progress", conclusion=None)
+        self.assertEqual(watcher.poll()["active_releases"], 1)
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "escalated")
+        self.by_id[123] = release(status="completed", conclusion="failure")
+        self.assertEqual(watcher.poll()["active_releases"], 0)
+        self.assertEqual(self.starts(), [])
+
     def test_initialization_excludes_historical_completed_releases(self):
         watcher.STATE_PATH.unlink()
         self.runs = [release(1, "completed", "failure", BEFORE),

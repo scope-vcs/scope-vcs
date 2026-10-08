@@ -93,7 +93,8 @@ class SessionObserverTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime(2026, 10, 8, 20, tzinfo=timezone.utc)
         self.state = {"status": "idle", "progress_at": "2026-10-08T09:00:00Z", "repair_owners": 0,
-                      "releases": 0, "activated_on": "2026-10-08", "daily_audited_on": "2026-10-07"}
+                      "releases": 0, "activated_on": "2026-10-08", "daily_audited_on": "2026-10-07",
+                      "observed": {"123": {"attempt": 1, "status": "verified"}}}
         self.run = {"id": 123, "run_attempt": 1, "status": "completed", "conclusion": "success",
                     "created_at": "2026-10-08T07:08:04Z", "display_title": "Release / daily 2026-10-08",
                     "head_branch": "main", "event": "workflow_dispatch", "path": ".github/workflows/release.yml",
@@ -118,11 +119,11 @@ class SessionObserverTests(unittest.TestCase):
         missed.assert_called_once_with("2026-10-08")
 
     def test_manual_failure_and_new_attempt_without_observation_alert(self):
-        for status in ("in_progress", "completed"):
-            with self.subTest(status=status), patch.object(heartbeat, "ensure_issue") as issue:
-                run = self.run | {"id": 456, "status": status, "conclusion": "failure", "display_title": "Release",
+        for status, conclusion in (("in_progress", None), ("completed", "failure"), ("completed", "success")):
+            with self.subTest(status=status, conclusion=conclusion), patch.object(heartbeat, "ensure_issue") as issue:
+                run = self.run | {"id": 456, "status": status, "conclusion": conclusion, "display_title": "Release",
                                   "created_at": "2026-10-08T19:00:00Z", "run_attempt": 2}
-                self.state["observed"] = {"456": {"attempt": 1, "status": "verified"}}
+                self.state["observed"]["456"] = {"attempt": 1, "status": "verified"}
                 self.assertFalse(self.observe([self.run, run]))
                 issue.assert_called_once()
         self.state["observed"]["456"] = {"attempt": 2, "status": "escalated"}
@@ -162,8 +163,21 @@ class SessionObserverTests(unittest.TestCase):
                 patch.object(heartbeat, "ensure_issue") as issue:
             self.assertFalse(heartbeat.observe(json.dumps(self.state), now=self.now))
             issue.assert_called_once()
-            self.state["observed"] = {"456": {"attempt": 2, "status": "escalated"}}
+            self.state["observed"]["456"] = {"attempt": 2, "status": "escalated"}
             self.assertTrue(heartbeat.observe(json.dumps(self.state), now=self.now))
+
+    def test_old_nonterminal_retries_are_found_when_event_delivery_is_missing(self):
+        for status in ("in_progress", "queued", "requested", "waiting", "pending"):
+            retry = self.run | {"id": 456, "run_attempt": 2, "status": status, "created_at": "2026-08-01T07:08:00Z",
+                               "run_started_at": "2026-10-08T19:00:00Z", "display_title": "Release"}
+            def request(*args):
+                if f"&status={status}" in args[1]:
+                    return json.dumps({"workflow_runs": [retry]})
+                return json.dumps({"workflow_runs": [self.run]})
+            with self.subTest(status=status), patch.object(heartbeat, "gh", side_effect=request), \
+                    patch.object(heartbeat, "issues", return_value=[]), patch.object(heartbeat, "ensure_issue") as issue:
+                self.assertFalse(heartbeat.observe(json.dumps(self.state), now=self.now))
+                issue.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -123,7 +123,7 @@ def session_health(value, now, max_age):
 def release_runs(repo, since):
     from deployment_policy import trusted_run
     runs = {}
-    for status in ("", "in_progress", "queued", "waiting"):
+    for status in ("", "in_progress", "queued", "requested", "waiting", "pending"):
         page = 1
         while True:
             query = f"branch=main&per_page=100&page={page}" + (f"&status={status}" if status else "")
@@ -191,7 +191,7 @@ def observe(value, repo=REPO, now=None, max_age=1200):
             alert_missed(expected.isoformat())
             healthy = False
         expected += timedelta(days=1)
-    unobserved = [run for run in runs if (run["status"] != "completed" or run.get("conclusion") != "success") and
+    unobserved = [run for run in runs if
                   (state.get("observed", {}).get(str(run["id"]), {}).get("attempt") != run["run_attempt"] or
                    run["status"] != "completed" and state.get("status") != "running") and
                   (run["status"] != "completed" or datetime.fromisoformat(

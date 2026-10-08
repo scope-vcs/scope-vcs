@@ -18,6 +18,10 @@ that process saved its failed budget; activation/startup failures exit 78 and do
 not restart. Import and argument failures also stop. Systemd has no competing
 start-rate limit that can block the Python cleanup attempt. A trigger delivered during a
 session joins its durable queue. Failed starts retain their request.
+An expired session leaves new requests queued while confirming repair termination.
+After confirmation it retires its budget, then handles new work in a fresh bounded
+session under the same exclusive lock. Unconfirmed termination leaves requests
+unhandled and retains repair ownership.
 
 `session.json` records the process ID, session ID, deadline, operation phase,
 last completed progress, observed run attempts, and outcome. T3's succeeded task
@@ -26,6 +30,10 @@ progress to establish command execution. Dependency failures retain a bounded
 operation name and exception category; raw CLI or provider output is excluded.
 Changing the scheduler does not establish the cause of earlier RuntimeError
 failures.
+Daily reconciliation failures retain their request and continue repair observation.
+They publish the sanitized failure without advancing successful progress, defer
+maintenance, and end at the existing deadline. A process deadline escapes ordinary
+dependency retries and credential-cleanup failures.
 
 ## Dispatch and repair safety
 
@@ -87,6 +95,8 @@ before replacing the existing scheduler.
 The Monday task creates a durable weekly intent in `image-pin-refresh.json`.
 An active release saves a deferral; its bounded session drains that intent after
 repair and release ownership end, including across restart or a week boundary.
+An escalated investigation remains active for maintenance deferral until GitHub
+confirms that its workflow ended.
 Ordinary release observation never creates unrequested weekly work. Failed pin
 starts reuse the same thread and worktree, retry for ten minutes, then escalate
 once. The maintenance agent updates exact pins and checksums, opens a protected

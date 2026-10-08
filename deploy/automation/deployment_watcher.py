@@ -71,10 +71,15 @@ def recent_runs(state: dict) -> list[dict]:
         page += 1
 
 
+def release_open(record: dict) -> bool:
+    return (record["status"] not in TERMINAL or record.get("workflow_status", "completed") != "completed"
+            or record["status"] == "escalated" and "workflow_status" not in record)
+
+
 def update_runs(state: dict, listed: list[dict]) -> dict[str, dict]:
     current = {str(run["id"]): run for run in listed if trusted_run(run)}
     for key, record in state["runs"].items():
-        if record["status"] not in TERMINAL and key not in current:
+        if key not in current and release_open(record):
             current[key] = github(f"actions/runs/{key}")
     for key, run in current.items():
         if not trusted_run(run):
@@ -96,6 +101,7 @@ def update_runs(state: dict, listed: list[dict]) -> dict[str, dict]:
                     recovered["status"] = "waiting"
                     for field in ("corrected_by", "verified_at", "thread_id"):
                         recovered.pop(field, None)
+        record["workflow_status"] = run["status"]
         if record["status"] in {"verified", "no_change", "recovered"}:
             continue
         if run["status"] == "completed":
@@ -428,7 +434,7 @@ def poll(*, initialize: bool = False, dry_run: bool = False, expired: bool = Fal
     for info in state["threads"].values():
         report_escalation(state, info)
     return {"tracked_releases": len(state["runs"]),
-            "active_releases": sum(r["status"] not in TERMINAL for r in state["runs"].values()),
+            "active_releases": sum(release_open(r) for r in state["runs"].values()),
             "repair_owners": sum(bool(t.get("owns_agent")) for t in state["threads"].values()),
             "open_investigations": sum(t["status"] == "monitoring" for t in state["threads"].values()),
             "escalated_investigations": sum(t["status"] == "escalated" for t in state["threads"].values())}

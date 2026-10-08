@@ -78,6 +78,14 @@ class T3Tests(unittest.TestCase):
                         runtime.T3Client().__enter__()
                     execute.assert_not_called()
 
+    def test_cleanup_failure_does_not_replace_process_cancellation(self):
+        issued = subprocess.CompletedProcess([], 0, json.dumps({"sessionId": "test-session", "token": "test-secret"}))
+        with patch.object(runtime.subprocess, "run", side_effect=[issued, subprocess.CompletedProcess([], 1, "")]) as execute:
+            with self.assertRaises(KeyboardInterrupt):
+                with runtime.T3Client():
+                    raise KeyboardInterrupt()
+        self.assertEqual(execute.call_args.args[0][1:4], ["auth", "session", "revoke"])
+
     def test_runtime_version_cannot_escape_version_directory(self):
         for version in ("../other", "..", ".", "/tmp/t3", "", None):
             with self.subTest(version=version):

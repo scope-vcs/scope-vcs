@@ -60,7 +60,7 @@ class SessionTests(unittest.TestCase):
         result = session.run()
         self.assertEqual(result["status"], "idle")
         self.assertEqual(len(session.read("triggers.json")["requests"]), 1)
-        self.poll.assert_called_once_with(expired=False, run_ids=[123])
+        self.poll.assert_called_once_with(run_ids=[123])
         save_json(self.root / "supervision.json", {"runs": {"123": {"attempt": 2, "status": "verified"}}, "threads": {}})
         self.assertEqual(session.trigger("webhook", PAYLOAD, NOW), {"deduplicated": "release-123-2"})
         self.assertEqual(self.launch.call_count, 2)
@@ -102,14 +102,18 @@ class SessionTests(unittest.TestCase):
     def test_session_waits_for_stop_confirmation_and_finishes_at_its_deadline(self):
         session.trigger("reconcile", now=NOW)
         self.poll.return_value = {"active_releases": 0, "repair_owners": 1}
+        self.stop.return_value = 1
         def advance(_):
-            Clock.current += timedelta(hours=2, minutes=3)
+            Clock.current += timedelta(hours=2, minutes=1)
+            if Clock.current >= NOW + timedelta(hours=4):
+                session.trigger("daily", now=Clock.current)
         with patch.object(session.time, "sleep", side_effect=advance):
             result = session.run()
         self.assertEqual(result["status"], "escalated")
         self.assertEqual(result["repair_owners"], 1)
-        self.assertTrue(self.poll.call_args.kwargs["expired"])
-        self.assertEqual(self.poll.call_count, 3)
+        self.stop.assert_called_once_with("deadline_exceeded")
+        self.assertEqual(self.poll.call_count, 2)
+        self.assertNotIn("handled_at", session.read("triggers.json")["requests"]["daily-2026-10-08"])
 
     def test_repeated_dependency_failures_exhaust_the_saved_process_recovery_budget(self):
         session.trigger("reconcile", now=NOW)
@@ -122,12 +126,37 @@ class SessionTests(unittest.TestCase):
         self.stop.assert_called_once_with("attempts_exhausted")
         self.assertEqual(self.poll.call_count, 4)
 
+    def test_daily_reconciliation_failure_keeps_supervising_repair_without_successful_progress(self):
+        session.trigger("daily", now=NOW)
+        self.daily.side_effect = RuntimeError("daily API unavailable")
+        self.poll.return_value = {"active_releases": 1, "repair_owners": 1}
+        during = []
+        def recover(_):
+            during.append((session.read("session.json"), session.read("triggers.json")))
+            Clock.current += timedelta(minutes=1)
+            self.daily.side_effect = None
+            self.poll.return_value = {"active_releases": 0, "repair_owners": 0}
+        with patch.object(session.time, "sleep", side_effect=recover):
+            result = session.run()
+        self.assertEqual(self.poll.call_count, 2)
+        self.stop.assert_not_called()
+        self.assertEqual(during[0][0]["progress_at"], NOW.isoformat())
+        self.assertEqual(during[0][0]["failure"]["operation"], "github.daily-dispatch")
+        self.assertNotIn("handled_at", during[0][1]["requests"]["daily-2026-10-08"])
+        self.assertEqual((result["status"], result["recoveries"]), ("idle", 0))
+        self.assertNotIn("failure", result)
+
     def test_exhausted_recovery_stops_and_confirms_existing_repair_before_new_work(self):
         save_json(self.root / "session.json", {"id": "prior", "status": "failed", "started_at": "2026-10-08T06:00:00+00:00",
                                              "deadline_at": "2026-10-08T10:00:00+00:00", "recoveries": 3})
         save_json(self.root / "supervision.json", {"runs": {}, "threads": {"repair": {"owns_agent": True}}})
         session.trigger("daily", now=NOW)
-        self.stop.side_effect = [1, 0]
+        outcomes = iter((1, 0))
+        def stop(reason):
+            owners = next(outcomes)
+            save_json(self.root / "supervision.json", {"runs": {}, "threads": {"repair": {"owns_agent": bool(owners)}}})
+            return owners
+        self.stop.side_effect = stop
         with patch.object(session.time, "sleep"):
             result = session.run()
         self.assertEqual(self.stop.call_count, 2)
@@ -143,6 +172,33 @@ class SessionTests(unittest.TestCase):
         self.stop.assert_called_once_with("deadline_exceeded")
         self.assertEqual(self.daily.call_args.kwargs, {"dispatch_day": "2026-10-08"})
         self.assertEqual(result["deadline_at"], "2026-10-08T11:08:00+00:00")
+
+    def test_daily_arriving_during_expiry_stays_queued_until_the_old_repair_stops(self):
+        Clock.current = NOW - timedelta(hours=4, minutes=2)
+        session.trigger("reconcile", now=Clock.current)
+        self.poll.return_value = {"active_releases": 0, "repair_owners": 1}
+        before = {}
+        def advance(_):
+            if not before:
+                before.update(session.read("session.json"))
+                Clock.current = NOW + timedelta(minutes=1)
+                session.trigger("daily", now=NOW)
+            else:
+                Clock.current += timedelta(seconds=30)
+        self.stop.side_effect = [1, 0]
+        def stopped():
+            self.poll.return_value = {"active_releases": 0, "repair_owners": 0}
+            return self.stop()
+        with patch.object(session.time, "sleep", side_effect=advance), \
+                patch.object(session.watcher, "stop_owned", side_effect=lambda reason: stopped()):
+            result = session.run()
+        self.assertEqual(self.stop.call_count, 2)
+        self.assertEqual(result["status"], "idle")
+        self.assertNotEqual(result["id"], before["id"])
+        self.assertEqual(result["recoveries"], 0)
+        self.assertEqual(self.daily.call_args.kwargs, {"dispatch_day": "2026-10-08"})
+        self.assertEqual(sum(call.kwargs["dispatch_day"] is not None for call in self.daily.call_args_list), 1)
+        self.assertIn("handled_at", session.read("triggers.json")["requests"]["daily-2026-10-08"])
 
     def test_cutover_guard_rejects_triggers_before_ownership_changes(self):
         save_json(self.root / "scheduler-owner.json", {"owner": "systemd"})
@@ -174,6 +230,17 @@ class ProcessDeadlineTests(unittest.TestCase):
         with self.assertRaises(session.SessionDeadlineExceeded):
             with session.process_deadline(deadline):
                 time.sleep(0.5)
+
+    def test_deadline_inside_maintenance_start_escapes_its_retry_handler(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(session.pins, "STATE_PATH", Path(directory) / "pins.json"), \
+                patch.object(session.pins, "start", side_effect=lambda *args: time.sleep(0.5)) as start:
+            session.pins.poll(True, datetime(2026, 10, 5, 14, tzinfo=timezone.utc), requested_weeks=("2026-W41",))
+            with self.assertRaises(session.SessionDeadlineExceeded):
+                with session.process_deadline(datetime.now(timezone.utc) + timedelta(seconds=0.05)):
+                    session.pins.poll(False, datetime(2026, 10, 5, 14, tzinfo=timezone.utc))
+            start.assert_called_once()
+            intent = json.loads(session.pins.STATE_PATH.read_text())["weeks"]["2026-W41"]
+            self.assertNotIn("first_attempt_at", intent)
 
 
 if __name__ == "__main__":

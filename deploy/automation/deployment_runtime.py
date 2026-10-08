@@ -175,14 +175,18 @@ class T3Client:
         self.request_id = 0
         return self
 
-    def __exit__(self, *args):
-        if self.rpc:
-            self.rpc.close()
-        result = subprocess.run([str(self.cli), "auth", "session", "revoke", "--base-dir", str(T3_HOME),
-                                 self.session["sessionId"]],
-                                capture_output=True, timeout=30)
-        if result.returncode:
-            raise RuntimeError("Cannot revoke local T3 session")
+    def __exit__(self, error_type, error, traceback):
+        try:
+            if self.rpc:
+                self.rpc.close()
+            result = subprocess.run([str(self.cli), "auth", "session", "revoke", "--base-dir", str(T3_HOME),
+                                     self.session["sessionId"]],
+                                    capture_output=True, timeout=30)
+            if result.returncode:
+                raise RuntimeError("Cannot revoke local T3 session")
+        except Exception:
+            if error_type is None or issubclass(error_type, Exception):
+                raise
 
     def request(self, path: str) -> dict:
         request = urllib.request.Request(self.origin + path, headers={

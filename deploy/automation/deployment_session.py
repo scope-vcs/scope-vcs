@@ -28,7 +28,7 @@ POLL_SECONDS = 60
 STOP_GRACE = 300
 
 
-class SessionDeadlineExceeded(TimeoutError):
+class SessionDeadlineExceeded(BaseException):
     pass
 
 
@@ -137,12 +137,15 @@ def process_deadline(deadline):
         signal.signal(signal.SIGALRM, previous)
 
 
-def stop_previous(previous, reason):
+def stop_previous(previous, reason, deadline=None):
+    deadline = deadline or datetime.now(timezone.utc) + timedelta(seconds=STOP_GRACE)
     previous.update(status="running", phase="stopping", stop_reason=reason,
-                    stop_deadline_at=(datetime.now(timezone.utc) + timedelta(seconds=STOP_GRACE)).isoformat(), pid=os.getpid())
+                    stop_deadline_at=deadline.isoformat(), pid=os.getpid())
     save_json(STATE_DIR / "session.json", previous)
-    with process_deadline(datetime.fromisoformat(previous["stop_deadline_at"])):
+    with process_deadline(deadline):
         while True:
+            if datetime.now(timezone.utc) >= deadline:
+                raise SessionDeadlineExceeded("Repair termination was not confirmed before the stop deadline")
             with operation("t3.stop-confirmation"):
                 owners = watcher.stop_owned(reason)
             previous.update(repair_owners=owners, progress_at=stamp())
@@ -161,90 +164,111 @@ def run(now=None):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError("Another supervision owner is still running") from None
-        at = now or datetime.now(timezone.utc)
-        previous = read("session.json", {})
-        supervision = read("supervision.json", {"threads": {}})
-        continuing = previous.get("status") in {"running", "failed"} or (
-            bool(previous) and any(value.get("owns_agent") for value in supervision["threads"].values()))
-        recoveries = previous.get("recoveries", 0) + 1 if continuing else 0
-        obsolete = continuing and at >= datetime.fromisoformat(previous["deadline_at"])
-        exhausted = recoveries > MAX_RECOVERIES
-        if obsolete or exhausted:
-            try:
-                stop_previous(previous, "attempts_exhausted" if exhausted else "deadline_exceeded")
-            except Exception as error:
-                previous.update(status="escalated", failed_at=stamp(), failure=diagnostic(error))
-                save_json(STATE_DIR / "session.json", previous)
-                return previous
-            with queue_lock():
-                queue = read("triggers.json", {"requests": {}})
-                new_work = any("handled_at" not in value and datetime.fromisoformat(value["requested_at"]) >
-                               datetime.fromisoformat(previous["started_at"]) for value in queue["requests"].values())
-                if not new_work:
-                    return previous
-            continuing = False
-            recoveries = 0
-        session = {"id": previous["id"] if continuing else str(uuid.uuid4()),
-                   "started_at": previous["started_at"] if continuing else at.isoformat(),
-                   "deadline_at": previous["deadline_at"] if continuing else (at + timedelta(seconds=DEADLINE_SECONDS)).isoformat(),
-                   "status": "running", "pid": os.getpid(), "phase": "starting",
-                   "recoveries": recoveries,
-                   "activated_on": read("scheduler-owner.json")["activated_on"],
-                   "progress_at": previous.get("progress_at", at.isoformat()) if continuing else at.isoformat()}
-        deadline = datetime.fromisoformat(session["deadline_at"])
+        while True:
+            result = run_session(now)
+            if result.get("phase") != "stopped" or not pending_after(result):
+                return result
+            now = None
+
+
+def pending_after(session):
+    with queue_lock():
+        queue = read("triggers.json", {"requests": {}})
+        return any("handled_at" not in value and datetime.fromisoformat(value["requested_at"]) >
+                   datetime.fromisoformat(session["started_at"]) for value in queue["requests"].values())
+
+
+def run_session(now=None):
+    at = now or datetime.now(timezone.utc)
+    previous = read("session.json", {})
+    supervision = read("supervision.json", {"threads": {}})
+    continuing = previous.get("status") in {"running", "failed"} or (
+        bool(previous) and any(value.get("owns_agent") for value in supervision["threads"].values()))
+    recoveries = previous.get("recoveries", 0) + 1 if continuing else 0
+    obsolete = continuing and at >= datetime.fromisoformat(previous["deadline_at"])
+    exhausted = recoveries > MAX_RECOVERIES
+    if obsolete or exhausted:
         try:
-            with process_deadline(deadline + timedelta(seconds=STOP_GRACE)):
-                publish(session)
-                return supervise_session(session, deadline)
-        except Exception as error:
-            failure = diagnostic(error)
-            session.update(status="escalated" if failure["category"] == "SessionDeadlineExceeded" else "failed",
-                           failed_at=stamp(), failure=failure)
-            save_json(STATE_DIR / "session.json", session)
-            if session["status"] == "escalated":
-                return session
-            raise
+            stop_previous(previous, "attempts_exhausted" if exhausted else "deadline_exceeded")
+        except (Exception, SessionDeadlineExceeded) as error:
+            previous.update(status="escalated", failed_at=stamp(), failure=diagnostic(error))
+            save_json(STATE_DIR / "session.json", previous)
+            return previous
+        return previous
+    session = {"id": previous["id"] if continuing else str(uuid.uuid4()),
+               "started_at": previous["started_at"] if continuing else at.isoformat(),
+               "deadline_at": previous["deadline_at"] if continuing else (at + timedelta(seconds=DEADLINE_SECONDS)).isoformat(),
+               "status": "running", "pid": os.getpid(), "phase": "starting",
+               "recoveries": recoveries,
+               "activated_on": read("scheduler-owner.json")["activated_on"],
+               "progress_at": previous.get("progress_at", at.isoformat()) if continuing else at.isoformat()}
+    deadline = datetime.fromisoformat(session["deadline_at"])
+    try:
+        with process_deadline(deadline + timedelta(seconds=STOP_GRACE)):
+            publish(session)
+            return supervise_session(session, deadline)
+    except (Exception, SessionDeadlineExceeded) as error:
+        failure = diagnostic(error)
+        session.update(status="escalated" if failure["category"] == "SessionDeadlineExceeded" else "failed",
+                       failed_at=stamp(), failure=failure)
+        save_json(STATE_DIR / "session.json", session)
+        if session["status"] == "escalated":
+            return session
+        raise
 
 
 def supervise_session(session, deadline):
     while True:
         at = datetime.now(timezone.utc)
         expired = at >= deadline
+        if expired:
+            stop_previous(session, "deadline_exceeded", deadline + timedelta(seconds=STOP_GRACE))
+            return session
         with queue_lock():
             queue = read("triggers.json", {"requests": {}})
             requests = {key: value for key, value in queue["requests"].items() if "handled_at" not in value}
         session["phase"] = "daily-reconciliation"
         save_json(STATE_DIR / "session.json", session)
         days = [key.removeprefix("daily-") for key in requests if key.startswith("daily-")]
-        with operation("github.daily-dispatch"):
-            daily = scheduler.poll(at, dispatch_day=scheduler.local_date(at).isoformat() if
-                                   not expired and scheduler.local_date(at).isoformat() in days else None)
+        daily = None
+        daily_failure = None
+        try:
+            with operation("github.daily-dispatch"):
+                daily = scheduler.poll(at, dispatch_day=scheduler.local_date(at).isoformat() if
+                                       scheduler.local_date(at).isoformat() in days else None)
+        except Exception as error:
+            daily_failure = diagnostic(error)
         session["phase"] = "release-supervision"
         save_json(STATE_DIR / "session.json", session)
         run_ids = [int(key.split("-")[1]) for key in requests if key.startswith("release-")]
-        result = watcher.poll(expired=expired, run_ids=run_ids)
+        result = watcher.poll(run_ids=run_ids)
         supervision = read("supervision.json")
         release_open = bool(result["active_releases"] or result["repair_owners"])
         with operation("t3.image-pin-refresh"):
-            pending_pins = pins.poll(release_open=release_open, now=at,
+            pending_pins = pins.poll(release_open=release_open or daily is None, now=at,
                                      requested_weeks=tuple(key.removeprefix("pins-") for key in requests if key.startswith("pins-")))
-        intent = daily["intents"].get(scheduler.local_date(at).isoformat(), {})
-        uncertain = ("dispatched_at" in intent and "run_id" not in intent
+        intent = daily["intents"].get(scheduler.local_date(at).isoformat(), {}) if daily is not None else {}
+        uncertain = daily is None or ("dispatched_at" in intent and "run_id" not in intent
                      and at < datetime.fromisoformat(intent["scheduled_at"]) + scheduler.START_GRACE)
-        session.update(progress_at=stamp(), phase="observing", releases=result["active_releases"],
-                       repair_owners=result["repair_owners"], daily_audited_on=daily["last_audited_on"],
+        session.update(phase="observing", releases=result["active_releases"],
+                       repair_owners=result["repair_owners"],
                        observed={key: {"attempt": value["attempt"], "status": value["status"]}
                              for key, value in supervision["runs"].items()
                              if datetime.fromisoformat(max(value["created_at"], value.get("attempt_started_at", "")).replace("Z", "+00:00")) >= at - timedelta(days=2)})
+        if daily_failure:
+            session.update(phase="daily-reconciliation-failed", failure=daily_failure, failed_at=stamp())
+        else:
+            session.update(progress_at=stamp(), daily_audited_on=daily["last_audited_on"])
+            session.pop("failure", None)
+            session.pop("failed_at", None)
         with queue_lock():
             queue = read("triggers.json", {"requests": {}})
             for key in requests:
-                queue["requests"][key]["handled_at"] = stamp()
+                if daily is not None or not key.startswith("daily-"):
+                    queue["requests"][key]["handled_at"] = stamp()
             save_json(STATE_DIR / "triggers.json", queue)
             new_work = any("handled_at" not in value for value in queue["requests"].values())
-            if expired and at >= deadline + timedelta(seconds=STOP_GRACE):
-                session.update(status="escalated", phase="deadline", ended_at=stamp())
-            elif not release_open and not uncertain and not pending_pins and not new_work:
+            if not release_open and not uncertain and not pending_pins and not new_work:
                 session.update(status="idle", phase="completed", ended_at=stamp())
             publish(session)
             if session["status"] != "running":
@@ -274,7 +298,7 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception as error:
+    except (Exception, SessionDeadlineExceeded) as error:
         print(json.dumps({"failed": diagnostic(error)}), flush=True)
         try:
             saved = read("session.json", {})
