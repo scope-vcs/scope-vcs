@@ -235,11 +235,13 @@ pub fn set_github_required_checks(
     for name in names {
         let name = name.trim();
         if name.is_empty() {
-            return Err(DomainError::invalid_input("Check names cannot be empty."));
+            return Err(DomainError::invalid_input(
+                "CI result names cannot be empty.",
+            ));
         }
         if name.chars().count() > GITHUB_CHECK_NAME_MAX_CHARS {
             return Err(DomainError::invalid_input(format!(
-                "Check names can be at most {GITHUB_CHECK_NAME_MAX_CHARS} characters."
+                "CI result names can be at most {GITHUB_CHECK_NAME_MAX_CHARS} characters."
             )));
         }
         if !required.iter().any(|existing| existing == name) {
@@ -248,7 +250,7 @@ pub fn set_github_required_checks(
     }
     if required.len() > GITHUB_REQUIRED_CHECKS_LIMIT {
         return Err(DomainError::invalid_input(format!(
-            "A repository can require at most {GITHUB_REQUIRED_CHECKS_LIMIT} checks."
+            "A repository can require at most {GITHUB_REQUIRED_CHECKS_LIMIT} CI results."
         )));
     }
     Ok(required)

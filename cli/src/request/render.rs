@@ -384,7 +384,7 @@ fn github_push_line(push: &RequestGitHubPushResponse) -> String {
 
 fn evaluation_state_label(state: Option<RequestCheckEvaluationState>) -> &'static str {
     match state {
-        None => "not worked out for this commit yet",
+        None => "not evaluated for this commit yet",
         Some(RequestCheckEvaluationState::NoChecks) => "not required",
         Some(RequestCheckEvaluationState::AwaitingApproval) => "waiting for maintainer approval",
         Some(RequestCheckEvaluationState::Started) => "started",

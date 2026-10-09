@@ -111,7 +111,7 @@ export function RepoRequiredChecks({
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p aria-live="polite" className="leading-5 text-muted-foreground">
-          {saved && sameNames(saved, names) && !dirty ? 'Requirements saved for future pushes.' : `${selection.names.length} results selected${dirty ? ' · unsaved changes' : ''}`}
+          {saved && sameNames(saved, names) && !dirty ? 'Requirements saved for future pushes.' : `${selection.names.length} ${selection.names.length === 1 ? 'result' : 'results'} selected${dirty ? ' · unsaved changes' : ''}`}
         </p>
         <Button disabled={!dirty || pending} onClick={() => void update()} size="sm" type="button">
           {pending ? 'Saving…' : 'Save requirements'}

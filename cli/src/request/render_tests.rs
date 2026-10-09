@@ -92,7 +92,7 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
         "mergeability": {
             "status": "ChecksAwaitingApproval", "current_main_oid": oid('a'),
             "request_head_oid": oid('b'),
-            "reason": "CI is waiting for maintainer approval"
+            "reason": "CI is waiting for a maintainer to start it"
         }
     }))
     .unwrap();
@@ -113,7 +113,7 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
         "{rendered}"
     );
     assert!(
-        rendered.contains("Mergeability: CI is waiting for maintainer approval"),
+        rendered.contains("Mergeability: CI is waiting for a maintainer to start it"),
         "{rendered}"
     );
     assert!(
@@ -302,7 +302,7 @@ fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
 }
 
 #[test]
-fn a_head_nobody_evaluated_says_its_checks_are_not_worked_out() {
+fn an_unevaluated_head_reports_ci_as_not_evaluated() {
     let unevaluated: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": null,
         "message": null, "can_approve": false, "github_push": null,
@@ -310,7 +310,7 @@ fn a_head_nobody_evaluated_says_its_checks_are_not_worked_out() {
         "mergeability": {
             "status": "ChecksNotEvaluated", "current_main_oid": oid('a'),
             "request_head_oid": oid('b'),
-            "reason": "CI has not been worked out for this commit yet"
+            "reason": "CI has not been evaluated for this commit yet"
         }
     }))
     .unwrap();
@@ -318,12 +318,12 @@ fn a_head_nobody_evaluated_says_its_checks_are_not_worked_out() {
     let rendered = request_checks_lines(&unevaluated).join("\n");
 
     assert!(
-        rendered.contains("CI: not worked out for this commit yet"),
+        rendered.contains("CI: not evaluated for this commit yet"),
         "{rendered}"
     );
     assert!(!rendered.contains("No CI is required"), "{rendered}");
     assert!(
-        rendered.contains("Mergeability: CI has not been worked out"),
+        rendered.contains("Mergeability: CI has not been evaluated"),
         "{rendered}"
     );
 }
