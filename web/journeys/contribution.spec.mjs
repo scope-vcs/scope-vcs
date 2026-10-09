@@ -183,7 +183,7 @@ test('a merge of a head that moved is refused and the page shows the new head', 
   assert.equal(request.head_oid, newHead)
 })
 
-test('only the maintainer approves checks, and pending checks hold the merge', async () => {
+test('only the maintainer allows CI, and pending CI holds the merge', async () => {
   const { maintainer: maintainerCli, contributor: contributorCli } = cli
   await syncMain(maintainerCli)
   await mkdir(join(maintainerCli.repo, '.scope/runs'), { recursive: true })
@@ -204,18 +204,23 @@ jobs:
   await syncMain(contributorCli)
 
   const name = `journey-checks-${runId}`
-  const { id } = await submitRequest(name, `${name}.txt`, 'needs checks\n')
+  const { id, head } = await submitRequest(name, `${name}.txt`, 'needs checks\n')
   finishedRequests.closed = id
   const { maintainer, contributor } = web
 
   await openRequest(contributor.page, id)
-  await contributor.page.getByText('These checks wait for a maintainer to start them.').waitFor()
-  assert.equal(await contributor.page.getByRole('button', { name: 'Approve checks' }).count(), 0)
+  await contributor.page.getByText('A maintainer must allow CI to run for this revision.').waitFor()
+  assert.equal(await contributor.page.getByRole('button', { name: 'Allow CI to run' }).count(), 0)
 
   await openRequest(maintainer.page, id)
-  await clickAfterHydration(maintainer.page.getByRole('button', { name: 'Approve checks' }))
-  await maintainer.page.getByRole('region', { name: 'Checks' }).getByRole('link', { name: 'queued' }).waitFor()
-  await waitForLifecycleBadge(maintainer.page, 'Checks running')
+  await clickAfterHydration(maintainer.page.getByRole('button', { name: 'Allow CI to run' }))
+  const confirmation = maintainer.page.getByRole('alertdialog', { name: 'Allow CI to run?' })
+  await confirmation.getByText(head, { exact: true }).waitFor()
+  const beforeApproval = await apiFetch(maintainerCli.token, `${requestApi(id)}/checks`)
+  assert.equal(beforeApproval.state, 'awaiting-approval')
+  await confirmation.getByRole('button', { name: 'Allow CI to run' }).click()
+  await maintainer.page.getByRole('region', { name: 'CI' }).getByRole('link', { name: /queued/ }).waitFor()
+  await waitForLifecycleBadge(maintainer.page, 'Waiting for CI')
   assert.equal(await maintainer.page.getByRole('button', { name: 'Merge', exact: true, disabled: false }).count(), 0)
   const checks = await apiFetch(maintainerCli.token, `${requestApi(id)}/checks`)
   assert.equal(checks.state, 'started')
@@ -242,7 +247,7 @@ test('review controls and completion states fit a narrow screen', async () => {
   const page = await context.newPage()
   await openRequest(page, id)
   for (const control of [
-    page.getByRole('button', { name: 'Approve checks' }),
+    page.getByRole('button', { name: 'Allow CI to run' }),
     page.getByRole('button', { name: /^Merge/ }).first(),
   ]) {
     await control.waitFor()
@@ -261,13 +266,15 @@ test('review controls and completion states fit a narrow screen', async () => {
   await context.close()
 })
 
-test('a revoked maintainer cannot approve checks from an open page', async () => {
+test('a revoked maintainer cannot allow CI from an open confirmation', async () => {
   const { id } = await submitRequest(`journey-revoked-${runId}`, `journey-revoked-${runId}.txt`, 'revoked\n')
   const { page } = web.maintainer
   await holdLiveUpdates(page)
   await openRequest(page, id)
-  const approve = page.getByRole('button', { name: 'Approve checks' })
-  await waitForClientHydration(approve)
+  const approve = page.getByRole('button', { name: 'Allow CI to run' })
+  await clickAfterHydration(approve)
+  const confirmation = page.getByRole('alertdialog', { name: 'Allow CI to run?' })
+  await confirmation.waitFor()
 
   const owner = await devSessionToken('dev')
   const revoked = await fetch(`${apiUrl}/v1/repos${repoPath}/members/scope_usr_dev_maintainer`, {
@@ -276,8 +283,8 @@ test('a revoked maintainer cannot approve checks from an open page', async () =>
   })
   assert.equal(revoked.ok, true, `member removal returned ${revoked.status}`)
 
-  await approve.click()
-  await page.getByRole('region', { name: 'Checks' }).getByRole('alert').filter({ hasText: 'repo maintainer required' }).waitFor()
+  await confirmation.getByRole('button', { name: 'Allow CI to run' }).click()
+  await confirmation.getByRole('alert').filter({ hasText: 'repo maintainer required' }).waitFor()
   const checks = await apiFetch(owner, `${requestApi(id)}/checks`)
   assert.equal(checks.state, 'awaiting-approval')
 })
