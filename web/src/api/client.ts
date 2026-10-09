@@ -1,4 +1,5 @@
 import { loadJson, stripTrailingSlash } from './http'
+import { SignInRequiredError } from './sign-in-required'
 import type { ApiValidator } from './validators.generated'
 
 const localApiBase = 'http://localhost:8080'
@@ -39,7 +40,7 @@ export function createApiClient() {
     if (authMode !== 'none') {
       const token = await requestAuthToken()
       if (!token && authMode === 'required') {
-        throw new Error('Sign in required.')
+        throw new SignInRequiredError()
       }
       if (token) {
         headers.set('authorization', `Bearer ${token}`)

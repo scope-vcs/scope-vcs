@@ -1,10 +1,10 @@
 import { forceSignedOut } from '@/auth-mode'
 import { fetchServerFunction } from '@/lib/stale-build'
 import { publicRequestOrigin } from '@/server/public-origin'
+import { serverFunctionFailureResponse } from '@/server/server-function-failure'
 import { signedOutAuthMiddleware } from '@/server/signed-out-auth-middleware'
-import { staleServerFunctionResponse } from '@/server/stale-server-function'
 import { clerkMiddleware } from '@clerk/tanstack-react-start/server'
-import { createCsrfMiddleware, createMiddleware, createStart } from '@tanstack/react-start'
+import { createCsrfMiddleware, createMiddleware, createStart, getGlobalStartContext } from '@tanstack/react-start'
 
 const serverFunctionCsrfMiddleware = createCsrfMiddleware({
   filter: (ctx) => ctx.handlerType === 'serverFn',
@@ -12,21 +12,31 @@ const serverFunctionCsrfMiddleware = createCsrfMiddleware({
     origin === publicRequestOrigin(ctx.request.url, process.env.RAILWAY_ENVIRONMENT_ID),
 })
 
-const staleServerFunctionMiddleware = createMiddleware().server(async ({ handlerType, next }) => {
-  if (handlerType !== 'serverFn') return next()
+const serverFunctionRequestFailureMiddleware = createMiddleware().server(async ({ handlerType, next }) => {
+  if (handlerType !== 'serverFn') return next({ context: { serverFunctionRequest: false } })
   try {
-    return await next()
+    return await next({ context: { serverFunctionRequest: true } })
   } catch (error) {
-    const response = staleServerFunctionResponse(error)
+    const response = serverFunctionFailureResponse(error)
     if (response) return response
     throw error
   }
 })
 
+const serverFunctionFailureMiddleware = createMiddleware({ type: 'function' }).server(async ({ next }) => {
+  try {
+    return await next()
+  } catch (error) {
+    if (!getGlobalStartContext()?.serverFunctionRequest) throw error
+    throw serverFunctionFailureResponse(error) ?? error
+  }
+})
+
 export const startInstance = createStart(() => {
   return {
+    functionMiddleware: [serverFunctionFailureMiddleware],
     requestMiddleware: [
-      staleServerFunctionMiddleware,
+      serverFunctionRequestFailureMiddleware,
       serverFunctionCsrfMiddleware,
       forceSignedOut ? signedOutAuthMiddleware : clerkMiddleware(),
     ],
