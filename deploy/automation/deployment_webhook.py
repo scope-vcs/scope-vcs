@@ -45,7 +45,8 @@ def forward(event, url, secret):
     body = json.dumps(payload, separators=(",", ":")).encode()
     signature = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     request = urllib.request.Request(url, data=body, headers={
-        "Content-Type": "application/json", "X-GitHub-Event": "workflow_run",
+        "Content-Type": "application/json", "User-Agent": "ScopeDeploymentSupervisor/1.0",
+        "X-GitHub-Event": "workflow_run",
         "X-GitHub-Delivery": delivery, "X-Hub-Signature-256": signature}, method="POST")
     with operation("t3.signed-webhook-delivery"):
         with urllib.request.build_opener(RejectRedirects()).open(request, timeout=45) as response:

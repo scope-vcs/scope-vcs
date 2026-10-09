@@ -28,6 +28,7 @@ class WebhookTests(unittest.TestCase):
             first = webhook.forward(EVENT, URL, "fixture-secret")
             second = webhook.forward(EVENT, URL, "fixture-secret")
         request = opener.open.call_args.args[0]
+        self.assertEqual(request.get_header("User-agent"), "ScopeDeploymentSupervisor/1.0")
         signature = hmac.new(b"fixture-secret", request.data, hashlib.sha256).hexdigest()
         self.assertEqual(request.get_header("X-hub-signature-256"), "sha256=" + signature)
         self.assertEqual(first, second)
