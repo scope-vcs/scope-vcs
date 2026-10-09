@@ -50,7 +50,15 @@ async function waitForService(url, child) {
 test('native installer installs the managed analyzer and preserves the bundle on failed updates', { timeout: 300_000 }, async (t) => {
   assert.ok(target, `No native distribution target for ${process.platform}/${process.arch}`);
   const workspace = await mkdtemp(join(tmpdir(), 'scope installer '));
-  t.after(() => rm(workspace, { recursive: true, force: true }));
+  let child;
+  t.after(async () => {
+    if (child?.exitCode === null && child.pid) {
+      const exited = once(child, 'exit');
+      child.kill();
+      await exited;
+    }
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  });
   const artifacts = join(workspace, 'artifacts');
   const installDir = join(workspace, 'user bin');
   await mkdir(artifacts);
@@ -65,20 +73,13 @@ test('native installer installs the managed analyzer and preserves the bundle on
   }
   const port = await availablePort();
   const url = `http://127.0.0.1:${port}`;
-  const child = spawn(service, [], {
+  child = spawn(service, [], {
     env: { ...process.env, PORT: String(port), SCOPE_CLI_ARTIFACT_DIR: artifacts, SCOPE_CLI_PUBLIC_URL: url },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   let serviceError = '';
   child.stderr.on('data', (chunk) => { serviceError += chunk; });
   child.on('error', (error) => { serviceError += error.message; });
-  t.after(async () => {
-    if (child.exitCode === null && child.pid) {
-      const exited = once(child, 'exit');
-      child.kill();
-      await exited;
-    }
-  });
   try {
     await waitForService(url, child);
   } catch (error) {
