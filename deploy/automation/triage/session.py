@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import sources
-from .investigate import cancellation_request, delegation_request, render_draft, select_target, status_request, validate_result
+from .investigate import delegation_request, render_draft, select_target, status_request, validate_result
 from .policy import timestamp
 from .store import Store
 
@@ -55,7 +55,7 @@ def prepare(store, capabilities, provider=None, model=None, options=None):
     reserved = set()
     try:
         target = select_target(capabilities, provider, model, options)
-    except ValueError:
+    except (ValueError, KeyError, TypeError, AttributeError):
         requests.append({'action': 'new_work_unavailable', 'blocked': True})
     else:
         while (claim := store.claim(now, target)) is not None:
@@ -65,7 +65,7 @@ def prepare(store, capabilities, provider=None, model=None, options=None):
         expired = claim['deadline'] <= now or claim['release_owned']
         if claim['task_id']:
             tool = 'task_cancel' if expired else 'task_status'
-            arguments = cancellation_request(claim) if expired else status_request(claim)
+            arguments = status_request(claim)
         elif expired or claim['request_id'] not in reserved:
             requests.append({**identity, 'action': 'reconcile_unbound_dispatch', 'blocked': True})
             continue
@@ -95,14 +95,14 @@ def apply_receipt(store, fingerprint, generation, receipt, now):
         raise ValueError('Stale investigation ownership')
     claim = claims[0]
     task_id = receipt['taskId']
-    store.bind(fingerprint, generation, task_id, now)
+    store.bind(fingerprint, generation, task_id)
     if receipt.get('status') not in TERMINAL or receipt.get('hasPendingChildRuns') is not False or receipt.get('workState') != 'result_available':
         return {'status': 'active', 'task_id': task_id}
-    if receipt['status'] == 'completed' and receipt.get('workState') == 'result_available' and now < claim['deadline'] and not claim['release_owned']:
+    if receipt['status'] == 'completed' and now < claim['deadline'] and not claim['release_owned']:
         result = validate_result(receipt['summary'], claim['packet'])
         store.finish(fingerprint, generation, task_id, result, now)
         return {'status': 'draft', 'task_id': task_id}
-    store.stopped(fingerprint, generation, task_id, now)
+    store.stopped(fingerprint, generation, task_id)
     return {'status': 'blocked', 'task_id': task_id}
 
 
@@ -125,6 +125,10 @@ def main(argv=None):
     receive.add_argument('--fingerprint', required=True)
     receive.add_argument('--generation', required=True, type=int)
     receive.add_argument('--receipt', required=True, type=Path)
+    absent = commands.add_parser('confirm-absent', help='Confirm no task or in-flight dispatch exists for an unbound claim')
+    absent.add_argument('--fingerprint', required=True)
+    absent.add_argument('--generation', required=True, type=int)
+    absent.add_argument('--request-id', required=True)
     commands.add_parser('drafts')
     args = parser.parse_args(argv)
     with Store(args.state) as store:
@@ -134,11 +138,14 @@ def main(argv=None):
             result = prepare(store, receipt_data(args.capabilities) if args.capabilities else {}, args.provider, args.model, json.loads(args.options))
         elif args.command == 'receive':
             result = apply_receipt(store, args.fingerprint, args.generation, receipt_data(args.receipt), utc_now())
+        elif args.command == 'confirm-absent':
+            store.confirm_absent(args.fingerprint, args.generation, args.request_id)
+            result = {'status': 'blocked'}
         elif args.command == 'drafts':
             result = [{'incident': item['fingerprint'], 'occurrences': item['occurrences'], 'release_owned': bool(item['release_owned']),
                        'markdown': render_draft(item['packet'], item['result'])} for item in store.drafts()]
         else:
-            result = store.status(utc_now())
+            result = store.status()
         print(json.dumps(result, indent=2))
     return 1 if args.command == 'sweep' and any(item['status'] == 'degraded' for item in result) else 0
 

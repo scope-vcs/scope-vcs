@@ -86,10 +86,6 @@ def status_request(claim: dict) -> dict:
     return {'taskId': claim['task_id']}
 
 
-def cancellation_request(claim: dict) -> dict:
-    return status_request(claim)
-
-
 def unique_object(pairs):
     value = {}
     for key, item in pairs:

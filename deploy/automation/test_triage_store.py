@@ -45,7 +45,7 @@ class StoreTests(unittest.TestCase):
             self.ingest(store, [observation(), observation('two')])
             store.degraded('github:checks', 'unavailable', at(21))
             self.assertEqual(store.cursor('github:checks'), timestamp(at(20)))
-            overview = store.status(at(21))
+            overview = store.status()
             self.assertEqual(overview['incidents'][0]['occurrences'], 2)
             self.assertEqual(overview['sources'][0]['status'], 'unavailable')
             with self.assertRaises(ValueError):
@@ -69,12 +69,12 @@ class StoreTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 store.ingest('github:checks', at(), at(20), [observation('two', 'another'), object()], at(20))
             self.assertEqual(store.cursor('github:checks'), timestamp(at(10)))
-            incidents = store.status(at(20))['incidents']
+            incidents = store.status()['incidents']
             self.assertEqual(len(incidents), 1)
             self.assertEqual(incidents[0]['occurrences'], 1)
             with self.assertRaises(ValueError):
                 self.ingest(store, [observation(signature='conflicting')])
-            self.assertEqual(len(store.status(at(20))['incidents']), 1)
+            self.assertEqual(len(store.status()['incidents']), 1)
 
     def test_connections_share_capacity_and_crashed_dispatch_intents_still_block(self):
         with Store(self.path) as first, Store(self.path) as second:
@@ -93,9 +93,9 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(durable['target'], TARGET)
             self.assertIsNone(durable['task_id'])
             with self.assertRaises(ValueError):
-                store.stopped(initial['fingerprint'], initial['generation'], None, at(1000))
+                store.stopped(initial['fingerprint'], initial['generation'], None)
             self.assertEqual(len(store.active()), 2)
-            store.bind(initial['fingerprint'], initial['generation'], 'task-one', at(1000))
+            store.bind(initial['fingerprint'], initial['generation'], 'task-one')
             bound = next(item for item in store.active() if item['fingerprint'] == initial['fingerprint'])
             self.assertEqual(bound['task_id'], 'task-one')
 
@@ -106,7 +106,7 @@ class StoreTests(unittest.TestCase):
             store.claim(at(10), TARGET)
             fingerprint, generation = claim['fingerprint'], claim['generation']
             result = diagnosis(claim['packet']['observations'][0]['event_id'])
-            store.bind(fingerprint, generation, 'task-one', at(10))
+            store.bind(fingerprint, generation, 'task-one')
             for candidate, task, now in [(generation + 1, 'task-one', at(11)),
                                           (generation, 'wrong-task', at(11)),
                                           (generation, 'task-one', claim['deadline'])]:
@@ -115,8 +115,8 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(store.drafts(), [])
             self.assertIsNone(store.claim(at(1000), TARGET))
             with self.assertRaises(ValueError):
-                store.stopped(fingerprint, generation, 'wrong-task', at(1000))
-            store.stopped(fingerprint, generation, 'task-one', at(1000))
+                store.stopped(fingerprint, generation, 'wrong-task')
+            store.stopped(fingerprint, generation, 'task-one')
             self.assertNotEqual(store.claim(at(1000), TARGET)['fingerprint'], fingerprint)
             with self.assertRaises(ValueError):
                 store.finish(fingerprint, generation, 'task-one', result, at(1001))
@@ -125,7 +125,7 @@ class StoreTests(unittest.TestCase):
         with Store(self.path) as store:
             self.ingest(store, [observation()])
             claim = store.claim(at(10), TARGET)
-            store.bind(claim['fingerprint'], claim['generation'], 'task-one', at(11))
+            store.bind(claim['fingerprint'], claim['generation'], 'task-one')
             with self.assertRaises(ValueError):
                 store.finish(claim['fingerprint'], claim['generation'], 'task-one', {'private_payload': 'secret'}, at(12))
             self.assertEqual(store.drafts(), [])
@@ -145,13 +145,13 @@ class StoreTests(unittest.TestCase):
         with Store(self.path) as store:
             self.ingest(store, [observation()])
             claim = store.claim(at(10), TARGET)
-            store.bind(claim['fingerprint'], claim['generation'], 'task-one', at(11))
+            store.bind(claim['fingerprint'], claim['generation'], 'task-one')
             store.finish(claim['fingerprint'], claim['generation'], 'task-one', diagnosis(), at(12))
             self.assertEqual(len(store.drafts()), 1)
             self.ingest(store, [observation('release-event', release_owned=True)])
         with Store(self.path) as store:
             self.assertEqual(store.drafts(), [])
-            incident = store.status(at(13))['incidents'][0]
+            incident = store.status()['incidents'][0]
             self.assertEqual(incident['release_owned'], 1)
             self.assertEqual(incident['occurrences'], 2)
             self.assertIsNone(store.claim(at(13), TARGET))
@@ -183,13 +183,13 @@ class StoreTests(unittest.TestCase):
         with Store(self.path) as store:
             self.ingest(store, [observation()])
             claim = store.claim(at(10), TARGET)
-            store.bind(claim['fingerprint'], claim['generation'], 'task-one', at(11))
+            store.bind(claim['fingerprint'], claim['generation'], 'task-one')
             self.ingest(store, [observation('release-event', release_owned=True)])
             self.assertEqual(store.active()[0]['release_owned'], 1)
             with self.assertRaises(ValueError):
                 store.finish(claim['fingerprint'], claim['generation'], 'task-one', diagnosis(), at(12))
             self.assertEqual(store.drafts(), [])
-            store.stopped(claim['fingerprint'], claim['generation'], 'task-one', at(13))
+            store.stopped(claim['fingerprint'], claim['generation'], 'task-one')
             self.assertIsNone(store.claim(at(14), TARGET))
 
 

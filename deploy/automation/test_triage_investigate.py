@@ -2,7 +2,7 @@ import copy
 import json
 import unittest
 
-from triage.investigate import cancellation_request, delegation_request, render_draft, select_target, status_request, validate_result
+from triage.investigate import delegation_request, render_draft, select_target, status_request, validate_result
 from triage.policy import Observation, evidence_packet
 
 
@@ -74,7 +74,6 @@ class InvestigationTests(unittest.TestCase):
         self.assertEqual(request['runtimeMode'], 'approval-required')
         self.assertIn('Do not retrieve raw logs', request['task'])
         self.assertEqual(status_request(claim), {'taskId': 'persisted-task'})
-        self.assertEqual(cancellation_request(claim), {'taskId': 'persisted-task'})
         with self.assertRaises(ValueError):
             status_request({'task_id': None})
         claim['packet']['observations'] *= 21

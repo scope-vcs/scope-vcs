@@ -139,14 +139,13 @@ class Store:
             self.connection.execute("UPDATE incidents SET generation = ?, state = 'active' WHERE fingerprint = ?", (generation, fingerprint))
             return claim
 
-    def bind(self, fingerprint, generation, task_id, now):
+    def bind(self, fingerprint, generation, task_id):
         if not isinstance(task_id, str) or not task_id or len(task_id) > 200:
             raise ValueError('Invalid task ID')
         with self.transaction():
             claim = self.owned(fingerprint, generation)
             if claim['task_id'] not in (None, task_id):
                 raise ValueError('Dispatch intent already bound')
-            timestamp(now)
             self.connection.execute('UPDATE claims SET task_id = ? WHERE fingerprint = ?', (task_id, fingerprint))
 
     def owned(self, fingerprint, generation, task_id=None):
@@ -175,12 +174,19 @@ class Store:
             self.connection.execute('DELETE FROM claims WHERE fingerprint = ?', (fingerprint,))
             self.connection.execute("UPDATE incidents SET state = 'draft' WHERE fingerprint = ?", (fingerprint,))
 
-    def stopped(self, fingerprint, generation, task_id, now):
+    def stopped(self, fingerprint, generation, task_id):
         if not isinstance(task_id, str) or not task_id:
             raise ValueError('Unbound dispatch intent cannot be released')
         with self.transaction():
             self.owned(fingerprint, generation, task_id)
-            timestamp(now)
+            self.connection.execute('DELETE FROM claims WHERE fingerprint = ?', (fingerprint,))
+            self.connection.execute("UPDATE incidents SET state = 'blocked' WHERE fingerprint = ?", (fingerprint,))
+
+    def confirm_absent(self, fingerprint, generation, request_id):
+        with self.transaction():
+            claim = self.owned(fingerprint, generation)
+            if claim['task_id'] is not None or claim['request_id'] != request_id:
+                raise ValueError('Only the confirmed unbound dispatch can be released')
             self.connection.execute('DELETE FROM claims WHERE fingerprint = ?', (fingerprint,))
             self.connection.execute("UPDATE incidents SET state = 'blocked' WHERE fingerprint = ?", (fingerprint,))
 
@@ -193,8 +199,7 @@ class Store:
             GROUP BY drafts.fingerprint ORDER BY finished_at
         ''')]
 
-    def status(self, now):
-        timestamp(now)
+    def status(self):
         return {'sources': [dict(row) for row in self.connection.execute('SELECT * FROM sources ORDER BY source_key')],
                 'incidents': [dict(row) for row in self.connection.execute('''
                     SELECT incidents.*, COUNT(observation_key) AS occurrences FROM incidents

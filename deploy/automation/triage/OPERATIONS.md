@@ -41,6 +41,14 @@ Run `prepare` without a capabilities file to recover polling and cancellation wh
 
 There are at most two active claims, each with a fifteen-minute result deadline. Expiry fences result acceptance but does not itself stop a remote process: the orchestrator must execute cancellation and confirm termination. If it disappears, the ledger keeps capacity occupied. Every previously emitted dispatch without a returned task ID remains blocked for manual reconciliation with T3, even before expiry. Only newly reserved claims emit a dispatch request. T3 scopes request deduplication to its provider session, so replay after restart could create another child. Never replay an ambiguous request or generate a new request ID to bypass it. Recover its actual T3 task ID and bind its receipt before proceeding. Finished or stopped incidents are not automatically investigated again in this draft phase.
 
+If reconciliation establishes that no task was created, stop the dispatching session and verify that no tool call remains in flight. Then explicitly confirm the absent dispatch:
+
+```sh
+python3 -B -m deploy.automation.triage.session confirm-absent --fingerprint FINGERPRINT --generation GENERATION --request-id REQUEST_ID
+```
+
+Use the exact claim identity from `status`. This operator assertion releases only that unbound claim, preserves the incident and evidence, and leaves the incident blocked without redispatch. Bound claims still require a terminal receipt. A timeout, an `isError` response, or failure to find a task is not proof of absence; if the outcome remains ambiguous, retain the claim. Do not automate this command from an error response.
+
 Investigators receive sanitized observations as untrusted data and run in approval-required mode. Their schema separates referenced observations from provisional hypothesis, confidence, severity, impact, owner and next action. Free-form output is rejected, as are references absent from the packet. Reproduction remains unknown because this phase supplies no validated reproduction receipt. A draft is a classification and evidence request, not a confirmed causal diagnosis. Review raw details separately within the source's authorized interface when needed.
 
 ## Activation gate and current evidence

@@ -50,7 +50,7 @@ class SessionTests(unittest.TestCase):
                 outcome = session.sweep(store, ['github-runs-created'], START, NOW, 'environment')
             self.assertEqual(outcome[0]['status'], 'degraded')
             self.assertEqual(outcome[0]['reason'], 'invalid_response')
-            status = store.status(NOW)
+            status = store.status()
             self.assertEqual(status['sources'][0]['cursor'], timestamp(END))
             self.assertEqual(status['sources'][0]['status'], 'invalid_response')
             self.assertEqual(len(status['incidents']), 1)
@@ -71,7 +71,7 @@ class SessionTests(unittest.TestCase):
             self.assertEqual({item['request_id'] for item in replay}, {item['request_id'] for item in first})
             self.assertEqual({item['target']['model'] for item in store.active()}, {'model'})
             self.assertEqual(len(store.active()), 2)
-            self.assertEqual(sum(item['state'] == 'pending' for item in store.status(NOW)['incidents']), 1)
+            self.assertEqual(sum(item['state'] == 'pending' for item in store.status()['incidents']), 1)
             for claim in store.active():
                 session.apply_receipt(store, claim['fingerprint'], claim['generation'], receipt(claim, status='running', workState='working'), NOW)
             at_deadline = self.prepare(store, now=store.active()[0]['deadline'])
@@ -87,15 +87,46 @@ class SessionTests(unittest.TestCase):
             self.prepare(store)
             for claim in store.active():
                 session.apply_receipt(store, claim['fingerprint'], claim['generation'], receipt(claim, status='running', workState='working'), NOW)
-            for now, tool in [(NOW, 'task_status'), (store.active()[0]['deadline'], 'task_cancel')]:
+            for now, tool, catalog in [(now, tool, catalog) for now, tool in [(NOW, 'task_status'), (store.active()[0]['deadline'], 'task_cancel')] for catalog in ({}, {'providers': [{}]}, {'providers': None})]:
                 with patch.object(session, 'utc_now', return_value=now):
-                    requests = session.prepare(store, {})
+                    requests = session.prepare(store, catalog)
                 controls = [item for item in requests if 'tool' in item]
                 self.assertEqual(len(controls), 2)
                 self.assertEqual({item['tool'] for item in controls}, {tool})
                 self.assertEqual({item['arguments']['taskId'] for item in controls}, {item['task_id'] for item in store.active()})
                 self.assertTrue(any(item.get('action') == 'new_work_unavailable' for item in requests))
-                self.assertEqual(sum(item['state'] == 'pending' for item in store.status(NOW)['incidents']), 1)
+                self.assertEqual(sum(item['state'] == 'pending' for item in store.status()['incidents']), 1)
+
+    def test_confirm_absent_releases_only_matching_unbound_claim_without_replay(self):
+        with Store(self.path) as store:
+            self.seed(store, 3)
+            self.prepare(store)
+            absent, bound = store.active()
+            store.bind(bound['fingerprint'], bound['generation'], 'existing-task')
+        automation = Path(__file__).resolve().parent
+        command = [sys.executable, '-B', '-m', 'triage.session', '--state', str(self.path), 'confirm-absent']
+        def invoke(claim, request_id=None, generation=None):
+            return subprocess.run(command + ['--fingerprint', claim['fingerprint'], '--generation', str(generation or claim['generation']), '--request-id', request_id or claim['request_id']], cwd=automation, capture_output=True, text=True)
+        for claim, request_id, generation in [(absent, 'wrong-request', None), (absent, None, absent['generation'] + 1), (bound, None, None)]:
+            result = invoke(claim, request_id, generation)
+            self.assertEqual(result.returncode, 2)
+            with Store(self.path) as store:
+                self.assertEqual(len(store.active()), 2)
+        result = invoke(absent)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['status'], 'blocked')
+        with Store(self.path) as store:
+            incidents = {item['fingerprint']: item for item in store.status()['incidents']}
+            self.assertEqual(incidents[absent['fingerprint']]['state'], 'blocked')
+            self.assertEqual(incidents[absent['fingerprint']]['occurrences'], 1)
+            self.assertEqual(store.drafts(), [])
+            requests = self.prepare(store)
+            self.assertEqual(len(store.active()), 2)
+            self.assertNotIn(absent['fingerprint'], {item['fingerprint'] for item in requests})
+            self.assertEqual({item['tool'] for item in requests}, {'delegate_task', 'task_status'})
+            with self.assertRaises(ValueError):
+                session.apply_receipt(store, absent['fingerprint'], absent['generation'], receipt(absent), NOW)
+        self.assertEqual(invoke(absent).returncode, 2)
 
     def test_receive_requires_final_result_and_confirmed_no_live_children(self):
         with Store(self.path) as store:
@@ -126,7 +157,7 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(result['status'], 'blocked')
             self.assertEqual(store.active(), [])
             self.assertEqual(store.drafts(), [])
-            self.assertEqual(store.status(NOW)['incidents'][0]['state'], 'blocked')
+            self.assertEqual(store.status()['incidents'][0]['state'], 'blocked')
 
     def test_confirmed_terminal_stops_release_capacity_only_without_pending_children(self):
         for state in ('failed', 'cancelled', 'interrupted'):
@@ -153,7 +184,7 @@ class SessionTests(unittest.TestCase):
                 session.apply_receipt(store, claim['fingerprint'], claim['generation'], receipt(claim, summary='private-token-invalid-output'), NOW)
             self.assertEqual(len(store.active()), 1)
             self.assertEqual(store.drafts(), [])
-            self.assertNotIn('private-token-invalid-output', json.dumps(store.status(NOW)))
+            self.assertNotIn('private-token-invalid-output', json.dumps(store.status()))
 
     def test_cli_reopens_persisted_draft_and_returns_generic_errors(self):
         with Store(self.path) as store:
