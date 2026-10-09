@@ -166,10 +166,14 @@ def observe(value, repo=REPO, now=None, max_age=1200):
         state = json.loads(value)
         if not isinstance(state, dict):
             raise ValueError("Session status must be an object")
+        installed = datetime.fromisoformat(state["installed_at"].replace("Z", "+00:00"))
+        if installed.tzinfo is None:
+            raise ValueError("Installation boundary must have a timezone")
         healthy = session_health(value, now, max_age)
     except (KeyError, ValueError, TypeError):
         healthy = False
         state = {}
+        installed = now
     day = local_date(now)
     try:
         audited = date.fromisoformat(state.get("daily_audited_on", day.isoformat()))
@@ -194,6 +198,8 @@ def observe(value, repo=REPO, now=None, max_age=1200):
     unobserved = [run for run in runs if
                   (state.get("observed", {}).get(str(run["id"]), {}).get("attempt") != run["run_attempt"] or
                    run["status"] != "completed" and state.get("status") != "running") and
+                  (run["status"] != "completed" or datetime.fromisoformat(
+                      max(run["created_at"], run.get("run_started_at") or "").replace("Z", "+00:00")) >= installed) and
                   (run["status"] != "completed" or datetime.fromisoformat(
                       max(run["created_at"], run.get("run_started_at") or "", run.get("event_seen_at", "")).replace("Z", "+00:00")) >= since) and
                   now - datetime.fromisoformat(max(run["created_at"], run.get("run_started_at") or "",

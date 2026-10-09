@@ -9,7 +9,7 @@ no all-day heartbeat requirement or recurring model poll.
 
 A completed session cycle publishes bounded JSON to
 `SCOPE_DEPLOYMENT_SESSION_STATUS`: lifecycle status, deadline, progress time,
-active releases and repair owners, activation date, daily audit boundary, and
+active releases and repair owners, activation date, installation boundary, daily audit boundary, and
 recent observed run attempts. Failed cycles save the failing operation locally
 and do not renew successful progress. A crash restart retains the deadline.
 A running session more than twenty minutes without completed progress, a deadline
@@ -21,6 +21,10 @@ also alerts, including a missed event for a completed failed run or new attempt.
 Recent forwarder run titles provide durable GitHub event receipts for completed
 retries whose original creation date lies outside the recent Release scan.
 The observer validates the forwarder identity and independently reads the Release.
+Completed attempts that predate the watcher's preserved installation boundary
+are excluded. Active attempts remain eligible regardless of age, and reruns
+started after installation must be observed. Confirmed session cleanup publishes
+its stopped state; failed cleanup publishes the failure and retained ownership.
 
 During installation, the existing minute timer keeps publishing
 `SCOPE_DEPLOYMENT_WATCHER_HEARTBEAT`. Until the first bounded session publishes its
@@ -40,7 +44,7 @@ recovery count, provider, numeric run ID, and T3 UUID. Raw provider output,
 credentials, and webhook signing values never appear in public issues.
 
 The host uses its existing GitHub login for dispatch, Actions-variable updates,
-and assigned issues. The observer requires content read and issue write only.
+and assigned issues. The observer requires Actions read, content read, and issue write.
 The separate event forwarder requires Actions read and a shared HMAC secret.
 T3 Connect authenticates that signature before dispatching a task prompt; see
 [OPERATIONS.md](OPERATIONS.md) for secret setup and safe owner cutover.

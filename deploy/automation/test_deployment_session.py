@@ -49,7 +49,7 @@ class SessionTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         save_json(self.root / "scheduler-owner.json", {"owner": "t3", "activated_on": "2026-10-08"})
-        save_json(self.root / "supervision.json", {"runs": {}, "threads": {}})
+        save_json(self.root / "supervision.json", {"installed_at": NOW.isoformat(), "runs": {}, "threads": {}})
 
     def test_duplicate_webhook_and_crashed_launch_keep_one_durable_trigger(self):
         self.launch.side_effect = RuntimeError("launch failed")
@@ -126,6 +126,28 @@ class SessionTests(unittest.TestCase):
         self.stop.assert_called_once_with("attempts_exhausted")
         self.assertEqual(self.poll.call_count, 4)
 
+    def test_expiry_publishes_confirmed_stop_and_preserves_failed_cleanup_health(self):
+        for owners in (0, 1):
+            with self.subTest(owners=owners):
+                Clock.current = NOW
+                self.heartbeat.reset_mock()
+                published_states = []
+                self.heartbeat.side_effect = lambda **kwargs: published_states.append(json.loads(json.dumps(kwargs["status"])))
+                save_json(self.root / "session.json", {})
+                self.poll.return_value = {"active_releases": 0, "repair_owners": 1}
+                self.stop.return_value = owners
+                def expire(_):
+                    Clock.current += timedelta(hours=4, minutes=1)
+                with patch.object(session.time, "sleep", side_effect=expire):
+                    result = session.run()
+                published = published_states[-1]
+                self.assertEqual(published["status"], "escalated")
+                self.assertEqual(published["repair_owners"], owners)
+                self.assertEqual(bool(published.get("failure")), bool(owners))
+                self.assertEqual(published["installed_at"], NOW.isoformat())
+                self.assertEqual(published["phase"], "stopped" if not owners else "stopping")
+                self.assertEqual(session.read("session.json"), result)
+
     def test_daily_reconciliation_failure_keeps_supervising_repair_without_successful_progress(self):
         session.trigger("daily", now=NOW)
         self.daily.side_effect = RuntimeError("daily API unavailable")
@@ -149,12 +171,12 @@ class SessionTests(unittest.TestCase):
     def test_exhausted_recovery_stops_and_confirms_existing_repair_before_new_work(self):
         save_json(self.root / "session.json", {"id": "prior", "status": "failed", "started_at": "2026-10-08T06:00:00+00:00",
                                              "deadline_at": "2026-10-08T10:00:00+00:00", "recoveries": 3})
-        save_json(self.root / "supervision.json", {"runs": {}, "threads": {"repair": {"owns_agent": True}}})
+        save_json(self.root / "supervision.json", {"installed_at": NOW.isoformat(), "runs": {}, "threads": {"repair": {"owns_agent": True}}})
         session.trigger("daily", now=NOW)
         outcomes = iter((1, 0))
         def stop(reason):
             owners = next(outcomes)
-            save_json(self.root / "supervision.json", {"runs": {}, "threads": {"repair": {"owns_agent": bool(owners)}}})
+            save_json(self.root / "supervision.json", {"installed_at": NOW.isoformat(), "runs": {}, "threads": {"repair": {"owns_agent": bool(owners)}}})
             return owners
         self.stop.side_effect = stop
         with patch.object(session.time, "sleep"):

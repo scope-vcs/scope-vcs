@@ -118,6 +118,7 @@ def trigger(kind, payload=None, now=None):
 
 
 def publish(session):
+    session["installed_at"] = read("supervision.json")["installed_at"]
     save_json(STATE_DIR / "session.json", session)
     with operation("github.session-heartbeat"):
         heartbeat(status=session)
@@ -142,19 +143,26 @@ def stop_previous(previous, reason, deadline=None):
     previous.update(status="running", phase="stopping", stop_reason=reason,
                     stop_deadline_at=deadline.isoformat(), pid=os.getpid())
     save_json(STATE_DIR / "session.json", previous)
-    with process_deadline(deadline):
-        while True:
-            if datetime.now(timezone.utc) >= deadline:
-                raise SessionDeadlineExceeded("Repair termination was not confirmed before the stop deadline")
-            with operation("t3.stop-confirmation"):
-                owners = watcher.stop_owned(reason)
-            previous.update(repair_owners=owners, progress_at=stamp())
-            save_json(STATE_DIR / "session.json", previous)
-            if not owners:
-                previous.update(status="escalated", phase="stopped", ended_at=stamp())
+    try:
+        with process_deadline(deadline):
+            while True:
+                if datetime.now(timezone.utc) >= deadline:
+                    raise SessionDeadlineExceeded("Repair termination was not confirmed before the stop deadline")
+                with operation("t3.stop-confirmation"):
+                    owners = watcher.stop_owned(reason)
+                previous.update(repair_owners=owners, progress_at=stamp())
                 save_json(STATE_DIR / "session.json", previous)
-                return
-            time.sleep(POLL_SECONDS)
+                if not owners:
+                    previous.update(status="escalated", phase="stopped", ended_at=stamp())
+                    previous.pop("failure", None)
+                    previous.pop("failed_at", None)
+                    break
+                time.sleep(POLL_SECONDS)
+    except (Exception, SessionDeadlineExceeded) as error:
+        previous.update(status="escalated", failed_at=stamp(), failure=diagnostic(error))
+        raise
+    finally:
+        publish(previous)
 
 
 def run(now=None):

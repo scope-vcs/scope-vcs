@@ -93,6 +93,7 @@ class SessionObserverTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime(2026, 10, 8, 20, tzinfo=timezone.utc)
         self.state = {"status": "idle", "progress_at": "2026-10-08T09:00:00Z", "repair_owners": 0,
+                      "installed_at": "2026-10-07T00:00:00Z",
                       "releases": 0, "activated_on": "2026-10-08", "daily_audited_on": "2026-10-07",
                       "observed": {"123": {"attempt": 1, "status": "verified"}}}
         self.run = {"id": 123, "run_attempt": 1, "status": "completed", "conclusion": "success",
@@ -130,6 +131,18 @@ class SessionObserverTests(unittest.TestCase):
         with patch.object(heartbeat, "ensure_issue") as issue:
             self.assertTrue(self.observe([self.run, run]))
             issue.assert_not_called()
+
+    def test_installation_excludes_completed_history_but_admits_active_and_retried_releases(self):
+        self.state.update(installed_at="2026-10-08T18:30:00Z", activated_on="2026-10-09",
+                          daily_audited_on="2026-10-08", observed={})
+        for status, started, expected in (("completed", "2026-10-08T18:00:00Z", True),
+                                           ("in_progress", "2026-10-08T18:00:00Z", False),
+                                           ("completed", "2026-10-08T19:00:00Z", False)):
+            run = self.run | {"id": 456, "created_at": "2026-10-08T17:00:00Z", "status": status,
+                              "run_started_at": started, "display_title": "Release"}
+            with self.subTest(status=status, started=started), patch.object(heartbeat, "ensure_issue") as issue:
+                self.assertEqual(self.observe([run]), expected)
+                self.assertEqual(issue.call_count, int(not expected))
 
     def test_expired_session_and_unconfirmed_repair_owner_remain_unhealthy(self):
         self.state.update(status="running", progress_at=self.now.isoformat(), deadline_at="2026-10-08T19:54:00Z")
