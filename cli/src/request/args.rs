@@ -154,7 +154,10 @@ pub(super) struct RequestMergeArgs {
     pub(super) target: RequestTargetArgs,
     #[arg(long, help = "Confirm the merge")]
     pub(super) yes: bool,
-    #[arg(long, help = "Enable auto-merge and allow CI for the current revision")]
+    #[arg(
+        long,
+        help = "Enable auto-merge for the current revision (approve waiting CI with scope request ci --approve)"
+    )]
     pub(super) auto: bool,
     #[arg(long, help = "Cancel the active automatic merge authorization")]
     pub(super) cancel_auto: bool,

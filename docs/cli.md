@@ -127,9 +127,9 @@ cannot merge until CI is evaluated; `scope request ci` and
 [the GitHub App guide](github-app.md) for how GitHub CI runs.
 
 When CI is still running, a maintainer can authorize the current request
-revision to merge later with `scope request merge --auto --yes`. Enabling
-auto-merge also allows CI for that revision, including CI awaiting maintainer
-approval. The command returns after the server saves the authorization; a
+revision to merge later with `scope request merge --auto --yes`. CI awaiting
+maintainer permission still requires `scope request ci --approve`; enabling
+auto-merge does not approve CI. The command returns after the server saves the authorization; a
 successful exit does not by itself mean the request has merged. `scope request show` reports the authorizer,
 authorized head, state, and what auto-merge is waiting for. A new request push
 ends that authorization. Cancel an active authorization with

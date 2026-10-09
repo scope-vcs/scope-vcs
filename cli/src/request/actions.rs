@@ -242,7 +242,7 @@ fn update_request_auto_merge(
         })?;
         require_confirmation(
             &format!(
-                "Enable auto-merge for request {request_name} and allow CI for revision {}",
+                "Enable auto-merge for request {request_name} at revision {}. If CI needs permission, run scope request ci --approve separately",
                 short_oid(current.head_oid.as_str())
             ),
             yes,
