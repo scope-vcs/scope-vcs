@@ -1,4 +1,7 @@
 import { toast } from 'sonner'
+import { SIGN_IN_REQUIRED_HEADER, SignInRequiredError } from '../api/sign-in-required'
+import { withSessionRetry } from './session-retry-fetch'
+import { sessionReady, whenSessionReady } from './viewer-state'
 
 export const STALE_BUILD_HEADER = 'x-scope-stale-build'
 
@@ -13,9 +16,18 @@ export class StaleBuildError extends Error {
 
 let staleBuild = false
 
+const sendServerFunction = withSessionRetry(
+  (input, init) => fetch(input, init),
+  { ready: sessionReady, whenReady: whenSessionReady },
+)
+
 export const fetchServerFunction: typeof fetch = async (input, init) => {
   if (staleBuild) throw new StaleBuildError()
-  const response = await fetch(input, init)
+  const response = await sendServerFunction(input, init)
+  if (response.headers.has(SIGN_IN_REQUIRED_HEADER)) {
+    await response.body?.cancel()
+    throw new SignInRequiredError()
+  }
   if (!response.headers.has(STALE_BUILD_HEADER)) return response
   await response.body?.cancel()
   staleBuild = true

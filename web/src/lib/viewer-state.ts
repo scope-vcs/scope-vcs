@@ -20,3 +20,28 @@ export function activateViewer(viewerId: string | null) {
   if (previous !== undefined && previous !== viewerId) resetViewerState()
   return previous
 }
+
+let currentSessionReady = false
+const sessionReadyWaiters = new Set<() => void>()
+
+export function sessionReady() {
+  return currentSessionReady
+}
+
+export function markSessionReady() {
+  currentSessionReady = true
+  for (const wake of [...sessionReadyWaiters]) wake()
+}
+
+export function whenSessionReady(boundMs: number) {
+  if (currentSessionReady) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const wake = () => {
+      clearTimeout(timer)
+      sessionReadyWaiters.delete(wake)
+      resolve()
+    }
+    const timer = setTimeout(wake, boundMs)
+    sessionReadyWaiters.add(wake)
+  })
+}
