@@ -148,8 +148,12 @@ systemctl --user daemon-reload
 Finish tunnel and signing setup first. Inspect live release state and actual T3
 repair ownership. When no repair is active, disable the old timer and drain its
 service. Save `scheduler-owner.json` atomically with owner `t3` and
-`activated_on` set to the next Chicago date; the previous owner remains responsible
-for today's existing daily intent. This is the only local activation gate.
+`activated_on` set to the first dated daily start the new owner must deliver.
+For an existing installation, use today's Chicago date when cutting over before
+02:08, or the next date after today's start was handled by the previous owner.
+For a fresh installation, use the date saved by daily initialization. Preserve
+inherited dispatch intents and reconcile any ambiguous dispatch before changing
+ownership. This is the only local activation gate.
 
 ```sh
 systemctl --user disable --now scope-deployment-watcher.timer

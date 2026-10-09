@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 import deployment_session as session
 from deployment_diagnostics import OperationFailure, diagnostic, operation
 from deployment_runtime import save_json
+from heartbeat import session_health
 
 
 NOW = datetime(2026, 10, 8, 7, 8, tzinfo=timezone.utc)
@@ -39,9 +40,11 @@ class SessionTests(unittest.TestCase):
         self.pins = Mock(return_value=False)
         self.heartbeat = Mock()
         self.stop = Mock(return_value=0)
+        self.issue = Mock(return_value="assigned-escalation")
         replacements = [(session, "STATE_DIR", self.root), (session, "launch", self.launch),
                         (session, "datetime", Clock), (session, "github", Mock(return_value=TRUSTED)),
                         (session, "heartbeat", self.heartbeat), (session.watcher, "poll", self.poll),
+                        (session, "ensure_issue", self.issue),
                         (session.watcher, "stop_owned", self.stop),
                         (session.scheduler, "poll", self.daily), (session.pins, "poll", self.pins)]
         for owner, name, value in replacements:
@@ -143,15 +146,96 @@ class SessionTests(unittest.TestCase):
         self.assertNotIn("handled_at", session.read("triggers.json")["requests"]["daily-2026-10-08"])
 
     def test_repeated_dependency_failures_exhaust_the_saved_process_recovery_budget(self):
-        session.trigger("reconcile", now=NOW)
-        self.poll.side_effect = RuntimeError("dependency unavailable")
+        cases = ((failing, new_work) for failing in (self.heartbeat, self.poll) for new_work in (False, True))
+        for failing, new_work in cases:
+            with self.subTest(heartbeat_failure=failing is self.heartbeat, new_work=new_work):
+                for name in ("session.json", "triggers.json"):
+                    (self.root / name).unlink(missing_ok=True)
+                for mock in (self.heartbeat, self.poll, self.daily, self.pins, self.stop, self.issue):
+                    mock.reset_mock(side_effect=True)
+                Clock.current = NOW
+                for kind in ("daily", "pins", "webhook", "reconcile"):
+                    session.trigger(kind, PAYLOAD if kind == "webhook" else None, NOW)
+                initial = set(session.read("triggers.json")["requests"])
+                failing.side_effect = RuntimeError("dependency unavailable")
+                for _ in range(4):
+                    with self.assertRaises(RuntimeError):
+                        session.run()
+                previous = session.read("session.json")
+                failing.side_effect = None
+                Clock.current += timedelta(minutes=2)
+                new = session.trigger("reconcile", now=Clock.current)["queued"] if new_work else None
+                result = session.run()
+                self.stop.assert_called_once_with("attempts_exhausted")
+                self.issue.assert_called_once()
+                queue = session.read("triggers.json")["requests"]
+                for key in initial:
+                    self.assertIn("handled_at", queue[key])
+                    receipt = queue[key]["retirements"][previous["id"]]
+                    self.assertEqual(receipt["reason"], "attempts_exhausted")
+                    self.assertEqual(receipt["alert_url"], "assigned-escalation")
+                if new_work:
+                    self.assertIn("handled_at", queue[new])
+                    self.assertNotIn("retirements", queue[new])
+                    self.assertEqual(result["status"], "idle")
+                    self.assertNotEqual(result["id"], previous["id"])
+                    self.daily.assert_called_with(Clock.current, dispatch_day=None)
+                    self.pins.assert_called_once_with(release_open=False, now=Clock.current, requested_weeks=())
+                else:
+                    self.assertEqual(result["status"], "escalated")
+                    self.assertEqual(result["id"], previous["id"])
+                    self.pins.assert_not_called()
+                retired = next(call.kwargs["status"] for call in self.heartbeat.call_args_list
+                               if call.kwargs["status"].get("phase") == "stopped")
+                self.assertEqual(retired["escalated_requests"], 4)
+                self.assertFalse(session_health(json.dumps(retired), Clock.current, 1200))
+
+    def test_failed_escalation_preserves_unhandled_work_and_blocks_new_budget_until_retirement(self):
+        session.trigger("daily", now=NOW)
+        self.heartbeat.side_effect = RuntimeError("heartbeat unavailable")
         for _ in range(4):
             with self.assertRaises(RuntimeError):
                 session.run()
+        previous = session.read("session.json")
+        self.heartbeat.side_effect = None
+        self.issue.side_effect = RuntimeError("issue unavailable")
+        new = session.trigger("reconcile", now=NOW)["queued"]
         result = session.run()
-        self.assertEqual(result["status"], "escalated")
-        self.stop.assert_called_once_with("attempts_exhausted")
-        self.assertEqual(self.poll.call_count, 4)
+        self.assertEqual(result["phase"], "stopping")
+        self.assertEqual(result["failure"]["operation"], "github.trigger-escalation")
+        self.assertEqual(result["id"], previous["id"])
+        self.poll.assert_not_called()
+        queue = session.read("triggers.json")["requests"]
+        self.assertTrue(all("handled_at" not in value for value in queue.values()))
+        self.assertFalse(session_health(json.dumps(result), NOW, 1200))
+        self.issue.side_effect = None
+        result = session.run()
+        self.assertEqual(result["status"], "idle")
+        self.assertNotEqual(result["id"], previous["id"])
+        queue = session.read("triggers.json")["requests"]
+        self.assertIn("retirements", queue["daily-2026-10-08"])
+        self.assertNotIn("retirements", queue[new])
+        self.daily.assert_called_once_with(NOW, dispatch_day=None)
+
+    def test_completion_arriving_during_a_poll_remains_pending_until_another_poll(self):
+        session.trigger("webhook", PAYLOAD | {"action": "in_progress"}, NOW)
+        outcomes = []
+        def poll(**kwargs):
+            if not outcomes:
+                session.trigger("webhook", PAYLOAD, NOW)
+            outcomes.append(kwargs)
+            return {"active_releases": 0, "repair_owners": 0}
+        self.poll.side_effect = poll
+        during = []
+        with patch.object(session.time, "sleep", side_effect=lambda _: during.append(session.read("triggers.json"))):
+            result = session.run()
+        self.assertEqual(result["status"], "idle")
+        self.assertEqual(len(outcomes), 2)
+        self.assertEqual(len(during), 1)
+        self.assertNotIn("handled_at", during[0]["requests"]["release-123-2"])
+        request = session.read("triggers.json")["requests"]["release-123-2"]
+        self.assertEqual(request["events"], ["2:in_progress", "2:completed"])
+        self.assertIn("handled_at", request)
 
     def test_expiry_publishes_confirmed_stop_and_preserves_failed_cleanup_health(self):
         for owners in (0, 1):

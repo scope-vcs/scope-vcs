@@ -20,7 +20,7 @@ from deployment_runtime import github, save_json
 import deployment_scheduler as scheduler
 import deployment_watcher as watcher
 import image_pin_refresh as pins
-from heartbeat import heartbeat
+from heartbeat import REPO, ensure_issue, heartbeat
 
 STATE_DIR = watcher.STATE_DIR
 SERVICE = "scope-deployment-session.service"
@@ -107,7 +107,7 @@ def trigger(kind, payload=None, now=None):
         queue = read("triggers.json", {"requests": {}})
         existing = queue["requests"].get(key)
         if existing is None:
-            queue["requests"][key] = {"kind": kind, "requested_at": now.isoformat()}
+            queue["requests"][key] = {"kind": kind, "revision": 1, "requested_at": now.isoformat()}
             if kind == "webhook":
                 queue["requests"][key]["events"] = [event]
             save_json(STATE_DIR / "triggers.json", queue)
@@ -120,7 +120,8 @@ def trigger(kind, payload=None, now=None):
         if existing is not None and kind == "webhook":
             events = existing.setdefault("events", [])
             if event not in events:
-                existing.update(events=events + [event], requested_at=now.isoformat())
+                existing.update(events=events + [event], revision=existing["revision"] + 1,
+                                requested_at=now.isoformat())
                 existing.pop("handled_at", None)
                 save_json(STATE_DIR / "triggers.json", queue)
             elif "handled_at" in existing:
@@ -133,7 +134,47 @@ def publish(session):
     session["installed_at"] = read("supervision.json")["installed_at"]
     save_json(STATE_DIR / "session.json", session)
     with operation("github.session-heartbeat"):
-        heartbeat(status=session)
+        heartbeat(status={key: value for key, value in session.items() if key != "admitted_requests"})
+
+
+def pending_requests():
+    with queue_lock():
+        queue = read("triggers.json", {"requests": {}})
+        return {key: value for key, value in queue["requests"].items() if "handled_at" not in value}
+
+
+def admit_requests(session):
+    requests = pending_requests()
+    session["admitted_requests"].update({key: value["revision"] for key, value in requests.items()})
+    save_json(STATE_DIR / "session.json", session)
+    return requests
+
+
+def retire_requests(session, reason):
+    requests = pending_requests()
+    admitted = session.get("admitted_requests", {})
+    abandoned = {key: revision for key, revision in admitted.items()
+                 if key in requests and requests[key]["revision"] == revision}
+    if abandoned:
+        with operation("github.trigger-escalation"):
+            url = ensure_issue(REPO, f"<!-- scope-deployment-watch:session:{session['id']} -->",
+                               "Deployment session stopped with unhandled triggers",
+                               f"Bounded session {session['id']} stopped with {len(abandoned)} unhandled requests. "
+                               "Automatic handling has ended. Inspect session.json, triggers.json, daily-dispatch.json "
+                               "and deployment receipts on the supervision host. Reconcile any ambiguous dispatch "
+                               "before taking manual action; preserved repair worktrees remain available.", state="all")
+        with queue_lock():
+            queue = read("triggers.json")
+            for key, revision in abandoned.items():
+                request = queue["requests"][key]
+                request.setdefault("retirements", {})[session["id"]] = {
+                    "revision": revision, "at": stamp(), "reason": reason, "alert_url": url}
+                if request["revision"] == revision:
+                    request["handled_at"] = stamp()
+            save_json(STATE_DIR / "triggers.json", queue)
+    with queue_lock():
+        queue = read("triggers.json", {"requests": {}})
+        return sum(session["id"] in value.get("retirements", {}) for value in queue["requests"].values())
 
 
 @contextmanager
@@ -166,9 +207,13 @@ def stop_previous(previous, reason, deadline=None):
                 previous.update(repair_owners=owners, releases=releases, progress_at=stamp())
                 save_json(STATE_DIR / "session.json", previous)
                 if not owners:
+                    previous["escalated_requests"] = retire_requests(previous, reason)
                     previous.update(status="escalated", phase="stopped", ended_at=stamp())
-                    previous.pop("failure", None)
-                    previous.pop("failed_at", None)
+                    if previous["escalated_requests"]:
+                        previous.setdefault("failure", {"operation": "session.trigger-retirement", "category": "UnhandledTriggers"})
+                    else:
+                        previous.pop("failure", None)
+                        previous.pop("failed_at", None)
                     break
                 time.sleep(POLL_SECONDS)
     except (Exception, SessionDeadlineExceeded) as error:
@@ -187,16 +232,9 @@ def run(now=None):
             raise RuntimeError("Another supervision owner is still running") from None
         while True:
             result = run_session(now)
-            if result.get("phase") != "stopped" or not pending_after(result):
+            if result.get("phase") != "stopped" or not pending_requests():
                 return result
             now = None
-
-
-def pending_after(session):
-    with queue_lock():
-        queue = read("triggers.json", {"requests": {}})
-        return any("handled_at" not in value and datetime.fromisoformat(value["requested_at"]) >
-                   datetime.fromisoformat(session["started_at"]) for value in queue["requests"].values())
 
 
 def run_session(now=None):
@@ -204,6 +242,7 @@ def run_session(now=None):
     previous = read("session.json", {})
     supervision = read("supervision.json", {"threads": {}})
     continuing = previous.get("status") in {"running", "failed"} or (
+        previous.get("status") == "escalated" and previous.get("phase") != "stopped") or (
         bool(previous) and any(value.get("owns_agent") for value in supervision["threads"].values()))
     recoveries = previous.get("recoveries", 0) + 1 if continuing else 0
     obsolete = continuing and at >= datetime.fromisoformat(previous["deadline_at"])
@@ -221,11 +260,13 @@ def run_session(now=None):
                "deadline_at": previous["deadline_at"] if continuing else (at + timedelta(seconds=DEADLINE_SECONDS)).isoformat(),
                "status": "running", "pid": os.getpid(), "phase": "starting",
                "recoveries": recoveries,
+               "admitted_requests": previous.get("admitted_requests", {}) if continuing else {},
                "activated_on": read("scheduler-owner.json")["activated_on"],
                "progress_at": previous.get("progress_at", at.isoformat()) if continuing else at.isoformat()}
     deadline = datetime.fromisoformat(session["deadline_at"])
     try:
         with process_deadline(deadline + timedelta(seconds=STOP_GRACE)):
+            admit_requests(session)
             publish(session)
             return supervise_session(session, deadline)
     except (Exception, SessionDeadlineExceeded) as error:
@@ -245,9 +286,7 @@ def supervise_session(session, deadline):
         if expired:
             stop_previous(session, "deadline_exceeded", deadline + timedelta(seconds=STOP_GRACE))
             return session
-        with queue_lock():
-            queue = read("triggers.json", {"requests": {}})
-            requests = {key: value for key, value in queue["requests"].items() if "handled_at" not in value}
+        requests = admit_requests(session)
         session["phase"] = "daily-reconciliation"
         save_json(STATE_DIR / "session.json", session)
         days = [key.removeprefix("daily-") for key in requests if key.startswith("daily-")]
@@ -284,8 +323,8 @@ def supervise_session(session, deadline):
             session.pop("failed_at", None)
         with queue_lock():
             queue = read("triggers.json", {"requests": {}})
-            for key in requests:
-                if daily is not None or not key.startswith("daily-"):
+            for key, request in requests.items():
+                if queue["requests"][key]["revision"] == request["revision"] and (daily is not None or not key.startswith("daily-")):
                     queue["requests"][key]["handled_at"] = stamp()
             save_json(STATE_DIR / "triggers.json", queue)
             new_work = any("handled_at" not in value for value in queue["requests"].values())
