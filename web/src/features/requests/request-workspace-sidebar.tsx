@@ -294,9 +294,7 @@ export function RequestWorkspaceSidebar({
                 <span>
                   <TextSkeleton length="short" size="meta" />
                 </span>
-                <span>
-                  <TextSkeleton className="mx-auto" length="tiny" size="meta" />
-                </span>
+                <GroupCount count={null} />
               </h2>
               <RequestWorkspaceListSkeleton rail />
             </section>
@@ -434,7 +432,9 @@ function count(page: RequestQueuePageResponse, moved: number) {
 }
 
 function GroupCount({ count }: { count: string | null }) {
-  return count === null
-    ? <TextSkeleton length="tiny" size="meta" />
-    : <span className="tabular-nums">{count}</span>
+  return (
+    <span className="tabular-nums">
+      {count === null ? <TextSkeleton className="mx-auto" length="tiny" size="meta" /> : count}
+    </span>
+  )
 }

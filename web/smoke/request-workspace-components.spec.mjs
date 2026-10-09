@@ -11,7 +11,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 const require = createRequire(import.meta.url)
 
-test('request rows exchange age and actions and restore the selected view across repository sections', async (t) => {
+async function workspacePage(t) {
   const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-request-workspace-'))
   t.after(() => rm(cacheDir, { recursive: true, force: true }))
   const server = await createServer({
@@ -36,7 +36,11 @@ test('request rows exchange age and actions and restore the selected view across
   page.setDefaultTimeout(10_000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  const base = server.resolvedUrls.local[0]
+  return { page, base: server.resolvedUrls.local[0], errors }
+}
+
+test('request rows exchange age and actions and restore the selected view across repository sections', async (t) => {
+  const { page, base, errors } = await workspacePage(t)
   const requestsPath = '/adam/demo/requests'
   const row = page.locator('[data-request-id="request-0"]')
   const age = row.locator('time')
@@ -244,5 +248,78 @@ test('request rows exchange age and actions and restore the selected view across
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.mobile.png` })
   }
+  assert.deepEqual(errors, [])
+})
+
+test('collapsed request loading keeps its header stable without guessing avatar rows', async (t) => {
+  const { page, base, errors } = await workspacePage(t)
+  await page.goto(new URL('/adam/demo/requests/request-0', base).href)
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
+  const sidebar = page.getByRole('complementary', { name: 'Requests workspace' })
+  await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 54)
+  const header = sidebar.locator('.request-workspace-needs-you > h2')
+  const toggle = page.getByRole('button', { name: 'Expand requests sidebar' })
+  const geometry = async () => ({
+    rail: await sidebar.boundingBox(),
+    toggle: await toggle.boundingBox(),
+    count: await header.boundingBox(),
+  })
+  const initial = await geometry()
+  const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
+  const done = [0, 1, 2].map((index) => ({
+    request: { id: `request-${index}`, title: `Closed request ${index}` },
+    author: { handle: 'adam' },
+    attention: { group: 'done', reason: 'closed' },
+    attention_at_unix: 1_790_000_000,
+  }))
+  const pages = { active: empty, unclaimed: empty, set_aside: empty, done: { ...empty, requests: done } }
+  for (const maintainer of [null, true]) {
+    await page.evaluate((maintainer) => window.setQueue({ pages: undefined, maintainer, loading: true }), maintainer)
+    await sidebar.locator('[aria-busy="true"]').waitFor()
+    assert.deepEqual(await geometry(), initial)
+    const placeholders = sidebar.locator('[data-slot="skeleton"]:visible')
+    assert.equal(await placeholders.count(), 1, 'the collapsed rail must not invent avatar slots before the queue is known')
+    const placeholder = await placeholders.boundingBox()
+    const count = await header.boundingBox()
+    assert(placeholder.y >= count.y && placeholder.y + placeholder.height <= count.y + count.height)
+    assert.equal(placeholder.x + placeholder.width / 2, initial.rail.x + initial.rail.width / 2, 'the count placeholder stays centered in both pending phases')
+    if (process.env.SCOPE_COMPONENT_SCREENSHOT && maintainer === true) {
+      await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-pending.png` })
+    }
+    await toggle.click()
+    await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 360)
+    assert(await sidebar.locator('[data-slot="skeleton"]:visible').count() > 1, 'expanded loading still shows list placeholders')
+    await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
+    await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 54)
+  }
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), pages)
+  const selected = sidebar.getByRole('link', { name: /Closed request 0/ })
+  await selected.waitFor()
+  assert.deepEqual(await geometry(), initial)
+  assert.equal(await header.textContent(), 'Needs you0')
+  assert.equal(await selected.getAttribute('aria-current'), 'page')
+  assert.equal(await sidebar.getByRole('button', { name: 'Show 2 more requests' }).isVisible(), true)
+  const loaded = await selected.boundingBox()
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: true }), pages)
+  await sidebar.locator('[aria-busy="true"]').waitFor()
+  assert.deepEqual(await selected.boundingBox(), loaded, 'refresh retains the selected request')
+  assert.equal(await sidebar.locator('[data-slot="skeleton"]:visible').count(), 0)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-loaded.png` })
+  }
+  await sidebar.getByRole('button', { name: 'Show 2 more requests' }).click()
+  await sidebar.getByRole('button', { name: /Done/ }).click()
+  await sidebar.getByRole('link', { name: /Closed request 1/ }).click()
+  await page.waitForURL(/\/request-1$/)
+  await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 54)
+  assert.equal(await sidebar.getByRole('link', { name: /Closed request 1/ }).getAttribute('aria-current'), 'page')
+  await page.evaluate(() => window.setQueue({ pages: undefined, maintainer: false, loading: true }))
+  await sidebar.locator('[aria-busy="true"]').waitFor()
+  assert.equal(await sidebar.locator('[data-slot="skeleton"]:visible').count(), 0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  assert.equal(await sidebar.isVisible(), false)
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Requests', exact: true }).click()
+  await sidebar.waitFor()
+  assert(await sidebar.locator('[data-slot="skeleton"]:visible').count() > 0, 'mobile request lists keep their loading rows')
   assert.deepEqual(errors, [])
 })
