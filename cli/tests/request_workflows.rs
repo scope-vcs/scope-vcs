@@ -504,10 +504,11 @@ impl FixtureServer {
     }
 
     fn with_request(detail: Value) -> Self {
-        Self::with_repository(detail, repository())
+        Self::with_request_states(detail.clone(), detail)
     }
 
-    fn with_repository(detail: Value, repo: Value) -> Self {
+    fn with_request_states(start_detail: Value, show_detail: Value) -> Self {
+        let repo = repository();
         let seen = Arc::new(Mutex::new(Vec::new()));
         let inspected = seen.clone();
         let edited = Arc::new(Mutex::new(Value::Null));
@@ -523,8 +524,6 @@ impl FixtureServer {
         let auto_merge_seen_get = inspected.clone();
         let auto_merge_seen_post = inspected.clone();
         let auto_merge_seen_delete = inspected.clone();
-        let start_detail = detail.clone();
-        let show_detail = detail.clone();
         let app = Router::new()
                     .route("/v1/session", get(|| async { Json(support::session_response("usr_test", "owner", "test@example.test")) }))
                     .route("/v1/repos/owner/repo", get(move || { let repo=repo.clone(); async move { Json(repo) } }))

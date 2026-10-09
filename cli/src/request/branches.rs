@@ -100,6 +100,22 @@ pub(super) fn start_request_branch(
             error,
         )
     })?;
+    let detail = get_request(
+        api,
+        &context.target.owner,
+        &context.target.repo,
+        &response.request.id,
+    )
+    .map_err(|error| {
+        recovery::request_partial(
+            &context,
+            &response.request,
+            &branch,
+            "refresh_request",
+            true,
+            error,
+        )
+    })?;
 
     let mut human_lines = repo_access_lines(&context.repo);
     human_lines.extend([
@@ -119,7 +135,7 @@ pub(super) fn start_request_branch(
     ]);
     let result = StartResult {
         repo: context.repo,
-        request: response.request,
+        request: detail.request,
         branch,
         base_oid,
         remote: context.target.remote,
