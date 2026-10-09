@@ -7,6 +7,7 @@ import { RequestWorkspaceSidebar } from '@/features/requests/request-workspace-s
 import { RequestWorkspaceShell } from '@/features/requests/request-workspace-shell'
 import type { RepoLiveState } from '@/api/types'
 import type { RequestQueueItemResponse } from '@/api/types.generated'
+import type { RequestQueuePages } from '@/features/requests/request-list-model'
 import { FixtureViewer } from './clerk'
 import './styles.css'
 
@@ -45,11 +46,13 @@ function Repository() {
 function Workspace() {
   const { owner, repo, requestId } = useParams({ strict: false })
   const [collapsed, setCollapsed] = useState(false)
+  const [queue, setQueue] = useState<{ pages: RequestQueuePages | undefined; maintainer: boolean | null; loading: boolean }>({ pages, maintainer: true, loading: false })
+  Object.assign(window, { setQueue })
   return <RequestWorkspaceShell collapsed={collapsed} detailOpenOnMobile={Boolean(requestId)}
     onCollapsedChange={setCollapsed} sidebar={
-      <RequestWorkspaceSidebar pages={pages} collapsed={collapsed} onCollapsedChange={setCollapsed}
-        query="" onSearch={noop} loading={false} skeleton={false} error={null} actionError={null}
-        maintainer onRetry={noop} onLoadMore={noop} onAction={noop}
+      <RequestWorkspaceSidebar pages={queue.pages} collapsed={collapsed} onCollapsedChange={setCollapsed}
+        query="" onSearch={noop} loading={queue.loading} skeleton={!queue.pages} error={null} actionError={null}
+        maintainer={queue.maintainer} onRetry={noop} onLoadMore={noop} onAction={noop}
         params={{ owner: owner!, repo: repo! }} pendingId={null} selectedId={requestId}
         focus={false} onFocusToggle={noop} />
     }><Outlet /></RequestWorkspaceShell>

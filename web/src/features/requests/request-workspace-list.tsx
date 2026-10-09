@@ -87,7 +87,7 @@ export function RequestWorkspaceList({
 
 export function RequestWorkspaceListSkeleton({ rail = false }: { rail?: boolean }) {
   return (
-    <div className="request-workspace-rows">
+    <div className="request-workspace-rows request-workspace-rows--pending">
       {[0, 1, 2].map((index) => (
         <div className="request-workspace-row" data-rail={rail ? '' : undefined} key={index}>
           <div className="request-workspace-row-link">
