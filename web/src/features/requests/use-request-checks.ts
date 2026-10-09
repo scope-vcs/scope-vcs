@@ -4,7 +4,7 @@ import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { reconcileRequestState, requestStateResource } from './request-state-resource'
 
 export type RequestChecksController = {
-  approve: () => Promise<void>
+  approve: (expectedHeadOid: string) => Promise<boolean>
   approving: boolean
   checks: RequestChecksResponse
   error: string | null
@@ -22,26 +22,27 @@ export function useRequestChecks({
   const [approving, setApproving] = useState(false)
   const [approveError, setApproveError] = useState<string | null>(null)
 
-  const shownHeadOid = checks.head_oid
-  const runApproval = useCallback(async () => {
+  const runApproval = useCallback(async (expectedHeadOid: string) => {
     const snapshot = requestStateResource.getSnapshot(identity)
     setApproving(true)
     setApproveError(null)
     try {
-      const result = await approve(shownHeadOid)
+      const result = await approve(expectedHeadOid)
       reconcileRequestState(identity, snapshot, (state) => ({
         ...state,
         checks: result,
         detail: { request: { ...state.detail.request, mergeability: result.mergeability } },
         auto_merge: { ...state.auto_merge, can_enable: false },
       }))
+      return true
     } catch (cause) {
-      setApproveError(resourceErrorMessage(cause, 'The checks could not be started.'))
+      setApproveError(resourceErrorMessage(cause, 'CI could not be started.'))
+      return false
     } finally {
       requestStateResource.invalidate(identity)
       setApproving(false)
     }
-  }, [approve, identity, shownHeadOid])
+  }, [approve, identity])
 
   return {
     approve: runApproval,

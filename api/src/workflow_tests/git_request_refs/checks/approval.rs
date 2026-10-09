@@ -124,7 +124,7 @@ async fn checks_awaiting_approval_wait_for_a_maintainer_and_gate_the_merge() {
     .await;
     assert_eq!(
         expect_json(unapproved_merge, StatusCode::CONFLICT).await["message"],
-        "checks are waiting for a maintainer to start them"
+        "CI is waiting for a maintainer to start it"
     );
 
     let approved = expect_json(
@@ -160,7 +160,7 @@ async fn checks_awaiting_approval_wait_for_a_maintainer_and_gate_the_merge() {
         api_request(app, "POST", &merge_route(REQUEST_ID), Some(&member), None).await;
     assert_eq!(
         expect_json(pending_merge, StatusCode::CONFLICT).await["message"],
-        "checks have not finished"
+        "CI has not finished"
     );
 }
 

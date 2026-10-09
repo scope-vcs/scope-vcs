@@ -25,7 +25,7 @@ pub(in crate::request) fn receipt_lines(
         }
         Some(RequestAutoMergeIntentStatus::Cancelled) => {
             lines.push(
-                "Auto-merge is canceled; passing checks will leave the request open.".to_string(),
+                "Auto-merge is canceled; passing CI will leave the request open.".to_string(),
             );
         }
         Some(RequestAutoMergeIntentStatus::Stopped) => {
@@ -69,8 +69,8 @@ pub(super) fn stop_reason_label(reason: RequestAutoMergeStopReason) -> &'static 
         RequestAutoMergeStopReason::RequestChanged => "the request changed",
         RequestAutoMergeStopReason::RequestClosed => "the request was closed",
         RequestAutoMergeStopReason::AccessRevoked => "the authorizer lost maintainer access",
-        RequestAutoMergeStopReason::ChecksFailed => "checks failed",
-        RequestAutoMergeStopReason::ChecksConfigurationError => "checks have a configuration error",
+        RequestAutoMergeStopReason::ChecksFailed => "CI failed",
+        RequestAutoMergeStopReason::ChecksConfigurationError => "CI has a configuration error",
         RequestAutoMergeStopReason::MergeConflict => "the request conflicts with main",
         RequestAutoMergeStopReason::RequestBranchMissing => "the request branch is missing",
     }

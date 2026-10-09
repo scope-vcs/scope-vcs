@@ -29,6 +29,8 @@ export function RequestChecksSection({
 }) {
   const [expanded, setExpanded] = useState(false)
   const listId = useId()
+  if (checks.state === 'no-checks') return null
+
   const note = requestCheckEvaluationNote(checks)
   const warning = requestChecksWorkflowWarning(checks)
   const publicNote = requestPublicChecksNote(checks, requestViewName)
@@ -37,10 +39,10 @@ export function RequestChecksSection({
 
   return (
     <section
-      aria-label="Checks"
+      aria-label="CI"
       className={CHECKS_SECTION_CLASS}
     >
-      <h2 className="label-mono text-muted-foreground">checks</h2>
+      <h2 className="label-mono text-muted-foreground">CI</h2>
       {error ? (
         <p className="mt-2 text-[13px] text-danger-strong" role="alert">
           {error}
@@ -112,7 +114,7 @@ export function RequestChecksSection({
           onClick={() => setExpanded((open) => !open)}
           type="button"
         >
-          {expanded ? 'Show less' : `Show all ${summary.all.length}`}
+          {expanded ? 'Show less' : `Show all ${summary.all.length} results`}
           <ChevronDown aria-hidden="true" className={cn('size-3 transition-transform', expanded && 'rotate-180')} />
         </button>
       ) : null}

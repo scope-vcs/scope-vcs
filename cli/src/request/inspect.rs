@@ -8,7 +8,7 @@ use crate::{
         scope_remote_head_oid,
     },
 };
-use args::{RequestCheckoutArgs, RequestChecksArgs, RequestDiffArgs};
+use args::{RequestCheckoutArgs, RequestCiArgs, RequestDiffArgs};
 use scope_api_contract::RequestRevisionInspectionState;
 
 pub(super) fn checkout_request(
@@ -259,10 +259,10 @@ pub(super) fn diff_request(
     ))
 }
 
-pub(super) fn request_checks(
+pub(super) fn request_ci(
     git_repo: Option<&GitRepo>,
     api: ApiSession<'_>,
-    args: RequestChecksArgs,
+    args: RequestCiArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let (context, request_id) =
         load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
@@ -283,7 +283,7 @@ pub(super) fn request_checks(
     };
     let lines = super::render::request_checks_lines(&checks);
     Ok(RequestCommandOutcome::new(
-        "request.checks",
+        "request.ci",
         RequestCommandResult::Checks(ChecksResult {
             repo: context.repo,
             checks,

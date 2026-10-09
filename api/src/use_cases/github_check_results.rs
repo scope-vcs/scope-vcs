@@ -75,7 +75,7 @@ pub(crate) async fn confirm_recent_github_checks(
         .await
         .map_err(|error| {
             ApiError::upstream_unavailable(
-                "Scope could not confirm this request's checks with GitHub. Try again.",
+                "Scope could not confirm this request's CI results with GitHub. Try again.",
                 error.into_operator_diagnostic(),
             )
         })
@@ -121,7 +121,7 @@ pub(crate) async fn refresh_commit_checks(
         .await?
         .ok_or_else(|| {
             ApiError::upstream_unavailable(
-                "GitHub no longer lets Scope read this repository's checks.",
+                "GitHub no longer lets Scope read this repository's CI results.",
                 format!(
                     "GitHub refused to list check runs of {} for {}",
                     connection.github_full_name, connection.repository_id

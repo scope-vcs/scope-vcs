@@ -411,9 +411,7 @@ async fn evaluate_request_checks(
         .await?
         .map(|read| read.connection);
     if repo.incarnation() != *incarnation {
-        return Err(ApiError::conflict(
-            "repository changed while evaluating checks",
-        ));
+        return Err(ApiError::conflict("repository changed while evaluating CI"));
     }
     let expected_canonical_main_oid = state
         .metadata

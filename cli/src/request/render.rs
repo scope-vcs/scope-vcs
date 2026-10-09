@@ -319,13 +319,13 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
             terminal_text(&checks.request_id),
             short_oid(checks.head_oid.as_str())
         ),
-        format!("Checks: {}", evaluation_state_label(checks.state)),
+        format!("CI: {}", evaluation_state_label(checks.state)),
     ];
     if let Some(message) = &checks.message {
         lines.push(format!("  {}", terminal_text(message)));
     }
     if checks.state == Some(RequestCheckEvaluationState::NoChecks) {
-        lines.push("  This head asks for no checks.".to_string());
+        lines.push("  No CI is required for this revision.".to_string());
     }
     for check in &checks.checks {
         lines.push(check_line(check));
@@ -335,7 +335,7 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
     }
     if checks.private_request_on_public_github {
         lines.push(
-            "GitHub: the checks run in a public GitHub repository, so this request is public there."
+            "GitHub: CI runs in a public GitHub repository, so this request is public there."
                 .to_string(),
         );
     }
@@ -351,13 +351,13 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
             );
         }
         let command = format!(
-            "`scope request checks --approve --head {}`",
+            "`scope request ci --approve --head {}`",
             checks.head_oid.as_str()
         );
         lines.push(if checks.github_push.is_some() {
             format!("Send this revision to GitHub Actions with {command}.")
         } else {
-            format!("Start these checks with {command}.")
+            format!("Allow CI for this revision with {command}.")
         });
     }
     lines
@@ -385,7 +385,7 @@ fn github_push_line(push: &RequestGitHubPushResponse) -> String {
 fn evaluation_state_label(state: Option<RequestCheckEvaluationState>) -> &'static str {
     match state {
         None => "not worked out for this commit yet",
-        Some(RequestCheckEvaluationState::NoChecks) => "none asked for",
+        Some(RequestCheckEvaluationState::NoChecks) => "not required",
         Some(RequestCheckEvaluationState::AwaitingApproval) => "waiting for maintainer approval",
         Some(RequestCheckEvaluationState::Started) => "started",
         Some(RequestCheckEvaluationState::ConfigurationError) => "workflow configuration error",
@@ -481,7 +481,7 @@ fn mergeability_label(mergeability: &RequestMergeabilityResponse) -> String {
         | RequestMergeabilityStatus::ChecksConfigurationError => mergeability
             .reason
             .clone()
-            .unwrap_or_else(|| "checks have not passed".to_string()),
+            .unwrap_or_else(|| "CI has not passed".to_string()),
     }
 }
 

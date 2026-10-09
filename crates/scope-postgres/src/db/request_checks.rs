@@ -78,7 +78,7 @@ impl RequestStore {
             || request.head_oid != command.evaluation.head_oid
         {
             return Err(PostgresError::conflict(
-                "request changed while evaluating checks",
+                "request changed while evaluating CI",
             ));
         }
         let canonical_main_oid =
@@ -90,13 +90,11 @@ impl RequestStore {
                 .as_ref()
                 .is_some_and(|base| canonical_main_oid.as_deref() != Some(&base.canonical_main_oid))
         {
-            return Err(PostgresError::conflict(
-                "main changed while evaluating checks",
-            ));
+            return Err(PostgresError::conflict("main changed while evaluating CI"));
         }
         if request.is_terminal() {
             return Err(PostgresError::conflict(
-                "request can no longer merge, so its checks are not evaluated",
+                "request can no longer merge, so its CI is not evaluated",
             ));
         }
         if let Some(evaluation) = evaluation_for_head(
@@ -161,7 +159,7 @@ impl RequestStore {
         ensure_approving_reviewed_head(&request, &command.reviewed_head_oid)?;
         let evaluation = evaluation_for_head(&tx, &request.id, &request.head_oid)
             .await?
-            .ok_or_else(|| PostgresError::not_found("request head has no recorded checks"))?;
+            .ok_or_else(|| PostgresError::not_found("request head has no recorded CI"))?;
         evaluation.ensure_awaiting_approval()?;
         let mut revisions = Vec::new();
         for check in evaluation.native_checks() {

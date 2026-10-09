@@ -19,7 +19,7 @@ commands:
   native-runs list            list the accounts whose repositories may use native runs
   native-runs add <handle> [note]
                               list an account, or replace its note
-  native-runs remove <handle> unlist an account; its waiting request checks become
+  native-runs remove <handle> unlist an account; its waiting request CI becomes
                               configuration errors and its unfinished runs are canceled
   help                        show this help
 

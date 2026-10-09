@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useParams } from '@tanstack/react-router'
+import { RequestCiApproval } from '@/features/requests/request-ci-approval'
 import { RequestChecksSection } from '@/features/requests/request-checks-section'
 import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.generated'
 import './styles.css'
@@ -44,12 +45,33 @@ function Request() {
   const [checks, setChecks] = useState(running)
   Object.assign(window, {
     showNative: () => setChecks(native),
+    showState: (state: RequestChecksResponse['state']) => setChecks({
+      ...running, state, checks: [], github_push: null, private_request_on_public_github: false,
+    }),
+    showApproval: () => setChecks({
+      ...running, state: 'awaiting-approval', can_approve: true, changes_github_workflows: true,
+    }),
+    pushRevision: () => setChecks((current) => ({ ...current, head_oid: 'b'.repeat(40) })),
     refresh: () => setChecks((current) => ({
       ...current,
       checks: current.checks.map((check, index) => index ? check : { ...check as GitHubCheck, status: 'completed', conclusion: 'success' }),
     })),
   })
-  return <main className="mx-auto max-w-3xl"><RequestChecksSection checks={checks} error={null} params={{ owner: owner!, repo: repo! }} requestViewName="Agent" /></main>
+  return (
+    <main className="mx-auto max-w-3xl">
+      <RequestCiApproval
+        controller={{
+          checks, approving: false, error: null,
+          approve: async (head) => {
+            Object.assign(window, { approvedHead: head })
+            return true
+          },
+        }}
+        requestViewName="Agent"
+      />
+      <RequestChecksSection checks={checks} error={null} params={{ owner: owner!, repo: repo! }} requestViewName="Agent" />
+    </main>
+  )
 }
 
 function Run() {

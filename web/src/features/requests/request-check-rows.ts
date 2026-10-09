@@ -60,20 +60,23 @@ export function requestChecksSummary(checks: RequestChecksResponse): RequestChec
   const skipped = count('inert')
 
   const push = checks.github_push
-  const lead: RequestChecksSummary['lead'] = push?.state === 'failed'
-    ? { state: 'failed', text: 'Checks couldn’t start' }
-    : push?.state === 'sending'
-      ? { state: 'running', text: 'Starting checks' }
-      : failed
-        ? { state: 'failed', text: `${failed} failed` }
-        : left
-          ? { state: 'running', text: `${left} of ${all.length - skipped} left` }
-          : passed
-            ? { state: 'succeeded', text: `All ${passed} passed` }
-            : null
+  const lead: RequestChecksSummary['lead'] = checks.state !== 'started'
+    ? null
+    : push?.state === 'failed'
+      ? { state: 'failed', text: 'CI couldn’t start' }
+      : push?.state === 'sending'
+        ? { state: 'running', text: 'Starting CI' }
+        : failed
+          ? { state: 'failed', text: 'CI failed' }
+          : left
+            ? { state: 'running', text: 'CI running' }
+            : passed || skipped
+              ? { state: 'succeeded', text: 'CI passed' }
+              : null
   const counts = [
-    failed && left ? `${left} left` : null,
-    lead && lead.state !== 'succeeded' && passed ? `${passed} passed` : null,
+    failed ? `${failed} failed` : null,
+    left ? failed ? `${left} left` : `${left} of ${all.length - skipped} left` : null,
+    passed ? `${passed} passed` : null,
     skipped ? `${skipped} skipped` : null,
   ].filter(Boolean)
   const startError = push?.error && (push.state === 'failed' || push.state === 'sending')

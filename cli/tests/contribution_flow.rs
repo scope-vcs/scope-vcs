@@ -145,11 +145,11 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
             }),
         "request diff omitted the committed contribution: {diff}"
     );
-    let checks = maintainer.json(["request", "checks", "--request", request_id.as_str()]);
-    assert_command(&checks, "request.checks");
+    let checks = maintainer.json(["request", "ci", "--request", request_id.as_str()]);
+    assert_command(&checks, "request.ci");
     assert_eq!(string_at(&checks, "/result/checks/request_id"), request_id);
-    let public_checks = contributor.json(["request", "checks"]);
-    assert_command(&public_checks, "request.checks");
+    let public_checks = contributor.json(["request", "ci"]);
+    assert_command(&public_checks, "request.ci");
     assert_eq!(
         string_at(&public_checks, "/result/checks/request_id"),
         request_id

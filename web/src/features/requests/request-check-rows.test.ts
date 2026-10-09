@@ -22,7 +22,7 @@ const github = (
 const checks = (
   list: RequestCheckResponse[],
   push: RequestChecksResponse['github_push'] = null,
-) => ({ checks: list, github_push: push }) as RequestChecksResponse
+) => ({ state: 'started', checks: list, github_push: push }) as RequestChecksResponse
 
 const rows = (...list: RequestCheckResponse[]) => requestChecksSummary(checks(list)).all
 
@@ -84,8 +84,8 @@ test('the summary leads with what is left and lists only checks that need someon
     github('ci / web', 'completed', 'skipped'),
     github('ci / api', 'in_progress'),
   ]))
-  assert.deepEqual(running.lead, { state: 'running', text: '2 of 3 left' })
-  assert.equal(running.counts, '1 passed · 1 skipped')
+  assert.deepEqual(running.lead, { state: 'running', text: 'CI running' })
+  assert.equal(running.counts, '2 of 3 left · 1 passed · 1 skipped')
   assert.deepEqual(running.attention.map((row) => row.name), ['ci / api', 'ci / cli'])
   assert.equal(running.all.length, 4)
 
@@ -94,16 +94,16 @@ test('the summary leads with what is left and lists only checks that need someon
     github('ci / web', 'completed', 'failure'),
     github('lint', 'completed', 'success'),
   ]))
-  assert.deepEqual(failed.lead, { state: 'failed', text: '1 failed' })
-  assert.equal(failed.counts, '1 left · 1 passed')
+  assert.deepEqual(failed.lead, { state: 'failed', text: 'CI failed' })
+  assert.equal(failed.counts, '1 failed · 1 left · 1 passed')
   assert.deepEqual(failed.attention.map((row) => row.name), ['ci / web', 'ci / api'])
 
   const passed = requestChecksSummary(checks([
     github('lint', 'completed', 'success'),
     github('web', 'completed', 'skipped'),
   ]))
-  assert.deepEqual(passed.lead, { state: 'succeeded', text: 'All 1 passed' })
-  assert.equal(passed.counts, '1 skipped')
+  assert.deepEqual(passed.lead, { state: 'succeeded', text: 'CI passed' })
+  assert.equal(passed.counts, '1 passed · 1 skipped')
   assert.deepEqual(passed.attention, [])
 
   assert.equal(requestChecksSummary(checks([])).lead, null)
@@ -112,7 +112,7 @@ test('the summary leads with what is left and lists only checks that need someon
     { provider: 'native', workflow_path: '/a.yml', workflow_name: 'a', run_id: 'run_a', run_state: 'succeeded' },
     { provider: 'native', workflow_path: '/b.yml', workflow_name: 'b', run_id: 'run_b', run_state: 'canceled' },
   ]))
-  assert.deepEqual(canceled.lead, { state: 'failed', text: '1 failed' })
+  assert.deepEqual(canceled.lead, { state: 'failed', text: 'CI failed' })
   assert.deepEqual(canceled.attention.map((row) => [row.name, row.label]), [['b', 'canceled']])
 })
 
@@ -122,7 +122,7 @@ test('the summary says when checks are starting or could not start, without nami
   const waiting = [github('ci', null)]
 
   const sending = requestChecksSummary(checks(waiting, push('sending', null)))
-  assert.deepEqual(sending.lead, { state: 'running', text: 'Starting checks' })
+  assert.deepEqual(sending.lead, { state: 'running', text: 'Starting CI' })
   assert.equal(sending.startError, null)
   assert.deepEqual(
     requestChecksSummary(checks(waiting, push('sending', 'remote rejected'))).startError,
@@ -130,7 +130,7 @@ test('the summary says when checks are starting or could not start, without nami
   )
 
   const failed = requestChecksSummary(checks(waiting, push('failed', 'remote rejected')))
-  assert.deepEqual(failed.lead, { state: 'failed', text: 'Checks couldn’t start' })
+  assert.deepEqual(failed.lead, { state: 'failed', text: 'CI couldn’t start' })
   assert.deepEqual(failed.startError, { text: 'remote rejected', failed: true })
 })
 

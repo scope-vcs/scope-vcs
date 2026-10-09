@@ -54,8 +54,8 @@ pub(super) enum RequestCommand {
     Checkout(RequestCheckoutArgs),
     #[command(about = "Inspect the server-visible changes in a request revision")]
     Diff(RequestDiffArgs),
-    #[command(about = "Show the checks the request head asks for and whether it can merge")]
-    Checks(RequestChecksArgs),
+    #[command(about = "Show CI for the current request revision and whether it can merge")]
+    Ci(RequestCiArgs),
 }
 
 #[derive(Parser)]
@@ -154,7 +154,7 @@ pub(super) struct RequestMergeArgs {
     pub(super) target: RequestTargetArgs,
     #[arg(long, help = "Confirm the merge")]
     pub(super) yes: bool,
-    #[arg(long, help = "Merge the current request revision when its checks pass")]
+    #[arg(long, help = "Enable auto-merge and allow CI for the current revision")]
     pub(super) auto: bool,
     #[arg(long, help = "Cancel the active automatic merge authorization")]
     pub(super) cancel_auto: bool,
@@ -309,12 +309,12 @@ pub(super) struct RequestCheckoutArgs {
 }
 
 #[derive(Parser)]
-pub(super) struct RequestChecksArgs {
+pub(super) struct RequestCiArgs {
     #[command(flatten)]
     pub(super) target: RequestTargetArgs,
     #[arg(
         long,
-        help = "Start the checks this head is waiting on, then show them (maintainers)"
+        help = "Allow CI for the current revision, then show its status (maintainers)"
     )]
     pub(super) approve: bool,
     #[arg(
