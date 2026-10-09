@@ -38,20 +38,25 @@ fn adopted_branch_compares_with_scope_request_despite_external_upstream() {
     run_git(dir.path(), ["add", "fix.txt"]);
     commit_all(dir.path(), "First request commit");
 
-    let mut detail = request();
-    detail["base_main_oid"] = base.clone().into();
-    detail["head_oid"] = base.clone().into();
-    detail["mergeability"]["current_main_oid"] = base.clone().into();
-    detail["mergeability"]["request_head_oid"] = base.into();
-    let server = FixtureServer::with_request(detail);
+    let head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+    let mut started = request();
+    started["base_main_oid"] = base.clone().into();
+    started["head_oid"] = base.clone().into();
+    started["mergeability"]["current_main_oid"] = base.clone().into();
+    started["mergeability"]["request_head_oid"] = base.into();
+    let mut pushed = started.clone();
+    pushed["head_oid"] = head.clone().into();
+    pushed["mergeability"]["request_head_oid"] = head.clone().into();
+    let server = FixtureServer::with_request_states(started, pushed);
     let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
-    success(
+    let start = success(
         transport
             .command(&server, dir.path())
             .args(["--json", "request", "start", "fix-one", "--current-branch"])
             .output()
             .unwrap(),
     );
+    assert_eq!(start["result"]["request"]["head_oid"], head);
     assert_eq!(
         git_stdout(dir.path(), ["rev-parse", "--abbrev-ref", "@{upstream}"]),
         "origin/main"
