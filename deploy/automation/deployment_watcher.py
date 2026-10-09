@@ -8,9 +8,8 @@ from pathlib import Path
 
 from deployment_policy import FALLBACK_PROVIDER, MAX_RECOVERIES, PRIMARY_PROVIDER, TERMINAL, completion, running, stamp, supervise, timestamp, trusted_run
 from deployment_runtime import CHECKOUT, PROJECT_ID, REPOSITORY, T3Client, create_worktree, github, interrupt_command, jobs, message_command, save_json, thread_create_command
-import deployment_scheduler
-import image_pin_refresh
-from heartbeat import alert, heartbeat
+from deployment_diagnostics import diagnostic, operation
+from heartbeat import alert
 
 STATE_DIR = Path.home() / ".local/state/scope-deployment-watcher"
 STATE_PATH = STATE_DIR / "supervision.json"
@@ -72,10 +71,15 @@ def recent_runs(state: dict) -> list[dict]:
         page += 1
 
 
+def release_open(record: dict) -> bool:
+    return (record["status"] not in TERMINAL or record.get("workflow_status", "completed") != "completed"
+            or record["status"] == "escalated" and "workflow_status" not in record)
+
+
 def update_runs(state: dict, listed: list[dict]) -> dict[str, dict]:
     current = {str(run["id"]): run for run in listed if trusted_run(run)}
     for key, record in state["runs"].items():
-        if record["status"] not in TERMINAL and key not in current:
+        if key not in current and release_open(record):
             current[key] = github(f"actions/runs/{key}")
     for key, run in current.items():
         if not trusted_run(run):
@@ -85,11 +89,11 @@ def update_runs(state: dict, listed: list[dict]) -> dict[str, dict]:
             if (max(run["created_at"], run.get("run_started_at") or run["created_at"]) < state["installed_at"]
                     and run["status"] == "completed"):
                 continue
-            record = {"run_id": run["id"], "attempt": run["run_attempt"], "status": "waiting",
+            record = {"run_id": run["id"], "attempt": run["run_attempt"], "status": "watching",
                       "created_at": run["created_at"], "attempt_started_at": run.get("run_started_at") or run["created_at"]}
             state["runs"][key] = record
         elif run["run_attempt"] > record["attempt"]:
-            record.update(attempt=run["run_attempt"], status="waiting",
+            record.update(attempt=run["run_attempt"], status="watching",
                           attempt_started_at=run.get("run_started_at") or run["created_at"])
             record.pop("thread_id", None)
             for recovered in state["runs"].values():
@@ -97,12 +101,15 @@ def update_runs(state: dict, listed: list[dict]) -> dict[str, dict]:
                     recovered["status"] = "waiting"
                     for field in ("corrected_by", "verified_at", "thread_id"):
                         recovered.pop(field, None)
+        record["workflow_status"] = run["status"]
         if record["status"] in {"verified", "no_change", "recovered"}:
             continue
         if run["status"] == "completed":
             verified = completion(run, jobs(run))
             if verified:
                 record.update(status=verified, verified_at=stamp())
+            elif record["status"] == "watching":
+                record["status"] = "waiting"
     if listed:
         state["listed_through"] = max(state["listed_through"], max(r["created_at"] for r in listed))
     persist(state)
@@ -144,6 +151,8 @@ def read_corrections(state: dict, info: dict) -> str:
         if existing and existing.get("incident_id") not in {None, info["incident_id"]}:
             raise ValueError("Correction belongs to another release investigation")
         runs[str(correction)] = run
+    if len(runs) > 3:
+        raise ValueError("Correction deployment limit exceeded")
     targets = {str(correction) for correction in corrections.values()}
     for original, correction in corrections.items():
         record = state["runs"].get(original)
@@ -252,11 +261,20 @@ def escalate(state: dict, info: dict, reason: str) -> None:
     records = unresolved(state, info["incident_id"])
     if not records:
         return
-    info["alert_url"] = alert(records[0]["run_id"], reason, recoveries=info["recoveries"],
-                              thread_id=info["thread_id"], provider=info["provider"])
-    info.update(status="escalated", reason=reason)
+    info.update(status="escalated", reason=reason, pending_alert_run_id=records[0]["run_id"])
     for record in records:
         record["status"] = "escalated"
+    persist(state)
+    report_escalation(state, info)
+
+
+def report_escalation(state: dict, info: dict) -> None:
+    if "pending_alert_run_id" not in info:
+        return
+    with operation("github.release-escalation"):
+        info["alert_url"] = alert(info["pending_alert_run_id"], info["reason"], recoveries=info["recoveries"],
+                                  thread_id=info["thread_id"], provider=info["provider"])
+    info.pop("pending_alert_run_id")
     persist(state)
 
 
@@ -270,8 +288,8 @@ def interrupt(client: T3Client, state: dict, info: dict, thread: dict, reason: s
                                           info["thread_id"], run_id))
 
 
-def monitor(client: T3Client, state: dict, info: dict, shell: dict) -> None:
-    if info.get("pending_command"):
+def monitor(client: T3Client, state: dict, info: dict, shell: dict, *, expired: bool = False, stop_reason: str = "deadline_exceeded") -> None:
+    if info.get("pending_command") and not expired:
         dispatch_pending(client, state, info)
         return
     thread = shell or {"deletedAt": stamp()}
@@ -280,6 +298,16 @@ def monitor(client: T3Client, state: dict, info: dict, shell: dict) -> None:
     if info["status"] == "escalated":
         if running(thread):
             interrupt(client, state, info, thread, info["reason"])
+        return
+    if expired:
+        info.pop("pending_command", None)
+        if not unresolved(state, info["incident_id"]) and not running(thread):
+            info["status"] = "verified"
+            persist(state)
+            return
+        if running(thread):
+            interrupt(client, state, info, thread, stop_reason)
+        escalate(state, info, stop_reason)
         return
     if info.get("stopping_at") and running(thread):
         interrupt(client, state, info, thread, info["stop_reason"])
@@ -318,7 +346,34 @@ def monitor(client: T3Client, state: dict, info: dict, shell: dict) -> None:
     dispatch_pending(client, state, info)
 
 
-def poll(*, initialize: bool = False, dry_run: bool = False) -> dict:
+def supervise_agents(state: dict, *, expired: bool = False, stop_reason: str = "deadline_exceeded") -> None:
+    active = [t for t in state["threads"].values() if t["status"] == "monitoring" or t.get("owns_agent")]
+    if not active:
+        return
+    with operation("t3.repair-supervision"), T3Client() as client:
+        snapshot = client.shell()
+        if not any(p["id"] == PROJECT_ID and p["workspaceRoot"] == str(CHECKOUT)
+                   and not p.get("deletedAt") for p in snapshot["projects"]):
+            raise RuntimeError("Scope T3 project does not match the configured checkout")
+        shells = {t["id"]: t for t in snapshot["threads"] + snapshot["archivedThreads"]}
+        for info in active:
+            monitor(client, state, info, shells.get(info["thread_id"], {}), expired=expired, stop_reason=stop_reason)
+
+
+def stop_owned(reason: str) -> int:
+    state = json.loads(STATE_PATH.read_text())
+    supervise_agents(state, expired=True, stop_reason=reason)
+    for record in state["runs"].values():
+        if record["status"] not in TERMINAL:
+            alert(record["run_id"], reason)
+            record["status"] = "escalated"
+            persist(state)
+    for info in state["threads"].values():
+        report_escalation(state, info)
+    return sum(bool(info.get("owns_agent")) for info in state["threads"].values())
+
+
+def poll(*, initialize: bool = False, dry_run: bool = False, expired: bool = False, run_ids: list[int] | None = None) -> dict:
     if not STATE_PATH.exists():
         if not initialize:
             raise RuntimeError("Supervisor state missing; initialize explicitly after inspecting existing monitors")
@@ -328,17 +383,16 @@ def poll(*, initialize: bool = False, dry_run: bool = False) -> dict:
             persist(state)
     else:
         state = json.loads(STATE_PATH.read_text())
-    listed = recent_runs(state)
+    with operation("github.release-list"):
+        listed = recent_runs(state)
+        known = {run["id"] for run in listed}
+        listed.extend(github(f"actions/runs/{run_id}") for run_id in run_ids or [] if run_id not in known)
     if dry_run:
         return {"trusted_releases": len([r for r in listed if trusted_run(r)]),
                 "incomplete_releases": [r["id"] for r in listed if trusted_run(r) and r["status"] != "completed"],
                 "tracked_releases": len(state["runs"])}
-    scheduler_error = None
-    try:
-        deployment_scheduler.poll()
-    except Exception as error:
-        scheduler_error = error
-    update_runs(state, listed)
+    with operation("github.release-verification"):
+        update_runs(state, listed)
     for info in list(state["threads"].values()):
         if info["status"] == "monitoring":
             try:
@@ -350,6 +404,11 @@ def poll(*, initialize: bool = False, dry_run: bool = False) -> dict:
                     info["reported_blocker"] = "verification_failed"
     for record in list(state["runs"].values()):
         if record["status"] != "waiting":
+            continue
+        if expired:
+            alert(record["run_id"], "deadline_exceeded")
+            record["status"] = "escalated"
+            persist(state)
             continue
         info = next((t for t in state["threads"].values()
                      if t["status"] == "monitoring" or t.get("owns_agent")), None)
@@ -364,23 +423,19 @@ def poll(*, initialize: bool = False, dry_run: bool = False) -> dict:
             save_json(inbox_path(info), {"releases": unresolved(state, info["incident_id"])})
             if "commit" not in info and not info.get("pending_command"):
                 queue_turn(state, info)
-    active = [t for t in state["threads"].values() if t["status"] == "monitoring" or t.get("owns_agent")]
-    if active:
-        with T3Client() as client:
-            snapshot = client.shell()
-            if not any(p["id"] == PROJECT_ID and p["workspaceRoot"] == str(CHECKOUT)
-                       and not p.get("deletedAt") for p in snapshot["projects"]):
-                raise RuntimeError("Scope T3 project does not match the configured checkout")
-            shells = {t["id"]: t for t in snapshot["threads"] + snapshot["archivedThreads"]}
-            for info in active:
-                monitor(client, state, info, shells.get(info["thread_id"], {}))
+    supervise_agents(state, expired=expired)
     state["last_poll_at"] = stamp()
+    if expired:
+        for record in state["runs"].values():
+            if record["status"] == "watching":
+                alert(record["run_id"], "deadline_exceeded")
+                record["status"] = "escalated"
     persist(state)
-    image_pin_refresh.poll(release_open=bool(active))
-    if scheduler_error is not None:
-        raise RuntimeError("Daily release scheduler failed") from scheduler_error
-    heartbeat()
+    for info in state["threads"].values():
+        report_escalation(state, info)
     return {"tracked_releases": len(state["runs"]),
+            "active_releases": sum(release_open(r) for r in state["runs"].values()),
+            "repair_owners": sum(bool(t.get("owns_agent")) for t in state["threads"].values()),
             "open_investigations": sum(t["status"] == "monitoring" for t in state["threads"].values()),
             "escalated_investigations": sum(t["status"] == "escalated" for t in state["threads"].values())}
 
@@ -388,23 +443,17 @@ def poll(*, initialize: bool = False, dry_run: bool = False) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--initialize", action="store_true")
-    parser.add_argument("--initialize-scheduler", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (STATE_DIR / "watcher.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        if args.initialize_scheduler:
-            if args.initialize or args.dry_run:
-                raise ValueError("Initialize the scheduler separately from other watcher options")
-            print(json.dumps(deployment_scheduler.initialize()))
-        else:
-            print(json.dumps(poll(initialize=args.initialize, dry_run=args.dry_run)))
+        print(json.dumps(poll(initialize=args.initialize, dry_run=args.dry_run)))
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        print(f"Deployment supervisor failed: {type(error).__name__}", flush=True)
+        print(json.dumps({"failed": diagnostic(error)}), flush=True)
         raise SystemExit(1)

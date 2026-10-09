@@ -1,178 +1,212 @@
 # Release supervision
 
-Surface runs `scope-deployment-watcher.timer` every minute, all day. The watcher
-dispatches the daily Release workflow at 2:08 a.m. America/Chicago and starts a
-T3 agent as soon as a main Release workflow appears, including queued validation
-and failures before staging. PR checks remain the only merge-time CI. Release
-retains manual dispatch. GitHub cron must be removed before installing this
-scheduler so only Surface owns automatic release dispatch.
+A native T3 task at 02:08 America/Chicago owns dated daily Release dispatch. A
+Monday 09:00 task requests image-pin maintenance. A signed T3 Connect webhook
+reconciles manual and other main Releases. Tasks return to the existing deployment
+orchestration conversation; they do not create a conversation per tick. There is
+no recurring minute prompt or daytime polling agent. GitHub cron stays removed,
+and pushes or merges to main do not release the application.
 
-The daily intent lives in `~/.local/state/scope-deployment-watcher/daily-dispatch.json`.
-It is synced to disk before the GitHub API call, using the intended Chicago date. The
-workflow records that date in its run title. A lost or failed API response is
-ambiguous and is never retried automatically; the watcher looks for the exact
-dated run on subsequent polls. An assigned GitHub issue reports a missing or late
-run after five minutes. If Surface is offline for a whole date, its next poll
-alerts on the missed date without launching a stale release. Start-deadline issues
-remain open for investigation even if a run later appears; finding a run proves
-dispatch, not recovery from the scheduling delay or successful deployment. The external
-heartbeat alerts while Surface cannot poll. On the spring daylight-saving change,
-the nonexistent 2:08 a.m. runs at 3:00 a.m.; the fall 2:08 a.m. occurs once.
-If a scheduler lookup fails, the same invocation still supervises existing
-releases but withholds its heartbeat; the external observer then reports the
-broken dispatch owner.
-The Scope mirror also runs checks on requests and manual starts, not pushes to main.
+Each task invokes `deployment_session.py trigger`. The helper saves the request
+before starting `scope-deployment-session.service`. One process holds
+`watcher.lock` throughout a bounded session, polls GitHub and durable state every
+minute, and exits after independently verified completion, escalation, or its
+four-hour deadline plus five minutes to confirm repair termination. Systemd also
+caps process lifetime at 250 minutes. A durable budget of three crash recoveries preserves the
+saved session deadline and existing repair owner. Exit 75 permits retry only after
+that process saved its failed budget; activation/startup failures exit 78 and do
+not restart. Import and argument failures also stop. Systemd has no competing
+start-rate limit that can block the Python cleanup attempt. A trigger delivered during a
+session joins its durable queue. Failed starts retain their request.
+An expired session leaves new requests queued while confirming repair termination.
+After confirmation it retires its budget, then handles new work in a fresh bounded
+session under the same exclusive lock. Unconfirmed termination leaves requests
+unhandled and retains repair ownership.
 
-The watcher tracks releases in
-`~/.local/state/scope-deployment-watcher/supervision.json`. Successful dispatch
-means monitoring, not completion. GitHub's successful `Verify and record release`
-job supplies the independent production evidence. A successful no-change run must
-explicitly skip all deployment jobs. Corrective runs require an agent-written
-mapping in the incident's `receipts` file and their own successful production
-verification. A failed correction may link to another correction; the whole
-chain resolves to its final independently verified run. Duplicate polls preserve
-the same result. Unrelated successful runs do not silently resolve older failures.
+`session.json` records the process ID, session ID, deadline, operation phase,
+last completed progress, observed run attempts, and outcome. T3's succeeded task
+status proves prompt delivery only. Check the service exit result and saved
+progress to establish command execution. Dependency failures retain a bounded
+operation name and exception category; raw CLI or provider output is excluded.
+Changing the scheduler does not establish the cause of earlier RuntimeError
+failures.
+Daily reconciliation failures retain their request and continue repair observation.
+They publish the sanitized failure without advancing successful progress, defer
+maintenance, and end at the existing deadline. A process deadline escapes ordinary
+dependency retries and credential-cleanup failures.
 
-One conversation owns an open investigation. Newly discovered releases appear in
-its `inboxes` file, which the prompt requires the agent to read each monitoring
-cycle. Repairs use PRs with squash auto-merge after `Required PR checks` passes.
-They never bypass protection or push directly to main. An interrupted worktree is
-preserved for the replacement provider. A failure the agent re-runs without
-repairing is recorded in a `release-flake` issue, as `AGENTS.md` requires; when it
-recurs, the agent fixes its cause in that investigation.
+## Dispatch and repair safety
 
-The supervisor allows three agent recoveries after the initial dispatch. It
-resumes a prematurely finished agent after two minutes, falls back from Claude to
-Codex on an error or repeated early exit, and interrupts an agent with no
-activity for twenty minutes. It waits for the old agent to stop before resuming.
-Unanswered approval/input requests escalate after ten minutes. An investigation
-has a four-hour recovery limit. The agent is instructed to cap corrective
-deployments at three. An assigned GitHub issue records exhausted recovery or a
-reported blocker. Escalation stops automatic repair; an agent that cannot be
-stopped retains ownership, preventing overlapping repairs.
+The daily intent in `~/.local/state/scope-deployment-watcher/daily-dispatch.json`
+is synced before dispatch. An ambiguous API response is reconciled against the
+exact dated main Release and never blindly retried. A missing or late start
+opens an assigned issue after five minutes. A daily trigger delayed more than
+ten minutes does not launch a stale release. Whole missed dates are audited
+without catch-up dispatch. Spring's nonexistent 02:08 maps to 03:08, matching
+T3's local-time calculation; fall's 02:08 occurs once.
 
-See [heartbeat.md](heartbeat.md) for the external missing-heartbeat alert. It uses
-the existing GitHub login and sends no build jobs. GitHub scheduling and issue
-notification preferences affect alert delivery; this is not a paging SLA.
+Healthy queued and running releases need deterministic observation only. A
+failure or missing final verification starts repair. `supervision.json` retains
+one repair conversation and its dedicated worktree. Later releases enter that
+owner's inbox. Existing receipts and all worktrees are preserved across crashes,
+upgrades, and provider handoffs. A previous agent must be confirmed stopped
+before another repair owner starts. Unconfirmed termination retains ownership.
 
-## Weekly image pin refresh
+The successful `Verify and record release` job supplies independent completion
+proof and exact production deployment receipts. A successful no-change run must
+explicitly skip deployment jobs. Corrective receipts map the original run through
+an explicit chain to a subsequently verified correction; unrelated successes
+cannot close failures. Current attempts are checked independently. At most three
+correction run IDs are admitted per investigation, and repair prompts cap
+corrective deployments at three. The supervisor permits three agent recoveries,
+interrupts twenty-minute inactivity, waits for stop confirmation before fallback,
+and escalates unanswered input after ten minutes or a four-hour investigation.
+Repair follows protected PR delivery and Scope mirroring. Recurring release-flake
+failures must be fixed, not merely rerun.
 
-The same watcher poll starts one T3 agent each week, from Monday 9:00 a.m.
-America/Chicago, to refresh the pinned packages in the runner base and media worker
-images before a stale pin fails the release scan. The agent opens a PR only when a
-pin changes and enables squash auto-merge after `Required PR checks` passes; that
-CI builds and scans each image whose files changed. The scan gate is unchanged,
-and a failed release scan is still repaired by the release agent.
+## Signed release events
 
-The weekly intent lives in `~/.local/state/scope-deployment-watcher/image-pin-refresh.json`
-and is written before dispatch, so a retry reuses the same thread. The refresh
-waits while a release investigation is open. If Surface is offline on Monday, it
-starts at the next poll in that week; a missed week is skipped. The watcher does
-not supervise this agent: a start that fails for ten minutes opens an assigned
-issue, and an agent that stops early is not resumed. The first poll after
-installation starts the current week's refresh if Monday 9:00 a.m. has passed.
+`Deployment supervision event` runs code only for main's Release workflow events
+(requested, in progress, and completed). GitHub repository hooks cannot filter by
+workflow, and T3's native webhook has no payload filter; using a repository-wide
+hook would produce unrelated model prompts. The filtered forwarder independently
+checks the run through GitHub, signs its exact bounded JSON body with HMAC-SHA256,
+and sends it through T3 Connect. Each forwarder run also records the original
+Release ID and attempt in its GitHub run title, so the external observer can
+find completed retries of old run IDs even when Surface misses their delivery. It follows no redirects and makes no ambiguous
+POST retry. The receiver requires `x-hub-signature-256`, hexadecimal encoding,
+and the `sha256=` prefix, then independently verifies trusted workflow identity
+and current attempt through GitHub again. Run/attempt ownership and deterministic
+delivery IDs deduplicate events. Unsigned or invalid signatures are rejected
+before any prompt is delivered. T3 Connect expires held deliveries after ten
+minutes; the external observer reports missed supervision.
+
+Each run/attempt retains admitted event phases. A new completion phase requeues
+an escalated run whose workflow is still open, with its new request time preserved
+through expired-session cleanup. Replays of handled phases cannot renew its budget.
+
+Configure repository variable `SCOPE_DEPLOYMENT_WEBHOOK_URL` with the task's
+managed URL and Actions secret `SCOPE_DEPLOYMENT_WEBHOOK_SECRET` with the shared
+signing secret. Enter that same secret privately through T3's `request_secret`
+card and save its one-use reference on the webhook task. Do not put secret values
+in chat, files, commands, or task prompts. Keep the webhook paused until signing,
+forwarding, and independent deduplication are verified. Without the URL, the
+forwarder remains skipped. Required credentials and tunnel access must be ready
+before replacing the existing scheduler.
+
+## Weekly image pins
+
+The Monday task creates a durable weekly intent in `image-pin-refresh.json`.
+An active release saves a deferral; its bounded session drains that intent after
+repair and release ownership end, including across restart or a week boundary.
+An escalated investigation remains active for maintenance deferral until GitHub
+confirms that its workflow ended.
+Ordinary release observation never creates unrequested weekly work. Failed pin
+starts reuse the same thread and worktree, retry for ten minutes, then escalate
+once. The maintenance agent updates exact pins and checksums, opens a protected
+PR only when needed, and never releases the app or weakens image scans.
 
 ## While Surface is offline
 
-Automatic dispatch and repair run only on Surface; nothing takes over while it is
-offline. An open "Surface deployment watcher stopped reporting" issue hands both to
-its assignee, the on-call maintainer (currently `adamblumoff`), until the issue
-closes:
+The external code-only GitHub observer checks expected daily starts, active
+session progress, and releases whose event never reached supervision. Idle
+sessions need no daytime heartbeat renewal. Scheduling and issue notifications
+remain best effort, not a paging SLA. See [heartbeat.md](heartbeat.md).
 
-1. Comment on the issue to acknowledge that you own releases until it closes.
-2. After 2:08 a.m. Chicago, check `gh run list --workflow release.yml --limit 5`.
-   If no release ran that date, dispatch one with
-   `gh workflow run release.yml --ref main`. Leave `schedule_intent` empty; that
-   input belongs to the watcher.
-3. Repair a failed release with a PR, following the same rules as the agent:
-   squash auto-merge after `Required PR checks`, then a manual release that passes
-   its own production verification. Link the failed and corrective runs in the
-   issue.
+An assigned outage or missing-start issue gives the maintainer release ownership:
 
-When Surface returns on the same Chicago date, it dispatches that date's daily run
-if it has not already; with nothing new on main, that run skips every deployment
-job. For whole dates it missed, it opens "Daily release did not start" issues;
-close them with a link to your manual run. It also opens an investigation for any
-failed release it had not seen. Its agent should find your corrective run from the
-issue links and record it in the incident receipt; the release resolves only
-through that receipt, as described above.
+1. Acknowledge ownership in the issue and inspect existing repair work before
+   starting another repair.
+2. Check recent Release runs and dated dispatch intents. Reconcile an uncertain
+   mutation before dispatching manually. Leave `schedule_intent` empty for a
+   manual release.
+3. Repair through a PR, required checks and reviews, and a corrective release
+   with independent production verification. Link the original and correction in
+   the issue and preserve the incident receipt chain.
 
-## Install or upgrade on Surface
+Returning online does not launch a missed dated release. A manual reconcile
+trigger observes current runs and existing repair ownership without daily dispatch.
 
-Verify hostname `adam-blumoff-surface-book-2` and fleet identity `surface` before
-changing files. Run the tests from the repository root:
+## Install and verified cutover
 
-```sh
-python3 -B -m unittest discover -s deploy/automation -p 'test_*.py'
-```
+Verify Surface identity (`adam-blumoff-surface-book-2`) and use delivered GitHub
+main. Run `./dev/check ops` and `./dev/check guardrails`. Create replacement tasks
+paused with stable client request IDs and bindings to the existing conversation.
+Preserve `supervision.json`, `daily-dispatch.json`, `image-pin-refresh.json`,
+receipts, inboxes, and every repair worktree. Never initialize existing state.
 
-Deploy the Release workflow change first. Confirm main has no `schedule` event,
-has the `schedule_intent` workflow-dispatch input and dated `run-name`, and retains
-manual dispatch and release concurrency. Do not install the scheduler while the
-GitHub cron is still active. Stop the watcher timer and wait for its current
-service invocation to finish. Inspect any existing T3 deployment monitor before
-initializing new supervision state. Do not start a second agent while an old one
-is repairing a release. Upgrade only when no investigation is open: an open
-incident keeps its stored provider, and a version that changes the primary
-provider would treat that provider with the new roles.
-
-From a checkout of the delivered main revision, install the Python modules and
-systemd units. Preserve `supervision.json`, receipts, inboxes, and any existing
-agent worktree:
+Stage the delivered modules separately so the existing timer continues to use
+its installed implementation until cutover:
 
 ```sh
-systemctl --user stop scope-deployment-watcher.timer
-while systemctl --user is-active --quiet scope-deployment-watcher.service; do sleep 2; done
-install -d -m 700 ~/.local/share/scope-automation/release-supervisor ~/.local/state/scope-deployment-watcher
-install -m 600 deploy/automation/deployment_watcher.py deploy/automation/deployment_policy.py deploy/automation/deployment_runtime.py deploy/automation/deployment_scheduler.py deploy/automation/image_pin_refresh.py deploy/automation/heartbeat.py ~/.local/share/scope-automation/release-supervisor/
-install -d -m 755 ~/.config/systemd/user
-install -m 644 deploy/automation/scope-deployment-watcher.service deploy/automation/scope-deployment-watcher.timer ~/.config/systemd/user/
+install -d -m 700 ~/.local/share/scope-automation/bounded-release-supervisor
+install -m 600 deploy/automation/deployment_*.py deploy/automation/image_pin_refresh.py deploy/automation/heartbeat.py ~/.local/share/scope-automation/bounded-release-supervisor/
+install -m 644 deploy/automation/scope-deployment-session.service ~/.config/systemd/user/
 systemctl --user daemon-reload
-if test ! -e ~/.local/state/scope-deployment-watcher/daily-dispatch.json; then
-  python3 -B ~/.local/share/scope-automation/release-supervisor/deployment_watcher.py --initialize-scheduler
-fi
 ```
 
-The one-time scheduler initialization begins automatic dispatch on the next
-Chicago calendar date, avoiding a duplicate release on the cutover date. Merge
-the workflow change and install the scheduler on the same Chicago date, after
-that date's 2:08 a.m. release has run. With cron removed, any date between the
-merge and the activation date has no automatic release and is not reported as
-missed. If
-`daily-dispatch.json` already exists, inspect it and skip `--initialize-scheduler`;
-the command deliberately refuses to overwrite prior dispatch history. A missing
-or corrupt scheduler state after installation fails the poll, which eventually
-raises the external heartbeat alert. Verify the `gh` login on Surface can call
-`workflow_dispatch`, list workflow runs, and create assigned issues. The watcher
-does not need a second timer or another local credential.
-
-For a first install with no `supervision.json`, run these commands before enabling
-the timer:
+Finish tunnel and signing setup first. Inspect live release state and actual T3
+repair ownership. When no repair is active, disable the old timer and drain its
+service. Save `scheduler-owner.json` atomically with owner `t3` and
+`activated_on` set to the first dated daily start the new owner must deliver.
+For an existing installation, use today's Chicago date when cutting over before
+02:08, or the next date after today's start was handled by the previous owner.
+For a fresh installation, use the date saved by daily initialization. Preserve
+inherited dispatch intents and reconcile any ambiguous dispatch before changing
+ownership. This is the only local activation gate.
 
 ```sh
-python3 -B ~/.local/share/scope-automation/release-supervisor/deployment_watcher.py --initialize --dry-run
-python3 -B ~/.local/share/scope-automation/release-supervisor/deployment_watcher.py --initialize
+systemctl --user disable --now scope-deployment-watcher.timer
+systemctl --user is-active scope-deployment-watcher.service
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_session.py trigger reconcile
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_session.py status
+systemctl --user show scope-deployment-session.service -p ActiveState -p Result -p ExecMainStatus
 ```
 
-Supervisor initialization establishes a boundary for completed historical runs,
-so deployment failures already repaired before installation are not reactivated.
-It still adopts unfinished releases. Subsequent invocations never initialize
-state implicitly. The previous watcher's `state.json` is historical operational
-evidence and is not read by this supervisor.
+Use the forwarder's manual `workflow_dispatch` input `run_id` to send an existing,
+already verified main Release as a signing probe; it never starts a Release.
+Repeat that probe to establish deduplication and send an unsigned request to
+confirm rejection before prompt delivery.
 
-Then enable the existing minute timer and inspect its next invocation:
+Prove a manual T3 task invocation executes the command and exits, persisted
+progress advances, healthy releases create no repair agent, signed delivery and
+replay share ownership, invalid signatures deliver no prompt, and the external
+observer passes. A task prompt accepted into a busy conversation is not execution
+proof. Keep replacements paused until these checks succeed. Then enable exactly
+one daily task, one weekly pin task, and the signed event task; verify next run
+times in Chicago and confirm the old minute timer is disabled. Retain the old
+installed implementation for rollback until verified installation completes.
+
+If cutover fails, pause new tasks and stop/drain the bounded session before
+restoring the previous owner. Do not stop an active repair to roll back scheduling.
+Before restoring the old implementation, migrate any nonterminal `watching`
+run records to its `waiting` state under `watcher.lock`, using atomic `save_json`.
+This one-time rollback keeps releases admitted by the new observer visible to
+the old repair owner. Preserve all other records, receipts, and worktrees.
+Remove `SCOPE_DEPLOYMENT_SESSION_STATUS` when restoring the old timer so the
+external observer checks that operating owner's timestamp. The old timer and
+its installed modules remain safe while signing or other prerequisites are
+missing. After success, record task IDs, schedules, PR/merge and operational
+proof in the orchestration conversation, then delete the setup task.
+
+For a first installation, confirm that both `supervision.json` and
+`daily-dispatch.json` are absent, then inspect historical releases and active T3
+repair ownership. Inspect the read-only preview before initializing:
 
 ```sh
-systemctl --user enable --now scope-deployment-watcher.timer
-systemctl --user list-timers scope-deployment-watcher.timer
-systemctl --user status scope-deployment-watcher.service
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_watcher.py --initialize --dry-run
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_scheduler.py initialize
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_watcher.py --initialize
 ```
 
-Confirm the timer's next run, the service's last exit status, and a fresh
-`SCOPE_DEPLOYMENT_WATCHER_HEARTBEAT` repository variable. Dispatch `Deployment
-watcher heartbeat` once to verify the external observer. Its test suite exercises
-missing/stale heartbeat alerts with mocked GitHub calls, without sending test
-notifications.
+Daily initialization takes the supervision lock, refuses existing state, and
+sets dispatch activation to the next Chicago date without dispatching a Release.
+Supervision initialization establishes the boundary for completed historical
+runs and admits active runs. Neither runs implicitly during a session. Reuse
+existing state on an upgrade; do not run these initialization commands. Continue
+the verified cutover above, omitting old timer retirement only if none exists.
+If first-install preparation was interrupted, inspect the saved JSON and run
+only the initialization command for a missing file; preserve existing state.
 
 ## Main checks
 

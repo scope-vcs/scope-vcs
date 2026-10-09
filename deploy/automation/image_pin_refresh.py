@@ -63,37 +63,42 @@ def alert_not_started(week: str) -> str:
     marker = f"<!-- scope-deployment-watch:image-pin-refresh:{week} -->"
     return ensure_issue(
         REPOSITORY, marker, f"Weekly image pin refresh did not start for {week}",
-        f"The Surface deployment watcher could not start the {week} image pin refresh "
-        "agent within ten minutes. It retries every minute. Inspect the watcher service, "
+        f"The bounded deployment session could not start the {week} image pin refresh "
+        "agent within ten minutes. Inspect the session service, "
         "its image-pin-refresh.json intent, and the local T3 server.", "all")
 
 
-def poll(release_open: bool, now: datetime | None = None) -> None:
-    if release_open:
-        return
+def poll(release_open: bool, now: datetime | None = None, *, requested_weeks: tuple[str, ...] = ()) -> bool:
     now = now or datetime.now(timezone.utc)
-    week, due = current_week(now)
     state = json.loads(STATE_PATH.read_text()) if STATE_PATH.exists() else {"weeks": {}}
-    intent = state["weeks"].get(week)
-    if intent is None:
+    for week in requested_weeks:
+        year, number = week.split("-W")
+        monday = datetime.fromisocalendar(int(year), int(number), 1)
+        due = monday.replace(hour=MONDAY_HOUR, tzinfo=ZONE)
         if now < due:
-            return
+            continue
+        if week in state["weeks"]:
+            continue
         name = f"scope-image-pins-{week}"
         intent = {"created_at": timestamp(now), "thread_id": str(uuid.uuid5(uuid.NAMESPACE_URL, name)),
                   "worktree": str(Path.home() / ".codex/worktrees" / name / "scope-vcs")}
         state["weeks"][week] = intent
         save_json(STATE_PATH, state)
-    if "started_at" in intent:
-        return
-    try:
-        start(week, intent)
-        intent["started_at"] = timestamp(now)
-    except Exception:
-        created = datetime.fromisoformat(intent["created_at"].replace("Z", "+00:00"))
-        if now - created < START_GRACE or "alert_url" in intent:
-            return
+    pending = [(key, value) for key, value in state["weeks"].items()
+               if "started_at" not in value and "alert_url" not in value]
+    if release_open:
+        for _, value in pending:
+            value.setdefault("deferred_at", timestamp(now))
+        save_json(STATE_PATH, state)
+        return bool(pending)
+    for key, value in pending:
         try:
-            intent["alert_url"] = alert_not_started(week)
+            start(key, value)
+            value["started_at"] = timestamp(now)
         except Exception:
-            return
+            value.setdefault("first_attempt_at", timestamp(now))
+            created = datetime.fromisoformat(value["first_attempt_at"].replace("Z", "+00:00"))
+            if now - created >= START_GRACE:
+                value["alert_url"] = alert_not_started(key)
     save_json(STATE_PATH, state)
+    return any("started_at" not in value and "alert_url" not in value for value in state["weeks"].values())

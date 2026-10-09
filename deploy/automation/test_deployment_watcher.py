@@ -13,7 +13,7 @@ NOW = "2026-09-23T00:01:00Z"
 BEFORE = "2026-09-22T23:00:00Z"
 
 
-def release(run_id=123, status="queued", conclusion=None, created_at=NOW, attempt=1):
+def release(run_id=123, status="completed", conclusion="failure", created_at=NOW, attempt=1):
     return {"id": run_id, "status": status, "conclusion": conclusion,
             "created_at": created_at, "run_attempt": attempt,
             "head_branch": "main", "event": "workflow_dispatch",
@@ -39,7 +39,7 @@ class WatcherTests(unittest.TestCase):
             "STATE_DIR": self.root, "STATE_PATH": self.root / "supervision.json",
             "stamp": lambda: NOW, "T3Client": self.t3,
             "create_worktree": MagicMock(return_value="commit"),
-            "heartbeat": MagicMock(), "alert": MagicMock(return_value="issue-url"),
+            "alert": MagicMock(return_value="issue-url"),
             "jobs": MagicMock(return_value=[]), "github": MagicMock(side_effect=self.github),
         }
         for name, value in replacements.items():
@@ -47,13 +47,6 @@ class WatcherTests(unittest.TestCase):
             patcher = patch.object(watcher, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        scheduler = patch.object(watcher.deployment_scheduler, "poll", return_value={})
-        scheduler.start()
-        self.addCleanup(scheduler.stop)
-        self.refresh = MagicMock()
-        refresh = patch.object(watcher.image_pin_refresh, "poll", self.refresh)
-        refresh.start()
-        self.addCleanup(refresh.stop)
         watcher.persist({"installed_at": BEFORE, "listed_through": BEFORE, "runs": {}, "threads": {}})
 
     def github(self, path):
@@ -74,14 +67,28 @@ class WatcherTests(unittest.TestCase):
         return [call.args[0] for call in self.client.dispatch.call_args_list
                 if call.args[0]["type"] == "message.dispatch"]
 
-    def test_queued_and_early_failed_releases_are_admitted_at_midnight(self):
-        for status, conclusion in [("queued", None), ("completed", "failure")]:
-            with self.subTest(status=status):
-                self.runs = [release(status=status, conclusion=conclusion)]
-                watcher.poll()
-                self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
+    def test_healthy_release_is_observed_without_an_agent_until_it_fails(self):
+        self.runs = [release(status="queued", conclusion=None)]
+        result = watcher.poll()
+        self.assertEqual(result["active_releases"], 1)
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "watching")
+        self.assertEqual(self.starts(), [])
+        self.runs = [release()]
+        watcher.poll()
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
         self.assertEqual(len(self.starts()), 1)
-        self.assertEqual(self.mocks["heartbeat"].call_count, 2)
+
+    def test_escalation_keeps_a_running_release_active_until_github_confirms_completion(self):
+        self.runs = [release(status="in_progress", conclusion=None)]
+        watcher.poll()
+        watcher.stop_owned("deadline_exceeded")
+        self.runs = []
+        self.by_id[123] = release(status="in_progress", conclusion=None)
+        self.assertEqual(watcher.poll()["active_releases"], 1)
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "escalated")
+        self.by_id[123] = release(status="completed", conclusion="failure")
+        self.assertEqual(watcher.poll()["active_releases"], 0)
+        self.assertEqual(self.starts(), [])
 
     def test_initialization_excludes_historical_completed_releases(self):
         watcher.STATE_PATH.unlink()
@@ -90,7 +97,7 @@ class WatcherTests(unittest.TestCase):
                      release(3, "in_progress", created_at=BEFORE)]
         watcher.poll(initialize=True)
         self.assertEqual(set(self.saved()["runs"]), {"3"})
-        self.assertEqual(len(self.starts()), 1)
+        self.assertEqual(len(self.starts()), 0)
 
     def test_initialization_admits_late_retry_of_historical_run(self):
         watcher.STATE_PATH.unlink()
@@ -105,6 +112,12 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(state["runs"]["2"]["status"], "monitoring")
         self.assertEqual(len(self.starts()), 1)
 
+    def test_webhook_admits_old_run_retry_outside_the_recent_run_window(self):
+        self.by_id[123] = release(123, "completed", "failure", BEFORE, attempt=2) | {"run_started_at": NOW}
+        watcher.poll(run_ids=[123])
+        self.assertEqual(self.saved()["runs"]["123"]["attempt"], 2)
+        self.assertEqual(len(self.starts()), 1)
+
     def test_success_requires_release_verification_job(self):
         self.runs = [release(status="completed", conclusion="success")]
         watcher.poll()
@@ -112,6 +125,9 @@ class WatcherTests(unittest.TestCase):
         self.mocks["jobs"].return_value = [{"name": "Verify and record release", "conclusion": "success"}]
         watcher.poll()
         self.assertEqual(self.saved()["runs"]["123"]["status"], "verified")
+        self.agent = {"status": "completed", "activeRunId": None, "updatedAt": NOW}
+        self.assertEqual(watcher.stop_owned("deadline_exceeded"), 0)
+        self.assertEqual(next(iter(self.saved()["threads"].values()))["status"], "verified")
 
     def test_uncertain_dispatch_reuses_persisted_command(self):
         self.runs = [release()]
@@ -119,9 +135,8 @@ class WatcherTests(unittest.TestCase):
             if command["type"] == "message.dispatch":
                 raise TimeoutError("Accepted but response lost")
         self.client.dispatch.side_effect = lose_response
-        with self.assertRaises(TimeoutError):
+        with self.assertRaisesRegex(RuntimeError, "t3.repair-supervision: TimeoutError"):
             watcher.poll()
-        self.mocks["heartbeat"].assert_not_called()
         pending = next(iter(self.saved()["threads"].values()))["pending_command"]
         self.client.dispatch.side_effect = None
         watcher.poll()
@@ -140,28 +155,18 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(len(self.starts()), 1)
         self.assertEqual(next(iter(self.saved()["threads"].values()))["recoveries"], 0)
 
-    def test_project_mismatch_fails_before_dispatch_and_heartbeat(self):
+    def test_project_mismatch_fails_before_dispatch(self):
         self.runs = [release()]
         self.projects = []
         with self.assertRaises(RuntimeError):
             watcher.poll()
         self.client.dispatch.assert_not_called()
-        self.mocks["heartbeat"].assert_not_called()
 
-    def test_github_failure_does_not_renew_heartbeat(self):
+    def test_github_failure_prevents_repair_dispatch(self):
         self.mocks["github"].side_effect = RuntimeError("unavailable")
         with self.assertRaises(RuntimeError):
             watcher.poll()
-        self.mocks["heartbeat"].assert_not_called()
-
-    def test_scheduler_failure_still_supervises_release_without_heartbeat(self):
-        self.runs = [release()]
-        with patch.object(watcher.deployment_scheduler, "poll", side_effect=RuntimeError("unavailable")):
-            with self.assertRaisesRegex(RuntimeError, "Daily release scheduler failed"):
-                watcher.poll()
-        self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
-        self.assertEqual(len(self.starts()), 1)
-        self.mocks["heartbeat"].assert_not_called()
+        self.client.dispatch.assert_not_called()
 
     def test_verified_correction_receipt_recovers_original(self):
         self.runs = [release(status="completed", conclusion="failure")]
@@ -314,13 +319,6 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(record["status"], "monitoring")
         self.assertEqual(len(self.starts()), 1)
 
-    def test_image_pin_refresh_waits_while_a_release_investigation_is_open(self):
-        watcher.poll()
-        self.refresh.assert_called_once_with(release_open=False)
-        self.runs = [release()]
-        watcher.poll()
-        self.assertEqual(self.refresh.call_args.kwargs, {"release_open": True})
-
     def test_initial_prompt_includes_all_grouped_releases(self):
         self.runs = [release(123), release(456)]
         watcher.poll()
@@ -374,7 +372,7 @@ class WatcherTests(unittest.TestCase):
     def test_pending_dispatch_remains_idempotent_after_release_finishes(self):
         self.runs = [release()]
         self.client.dispatch.side_effect = [None, TimeoutError("Lost response")]
-        with self.assertRaises(TimeoutError):
+        with self.assertRaisesRegex(RuntimeError, "t3.repair-supervision: TimeoutError"):
             watcher.poll()
         self.client.dispatch.side_effect = None
         self.runs = [release(status="completed", conclusion="success")]
@@ -411,19 +409,42 @@ class WatcherTests(unittest.TestCase):
         self.mocks["alert"].assert_called_once_with(
             123, "agent_unavailable", recoveries=0, thread_id=info["thread_id"], provider="claudeAgent")
 
-    def test_failed_agent_read_does_not_publish_heartbeat(self):
+    def test_failed_agent_read_keeps_repair_ownership(self):
         self.runs = [release()]
         watcher.poll()
-        self.mocks["heartbeat"].reset_mock()
         self.client.shell.side_effect = RuntimeError("T3 unavailable")
         with self.assertRaises(RuntimeError):
             watcher.poll()
-        self.mocks["heartbeat"].assert_not_called()
+        self.assertTrue(next(iter(self.saved()["threads"].values()))["owns_agent"])
+
+    def test_cached_stop_survives_release_lookup_failure_and_retains_owner_until_confirmed(self):
+        self.runs = [release()]
+        watcher.poll()
+        self.mocks["github"].side_effect = RuntimeError("GitHub lookup unavailable")
+        self.assertEqual(watcher.stop_owned("attempts_exhausted"), 1)
+        self.assertEqual(self.client.dispatch.call_args.args[0]["type"], "run.interrupt")
+        self.agent = {"status": "interrupted", "activeRunId": None, "updatedAt": NOW}
+        self.assertEqual(watcher.stop_owned("attempts_exhausted"), 0)
+        self.assertEqual(len(self.starts()), 1)
+
+    def test_failed_escalation_publication_cannot_resume_a_stopped_repair(self):
+        self.runs = [release()]
+        watcher.poll()
+        self.agent = {"status": "interrupted", "activeRunId": None, "updatedAt": NOW}
+        self.mocks["alert"].side_effect = RuntimeError("Issue API unavailable")
+        with self.assertRaises(RuntimeError):
+            watcher.stop_owned("attempts_exhausted")
+        info = next(iter(self.saved()["threads"].values()))
+        self.assertEqual(info["status"], "escalated")
+        self.assertIn("pending_alert_run_id", info)
+        self.mocks["alert"].side_effect = None
+        watcher.poll()
+        self.assertEqual(len(self.starts()), 1)
+        self.assertNotIn("pending_alert_run_id", next(iter(self.saved()["threads"].values())))
 
     def test_untrusted_correction_keeps_original_open_and_supervised(self):
         self.runs = [release(status="completed", conclusion="failure")]
         watcher.poll()
-        self.mocks["heartbeat"].reset_mock()
         self.client.shell.reset_mock()
         info = next(iter(self.saved()["threads"].values()))
         path = watcher.receipt_path(info)
@@ -433,7 +454,6 @@ class WatcherTests(unittest.TestCase):
         watcher.poll()
         self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
         self.client.shell.assert_called_once_with()
-        self.mocks["heartbeat"].assert_called_once()
         self.mocks["alert"].assert_not_called()
 
     def test_temporary_malformed_receipt_does_not_interrupt_supervision(self):
@@ -444,13 +464,11 @@ class WatcherTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         for content in ["{", "[]", '{"corrections": []}', '{"blocker": "yes"}']:
             with self.subTest(receipt=content):
-                self.mocks["heartbeat"].reset_mock()
                 self.client.shell.reset_mock()
                 path.write_text(content)
                 watcher.poll()
                 self.assertEqual(self.saved()["runs"]["123"]["status"], "monitoring")
                 self.client.shell.assert_called_once_with()
-                self.mocks["heartbeat"].assert_called_once()
                 self.mocks["alert"].assert_not_called()
         path.write_text(json.dumps({"corrections": {}, "blocker": False}))
         with patch.object(watcher, "stamp", return_value="2026-09-23T00:02:00Z"):
@@ -472,14 +490,12 @@ class WatcherTests(unittest.TestCase):
         with patch.object(watcher, "stamp", return_value="2026-09-23T00:02:59Z"):
             watcher.poll()
         self.mocks["alert"].assert_not_called()
-        self.mocks["heartbeat"].reset_mock()
         with patch.object(watcher, "stamp", return_value="2026-09-23T00:03:00Z"):
             watcher.poll()
         self.assertEqual(self.saved()["runs"]["123"]["status"], "escalated")
         self.mocks["alert"].assert_called_once_with(
             123, "verification_failed", recoveries=0,
             thread_id=info["thread_id"], provider="claudeAgent")
-        self.mocks["heartbeat"].assert_called_once()
         self.assertEqual(self.client.dispatch.call_args.args[0],
                          watcher.interrupt_command(f"{info['incident_id']}-stop-0-run-1", info["thread_id"], "run-1"))
 

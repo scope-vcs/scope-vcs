@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import argparse
 from datetime import date, datetime, timedelta, timezone
+import fcntl
 import json
 from pathlib import Path
 import subprocess
 from zoneinfo import ZoneInfo
 
 from deployment_runtime import REPOSITORY, github, save_json
+from deployment_diagnostics import diagnostic, operation
+from deployment_policy import trusted_run
 from heartbeat import ensure_issue
 
 ZONE = ZoneInfo("America/Chicago")
 HOUR = 2
 MINUTE = 8
 START_GRACE = timedelta(minutes=5)
+TRIGGER_GRACE = timedelta(minutes=10)
 STATE_PATH = Path.home() / ".local/state/scope-deployment-watcher/daily-dispatch.json"
 
 
@@ -22,11 +27,7 @@ def local_date(now: datetime) -> date:
 
 def scheduled_at(day: date) -> datetime:
     wall = datetime(day.year, day.month, day.day, HOUR, MINUTE, tzinfo=ZONE)
-    instant = wall.astimezone(timezone.utc)
-    skipped_by_spring_forward = instant.astimezone(ZONE).hour != HOUR
-    if skipped_by_spring_forward:
-        return instant.astimezone(ZONE).replace(hour=3, minute=0).astimezone(timezone.utc)
-    return instant
+    return wall.astimezone(timezone.utc)
 
 
 def initialize(now: datetime | None = None) -> dict:
@@ -61,7 +62,7 @@ def find_run(day: str, dispatched_at: str) -> dict | None:
             "actions/workflows/release.yml/runs?branch=main&event=workflow_dispatch"
             f"&per_page=100&page={page}")["workflow_runs"]
         for run in batch:
-            if (run.get("display_title") == title
+            if (trusted_run(run) and run.get("display_title") == title
                     and datetime.fromisoformat(run["created_at"].replace("Z", "+00:00")) >= cutoff):
                 return run
         if (len(batch) < 100 or datetime.fromisoformat(
@@ -75,7 +76,7 @@ def alert_missed(day: str) -> str:
     return ensure_issue(
         REPOSITORY, marker, f"Daily release did not start on {day}",
         f"The {day} Chicago daily Release workflow had no matching run within "
-        "five minutes of its intended start. Inspect the Surface deployment watcher, "
+        "five minutes of its intended start. Inspect the T3 daily task, "
         "its daily-dispatch.json intent, GitHub Actions, and the release workflow. "
         "An uncertain dispatch response is never retried automatically.", "all")
 
@@ -92,7 +93,7 @@ def reconcile_start(day: str, intent: dict, now: datetime) -> None:
             intent["alert_url"] = alert_missed(day)
 
 
-def poll(now: datetime | None = None) -> dict:
+def poll(now: datetime | None = None, *, dispatch_day: str | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         raise ValueError("Scheduler time must include a timezone")
@@ -117,9 +118,18 @@ def poll(now: datetime | None = None) -> dict:
         return state
     intent = state["intents"].get(day)
     if intent is None:
-        intent = {"scheduled_at": due.isoformat(), "dispatched_at": now.isoformat(),
-                  "status": "uncertain"}
+        if dispatch_day != day or now >= due + TRIGGER_GRACE:
+            if now < due + START_GRACE:
+                return state
+            intent = {"scheduled_at": due.isoformat(), "status": "missed"}
+            state["intents"][day] = intent
+            reconcile_start(day, intent, now)
+            save_json(STATE_PATH, state)
+            return state
+        intent = {"scheduled_at": due.isoformat(), "status": "pending"}
         state["intents"][day] = intent
+    if ("dispatched_at" not in intent and dispatch_day == day and now < due + TRIGGER_GRACE):
+        intent.update(dispatched_at=now.isoformat(), status="uncertain")
         save_json(STATE_PATH, state)
         try:
             dispatch(day)
@@ -131,3 +141,22 @@ def poll(now: datetime | None = None) -> dict:
     reconcile_start(day, intent, now)
     save_json(STATE_PATH, state)
     return state
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Explicit first-install daily dispatch state")
+    parser.add_argument("command", choices=["initialize"])
+    parser.parse_args()
+    with operation("state.daily-initialization"):
+        STATE_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with (STATE_PATH.parent / "watcher.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            print(json.dumps(initialize()))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print(json.dumps({"failed": diagnostic(error)}), flush=True)
+        raise SystemExit(1)

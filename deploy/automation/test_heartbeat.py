@@ -89,5 +89,109 @@ class HeartbeatTests(unittest.TestCase):
         gh.assert_not_called()
 
 
+class SessionObserverTests(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime(2026, 10, 8, 20, tzinfo=timezone.utc)
+        self.state = {"status": "idle", "progress_at": "2026-10-08T09:00:00Z", "repair_owners": 0,
+                      "installed_at": "2026-10-07T00:00:00Z",
+                      "releases": 0, "activated_on": "2026-10-08", "daily_audited_on": "2026-10-07",
+                      "observed": {"123": {"attempt": 1, "status": "verified"}}}
+        self.run = {"id": 123, "run_attempt": 1, "status": "completed", "conclusion": "success",
+                    "created_at": "2026-10-08T07:08:04Z", "display_title": "Release / daily 2026-10-08",
+                    "head_branch": "main", "event": "workflow_dispatch", "path": ".github/workflows/release.yml",
+                    "repository": {"full_name": "scope-vcs/scope-vcs"}}
+
+    def observe(self, runs=None):
+        with patch.object(heartbeat, "issues", return_value=[]), \
+                patch.object(heartbeat, "gh", return_value=json.dumps({"workflow_runs": runs if runs is not None else [self.run]})):
+            return heartbeat.observe(json.dumps(self.state), now=self.now)
+
+    def test_idle_daytime_needs_no_fresh_heartbeat_but_active_sessions_do(self):
+        with patch.object(heartbeat, "ensure_issue") as issue:
+            self.assertTrue(self.observe())
+            issue.assert_not_called()
+            self.state.update(status="running", deadline_at="2026-10-08T23:00:00Z", releases=1)
+            self.assertFalse(self.observe())
+            issue.assert_called_once()
+
+    def test_missing_daily_start_is_independent_of_a_healthy_idle_session(self):
+        with patch("deployment_scheduler.alert_missed", return_value="issue-url") as missed:
+            self.assertFalse(self.observe([]))
+        missed.assert_called_once_with("2026-10-08")
+
+    def test_manual_failure_and_new_attempt_without_observation_alert(self):
+        for status, conclusion in (("in_progress", None), ("completed", "failure"), ("completed", "success")):
+            with self.subTest(status=status, conclusion=conclusion), patch.object(heartbeat, "ensure_issue") as issue:
+                run = self.run | {"id": 456, "status": status, "conclusion": conclusion, "display_title": "Release",
+                                  "created_at": "2026-10-08T19:00:00Z", "run_attempt": 2}
+                self.state["observed"]["456"] = {"attempt": 1, "status": "verified"}
+                self.assertFalse(self.observe([self.run, run]))
+                issue.assert_called_once()
+        self.state["observed"]["456"] = {"attempt": 2, "status": "escalated"}
+        with patch.object(heartbeat, "ensure_issue") as issue:
+            self.assertTrue(self.observe([self.run, run]))
+            issue.assert_not_called()
+
+    def test_installation_excludes_completed_history_but_admits_active_and_retried_releases(self):
+        self.state.update(installed_at="2026-10-08T18:30:00Z", activated_on="2026-10-09",
+                          daily_audited_on="2026-10-08", observed={})
+        for status, started, expected in (("completed", "2026-10-08T18:00:00Z", True),
+                                           ("in_progress", "2026-10-08T18:00:00Z", False),
+                                           ("completed", "2026-10-08T19:00:00Z", False)):
+            run = self.run | {"id": 456, "created_at": "2026-10-08T17:00:00Z", "status": status,
+                              "run_started_at": started, "display_title": "Release"}
+            with self.subTest(status=status, started=started), patch.object(heartbeat, "ensure_issue") as issue:
+                self.assertEqual(self.observe([run]), expected)
+                self.assertEqual(issue.call_count, int(not expected))
+
+    def test_expired_session_and_unconfirmed_repair_owner_remain_unhealthy(self):
+        self.state.update(status="running", progress_at=self.now.isoformat(), deadline_at="2026-10-08T19:54:00Z")
+        with patch.object(heartbeat, "ensure_issue"):
+            self.assertFalse(self.observe())
+            self.state.update(status="escalated", repair_owners=1)
+            self.assertFalse(self.observe())
+
+    def test_historical_failures_are_not_event_gaps_but_an_old_run_active_retry_is(self):
+        historical = self.run | {"id": 456, "created_at": "2026-09-01T07:08:00Z", "conclusion": "failure", "display_title": "Release"}
+        with patch.object(heartbeat, "ensure_issue") as issue:
+            self.assertTrue(self.observe([self.run, historical]))
+            issue.assert_not_called()
+            retry = historical | {"status": "in_progress", "run_attempt": 2, "run_started_at": "2026-10-08T19:00:00Z"}
+            self.assertFalse(self.observe([self.run, retry]))
+            issue.assert_called_once()
+
+    def test_completed_old_run_retry_is_found_through_durable_github_event_receipts(self):
+        event = {"id": 987, "display_title": "Supervise Release / 456 / attempt 2", "created_at": "2026-10-08T19:00:00Z",
+                 "head_branch": "main", "event": "workflow_run", "path": ".github/workflows/deployment-supervision-event.yml",
+                 "repository": {"full_name": heartbeat.REPO}}
+        retry = self.run | {"id": 456, "run_attempt": 2, "created_at": "2026-08-01T07:08:00Z",
+                           "run_started_at": "2026-10-08T19:00:00Z", "conclusion": "failure", "display_title": "Release"}
+        def request(*args):
+            if "deployment-supervision-event.yml/runs?" in args[1]:
+                return json.dumps({"workflow_runs": [event]})
+            if args[1].endswith("actions/runs/456"):
+                return json.dumps(retry)
+            return json.dumps({"workflow_runs": [self.run]})
+        with patch.object(heartbeat, "gh", side_effect=request), patch.object(heartbeat, "issues", return_value=[]), \
+                patch.object(heartbeat, "ensure_issue") as issue:
+            self.assertFalse(heartbeat.observe(json.dumps(self.state), now=self.now))
+            issue.assert_called_once()
+            self.state["observed"]["456"] = {"attempt": 2, "status": "escalated"}
+            self.assertTrue(heartbeat.observe(json.dumps(self.state), now=self.now))
+
+    def test_old_nonterminal_retries_are_found_when_event_delivery_is_missing(self):
+        for status in ("in_progress", "queued", "requested", "waiting", "pending"):
+            retry = self.run | {"id": 456, "run_attempt": 2, "status": status, "created_at": "2026-08-01T07:08:00Z",
+                               "run_started_at": "2026-10-08T19:00:00Z", "display_title": "Release"}
+            def request(*args):
+                if f"&status={status}" in args[1]:
+                    return json.dumps({"workflow_runs": [retry]})
+                return json.dumps({"workflow_runs": [self.run]})
+            with self.subTest(status=status), patch.object(heartbeat, "gh", side_effect=request), \
+                    patch.object(heartbeat, "issues", return_value=[]), patch.object(heartbeat, "ensure_issue") as issue:
+                self.assertFalse(heartbeat.observe(json.dumps(self.state), now=self.now))
+                issue.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
