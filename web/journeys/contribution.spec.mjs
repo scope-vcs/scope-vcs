@@ -248,7 +248,7 @@ test('review controls and completion states fit a narrow screen', async () => {
   await openRequest(page, id)
   for (const control of [
     page.getByRole('button', { name: 'Allow CI to run' }),
-    page.getByRole('button', { name: /^Merge/ }).first(),
+    page.getByRole('button', { name: 'Enable auto-merge', exact: true }),
   ]) {
     await control.waitFor()
     const { x, y, width, height } = await control.boundingBox()
