@@ -1,8 +1,8 @@
 # Releases and maintenance recovery
 
-`release.yml` is the production entry point. The deployment watcher dispatches
+`release.yml` is the production entry point. A native T3 task dispatches
 it once daily at 2:08 AM in `America/Chicago`; the spring daylight-saving gap
-runs at 3:00 AM. GitHub cron is disabled. A failed run does not trigger another
+runs at 3:08 AM. GitHub cron is disabled. A failed run does not trigger another
 automatic daily attempt. Use manual dispatch for a correction or recovery:
 
 ```sh
@@ -14,12 +14,17 @@ concurrency lock. Later commits wait for another release. Component receipts
 skip unchanged work. `ci.yml` validates pull requests without deploying; it and
 Release call the same reusable validation workflow.
 
-On Surface, `scope-deployment-watcher.timer` checks GitHub every minute, all day.
-Its local `deployment_watcher.py` starts a Claude thread in T3 when a main Release
-workflow appears, then follows the release and handles corrections. The watcher
-also owns the durable daily dispatch intent and alerts on a missing release run.
-Its persisted run and command IDs prevent duplicate threads after retries. See
-[watcher operations](../deploy/automation/OPERATIONS.md) for the machine cutover.
+On Surface, daily and signed main Release event triggers start or join
+`scope-deployment-session.service`. Its bounded Python process polls during
+active supervision, preserves one repair owner, and exits on verified completion,
+escalation, or its deadline. Healthy releases need no repair agent. Durable daily
+intents and run/attempt ownership prevent duplicate dispatch and repair. The
+external GitHub observer reports missed starts, stalled sessions, and missed
+release events; idle daytime needs no heartbeat renewal. During an incident,
+inspect `session.json`, `triggers.json`, `supervision.json`, signed event delivery,
+and the bounded service. See [release supervision operations](../deploy/automation/OPERATIONS.md)
+for commands, ownership, and verified cutover. The installed minute timer remains
+the operating owner only until that cutover succeeds or when it is restored.
 The shared automation client resolves T3's active native executable from
 `runtime/service-state.json` each time it connects, so nightly updates and
 rollbacks do not pin automation to an obsolete executable.

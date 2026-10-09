@@ -1,4 +1,5 @@
 from datetime import datetime
+import fcntl
 import json
 from pathlib import Path
 import tempfile
@@ -45,10 +46,21 @@ class SchedulerTests(unittest.TestCase):
         return json.loads(self.path.read_text())
 
     def test_initialize_starts_next_local_day_to_avoid_transition_duplicate(self):
-        scheduler.initialize(utc("2026-09-24T06:00:00Z"))
-        self.assertEqual(self.state()["activated_on"], "2026-09-25")
-        with self.assertRaises(RuntimeError):
-            scheduler.initialize(utc("2026-09-24T06:00:00Z"))
+        with patch("sys.argv", ["deployment_scheduler.py", "initialize"]), \
+                patch.object(scheduler, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = utc("2026-09-24T06:00:00Z")
+            with (self.path.parent / "watcher.lock").open("a") as owner:
+                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with self.assertRaises(RuntimeError):
+                    scheduler.main()
+                self.assertFalse(self.path.exists())
+            scheduler.main()
+            self.assertEqual(self.state()["activated_on"], "2026-09-25")
+            before = self.path.read_bytes()
+            with self.assertRaises(RuntimeError):
+                scheduler.main()
+            self.assertEqual(self.path.read_bytes(), before)
+        self.dispatch.assert_not_called()
 
     def test_one_intent_and_dispatch_even_after_ambiguous_response(self):
         scheduler.initialize(utc("2026-09-24T06:00:00Z"))

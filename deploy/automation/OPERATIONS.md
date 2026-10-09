@@ -81,6 +81,10 @@ delivery IDs deduplicate events. Unsigned or invalid signatures are rejected
 before any prompt is delivered. T3 Connect expires held deliveries after ten
 minutes; the external observer reports missed supervision.
 
+Each run/attempt retains admitted event phases. A new completion phase requeues
+an escalated run whose workflow is still open, with its new request time preserved
+through expired-session cleanup. Replays of handled phases cannot renew its budget.
+
 Configure repository variable `SCOPE_DEPLOYMENT_WEBHOOK_URL` with the task's
 managed URL and Actions secret `SCOPE_DEPLOYMENT_WEBHOOK_SECRET` with the shared
 signing secret. Enter that same secret privately through T3's `request_secret`
@@ -181,10 +185,24 @@ its installed modules remain safe while signing or other prerequisites are
 missing. After success, record task IDs, schedules, PR/merge and operational
 proof in the orchestration conversation, then delete the setup task.
 
-For a new installation, inspect historical and active monitors before explicitly
-initializing supervision and daily intent state. Initialization establishes a
-boundary for completed historical runs and starts dated dispatch the next local
-day; it never occurs implicitly during supervision.
+For a first installation, confirm that both `supervision.json` and
+`daily-dispatch.json` are absent, then inspect historical releases and active T3
+repair ownership. Inspect the read-only preview before initializing:
+
+```sh
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_watcher.py --initialize --dry-run
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_scheduler.py initialize
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_watcher.py --initialize
+```
+
+Daily initialization takes the supervision lock, refuses existing state, and
+sets dispatch activation to the next Chicago date without dispatching a Release.
+Supervision initialization establishes the boundary for completed historical
+runs and admits active runs. Neither runs implicitly during a session. Reuse
+existing state on an upgrade; do not run these initialization commands. Continue
+the verified cutover above, omitting old timer retirement only if none exists.
+If first-install preparation was interrupted, inspect the saved JSON and run
+only the initialization command for a missing file; preserve existing state.
 
 ## Main checks
 

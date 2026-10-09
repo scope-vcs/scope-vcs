@@ -54,9 +54,9 @@ class SessionTests(unittest.TestCase):
     def test_duplicate_webhook_and_crashed_launch_keep_one_durable_trigger(self):
         self.launch.side_effect = RuntimeError("launch failed")
         with self.assertRaises(RuntimeError):
-            session.trigger("webhook", PAYLOAD, NOW)
+            session.trigger("webhook", PAYLOAD | {"action": "in_progress"}, NOW)
         self.launch.side_effect = None
-        session.trigger("webhook", PAYLOAD, NOW)
+        session.trigger("webhook", PAYLOAD | {"action": "in_progress"}, NOW)
         result = session.run()
         self.assertEqual(result["status"], "idle")
         self.assertEqual(len(session.read("triggers.json")["requests"]), 1)
@@ -64,6 +64,29 @@ class SessionTests(unittest.TestCase):
         save_json(self.root / "supervision.json", {"runs": {"123": {"attempt": 2, "status": "verified"}}, "threads": {}})
         self.assertEqual(session.trigger("webhook", PAYLOAD, NOW), {"deduplicated": "release-123-2"})
         self.assertEqual(self.launch.call_count, 2)
+        for workflow_status in ("in_progress", "completed", None):
+            record = {"attempt": 2, "status": "escalated", "created_at": NOW.isoformat()}
+            if workflow_status is not None:
+                record["workflow_status"] = workflow_status
+            save_json(self.root / "supervision.json", {"installed_at": NOW.isoformat(), "runs": {"123": record}, "threads": {}})
+            queue = session.read("triggers.json")
+            queue["requests"]["release-123-2"].update(events=["2:in_progress"], handled_at=NOW.isoformat())
+            save_json(self.root / "triggers.json", queue)
+            self.launch.reset_mock()
+            result = session.trigger("webhook", PAYLOAD, NOW + timedelta(hours=5))
+            with self.subTest(workflow_status=workflow_status):
+                self.assertEqual("deduplicated" in result, workflow_status == "completed")
+                self.assertEqual(self.launch.call_count, int(workflow_status != "completed"))
+                self.assertEqual(len(session.read("triggers.json")["requests"]), 1)
+        save_json(self.root / "session.json", {"id": "expired", "status": "failed", "started_at": NOW.isoformat(),
+                                             "deadline_at": (NOW + timedelta(hours=4)).isoformat()})
+        Clock.current = NOW + timedelta(hours=5)
+        result = session.run()
+        self.assertEqual(result["status"], "idle")
+        self.poll.assert_called_with(run_ids=[123])
+        self.launch.reset_mock()
+        self.assertEqual(session.trigger("webhook", PAYLOAD, Clock.current), {"deduplicated": "release-123-2"})
+        self.launch.assert_not_called()
 
     def test_events_verify_github_identity_and_use_the_current_attempt(self):
         for mismatch in ({"head_branch": "feature"}, {"path": ".github/workflows/validate.yml"},
@@ -73,6 +96,10 @@ class SessionTests(unittest.TestCase):
         session.trigger("webhook", PAYLOAD | {"attempt": 1}, NOW)
         self.assertEqual(set(session.read("triggers.json")["requests"]), {"release-123-2"})
         self.launch.assert_called_once()
+        session.run()
+        result = session.trigger("webhook", PAYLOAD, NOW)
+        self.assertEqual(result["queued"], "release-123-2")
+        self.assertEqual(self.launch.call_count, 2)
 
     def test_one_process_owns_supervision_and_never_dispatches_a_daily_for_a_manual_event(self):
         session.trigger("webhook", PAYLOAD, NOW)

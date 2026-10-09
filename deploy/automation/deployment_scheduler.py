@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import argparse
 from datetime import date, datetime, timedelta, timezone
+import fcntl
 import json
 from pathlib import Path
 import subprocess
 from zoneinfo import ZoneInfo
 
 from deployment_runtime import REPOSITORY, github, save_json
+from deployment_diagnostics import diagnostic, operation
 from deployment_policy import trusted_run
 from heartbeat import ensure_issue
 
@@ -138,3 +141,22 @@ def poll(now: datetime | None = None, *, dispatch_day: str | None = None) -> dic
     reconcile_start(day, intent, now)
     save_json(STATE_PATH, state)
     return state
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Explicit first-install daily dispatch state")
+    parser.add_argument("command", choices=["initialize"])
+    parser.parse_args()
+    with operation("state.daily-initialization"):
+        STATE_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with (STATE_PATH.parent / "watcher.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            print(json.dumps(initialize()))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print(json.dumps({"failed": diagnostic(error)}), flush=True)
+        raise SystemExit(1)

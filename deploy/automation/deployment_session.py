@@ -15,7 +15,7 @@ import time
 import uuid
 
 from deployment_diagnostics import diagnostic, operation
-from deployment_policy import DEADLINE_SECONDS, MAX_RECOVERIES, TERMINAL, stamp, trusted_run
+from deployment_policy import DEADLINE_SECONDS, MAX_RECOVERIES, stamp, trusted_run
 from deployment_runtime import github, save_json
 import deployment_scheduler as scheduler
 import deployment_watcher as watcher
@@ -88,6 +88,7 @@ def trigger(kind, payload=None, now=None):
             key = event_key(payload)
         if key is None:
             return {"ignored": True}
+        event = f"{payload['attempt']}:{payload['action']}"
     elif kind == "daily":
         day = scheduler.local_date(now)
         if now < scheduler.scheduled_at(day):
@@ -107,11 +108,22 @@ def trigger(kind, payload=None, now=None):
         existing = queue["requests"].get(key)
         if existing is None:
             queue["requests"][key] = {"kind": kind, "requested_at": now.isoformat()}
+            if kind == "webhook":
+                queue["requests"][key]["events"] = [event]
             save_json(STATE_DIR / "triggers.json", queue)
         elif "handled_at" in existing and kind == "webhook":
             run_id = key.split("-")[1]
             record = read("supervision.json", {"runs": {}})["runs"].get(run_id, {})
-            if record.get("status") in TERMINAL and record.get("attempt") == int(key.split("-")[2]):
+            if (record and not watcher.release_open(record)
+                    and record.get("attempt") == int(key.split("-")[2])):
+                return {"deduplicated": key}
+        if existing is not None and kind == "webhook":
+            events = existing.setdefault("events", [])
+            if event not in events:
+                existing.update(events=events + [event], requested_at=now.isoformat())
+                existing.pop("handled_at", None)
+                save_json(STATE_DIR / "triggers.json", queue)
+            elif "handled_at" in existing:
                 return {"deduplicated": key}
         launch()
     return {"queued": key, "service": SERVICE}
@@ -150,7 +162,8 @@ def stop_previous(previous, reason, deadline=None):
                     raise SessionDeadlineExceeded("Repair termination was not confirmed before the stop deadline")
                 with operation("t3.stop-confirmation"):
                     owners = watcher.stop_owned(reason)
-                previous.update(repair_owners=owners, progress_at=stamp())
+                releases = sum(watcher.release_open(value) for value in read("supervision.json")["runs"].values())
+                previous.update(repair_owners=owners, releases=releases, progress_at=stamp())
                 save_json(STATE_DIR / "session.json", previous)
                 if not owners:
                     previous.update(status="escalated", phase="stopped", ended_at=stamp())
