@@ -189,6 +189,7 @@ class Store:
                              'occurrences': row['occurrences']} for row in self.connection.execute('''
             SELECT drafts.*, COUNT(observations.observation_key) AS occurrences, incidents.release_owned
             FROM drafts JOIN incidents USING(fingerprint) JOIN observations USING(fingerprint)
+            WHERE incidents.release_owned = 0
             GROUP BY drafts.fingerprint ORDER BY finished_at
         ''')]
 

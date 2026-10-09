@@ -58,7 +58,7 @@ class SessionTests(unittest.TestCase):
         with Store(self.path) as reopened:
             self.assertEqual(reopened.cursor('github-runs-created:scope-vcs/scope-vcs'), timestamp(END))
 
-    def test_prepare_replay_retains_dispatch_identity_target_and_two_slot_limit(self):
+    def test_prepare_emits_each_dispatch_once_and_retains_ambiguous_ownership(self):
         with Store(self.path) as store:
             self.seed(store, 3)
             first = self.prepare(store)
@@ -67,7 +67,9 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(len({item['arguments']['clientRequestId'] for item in first}), 2)
         with Store(self.path) as store:
             replay = self.prepare(store, model='other-model')
-            self.assertEqual(replay, first)
+            self.assertEqual({item.get('action') for item in replay}, {'reconcile_unbound_dispatch'})
+            self.assertEqual({item['request_id'] for item in replay}, {item['request_id'] for item in first})
+            self.assertEqual({item['target']['model'] for item in store.active()}, {'model'})
             self.assertEqual(len(store.active()), 2)
             self.assertEqual(sum(item['state'] == 'pending' for item in store.status(NOW)['incidents']), 1)
             for claim in store.active():
@@ -78,6 +80,22 @@ class SessionTests(unittest.TestCase):
                 self.assertEqual(set(request['arguments']), {'taskId'})
                 self.assertIn(request['arguments']['taskId'], {claim['task_id'] for claim in store.active()})
             self.assertEqual(len(store.active()), 2)
+
+    def test_unavailable_catalog_preserves_existing_task_controls(self):
+        with Store(self.path) as store:
+            self.seed(store, 3)
+            self.prepare(store)
+            for claim in store.active():
+                session.apply_receipt(store, claim['fingerprint'], claim['generation'], receipt(claim, status='running', workState='working'), NOW)
+            for now, tool in [(NOW, 'task_status'), (store.active()[0]['deadline'], 'task_cancel')]:
+                with patch.object(session, 'utc_now', return_value=now):
+                    requests = session.prepare(store, {})
+                controls = [item for item in requests if 'tool' in item]
+                self.assertEqual(len(controls), 2)
+                self.assertEqual({item['tool'] for item in controls}, {tool})
+                self.assertEqual({item['arguments']['taskId'] for item in controls}, {item['task_id'] for item in store.active()})
+                self.assertTrue(any(item.get('action') == 'new_work_unavailable' for item in requests))
+                self.assertEqual(sum(item['state'] == 'pending' for item in store.status(NOW)['incidents']), 1)
 
     def test_receive_requires_final_result_and_confirmed_no_live_children(self):
         with Store(self.path) as store:
@@ -110,6 +128,22 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(store.drafts(), [])
             self.assertEqual(store.status(NOW)['incidents'][0]['state'], 'blocked')
 
+    def test_confirmed_terminal_stops_release_capacity_only_without_pending_children(self):
+        for state in ('failed', 'cancelled', 'interrupted'):
+            with self.subTest(state=state), Store(self.path.with_name(state + '.sqlite')) as store:
+                self.seed(store)
+                self.prepare(store)
+                claim = store.active()[0]
+                stopped = receipt(claim, status=state, summary=None, hasPendingChildRuns=True)
+                result = session.apply_receipt(store, claim['fingerprint'], claim['generation'], stopped, NOW)
+                self.assertEqual(result['status'], 'active')
+                self.assertEqual(len(store.active()), 1)
+                stopped['hasPendingChildRuns'] = False
+                result = session.apply_receipt(store, claim['fingerprint'], claim['generation'], stopped, NOW)
+                self.assertEqual(result['status'], 'blocked')
+                self.assertEqual(store.active(), [])
+                self.assertEqual(store.drafts(), [])
+
     def test_invalid_completed_summary_is_rejected_without_losing_dispatch_ownership(self):
         with Store(self.path) as store:
             self.seed(store)
@@ -135,12 +169,14 @@ class SessionTests(unittest.TestCase):
         self.assertIn('Reproduction: unknown', drafts[0]['markdown'])
         self.assertEqual(drafts[0]['occurrences'], 1)
         invalid = self.path.parent / 'invalid.json'
-        invalid.write_text('private-token-bad-json')
-        result = subprocess.run([sys.executable, '-m', 'triage.session', '--state', str(self.path), 'receive', '--fingerprint', claim['fingerprint'], '--generation', str(claim['generation']), '--receipt', str(invalid)], cwd=automation, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn('state retained', result.stderr)
-        self.assertNotIn('private-token-bad-json', result.stdout + result.stderr)
-        self.assertNotIn('Traceback', result.stderr)
+        for value in ('private-token-bad-json', '[]', 'null', '42', '{"structuredContent": []}'):
+            with self.subTest(value=value):
+                invalid.write_text(value)
+                result = subprocess.run([sys.executable, '-m', 'triage.session', '--state', str(self.path), 'receive', '--fingerprint', claim['fingerprint'], '--generation', str(claim['generation']), '--receipt', str(invalid)], cwd=automation, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn('state retained', result.stderr)
+                self.assertNotIn('private-token-bad-json', result.stdout + result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
 
 
 if __name__ == '__main__':

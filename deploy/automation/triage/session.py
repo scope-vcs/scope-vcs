@@ -50,18 +50,23 @@ def sweep(store, selected, since, until, environment_id):
 
 
 def prepare(store, capabilities, provider=None, model=None, options=None):
-    target = select_target(capabilities, provider, model, options)
     now = utc_now()
-    while store.claim(now, target) is not None:
-        pass
     requests = []
+    reserved = set()
+    try:
+        target = select_target(capabilities, provider, model, options)
+    except ValueError:
+        requests.append({'action': 'new_work_unavailable', 'blocked': True})
+    else:
+        while (claim := store.claim(now, target)) is not None:
+            reserved.add(claim['request_id'])
     for claim in store.active():
         identity = {name: claim[name] for name in ('fingerprint', 'generation', 'request_id', 'deadline')}
         expired = claim['deadline'] <= now or claim['release_owned']
         if claim['task_id']:
             tool = 'task_cancel' if expired else 'task_status'
             arguments = cancellation_request(claim) if expired else status_request(claim)
-        elif expired:
+        elif expired or claim['request_id'] not in reserved:
             requests.append({**identity, 'action': 'reconcile_unbound_dispatch', 'blocked': True})
             continue
         else:
@@ -74,9 +79,14 @@ def prepare(store, capabilities, provider=None, model=None, options=None):
 
 def receipt_data(path):
     data = json.loads(Path(path).read_text())
+    if not isinstance(data, dict):
+        raise ValueError('T3 receipt must be an object')
     if data.get('isError'):
         raise ValueError('T3 request did not succeed')
-    return data.get('structuredContent', data)
+    result = data.get('structuredContent', data)
+    if not isinstance(result, dict):
+        raise ValueError('T3 receipt content must be an object')
+    return result
 
 
 def apply_receipt(store, fingerprint, generation, receipt, now):
@@ -107,7 +117,7 @@ def main(argv=None):
     collect.add_argument('--environment-id', default=json.loads((sources.ROOT / '.github/deployment-services.json').read_text())['environments']['production']['environmentId'])
     commands.add_parser('status')
     prepare_parser = commands.add_parser('prepare')
-    prepare_parser.add_argument('--capabilities', required=True, type=Path)
+    prepare_parser.add_argument('--capabilities', type=Path)
     prepare_parser.add_argument('--provider')
     prepare_parser.add_argument('--model')
     prepare_parser.add_argument('--options', default='{}')
@@ -121,7 +131,7 @@ def main(argv=None):
         if args.command == 'sweep':
             result = sweep(store, SOURCES if args.source == 'all' else [args.source], args.since, args.until, args.environment_id)
         elif args.command == 'prepare':
-            result = prepare(store, receipt_data(args.capabilities), args.provider, args.model, json.loads(args.options))
+            result = prepare(store, receipt_data(args.capabilities) if args.capabilities else {}, args.provider, args.model, json.loads(args.options))
         elif args.command == 'receive':
             result = apply_receipt(store, args.fingerprint, args.generation, receipt_data(args.receipt), utc_now())
         elif args.command == 'drafts':

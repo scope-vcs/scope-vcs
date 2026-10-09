@@ -141,6 +141,21 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(draft['occurrences'], 2)
             self.assertEqual(store.active(), [])
 
+    def test_release_ownership_withdraws_a_saved_draft_without_losing_evidence(self):
+        with Store(self.path) as store:
+            self.ingest(store, [observation()])
+            claim = store.claim(at(10), TARGET)
+            store.bind(claim['fingerprint'], claim['generation'], 'task-one', at(11))
+            store.finish(claim['fingerprint'], claim['generation'], 'task-one', diagnosis(), at(12))
+            self.assertEqual(len(store.drafts()), 1)
+            self.ingest(store, [observation('release-event', release_owned=True)])
+        with Store(self.path) as store:
+            self.assertEqual(store.drafts(), [])
+            incident = store.status(at(13))['incidents'][0]
+            self.assertEqual(incident['release_owned'], 1)
+            self.assertEqual(incident['occurrences'], 2)
+            self.assertIsNone(store.claim(at(13), TARGET))
+
     def test_dispatch_target_contract_rejects_invalid_target_before_reservation(self):
         with Store(self.path) as store:
             self.ingest(store, [observation()])
