@@ -29,8 +29,10 @@ its stopped state; failed cleanup publishes the failure and retained ownership.
 An explicit operator quarantine can exclude an escalated, empty GitHub queue
 that has been unchanged for seven days. Session status includes its exact run
 fingerprint, without the operator's free-text reason. The observer independently
-checks that fingerprint and reads current-attempt jobs. Changed metadata, a
-new attempt or any job makes the run eligible for alerts again. Quarantine does
+checks that fingerprint and reads current-attempt jobs, including quarantined
+runs outside the recent listing. Changed metadata, a new attempt or any job
+alerts until the host reconciles the disposition, even when the same old attempt
+has completed. Quarantine does
 not assert completion or erase release history. See the command and constraints
 in [OPERATIONS.md](OPERATIONS.md).
 

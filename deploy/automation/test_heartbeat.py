@@ -186,15 +186,22 @@ class SessionObserverTests(unittest.TestCase):
         self.state["quarantined"] = {"456": {"at": "2026-10-08T18:00:00Z", "run": {
             "id": 456, "run_attempt": 1, "status": "queued", "created_at": old, "updated_at": old,
             "run_started_at": old, "head_sha": "a" * 40}}}
-        for change, new_jobs, expected in (({}, [], True), ({"run_attempt": 2}, [], False),
-                                            ({"status": "in_progress"}, [], False), ({"updated_at": "2026-10-08T19:00:00Z"}, [], False),
-                                            ({}, [{"name": "Plan selected components"}], False)):
-            with self.subTest(change=change, new_jobs=new_jobs):
+        self.state["observed"]["456"] = {"attempt": 1, "status": "escalated"}
+        cases = (({}, [], True, True), ({"run_attempt": 2}, [], False, True),
+                 ({"status": "in_progress"}, [], False, True), ({"updated_at": "2026-10-08T19:00:00Z"}, [], False, True),
+                 ({}, [{"name": "Plan selected components"}], False, True),
+                 ({}, [], True, False)) + tuple(
+                     ({"status": "completed", "conclusion": conclusion}, [], False, listed)
+                     for conclusion in ("failure", "cancelled", "success") for listed in (True, False))
+        for change, new_jobs, expected, listed in cases:
+            with self.subTest(change=change, new_jobs=new_jobs, listed=listed):
                 run = stale | change
                 def request(*args):
                     if "/jobs?" in args[1]:
                         return json.dumps({"jobs": new_jobs, "total_count": len(new_jobs)})
-                    return json.dumps({"workflow_runs": [self.run, run]})
+                    if args[1].endswith("actions/runs/456"):
+                        return json.dumps(run)
+                    return json.dumps({"workflow_runs": [self.run, run] if listed else [self.run]})
                 with patch.object(heartbeat, "gh", side_effect=request), patch.object(heartbeat, "issues", return_value=[]), \
                         patch.object(heartbeat, "ensure_issue") as issue:
                     result = heartbeat.observe(json.dumps(self.state), now=self.now)
