@@ -159,6 +159,7 @@ def release_runs(repo, since):
 
 
 def observe(value, repo=REPO, now=None, max_age=1200):
+    from deployment_policy import quarantine_matches
     from deployment_scheduler import START_GRACE, alert_missed, local_date, scheduled_at
     now = now or datetime.now(timezone.utc)
     state = {}
@@ -184,7 +185,13 @@ def observe(value, repo=REPO, now=None, max_age=1200):
     session_ok = healthy
     first = max(activated, min(audited + timedelta(days=1), day))
     since = min(scheduled_at(first), now - timedelta(hours=24))
-    runs = release_runs(repo, since)
+    runs = []
+    for run in release_runs(repo, since):
+        if quarantine_matches(run, state.get("quarantined", {}).get(str(run["id"]))):
+            current_jobs = json.loads(gh("api", f"repos/{repo}/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs?per_page=1"))
+            if not current_jobs["total_count"]:
+                continue
+        runs.append(run)
     expected = first
     while expected <= day:
         intended = scheduled_at(expected)

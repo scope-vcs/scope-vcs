@@ -104,6 +104,35 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(result["queued"], "release-123-2")
         self.assertEqual(self.launch.call_count, 2)
 
+    def test_quarantine_replay_rechecks_github_and_publishes_its_disposition(self):
+        old = "2026-09-01T00:00:00Z"
+        run = TRUSTED | {"status": "queued", "head_sha": "a" * 40, "created_at": old,
+                         "updated_at": old, "run_started_at": old}
+        quarantine = {"at": "2026-10-07T00:00:00Z", "reason": "Operator accepted stale queue", "run": {
+            "id": 123, "run_attempt": 2, "status": "queued", "head_sha": "a" * 40,
+            "created_at": old, "updated_at": old, "run_started_at": old}}
+        record = {"run_id": 123, "attempt": 2, "status": "escalated", "created_at": old,
+                  "workflow_status": "queued", "quarantine": quarantine}
+        save_json(self.root / "supervision.json", {"installed_at": NOW.isoformat(), "runs": {"123": record}, "threads": {}})
+        with patch.object(session, "github", return_value=run), patch.object(session.watcher, "jobs", return_value=[]):
+            session.trigger("webhook", PAYLOAD, NOW)
+            session.run()
+            self.assertEqual(session.trigger("webhook", PAYLOAD, NOW), {"deduplicated": "release-123-2"})
+        published = self.heartbeat.call_args.kwargs["status"]
+        self.assertIn("123", published["quarantined"])
+        self.assertNotIn("reason", published["quarantined"]["123"])
+        self.launch.reset_mock()
+        for change, jobs in (({"updated_at": NOW.isoformat()}, []), ({}, [{"name": "Plan selected components"}])):
+            with self.subTest(change=change, jobs=jobs):
+                queue = session.read("triggers.json")
+                queue["requests"]["release-123-2"]["handled_at"] = NOW.isoformat()
+                save_json(self.root / "triggers.json", queue)
+                with patch.object(session, "github", return_value=run | change), patch.object(session.watcher, "jobs", return_value=jobs):
+                    result = session.trigger("webhook", PAYLOAD, NOW)
+                self.assertEqual(result["queued"], "release-123-2")
+                self.assertNotIn("handled_at", session.read("triggers.json")["requests"]["release-123-2"])
+        self.assertEqual(self.launch.call_count, 2)
+
     def test_one_process_owns_supervision_and_never_dispatches_a_daily_for_a_manual_event(self):
         session.trigger("webhook", PAYLOAD, NOW)
         with (self.root / "watcher.lock").open("a") as owner:

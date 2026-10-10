@@ -112,6 +112,13 @@ supervision. Healthy releases need no repair agent; failures use one preserved
 repair owner, explicit corrective chains, and independently verified deployment
 receipts. A Monday 09:00 task handles image pins with durable release deferral.
 
+An operator can explicitly quarantine an escalated GitHub queue with no jobs
+and no activity for seven days. Its exact attempt and metadata remain in
+supervision state; it is not recorded as a completed deployment. Both bounded
+supervision and the external observer independently check for changed metadata
+or new jobs, which restore normal supervision and alerting. This handles stale
+GitHub records without silently excluding old active releases.
+
 The external GitHub observer checks expected daily starts and active-session
 progress. Idle daytime needs no recurring heartbeat or model prompt. The
 [operations guide](../deploy/automation/OPERATIONS.md) describes signing,

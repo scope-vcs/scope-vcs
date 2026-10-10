@@ -15,7 +15,7 @@ import time
 import uuid
 
 from deployment_diagnostics import diagnostic, operation
-from deployment_policy import DEADLINE_SECONDS, MAX_RECOVERIES, stamp, trusted_run
+from deployment_policy import DEADLINE_SECONDS, MAX_RECOVERIES, quarantine_matches, stamp, trusted_run
 from deployment_runtime import github, save_json
 import deployment_scheduler as scheduler
 import deployment_watcher as watcher
@@ -50,7 +50,7 @@ def require_owner():
         raise RuntimeError("T3 cutover has not been verified and activated")
 
 
-def event_key(payload):
+def verified_event_run(payload):
     if (payload.get("event") != "workflow_run" or payload.get("action") not in {"requested", "in_progress", "completed"}
             or payload.get("repository") != "scope-vcs/scope-vcs"):
         return None
@@ -63,7 +63,7 @@ def event_key(payload):
     run = github(f"actions/runs/{run_id}")
     if not trusted_run(run) or run["run_attempt"] < attempt:
         return None
-    return f"release-{run_id}-{run['run_attempt']}"
+    return run
 
 
 def launch():
@@ -85,9 +85,10 @@ def trigger(kind, payload=None, now=None):
     payload = payload or {}
     if kind == "webhook":
         with operation("github.webhook-validation"):
-            key = event_key(payload)
-        if key is None:
+            event_run = verified_event_run(payload)
+        if event_run is None:
             return {"ignored": True}
+        key = f"release-{event_run['id']}-{event_run['run_attempt']}"
         event = f"{payload['attempt']}:{payload['action']}"
     elif kind == "daily":
         day = scheduler.local_date(now)
@@ -106,6 +107,7 @@ def trigger(kind, payload=None, now=None):
     with queue_lock():
         queue = read("triggers.json", {"requests": {}})
         existing = queue["requests"].get(key)
+        quarantine_changed = False
         if existing is None:
             queue["requests"][key] = {"kind": kind, "revision": 1, "requested_at": now.isoformat()}
             if kind == "webhook":
@@ -114,13 +116,15 @@ def trigger(kind, payload=None, now=None):
         elif "handled_at" in existing and kind == "webhook":
             run_id = key.split("-")[1]
             record = read("supervision.json", {"runs": {}})["runs"].get(run_id, {})
+            if record.get("quarantine") and not record["quarantine"].get("lifted_at"):
+                quarantine_changed = not quarantine_matches(event_run, record["quarantine"]) or bool(watcher.jobs(event_run))
             if (record and not watcher.release_open(record)
-                    and record.get("attempt") == int(key.split("-")[2])):
+                    and record.get("attempt") == int(key.split("-")[2]) and not quarantine_changed):
                 return {"deduplicated": key}
         if existing is not None and kind == "webhook":
             events = existing.setdefault("events", [])
-            if event not in events:
-                existing.update(events=events + [event], revision=existing["revision"] + 1,
+            if event not in events or quarantine_changed:
+                existing.update(events=events + [event] if event not in events else events, revision=existing["revision"] + 1,
                                 requested_at=now.isoformat())
                 existing.pop("handled_at", None)
                 save_json(STATE_DIR / "triggers.json", queue)
@@ -131,7 +135,11 @@ def trigger(kind, payload=None, now=None):
 
 
 def publish(session):
-    session["installed_at"] = read("supervision.json")["installed_at"]
+    supervision = read("supervision.json")
+    session["installed_at"] = supervision["installed_at"]
+    session["quarantined"] = {key: {field: record["quarantine"][field] for field in ("at", "run")}
+                              for key, record in supervision["runs"].items()
+                              if record.get("quarantine") and not record["quarantine"].get("lifted_at")}
     save_json(STATE_DIR / "session.json", session)
     with operation("github.session-heartbeat"):
         heartbeat(status={key: value for key, value in session.items() if key != "admitted_requests"})

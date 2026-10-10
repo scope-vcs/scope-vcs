@@ -179,6 +179,28 @@ class SessionObserverTests(unittest.TestCase):
             self.state["observed"]["456"] = {"attempt": 2, "status": "escalated"}
             self.assertTrue(heartbeat.observe(json.dumps(self.state), now=self.now))
 
+    def test_quarantine_is_independently_checked_and_new_activity_alerts(self):
+        old = "2026-09-01T07:08:00Z"
+        stale = self.run | {"id": 456, "status": "queued", "conclusion": None, "display_title": "Release",
+                            "created_at": old, "updated_at": old, "run_started_at": old, "head_sha": "a" * 40}
+        self.state["quarantined"] = {"456": {"at": "2026-10-08T18:00:00Z", "run": {
+            "id": 456, "run_attempt": 1, "status": "queued", "created_at": old, "updated_at": old,
+            "run_started_at": old, "head_sha": "a" * 40}}}
+        for change, new_jobs, expected in (({}, [], True), ({"run_attempt": 2}, [], False),
+                                            ({"status": "in_progress"}, [], False), ({"updated_at": "2026-10-08T19:00:00Z"}, [], False),
+                                            ({}, [{"name": "Plan selected components"}], False)):
+            with self.subTest(change=change, new_jobs=new_jobs):
+                run = stale | change
+                def request(*args):
+                    if "/jobs?" in args[1]:
+                        return json.dumps({"jobs": new_jobs, "total_count": len(new_jobs)})
+                    return json.dumps({"workflow_runs": [self.run, run]})
+                with patch.object(heartbeat, "gh", side_effect=request), patch.object(heartbeat, "issues", return_value=[]), \
+                        patch.object(heartbeat, "ensure_issue") as issue:
+                    result = heartbeat.observe(json.dumps(self.state), now=self.now)
+                self.assertEqual(result, expected)
+                self.assertEqual(issue.call_count, int(not expected))
+
     def test_old_nonterminal_retries_are_found_when_event_delivery_is_missing(self):
         for status in ("in_progress", "queued", "requested", "waiting", "pending"):
             retry = self.run | {"id": 456, "run_attempt": 2, "status": status, "created_at": "2026-08-01T07:08:00Z",

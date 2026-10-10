@@ -129,6 +129,26 @@ trigger observes current runs and existing repair ownership without daily dispat
 
 ## Install and verified cutover
 
+An operator can quarantine a known GitHub metadata inconsistency that would
+otherwise keep supervision active indefinitely. This requires an escalated,
+trusted main Release, queued with no jobs and no activity for seven days, and
+no repair owner. The command holds the supervision lock, verifies GitHub, and
+preserves the run, escalation, receipts and worktrees. It never records a
+successful or completed release and does not cancel or delete the GitHub run.
+
+```sh
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_watcher.py --quarantine RUN_ID --reason 'Operator disposition and evidence reference' --dry-run
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_watcher.py --quarantine RUN_ID --reason 'Operator disposition and evidence reference'
+```
+
+The disposition binds to the exact attempt, status, revision, creation/update
+and start timestamps. Supervision and the external observer independently check
+that fingerprint and the absence of jobs. Any change or new job lifts the
+quarantine, resumes observation and retains the original disposition for audit.
+Webhook replay must also recheck activity before using a prior acknowledgment.
+The observer can alert on new activity even while Surface is idle. Quarantine
+is an explicit operator action, never an automatic response to an old queue.
+
 Verify Surface identity (`adam-blumoff-surface-book-2`) and use delivered GitHub
 main. Run `./dev/check ops` and `./dev/check guardrails`. Create replacement tasks
 paused with stable client request IDs and bindings to the existing conversation.
