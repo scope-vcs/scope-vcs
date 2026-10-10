@@ -28,6 +28,17 @@ def trusted_run(run: dict) -> bool:
             and run.get("path", "").split("@")[0] == ".github/workflows/release.yml")
 
 
+def quarantine_snapshot(run: dict) -> dict:
+    return {key: run.get(key) for key in (
+        "id", "run_attempt", "status", "created_at", "updated_at", "run_started_at", "head_sha")}
+
+
+def quarantine_matches(run: dict, quarantine: dict | None) -> bool:
+    return (isinstance(quarantine, dict) and bool(quarantine.get("at")) and not quarantine.get("lifted_at")
+            and trusted_run(run) and run.get("status") == "queued" and bool(run.get("head_sha"))
+            and bool(run.get("updated_at")) and quarantine.get("run") == quarantine_snapshot(run))
+
+
 def completion(run: dict, jobs: list[dict]) -> str | None:
     if run.get("status") != "completed" or run.get("conclusion") != "success":
         return None

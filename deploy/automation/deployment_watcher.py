@@ -6,7 +6,7 @@ import json
 import uuid
 from pathlib import Path
 
-from deployment_policy import FALLBACK_PROVIDER, MAX_RECOVERIES, PRIMARY_PROVIDER, TERMINAL, completion, running, stamp, supervise, timestamp, trusted_run
+from deployment_policy import FALLBACK_PROVIDER, MAX_RECOVERIES, PRIMARY_PROVIDER, TERMINAL, completion, quarantine_matches, quarantine_snapshot, running, stamp, supervise, timestamp, trusted_run
 from deployment_runtime import CHECKOUT, PROJECT_ID, REPOSITORY, T3Client, create_worktree, github, interrupt_command, jobs, message_command, save_json, thread_create_command
 from deployment_diagnostics import diagnostic, operation
 from heartbeat import alert
@@ -72,19 +72,58 @@ def recent_runs(state: dict) -> list[dict]:
 
 
 def release_open(record: dict) -> bool:
+    if record.get("quarantine") and not record["quarantine"].get("lifted_at"):
+        return False
     return (record["status"] not in TERMINAL or record.get("workflow_status", "completed") != "completed"
             or record["status"] == "escalated" and "workflow_status" not in record)
+
+
+def quarantine_run(run_id: int, reason: str, *, dry_run=False) -> dict:
+    state = json.loads(STATE_PATH.read_text())
+    record = state["runs"].get(str(run_id), {})
+    if not reason.strip() or len(reason) > 500:
+        raise ValueError("Quarantine requires a bounded operator reason")
+    if record.get("status") != "escalated" or any(
+            info.get("owns_agent") or info.get("status") == "monitoring" for info in state["threads"].values()):
+        raise ValueError("Quarantine requires an escalated release and no repair owner")
+    run = github(f"actions/runs/{run_id}")
+    at = stamp()
+    if (not trusted_run(run) or run.get("status") != "queued" or run["run_attempt"] != record.get("attempt")
+            or not run.get("head_sha") or not run.get("updated_at")
+            or timestamp(at) - max(timestamp(run[key]) for key in ("created_at", "updated_at", "run_started_at")
+                                  if run.get(key)) < 7 * 24 * 60 * 60
+            or jobs(run)):
+        raise ValueError("Only a trusted, unchanged, empty queue older than seven days can be quarantined")
+    previous = record.get("quarantine")
+    if previous and not previous.get("lifted_at"):
+        if quarantine_matches(run, previous) and previous["reason"] == reason.strip():
+            return {"run_id": run_id, "quarantine": previous, "dry_run": dry_run}
+        raise ValueError("This release already has an active quarantine disposition")
+    if previous:
+        record.setdefault("quarantine_history", []).append(previous)
+    record.update(workflow_status=run["status"], quarantine={"at": at, "reason": reason.strip(), "run": quarantine_snapshot(run)})
+    if not dry_run:
+        persist(state)
+    return {"run_id": run_id, "quarantine": record["quarantine"], "dry_run": dry_run}
 
 
 def update_runs(state: dict, listed: list[dict]) -> dict[str, dict]:
     current = {str(run["id"]): run for run in listed if trusted_run(run)}
     for key, record in state["runs"].items():
-        if key not in current and release_open(record):
+        quarantine = record.get("quarantine")
+        if key not in current and (release_open(record) or quarantine and not quarantine.get("lifted_at")):
             current[key] = github(f"actions/runs/{key}")
     for key, run in current.items():
         if not trusted_run(run):
             raise RuntimeError("Tracked workflow is no longer a trusted main release")
         record = state["runs"].get(key)
+        if record and record.get("quarantine") and not record["quarantine"].get("lifted_at"):
+            if quarantine_matches(run, record["quarantine"]) and not jobs(run):
+                continue
+            record["quarantine"]["lifted_at"] = stamp()
+            record["status"] = "watching"
+            record.pop("thread_id", None)
+            record.pop("incident_id", None)
         if record is None:
             if (max(run["created_at"], run.get("run_started_at") or run["created_at"]) < state["installed_at"]
                     and run["status"] == "completed"):
@@ -448,7 +487,8 @@ def main() -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (STATE_DIR / "watcher.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        print(json.dumps(poll(initialize=args.initialize, dry_run=args.dry_run)))
+        result = poll(initialize=args.initialize, dry_run=args.dry_run)
+        print(json.dumps(result))
 
 
 if __name__ == "__main__":

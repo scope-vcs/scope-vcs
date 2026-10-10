@@ -99,6 +99,74 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(set(self.saved()["runs"]), {"3"})
         self.assertEqual(len(self.starts()), 0)
 
+    def test_operator_quarantine_preserves_escalation_and_reopens_on_new_activity(self):
+        old = "2026-08-01T00:00:00Z"
+        run = release(status="queued", conclusion=None, created_at=old) | {
+            "updated_at": old, "run_started_at": old, "head_sha": "a" * 40}
+        self.by_id[123] = run
+        state = self.saved()
+        state["runs"]["123"] = {"run_id": 123, "attempt": 1, "status": "escalated",
+                                 "created_at": old, "workflow_status": "queued"}
+        watcher.persist(state)
+        watcher.quarantine_run(123, "Operator accepted stale GitHub queue")
+        quarantined = self.saved()
+        self.assertEqual(quarantined["runs"]["123"]["status"], "escalated")
+        self.assertEqual(watcher.poll()["active_releases"], 0)
+        self.assertEqual(self.starts(), [])
+        for changed, new_jobs in (({"run_attempt": 2}, []), ({"status": "in_progress"}, []),
+                                  ({"updated_at": NOW}, []), ({"head_sha": "b" * 40}, []),
+                                  ({"run_started_at": NOW}, []), ({}, [{"name": "Plan selected components"}])):
+            with self.subTest(changed=changed, new_jobs=new_jobs):
+                watcher.persist(copy.deepcopy(quarantined))
+                self.by_id[123] = run | changed
+                self.mocks["jobs"].return_value = new_jobs
+                self.assertEqual(watcher.poll()["active_releases"], 1)
+                record = self.saved()["runs"]["123"]
+                self.assertEqual(record["status"], "watching")
+                self.assertEqual(record["quarantine"]["lifted_at"], NOW)
+                self.assertEqual(self.starts(), [])
+        record["status"] = "escalated"
+        state = self.saved()
+        state["runs"]["123"] = record
+        watcher.persist(state)
+        self.by_id[123] = run
+        self.mocks["jobs"].return_value = []
+        watcher.quarantine_run(123, "Operator renewed stale GitHub queue disposition")
+        renewed = self.saved()["runs"]["123"]
+        self.assertEqual(renewed["quarantine_history"], [record["quarantine"]])
+        self.assertNotIn("lifted_at", renewed["quarantine"])
+
+    def test_completed_lifted_quarantine_does_not_require_historical_github_run(self):
+        state = self.saved()
+        state["runs"]["123"] = {"run_id": 123, "attempt": 1, "status": "verified",
+                                 "created_at": BEFORE, "workflow_status": "completed",
+                                 "quarantine": {"at": BEFORE, "lifted_at": NOW}}
+        watcher.persist(state)
+        self.assertEqual(watcher.poll()["active_releases"], 0)
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "verified")
+        self.assertEqual(self.starts(), [])
+
+    def test_quarantine_rejects_live_jobs_recent_activity_or_repair_ownership(self):
+        old = "2026-08-01T00:00:00Z"
+        run = release(status="queued", conclusion=None, created_at=old) | {
+            "updated_at": old, "run_started_at": old, "head_sha": "a" * 40}
+        base = self.saved()
+        base["runs"]["123"] = {"run_id": 123, "attempt": 1, "status": "escalated", "created_at": old}
+        for change, jobs, thread in (({"status": "in_progress"}, [], {}), ({"updated_at": NOW}, [], {}),
+                                     ({"run_attempt": 2}, [], {}), ({"head_branch": "feature"}, [], {}),
+                                     ({}, [{"name": "Plan selected components"}], {}),
+                                     ({}, [], {"status": "escalated", "owns_agent": True})):
+            with self.subTest(change=change, jobs=jobs, thread=thread):
+                state = copy.deepcopy(base)
+                if thread:
+                    state["threads"]["incident"] = thread
+                watcher.persist(state)
+                self.by_id[123] = run | change
+                self.mocks["jobs"].return_value = jobs
+                with self.assertRaises(ValueError):
+                    watcher.quarantine_run(123, "Operator accepted stale GitHub queue")
+                self.assertNotIn("quarantine", self.saved()["runs"]["123"])
+
     def test_initialization_admits_late_retry_of_historical_run(self):
         watcher.STATE_PATH.unlink()
         self.runs = [release(1, "completed", "failure", BEFORE),

@@ -26,6 +26,16 @@ are excluded. Active attempts remain eligible regardless of age, and reruns
 started after installation must be observed. Confirmed session cleanup publishes
 its stopped state; failed cleanup publishes the failure and retained ownership.
 
+An explicit operator quarantine can exclude an escalated, empty GitHub queue
+that has been unchanged for seven days. Session status includes its exact run
+fingerprint, without the operator's free-text reason. The observer independently
+checks that fingerprint and reads current-attempt jobs, including quarantined
+runs outside the recent listing. Changed metadata, a new attempt or any job
+alerts until the host reconciles the disposition, even when the same old attempt
+has completed. Quarantine does
+not assert completion or erase release history. See the command and constraints
+in [OPERATIONS.md](OPERATIONS.md).
+
 During installation, the existing minute timer keeps publishing
 `SCOPE_DEPLOYMENT_WATCHER_HEARTBEAT`. Until the first bounded session publishes its
 status, the external workflow checks that operating owner's timestamp. Rollback

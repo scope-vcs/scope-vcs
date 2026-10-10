@@ -159,6 +159,7 @@ def release_runs(repo, since):
 
 
 def observe(value, repo=REPO, now=None, max_age=1200):
+    from deployment_policy import quarantine_matches, trusted_run
     from deployment_scheduler import START_GRACE, alert_missed, local_date, scheduled_at
     now = now or datetime.now(timezone.utc)
     state = {}
@@ -184,7 +185,25 @@ def observe(value, repo=REPO, now=None, max_age=1200):
     session_ok = healthy
     first = max(activated, min(audited + timedelta(days=1), day))
     since = min(scheduled_at(first), now - timedelta(hours=24))
-    runs = release_runs(repo, since)
+    current = {str(run["id"]): run for run in release_runs(repo, since)}
+    quarantined = state.get("quarantined", {})
+    for run_id in quarantined:
+        if run_id not in current:
+            run = json.loads(gh("api", f"repos/{repo}/actions/runs/{run_id}"))
+            if not trusted_run(run):
+                raise ValueError("Quarantined workflow is no longer a trusted main Release")
+            current[run_id] = run
+    runs = []
+    quarantine_changed = False
+    for run in current.values():
+        disposition = quarantined.get(str(run["id"]))
+        if disposition:
+            if quarantine_matches(run, disposition):
+                current_jobs = json.loads(gh("api", f"repos/{repo}/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs?per_page=1"))
+                if not current_jobs["total_count"]:
+                    continue
+            quarantine_changed = True
+        runs.append(run)
     expected = first
     while expected <= day:
         intended = scheduled_at(expected)
@@ -204,9 +223,10 @@ def observe(value, repo=REPO, now=None, max_age=1200):
                       max(run["created_at"], run.get("run_started_at") or "", run.get("event_seen_at", "")).replace("Z", "+00:00")) >= since) and
                   now - datetime.fromisoformat(max(run["created_at"], run.get("run_started_at") or "",
                       run.get("event_seen_at", "")).replace("Z", "+00:00")) >= timedelta(minutes=20)]
-    if not session_ok or unobserved:
+    if not session_ok or unobserved or quarantine_changed:
         ensure_issue(repo, OUTAGE, "Scope deployment session needs attention",
-                     "The T3 deployment session is missing, failed, stalled, or has not admitted an expected Release. "
+                     "The T3 deployment session is missing, failed, stalled, has not admitted an expected Release, "
+                     "or has not reconciled a changed quarantine. "
                      "Inspect session.json, triggers.json, signed webhook deliveries, T3 task execution, "
                      "and scope-deployment-session.service. Idle daytime is healthy. See "
                      "\"While Surface is offline\" in "
