@@ -11,27 +11,28 @@ const github = (name: string, status: GitHubCheck['status'], conclusion: GitHubC
   provider: 'github', name, status, conclusion, run,
   details_url: status ? 'https://github.com/octo/demo/actions/runs/1/job/2' : null,
 })
+const ciRun = (job_id: string) => ({ run_id: '9001', workflow_name: 'CI', job_id })
 const V = 'Validate selected components'
 const S = `${V} / Server validation`
-const running = {
+const running: RequestChecksResponse = {
   request_id: 'req_1', head_oid: 'a'.repeat(40), state: 'started', message: null, can_approve: false,
   changes_github_workflows: false, private_request_on_public_github: true,
   github_push: { state: 'sent', branch: 'scope/requests/req_1', error: null },
   checks: [
-    github('Check operations', 'in_progress', null, { run_id: '9001', job_id: '31' }),
-    github('Check repository policy', 'completed', 'success'),
-    github('Plan selected components', 'completed', 'success'),
-    github('Required PR checks', 'completed', 'success'),
-    github(`${V} / CLI validation`, 'queued', null, { run_id: '9002', job_id: '45' }),
+    github('Check operations', 'in_progress', null, ciRun('31')),
+    github('Check repository policy', 'completed', 'success', ciRun('32')),
+    github('Plan selected components', 'completed', 'success', ciRun('33')),
+    github('Required PR checks', 'completed', 'success', { run_id: '9002', workflow_name: 'PR requirements', job_id: '45' }),
+    github(`${V} / CLI validation`, 'queued', null, ciRun('35')),
     github(`${V} / Integration validation`, null),
-    github(`${V} / Production validation gate`, 'completed', 'success'),
-    github(`${V} / Runner base image`, 'completed', 'skipped'),
-    github(`${S} / Backend validation`, 'completed', 'skipped'),
-    github(`${S} / Media worker image`, 'completed', 'skipped'),
-    github(`${S} / Server validation gate`, 'completed', 'success'),
-    github(`${S} / Web validation`, 'completed', 'skipped'),
+    github(`${V} / Production validation gate`, 'completed', 'success', ciRun('37')),
+    github(`${V} / Runner base image`, 'completed', 'skipped', ciRun('38')),
+    github(`${S} / Backend validation`, 'completed', 'skipped', ciRun('39')),
+    github(`${S} / Media worker image`, 'completed', 'skipped', ciRun('40')),
+    github(`${S} / Server validation gate`, 'completed', 'success', ciRun('41')),
+    github(`${S} / Web validation`, 'completed', 'skipped', ciRun('42')),
   ],
-} as unknown as RequestChecksResponse
+}
 const native = {
   ...running, private_request_on_public_github: false, github_push: null,
   checks: [

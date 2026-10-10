@@ -25,7 +25,7 @@ use scope_domain::{
         RequestViewer, request_checks_message, request_mergeability,
     },
 };
-use scope_postgres::db::ApproveRequestChecksCommand;
+use scope_postgres::db::{ApproveRequestChecksCommand, GitHubWorkflowRunReference};
 use std::collections::HashMap;
 
 pub(crate) async fn get_request_checks(
@@ -184,7 +184,7 @@ fn check_response(
     check: &RequestCheck,
     tested_oid: &str,
     results: &RequestCheckResults,
-    check_runs: &HashMap<u64, u64>,
+    check_runs: &HashMap<u64, GitHubWorkflowRunReference>,
 ) -> RequestCheckResponse {
     match check {
         RequestCheck::Native(check) => RequestCheckResponse::Native {
@@ -209,7 +209,8 @@ fn check_response(
                 run: run.and_then(|run| {
                     let workflow_run = check_runs.get(&run.check_suite_id?)?;
                     Some(RequestCheckRunResponse {
-                        run_id: workflow_run.to_string(),
+                        run_id: workflow_run.github_run_id.to_string(),
+                        workflow_name: workflow_run.workflow_name.clone(),
                         job_id: run.github_check_run_id.to_string(),
                     })
                 }),

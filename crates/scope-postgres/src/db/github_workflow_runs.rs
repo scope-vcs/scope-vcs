@@ -54,6 +54,12 @@ pub struct GitHubWorkflowRunRead {
     pub request_id: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubWorkflowRunReference {
+    pub github_run_id: u64,
+    pub workflow_name: String,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct GitHubWorkflowRunPageQuery<'a> {
     pub repo_id: &'a str,
@@ -500,7 +506,7 @@ pub(super) async fn github_workflow_runs_for_check_suites<C: ConnectionTrait>(
     repo_id: &str,
     github_repository_id: u64,
     check_suite_ids: &[u64],
-) -> Result<Vec<(u64, u64)>, PostgresError> {
+) -> Result<Vec<(u64, GitHubWorkflowRunReference)>, PostgresError> {
     if check_suite_ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -510,7 +516,7 @@ pub(super) async fn github_workflow_runs_for_check_suites<C: ConnectionTrait>(
         .collect::<Result<Vec<_>, _>>()?;
     conn.query_all_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT check_suite_id, github_run_id FROM scope_github_workflow_runs
+        "SELECT check_suite_id, github_run_id, workflow_name FROM scope_github_workflow_runs
                   WHERE repo_id = $1 AND github_repository_id = $2
                     AND check_suite_id = ANY($3)",
         [
@@ -531,7 +537,12 @@ pub(super) async fn github_workflow_runs_for_check_suites<C: ConnectionTrait>(
             .map_err(PostgresError::internal)?;
         Ok((
             i64_to_u64(suite, "GitHub check suite id")?,
-            i64_to_u64(run, "GitHub workflow run id")?,
+            GitHubWorkflowRunReference {
+                github_run_id: i64_to_u64(run, "GitHub workflow run id")?,
+                workflow_name: row
+                    .try_get("", "workflow_name")
+                    .map_err(PostgresError::internal)?,
+            },
         ))
     })
     .collect()

@@ -5,6 +5,8 @@ import { type RunTone, runStatus } from '../runs/run-status'
 
 export type RequestCheckRow = {
   key: string
+  provider: RequestCheckResponse['provider']
+  workflow: { id: string; name: string } | null
   name: string
   leaf: string
   parents: string[]
@@ -28,6 +30,8 @@ function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
   if (check.provider === 'native') {
     return row(
       `native:${check.workflow_path}`,
+      'native',
+      null,
       check.workflow_name,
       check.run_state === 'canceled' ? 'failed' : check.run_state ?? 'pending',
       check.run_state ? runStatus(check.run_state).label : 'not started',
@@ -39,6 +43,8 @@ function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
     : { state: 'pending', label: 'waiting' }
   return row(
     `github:${check.name}`,
+    'github',
+    check.run ? { id: check.run.run_id, name: check.run.workflow_name } : null,
     check.name,
     result.state,
     result.label,
@@ -49,7 +55,7 @@ function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
 export function requestChecksSummary(checks: RequestChecksResponse): RequestChecksSummary {
   const all = checks.checks
     .map(requestCheckRow)
-    .sort(byWorkflowPath)
+    .sort(byNamePath)
   const attention = all
     .filter((check) => check.tone in ATTENTION_ORDER)
     .sort((a, b) => ATTENTION_ORDER[a.tone]! - ATTENTION_ORDER[b.tone]!)
@@ -88,29 +94,32 @@ export function requestChecksSummary(checks: RequestChecksResponse): RequestChec
   return { lead, counts: counts.length ? counts.join(' · ') : null, startError, attention, all }
 }
 
-export type RequestCheckTreeLine =
-  | { kind: 'group'; key: string; name: string; depth: number }
-  | { kind: 'check'; row: RequestCheckRow; depth: number }
+export type RequestCheckGroup =
+  | { kind: 'workflow'; key: string; name: string; runId: string; jobs: RequestCheckRow[] }
+  | { kind: 'native'; key: string; row: RequestCheckRow }
+  | { kind: 'unassigned'; key: string; jobs: RequestCheckRow[] }
 
-export function requestCheckTree(rows: RequestCheckRow[]): RequestCheckTreeLine[] {
-  const lines: RequestCheckTreeLine[] = []
-  let open: string[] = []
+export function requestCheckGroups(rows: RequestCheckRow[]): RequestCheckGroup[] {
+  const groups = new Map<string, RequestCheckGroup>()
   for (const row of rows) {
-    let shared = 0
-    while (shared < open.length && shared < row.parents.length && open[shared] === row.parents[shared]) {
-      shared += 1
+    if (row.provider === 'native') {
+      groups.set(row.key, { kind: 'native', key: row.key, row })
+      continue
     }
-    for (let depth = shared; depth < row.parents.length; depth += 1) {
-      const path = row.parents.slice(0, depth + 1).join(' / ')
-      lines.push({ kind: 'group', key: `group:${path}`, name: row.parents[depth]!, depth })
+    const key = row.workflow ? `workflow:${row.workflow.id}` : 'unassigned'
+    let group = groups.get(key)
+    if (!group) {
+      group = row.workflow
+        ? { kind: 'workflow', key, name: row.workflow.name, runId: row.workflow.id, jobs: [] }
+        : { kind: 'unassigned', key, jobs: [] }
+      groups.set(key, group)
     }
-    open = row.parents
-    lines.push({ kind: 'check', row, depth: row.parents.length })
+    if (group.kind !== 'native') group.jobs.push(row)
   }
-  return lines
+  return [...groups.values()]
 }
 
-function byWorkflowPath(a: RequestCheckRow, b: RequestCheckRow) {
+function byNamePath(a: RequestCheckRow, b: RequestCheckRow) {
   const left = [...a.parents, a.leaf]
   const right = [...b.parents, b.leaf]
   for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
@@ -122,6 +131,8 @@ function byWorkflowPath(a: RequestCheckRow, b: RequestCheckRow) {
 
 function row(
   key: string,
+  provider: RequestCheckResponse['provider'],
+  workflow: RequestCheckRow['workflow'],
   name: string,
   state: string,
   label: string,
@@ -129,5 +140,5 @@ function row(
 ): RequestCheckRow {
   const parts = name.split(' / ')
   const leaf = parts.pop()!
-  return { key, name, leaf, parents: parts, state, tone: runStatus(state).tone, label, run }
+  return { key, provider, workflow, name, leaf, parents: parts, state, tone: runStatus(state).tone, label, run }
 }
