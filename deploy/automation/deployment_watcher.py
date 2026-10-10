@@ -94,8 +94,13 @@ def quarantine_run(run_id: int, reason: str, *, dry_run=False) -> dict:
                                   if run.get(key)) < 7 * 24 * 60 * 60
             or jobs(run)):
         raise ValueError("Only a trusted, unchanged, empty queue older than seven days can be quarantined")
-    if record.get("quarantine"):
-        raise ValueError("This release already has a quarantine disposition")
+    previous = record.get("quarantine")
+    if previous and not previous.get("lifted_at"):
+        if quarantine_matches(run, previous) and previous["reason"] == reason.strip():
+            return {"run_id": run_id, "quarantine": previous, "dry_run": dry_run}
+        raise ValueError("This release already has an active quarantine disposition")
+    if previous:
+        record.setdefault("quarantine_history", []).append(previous)
     record.update(workflow_status=run["status"], quarantine={"at": at, "reason": reason.strip(), "run": quarantine_snapshot(run)})
     if not dry_run:
         persist(state)
@@ -105,7 +110,8 @@ def quarantine_run(run_id: int, reason: str, *, dry_run=False) -> dict:
 def update_runs(state: dict, listed: list[dict]) -> dict[str, dict]:
     current = {str(run["id"]): run for run in listed if trusted_run(run)}
     for key, record in state["runs"].items():
-        if key not in current and (release_open(record) or record.get("quarantine")):
+        quarantine = record.get("quarantine")
+        if key not in current and (release_open(record) or quarantine and not quarantine.get("lifted_at")):
             current[key] = github(f"actions/runs/{key}")
     for key, run in current.items():
         if not trusted_run(run):
@@ -475,17 +481,13 @@ def poll(*, initialize: bool = False, dry_run: bool = False, expired: bool = Fal
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    action = parser.add_mutually_exclusive_group()
-    action.add_argument("--initialize", action="store_true")
-    action.add_argument("--quarantine", type=int)
-    parser.add_argument("--reason", default="")
+    parser.add_argument("--initialize", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (STATE_DIR / "watcher.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        result = quarantine_run(args.quarantine, args.reason, dry_run=args.dry_run) if args.quarantine is not None else poll(
-            initialize=args.initialize, dry_run=args.dry_run)
+        result = poll(initialize=args.initialize, dry_run=args.dry_run)
         print(json.dumps(result))
 
 

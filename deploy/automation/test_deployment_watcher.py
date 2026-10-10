@@ -108,9 +108,7 @@ class WatcherTests(unittest.TestCase):
         state["runs"]["123"] = {"run_id": 123, "attempt": 1, "status": "escalated",
                                  "created_at": old, "workflow_status": "queued"}
         watcher.persist(state)
-        with patch("sys.argv", ["watcher", "--quarantine", "123", "--reason", "Operator accepted stale GitHub queue"]), \
-                patch("builtins.print"):
-            watcher.main()
+        watcher.quarantine_run(123, "Operator accepted stale GitHub queue")
         quarantined = self.saved()
         self.assertEqual(quarantined["runs"]["123"]["status"], "escalated")
         self.assertEqual(watcher.poll()["active_releases"], 0)
@@ -127,6 +125,26 @@ class WatcherTests(unittest.TestCase):
                 self.assertEqual(record["status"], "watching")
                 self.assertEqual(record["quarantine"]["lifted_at"], NOW)
                 self.assertEqual(self.starts(), [])
+        record["status"] = "escalated"
+        state = self.saved()
+        state["runs"]["123"] = record
+        watcher.persist(state)
+        self.by_id[123] = run
+        self.mocks["jobs"].return_value = []
+        watcher.quarantine_run(123, "Operator renewed stale GitHub queue disposition")
+        renewed = self.saved()["runs"]["123"]
+        self.assertEqual(renewed["quarantine_history"], [record["quarantine"]])
+        self.assertNotIn("lifted_at", renewed["quarantine"])
+
+    def test_completed_lifted_quarantine_does_not_require_historical_github_run(self):
+        state = self.saved()
+        state["runs"]["123"] = {"run_id": 123, "attempt": 1, "status": "verified",
+                                 "created_at": BEFORE, "workflow_status": "completed",
+                                 "quarantine": {"at": BEFORE, "lifted_at": NOW}}
+        watcher.persist(state)
+        self.assertEqual(watcher.poll()["active_releases"], 0)
+        self.assertEqual(self.saved()["runs"]["123"]["status"], "verified")
+        self.assertEqual(self.starts(), [])
 
     def test_quarantine_rejects_live_jobs_recent_activity_or_repair_ownership(self):
         old = "2026-08-01T00:00:00Z"

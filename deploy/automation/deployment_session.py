@@ -145,6 +145,23 @@ def publish(session):
         heartbeat(status={key: value for key, value in session.items() if key != "admitted_requests"})
 
 
+def quarantine(run_id, reason, *, dry_run=False):
+    if not dry_run:
+        require_owner()
+    with (STATE_DIR / "watcher.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        current = read("session.json", {})
+        if not dry_run and current.get("status") not in {"idle", "escalated"}:
+            raise RuntimeError("Quarantine requires a stopped bounded session")
+        result = watcher.quarantine_run(run_id, reason, dry_run=dry_run)
+        if not dry_run:
+            supervision = read("supervision.json")
+            current.update(releases=sum(watcher.release_open(value) for value in supervision["runs"].values()),
+                           repair_owners=sum(bool(value.get("owns_agent")) for value in supervision["threads"].values()))
+            publish(current)
+        return result
+
+
 def pending_requests():
     with queue_lock():
         queue = read("triggers.json", {"requests": {}})
@@ -350,6 +367,10 @@ def main():
     subcommands.add_parser("run")
     trigger_parser = subcommands.add_parser("trigger")
     trigger_parser.add_argument("kind", choices=["daily", "webhook", "pins", "reconcile"])
+    quarantine_parser = subcommands.add_parser("quarantine")
+    quarantine_parser.add_argument("run_id", type=int)
+    quarantine_parser.add_argument("--reason", required=True)
+    quarantine_parser.add_argument("--dry-run", action="store_true")
     subcommands.add_parser("status")
     args = parser.parse_args()
     if args.command == "trigger":
@@ -357,6 +378,8 @@ def main():
         result = trigger(args.kind, payload)
     elif args.command == "run":
         result = run()
+    elif args.command == "quarantine":
+        result = quarantine(args.run_id, args.reason, dry_run=args.dry_run)
     else:
         result = {"owner": read("scheduler-owner.json", {}), "session": read("session.json", {}),
                   "triggers": read("triggers.json", {})}

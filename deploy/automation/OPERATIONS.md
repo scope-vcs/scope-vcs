@@ -137,8 +137,8 @@ preserves the run, escalation, receipts and worktrees. It never records a
 successful or completed release and does not cancel or delete the GitHub run.
 
 ```sh
-python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_watcher.py --quarantine RUN_ID --reason 'Operator disposition and evidence reference' --dry-run
-python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_watcher.py --quarantine RUN_ID --reason 'Operator disposition and evidence reference'
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_session.py quarantine RUN_ID --reason 'Operator disposition and evidence reference' --dry-run
+python3 -B ~/.local/share/scope-automation/bounded-release-supervisor/deployment_session.py quarantine RUN_ID --reason 'Operator disposition and evidence reference'
 ```
 
 The disposition binds to the exact attempt, status, revision, creation/update
@@ -148,6 +148,13 @@ quarantine, resumes observation and retains the original disposition for audit.
 Webhook replay must also recheck activity before using a prior acknowledgment.
 The observer can alert on new activity even while Surface is idle. Quarantine
 is an explicit operator action, never an automatic response to an old queue.
+Applying it requires the T3 owner and a stopped bounded session. The command
+updates local session state and publishes the disposition and reconciled counts
+before returning. If publication fails, repeat the same command and reason to
+retry publication without creating another disposition. A lifted disposition
+can be renewed after another seven days of inactivity; earlier dispositions
+remain in local audit history. Completed runs with lifted dispositions need
+no further direct lookup after leaving the recent release listing.
 
 Verify Surface identity (`adam-blumoff-surface-book-2`) and use delivered GitHub
 main. Run `./dev/check ops` and `./dev/check guardrails`. Create replacement tasks
