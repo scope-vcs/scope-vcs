@@ -41,20 +41,20 @@ jobs:
     let first_head = string_at(&pushed, "/result/request/head_oid");
     contributor.json(["request", "submit", "--yes"]);
 
-    let waiting = maintainer.json(["request", "checks", "--request", &id]);
+    let waiting = maintainer.json(["request", "ci", "--request", &id]);
     assert_eq!(waiting["result"]["checks"]["state"], "awaiting-approval");
     assert_eq!(waiting["result"]["checks"]["can_approve"], true);
-    let public = contributor.json(["request", "checks"]);
+    let public = contributor.json(["request", "ci"]);
     assert_eq!(public["result"]["checks"]["can_approve"], false);
-    assert_error(contributor, ["request", "checks", "--approve"], "forbidden");
+    assert_error(contributor, ["request", "ci", "--approve"], "forbidden");
     assert_error(
         maintainer,
         ["request", "merge", "--request", &id, "--yes"],
         "conflict",
     );
 
-    maintainer.json(["request", "checks", "--request", &id, "--approve"]);
-    let queued = maintainer.json(["request", "checks", "--request", &id]);
+    maintainer.json(["request", "ci", "--request", &id, "--approve"]);
+    let queued = maintainer.json(["request", "ci", "--request", &id]);
     assert_eq!(queued["result"]["checks"]["state"], "started");
     assert_eq!(queued["result"]["checks"]["head_oid"], first_head);
     assert_eq!(
@@ -108,7 +108,7 @@ jobs:
     let pushed = contributor.json(["request", "push"]);
     let second_head = string_at(&pushed, "/result/request/head_oid");
     assert_ne!(second_head, first_head);
-    let revised = maintainer.json(["request", "checks", "--request", &id]);
+    let revised = maintainer.json(["request", "ci", "--request", &id]);
     assert_eq!(revised["result"]["checks"]["head_oid"], second_head);
     assert_eq!(revised["result"]["checks"]["state"], "awaiting-approval");
     assert!(revised["result"]["checks"]["checks"][0]["run_id"].is_null());

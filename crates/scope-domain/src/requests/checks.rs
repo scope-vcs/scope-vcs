@@ -275,9 +275,7 @@ impl RequestCheckEvaluation {
 
     pub fn ensure_awaiting_approval(&self) -> Result<(), DomainError> {
         if self.state != RequestCheckEvaluationState::AwaitingApproval {
-            return Err(DomainError::conflict(
-                "request checks are not awaiting approval",
-            ));
+            return Err(DomainError::conflict("request CI is not awaiting approval"));
         }
         Ok(())
     }
@@ -508,7 +506,7 @@ pub fn request_checks_message(
     }
     if evaluation.asks_github() && results.github == GitHubCheckResults::Disconnected {
         return Some(
-            "This repository is no longer connected to GitHub, so its checks cannot pass. \
+            "This repository is no longer connected to GitHub, so its CI cannot pass. \
              A maintainer can reconnect it in repository settings."
                 .to_string(),
         );
@@ -555,7 +553,7 @@ pub fn ensure_approving_reviewed_head(
 ) -> Result<(), DomainError> {
     if request.head_oid != reviewed_head_oid {
         return Err(DomainError::conflict(
-            "This request has a new revision. Review it before approving its checks.",
+            "This request has a new revision. Review it before approving its CI.",
         ));
     }
     Ok(())

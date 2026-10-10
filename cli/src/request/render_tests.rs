@@ -66,7 +66,7 @@ fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
     assert!(lines[2].contains("note  [31m"), "{}", lines[2]);
     let main_oid = oid('c');
     assert!(lines[3].contains(short_oid(&main_oid)));
-    assert!(lines[10].contains("checks failed"), "{}", lines[10]);
+    assert!(lines[10].contains("CI failed"), "{}", lines[10]);
 }
 
 #[test]
@@ -92,7 +92,7 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
         "mergeability": {
             "status": "ChecksAwaitingApproval", "current_main_oid": oid('a'),
             "request_head_oid": oid('b'),
-            "reason": "checks are waiting for a maintainer to start them"
+            "reason": "CI is waiting for a maintainer to start it"
         }
     }))
     .unwrap();
@@ -113,14 +113,11 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
         "{rendered}"
     );
     assert!(
-        rendered.contains("Mergeability: checks are waiting for a maintainer to start them"),
+        rendered.contains("Mergeability: CI is waiting for a maintainer to start it"),
         "{rendered}"
     );
     assert!(
-        rendered.contains(&format!(
-            "scope request checks --approve --head {}",
-            oid('b')
-        )),
+        rendered.contains(&format!("scope request ci --approve --head {}", oid('b'))),
         "{rendered}"
     );
     assert!(!rendered.contains('\u{1b}'), "{rendered:?}");
@@ -149,14 +146,14 @@ fn started_checks_report_each_provider_state_and_where_its_logs_are() {
         ],
         "mergeability": {
             "status": "ChecksPending", "current_main_oid": oid('a'),
-            "request_head_oid": oid('b'), "reason": "checks have not finished"
+            "request_head_oid": oid('b'), "reason": "CI has not finished"
         }
     }))
     .unwrap();
 
     let rendered = request_checks_lines(&checks).join("\n");
 
-    assert!(rendered.contains("Checks: started"), "{rendered}");
+    assert!(rendered.contains("CI: started"), "{rendered}");
     assert!(
         rendered.contains("checks · Scope · succeeded (run_a)"),
         "{rendered}"
@@ -182,7 +179,7 @@ fn started_checks_report_each_provider_state_and_where_its_logs_are() {
         "{rendered}"
     );
     assert!(
-        rendered.contains("Mergeability: checks have not finished"),
+        rendered.contains("Mergeability: CI has not finished"),
         "{rendered}"
     );
     assert!(!rendered.contains("--approve"), "{rendered}");
@@ -200,7 +197,7 @@ fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workf
                 "conclusion": null, "details_url": null}],
             "mergeability": {
                 "status": "ChecksPending", "current_main_oid": oid('a'),
-                "request_head_oid": oid('b'), "reason": "checks have not finished"
+                "request_head_oid": oid('b'), "reason": "CI has not finished"
             }
         }))
         .unwrap()
@@ -227,7 +224,7 @@ fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workf
     );
     assert!(
         awaiting.contains(
-            "Send this revision to GitHub Actions with `scope request checks --approve --head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`."
+            "Send this revision to GitHub Actions with `scope request ci --approve --head bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`."
         ),
         "{awaiting}"
     );
@@ -288,8 +285,8 @@ fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
     .unwrap();
 
     let rendered = request_checks_lines(&no_checks).join("\n");
-    assert!(rendered.contains("Checks: none asked for"), "{rendered}");
-    assert!(rendered.contains("asks for no checks"), "{rendered}");
+    assert!(rendered.contains("CI: not required"), "{rendered}");
+    assert!(rendered.contains("No CI is required"), "{rendered}");
     assert!(rendered.contains("Mergeability: ready"), "{rendered}");
 
     let rendered = request_checks_lines(&broken).join("\n");
@@ -305,7 +302,7 @@ fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
 }
 
 #[test]
-fn a_head_nobody_evaluated_says_its_checks_are_not_worked_out() {
+fn an_unevaluated_head_reports_ci_as_not_evaluated() {
     let unevaluated: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": null,
         "message": null, "can_approve": false, "github_push": null,
@@ -313,7 +310,7 @@ fn a_head_nobody_evaluated_says_its_checks_are_not_worked_out() {
         "mergeability": {
             "status": "ChecksNotEvaluated", "current_main_oid": oid('a'),
             "request_head_oid": oid('b'),
-            "reason": "checks have not been worked out for this commit yet"
+            "reason": "CI has not been evaluated for this commit yet"
         }
     }))
     .unwrap();
@@ -321,12 +318,12 @@ fn a_head_nobody_evaluated_says_its_checks_are_not_worked_out() {
     let rendered = request_checks_lines(&unevaluated).join("\n");
 
     assert!(
-        rendered.contains("Checks: not worked out for this commit yet"),
+        rendered.contains("CI: not evaluated for this commit yet"),
         "{rendered}"
     );
-    assert!(!rendered.contains("asks for no checks"), "{rendered}");
+    assert!(!rendered.contains("No CI is required"), "{rendered}");
     assert!(
-        rendered.contains("Mergeability: checks have not been worked out"),
+        rendered.contains("Mergeability: CI has not been evaluated"),
         "{rendered}"
     );
 }

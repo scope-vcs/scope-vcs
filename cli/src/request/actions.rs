@@ -242,7 +242,7 @@ fn update_request_auto_merge(
         })?;
         require_confirmation(
             &format!(
-                "Merge request {request_name} when checks pass for head {}",
+                "Enable auto-merge for request {request_name} at revision {}. If CI needs permission, run scope request ci --approve separately",
                 short_oid(current.head_oid.as_str())
             ),
             yes,
@@ -250,7 +250,7 @@ fn update_request_auto_merge(
         (
             "request.merge.auto",
             authorize_request_auto_merge(api, target, revision_id, current.head_oid)?,
-            "Automatic merge authorization saved",
+            "Auto-merge enabled",
         )
     } else {
         if !current.can_cancel {

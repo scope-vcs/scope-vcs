@@ -182,7 +182,7 @@ pub fn request_checks(
             routes::repo_request_checks(target.owner, target.repo, target.request_id),
         ),
         format!(
-            "load request checks {} for {}/{}",
+            "load request CI {} for {}/{}",
             target.request_id, target.owner, target.repo
         ),
     )
@@ -200,7 +200,7 @@ pub fn approve_request_checks(
         )
         .json(&ApproveRequestChecksRequest { expected_head_oid }),
         format!(
-            "approve request checks {} for {}/{}",
+            "allow request CI {} for {}/{}",
             target.request_id, target.owner, target.repo
         ),
     )

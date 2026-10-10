@@ -1,20 +1,17 @@
 import type { RepoParams } from '@/api/types'
 import type { RequestChecksResponse } from '@/api/types.generated'
 import { cn } from '@/lib/utils'
-import { Link } from '@tanstack/react-router'
-import { ChevronDown, ChevronRight, Globe } from 'lucide-react'
+import { ChevronDown, Globe } from 'lucide-react'
 import { useId, useState } from 'react'
 import { RunStatusIcon } from '../runs/run-status-icon'
-import { type RequestCheckRow, requestCheckTree, requestChecksSummary } from './request-check-rows'
+import { requestChecksSummary } from './request-check-rows'
+import { RequestCheckWorkflows } from './request-check-workflows'
 import {
   requestCheckEvaluationNote,
   requestChecksWorkflowWarning,
   requestPublicChecksNote,
 } from './request-labels'
 import { CHECKS_SECTION_CLASS } from './request-checks-pending'
-
-const ROW_CLASS = 'group -mx-1.5 flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-[13px]'
-const INDENT_PX = 14
 
 export function RequestChecksSection({
   checks,
@@ -29,6 +26,8 @@ export function RequestChecksSection({
 }) {
   const [expanded, setExpanded] = useState(false)
   const listId = useId()
+  if (checks.state === 'no-checks') return null
+
   const note = requestCheckEvaluationNote(checks)
   const warning = requestChecksWorkflowWarning(checks)
   const publicNote = requestPublicChecksNote(checks, requestViewName)
@@ -37,10 +36,10 @@ export function RequestChecksSection({
 
   return (
     <section
-      aria-label="Checks"
+      aria-label="CI"
       className={CHECKS_SECTION_CLASS}
     >
-      <h2 className="label-mono text-muted-foreground">checks</h2>
+      <h2 className="label-mono text-muted-foreground">CI</h2>
       {error ? (
         <p className="mt-2 text-[13px] text-danger-strong" role="alert">
           {error}
@@ -79,31 +78,7 @@ export function RequestChecksSection({
           {publicNote}
         </p>
       ) : null}
-      {(expanded ? summary.all.length : summary.attention.length) ? (
-        <ul className="mt-2 grid grid-cols-[minmax(0,1fr)]" id={listId}>
-          {expanded
-            ? requestCheckTree(summary.all).map((line) =>
-                line.kind === 'group' ? (
-                  <li
-                    className="truncate pt-1.5 pb-0.5 text-xs text-muted-foreground"
-                    key={line.key}
-                    style={{ paddingLeft: line.depth * INDENT_PX }}
-                  >
-                    {line.name}
-                  </li>
-                ) : (
-                  <li key={line.row.key}>
-                    <CheckRow depth={line.depth} params={params} row={line.row} />
-                  </li>
-                ),
-              )
-            : summary.attention.map((row) => (
-                <li key={row.key}>
-                  <CheckRow params={params} row={row} showParent />
-                </li>
-              ))}
-        </ul>
-      ) : null}
+      <RequestCheckWorkflows id={listId} params={params} rows={expanded ? summary.all : summary.attention} />
       {folded ? (
         <button
           aria-controls={expanded ? listId : undefined}
@@ -112,72 +87,10 @@ export function RequestChecksSection({
           onClick={() => setExpanded((open) => !open)}
           type="button"
         >
-          {expanded ? 'Show less' : `Show all ${summary.all.length}`}
+          {expanded ? 'Show less' : `Show all ${summary.all.length} results`}
           <ChevronDown aria-hidden="true" className={cn('size-3 transition-transform', expanded && 'rotate-180')} />
         </button>
       ) : null}
     </section>
-  )
-}
-
-function CheckRow({
-  depth = 0,
-  params,
-  row,
-  showParent = false,
-}: {
-  depth?: number
-  params: RepoParams
-  row: RequestCheckRow
-  showParent?: boolean
-}) {
-  const parent = showParent ? row.parents.at(-1) : undefined
-  const content = (
-    <>
-      <RunStatusIcon state={row.state} />
-      <span className={cn('flex min-w-0 flex-1', row.tone === 'inert' && 'text-muted-foreground')} title={row.name}>
-        {parent ? (
-          <>
-            <span className="min-w-0 truncate text-muted-foreground">{parent}</span>
-            <span className="shrink-0 text-muted-foreground">{'\u00a0/\u00a0'}</span>
-          </>
-        ) : null}
-        <span className="max-w-full shrink-0 truncate">{row.leaf}</span>
-      </span>
-      {row.tone === 'success' || row.tone === 'inert' ? null : (
-        <span
-          className={cn(
-            'shrink-0 font-mono text-xs',
-            row.tone === 'danger' ? 'text-danger-strong' : 'text-muted-foreground',
-          )}
-        >
-          {row.label}
-        </span>
-      )}
-    </>
-  )
-  const style = depth ? { paddingLeft: 6 + depth * INDENT_PX } : undefined
-  if (!row.run) {
-    return (
-      <div className={ROW_CLASS} style={style}>
-        {content}
-        <span aria-hidden="true" className="size-3 shrink-0" />
-      </div>
-    )
-  }
-  return (
-    <Link
-      className={cn(ROW_CLASS, 'hover:bg-accent focus-visible:bg-accent')}
-      hash={row.run.hash}
-      params={{ ...params, runId: row.run.id }}
-      style={style}
-      to="/$owner/$repo/runs/$runId"
-    >
-      {content}
-      <ChevronRight
-        aria-hidden="true"
-        className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
-      />
-    </Link>
   )
 }

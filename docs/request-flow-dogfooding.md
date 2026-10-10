@@ -17,23 +17,23 @@ to test native merge: it may receive only commits already merged on GitHub main.
 | Start interrupted after remote creation | Recover the same request and branch; no duplicate request or lost commits | CLI request workflow recovery test |
 | Push to another request | Target head advances; current branch identity and upstream remain unchanged | CLI request workflow recovery test |
 | Contributor and maintainer review | Draft visibility, checkout, diff, discussions, and access agree | Two-actor contribution integration |
-| Checks and revised heads | Contributor heads reach `scope/requests/<id>` only after maintainer approval; the request shows the GitHub checks for the same commit that a pull request would run; required checks block merge; a result for an older head does not count; a new head gets fresh results | Two-actor contribution integration and API request-check and GitHub check tests |
-| Auto merge | Authorization binds to a revision; cancellation, failed checks, and newer revisions stop it | Two-actor contribution integration and API auto-merge tests |
+| CI and revised heads | Contributor heads reach `scope/requests/<id>` only after maintainer approval; the request shows the GitHub CI results for the same commit that a pull request would run; required results block merge; a result for an older head does not count; a new head gets fresh results | Two-actor contribution integration and API request-check and GitHub check tests |
+| Auto merge | Authorization binds to a revision; cancellation, failed CI, and newer revisions stop it | Two-actor contribution integration and API auto-merge tests |
 | Native merge | Correct files reach main; private files remain private; conflicting main changes stop merge | Two-actor contribution integration and API auto-merge tests |
 | Close and interrupted responses | Inspect state before retry; authorized repeat close distinguishes closed/merged; concurrent close has one transition; unauthorized actors remain denied | Two-actor contribution integration, domain and API close tests |
 | Browser/CLI agreement | Inspect the same request and revision in both, including navigation and reopening after changes | Seeded web request smoke tests plus a paired browser/CLI exercise |
 
 Run the CLI contribution integration against a seeded stack with
 `SCOPE_API_URL=http://localhost:8080 dev/checks/integration cli`. Its two actors use
-separate sessions. The checks scenario deliberately leaves its checks pending when
-no runner is present; it proves approval and merge gating, not that workflows ran.
-API auto-merge tests cover completed checks and conflict handling separately.
+separate sessions. The CI scenario deliberately leaves its required results pending
+when no runner is present; it proves approval and merge gating, not that workflows ran.
+API auto-merge tests cover completed CI and conflict handling separately.
 
-Checks on this repository's requests come from its GitHub Actions workflows on
+CI on this repository's requests comes from its GitHub Actions workflows on
 `scope/requests/<id>`. Until this repository is connected to GitHub, record
-request checks as setup-blocked. Do not start Scope runs.
+request CI as setup-blocked. Do not start Scope runs.
 
-In a repository connected to GitHub, a public request's checks run on a check
+In a repository connected to GitHub, a public request's CI runs on a check
 commit: the contribution merged onto private main, pushed to
 `scope/requests/<request id>` only after a maintainer approves. Confirm on GitHub
 that the branch holds the private files as well as the contribution, and that the
@@ -48,7 +48,7 @@ For each relevant scenario, record **passed**, **failed**, **setup-blocked**, or
 role, request/head, expected result, actual result, and the next action. Keep local
 fix verification separate from behavior observed with the released CLI and hosted
 service. A setup failure is useful evidence, but it does not count as a lifecycle
-pass. A pending or queued check is not a successful check.
+pass. A pending or queued required result is not a successful result.
 
 A useful PR note can be short:
 
@@ -65,7 +65,7 @@ Recovery or remaining gap:
 
 - Fix repeated setup blockers once, then rerun the blocked scenario. Repeating the
   same setup failure on more PRs adds no request-lifecycle evidence.
-- When ordinary mirroring passes, move effort to uncovered roles, revised checks,
+- When ordinary mirroring passes, move effort to uncovered roles, revised CI,
   native merge, conflicts, and interrupted operations. More successful mirror
   notes alone do not justify calling the request flow robust.
 - Repeat a scenario after its behavior changes, after a regression, or when a

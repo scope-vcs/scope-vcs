@@ -323,7 +323,7 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
             if request.permissions.can_push_branch {
                 "Commit changes, then scope request push"
             } else {
-                "Inspect scope request diff and scope request checks"
+                "Inspect scope request diff and scope request ci"
             }
             .into(),
         );

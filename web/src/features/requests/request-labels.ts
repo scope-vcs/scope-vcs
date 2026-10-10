@@ -27,25 +27,25 @@ const EVENT_LABELS = {
 } as const satisfies Record<RequestEventKind, string>
 
 const MERGEABILITY = {
-  Ready: { label: 'Clean merge available', tone: 'success' },
+  Ready: { label: 'Ready to merge', tone: 'success' },
   Draft: { label: 'Draft', tone: 'neutral' },
   Closed: { label: 'Closed', tone: 'neutral' },
   Merged: { label: 'Merged', tone: 'success' },
   NotMaintainer: { label: 'Maintainer merges', tone: 'outline' },
   MissingRequestBranch: { label: 'Branch missing', tone: 'warning' },
-  ChecksNotEvaluated: { label: 'Checks not worked out', tone: 'warning' },
-  ChecksAwaitingApproval: { label: 'Checks await approval', tone: 'warning' },
-  ChecksPending: { label: 'Checks running', tone: 'info' },
-  ChecksFailed: { label: 'Checks failed', tone: 'danger' },
-  ChecksConfigurationError: { label: 'Checks misconfigured', tone: 'danger' },
+  ChecksNotEvaluated: { label: 'CI status unavailable', tone: 'warning' },
+  ChecksAwaitingApproval: { label: 'CI needs permission to run', tone: 'warning' },
+  ChecksPending: { label: 'Waiting for CI', tone: 'info' },
+  ChecksFailed: { label: 'CI failed', tone: 'danger' },
+  ChecksConfigurationError: { label: 'CI needs configuration', tone: 'danger' },
 } as const satisfies Record<
   RequestSummaryResponse['mergeability']['status'],
   { label: string; tone: BadgeVariant }
 >
 
 const CHECK_EVALUATION_NOTES = {
-  'no-checks': 'This head asks for no checks.',
-  'awaiting-approval': 'These checks wait for a maintainer to start them.',
+  'no-checks': null,
+  'awaiting-approval': 'A maintainer must allow CI to run for this revision.',
   'started': null,
   'configuration-error': null,
 } as const satisfies Record<RequestCheckEvaluationState, string | null>
@@ -81,24 +81,24 @@ export function requestMergeabilityTone(request: RequestLabelSource): BadgeVaria
 
 export function requestCheckEvaluationNote(checks: RequestChecksResponse) {
   if (checks.state === null) {
-    return 'The checks for this commit have not been worked out yet.'
+    return 'CI status is not available yet.'
   }
   if (checks.message) return checks.message
   if (checks.state === 'configuration-error') {
-    return 'This head’s workflow configuration is invalid.'
+    return 'The CI configuration for this revision is invalid.'
   }
   return CHECK_EVALUATION_NOTES[checks.state]
 }
 
 export function requestChecksWorkflowWarning(checks: RequestChecksResponse) {
   return checks.can_approve && checks.changes_github_workflows
-    ? 'This request changes GitHub workflow files. Approving runs them with your repository’s secrets.'
+    ? 'This revision changes GitHub workflow files. Allowing CI runs them with your repository’s secrets.'
     : null
 }
 
 export function requestPublicChecksNote(checks: RequestChecksResponse, requestViewName: string) {
   return checks.private_request_on_public_github
-    ? `Checks run publicly, so this ${requestViewName} request’s changes are public.`
+    ? `CI runs publicly, so this ${requestViewName} request’s changes are public.`
     : null
 }
 
@@ -129,7 +129,7 @@ export function requestEventBody(event: RequestEventResponse) {
     return discussionText(payload.DiscussionReopened.discussion_id)
   }
   if ('AutoMergeEnabled' in payload) {
-    return `Will merge ${shortOid(payload.AutoMergeEnabled.head_oid)} when checks pass.`
+    return `Will merge ${shortOid(payload.AutoMergeEnabled.head_oid)} when this revision is ready to merge.`
   }
   if ('AutoMergeCancelled' in payload) {
     return `Canceled auto-merge for ${shortOid(payload.AutoMergeCancelled.head_oid)}.`

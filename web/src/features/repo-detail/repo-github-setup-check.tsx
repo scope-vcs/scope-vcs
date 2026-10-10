@@ -2,32 +2,30 @@ import type { GitHubConnectionResponse } from '@/api/types.generated'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
-import { Check, FlaskConical, LoaderCircle, Plus } from 'lucide-react'
+import { FlaskConical, LoaderCircle } from 'lucide-react'
 import { useState } from 'react'
 import { GITHUB_TRIGGER_SNIPPET, githubSetupCheckView } from './repo-github-setup-check-model'
 
 export function RepoGitHubSetupCheck({
   github,
-  requireCheck,
   startTest,
 }: {
   github: GitHubConnectionResponse
-  requireCheck: (name: string) => Promise<unknown>
   startTest: () => Promise<unknown>
 }) {
-  const [pending, setPending] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
   const [error, setError] = useState<{ title: string; message: string } | null>(null)
-  const view = githubSetupCheckView(github.setup_check, github.required_checks)
+  const view = githubSetupCheckView(github.setup_check)
 
-  async function act(key: string, title: string, action: () => Promise<unknown>) {
+  async function testConnection() {
     setError(null)
-    setPending(key)
+    setPending(true)
     try {
-      await action()
+      await startTest()
     } catch (cause) {
-      setError({ title, message: resourceErrorMessage(cause, 'Try again.') })
+      setError({ title: 'The test could not start', message: resourceErrorMessage(cause, 'Try again.') })
     } finally {
-      setPending(null)
+      setPending(false)
     }
   }
 
@@ -49,13 +47,13 @@ export function RepoGitHubSetupCheck({
           {view?.status ?? 'Test the connection to check that workflows start on Scope’s branches.'}
         </p>
         <Button
-          disabled={pending !== null || testing}
-          onClick={() => void act('test', 'The test could not start', startTest)}
+          disabled={pending || testing}
+          onClick={() => void testConnection()}
           size="sm"
           type="button"
           variant="secondary"
         >
-          {pending === 'test' || testing
+          {pending || testing
             ? <LoaderCircle className="size-3.5 animate-spin" />
             : <FlaskConical className="size-3.5" />}
           <span>Test connection</span>
@@ -64,39 +62,6 @@ export function RepoGitHubSetupCheck({
       {view?.problem && (
         <p className="break-words leading-5 text-danger-strong" role="alert">{view.problem}</p>
       )}
-      {view?.candidates.length ? (
-        <ul aria-label="Checks GitHub ran" className="divide-y divide-border">
-          {view.candidates.map((candidate) => (
-            <li className="flex min-h-9 items-center justify-between gap-3" key={candidate.name}>
-              <span className="min-w-0 truncate font-mono text-[13px]">{candidate.name}</span>
-              {candidate.required ? (
-                <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                  <Check className="size-3.5" />
-                  Required
-                </span>
-              ) : (
-                <Button
-                  aria-label={`Require ${candidate.name}`}
-                  disabled={pending !== null}
-                  onClick={() => void act(
-                    candidate.name,
-                    'The check was not required',
-                    () => requireCheck(candidate.name),
-                  )}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  {pending === candidate.name
-                    ? <LoaderCircle className="size-3.5 animate-spin" />
-                    : <Plus className="size-3.5" />}
-                  <span>Require</span>
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : null}
       {error && <PageErrorAlert className="mt-0" title={error.title}>{error.message}</PageErrorAlert>}
     </div>
   )

@@ -172,7 +172,7 @@ impl RequestStore {
             ) {
                 RequestAutoMergeReadiness::Ready => {}
                 RequestAutoMergeReadiness::Waiting(_) => {
-                    return Err(PostgresError::conflict("auto-merge checks are not ready"));
+                    return Err(PostgresError::conflict("auto-merge CI is not ready"));
                 }
                 RequestAutoMergeReadiness::Stop(reason) => {
                     let mutation = stop_request_auto_merge(

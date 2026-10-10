@@ -2,7 +2,7 @@ use super::Request;
 use crate::{error::DomainError, runs::validation::validate_git_oid, views::Views};
 use serde::{Deserialize, Serialize};
 
-pub const PRIVATE_CODE_CONFLICT_MESSAGE: &str = "This contribution conflicts with private code, so its checks cannot run. A maintainer must resolve the conflict.";
+pub const PRIVATE_CODE_CONFLICT_MESSAGE: &str = "This contribution conflicts with private code, so its CI cannot run. A maintainer must resolve the conflict.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GitHubCheckTarget {

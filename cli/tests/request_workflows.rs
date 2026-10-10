@@ -98,7 +98,7 @@ fn request_auto_merge_saves_exact_revision_and_returns_a_pending_receipt() {
         .unwrap();
     assert_success(&output, "schedule auto-merge receipt");
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("authorization saved"), "{stdout}");
+    assert!(stdout.contains("Auto-merge enabled"), "{stdout}");
     assert!(stdout.contains("has not merged yet"), "{stdout}");
 }
 
@@ -125,7 +125,7 @@ fn request_show_and_cancel_auto_merge_use_the_active_server_intent() {
     assert!(stdout.contains("auto-merge: Active"), "{stdout}");
     assert!(stdout.contains("authorized by @owner"), "{stdout}");
     assert!(stdout.contains("head aaaaaaa"), "{stdout}");
-    assert!(stdout.contains("checks have not finished"), "{stdout}");
+    assert!(stdout.contains("CI has not finished"), "{stdout}");
 
     let canceled = server
         .command(dir.path())
@@ -344,9 +344,22 @@ fn request_diff_defaults_to_visible_text_changes() {
 }
 
 #[test]
-fn request_checks_read_the_server_evaluation_for_the_head() {
-    let dir = TempDir::new("request-checks");
+fn request_ci_reads_the_server_evaluation_for_the_head() {
+    let dir = TempDir::new("request-ci");
     let server = FixtureServer::start();
+    let obsolete = server
+        .command(dir.path())
+        .args(["--json", "--repo", "owner/repo", "request", "checks"])
+        .output()
+        .unwrap();
+    assert_eq!(obsolete.status.code(), Some(2), "{obsolete:?}");
+    let error: scope_api_contract::ErrorResponse =
+        serde_json::from_slice(&obsolete.stderr).unwrap();
+    assert!(
+        error.message.contains("unrecognized subcommand 'checks'"),
+        "{}",
+        error.message
+    );
     let output = server
         .command(dir.path())
         .args([
@@ -354,13 +367,14 @@ fn request_checks_read_the_server_evaluation_for_the_head() {
             "--repo",
             "owner/repo",
             "request",
-            "checks",
+            "ci",
             "--request",
             "req_one",
         ])
         .output()
         .unwrap();
     let result = success(output);
+    assert_eq!(result["command"], "request.ci");
     assert_eq!(result["result"]["checks"]["head_oid"], OID);
     assert_eq!(result["result"]["checks"]["state"], "awaiting-approval");
     assert_eq!(
@@ -383,7 +397,7 @@ fn request_checks_read_the_server_evaluation_for_the_head() {
 }
 
 #[test]
-fn approving_request_checks_starts_them_and_prints_the_refreshed_evaluation() {
+fn approving_request_ci_starts_it_and_prints_the_refreshed_evaluation() {
     let dir = TempDir::new("request-checks-approve");
     let server = FixtureServer::start();
     let output = server
@@ -393,7 +407,7 @@ fn approving_request_checks_starts_them_and_prints_the_refreshed_evaluation() {
             "--repo",
             "owner/repo",
             "request",
-            "checks",
+            "ci",
             "--request",
             "req_one",
             "--approve",
@@ -401,6 +415,7 @@ fn approving_request_checks_starts_them_and_prints_the_refreshed_evaluation() {
         .output()
         .unwrap();
     let result = success(output);
+    assert_eq!(result["command"], "request.ci");
     assert_eq!(result["result"]["checks"]["state"], "started");
     assert_eq!(result["result"]["checks"]["checks"][0]["run_id"], "run_one");
     assert_eq!(
@@ -675,7 +690,7 @@ fn auto_merge_response(status: Option<&str>) -> Value {
             "created_at_unix": 10,
             "updated_at_unix": 11
         })),
-        "waiting_reason": status.filter(|status| *status == "Active").map(|_| "checks have not finished"),
+        "waiting_reason": status.filter(|status| *status == "Active").map(|_| "CI has not finished"),
         "can_enable": status.is_none(),
         "can_cancel": status == Some("Active")
     })
@@ -692,9 +707,9 @@ fn checks_evaluation(state: &str, run: Option<(&str, &str)>) -> Value {
             "status": if awaiting { "ChecksAwaitingApproval" } else { "ChecksPending" },
             "current_main_oid":OID,"request_head_oid":OID,
             "reason": if awaiting {
-                "checks are waiting for a maintainer to start them"
+                "CI is waiting for maintainer approval"
             } else {
-                "checks have not finished"
+                "CI has not finished"
             }
         }
     })

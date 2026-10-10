@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowLeft,
-  CirclePlay,
   ShieldQuestion,
   SlidersHorizontal,
   UserRound,
@@ -31,6 +30,7 @@ import type {
   CancelRequestAutoMergeInput,
 } from './request-auto-merge-api'
 import { RequestChecksSection } from './request-checks-section'
+import { RequestCiApproval } from './request-ci-approval'
 import { RequestDetailHeader } from './request-detail-header'
 import { RequestDetails, RequestDetailsProvider } from './request-details'
 import { RequestDetailsSurface } from './request-details-surface'
@@ -214,18 +214,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                   I’ll take this
                 </Button>
               ) : null}
-              {checks.checks.can_approve ? (
-                <Button
-                  disabled={checks.approving}
-                  onClick={() => void checks.approve()}
-                  size="sm"
-                  type="button"
-                  variant="secondary"
-                >
-                  <CirclePlay />
-                  Approve checks
-                </Button>
-              ) : null}
+              <RequestCiApproval controller={checks} key={identity} requestViewName={requestViewName} />
               {canRelease ? (
                 <Button onClick={workspace?.release} size="sm" type="button" variant="secondary">
                   <UserRoundMinus />
@@ -263,17 +252,17 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
             </Link>
           </Button>
         </div>
-        {requestActions.error || autoMerge.error ? (
+        {requestActions.error || autoMerge.error || stateError ? (
           <p
             className="border-b border-border px-5 py-2 text-sm text-danger-strong sm:px-6 lg:px-8"
             role="alert"
           >
-            {requestActions.error ?? autoMerge.error}
+            {requestActions.error ?? autoMerge.error ?? stateError}
           </p>
         ) : null}
         <RequestChecksSection
           checks={checks.checks}
-          error={checks.error ?? stateError}
+          error={checks.error}
           params={params}
           requestViewName={requestViewName}
         />

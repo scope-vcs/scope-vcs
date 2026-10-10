@@ -131,7 +131,7 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   committed main push carries;
 - `request_discussion_mutation.rs` for discussion commands, authorization
   context, persistence, result loading, and timeline publication;
-- `request_checks.rs` for evaluating the checks a pushed request head asks
+- `request_checks.rs` for evaluating the CI a pushed request head asks
   for with the repository's provider, starting or holding its native runs or
   its push to GitHub, reading what native runs and GitHub check results mean
   for a merge, and evaluating a head again from its saved revision when its
@@ -151,10 +151,10 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
 - `native_runs.rs` for the operator-managed list of accounts that may use
   Scope's hosted runner. `scope-domain/src/runs/availability.rs` owns the rule:
   a repository may create native runs only while its owning account is listed.
-  Run creation, retry, push-to-main triggers, request check evaluation, and
+  Run creation, retry, push-to-main triggers, request CI evaluation, and
   admission share-lock the listing in `scope-postgres/src/db/native_runs.rs`.
-  An unlisted repository's request checks are `NoChecks`. Removing an account
-  turns its waiting request checks into configuration errors and cancels its
+  An unlisted repository's request CI is `NoChecks`. Removing an account
+  turns its waiting request CI into configuration errors and cancels its
   unfinished runs; and
 - `content_cleanup.rs` for repository-storage cleanup and source-blob cleanup
   coordination.
@@ -166,10 +166,10 @@ environment, the signed setup state, and webhook verification.
 `api/src/http/github.rs` runs the connect flow, sets required checks and
 dispatches webhook events. Connection and required-check rules live in
 `scope-domain/src/github_connection.rs`; which provider answers a repository's
-checks, the GitHub evaluation, push retries and push status live in
+CI, the GitHub evaluation, push retries and push status live in
 `scope-domain/src/requests/checks/`. Links, required checks, push jobs and
 check runs are stored by the `github_*` modules in `scope-postgres/src/db/`.
-Registration, the connect flow and how checks run are described in
+Registration, the connect flow and how CI runs are described in
 [the GitHub App guide](github-app.md).
 
 The other applications remain narrow:
