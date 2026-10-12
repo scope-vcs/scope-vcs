@@ -3,6 +3,7 @@ use crate::requests::{RequestBase, fixtures::source_blob};
 
 fn revision() -> RequestRevision {
     RequestRevision {
+        base_version: 1,
         id: "revision".into(),
         request_id: "request".into(),
         position: 2,
