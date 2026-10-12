@@ -7,6 +7,22 @@ orchestration conversation; they do not create a conversation per tick. There is
 no recurring minute prompt or daytime polling agent. GitHub cron stays removed,
 and pushes or merges to main do not release the application.
 
+The code-only `scope-deployment-daily-fallback.timer` recovers a daily task that
+never reaches Python, including a provider authentication failure. It calls
+`deployment_session.py trigger daily-fallback` five minutes after the daily due
+time. T3 remains the primary scheduler. The fallback joins the same dated request
+and bounded service; it cannot dispatch independently. It exits without launching
+when a dispatch was already attempted or the request was already handled, including
+retirement after exhausted recovery. Ambiguous dispatches are never retried.
+
+The timer checks at 07:13 and 08:13 UTC. Python admits only the interval from five
+to ten minutes after that day's Chicago due time. This covers standard time,
+daylight time, and the spring transition's normalized 03:08 start. The other check
+exits immediately. A persistent timer firing after the window also exits without
+catch-up. The fallback trigger has a 90-second process limit and makes no model
+call; the existing bounded service owns all subsequent supervision. Late-start
+alerts remain visible even when fallback succeeds.
+
 Each task invokes `deployment_session.py trigger`. The helper saves the request
 before starting `scope-deployment-session.service`. One process holds
 `watcher.lock` throughout a bounded session, polls GitHub and durable state every
@@ -169,6 +185,7 @@ its installed implementation until cutover:
 install -d -m 700 ~/.local/share/scope-automation/bounded-release-supervisor
 install -m 600 deploy/automation/deployment_*.py deploy/automation/image_pin_refresh.py deploy/automation/heartbeat.py ~/.local/share/scope-automation/bounded-release-supervisor/
 install -m 644 deploy/automation/scope-deployment-session.service ~/.config/systemd/user/
+install -m 644 deploy/automation/scope-deployment-daily-fallback.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload
 ```
 
@@ -204,7 +221,16 @@ one daily task, one weekly pin task, and the signed event task; verify next run
 times in Chicago and confirm the old minute timer is disabled. Retain the old
 installed implementation for rollback until verified installation completes.
 
-If cutover fails, pause new tasks and stop/drain the bounded session before
+For the daily fallback, verify both calendar checks with
+`systemd-analyze calendar '*-*-* 07,08:13:00 UTC'`. Outside the fallback window,
+manually start `scope-deployment-daily-fallback.service` and confirm exit 0 with
+`outside-fallback-window` in its journal and unchanged durable state. Then enable
+`scope-deployment-daily-fallback.timer` with `systemctl --user enable --now`.
+Inspect its next run and the next native T3 run; these feed one dated intent.
+Pausing releases for maintenance requires pausing the native daily task and
+disabling this fallback timer. Pausing only the T3 task does not pause fallback.
+
+If cutover fails, disable the fallback timer, pause new tasks and stop/drain the bounded session before
 restoring the previous owner. Do not stop an active repair to roll back scheduling.
 Before restoring the old implementation, migrate any nonterminal `watching`
 run records to its `waiting` state under `watcher.lock`, using atomic `save_json`.

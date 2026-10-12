@@ -83,6 +83,12 @@ def trigger(kind, payload=None, now=None):
     require_owner()
     now = now or datetime.now(timezone.utc)
     payload = payload or {}
+    fallback = kind == "daily-fallback"
+    if fallback:
+        due = scheduler.scheduled_at(scheduler.local_date(now))
+        if not due + scheduler.START_GRACE <= now < due + scheduler.TRIGGER_GRACE:
+            return {"ignored": "outside-fallback-window"}
+        kind = "daily"
     if kind == "webhook":
         with operation("github.webhook-validation"):
             event_run = verified_event_run(payload)
@@ -107,6 +113,10 @@ def trigger(kind, payload=None, now=None):
     with queue_lock():
         queue = read("triggers.json", {"requests": {}})
         existing = queue["requests"].get(key)
+        if fallback:
+            intent = read("daily-dispatch.json")["intents"].get(day.isoformat(), {})
+            if "dispatched_at" in intent or existing is not None and "handled_at" in existing:
+                return {"deduplicated": key}
         quarantine_changed = False
         if existing is None:
             queue["requests"][key] = {"kind": kind, "revision": 1, "requested_at": now.isoformat()}
@@ -366,7 +376,7 @@ def main():
     subcommands = parser.add_subparsers(dest="command", required=True)
     subcommands.add_parser("run")
     trigger_parser = subcommands.add_parser("trigger")
-    trigger_parser.add_argument("kind", choices=["daily", "webhook", "pins", "reconcile"])
+    trigger_parser.add_argument("kind", choices=["daily", "daily-fallback", "webhook", "pins", "reconcile"])
     quarantine_parser = subcommands.add_parser("quarantine")
     quarantine_parser.add_argument("run_id", type=int)
     quarantine_parser.add_argument("--reason", required=True)

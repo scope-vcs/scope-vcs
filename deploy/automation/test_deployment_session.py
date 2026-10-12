@@ -36,6 +36,7 @@ class SessionTests(unittest.TestCase):
         Clock.current = NOW
         self.launch = Mock()
         self.poll = Mock(return_value={"active_releases": 0, "repair_owners": 0})
+        self.real_daily = session.scheduler.poll
         self.daily = Mock(return_value={"intents": {}, "last_audited_on": "2026-10-07"})
         self.pins = Mock(return_value=False)
         self.heartbeat = Mock()
@@ -392,10 +393,68 @@ class SessionTests(unittest.TestCase):
 
     def test_cutover_guard_rejects_triggers_before_ownership_changes(self):
         save_json(self.root / "scheduler-owner.json", {"owner": "systemd"})
-        with self.assertRaisesRegex(RuntimeError, "cutover"):
-            session.trigger("daily", now=NOW)
+        for kind in ("daily", "daily-fallback"):
+            with self.subTest(kind=kind), self.assertRaisesRegex(RuntimeError, "cutover"):
+                session.trigger(kind, now=NOW + timedelta(minutes=5))
         self.launch.assert_not_called()
         self.assertFalse((self.root / "triggers.json").exists())
+
+    def test_fallback_recovers_provider_or_launch_failure_without_a_second_dispatch(self):
+        for queued in (False, True):
+            with self.subTest(queued=queued):
+                for name in ("session.json", "triggers.json"):
+                    (self.root / name).unlink(missing_ok=True)
+                save_json(self.root / "daily-dispatch.json", {
+                    "activated_on": "2026-10-08", "last_audited_on": "2026-10-07", "intents": {}})
+                Clock.current = NOW + timedelta(minutes=5)
+                if queued:
+                    self.launch.side_effect = RuntimeError("systemd unavailable")
+                    with self.assertRaises(RuntimeError):
+                        session.trigger("daily", now=NOW)
+                    self.launch.side_effect = None
+                with patch.object(session.scheduler, "STATE_PATH", self.root / "daily-dispatch.json"), \
+                        patch.object(session.scheduler, "poll", self.real_daily), \
+                        patch.object(session.scheduler, "dispatch") as dispatch, \
+                        patch.object(session.scheduler, "find_run", return_value={"id": 321, "created_at": "2026-10-08T07:13:01Z"}), \
+                        patch.object(session.scheduler, "alert_missed", return_value="late-start-issue"):
+                    result = session.trigger("daily-fallback", now=Clock.current)
+                    self.assertEqual(result["queued"], "daily-2026-10-08")
+                    self.assertEqual(session.run()["status"], "idle")
+                    self.launch.reset_mock()
+                    before = session.read("triggers.json")
+                    self.assertEqual(session.trigger("daily-fallback", now=Clock.current), {"deduplicated": "daily-2026-10-08"})
+                    self.launch.assert_not_called()
+                    self.assertEqual(session.read("triggers.json"), before)
+                    session.trigger("daily", now=Clock.current)
+                    session.run()
+                dispatch.assert_called_once_with("2026-10-08")
+                intent = session.read("daily-dispatch.json")["intents"]["2026-10-08"]
+                self.assertEqual((intent["status"], intent["run_id"], intent["alert_url"]), ("started", 321, "late-start-issue"))
+
+    def test_fallback_preserves_ambiguous_dispatch_and_retired_requests(self):
+        for intent, request in (({"dispatched_at": NOW.isoformat(), "status": "uncertain"}, None),
+                                ({}, {"handled_at": NOW.isoformat(), "retirements": {"old": {"reason": "attempts_exhausted"}}})):
+            with self.subTest(intent=intent, request=request):
+                save_json(self.root / "daily-dispatch.json", {"intents": {"2026-10-08": intent}})
+                save_json(self.root / "triggers.json", {"requests": {"daily-2026-10-08": request} if request else {}})
+                before = {name: (self.root / name).read_bytes() for name in ("triggers.json", "daily-dispatch.json")}
+                self.assertEqual(session.trigger("daily-fallback", now=NOW + timedelta(minutes=5)), {"deduplicated": "daily-2026-10-08"})
+                self.assertEqual(before, {name: (self.root / name).read_bytes() for name in before})
+        self.launch.assert_not_called()
+
+    def test_fallback_only_admits_the_chicago_window_across_dst(self):
+        for day, utc_hour in (("2026-10-08", 7), ("2026-03-08", 8), ("2026-11-01", 8)):
+            for hour, minute, admitted in ((utc_hour, 12, False), (utc_hour, 13, True),
+                                          (utc_hour, 18, False), (15 - utc_hour, 13, False)):
+                with self.subTest(day=day, hour=hour, minute=minute):
+                    (self.root / "triggers.json").unlink(missing_ok=True)
+                    save_json(self.root / "daily-dispatch.json", {"intents": {}})
+                    self.launch.reset_mock()
+                    at = datetime.fromisoformat(day).replace(hour=hour, minute=minute, tzinfo=timezone.utc)
+                    result = session.trigger("daily-fallback", now=at)
+                    self.assertEqual("queued" in result, admitted)
+                    self.assertEqual(self.launch.call_count, int(admitted))
+                    self.assertEqual((self.root / "triggers.json").exists(), admitted)
 
     def test_early_manual_task_invocation_cannot_consume_the_future_daily_or_weekly_slot(self):
         self.assertEqual(session.trigger("daily", now=NOW - timedelta(minutes=1)), {"ignored": "not-due"})
