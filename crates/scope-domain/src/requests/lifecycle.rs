@@ -12,6 +12,7 @@ pub struct StartRequestFacts {
     pub request_id_exists: bool,
     pub request_name_exists: bool,
     pub public_working_request_count: usize,
+    pub stack_depth: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -24,6 +25,7 @@ pub struct StartRequestInput {
     pub author_role: RequestActorRole,
     pub author_view: ViewId,
     pub view: ViewId,
+    pub base: super::RequestBase,
     pub main_ancestor_oid: String,
     pub event_id: String,
     pub now_unix: u64,
@@ -54,6 +56,7 @@ pub struct WorkingRequestUploadMutation {
 
 #[derive(Clone, Debug)]
 pub struct RecordRequestRevisionInput {
+    pub new_base: Option<super::RequestBase>,
     pub request_id: String,
     pub actor_user_id: String,
     pub actor_can_edit: bool,
@@ -119,6 +122,13 @@ pub(super) fn open_request(
     views: &Views,
 ) -> Result<StartRequestMutation, DomainError> {
     validate_start_request_input(&input, views)?;
+    if matches!(input.base, super::RequestBase::Request { .. })
+        && (input.author_role == RequestActorRole::Public || &input.view != views.full())
+    {
+        return Err(DomainError::forbidden(
+            "stacks require a full-view maintainer",
+        ));
+    }
     if facts.request_id_exists {
         return Err(DomainError::conflict("request already exists"));
     }
@@ -140,12 +150,16 @@ pub(super) fn open_request(
         author_user_id: Some(input.author_user_id),
         author_role: input.author_role,
         view: input.view,
-        base: super::RequestBase::Main {
-            review_base_oid: input.main_ancestor_oid.clone(),
+        head_oid: input.base.review_base_oid().to_string(),
+        stack_status: if matches!(input.base, super::RequestBase::Main { .. }) {
+            super::RequestStackStatus::Main
+        } else {
+            super::RequestStackStatus::WaitingForParent
         },
+        stack_depth: facts.stack_depth,
+        base: input.base,
         base_version: 1,
         main_ancestor_oid: input.main_ancestor_oid.clone(),
-        head_oid: input.main_ancestor_oid,
         git_snapshot: None,
         title,
         description_markdown: String::new(),
@@ -229,8 +243,17 @@ pub fn record_request_revision(
     let old_head_oid = request.head_oid.clone();
     let main_ancestor_oid =
         request_main_ancestor_after_revision(&request, &input.git_facts).to_string();
-    let base = super::RequestBase::Main {
-        review_base_oid: main_ancestor_oid.clone(),
+    let base = match input.new_base {
+        Some(base) => {
+            super::validate_request_repin(&request.base, &base)?;
+            base
+        }
+        None => match &request.base {
+            super::RequestBase::Main { .. } => super::RequestBase::Main {
+                review_base_oid: main_ancestor_oid.clone(),
+            },
+            base => base.clone(),
+        },
     };
     if base != request.base {
         request.base_version = request
@@ -238,6 +261,11 @@ pub fn record_request_revision(
             .checked_add(1)
             .ok_or_else(|| DomainError::conflict("request base version overflow"))?;
         request.base = base;
+        request.stack_status = if matches!(request.base, super::RequestBase::Main { .. }) {
+            super::RequestStackStatus::Main
+        } else {
+            super::RequestStackStatus::WaitingForParent
+        };
     }
     request.main_ancestor_oid = main_ancestor_oid;
     request.head_oid = input.new_head_oid.clone();

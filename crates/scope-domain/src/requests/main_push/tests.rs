@@ -288,6 +288,9 @@ fn people_cannot_choose_a_main_push_request_name() {
             author_role: RequestActorRole::Member,
             author_view: agent(),
             view: agent(),
+            base: crate::requests::RequestBase::Main {
+                review_base_oid: BASE.to_string(),
+            },
             main_ancestor_oid: BASE.into(),
             event_id: "event".into(),
             now_unix: 40,

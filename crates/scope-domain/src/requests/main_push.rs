@@ -197,6 +197,7 @@ pub fn start_main_push_request(
     }
     let started = start_main_push_draft(
         StartRequestFacts {
+            stack_depth: 0,
             request_id_exists: facts.request_id_exists,
             request_name_exists: facts.request_with_name.is_some(),
             public_working_request_count: facts.public_working_request_count,
@@ -210,6 +211,9 @@ pub fn start_main_push_request(
             author_role: request_actor_role(access.clone()),
             author_view: access.view.clone(),
             view,
+            base: crate::requests::RequestBase::Main {
+                review_base_oid: input.main_ancestor_oid.clone(),
+            },
             main_ancestor_oid: input.main_ancestor_oid,
             event_id: input.started_event_id,
             now_unix: input.now_unix,
@@ -221,6 +225,7 @@ pub fn start_main_push_request(
         started.request,
         false,
         RecordRequestRevisionInput {
+            new_base: None,
             request_id: input.id.clone(),
             actor_user_id: input.pusher_user_id.clone(),
             actor_can_edit: true,

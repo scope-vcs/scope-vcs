@@ -1,5 +1,7 @@
 use crate::error::DomainError;
 
+mod stack;
+pub use stack::*;
 mod base;
 pub use base::RequestBase;
 pub mod comparison;

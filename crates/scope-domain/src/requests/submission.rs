@@ -87,6 +87,9 @@ pub fn merge_request(
     if request.state() != RequestState::Open {
         return Err(DomainError::conflict("only open requests can be merged"));
     }
+    if let Some(reason) = request.stack_status.blocking_reason() {
+        return Err(DomainError::conflict(reason));
+    }
     if input.merged_head_oid != request.head_oid {
         return Err(DomainError::conflict(
             "request branch changed before merge completed",

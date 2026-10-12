@@ -23,6 +23,11 @@ pub enum RequestMergeabilityStatus {
     ChecksPending,
     ChecksFailed,
     ChecksConfigurationError,
+    WaitingForParent,
+    ParentRewritten,
+    ParentClosed,
+    AncestorBlocked,
+    IntegrationConflict,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,6 +123,7 @@ pub struct RequestMergeSubject<'a> {
     pub view: &'a ViewId,
     pub state: RequestState,
     pub has_git_snapshot: bool,
+    pub stack_status: super::RequestStackStatus,
 }
 
 impl<'a> From<&'a Request> for RequestMergeSubject<'a> {
@@ -127,6 +133,7 @@ impl<'a> From<&'a Request> for RequestMergeSubject<'a> {
             view: &request.view,
             state: request.state(),
             has_git_snapshot: request.git_snapshot.is_some(),
+            stack_status: request.stack_status,
         }
     }
 }
@@ -166,6 +173,26 @@ pub(super) fn evaluate_request_merge(
         RequestState::Open if !subject.has_git_snapshot => (
             RequestMergeabilityStatus::MissingRequestBranch,
             Some("request branch has not been pushed"),
+        ),
+        RequestState::Open if subject.stack_status != super::RequestStackStatus::Main => (
+            match subject.stack_status {
+                super::RequestStackStatus::WaitingForParent
+                | super::RequestStackStatus::ParentExtended => {
+                    RequestMergeabilityStatus::WaitingForParent
+                }
+                super::RequestStackStatus::ParentRewritten => {
+                    RequestMergeabilityStatus::ParentRewritten
+                }
+                super::RequestStackStatus::ParentClosed => RequestMergeabilityStatus::ParentClosed,
+                super::RequestStackStatus::AncestorBlocked => {
+                    RequestMergeabilityStatus::AncestorBlocked
+                }
+                super::RequestStackStatus::IntegrationConflict => {
+                    RequestMergeabilityStatus::IntegrationConflict
+                }
+                super::RequestStackStatus::Main => unreachable!(),
+            },
+            subject.stack_status.blocking_reason(),
         ),
         RequestState::Open => match checks {
             RequestChecksOutcome::Clear => (RequestMergeabilityStatus::Ready, None),

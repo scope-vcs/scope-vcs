@@ -1,0 +1,261 @@
+use super::{
+    Request, RequestBase, RequestEvent, RequestEventKind, RequestEventPayload, RequestRevision,
+    RequestState, advance_request_activity,
+};
+use crate::{error::DomainError, views::ViewId};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
+
+pub const REQUEST_STACK_MAX_DEPTH: u32 = 32;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestStackStatus {
+    Main,
+    WaitingForParent,
+    ParentExtended,
+    ParentRewritten,
+    ParentClosed,
+    AncestorBlocked,
+    IntegrationConflict,
+}
+
+impl RequestStackStatus {
+    pub const fn blocking_reason(self) -> Option<&'static str> {
+        match self {
+            Self::Main => None,
+            Self::WaitingForParent | Self::ParentExtended => Some("parent request must land first"),
+            Self::ParentRewritten => Some("parent no longer contains the pinned revision"),
+            Self::ParentClosed => Some("parent request is closed"),
+            Self::AncestorBlocked => Some("an ancestor request is blocked"),
+            Self::IntegrationConflict => Some("request integration conflicts with main"),
+        }
+    }
+}
+
+pub fn validate_request_stack_base(
+    child_id: &str,
+    repo_id: &str,
+    view: &ViewId,
+    base: &RequestBase,
+    ancestors: &[Request],
+    parent_current_revision: Option<&RequestRevision>,
+) -> Result<u32, DomainError> {
+    let RequestBase::Request {
+        request_id,
+        revision_id,
+        head_oid,
+    } = base
+    else {
+        if !ancestors.is_empty() {
+            return Err(DomainError::conflict("main base cannot have ancestors"));
+        }
+        return Ok(0);
+    };
+    if !view.is_private() {
+        return Err(DomainError::forbidden(
+            "stacks require the private full view",
+        ));
+    }
+    if ancestors.is_empty() || ancestors.len() > REQUEST_STACK_MAX_DEPTH as usize {
+        return Err(DomainError::conflict(
+            "request stack requires a complete ancestry of at most 32 parents",
+        ));
+    }
+    let parent = &ancestors[0];
+    let revision = parent_current_revision
+        .ok_or_else(|| DomainError::conflict("parent requires a saved current revision"))?;
+    if parent.state() != RequestState::Open
+        || parent.git_snapshot.is_none()
+        || parent.id != *request_id
+        || revision.id != *revision_id
+        || revision.request_id != parent.id
+        || revision.new_head_oid != *head_oid
+        || parent.head_oid != *head_oid
+    {
+        return Err(DomainError::conflict(
+            "parent pin must name an open parent's current saved revision",
+        ));
+    }
+    let mut seen = BTreeSet::from([child_id]);
+    for (index, ancestor) in ancestors.iter().enumerate() {
+        if ancestor.repo_id != repo_id
+            || &ancestor.view != view
+            || !seen.insert(ancestor.id.as_str())
+        {
+            return Err(DomainError::conflict(
+                "request stack must be acyclic within the same repository and view",
+            ));
+        }
+        match (&ancestor.base, ancestors.get(index + 1)) {
+            (RequestBase::Request { request_id, .. }, Some(next)) if request_id == &next.id => {}
+            (RequestBase::Main { .. }, None) => {}
+            _ => {
+                return Err(DomainError::conflict(
+                    "request stack ancestry is incomplete",
+                ));
+            }
+        }
+    }
+    Ok(ancestors.len() as u32)
+}
+
+pub fn validate_request_repin(old: &RequestBase, new: &RequestBase) -> Result<(), DomainError> {
+    match (old, new) {
+        (
+            RequestBase::Request {
+                request_id: old_id, ..
+            },
+            RequestBase::Request {
+                request_id: new_id, ..
+            },
+        ) if old_id == new_id => Ok(()),
+        _ if old == new => Ok(()),
+        _ => Err(DomainError::conflict(
+            "request publication may only repin its existing parent",
+        )),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RequestParentGitFacts {
+    pub parent_contains_pin: bool,
+    pub ancestor_blocked: bool,
+    pub integration_conflict: bool,
+}
+
+pub fn classify_request_stack(
+    base: &RequestBase,
+    parent: Option<&Request>,
+    facts: RequestParentGitFacts,
+) -> Result<RequestStackStatus, DomainError> {
+    let RequestBase::Request {
+        request_id,
+        head_oid,
+        ..
+    } = base
+    else {
+        return Ok(RequestStackStatus::Main);
+    };
+    let parent = parent
+        .filter(|parent| parent.id == *request_id)
+        .ok_or_else(|| DomainError::conflict("request parent is unavailable"))?;
+    if parent.state() == RequestState::Closed {
+        return Ok(RequestStackStatus::ParentClosed);
+    }
+    if !facts.parent_contains_pin {
+        return Ok(RequestStackStatus::ParentRewritten);
+    }
+    if facts.ancestor_blocked {
+        return Ok(RequestStackStatus::AncestorBlocked);
+    }
+    if facts.integration_conflict {
+        return Ok(RequestStackStatus::IntegrationConflict);
+    }
+    Ok(if parent.head_oid == *head_oid {
+        RequestStackStatus::WaitingForParent
+    } else {
+        RequestStackStatus::ParentExtended
+    })
+}
+
+#[derive(Clone, Debug)]
+pub struct RetargetRequestAfterParentMergeInput {
+    pub event_id: String,
+    pub now_unix: u64,
+    pub parent_contains_pin: bool,
+    pub contained_main_oid: Option<String>,
+    pub contained_main_descends_from_ancestor: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequestRetargetEffects {
+    pub rebind_check_context: bool,
+    pub preserve_auto_merge_intent: bool,
+    pub refresh_queue: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequestRetargetMutation {
+    pub request: Request,
+    pub event: RequestEvent,
+    pub effects: RequestRetargetEffects,
+}
+
+pub fn retarget_request_after_parent_merge(
+    mut child: Request,
+    parent: &Request,
+    input: RetargetRequestAfterParentMergeInput,
+) -> Result<RequestRetargetMutation, DomainError> {
+    let RequestBase::Request {
+        request_id,
+        head_oid,
+        ..
+    } = &child.base
+    else {
+        return Err(DomainError::conflict("request has no parent pin"));
+    };
+    if child.is_terminal()
+        || parent.id != *request_id
+        || parent.repo_id != child.repo_id
+        || parent.view != child.view
+        || parent.state() != RequestState::Merged
+        || !input.parent_contains_pin
+    {
+        return Err(DomainError::conflict(
+            "only a containing parent merge can retarget an active child",
+        ));
+    }
+    super::validate_required("retarget event id", &input.event_id)?;
+    let landed_head_oid = parent
+        .merged_head_oid
+        .clone()
+        .ok_or_else(|| DomainError::conflict("parent merge head is missing"))?;
+    let main_oid = parent
+        .merged_main_oid
+        .clone()
+        .ok_or_else(|| DomainError::conflict("parent merge main is missing"))?;
+    let old_base = child.base.clone();
+    child.base = RequestBase::Main {
+        review_base_oid: head_oid.clone(),
+    };
+    child.base_version = child
+        .base_version
+        .checked_add(1)
+        .ok_or_else(|| DomainError::conflict("request base version overflow"))?;
+    child.stack_status = RequestStackStatus::Main;
+    child.stack_depth = 0;
+    if input.contained_main_descends_from_ancestor {
+        if let Some(oid) = input.contained_main_oid {
+            child.main_ancestor_oid = oid;
+        }
+    }
+    child.updated_at_unix = input.now_unix;
+    let position = advance_request_activity(&mut child)?;
+    child.validate_facts()?;
+    let event = RequestEvent {
+        id: input.event_id,
+        request_id: child.id.clone(),
+        actor_user_id: parent.merged_by_user_id.clone(),
+        kind: RequestEventKind::BaseRetargeted,
+        position,
+        payload: RequestEventPayload::BaseRetargeted {
+            old_base,
+            landed_head_oid,
+            main_oid,
+        },
+        created_at_unix: input.now_unix,
+    };
+    Ok(RequestRetargetMutation {
+        request: child,
+        event,
+        effects: RequestRetargetEffects {
+            rebind_check_context: true,
+            preserve_auto_merge_intent: true,
+            refresh_queue: true,
+        },
+    })
+}
+
+#[cfg(test)]
+mod tests;
