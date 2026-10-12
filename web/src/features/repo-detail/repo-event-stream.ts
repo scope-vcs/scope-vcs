@@ -64,13 +64,16 @@ export async function runRepoEventStream({
 }) {
   let reconnectAttempt = 0
   let consecutiveTransportFailures = 0
+  let delivered = false
   const deliver = (event: RepoChangeEvent) => {
+    delivered = true
     reconnectAttempt = 0
     consecutiveTransportFailures = 0
     onEvent(event)
   }
 
   while (!signal.aborted) {
+    delivered = false
     let outcome: RepoStreamEnd
     try {
       outcome = await connect(deliver, signal)
@@ -78,6 +81,7 @@ export async function runRepoEventStream({
       outcome = { type: 'transport' }
     }
     if (signal.aborted) return
+    if (delivered && outcome.type === 'stream-error' && outcome.error.code === 'unauthorized') continue
 
     onInterrupted()
     if (outcome.type === 'stream-error' && !outcome.error.retryable && outcome.error.code !== 'unauthorized') return
