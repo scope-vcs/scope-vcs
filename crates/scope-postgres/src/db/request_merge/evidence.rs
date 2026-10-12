@@ -52,12 +52,32 @@ impl RequestStore {
     }
 }
 
+pub(super) struct LockedMergeChecks {
+    pub(super) evaluation: Option<RequestCheckEvaluation>,
+    pub(super) results: RequestCheckResults,
+    valid_until_unix: Option<u64>,
+}
+
+impl LockedMergeChecks {
+    pub(super) fn ensure_fresh(&self, now_unix: u64) -> Result<(), PostgresError> {
+        if self
+            .valid_until_unix
+            .is_some_and(|expiry| expiry <= now_unix)
+        {
+            return Err(PostgresError::conflict(
+                "request CI confirmation expired; retry merge",
+            ));
+        }
+        Ok(())
+    }
+}
+
 pub(super) async fn locked_merge_checks(
     tx: &DatabaseTransaction,
     request: &Request,
     expected: &ExpectedRequestMergeEvidence,
     now_unix: u64,
-) -> Result<(Option<RequestCheckEvaluation>, RequestCheckResults), PostgresError> {
+) -> Result<LockedMergeChecks, PostgresError> {
     let started = std::time::Instant::now();
     let revision = latest_revision_for_request(tx, &request.id)
         .await?
@@ -88,7 +108,7 @@ pub(super) async fn locked_merge_checks(
     if actual != expected.evaluation {
         return Err(stale_evidence());
     }
-    if let Some(evaluation) = &evaluation
+    let valid_until_unix = if let Some(evaluation) = &evaluation
         && evaluation.asks_github()
     {
         let destination = evaluation.github_repository_id.ok_or_else(stale_evidence)?;
@@ -101,19 +121,27 @@ pub(super) async fn locked_merge_checks(
         )
         .await?
         .ok_or_else(stale_evidence)?;
-        if read.started_reads != read.applied_read
-            || read.started_at.is_none_or(|at| {
-                at.saturating_add(scope_domain::requests::GITHUB_CHECK_MERGE_FRESHNESS_SECS)
-                    <= now_unix.saturating_add(started.elapsed().as_secs())
-            })
-        {
+        if read.started_reads != read.applied_read {
             return Err(PostgresError::conflict(
-                "request CI confirmation changed or expired; retry merge",
+                "request CI confirmation changed; retry merge",
             ));
         }
-    }
+        Some(
+            read.started_at
+                .ok_or_else(stale_evidence)?
+                .saturating_add(scope_domain::requests::GITHUB_CHECK_MERGE_FRESHNESS_SECS),
+        )
+    } else {
+        None
+    };
     let results = request_check_results(tx, &request.repo_id, evaluation.as_ref()).await?;
-    Ok((evaluation, results))
+    let checks = LockedMergeChecks {
+        evaluation,
+        results,
+        valid_until_unix,
+    };
+    checks.ensure_fresh(now_unix.saturating_add(started.elapsed().as_secs()))?;
+    Ok(checks)
 }
 
 async fn expected_evaluation(
