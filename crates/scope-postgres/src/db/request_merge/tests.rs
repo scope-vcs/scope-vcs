@@ -279,6 +279,7 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
         .requests()
         .record_request_revision(
             RecordRequestRevisionInput {
+                new_base: None,
                 request_id: "req_1".into(),
                 actor_user_id: "user_public".into(),
                 actor_can_edit: true,
@@ -478,6 +479,7 @@ async fn merge_command(
     prepared: MergePreparation,
 ) -> MergeRequestContentCommand {
     MergeRequestContentCommand {
+        stack_children: Vec::new(),
         owner: "owner".to_string(),
         name: "repo".to_string(),
         request_id: "req_1".to_string(),

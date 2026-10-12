@@ -44,6 +44,7 @@ impl RequestStore {
         generated_ids: &dyn GeneratedIdSource,
     ) -> Result<MergeRequestContentMutation, PostgresError> {
         let MergeRequestContentCommand {
+            stack_children,
             owner,
             name,
             request_id,
@@ -64,12 +65,12 @@ impl RequestStore {
         let repo_id = scope_domain::repository::repo_id(&owner, &name);
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
-        acquire_aggregate_lock(&tx, "request", &request_id).await?;
 
         let request = request_by_id(&tx, &request_id)
             .await?
             .filter(|request| request.repo_id == repo_id)
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
+        super::request_stack::lock_graph(&tx, &request).await?;
         let locked_auto_merge = if let Some(expected) = &expected_auto_merge {
             let row = entities::request_auto_merge_intent::Entity::find_by_id(&expected.intent_id)
                 .lock_exclusive()
@@ -282,6 +283,14 @@ impl RequestStore {
         } else {
             request_mutation
         };
+        super::request_stack::retarget_children(
+            &tx,
+            &request_mutation.request,
+            &stack_children,
+            now_unix,
+            generated_ids,
+        )
+        .await?;
         checks.ensure_fresh(now_unix.saturating_add(started.elapsed().as_secs()))?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(MergeRequestContentMutation {
@@ -298,6 +307,7 @@ mod tests;
 
 #[derive(Clone, Debug)]
 pub struct LandedRequestCandidate {
+    pub stack_children: Vec<super::RequestStackChildFacts>,
     pub request_id: String,
     pub head_oid: String,
 }
@@ -332,9 +342,17 @@ pub(super) async fn complete_landed_requests(
     {
         return Ok(0);
     }
-    let mut completed = 0;
+    let mut ordered = Vec::with_capacity(completion.candidates.len());
     for candidate in completion.candidates {
-        acquire_aggregate_lock(tx, "request", &candidate.request_id).await?;
+        let depth = request_by_id(tx, &candidate.request_id)
+            .await?
+            .map(|request| request.stack_depth)
+            .unwrap_or_default();
+        ordered.push((depth, candidate.request_id.clone(), candidate));
+    }
+    ordered.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
+    let mut completed = 0;
+    for (_, _, candidate) in ordered {
         let Some(request) = request_by_id(tx, &candidate.request_id)
             .await?
             .filter(|request| {
@@ -345,6 +363,7 @@ pub(super) async fn complete_landed_requests(
         else {
             continue;
         };
+        super::request_stack::lock_graph(tx, &request).await?;
         let active_auto_merge = lock_active_intent_for_request(tx, &request.id).await?;
         let mutation = merge_request(
             &request,
@@ -369,6 +388,14 @@ pub(super) async fn complete_landed_requests(
             )?;
             persist_existing_auto_merge_mutation(tx, stored.model, &fulfilled).await?;
         }
+        super::request_stack::retarget_children(
+            tx,
+            &mutation.request,
+            &candidate.stack_children,
+            now_unix,
+            generated_ids,
+        )
+        .await?;
         completed += 1;
     }
     Ok(completed)

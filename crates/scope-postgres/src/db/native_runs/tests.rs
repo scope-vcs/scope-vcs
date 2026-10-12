@@ -231,6 +231,7 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
                 author_role: RequestActorRole::Public,
                 author_view: ViewId::public(),
                 view: ViewId::public(),
+                base: scope_domain::requests::RequestBase::Main { review_base_oid: head_oid.clone() },
                 main_ancestor_oid: head_oid.clone(),
                 event_id: format!("{request_id}-event"),
                 now_unix: 2,
@@ -379,6 +380,7 @@ async fn record_check_revision(
         .requests()
         .record_request_revision(
             RecordRequestRevisionInput {
+                new_base: None,
                 request_id: request_id.into(),
                 actor_user_id: "user_public".into(),
                 actor_can_edit: true,

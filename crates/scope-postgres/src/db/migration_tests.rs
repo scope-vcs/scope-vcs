@@ -32,6 +32,7 @@ mod repository_workflow_catalogs;
 mod request_review_bases;
 mod request_revision_rewrites;
 mod request_run_source_base;
+mod request_stacks;
 mod request_views;
 mod run_attempt_active_indexes;
 mod run_execution_invariants;
@@ -83,6 +84,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0083_request_workflow_changes",
     "m0084_request_review_bases",
     "m0085_request_check_identity",
+    "m0086_private_request_stacks",
 ];
 
 pub(super) async fn isolated_database() -> (

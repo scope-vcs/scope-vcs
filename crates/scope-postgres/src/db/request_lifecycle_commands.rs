@@ -56,6 +56,7 @@ pub struct ExpectedGitHubCheckRead {
 
 #[derive(Clone, Debug)]
 pub struct MergeRequestContentCommand {
+    pub stack_children: Vec<super::RequestStackChildFacts>,
     pub owner: String,
     pub name: String,
     pub request_id: String,

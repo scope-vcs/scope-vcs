@@ -62,6 +62,15 @@ struct QueueModel {
     author_role: String,
     audience: String,
     head_oid: String,
+    base_kind: String,
+    review_base_oid: String,
+    parent_request_id: Option<String>,
+    parent_revision_id: Option<String>,
+    parent_head_oid: Option<String>,
+    base_version: i64,
+    main_ancestor_oid: String,
+    stack_status: String,
+    stack_depth: i32,
     submitted_at_unix: Option<i64>,
     closed_at_unix: Option<i64>,
     merged_at_unix: Option<i64>,
@@ -193,6 +202,18 @@ impl QueueModel {
                 view: scope_domain::views::ViewId::parse(&self.audience)
                     .map_err(PostgresError::internal)?,
                 head_oid: self.head_oid,
+                base: entities::request::BaseColumns {
+                    kind: self.base_kind,
+                    review_base_oid: self.review_base_oid,
+                    parent_request_id: self.parent_request_id,
+                    parent_revision_id: self.parent_revision_id,
+                    parent_head_oid: self.parent_head_oid,
+                }
+                .try_into_domain()?,
+                base_version: i64_to_u64(self.base_version, "request base version")?,
+                main_ancestor_oid: self.main_ancestor_oid,
+                stack_status: entities::decode_enum(self.stack_status)?,
+                stack_depth: u32::try_from(self.stack_depth).map_err(PostgresError::internal)?,
                 state,
                 submitted_at_unix: optional_u64(self.submitted_at_unix, "request submission time")?,
                 closed_at_unix: optional_u64(self.closed_at_unix, "request close time")?,
@@ -447,7 +468,7 @@ async fn next_snooze_expiry<C: ConnectionTrait>(
 const QUEUE_SQL: &str = r#"
 WITH facts AS (
     SELECT r.id, r.name, r.title, r.author_user_id, r.author_role, r.audience,
-        r.head_oid, r.submitted_at_unix, r.closed_at_unix, r.merged_at_unix,
+        r.head_oid, r.base_kind, r.review_base_oid, r.parent_request_id, r.parent_revision_id, r.parent_head_oid, r.base_version, r.main_ancestor_oid, r.stack_status, r.stack_depth, r.submitted_at_unix, r.closed_at_unix, r.merged_at_unix,
         r.updated_at_unix, r.activity_version, r.git_snapshot IS NOT NULL AS has_git_snapshot,
         GREATEST(r.updated_at_unix,
             CASE WHEN $3 THEN COALESCE(a.updated_at_unix, 0) ELSE 0 END,
@@ -475,7 +496,7 @@ WITH facts AS (
     SELECT facts.*, {queue_placement} AS queue_section
     FROM facts
 )
-SELECT id, name, title, author_user_id, author_role, audience, head_oid,
+SELECT id, name, title, author_user_id, author_role, audience, head_oid, base_kind, review_base_oid, parent_request_id, parent_revision_id, parent_head_oid, base_version, main_ancestor_oid, stack_status, stack_depth,
     submitted_at_unix, closed_at_unix, merged_at_unix, updated_at_unix,
     activity_version, attention_at_unix, has_git_snapshot, viewer_is_invitee, attention_state,
     attention_reason, through_activity_version, snoozed_until_unix,

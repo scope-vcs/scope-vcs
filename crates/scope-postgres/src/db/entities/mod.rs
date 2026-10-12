@@ -105,7 +105,7 @@ pub use request_auto_merge::request_auto_merge_intent;
 pub use requests::{
     request, request_attention_state, request_check_evaluation, request_claim, request_discussion,
     request_discussion_read_state, request_discussion_reply, request_event, request_invitee,
-    request_rating, request_revision,
+    request_rating, request_revision, revision_context_receipt,
 };
 pub use runs::{
     push_trigger_evaluation, run, run_attempt, run_attempt_cache, run_attempt_cache_setup,

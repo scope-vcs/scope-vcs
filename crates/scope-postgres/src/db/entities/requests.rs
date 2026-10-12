@@ -4,127 +4,12 @@ use scope_domain::requests::{
     RequestAttentionState, RequestBase, RequestCheckEvaluation, RequestClaim, RequestDiscussion,
     RequestDiscussionAnchor, RequestDiscussionReadState, RequestDiscussionReply,
     RequestDiscussionStatus, RequestEvent, RequestEventKind, RequestEventPayload, RequestInvitee,
-    RequestRating, RequestRevision,
+    RequestRating, RequestRevision, RequestStackStatus,
 };
 use scope_domain::views::ViewId;
 use scope_domain::{content::SourceBlob, policy::ScopePath};
 
-pub mod request {
-    use super::*;
-
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "scope_requests")]
-    pub struct Model {
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub id: String,
-        pub repo_id: String,
-        pub name: String,
-        pub author_user_id: Option<String>,
-        pub author_role: String,
-        pub audience: String,
-        pub base_kind: String,
-        pub review_base_oid: String,
-        pub base_version: i64,
-        pub current_check_evaluation_id: Option<String>,
-        pub main_ancestor_oid: String,
-        pub head_oid: String,
-        pub git_snapshot: Option<Json>,
-        pub title: String,
-        pub description_markdown: String,
-        pub activity_version: i64,
-        pub submitted_at_unix: Option<i64>,
-        pub closed_at_unix: Option<i64>,
-        pub closed_by_user_id: Option<String>,
-        pub merged_at_unix: Option<i64>,
-        pub merged_by_user_id: Option<String>,
-        pub merged_head_oid: Option<String>,
-        pub merged_main_oid: Option<String>,
-        pub created_at_unix: i64,
-        pub updated_at_unix: i64,
-    }
-
-    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
-
-    impl ActiveModelBehavior for ActiveModel {}
-
-    impl Model {
-        pub fn from_domain(request: &Request) -> Result<Self, PostgresError> {
-            request.validate_facts()?;
-            Ok(Self {
-                id: request.id.clone(),
-                repo_id: request.repo_id.clone(),
-                name: request.name.clone(),
-                author_user_id: request.author_user_id.clone(),
-                author_role: encode_enum(request.author_role)?,
-                audience: request.view.as_str().to_string(),
-                base_kind: "Main".to_string(),
-                review_base_oid: request.base.review_base_oid().to_string(),
-                base_version: u64_to_i64(request.base_version, "request base version")?,
-                current_check_evaluation_id: None,
-                main_ancestor_oid: request.main_ancestor_oid.clone(),
-                head_oid: request.head_oid.clone(),
-                git_snapshot: request.git_snapshot.as_ref().map(encode_json).transpose()?,
-                title: request.title.clone(),
-                description_markdown: request.description_markdown.clone(),
-                activity_version: u64_to_i64(request.activity_version, "request activity version")?,
-                submitted_at_unix: optional_u64_to_i64(
-                    request.submitted_at_unix,
-                    "request submission time",
-                )?,
-                closed_at_unix: optional_u64_to_i64(request.closed_at_unix, "request close time")?,
-                closed_by_user_id: request.closed_by_user_id.clone(),
-                merged_at_unix: optional_u64_to_i64(request.merged_at_unix, "request merge time")?,
-                merged_by_user_id: request.merged_by_user_id.clone(),
-                merged_head_oid: request.merged_head_oid.clone(),
-                merged_main_oid: request.merged_main_oid.clone(),
-                created_at_unix: u64_to_i64(request.created_at_unix, "request creation time")?,
-                updated_at_unix: u64_to_i64(request.updated_at_unix, "request update time")?,
-            })
-        }
-
-        pub fn try_into_domain(self) -> Result<Request, PostgresError> {
-            if self.base_kind != "Main" {
-                return Err(PostgresError::internal_message("invalid request base kind"));
-            }
-            let request = Request {
-                id: self.id,
-                repo_id: self.repo_id,
-                name: self.name,
-                author_user_id: self.author_user_id,
-                author_role: decode_enum::<RequestActorRole>(self.author_role)?,
-                view: ViewId::parse(&self.audience).map_err(PostgresError::internal)?,
-                base: RequestBase::Main {
-                    review_base_oid: self.review_base_oid,
-                },
-                base_version: i64_to_u64(self.base_version, "request base version")?,
-                main_ancestor_oid: self.main_ancestor_oid,
-                head_oid: self.head_oid,
-                git_snapshot: self
-                    .git_snapshot
-                    .map(decode_json::<SourceBlob>)
-                    .transpose()?,
-                title: self.title,
-                description_markdown: self.description_markdown,
-                activity_version: i64_to_u64(self.activity_version, "request activity version")?,
-                submitted_at_unix: optional_i64_to_u64(
-                    self.submitted_at_unix,
-                    "request submission time",
-                )?,
-                closed_at_unix: optional_i64_to_u64(self.closed_at_unix, "request close time")?,
-                closed_by_user_id: self.closed_by_user_id,
-                merged_at_unix: optional_i64_to_u64(self.merged_at_unix, "request merge time")?,
-                merged_by_user_id: self.merged_by_user_id,
-                merged_head_oid: self.merged_head_oid,
-                merged_main_oid: self.merged_main_oid,
-                created_at_unix: i64_to_u64(self.created_at_unix, "request creation time")?,
-                updated_at_unix: i64_to_u64(self.updated_at_unix, "request update time")?,
-            };
-            request.validate_facts()?;
-            Ok(request)
-        }
-    }
-}
+pub mod request;
 
 pub mod request_claim {
     use super::*;
@@ -321,80 +206,7 @@ pub mod request_invitee {
     }
 }
 
-pub mod request_revision {
-    use super::*;
-
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "scope_request_revisions")]
-    pub struct Model {
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub id: String,
-        pub request_id: String,
-        pub position: i64,
-        pub actor_user_id: Option<String>,
-        pub old_head_oid: String,
-        pub new_head_oid: String,
-        pub base_kind: String,
-        pub review_base_oid: String,
-        pub main_ancestor_oid: String,
-        pub rewrote_history: bool,
-        pub git_snapshot: Json,
-        pub created_at_unix: i64,
-    }
-
-    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
-
-    impl ActiveModelBehavior for ActiveModel {}
-
-    impl Model {
-        pub fn from_domain(value: &RequestRevision) -> Result<Self, PostgresError> {
-            Ok(Self {
-                id: value.id.clone(),
-                request_id: value.request_id.clone(),
-                position: u64_to_i64(value.position, "request revision position")?,
-                actor_user_id: value.actor_user_id.clone(),
-                old_head_oid: value.old_head_oid.clone(),
-                new_head_oid: value.new_head_oid.clone(),
-                base_kind: "Main".to_string(),
-                review_base_oid: value.base.review_base_oid().to_string(),
-                main_ancestor_oid: value.main_ancestor_oid.clone(),
-                rewrote_history: value.rewrote_history,
-                git_snapshot: encode_json(&value.git_snapshot)?,
-                created_at_unix: u64_to_i64(
-                    value.created_at_unix,
-                    "request revision creation time",
-                )?,
-            })
-        }
-
-        pub fn try_into_domain(self) -> Result<RequestRevision, PostgresError> {
-            if self.base_kind != "Main" {
-                return Err(PostgresError::internal_message(
-                    "invalid revision base kind",
-                ));
-            }
-            Ok(RequestRevision {
-                id: self.id,
-                request_id: self.request_id,
-                position: i64_to_u64(self.position, "request revision position")?,
-                actor_user_id: self.actor_user_id,
-                old_head_oid: self.old_head_oid,
-                new_head_oid: self.new_head_oid,
-                base: RequestBase::Main {
-                    review_base_oid: self.review_base_oid,
-                },
-                main_ancestor_oid: self.main_ancestor_oid,
-                rewrote_history: self.rewrote_history,
-                git_snapshot: decode_json::<SourceBlob>(self.git_snapshot)?,
-                created_at_unix: i64_to_u64(
-                    self.created_at_unix,
-                    "request revision creation time",
-                )?,
-            })
-        }
-    }
-}
+pub mod request_revision;
 
 pub mod request_event {
     use super::*;
@@ -651,3 +463,6 @@ pub mod request_discussion_read_state {
 }
 
 pub mod request_check_evaluation;
+
+pub(crate) mod base;
+pub mod revision_context_receipt;

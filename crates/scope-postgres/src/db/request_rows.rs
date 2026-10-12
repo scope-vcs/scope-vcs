@@ -10,8 +10,8 @@ use {
     crate::error::PostgresError,
     scope_domain::repository::access::RepositoryAccess,
     scope_domain::requests::{
-        REQUEST_LIST_MAX_PAGE_SIZE, Request, RequestActorRole, RequestEvent, RequestListPredicate,
-        RequestState, request_list_predicate,
+        REQUEST_LIST_MAX_PAGE_SIZE, Request, RequestActorRole, RequestBase, RequestEvent,
+        RequestListPredicate, RequestStackStatus, RequestState, request_list_predicate,
     },
     scope_domain::views::{ViewId, Views},
     std::collections::BTreeMap,
@@ -26,6 +26,11 @@ pub struct RequestListRow {
     pub author_role: RequestActorRole,
     pub view: ViewId,
     pub head_oid: String,
+    pub base: RequestBase,
+    pub base_version: u64,
+    pub main_ancestor_oid: String,
+    pub stack_status: RequestStackStatus,
+    pub stack_depth: u32,
     pub state: RequestState,
     pub submitted_at_unix: Option<u64>,
     pub closed_at_unix: Option<u64>,
@@ -54,6 +59,15 @@ pub(super) struct RequestListModel {
     author_role: String,
     audience: String,
     head_oid: String,
+    base_kind: String,
+    review_base_oid: String,
+    parent_request_id: Option<String>,
+    parent_revision_id: Option<String>,
+    parent_head_oid: Option<String>,
+    base_version: i64,
+    main_ancestor_oid: String,
+    stack_status: String,
+    stack_depth: i32,
     submitted_at_unix: Option<i64>,
     closed_at_unix: Option<i64>,
     merged_at_unix: Option<i64>,
@@ -84,6 +98,21 @@ impl RequestListModel {
             author_role: entities::decode_enum(self.author_role)?,
             view: ViewId::parse(&self.audience).map_err(PostgresError::internal)?,
             head_oid: self.head_oid,
+            base: entities::request::BaseColumns {
+                kind: self.base_kind,
+                review_base_oid: self.review_base_oid,
+                parent_request_id: self.parent_request_id,
+                parent_revision_id: self.parent_revision_id,
+                parent_head_oid: self.parent_head_oid,
+            }
+            .try_into_domain()?,
+            base_version: integer_columns::i64_to_u64(self.base_version, "request base version")?,
+            main_ancestor_oid: self.main_ancestor_oid,
+            stack_status: entities::decode_enum(self.stack_status)?,
+            stack_depth: self
+                .stack_depth
+                .try_into()
+                .map_err(PostgresError::internal)?,
             state: RequestState::from_timestamps(merged_at_unix, closed_at_unix, submitted_at_unix),
             submitted_at_unix,
             closed_at_unix,
@@ -201,6 +230,15 @@ pub(super) fn request_list_projection() -> sea_orm::Select<entities::request::En
         .column(entities::request::Column::AuthorRole)
         .column(entities::request::Column::Audience)
         .column(entities::request::Column::HeadOid)
+        .column(entities::request::Column::BaseKind)
+        .column(entities::request::Column::ReviewBaseOid)
+        .column(entities::request::Column::ParentRequestId)
+        .column(entities::request::Column::ParentRevisionId)
+        .column(entities::request::Column::ParentHeadOid)
+        .column(entities::request::Column::BaseVersion)
+        .column(entities::request::Column::MainAncestorOid)
+        .column(entities::request::Column::StackStatus)
+        .column(entities::request::Column::StackDepth)
         .column(entities::request::Column::SubmittedAtUnix)
         .column(entities::request::Column::ClosedAtUnix)
         .column(entities::request::Column::MergedAtUnix)
@@ -469,6 +507,26 @@ where
         .col_expr(
             entities::request::Column::ReviewBaseOid,
             Expr::value(row.review_base_oid),
+        )
+        .col_expr(
+            entities::request::Column::ParentRequestId,
+            Expr::value(row.parent_request_id),
+        )
+        .col_expr(
+            entities::request::Column::ParentRevisionId,
+            Expr::value(row.parent_revision_id),
+        )
+        .col_expr(
+            entities::request::Column::ParentHeadOid,
+            Expr::value(row.parent_head_oid),
+        )
+        .col_expr(
+            entities::request::Column::StackStatus,
+            Expr::value(row.stack_status),
+        )
+        .col_expr(
+            entities::request::Column::StackDepth,
+            Expr::value(row.stack_depth),
         )
         .col_expr(
             entities::request::Column::BaseVersion,
