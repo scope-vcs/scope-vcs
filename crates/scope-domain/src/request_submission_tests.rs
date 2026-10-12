@@ -64,6 +64,6 @@ fn only_an_open_request_with_its_own_commits_lands_with_main() {
     assert!(!lands_with_main(&pushed_draft(RequestActorRole::Member)));
 
     let mut empty = open;
-    empty.head_oid = empty.base_main_oid.clone();
+    empty.head_oid = empty.main_ancestor_oid.clone();
     assert!(!lands_with_main(&empty));
 }

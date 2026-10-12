@@ -27,7 +27,11 @@ fn terminal_request(merged: bool) -> Request {
         author_user_id: Some("author".to_string()),
         author_role: RequestActorRole::Public,
         view: ViewId::public(),
-        base_main_oid: "a".repeat(40),
+        base: crate::requests::RequestBase::Main {
+            review_base_oid: "a".repeat(40),
+        },
+        base_version: 1,
+        main_ancestor_oid: "a".repeat(40),
         head_oid: "b".repeat(40),
         git_snapshot: None,
         title: "Change".to_string(),

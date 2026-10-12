@@ -247,7 +247,7 @@ pub(super) fn ensure_request_paths_allowed(
     }
     let changed_paths = request_side_changed_file_paths(
         git_repo,
-        request.base_main_oid.as_str(),
+        request.main_ancestor_oid.as_str(),
         current_main_oid,
         request_head_oid,
     )?;

@@ -232,7 +232,7 @@ fn request_summary(
             "id":"req_one","name":"change","title":"Change",
             "description_markdown":"","author_user_id":"scope_usr_author",
             "author_role":"Member","view":view,
-            "base_main_oid":base_oid,"head_oid":head_oid,"state":"Draft",
+            "base":{"kind":"main","review_base_oid":base_oid},"base_version":1,"main_ancestor_oid":base_oid,"head_oid":head_oid,"state":"Draft",
             "activity_version":1,"submitted_at_unix":null,"closed_at_unix":null,
             "closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,
             "merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,

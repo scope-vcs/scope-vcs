@@ -209,6 +209,7 @@ wire_enum!(RequestEventKind => DomainRequestEventKind {
 });
 wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
     Ready,
+    RepositoryNotReady,
     Draft,
     Closed,
     Merged,

@@ -171,6 +171,47 @@ async fn request_check_deliveries_refresh_a_running_setup_test_of_the_same_commi
     let request_id = "req_setup_commit";
     super::super::requests::create_owner_request(&state, request_id, &main).await;
     let requests = state.metadata.requests();
+    let request = stored_request(&state, request_id).await;
+    let revision = requests
+        .record_request_revision(
+            scope_domain::requests::RecordRequestRevisionInput {
+                request_id: request.id.clone(),
+                actor_user_id: test_owner_id(),
+                actor_can_edit: true,
+                expected_old_head_oid: Some(request.head_oid.clone()),
+                new_head_oid: request.head_oid.clone(),
+                git_snapshot: request.git_snapshot.clone().unwrap(),
+                git_facts: scope_domain::requests::RequestRevisionGitFacts {
+                    contains_old_head: true,
+                    contained_main_oid: None,
+                    contained_main_descends_from_base: false,
+                },
+                event_id: "event_setup_commit_revision".into(),
+                body: None,
+                now_unix: unix_now(),
+            },
+            &crate::persistence_ids::generate_persistence_id,
+        )
+        .await
+        .unwrap()
+        .revision;
+    let context =
+        scope_domain::requests::RequestCheckContext::for_revision(&request, &revision).unwrap();
+    let mut evaluation = scope_domain::requests::RequestCheckPlan::evaluate_github(
+        &request,
+        &context,
+        &scope_domain::views::Views::builtin(),
+        scope_domain::requests::GitHubRequestChecks {
+            github_repository_id: GITHUB_REPOSITORY_ID,
+            tested: scope_domain::requests::GitHubTestedCommit::Head,
+            required_check_names: &["test".into()],
+        },
+        None,
+        unix_now(),
+    )
+    .unwrap()
+    .evaluation;
+    evaluation.approve(Vec::new(), unix_now()).unwrap();
     requests
         .record_request_checks(scope_postgres::db::RecordRequestChecksCommand {
             expected_canonical_main_oid: requests.request_check_base(TEST_REPO_ID).await.unwrap(),
@@ -182,15 +223,7 @@ async fn request_check_deliveries_refresh_a_running_setup_test_of_the_same_commi
                 .unwrap()
                 .unwrap()
                 .incarnation(),
-            evaluation: scope_domain::requests::RequestCheckEvaluation::started(
-                request_id,
-                &main,
-                vec![scope_domain::requests::RequestCheck::GitHub {
-                    name: "test".into(),
-                }],
-                unix_now(),
-            )
-            .unwrap(),
+            evaluation,
             revisions: Vec::new(),
             runs: Vec::new(),
             push_to_github: false,

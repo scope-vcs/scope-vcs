@@ -87,10 +87,20 @@ pub(crate) fn snapshot_response(
     viewer: RequestViewer<'_>,
 ) -> Result<RequestAutoMergeResponse, ApiError> {
     let readiness = scope_domain::requests::request_auto_merge_readiness(
-        &snapshot.request.id,
-        &snapshot.request.head_oid,
-        snapshot.evaluation.as_ref(),
-        &snapshot.results,
+        scope_domain::requests::evaluate_merge_gate(
+            scope_domain::requests::MergeGateInput::RequestMerge {
+                repository_lifecycle: snapshot.repository.record.lifecycle_state,
+                subject: (&snapshot.request).into(),
+                viewer: &viewer,
+                views: &snapshot.repository.views,
+                checks: scope_domain::requests::request_checks_outcome(
+                    &snapshot.request.id,
+                    &snapshot.request.head_oid,
+                    snapshot.evaluation.as_ref(),
+                    &snapshot.results,
+                ),
+            },
+        ),
     );
     let views = &snapshot.repository.views;
     let users = &snapshot.users;

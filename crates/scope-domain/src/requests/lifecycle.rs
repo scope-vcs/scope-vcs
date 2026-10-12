@@ -24,7 +24,7 @@ pub struct StartRequestInput {
     pub author_role: RequestActorRole,
     pub author_view: ViewId,
     pub view: ViewId,
-    pub base_main_oid: String,
+    pub main_ancestor_oid: String,
     pub event_id: String,
     pub now_unix: u64,
 }
@@ -140,8 +140,12 @@ pub(super) fn open_request(
         author_user_id: Some(input.author_user_id),
         author_role: input.author_role,
         view: input.view,
-        base_main_oid: input.base_main_oid.clone(),
-        head_oid: input.base_main_oid,
+        base: super::RequestBase::Main {
+            review_base_oid: input.main_ancestor_oid.clone(),
+        },
+        base_version: 1,
+        main_ancestor_oid: input.main_ancestor_oid.clone(),
+        head_oid: input.main_ancestor_oid,
         git_snapshot: None,
         title,
         description_markdown: String::new(),
@@ -223,7 +227,19 @@ pub fn record_request_revision(
     validate_expected_head(&request, input.expected_old_head_oid.as_deref())?;
     validate_snapshot_head(&input.git_snapshot, &input.new_head_oid)?;
     let old_head_oid = request.head_oid.clone();
-    request.base_main_oid = request_base_after_revision(&request, &input.git_facts).to_string();
+    let main_ancestor_oid =
+        request_main_ancestor_after_revision(&request, &input.git_facts).to_string();
+    let base = super::RequestBase::Main {
+        review_base_oid: main_ancestor_oid.clone(),
+    };
+    if base != request.base {
+        request.base_version = request
+            .base_version
+            .checked_add(1)
+            .ok_or_else(|| DomainError::conflict("request base version overflow"))?;
+        request.base = base;
+    }
+    request.main_ancestor_oid = main_ancestor_oid;
     request.head_oid = input.new_head_oid.clone();
     let old_git_snapshot = request.git_snapshot.replace(input.git_snapshot.clone());
     request.updated_at_unix = input.now_unix;
@@ -257,13 +273,13 @@ pub fn record_request_revision(
     })
 }
 
-pub fn request_base_after_revision<'a>(
+pub fn request_main_ancestor_after_revision<'a>(
     request: &'a Request,
     facts: &'a RequestRevisionGitFacts,
 ) -> &'a str {
     match facts.contained_main_oid.as_deref() {
         Some(main_oid) if facts.contained_main_descends_from_base => main_oid,
-        _ => &request.base_main_oid,
+        _ => &request.main_ancestor_oid,
     }
 }
 
@@ -370,7 +386,7 @@ fn validate_start_request_input(
         validate_required("title", title)?;
         validate_body_size("request title", title, REQUEST_TITLE_MAX_BYTES)?;
     }
-    validate_required("base main oid", &input.base_main_oid)?;
+    validate_required("base main oid", &input.main_ancestor_oid)?;
     validate_required("event id", &input.event_id)?;
     validate_start_request_view(input.author_role, &input.author_view, &input.view, views)?;
     Ok(())

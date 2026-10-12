@@ -18,7 +18,8 @@ use scope_domain::{
     repo_config::RepoConfig,
     repository::RepositoryIncarnation,
     requests::{
-        Request, RequestRevisionGitFacts, canonical_request_ref, request_base_after_revision,
+        Request, RequestRevisionGitFacts, canonical_request_ref,
+        request_main_ancestor_after_revision,
     },
 };
 use scope_git::DEFAULT_GIT_BRANCH;
@@ -294,7 +295,7 @@ pub(crate) async fn persist_request_ref_to_store(
     update: &RequestRefUpdate,
 ) -> Result<PersistedRequestRef, ApiError> {
     let path = staging_repo.to_path_buf();
-    let base_oid = request.base_main_oid.clone();
+    let base_oid = request.main_ancestor_oid.clone();
     let head_oid = update.new_head_oid.clone();
     crate::git::blocking::run(move || {
         ensure_request_ref_oid_is_commit(&path, &head_oid)?;
@@ -432,14 +433,14 @@ fn prepare_request_ref_snapshot(
     ensure_request_ref_store_head_matches_push(expected_stored_head, Some(logical_old_head))?;
     let git_facts = request_revision_git_facts(
         staging_repo,
-        &request.base_main_oid,
+        &request.main_ancestor_oid,
         logical_old_head,
         &update.new_head_oid,
         main_tips.view,
     )?;
     let snapshot_base = thin_snapshot_base(
         request.view.clone(),
-        request_base_after_revision(request, &git_facts),
+        request_main_ancestor_after_revision(request, &git_facts),
         main_tips.accepted,
         staging_repo,
     )?;

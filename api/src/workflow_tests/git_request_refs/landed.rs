@@ -150,7 +150,7 @@ async fn landed_request_is_complete_when_main_push_persistence_returns() {
                 author_role: RequestActorRole::Owner,
                 author_view: scope_domain::views::ViewId::private(),
                 view: ViewId::private(),
-                base_main_oid: base_head,
+                main_ancestor_oid: base_head,
                 title: Some("Atomic landed request".into()),
                 event_id: "event_atomic_landed_started".into(),
                 now_unix: unix_now(),

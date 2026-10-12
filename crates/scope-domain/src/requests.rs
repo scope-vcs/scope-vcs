@@ -1,15 +1,28 @@
 use crate::error::DomainError;
 
+mod base;
+pub use base::RequestBase;
+pub mod comparison;
+pub use comparison::{
+    RequestCommitMembershipFacts, RequestCommitRange, RequestComparison, RequestComparisonIdentity,
+    RequestComparisonMode,
+};
+
 #[cfg(test)]
 pub(crate) mod fixtures;
 mod view_paths;
 pub use view_paths::{PathHistory, RequestViewPathError, RequestViewPaths};
 
+pub mod merge_gate;
+pub use merge_gate::{
+    GITHUB_CHECK_MERGE_FRESHNESS_SECS, MergeGateAuthority, MergeGateDecision, MergeGateInput,
+    RequestMergeSubject, RequestMergeability, RequestMergeabilityStatus, evaluate_merge_gate,
+};
 mod access;
 pub use access::{
-    RequestListPredicate, RequestMergeSubject, RequestMergeability, RequestMergeabilityStatus,
-    RequestPermissions, RequestPolicyDecision, RequestViewer, request_actor_role,
-    request_list_mergeability, request_list_predicate, request_mergeability, request_policy,
+    RequestListPredicate, RequestPermissions, RequestPolicyDecision, RequestViewer,
+    request_actor_role, request_list_mergeability, request_list_predicate, request_mergeability,
+    request_policy,
 };
 mod auto_merge;
 pub use auto_merge::{
@@ -25,12 +38,13 @@ mod checks;
 pub use checks::{
     CheckCommitBase, GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubBranch, GitHubCheckConclusion,
     GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus, GitHubCheckTarget, GitHubPush,
-    GitHubPushDestination, GitHubPushState, GitHubPushStatus, GitHubTestedCommit,
-    NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck,
-    RequestCheckEvaluation, RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider,
-    RequestCheckResults, RequestCheckReviewer, RequestChecksOutcome, changes_github_workflows,
-    check_commit_message, ensure_approving_reviewed_head, github_push_retry_at, github_retry_at,
-    request_checks_message, request_checks_outcome, request_head_awaits_evaluation,
+    GitHubPushDestination, GitHubPushState, GitHubPushStatus, GitHubRequestChecks,
+    GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck,
+    PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext, RequestCheckEvaluation,
+    RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider, RequestCheckResults,
+    RequestCheckReviewer, RequestChecksOutcome, changes_github_workflows, check_commit_message,
+    ensure_approving_reviewed_head, github_push_retry_at, github_retry_at, request_checks_message,
+    request_checks_outcome, request_head_awaits_evaluation,
 };
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};
@@ -53,7 +67,7 @@ pub use lifecycle::{
     RecordWorkingRequestUploadInput, RequestRevisionGitFacts, RequestRevisionMutation,
     StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
     close_request, record_request_revision, record_working_request_upload,
-    request_base_after_revision, start_request, validate_chosen_request_name,
+    request_main_ancestor_after_revision, start_request, validate_chosen_request_name,
     validate_request_name, validate_start_request_view,
 };
 mod invitees;

@@ -300,7 +300,11 @@ fn open_request() -> Request {
         author_user_id: Some("author".into()),
         author_role: RequestActorRole::Public,
         view: ViewId::public(),
-        base_main_oid: "0".repeat(40),
+        base: crate::requests::RequestBase::Main {
+            review_base_oid: "0".repeat(40),
+        },
+        base_version: 1,
+        main_ancestor_oid: "0".repeat(40),
         head_oid: "1".repeat(40),
         git_snapshot: None,
         title: "Request".into(),

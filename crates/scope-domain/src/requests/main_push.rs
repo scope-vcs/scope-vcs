@@ -24,7 +24,7 @@ pub struct StartMainPushRequestInput {
     pub pusher_handle: String,
     pub validated_view: ViewId,
     pub name: String,
-    pub base_main_oid: String,
+    pub main_ancestor_oid: String,
     pub head_oid: String,
     pub git_snapshot: SourceBlob,
     pub git_facts: RequestRevisionGitFacts,
@@ -189,7 +189,7 @@ pub fn start_main_push_request(
             )));
         }
     }
-    if facts.view_main_oid.as_deref() != Some(input.base_main_oid.as_str()) {
+    if facts.view_main_oid.as_deref() != Some(input.main_ancestor_oid.as_str()) {
         return Err(DomainError::conflict(format!(
             "the {} view's main moved; pull it, then push again",
             views.display_name(&view)
@@ -210,7 +210,7 @@ pub fn start_main_push_request(
             author_role: request_actor_role(access.clone()),
             author_view: access.view.clone(),
             view,
-            base_main_oid: input.base_main_oid,
+            main_ancestor_oid: input.main_ancestor_oid,
             event_id: input.started_event_id,
             now_unix: input.now_unix,
         },

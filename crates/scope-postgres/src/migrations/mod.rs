@@ -40,6 +40,8 @@ mod m0080_github_workflow_job_reads;
 mod m0081_github_job_log_reads;
 mod m0082_github_workflow_run_list;
 mod m0083_request_workflow_changes;
+mod m0084_request_review_bases;
+mod m0085_request_check_identity;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -249,6 +251,14 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0083_request_workflow_changes::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0084_request_review_bases::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0085_request_check_identity::Migration),
             metadata_restore_safe: true,
         },
     ]

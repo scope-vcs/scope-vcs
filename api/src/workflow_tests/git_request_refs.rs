@@ -123,7 +123,7 @@ async fn start_request_for_author(
     )
     .await
     .unwrap();
-    let base_main_oid = git_stdout_text(
+    let main_ancestor_oid = git_stdout_text(
         &projection_repo,
         &["rev-parse", &format!("refs/heads/{DEFAULT_GIT_BRANCH}")],
         "read request base",
@@ -144,7 +144,7 @@ async fn start_request_for_author(
             author_role,
             author_view: scope_domain::views::ViewId::private(),
             view: ViewId::public(),
-            base_main_oid,
+            main_ancestor_oid,
             event_id: "event_request_branch_started".to_string(),
             now_unix: 2,
         })
@@ -163,7 +163,11 @@ async fn insert_private_request_for_public_user(state: &AppState) {
             author_user_id: Some(public_user_id()),
             author_role: RequestActorRole::Member,
             view: ViewId::private(),
-            base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: "a".repeat(40),
+            },
+            base_version: 1,
+            main_ancestor_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             head_oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
             git_snapshot: None,
             title: "Former member request".to_string(),
@@ -220,7 +224,7 @@ async fn insert_public_contributor(state: &AppState) {
 async fn assert_request_branch_unchanged(state: &AppState) {
     let request = stored_request(state, REQUEST_ID).await;
     assert_eq!(request.state(), RequestState::Draft);
-    assert_eq!(request.head_oid, request.base_main_oid);
+    assert_eq!(request.head_oid, request.main_ancestor_oid);
     assert!(request.git_snapshot.is_none());
     assert_eq!(request_event_count(state).await, 1);
 }

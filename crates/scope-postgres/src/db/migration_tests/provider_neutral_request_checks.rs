@@ -30,6 +30,13 @@ async fn stored_checks_become_native_checks_that_test_their_head() {
         ) SELECT name, 'checks-user/repo', name, 'checks-user', 'Owner', 'Private',
                  repeat('a', 40), repeat('b', 40), name, '', 0, 1, 1
           FROM (VALUES ('started'), ('waiting'), ('empty')) AS fixture(name);
+        INSERT INTO scope_request_revisions (
+            id, request_id, position, actor_user_id, old_head_oid, new_head_oid,
+            base_main_oid, rewrote_history, git_snapshot, created_at_unix
+        ) SELECT id || '-revision', id, 1, 'checks-user', repeat('a', 40),
+                 CASE WHEN id = 'empty' THEN repeat('c', 40) ELSE repeat('b', 40) END,
+                 repeat('a', 40), FALSE, '{}', 2
+          FROM scope_requests;
         INSERT INTO scope_request_check_evaluations (
             request_id, head_oid, state, message, checks, created_at_unix, updated_at_unix
         ) VALUES

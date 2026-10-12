@@ -1,7 +1,7 @@
 use super::*;
 use scope_domain::requests::{
     NativeRequestCheck, RecordRequestRevisionInput, RequestActorRole, RequestCheck,
-    RequestCheckEvaluation, RequestRevisionGitFacts, StartRequestInput,
+    RequestCheckContext, RequestCheckEvaluation, RequestRevisionGitFacts, StartRequestInput,
 };
 use scope_domain::runs::run::RunState;
 use scope_domain::views::ViewId;
@@ -53,7 +53,7 @@ async fn open_request_with_revision(
             author_role,
             author_view: scope_domain::views::ViewId::private(),
             view,
-            base_main_oid: FIRST_HEAD.to_string(),
+            main_ancestor_oid: FIRST_HEAD.to_string(),
             event_id: format!("event_{request_id}_started"),
             now_unix: 2,
         })
@@ -144,15 +144,34 @@ async fn record_queued_request_check(state: &AppState, request_id: &str) -> Stri
         [("/.scope/runs/checks.yml", workflow.as_bytes())],
     )
     .unwrap();
-    let mut checks = Vec::new();
-    let mut runs = Vec::new();
-    for revision in &revisions {
-        let mut check = NativeRequestCheck::for_revision(revision);
-        let run = check.run(&request, revision, &test_owner_id(), 5).unwrap();
-        check.run_id = Some(run.id.clone());
-        checks.push(RequestCheck::Native(check));
-        runs.push(run);
-    }
+    let revision = state
+        .metadata
+        .requests()
+        .request_revision_window(&request.id, None, 1)
+        .await
+        .unwrap()
+        .revisions
+        .into_iter()
+        .next()
+        .unwrap();
+    let context = RequestCheckContext::for_revision(&request, &revision).unwrap();
+    let checks = revisions
+        .iter()
+        .map(|revision| RequestCheck::Native(NativeRequestCheck::for_revision(revision)))
+        .collect();
+    let mut evaluation = RequestCheckEvaluation::awaiting_approval(&context, checks, 5).unwrap();
+    let runs = evaluation
+        .native_checks()
+        .zip(&revisions)
+        .map(|(check, revision)| {
+            check
+                .run(&request, &evaluation.id, revision, &test_owner_id(), 5)
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    evaluation
+        .approve(runs.iter().map(|run| run.id.clone()).collect(), 5)
+        .unwrap();
     assert_eq!(runs.len(), 1);
     let run_id = runs[0].id.clone();
     state
@@ -173,8 +192,7 @@ async fn record_queued_request_check(state: &AppState, request_id: &str) -> Stri
                 .unwrap()
                 .unwrap()
                 .incarnation(),
-            evaluation: RequestCheckEvaluation::started(&request.id, &request.head_oid, checks, 5)
-                .unwrap(),
+            evaluation,
             revisions,
             runs,
             push_to_github: false,
@@ -495,6 +513,21 @@ async fn active_authorization_reports_pending_checks_and_stops_after_a_new_push(
 async fn configuration_failure_stays_stopped_if_the_evaluation_later_clears() {
     let request_id = "req_auto_merge_failed_checks";
     let (state, revision_id) = open_owner_request(request_id).await;
+    let request = state
+        .metadata
+        .requests()
+        .request_for_tests(request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let revision = state
+        .metadata
+        .requests()
+        .request_revision(request_id, &revision_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let context = RequestCheckContext::for_revision(&request, &revision).unwrap();
     state
         .metadata
         .requests()
@@ -514,8 +547,7 @@ async fn configuration_failure_stays_stopped_if_the_evaluation_later_clears() {
                 .unwrap()
                 .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
-                request_id,
-                SECOND_HEAD,
+                &context,
                 "invalid request workflow",
                 5,
             )
@@ -553,12 +585,7 @@ async fn configuration_failure_stays_stopped_if_the_evaluation_later_clears() {
                 .unwrap()
                 .unwrap()
                 .incarnation(),
-            evaluation: RequestCheckEvaluation::no_checks(
-                request_id,
-                SECOND_HEAD,
-                attempt_time + 1,
-            )
-            .unwrap(),
+            evaluation: RequestCheckEvaluation::no_checks(&context, attempt_time + 1).unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
             push_to_github: false,
@@ -794,7 +821,7 @@ async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_r
         .unwrap();
     let header = String::from_utf8_lossy(&snapshot[..header_end]);
     assert!(
-        header.contains(&format!("\n-{}", request.base_main_oid)),
+        header.contains(&format!("\n-{}", request.main_ancestor_oid)),
         "snapshot should require its base instead of carrying main: {header}"
     );
 

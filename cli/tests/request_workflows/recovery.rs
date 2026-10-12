@@ -18,7 +18,7 @@ fn request_start_metadata_failure_can_retry_push_without_creating_another_reques
         ],
     );
     let mut detail = request();
-    detail["base_main_oid"] = head.clone().into();
+    detail["main_ancestor_oid"] = head.clone().into();
     detail["head_oid"] = head.clone().into();
     detail["mergeability"]["current_main_oid"] = head.clone().into();
     detail["mergeability"]["request_head_oid"] = head.clone().into();

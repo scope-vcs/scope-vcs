@@ -14,25 +14,35 @@ use crate::{
 fn configuration_error_only_stops_its_authorized_head() {
     let request = open_request();
     let intent = active_intent();
+    let mut other_revision = check_context("request_1", HEAD);
+    other_revision.revision_id = "revision_other".into();
     let evaluations = [
-        RequestCheckEvaluation::no_checks("request_1", HEAD, 4).unwrap(),
+        RequestCheckEvaluation::configuration_error(&other_revision, "other revision", 4).unwrap(),
+        RequestCheckEvaluation::no_checks(&check_context("request_1", HEAD), 4).unwrap(),
         RequestCheckEvaluation::awaiting_approval(
-            "request_1",
-            HEAD,
+            &check_context("request_1", HEAD),
             vec![native_check('c', None)],
             4,
         )
         .unwrap(),
         RequestCheckEvaluation::started(
-            "request_1",
-            HEAD,
+            &check_context("request_1", HEAD),
             vec![native_check('c', Some("run_1"))],
             4,
         )
         .unwrap(),
-        RequestCheckEvaluation::configuration_error("request_1", OTHER_HEAD, "stale head", 4)
-            .unwrap(),
-        RequestCheckEvaluation::configuration_error("request_2", HEAD, "other request", 4).unwrap(),
+        RequestCheckEvaluation::configuration_error(
+            &check_context("request_1", OTHER_HEAD),
+            "stale head",
+            4,
+        )
+        .unwrap(),
+        RequestCheckEvaluation::configuration_error(
+            &check_context("request_2", HEAD),
+            "other request",
+            4,
+        )
+        .unwrap(),
     ];
     for evaluation in &evaluations {
         assert!(
@@ -54,9 +64,12 @@ fn matching_configuration_error_owns_the_reason_and_monotonic_time() {
     request.updated_at_unix = 10;
     let mut intent = active_intent();
     intent.updated_at_unix = 12;
-    let evaluation =
-        RequestCheckEvaluation::configuration_error("request_1", HEAD, "invalid workflow", 8)
-            .unwrap();
+    let evaluation = RequestCheckEvaluation::configuration_error(
+        &check_context("request_1", HEAD),
+        "invalid workflow",
+        8,
+    )
+    .unwrap();
 
     let stopped = stop_request_auto_merge_for_check_evaluation(
         &request,
@@ -83,8 +96,7 @@ fn matching_configuration_error_owns_the_reason_and_monotonic_time() {
     ));
 
     let later_evaluation = RequestCheckEvaluation::configuration_error(
-        "request_1",
-        HEAD,
+        &check_context("request_1", HEAD),
         "later invalid workflow",
         14,
     )

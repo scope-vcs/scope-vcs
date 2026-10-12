@@ -345,7 +345,7 @@ async fn public_repo_stream_drops_private_request_identifiers() {
             author_role: RequestActorRole::Owner,
             author_view: scope_domain::views::ViewId::private(),
             view: ViewId::private(),
-            base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            main_ancestor_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             event_id: "event_private_stream_started".to_string(),
             now_unix: 1,
         })
@@ -363,7 +363,7 @@ async fn public_repo_stream_drops_private_request_identifiers() {
             author_role: RequestActorRole::Owner,
             author_view: scope_domain::views::ViewId::private(),
             view: ViewId::public(),
-            base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            main_ancestor_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             event_id: "event_public_stream_started".to_string(),
             now_unix: 1,
         })

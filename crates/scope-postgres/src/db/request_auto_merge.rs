@@ -3,16 +3,16 @@ use super::{
     generated_ids::generate_id,
     integer_columns::u64_to_i64,
     request_access::{ensure_user_exists, lock_request_repository},
-    request_checks::{evaluation_for_head, request_check_results},
+    request_checks::evaluation_for_head,
     request_revision_rows::latest_revision_for_request,
     request_rows::{insert_request_event_row, request_by_id, save_request_row},
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
     AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, RequestAutoMergeIntent,
-    RequestAutoMergeMutation, RequestAutoMergeStopReason, RequestCheckEvaluation,
-    RequestCheckResults, RequestViewer, authorize_request_auto_merge, cancel_request_auto_merge,
-    request_policy, stop_request_auto_merge, stop_request_auto_merge_for_check_run,
+    RequestAutoMergeMutation, RequestAutoMergeStopReason, RequestCheckEvaluation, RequestViewer,
+    authorize_request_auto_merge, cancel_request_auto_merge, request_policy,
+    stop_request_auto_merge, stop_request_auto_merge_for_check_run,
 };
 use sea_orm::{
     ActiveModelTrait,
@@ -75,12 +75,6 @@ pub struct StopClaimedRequestAutoMergeCommand {
     pub reason: RequestAutoMergeStopReason,
     pub event_id: String,
     pub now_unix: u64,
-}
-
-#[derive(Clone, Debug)]
-pub struct RequestAutoMergeCheckState {
-    pub evaluation: Option<RequestCheckEvaluation>,
-    pub results: RequestCheckResults,
 }
 
 impl RequestStore {
@@ -386,6 +380,7 @@ pub(super) async fn request_id_for_check_run<C: ConnectionTrait>(
             r#"
             SELECT evaluation.request_id
               FROM scope_request_check_evaluations evaluation
+              JOIN scope_requests request ON request.current_check_evaluation_id = evaluation.id
              WHERE evaluation.checks @> jsonb_build_array(
                    jsonb_build_object('provider', 'native', 'run_id', $1::text)
                )
@@ -526,18 +521,6 @@ pub(super) async fn persist_existing_auto_merge_mutation(
         .await
         .map_err(PostgresError::internal)?;
     Ok(())
-}
-
-pub(super) async fn request_auto_merge_check_state<C: sea_orm::ConnectionTrait>(
-    conn: &C,
-    intent: &RequestAutoMergeIntent,
-) -> Result<RequestAutoMergeCheckState, PostgresError> {
-    let evaluation = evaluation_for_head(conn, &intent.request_id, &intent.head_oid).await?;
-    let results = request_check_results(conn, &intent.repo_id, &evaluation).await?;
-    Ok(RequestAutoMergeCheckState {
-        evaluation,
-        results,
-    })
 }
 
 pub(super) fn automatic_event_id(kind: &str, intent_id: &str) -> String {
