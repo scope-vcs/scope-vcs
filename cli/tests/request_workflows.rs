@@ -7,6 +7,9 @@ mod recovery;
 #[cfg(unix)]
 #[path = "request_workflows/rewrites.rs"]
 mod rewrites;
+#[cfg(unix)]
+#[path = "request_workflows/stacks.rs"]
+mod stacks;
 mod support;
 
 use axum::{
@@ -246,6 +249,8 @@ fn request_diff_uses_server_revision_and_path_with_no_local_private_data() {
             "req_one",
             "--revision",
             "rev_old",
+            "--comparison",
+            "commit",
             "--commit",
             OID,
             "--path",
@@ -278,6 +283,45 @@ fn request_diff_uses_server_revision_and_path_with_no_local_private_data() {
 }
 
 #[test]
+fn request_diff_defaults_to_the_server_pinned_layer_manifest() {
+    let dir = TempDir::new("request-layer-diff");
+    let server = FixtureServer::start();
+    let value = success(
+        server
+            .command(dir.path())
+            .args([
+                "--json",
+                "--repo",
+                "owner/repo",
+                "request",
+                "diff",
+                "--request",
+                "req_one",
+            ])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(
+        value["result"]["revisions"]["comparison"]["mode"],
+        "request"
+    );
+    assert_eq!(value["result"]["files"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        value["result"]["files"][0]["diff"]["new_content"]["text"],
+        "server-layer\n"
+    );
+    let seen = server.seen.lock().unwrap();
+    assert!(
+        seen.iter()
+            .any(|uri| uri.ends_with("changes?comparison=request"))
+    );
+    assert!(seen.iter().any(
+        |uri| uri.contains("/changes/rev_old/file-diff?") && uri.contains("comparison=request")
+    ));
+    assert!(!seen.iter().any(|uri| uri.contains("/commits/")));
+}
+
+#[test]
 fn request_diff_rejects_a_commit_absent_from_visible_revision_inspection() {
     let dir = TempDir::new("request-absent-commit");
     let server = FixtureServer::start();
@@ -293,6 +337,8 @@ fn request_diff_rejects_a_commit_absent_from_visible_revision_inspection() {
             "req_one",
             "--revision",
             "rev_old",
+            "--comparison",
+            "commit",
             "--commit",
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         ])
@@ -340,7 +386,7 @@ fn request_diff_defaults_to_visible_text_changes() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("-old\n+server-visible"), "{stdout}");
+    assert!(stdout.contains("-old\n+server-layer"), "{stdout}");
 }
 
 #[test]
@@ -539,6 +585,7 @@ impl FixtureServer {
         let auto_merge_seen_get = inspected.clone();
         let auto_merge_seen_post = inspected.clone();
         let auto_merge_seen_delete = inspected.clone();
+        let aggregate_seen = inspected.clone();
         let app = Router::new()
                     .route("/v1/session", get(|| async { Json(support::session_response("usr_test", "owner", "test@example.test")) }))
                     .route("/v1/repos/owner/repo", get(move || { let repo=repo.clone(); async move { Json(repo) } }))
@@ -584,7 +631,8 @@ impl FixtureServer {
                     }))
                     .route("/v1/repos/owner/repo/requests", get(|| async { Json(json!({"requests":[list_item("req_one", "fix-one", "Open"), list_item("req_two", "fix-two", "Closed"), list_item("req_three", "fix-three", "Open")], "next_cursor":null})) }).post(move || { let started=started.clone(); let detail=start_detail.clone(); async move { started.lock().unwrap().push("POST request".to_string()); Json(json!({"request":detail})) } }))
                     .route("/v1/repos/owner/repo/requests/req_one", get(move || { let detail=show_detail.clone(); async move { Json(json!({"request":detail})) } }).patch(move |Json(body): Json<Value>| { let captured=captured.clone(); async move { *captured.lock().unwrap()=body; Json(json!({"request":request()})) } }))
-                    .route("/v1/repos/owner/repo/requests/req_one/changes", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| { let inspected=revisions_seen.clone(); async move { inspected.lock().unwrap().push(uri.to_string()); Json(json!({"review_revision_id":query.get("revision").map(String::as_str).unwrap_or("rev_old"), "revisions":[{"id":"rev_old","position":1,"actor":{"id":"usr_test","handle":"owner"},"old_head_oid":null,"new_head_oid":OID,"commits":[{"oid":OID,"parent_oids":[],"author":"owner","authored_at_unix":1,"message":"Old revision","change_count":1,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"label":"public"}],"files_truncated":false}],"inspection":"Complete","created_at_unix":1}],"has_earlier_revisions":false})) } }))
+                    .route("/v1/repos/owner/repo/requests/req_one/changes", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| { let inspected=revisions_seen.clone(); async move { inspected.lock().unwrap().push(uri.to_string()); Json(json!({"comparison":if query.get("comparison").is_some_and(|mode| mode == "request" || mode == "push") { json!({"revision_id":"rev_old","mode":query["comparison"],"base_oid":OID,"head_oid":OID,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"label":"public"}],"inspection":"Complete"}) } else {Value::Null},"review_revision_id":query.get("revision").map(String::as_str).unwrap_or("rev_old"), "revisions":[{"id":"rev_old","base":{"kind":"main","review_base_oid":OID},"base_version":1,"position":1,"actor":{"id":"usr_test","handle":"owner"},"old_head_oid":null,"new_head_oid":OID,"commits":[{"oid":OID,"parent_oids":[],"author":"owner","authored_at_unix":1,"message":"Old revision","change_count":1,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"label":"public"}],"files_truncated":false}],"inspection":"Complete","created_at_unix":1}],"has_earlier_revisions":false})) } }))
+                    .route("/v1/repos/owner/repo/requests/req_one/changes/rev_old/file-diff", get(move |OriginalUri(uri):OriginalUri| { let seen=aggregate_seen.clone(); async move { seen.lock().unwrap().push(uri.to_string()); Json(json!({"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_content":{"kind":"text","text":"old\n"},"new_content":{"kind":"text","text":"server-layer\n"}})) } }))
                     .route("/v1/repos/owner/repo/requests/req_one/changes/rev_old/commits/{commit}/file-diff", get(move |OriginalUri(uri): OriginalUri| { let inspected=inspected.clone(); async move { inspected.lock().unwrap().push(uri.to_string()); Json(json!({"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_content":{"kind":"text","text":"old\n"},"new_content":{"kind":"text","text":"server-visible\n"}})) } }));
         Self {
             server: TestServer::new(app),
@@ -669,10 +717,10 @@ fn repository() -> Value {
     repository_response(json!({"open_request_count": 2}))
 }
 fn list_item(id: &str, name: &str, state: &str) -> Value {
-    json!({"id":id,"name":name,"title":name,"author_role":"Public","view":"public","head_oid":OID,"state":state,"submitted_at_unix":1,"updated_at_unix":2,"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
+    json!({"id":id,"name":name,"title":name,"base":{"kind":"main","review_base_oid":OID},"base_version":1,"stack_status":"main","stack_depth":1,"author_role":"Public","view":"public","head_oid":OID,"state":state,"submitted_at_unix":1,"updated_at_unix":2,"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
 }
 fn request() -> Value {
-    json!({"id":"req_one","name":"fix-one","title":"Fix one","description_markdown":"","author_user_id":"usr_test","author_role":"Public","view":"public","base":{"kind":"main","review_base_oid":OID},"base_version":1,"main_ancestor_oid":OID,"head_oid":OID,"state":"Draft","activity_version":0,"submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,"updated_at_unix":2,"invitees":[],"permissions":{"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,"can_wait_after_reply":false,"can_edit_identity":true,"can_pull_branch":false,"can_push_branch":true,"can_submit":false,"can_manage_invitees":false,"can_leave_request":false,"can_close":false,"can_merge":false},"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
+    json!({"id":"req_one","name":"fix-one","title":"Fix one","description_markdown":"","author_user_id":"usr_test","author_role":"Public","view":"public","base":{"kind":"main","review_base_oid":OID},"base_version":1,"stack_status":"main","stack_depth":1,"main_ancestor_oid":OID,"head_oid":OID,"state":"Draft","activity_version":0,"submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,"updated_at_unix":2,"invitees":[],"permissions":{"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,"can_wait_after_reply":false,"can_edit_identity":true,"can_pull_branch":false,"can_push_branch":true,"can_submit":false,"can_manage_invitees":false,"can_leave_request":false,"can_close":false,"can_merge":false},"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
 }
 
 fn auto_merge_response(status: Option<&str>) -> Value {

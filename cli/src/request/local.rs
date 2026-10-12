@@ -370,7 +370,7 @@ pub(super) fn adoptable_current_branch(
     }
     if !try_run_git_in_repo(git_repo, &["merge-base", "--is-ancestor", base_oid, "HEAD"])? {
         return Err(crate::error::CliError::usage(format!(
-            "branch '{branch}' does not contain Scope main at {}; merge or rebase onto it, then retry",
+            "branch '{branch}' does not contain the selected base at {}; merge or rebase onto it, then retry",
             short_oid(base_oid)
         ))
         .into());
@@ -408,10 +408,6 @@ pub(super) fn update_request_remote_ref(
 ) -> anyhow::Result<()> {
     let remote_ref = request_remote_ref(&target.remote, request_name);
     run_git_in_repo(git_repo, &["update-ref", &remote_ref, request_head_oid])
-}
-
-pub(super) fn remote_main_ref(remote: &str) -> String {
-    format!("refs/remotes/{remote}/{DEFAULT_SCOPE_BRANCH}")
 }
 
 pub(super) fn request_remote_ref(remote: &str, request_name: &str) -> String {

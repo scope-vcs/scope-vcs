@@ -301,6 +301,8 @@ pub struct RequestSummaryResponse {
     pub view: ViewId,
     pub base: RequestBase,
     pub base_version: u64,
+    pub stack_status: RequestStackStatus,
+    pub stack_depth: u32,
     pub main_ancestor_oid: GitOid,
     pub head_oid: GitOid,
     pub state: RequestState,
@@ -319,11 +321,70 @@ pub struct RequestSummaryResponse {
     pub mergeability: RequestMergeabilityResponse,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RequestBase {
-    Main { review_base_oid: GitOid },
+    Main {
+        review_base_oid: GitOid,
+    },
+    Request {
+        request_id: String,
+        revision_id: String,
+        head_oid: GitOid,
+    },
+}
+
+impl TryFrom<scope_domain::requests::RequestBase> for RequestBase {
+    type Error = crate::GitOidParseError;
+
+    fn try_from(base: scope_domain::requests::RequestBase) -> Result<Self, Self::Error> {
+        match base {
+            scope_domain::requests::RequestBase::Main { review_base_oid } => Ok(Self::Main {
+                review_base_oid: review_base_oid.try_into()?,
+            }),
+            scope_domain::requests::RequestBase::Request {
+                request_id,
+                revision_id,
+                head_oid,
+            } => Ok(Self::Request {
+                request_id,
+                revision_id,
+                head_oid: head_oid.try_into()?,
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum RequestStackStatus {
+    Main,
+    WaitingForParent,
+    ParentExtended,
+    ParentRewritten,
+    ParentClosed,
+    AncestorBlocked,
+    IntegrationConflict,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestRevisionContextRequest {
+    pub operation_key: String,
+    pub base: RequestBase,
+    pub expected_head_oid: GitOid,
+    pub expected_revision_id: String,
+    pub expected_base_version: u64,
+    pub expected_parent_base_version: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestRevisionContextResponse {
+    pub request: RequestSummaryResponse,
+    pub revision_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -363,6 +424,10 @@ pub struct LeaveRequestResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestListItemResponse {
+    pub base: RequestBase,
+    pub base_version: u64,
+    pub stack_status: RequestStackStatus,
+    pub stack_depth: u32,
     pub id: String,
     pub name: String,
     pub title: String,
@@ -520,6 +585,8 @@ pub enum RequestRevisionInspectionState {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestRevisionResponse {
+    pub base: RequestBase,
+    pub base_version: u64,
     pub id: String,
     pub position: u64,
     /// Null once that account is deleted; clients show a deleted user.
@@ -531,9 +598,30 @@ pub struct RequestRevisionResponse {
     pub created_at_unix: u64,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum RequestComparisonMode {
+    Request,
+    Push,
+    Commit,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestComparisonResponse {
+    pub revision_id: String,
+    pub mode: RequestComparisonMode,
+    pub base_oid: Option<GitOid>,
+    pub head_oid: Option<GitOid>,
+    pub files: Vec<CommitFileResponse>,
+    pub inspection: RequestRevisionInspectionState,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestRevisionListResponse {
+    pub comparison: Option<RequestComparisonResponse>,
     pub review_revision_id: Option<String>,
     pub revisions: Vec<RequestRevisionResponse>,
     pub has_earlier_revisions: bool,
@@ -591,6 +679,7 @@ pub struct RequestActivityPageResponse {
 #[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct StartRequestRequest {
+    pub base: Option<RequestBase>,
     pub name: String,
     pub title: Option<String>,
     pub view: ViewId,

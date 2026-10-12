@@ -334,7 +334,7 @@ fn summary() -> RequestSummaryResponse {
             "id":"req_one","name":"fix-refs","title":"Fix request refs",
             "description_markdown":"Atomic updates","author_user_id":"scope_usr_author",
             "author_role":"Public","view":"public",
-            "base":{"kind":"main","review_base_oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"base_version":1,"main_ancestor_oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "base":{"kind":"main","review_base_oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"base_version":1,"stack_status":"main","stack_depth":1,"main_ancestor_oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "head_oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","state":"Draft",
             "activity_version":1,
             "submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,
