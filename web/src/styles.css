@@ -56,7 +56,7 @@ body {
   animation: scope-skeleton-breathe 1.6s ease-in-out infinite;
 }
 
-#main-content > .app-rail {
+#main-content .app-rail:not(.app-rail .app-rail) {
   width: auto;
   margin-inline: max(0px, (100vw - var(--app-rail)) / 2) auto;
 }
