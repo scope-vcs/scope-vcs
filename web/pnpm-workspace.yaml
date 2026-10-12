@@ -1,6 +1,4 @@
 minimumReleaseAge: 10080
-minimumReleaseAgeExclude:
-  - '@tanstack/charts@1.0.0'
 trustPolicy: no-downgrade
 trustPolicyExclude:
   - semver@6.3.1
