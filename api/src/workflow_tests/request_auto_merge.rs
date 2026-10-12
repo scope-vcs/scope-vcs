@@ -434,7 +434,7 @@ async fn authorization_is_bound_to_the_exact_revision_and_only_the_current_inten
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn public_authors_cannot_authorize_auto_merge() {
+async fn public_authors_can_read_maintainer_auto_merge_but_cannot_authorize_it() {
     let author_user_id =
         scope_postgres::db::scope_user_id_for_auth_identity("clerk", PUBLIC_AUTO_SUBJECT);
     let (state, revision_id) = open_request_with_revision(
@@ -445,7 +445,7 @@ async fn public_authors_cannot_authorize_auto_merge() {
     )
     .await;
     let response = api_request(
-        router(state),
+        router(state.clone()),
         "POST",
         &auto_merge_route("req_public_auto_merge"),
         Some(&bearer_header_for(PUBLIC_AUTO_SUBJECT, PUBLIC_AUTO_EMAIL)),
@@ -460,6 +460,30 @@ async fn public_authors_cannot_authorize_auto_merge() {
     .await;
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let app = router(state);
+    authorize(
+        app.clone(),
+        "req_public_auto_merge",
+        &revision_id,
+        SECOND_HEAD,
+    )
+    .await;
+    let response = expect_json(
+        api_request(
+            app,
+            "GET",
+            &auto_merge_route("req_public_auto_merge"),
+            Some(&bearer_header_for(PUBLIC_AUTO_SUBJECT, PUBLIC_AUTO_EMAIL)),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(response["intent"]["status"], "Active");
+    assert_eq!(response["waiting_reason"], "Waiting for CI evaluation");
+    assert_eq!(response["can_enable"], false);
+    assert_eq!(response["can_cancel"], false);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

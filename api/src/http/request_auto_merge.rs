@@ -86,22 +86,24 @@ pub(crate) fn snapshot_response(
     snapshot: &scope_postgres::db::RequestStateSnapshot,
     viewer: RequestViewer<'_>,
 ) -> Result<RequestAutoMergeResponse, ApiError> {
-    let readiness = scope_domain::requests::request_auto_merge_readiness(
-        scope_domain::requests::evaluate_merge_gate(
-            scope_domain::requests::MergeGateInput::RequestMerge {
-                repository_lifecycle: snapshot.repository.record.lifecycle_state,
-                subject: (&snapshot.request).into(),
-                viewer: &viewer,
-                views: &snapshot.repository.views,
-                checks: scope_domain::requests::request_checks_outcome(
-                    &snapshot.request.id,
-                    &snapshot.request.head_oid,
-                    snapshot.evaluation.as_ref(),
-                    &snapshot.results,
-                ),
-            },
-        ),
-    );
+    let readiness = |actor: &RequestViewer<'_>| {
+        scope_domain::requests::request_auto_merge_readiness(
+            scope_domain::requests::evaluate_merge_gate(
+                scope_domain::requests::MergeGateInput::RequestMerge {
+                    repository_lifecycle: snapshot.repository.record.lifecycle_state,
+                    subject: (&snapshot.request).into(),
+                    viewer: actor,
+                    views: &snapshot.repository.views,
+                    checks: scope_domain::requests::request_checks_outcome(
+                        &snapshot.request.id,
+                        &snapshot.request.head_oid,
+                        snapshot.evaluation.as_ref(),
+                        &snapshot.results,
+                    ),
+                },
+            ),
+        )
+    };
     let views = &snapshot.repository.views;
     let users = &snapshot.users;
     let can_merge = request_policy(&snapshot.request, viewer.clone(), views)
@@ -111,7 +113,7 @@ pub(crate) fn snapshot_response(
         &snapshot.request,
         snapshot.revision.as_ref(),
         snapshot.auto_merge.as_ref(),
-        readiness,
+        readiness(&viewer),
         can_merge,
     );
     let can_cancel = request_auto_merge_can_cancel(
@@ -123,7 +125,15 @@ pub(crate) fn snapshot_response(
         .auto_merge
         .as_ref()
         .filter(|intent| intent.is_active())
-        .and_then(|_| readiness.waiting_reason_message())
+        .and_then(|intent| {
+            let access = snapshot.auto_merge_actor_access.as_ref()?;
+            readiness(&RequestViewer::new(
+                access.clone(),
+                Some(&intent.actor_user_id),
+                false,
+            ))
+            .waiting_reason_message()
+        })
         .map(str::to_string);
     let intent = match snapshot.auto_merge.as_ref() {
         Some(intent) => Some(RequestAutoMergeIntentResponse {
