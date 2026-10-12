@@ -1,10 +1,7 @@
 import { PageHeader } from '@/components/page-header'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { ApplicationPendingShell } from '@/components/pending-surface'
-import {
-  TextSkeleton,
-  type TextSkeletonLength,
-} from '@/components/ui/skeleton'
+import { TextSkeleton, type TextSkeletonLength } from '@/components/ui/text-skeleton'
 import { OwnerProfileTopbarActions } from './owner-profile-topbar-actions'
 
 const REPOSITORY_LENGTHS: TextSkeletonLength[] = ['medium', 'short', 'long', 'medium']

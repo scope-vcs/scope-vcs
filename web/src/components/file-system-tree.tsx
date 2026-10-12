@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { BlockSkeleton, TextSkeleton, type TextSkeletonLength } from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { TextSkeleton, type TextSkeletonLength } from '@/components/ui/text-skeleton'
 import { VisibilityBadge, VisibilityLegend } from '@/components/visibility-badge'
 import { cn } from '@/lib/utils'
 import {

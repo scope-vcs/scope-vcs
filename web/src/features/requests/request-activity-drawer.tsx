@@ -1,12 +1,9 @@
 import { PendingSurface } from '@/components/pending-surface'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  BlockSkeleton,
-  LineSkeleton,
-  TextSkeleton,
-  type LineSkeletonLength,
-} from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { LineSkeleton, type LineSkeletonLength } from '@/components/ui/line-skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { Link } from '@tanstack/react-router'
 import { ChevronRight, History, TriangleAlert } from 'lucide-react'
 import type { RefObject } from 'react'

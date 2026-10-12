@@ -1,10 +1,7 @@
 import { ApplicationTopbar } from '@/components/application-topbar'
 import { AppShell } from '@/components/app-shell'
 import { PageRail } from '@/components/page-header'
-import {
-  TextSkeleton,
-  type TextSkeletonLength,
-} from '@/components/ui/skeleton'
+import { TextSkeleton, type TextSkeletonLength } from '@/components/ui/text-skeleton'
 import { cn } from '@/lib/utils'
 import { useRouter } from '@tanstack/react-router'
 import { createContext, use, useCallback, useEffect, useState, type ReactNode } from 'react'

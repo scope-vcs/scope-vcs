@@ -13,7 +13,7 @@ function cliSessionsIdentity(viewerId: string) {
   return `cli-sessions\0${viewerId}`
 }
 
-export type CliSessionsHandoff = {
+type CliSessionsHandoff = {
   viewerId: string | null
   sessions: CliSessionsResponse
   revocationGeneration: number

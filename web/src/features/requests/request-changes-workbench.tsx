@@ -6,7 +6,8 @@ import type {
 } from '@/api/types.generated'
 import type { LoadRequestRevisionCommitInput } from '@/api/requests'
 import { PendingSurface } from '@/components/pending-surface'
-import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import {
   historyDiffCacheKey,
   historyDiffResource,
@@ -509,7 +510,6 @@ function commitDetail(
     })),
     logical_commit_id: commit.oid,
     message: commit.message,
-    parent_projected_id: commit.parent_oids[0] ?? null,
     projected_id: requestRevisionCommitId(revisionId, commit.oid),
     repo_id: repoId,
   }

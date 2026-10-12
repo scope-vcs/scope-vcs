@@ -8,8 +8,8 @@ import { RequestWorkspaceShell } from '@/features/requests/request-workspace-she
 import type { RepoLiveState } from '@/api/types'
 import type { RequestQueueItemResponse } from '@/api/types.generated'
 import type { RequestQueuePages } from '@/features/requests/request-list-model'
-import { FixtureViewer } from './clerk'
-import './styles.css'
+import { FixtureViewer } from '../shared/clerk'
+import '../shared/styles.css'
 
 const titles = [
   'Let an invite have many links and tell each visitor where they stand',

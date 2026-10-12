@@ -1,43 +1,11 @@
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { chromium } from 'playwright'
-import { createServer } from 'vite'
-import tailwindcss from '@tailwindcss/vite'
-
-const require = createRequire(import.meta.url)
+import { fixtureClerk, openFixture } from './support/fixture-server.mjs'
 
 async function workspacePage(t) {
-  const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-request-workspace-'))
-  t.after(() => rm(cacheDir, { recursive: true, force: true }))
-  const server = await createServer({
-    cacheDir,
-    configFile: false,
-    root: fileURLToPath(new URL('./fixtures/request-workspace', import.meta.url)),
-    plugins: [tailwindcss()],
-    server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } },
-    resolve: { alias: [
-      { find: '@clerk/tanstack-react-start', replacement: fileURLToPath(new URL('./fixtures/request-workspace/clerk.tsx', import.meta.url)) },
-      { find: '@', replacement: fileURLToPath(new URL('../src', import.meta.url)) },
-      ...['react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom/client', 'react']
-        .map((name) => ({ find: name, replacement: require.resolve(name) })),
-    ] },
-    oxc: { jsx: { runtime: 'automatic' } },
-  })
-  t.after(() => server.close())
-  await server.listen()
-  const browser = await chromium.launch({ headless: true })
-  t.after(() => browser.close())
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-  page.setDefaultTimeout(10_000)
-  const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
+  const { base, errors, page } = await openFixture(t, 'request-workspace', { aliases: [fixtureClerk], tailwind: true })
   const railClosed = () => page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
-  return { page, base: server.resolvedUrls.local[0], errors, railClosed }
+  return { page, base, errors, railClosed }
 }
 
 test('request rows exchange age and actions and restore the selected view across repository sections', async (t) => {

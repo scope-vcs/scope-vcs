@@ -1,10 +1,7 @@
 import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
-import {
-  BlockSkeleton,
-  TextSkeleton,
-  type TextSkeletonLength,
-} from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { TextSkeleton, type TextSkeletonLength } from '@/components/ui/text-skeleton'
 import {
   RUN_ROW_CLASS,
   RUN_ROW_DURATION_CLASS,

@@ -1,7 +1,8 @@
 import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
 import { Button } from '@/components/ui/button'
-import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { useParams } from '@tanstack/react-router'
 import {
   AccessSection,
