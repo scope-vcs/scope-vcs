@@ -124,7 +124,7 @@ GitHub records without silently excluding old active releases.
 
 The external GitHub observer checks expected daily starts and active-session
 progress. Idle daytime needs no recurring heartbeat or model prompt. The
-[operations guide](../deploy/automation/OPERATIONS.md) describes signing,
+[operations guide](https://github.com/scope-vcs/release-supervisor/blob/main/OPERATIONS.md) describes signing,
 observable process deadlines, dispatch intents, failure diagnostics, and the
 verified single-owner cutover from the installed systemd minute timer.
 
@@ -206,3 +206,19 @@ after release: real API/database spans with matching log trace IDs, claimed-job
 consumer spans, and useful web runtime spans. Preserve normal forward recovery
 if a transition fails. At actual release completion, create T3 checks for one
 hour and 24 hours later as described in [tracing follow-up](tracing.md#follow-up-after-release).
+
+## Main checks
+
+After the aggregate check has been committed to main, configure protection using
+the checked-in payload and enable GitHub auto-merge:
+
+```sh
+gh api --method PUT repos/scope-vcs/scope-vcs/branches/main/protection --input .github/main-protection.json
+gh api --method PATCH repos/scope-vcs/scope-vcs -F allow_auto_merge=true
+```
+
+This requires the GitHub Actions `Required PR checks` result, including for
+administrators, without reviewer approvals, up-to-date branch rebuilds, merge
+queues, or post-merge CI. Force pushes and main deletion are disabled. Read the
+settings back after applying them. Local tests remain required for explicitly
+authorized direct-main changes made before protection is enabled.
