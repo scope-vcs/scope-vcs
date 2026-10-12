@@ -19,7 +19,7 @@ function AppRail({
 }: RailProps) {
   return (
     <Component
-      className={cn('mx-auto w-full max-w-[1280px]', className)}
+      className={cn('app-rail mx-auto w-full max-w-(--app-rail)', className)}
       id={id}
       tabIndex={tabIndex}
     >
