@@ -147,6 +147,7 @@ fn review_revision_is_newest_unless_an_existing_revision_is_pinned() {
 
 fn revision(id: &str, position: u64) -> RequestRevision {
     RequestRevision {
+        base_version: 1,
         id: id.to_string(),
         request_id: "request".to_string(),
         position,

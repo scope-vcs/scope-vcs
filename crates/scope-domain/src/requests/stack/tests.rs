@@ -17,6 +17,7 @@ fn parent() -> Request {
 
 fn revision(parent: &Request) -> RequestRevision {
     RequestRevision {
+        base_version: 1,
         id: "parent-revision".into(),
         request_id: parent.id.clone(),
         position: 2,
@@ -225,4 +226,6 @@ fn ordinary_child_push_retains_pin_and_explicit_repin_records_same_head() {
     assert_eq!(repin.revision.base, new_base);
     assert_eq!(repin.revision.new_head_oid, child.head_oid);
     assert_eq!(repin.request.base_version, child.base_version + 1);
+    assert_eq!(repin.revision.base_version, child.base_version + 1);
+    assert_eq!(push.revision.base_version, child.base_version);
 }
