@@ -145,7 +145,7 @@ impl RequestStore {
         let context = repository_access(&tx, &repo_id, Some(&actor_user_id))
             .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
-        let (evaluation, results) = evidence::locked_merge_checks(
+        let checks = evidence::locked_merge_checks(
             &tx,
             &request,
             &expected_merge_evidence,
@@ -161,8 +161,8 @@ impl RequestStore {
             checks: request_checks_outcome(
                 &request.id,
                 &request.head_oid,
-                evaluation.as_ref(),
-                &results,
+                checks.evaluation.as_ref(),
+                &checks.results,
             ),
         });
         if expected_auto_merge.is_some()
@@ -282,6 +282,7 @@ impl RequestStore {
         } else {
             request_mutation
         };
+        checks.ensure_fresh(now_unix.saturating_add(started.elapsed().as_secs()))?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(MergeRequestContentMutation {
             request: request_mutation,

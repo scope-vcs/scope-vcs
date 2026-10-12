@@ -257,6 +257,8 @@ Follow these paths from application coordination to durable rules and storage:
   GitHub evidence additionally requires the same destination and settled, fresh
   read sequence, protected by connection and refresh-row locks. Network reads
   finish before those locks; changed evidence requires fresh preparation.
+  Locked evidence carries its expiry through publication waits and checks it
+  again immediately before commit, rolling back writes if confirmation expired.
 - `request_auto_merge.rs` owns authorization, cancellation, claims, and terminal
   intent transitions. Request, membership, check, and run transactions stop
   affected intents atomically. The final merge transaction revalidates the

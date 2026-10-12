@@ -608,47 +608,91 @@ async fn manual_merge_rejects_check_reads_that_changed_after_preparation() {
 }
 
 #[tokio::test]
-async fn final_merge_fences_new_check_reads_until_content_and_lifecycle_commit() {
+async fn final_merge_fences_check_reads_and_rejects_expiry_while_publication_waits() {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
-    let store = merge_store_with_github(true).await;
-    apply_github_result(&store, true).await;
-    let prepared = merge_preparation(&store).await;
-    let command = merge_command(&store, "user_owner", prepared).await;
-    let held = store.db.begin().await.unwrap();
-    let holder_pid: i32 = held
-        .query_one_raw(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SELECT pg_backend_pid() AS pid",
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get("", "pid")
-        .unwrap();
-    held.execute_unprepared("SELECT id FROM scope_repositories WHERE id = 'owner/repo' FOR UPDATE")
-        .await
-        .unwrap();
-    let merge_store = store.clone();
-    let merge = tokio::spawn(async move {
-        merge_store
-            .requests()
-            .merge_request_content(command, &super::super::generated_ids::test_generated_id)
+    for expires in [false, true] {
+        let store = merge_store_with_github(true).await;
+        apply_github_result(&store, true).await;
+        let prepared = merge_preparation(&store).await;
+        let command = merge_command(&store, "user_owner", prepared).await;
+        let held = store.db.begin().await.unwrap();
+        let holder_pid: i32 = held
+            .query_one_raw(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "SELECT pg_backend_pid() AS pid",
+            ))
             .await
-    });
-    let merge_pid = super::super::locks::wait_for_transaction_waiter(&store, holder_pid).await;
-    let read_store = store.clone();
-    let read = tokio::spawn(async move {
-        read_store
-            .requests()
-            .start_github_check_read(&github_commit())
-            .await
-    });
-    super::super::locks::wait_for_transaction_waiter(&store, merge_pid).await;
-    assert!(!read.is_finished());
-    held.commit().await.unwrap();
-    assert_eq!(
-        merge.await.unwrap().unwrap().request.request.state(),
-        RequestState::Merged
-    );
-    assert_eq!(read.await.unwrap().unwrap(), 2);
+            .unwrap()
+            .unwrap()
+            .try_get("", "pid")
+            .unwrap();
+        held.execute_unprepared(
+            "SELECT id FROM scope_repositories WHERE id = 'owner/repo' FOR UPDATE",
+        )
+        .await
+        .unwrap();
+        let merge_store = store.clone();
+        let merge = tokio::spawn(async move {
+            merge_store
+                .requests()
+                .merge_request_content(command, &super::super::generated_ids::test_generated_id)
+                .await
+        });
+        let merge_pid = super::super::locks::wait_for_transaction_waiter(&store, holder_pid).await;
+        let read_store = store.clone();
+        let read = tokio::spawn(async move {
+            read_store
+                .requests()
+                .start_github_check_read(&github_commit())
+                .await
+        });
+        super::super::locks::wait_for_transaction_waiter(&store, merge_pid).await;
+        assert!(!read.is_finished());
+        if expires {
+            tokio::time::sleep(std::time::Duration::from_secs(
+                scope_domain::requests::GITHUB_CHECK_MERGE_FRESHNESS_SECS + 1,
+            ))
+            .await;
+        }
+        held.commit().await.unwrap();
+        let result = merge.await.unwrap();
+        if expires {
+            assert_eq!(
+                result.unwrap_err().kind,
+                crate::error::PostgresErrorKind::Conflict
+            );
+        } else {
+            assert_eq!(
+                result.unwrap().request.request.state(),
+                RequestState::Merged
+            );
+        }
+        assert_eq!(read.await.unwrap().unwrap(), 2);
+        assert_eq!(
+            store
+                .requests()
+                .request_for_tests("req_1")
+                .await
+                .unwrap()
+                .unwrap()
+                .state(),
+            if expires {
+                RequestState::Open
+            } else {
+                RequestState::Merged
+            }
+        );
+        assert_eq!(
+            store
+                .repositories()
+                .repository_for_tests("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .git_head
+                .unwrap()
+                .head_oid,
+            if expires { BASE_HEAD } else { MERGED_HEAD }
+        );
+    }
 }
