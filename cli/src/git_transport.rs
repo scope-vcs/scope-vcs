@@ -4,7 +4,6 @@ use reqwest::Url;
 use scope_domain::views::ViewId;
 
 pub const DEFAULT_SCOPE_REMOTE: &str = "scope";
-const LEGACY_FULL_VIEW_SEGMENT: &str = "permissioned";
 const SCOPE_REMOTE_PATH_HINT: &str = "Scope remote must have path /git/<view>/owner/repo";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -85,21 +84,6 @@ impl ScopeRemote {
     }
 }
 
-pub fn legacy_full_view_url(remote_url: &str) -> Option<String> {
-    let mut url = Url::parse(remote_url).ok()?;
-    let segments = url.path_segments()?.map(str::to_owned).collect::<Vec<_>>();
-    if segments.len() != 4 || segments[0] != "git" || segments[1] != LEGACY_FULL_VIEW_SEGMENT {
-        return None;
-    }
-    url.set_path(&format!(
-        "/git/{}/{}/{}",
-        ViewId::PRIVATE,
-        segments[2],
-        segments[3]
-    ));
-    Some(url.to_string())
-}
-
 pub fn scope_path_origin(remote_url: &str) -> Option<String> {
     ScopeRemote::from_url(remote_url)
         .ok()
@@ -121,12 +105,6 @@ pub fn select_scope_push_remote(
     explicit_remote: Option<&str>,
 ) -> anyhow::Result<String> {
     crate::context::select_remote(repo, api_url, explicit_remote, true)
-}
-
-pub(crate) fn redacted_remote_url(remote_url: &str) -> String {
-    Url::parse(remote_url)
-        .map(|url| redacted_url(&url))
-        .unwrap_or_else(|_| "an unparseable URL".into())
 }
 
 fn redacted_url(url: &Url) -> String {
@@ -178,24 +156,6 @@ mod tests {
             remote.url_for_view(&ViewId::parse("agent").unwrap()),
             "https://git.scope.example/git/agent/adam/repo"
         );
-    }
-
-    #[test]
-    fn only_legacy_permissioned_remotes_are_rewritten_to_the_full_view() {
-        assert_eq!(
-            legacy_full_view_url("https://scope@scope.example/git/permissioned/adam/repo")
-                .as_deref(),
-            Some("https://scope@scope.example/git/private/adam/repo")
-        );
-        for remote in [
-            "https://scope.example/git/private/adam/repo",
-            "https://scope.example/git/public/adam/repo",
-            "https://scope.example/git/permissioned/adam",
-            "https://github.com/adam/permissioned",
-            "not a url",
-        ] {
-            assert_eq!(legacy_full_view_url(remote), None, "{remote}");
-        }
     }
 
     #[test]

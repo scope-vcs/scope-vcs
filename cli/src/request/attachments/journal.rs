@@ -1,3 +1,4 @@
+use crate::unix_now;
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -7,7 +8,6 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 const MAX_JOURNAL_BYTES: u64 = 2 * 1024 * 1024;
@@ -58,7 +58,7 @@ pub(super) fn upload_operations(keys: &[&str]) -> anyhow::Result<Vec<String>> {
     let path = journal_path()?;
     let _lock = lock_journal(&path)?;
     let mut journal = load_journal(&path)?;
-    let now = unix_now()?;
+    let now = unix_now();
     let operations = keys
         .iter()
         .map(|key| journal.upload_operation_id(key, now))
@@ -77,7 +77,7 @@ pub(super) fn rotate_upload_operation(
     journal
         .uploads
         .retain(|receipt| receipt.key != key || receipt.operation_id != expired_operation_id);
-    let operation_id = journal.upload_operation_id(key, unix_now()?)?;
+    let operation_id = journal.upload_operation_id(key, unix_now())?;
     save_journal(&path, &mut journal)?;
     Ok(operation_id)
 }
@@ -116,7 +116,7 @@ pub(crate) fn begin_mutation(
     let path = journal_path()?;
     let _lock = lock_journal(&path)?;
     let mut journal = load_journal(&path)?;
-    let now = unix_now()?;
+    let now = unix_now();
     let client_id = if let Some(receipt) = journal
         .pending_mutations
         .iter_mut()
@@ -249,7 +249,7 @@ fn save_journal(path: &Path, journal: &mut ReceiptJournal) -> anyhow::Result<()>
     let temp_path = parent.join(format!(
         ".request-attachments.{}.{}.tmp",
         std::process::id(),
-        unix_now()?
+        unix_now()
     ));
     let result = (|| -> anyhow::Result<()> {
         write_private_file(&temp_path, &bytes)?;
@@ -332,13 +332,6 @@ fn secure_directory(path: &Path) -> anyhow::Result<()> {
             .context("secure Scope attachment receipt directory")?;
     }
     Ok(())
-}
-
-pub(super) fn unix_now() -> anyhow::Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system clock is before Unix epoch")?
-        .as_secs())
 }
 
 #[cfg(test)]
