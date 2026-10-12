@@ -271,6 +271,13 @@ async fn receive_pack_request(
     request: Request,
     access: ReceivePackAccess,
 ) -> Response {
+    let base_publication =
+        match crate::use_cases::request_base_publication::RequestBasePublicationHeaders::parse(
+            &headers,
+        ) {
+            Ok(publication) => publication,
+            Err(error) => return git_error_response(error),
+        };
     let content_type = headers
         .get(CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
@@ -294,6 +301,7 @@ async fn receive_pack_request(
         &org,
         &repo,
         request.into_body(),
+        base_publication,
         content_length,
         content_type,
         access,
@@ -438,11 +446,15 @@ async fn handle_git_receive_pack_body(
     owner: &str,
     repo_name: &str,
     body: Body,
+    base_publication: Option<
+        crate::use_cases::request_base_publication::RequestBasePublicationHeaders,
+    >,
     content_length: Option<u64>,
     content_type: Option<String>,
     access: ReceivePackAccess,
 ) -> Result<Response, ApiError> {
-    let preparation = git_receive::prepare(state, owner, repo_name, access, false).await?;
+    let mut preparation = git_receive::prepare(state, owner, repo_name, access, false).await?;
+    preparation.base_publication = base_publication;
     let remote_user = preparation.access.author_id().to_string();
     let staging_repo = TemporaryRepository(preparation.staging_repo.clone());
     let receive_started_at = Instant::now();

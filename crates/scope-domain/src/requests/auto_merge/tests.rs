@@ -49,7 +49,7 @@ fn open_request() -> Request {
         view: crate::views::ViewId::public(),
         base_version: 1,
         stack_status: crate::requests::RequestStackStatus::Main,
-        stack_depth: 0,
+        stack_depth: 1,
         base: crate::requests::RequestBase::Main {
             review_base_oid: "c".repeat(40),
         },

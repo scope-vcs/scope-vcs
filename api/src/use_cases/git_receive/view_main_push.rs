@@ -274,11 +274,15 @@ async fn provisional_request(
         let access = &context.access;
         let started = start_main_push_draft(
             StartRequestFacts {
+                stack_depth: 1,
                 request_id_exists: false,
                 request_name_exists: request_with_name.is_some(),
                 public_working_request_count: 0,
             },
             StartRequestInput {
+                base: scope_domain::requests::RequestBase::Main {
+                    review_base_oid: (provisional.view_main_oid.to_string()).clone(),
+                },
                 id: provisional.request_id.to_string(),
                 repo_id: context.repo_id.clone(),
                 name,

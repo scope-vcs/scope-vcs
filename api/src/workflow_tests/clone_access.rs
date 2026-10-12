@@ -174,6 +174,9 @@ async fn public_git_read_view_physically_excludes_private_objects() {
         .metadata
         .requests()
         .start_request(StartRequestInput {
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: main_ancestor_oid.clone(),
+            },
             id: "req_public_read_view".to_string(),
             repo_id: TEST_REPO_ID.to_string(),
             name: "public-fix".to_string(),

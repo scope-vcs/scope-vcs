@@ -23,7 +23,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-fn read_policy(repo: &Repository) -> RepositoryReadPolicy {
+pub(super) fn read_policy(repo: &Repository) -> RepositoryReadPolicy {
     RepositoryReadPolicy {
         context: RepositoryAccessContext {
             record: repo.record.clone(),
@@ -157,6 +157,7 @@ fn revision_response_keeps_oversized_commit_identity_and_prioritizes_selection()
         id: "revision-1".to_string(),
         request_id: "request-1".to_string(),
         position: 1,
+        base_version: 1,
         actor_user_id: Some("owner-1".to_string()),
         old_head_oid: base.clone(),
         new_head_oid: last.clone(),
@@ -257,6 +258,7 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
         id: "revision-1".to_string(),
         request_id: "request-1".to_string(),
         position: 1,
+        base_version: 1,
         actor_user_id: Some("owner-1".to_string()),
         old_head_oid: base.clone(),
         new_head_oid: empty.clone(),
@@ -400,6 +402,7 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
         id: "revision-root".to_string(),
         request_id: "request-root".to_string(),
         position: 1,
+        base_version: 1,
         actor_user_id: Some("owner-1".to_string()),
         old_head_oid: base.clone(),
         new_head_oid: head,

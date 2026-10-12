@@ -45,6 +45,9 @@ async fn open_request_with_revision(
         .metadata
         .requests()
         .start_request(StartRequestInput {
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: (FIRST_HEAD.to_string()).clone(),
+            },
             id: request_id.to_string(),
             repo_id: TEST_REPO_ID.to_string(),
             name: request_id.replace('_', "-"),
@@ -108,6 +111,7 @@ async fn record_revision(
         .requests()
         .record_request_revision(
             RecordRequestRevisionInput {
+                new_base: None,
                 request_id: request_id.to_string(),
                 actor_user_id: actor_user_id.to_string(),
                 actor_can_edit: true,

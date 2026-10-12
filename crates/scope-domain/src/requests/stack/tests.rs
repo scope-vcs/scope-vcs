@@ -40,7 +40,7 @@ fn child(parent: &Request) -> Request {
         revision_id: "parent-revision".into(),
         head_oid: parent.head_oid.clone(),
     };
-    child.stack_depth = 1;
+    child.stack_depth = 2;
     child.stack_status = RequestStackStatus::WaitingForParent;
     child.head_oid = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into();
     child.git_snapshot = Some(source_blob(&child.head_oid));
@@ -62,7 +62,7 @@ fn parent_pin_rejects_wrong_revision_view_cycles_and_overdepth() {
             Some(&revision)
         )
         .unwrap(),
-        1
+        2
     );
     revision.id = "stale-revision".into();
     assert!(
@@ -105,13 +105,47 @@ fn parent_pin_rejects_wrong_revision_view_cycles_and_overdepth() {
         )
         .is_err()
     );
+    let ancestry = |count: usize| {
+        (0..count)
+            .map(|index| {
+                let mut ancestor = parent.clone();
+                ancestor.id = if index == 0 {
+                    parent.id.clone()
+                } else {
+                    format!("ancestor-{index}")
+                };
+                ancestor.stack_depth = (count - index) as u32;
+                if index + 1 < count {
+                    ancestor.base = RequestBase::Request {
+                        request_id: format!("ancestor-{}", index + 1),
+                        revision_id: "saved-ancestor-revision".into(),
+                        head_oid: parent.head_oid.clone(),
+                    };
+                    ancestor.stack_status = RequestStackStatus::WaitingForParent;
+                }
+                ancestor
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        validate_request_stack_base(
+            &child.id,
+            &child.repo_id,
+            &child.view,
+            &child.base,
+            &ancestry(32),
+            Some(&revision)
+        )
+        .unwrap(),
+        33
+    );
     assert!(
         validate_request_stack_base(
             &child.id,
             &child.repo_id,
             &child.view,
             &child.base,
-            &vec![parent; 33],
+            &ancestry(33),
             Some(&revision)
         )
         .is_err()

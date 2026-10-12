@@ -81,6 +81,8 @@ pub(crate) struct ReceivePreparation {
     pub(crate) access: ReceivePackAccess,
     pub(crate) staging_repo: PathBuf,
     pub(crate) refs_before: Option<Vec<(String, String)>>,
+    pub(crate) base_publication:
+        Option<crate::use_cases::request_base_publication::RequestBasePublicationHeaders>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,6 +170,7 @@ pub(crate) async fn prepare(
         access,
         staging_repo,
         refs_before,
+        base_publication: None,
     })
 }
 
@@ -248,6 +251,7 @@ async fn complete_inner(
             &preparation.access,
             staging_repo,
             update,
+            preparation.base_publication,
         )
         .await?;
         tracing::info!(
@@ -259,6 +263,11 @@ async fn complete_inner(
         return Ok(ReceiveCompletion::RequestRevision);
     }
 
+    if preparation.base_publication.is_some() {
+        return Err(ApiError::bad_request(
+            "request base headers require a request ref update",
+        ));
+    }
     match preparation.access {
         ReceivePackAccess::RequestContributor { .. } => {
             return Err(ApiError::bad_request(

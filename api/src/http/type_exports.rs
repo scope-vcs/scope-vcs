@@ -35,24 +35,25 @@ use scope_api_contract::{
     RequestAttentionResponse, RequestAttentionState, RequestAutoMergeIntentResponse,
     RequestAutoMergeIntentStatus, RequestAutoMergeResponse, RequestAutoMergeStopReason,
     RequestBase, RequestCheckEvaluationState, RequestCheckResponse, RequestCheckRunResponse,
-    RequestChecksResponse, RequestCloseResponse, RequestDetailResponse, RequestDiscussionAnchor,
-    RequestDiscussionAnchorInput, RequestDiscussionChangesResponse,
-    RequestDiscussionMutationResponse, RequestDiscussionPageResponse,
-    RequestDiscussionReadResponse, RequestDiscussionRepliesPageResponse,
-    RequestDiscussionReplyMutationResponse, RequestDiscussionReplyReferenceResponse,
-    RequestDiscussionReplyResponse, RequestDiscussionStatus, RequestDiscussionSummaryResponse,
-    RequestEventKind, RequestEventPayload, RequestEventResponse, RequestGitHubPushResponse,
-    RequestGitHubPushState, RequestIdentityAuditFact, RequestInviteeMutationResponse,
-    RequestInviteeResponse, RequestListItemResponse, RequestListResponse,
-    RequestMergeabilityResponse, RequestMergeabilityStatus, RequestMutationResponse,
-    RequestPermissionsResponse, RequestQueueGroup, RequestQueueItemResponse,
-    RequestQueuePageResponse, RequestQueueSection, RequestRatingParticipantResponse,
-    RequestRatingResponse, RequestRatingsResponse, RequestRevisionCommitResponse,
+    RequestChecksResponse, RequestCloseResponse, RequestComparisonMode, RequestComparisonResponse,
+    RequestDetailResponse, RequestDiscussionAnchor, RequestDiscussionAnchorInput,
+    RequestDiscussionChangesResponse, RequestDiscussionMutationResponse,
+    RequestDiscussionPageResponse, RequestDiscussionReadResponse,
+    RequestDiscussionRepliesPageResponse, RequestDiscussionReplyMutationResponse,
+    RequestDiscussionReplyReferenceResponse, RequestDiscussionReplyResponse,
+    RequestDiscussionStatus, RequestDiscussionSummaryResponse, RequestEventKind,
+    RequestEventPayload, RequestEventResponse, RequestGitHubPushResponse, RequestGitHubPushState,
+    RequestIdentityAuditFact, RequestInviteeMutationResponse, RequestInviteeResponse,
+    RequestListItemResponse, RequestListResponse, RequestMergeabilityResponse,
+    RequestMergeabilityStatus, RequestMutationResponse, RequestPermissionsResponse,
+    RequestQueueGroup, RequestQueueItemResponse, RequestQueuePageResponse, RequestQueueSection,
+    RequestRatingParticipantResponse, RequestRatingResponse, RequestRatingsResponse,
+    RequestRevisionCommitResponse, RequestRevisionContextRequest, RequestRevisionContextResponse,
     RequestRevisionInspectionState, RequestRevisionListResponse, RequestRevisionResponse,
-    RequestState, RequestStateResponse, RequestSummaryResponse, RetryRequestAttachmentRequest,
-    RunChangeKind, RunLogResponse, RunResponse, RunState, SessionIdentity, StartRequestRequest,
-    StepState, SubmitRequestRequest, UpdateRepoMetadataRequest, UserResponse, ViewDefinition,
-    ViewId, ViewIncludes, ViewReaders,
+    RequestStackStatus, RequestState, RequestStateResponse, RequestSummaryResponse,
+    RetryRequestAttachmentRequest, RunChangeKind, RunLogResponse, RunResponse, RunState,
+    SessionIdentity, StartRequestRequest, StepState, SubmitRequestRequest,
+    UpdateRepoMetadataRequest, UserResponse, ViewDefinition, ViewId, ViewIncludes, ViewReaders,
 };
 use scope_api_contract::{
     RepositoryDependencyCheckResponse, RepositoryDependencyCheckStatus,
@@ -251,6 +252,11 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         RequestMutationResponse,
         RequestListItemResponse,
         RequestBase,
+        RequestStackStatus,
+        RequestComparisonMode,
+        RequestComparisonResponse,
+        RequestRevisionContextRequest,
+        RequestRevisionContextResponse,
         RequestSummaryResponse,
         RequestInviteeResponse,
         AddRequestInviteeRequest,
@@ -401,6 +407,7 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         RequestMutationResponse,
         RequestRatingResponse,
         RequestRatingsResponse,
+        RequestRevisionContextResponse,
         RequestRevisionListResponse,
         ReviewFileDiffResponse,
         RunResponse,
@@ -457,6 +464,10 @@ fn api_path_builder_declaration() -> String {
 
 fn declaration<T: TS>(config: &ts_rs::Config) -> String {
     format!("export {}", T::decl(config))
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn schema<T: JsonSchema>() -> (String, serde_json::Value) {

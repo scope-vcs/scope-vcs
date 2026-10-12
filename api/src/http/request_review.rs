@@ -29,8 +29,9 @@ use axum::{
     http::HeaderMap,
 };
 use scope_api_contract::{
-    CommitFileResponse, GitOid, RequestRevisionCommitResponse, RequestRevisionInspectionState,
-    RequestRevisionListResponse, RequestRevisionResponse,
+    CommitFileResponse, GitOid, RequestComparisonMode, RequestComparisonResponse,
+    RequestRevisionCommitResponse, RequestRevisionInspectionState, RequestRevisionListResponse,
+    RequestRevisionResponse,
 };
 use scope_domain::{
     policy::ScopePath,
@@ -41,7 +42,9 @@ use scope_postgres::db::RepositoryReadPolicy;
 use serde::Deserialize;
 use std::{path::Path as FsPath, sync::Arc};
 
+mod comparison;
 mod inspection;
+pub(crate) use comparison::get_request_revision_file_diff;
 
 use inspection::{
     inspect_request_commit, inspect_request_commits_identity_only, request_revision_commit_files,
@@ -56,6 +59,7 @@ const MAX_IMPORTED_REQUEST_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Deserialize)]
 pub(crate) struct RequestRevisionListRequest {
+    comparison: Option<RequestComparisonMode>,
     revision: Option<String>,
     commit: Option<String>,
 }
@@ -83,6 +87,11 @@ pub(crate) async fn list_request_revisions(
             "selecting a request commit requires a revision",
         ));
     }
+    let mode = comparison::selected_mode(
+        input.comparison,
+        input.commit.is_some(),
+        access.view.is_private(),
+    )?;
     let revision_window = state
         .metadata
         .requests()
@@ -118,6 +127,7 @@ pub(crate) async fn list_request_revisions(
             .filter(|index| Some(*index) != selected_revision_index),
     );
     let mut work_budget = RequestRevisionListWorkBudget::new();
+    let mut comparison_response = None;
     for index in processing_order {
         let revision = &revisions[index];
         let commit_limit = work_budget.claim_revision(revision.git_snapshot.size_bytes);
@@ -128,27 +138,61 @@ pub(crate) async fn list_request_revisions(
                 .flatten();
             let file_limit = work_budget.remaining_files;
             let inspection_access = access.clone();
+            let selected_comparison =
+                Some(index) == selected_revision_index && access.view.is_private();
             let inspected = with_request_revision_store_repo(
                 &state,
                 &repo.context.incarnation(),
                 &request,
                 revision,
                 move |raw_repo, revision| {
-                    request_revision_commits(
+                    let comparison = selected_comparison
+                        .then(|| {
+                            comparison::inspect_comparison(
+                                raw_repo,
+                                &repo_for_inspection,
+                                &inspection_access,
+                                revision,
+                                mode,
+                                selected_commit.as_deref(),
+                                comparison::ComparisonFileSelection {
+                                    limit: file_limit,
+                                    path: None,
+                                },
+                            )
+                        })
+                        .transpose()?;
+                    let remaining_files = file_limit
+                        .saturating_sub(comparison.as_ref().map_or(0, |value| value.files.len()));
+                    let commits = request_revision_commits(
                         raw_repo,
                         &repo_for_inspection,
                         inspection_access,
                         revision,
                         selected_commit.as_deref(),
                         commit_limit,
-                        file_limit,
-                    )
+                        remaining_files,
+                    )?;
+                    Ok((commits, comparison))
                 },
             )
             .await?;
-            work_budget.record_inspected(inspected.inspected, inspected.files_listed);
+            let (inspected, selected_comparison) = inspected;
+            let comparison_files = selected_comparison
+                .as_ref()
+                .map_or(0, |value| value.files.len());
+            if selected_comparison.is_some() {
+                comparison_response = selected_comparison;
+            }
+            work_budget.record_inspected(
+                inspected.inspected,
+                inspected.files_listed + comparison_files,
+            );
             (inspected.visible, inspected.inspection)
         } else {
+            if Some(index) == selected_revision_index && access.view.is_private() {
+                comparison_response = Some(comparison::unavailable_comparison(revision, mode));
+            }
             (Vec::new(), RequestRevisionInspectionState::Unavailable)
         };
         let (old_head_oid, new_head_oid) = if access.view.is_private() {
@@ -168,6 +212,8 @@ pub(crate) async fn list_request_revisions(
         responses[index] = Some(RequestRevisionResponse {
             id: revision.id.clone(),
             position: revision.position,
+            base: crate::http::responses::request_base_response(revision.base.clone())?,
+            base_version: revision.base_version,
             actor: recorded_actor_response(revision.actor_user_id.as_deref(), &users)?,
             old_head_oid,
             new_head_oid,
@@ -181,6 +227,7 @@ pub(crate) async fn list_request_revisions(
         .map(|response| response.expect("every request revision is processed once"))
         .collect();
     Ok(Json(RequestRevisionListResponse {
+        comparison: comparison_response,
         review_revision_id,
         revisions,
         has_earlier_revisions: revision_window.has_earlier_revisions,
@@ -414,19 +461,24 @@ fn request_revision_commit_oids(
     limit: usize,
 ) -> Result<Vec<String>, ApiError> {
     let range = comparison.membership();
-    let exclude_earlier_history = format!("^{}", range.excluded_ancestor_oid());
+    let exclusions = range
+        .excluded_ancestor_oids()
+        .iter()
+        .map(|oid| format!("^{oid}"))
+        .collect::<Vec<_>>();
     let max_count = format!("--max-count={}", limit.saturating_add(1));
     let max_output_bytes = limit.saturating_add(1).saturating_mul(41);
+    let mut args = vec![
+        "rev-list",
+        &max_count,
+        "--reverse",
+        "--topo-order",
+        range.head_oid(),
+    ];
+    args.extend(exclusions.iter().map(String::as_str));
     let output = run_git_output_bounded(
         Some(raw_repo),
-        &[
-            "rev-list",
-            &max_count,
-            "--reverse",
-            "--topo-order",
-            range.head_oid(),
-            &exclude_earlier_history,
-        ],
+        &args,
         "reading request revision commits",
         max_output_bytes,
     )?;

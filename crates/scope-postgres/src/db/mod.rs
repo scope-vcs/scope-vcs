@@ -83,11 +83,11 @@ mod request_media;
 mod request_merge;
 mod request_queue;
 mod request_ratings;
+mod request_revision_context;
 mod request_revision_rows;
 mod request_rows;
-mod request_state;
 mod request_stack;
-mod request_revision_context;
+mod request_state;
 mod request_submission_transactions;
 mod requests;
 mod run_admission;
@@ -215,10 +215,10 @@ pub use request_merge::{LandedRequestCandidate, LandedRequestCompletion};
 pub use request_queue::{
     RequestQueueCursor, RequestQueuePage, RequestQueuePageQuery, RequestQueueRow,
 };
-pub use request_rows::{RequestListPageQuery, RequestListRow};
-pub use request_state::RequestStateSnapshot;
-pub use request_stack::{RequestParentPublicationFacts, RequestStackChildFacts};
 pub use request_revision_context::RequestRevisionContextPublication;
+pub use request_rows::{RequestListPageQuery, RequestListRow};
+pub use request_stack::{RequestParentPublicationFacts, RequestStackChildFacts};
+pub use request_state::RequestStateSnapshot;
 pub use run_admission::DispatchAdmission;
 pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePreparationCommand};
 pub use run_details::{RunAttemptDetail, RunDetail};

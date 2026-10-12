@@ -14,6 +14,95 @@ const MAX_REQUEST_COMMIT_IDENTITY_BYTES: usize = 64 * 1024;
 const MAX_REQUEST_COMMIT_METADATA_BYTES: usize = 64 * 1024;
 const MAX_REQUEST_DIFF_FIELD_BYTES: usize = 64 * 1024;
 
+pub(super) fn request_commit_first_parent(
+    raw_repo: &FsPath,
+    oid: &str,
+) -> Result<Option<String>, ApiError> {
+    Ok(request_commit_identity(raw_repo, oid)?
+        .parent_oids
+        .into_iter()
+        .next())
+}
+
+pub(super) fn inspect_comparison_files(
+    raw_repo: &FsPath,
+    policy: &Policy,
+    views: &Views,
+    access: &RepositoryAccess,
+    base_oid: Option<&str>,
+    head_oid: &str,
+    selection: comparison::ComparisonFileSelection<'_>,
+) -> Result<(Vec<CommitFileResponse>, bool), ApiError> {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(raw_repo).args([
+        "--literal-pathspecs",
+        "diff-tree",
+        "--root",
+        "--no-commit-id",
+        "-r",
+        "--raw",
+        "-z",
+        "--no-renames",
+        "--abbrev=64",
+    ]);
+    if let Some(base_oid) = base_oid {
+        command.arg(base_oid);
+    }
+    command.arg(head_oid).arg("--");
+    if let Some(path) = selection.path {
+        command.arg(path);
+    }
+    let git_span = crate::git::command::prepare_git_subprocess(&mut command)?;
+    let _entered = git_span.enter();
+    let policy = policy.clone();
+    let views = views.clone();
+    let access = access.clone();
+    let output = run_with_stdout(
+        &mut command,
+        None,
+        ProcessLimits::new(RuntimeBudgets::default_git_command_timeout()),
+        "reading request comparison files",
+        move |stdout, _cancellation| {
+            let mut reader = BufReader::new(stdout);
+            let mut files = Vec::new();
+            let mut incomplete = false;
+            while let Some(header) = read_nul_field_bounded(&mut reader)? {
+                validate_request_diff_header(&header)?;
+                let path = read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
+                    ApiError::internal_message("request comparison diff is missing a path")
+                })?;
+                if path.truncated || files.len() == selection.limit {
+                    incomplete = true;
+                    continue;
+                }
+                let mut raw = header.bytes;
+                raw.push(0);
+                raw.extend(path.bytes);
+                raw.push(0);
+                let inspected = inspect_request_changes(&raw, &policy, &views, &access)?;
+                incomplete |= inspected.hidden;
+                files.extend(inspected.files.into_iter().map(request_file_response));
+            }
+            files.sort_by(|left, right| left.path.cmp(&right.path));
+            Ok((files, incomplete))
+        },
+    )
+    .map_err(|error| match error {
+        StreamingProcessError::Process(error) => {
+            ApiError::infrastructure_unavailable(error.to_string())
+        }
+        StreamingProcessError::Consumer(error) => error,
+    })?;
+    crate::git::command::record_git_exit(&git_span, output.status);
+    if !output.status.success() {
+        return Err(ApiError::infrastructure_unavailable(format!(
+            "reading request comparison files: {}",
+            truncated_stderr(&output.stderr, scope_git_process::STDERR_DIAGNOSTIC_BYTES).trim()
+        )));
+    }
+    Ok(output.value)
+}
+
 pub(super) fn request_revision_commit_files(
     raw_repo: &FsPath,
     policy: &Policy,

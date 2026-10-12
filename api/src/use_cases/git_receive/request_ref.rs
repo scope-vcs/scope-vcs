@@ -231,6 +231,9 @@ pub(super) async fn persist_request_ref_revision(
     access: &super::ReceivePackAccess,
     staging_repo: &Path,
     update: RequestRefUpdate,
+    base_publication: Option<
+        crate::use_cases::request_base_publication::RequestBasePublicationHeaders,
+    >,
 ) -> Result<(), ApiError> {
     let expected_incarnation = access.incarnation();
     let actor_user_id = access.author_id();
@@ -253,6 +256,29 @@ pub(super) async fn persist_request_ref_revision(
     }
     let update_lock =
         acquire_request_ref_update_lock_async(state, &incarnation, &update.request_ref).await?;
+    let (publication, parent_facts) =
+        crate::use_cases::request_base_publication::prepare_request_base_publication(
+            state,
+            &incarnation,
+            &request,
+            base_publication,
+            staging_repo,
+            &update.new_head_oid,
+        )
+        .await?;
+    let child_facts =
+        crate::use_cases::request_base_publication::request_stack_child_publication_facts(
+            state,
+            &incarnation,
+            &request,
+            staging_repo,
+            &update.new_head_oid,
+        )
+        .await?;
+    let mut published_request = request.clone();
+    if let Some(publication) = &publication {
+        published_request.base = publication.base.clone();
+    }
     let request_view = request.view.clone();
     let now_unix = unix_now()?;
     let expected_old_head_oid = update
@@ -264,26 +290,35 @@ pub(super) async fn persist_request_ref_revision(
         &git,
         &context.repo_config,
         staging_repo,
-        &request,
+        &published_request,
         &update,
     )
     .await?;
+    let expected_base_version = publication
+        .as_ref()
+        .map_or(request.base_version, |publication| {
+            publication.expected_base_version
+        });
     let mutation = state
         .metadata
         .requests()
-        .record_request_revision(
+        .record_request_revision_with_stack(
             RecordRequestRevisionInput {
                 request_id: request.id.clone(),
                 actor_user_id: actor_user_id.to_string(),
                 actor_can_edit: false,
                 expected_old_head_oid,
                 new_head_oid: update.new_head_oid.clone(),
+                new_base: publication.map(|publication| publication.base),
                 git_snapshot: persisted.git_snapshot.clone(),
                 git_facts: persisted.git_facts.clone(),
                 event_id: crate::persistence_ids::generate_prefixed_id("event_request_revision")?,
                 body: None,
                 now_unix,
             },
+            expected_base_version,
+            parent_facts,
+            child_facts,
             &crate::persistence_ids::generate_persistence_id,
         )
         .await;

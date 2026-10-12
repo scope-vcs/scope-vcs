@@ -29,13 +29,9 @@ pub(crate) fn request_summary_response(
         author_user_id: request.author_user_id,
         author_role: request.author_role.into(),
         view: request.view.into(),
-        base: match request.base {
-            scope_domain::requests::RequestBase::Main { review_base_oid } => {
-                scope_api_contract::RequestBase::Main {
-                    review_base_oid: super::git_oid_response(review_base_oid)?,
-                }
-            }
-        },
+        base: request_base_response(request.base)?,
+        stack_status: request.stack_status.into(),
+        stack_depth: request.stack_depth,
         base_version: request.base_version,
         main_ancestor_oid: super::git_oid_response(request.main_ancestor_oid)?,
         head_oid: super::git_oid_response(request.head_oid)?,
@@ -76,6 +72,7 @@ pub(crate) fn request_list_item_response(
             view: &request.view,
             state: request.state,
             has_git_snapshot: request.has_git_snapshot,
+            stack_status: request.stack_status,
         },
         viewer,
         views,
@@ -91,6 +88,10 @@ pub(crate) fn request_list_item_response(
         author_role: request.author_role.into(),
         view: request.view.into(),
         head_oid: request_head_oid.clone(),
+        base: request_base_response(request.base)?,
+        base_version: request.base_version,
+        stack_status: request.stack_status.into(),
+        stack_depth: request.stack_depth,
         state: request.state.into(),
         submitted_at_unix: request.submitted_at_unix,
         updated_at_unix: request.updated_at_unix,
@@ -106,15 +107,15 @@ pub(crate) fn request_list_item_response(
 pub(crate) fn request_event_response(
     event: RequestEvent,
     actor: Option<RequestActorSummaryResponse>,
-) -> RequestEventResponse {
-    RequestEventResponse {
+) -> Result<RequestEventResponse, ApiError> {
+    Ok(RequestEventResponse {
         id: event.id,
         position: event.position,
         actor,
         kind: event.kind.into(),
-        payload: event.payload.into(),
+        payload: event.payload.try_into().map_err(ApiError::internal)?,
         created_at_unix: event.created_at_unix,
-    }
+    })
 }
 
 pub(crate) fn request_response(
@@ -151,4 +152,11 @@ pub(crate) fn request_response(
         reason: decision.reason.map(str::to_string),
     };
     request_summary_response(request, invitees, permissions, mergeability)
+}
+
+pub(crate) fn request_base_response(
+    base: scope_domain::requests::RequestBase,
+) -> Result<scope_api_contract::RequestBase, ApiError> {
+    base.try_into()
+        .map_err(|error| ApiError::internal_message(format!("persisted {error}")))
 }

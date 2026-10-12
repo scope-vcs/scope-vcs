@@ -475,7 +475,7 @@ pub(crate) async fn activity(
         .into_iter()
         .map(|event| {
             let actor = recorded_actor_response(event.actor_user_id.as_deref(), &users)?;
-            Ok(request_event_response(event, actor))
+            request_event_response(event, actor)
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
     Ok(Json(RequestActivityPageResponse {

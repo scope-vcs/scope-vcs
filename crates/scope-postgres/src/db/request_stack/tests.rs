@@ -490,7 +490,7 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
     );
     assert_eq!(retargeted.base_version, child.base_version + 1);
     assert_eq!(retargeted.head_oid, child.head_oid);
-    assert_eq!(retargeted.stack_depth, 0);
+    assert_eq!(retargeted.stack_depth, 1);
     let retained = store
         .requests()
         .request_check_evaluation(&child.id, &child.head_oid)
@@ -502,7 +502,7 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
     assert_eq!(retained.tested_oid, evaluation.tested_oid);
     assert_eq!(retained.base_version, retargeted.base_version);
     assert!(retained.matches_request(&retargeted));
-    assert_eq!(load(&store, &grandchild.id).await.stack_depth, 1);
+    assert_eq!(load(&store, &grandchild.id).await.stack_depth, 2);
     assert_eq!(
         store
             .requests()
@@ -577,5 +577,5 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
         }
     );
     assert_eq!(remaining.head_oid, grandchild.head_oid);
-    assert_eq!(remaining.stack_depth, 0);
+    assert_eq!(remaining.stack_depth, 1);
 }

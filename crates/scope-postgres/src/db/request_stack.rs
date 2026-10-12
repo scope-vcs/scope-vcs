@@ -8,7 +8,7 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
-    REQUEST_STACK_MAX_DEPTH, Request, RequestAutoMergeStopReason, RequestBase,
+    REQUEST_STACK_MAX_ANCESTORS, Request, RequestAutoMergeStopReason, RequestBase,
     RequestParentGitFacts, refresh_request_stack, stop_request_auto_merge,
     validate_request_stack_base,
 };
@@ -141,9 +141,9 @@ pub(super) async fn ancestry<C: ConnectionTrait>(
     let mut result = Vec::new();
     let mut seen = BTreeSet::new();
     while let Some(id) = next {
-        if !seen.insert(id.clone()) || result.len() >= REQUEST_STACK_MAX_DEPTH as usize {
+        if !seen.insert(id.clone()) || result.len() >= REQUEST_STACK_MAX_ANCESTORS as usize {
             return Err(PostgresError::conflict(
-                "request stack is cyclic or exceeds depth 32",
+                "request stack is cyclic or exceeds 32 ancestors",
             ));
         }
         let request = request_by_id(conn, &id)

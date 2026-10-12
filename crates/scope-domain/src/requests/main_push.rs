@@ -197,7 +197,7 @@ pub fn start_main_push_request(
     }
     let started = start_main_push_draft(
         StartRequestFacts {
-            stack_depth: 0,
+            stack_depth: 1,
             request_id_exists: facts.request_id_exists,
             request_name_exists: facts.request_with_name.is_some(),
             public_working_request_count: facts.public_working_request_count,

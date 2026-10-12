@@ -380,7 +380,9 @@ async fn changes_github_workflow_files(
                             "diff",
                             "--name-only",
                             "-z",
-                            range.excluded_ancestor_oid(),
+                            comparison.identity().base_oid.as_deref().ok_or_else(|| {
+                                ApiError::conflict("request comparison has no review base")
+                            })?,
                             range.head_oid(),
                             "--",
                             ".github/workflows",

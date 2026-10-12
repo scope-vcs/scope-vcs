@@ -239,6 +239,7 @@ mod tests {
             git_snapshot_from_ref(&source, "refs/heads/topic", Some(&old_head_oid)).unwrap();
         (
             RequestRevision {
+                base_version: 1,
                 id: "revision".into(),
                 request_id: "request".into(),
                 position: 1,
@@ -259,6 +260,8 @@ mod tests {
 
     fn request_fixture() -> Request {
         Request {
+            stack_status: scope_domain::requests::RequestStackStatus::Main,
+            stack_depth: 1,
             id: "request".into(),
             repo_id: "owner/repo".into(),
             name: "topic".into(),
@@ -421,6 +424,7 @@ mod tests {
     fn revision_cache_identity_separates_incarnations_requests_and_snapshot_claims() {
         let request = request_fixture();
         let mut revision = RequestRevision {
+            base_version: 1,
             id: "revision".into(),
             request_id: request.id.clone(),
             position: 1,

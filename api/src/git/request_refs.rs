@@ -295,10 +295,12 @@ pub(crate) async fn persist_request_ref_to_store(
     update: &RequestRefUpdate,
 ) -> Result<PersistedRequestRef, ApiError> {
     let path = staging_repo.to_path_buf();
-    let base_oid = request.main_ancestor_oid.clone();
+    let base_oid = request.base.review_base_oid().to_string();
+    let main_ancestor_oid = request.main_ancestor_oid.clone();
     let head_oid = update.new_head_oid.clone();
     crate::git::blocking::run(move || {
         ensure_request_ref_oid_is_commit(&path, &head_oid)?;
+        ensure_request_ref_descends_from_base(&path, &main_ancestor_oid, &head_oid)?;
         ensure_request_ref_descends_from_base(&path, &base_oid, &head_oid)
     })
     .await?;

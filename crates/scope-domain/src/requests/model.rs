@@ -201,7 +201,7 @@ pub struct RequestTimelineMutation {
 pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
     match &request.base {
         super::RequestBase::Main { .. }
-            if request.stack_depth != 0
+            if request.stack_depth != 1
                 || !matches!(
                     request.stack_status,
                     super::RequestStackStatus::Main
@@ -209,7 +209,7 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
                 ) =>
         {
             return Err(DomainError::conflict(
-                "main requests require zero stack depth",
+                "main requests require layer depth one",
             ));
         }
         super::RequestBase::Request {
@@ -220,7 +220,7 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
             || revision_id.is_empty()
             || head_oid.is_empty()
             || request_id == &request.id
-            || request.stack_depth == 0
+            || request.stack_depth < 2
             || request.stack_depth > super::REQUEST_STACK_MAX_DEPTH
             || request.stack_status == super::RequestStackStatus::Main =>
         {

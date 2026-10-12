@@ -479,7 +479,7 @@ fn public_view_member_cannot_read_private_request_metadata() {
 #[test]
 fn request_creation_checks_id_then_name_then_public_working_limit() {
     let mut facts = StartRequestFacts {
-        stack_depth: 0,
+        stack_depth: 1,
         request_id_exists: true,
         request_name_exists: true,
         public_working_request_count: PUBLIC_WORKING_REQUEST_LIMIT,

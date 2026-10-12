@@ -47,12 +47,12 @@ const CONTRIBUTIONS: &str = r#"
         submitted_at_unix, closed_at_unix, closed_by_user_id, merged_at_unix,
         merged_by_user_id, merged_head_oid, merged_main_oid, created_at_unix, updated_at_unix)
     VALUES
-        ('authored', 'owner/shared', 'authored', 'leaver', 'Member', 'private', 'Main', repeat('a', 40), 1, 'main', 0, repeat('a', 40),
+        ('authored', 'owner/shared', 'authored', 'leaver', 'Member', 'private', 'Main', repeat('a', 40), 1, 'main', 1, repeat('a', 40),
             repeat('b', 40), 'Authored', '', 2, 2, 3, 'leaver', NULL, NULL, NULL, NULL, 1, 3),
-        ('merged', 'owner/shared', 'merged', 'owner', 'Owner', 'private', 'Main', repeat('a', 40), 1, 'main', 0, repeat('a', 40),
+        ('merged', 'owner/shared', 'merged', 'owner', 'Owner', 'private', 'Main', repeat('a', 40), 1, 'main', 1, repeat('a', 40),
             repeat('b', 40), 'Merged', '', 2, 2, NULL, NULL, 3, 'leaver', repeat('b', 40),
             repeat('c', 40), 1, 3),
-        ('open', 'owner/shared', 'open', 'owner', 'Owner', 'private', 'Main', repeat('a', 40), 1, 'main', 0, repeat('a', 40),
+        ('open', 'owner/shared', 'open', 'owner', 'Owner', 'private', 'Main', repeat('a', 40), 1, 'main', 1, repeat('a', 40),
             repeat('b', 40), 'Open', '', 2, 2, NULL, NULL, NULL, NULL, NULL, NULL, 1, 3);
     INSERT INTO scope_request_events (id, request_id, actor_user_id, kind, position, payload,
         created_at_unix)
@@ -244,9 +244,9 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
                 main_ancestor_oid, head_oid, title, description_markdown, activity_version,
                 submitted_at_unix, created_at_unix, updated_at_unix)
             VALUES
-                ('submitted', 'owner/public', 'submitted', 'leaver', 'Public', 'public', 'Main', repeat('a', 40), 1, 'main', 0,
+                ('submitted', 'owner/public', 'submitted', 'leaver', 'Public', 'public', 'Main', repeat('a', 40), 1, 'main', 1,
                     repeat('a', 40), repeat('b', 40), 'Submitted', '', 1, 2, 1, 2),
-                ('draft', 'owner/public', 'draft', 'leaver', 'Public', 'public', 'Main', repeat('a', 40), 1, 'main', 0,
+                ('draft', 'owner/public', 'draft', 'leaver', 'Public', 'public', 'Main', repeat('a', 40), 1, 'main', 1,
                     repeat('a', 40), repeat('b', 40), 'Draft', '', 1, NULL, 1, 1)",
         )
         .await

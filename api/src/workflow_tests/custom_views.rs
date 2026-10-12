@@ -328,6 +328,9 @@ async fn a_member_on_a_narrower_view_cannot_read_or_push_through_the_full_view()
         .metadata
         .requests()
         .start_request(StartRequestInput {
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: (head.clone()).clone(),
+            },
             id: "req_private_views".to_string(),
             repo_id: TEST_REPO_ID.to_string(),
             name: "private-fix".to_string(),

@@ -305,7 +305,7 @@ fn open_request() -> Request {
         },
         base_version: 1,
         stack_status: crate::requests::RequestStackStatus::Main,
-        stack_depth: 0,
+        stack_depth: 1,
         main_ancestor_oid: "0".repeat(40),
         head_oid: "1".repeat(40),
         git_snapshot: None,

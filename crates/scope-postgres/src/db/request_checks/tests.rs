@@ -82,7 +82,9 @@ async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) 
             author_role: RequestActorRole::Public,
             author_view: ViewId::public(),
             view: ViewId::public(),
-            base: scope_domain::requests::RequestBase::Main { review_base_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into() },
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            },
             main_ancestor_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             event_id: event_id.into(),
             now_unix: 2,

@@ -16,7 +16,7 @@ async fn only_an_evaluation_that_tests_a_check_commit_names_what_it_merges() {
             main_ancestor_oid,base_kind,review_base_oid,base_version,stack_status,stack_depth,head_oid,title,description_markdown,activity_version,
             created_at_unix,updated_at_unix)
             VALUES ('req_1','owner/one','one','owner','Owner','public',
-                    repeat('a',40),'Main',repeat('a',40),1,'main',0,repeat('b',40),'one','',0,1,1);
+                    repeat('a',40),'Main',repeat('a',40),1,'main',1,repeat('b',40),'one','',0,1,1);
         INSERT INTO scope_request_revisions (
             id,request_id,position,actor_user_id,old_head_oid,new_head_oid,
             main_ancestor_oid,base_kind,review_base_oid,base_version,rewrote_history,git_snapshot,created_at_unix)

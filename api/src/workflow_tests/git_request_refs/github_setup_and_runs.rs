@@ -175,6 +175,7 @@ async fn request_check_deliveries_refresh_a_running_setup_test_of_the_same_commi
     let revision = requests
         .record_request_revision(
             scope_domain::requests::RecordRequestRevisionInput {
+                new_base: None,
                 request_id: request.id.clone(),
                 actor_user_id: test_owner_id(),
                 actor_can_edit: true,

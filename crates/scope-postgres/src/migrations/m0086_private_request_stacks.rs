@@ -19,16 +19,16 @@ impl MigrationTrait for Migration {
                 ADD COLUMN parent_revision_id text,
                 ADD COLUMN parent_head_oid text,
                 ADD COLUMN stack_status text NOT NULL DEFAULT 'main',
-                ADD COLUMN stack_depth integer NOT NULL DEFAULT 0,
+                ADD COLUMN stack_depth integer NOT NULL DEFAULT 1,
                 ADD CONSTRAINT scope_requests_base_values CHECK (
                     (base_kind = 'Main' AND parent_request_id IS NULL AND
                         parent_revision_id IS NULL AND parent_head_oid IS NULL AND
-                        stack_depth = 0 AND stack_status IN ('main', 'integration_conflict')) OR
+                        stack_depth = 1 AND stack_status IN ('main', 'integration_conflict')) OR
                     (base_kind = 'Request' AND parent_request_id IS NOT NULL AND
                         parent_revision_id IS NOT NULL AND parent_head_oid IS NOT NULL AND
                         parent_request_id <> id AND length(parent_request_id) > 0 AND
                         length(parent_revision_id) > 0 AND length(parent_head_oid) = 40 AND
-                        review_base_oid = parent_head_oid AND stack_depth BETWEEN 1 AND 32 AND
+                        review_base_oid = parent_head_oid AND stack_depth BETWEEN 2 AND 33 AND
                         stack_status IN ('waiting_for_parent', 'parent_extended', 'parent_rewritten',
                             'parent_closed', 'ancestor_blocked', 'integration_conflict'))
                 ),

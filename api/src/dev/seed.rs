@@ -465,6 +465,7 @@ fn seed_owner_request(
     } = request;
     let started = start_request(
         StartRequestFacts {
+            stack_depth: 1,
             request_id_exists: catalog.requests.contains_key(id),
             request_name_exists: catalog
                 .requests
@@ -473,6 +474,9 @@ fn seed_owner_request(
             public_working_request_count: 0,
         },
         StartRequestInput {
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: (base_oid.clone()).clone(),
+            },
             id: id.to_string(),
             repo_id: repo_id.to_string(),
             author_user_id: owner.id.clone(),
@@ -532,6 +536,7 @@ fn seed_owner_request(
             request,
             catalog.request_events.contains_key(&event_id),
             RecordRequestRevisionInput {
+                new_base: None,
                 request_id: id.to_string(),
                 actor_user_id: owner.id.clone(),
                 actor_can_edit: true,

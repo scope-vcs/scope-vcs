@@ -7,12 +7,23 @@ use super::{
 use crate::views::{ViewId, Views};
 use crate::{content::SourceBlob, error::DomainError};
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct StartRequestFacts {
     pub request_id_exists: bool,
     pub request_name_exists: bool,
     pub public_working_request_count: usize,
     pub stack_depth: u32,
+}
+
+impl Default for StartRequestFacts {
+    fn default() -> Self {
+        Self {
+            request_id_exists: false,
+            request_name_exists: false,
+            public_working_request_count: 0,
+            stack_depth: 1,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

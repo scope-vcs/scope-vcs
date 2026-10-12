@@ -1,3 +1,6 @@
+mod request_stacks;
+pub use request_stacks::*;
+
 use crate::{
     FileChangeKind, FirstPushTokenStatus, GitOid, RepoConfig, RepoLifecycleState, RepositoryActor,
     RequestActorRole, RequestDiscussionStatus, RequestEventKind, RequestEventPayload,
@@ -301,6 +304,9 @@ pub struct RequestSummaryResponse {
     pub view: ViewId,
     pub base: RequestBase,
     pub base_version: u64,
+    pub stack_status: RequestStackStatus,
+    /// Counts this request and its request ancestors; main-rooted requests have depth 1, with a maximum of 33.
+    pub stack_depth: u32,
     pub main_ancestor_oid: GitOid,
     pub head_oid: GitOid,
     pub state: RequestState,
@@ -317,13 +323,6 @@ pub struct RequestSummaryResponse {
     pub invitees: Vec<RequestInviteeResponse>,
     pub permissions: RequestPermissionsResponse,
     pub mergeability: RequestMergeabilityResponse,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum RequestBase {
-    Main { review_base_oid: GitOid },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -363,6 +362,11 @@ pub struct LeaveRequestResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestListItemResponse {
+    pub base: RequestBase,
+    pub base_version: u64,
+    pub stack_status: RequestStackStatus,
+    /// Counts this request and its request ancestors; main-rooted requests have depth 1, with a maximum of 33.
+    pub stack_depth: u32,
     pub id: String,
     pub name: String,
     pub title: String,
@@ -520,6 +524,8 @@ pub enum RequestRevisionInspectionState {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestRevisionResponse {
+    pub base: RequestBase,
+    pub base_version: u64,
     pub id: String,
     pub position: u64,
     /// Null once that account is deleted; clients show a deleted user.
@@ -534,6 +540,7 @@ pub struct RequestRevisionResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestRevisionListResponse {
+    pub comparison: Option<RequestComparisonResponse>,
     pub review_revision_id: Option<String>,
     pub revisions: Vec<RequestRevisionResponse>,
     pub has_earlier_revisions: bool,
@@ -591,6 +598,7 @@ pub struct RequestActivityPageResponse {
 #[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct StartRequestRequest {
+    pub base: Option<RequestBase>,
     pub name: String,
     pub title: Option<String>,
     pub view: ViewId,

@@ -50,7 +50,7 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
         "SELECT stack_status, stack_depth, base_kind, review_base_oid FROM scope_requests WHERE id = 'parent'"
     )).await.unwrap().unwrap();
     assert_eq!(main.try_get::<String>("", "stack_status").unwrap(), "main");
-    assert_eq!(main.try_get::<i32>("", "stack_depth").unwrap(), 0);
+    assert_eq!(main.try_get::<i32>("", "stack_depth").unwrap(), 1);
     assert_eq!(main.try_get::<String>("", "base_kind").unwrap(), "Main");
     assert_eq!(
         main.try_get::<String>("", "review_base_oid").unwrap(),
@@ -72,7 +72,7 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
         r#"
         UPDATE scope_requests SET base_kind = 'Request', parent_request_id = 'parent',
             parent_revision_id = 'parent-revision', parent_head_oid = repeat('b',40),
-            review_base_oid = repeat('b',40), stack_status = 'waiting_for_parent', stack_depth = 1
+            review_base_oid = repeat('b',40), stack_status = 'waiting_for_parent', stack_depth = 2
             WHERE id = 'child';
         UPDATE scope_request_revisions SET base_kind = 'Request', parent_request_id = 'parent',
             parent_revision_id = 'parent-revision', parent_head_oid = repeat('b',40),
@@ -107,7 +107,15 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
             "scope_requests_base_values",
         ),
         (
-            "UPDATE scope_requests SET stack_depth = 33 WHERE id = 'child'",
+            "UPDATE scope_requests SET stack_depth = 0 WHERE id = 'parent'",
+            "scope_requests_base_values",
+        ),
+        (
+            "UPDATE scope_requests SET stack_depth = 1 WHERE id = 'child'",
+            "scope_requests_base_values",
+        ),
+        (
+            "UPDATE scope_requests SET stack_depth = 34 WHERE id = 'child'",
             "scope_requests_base_values",
         ),
         (

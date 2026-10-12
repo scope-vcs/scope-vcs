@@ -6,7 +6,8 @@ use crate::{error::DomainError, views::ViewId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const REQUEST_STACK_MAX_DEPTH: u32 = 32;
+pub const REQUEST_STACK_MAX_ANCESTORS: u32 = 32;
+pub const REQUEST_STACK_MAX_DEPTH: u32 = REQUEST_STACK_MAX_ANCESTORS + 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -60,14 +61,14 @@ pub fn validate_request_stack_base(
         if !ancestors.is_empty() {
             return Err(DomainError::conflict("main base cannot have ancestors"));
         }
-        return Ok(0);
+        return Ok(1);
     };
     if !view.is_private() {
         return Err(DomainError::forbidden(
             "stacks require the private full view",
         ));
     }
-    if ancestors.is_empty() || ancestors.len() > REQUEST_STACK_MAX_DEPTH as usize {
+    if ancestors.is_empty() || ancestors.len() > REQUEST_STACK_MAX_ANCESTORS as usize {
         return Err(DomainError::conflict(
             "request stack requires a complete ancestry of at most 32 parents",
         ));
@@ -107,7 +108,7 @@ pub fn validate_request_stack_base(
             }
         }
     }
-    Ok(ancestors.len() as u32)
+    Ok(ancestors.len() as u32 + 1)
 }
 
 pub fn validate_request_repin(old: &RequestBase, new: &RequestBase) -> Result<(), DomainError> {
@@ -235,7 +236,7 @@ pub fn refresh_request_stack(
         .stack_depth
         .checked_add(1)
         .filter(|depth| *depth <= REQUEST_STACK_MAX_DEPTH)
-        .ok_or_else(|| DomainError::conflict("request stack exceeds depth 32"))?;
+        .ok_or_else(|| DomainError::conflict("request stack exceeds 32 ancestors"))?;
     let depth_changed = request.stack_depth != depth;
     let status_changed = request.stack_status != status;
     let refresh_queue = depth_changed
@@ -326,7 +327,7 @@ pub fn retarget_request_after_parent_merge(
     if child.stack_status != RequestStackStatus::IntegrationConflict {
         child.stack_status = RequestStackStatus::Main;
     }
-    child.stack_depth = 0;
+    child.stack_depth = 1;
     if input.contained_main_descends_from_ancestor {
         if let Some(oid) = input.contained_main_oid {
             child.main_ancestor_oid = oid;

@@ -32,7 +32,7 @@ fn terminal_request(merged: bool) -> Request {
         },
         base_version: 1,
         stack_status: crate::requests::RequestStackStatus::Main,
-        stack_depth: 0,
+        stack_depth: 1,
         main_ancestor_oid: "a".repeat(40),
         head_oid: "b".repeat(40),
         git_snapshot: None,

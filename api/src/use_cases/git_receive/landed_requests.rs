@@ -26,10 +26,34 @@ pub(super) async fn landed_request_candidates(
         return Ok(Vec::new());
     }
     let path = staging_repo.to_path_buf();
-    let main_oid = main_oid.to_string();
-    let landed =
-        crate::git::blocking::run(move || requests_carried_by(&path, &main_oid, candidates))
-            .await?;
+    let main_oid_for_scan = main_oid.to_string();
+    let mut landed = crate::git::blocking::run(move || {
+        requests_carried_by(&path, &main_oid_for_scan, candidates)
+    })
+    .await?;
+    let incarnation = state
+        .metadata
+        .repositories()
+        .repository_record(repository_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("repo not found"))?
+        .incarnation();
+    for candidate in &mut landed {
+        let parent = state
+            .metadata
+            .requests()
+            .request_by_id(&candidate.request_id)
+            .await?
+            .ok_or_else(|| ApiError::conflict("landed request changed during preparation"))?;
+        candidate.stack_children = crate::use_cases::request_stack_landing::prepare_stack_landing(
+            state,
+            &incarnation,
+            &parent,
+            staging_repo,
+            &main_oid,
+        )
+        .await?;
+    }
     tracing::Span::current().record("scope.landed_request.count", landed.len());
     Ok(landed)
 }
@@ -60,6 +84,7 @@ fn requests_carried_by(
             landed.push(LandedRequestCandidate {
                 request_id: request.id,
                 head_oid: request.head_oid,
+                stack_children: Vec::new(),
             });
         }
     }
