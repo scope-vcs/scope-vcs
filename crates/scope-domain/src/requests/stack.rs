@@ -21,6 +21,16 @@ pub enum RequestStackStatus {
 }
 
 impl RequestStackStatus {
+    pub const fn requires_restack(self) -> bool {
+        matches!(
+            self,
+            Self::ParentRewritten
+                | Self::ParentClosed
+                | Self::AncestorBlocked
+                | Self::IntegrationConflict
+        )
+    }
+
     pub const fn blocking_reason(self) -> Option<&'static str> {
         match self {
             Self::Main => None,
@@ -156,6 +166,65 @@ pub fn classify_request_stack(
         RequestStackStatus::WaitingForParent
     } else {
         RequestStackStatus::ParentExtended
+    })
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequestStackRefreshEffects {
+    pub stop_auto_merge: bool,
+    pub refresh_queue: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequestStackRefreshMutation {
+    pub request: Request,
+    pub effects: RequestStackRefreshEffects,
+}
+
+pub fn refresh_request_stack(
+    mut request: Request,
+    parent: Option<&Request>,
+    facts: RequestParentGitFacts,
+    now_unix: u64,
+) -> Result<RequestStackRefreshMutation, DomainError> {
+    if matches!(request.base, RequestBase::Main { .. }) {
+        return Ok(RequestStackRefreshMutation {
+            request,
+            effects: RequestStackRefreshEffects {
+                stop_auto_merge: false,
+                refresh_queue: false,
+            },
+        });
+    }
+    let parent = parent.ok_or_else(|| DomainError::conflict("request parent is unavailable"))?;
+    if parent.repo_id != request.repo_id || parent.view != request.view {
+        return Err(DomainError::conflict(
+            "request parent must share the repository and view",
+        ));
+    }
+    let status = classify_request_stack(&request.base, Some(parent), facts)?;
+    let depth = parent
+        .stack_depth
+        .checked_add(1)
+        .filter(|depth| *depth <= REQUEST_STACK_MAX_DEPTH)
+        .ok_or_else(|| DomainError::conflict("request stack exceeds depth 32"))?;
+    let depth_changed = request.stack_depth != depth;
+    let status_changed = request.stack_status != status;
+    let refresh_queue = depth_changed
+        || (status_changed
+            && (request.stack_status.requires_restack() || status.requires_restack()));
+    if depth_changed || status_changed {
+        request.stack_status = status;
+        request.stack_depth = depth;
+        request.updated_at_unix = request.updated_at_unix.max(now_unix);
+        request.validate_facts()?;
+    }
+    Ok(RequestStackRefreshMutation {
+        request,
+        effects: RequestStackRefreshEffects {
+            stop_auto_merge: status.requires_restack(),
+            refresh_queue,
+        },
     })
 }
 

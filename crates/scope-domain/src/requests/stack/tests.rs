@@ -229,3 +229,99 @@ fn ordinary_child_push_retains_pin_and_explicit_repin_records_same_head() {
     assert_eq!(repin.revision.base_version, child.base_version + 1);
     assert_eq!(push.revision.base_version, child.base_version);
 }
+
+#[test]
+fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
+    let mut parent = parent();
+    let child = child(&parent);
+    let clean = RequestParentGitFacts {
+        parent_contains_pin: true,
+        ancestor_blocked: false,
+        integration_conflict: false,
+    };
+    let unchanged = refresh_request_stack(
+        child.clone(),
+        Some(&parent),
+        clean,
+        child.updated_at_unix + 10,
+    )
+    .unwrap();
+    assert_eq!(unchanged.request.updated_at_unix, child.updated_at_unix);
+    assert!(!unchanged.effects.refresh_queue);
+    parent.head_oid = "extension".into();
+    let extension = refresh_request_stack(
+        child.clone(),
+        Some(&parent),
+        clean,
+        child.updated_at_unix + 10,
+    )
+    .unwrap();
+    assert_eq!(
+        extension.request.stack_status,
+        RequestStackStatus::ParentExtended
+    );
+    assert_eq!(extension.request.base, child.base);
+    assert!(!extension.effects.stop_auto_merge);
+    assert!(!extension.effects.refresh_queue);
+    for (facts, expected) in [
+        (
+            RequestParentGitFacts {
+                parent_contains_pin: false,
+                ..clean
+            },
+            RequestStackStatus::ParentRewritten,
+        ),
+        (
+            RequestParentGitFacts {
+                ancestor_blocked: true,
+                ..clean
+            },
+            RequestStackStatus::AncestorBlocked,
+        ),
+        (
+            RequestParentGitFacts {
+                integration_conflict: true,
+                ..clean
+            },
+            RequestStackStatus::IntegrationConflict,
+        ),
+    ] {
+        let blocked = refresh_request_stack(
+            extension.request.clone(),
+            Some(&parent),
+            facts,
+            child.updated_at_unix + 20,
+        )
+        .unwrap();
+        assert_eq!(blocked.request.stack_status, expected);
+        assert!(blocked.effects.stop_auto_merge);
+        assert!(blocked.effects.refresh_queue);
+        let repaired = refresh_request_stack(
+            blocked.request,
+            Some(&parent),
+            clean,
+            child.updated_at_unix + 30,
+        )
+        .unwrap();
+        assert!(!repaired.effects.stop_auto_merge);
+        assert!(repaired.effects.refresh_queue);
+    }
+    parent.closed_at_unix = Some(parent.updated_at_unix);
+    let closed = refresh_request_stack(
+        child.clone(),
+        Some(&parent),
+        clean,
+        child.updated_at_unix + 40,
+    )
+    .unwrap();
+    assert_eq!(
+        closed.request.stack_status,
+        RequestStackStatus::ParentClosed
+    );
+    assert!(closed.effects.stop_auto_merge);
+    assert!(closed.effects.refresh_queue);
+    parent.stack_depth = REQUEST_STACK_MAX_DEPTH;
+    assert!(
+        refresh_request_stack(child, Some(&parent), clean, parent.updated_at_unix + 40).is_err()
+    );
+}
