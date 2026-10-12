@@ -29,6 +29,7 @@ mod repository_invite_emails;
 mod repository_invite_links;
 mod repository_landing_files;
 mod repository_workflow_catalogs;
+mod request_review_bases;
 mod request_revision_rewrites;
 mod request_run_source_base;
 mod request_views;
@@ -80,6 +81,8 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0081_github_job_log_reads",
     "m0082_github_workflow_run_list",
     "m0083_request_workflow_changes",
+    "m0084_request_review_bases",
+    "m0085_request_check_identity",
 ];
 
 pub(super) async fn isolated_database() -> (

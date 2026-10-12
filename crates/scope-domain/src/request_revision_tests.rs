@@ -71,15 +71,23 @@ fn revision_records_snapshot_without_manufacturing_a_discussion() {
     assert_eq!(mutation.revision.new_head_oid, "head-2");
     assert_eq!(mutation.revision.id, mutation.event.id);
     assert!(!mutation.revision.rewrote_history);
-    assert_eq!(mutation.revision.commits_after_oid(), "head-1");
+    assert_eq!(
+        RequestComparison::push(&mutation.revision, ViewId::private())
+            .membership()
+            .excluded_ancestor_oid(),
+        "head-1"
+    );
 }
 
 #[test]
 fn revision_moves_the_base_to_newer_main_the_head_contains() {
     let mutation = revise(extending_facts(Some("main-2"), true));
 
-    assert_eq!(mutation.request.base_main_oid, "main-2");
-    assert_eq!(mutation.revision.base_main_oid, "main-2");
+    assert_eq!(mutation.request.main_ancestor_oid, "main-2");
+    assert_eq!(mutation.revision.main_ancestor_oid, "main-2");
+    assert_eq!(mutation.request.base_version, 2);
+    assert_eq!(mutation.request.base.review_base_oid(), "main-2");
+    assert_eq!(mutation.revision.base.review_base_oid(), "main-2");
 }
 
 #[test]
@@ -90,8 +98,10 @@ fn revision_keeps_the_base_when_contained_main_does_not_descend_from_it() {
     ] {
         let mutation = revise(facts);
 
-        assert_eq!(mutation.request.base_main_oid, "base");
-        assert_eq!(mutation.revision.base_main_oid, "base");
+        assert_eq!(mutation.request.main_ancestor_oid, "base");
+        assert_eq!(mutation.revision.main_ancestor_oid, "base");
+        assert_eq!(mutation.request.base_version, 1);
+        assert_eq!(mutation.revision.base.review_base_oid(), "base");
     }
 }
 
@@ -105,7 +115,12 @@ fn rewritten_revision_lists_its_commits_after_the_new_base() {
 
     assert!(mutation.revision.rewrote_history);
     assert_eq!(mutation.revision.old_head_oid, "head-1");
-    assert_eq!(mutation.revision.commits_after_oid(), "main-2");
+    assert_eq!(
+        RequestComparison::push(&mutation.revision, ViewId::private())
+            .membership()
+            .excluded_ancestor_oid(),
+        "main-2"
+    );
 }
 
 #[test]
@@ -137,7 +152,10 @@ fn revision(id: &str, position: u64) -> RequestRevision {
         actor_user_id: Some("author".to_string()),
         old_head_oid: "old".to_string(),
         new_head_oid: "new".to_string(),
-        base_main_oid: "base".to_string(),
+        base: crate::requests::RequestBase::Main {
+            review_base_oid: "base".to_string(),
+        },
+        main_ancestor_oid: "base".to_string(),
         rewrote_history: false,
         git_snapshot: source_blob(id),
         created_at_unix: position,

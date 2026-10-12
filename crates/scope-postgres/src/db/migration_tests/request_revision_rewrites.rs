@@ -46,7 +46,7 @@ async fn existing_revisions_extend_their_old_head_from_the_request_base() {
     let row = db
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
-            "SELECT base_main_oid, rewrote_history FROM scope_request_revisions \
+            "SELECT review_base_oid, rewrote_history FROM scope_request_revisions \
              WHERE id = 'revision-1'"
                 .to_string(),
         ))
@@ -54,7 +54,7 @@ async fn existing_revisions_extend_their_old_head_from_the_request_base() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        row.try_get::<String>("", "base_main_oid").unwrap(),
+        row.try_get::<String>("", "review_base_oid").unwrap(),
         "a".repeat(40)
     );
     assert!(!row.try_get::<bool>("", "rewrote_history").unwrap());

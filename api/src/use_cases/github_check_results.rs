@@ -18,7 +18,6 @@ const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
 const PENDING_REFRESH_SECS: u64 = 2 * 60;
 const SETTLED_REFRESH_SECS: u64 = 10 * 60;
 const RECONCILE_BATCH_SIZE: u64 = 20;
-const MERGE_FRESHNESS_SECS: u64 = 60;
 
 pub(crate) async fn refresh_checks_for_delivery(
     state: &AppState,
@@ -68,7 +67,9 @@ pub(crate) async fn confirm_recent_github_checks(
         .settled_github_check_read_started_at(&check_commit(&connection, &evaluation.tested_oid))
         .await?;
     let now_unix = unix_now()?;
-    if read_at.is_some_and(|read_at| read_at.saturating_add(MERGE_FRESHNESS_SECS) > now_unix) {
+    if read_at.is_some_and(|read_at| {
+        read_at.saturating_add(scope_domain::requests::GITHUB_CHECK_MERGE_FRESHNESS_SECS) > now_unix
+    }) {
         return Ok(());
     }
     refresh_commit_checks(state, &connection, &evaluation.tested_oid)

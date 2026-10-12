@@ -65,7 +65,7 @@ fn concurrent_push(
     landed: &Request,
     id: &str,
     name: &str,
-    base_main_oid: &str,
+    main_ancestor_oid: &str,
 ) -> StartMainPushRequestInput {
     StartMainPushRequestInput {
         id: id.to_string(),
@@ -75,12 +75,12 @@ fn concurrent_push(
         pusher_handle: "agent-member".to_string(),
         validated_view: view("agent"),
         name: name.to_string(),
-        base_main_oid: base_main_oid.to_string(),
+        main_ancestor_oid: main_ancestor_oid.to_string(),
         head_oid: landed.head_oid.clone(),
         git_snapshot: landed.git_snapshot.clone().unwrap(),
         git_facts: RequestRevisionGitFacts {
             contains_old_head: true,
-            contained_main_oid: Some(base_main_oid.to_string()),
+            contained_main_oid: Some(main_ancestor_oid.to_string()),
             contained_main_descends_from_base: true,
         },
         started_event_id: format!("{id}_started"),

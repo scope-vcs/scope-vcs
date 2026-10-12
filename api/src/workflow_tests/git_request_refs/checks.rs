@@ -1,6 +1,6 @@
 use super::*;
 use scope_api_contract::routes::{repo_request, repo_request_checks};
-use scope_domain::requests::RequestCheckEvaluation;
+use scope_domain::requests::{RequestCheckContext, RequestCheckEvaluation};
 use scope_domain::runs::source::RunTrigger;
 use scope_postgres::db::RecordRequestChecksCommand;
 
@@ -128,6 +128,19 @@ async fn a_maintainers_push_starts_the_request_workflows_at_its_head() {
     assert_eq!(run.source.git_oid(), checks["head_oid"].as_str().unwrap());
     assert_eq!(run.requested_by_user_id.as_deref(), Some(&*test_owner_id()));
 
+    let request = stored_request(&state, &request_id).await;
+    let revision = state
+        .metadata
+        .requests()
+        .request_revision_window(&request_id, None, 1)
+        .await
+        .unwrap()
+        .revisions
+        .into_iter()
+        .next()
+        .unwrap();
+    let mut stale_context = RequestCheckContext::for_revision(&request, &revision).unwrap();
+    stale_context.head_oid = "ffffffffffffffffffffffffffffffffffffffff".into();
     state
         .metadata
         .requests()
@@ -147,8 +160,7 @@ async fn a_maintainers_push_starts_the_request_workflows_at_its_head() {
                 .unwrap()
                 .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
-                &request_id,
-                "ffffffffffffffffffffffffffffffffffffffff",
+                &stale_context,
                 "stale head configuration error",
                 unix_now(),
             )

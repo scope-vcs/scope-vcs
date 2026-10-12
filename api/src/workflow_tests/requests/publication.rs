@@ -154,7 +154,7 @@ async fn public_request_reads_and_start_use_current_head_before_projection_rebui
     .await;
     assert_eq!(started.status(), StatusCode::OK);
     assert_eq!(
-        response_json(started).await["request"]["base_main_oid"],
+        response_json(started).await["request"]["main_ancestor_oid"],
         expected_public_head,
     );
 }

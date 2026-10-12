@@ -20,8 +20,9 @@ use scope_domain::{
     views::ViewId,
 };
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, EntityTrait, IntoActiveModel,
-    QueryFilter, TransactionTrait, sea_query::OnConflict,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait,
+    IntoActiveModel, QueryFilter, Statement, TransactionTrait,
+    sea_query::{OnConflict, Query},
 };
 
 #[derive(Clone, Debug)]
@@ -75,10 +76,26 @@ impl RequestStore {
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
         if repo.incarnation() != command.repository_incarnation
-            || request.head_oid != command.evaluation.head_oid
+            || !command.evaluation.matches_request(&request)
         {
             return Err(PostgresError::conflict(
                 "request changed while evaluating CI",
+            ));
+        }
+        let revision = super::request_revision_rows::latest_revision_for_request(&tx, &request.id)
+            .await?
+            .ok_or_else(|| PostgresError::conflict("request has no saved revision"))?;
+        if revision.id != command.evaluation.revision_id {
+            return Err(PostgresError::conflict(
+                "request changed while evaluating CI",
+            ));
+        }
+        let github_repository_id = repository_github_connection(&tx, &request.repo_id)
+            .await?
+            .map(|connection| connection.github_repository_id);
+        if github_repository_id != command.evaluation.github_repository_id {
+            return Err(PostgresError::conflict(
+                "request check provider changed while evaluating CI",
             ));
         }
         let canonical_main_oid =
@@ -120,6 +137,7 @@ impl RequestStore {
             save_workflow_revision(&tx, revision, command.evaluation.updated_at_unix).await?;
         }
         save_evaluation(&tx, &command.evaluation).await?;
+        select_current_evaluation(&tx, &command.evaluation).await?;
         let queued_github_push = command.push_to_github
             && queue_tested_commit_push(
                 &tx,
@@ -246,6 +264,14 @@ impl RequestStore {
         entities::request_check_evaluation::Entity::find()
             .filter(entities::request_check_evaluation::Column::RequestId.eq(request_id))
             .filter(entities::request_check_evaluation::Column::TestedOid.eq(tested_oid))
+            .filter(
+                entities::request_check_evaluation::Column::Id.in_subquery(
+                    Query::select()
+                        .column(entities::request::Column::CurrentCheckEvaluationId)
+                        .from(entities::request::Entity)
+                        .to_owned(),
+                ),
+            )
             .one(self.db.as_ref())
             .await
             .map_err(PostgresError::internal)?
@@ -272,6 +298,14 @@ impl RequestStore {
         }
         entities::request_check_evaluation::Entity::find()
             .filter(head_pairs_condition(heads))
+            .filter(
+                entities::request_check_evaluation::Column::Id.in_subquery(
+                    Query::select()
+                        .column(entities::request::Column::CurrentCheckEvaluationId)
+                        .from(entities::request::Entity)
+                        .to_owned(),
+                ),
+            )
             .all(self.db.as_ref())
             .await
             .map_err(PostgresError::internal)?
@@ -305,9 +339,11 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
     let mut tested_oids = Vec::new();
     let mut github_request_ids = Vec::new();
     let mut check_commit_request_ids = Vec::new();
+    let mut github_destinations = Vec::new();
     for evaluation in evaluations {
         run_ids.extend(evaluation.run_ids().map(str::to_string));
         if evaluation.asks_github() {
+            github_destinations.push(evaluation.github_repository_id);
             tested_oids.push(evaluation.tested_oid.clone());
             if evaluation.tests_check_commit() {
                 check_commit_request_ids.push(evaluation.request_id.clone());
@@ -333,7 +369,12 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
     } else {
         repository_github_connection(conn, repo_id)
             .await?
-            .filter(|connection| connection.is_connected())
+            .filter(|connection| {
+                connection.is_connected()
+                    && github_destinations
+                        .iter()
+                        .all(|destination| *destination == Some(connection.github_repository_id))
+            })
     };
     let withheld_from_github = match &connection {
         Some(connection) if !connection.may_receive_private_requests() => {
@@ -460,40 +501,46 @@ pub(super) async fn evaluation_for_head<C: ConnectionTrait>(
     request_id: &str,
     head_oid: &str,
 ) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
-    entities::request_check_evaluation::Entity::find_by_id((
-        request_id.to_string(),
-        head_oid.to_string(),
-    ))
-    .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
-    .map(entities::request_check_evaluation::Model::try_into_domain)
-    .transpose()
+    let Some(request) = entities::request::Entity::find_by_id(request_id.to_string())
+        .one(conn)
+        .await
+        .map_err(PostgresError::internal)?
+    else {
+        return Ok(None);
+    };
+    if request.head_oid != head_oid {
+        return Ok(None);
+    }
+    let Some(id) = request.current_check_evaluation_id else {
+        return Ok(None);
+    };
+    entities::request_check_evaluation::Entity::find_by_id(id)
+        .filter(entities::request_check_evaluation::Column::RequestId.eq(request_id))
+        .filter(entities::request_check_evaluation::Column::HeadOid.eq(head_oid))
+        .one(conn)
+        .await
+        .map_err(PostgresError::internal)?
+        .map(entities::request_check_evaluation::Model::try_into_domain)
+        .transpose()
 }
 
 pub(super) async fn save_evaluation(
     tx: &DatabaseTransaction,
     evaluation: &RequestCheckEvaluation,
 ) -> Result<(), PostgresError> {
+    evaluation.ensure_identity()?;
     let model = entities::request_check_evaluation::Model::from_domain(evaluation)?;
     entities::request_check_evaluation::Entity::insert(model.into_active_model())
         .on_conflict(
-            OnConflict::columns([
-                entities::request_check_evaluation::Column::RequestId,
-                entities::request_check_evaluation::Column::HeadOid,
-            ])
-            .update_columns([
-                entities::request_check_evaluation::Column::TestedOid,
-                entities::request_check_evaluation::Column::ChangesGithubWorkflows,
-                entities::request_check_evaluation::Column::State,
-                entities::request_check_evaluation::Column::Message,
-                entities::request_check_evaluation::Column::Checks,
-                entities::request_check_evaluation::Column::CreatedAtUnix,
-                entities::request_check_evaluation::Column::UpdatedAtUnix,
-                entities::request_check_evaluation::Column::CheckPrivateMainOid,
-                entities::request_check_evaluation::Column::CheckPublicBaseOid,
-            ])
-            .to_owned(),
+            OnConflict::column(entities::request_check_evaluation::Column::Id)
+                .update_columns([
+                    entities::request_check_evaluation::Column::ChangesGithubWorkflows,
+                    entities::request_check_evaluation::Column::State,
+                    entities::request_check_evaluation::Column::Message,
+                    entities::request_check_evaluation::Column::Checks,
+                    entities::request_check_evaluation::Column::UpdatedAtUnix,
+                ])
+                .to_owned(),
         )
         .exec(tx)
         .await
@@ -503,3 +550,34 @@ pub(super) async fn save_evaluation(
 
 #[cfg(test)]
 mod tests;
+
+pub(super) async fn select_current_evaluation(
+    tx: &DatabaseTransaction,
+    evaluation: &RequestCheckEvaluation,
+) -> Result<(), PostgresError> {
+    tx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE scope_requests SET current_check_evaluation_id = $2 WHERE id = $1",
+        [
+            evaluation.request_id.clone().into(),
+            evaluation.id.clone().into(),
+        ],
+    ))
+    .await
+    .map_err(PostgresError::internal)?;
+    Ok(())
+}
+
+pub(super) async fn clear_current_evaluation(
+    tx: &DatabaseTransaction,
+    request_id: &str,
+) -> Result<(), PostgresError> {
+    tx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE scope_requests SET current_check_evaluation_id = NULL WHERE id = $1",
+        [request_id.into()],
+    ))
+    .await
+    .map_err(PostgresError::internal)?;
+    Ok(())
+}

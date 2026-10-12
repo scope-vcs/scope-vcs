@@ -192,8 +192,13 @@ fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
         let can_merge = request_policy(&request, viewer.clone(), &views)
             .permissions
             .can_merge;
-        let mergeability =
-            request_mergeability(&request, &viewer, &views, RequestChecksOutcome::Clear);
+        let mergeability = request_mergeability(
+            &request,
+            &viewer,
+            &views,
+            RequestChecksOutcome::Clear,
+            crate::repository::RepoLifecycleState::Ready,
+        );
         assert_eq!(
             mergeability.status == RequestMergeabilityStatus::Ready,
             can_merge,
@@ -204,14 +209,22 @@ fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
                 (&request).into(),
                 &viewer,
                 &views,
-                RequestChecksOutcome::Clear
+                RequestChecksOutcome::Clear,
+                crate::repository::RepoLifecycleState::Ready
             ),
             mergeability
         );
     }
     let narrower = RequestViewer::new(member(agent(), true), Some("other-agent"), false);
     assert_eq!(
-        request_mergeability(&request, &narrower, &views, RequestChecksOutcome::Clear).reason,
+        request_mergeability(
+            &request,
+            &narrower,
+            &views,
+            RequestChecksOutcome::Clear,
+            crate::repository::RepoLifecycleState::Ready
+        )
+        .reason,
         Some("merging needs a maintainer who reads the full view")
     );
 }

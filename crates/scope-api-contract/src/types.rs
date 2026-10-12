@@ -299,7 +299,9 @@ pub struct RequestSummaryResponse {
     pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
     pub view: ViewId,
-    pub base_main_oid: GitOid,
+    pub base: RequestBase,
+    pub base_version: u64,
+    pub main_ancestor_oid: GitOid,
     pub head_oid: GitOid,
     pub state: RequestState,
     pub activity_version: u64,
@@ -315,6 +317,13 @@ pub struct RequestSummaryResponse {
     pub invitees: Vec<RequestInviteeResponse>,
     pub permissions: RequestPermissionsResponse,
     pub mergeability: RequestMergeabilityResponse,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RequestBase {
+    Main { review_base_oid: GitOid },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

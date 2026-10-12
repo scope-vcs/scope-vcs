@@ -155,7 +155,7 @@ async fn public_git_read_view_physically_excludes_private_objects() {
     )
     .await
     .unwrap();
-    let base_main_oid = git_stdout_text(
+    let main_ancestor_oid = git_stdout_text(
         &public_repo,
         &["rev-parse", "refs/heads/main"],
         "read public main",
@@ -182,7 +182,7 @@ async fn public_git_read_view_physically_excludes_private_objects() {
             author_role: RequestActorRole::Public,
             author_view: scope_domain::views::ViewId::private(),
             view: ViewId::public(),
-            base_main_oid,
+            main_ancestor_oid,
             event_id: "event_req_public_read_view_started".to_string(),
             now_unix: 2,
         })

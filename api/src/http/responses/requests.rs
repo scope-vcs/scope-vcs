@@ -1,3 +1,5 @@
+use super::git_oid_response;
+use crate::error::ApiError;
 use scope_api_contract::{
     RequestActorSummaryResponse, RequestEventResponse, RequestInviteeResponse,
     RequestListItemResponse, RequestMergeabilityResponse, RequestPermissionsResponse,
@@ -6,7 +8,7 @@ use scope_api_contract::{
 use scope_domain::{
     requests::{
         Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject, RequestViewer,
-        request_list_mergeability,
+        request_list_mergeability, request_mergeability, request_policy,
     },
     views::Views,
 };
@@ -27,7 +29,15 @@ pub(crate) fn request_summary_response(
         author_user_id: request.author_user_id,
         author_role: request.author_role.into(),
         view: request.view.into(),
-        base_main_oid: super::git_oid_response(request.base_main_oid)?,
+        base: match request.base {
+            scope_domain::requests::RequestBase::Main { review_base_oid } => {
+                scope_api_contract::RequestBase::Main {
+                    review_base_oid: super::git_oid_response(review_base_oid)?,
+                }
+            }
+        },
+        base_version: request.base_version,
+        main_ancestor_oid: super::git_oid_response(request.main_ancestor_oid)?,
         head_oid: super::git_oid_response(request.head_oid)?,
         state: state.into(),
         activity_version: request.activity_version,
@@ -58,6 +68,7 @@ pub(crate) fn request_list_item_response(
     views: &Views,
     current_main_oid: Option<String>,
     checks: RequestChecksOutcome,
+    repository_lifecycle: scope_domain::repository::RepoLifecycleState,
 ) -> Result<RequestListItemResponse, crate::error::ApiError> {
     let decision = request_list_mergeability(
         RequestMergeSubject {
@@ -69,6 +80,7 @@ pub(crate) fn request_list_item_response(
         viewer,
         views,
         checks,
+        repository_lifecycle,
     );
     let request_head_oid = super::git_oid_response(request.head_oid)?;
     Ok(RequestListItemResponse {
@@ -103,4 +115,40 @@ pub(crate) fn request_event_response(
         payload: event.payload.into(),
         created_at_unix: event.created_at_unix,
     }
+}
+
+pub(crate) fn request_response(
+    request: Request,
+    viewer: RequestViewer<'_>,
+    views: &Views,
+    current_main_oid: Option<String>,
+    invitees: Vec<RequestInviteeResponse>,
+    checks: scope_domain::requests::RequestChecksOutcome,
+    repository_lifecycle: scope_domain::repository::RepoLifecycleState,
+) -> Result<RequestSummaryResponse, ApiError> {
+    let policy = request_policy(&request, viewer.clone(), views);
+    let can_view_activity = policy.activity_stream_visible;
+    let decision = policy.permissions;
+    let permissions = RequestPermissionsResponse {
+        can_view_activity,
+        can_open_discussion: decision.can_open_discussion,
+        can_reply_to_discussion: decision.can_reply_to_discussion,
+        can_wait_after_reply: decision.can_wait_after_reply,
+        can_edit_identity: decision.can_edit_identity,
+        can_pull_branch: decision.can_pull_branch,
+        can_push_branch: decision.can_push_branch,
+        can_submit: decision.can_submit,
+        can_manage_invitees: decision.can_manage_invitees,
+        can_leave_request: decision.can_leave_request,
+        can_close: decision.can_close,
+        can_merge: decision.can_merge,
+    };
+    let decision = request_mergeability(&request, &viewer, views, checks, repository_lifecycle);
+    let mergeability = RequestMergeabilityResponse {
+        status: decision.status.into(),
+        current_main_oid: current_main_oid.map(git_oid_response).transpose()?,
+        request_head_oid: git_oid_response(request.head_oid.clone())?,
+        reason: decision.reason.map(str::to_string),
+    };
+    request_summary_response(request, invitees, permissions, mergeability)
 }

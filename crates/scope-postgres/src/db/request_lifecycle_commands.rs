@@ -34,6 +34,26 @@ pub struct ExpectedRequestAutoMerge {
     pub fulfilled_event_id: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExpectedRequestMergeEvidence {
+    pub revision_id: String,
+    pub base_version: u64,
+    pub evaluation: Option<ExpectedRequestCheckEvaluation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExpectedRequestCheckEvaluation {
+    pub evaluation_id: String,
+    pub tested_oid: String,
+    pub github: Option<ExpectedGitHubCheckRead>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExpectedGitHubCheckRead {
+    pub github_repository_id: u64,
+    pub applied_read: u64,
+}
+
 #[derive(Clone, Debug)]
 pub struct MergeRequestContentCommand {
     pub owner: String,
@@ -45,6 +65,7 @@ pub struct MergeRequestContentCommand {
     pub expected_repo_change_version: u64,
     pub expected_request_head_oid: String,
     pub expected_auto_merge: Option<ExpectedRequestAutoMerge>,
+    pub expected_merge_evidence: ExpectedRequestMergeEvidence,
     pub update: scope_domain::reviewed_updates::content::ReviewedUpdateInput,
     pub landing_file_mutation: scope_domain::landing_file::RepositoryLandingFileMutation,
     pub workflow_catalog: scope_domain::runs::catalog::RepositoryWorkflowCatalog,

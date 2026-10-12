@@ -17,6 +17,7 @@ pub fn stop_request_auto_merge_for_check_evaluation(
     if evaluation.state != RequestCheckEvaluationState::ConfigurationError
         || evaluation.request_id != intent.request_id
         || evaluation.head_oid != intent.head_oid
+        || evaluation.revision_id != intent.revision_id
     {
         return Ok(None);
     }

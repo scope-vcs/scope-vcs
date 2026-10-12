@@ -108,7 +108,7 @@ async fn rewritten_revision_moves_the_stored_request_base() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(request.base_main_oid, "newer-main");
+    assert_eq!(request.main_ancestor_oid, "newer-main");
     assert_eq!(request.head_oid, "rebased");
     let revision = store
         .requests()
@@ -117,8 +117,13 @@ async fn rewritten_revision_moves_the_stored_request_base() {
         .unwrap()
         .unwrap();
     assert!(revision.rewrote_history);
-    assert_eq!(revision.base_main_oid, "newer-main");
-    assert_eq!(revision.commits_after_oid(), "newer-main");
+    assert_eq!(revision.main_ancestor_oid, "newer-main");
+    assert_eq!(
+        scope_domain::requests::RequestComparison::push(&revision, ViewId::private())
+            .membership()
+            .excluded_ancestor_oid(),
+        "newer-main"
+    );
 }
 
 #[tokio::test]
@@ -784,7 +789,7 @@ fn public_start_input() -> StartRequestInput {
         author_role: RequestActorRole::Public,
         author_view: ViewId::public(),
         view: ViewId::public(),
-        base_main_oid: "base".to_string(),
+        main_ancestor_oid: "base".to_string(),
         event_id: "event_started".to_string(),
         now_unix: 2,
     }

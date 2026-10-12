@@ -14,7 +14,7 @@ use scope_domain::{
         Repository,
         access::{RepositoryAccess, RepositoryAccessContext},
     },
-    requests::RequestRevision,
+    requests::{RequestBase, RequestRevision},
 };
 use scope_postgres::db::RepositoryReadPolicy;
 use std::{
@@ -160,7 +160,10 @@ fn revision_response_keeps_oversized_commit_identity_and_prioritizes_selection()
         actor_user_id: Some("owner-1".to_string()),
         old_head_oid: base.clone(),
         new_head_oid: last.clone(),
-        base_main_oid: base,
+        base: RequestBase::Main {
+            review_base_oid: base.clone(),
+        },
+        main_ancestor_oid: base,
         rewrote_history: false,
         git_snapshot: SourceBlob {
             content_ref: ContentRef::blob_sha256("snapshot"),
@@ -257,7 +260,10 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
         actor_user_id: Some("owner-1".to_string()),
         old_head_oid: base.clone(),
         new_head_oid: empty.clone(),
-        base_main_oid: base,
+        base: RequestBase::Main {
+            review_base_oid: base.clone(),
+        },
+        main_ancestor_oid: base,
         rewrote_history: false,
         git_snapshot: SourceBlob {
             content_ref: ContentRef::blob_sha256("snapshot"),
@@ -397,7 +403,10 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
         actor_user_id: Some("owner-1".to_string()),
         old_head_oid: base.clone(),
         new_head_oid: head,
-        base_main_oid: base,
+        base: RequestBase::Main {
+            review_base_oid: base.clone(),
+        },
+        main_ancestor_oid: base,
         rewrote_history: false,
         git_snapshot: SourceBlob {
             content_ref: ContentRef::blob_sha256("snapshot"),

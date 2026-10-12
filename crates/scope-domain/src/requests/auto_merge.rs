@@ -1,7 +1,6 @@
 use super::{
-    Request, RequestCheckEvaluation, RequestCheckResults, RequestChecksOutcome, RequestEvent,
-    RequestEventKind, RequestEventPayload, RequestRevision, RequestState, advance_request_activity,
-    request_checks_outcome, validate_required,
+    Request, RequestCheckEvaluation, RequestEvent, RequestEventKind, RequestEventPayload,
+    RequestRevision, RequestState, advance_request_activity, validate_required,
 };
 use crate::{error::DomainError, runs::validation::validate_git_oid};
 use serde::{Deserialize, Serialize};
@@ -137,28 +136,40 @@ impl RequestAutoMergeReadiness {
     }
 }
 
-pub fn request_auto_merge_readiness(
-    request_id: &str,
-    head_oid: &str,
-    evaluation: Option<&RequestCheckEvaluation>,
-    results: &RequestCheckResults,
-) -> RequestAutoMergeReadiness {
-    match request_checks_outcome(request_id, head_oid, evaluation, results) {
-        RequestChecksOutcome::Clear => RequestAutoMergeReadiness::Ready,
-        RequestChecksOutcome::NotEvaluated => RequestAutoMergeReadiness::Waiting(
+pub fn request_auto_merge_readiness(gate: super::MergeGateDecision) -> RequestAutoMergeReadiness {
+    use super::RequestMergeabilityStatus;
+    let Some(decision) = gate.request_mergeability() else {
+        return RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::AccessRevoked);
+    };
+    match decision.status {
+        RequestMergeabilityStatus::Ready => RequestAutoMergeReadiness::Ready,
+        RequestMergeabilityStatus::ChecksNotEvaluated => RequestAutoMergeReadiness::Waiting(
             RequestAutoMergeWaitingReason::CheckEvaluationMissing,
         ),
-        RequestChecksOutcome::AwaitingApproval => RequestAutoMergeReadiness::Waiting(
+        RequestMergeabilityStatus::ChecksAwaitingApproval => RequestAutoMergeReadiness::Waiting(
             RequestAutoMergeWaitingReason::ChecksAwaitingApproval,
         ),
-        RequestChecksOutcome::Pending => {
+        RequestMergeabilityStatus::ChecksPending
+        | RequestMergeabilityStatus::RepositoryNotReady => {
             RequestAutoMergeReadiness::Waiting(RequestAutoMergeWaitingReason::ChecksPending)
         }
-        RequestChecksOutcome::Failed => {
+        RequestMergeabilityStatus::ChecksFailed => {
             RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ChecksFailed)
         }
-        RequestChecksOutcome::ConfigurationError => {
+        RequestMergeabilityStatus::ChecksConfigurationError => {
             RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ChecksConfigurationError)
+        }
+        RequestMergeabilityStatus::NotMaintainer => {
+            RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::AccessRevoked)
+        }
+        RequestMergeabilityStatus::Closed => {
+            RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::RequestClosed)
+        }
+        RequestMergeabilityStatus::MissingRequestBranch => {
+            RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::RequestBranchMissing)
+        }
+        RequestMergeabilityStatus::Draft | RequestMergeabilityStatus::Merged => {
+            RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::RequestChanged)
         }
     }
 }

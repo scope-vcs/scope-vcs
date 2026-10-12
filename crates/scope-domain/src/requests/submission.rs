@@ -118,7 +118,7 @@ pub fn merge_request(
 }
 
 pub fn lands_with_main(request: &Request) -> bool {
-    request.state() == RequestState::Open && request.head_oid != request.base_main_oid
+    request.state() == RequestState::Open && request.head_oid != request.main_ancestor_oid
 }
 
 fn validate_command(request: &Request, request_id: &str, actor: &str) -> Result<(), DomainError> {

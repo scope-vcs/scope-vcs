@@ -6,7 +6,7 @@ use scope_domain::{
     history::FileChangeKind,
     policy::{Policy, ScopePath},
     repository::access::RepositoryAccess,
-    requests::RequestRevision,
+    requests::{RequestCommitMembershipFacts, RequestCommitRange, RequestRevision},
     views::{ViewId, Views},
 };
 use std::{collections::BTreeSet, path::Path as FsPath};
@@ -139,19 +139,28 @@ pub(crate) fn commit_belongs_to_revision(
     revision: &RequestRevision,
     commit_oid: &str,
 ) -> Result<bool, ApiError> {
-    if !git_commit_exists(raw_repo, commit_oid)? {
-        return Ok(false);
-    }
+    let range = RequestCommitRange::push(revision);
+    Ok(range.contains_commit(request_commit_membership_facts(
+        raw_repo, &range, commit_oid,
+    )?))
+}
+
+pub(crate) fn request_commit_membership_facts(
+    raw_repo: &FsPath,
+    range: &RequestCommitRange,
+    commit_oid: &str,
+) -> Result<RequestCommitMembershipFacts, ApiError> {
+    let exists = git_commit_exists(raw_repo, commit_oid)?;
     const ACTION: &str = "validating request revision commit";
-    if !git_is_ancestor(raw_repo, commit_oid, &revision.new_head_oid, ACTION)? {
-        return Ok(false);
-    }
-    Ok(!git_is_ancestor(
-        raw_repo,
-        commit_oid,
-        revision.commits_after_oid(),
-        ACTION,
-    )?)
+    let ancestor_of_head =
+        exists && git_is_ancestor(raw_repo, commit_oid, range.head_oid(), ACTION)?;
+    let ancestor_of_excluded_boundary = ancestor_of_head
+        && git_is_ancestor(raw_repo, commit_oid, range.excluded_ancestor_oid(), ACTION)?;
+    Ok(RequestCommitMembershipFacts {
+        exists,
+        ancestor_of_head,
+        ancestor_of_excluded_boundary,
+    })
 }
 
 fn git_commit_exists(raw_repo: &FsPath, commit_oid: &str) -> Result<bool, ApiError> {

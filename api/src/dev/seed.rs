@@ -481,7 +481,7 @@ fn seed_owner_request(
             author_role: RequestActorRole::Owner,
             author_view: ViewId::private(),
             view,
-            base_main_oid: base_oid.clone(),
+            main_ancestor_oid: base_oid.clone(),
             event_id: format!("event_{id}_started"),
             now_unix,
         },

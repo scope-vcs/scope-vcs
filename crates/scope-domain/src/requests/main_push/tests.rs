@@ -40,7 +40,7 @@ fn input() -> StartMainPushRequestInput {
         pusher_handle: "ada".into(),
         validated_view: agent(),
         name: "main-push-222222222222".into(),
-        base_main_oid: BASE.into(),
+        main_ancestor_oid: BASE.into(),
         head_oid: HEAD.into(),
         git_snapshot: source_blob(HEAD),
         git_facts: RequestRevisionGitFacts {
@@ -106,7 +106,7 @@ fn a_narrower_main_push_lands_as_an_auto_merged_request_in_the_pushers_view() {
     assert_eq!(request.title, "Main push from ada");
     assert_eq!(request.state(), RequestState::Open);
     assert_eq!(request.head_oid, HEAD);
-    assert_eq!(request.base_main_oid, BASE);
+    assert_eq!(request.main_ancestor_oid, BASE);
     assert_eq!(
         mutation
             .events
@@ -288,7 +288,7 @@ fn people_cannot_choose_a_main_push_request_name() {
             author_role: RequestActorRole::Member,
             author_view: agent(),
             view: agent(),
-            base_main_oid: BASE.into(),
+            main_ancestor_oid: BASE.into(),
             event_id: "event".into(),
             now_unix: 40,
         },

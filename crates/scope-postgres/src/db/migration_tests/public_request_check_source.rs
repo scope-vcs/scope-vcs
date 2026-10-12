@@ -35,6 +35,12 @@ async fn public_check_source_migration_invalidates_only_unfinished_public_empty_
             ('empty', 'Public'), ('private', 'Private'), ('approved', 'Public'),
             ('waiting', 'Public'), ('invalid', 'Public'), ('finished', 'Public')
           ) AS fixture(name, audience);
+        INSERT INTO scope_request_revisions (
+            id, request_id, position, actor_user_id, old_head_oid, new_head_oid,
+            git_snapshot, created_at_unix
+        ) SELECT id || '-revision', id, 1, 'checks-user', repeat('a', 40),
+                 repeat('b', 40), '{}', 2
+          FROM scope_requests;
         INSERT INTO scope_request_check_evaluations (
             request_id, head_oid, state, message, checks, created_at_unix, updated_at_unix
         ) SELECT name, repeat('b', 40), state,

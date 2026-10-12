@@ -193,7 +193,7 @@ impl RequestStore {
             DatabaseBackend::Postgres,
             "SELECT request.* FROM scope_requests request
              JOIN scope_request_check_evaluations evaluation
-               ON request.id = evaluation.request_id AND request.head_oid = evaluation.head_oid
+               ON request.id = evaluation.request_id AND request.current_check_evaluation_id = evaluation.id
              WHERE request.repo_id = $1 AND evaluation.tested_oid = $2
                AND evaluation.checks @> '[{\"provider\":\"github\"}]'::jsonb
              ORDER BY request.id",
@@ -213,38 +213,31 @@ impl RequestStore {
         repo_id: &str,
         commit_oid: &str,
     ) -> Result<Vec<RequestCheckEvaluation>, PostgresError> {
-        let heads = self
-            .db
-            .query_all_raw(Statement::from_sql_and_values(
+        super::entities::request_check_evaluation::Model::find_by_statement(
+            Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
-                SELECT evaluation.request_id, evaluation.head_oid
-                  FROM scope_request_check_evaluations evaluation
-                  JOIN scope_requests request
-                    ON request.id = evaluation.request_id
-                   AND request.head_oid = evaluation.head_oid
-                 WHERE request.repo_id = $1
-                   AND evaluation.tested_oid = $2
-                   AND evaluation.state = 'started'
-                   AND evaluation.checks @? '$[*] ? (@.provider == "github")'
-                   AND request.merged_at_unix IS NULL
-                   AND request.closed_at_unix IS NULL
-                "#,
+            SELECT evaluation.*
+              FROM scope_request_check_evaluations evaluation
+              JOIN scope_requests request
+                ON request.id = evaluation.request_id
+               AND request.current_check_evaluation_id = evaluation.id
+             WHERE request.repo_id = $1
+               AND evaluation.tested_oid = $2
+               AND evaluation.state = 'started'
+               AND evaluation.checks @? '$[*] ? (@.provider == "github")'
+               AND request.merged_at_unix IS NULL
+               AND request.closed_at_unix IS NULL
+            "#,
                 [repo_id.into(), commit_oid.into()],
-            ))
-            .await
-            .map_err(PostgresError::internal)?
-            .into_iter()
-            .map(|row| {
-                Ok((
-                    row.try_get::<String>("", "request_id")
-                        .map_err(PostgresError::internal)?,
-                    row.try_get::<String>("", "head_oid")
-                        .map_err(PostgresError::internal)?,
-                ))
-            })
-            .collect::<Result<Vec<_>, PostgresError>>()?;
-        self.request_check_evaluations(&heads).await
+            ),
+        )
+        .all(self.db.as_ref())
+        .await
+        .map_err(PostgresError::internal)?
+        .into_iter()
+        .map(super::entities::request_check_evaluation::Model::try_into_domain)
+        .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_commit_is_watched"))]
@@ -265,7 +258,10 @@ impl RequestStore {
                     SELECT 1
                       FROM scope_request_check_evaluations evaluation
                       JOIN scope_requests request ON request.id = evaluation.request_id
+                      JOIN scope_github_connections connection ON connection.repo_id = request.repo_id
+                        AND connection.github_repository_id = evaluation.github_repository_id
                      WHERE evaluation.tested_oid = $2 AND request.repo_id = $1
+                       AND evaluation.checks @? '$[*] ? (@.provider == \"github\")'
                  ) AS tested",
                 [repo_id.into(), commit_oid.into()],
             ))
@@ -290,10 +286,11 @@ impl RequestStore {
               FROM scope_request_check_evaluations evaluation
               JOIN scope_requests request
                 ON request.id = evaluation.request_id
-               AND request.head_oid = evaluation.head_oid
+               AND request.current_check_evaluation_id = evaluation.id
               JOIN scope_github_connections connection
                 ON connection.repo_id = request.repo_id
                AND connection.status = 'Connected'
+               AND connection.github_repository_id = evaluation.github_repository_id
               LEFT JOIN scope_github_check_refreshes refresh
                 ON refresh.repo_id = request.repo_id
                AND refresh.github_repository_id = connection.github_repository_id

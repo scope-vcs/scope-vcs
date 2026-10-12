@@ -95,7 +95,7 @@ export function RequestDetails() {
           )}
 
           <DetailsSection title="git state">
-            <DetailsValue label="Base" value={shortOid(request.base_main_oid)} />
+            <DetailsValue label="Base" value={shortOid(request.main_ancestor_oid)} />
             <DetailsValue label="Head" value={shortOid(request.head_oid)} />
             <pre className="mt-1 min-w-0 whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 text-[11px] leading-5"><code>{`git fetch origin\ngit switch --track origin/${request.name}`}</code></pre>
           </DetailsSection>

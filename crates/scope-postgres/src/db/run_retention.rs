@@ -152,9 +152,10 @@ fn active_auto_merge_evidence_is_absent() -> sea_orm::sea_query::SimpleExpr {
         "NOT EXISTS (
             SELECT 1
               FROM scope_request_auto_merge_intents intent
+              JOIN scope_requests request
+                ON request.id = intent.request_id AND request.head_oid = intent.head_oid
               JOIN scope_request_check_evaluations evaluation
-                ON evaluation.request_id = intent.request_id
-               AND evaluation.head_oid = intent.head_oid
+                ON evaluation.id = request.current_check_evaluation_id
              WHERE intent.status = 'Active'
                AND evaluation.checks @> jsonb_build_array(
                    jsonb_build_object('provider', 'native', 'run_id', scope_runs.id)

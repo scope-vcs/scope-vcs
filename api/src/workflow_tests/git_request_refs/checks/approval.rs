@@ -1,6 +1,6 @@
 use super::*;
 use scope_api_contract::routes::repo_request_checks_approve;
-use scope_domain::requests::{NativeRequestCheck, RequestCheck};
+use scope_domain::requests::{NativeRequestCheck, RequestCheck, RequestCheckContext};
 
 fn approve_route(request_id: &str) -> String {
     repo_request_checks_approve(TEST_REPO_OWNER, TEST_REPO_NAME, request_id)
@@ -10,6 +10,17 @@ async fn record_awaiting_approval(state: &AppState, request_id: &str) {
     allow_native_runs(state).await;
     forget_evaluations(state, request_id).await;
     let request = stored_request(state, request_id).await;
+    let revision = state
+        .metadata
+        .requests()
+        .request_revision_window(&request.id, None, 1)
+        .await
+        .unwrap()
+        .revisions
+        .into_iter()
+        .next()
+        .unwrap();
+    let context = RequestCheckContext::for_revision(&request, &revision).unwrap();
     let workflow = request_workflow();
     let revisions = scope_run_config::parse_workflow_set(
         TEST_REPO_ID,
@@ -20,13 +31,8 @@ async fn record_awaiting_approval(state: &AppState, request_id: &str) {
         .iter()
         .map(|revision| RequestCheck::Native(NativeRequestCheck::for_revision(revision)))
         .collect();
-    let evaluation = RequestCheckEvaluation::awaiting_approval(
-        &request.id,
-        &request.head_oid,
-        checks,
-        unix_now(),
-    )
-    .unwrap();
+    let evaluation =
+        RequestCheckEvaluation::awaiting_approval(&context, checks, unix_now()).unwrap();
     state
         .metadata
         .requests()

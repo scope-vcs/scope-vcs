@@ -1,6 +1,8 @@
 use super::{
     RequestStore, entities,
-    request_checks::{evaluation_for_head, queue_tested_commit_push, save_evaluation},
+    request_checks::{
+        evaluation_for_head, queue_tested_commit_push, save_evaluation, select_current_evaluation,
+    },
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
@@ -15,6 +17,7 @@ pub struct RebuildCheckCommitCommand {
     pub repository_incarnation: scope_domain::repository::RepositoryIncarnation,
     pub request_id: String,
     pub head_oid: String,
+    pub expected_evaluation_id: String,
     pub replaced_tested_oid: String,
     pub expected_canonical_main_oid: Option<String>,
     pub tested: GitHubTestedCommit,
@@ -65,6 +68,7 @@ impl RequestStore {
 
         if request.is_terminal()
             || request.head_oid != command.head_oid
+            || evaluation.id != command.expected_evaluation_id
             || evaluation.tested_oid != command.replaced_tested_oid
             || !evaluation.needs_new_check_commit(canonical_main.as_deref())
         {
@@ -81,6 +85,7 @@ impl RequestStore {
             command.now_unix,
         )?;
         save_evaluation(&tx, &evaluation).await?;
+        select_current_evaluation(&tx, &evaluation).await?;
         let queued_github_push = push_to_github
             && queue_tested_commit_push(&tx, &request, &evaluation.tested_oid, command.now_unix)
                 .await?;
@@ -121,7 +126,7 @@ impl RequestStore {
                   FROM scope_request_check_evaluations evaluation
                   JOIN scope_requests request
                     ON request.id = evaluation.request_id
-                   AND request.head_oid = evaluation.head_oid
+                   AND request.current_check_evaluation_id = evaluation.id
                   JOIN scope_git_heads head ON head.repo_id = request.repo_id
                  WHERE request.repo_id = $1
                    AND request.merged_at_unix IS NULL

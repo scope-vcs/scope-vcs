@@ -1,6 +1,10 @@
 use super::*;
 use crate::requests::fixtures::open_request;
 
+fn context(request_id: impl Into<String>, head_oid: impl Into<String>) -> RequestCheckContext {
+    RequestCheckContext::new(request_id, "revision_1", head_oid, 1, "f".repeat(40)).unwrap()
+}
+
 const HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const OLD_HEAD: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
@@ -55,8 +59,7 @@ fn github_run(
 #[test]
 fn approval_gives_every_recorded_check_its_run_in_order() {
     let mut evaluation = RequestCheckEvaluation::awaiting_approval(
-        "req_1",
-        HEAD,
+        &context("req_1", HEAD),
         vec![check("checks", None), check("lint", None)],
         10,
     )
@@ -70,16 +73,16 @@ fn approval_gives_every_recorded_check_its_run_in_order() {
     assert_eq!(evaluation.updated_at_unix, 11);
     assert!(evaluation.approve(vec![], 12).is_err());
     assert!(
-        RequestCheckEvaluation::started("req_1", HEAD, vec![check("checks", None)], 1).is_err()
+        RequestCheckEvaluation::started(&context("req_1", HEAD), vec![check("checks", None)], 1)
+            .is_err()
     );
-    assert!(RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![], 1).is_err());
+    assert!(RequestCheckEvaluation::awaiting_approval(&context("req_1", HEAD), vec![], 1).is_err());
 }
 
 #[test]
 fn approval_starts_only_native_runs_and_github_checks_need_none() {
     let mut evaluation = RequestCheckEvaluation::awaiting_approval(
-        "req_1",
-        HEAD,
+        &context("req_1", HEAD),
         vec![github("ci / test"), check("checks", None)],
         10,
     )
@@ -96,15 +99,21 @@ fn approval_starts_only_native_runs_and_github_checks_need_none() {
     assert_eq!(evaluation.run_ids().collect::<Vec<_>>(), ["run_a"]);
 
     let github_only =
-        RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci / test")], 1).unwrap();
-    assert_eq!(github_only.tested_oid, HEAD);
-    let mut awaiting_github =
-        RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![github("ci / test")], 1)
+        RequestCheckEvaluation::started(&context("req_1", HEAD), vec![github("ci / test")], 1)
             .unwrap();
+    assert_eq!(github_only.tested_oid, HEAD);
+    let mut awaiting_github = RequestCheckEvaluation::awaiting_approval(
+        &context("req_1", HEAD),
+        vec![github("ci / test")],
+        1,
+    )
+    .unwrap();
     assert!(awaiting_github.awaits_approval());
     awaiting_github.approve(Vec::new(), 2).unwrap();
     assert_eq!(awaiting_github.state, RequestCheckEvaluationState::Started);
-    assert!(RequestCheckEvaluation::started("req_1", HEAD, vec![github(" ")], 1).is_err());
+    assert!(
+        RequestCheckEvaluation::started(&context("req_1", HEAD), vec![github(" ")], 1).is_err()
+    );
 }
 
 #[test]
@@ -155,8 +164,7 @@ fn outcome_follows_the_current_head_and_its_runs() {
     let mut request = open_request();
     request.head_oid = HEAD.to_string();
     let started = RequestCheckEvaluation::started(
-        &request.id,
-        HEAD,
+        &context(&request.id, HEAD),
         vec![check("checks", Some("run_a")), check("lint", Some("run_b"))],
         1,
     )
@@ -190,8 +198,7 @@ fn outcome_follows_the_current_head_and_its_runs() {
     );
 
     let stale = RequestCheckEvaluation::awaiting_approval(
-        &request.id,
-        OLD_HEAD,
+        &context(&request.id, OLD_HEAD),
         vec![check("checks", None)],
         1,
     )
@@ -201,8 +208,7 @@ fn outcome_follows_the_current_head_and_its_runs() {
         RequestChecksOutcome::NotEvaluated
     );
     let waiting = RequestCheckEvaluation::awaiting_approval(
-        &request.id,
-        HEAD,
+        &context(&request.id, HEAD),
         vec![check("checks", None)],
         1,
     )
@@ -215,9 +221,12 @@ fn outcome_follows_the_current_head_and_its_runs() {
 
 #[test]
 fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
-    let started =
-        RequestCheckEvaluation::started("req_1", HEAD, vec![github("test"), github("lint")], 1)
-            .unwrap();
+    let started = RequestCheckEvaluation::started(
+        &context("req_1", HEAD),
+        vec![github("test"), github("lint")],
+        1,
+    )
+    .unwrap();
     let outcome = |runs: Vec<GitHubCheckRun>| {
         request_checks_outcome(
             "req_1",
@@ -285,8 +294,7 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
         RequestChecksOutcome::ConfigurationError
     );
     let awaiting = RequestCheckEvaluation::awaiting_approval(
-        "req_1",
-        HEAD,
+        &context("req_1", HEAD),
         vec![check("checks", None), github("test")],
         1,
     )
@@ -310,7 +318,8 @@ fn the_latest_github_run_on_the_tested_commit_decides_each_required_name() {
 #[test]
 fn github_conclusions_pass_or_fail_a_completed_run() {
     use GitHubCheckConclusion::*;
-    let started = RequestCheckEvaluation::started("req_1", HEAD, vec![github("test")], 1).unwrap();
+    let started =
+        RequestCheckEvaluation::started(&context("req_1", HEAD), vec![github("test")], 1).unwrap();
     let outcome = |status, conclusion| {
         let run = GitHubCheckRun {
             status,
@@ -361,9 +370,12 @@ fn github_conclusions_pass_or_fail_a_completed_run() {
 
 #[test]
 fn a_disconnected_github_provider_leaves_native_only_heads_alone() {
-    let started =
-        RequestCheckEvaluation::started("req_1", HEAD, vec![check("checks", Some("run_a"))], 1)
-            .unwrap();
+    let started = RequestCheckEvaluation::started(
+        &context("req_1", HEAD),
+        vec![check("checks", Some("run_a"))],
+        1,
+    )
+    .unwrap();
     assert_eq!(
         request_checks_outcome(
             "req_1",
@@ -382,9 +394,12 @@ fn a_disconnected_github_provider_leaves_native_only_heads_alone() {
 
 #[test]
 fn withdrawing_native_runs_ends_only_a_wait() {
-    let awaiting =
-        RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![check("checks", None)], 5)
-            .unwrap();
+    let awaiting = RequestCheckEvaluation::awaiting_approval(
+        &context("req_1", HEAD),
+        vec![check("checks", None)],
+        5,
+    )
+    .unwrap();
     let withdrawn = awaiting.withdraw_native_runs(&[], 9).unwrap().unwrap();
     assert_eq!(
         withdrawn.state,
@@ -394,7 +409,8 @@ fn withdrawing_native_runs_ends_only_a_wait() {
         withdrawn.message.as_deref(),
         Some(crate::runs::availability::NATIVE_RUNS_UNAVAILABLE)
     );
-    assert!(withdrawn.checks.is_empty());
+    assert_eq!(withdrawn.checks, awaiting.checks);
+    assert_eq!(withdrawn.id, awaiting.id);
     assert_eq!(
         (withdrawn.created_at_unix, withdrawn.updated_at_unix),
         (5, 9)
@@ -404,21 +420,25 @@ fn withdrawing_native_runs_ends_only_a_wait() {
         RequestChecksOutcome::ConfigurationError
     );
 
-    let started =
-        RequestCheckEvaluation::started("req_1", HEAD, vec![check("checks", Some("run_a"))], 5)
-            .unwrap();
+    let started = RequestCheckEvaluation::started(
+        &context("req_1", HEAD),
+        vec![check("checks", Some("run_a"))],
+        5,
+    )
+    .unwrap();
     let running = [("run_a".to_string(), RunState::Queued)];
     assert!(started.withdraw_native_runs(&running, 9).unwrap().is_some());
     for finished in [RunState::Succeeded, RunState::Failed, RunState::Canceled] {
         let runs = [("run_a".to_string(), finished)];
         assert_eq!(started.withdraw_native_runs(&runs, 9).unwrap(), None);
     }
-    let none = RequestCheckEvaluation::no_checks("req_1", HEAD, 5).unwrap();
+    let none = RequestCheckEvaluation::no_checks(&context("req_1", HEAD), 5).unwrap();
     assert_eq!(none.withdraw_native_runs(&[], 9).unwrap(), None);
 
     for github_only in [
-        RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![github("test")], 5).unwrap(),
-        RequestCheckEvaluation::started("req_1", HEAD, vec![github("test")], 5).unwrap(),
+        RequestCheckEvaluation::awaiting_approval(&context("req_1", HEAD), vec![github("test")], 5)
+            .unwrap(),
+        RequestCheckEvaluation::started(&context("req_1", HEAD), vec![github("test")], 5).unwrap(),
     ] {
         assert!(!github_only.uses_native_runs());
         assert_eq!(github_only.withdraw_native_runs(&[], 9).unwrap(), None);
@@ -476,7 +496,8 @@ fn push(target_oid: &str, state: GitHubPushState, last_error: Option<&str>) -> G
 
 #[test]
 fn a_pushed_commit_without_any_run_says_no_workflow_started_after_a_while() {
-    let started = RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci")], 1).unwrap();
+    let started =
+        RequestCheckEvaluation::started(&context("req_1", HEAD), vec![github("ci")], 1).unwrap();
     let results = |runs| RequestCheckResults {
         github: GitHubCheckResults::Connected(runs),
         ..native_results(&[])
@@ -518,7 +539,8 @@ fn a_pushed_commit_without_any_run_says_no_workflow_started_after_a_while() {
 
 #[test]
 fn a_request_withheld_from_a_public_github_repository_cannot_pass_and_says_why() {
-    let started = RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci")], 1).unwrap();
+    let started =
+        RequestCheckEvaluation::started(&context("req_1", HEAD), vec![github("ci")], 1).unwrap();
     let mut results = RequestCheckResults {
         native_runs: Vec::new(),
         github: GitHubCheckResults::Connected(vec![github_run(
@@ -597,12 +619,14 @@ fn a_push_is_revoked_by_a_disconnect_or_a_reconnect_elsewhere() {
 #[test]
 fn the_push_status_follows_the_latest_push_of_the_tested_commit() {
     let awaiting =
-        RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![github("ci")], 1).unwrap();
+        RequestCheckEvaluation::awaiting_approval(&context("req_1", HEAD), vec![github("ci")], 1)
+            .unwrap();
     assert_eq!(
         GitHubPushStatus::for_evaluation(&awaiting, None),
         Some(GitHubPushStatus::AwaitingApproval)
     );
-    let started = RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci")], 1).unwrap();
+    let started =
+        RequestCheckEvaluation::started(&context("req_1", HEAD), vec![github("ci")], 1).unwrap();
     assert_eq!(
         GitHubPushStatus::for_evaluation(
             &started,
@@ -635,9 +659,12 @@ fn the_push_status_follows_the_latest_push_of_the_tested_commit() {
             error: "refused".into()
         })
     );
-    let native =
-        RequestCheckEvaluation::awaiting_approval("req_1", HEAD, vec![check("checks", None)], 1)
-            .unwrap();
+    let native = RequestCheckEvaluation::awaiting_approval(
+        &context("req_1", HEAD),
+        vec![check("checks", None)],
+        1,
+    )
+    .unwrap();
     assert_eq!(GitHubPushStatus::for_evaluation(&native, None), None);
 }
 
@@ -702,7 +729,8 @@ fn only_paths_under_github_workflows_are_workflow_changes() {
 fn a_check_commit_counts_only_while_private_main_is_the_one_it_was_built_on() {
     let check_commit = "c".repeat(40);
     let mut evaluation =
-        RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci / test")], 10).unwrap();
+        RequestCheckEvaluation::started(&context("req_1", HEAD), vec![github("ci / test")], 10)
+            .unwrap();
     evaluation.tested_oid = check_commit.clone();
     evaluation.check_commit_base =
         Some(CheckCommitBase::new("d".repeat(40), "e".repeat(40)).unwrap());
@@ -725,6 +753,7 @@ fn a_check_commit_counts_only_while_private_main_is_the_one_it_was_built_on() {
     assert_eq!(outcome(&"f".repeat(40)), RequestChecksOutcome::Pending);
     assert!(evaluation.needs_new_check_commit(Some(&"f".repeat(40))));
     let head =
-        RequestCheckEvaluation::started("req_1", HEAD, vec![github("ci / test")], 10).unwrap();
+        RequestCheckEvaluation::started(&context("req_1", HEAD), vec![github("ci / test")], 10)
+            .unwrap();
     assert!(!head.needs_new_check_commit(Some(&"f".repeat(40))));
 }

@@ -14,11 +14,13 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod context;
 mod github;
 mod github_push;
 mod planning;
 mod reviewer;
 mod tested_commit;
+pub use context::RequestCheckContext;
 pub use github::{
     GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun,
     GitHubCheckStatus, NO_GITHUB_WORKFLOWS_STARTED,
@@ -27,7 +29,7 @@ pub use github_push::{
     GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus,
     changes_github_workflows, github_push_retry_at, github_retry_at,
 };
-pub use planning::RequestCheckPlan;
+pub use planning::{GitHubRequestChecks, RequestCheckPlan};
 pub use reviewer::RequestCheckReviewer;
 pub use tested_commit::{
     CheckCommitBase, GitHubCheckTarget, GitHubTestedCommit, PRIVATE_CODE_CONFLICT_MESSAGE,
@@ -105,6 +107,7 @@ impl NativeRequestCheck {
     pub fn run(
         &self,
         request: &Request,
+        evaluation_id: &str,
         revision: &WorkflowRevision,
         requested_by_user_id: &str,
         now_unix: u64,
@@ -127,7 +130,7 @@ impl NativeRequestCheck {
         }
         let idempotency_key = format!(
             "request:{}:{}:{}",
-            request.id, request.head_oid, self.workflow_path
+            request.id, evaluation_id, self.workflow_path
         );
         let digest = Sha256::digest(
             format!("{}\0{idempotency_key}", revision.workflow().repository_id()).as_bytes(),
@@ -140,7 +143,10 @@ impl NativeRequestCheck {
             RunTrigger::Request,
             Some(requested_by_user_id.to_string()),
             if request.view.is_private() {
-                RunSource::request_git_snapshot(snapshot, request.base_main_oid.clone())?
+                RunSource::request_git_snapshot(
+                    snapshot,
+                    request.base.review_base_oid().to_string(),
+                )?
             } else {
                 RunSource::ephemeral_git_bundle(snapshot)?
             },
@@ -151,6 +157,11 @@ impl NativeRequestCheck {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestCheckEvaluation {
+    pub id: String,
+    pub revision_id: String,
+    pub base_version: u64,
+    pub review_base_oid: String,
+    pub github_repository_id: Option<u64>,
     pub request_id: String,
     pub head_oid: String,
     pub tested_oid: String,
@@ -164,14 +175,9 @@ pub struct RequestCheckEvaluation {
 }
 
 impl RequestCheckEvaluation {
-    pub fn no_checks(
-        request_id: impl Into<String>,
-        head_oid: impl Into<String>,
-        now_unix: u64,
-    ) -> Result<Self, DomainError> {
+    pub fn no_checks(context: &RequestCheckContext, now_unix: u64) -> Result<Self, DomainError> {
         Self::new(
-            request_id,
-            head_oid,
+            context,
             RequestCheckEvaluationState::NoChecks,
             None,
             Vec::new(),
@@ -180,8 +186,7 @@ impl RequestCheckEvaluation {
     }
 
     pub fn awaiting_approval(
-        request_id: impl Into<String>,
-        head_oid: impl Into<String>,
+        context: &RequestCheckContext,
         checks: Vec<RequestCheck>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
@@ -196,8 +201,7 @@ impl RequestCheckEvaluation {
             ));
         }
         Self::new(
-            request_id,
-            head_oid,
+            context,
             RequestCheckEvaluationState::AwaitingApproval,
             None,
             checks,
@@ -206,15 +210,13 @@ impl RequestCheckEvaluation {
     }
 
     pub fn started(
-        request_id: impl Into<String>,
-        head_oid: impl Into<String>,
+        context: &RequestCheckContext,
         checks: Vec<RequestCheck>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
         ensure_every_check_started(&checks)?;
         Self::new(
-            request_id,
-            head_oid,
+            context,
             RequestCheckEvaluationState::Started,
             None,
             checks,
@@ -223,16 +225,14 @@ impl RequestCheckEvaluation {
     }
 
     pub fn configuration_error(
-        request_id: impl Into<String>,
-        head_oid: impl Into<String>,
+        context: &RequestCheckContext,
         message: impl Into<String>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
         let message = message.into();
         validate_required("configuration error message", &message)?;
         Self::new(
-            request_id,
-            head_oid,
+            context,
             RequestCheckEvaluationState::ConfigurationError,
             Some(message),
             Vec::new(),
@@ -302,11 +302,13 @@ impl RequestCheckEvaluation {
             return Ok(None);
         }
         let mut withdrawn = Self::configuration_error(
-            &self.request_id,
-            &self.head_oid,
+            &self.context(),
             NATIVE_RUNS_UNAVAILABLE,
             now_unix.max(self.updated_at_unix),
         )?;
+        withdrawn.checks = self.checks.clone();
+        withdrawn.id = self.id.clone();
+        withdrawn.github_repository_id = self.github_repository_id;
         withdrawn.created_at_unix = self.created_at_unix;
         Ok(Some(withdrawn))
     }
@@ -366,15 +368,14 @@ impl RequestCheckEvaluation {
     }
 
     fn new(
-        request_id: impl Into<String>,
-        head_oid: impl Into<String>,
+        context: &RequestCheckContext,
         state: RequestCheckEvaluationState,
         message: Option<String>,
         checks: Vec<RequestCheck>,
         now_unix: u64,
     ) -> Result<Self, DomainError> {
-        let request_id = request_id.into();
-        let head_oid = head_oid.into();
+        let request_id = context.request_id.clone();
+        let head_oid = context.head_oid.clone();
         validate_required("request id", &request_id)?;
         validate_git_oid("request check head", &head_oid)?;
         for check in &checks {
@@ -390,7 +391,12 @@ impl RequestCheckEvaluation {
                 RequestCheck::GitHub { name } => validate_required("check name", name)?,
             }
         }
-        Ok(Self {
+        let mut evaluation = Self {
+            id: String::new(),
+            revision_id: context.revision_id.clone(),
+            base_version: context.base_version,
+            review_base_oid: context.review_base_oid.clone(),
+            github_repository_id: None,
             request_id,
             changes_github_workflows: None,
             tested_oid: head_oid.clone(),
@@ -401,7 +407,75 @@ impl RequestCheckEvaluation {
             checks,
             created_at_unix: now_unix,
             updated_at_unix: now_unix,
-        })
+        };
+        evaluation.renew_identity();
+        Ok(evaluation)
+    }
+
+    pub fn context(&self) -> RequestCheckContext {
+        RequestCheckContext {
+            request_id: self.request_id.clone(),
+            revision_id: self.revision_id.clone(),
+            head_oid: self.head_oid.clone(),
+            base_version: self.base_version,
+            review_base_oid: self.review_base_oid.clone(),
+        }
+    }
+
+    pub fn matches_request(&self, request: &Request) -> bool {
+        self.request_id == request.id
+            && self.head_oid == request.head_oid
+            && self.base_version == request.base_version
+            && self.review_base_oid == request.base.review_base_oid()
+    }
+
+    pub fn ensure_identity(&self) -> Result<(), DomainError> {
+        let mut expected = self.clone();
+        expected.renew_identity();
+        if expected.id != self.id {
+            return Err(DomainError::conflict(
+                "request check identity does not match its evidence",
+            ));
+        }
+        Ok(())
+    }
+
+    fn renew_identity(&mut self) {
+        let mut digest = Sha256::new();
+        for value in [
+            &self.request_id,
+            &self.revision_id,
+            &self.head_oid,
+            &self.review_base_oid,
+            &self.tested_oid,
+        ] {
+            digest.update(value.as_bytes());
+            digest.update([0]);
+        }
+        digest.update(self.github_repository_id.unwrap_or_default().to_be_bytes());
+        if let Some(base) = &self.check_commit_base {
+            digest.update(base.canonical_main_oid.as_bytes());
+            digest.update([0]);
+            digest.update(base.view_base_oid.as_bytes());
+            digest.update([0]);
+        }
+        for check in &self.checks {
+            match check {
+                RequestCheck::Native(check) => {
+                    digest.update(b"native\0");
+                    digest.update(check.workflow_path.as_bytes());
+                    digest.update([0]);
+                    digest.update(check.workflow_revision_digest.as_bytes());
+                    digest.update([0]);
+                }
+                RequestCheck::GitHub { name } => {
+                    digest.update(b"github\0");
+                    digest.update(name.as_bytes());
+                    digest.update([0]);
+                }
+            }
+        }
+        self.id = format!("evaluation_{}", hex::encode(digest.finalize()));
     }
 }
 

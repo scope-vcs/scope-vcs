@@ -10,20 +10,11 @@ pub struct RequestRevision {
     pub actor_user_id: Option<String>,
     pub old_head_oid: String,
     pub new_head_oid: String,
-    pub base_main_oid: String,
+    pub base: super::RequestBase,
+    pub main_ancestor_oid: String,
     pub rewrote_history: bool,
     pub git_snapshot: SourceBlob,
     pub created_at_unix: u64,
-}
-
-impl RequestRevision {
-    pub fn commits_after_oid(&self) -> &str {
-        if self.rewrote_history {
-            &self.base_main_oid
-        } else {
-            &self.old_head_oid
-        }
-    }
 }
 
 pub fn select_request_review_revision<'a>(
@@ -62,7 +53,8 @@ pub(super) fn revision(
         actor_user_id: event.actor_user_id.clone(),
         old_head_oid,
         new_head_oid,
-        base_main_oid: request.base_main_oid.clone(),
+        base: request.base.clone(),
+        main_ancestor_oid: request.main_ancestor_oid.clone(),
         rewrote_history,
         git_snapshot,
         created_at_unix: event.created_at_unix,

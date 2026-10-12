@@ -29,6 +29,7 @@ use scope_domain::{
 
 const BASE_HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const REQUEST_HEAD: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const CHECK_HEAD: &str = "dddddddddddddddddddddddddddddddddddddddd";
 const MERGED_HEAD: &str = "cccccccccccccccccccccccccccccccccccccccc";
 
 #[tokio::test]
@@ -39,7 +40,7 @@ async fn locked_merge_derives_maintainer_authorization_before_content_persistenc
     let error = store
         .requests()
         .merge_request_content(
-            merge_command("user_public", prepared),
+            merge_command(&store, "user_public", prepared).await,
             &super::super::generated_ids::test_generated_id,
         )
         .await
@@ -78,7 +79,7 @@ async fn locked_merge_allows_owner_and_persists_content_and_request_once() {
     let mutation = store
         .requests()
         .merge_request_content(
-            merge_command("user_owner", prepared),
+            merge_command(&store, "user_owner", prepared).await,
             &super::super::generated_ids::test_generated_id,
         )
         .await
@@ -100,28 +101,6 @@ async fn locked_merge_allows_owner_and_persists_content_and_request_once() {
 #[tokio::test]
 async fn cancellation_after_preparation_fences_the_final_content_commit() {
     let store = merge_store().await;
-    store
-        .requests()
-        .record_request_checks(RecordRequestChecksCommand {
-            expected_canonical_main_oid: store
-                .requests()
-                .request_check_base("owner/repo")
-                .await
-                .unwrap(),
-            repository_incarnation: store
-                .repositories()
-                .repository_record("owner/repo")
-                .await
-                .unwrap()
-                .unwrap()
-                .incarnation(),
-            evaluation: RequestCheckEvaluation::no_checks("req_1", REQUEST_HEAD, 6).unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
-            push_to_github: false,
-        })
-        .await
-        .unwrap();
     store
         .requests()
         .authorize_request_auto_merge(AuthorizeRequestAutoMergeCommand {
@@ -162,7 +141,7 @@ async fn cancellation_after_preparation_fences_the_final_content_commit() {
         .await
         .unwrap();
 
-    let mut command = merge_command("user_owner", prepared);
+    let mut command = merge_command(&store, "user_owner", prepared).await;
     command.now_unix = 9;
     command.expected_auto_merge = Some(ExpectedRequestAutoMerge {
         intent_id: claim.intent.id,
@@ -215,7 +194,7 @@ async fn stale_manual_preparation_does_not_stop_a_current_auto_merge_intent() {
         .await
         .unwrap();
     let prepared = merge_preparation(&store).await;
-    let mut stale_manual = merge_command("user_owner", prepared);
+    let mut stale_manual = merge_command(&store, "user_owner", prepared).await;
     stale_manual.expected_request_head_oid = BASE_HEAD.into();
     stale_manual.now_unix = 8;
 
@@ -257,6 +236,10 @@ struct MergePreparation {
 }
 
 async fn merge_store() -> super::super::MetadataStore {
+    merge_store_with_github(false).await
+}
+
+async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
     let store = postgres_store();
     let mut repo = store
         .repositories()
@@ -283,6 +266,10 @@ async fn merge_store() -> super::super::MetadataStore {
     store
         .requests()
         .mutate_request_for_tests("req_1", |request| {
+            request.base = scope_domain::requests::RequestBase::Main {
+                review_base_oid: BASE_HEAD.into(),
+            };
+            request.main_ancestor_oid = BASE_HEAD.into();
             request.submitted_at_unix = Some(4);
             request.updated_at_unix = 4;
         })
@@ -312,6 +299,70 @@ async fn merge_store() -> super::super::MetadataStore {
             },
             &super::super::generated_ids::test_generated_id,
         )
+        .await
+        .unwrap();
+    let request = store
+        .requests()
+        .request_for_tests("req_1")
+        .await
+        .unwrap()
+        .unwrap();
+    let revision = super::super::request_revision_rows::latest_revision_for_request(
+        store.db.as_ref(),
+        "req_1",
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let context =
+        scope_domain::requests::RequestCheckContext::for_revision(&request, &revision).unwrap();
+    let evaluation = if github {
+        use sea_orm::ConnectionTrait;
+        store.db.execute_unprepared("INSERT INTO scope_github_connections (repo_id, installation_id, github_repository_id, github_full_name, connected_by_user_id, connected_at_unix, status) VALUES ('owner/repo', 7, 42, 'octo/repo', 'user_owner', 1, 'Connected')").await.unwrap();
+        let names = vec!["test".to_string()];
+        let mut evaluation = scope_domain::requests::RequestCheckPlan::evaluate_github(
+            &request,
+            &context,
+            &scope_domain::views::Views::builtin(),
+            scope_domain::requests::GitHubRequestChecks {
+                github_repository_id: 42,
+                tested: scope_domain::requests::GitHubTestedCommit::CheckCommit {
+                    oid: CHECK_HEAD.into(),
+                    base: scope_domain::requests::CheckCommitBase::new(BASE_HEAD, BASE_HEAD)
+                        .unwrap(),
+                },
+                required_check_names: &names,
+            },
+            None,
+            5,
+        )
+        .unwrap()
+        .evaluation;
+        evaluation.approve(Vec::new(), 5).unwrap();
+        evaluation
+    } else {
+        RequestCheckEvaluation::no_checks(&context, 5).unwrap()
+    };
+    store
+        .requests()
+        .record_request_checks(RecordRequestChecksCommand {
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            evaluation,
+            revisions: Vec::new(),
+            runs: Vec::new(),
+            push_to_github: false,
+        })
         .await
         .unwrap();
     store
@@ -421,7 +472,11 @@ fn source_blob(label: &str) -> SourceBlob {
     }
 }
 
-fn merge_command(actor_user_id: &str, prepared: MergePreparation) -> MergeRequestContentCommand {
+async fn merge_command(
+    store: &super::super::MetadataStore,
+    actor_user_id: &str,
+    prepared: MergePreparation,
+) -> MergeRequestContentCommand {
     MergeRequestContentCommand {
         owner: "owner".to_string(),
         name: "repo".to_string(),
@@ -432,6 +487,24 @@ fn merge_command(actor_user_id: &str, prepared: MergePreparation) -> MergeReques
         expected_repo_change_version: prepared.expected_repo_change_version,
         expected_request_head_oid: REQUEST_HEAD.to_string(),
         expected_auto_merge: None,
+        expected_merge_evidence: {
+            let request = store
+                .requests()
+                .request_for_tests("req_1")
+                .await
+                .unwrap()
+                .unwrap();
+            store
+                .requests()
+                .request_merge_evidence(
+                    &request.id,
+                    &request.head_oid,
+                    request.base_version,
+                    request.base.review_base_oid(),
+                )
+                .await
+                .unwrap()
+        },
         update: prepared.update,
         landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
         workflow_catalog: prepared.workflow_catalog,
@@ -441,4 +514,141 @@ fn merge_command(actor_user_id: &str, prepared: MergePreparation) -> MergeReques
         },
         now_unix: 5,
     }
+}
+
+fn github_commit() -> crate::db::GitHubCheckCommit {
+    crate::db::GitHubCheckCommit {
+        repo_id: "owner/repo".into(),
+        github_repository_id: 42,
+        commit_oid: CHECK_HEAD.into(),
+    }
+}
+
+async fn apply_github_result(store: &super::super::MetadataStore, passed: bool) {
+    use scope_domain::requests::{GitHubCheckConclusion, GitHubCheckRun, GitHubCheckStatus};
+    let commit = github_commit();
+    let read = store
+        .requests()
+        .start_github_check_read(&commit)
+        .await
+        .unwrap();
+    store
+        .requests()
+        .apply_github_check_read(
+            &commit,
+            read,
+            5,
+            &[GitHubCheckRun {
+                commit_oid: CHECK_HEAD.into(),
+                name: "test".into(),
+                github_check_run_id: read,
+                status: GitHubCheckStatus::Completed,
+                conclusion: Some(if passed {
+                    GitHubCheckConclusion::Success
+                } else {
+                    GitHubCheckConclusion::Failure
+                }),
+                details_url: None,
+                check_suite_id: None,
+            }],
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn manual_merge_rejects_check_reads_that_changed_after_preparation() {
+    for change in ["in-flight", "failed", "new-passing-read", "expired"] {
+        let store = merge_store_with_github(true).await;
+        apply_github_result(&store, true).await;
+        let prepared = merge_preparation(&store).await;
+        let mut command = merge_command(&store, "user_owner", prepared).await;
+        match change {
+            "in-flight" => {
+                store
+                    .requests()
+                    .start_github_check_read(&github_commit())
+                    .await
+                    .unwrap();
+            }
+            "failed" => apply_github_result(&store, false).await,
+            "new-passing-read" => apply_github_result(&store, true).await,
+            "expired" => command.now_unix = 65,
+            _ => unreachable!(),
+        }
+        let error = store
+            .requests()
+            .merge_request_content(command, &super::super::generated_ids::test_generated_id)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.kind,
+            crate::error::PostgresErrorKind::Conflict,
+            "{change}"
+        );
+        let repo = store
+            .repositories()
+            .repository_for_tests("owner/repo")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(repo.git_head.unwrap().head_oid, BASE_HEAD, "{change}");
+        assert_eq!(
+            store
+                .requests()
+                .request_for_tests("req_1")
+                .await
+                .unwrap()
+                .unwrap()
+                .state(),
+            RequestState::Open,
+            "{change}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn final_merge_fences_new_check_reads_until_content_and_lifecycle_commit() {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+    let store = merge_store_with_github(true).await;
+    apply_github_result(&store, true).await;
+    let prepared = merge_preparation(&store).await;
+    let command = merge_command(&store, "user_owner", prepared).await;
+    let held = store.db.begin().await.unwrap();
+    let holder_pid: i32 = held
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT pg_backend_pid() AS pid",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "pid")
+        .unwrap();
+    held.execute_unprepared("SELECT id FROM scope_repositories WHERE id = 'owner/repo' FOR UPDATE")
+        .await
+        .unwrap();
+    let merge_store = store.clone();
+    let merge = tokio::spawn(async move {
+        merge_store
+            .requests()
+            .merge_request_content(command, &super::super::generated_ids::test_generated_id)
+            .await
+    });
+    let merge_pid = super::super::locks::wait_for_transaction_waiter(&store, holder_pid).await;
+    let read_store = store.clone();
+    let read = tokio::spawn(async move {
+        read_store
+            .requests()
+            .start_github_check_read(&github_commit())
+            .await
+    });
+    super::super::locks::wait_for_transaction_waiter(&store, merge_pid).await;
+    assert!(!read.is_finished());
+    held.commit().await.unwrap();
+    assert_eq!(
+        merge.await.unwrap().unwrap().request.request.state(),
+        RequestState::Merged
+    );
+    assert_eq!(read.await.unwrap().unwrap(), 2);
 }

@@ -74,7 +74,7 @@ pub(crate) fn detail_response(
         &snapshot.results,
     );
     Ok(RequestDetailResponse {
-        request: super::requests::request_response(
+        request: super::responses::request_response(
             snapshot.request.clone(),
             viewer,
             &snapshot.repository.views,
@@ -86,6 +86,7 @@ pub(crate) fn detail_response(
                 .map(super::requests::request_invitee_response)
                 .collect(),
             checks,
+            snapshot.repository.record.lifecycle_state,
         )?,
     })
 }

@@ -11,7 +11,7 @@ impl RequestStore {
     ) -> Result<Vec<Request>, PostgresError> {
         entities::request::Model::find_by_statement(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             r#"SELECT request.* FROM scope_requests request
-             LEFT JOIN scope_request_check_evaluations evaluation ON evaluation.request_id = request.id AND evaluation.head_oid = request.head_oid
+             LEFT JOIN scope_request_check_evaluations evaluation ON evaluation.id = request.current_check_evaluation_id
              LEFT JOIN scope_git_heads head ON head.repo_id = request.repo_id
              WHERE request.merged_at_unix IS NULL AND request.closed_at_unix IS NULL
                AND ($1::text IS NULL OR request.id > $1)
@@ -39,7 +39,8 @@ impl RequestStore {
         if !repo.is_some_and(|repo| repo.incarnation() == *incarnation)
             || !current.is_some_and(|current| {
                 current.head_oid == request.head_oid
-                    && current.base_main_oid == request.base_main_oid
+                    && current.base == request.base
+                    && current.base_version == request.base_version
                     && !current.is_terminal()
             })
         {

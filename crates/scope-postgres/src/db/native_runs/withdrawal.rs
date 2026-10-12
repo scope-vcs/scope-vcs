@@ -64,7 +64,7 @@ async fn waiting_request_ids(
          FROM scope_requests request
          JOIN scope_repositories repo ON repo.id = request.repo_id
          JOIN scope_request_check_evaluations evaluation
-           ON evaluation.request_id = request.id AND evaluation.head_oid = request.head_oid
+           ON evaluation.id = request.current_check_evaluation_id
          WHERE repo.owner_user_id = $1
            AND request.closed_at_unix IS NULL AND request.merged_at_unix IS NULL
            AND evaluation.state IN ('awaiting-approval', 'started')
