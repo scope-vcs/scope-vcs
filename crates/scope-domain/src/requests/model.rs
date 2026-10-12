@@ -202,7 +202,11 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
     match &request.base {
         super::RequestBase::Main { .. }
             if request.stack_depth != 0
-                || request.stack_status != super::RequestStackStatus::Main =>
+                || !matches!(
+                    request.stack_status,
+                    super::RequestStackStatus::Main
+                        | super::RequestStackStatus::IntegrationConflict
+                ) =>
         {
             return Err(DomainError::conflict(
                 "main requests require zero stack depth",

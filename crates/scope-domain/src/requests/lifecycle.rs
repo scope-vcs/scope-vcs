@@ -207,6 +207,11 @@ pub fn record_working_request_upload(
     }
     validate_expected_head(&request, input.expected_old_head_oid.as_deref())?;
     validate_snapshot_head(&input.git_snapshot, &input.new_head_oid)?;
+    if matches!(request.base, super::RequestBase::Request { .. }) {
+        return Err(DomainError::conflict(
+            "parent-based uploads require stack publication evidence",
+        ));
+    }
     let old_git_snapshot = request.git_snapshot.replace(input.git_snapshot);
     request.head_oid = input.new_head_oid;
     request.updated_at_unix = input.now_unix;
@@ -261,6 +266,15 @@ pub fn record_request_revision(
             .checked_add(1)
             .ok_or_else(|| DomainError::conflict("request base version overflow"))?;
         request.base = base;
+        request.stack_status = if matches!(request.base, super::RequestBase::Main { .. }) {
+            super::RequestStackStatus::Main
+        } else {
+            super::RequestStackStatus::WaitingForParent
+        };
+    }
+    if request.stack_status == super::RequestStackStatus::IntegrationConflict
+        && old_head_oid != input.new_head_oid
+    {
         request.stack_status = if matches!(request.base, super::RequestBase::Main { .. }) {
             super::RequestStackStatus::Main
         } else {

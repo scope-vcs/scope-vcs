@@ -296,6 +296,10 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
         assert_eq!(blocked.request.stack_status, expected);
         assert!(blocked.effects.stop_auto_merge);
         assert!(blocked.effects.refresh_queue);
+        assert_eq!(
+            blocked.request.activity_version,
+            extension.request.activity_version + 1
+        );
         let repaired = refresh_request_stack(
             blocked.request,
             Some(&parent),
@@ -324,4 +328,84 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
     assert!(
         refresh_request_stack(child, Some(&parent), clean, parent.updated_at_unix + 40).is_err()
     );
+}
+
+#[test]
+fn integration_conflict_preserves_review_evidence_until_a_changed_publication() {
+    let request = parent();
+    let original = revision(&request);
+    let marked = mark_request_integration_conflict(
+        request.clone(),
+        &request.head_oid,
+        request.base_version,
+        request.updated_at_unix + 1,
+    )
+    .unwrap();
+    assert_eq!(
+        marked.request.stack_status,
+        RequestStackStatus::IntegrationConflict
+    );
+    assert_eq!(marked.request.base, request.base);
+    assert_eq!(marked.request.head_oid, request.head_oid);
+    assert_eq!(marked.request.git_snapshot, request.git_snapshot);
+    assert_eq!(marked.request.base_version, original.base_version);
+    assert!(marked.effects.stop_auto_merge);
+    assert!(marked.effects.refresh_queue);
+    assert_eq!(
+        marked.request.activity_version,
+        request.activity_version + 1
+    );
+    assert!(
+        mark_request_integration_conflict(
+            request.clone(),
+            "stale",
+            request.base_version,
+            request.updated_at_unix + 1,
+        )
+        .is_err()
+    );
+    assert!(
+        mark_request_integration_conflict(
+            request.clone(),
+            &request.head_oid,
+            request.base_version + 1,
+            request.updated_at_unix + 1,
+        )
+        .is_err()
+    );
+    let input = RecordRequestRevisionInput {
+        new_base: None,
+        request_id: request.id.clone(),
+        actor_user_id: "author".into(),
+        actor_can_edit: true,
+        expected_old_head_oid: Some(request.head_oid.clone()),
+        new_head_oid: request.head_oid.clone(),
+        git_snapshot: source_blob(&request.head_oid),
+        git_facts: RequestRevisionGitFacts {
+            contains_old_head: true,
+            contained_main_oid: Some(request.main_ancestor_oid.clone()),
+            contained_main_descends_from_base: true,
+        },
+        event_id: "publication".into(),
+        body: None,
+        now_unix: request.updated_at_unix + 2,
+    };
+    let unchanged = record_request_revision(marked.request.clone(), false, input.clone()).unwrap();
+    assert_eq!(
+        unchanged.request.stack_status,
+        RequestStackStatus::IntegrationConflict
+    );
+    let new_head = "cccccccccccccccccccccccccccccccccccccccc";
+    let repaired = record_request_revision(
+        marked.request,
+        false,
+        RecordRequestRevisionInput {
+            new_head_oid: new_head.into(),
+            git_snapshot: source_blob(new_head),
+            ..input
+        },
+    )
+    .unwrap();
+    assert_eq!(repaired.request.stack_status, RequestStackStatus::Main);
+    assert_eq!(repaired.revision.new_head_oid, new_head);
 }

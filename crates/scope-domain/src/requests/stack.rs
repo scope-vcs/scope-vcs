@@ -181,6 +181,34 @@ pub struct RequestStackRefreshMutation {
     pub effects: RequestStackRefreshEffects,
 }
 
+pub fn mark_request_integration_conflict(
+    mut request: Request,
+    expected_head_oid: &str,
+    expected_base_version: u64,
+    now_unix: u64,
+) -> Result<RequestStackRefreshMutation, DomainError> {
+    if request.is_terminal()
+        || request.head_oid != expected_head_oid
+        || request.base_version != expected_base_version
+    {
+        return Err(DomainError::conflict("request integration context changed"));
+    }
+    let changed = request.stack_status != RequestStackStatus::IntegrationConflict;
+    request.stack_status = RequestStackStatus::IntegrationConflict;
+    request.updated_at_unix = request.updated_at_unix.max(now_unix);
+    if changed {
+        advance_request_activity(&mut request)?;
+    }
+    request.validate_facts()?;
+    Ok(RequestStackRefreshMutation {
+        request,
+        effects: RequestStackRefreshEffects {
+            stop_auto_merge: true,
+            refresh_queue: changed,
+        },
+    })
+}
+
 pub fn refresh_request_stack(
     mut request: Request,
     parent: Option<&Request>,
@@ -217,6 +245,9 @@ pub fn refresh_request_stack(
         request.stack_status = status;
         request.stack_depth = depth;
         request.updated_at_unix = request.updated_at_unix.max(now_unix);
+        if refresh_queue {
+            advance_request_activity(&mut request)?;
+        }
         request.validate_facts()?;
     }
     Ok(RequestStackRefreshMutation {
@@ -292,7 +323,9 @@ pub fn retarget_request_after_parent_merge(
         .base_version
         .checked_add(1)
         .ok_or_else(|| DomainError::conflict("request base version overflow"))?;
-    child.stack_status = RequestStackStatus::Main;
+    if child.stack_status != RequestStackStatus::IntegrationConflict {
+        child.stack_status = RequestStackStatus::Main;
+    }
     child.stack_depth = 0;
     if input.contained_main_descends_from_ancestor {
         if let Some(oid) = input.contained_main_oid {
