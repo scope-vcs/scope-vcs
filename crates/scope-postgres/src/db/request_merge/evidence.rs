@@ -41,9 +41,11 @@ impl RequestStore {
             revision_id: revision.id,
             base_version: request.base_version,
             evaluation: match evaluation.as_ref() {
-                Some(evaluation) => {
-                    Some(expected_evaluation(&tx, &request, evaluation, false).await?)
-                }
+                Some(evaluation) => Some(
+                    expected_evaluation(&tx, &request, evaluation, false)
+                        .await?
+                        .0,
+                ),
                 None => None,
             },
         };
@@ -96,44 +98,30 @@ pub(super) async fn locked_merge_checks(
     .await
     .map_err(PostgresError::internal)?;
     let evaluation = evaluation_for_head(tx, &request.id, &request.head_oid).await?;
-    let actual = match evaluation.as_ref() {
+    let (actual, github_read) = match evaluation.as_ref() {
         Some(evaluation) => {
             if evaluation.revision_id != revision.id || !evaluation.matches_request(request) {
                 return Err(stale_evidence());
             }
-            Some(expected_evaluation(tx, request, evaluation, true).await?)
+            let (expected, github_read) =
+                expected_evaluation(tx, request, evaluation, true).await?;
+            (Some(expected), github_read)
         }
-        None => None,
+        None => (None, None),
     };
     if actual != expected.evaluation {
         return Err(stale_evidence());
     }
-    let valid_until_unix = if let Some(evaluation) = &evaluation
-        && evaluation.asks_github()
-    {
-        let destination = evaluation.github_repository_id.ok_or_else(stale_evidence)?;
-        let read = read_github_sequence(
-            tx,
-            &request.repo_id,
-            destination,
-            &evaluation.tested_oid,
-            false,
-        )
-        .await?
-        .ok_or_else(stale_evidence)?;
-        if read.started_reads != read.applied_read {
-            return Err(PostgresError::conflict(
-                "request CI confirmation changed; retry merge",
-            ));
-        }
-        Some(
+    let valid_until_unix = github_read
+        .map(|read| {
             read.started_at
-                .ok_or_else(stale_evidence)?
-                .saturating_add(scope_domain::requests::GITHUB_CHECK_MERGE_FRESHNESS_SECS),
-        )
-    } else {
-        None
-    };
+                .map(|started_at| {
+                    started_at
+                        .saturating_add(scope_domain::requests::GITHUB_CHECK_MERGE_FRESHNESS_SECS)
+                })
+                .ok_or_else(stale_evidence)
+        })
+        .transpose()?;
     let results = request_check_results(tx, &request.repo_id, evaluation.as_ref()).await?;
     let checks = LockedMergeChecks {
         evaluation,
@@ -149,8 +137,8 @@ async fn expected_evaluation(
     request: &Request,
     evaluation: &RequestCheckEvaluation,
     lock: bool,
-) -> Result<ExpectedRequestCheckEvaluation, PostgresError> {
-    let github = if evaluation.asks_github() {
+) -> Result<(ExpectedRequestCheckEvaluation, Option<GitHubReadSequence>), PostgresError> {
+    let (github, read) = if evaluation.asks_github() {
         let connection = repository_github_connection(tx, &request.repo_id)
             .await?
             .filter(|connection| connection.is_connected())
@@ -170,18 +158,24 @@ async fn expected_evaluation(
         .ok_or_else(|| {
             PostgresError::conflict("request CI confirmation is not settled; retry merge")
         })?;
-        Some(ExpectedGitHubCheckRead {
-            github_repository_id: connection.github_repository_id,
-            applied_read: read.applied_read,
-        })
+        (
+            Some(ExpectedGitHubCheckRead {
+                github_repository_id: connection.github_repository_id,
+                applied_read: read.applied_read,
+            }),
+            Some(read),
+        )
     } else {
-        None
+        (None, None)
     };
-    Ok(ExpectedRequestCheckEvaluation {
-        evaluation_id: evaluation.id.clone(),
-        tested_oid: evaluation.tested_oid.clone(),
-        github,
-    })
+    Ok((
+        ExpectedRequestCheckEvaluation {
+            evaluation_id: evaluation.id.clone(),
+            tested_oid: evaluation.tested_oid.clone(),
+            github,
+        },
+        read,
+    ))
 }
 
 struct GitHubReadSequence {
