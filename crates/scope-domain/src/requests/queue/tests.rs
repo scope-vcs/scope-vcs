@@ -304,6 +304,8 @@ fn open_request() -> Request {
             review_base_oid: "0".repeat(40),
         },
         base_version: 1,
+        stack_status: crate::requests::RequestStackStatus::Main,
+        stack_depth: 0,
         main_ancestor_oid: "0".repeat(40),
         head_oid: "1".repeat(40),
         git_snapshot: None,

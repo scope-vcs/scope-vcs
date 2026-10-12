@@ -18,7 +18,7 @@ impl RequestCheckContext {
     ) -> Result<Self, DomainError> {
         if revision.request_id != request.id
             || revision.new_head_oid != request.head_oid
-            || revision.base != request.base
+            || revision.base.review_base_oid() != request.base.review_base_oid()
         {
             return Err(DomainError::conflict("request changed while evaluating CI"));
         }

@@ -109,6 +109,7 @@ fn open_request_edits_and_revisions_stay_open() {
         request,
         false,
         RecordRequestRevisionInput {
+            new_base: None,
             request_id: "request_1".to_string(),
             actor_user_id: "author".to_string(),
             actor_can_edit: true,
@@ -478,6 +479,7 @@ fn public_view_member_cannot_read_private_request_metadata() {
 #[test]
 fn request_creation_checks_id_then_name_then_public_working_limit() {
     let mut facts = StartRequestFacts {
+        stack_depth: 0,
         request_id_exists: true,
         request_name_exists: true,
         public_working_request_count: PUBLIC_WORKING_REQUEST_LIMIT,

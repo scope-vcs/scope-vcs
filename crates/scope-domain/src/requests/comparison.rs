@@ -11,7 +11,7 @@ pub enum RequestComparisonMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestCommitRange {
     head_oid: String,
-    excluded_ancestor_oid: String,
+    excluded_ancestor_oids: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,17 +25,21 @@ impl RequestCommitRange {
     pub fn request(revision: &RequestRevision) -> Self {
         Self {
             head_oid: revision.new_head_oid.clone(),
-            excluded_ancestor_oid: revision.base.review_base_oid().to_string(),
+            excluded_ancestor_oids: vec![revision.base.review_base_oid().to_string()],
         }
     }
 
     pub fn push(revision: &RequestRevision) -> Self {
         Self {
             head_oid: revision.new_head_oid.clone(),
-            excluded_ancestor_oid: if revision.rewrote_history {
-                revision.base.review_base_oid().to_string()
+            excluded_ancestor_oids: if revision.rewrote_history {
+                vec![revision.base.review_base_oid().to_string()]
             } else {
-                revision.old_head_oid.clone()
+                let mut boundaries = vec![revision.old_head_oid.clone()];
+                if revision.base.review_base_oid() != revision.old_head_oid {
+                    boundaries.push(revision.base.review_base_oid().to_string());
+                }
+                boundaries
             },
         }
     }
@@ -44,8 +48,8 @@ impl RequestCommitRange {
         &self.head_oid
     }
 
-    pub fn excluded_ancestor_oid(&self) -> &str {
-        &self.excluded_ancestor_oid
+    pub fn excluded_ancestor_oids(&self) -> &[String] {
+        &self.excluded_ancestor_oids
     }
 
     pub fn contains_commit(&self, facts: RequestCommitMembershipFacts) -> bool {
@@ -100,7 +104,7 @@ impl RequestComparison {
                 revision_id: revision.id.clone(),
                 mode,
                 view,
-                base_oid: Some(membership.excluded_ancestor_oid.clone()),
+                base_oid: Some(membership.excluded_ancestor_oids[0].clone()),
                 head_oid: membership.head_oid.clone(),
             },
             membership,
