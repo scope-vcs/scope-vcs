@@ -73,10 +73,7 @@ jobs:
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
         run: bash .github/scripts/extract-railway-maintenance.sh prepared-release.json target/release/scope-maintenance
 
-      - name: Install Railway CLI
-        run: |
-          railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
-          npm install -g "@railway/cli@$railway_cli_version"
+      - uses: ./.github/actions/install-railway-cli
 
       - name: Deploy to Railway
         id: transition
@@ -89,7 +86,6 @@ jobs:
           SCOPE_RECOVER_CLOSED_CUTOVER: ${{ inputs.recover_cutover_id != '' && '1' || '0' }}
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
-          RAILWAY_DEPLOY_MESSAGE: ${{ github.event.head_commit.message || github.workflow }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson

@@ -107,10 +107,8 @@ export async function waitForPredecessors(directory, {
 }
 
 async function main() {
-  const [command, directory, component, service, idsJson] = process.argv.slice(2);
-  if (command === 'record') {
-    recordPredecessors(directory, component, service, JSON.parse(idsJson));
-  } else if (command === 'snapshot') {
+  const [command, directory, component, service] = process.argv.slice(2);
+  if (command === 'snapshot') {
     const { project, environment } = scope();
     const status = readRailway(['status', '--project', project, '--environment', environment, '--json']);
     recordPredecessors(directory, component, service, activePredecessors(status, environment, service));
@@ -124,7 +122,7 @@ async function main() {
     }
     await waitForPredecessors(directory, { timeoutMs: timeout * 1000, intervalMs: interval * 1000 });
   } else {
-    throw new Error('usage: railway-predecessor-teardown.mjs record|snapshot|wait ...');
+    throw new Error('usage: railway-predecessor-teardown.mjs snapshot|activated|wait ...');
   }
 }
 

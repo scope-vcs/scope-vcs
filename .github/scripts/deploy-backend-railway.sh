@@ -9,10 +9,10 @@ router_service="${SCOPE_RAILWAY_ROUTER_SERVICE_ID:?SCOPE_RAILWAY_ROUTER_SERVICE_
 media_service="${SCOPE_RAILWAY_MEDIA_SERVICE_ID:?SCOPE_RAILWAY_MEDIA_SERVICE_ID is required}"
 media_worker_service="${SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID:?SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID is required}"
 router_group="${SCOPE_RAILWAY_ROUTER_GROUP_ID:?SCOPE_RAILWAY_ROUTER_GROUP_ID is required}"
-database_service="${SCOPE_RAILWAY_DATABASE_SERVICE_ID:?SCOPE_RAILWAY_DATABASE_SERVICE_ID is required}"
+: "${SCOPE_RAILWAY_DATABASE_SERVICE_ID:?SCOPE_RAILWAY_DATABASE_SERVICE_ID is required}"
 api_region="${SCOPE_RAILWAY_API_REGION_ID:?SCOPE_RAILWAY_API_REGION_ID is required}"
-worker_region="${SCOPE_RAILWAY_WORKER_REGION_ID:?SCOPE_RAILWAY_WORKER_REGION_ID is required}"
-media_region="${SCOPE_RAILWAY_MEDIA_REGION_ID:?SCOPE_RAILWAY_MEDIA_REGION_ID is required}"
+: "${SCOPE_RAILWAY_WORKER_REGION_ID:?SCOPE_RAILWAY_WORKER_REGION_ID is required}"
+: "${SCOPE_RAILWAY_MEDIA_REGION_ID:?SCOPE_RAILWAY_MEDIA_REGION_ID is required}"
 media_worker_image="${SCOPE_MEDIA_WORKER_IMAGE:-}"
 deploy_worker_requested="${SCOPE_DEPLOY_WORKER:-1}"
 deploy_router_requested="${SCOPE_DEPLOY_ROUTER:-1}"
@@ -40,9 +40,7 @@ for deployment_flag in deploy_worker_requested deploy_router_requested \
     exit 2
   fi
 done
-if [[ "$deploy_worker_requested" == "0" \
-  && "$deploy_router_requested" == "0" && "$deploy_api_requested" == "0" \
-  && "$deploy_media_requested" == "0" && "$deploy_media_worker_requested" == "0" ]]; then
+if [[ "$deploy_worker_requested$deploy_router_requested$deploy_api_requested$deploy_media_requested$deploy_media_worker_requested" == 00000 ]]; then
   echo "At least one backend service must be selected for deployment." >&2
   exit 2
 fi
@@ -119,40 +117,20 @@ wait_for_writer_fence() {
 }
 
 plan_requires_maintenance() {
-  PLAN_JSON="$1" node -e '
-const plan = JSON.parse(process.env.PLAN_JSON || "{}");
-if (!Array.isArray(plan.pending)) process.exit(2);
-process.exit(plan.pending.length > 0 ? 0 : 1);
-'
+  jq -e '.pending | if type == "array" then length > 0 else "" | halt_error(2) end' <<< "$1" >/dev/null
 }
 
 plan_is_exact() {
-  PLAN_JSON="$1" node -e '
-const plan = JSON.parse(process.env.PLAN_JSON || "{}");
-process.exit(plan.exact === true && Array.isArray(plan.pending) && plan.pending.length === 0 ? 0 : 1);
-'
+  jq -e '.exact == true and .pending == []' <<< "$1" >/dev/null
 }
 
 plans_have_same_ledger() {
-  BEFORE_PLAN_JSON="$1" AFTER_PLAN_JSON="$2" node -e '
-const before = JSON.parse(process.env.BEFORE_PLAN_JSON || "{}");
-const after = JSON.parse(process.env.AFTER_PLAN_JSON || "{}");
-const ledger = (plan) => Array.isArray(plan.pending)
-  ? plan.pending.map(({name}) => name)
-  : null;
-const beforeLedger = ledger(before);
-const afterLedger = ledger(after);
-process.exit(
-  before.exact === after.exact &&
-  Array.isArray(before.applied) && Array.isArray(after.applied) &&
-  JSON.stringify(before.applied) === JSON.stringify(after.applied) &&
-  beforeLedger !== null &&
-  afterLedger !== null &&
-  JSON.stringify(beforeLedger) === JSON.stringify(afterLedger)
-    ? 0
-    : 1,
-);
-'
+  jq -en --argjson before "$1" --argjson after "$2" '
+    def ledger: if (.pending | type) == "array" then [.pending[].name] else null end;
+    $before.exact == $after.exact
+      and ($before.applied | type) == "array" and $before.applied == $after.applied
+      and ($before | ledger) != null and ($before | ledger) == ($after | ledger)
+  ' >/dev/null 2>&1
 }
 
 successful_deployment_field() {
@@ -222,57 +200,39 @@ quiesce_writers() {
   return "$failed"
 }
 
+restore_writer() {
+  local flag="$1" service="$2" component="$3" had_history="${4:-1}"
+  [[ "${!flag}" == "1" ]] || return 0
+  [[ "$had_history" != "1" ]] || restart_service "$service" "$(require_successful_deployment_id "$component")"
+  printf -v "$flag" 0
+}
+
 restore_old_release() {
   echo "Migration did not commit; restoring the previous metadata-writer deployments." >&2
-  if [[ "$worker_closed" == "1" ]]; then
-    restart_service "$worker_service" "$(require_successful_deployment_id run-worker)"
-    worker_closed=0
-  fi
-  if [[ "$api_closed" == "1" ]]; then
-    restart_service "$api_service" "$(require_successful_deployment_id api)"
-    api_closed=0
-  fi
-  if [[ "$media_closed" == "1" ]]; then
-    if [[ "$media_had_history" == "1" ]]; then
-      restart_service "$media_service" "$(require_successful_deployment_id media-api)"
-    fi
-    media_closed=0
-  fi
-  if [[ "$media_worker_closed" == "1" ]]; then
-    if [[ "$media_worker_had_history" == "1" ]]; then
-      restart_service "$media_worker_service" "$(require_successful_deployment_id media-worker)"
-    fi
-    media_worker_closed=0
-  fi
+  restore_writer worker_closed "$worker_service" run-worker
+  restore_writer api_closed "$api_service" api
+  restore_writer media_closed "$media_service" media-api "$media_had_history"
+  restore_writer media_worker_closed "$media_worker_service" media-worker "$media_worker_had_history"
   mark_maintenance_end
 }
 
 deploy_release() {
-  local component="$1"
-  local service_name="$2"
-  local verified_sha
-  verified_sha="$(successful_deployment_field "$component" sourceSha)"
-  SCOPE_DEPLOYMENT_COMPONENT="$component" \
-    SCOPE_DEPLOYMENT_EVIDENCE_PATH="$(component_pending_evidence_path "$component")" \
+  successful_deployment_field "$1" sourceSha >/dev/null
+  SCOPE_DEPLOYMENT_COMPONENT="$1" \
+    SCOPE_DEPLOYMENT_EVIDENCE_PATH="$(component_pending_evidence_path "$1")" \
     SCOPE_PREDECESSOR_TEARDOWN_DIR="$predecessor_teardown_dir" \
     SCOPE_DEFER_SERVICE_HEALTH=1 \
-    SCOPE_VERIFIED_SUCCESSFUL_SHA="$verified_sha" \
-    bash .github/scripts/deploy-railway.sh "$service_name"
+    bash .github/scripts/deploy-railway.sh "$2"
 }
 
 pending_deployment_id() {
-  local component="$1"
   local evidence_file
-  evidence_file="$(component_pending_evidence_path "$component")"
+  evidence_file="$(component_pending_evidence_path "$1")"
   [[ -n "$evidence_file" && -s "$evidence_file" ]] || return 0
-  COMPONENT="$component" EVIDENCE_PATH="$evidence_file" node -e '
-const { readFileSync } = require("node:fs");
-const records = readFileSync(process.env.EVIDENCE_PATH, "utf8")
-  .trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
-if (records.length !== 1 || records[0].component !== process.env.COMPONENT ||
-    typeof records[0].evidenceId !== "string" || !records[0].evidenceId) process.exit(1);
-process.stdout.write(records[0].evidenceId);
-'
+  jq -sjer --arg component "$1" '
+    if length == 1 and .[0].component == $component and (.[0].evidenceId | type == "string" and length > 0)
+    then .[0].evidenceId else error("invalid pending deployment evidence") end
+  ' "$evidence_file"
 }
 
 component_pending_evidence_path() {
@@ -319,18 +279,13 @@ activate_image_release() {
 
 promote_pending_evidence() {
   [[ -n "$deployment_evidence_path" ]] || return 0
-  FINAL_EVIDENCE_PATH="$deployment_evidence_path" \
-    PENDING_EVIDENCE_PREFIX="$pending_evidence_path" \
-    node -e '
-const { appendFileSync, existsSync, readFileSync, unlinkSync } = require("node:fs");
-const paths = ["run-worker", "media-api", "media-worker", "api", "git-router", "web"]
-  .map(component => `${process.env.PENDING_EVIDENCE_PREFIX}.${component}`)
-  .filter(existsSync);
-if (paths.length) {
-  appendFileSync(process.env.FINAL_EVIDENCE_PATH, paths.map(path => readFileSync(path)).join(""));
-  for (const path of paths) unlinkSync(path);
-}
-'
+  local component paths=()
+  for component in run-worker media-api media-worker api git-router web; do
+    [[ ! -e "$pending_evidence_path.$component" ]] || paths+=("$pending_evidence_path.$component")
+  done
+  (( ${#paths[@]} > 0 )) || return 0
+  cat -- "${paths[@]}" >> "$deployment_evidence_path"
+  rm -f -- "${paths[@]}"
 }
 
 discard_pending_evidence() {
@@ -429,6 +384,12 @@ leave_failure_state() {
 }
 trap 'leave_failure_state $?' EXIT
 
+finish() {
+  trap - EXIT
+  discard_pending_evidence
+  exit 0
+}
+
 source .github/scripts/railway-service-health.sh
 source .github/scripts/railway-backend-control.sh
 source .github/scripts/release-maintenance-gates.sh
@@ -440,9 +401,7 @@ fi
 if [[ -n "$cutover_id" ]]; then
   validate_production_target
   recover_cutover
-  trap - EXIT
-  discard_pending_evidence
-  exit 0
+  finish
 fi
 journal cutover-guard
 selected_components=()
@@ -493,9 +452,7 @@ case "$plan_status" in
       enter_public_gates
       deploy_and_reopen
       cutover_phase complete
-      trap - EXIT
-      discard_pending_evidence
-      exit 0
+      finish
     fi
     if [[ "$api_running" == "0" || "$worker_running" == "0" ]]; then
       echo "Metadata-writer replica state is inconsistent; refusing deployment." >&2
@@ -521,9 +478,7 @@ case "$plan_status" in
     fi
     maintenance_read verify
     deploy_selected_releases
-    trap - EXIT
-    discard_pending_evidence
-    exit 0
+    finish
     ;;
   *)
     echo "Maintenance plan output was invalid; refusing deployment." >&2
@@ -549,7 +504,6 @@ if [[ "$media_had_history" == "1" ]]; then
     exit 1
   }
 else
-  media_had_history=0
   media_closed=1
 fi
 media_worker_had_history="$(service_has_deployment_history "$media_worker_service")" || exit $?
@@ -559,7 +513,6 @@ if [[ "$media_worker_had_history" == "1" ]]; then
     exit 1
   }
 else
-  media_worker_had_history=0
   media_worker_closed=1
 fi
 
@@ -575,5 +528,4 @@ quiesce_writers
 cutover_phase closed
 apply_cutover
 cutover_phase complete
-trap - EXIT
-discard_pending_evidence
+finish

@@ -23,12 +23,11 @@ console.log(JSON.stringify({id:"11111111-1111-4111-8111-111111111111",environmen
 fi
 
 if [[ "$1 $2" == "environment config" ]]; then
-  stored_api_region="${FAKE_STORED_API_REGION:-us-east4-eqdc4a}"
   router_config='{}'
   if [[ "${FAKE_ROUTER_CONFIGURED:-1}" == "1" || -f "$FAKE_RAILWAY_STATE/router-scale" ]]; then
     router_config='{"groupId":"runtime-group","deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}}'
   fi
-  printf '{"services":{"scope-api":{"deploy":{"multiRegionConfig":{"%s":{"numReplicas":1}}}},"scope-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-web":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-repo-router":%s}}\n' "$stored_api_region" "$router_config"
+  printf '{"services":{"scope-api":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-web":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-repo-router":%s}}\n' "$router_config"
   exit 0
 fi
 
@@ -58,7 +57,7 @@ if [[ "$1" == "api" && "$2" == *"serviceInstance"* ]]; then
       repo-router) component=git-router ;;
       media) component=media-api ;;
     esac
-    deployed="$(FAKE_IMMUTABLE_ACTIVATION=1 "$0" up "$FAKE_UPLOAD_ROOT/$component" --service "$service")"
+    deployed="$("$0" up "$FAKE_UPLOAD_ROOT/$component" --service "$service")"
     jq -c '{data:{serviceInstanceDeployV2:.deploymentId}}' <<< "$deployed"
   fi
   exit 0
@@ -324,11 +323,6 @@ if [[ "$1" == "up" ]]; then
     printf '{"deploymentId":"new-%s"}\n' "$service"
     exit 0
   fi
-  if [[ -f "$FAKE_RAILWAY_STATE/up-${service}" && "${FAKE_IMMUTABLE_ACTIVATION:-0}" != "1" ]]; then
-    touch "$FAKE_RAILWAY_STATE/skipped-${service}"
-    printf '{"deploymentId":"skip-%s"}\n' "$service"
-    exit 0
-  fi
   touch "$FAKE_RAILWAY_STATE/up-${service}"
   rm -f "$FAKE_RAILWAY_STATE/stopped-${service}" "$FAKE_RAILWAY_STATE/gate-${service}"
   [[ "${FAKE_LOST_UP_RESPONSE_SERVICE:-}" != "$service" ]] || exit 75
@@ -435,7 +429,6 @@ if (action === 'snapshot') {
 } else if (action === 'restore') {
   if (!gate.previous) throw new Error('Missing original gate snapshot');
   gate.phase = 'restored';
-  // Restoring config does not reopen service or restart removed predecessors.
 } else throw new Error(`Unknown gate action ${action}`);
 trace(`gate ${action} ${gate.serviceId}`);
 fs.writeFileSync(file, JSON.stringify(gate));

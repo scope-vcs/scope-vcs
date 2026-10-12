@@ -12,7 +12,7 @@ node --test .github/scripts/check-backend-binary-sizes.test.mjs
 node --test .github/scripts/check-production-backups.test.mjs
 node --test .github/scripts/production-deployment-progress.test.mjs
 node --test .github/scripts/plan-production-deployment.test.mjs
-node --test .github/scripts/railway-deployment-history.test.mjs
+node --test .github/scripts/railway-deployment-history.test.mjs .github/scripts/railway-production-target.test.mjs
 node --test .github/scripts/verify-staging-target.test.mjs
 node --test .github/scripts/stop-railway-writers.test.mjs
 node --test .github/scripts/preview-environment.test.mjs .github/scripts/preview-pull-request.test.mjs

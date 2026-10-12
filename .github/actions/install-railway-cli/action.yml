@@ -1,0 +1,7 @@
+name: Install Railway CLI
+description: Install the Railway CLI version pinned by the deployment manifest.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: npm install -g "@railway/cli@$(jq -er '.railway.cliVersion' .github/deployment-services.json)"
