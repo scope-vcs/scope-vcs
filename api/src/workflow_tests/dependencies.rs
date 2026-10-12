@@ -97,13 +97,7 @@ async fn dependency_report_is_persisted_and_maintainer_only() {
     let claim = state
         .metadata
         .jobs()
-        .claim_dependency_analysis(
-            "dependency-test",
-            DEPENDENCY_ANALYZER_VERSION,
-            now,
-            60,
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .claim_dependency_analysis("dependency-test", DEPENDENCY_ANALYZER_VERSION, now, 60)
         .await
         .unwrap()
         .unwrap();
@@ -148,13 +142,7 @@ async fn dependency_report_is_persisted_and_maintainer_only() {
         state
             .metadata
             .jobs()
-            .claim_dependency_analysis(
-                "after-read",
-                DEPENDENCY_ANALYZER_VERSION,
-                now + 2,
-                60,
-                &crate::persistence_ids::generate_persistence_id,
-            )
+            .claim_dependency_analysis("after-read", DEPENDENCY_ANALYZER_VERSION, now + 2, 60,)
             .await
             .unwrap()
             .is_none(),

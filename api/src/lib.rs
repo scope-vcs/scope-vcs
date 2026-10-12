@@ -1,4 +1,5 @@
 pub mod app;
+mod background_work;
 pub mod maintenance_http;
 pub mod native_runs_maintenance;
 pub mod state;
@@ -7,7 +8,7 @@ pub(crate) mod auth;
 pub(crate) mod cache_grants;
 pub(crate) mod clerk_users;
 pub(crate) mod config;
-#[cfg(any(test, feature = "local-dev", feature = "smoke-seed"))]
+#[cfg(any(test, feature = "local-dev"))]
 #[path = "dev/seed.rs"]
 pub(crate) mod demo_seed;
 #[cfg(feature = "local-dev")]
@@ -18,6 +19,7 @@ pub(crate) mod error;
 pub(crate) mod git;
 pub(crate) mod git_segment_recovery;
 pub(crate) mod github;
+pub(crate) mod grant_signing;
 pub(crate) mod http;
 pub(crate) mod invite_mailer;
 pub(crate) mod media_grants;
@@ -26,30 +28,27 @@ pub(crate) mod operation_analytics;
 pub(crate) mod persistence;
 pub(crate) mod persistence_ids;
 pub(crate) mod push_intents;
-mod reconciler_runtime;
 pub(crate) mod repo_access;
 pub(crate) mod repo_events;
-mod repository_backfill;
 pub(crate) mod retention;
 pub(crate) mod run_attempt_effects;
 pub(crate) mod run_recovery;
 pub(crate) mod runtime_budgets;
+#[cfg(any(test, feature = "local-dev", feature = "smoke-seed"))]
+pub(crate) mod seed_user;
 #[cfg(feature = "smoke-seed")]
 pub mod smoke_seed;
 mod storage_runtime;
 pub(crate) mod use_cases;
-mod workflow_catalog_backfill;
+mod workflow_catalog_validation;
 
 #[cfg(test)]
 mod workflow_tests;
 
 pub use app::router;
-pub use reconciler_runtime::ReconcilerRuntime;
+pub use background_work::BackgroundWork;
 pub use state::AppState;
-pub use workflow_catalog_backfill::{
-    backfill_repository_workflow_catalogs_for_maintenance,
-    validate_repository_workflow_catalogs_for_maintenance,
-};
+pub use workflow_catalog_validation::validate_repository_workflow_catalogs_for_maintenance;
 
 #[cfg(feature = "type-export")]
 pub fn export_api_contract(output_path: &std::path::Path, schema_output_path: &std::path::Path) {

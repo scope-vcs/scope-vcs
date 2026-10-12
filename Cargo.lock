@@ -3553,9 +3553,7 @@ dependencies = [
  "anyhow",
  "axum",
  "bytes",
- "getrandom 0.3.4",
  "hex",
- "jsonwebtoken",
  "scope-api-contract",
  "scope-domain",
  "scope-media-storage",
@@ -3569,7 +3567,6 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -3618,6 +3615,7 @@ name = "scope-postgres"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "getrandom 0.3.4",
  "hex",
  "libc",
  "scope-cache-domain",
@@ -3708,8 +3706,11 @@ dependencies = [
  "axum",
  "axum-tracing-opentelemetry",
  "bytes",
+ "getrandom 0.3.4",
+ "hex",
  "http",
  "http-body",
+ "jsonwebtoken",
  "opentelemetry",
  "opentelemetry-http",
  "opentelemetry-otlp",
@@ -3717,6 +3718,7 @@ dependencies = [
  "reqwest",
  "scope-api-contract",
  "scope-postgres",
+ "serde",
  "serde_json",
  "thiserror",
  "tokio",

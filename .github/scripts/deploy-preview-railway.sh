@@ -43,7 +43,6 @@ run_maintenance() {
 run_maintenance plan >/dev/null
 run_maintenance validate-workflow-catalogs
 run_maintenance apply
-run_maintenance backfill-workflow-catalogs
 run_maintenance verify
 
 evidence_dir="$(mktemp -d)"

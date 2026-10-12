@@ -642,10 +642,10 @@ fn git_blob(bare: &Path, git_oid: &str, path: &str) -> Result<Option<Vec<u8>>, A
     let size = size
         .parse::<usize>()
         .map_err(|_| ApiError::infrastructure_unavailable("invalid Git workflow size"))?;
-    if size > scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES {
+    if size > scope_domain::runs::catalog::MAX_WORKFLOW_DEFINITION_BYTES {
         return Err(ApiError::bad_request(format!(
             "workflow definition exceeds {} bytes",
-            scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES
+            scope_domain::runs::catalog::MAX_WORKFLOW_DEFINITION_BYTES
         )));
     }
 
@@ -657,7 +657,7 @@ fn git_blob(bare: &Path, git_oid: &str, path: &str) -> Result<Option<Vec<u8>>, A
         &mut blob,
         None,
         ProcessLimits::new(GIT_INSPECTION_TIMEOUT)
-            .with_max_stdout_bytes(scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES),
+            .with_max_stdout_bytes(scope_domain::runs::catalog::MAX_WORKFLOW_DEFINITION_BYTES),
     )?;
     if !output.status.success() || output.stdout.len() != size {
         return Err(ApiError::infrastructure_unavailable(format!(

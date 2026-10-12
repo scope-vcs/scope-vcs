@@ -1,11 +1,16 @@
 use crate::storage_runtime::{StorageRuntime, StorageSource};
 use crate::{
     auth::clerk::ClerkVerifier,
+    background_work::BackgroundWakeups,
     cache_grants::CacheGrantIssuer,
+    clerk_users::ClerkUsers,
     config::{
-        SCOPE_OPERATOR_TOKEN_ENV, database_url_from_env, git_public_url_from_env, non_empty_env,
+        SCOPE_DISPATCH_BROKER_TOKEN_ENV, database_url_from_env, git_public_url_from_env,
+        non_empty_env,
     },
     git::repository_engine::RepositoryEngine,
+    github::GitHubApp,
+    invite_mailer::InviteMailer,
     media_grants::MediaGrantIssuer,
     repo_events::RepoChangeBus,
     runtime_budgets::RuntimeBudgets,
@@ -19,16 +24,10 @@ use std::{path::PathBuf, sync::Arc};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub(crate) auto_merge_wakeup: Arc<tokio::sync::Notify>,
-    pub(crate) clerk_user_deletion_wakeup: Arc<tokio::sync::Notify>,
-    pub(crate) clerk_users: crate::clerk_users::ClerkUsers,
-    pub(crate) github: Option<Arc<crate::github::GitHubApp>>,
-    pub(crate) github_job_log_wakeup: Arc<tokio::sync::Notify>,
-    pub(crate) github_push_wakeup: Arc<tokio::sync::Notify>,
-    pub(crate) github_run_import_wakeup: Arc<tokio::sync::Notify>,
-    pub(crate) github_job_read_wakeup: Arc<tokio::sync::Notify>,
-    pub(crate) invite_email_wakeup: Arc<tokio::sync::Notify>,
-    pub(crate) invite_mailer: crate::invite_mailer::InviteMailer,
+    pub(crate) wakeups: Arc<BackgroundWakeups>,
+    pub(crate) clerk_users: ClerkUsers,
+    pub(crate) github: Option<Arc<GitHubApp>>,
+    pub(crate) invite_mailer: InviteMailer,
     pub(crate) metadata: MetadataStore,
     pub(crate) data_dir: Arc<PathBuf>,
     pub(crate) clerk: ClerkVerifier,
@@ -38,7 +37,6 @@ pub struct AppState {
     pub(crate) media_grants: MediaGrantIssuer,
     pub(crate) runtime_budgets: Arc<RuntimeBudgets>,
     pub(crate) dispatch_broker_token: Option<Arc<str>>,
-    pub(crate) operator_token: Option<Arc<str>>,
     pub(crate) product_analytics: ProductAnalytics,
     pub(crate) repo_events: RepoChangeBus,
     pub(crate) push_intent_signing_key: Arc<[u8]>,
@@ -48,67 +46,122 @@ pub struct AppState {
     pub(crate) test_object_backend: Arc<scope_storage::MemoryBackend>,
 }
 
+pub(crate) struct AppServices {
+    pub(crate) storage: StorageRuntime,
+    pub(crate) metadata: MetadataStore,
+    pub(crate) cache_grants: CacheGrantIssuer,
+    pub(crate) media_grants: MediaGrantIssuer,
+    pub(crate) product_analytics: ProductAnalytics,
+    pub(crate) git_public_url: String,
+}
+
+struct Integrations {
+    clerk: ClerkVerifier,
+    clerk_users: ClerkUsers,
+    github: Option<Arc<GitHubApp>>,
+    invite_mailer: InviteMailer,
+    dispatch_broker_token: Option<Arc<str>>,
+}
+
+impl Integrations {
+    fn from_env() -> anyhow::Result<Self> {
+        Ok(Self {
+            clerk: ClerkVerifier::from_env(),
+            clerk_users: ClerkUsers::from_env(),
+            github: GitHubApp::from_env()?.map(Arc::new),
+            invite_mailer: InviteMailer::from_env(),
+            dispatch_broker_token: non_empty_env(SCOPE_DISPATCH_BROKER_TOKEN_ENV).map(Arc::from),
+        })
+    }
+
+    #[cfg(test)]
+    fn for_tests() -> Self {
+        Self {
+            clerk: ClerkVerifier::new_with_policy(
+                Some("https://clerk.test".to_string()),
+                Some("http://127.0.0.1/.well-known/jwks.json".to_string()),
+                crate::auth::clerk::ClerkTokenPolicy {
+                    authorized_parties: vec![crate::config::LOCAL_APP_ORIGIN.to_string()],
+                    audiences: vec![crate::config::DEFAULT_CLERK_AUDIENCE.to_string()],
+                },
+            ),
+            clerk_users: ClerkUsers::Scripted(Default::default()),
+            github: None,
+            invite_mailer: InviteMailer::Recording(Default::default()),
+            dispatch_broker_token: None,
+        }
+    }
+}
+
 impl AppState {
     pub async fn from_env() -> anyhow::Result<Self> {
         let git_public_url = git_public_url_from_env(None)?;
         let storage = StorageRuntime::from_env(StorageSource::S3).await?;
         storage.git_segment_store.cleanup_temporary().await?;
         let metadata = MetadataStore::connect(database_url_from_env()?).await?;
+        let state = Self::connect(AppServices {
+            storage,
+            metadata,
+            cache_grants: CacheGrantIssuer::from_env()?,
+            media_grants: MediaGrantIssuer::from_env()?,
+            product_analytics: ProductAnalytics::from_env(EventSource::Api).await?,
+            git_public_url,
+        })?;
+        best_effort_drain_pending_repo_storage_deletions(&state).await;
+        Ok(state)
+    }
+
+    pub(crate) fn connect(services: AppServices) -> anyhow::Result<Self> {
         let repo_events = RepoChangeBus::default();
-        let cache_grants = CacheGrantIssuer::from_env()?;
-        let media_grants = MediaGrantIssuer::from_env()?;
         let listener_bus = repo_events.clone();
-        metadata
+        services
+            .metadata
             .repositories()
             .start_repo_change_listener(move |payload| {
                 listener_bus.publish_notification_payload(&payload)
             })?;
-        let product_analytics = ProductAnalytics::from_env(EventSource::Api).await?;
+        Ok(Self::assemble(
+            services,
+            Integrations::from_env()?,
+            repo_events,
+        ))
+    }
 
-        let state = Self {
-            auto_merge_wakeup: Arc::new(tokio::sync::Notify::new()),
-            clerk_user_deletion_wakeup: Arc::new(tokio::sync::Notify::new()),
-            clerk_users: crate::clerk_users::ClerkUsers::from_env(),
-            github: crate::github::GitHubApp::from_env()?.map(Arc::new),
-            github_job_log_wakeup: Arc::new(tokio::sync::Notify::new()),
-            github_push_wakeup: Arc::new(tokio::sync::Notify::new()),
-            github_run_import_wakeup: Arc::new(tokio::sync::Notify::new()),
-            github_job_read_wakeup: Arc::new(tokio::sync::Notify::new()),
-            invite_email_wakeup: Arc::new(tokio::sync::Notify::new()),
-            invite_mailer: crate::invite_mailer::InviteMailer::from_env(),
+    fn assemble(
+        services: AppServices,
+        integrations: Integrations,
+        repo_events: RepoChangeBus,
+    ) -> Self {
+        let AppServices {
+            storage,
+            metadata,
+            cache_grants,
+            media_grants,
+            product_analytics,
+            git_public_url,
+        } = services;
+        Self {
+            wakeups: Arc::default(),
+            clerk_users: integrations.clerk_users,
+            github: integrations.github,
+            invite_mailer: integrations.invite_mailer,
             metadata,
             data_dir: storage.data_dir,
-            clerk: ClerkVerifier::from_env(),
+            clerk: integrations.clerk,
             object_store: storage.object_store,
             git_segment_store: storage.git_segment_store,
             cache_grants,
             media_grants,
             runtime_budgets: storage.runtime_budgets,
-            dispatch_broker_token: non_empty_env(crate::config::SCOPE_DISPATCH_BROKER_TOKEN_ENV)
-                .map(Arc::from),
-            operator_token: non_empty_env(SCOPE_OPERATOR_TOKEN_ENV).map(Arc::from),
+            dispatch_broker_token: integrations.dispatch_broker_token,
             product_analytics,
             repo_events,
             push_intent_signing_key: storage.push_intent_signing_key,
             repository_engine: storage.repository_engine,
             git_public_url: Arc::from(git_public_url),
             #[cfg(test)]
-            test_object_backend: Arc::new(scope_storage::MemoryBackend::default()),
-        };
-        state.repository_engine.start_reaper();
-        state.start_run_attempt_recovery();
-        state.start_retention();
-        state.start_request_ref_cleanup();
-        state.start_invite_email_delivery();
-        state.start_github_pushes();
-        state.start_github_run_imports();
-        state.start_github_job_reads();
-        state.start_github_job_log_reads();
-        state.start_github_check_reconciliation();
-        state.start_clerk_user_deletion();
-        state.start_git_segment_recovery();
-        best_effort_drain_pending_repo_storage_deletions(&state).await;
-        Ok(state)
+            test_object_backend: storage.test_object_backend,
+        }
     }
 
     pub async fn shutdown_product_analytics(&self) {
@@ -118,46 +171,19 @@ impl AppState {
     #[cfg(test)]
     pub(crate) fn test_state() -> Self {
         install_test_tracing();
-        let test_object_backend = Arc::new(scope_storage::MemoryBackend::default());
-        let storage = StorageRuntime::for_tests(test_object_backend.clone());
         let target = scope_postgres::db::TestDatabaseTarget::required().unwrap();
-        let metadata = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-        Self {
-            auto_merge_wakeup: Arc::new(tokio::sync::Notify::new()),
-            clerk_user_deletion_wakeup: Arc::new(tokio::sync::Notify::new()),
-            clerk_users: crate::clerk_users::ClerkUsers::Scripted(Default::default()),
-            github: None,
-            github_job_log_wakeup: Arc::new(tokio::sync::Notify::new()),
-            github_push_wakeup: Arc::new(tokio::sync::Notify::new()),
-            github_run_import_wakeup: Arc::new(tokio::sync::Notify::new()),
-            github_job_read_wakeup: Arc::new(tokio::sync::Notify::new()),
-            invite_email_wakeup: Arc::new(tokio::sync::Notify::new()),
-            invite_mailer: crate::invite_mailer::InviteMailer::Recording(Default::default()),
-            metadata,
-            data_dir: storage.data_dir,
-            clerk: ClerkVerifier::new_with_policy(
-                Some("https://clerk.test".to_string()),
-                Some("http://127.0.0.1/.well-known/jwks.json".to_string()),
-                crate::auth::clerk::ClerkTokenPolicy {
-                    authorized_parties: vec![crate::config::LOCAL_APP_ORIGIN.to_string()],
-                    audiences: vec![crate::config::DEFAULT_CLERK_AUDIENCE.to_string()],
-                },
-            ),
-            object_store: storage.object_store,
-            git_segment_store: storage.git_segment_store,
-            cache_grants: CacheGrantIssuer::test(),
-            media_grants: MediaGrantIssuer::test(),
-            runtime_budgets: storage.runtime_budgets,
-            dispatch_broker_token: None,
-            operator_token: None,
-            product_analytics: ProductAnalytics::disabled(),
-            repo_events: RepoChangeBus::default(),
-            push_intent_signing_key: storage.push_intent_signing_key,
-            repository_engine: storage.repository_engine,
-            git_public_url: Arc::from(crate::config::LOCAL_API_ORIGIN),
-            #[cfg(test)]
-            test_object_backend,
-        }
+        Self::assemble(
+            AppServices {
+                storage: StorageRuntime::for_tests(),
+                metadata: MetadataStore::connect_fresh_for_tests(&target).unwrap(),
+                cache_grants: CacheGrantIssuer::test(),
+                media_grants: MediaGrantIssuer::test(),
+                product_analytics: ProductAnalytics::disabled(),
+                git_public_url: crate::config::LOCAL_API_ORIGIN.to_string(),
+            },
+            Integrations::for_tests(),
+            RepoChangeBus::default(),
+        )
     }
 }
 

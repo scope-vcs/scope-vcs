@@ -8,7 +8,7 @@ use crate::{
 
 pub const GITHUB_JOBS_READ_INTERVAL_SECS: u64 = 30;
 pub const GITHUB_JOB_LOG_LIMIT_BYTES: usize = 1024 * 1024;
-pub const GITHUB_JOB_LOG_PUBLISH_GRACE_SECS: u64 = 10 * 60;
+const GITHUB_JOB_LOG_PUBLISH_GRACE_SECS: u64 = 10 * 60;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubWorkflowJob {

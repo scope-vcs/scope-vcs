@@ -95,3 +95,9 @@ impl From<scope_git::GitSnapshotError> for PostgresError {
         Self::internal(error)
     }
 }
+
+impl From<sea_orm::DbErr> for PostgresError {
+    fn from(error: sea_orm::DbErr) -> Self {
+        Self::internal(error)
+    }
+}

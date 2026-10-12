@@ -73,7 +73,7 @@ API, Git, and media clients, with `Retry-After`. It needs no database connection
 Only its `/readyz` endpoint returns success.
 
 The cutover stops metadata writers, acquires the database writer fence, applies
-migrations and required backfills, and verifies the exact ledger. It then activates
+migrations, and verifies the exact ledger. It then activates
 prepared services in dependency order. Public services reopen as their dependencies
 become ready; API activation follows its backend dependencies, and web opens last.
 The journal completes only after the coordinated activation succeeds.
@@ -90,7 +90,7 @@ An unknown or unreadable ledger leaves writers closed.
 
 Once a maintenance gate starts replacing deployments, recovery proceeds forward:
 Railway may already have removed the previous deployment IDs. A committed migration
-or an uncertain external backfill also prevents old-binary restoration. Runtime
+also prevents old-binary restoration. Runtime
 schema verification and the exclusive database fence remain the final write boundary.
 
 To deploy an already prepared, validated release through the same workflow:
@@ -125,7 +125,7 @@ digests, and an exact candidate migration ledger with nothing pending.
 
 Cleanup may have removed the staging deployments after the smoke failure. Resume
 reactivates those pinned images with writers closed first, without restoring the
-pre-migration database, applying migrations, or repeating backfills. Browser smoke
+pre-migration database or applying migrations. Browser smoke
 checks come from the current trusted workflow revision so a corrected smoke test
 does not require rebuilding the application images. Production stays blocked
 until the resumed browser, Git, and media smoke checks succeed. An unresolved
@@ -149,9 +149,8 @@ Plaintext archives and snapshots encrypted under another key are rejected.
 Matching ledgers with no pending migrations require neither the key nor an archive
 upload. If a failed candidate leaves staging ahead, the next attempt restores a
 matching retained baseline while writers are fenced. Unknown baselines and snapshots
-that cross known external storage transformations fail explicitly. Required
-backfills run in staging as well as production; physical object cleanup does not
-run as part of candidate testing.
+that cross known external storage transformations fail explicitly. Physical
+object cleanup does not run as part of candidate testing.
 
 A database snapshot does not back up object storage. Preserve the staging object
 stores and keys across these tests. Unseeded or incompatible staging needs an
@@ -178,7 +177,7 @@ carry their source SHA as `SCOPE_ANALYTICS_RELEASE`. See
 
 ## Private database maintenance
 
-Release preflight, migrations, workflow backfills, and staging database operations
+Release preflight, migrations, and staging database operations
 run through `railway-private-maintenance.sh` and `railway-private-command.sh`.
 They use SSH into the dedicated maintenance service. Its `DATABASE_URL` points
 to the private database hostname and uses the migration role. CI does not fetch

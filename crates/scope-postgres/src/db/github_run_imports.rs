@@ -57,7 +57,7 @@ impl RepositoryStore {
         user_id: &str,
         count: u32,
     ) -> Result<(u32, RepositoryIncarnation), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, repo_id).await?;
         acquire_aggregate_lock(&tx, "github-run-import", repo_id).await?;
         let context = repository_access(&tx, repo_id, Some(user_id))
@@ -65,7 +65,7 @@ impl RepositoryStore {
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
         let count = set_github_run_import_count(context.access.clone(), count)?;
         save_run_import_count(&tx, repo_id, count).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok((count, context.incarnation()))
     }
 
@@ -76,7 +76,7 @@ impl RepositoryStore {
         user_id: &str,
         now_unix: u64,
     ) -> Result<(GitHubRunImport, RepositoryIncarnation), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, repo_id).await?;
         acquire_aggregate_lock(&tx, "github-connection", repo_id).await?;
         acquire_aggregate_lock(&tx, "github-run-import", repo_id).await?;
@@ -94,7 +94,7 @@ impl RepositoryStore {
             now_unix,
         )?;
         queue_github_run_import(&tx, &import).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok((import, context.incarnation()))
     }
 
@@ -144,8 +144,7 @@ impl RepositoryStore {
             ],
         ))
         .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(ImportRow::into_domain)
         .collect()
@@ -158,7 +157,7 @@ impl RepositoryStore {
         claim_token: &str,
         runs: &[GitHubWorkflowRun],
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(row) = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -174,20 +173,18 @@ impl RepositoryStore {
                     FOR UPDATE OF import FOR SHARE OF connection",
                 [repo_id.into(), claim_token.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Ok(false);
         };
         let github_repository_id = i64_to_u64(
-            row.try_get("", "github_repository_id")
-                .map_err(PostgresError::internal)?,
+            row.try_get("", "github_repository_id")?,
             "GitHub repository id",
         )?;
         for run in runs {
             save_workflow_run(&tx, repo_id, github_repository_id, run).await?;
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(true)
     }
 
@@ -246,8 +243,7 @@ impl RepositoryStore {
                     finished.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(result.rows_affected() == 1)
     }
 }
@@ -262,14 +258,9 @@ pub(super) async fn run_import_count<C: ConnectionTrait>(
             "SELECT run_count FROM scope_github_run_import_counts WHERE repo_id = $1",
             [repo_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     {
-        Some(row) => i32_to_u32(
-            row.try_get("", "run_count")
-                .map_err(PostgresError::internal)?,
-            "GitHub run import count",
-        ),
+        Some(row) => i32_to_u32(row.try_get("", "run_count")?, "GitHub run import count"),
         None => Ok(GITHUB_RUN_IMPORT_DEFAULT_COUNT),
     }
 }
@@ -288,8 +279,7 @@ pub(super) async fn save_run_import_count<C: ConnectionTrait>(
             u32_to_i32(count, "GitHub run import count")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -325,8 +315,7 @@ pub(super) async fn queue_github_run_import<C: ConnectionTrait>(
             queued_at.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -339,8 +328,7 @@ pub(super) async fn delete_github_run_import<C: ConnectionTrait>(
         "DELETE FROM scope_github_run_imports WHERE repo_id = $1",
         [repo_id.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -354,8 +342,7 @@ async fn load_import<C: ConnectionTrait>(
         [repo_id.into()],
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .map(ImportRow::into_domain)
     .transpose()
 }

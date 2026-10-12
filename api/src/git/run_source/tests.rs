@@ -575,7 +575,7 @@ fn workflow_blob_inspection_distinguishes_absence_invalid_type_oversize_and_read
     fs::write(source.path().join(".scope/runs/good.yml"), "name: Checks\n").unwrap();
     fs::write(
         source.path().join(".scope/runs/large.yml"),
-        vec![b'x'; scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES + 1],
+        vec![b'x'; scope_domain::runs::catalog::MAX_WORKFLOW_DEFINITION_BYTES + 1],
     )
     .unwrap();
     run_git(Some(source.path()), &["add", "."], "stage workflow fixture").unwrap();

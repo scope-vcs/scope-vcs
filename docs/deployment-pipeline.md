@@ -68,7 +68,7 @@ The unfenced rolling path retains sequential activation.
 
 Read-only maintenance SSH calls (plan, preflight, verify, catalog validation,
 runtime verification, and the production readiness audit) make up to three
-attempts when SSH reports a transport failure; migrations, backfills, writer
+attempts when SSH reports a transport failure; migrations, writer
 fencing and draining, restores, dumps, and seeding never retry one. Runner base
 image pushes also make up to three attempts. Release image preparation,
 maintenance binary extraction, maintenance runtime publication, and the staging
@@ -161,9 +161,8 @@ even when deployment times out, and the pull request comment reports failures.
 
 The first deployment copies staging with `skipInitialDeploys`. Railway does not
 copy sealed variables, so the workflow generates the Postgres administrator
-password, one login per runtime role, encryption keys, grant signing keys, and
-the operator token, and points bucket credentials at the environment's own
-bucket instances. It switches Railway tracing on for every service except
+password, one login per runtime role, encryption keys, and grant signing keys,
+and points bucket credentials at the environment's own bucket instances. It switches Railway tracing on for every service except
 Postgres, with automatic instrumentation for `scope-web`, before anything
 deploys. Railway also copies staging's unsealed variables. The preview keeps
 only the settings reviewed in `KEPT_STAGING_SETTINGS` and its own variables and

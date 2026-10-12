@@ -1,5 +1,5 @@
 use super::{
-    GeneratedIdKind, GeneratedIdSource, JobStore, acquire_aggregate_lock, entities,
+    GeneratedIdKind, JobStore, acquire_aggregate_lock, entities,
     generated_ids::generate_id,
     git_segments::{load_git_pack_spans, publish_git_segment, retire_git_segment},
 };
@@ -76,8 +76,7 @@ where
         "#,
         [repo_id.into(), target_sequence.into(), now.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -89,7 +88,6 @@ impl JobStore {
         max_source_bytes: u64,
         now_unix: u64,
         lease_seconds: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<Option<GitCompactionClaim>, PostgresError> {
         if worker_id.trim().is_empty() {
             return Err(PostgresError::internal_message(
@@ -106,8 +104,8 @@ impl JobStore {
         let lease_expires = now.checked_add(lease_seconds).ok_or_else(|| {
             PostgresError::internal_message("Git compaction lease expiry exceeds database bigint")
         })?;
-        let lease_generation = generate_id(generated_ids, GeneratedIdKind::CleanupGeneration)?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let lease_generation = generate_id(GeneratedIdKind::CleanupGeneration)?;
+        let tx = self.db.begin().await?;
         let Some(job) =
             entities::git_compaction_job::Model::find_by_statement(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -140,16 +138,14 @@ impl JobStore {
                 ],
             ))
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         };
         let repo = entities::repository::Entity::find_by_id(job.repo_id.clone())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| {
                 PostgresError::internal_message("Git compaction job has no repository")
             })?;
@@ -167,7 +163,7 @@ impl JobStore {
         let target_sequence = i64_to_u64(job.target_sequence, "Git compaction target sequence")?;
         let attempts = i32_to_u32(job.attempts, "Git compaction attempt count")?;
         let due_at_unix = i64_to_u64(job.next_run_at_unix, "Git compaction due time")?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(GitCompactionClaim {
             target_sequence,
             attempts,
@@ -185,7 +181,7 @@ impl JobStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         let now = u64_to_i64(now_unix, "Git compaction time")?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
@@ -208,8 +204,7 @@ impl JobStore {
                 u64_to_i64(claim.target_sequence, "Git compaction target sequence")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "DELETE FROM scope_git_compaction_jobs
@@ -220,8 +215,7 @@ impl JobStore {
                 u64_to_i64(claim.target_sequence, "Git compaction target sequence")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         tx.commit().await.map_err(PostgresError::internal)
     }
 
@@ -261,8 +255,7 @@ impl JobStore {
                     claim.lease_generation.clone().into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -293,8 +286,7 @@ impl JobStore {
                     now.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -332,8 +324,7 @@ impl JobStore {
                     MAX_COMPACTION_RETRY_SECONDS.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -348,7 +339,7 @@ impl JobStore {
         plan.validate_replacement(&replacement)
             .map_err(|error| PostgresError::internal_message(error.to_string()))?;
         let expected_spans = plan.selected_spans();
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", repo_id).await?;
         let current_spans = load_git_pack_spans(&tx, repo_id).await?;
         validate_git_pack_layout(&current_spans)
@@ -365,12 +356,12 @@ impl JobStore {
         });
         let Some((range_start, current_range)) = current_range else {
             retire_git_segment(&tx, &replacement.segment.segment_id, now_unix).await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(false);
         };
         if current_range != expected_spans {
             retire_git_segment(&tx, &replacement.segment.segment_id, now_unix).await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(false);
         }
 
@@ -388,20 +379,18 @@ impl JobStore {
                 ),
             )
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         entities::git_pack_span::Model::from_domain(repo_id, &replacement)?
             .into_active_model()
             .insert(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         publish_git_segment(&tx, repo_id, &replacement.segment, now_unix).await?;
         for span in expected_spans {
             if span.segment.segment_id != replacement.segment.segment_id {
                 retire_git_segment(&tx, &span.segment.segment_id, now_unix).await?;
             }
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(true)
     }
 }

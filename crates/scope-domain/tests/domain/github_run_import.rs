@@ -1,3 +1,4 @@
+use crate::support::{OWNER, member, outsider, owner};
 use scope_domain::{
     error::DomainErrorKind,
     github_connection::{
@@ -8,32 +9,9 @@ use scope_domain::{
         GITHUB_RUN_IMPORT_DEFAULT_COUNT, GitHubRunImport, GitHubRunImportState,
         github_run_import_error, set_github_run_import_count, start_github_run_import,
     },
-    repository::{
-        RepoLifecycleState,
-        access::{RepositoryAccess, repository_access_for_user_id},
-        collaboration::RepositoryMemberPermissions,
-    },
 };
 
-const OWNER: &str = "user_owner";
 const NOW: u64 = 1_000;
-
-fn owner() -> RepositoryAccess {
-    repository_access_for_user_id(OWNER, RepoLifecycleState::Ready, None, OWNER)
-}
-
-fn member() -> RepositoryAccess {
-    repository_access_for_user_id(
-        OWNER,
-        RepoLifecycleState::Ready,
-        Some(RepositoryMemberPermissions::default()),
-        "user_member",
-    )
-}
-
-fn outsider() -> RepositoryAccess {
-    repository_access_for_user_id(OWNER, RepoLifecycleState::Ready, None, "user_outsider")
-}
 
 fn command(github_repository_id: u64, run_import_count: u32) -> ConnectGitHubRepository {
     ConnectGitHubRepository {

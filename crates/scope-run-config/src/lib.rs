@@ -1,6 +1,6 @@
 use scope_domain::runs::{
     cache::definition::{CacheKeyInputs, WorkflowCache},
-    catalog::RepositoryWorkflowCatalog,
+    catalog::{MAX_WORKFLOW_DEFINITION_BYTES, RepositoryWorkflowCatalog},
     workflow::{
         definition::{
             CompiledWorkflow, ContainerSpec, WorkflowJob, WorkflowJobId, WorkflowStep,
@@ -17,8 +17,6 @@ use std::{
     fmt,
 };
 use thiserror::Error;
-
-pub use scope_domain::runs::catalog::MAX_WORKFLOW_DEFINITION_BYTES;
 
 #[derive(Debug, Error)]
 pub enum RunConfigError {
@@ -380,7 +378,7 @@ jobs:
         let on_request = WORKFLOW.replace("manual: true", "manual: true\n  request: true");
         let parsed = parse_workflow("/.scope/runs/test.yml", on_request.as_bytes()).unwrap();
         assert!(parsed.definition().triggers().request());
-        let job = definition.only_job().unwrap();
+        let job = &definition.jobs()[0];
         assert_eq!(job.id().as_str(), "checks");
         assert_eq!(job.timeout_seconds(), 20 * 60);
         assert_eq!(
@@ -496,8 +494,7 @@ jobs:
             parse_workflow("/.scope/runs/test.yml", missing.as_bytes())
                 .unwrap()
                 .definition()
-                .only_job()
-                .unwrap()
+                .jobs()[0]
                 .caches()
                 .is_empty()
         );
@@ -544,7 +541,7 @@ jobs:
     #[test]
     fn environment_is_strict_and_job_values_override_workflow_values() {
         let parsed = parse_workflow("/.scope/runs/test.yml", WORKFLOW.as_bytes()).unwrap();
-        let environment = parsed.definition().only_job().unwrap().environment();
+        let environment = parsed.definition().jobs()[0].environment();
         assert_eq!(environment["RUSTUP_TOOLCHAIN"], "stable");
         assert_eq!(environment["TEST_MODE"], "strict");
 

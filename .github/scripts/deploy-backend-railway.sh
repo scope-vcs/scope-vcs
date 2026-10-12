@@ -99,10 +99,6 @@ maintenance_read() {
   return 1
 }
 
-backfill_repository_snapshots() {
-  maintenance backfill-workflow-catalogs
-}
-
 wait_for_writer_fence() {
   local grace_seconds="${SCOPE_WRITER_FENCE_GRACE_SECONDS:-10}"
   local grace_deadline=$((SECONDS + grace_seconds))
@@ -387,8 +383,6 @@ deploy_selected_releases() {
 deploy_and_reopen() {
   cutover_phase verifying
   maintenance_read verify
-  cutover_phase backfills
-  backfill_repository_snapshots
   predecessor_teardown_dir="$(mktemp -d)"
   cutover_phase activating-cache
   cache_closed=0

@@ -24,7 +24,13 @@ async fn multibyte_capacity_rejection_records_retry() {
         metadata.runs().run("run-0").await.unwrap().unwrap().state,
         RunState::Queued
     );
-    let jobs = metadata.runs().run_jobs("run-0").await.unwrap();
+    let jobs = metadata
+        .runs()
+        .run_snapshot("run-0")
+        .await
+        .unwrap()
+        .unwrap()
+        .jobs;
     let retry = jobs[0].capacity_retry.as_ref().unwrap();
     assert_eq!(retry.rejections, 1);
     assert!(retry.next_attempt_at_unix.unwrap() > now);
@@ -80,7 +86,13 @@ async fn capacity_rejection_retries_after_restart_and_stops_after_three_extra_at
     let restarted = coordinator(metadata.clone(), &provider);
     let mut clock = now;
     for expected in 2..=4 {
-        let jobs = metadata.runs().run_jobs("run-0").await.unwrap();
+        let jobs = metadata
+            .runs()
+            .run_snapshot("run-0")
+            .await
+            .unwrap()
+            .unwrap()
+            .jobs;
         let due = jobs[0]
             .capacity_retry
             .as_ref()
@@ -145,7 +157,13 @@ async fn capacity_retry_can_start_and_expired_waits_settle_even_when_dispatch_is
         let mut execution = coordinator(metadata.clone(), &provider);
         let now = crate::unix_now().unwrap();
         execution.dispatch_available(now).await.unwrap();
-        let jobs = metadata.runs().run_jobs("run-0").await.unwrap();
+        let jobs = metadata
+            .runs()
+            .run_snapshot("run-0")
+            .await
+            .unwrap()
+            .unwrap()
+            .jobs;
         let retry = jobs[0].capacity_retry.as_ref().unwrap();
         if recover {
             provider.reply(

@@ -37,7 +37,7 @@ impl MediaStore {
         lease_expires_at_unix: u64,
     ) -> Result<Option<RequestAttachmentProcessingLease>, PostgresError> {
         validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(candidate) = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -58,18 +58,13 @@ impl MediaStore {
                  LIMIT 1",
                 [as_i64(now_unix, "processing claim time")?.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         };
-        let attachment_id = candidate
-            .try_get::<String>("", "attachment_id")
-            .map_err(PostgresError::internal)?;
-        let repository_id = candidate
-            .try_get::<String>("", "repository_id")
-            .map_err(PostgresError::internal)?;
+        let attachment_id = candidate.try_get::<String>("", "attachment_id")?;
+        let repository_id = candidate.try_get::<String>("", "repository_id")?;
         acquire_shared_repository_lock(&tx, &repository_id).await?;
         let Some(job) = tx
             .query_one_raw(Statement::from_sql_and_values(
@@ -92,20 +87,14 @@ impl MediaStore {
                     attachment_id.clone().into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         };
-        let old_generation = u64::try_from(
-            job.try_get::<i64>("", "lease_generation")
-                .map_err(PostgresError::internal)?,
-        )
-        .map_err(PostgresError::internal)?;
-        let old_state = job
-            .try_get::<String>("", "state")
+        let old_generation = u64::try_from(job.try_get::<i64>("", "lease_generation")?)
             .map_err(PostgresError::internal)?;
+        let old_state = job.try_get::<String>("", "state")?;
         let mut attachment = lock_attachment(&tx, &attachment_id).await?;
         if old_state == "Leased" {
             tx.execute_raw(Statement::from_sql_and_values(
@@ -119,8 +108,7 @@ impl MediaStore {
                     as_i64(now_unix, "orphan time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         }
         if attachment.state == RequestAttachmentState::Uploaded {
             attachment = transition_attachment(
@@ -137,13 +125,10 @@ impl MediaStore {
         let generation = old_generation.checked_add(1).ok_or_else(|| {
             PostgresError::internal_message("processing lease generation overflow")
         })?;
-        let attempt = u32::try_from(
-            job.try_get::<i32>("", "attempt")
-                .map_err(PostgresError::internal)?,
-        )
-        .map_err(PostgresError::internal)?
-        .checked_add(1)
-        .ok_or_else(|| PostgresError::internal_message("processing attempt overflow"))?;
+        let attempt = u32::try_from(job.try_get::<i32>("", "attempt")?)
+            .map_err(PostgresError::internal)?
+            .checked_add(1)
+            .ok_or_else(|| PostgresError::internal_message("processing attempt overflow"))?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_processing_jobs
@@ -159,10 +144,9 @@ impl MediaStore {
                 as_i64(now_unix, "processing claim time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         notify_attachment_change(&tx, &attachment).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(RequestAttachmentProcessingLease {
             attachment_id,
             repository_id: attachment.repository_id,
@@ -205,8 +189,7 @@ impl MediaStore {
                     as_i64(lease_expires_at_unix, "processing lease expiry")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -237,15 +220,11 @@ impl MediaStore {
                     as_i64(now_unix, "processing source read time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let Some(row) = valid else {
             return Ok(None);
         };
-        let Some(manifest_id) = row
-            .try_get::<Option<String>>("", "original_manifest_id")
-            .map_err(PostgresError::internal)?
-        else {
+        let Some(manifest_id) = row.try_get::<Option<String>>("", "original_manifest_id")? else {
             return Ok(None);
         };
         manifest_by_id(self.db.as_ref(), &manifest_id).await
@@ -263,7 +242,7 @@ impl MediaStore {
         if object_key.trim().is_empty() {
             return Err(PostgresError::invalid_input("media object key is required"));
         }
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         if lock_lease_attachment(
             &tx,
             attachment_id,
@@ -275,7 +254,7 @@ impl MediaStore {
         .await?
         .is_none()
         {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(MediaLeaseMutation::LeaseLost);
         }
         if let Some(row) = tx
@@ -285,29 +264,19 @@ impl MediaStore {
                  FROM scope_request_media_processing_objects WHERE object_key = $1 FOR UPDATE",
                 [object_key.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         {
-            let same = row
-                .try_get::<String>("", "attachment_id")
-                .map_err(PostgresError::internal)?
-                == attachment_id
-                && u64::try_from(
-                    row.try_get::<i64>("", "lease_generation")
-                        .map_err(PostgresError::internal)?,
-                )
-                .map_err(PostgresError::internal)?
-                    == lease_generation
-                && row
-                    .try_get::<String>("", "state")
+            let same = row.try_get::<String>("", "attachment_id")? == attachment_id
+                && u64::try_from(row.try_get::<i64>("", "lease_generation")?)
                     .map_err(PostgresError::internal)?
-                    == "Pending";
+                    == lease_generation
+                && row.try_get::<String>("", "state")? == "Pending";
             if !same {
                 return Err(PostgresError::conflict(
                     "media object key is already reserved by another processing lease",
                 ));
             }
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(MediaLeaseMutation::Applied(()));
         }
         tx.execute_raw(Statement::from_sql_and_values(
@@ -323,9 +292,8 @@ impl MediaStore {
                 as_i64(now_unix, "processing object reservation time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        .await?;
+        tx.commit().await?;
         Ok(MediaLeaseMutation::Applied(()))
     }
 
@@ -334,7 +302,7 @@ impl MediaStore {
         &self,
         command: ValidateRequestAttachmentSourceCommand,
     ) -> Result<MediaLeaseMutation<RequestAttachment>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some((lease, attachment)) = lock_lease_attachment(
             &tx,
             &command.attachment_id,
@@ -345,7 +313,7 @@ impl MediaStore {
         )
         .await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(MediaLeaseMutation::LeaseLost);
         };
         validate_source_identity(&attachment, &command.source)?;
@@ -362,7 +330,7 @@ impl MediaStore {
         )?;
         save_validated_source(&tx, &next).await?;
         notify_attachment_change(&tx, &next).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(MediaLeaseMutation::Applied(next))
     }
 
@@ -371,7 +339,7 @@ impl MediaStore {
         &self,
         command: CompleteRequestAttachmentProcessingCommand,
     ) -> Result<MediaLeaseMutation<RequestAttachment>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some((lease, attachment)) = lock_lease_attachment(
             &tx,
             &command.attachment_id,
@@ -382,7 +350,7 @@ impl MediaStore {
         )
         .await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(MediaLeaseMutation::LeaseLost);
         };
         validate_source_identity(&attachment, &command.source)?;
@@ -433,7 +401,7 @@ impl MediaStore {
         save_completed_attachment(&tx, &next, derivative_bytes).await?;
         complete_job(&tx, &attachment.id, command.now_unix).await?;
         notify_attachment_change(&tx, &next).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(MediaLeaseMutation::Applied(next))
     }
 
@@ -442,7 +410,7 @@ impl MediaStore {
         &self,
         command: FailRequestAttachmentProcessingCommand,
     ) -> Result<MediaLeaseMutation<RequestAttachment>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some((lease, attachment)) = lock_lease_attachment(
             &tx,
             &command.attachment_id,
@@ -453,7 +421,7 @@ impl MediaStore {
         )
         .await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(MediaLeaseMutation::LeaseLost);
         };
         let next = validate_processing_failure(
@@ -496,8 +464,7 @@ impl MediaStore {
                 as_i64(command.now_unix, "processing failure time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_processing_objects
@@ -509,10 +476,9 @@ impl MediaStore {
                 as_i64(command.now_unix, "processing failure time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         notify_attachment_change(&tx, &next).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(MediaLeaseMutation::Applied(next))
     }
 
@@ -530,7 +496,7 @@ impl MediaStore {
                 "retry operation id is required",
             ));
         }
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) = lock_request_repository(&tx, request_id, actor_user_id).await?;
         let Some(observed) = attachment_by_id(&tx, attachment_id).await? else {
             return Err(PostgresError::not_found("request attachment not found"));
@@ -557,8 +523,7 @@ impl MediaStore {
                  WHERE attachment_id = $1 AND operation_id = $2",
                 [attachment_id.into(), operation_id.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .is_some();
         if existing_operation {
             let bindings = bindings_for_attachment(&tx, attachment_id).await?;
@@ -573,7 +538,7 @@ impl MediaStore {
             {
                 return Err(PostgresError::not_found("request attachment not found"));
             }
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(attachment);
         }
         let actor_can_write = match &attachment.target {
@@ -600,8 +565,7 @@ impl MediaStore {
                 as_i64(now_unix, "retry operation time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_processing_jobs
@@ -613,10 +577,9 @@ impl MediaStore {
                 as_i64(now_unix, "processing retry time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         notify_attachment_change(&tx, &next).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(next)
     }
 }
@@ -640,19 +603,13 @@ where
                 attachment.request_id.clone().into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     else {
         return Ok(());
     };
-    let incarnation_id = row
-        .try_get::<String>("", "incarnation_id")
-        .map_err(PostgresError::internal)?;
-    let view = ViewId::parse(
-        &row.try_get::<String>("", "audience")
-            .map_err(PostgresError::internal)?,
-    )
-    .map_err(PostgresError::internal)?;
+    let incarnation_id = row.try_get::<String>("", "incarnation_id")?;
+    let view =
+        ViewId::parse(&row.try_get::<String>("", "audience")?).map_err(PostgresError::internal)?;
     let payload = serde_json::json!({
         "event": {
             "repo_id": attachment.repository_id,
@@ -674,7 +631,6 @@ where
         format!("SELECT pg_notify('{POSTGRES_REPO_CHANGE_CHANNEL}', $1)"),
         [payload.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }

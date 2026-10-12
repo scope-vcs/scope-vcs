@@ -32,17 +32,13 @@ impl CacheStore {
                     u64_to_i64(retry_at_unix, "retry time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         rows.into_iter()
             .map(|row| {
                 Ok(PendingOrphanCacheUpload {
-                    object_key: row
-                        .try_get("", "object_key")
-                        .map_err(PostgresError::internal)?,
+                    object_key: row.try_get("", "object_key")?,
                     attempts: i32_to_u32(
-                        row.try_get::<i32>("", "attempts")
-                            .map_err(PostgresError::internal)?,
+                        row.try_get::<i32>("", "attempts")?,
                         "cache job attempts",
                     )?,
                 })
@@ -60,8 +56,7 @@ impl CacheStore {
                 "DELETE FROM scope_cache_orphan_uploads WHERE object_key = $1",
                 vec![object_key.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -83,14 +78,13 @@ impl CacheStore {
                     bounded_job_error(error).into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "expire_references"))]
     pub async fn expire_references(&self, now_unix: u64, limit: u64) -> Result<u64, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let rows = tx
             .query_all_raw(statement(
                 "SELECT repository_id, identity_digest, compatibility_group_digest,
@@ -105,16 +99,13 @@ impl CacheStore {
                     u64_to_i64(limit, "batch limit")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         for row in &rows {
-            let repository_id: String = row
-                .try_get("", "repository_id")
-                .map_err(PostgresError::internal)?;
+            let repository_id: String = row.try_get("", "repository_id")?;
             expire_reference_row(&tx, &repository_id, row, now_unix).await?;
         }
         let count = rows.len() as u64;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(count)
     }
 
@@ -145,20 +136,13 @@ impl CacheStore {
                     u64_to_i64(now_unix.saturating_add(300), "cleanup lease expiry")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         rows.into_iter()
             .map(|row| {
                 Ok(CacheUploadCleanupClaim {
-                    upload_id: row
-                        .try_get("", "upload_id")
-                        .map_err(PostgresError::internal)?,
-                    object_key: row
-                        .try_get("", "object_key")
-                        .map_err(PostgresError::internal)?,
-                    generation: row
-                        .try_get("", "cleanup_generation")
-                        .map_err(PostgresError::internal)?,
+                    upload_id: row.try_get("", "upload_id")?,
+                    object_key: row.try_get("", "object_key")?,
+                    generation: row.try_get("", "cleanup_generation")?,
                 })
             })
             .collect()
@@ -177,7 +161,7 @@ impl CacheStore {
         let db = self.db.clone();
         let claim = claim.clone();
         tokio::spawn(async move {
-            let tx = db.begin().await.map_err(PostgresError::internal)?;
+            let tx = db.begin().await?;
             let current = tx
                 .query_one_raw(statement(
                     "SELECT upload_id FROM scope_cache_uploads
@@ -185,15 +169,14 @@ impl CacheStore {
                      FOR UPDATE",
                     vec![claim.upload_id.clone().into(), claim.generation.into()],
                 ))
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
             if current.is_none() {
                 return Ok(());
             }
             match tokio::time::timeout(UPLOAD_DELETE_TIMEOUT, delete()).await {
                 Ok(result) => result?,
                 Err(_) => {
-                    tx.rollback().await.map_err(PostgresError::internal)?;
+                    tx.rollback().await?;
                     return Err(PostgresError::internal_message(format!(
                         "cache upload deletion exceeded {} ms; cleanup will be retried",
                         UPLOAD_DELETE_TIMEOUT.as_millis()
@@ -204,8 +187,7 @@ impl CacheStore {
                 "DELETE FROM scope_cache_uploads WHERE upload_id = $1",
                 vec![claim.upload_id.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
             tx.commit().await.map_err(PostgresError::internal)
         })
         .await
@@ -232,8 +214,7 @@ impl CacheStore {
                     u64_to_i64(limit, "batch limit")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(result.rows_affected())
     }
 
@@ -257,17 +238,12 @@ impl CacheStore {
                     u64_to_i64(limit, "batch limit")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let mut deletions = Vec::with_capacity(candidates.len());
         for candidate in candidates {
-            let repository_id: String = candidate
-                .try_get("", "repository_id")
-                .map_err(PostgresError::internal)?;
-            let checksum_sha256: String = candidate
-                .try_get("", "checksum_sha256")
-                .map_err(PostgresError::internal)?;
-            let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+            let repository_id: String = candidate.try_get("", "repository_id")?;
+            let checksum_sha256: String = candidate.try_get("", "checksum_sha256")?;
+            let tx = self.db.begin().await?;
             lock_repository(&tx, &repository_id).await?;
             let row = tx
                 .query_one_raw(statement(
@@ -298,14 +274,13 @@ impl CacheStore {
                         u64_to_i64(retry_at_unix, "retry time")?.into(),
                     ],
                 ))
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
             let Some(row) = row else {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 continue;
             };
             let deletion = decode_deletion(row)?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             deletions.push(deletion);
         }
         Ok(deletions)
@@ -317,7 +292,7 @@ impl CacheStore {
         repository_id: &str,
         checksum_sha256: &str,
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         lock_repository(&tx, repository_id).await?;
         let result = tx
             .execute_raw(statement(
@@ -336,9 +311,8 @@ impl CacheStore {
                    )",
                 vec![repository_id.into(), checksum_sha256.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+            .await?;
+        tx.commit().await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -361,8 +335,7 @@ impl CacheStore {
                     bounded_job_error(error).into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 }
@@ -384,8 +357,7 @@ pub(super) async fn expire_repository_references(
                 u64_to_i64(now_unix, "current time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     for row in &rows {
         expire_reference_row(tx, repository_id, row, now_unix).await?;
     }
@@ -398,12 +370,8 @@ async fn expire_reference_row(
     row: &QueryResult,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
-    let identity: String = row
-        .try_get("", "identity_digest")
-        .map_err(PostgresError::internal)?;
-    let checksum: String = row
-        .try_get("", "checksum_sha256")
-        .map_err(PostgresError::internal)?;
+    let identity: String = row.try_get("", "identity_digest")?;
+    let checksum: String = row.try_get("", "checksum_sha256")?;
     let reference = domain_reference_from_query(repository_id, &identity, row)?;
     let EvictionDecision::RemoveReference { deletion } =
         scope_cache_domain::decide_reference_eviction(&reference, 0, now_unix)?
@@ -417,8 +385,7 @@ async fn expire_reference_row(
          WHERE repository_id = $1 AND identity_digest = $2",
         vec![repository_id.into(), identity.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     queue_if_unreferenced(
         tx,
         repository_id,
@@ -463,19 +430,14 @@ pub(super) async fn make_repository_room(
                  FOR UPDATE LIMIT 1",
                 vec![repository_id.into(), protected_identity.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| {
                 PostgresError::resource_exhausted(
                     "repository cache budget cannot fit the requested object",
                 )
             })?;
-        let identity: String = victim
-            .try_get("", "identity_digest")
-            .map_err(PostgresError::internal)?;
-        let checksum: String = victim
-            .try_get("", "checksum_sha256")
-            .map_err(PostgresError::internal)?;
+        let identity: String = victim.try_get("", "identity_digest")?;
+        let checksum: String = victim.try_get("", "checksum_sha256")?;
         let reference = domain_reference_from_query(repository_id, &identity, &victim)?;
         let storage_with_upload = i64_to_u64(
             usage.saturating_add(additional_bytes),
@@ -497,8 +459,7 @@ pub(super) async fn make_repository_room(
              WHERE repository_id = $1 AND identity_digest = $2",
             vec![repository_id.into(), identity.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         queue_if_unreferenced(
             tx,
             repository_id,
@@ -533,8 +494,7 @@ pub(super) async fn active_repository_bytes(
              ) active_cache_bytes",
             vec![repository_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::internal_message("cache usage query returned no row"))?;
     row.try_get("", "bytes").map_err(PostgresError::internal)
 }
@@ -569,30 +529,18 @@ pub(super) async fn queue_if_unreferenced(
             not_before.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
 fn decode_deletion(row: QueryResult) -> Result<PendingCacheDeletion, PostgresError> {
     Ok(PendingCacheDeletion {
-        repository_id: row
-            .try_get("", "repository_id")
-            .map_err(PostgresError::internal)?,
-        checksum_sha256: row
-            .try_get("", "checksum_sha256")
-            .map_err(PostgresError::internal)?,
-        object_key: row
-            .try_get("", "object_key")
-            .map_err(PostgresError::internal)?,
-        attempts: i32_to_u32(
-            row.try_get::<i32>("", "attempts")
-                .map_err(PostgresError::internal)?,
-            "cache job attempts",
-        )?,
+        repository_id: row.try_get("", "repository_id")?,
+        checksum_sha256: row.try_get("", "checksum_sha256")?,
+        object_key: row.try_get("", "object_key")?,
+        attempts: i32_to_u32(row.try_get::<i32>("", "attempts")?, "cache job attempts")?,
         eligible_after_unix: i64_to_u64(
-            row.try_get("", "eligible_after_unix")
-                .map_err(PostgresError::internal)?,
+            row.try_get("", "eligible_after_unix")?,
             "cache deletion eligibility time",
         )?,
     })

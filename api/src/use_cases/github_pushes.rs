@@ -1,3 +1,4 @@
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     auth::tokens::random_token, error::ApiError,
     git::request_refs::with_request_revision_store_repo, github::GitHubApp, persistence::unix_now,
@@ -403,26 +404,18 @@ async fn publish_push_change(state: &AppState, push: &GitHubPush) {
     }
 }
 
-impl AppState {
-    pub(crate) fn start_github_pushes(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            loop {
-                let pass = async {
-                    state.metadata.admin().readiness_check().await?;
-                    push_due_github_branches(&state, unix_now()?).await
-                };
-                if let Err(error) = pass.await {
-                    tracing::warn!(
-                        error = %error.operator_diagnostic(),
-                        "GitHub push pass failed; retrying"
-                    );
-                }
-                tokio::select! {
-                    _ = state.github_push_wakeup.notified() => {},
-                    _ = tokio::time::sleep(POLL_INTERVAL) => {},
-                }
-            }
-        });
+impl BackgroundWork {
+    pub(crate) fn start_github_pushes(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "GitHub push pass",
+                cadence: Cadence::AfterPass {
+                    delay: POLL_INTERVAL,
+                    wakeup: Some(|wakeups| &wakeups.github_pushes),
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            |state| async move { push_due_github_branches(&state, unix_now()?).await },
+        );
     }
 }

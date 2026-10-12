@@ -1,5 +1,5 @@
 use super::{
-    AuthStore, GeneratedIdSource, acquire_aggregate_lock,
+    AuthStore, acquire_aggregate_lock,
     auth::load_user_by_id,
     collaboration_rows::{load_repository_collaboration, save_collaboration_state},
     entities,
@@ -80,7 +80,6 @@ impl AuthStore {
         &self,
         user_id: &str,
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<DeletedAccount, AccountDeletionError> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let user = load_user_by_id(&tx, user_id).await?;
@@ -189,7 +188,6 @@ impl AuthStore {
                 &record.owner_handle,
                 &record.name,
                 now_unix,
-                generated_ids,
             )
             .await?;
             deleted.deleted_repositories.push(AccountDeletionChange {
@@ -213,15 +211,7 @@ impl AuthStore {
             let Some(repo) = others.iter().find(|repo| repo.record.id == repo_id) else {
                 continue;
             };
-            delete_draft(
-                &tx,
-                &repo.incarnation(),
-                &request_id,
-                user_id,
-                now_unix,
-                generated_ids,
-            )
-            .await?;
+            delete_draft(&tx, &repo.incarnation(), &request_id, user_id, now_unix).await?;
         }
         for mut repo in others {
             let before = repo.clone();
@@ -329,7 +319,6 @@ async fn delete_draft(
     request_id: &str,
     user_id: &str,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError> {
     acquire_aggregate_lock(tx, "request", request_id).await?;
     let Some(request) = request_by_id(tx, request_id).await? else {
@@ -367,7 +356,6 @@ async fn delete_draft(
         &revisions,
         orphan_objects,
         now_unix,
-        generated_ids,
     )
     .await
 }

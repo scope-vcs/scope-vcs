@@ -31,7 +31,7 @@ impl RequestStore {
         &self,
         command: RebuildCheckCommitCommand,
     ) -> Result<Option<RequestChecksMutation>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         super::locks::acquire_shared_repository_lock(
             &tx,
             command.repository_incarnation.repository_id(),
@@ -99,7 +99,7 @@ impl RequestStore {
             )
             .await?;
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(RequestChecksMutation {
             evaluation,
             created_runs: Vec::new(),
@@ -133,8 +133,7 @@ impl RequestStore {
                 "#,
                 [repo_id.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(|row| {
                 row.try_get::<String>("", "id")
@@ -158,7 +157,6 @@ pub(super) async fn canonical_main_oid<C: ConnectionTrait>(
 ) -> Result<Option<String>, PostgresError> {
     Ok(entities::git_head::Entity::find_by_id(repo_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(|head| head.head_oid))
 }

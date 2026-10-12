@@ -35,8 +35,7 @@ where
                     .eq(usize_to_i64(ordinal, "commit ordinal")?),
             )
             .one(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(|row| row.id),
         None => None,
     };
@@ -48,8 +47,7 @@ where
                     .eq(usize_to_i64(ordinal, "change set ordinal")?),
             )
             .one(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(|row| row.id),
         None => None,
     };
@@ -76,8 +74,7 @@ where
         )
         .order_by_asc(entities::logical_commit::Column::Ordinal)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let mut changes_by_commit = BTreeMap::<String, Vec<FileChange>>::new();
     if !commit_rows.is_empty() {
         for row in entities::file_change::Entity::find()
@@ -98,8 +95,7 @@ where
             .order_by_asc(entities::file_change::Column::CommitId)
             .order_by_asc(entities::file_change::Column::Ordinal)
             .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         {
             changes_by_commit
                 .entry(row.commit_id.clone())
@@ -123,8 +119,7 @@ where
         )
         .order_by_asc(entities::visibility_change_set::Column::Ordinal)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let mut changes_by_set = BTreeMap::<String, Vec<VisibilityChange>>::new();
     if !set_rows.is_empty() {
         for row in entities::visibility_change::Entity::find()
@@ -147,8 +142,7 @@ where
             .order_by_asc(entities::visibility_change::Column::ChangeSetId)
             .order_by_asc(entities::visibility_change::Column::Ordinal)
             .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         {
             changes_by_set
                 .entry(row.change_set_id.clone())

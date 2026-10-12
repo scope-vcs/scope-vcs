@@ -1,3 +1,4 @@
+use crate::support::{OWNER, member, outsider, owner};
 use scope_domain::{
     error::DomainErrorKind,
     github_connection::{
@@ -13,25 +14,7 @@ use scope_domain::{
 };
 use std::collections::BTreeSet;
 
-const OWNER: &str = "user_owner";
 const NOW: u64 = 1_000;
-
-fn owner() -> scope_domain::repository::access::RepositoryAccess {
-    repository_access_for_user_id(OWNER, RepoLifecycleState::Ready, None, OWNER)
-}
-
-fn member() -> scope_domain::repository::access::RepositoryAccess {
-    repository_access_for_user_id(
-        OWNER,
-        RepoLifecycleState::Ready,
-        Some(RepositoryMemberPermissions::default()),
-        "user_member",
-    )
-}
-
-fn outsider() -> scope_domain::repository::access::RepositoryAccess {
-    repository_access_for_user_id(OWNER, RepoLifecycleState::Ready, None, "user_outsider")
-}
 
 fn command(repository_id: &str, github_repository_id: u64) -> ConnectGitHubRepository {
     ConnectGitHubRepository {

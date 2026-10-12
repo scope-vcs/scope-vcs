@@ -1,3 +1,4 @@
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     auth::tokens::random_token,
     clerk_users::{CLERK_REQUEST_TIMEOUT, ClerkUserDeletion},
@@ -51,26 +52,18 @@ pub(crate) async fn delete_due_clerk_users(
     Ok(claimed.len())
 }
 
-impl AppState {
-    pub(crate) fn start_clerk_user_deletion(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            loop {
-                let pass = async {
-                    state.metadata.admin().readiness_check().await?;
-                    delete_due_clerk_users(&state, &unix_now).await
-                };
-                if let Err(error) = pass.await {
-                    tracing::warn!(
-                        error = %error.operator_diagnostic(),
-                        "Clerk user deletion pass failed; retrying"
-                    );
-                }
-                tokio::select! {
-                    _ = state.clerk_user_deletion_wakeup.notified() => {},
-                    _ = tokio::time::sleep(POLL_INTERVAL) => {},
-                }
-            }
-        });
+impl BackgroundWork {
+    pub(crate) fn start_clerk_user_deletion(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "Clerk user deletion pass",
+                cadence: Cadence::AfterPass {
+                    delay: POLL_INTERVAL,
+                    wakeup: Some(|wakeups| &wakeups.clerk_user_deletion),
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            |state| async move { delete_due_clerk_users(&state, &unix_now).await },
+        );
     }
 }

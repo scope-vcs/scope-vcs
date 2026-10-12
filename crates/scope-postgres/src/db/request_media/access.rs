@@ -71,7 +71,7 @@ impl MediaStore {
                 .then_some(attachment)
             })
             .collect();
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(visible)
     }
 
@@ -184,7 +184,6 @@ where
             "SELECT 1 AS present FROM scope_request_media_cleanup_jobs WHERE attachment_id = $1",
             [attachment_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .is_some())
 }

@@ -2,6 +2,7 @@ use super::{
     RepositoryCollaborationMutation, RepositoryStore, acquire_aggregate_lock,
     collaboration_rows::{lock_collaboration_state, save_collaboration_state},
     entities,
+    integer_columns::u64_to_i64,
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -52,7 +53,7 @@ impl RepositoryStore {
         PostgresError,
     > {
         let repo_id = repo_id(&command.owner, &command.name);
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let mut repo = lock_collaboration_state(&tx, &repo_id)
             .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {repo_id} not found")))?;
@@ -75,7 +76,7 @@ impl RepositoryStore {
             .ok_or_else(|| PostgresError::internal_message("emailed invite is missing"))?;
         repo.record.bump_change_version();
         save_collaboration_state(&tx, &before, &repo).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(RepositoryCollaborationMutation::committed(
             &repo.record,
             (invite, email),
@@ -90,16 +91,16 @@ impl RepositoryStore {
         lease_expires_at_unix: u64,
         limit: u64,
     ) -> Result<Vec<String>, PostgresError> {
-        let now = to_i64(now_unix)?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let now = u64_to_i64(now_unix, "repository invite email time")?;
+        let tx = self.db.begin().await?;
         Entity::delete_many()
             .filter(Column::InviteId.is_null())
-            .filter(Column::CreatedAtUnix.lte(to_i64(
+            .filter(Column::CreatedAtUnix.lte(u64_to_i64(
                 now_unix.saturating_sub(INVITE_EMAIL_OWNER_WINDOW_SECS),
+                "repository invite email time",
             )?))
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let rows = Entity::find()
             .filter(Column::State.eq(state_name(RepositoryInviteEmailState::Queued)))
             .filter(Column::InviteId.is_not_null())
@@ -115,17 +116,19 @@ impl RepositoryStore {
             .limit(limit)
             .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
             .all(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let mut claimed = Vec::with_capacity(rows.len());
         for row in rows {
             claimed.push(row.id.clone());
             let mut active = row.into_active_model();
             active.claim_token = Set(Some(claim_token.to_string()));
-            active.claim_expires_at_unix = Set(Some(to_i64(lease_expires_at_unix)?));
-            active.update(&tx).await.map_err(PostgresError::internal)?;
+            active.claim_expires_at_unix = Set(Some(u64_to_i64(
+                lease_expires_at_unix,
+                "repository invite email time",
+            )?));
+            active.update(&tx).await?;
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(claimed)
     }
 
@@ -138,7 +141,7 @@ impl RepositoryStore {
         now_unix: u64,
     ) -> Result<Option<RepositoryCollaborationMutation<RepositoryInviteEmailDelivery>>, PostgresError>
     {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(repo_id) = email_repository_id(&tx, email_id).await? else {
             return Ok(None);
         };
@@ -158,7 +161,7 @@ impl RepositoryStore {
             now_unix,
         )?;
         save_collaboration_state(&tx, &before, &repo).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(RepositoryCollaborationMutation::committed(
             &repo.record,
             RepositoryInviteEmailDelivery {
@@ -177,7 +180,7 @@ impl RepositoryStore {
         provider_message_id: Option<String>,
         now_unix: u64,
     ) -> Result<Option<RepositoryCollaborationMutation<RepositoryInviteEmail>>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(repo_id) = email_repository_id(&tx, email_id).await? else {
             return Ok(None);
         };
@@ -192,11 +195,15 @@ impl RepositoryStore {
         let mut active = row.into_active_model();
         active.state = Set(state_name(email.state).to_string());
         active.attempts = Set(i32::try_from(email.attempts).map_err(PostgresError::internal)?);
-        active.updated_at_unix = Set(to_i64(email.updated_at_unix)?);
+        active.updated_at_unix = Set(u64_to_i64(
+            email.updated_at_unix,
+            "repository invite email time",
+        )?);
         active.claim_token = Set(None);
         active.claim_expires_at_unix = Set(None);
         if let Some(retry_at) = retry_at {
-            active.next_attempt_at_unix = Set(to_i64(retry_at)?);
+            active.next_attempt_at_unix =
+                Set(u64_to_i64(retry_at, "repository invite email time")?);
         }
         if provider_message_id.is_some() {
             active.provider_message_id = Set(provider_message_id);
@@ -207,16 +214,16 @@ impl RepositoryStore {
                 Some(error.chars().take(2000).collect())
             }
         });
-        active.update(&tx).await.map_err(PostgresError::internal)?;
+        active.update(&tx).await?;
 
         if retry_at.is_some() {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         }
         let before = repo.clone();
         repo.record.bump_change_version();
         save_collaboration_state(&tx, &before, &repo).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(RepositoryCollaborationMutation::committed(
             &repo.record,
             email,
@@ -236,19 +243,20 @@ pub(super) async fn queue_invite_email(
     let for_invite = Entity::find()
         .filter(Column::InviteId.eq(invite_id.to_string()))
         .all(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(Model::try_into_domain)
         .collect::<Result<Vec<_>, _>>()?;
-    let window_start = to_i64(now_unix.saturating_sub(INVITE_EMAIL_OWNER_WINDOW_SECS))?;
+    let window_start = u64_to_i64(
+        now_unix.saturating_sub(INVITE_EMAIL_OWNER_WINDOW_SECS),
+        "repository invite email time",
+    )?;
     let owner_recent_sends_unix = Entity::find()
         .filter(Column::RequestedByUserId.eq(owner_user_id.to_string()))
         .filter(Column::CreatedAtUnix.gt(window_start))
         .filter(Column::State.ne(state_name(RepositoryInviteEmailState::Failed)))
         .all(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|row| u64::try_from(row.created_at_unix).map_err(PostgresError::internal))
         .collect::<Result<Vec<_>, _>>()?;
@@ -272,18 +280,17 @@ pub(super) async fn queue_invite_email(
         requested_by_user_id: email.requested_by_user_id.clone(),
         state: state_name(email.state).to_string(),
         attempts: 0,
-        next_attempt_at_unix: to_i64(now_unix)?,
+        next_attempt_at_unix: u64_to_i64(now_unix, "repository invite email time")?,
         claim_token: None,
         claim_expires_at_unix: None,
         provider_message_id: None,
         last_error: None,
-        created_at_unix: to_i64(email.created_at_unix)?,
-        updated_at_unix: to_i64(email.updated_at_unix)?,
+        created_at_unix: u64_to_i64(email.created_at_unix, "repository invite email time")?,
+        updated_at_unix: u64_to_i64(email.updated_at_unix, "repository invite email time")?,
     }
     .into_active_model()
     .insert(tx)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(email)
 }
 
@@ -293,16 +300,14 @@ where
 {
     let Some(invite_id) = Entity::find_by_id(email_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .and_then(|email| email.invite_id)
     else {
         return Ok(None);
     };
     Ok(entities::repository_invite::Entity::find_by_id(invite_id)
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(|invite| invite.repo_id))
 }
 
@@ -311,11 +316,7 @@ async fn claimed_email(
     email_id: &str,
     claim_token: &str,
 ) -> Result<Option<(Model, RepositoryInviteEmail)>, PostgresError> {
-    let Some(row) = Entity::find_by_id(email_id.to_string())
-        .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
-    else {
+    let Some(row) = Entity::find_by_id(email_id.to_string()).one(tx).await? else {
         return Ok(None);
     };
     if row.state != state_name(RepositoryInviteEmailState::Queued)
@@ -325,10 +326,6 @@ async fn claimed_email(
     }
     let email = row.clone().try_into_domain()?;
     Ok(Some((row, email)))
-}
-
-fn to_i64(value: u64) -> Result<i64, PostgresError> {
-    i64::try_from(value).map_err(PostgresError::internal)
 }
 
 pub(super) async fn latest_invite_emails<C>(
@@ -346,8 +343,7 @@ where
         .order_by_asc(Column::CreatedAtUnix)
         .order_by_asc(Column::Id)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let mut latest = BTreeMap::new();
     for row in rows {
         let email = row.try_into_domain()?;

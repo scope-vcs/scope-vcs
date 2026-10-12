@@ -44,13 +44,16 @@ async fn zero_cloud_concurrency_pauses_admission() {
         0
     );
     assert_eq!(provider.count("start"), 0);
-    assert!(
+    assert_eq!(
         metadata
             .runs()
-            .next_dispatchable_job()
+            .run_snapshot("run-0")
             .await
             .unwrap()
-            .is_some()
+            .unwrap()
+            .jobs[0]
+            .state,
+        scope_domain::runs::job::RunJobState::Queued
     );
 }
 

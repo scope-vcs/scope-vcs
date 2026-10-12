@@ -1,4 +1,5 @@
 use super::{github_job_logs, github_workflow_runs::configured_app};
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use scope_domain::{
     github_connection::GitHubConnection,
@@ -89,7 +90,7 @@ pub(crate) async fn run_jobs(
                 now_unix,
             )
             .await?;
-        state.github_job_read_wakeup.notify_one();
+        state.wakeups.github_job_reads.notify_one();
     }
     Ok(GitHubRunJobs {
         not_read_yet: github_jobs_not_read_yet(
@@ -218,24 +219,19 @@ async fn read_queued_jobs(
     }
 }
 
-impl AppState {
-    pub(crate) fn start_github_job_reads(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            loop {
-                let pass = async {
-                    state.metadata.admin().readiness_check().await?;
-                    retry_github_workflow_job_reads_once(&state, unix_now()?).await
-                };
-                if let Err(error) = pass.await {
-                    tracing::warn!(error = %error.operator_diagnostic(), "GitHub job read pass failed; retrying");
-                }
-                tokio::select! {
-                    _ = state.github_job_read_wakeup.notified() => {},
-                    _ = tokio::time::sleep(READ_POLL_INTERVAL) => {},
-                }
-            }
-        });
+impl BackgroundWork {
+    pub(crate) fn start_github_job_reads(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "GitHub job read pass",
+                cadence: Cadence::AfterPass {
+                    delay: READ_POLL_INTERVAL,
+                    wakeup: Some(|wakeups| &wakeups.github_job_reads),
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            |state| async move { retry_github_workflow_job_reads_once(&state, unix_now()?).await },
+        );
     }
 }
 

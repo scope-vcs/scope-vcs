@@ -1,6 +1,6 @@
 use crate::{
     db::{
-        CleanupStore, GeneratedIdKind, GeneratedIdSource, entities, generated_ids::generate_id,
+        CleanupStore, GeneratedIdKind, entities, generated_ids::generate_id,
         integer_columns::u64_to_i64,
     },
     error::PostgresError,
@@ -28,7 +28,6 @@ pub(crate) async fn queue_pending_request_ref_cleanup<C>(
     incarnation: &RepositoryIncarnation,
     request: &Request,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -36,7 +35,7 @@ where
     let now_unix = u64_to_i64(now_unix, "request ref cleanup time")?;
     entities::request_ref_cleanup_job::Entity::insert(
         entities::request_ref_cleanup_job::Model {
-            id: generate_id(generated_ids, GeneratedIdKind::CleanupGeneration)?,
+            id: generate_id(GeneratedIdKind::CleanupGeneration)?,
             repo_id: incarnation.repository_id().to_string(),
             incarnation_id: incarnation.incarnation_id().to_string(),
             request_id: request.id.clone(),
@@ -50,8 +49,7 @@ where
         .into_active_model(),
     )
     .exec(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -66,7 +64,7 @@ impl CleanupStore {
             sea_orm::DatabaseBackend::Postgres,
             "SELECT EXISTS(SELECT 1 FROM scope_requests q JOIN scope_repositories r ON r.id = q.repo_id WHERE r.id = $1 AND r.incarnation_id = $2 AND q.name = $3) AS live",
             [incarnation.repository_id().into(), incarnation.incarnation_id().into(), request_name.into()],
-        )).await.map_err(PostgresError::internal)?
+        )).await?
             .ok_or_else(|| PostgresError::internal_message("request ref existence query returned no row"))?;
         row.try_get("", "live").map_err(PostgresError::internal)
     }
@@ -89,8 +87,7 @@ impl CleanupStore {
             .order_by_asc(entities::request_ref_cleanup_job::Column::NextRunAtUnix)
             .order_by_asc(entities::request_ref_cleanup_job::Column::Id)
             .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(|row| {
                 Ok(RequestRefCleanup {
@@ -113,8 +110,7 @@ impl CleanupStore {
     pub async fn complete_request_ref_cleanup(&self, id: &str) -> Result<(), PostgresError> {
         entities::request_ref_cleanup_job::Entity::delete_by_id(id.to_string())
             .exec(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -145,8 +141,7 @@ impl CleanupStore {
             )
             .filter(entities::request_ref_cleanup_job::Column::Id.eq(cleanup.id.clone()))
             .exec(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 }

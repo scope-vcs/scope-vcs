@@ -1,6 +1,7 @@
 use super::{
     RepositoryStore,
     entities::{decode_enum, encode_enum},
+    github_read_queue::GitHubReadQueue,
     integer_columns::{
         i32_to_u32, i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u32_to_i32, u64_to_i64,
     },
@@ -98,6 +99,15 @@ pub struct GitHubWorkflowRunDetailRead {
     pub jobs_read_queued: bool,
 }
 
+const RUN_READS: GitHubReadQueue = GitHubReadQueue {
+    table: "scope_github_workflow_run_reads",
+    key: &["repo_id", "github_repository_id", "github_run_id"],
+    joined: "",
+    joined_on: "",
+    returning: "read.repo_id, read.github_repository_id, read.github_run_id, read.attempts",
+    label: "GitHub workflow run read",
+};
+
 const REQUEST_JOIN: &str = "LEFT JOIN scope_requests request
       ON request.repo_id = run.repo_id
      AND request.id = run.request_id";
@@ -135,8 +145,7 @@ impl RepositoryStore {
                     u64_to_i64(now_unix, "GitHub workflow run read time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -147,39 +156,22 @@ impl RepositoryStore {
         retry_at_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubWorkflowRunReadJob>, PostgresError> {
-        ReadJobRow::find_by_statement(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "UPDATE scope_github_workflow_run_reads read
-                SET attempts = read.attempts + 1, next_attempt_at_unix = $2
-               FROM (SELECT repo_id, github_repository_id, github_run_id
-                       FROM scope_github_workflow_run_reads
-                      WHERE next_attempt_at_unix <= $1
-                      ORDER BY next_attempt_at_unix
-                      LIMIT $3
-                      FOR UPDATE SKIP LOCKED) due
-              WHERE read.repo_id = due.repo_id
-                AND read.github_repository_id = due.github_repository_id
-                AND read.github_run_id = due.github_run_id
-          RETURNING read.repo_id, read.github_repository_id, read.github_run_id, read.attempts",
-            [
-                u64_to_i64(now_unix, "GitHub workflow run read time")?.into(),
-                u64_to_i64(retry_at_unix, "GitHub workflow run read time")?.into(),
-                u64_to_i64(limit, "GitHub workflow run read batch size")?.into(),
-            ],
-        ))
-        .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(|row| {
-            Ok(GitHubWorkflowRunReadJob {
-                repo_id: row.repo_id,
-                github_repository_id: i64_to_u64(row.github_repository_id, "GitHub repository id")?,
-                github_run_id: i64_to_u64(row.github_run_id, "GitHub workflow run id")?,
-                attempts: i32_to_u32(row.attempts, "GitHub workflow run read attempts")?,
+        RUN_READS
+            .claim_due::<ReadJobRow>(self.db.as_ref(), now_unix, retry_at_unix, limit)
+            .await?
+            .into_iter()
+            .map(|row| {
+                Ok(GitHubWorkflowRunReadJob {
+                    repo_id: row.repo_id,
+                    github_repository_id: i64_to_u64(
+                        row.github_repository_id,
+                        "GitHub repository id",
+                    )?,
+                    github_run_id: i64_to_u64(row.github_run_id, "GitHub workflow run id")?,
+                    attempts: i32_to_u32(row.attempts, "GitHub workflow run read attempts")?,
+                })
             })
-        })
-        .collect()
+            .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_workflow_run_read"))]
@@ -188,34 +180,18 @@ impl RepositoryStore {
         job: &GitHubWorkflowRunReadJob,
         retry_at_unix: Option<u64>,
     ) -> Result<(), PostgresError> {
-        let key: Vec<Value> = vec![
-            job.repo_id.clone().into(),
-            u64_to_i64(job.github_repository_id, "GitHub repository id")?.into(),
-            u64_to_i64(job.github_run_id, "GitHub workflow run id")?.into(),
-        ];
-        let statement = match retry_at_unix {
-            None => Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "DELETE FROM scope_github_workflow_run_reads
-                  WHERE repo_id = $1 AND github_repository_id = $2 AND github_run_id = $3",
-                key,
-            ),
-            Some(retry_at) => {
-                let mut values = key;
-                values.push(u64_to_i64(retry_at, "GitHub workflow run read time")?.into());
-                Statement::from_sql_and_values(
-                    DatabaseBackend::Postgres,
-                    "UPDATE scope_github_workflow_run_reads SET next_attempt_at_unix = $4
-                      WHERE repo_id = $1 AND github_repository_id = $2 AND github_run_id = $3",
-                    values,
-                )
-            }
-        };
-        self.db
-            .execute_raw(statement)
+        RUN_READS
+            .finish(
+                self.db.as_ref(),
+                &[],
+                vec![
+                    job.repo_id.clone().into(),
+                    u64_to_i64(job.github_repository_id, "GitHub repository id")?.into(),
+                    u64_to_i64(job.github_run_id, "GitHub workflow run id")?.into(),
+                ],
+                retry_at_unix,
+            )
             .await
-            .map_err(PostgresError::internal)?;
-        Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_run_page"))]
@@ -257,8 +233,7 @@ impl RepositoryStore {
             values,
         ))
         .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(ListedRow::into_read)
         .collect()
@@ -292,8 +267,7 @@ impl RepositoryStore {
             ],
         ))
         .one(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(|row| {
             let jobs_read = match (row.jobs_read_attempt, row.jobs_read_at_unix) {
                 (Some(attempt), Some(read_at)) => Some(GitHubJobsRead {
@@ -345,8 +319,7 @@ impl RepositoryStore {
                     read_at(expected)?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -367,8 +340,7 @@ impl RepositoryStore {
                     u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(|row| {
                 row.try_get("", "workflow_name")
@@ -433,8 +405,7 @@ pub(super) async fn save_workflow_run<C: ConnectionTrait>(
                             AND connection.status = 'Connected'))",
         values,
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -462,8 +433,7 @@ pub(super) async fn branch_workflow_runs<C: ConnectionTrait>(
         ],
     ))
     .all(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .into_iter()
     .map(WorkflowRunRow::into_domain)
     .collect()
@@ -525,23 +495,16 @@ pub(super) async fn github_workflow_runs_for_check_suites<C: ConnectionTrait>(
             suites.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .into_iter()
     .map(|row| {
-        let suite: i64 = row
-            .try_get("", "check_suite_id")
-            .map_err(PostgresError::internal)?;
-        let run: i64 = row
-            .try_get("", "github_run_id")
-            .map_err(PostgresError::internal)?;
+        let suite: i64 = row.try_get("", "check_suite_id")?;
+        let run: i64 = row.try_get("", "github_run_id")?;
         Ok((
             i64_to_u64(suite, "GitHub check suite id")?,
             GitHubWorkflowRunReference {
                 github_run_id: i64_to_u64(run, "GitHub workflow run id")?,
-                workflow_name: row
-                    .try_get("", "workflow_name")
-                    .map_err(PostgresError::internal)?,
+                workflow_name: row.try_get("", "workflow_name")?,
             },
         ))
     })

@@ -1,17 +1,10 @@
 use super::fake_github::{
-    FakeGitHub, GITHUB_REPOSITORY_ID, GOOD_CODE, INSTALLATION_ID, InstallationState,
-    WEBHOOK_SECRET, github_repository, user_repository, webhook,
+    GITHUB_REPOSITORY_ID, GOOD_CODE, INSTALLATION_ID, InstallationState, WEBHOOK_SECRET,
+    github_repository, github_state, user_repository, webhook,
 };
 use super::*;
 use scope_domain::github_connection::ConnectGitHubRepository;
 use std::sync::atomic::Ordering;
-
-async fn github_state() -> (AppState, Arc<FakeGitHub>) {
-    let mut state = test_state_with_readme().await;
-    cache_test_jwks(&state);
-    let fake = FakeGitHub::install(&mut state).await;
-    (state, fake)
-}
 
 async fn request(
     state: &AppState,

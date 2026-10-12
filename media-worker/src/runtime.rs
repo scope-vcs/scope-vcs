@@ -24,13 +24,6 @@ pub(crate) async fn dependencies_ready(
     false
 }
 
-pub(crate) fn random_id(prefix: &str) -> anyhow::Result<String> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes)
-        .map_err(|error| anyhow::anyhow!("secure random generation failed: {error}"))?;
-    Ok(format!("{prefix}-{}", hex::encode(bytes)))
-}
-
 pub(crate) fn lease_expiry(now_unix: u64, duration: Duration) -> anyhow::Result<u64> {
     now_unix
         .checked_add(duration.as_secs())
@@ -39,33 +32,4 @@ pub(crate) fn lease_expiry(now_unix: u64, duration: Duration) -> anyhow::Result<
 
 pub(crate) fn retry_delay(attempt: u32) -> Duration {
     Duration::from_secs(5_u64.saturating_mul(1_u64 << attempt.min(7)).min(600))
-}
-
-pub(crate) fn db_error(error: scope_postgres::error::PostgresError) -> anyhow::Error {
-    anyhow::Error::new(error)
-}
-
-pub(crate) async fn wait_or_shutdown(duration: Duration) -> bool {
-    tokio::select! {
-        _ = crate::shutdown_signal() => true,
-        _ = tokio::time::sleep(duration) => false,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn database_error_preserves_kind_for_recovery_decisions() {
-        let error = db_error(scope_postgres::error::PostgresError::conflict("lease lost"));
-        let source = error
-            .downcast_ref::<scope_postgres::error::PostgresError>()
-            .unwrap();
-        assert_eq!(
-            source.kind,
-            scope_postgres::error::PostgresErrorKind::Conflict
-        );
-        assert_eq!(source.message, "lease lost");
-        assert_eq!(error.to_string(), "lease lost");
-    }
 }

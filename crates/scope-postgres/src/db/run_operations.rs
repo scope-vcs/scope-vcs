@@ -17,27 +17,21 @@ impl RunStore {
         let tx = super::begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let Some(run) = entities::run::Entity::find_by_id(run_id.to_string())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::run::Model::try_into_domain)
             .transpose()?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         };
         let jobs = required_run_jobs(&tx, run_id).await?;
         let logs_truncated = run_has_truncated_logs_with(&tx, run_id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(RunSnapshot {
             run,
             jobs,
             logs_truncated,
         }))
-    }
-
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_jobs"))]
-    pub async fn run_jobs(&self, run_id: &str) -> Result<Vec<RunJob>, PostgresError> {
-        required_run_jobs(self.db.as_ref(), run_id).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_jobs_by_ids"))]
@@ -82,8 +76,7 @@ where
         .filter(entities::run_attempt::Column::RunId.eq(run_id))
         .filter(entities::run_attempt::Column::FirstTruncatedStepIndex.is_not_null())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .is_some())
 }
 
@@ -122,8 +115,7 @@ where
         .order_by_asc(entities::run_job::Column::RunId)
         .order_by_asc(entities::run_job::Column::JobKey)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::run_job::Model::try_into_domain)
         .collect::<Result<Vec<_>, _>>()?

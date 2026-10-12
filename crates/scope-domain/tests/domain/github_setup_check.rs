@@ -1,3 +1,4 @@
+use crate::support::{OWNER, owner};
 use scope_domain::{
     error::DomainErrorKind,
     github_connection::{
@@ -9,22 +10,14 @@ use scope_domain::{
         start_github_setup_check,
     },
     github_workflow_runs::GitHubWorkflowRun,
-    repository::{
-        RepoLifecycleState,
-        access::{RepositoryAccess, repository_access_for_user_id},
-    },
+    repository::{RepoLifecycleState, access::repository_access_for_user_id},
     requests::{GitHubCheckConclusion, GitHubCheckStatus, NO_GITHUB_WORKFLOWS_STARTED},
 };
 
-const OWNER: &str = "user_owner";
 const NOW: u64 = 1_000;
 
 fn main_oid() -> String {
     "a".repeat(40)
-}
-
-fn owner() -> RepositoryAccess {
-    repository_access_for_user_id(OWNER, RepoLifecycleState::Ready, None, OWNER)
 }
 
 fn connection() -> GitHubConnection {

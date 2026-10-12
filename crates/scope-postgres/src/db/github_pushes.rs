@@ -66,21 +66,15 @@ impl RequestStore {
                 ),
                 [id.into(), claim_token.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Ok(GitHubPushStanding::Lost);
         };
-        Ok(
-            if row
-                .try_get::<bool>("", "superseded")
-                .map_err(PostgresError::internal)?
-            {
-                GitHubPushStanding::Superseded
-            } else {
-                GitHubPushStanding::Current
-            },
-        )
+        Ok(if row.try_get::<bool>("", "superseded")? {
+            GitHubPushStanding::Superseded
+        } else {
+            GitHubPushStanding::Current
+        })
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "drop_superseded_github_push"))]
@@ -99,8 +93,7 @@ impl RequestStore {
                 ),
                 [id.into(), claim_token.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -156,8 +149,7 @@ impl RequestStore {
             ],
         ))
         .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(PushRow::into_domain)
         .collect()
@@ -195,7 +187,7 @@ impl RequestStore {
                 retry_at_unix: None,
             } => ("failed", None, Some(error)),
         };
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(push) = PushRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
@@ -216,8 +208,7 @@ impl RequestStore {
             ],
         ))
         .one(&tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(PushRow::into_domain)
         .transpose()?
         else {
@@ -236,16 +227,8 @@ impl RequestStore {
             )
             .await?;
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(push))
-    }
-
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "latest_github_push"))]
-    pub async fn latest_github_push(
-        &self,
-        request_id: &str,
-    ) -> Result<Option<GitHubPush>, PostgresError> {
-        latest_github_push(self.db.as_ref(), request_id).await
     }
 }
 
@@ -271,13 +254,11 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
                FROM scope_github_pushes WHERE repo_id = $1 AND ref = $2",
             [repo_id.into(), git_ref.clone().into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| {
             PostgresError::internal_message("GitHub push sequence query returned no row")
         })?
-        .try_get::<i64>("", "sequence")
-        .map_err(PostgresError::internal)?;
+        .try_get::<i64>("", "sequence")?;
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "DELETE FROM scope_github_pushes
@@ -285,8 +266,7 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
             AND (state <> 'running' OR lease_until_unix <= $3)",
         [repo_id.into(), git_ref.clone().into(), now.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     conn.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_github_pushes (id, repo_id, request_id, ref, sequence,
@@ -313,8 +293,7 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
             now.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .ok_or_else(|| PostgresError::internal_message("GitHub push insert returned no row"))?
     .try_get("", "id")
     .map_err(PostgresError::internal)
@@ -352,8 +331,7 @@ pub(super) async fn queue_pushed_branch_deletion<C: ConnectionTrait>(
         [repo_id.into(), branch.git_ref().into()],
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     else {
         return Ok(());
     };
@@ -381,8 +359,7 @@ pub(super) async fn queue_github_branch_deletions_for_repository<C: ConnectionTr
         [repo_id.into()],
     ))
     .all(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     for push in pushed {
         let push = push.into_domain()?;
         queue_github_push(
@@ -461,8 +438,7 @@ pub(super) async fn latest_github_push<C: ConnectionTrait>(
         [request_id.into()],
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .map(PushRow::into_domain)
     .transpose()
 }

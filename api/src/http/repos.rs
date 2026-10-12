@@ -90,7 +90,6 @@ pub(crate) async fn create_repo(
                 init_tokens: (token, push_token),
                 now_unix: now,
             },
-            &crate::persistence_ids::generate_persistence_id,
             move |cleanup| crate::git::storage::delete_repo_storage(&cleanup_state, cleanup),
         )
         .await?;
@@ -152,14 +151,7 @@ pub(crate) async fn delete_repo(
     let repo_id = state
         .metadata
         .repositories()
-        .delete_repo(
-            &owner,
-            &repo_name,
-            &incarnation,
-            &user.id,
-            unix_now()?,
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .delete_repo(&owner, &repo_name, &incarnation, &user.id, unix_now()?)
         .await?;
     state
         .publish_repo_change(&incarnation, delete_version, RepoChangeReason::RepoDeleted)
@@ -366,7 +358,6 @@ async fn apply_reviewed_config_before_push(
             owner,
             repo_name,
             now,
-            &crate::persistence_ids::generate_persistence_id,
             move |repo, open_requests_by_view| {
                 if repo.push_policy_for_user_id(&author_id).mode != MainPushMode::Ready {
                     return Err(DomainError::forbidden("push permission required"));

@@ -129,8 +129,7 @@ pub(super) async fn current_schema(db: &DatabaseConnection) -> Result<String, Po
         DatabaseBackend::Postgres,
         "SELECT current_schema() AS schema".to_string(),
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .ok_or_else(|| PostgresError::internal_message("Postgres did not return its schema"))?
     .try_get::<String>("", "schema")
     .map_err(PostgresError::internal)

@@ -52,12 +52,11 @@ impl JobStore {
                 "#,
                 [analyzer_version.into(), limit.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let mut enqueued = 0_u64;
         for candidate in candidates {
             let repo_id = database_value::<String>(&candidate, "id")?;
-            let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+            let tx = self.db.begin().await?;
             super::acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
             let current = tx
                 .query_one_raw(Statement::from_sql_and_values(
@@ -87,16 +86,15 @@ impl JobStore {
                     "#,
                     [repo_id.clone().into(), analyzer_version.into()],
                 ))
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
             let Some(current) = current else {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 continue;
             };
             if database_value::<bool>(&current, "report_current")?
                 || database_value::<bool>(&current, "job_current")?
             {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 continue;
             }
             let incarnation = RepositoryIncarnation::new(
@@ -113,7 +111,7 @@ impl JobStore {
                 now_unix,
             )
             .await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             enqueued += 1;
         }
         Ok(enqueued)

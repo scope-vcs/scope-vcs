@@ -8,27 +8,13 @@ use axum::{
     middleware,
     routing::{delete, get, patch, post},
 };
-use http::routes;
+use scope_api_contract::routes;
 use tower_http::cors::{Any, CorsLayer};
 
 pub fn router(state: AppState) -> Router {
     let router = Router::new()
         .route(routes::HEALTH, get(http::account::healthz))
         .route(routes::READINESS, get(http::account::readyz))
-        .route(routes::ADMIN_CLEANUP, get(http::admin::get_cleanup_status))
-        .route(
-            routes::ADMIN_CLEANUP_DRAIN,
-            post(http::admin::drain_cleanup),
-        )
-        .route(
-            routes::ADMIN_NATIVE_RUNS_ACCOUNTS,
-            get(http::admin::list_native_runs_accounts),
-        )
-        .route(
-            routes::ADMIN_NATIVE_RUNS_ACCOUNT,
-            axum::routing::put(http::admin::add_native_runs_account)
-                .delete(http::admin::remove_native_runs_account),
-        )
         .route(
             routes::CLI_DEVICE_LOGIN,
             post(http::device_login::start_cli_device_login),

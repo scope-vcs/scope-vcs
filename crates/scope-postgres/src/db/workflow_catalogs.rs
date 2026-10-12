@@ -1,29 +1,13 @@
-use super::{
-    RepositoryStore, acquire_aggregate_lock, begin_metadata_read_snapshot, entities,
-    git_segments::load_git_pack_spans,
-};
+use super::{RepositoryStore, begin_metadata_read_snapshot, entities};
 use crate::error::PostgresError;
 use scope_domain::{
-    content::SourceBlob,
-    repository::RepositoryIncarnation,
-    repository::git::{GitHead, GitPackSpan},
+    repository::git::GitHead,
     runs::catalog::{RepositoryWorkflowCatalog, RepositoryWorkflowFile},
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait, sea_query::OnConflict,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, sea_query::OnConflict,
 };
-use std::collections::{BTreeMap, BTreeSet};
-
-#[derive(Clone, Debug)]
-pub struct RepositoryWorkflowCatalogBackfillCandidate {
-    pub repo_id: String,
-    pub incarnation: RepositoryIncarnation,
-    pub source_change_version: u64,
-    pub git_head: GitHead,
-    pub git_pack_spans: Vec<GitPackSpan>,
-    pub workflow_blobs: Vec<(String, SourceBlob)>,
-}
 
 pub struct CurrentRepositoryWorkflowCatalog {
     pub repository_id: String,
@@ -137,107 +121,6 @@ impl RepositoryStore {
         Ok(snapshot)
     }
 
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_workflow_catalog_backfill_candidates"))]
-    pub async fn repository_workflow_catalog_backfill_candidates(
-        &self,
-    ) -> Result<Vec<RepositoryWorkflowCatalogBackfillCandidate>, PostgresError> {
-        let existing = entities::repository_workflow_catalog::Entity::find()
-            .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
-            .into_iter()
-            .map(|row| row.repo_id)
-            .collect::<BTreeSet<_>>();
-        let repositories = entities::repository::Entity::find()
-            .order_by_asc(entities::repository::Column::Id)
-            .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
-        let mut candidates = Vec::new();
-        for repository in repositories {
-            if existing.contains(&repository.id) {
-                continue;
-            }
-            let Some(git_head) = entities::git_head::Entity::find_by_id(&repository.id)
-                .one(self.db.as_ref())
-                .await
-                .map_err(PostgresError::internal)?
-                .map(entities::git_head::Model::try_into_domain)
-                .transpose()?
-            else {
-                continue;
-            };
-            let source_change_version = git_head.change_version;
-            let git_pack_spans = load_git_pack_spans(self.db.as_ref(), &repository.id).await?;
-            let workflow_blobs = current_workflow_blobs(self.db.as_ref(), &repository.id).await?;
-            let incarnation = RepositoryIncarnation::new(
-                repository.id.clone(),
-                repository.incarnation_id.clone(),
-            )
-            .map_err(PostgresError::internal)?;
-            candidates.push(RepositoryWorkflowCatalogBackfillCandidate {
-                repo_id: repository.id,
-                incarnation,
-                source_change_version,
-                git_head,
-                git_pack_spans,
-                workflow_blobs: workflow_blobs.into_iter().collect(),
-            });
-        }
-        Ok(candidates)
-    }
-
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "store_backfilled_repository_workflow_catalog"))]
-    pub async fn store_backfilled_repository_workflow_catalog(
-        &self,
-        catalog: &RepositoryWorkflowCatalog,
-    ) -> Result<bool, PostgresError> {
-        catalog
-            .validate_integrity()
-            .map_err(PostgresError::internal)?;
-        let repo_id = catalog.repository_id();
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "repository", repo_id).await?;
-        if entities::repository_workflow_catalog::Entity::find_by_id(repo_id)
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-            .is_some()
-        {
-            tx.rollback().await.map_err(PostgresError::internal)?;
-            return Ok(false);
-        }
-        if entities::repository::Entity::find_by_id(repo_id)
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-            .is_none()
-        {
-            return Err(PostgresError::not_found(
-                "repository disappeared during backfill",
-            ));
-        }
-        let git_head = entities::git_head::Entity::find_by_id(repo_id)
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| PostgresError::conflict("repository Git head changed during backfill"))?
-            .try_into_domain()?;
-        catalog
-            .verify_source(repo_id, &git_head.head_oid, git_head.change_version)
-            .map_err(|_| {
-                PostgresError::conflict(
-                    "repository workflow catalog source changed during backfill",
-                )
-            })?;
-        if let Some(files) = catalog.files() {
-            verify_current_workflow_blobs(&tx, repo_id, files).await?;
-        }
-        apply_repository_workflow_catalog(&tx, catalog).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
-        Ok(true)
-    }
-
     #[cfg(any(test, feature = "test-support"))]
     pub async fn delete_repository_workflow_catalog_for_tests(
         &self,
@@ -251,7 +134,7 @@ impl RepositoryStore {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub async fn corrupt_repository_workflow_catalog_source_for_tests(
+    pub async fn set_repository_workflow_catalog_source_for_tests(
         &self,
         repo_id: &str,
         source_head_oid: &str,
@@ -396,58 +279,4 @@ fn workflow_file_from_row(
         row.content_bytes,
     )
     .map_err(PostgresError::internal)
-}
-
-async fn current_workflow_blobs<C>(
-    conn: &C,
-    repo_id: &str,
-) -> Result<BTreeMap<String, SourceBlob>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let rows = entities::live_file::Entity::find()
-        .filter(entities::live_file::Column::RepoId.eq(repo_id))
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
-    let mut blobs = BTreeMap::new();
-    for row in rows {
-        if !row.path.starts_with("/.scope/runs/") {
-            continue;
-        }
-        blobs.insert(
-            row.path,
-            serde_json::from_value(row.content).map_err(PostgresError::internal)?,
-        );
-    }
-    Ok(blobs)
-}
-
-async fn verify_current_workflow_blobs<C>(
-    conn: &C,
-    repo_id: &str,
-    files: &[RepositoryWorkflowFile],
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let blobs = current_workflow_blobs(conn, repo_id).await?;
-    if blobs.len() != files.len() {
-        return Err(PostgresError::conflict(
-            "repository workflows changed during catalog backfill",
-        ));
-    }
-    for file in files {
-        let Some(blob) = blobs.get(file.path().as_str()) else {
-            return Err(PostgresError::conflict(
-                "repository workflows changed during catalog backfill",
-            ));
-        };
-        if file.verify_source(blob).is_err() {
-            return Err(PostgresError::conflict(
-                "repository workflows changed during catalog backfill",
-            ));
-        }
-    }
-    Ok(())
 }

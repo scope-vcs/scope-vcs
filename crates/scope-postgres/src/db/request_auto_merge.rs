@@ -1,5 +1,5 @@
 use super::{
-    GeneratedIdKind, GeneratedIdSource, RequestStore, acquire_aggregate_lock, entities,
+    GeneratedIdKind, RequestStore, acquire_aggregate_lock, entities,
     generated_ids::generate_id,
     integer_columns::u64_to_i64,
     request_access::{ensure_user_exists, lock_request_repository},
@@ -89,7 +89,7 @@ impl RequestStore {
         &self,
         command: AuthorizeRequestAutoMergeCommand,
     ) -> Result<RequestAutoMergeMutation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -122,7 +122,7 @@ impl RequestStore {
         )?;
         lock_request_check_evidence(&tx, &request.id, &revision.new_head_oid).await?;
         persist_new_auto_merge_mutation(&tx, &mutation).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(mutation)
     }
 
@@ -131,7 +131,7 @@ impl RequestStore {
         &self,
         command: CancelRequestAutoMergeCommand,
     ) -> Result<RequestAutoMergeMutation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -151,7 +151,7 @@ impl RequestStore {
             },
         )?;
         persist_existing_auto_merge_mutation(&tx, current.model, &mutation).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(mutation)
     }
 
@@ -167,7 +167,6 @@ impl RequestStore {
     pub async fn claim_due_request_auto_merges(
         &self,
         command: ClaimDueRequestAutoMergesCommand,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<Vec<ClaimedRequestAutoMerge>, PostgresError> {
         if command.limit == 0 {
             return Ok(Vec::new());
@@ -179,7 +178,7 @@ impl RequestStore {
         }
         let now = u64_to_i64(command.now_unix, "auto-merge claim time")?;
         let lease_expires = u64_to_i64(command.lease_expires_at_unix, "auto-merge claim expiry")?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let query = entities::request_auto_merge_intent::Entity::find()
             .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
             .filter(entities::request_auto_merge_intent::Column::NextAttemptAtUnix.lte(now))
@@ -195,18 +194,16 @@ impl RequestStore {
             .limit(command.limit)
             .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
             .all(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let mut claimed = Vec::with_capacity(rows.len());
         for row in rows {
             let repo = entities::repository::Entity::find_by_id(&row.repo_id)
                 .one(&tx)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
                 .ok_or_else(|| {
                     PostgresError::internal_message("auto-merge repository is missing")
                 })?;
-            let claim_token = generate_id(generated_ids, GeneratedIdKind::RequestAutoMergeClaim)?;
+            let claim_token = generate_id(GeneratedIdKind::RequestAutoMergeClaim)?;
             let intent = row.try_into_domain()?;
             let attempt = row
                 .attempt
@@ -217,7 +214,7 @@ impl RequestStore {
             update.claim_token = Set(Some(claim_token.clone()));
             update.claim_expires_at_unix = Set(Some(lease_expires));
             update.attempt = Set(i32::try_from(attempt).map_err(PostgresError::internal)?);
-            update.update(&tx).await.map_err(PostgresError::internal)?;
+            update.update(&tx).await?;
             claimed.push(ClaimedRequestAutoMerge {
                 intent,
                 claim_token,
@@ -227,7 +224,7 @@ impl RequestStore {
                 name: repo.name,
             });
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(claimed)
     }
 
@@ -271,8 +268,7 @@ impl RequestStore {
             .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
             .filter(entities::request_auto_merge_intent::Column::ClaimToken.eq(command.claim_token))
             .exec(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(result.rows_affected == 1)
     }
 
@@ -283,18 +279,16 @@ impl RequestStore {
     ) -> Result<Option<RequestAutoMergeMutation>, PostgresError> {
         let observed = entities::request_auto_merge_intent::Entity::find_by_id(&command.intent_id)
             .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let Some(observed) = observed else {
             return Ok(None);
         };
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "request", &observed.request_id).await?;
         let row = entities::request_auto_merge_intent::Entity::find_by_id(&command.intent_id)
             .lock_exclusive()
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let Some(row) = row.filter(|row| {
             row.status == "Active"
                 && row.claim_token.as_deref() == Some(command.claim_token.as_str())
@@ -316,7 +310,7 @@ impl RequestStore {
             command.now_unix,
         )?;
         persist_existing_auto_merge_mutation(&tx, row, &mutation).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(mutation))
     }
 }
@@ -346,8 +340,7 @@ pub(super) async fn lock_active_intent_for_request(
         .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
         .lock_exclusive()
         .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(StoredIntent::from_model)
         .transpose()
 }
@@ -393,8 +386,7 @@ pub(super) async fn request_id_for_check_run<C: ConnectionTrait>(
             "#,
             [run_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     row.map(|row| {
         row.try_get::<String>("", "request_id")
             .map_err(PostgresError::internal)
@@ -417,8 +409,7 @@ async fn lock_request_check_evidence(
         let exists = entities::run::Entity::find_by_id(&run_id)
             .lock_exclusive()
             .one(tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .is_some();
         if !exists {
             return Err(PostgresError::conflict(
@@ -463,15 +454,13 @@ pub(super) async fn stop_auto_merges_for_revoked_actor(
         .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
         .order_by_asc(entities::request_auto_merge_intent::Column::RequestId)
         .all(tx)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     for observed in rows.drain(..) {
         acquire_aggregate_lock(tx, "request", &observed.request_id).await?;
         let Some(stored) = entities::request_auto_merge_intent::Entity::find_by_id(&observed.id)
             .lock_exclusive()
             .one(tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .filter(|row| row.status == "Active")
         else {
             continue;
@@ -508,8 +497,7 @@ pub(super) async fn persist_new_auto_merge_mutation(
     )?
     .into_active_model()
     .insert(tx)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -520,11 +508,7 @@ pub(super) async fn persist_existing_auto_merge_mutation(
 ) -> Result<(), PostgresError> {
     save_request_row(tx, &mutation.request).await?;
     insert_request_event_row(tx, &mutation.event).await?;
-    stored
-        .with_transition(&mutation.intent)?
-        .update(tx)
-        .await
-        .map_err(PostgresError::internal)?;
+    stored.with_transition(&mutation.intent)?.update(tx).await?;
     Ok(())
 }
 
@@ -557,8 +541,7 @@ pub(super) async fn latest_intent<C: ConnectionTrait>(
         .order_by_desc(entities::request_auto_merge_intent::Column::CreatedAtUnix)
         .order_by_desc(entities::request_auto_merge_intent::Column::Id)
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(|row| row.try_into_domain())
         .transpose()
 }

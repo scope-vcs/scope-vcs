@@ -7,7 +7,7 @@ use super::{
     },
 };
 use crate::{
-    db::{CleanupStore, GeneratedIdSource, entities, integer_columns::u64_to_i64},
+    db::{CleanupStore, entities, integer_columns::u64_to_i64},
     error::PostgresError,
 };
 use scope_domain::{
@@ -30,16 +30,14 @@ impl CleanupStore {
         batch: RepoStorageCleanupBatch,
         retained: &[RepoStorageCleanup],
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         reconcile_repo_storage_cleanup_rows(
             &tx,
             &batch.loaded,
             retained,
             &batch.live_repo_ids,
             now_unix,
-            generated_ids,
         )
         .await?;
         tx.commit().await.map_err(PostgresError::internal)
@@ -50,11 +48,9 @@ impl CleanupStore {
         batch: SourceBlobCleanupBatch,
         retained: &[SourceBlob],
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        reconcile_source_blob_cleanup_rows(&tx, &batch.loaded, retained, now_unix, generated_ids)
-            .await?;
+        let tx = self.db.begin().await?;
+        reconcile_source_blob_cleanup_rows(&tx, &batch.loaded, retained, now_unix).await?;
         tx.commit().await.map_err(PostgresError::internal)
     }
 }
@@ -96,7 +92,6 @@ async fn reconcile_repo_storage_cleanup_rows<C>(
     retained: &[RepoStorageCleanup],
     live_repo_ids: &BTreeSet<String>,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -135,8 +130,7 @@ where
             repo_id(&loaded.cleanup.owner_handle, &loaded.cleanup.repo_name)
                 == repo_id(&cleanup.owner_handle, &cleanup.repo_name)
         }) {
-            queue_pending_repo_storage_cleanup_row(conn, cleanup.clone(), now_unix, generated_ids)
-                .await?;
+            queue_pending_repo_storage_cleanup_row(conn, cleanup.clone(), now_unix).await?;
         }
     }
     Ok(())
@@ -147,7 +141,6 @@ async fn reconcile_source_blob_cleanup_rows<C>(
     loaded: &[LoadedSourceBlobCleanup],
     retained: &[SourceBlob],
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -182,8 +175,7 @@ where
             .iter()
             .any(|loaded| loaded.blob.content_ref == blob.content_ref)
         {
-            queue_pending_source_blob_deletion_rows(conn, [blob.clone()], now_unix, generated_ids)
-                .await?;
+            queue_pending_source_blob_deletion_rows(conn, [blob.clone()], now_unix).await?;
         }
     }
     Ok(())
@@ -202,8 +194,7 @@ where
     let Some(model) =
         entities::repo_storage_cleanup_job::Entity::find_by_id(cleanup_repo_id.to_string())
             .one(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
     else {
         return Ok(());
     };
@@ -235,8 +226,7 @@ where
             Expr::value(now_i64),
         )
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -253,8 +243,7 @@ where
     let Some(model) =
         entities::source_blob_cleanup_job::Entity::find_by_id(encoded_content_ref.clone())
             .one(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
     else {
         return Ok(());
     };
@@ -286,8 +275,7 @@ where
             Expr::value(now_i64),
         )
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -368,8 +356,7 @@ where
             Expr::value(now_i64),
         )
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 

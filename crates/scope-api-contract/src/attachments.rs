@@ -1,3 +1,10 @@
+use crate::wire::wire_enum;
+use scope_domain::requests::attachments::{
+    RequestAttachmentDerivativeKind as DomainRequestAttachmentDerivativeKind,
+    RequestAttachmentFailureCode as DomainRequestAttachmentFailureCode,
+    RequestAttachmentKind as DomainRequestAttachmentKind,
+    RequestAttachmentState as DomainRequestAttachmentState,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -49,71 +56,24 @@ impl TryFrom<RequestAttachmentTargetInput>
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub enum RequestAttachmentKind {
-    Photo,
-    Video,
-}
+wire_enum!(RequestAttachmentKind => DomainRequestAttachmentKind { Photo, Video });
 
-impl From<scope_domain::requests::attachments::RequestAttachmentKind> for RequestAttachmentKind {
-    fn from(value: scope_domain::requests::attachments::RequestAttachmentKind) -> Self {
-        match value {
-            scope_domain::requests::attachments::RequestAttachmentKind::Photo => Self::Photo,
-            scope_domain::requests::attachments::RequestAttachmentKind::Video => Self::Video,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub enum RequestAttachmentState {
+wire_enum!(RequestAttachmentState => DomainRequestAttachmentState {
     Prepared,
     Uploaded,
     Processing,
     Ready,
     Failed,
     Rejected,
-}
+});
 
-impl From<scope_domain::requests::attachments::RequestAttachmentState> for RequestAttachmentState {
-    fn from(value: scope_domain::requests::attachments::RequestAttachmentState) -> Self {
-        use scope_domain::requests::attachments::RequestAttachmentState as Domain;
-        match value {
-            Domain::Prepared => Self::Prepared,
-            Domain::Uploaded => Self::Uploaded,
-            Domain::Processing => Self::Processing,
-            Domain::Ready => Self::Ready,
-            Domain::Failed => Self::Failed,
-            Domain::Rejected => Self::Rejected,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub enum RequestAttachmentDerivativeKind {
+wire_enum!(RequestAttachmentDerivativeKind => DomainRequestAttachmentDerivativeKind {
     ImagePreview,
     VideoPlayback,
     VideoPoster,
-}
+});
 
-impl From<scope_domain::requests::attachments::RequestAttachmentDerivativeKind>
-    for RequestAttachmentDerivativeKind
-{
-    fn from(value: scope_domain::requests::attachments::RequestAttachmentDerivativeKind) -> Self {
-        use scope_domain::requests::attachments::RequestAttachmentDerivativeKind as Domain;
-        match value {
-            Domain::ImagePreview => Self::ImagePreview,
-            Domain::VideoPlayback => Self::VideoPlayback,
-            Domain::VideoPoster => Self::VideoPoster,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub enum RequestAttachmentFailureCode {
+wire_enum!(RequestAttachmentFailureCode => DomainRequestAttachmentFailureCode {
     InvalidMedia,
     CorruptMedia,
     UnsupportedMedia,
@@ -121,24 +81,7 @@ pub enum RequestAttachmentFailureCode {
     CodecFailed,
     StorageUnavailable,
     Internal,
-}
-
-impl From<scope_domain::requests::attachments::RequestAttachmentFailureCode>
-    for RequestAttachmentFailureCode
-{
-    fn from(value: scope_domain::requests::attachments::RequestAttachmentFailureCode) -> Self {
-        use scope_domain::requests::attachments::RequestAttachmentFailureCode as Domain;
-        match value {
-            Domain::InvalidMedia => Self::InvalidMedia,
-            Domain::CorruptMedia => Self::CorruptMedia,
-            Domain::UnsupportedMedia => Self::UnsupportedMedia,
-            Domain::MediaLimitExceeded => Self::MediaLimitExceeded,
-            Domain::CodecFailed => Self::CodecFailed,
-            Domain::StorageUnavailable => Self::StorageUnavailable,
-            Domain::Internal => Self::Internal,
-        }
-    }
-}
+});
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]

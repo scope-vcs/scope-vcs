@@ -1,13 +1,10 @@
 use super::*;
-use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
+use crate::db::{CatalogFixture, MetadataStore, test_support::fixtures};
 use scope_domain::{
-    account::UserAccount,
-    content::SourceBlob,
-    content_ref::ContentRef,
     history::history_view_from_projection,
     policy::ScopePath,
-    projection::{FileChange, LogicalCommit, LogicalCommitOrigin, SourceGraph, project_graph},
-    repository::{RepoLifecycleState, Repository},
+    projection::{SourceGraph, project_graph},
+    repository::Repository,
     views::{ViewId, Views},
     visibility_changes::VisibilityChangeSet,
 };
@@ -29,51 +26,27 @@ fn history_view(
 }
 
 fn fixture(commits: usize) -> (MetadataStore, Repository) {
-    let store =
-        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
-    let owner = UserAccount {
-        id: "history_owner".into(),
-        handle: "owner".into(),
-        email: "history@example.com".into(),
-        email_verified: true,
-    };
-    let mut repo = Repository::new(&owner, "history", ViewId::public(), "repoi_history").unwrap();
-    repo.record.lifecycle_state = RepoLifecycleState::Ready;
+    let owner = fixtures::user("history_owner", "owner");
+    let mut repo = fixtures::repository(&owner, "history", ViewId::public());
     for index in 0..commits {
-        let oid = format!("{:040x}", index + 1);
-        repo.graph.commits.push(LogicalCommit {
-            occurred_at_unix: None,
-            id: format!("logical_{index}"),
-            origin: LogicalCommitOrigin::CanonicalPush {
-                source_head_oid: oid.clone(),
-            },
-            author_id: owner.id.clone(),
-            message: format!("Change {index}"),
-            changes: vec![FileChange {
-                path: ScopePath::parse(format!("/file-{}.txt", index % 32)).unwrap(),
-                old_content: None,
-                new_content: Some(SourceBlob {
-                    content_ref: ContentRef::git_bundle_sha256(format!("bundle-{index}")),
-                    sha256: format!("hash-{index}"),
-                    git_oid: oid,
-                    git_file_mode: "100644".into(),
-                    size_bytes: 100,
-                }),
-                label: if index % 2 == 0 {
-                    ViewId::public()
-                } else {
-                    ViewId::private()
-                },
-            }],
-        });
+        let label = if index % 2 == 0 {
+            ViewId::public()
+        } else {
+            ViewId::private()
+        };
+        repo.graph.commits.push(fixtures::canonical_commit(
+            &owner.id,
+            index,
+            &format!("/file-{}.txt", index % 32),
+            label,
+        ));
     }
     let mut catalog = CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner);
     catalog
         .repositories
         .insert(repo.record.id.clone(), repo.clone());
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
-    (store, repo)
+    (fixtures::seeded_store(catalog), repo)
 }
 
 #[tokio::test]
@@ -645,27 +618,10 @@ async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
         .run_ready_outbox_jobs("history-fold", 10, &|| Ok(1_700_000_000))
         .await
         .unwrap();
-    let pushed = LogicalCommit {
-        occurred_at_unix: Some(1_700_000_001),
-        id: "logical_300".into(),
-        origin: LogicalCommitOrigin::CanonicalPush {
-            source_head_oid: format!("{:040x}", 301),
-        },
-        author_id: "history_owner".into(),
-        message: "Change 300".into(),
-        changes: vec![FileChange {
-            path: ScopePath::parse("/file-0.txt").unwrap(),
-            old_content: repo.graph.commits[288].changes[0].new_content.clone(),
-            new_content: Some(SourceBlob {
-                content_ref: ContentRef::git_bundle_sha256("bundle-300"),
-                sha256: "hash-300".into(),
-                git_oid: format!("{:040x}", 301),
-                git_file_mode: "100644".into(),
-                size_bytes: 100,
-            }),
-            label: ViewId::public(),
-        }],
-    };
+    let mut pushed =
+        fixtures::canonical_commit("history_owner", 300, "/file-0.txt", ViewId::public());
+    pushed.occurred_at_unix = Some(1_700_000_001);
+    pushed.changes[0].old_content = repo.graph.commits[288].changes[0].new_content.clone();
     repo.graph.commits.push(pushed.clone());
     repo.live_files.insert(
         pushed.changes[0].path.clone(),

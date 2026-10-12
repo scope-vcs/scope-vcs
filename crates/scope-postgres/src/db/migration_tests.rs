@@ -9,33 +9,19 @@ use std::sync::Arc;
 
 mod cache_schema;
 mod current_schema_baseline;
-mod custom_views;
 mod fresh_schema;
-mod git_manifest_retirement;
 mod git_segment_schema;
 mod github_connections;
 mod github_request_checks;
 mod github_run_imports;
 mod github_setup_checks_and_workflow_runs;
-mod github_workflow_run_list;
 mod maintenance_cutover;
-mod native_runs_accounts;
-mod provider_neutral_request_checks;
 mod public_check_commits;
-mod public_request_check_source;
-mod repo_config_version;
-mod repository_content_version;
 mod repository_invite_emails;
-mod repository_invite_links;
 mod repository_landing_files;
 mod repository_workflow_catalogs;
-mod request_revision_rewrites;
-mod request_run_source_base;
-mod request_views;
 mod run_attempt_active_indexes;
-mod run_execution_invariants;
 mod run_state_constraints;
-mod view_ids;
 
 const LATEST_MIGRATIONS: &[&str] = &[
     "m0042_current_schema_baseline",
@@ -226,4 +212,31 @@ async fn exact_state_check_is_read_only_and_rejects_behind_and_ahead() {
     .await
     .unwrap();
     assert!(migrations::assert_exact_state(db.as_ref()).await.is_err());
+}
+
+#[tokio::test]
+async fn migration_plan_declares_metadata_restore_safety_for_pending_changes() {
+    let (_target, db, _lease) = isolated_database().await;
+    assert!(
+        !migrations::plan(db.as_ref())
+            .await
+            .unwrap()
+            .metadata_restore_safe
+    );
+    migrations::Migrator::up(db.as_ref(), Some(2))
+        .await
+        .unwrap();
+    let plan = migrations::plan(db.as_ref()).await.unwrap();
+    assert!(plan.metadata_restore_safe);
+    assert!(!plan.pending.is_empty());
+    assert_eq!(
+        serde_json::to_value(&plan).unwrap()["metadataRestoreSafe"],
+        true
+    );
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
+    let plan = migrations::plan(db.as_ref()).await.unwrap();
+    assert!(plan.metadata_restore_safe);
+    assert!(plan.exact);
 }

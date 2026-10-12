@@ -640,15 +640,12 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
     fixture
         .store
         .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: "deleted_request".to_string(),
-                actor_user_id: OWNER_ID.to_string(),
-                event_id: "event_delete_request".to_string(),
-                now_unix: 22,
-            },
-            &crate::db::generated_ids::test_generated_id,
-        )
+        .close_request(CloseRequestCommand {
+            request_id: "deleted_request".to_string(),
+            actor_user_id: OWNER_ID.to_string(),
+            event_id: "event_delete_request".to_string(),
+            now_unix: 22,
+        })
         .await
         .unwrap();
     assert!(

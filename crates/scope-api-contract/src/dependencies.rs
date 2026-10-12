@@ -1,14 +1,14 @@
+use crate::wire::wire_enum;
+use scope_domain::dependency_analysis::DependencyCheckStatus as DomainDependencyCheckStatus;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub enum RepositoryDependencyCheckStatus {
+wire_enum!(RepositoryDependencyCheckStatus => DomainDependencyCheckStatus {
     Pending,
     Ready,
     Updating,
     Failed,
     Unsupported,
-}
+});
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]

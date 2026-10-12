@@ -2,7 +2,6 @@ use super::*;
 use crate::db::{
     ApplyContentOnlyPushCommand, CloseRequestCommand, LandedRequestCandidate,
     LandedRequestCompletion, RepositoryMutation, RepositoryMutationResult,
-    generated_ids::test_generated_id,
 };
 use scope_domain::requests::{RequestAutoMergeIntentStatus, RequestEventKind};
 use sea_orm::ConnectionTrait;
@@ -39,29 +38,26 @@ async fn push(
                 .unwrap();
             store
                 .repositories()
-                .apply_content_only_push(
-                    ApplyContentOnlyPushCommand {
-                        incarnation: repo.incarnation(),
-                        owner: "owner".into(),
-                        name: "repo".into(),
-                        author_id: "user_owner".into(),
-                        expected_git_frontier: prepared.expected_git_frontier,
-                        update: prepared.update,
-                        landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
-                        workflow_catalog: prepared.workflow_catalog,
-                        push_trigger_input: input,
-                        landed_request_candidates: candidates,
-                        now_unix: 8,
-                    },
-                    &test_generated_id,
-                )
+                .apply_content_only_push(ApplyContentOnlyPushCommand {
+                    incarnation: repo.incarnation(),
+                    owner: "owner".into(),
+                    name: "repo".into(),
+                    author_id: "user_owner".into(),
+                    expected_git_frontier: prepared.expected_git_frontier,
+                    update: prepared.update,
+                    landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
+                    workflow_catalog: prepared.workflow_catalog,
+                    push_trigger_input: input,
+                    landed_request_candidates: candidates,
+                    now_unix: 8,
+                })
                 .await
                 .map(|result| result.unwrap())
                 .map_err(|error| error.to_string())
         }
         PushPath::General => store
             .repositories()
-            .mutate_repository("owner", "repo", 8, &test_generated_id, |repo| {
+            .mutate_repository("owner", "repo", 8, |repo| {
                 let head = prepared.update.git_head.clone();
                 apply_reviewed_update_to_repo(repo, prepared.update)
                     .map_err(scope_domain::repo_actions::reviewed_update_domain_error)?;
@@ -207,9 +203,7 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
                 .unwrap()
         );
         assert_eq!(
-            store
-                .requests()
-                .latest_github_push("req_1")
+            crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
                 .await
                 .unwrap()
                 .unwrap()
@@ -258,9 +252,7 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
                 .unwrap()
         );
         assert_eq!(
-            store
-                .requests()
-                .latest_github_push("req_1")
+            crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
                 .await
                 .unwrap()
                 .unwrap()
@@ -316,15 +308,12 @@ async fn main_push_skips_candidates_that_moved_closed_disappeared_or_are_drafts(
                 "closed" => {
                     store
                         .requests()
-                        .close_request(
-                            CloseRequestCommand {
-                                request_id: "req_1".into(),
-                                actor_user_id: "user_owner".into(),
-                                event_id: "event_closed_before_push".into(),
-                                now_unix: 6,
-                            },
-                            &test_generated_id,
-                        )
+                        .close_request(CloseRequestCommand {
+                            request_id: "req_1".into(),
+                            actor_user_id: "user_owner".into(),
+                            event_id: "event_closed_before_push".into(),
+                            now_unix: 6,
+                        })
                         .await
                         .unwrap();
                 }
@@ -385,7 +374,6 @@ async fn landed_completion_skips_a_non_maintainer_without_failing_the_transactio
             candidates: vec![candidate("req_1")],
         },
         8,
-        &test_generated_id,
     )
     .await
     .unwrap();
