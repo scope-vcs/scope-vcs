@@ -59,7 +59,7 @@ test("reads the newest successful revision for every component", async () => {
 
   const deployments = await latestSuccessfulDeployments(fetchImpl);
   assert.equal(deployments.web.sourceSha, PREVIOUS_SHA);
-  assert.equal(deployments.cache.sourceSha, PREVIOUS_SHA);
+  assert.equal(deployments["git-router"].sourceSha, PREVIOUS_SHA);
 });
 
 test("reads exact provider identity from the newest valid successful deployment", async () => {
@@ -145,7 +145,7 @@ test("records an ordered Railway evidence stream", async () => {
   const directory = mkdtempSync(join(tmpdir(), "deployment-progress-"));
   const evidencePath = join(directory, "evidence.ndjson");
   writeFileSync(evidencePath, [
-    JSON.stringify({ component: "cache", sourceSha: SOURCE_SHA, provider: "railway", evidenceId: "cache-1" }),
+    JSON.stringify({ component: "git-router", sourceSha: SOURCE_SHA, provider: "railway", evidenceId: "router-1" }),
     JSON.stringify({ component: "run-worker", sourceSha: SOURCE_SHA, provider: "railway", evidenceId: "worker-1" }),
     "",
   ].join("\n"));
@@ -162,7 +162,7 @@ test("records an ordered Railway evidence stream", async () => {
     assert.deepEqual(
       requests.filter(({ url }) => new URL(url).pathname.endsWith("/deployments"))
         .map(({ body }) => body.payload.component),
-      ["cache", "run-worker"],
+      ["git-router", "run-worker"],
     );
   } finally {
     rmSync(directory, { recursive: true });

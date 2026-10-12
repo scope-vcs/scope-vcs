@@ -13,7 +13,6 @@ validate_production_target() {
     EXPECTED_ENVIRONMENT_ID="$environment" \
     EXPECTED_API_SERVICE_ID="$api_service" \
     EXPECTED_WORKER_SERVICE_ID="$worker_service" \
-    EXPECTED_CACHE_SERVICE_ID="$cache_service" \
     EXPECTED_ROUTER_SERVICE_ID="$router_service" \
     EXPECTED_MEDIA_SERVICE_ID="$media_service" \
     EXPECTED_MEDIA_WORKER_SERVICE_ID="$media_worker_service" \
@@ -32,7 +31,6 @@ const fail = (message) => {
 const expectedServices = new Map([
   [process.env.EXPECTED_API_SERVICE_ID, "scope-api"],
   [process.env.EXPECTED_WORKER_SERVICE_ID, "scope-run-worker"],
-  [process.env.EXPECTED_CACHE_SERVICE_ID, "scope-cache"],
   [process.env.EXPECTED_ROUTER_SERVICE_ID, "scope-git-router"],
   [process.env.EXPECTED_MEDIA_SERVICE_ID, "scope-media-api"],
   [process.env.EXPECTED_MEDIA_WORKER_SERVICE_ID, "scope-media-worker"],

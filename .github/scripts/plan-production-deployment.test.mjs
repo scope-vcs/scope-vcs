@@ -19,7 +19,6 @@ function repositoryJson(path) {
 function deploymentSelection(overrides = {}) {
   return {
     "runner-image": false,
-    cache: false,
     "run-worker": false,
     "media-worker": false,
     "git-router": false,
@@ -35,7 +34,6 @@ function deploymentSelection(overrides = {}) {
 test("changes select the required deployment lanes", () => {
   const allLanes = {
     "runner-image": true,
-    cache: true,
     "run-worker": true,
     "media-worker": true,
     "git-router": true,
@@ -50,7 +48,7 @@ test("changes select the required deployment lanes", () => {
     ["attribution changes rebuild all distributions", ["NOTICE"], allLanes],
     ["dependency notices rebuild all distributions", ["legal/third-party-rust.txt"], allLanes],
     ["documentation-only changes do not deploy", ["docs/cache.md"], {}],
-    ["cache service changes run backend only", ["cache-service/src/main.rs"], { cache: true }],
+    ["git router changes run backend only", ["repo-router/src/main.rs"], { "git-router": true }],
     [
       "runner changes publish the runner base image and nothing else",
       ["runner-runtime/src/main.rs"],
@@ -61,7 +59,6 @@ test("changes select the required deployment lanes", () => {
       ["rust-toolchain.toml"],
       {
         "runner-image": true,
-        cache: true,
         "run-worker": true,
         "media-worker": true,
         "git-router": true,
@@ -86,7 +83,7 @@ test("changes select the required deployment lanes", () => {
     [
       "shared runtime image selects backend services and CLI downloads",
       ["deploy/railway/prebuilt.Dockerfile"],
-      { cache: true, "run-worker": true, "git-router": true, api: true, "cli-downloads": true },
+      { "run-worker": true, "git-router": true, api: true, "cli-downloads": true },
     ],
     [
       "dependency analyzer changes rebuild the worker and CLI bundle",
@@ -130,10 +127,9 @@ test("changes select the required deployment lanes", () => {
     ],
     [
       "unrelated shared crates retain broad CLI validation without rebuilding targets",
-      ["crates/scope-cache-contract/src/lib.rs"],
+      ["crates/scope-cache-domain/src/lib.rs"],
       {
         "runner-image": true,
-        cache: true,
         "run-worker": true,
         "media-worker": true,
         "git-router": true,
@@ -161,7 +157,7 @@ test("changes select the required deployment lanes", () => {
     [
       "backend workflow changes rebuild every backend service",
       [".github/workflows/deploy-backend.yml"],
-      { cache: true, "run-worker": true, "media-worker": true, "git-router": true, "media-api": true, api: true },
+      { "run-worker": true, "media-worker": true, "git-router": true, "media-api": true, api: true },
     ],
     [
       "artifact-shaping scripts select the lanes they package",
@@ -171,12 +167,12 @@ test("changes select the required deployment lanes", () => {
     [
       "release preparation scripts rebuild every prepared image",
       [".github/scripts/prepare-railway-artifact.sh", ".github/scripts/deployment-components.mjs"],
-      { cache: true, "run-worker": true, "git-router": true, "media-api": true, api: true, web: true, "cli-downloads": true },
+      { "run-worker": true, "git-router": true, "media-api": true, api: true, web: true, "cli-downloads": true },
     ],
     [
       "the production deploy wrapper reruns every service it activates",
       [".github/scripts/deploy-monitored-railway.sh"],
-      { cache: true, "run-worker": true, "media-worker": true, "git-router": true, "media-api": true, api: true, web: true },
+      { "run-worker": true, "media-worker": true, "git-router": true, "media-api": true, api: true, web: true },
     ],
     [
       "check entrypoints select the lane they gate",
@@ -245,22 +241,20 @@ test("an unseeded production ledger deploys every component", () => {
 test("skipped components remain selected across a later backend-only change", () => {
   const selection = planFromDeploymentProgress(manifest, {
     "runner-image": [],
-    cache: ["cache-service/src/main.rs"],
     "run-worker": [],
     "media-worker": [],
-    "git-router": [],
+    "git-router": ["repo-router/src/main.rs"],
     "media-api": [],
     api: [],
-    web: ["web/src/routes/+page.svelte", "cache-service/src/main.rs"],
+    web: ["web/src/routes/+page.svelte", "repo-router/src/main.rs"],
     "cli-downloads": [],
   });
 
   assert.deepEqual(selection, {
     "runner-image": false,
-    cache: true,
     "run-worker": false,
     "media-worker": false,
-    "git-router": false,
+    "git-router": true,
     "media-api": false,
     api: false,
     web: true,
@@ -272,7 +266,6 @@ test("skipped components remain selected across a later backend-only change", ()
 test("CLI deployment progress selects distribution builds only for binary inputs", () => {
   const broadOnly = planFromDeploymentProgress(manifest, {
     "runner-image": [],
-    cache: [],
     "run-worker": [],
     "media-worker": [],
     "git-router": [],
@@ -283,7 +276,6 @@ test("CLI deployment progress selects distribution builds only for binary inputs
   });
   const binaryChange = planFromDeploymentProgress(manifest, {
     "runner-image": [],
-    cache: [],
     "run-worker": [],
     "media-worker": [],
     "git-router": [],
@@ -312,7 +304,6 @@ test("release orchestration changes redeploy every component without selecting p
 test("manual scopes ignore pending production components", () => {
   assert.deepEqual(planFromDeploymentProgress(manifest, {}, "web"), {
     "runner-image": false,
-    cache: false,
     "run-worker": false,
     "media-worker": false,
     "git-router": false,
@@ -325,7 +316,7 @@ test("manual scopes ignore pending production components", () => {
 });
 
 test("deployment manifest is a single coherent production graph", () => {
-  const order = ["cache", "run-worker", "git-router", "media-api", "media-worker", "api", "web", "cli-downloads"];
+  const order = ["run-worker", "git-router", "media-api", "media-worker", "api", "web", "cli-downloads"];
   const serviceIds = order.map((service) => manifest.services[service].id).filter(Boolean);
 
   assert.equal(manifest.deploymentAuthority, "github-actions");
@@ -350,7 +341,6 @@ test("service config does not override Railway scaling or restart defaults", () 
   const configs = {
     "api/railway.json": "/readyz",
     "worker/railway.json": "/readyz",
-    "cache-service/railway.json": "/readyz",
     "repo-router/railway.json": "/readyz",
     "media-service/railway.json": "/readyz",
     "media-worker/railway.json": "/readyz",

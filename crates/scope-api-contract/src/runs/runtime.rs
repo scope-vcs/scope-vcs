@@ -138,8 +138,6 @@ pub struct WorkflowJob {
 pub struct ClaimRuntimeResponse {
     pub attempt_token: String,
     pub lease_expires_at_unix: u64,
-    pub cache_endpoint: String,
-    pub cache_grant: String,
     pub job: RunJobResponse,
 }
 
@@ -163,12 +161,6 @@ pub struct AttemptStatusResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AttemptHeartbeatResponse {
-    pub status: AttemptStatusResponse,
-    pub cache_grant: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AttemptRecoveryStatusResponse {
     pub next_log_sequence: u64,
     pub steps: Vec<AttemptStepStatusResponse>,
@@ -181,18 +173,6 @@ pub struct AttemptStepStatusResponse {
     pub started_at_unix: Option<u64>,
     pub completed_at_unix: Option<u64>,
     pub exit_code: Option<i32>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AttemptHeartbeatRequest {
-    pub cache_keys: Vec<AttemptCacheKeyMaterial>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AttemptCacheKeyMaterial {
-    pub cache_name: String,
-    pub compatibility_inputs_digest: String,
-    pub exact_inputs_digest: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

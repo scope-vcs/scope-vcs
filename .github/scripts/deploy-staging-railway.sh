@@ -17,9 +17,7 @@ project_id="$(jq -er '.railway.projectId' "$manifest_path")"
 production_environment_id="$(jq -er '.environments.production.environmentId' "$manifest_path")"
 staging_environment_id="$(jq -er '.environments.staging.environmentId' "$manifest_path")"
 staging_api_replicas="$(jq -er '.environments.staging.apiReplicas' "$manifest_path")"
-staging_cache_url="https://$(jq -er '.environments.staging.cacheDomain' "$manifest_path")"
 staging_router_url="https://$(jq -er '.environments.staging.routerDomain' "$manifest_path")"
-cache_service="$(jq -er '.services.cache.id' "$manifest_path")"
 worker_service="$(jq -er '.services["run-worker"].id' "$manifest_path")"
 api_service="$(jq -er '.services.api.id' "$manifest_path")"
 router_service="$(jq -er '.services["git-router"].id' "$manifest_path")"
@@ -52,11 +50,6 @@ railway variable set "${railway_scope[@]}" --service "$router_service" --skip-de
   "SCOPE_REPO_ROUTER_READ_REPLICAS=$staging_api_replicas" >/dev/null
 
 api_variables="$(railway_read variable list "${railway_scope[@]}" --service "$api_service" --json)"
-if ! jq -e --arg expected "$staging_cache_url" '.SCOPE_CACHE_URL == $expected' \
-  <<< "$api_variables" >/dev/null; then
-  echo "Staging API SCOPE_CACHE_URL does not match the reviewed staging cache domain." >&2
-  exit 1
-fi
 if ! jq -e --arg expected "$staging_router_url" '.SCOPE_GIT_PUBLIC_URL == $expected' \
   <<< "$api_variables" >/dev/null; then
   echo "Staging API SCOPE_GIT_PUBLIC_URL does not match the reviewed staging router domain." >&2
@@ -83,7 +76,6 @@ assert_writer_state() {
   current_services="$(railway_read service list "${railway_scope[@]}" --json)"
   SERVICES_JSON="$current_services" \
     API_SERVICE="$api_service" \
-    CACHE_SERVICE="$cache_service" \
     WORKER_SERVICE="$worker_service" \
     MEDIA_SERVICE="$media_service" \
     MEDIA_WORKER_SERVICE="$media_worker_service" \
@@ -91,7 +83,7 @@ assert_writer_state() {
     node -e '
 const services = JSON.parse(process.env.SERVICES_JSON || "[]");
 const expected = Number(process.env.EXPECTED_RUNNING);
-for (const id of [process.env.API_SERVICE, process.env.CACHE_SERVICE, process.env.WORKER_SERVICE,
+for (const id of [process.env.API_SERVICE, process.env.WORKER_SERVICE,
   process.env.MEDIA_SERVICE, process.env.MEDIA_WORKER_SERVICE]) {
   const service = services.find((candidate) => candidate.id === id);
   if (!service) process.exit(1);
@@ -183,7 +175,7 @@ activate_staging_pair() {
   return "$failed"
 }
 
-activate_staging_pair cache media-api
+activate_staging media-api
 activate_staging_pair run-worker media-worker
 activate_staging api
 activate_staging git-router
@@ -191,7 +183,7 @@ activate_staging web
 assert_staging_topology
 node .github/scripts/railway-predecessor-teardown.mjs wait "$predecessor_teardown_dir"
 evidence_files=()
-for component in cache run-worker media-api media-worker api git-router web; do
+for component in run-worker media-api media-worker api git-router web; do
   [[ ! -f "$evidence_dir/$component.jsonl" ]] || evidence_files+=("$evidence_dir/$component.jsonl")
 done
 jq -s --slurpfile manifest "$manifest_path" --arg commit "$SCOPE_DEPLOYMENT_SOURCE_SHA" --arg environmentId "$staging_environment_id" \

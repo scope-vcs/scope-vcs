@@ -38,7 +38,7 @@ if (manifest.releasePolicy?.maintenanceEnabled !== true) process.exit(1);
     echo "Automatic maintenance is disabled in the release policy; writers remain open." >&2
     return 1
   fi
-  validate_prepared_release api run-worker cache git-router media-api media-worker web
+  validate_prepared_release api run-worker git-router media-api media-worker web
   validate_maintenance_artifact
   prepare_maintenance_gates
   temporary="$(mktemp -d)"
@@ -62,7 +62,7 @@ recover_cutover() {
     echo "Recovery artifacts do not match the durable cutover manifest." >&2
     return 1
   fi
-  validate_prepared_release api run-worker cache git-router media-api media-worker web
+  validate_prepared_release api run-worker git-router media-api media-worker web
   validate_maintenance_artifact
   recover_maintenance_gates "$record"
   successful_deployments="$(jq -c .previous <<< "$record")"

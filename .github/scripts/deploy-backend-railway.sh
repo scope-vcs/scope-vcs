@@ -5,7 +5,6 @@ maintenance_binary="${SCOPE_MAINTENANCE_BINARY:-./target/release/scope-maintenan
 environment="${SCOPE_RAILWAY_ENVIRONMENT_ID:?SCOPE_RAILWAY_ENVIRONMENT_ID is required}"
 api_service="${SCOPE_RAILWAY_API_SERVICE_ID:?SCOPE_RAILWAY_API_SERVICE_ID is required}"
 worker_service="${SCOPE_RAILWAY_WORKER_SERVICE_ID:?SCOPE_RAILWAY_WORKER_SERVICE_ID is required}"
-cache_service="${SCOPE_RAILWAY_CACHE_SERVICE_ID:?SCOPE_RAILWAY_CACHE_SERVICE_ID is required}"
 router_service="${SCOPE_RAILWAY_ROUTER_SERVICE_ID:?SCOPE_RAILWAY_ROUTER_SERVICE_ID is required}"
 media_service="${SCOPE_RAILWAY_MEDIA_SERVICE_ID:?SCOPE_RAILWAY_MEDIA_SERVICE_ID is required}"
 media_worker_service="${SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID:?SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID is required}"
@@ -15,7 +14,6 @@ api_region="${SCOPE_RAILWAY_API_REGION_ID:?SCOPE_RAILWAY_API_REGION_ID is requir
 worker_region="${SCOPE_RAILWAY_WORKER_REGION_ID:?SCOPE_RAILWAY_WORKER_REGION_ID is required}"
 media_region="${SCOPE_RAILWAY_MEDIA_REGION_ID:?SCOPE_RAILWAY_MEDIA_REGION_ID is required}"
 media_worker_image="${SCOPE_MEDIA_WORKER_IMAGE:-}"
-deploy_cache_requested="${SCOPE_DEPLOY_CACHE:-1}"
 deploy_worker_requested="${SCOPE_DEPLOY_WORKER:-1}"
 deploy_router_requested="${SCOPE_DEPLOY_ROUTER:-1}"
 deploy_api_requested="${SCOPE_DEPLOY_API:-1}"
@@ -28,21 +26,21 @@ pending_evidence_path=""
 predecessor_teardown_dir=""
 remove_pending_evidence() {
   [[ -z "$pending_evidence_path" ]] ||
-    rm -f -- "$pending_evidence_path".{cache,run-worker,media-api,media-worker,api,git-router,web}
+    rm -f -- "$pending_evidence_path".{run-worker,media-api,media-worker,api,git-router,web}
 }
 if [[ -n "$deployment_evidence_path" ]]; then
   pending_evidence_path="${deployment_evidence_path}.pending.$$"
   remove_pending_evidence
 fi
 
-for deployment_flag in deploy_cache_requested deploy_worker_requested deploy_router_requested \
+for deployment_flag in deploy_worker_requested deploy_router_requested \
   deploy_api_requested deploy_media_requested deploy_media_worker_requested; do
   if [[ "${!deployment_flag}" != "0" && "${!deployment_flag}" != "1" ]]; then
     echo "${deployment_flag} must be 0 or 1." >&2
     exit 2
   fi
 done
-if [[ "$deploy_cache_requested" == "0" && "$deploy_worker_requested" == "0" \
+if [[ "$deploy_worker_requested" == "0" \
   && "$deploy_router_requested" == "0" && "$deploy_api_requested" == "0" \
   && "$deploy_media_requested" == "0" && "$deploy_media_worker_requested" == "0" ]]; then
   echo "At least one backend service must be selected for deployment." >&2
@@ -72,7 +70,6 @@ railway_scope=(--project "$RAILWAY_PROJECT_ID" --environment "$environment")
 cutover_committed=0
 api_closed=0
 worker_closed=0
-cache_closed=0
 media_closed=0
 media_worker_closed=0
 media_had_history=1
@@ -219,7 +216,6 @@ quiesce_writers() {
   enter_public_gates || failed=1
   close_writer "$api_service" api_closed 1 || failed=1
   close_writer "$worker_service" worker_closed 0 || failed=1
-  close_writer "$cache_service" cache_closed 0 || failed=1
   close_writer "$media_service" media_closed 1 || failed=1
   close_writer "$media_worker_service" media_worker_closed 0 || failed=1
   wait_for_writer_fence || failed=1
@@ -228,10 +224,6 @@ quiesce_writers() {
 
 restore_old_release() {
   echo "Migration did not commit; restoring the previous metadata-writer deployments." >&2
-  if [[ "$cache_closed" == "1" ]]; then
-    restart_service "$cache_service" "$(require_successful_deployment_id cache)"
-    cache_closed=0
-  fi
   if [[ "$worker_closed" == "1" ]]; then
     restart_service "$worker_service" "$(require_successful_deployment_id run-worker)"
     worker_closed=0
@@ -331,7 +323,7 @@ promote_pending_evidence() {
     PENDING_EVIDENCE_PREFIX="$pending_evidence_path" \
     node -e '
 const { appendFileSync, existsSync, readFileSync, unlinkSync } = require("node:fs");
-const paths = ["cache", "run-worker", "media-api", "media-worker", "api", "git-router", "web"]
+const paths = ["run-worker", "media-api", "media-worker", "api", "git-router", "web"]
   .map(component => `${process.env.PENDING_EVIDENCE_PREFIX}.${component}`)
   .filter(existsSync);
 if (paths.length) {
@@ -358,10 +350,6 @@ activate_pair() {
 }
 
 deploy_selected_releases() {
-  if [[ "$deploy_cache_requested" == "1" ]]; then
-    activate_release cache "$cache_service"
-    promote_pending_evidence
-  fi
   if [[ "$deploy_worker_requested" == "1" ]]; then
     activate_release run-worker "$worker_service"
     promote_pending_evidence
@@ -384,12 +372,9 @@ deploy_and_reopen() {
   cutover_phase verifying
   maintenance_read verify
   predecessor_teardown_dir="$(mktemp -d)"
-  cutover_phase activating-cache
-  cache_closed=0
   cutover_phase activating-media
   media_closed=0
-  activate_pair activate_release cache "$cache_service" '' \
-    activate_release media-api "$media_service" ''
+  activate_release media-api "$media_service"
   cutover_phase activating-worker
   worker_closed=0
   cutover_phase activating-media-worker
@@ -419,7 +404,7 @@ leave_failure_state() {
   trap - EXIT
   if [[ "$exit_status" -ne 0 ]]; then
     if [[ "$cutover_committed" == "0" \
-      && ( "$api_closed" == "1" || "$worker_closed" == "1" || "$cache_closed" == "1" \
+      && ( "$api_closed" == "1" || "$worker_closed" == "1" \
       || "$media_closed" == "1" || "$media_worker_closed" == "1" ) ]]; then
       local fresh_plan
       fresh_plan="$(maintenance_read plan || true)"
@@ -463,7 +448,6 @@ journal cutover-guard
 selected_components=()
 [[ "$deploy_api_requested" == "0" ]] || selected_components+=(api)
 [[ "$deploy_worker_requested" == "0" ]] || selected_components+=(run-worker)
-[[ "$deploy_cache_requested" == "0" ]] || selected_components+=(cache)
 [[ "$deploy_router_requested" == "0" ]] || selected_components+=(git-router)
 [[ "$deploy_media_requested" == "0" ]] || selected_components+=(media-api)
 [[ "$deploy_media_worker_requested" == "0" ]] || selected_components+=(media-worker)
@@ -484,18 +468,15 @@ case "$plan_status" in
   1)
     api_running="$(running_replicas "$api_service")"
     worker_running="$(running_replicas "$worker_service")"
-    cache_running="$(running_replicas "$cache_service")"
     media_running="$(running_replicas "$media_service")"
     media_worker_running="$(running_replicas "$media_worker_service")"
-    if [[ "$api_running" == "0" && "$worker_running" == "0" && "$cache_running" == "0" \
+    if [[ "$api_running" == "0" && "$worker_running" == "0" \
       && "$media_running" == "0" && "$media_worker_running" == "0" ]]; then
       api_has_history="$(service_has_deployment_history "$api_service")" || exit $?
       worker_has_history="$(service_has_deployment_history "$worker_service")" || exit $?
-      cache_has_history="$(service_has_deployment_history "$cache_service")" || exit $?
       media_had_history="$(service_has_deployment_history "$media_service")" || exit $?
       media_worker_had_history="$(service_has_deployment_history "$media_worker_service")" || exit $?
-      if [[ "$api_has_history" != "$worker_has_history" ]] \
-        || [[ "$api_has_history" != "$cache_has_history" ]]; then
+      if [[ "$api_has_history" != "$worker_has_history" ]]; then
         echo "Closed writers have inconsistent deployment history." >&2
         exit 1
       fi
@@ -506,7 +487,6 @@ case "$plan_status" in
       begin_cutover
       api_closed=1
       worker_closed=1
-      cache_closed=1
       media_closed=1
       media_worker_closed=1
       cutover_committed=1
@@ -517,7 +497,7 @@ case "$plan_status" in
       discard_pending_evidence
       exit 0
     fi
-    if [[ "$api_running" == "0" || "$worker_running" == "0" || "$cache_running" == "0" ]]; then
+    if [[ "$api_running" == "0" || "$worker_running" == "0" ]]; then
       echo "Metadata-writer replica state is inconsistent; refusing deployment." >&2
       exit 1
     fi
@@ -557,8 +537,7 @@ if ! assert_router_topology || ! carried_service_is_healthy git-router "$router_
 fi
 
 if ! carried_service_is_healthy api "$api_service" \
-  || ! carried_service_is_healthy run-worker "$worker_service" \
-  || ! carried_service_is_healthy cache "$cache_service"; then
+  || ! carried_service_is_healthy run-worker "$worker_service"; then
   echo "Maintenance cutover requires healthy metadata-writer deployments before closing writers." >&2
   exit 1
 fi

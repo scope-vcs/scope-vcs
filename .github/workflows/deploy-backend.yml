@@ -9,9 +9,6 @@ on:
       recover_cutover_id:
         type: string
         default: ""
-      deploy_cache:
-        type: boolean
-        default: false
       deploy_worker:
         type: boolean
         default: false
@@ -98,7 +95,6 @@ jobs:
           SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
           SCOPE_SUCCESSFUL_DEPLOYMENTS: ${{ inputs.successful_deployments }}
-          SCOPE_DEPLOY_CACHE: ${{ inputs.deploy_cache && '1' || '0' }}
           SCOPE_DEPLOY_WORKER: ${{ inputs.deploy_worker && '1' || '0' }}
           SCOPE_DEPLOY_ROUTER: ${{ inputs.deploy_router && '1' || '0' }}
           SCOPE_DEPLOY_API: ${{ inputs.deploy_api && '1' || '0' }}
@@ -111,7 +107,6 @@ jobs:
           SCOPE_RAILWAY_WEB_SERVICE_ID="$(jq -er '.services.web.id' "$manifest")"
           SCOPE_RAILWAY_API_SERVICE_ID="$(jq -r '.services.api.id' "$manifest")"
           SCOPE_RAILWAY_WORKER_SERVICE_ID="$(jq -r '.services["run-worker"].id' "$manifest")"
-          SCOPE_RAILWAY_CACHE_SERVICE_ID="$(jq -r '.services.cache.id' "$manifest")"
           SCOPE_RAILWAY_ROUTER_SERVICE_ID="$(jq -r '.services["git-router"].id' "$manifest")"
           SCOPE_RAILWAY_MEDIA_SERVICE_ID="$(jq -er '.services["media-api"].id | strings | select(length > 0)' "$manifest")"
           SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID="$(jq -er '.services["media-worker"].id | strings | select(length > 0)' "$manifest")"
@@ -124,7 +119,7 @@ jobs:
           export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
           export SCOPE_RAILWAY_WEB_SERVICE_ID
           export SCOPE_RAILWAY_API_SERVICE_ID SCOPE_RAILWAY_WORKER_SERVICE_ID
-          export SCOPE_RAILWAY_CACHE_SERVICE_ID SCOPE_RAILWAY_ROUTER_SERVICE_ID
+          export SCOPE_RAILWAY_ROUTER_SERVICE_ID
           export SCOPE_RAILWAY_MEDIA_SERVICE_ID SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID
           export SCOPE_RAILWAY_DATABASE_SERVICE_ID
           export SCOPE_RAILWAY_ROUTER_GROUP_ID

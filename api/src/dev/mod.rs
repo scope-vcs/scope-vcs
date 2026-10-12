@@ -73,7 +73,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
     AppState::connect(AppServices {
         storage,
         metadata,
-        cache_grants: crate::cache_grants::CacheGrantIssuer::test(),
+        run_caches: crate::use_cases::run_caches::RunCacheStorage::unreachable(),
         media_grants: crate::media_grants::MediaGrantIssuer::local()?,
         product_analytics: ProductAnalytics::disabled(),
         git_public_url,

@@ -13,7 +13,7 @@ chmod +x "$test_dir/bin/sleep"
 printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$test_dir/api/.scope-deployment-sha"
 
 cat > "$test_dir/services.json" <<'JSON'
-{"railway":{"projectId":"11111111-1111-4111-8111-111111111111","maintenanceServiceId":"33333333-3333-4333-8333-333333333333"},"environments":{"production":{"environmentId":"22222222-2222-4222-8222-222222222222"},"staging":{"environmentId":"44444444-4444-4444-8444-444444444444"}},"releasePolicy":{"maintenanceEnabled":true,"writerDrainTimeoutSeconds":120,"migrationLockTimeoutSeconds":120,"migrationStatementTimeoutSeconds":3600},"services":{"api":{"id":"scope-api","deployment":{"runtimeConfig":"api/railway.json","verifyTransitionConfig":true}},"run-worker":{"id":"scope-worker","deployment":{"runtimeConfig":"worker/railway.json","verifyTransitionConfig":true}},"cache":{"id":"scope-cache-service","deployment":{"runtimeConfig":"cache-service/railway.json","verifyTransitionConfig":true}},"git-router":{"id":"scope-repo-router","deployment":{"runtimeConfig":"repo-router/railway.json","verifyTransitionConfig":true}},"media-api":{"id":"scope-media","deployment":{"runtimeConfig":"media-service/railway.json","verifyTransitionConfig":true}},"media-worker":{"id":"scope-media-worker","deployment":{"runtimeConfig":"media-worker/railway.json","verifyTransitionConfig":true}},"web":{"id":"scope-web","deployment":{"runtimeConfig":"web/railway.json","verifyTransitionConfig":true}}}}
+{"railway":{"projectId":"11111111-1111-4111-8111-111111111111","maintenanceServiceId":"33333333-3333-4333-8333-333333333333"},"environments":{"production":{"environmentId":"22222222-2222-4222-8222-222222222222"},"staging":{"environmentId":"44444444-4444-4444-8444-444444444444"}},"releasePolicy":{"maintenanceEnabled":true,"writerDrainTimeoutSeconds":120,"migrationLockTimeoutSeconds":120,"migrationStatementTimeoutSeconds":3600},"services":{"api":{"id":"scope-api","deployment":{"runtimeConfig":"api/railway.json","verifyTransitionConfig":true}},"run-worker":{"id":"scope-worker","deployment":{"runtimeConfig":"worker/railway.json","verifyTransitionConfig":true}},"git-router":{"id":"scope-repo-router","deployment":{"runtimeConfig":"repo-router/railway.json","verifyTransitionConfig":true}},"media-api":{"id":"scope-media","deployment":{"runtimeConfig":"media-service/railway.json","verifyTransitionConfig":true}},"media-worker":{"id":"scope-media-worker","deployment":{"runtimeConfig":"media-worker/railway.json","verifyTransitionConfig":true}},"web":{"id":"scope-web","deployment":{"runtimeConfig":"web/railway.json","verifyTransitionConfig":true}}}}
 JSON
 
 cat > "$test_dir/github-fetch.cjs" <<'FAKE'
@@ -104,7 +104,6 @@ case "${1:-}" in
     if [[ "${FAKE_STALE_STOP_STATUS:-0}" == "1" ]]; then
       [[ -f "$FAKE_RAILWAY_STATE/stop-requested-scope-api" ]]
       [[ -f "$FAKE_RAILWAY_STATE/stop-requested-scope-worker" ]]
-      [[ -f "$FAKE_RAILWAY_STATE/stop-requested-scope-cache-service" ]]
     fi
     if [[ "${FAKE_STUCK_FENCE:-0}" == "1" && ! -f "$FAKE_RAILWAY_STATE/writers-drained" ]]; then
       exit 1
@@ -144,7 +143,7 @@ run_cutover() {
   local degrade_worker_after_api_stop="${FAKE_DEGRADE_WORKER_AFTER_API_STOP:-0}"
   local reported_api_region="${FAKE_API_REGION:-us-east4-eqdc4a}"
   local stored_api_region="${FAKE_STORED_API_REGION:-us-east4-eqdc4a}"
-  local deploy_cache="${SCOPE_DEPLOY_CACHE:-1}" deploy_worker="${SCOPE_DEPLOY_WORKER:-1}"
+  local deploy_worker="${SCOPE_DEPLOY_WORKER:-1}"
   local deploy_api="${SCOPE_DEPLOY_API:-1}" deploy_router="${SCOPE_DEPLOY_ROUTER:-0}"
   local stuck_fence="${FAKE_STUCK_FENCE:-0}" stale_stop_status="${FAKE_STALE_STOP_STATUS:-0}"
   local successful_deployments="${SCOPE_SUCCESSFUL_DEPLOYMENTS:-}"
@@ -157,7 +156,7 @@ run_cutover() {
   local history_failure_service="${FAKE_HISTORY_FAILURE_SERVICE:-}"
   local stopped_media_service="${FAKE_STOPPED_MEDIA_SERVICE:-}"
   if [[ -z "$successful_deployments" ]]; then
-    successful_deployments='{"api":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-api"},"run-worker":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-worker"},"cache":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-cache-service"},"media-api":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-media"},"media-worker":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-media-worker","artifactDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"git-router":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-repo-router"}}'
+    successful_deployments='{"api":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-api"},"run-worker":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-worker"},"media-api":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-media"},"media-worker":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-media-worker","artifactDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"git-router":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-repo-router"}}'
   fi
   if [[ "$no_history" == "1" ]]; then
     successful_deployments='{"git-router":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-repo-router"}}'
@@ -169,13 +168,11 @@ run_cutover() {
   [[ "$initial_exact" == "1" ]] && touch "$state/exact"
   if [[ "$initial_closed" == "1" ]]; then
     touch "$state/stopped-scope-api" "$state/stopped-scope-worker" \
-      "$state/stopped-scope-cache-service" "$state/stopped-scope-media" \
-      "$state/stopped-scope-media-worker"
+      "$state/stopped-scope-media" "$state/stopped-scope-media-worker"
   fi
   if [[ "$no_history" == "1" ]]; then
     touch "$state/no-history-scope-api" "$state/no-history-scope-worker" \
-      "$state/no-history-scope-cache-service" "$state/no-history-scope-media" \
-      "$state/no-history-scope-media-worker"
+      "$state/no-history-scope-media" "$state/no-history-scope-media-worker"
   fi
   [[ "$router_configured" == "0" ]] && touch "$state/no-history-scope-repo-router"
   : > "$trace"
@@ -184,7 +181,7 @@ run_cutover() {
   node -e '
 const fs = require("node:fs");
 const sourceSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const names = { api:"scope-api","run-worker":"scope-worker",cache:"scope-cache-service","git-router":"scope-repo-router","media-api":"scope-media","media-worker":"scope-media-worker",web:"scope-web" };
+const names = { api:"scope-api","run-worker":"scope-worker","git-router":"scope-repo-router","media-api":"scope-media","media-worker":"scope-media-worker",web:"scope-web" };
 const components = Object.fromEntries(Object.entries(names).map(([component,serviceId]) => [component,{
 serviceId,sourceSha,image:component === "media-worker"
   ? `ghcr.io/scope-vcs/scope-media-worker@sha256:${"a".repeat(64)}`
@@ -241,7 +238,6 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     SCOPE_RAILWAY_DATABASE_SERVICE_ID="scope-postgres" \
     SCOPE_RAILWAY_API_SERVICE_ID="scope-api" \
     SCOPE_RAILWAY_WORKER_SERVICE_ID="scope-worker" \
-    SCOPE_RAILWAY_CACHE_SERVICE_ID="scope-cache-service" \
     SCOPE_RAILWAY_ROUTER_SERVICE_ID="scope-repo-router" \
     SCOPE_RAILWAY_MEDIA_SERVICE_ID="scope-media" \
     SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID="scope-media-worker" \
@@ -250,7 +246,6 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     SCOPE_RAILWAY_WORKER_REGION_ID="us-east4-eqdc4a" \
     SCOPE_RAILWAY_MEDIA_REGION_ID="us-east4-eqdc4a" \
     SCOPE_MEDIA_WORKER_IMAGE="ghcr.io/scope-vcs/scope-media-worker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
-    SCOPE_DEPLOY_CACHE="$deploy_cache" \
     SCOPE_DEPLOY_WORKER="$deploy_worker" \
     SCOPE_DEPLOY_ROUTER="$deploy_router" \
     SCOPE_DEPLOY_API="$deploy_api" \
@@ -317,9 +312,9 @@ fi
 jq '.releasePolicy.maintenanceEnabled = true' "$test_dir/services.json" > "$test_dir/enabled.json"
 mv "$test_dir/enabled.json" "$test_dir/services.json"
 
-FAKE_MISSING_PREPARED_COMPONENT=cache run_cutover missing-prepared-cache
-[[ "$(cat "$test_dir/missing-prepared-cache-result")" != "0" ]]
-if grep -E 'graphql stop|maintenance apply' "$test_dir/missing-prepared-cache-trace"; then
+FAKE_MISSING_PREPARED_COMPONENT=run-worker run_cutover missing-prepared-worker
+[[ "$(cat "$test_dir/missing-prepared-worker-result")" != "0" ]]
+if grep -E 'graphql stop|maintenance apply' "$test_dir/missing-prepared-worker-trace"; then
   echo "missing prepared artifacts must prevent closure" >&2
   exit 1
 fi
@@ -360,7 +355,7 @@ done
 
 run_cutover success
 [[ "$(cat "$test_dir/success-result")" == "0" ]]
-assert_evidence_components success cache,run-worker,media-api,media-worker,api,git-router,web
+assert_evidence_components success run-worker,media-api,media-worker,api,git-router,web
 if grep -F -- '--path-as-root' "$test_dir/success-trace"; then
   echo "maintenance activation must not upload a build context" >&2
   exit 1
@@ -369,21 +364,20 @@ assert_in_order "$test_dir/success-trace" \
   "$test_dir/maintenance plan" \
   "graphql stop scope-api old-scope-api" \
   "graphql stop scope-worker old-scope-worker" \
-  "graphql stop scope-cache-service old-scope-cache-service" \
   "$test_dir/maintenance fence" \
   "$test_dir/maintenance validate-workflow-catalogs" \
   "$test_dir/maintenance apply" \
   "$test_dir/maintenance verify" \
-  "up $test_dir/cache" \
+  "up $test_dir/media-api" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
 
 FAKE_REQUIRE_PARALLEL_PAIR=1 run_cutover parallel-activation
 [[ "$(cat "$test_dir/parallel-activation-result")" == "0" ]]
-assert_evidence_components parallel-activation cache,run-worker,media-api,media-worker,api,git-router,web
+assert_evidence_components parallel-activation run-worker,media-api,media-worker,api,git-router,web
 assert_in_order "$test_dir/parallel-activation-trace" \
   "$test_dir/maintenance verify" \
-  "up $test_dir/cache" \
+  "up $test_dir/media-api" \
   "up $test_dir/run-worker" \
   "up $test_dir/api" \
   "up $test_dir/git-router"
@@ -396,7 +390,7 @@ assert_in_order "$test_dir/parallel-activation-trace" \
 FAKE_DELAY_REMOVE_UNTIL_ROUTER=1 run_cutover delayed-teardown
 [[ "$(cat "$test_dir/delayed-teardown-result")" == "0" ]]
 assert_in_order "$test_dir/delayed-teardown-trace" \
-  "up $test_dir/cache" \
+  "up $test_dir/media-api" \
   "up $test_dir/run-worker" \
   "up $test_dir/api" \
   "up $test_dir/git-router"
@@ -415,7 +409,6 @@ FAKE_STALE_STOP_STATUS=1 run_cutover stale-stop-status
 assert_in_order "$test_dir/stale-stop-status-trace" \
   "graphql stop scope-api old-scope-api" \
   "graphql stop scope-worker old-scope-worker" \
-  "graphql stop scope-cache-service old-scope-cache-service" \
   "$test_dir/maintenance fence" \
   "$test_dir/maintenance apply"
 
@@ -424,7 +417,6 @@ FAKE_STUCK_FENCE=1 run_cutover draining-writer
 [[ "$(grep -F -x -c "$test_dir/maintenance fence" "$test_dir/draining-writer-trace")" == "2" ]]
 assert_in_order "$test_dir/draining-writer-trace" \
   "graphql stop scope-worker old-scope-worker" \
-  "graphql stop scope-cache-service old-scope-cache-service" \
   "$test_dir/maintenance fence" \
   "$test_dir/maintenance drain-writers" \
   "$test_dir/maintenance fence" \
@@ -436,7 +428,6 @@ FAKE_FAIL_WORKFLOW_VALIDATION=1 run_cutover invalid-workflow-catalog
 assert_in_order "$test_dir/invalid-workflow-catalog-trace" \
   "graphql stop scope-api old-scope-api" \
   "graphql stop scope-worker old-scope-worker" \
-  "graphql stop scope-cache-service old-scope-cache-service" \
   "$test_dir/maintenance fence" \
   "$test_dir/maintenance validate-workflow-catalogs"
 if grep -F "graphql restart " "$test_dir/invalid-workflow-catalog-trace"; then
@@ -456,11 +447,11 @@ if grep -E "graphql (stop|restart) " "$test_dir/degraded-trace" \
   exit 1
 fi
 
-FAKE_DEGRADED_SERVICE=scope-cache-service run_cutover degraded-cache
-[[ "$(cat "$test_dir/degraded-cache-result")" != "0" ]]
-if grep -E "graphql (stop|restart) " "$test_dir/degraded-cache-trace" \
-  || grep -F "$test_dir/maintenance apply" "$test_dir/degraded-cache-trace"; then
-  echo "maintenance must not start with a degraded cache writer" >&2
+FAKE_DEGRADED_SERVICE=scope-media run_cutover degraded-media
+[[ "$(cat "$test_dir/degraded-media-result")" != "0" ]]
+if grep -E "graphql (stop|restart) " "$test_dir/degraded-media-trace" \
+  || grep -F "$test_dir/maintenance apply" "$test_dir/degraded-media-trace"; then
+  echo "maintenance must not start with a degraded media writer" >&2
   exit 1
 fi
 
@@ -497,50 +488,50 @@ assert_evidence_components crashed-worker ""
 assert_in_order "$test_dir/crashed-worker-trace" \
   "$test_dir/maintenance apply" \
   "up $test_dir/run-worker" \
-  "graphql stop scope-cache-service new-scope-cache-service"
+  "graphql stop scope-media new-scope-media"
 
-FAKE_CRASH_UP_SERVICE=scope-cache-service run_cutover crashed-cache
-[[ "$(cat "$test_dir/crashed-cache-result")" != "0" ]]
-assert_evidence_components crashed-cache ""
-[[ -f "$test_dir/crashed-cache-state/stopped-scope-cache-service" ]]
-assert_in_order "$test_dir/crashed-cache-trace" \
+FAKE_CRASH_UP_SERVICE=scope-media run_cutover crashed-media
+[[ "$(cat "$test_dir/crashed-media-result")" != "0" ]]
+assert_evidence_components crashed-media ""
+[[ -f "$test_dir/crashed-media-state/stopped-scope-media" ]]
+assert_in_order "$test_dir/crashed-media-trace" \
   "$test_dir/maintenance apply" \
-  "up $test_dir/cache"
-if grep -F "up $test_dir/run-worker" "$test_dir/crashed-cache-trace" \
-  || grep -F "up $test_dir/api" "$test_dir/crashed-cache-trace" \
-  || grep -F "graphql restart " "$test_dir/crashed-cache-trace"; then
-  echo "failed cache deployment must leave all metadata writers closed" >&2
+  "up $test_dir/media-api"
+if grep -F "up $test_dir/run-worker" "$test_dir/crashed-media-trace" \
+  || grep -F "up $test_dir/api" "$test_dir/crashed-media-trace" \
+  || grep -F "graphql restart " "$test_dir/crashed-media-trace"; then
+  echo "failed media deployment must leave all metadata writers closed" >&2
   exit 1
 fi
 
-mkdir "$test_dir/cache-evidence-promotion-evidence.jsonl"
-run_cutover cache-evidence-promotion 2> "$test_dir/cache-evidence-promotion-stderr"
-[[ "$(cat "$test_dir/cache-evidence-promotion-result")" != "0" ]]
-[[ -f "$test_dir/cache-evidence-promotion-state/up-scope-cache-service" ]]
-[[ -f "$test_dir/cache-evidence-promotion-state/stopped-scope-cache-service" ]]
-assert_in_order "$test_dir/cache-evidence-promotion-trace" \
+mkdir "$test_dir/evidence-promotion-evidence.jsonl"
+run_cutover evidence-promotion 2> "$test_dir/evidence-promotion-stderr"
+[[ "$(cat "$test_dir/evidence-promotion-result")" != "0" ]]
+[[ -f "$test_dir/evidence-promotion-state/up-scope-media" ]]
+[[ -f "$test_dir/evidence-promotion-state/stopped-scope-media" ]]
+assert_in_order "$test_dir/evidence-promotion-trace" \
   "$test_dir/maintenance apply" \
-  "up $test_dir/cache" \
-  "graphql stop scope-cache-service new-scope-cache-service" \
+  "up $test_dir/media-api" \
+  "graphql stop scope-media new-scope-media" \
   "$test_dir/maintenance fence"
-[[ "$(grep -F -c "graphql stop scope-cache-service new-scope-cache-service" \
-  "$test_dir/cache-evidence-promotion-trace")" == "1" ]]
-assert_in_order "$test_dir/cache-evidence-promotion-trace" \
+[[ "$(grep -F -c "graphql stop scope-media new-scope-media" \
+  "$test_dir/evidence-promotion-trace")" == "1" ]]
+assert_in_order "$test_dir/evidence-promotion-trace" \
   "up $test_dir/run-worker" \
   "up $test_dir/api" \
   "graphql stop scope-api new-scope-api"
 
-if compgen -G "$test_dir/cache-evidence-promotion-evidence.jsonl.pending.*" > /dev/null; then
-  echo "failed cache evidence promotion must discard pending evidence" >&2
+if compgen -G "$test_dir/evidence-promotion-evidence.jsonl.pending.*" > /dev/null; then
+  echo "failed evidence promotion must discard pending evidence" >&2
   exit 1
 fi
-[[ -z "$(find "$test_dir/cache-evidence-promotion-evidence.jsonl" -mindepth 1 -print -quit)" ]]
+[[ -z "$(find "$test_dir/evidence-promotion-evidence.jsonl" -mindepth 1 -print -quit)" ]]
 grep -F \
   "Cutover requires forward recovery; writers are closed. Rerun this workflow to finish the pinned deployment." \
-  "$test_dir/cache-evidence-promotion-stderr"
+  "$test_dir/evidence-promotion-stderr"
 if grep -F "Failed to re-close metadata writers after the cutover." \
-  "$test_dir/cache-evidence-promotion-stderr"; then
-  echo "cache evidence promotion recovery must report successful writer closure" >&2
+  "$test_dir/evidence-promotion-stderr"; then
+  echo "evidence promotion recovery must report successful writer closure" >&2
   exit 1
 fi
 
@@ -560,7 +551,7 @@ assert_in_order "$test_dir/rollback-trace" \
   "$test_dir/maintenance plan" \
   "$test_dir/maintenance apply" \
   "$test_dir/maintenance verify" \
-  "up $test_dir/cache" \
+  "up $test_dir/media-api" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
 
@@ -580,7 +571,6 @@ FAKE_INITIAL_EXACT=1 run_cutover rolling
 assert_in_order "$test_dir/rolling-trace" \
   "$test_dir/maintenance plan" \
   "$test_dir/maintenance verify" \
-  "up $test_dir/cache" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
 if grep -E "graphql (stop|restart) |maintenance (backfill-|cleanup-)" "$test_dir/rolling-trace"; then
@@ -589,20 +579,6 @@ if grep -E "graphql (stop|restart) |maintenance (backfill-|cleanup-)" "$test_dir
 fi
 
 FAKE_INITIAL_EXACT=1 \
-  SCOPE_DEPLOY_WORKER=0 \
-  SCOPE_DEPLOY_API=0 \
-  run_cutover rolling-cache
-[[ "$(cat "$test_dir/rolling-cache-result")" == "0" ]]
-assert_in_order "$test_dir/rolling-cache-trace" \
-  "$test_dir/maintenance verify" \
-  "up $test_dir/cache"
-if grep -E "up $test_dir/(run-worker|api)" "$test_dir/rolling-cache-trace"; then
-  echo "cache-only deployment must not deploy run-worker or API" >&2
-  exit 1
-fi
-
-FAKE_INITIAL_EXACT=1 \
-  SCOPE_DEPLOY_CACHE=0 \
   SCOPE_DEPLOY_API=0 \
   run_cutover rolling-worker
 [[ "$(cat "$test_dir/rolling-worker-result")" == "0" ]]
@@ -610,13 +586,12 @@ assert_evidence_components rolling-worker run-worker
 assert_in_order "$test_dir/rolling-worker-trace" \
   "$test_dir/maintenance verify" \
   "up $test_dir/run-worker"
-if grep -E "up $test_dir/(cache|api)" "$test_dir/rolling-worker-trace"; then
-  echo "worker-only deployment must not deploy cache or API" >&2
+if grep -F "up $test_dir/api" "$test_dir/rolling-worker-trace"; then
+  echo "worker-only deployment must not deploy the API" >&2
   exit 1
 fi
 
 FAKE_INITIAL_EXACT=1 \
-  SCOPE_DEPLOY_CACHE=0 \
   SCOPE_DEPLOY_API=0 \
   SCOPE_SUCCESSFUL_DEPLOYMENTS='{"run-worker":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"new-scope-worker"},"git-router":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-repo-router"}}' \
   FAKE_SKIP_UP_SERVICE=scope-worker \
@@ -629,7 +604,6 @@ if grep -F "graphql restart scope-worker" "$test_dir/carried-worker-drift-trace"
 fi
 
 FAKE_INITIAL_EXACT=1 \
-  SCOPE_DEPLOY_CACHE=0 \
   SCOPE_DEPLOY_API=0 \
   FAKE_UNHEALTHY_AFTER_UP_SERVICE=scope-worker \
   run_cutover rolling-worker-unhealthy
@@ -637,20 +611,18 @@ FAKE_INITIAL_EXACT=1 \
 assert_evidence_components rolling-worker-unhealthy ""
 
 FAKE_INITIAL_EXACT=1 \
-  SCOPE_DEPLOY_CACHE=0 \
   SCOPE_DEPLOY_WORKER=0 \
   run_cutover rolling-api
 [[ "$(cat "$test_dir/rolling-api-result")" == "0" ]]
 assert_in_order "$test_dir/rolling-api-trace" \
   "$test_dir/maintenance verify" \
   "up $test_dir/api"
-if grep -E "up $test_dir/(cache|run-worker)" "$test_dir/rolling-api-trace"; then
-  echo "API-only deployment must not deploy cache or run-worker" >&2
+if grep -F "up $test_dir/run-worker" "$test_dir/rolling-api-trace"; then
+  echo "API-only deployment must not deploy run-worker" >&2
   exit 1
 fi
 
 FAKE_INITIAL_EXACT=1 \
-  SCOPE_DEPLOY_CACHE=0 \
   SCOPE_DEPLOY_WORKER=0 \
   FAKE_UNHEALTHY_AFTER_UP_SERVICE=scope-api \
   run_cutover rolling-api-unhealthy
@@ -658,7 +630,6 @@ FAKE_INITIAL_EXACT=1 \
 assert_evidence_components rolling-api-unhealthy ""
 
 FAKE_INITIAL_EXACT=1 \
-  SCOPE_DEPLOY_CACHE=0 \
   SCOPE_DEPLOY_WORKER=0 \
   SCOPE_DEPLOY_ROUTER=1 \
   FAKE_ROUTER_CONFIGURED=0 \
@@ -677,7 +648,6 @@ assert_in_order "$test_dir/router-bootstrap-trace" \
   "up $test_dir/api"
 
 FAKE_INITIAL_EXACT=1 \
-  SCOPE_DEPLOY_CACHE=0 \
   SCOPE_DEPLOY_WORKER=0 \
   FAKE_ROUTER_CONFIGURED=0 \
   FAKE_ROUTER_INSTANCE_EXISTS=0 \
@@ -690,7 +660,6 @@ if grep -E "graphql (create-instance|configure-scale|stop|restart)|gate (enter|r
 fi
 
 FAKE_INITIAL_EXACT=1 \
-  SCOPE_DEPLOY_CACHE=0 \
   SCOPE_DEPLOY_WORKER=0 \
   FAKE_ROUTER_CONFIGURED=0 \
   run_cutover router-drift-refused
@@ -701,7 +670,6 @@ if grep -E "variable set|up |maintenance apply" "$test_dir/router-drift-refused-
 fi
 
 FAKE_INITIAL_EXACT=1 \
-  SCOPE_DEPLOY_CACHE=0 \
   SCOPE_DEPLOY_WORKER=0 \
   SCOPE_DEPLOY_ROUTER=1 \
   FAKE_ROUTER_DOMAIN_STATE=invalid \
@@ -712,11 +680,11 @@ if grep -E "graphql (create-instance|configure-scale|stop|restart)|gate (enter|r
   exit 1
 fi
 
-SCOPE_DEPLOY_CACHE=0 SCOPE_DEPLOY_WORKER=0 run_cutover maintenance-forces-all
+SCOPE_DEPLOY_WORKER=0 run_cutover maintenance-forces-all
 [[ "$(cat "$test_dir/maintenance-forces-all-result")" == "0" ]]
 assert_in_order "$test_dir/maintenance-forces-all-trace" \
   "$test_dir/maintenance apply" \
-  "up $test_dir/cache" \
+  "up $test_dir/media-api" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
 
@@ -727,15 +695,14 @@ FAKE_INITIAL_EXACT=1 FAKE_FAIL_FIRST_PLAN=1 run_cutover transient-plan
 FAKE_FAIL_UP_SERVICE=scope-worker run_cutover interrupted
 [[ "$(cat "$test_dir/interrupted-result")" != "0" ]]
 FAKE_RECOVER_CLOSED_CUTOVER=1 \
-  SCOPE_DEPLOY_CACHE=0 \
-  SCOPE_SUCCESSFUL_DEPLOYMENTS='{"cache":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"new-scope-cache-service"},"git-router":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-repo-router"}}' \
+  SCOPE_SUCCESSFUL_DEPLOYMENTS='{"media-api":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"new-scope-media"},"git-router":{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"railway","evidenceId":"old-scope-repo-router"}}' \
   run_cutover interrupted
 [[ "$(cat "$test_dir/interrupted-result")" == "0" ]]
-assert_evidence_components interrupted cache,run-worker,media-api,media-worker,api,git-router,web
+assert_evidence_components interrupted run-worker,media-api,media-worker,api,git-router,web
 assert_in_order "$test_dir/interrupted-trace" \
   "$test_dir/maintenance plan" \
   "$test_dir/maintenance verify" \
-  "up $test_dir/cache" \
+  "up $test_dir/media-api" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
 if grep -F "$test_dir/maintenance apply" "$test_dir/interrupted-trace"; then
@@ -758,7 +725,7 @@ FAKE_INITIAL_EXACT=1 \
 assert_in_order "$test_dir/bootstrap-trace" \
   "$test_dir/maintenance plan" \
   "$test_dir/maintenance verify" \
-  "up $test_dir/cache" \
+  "up $test_dir/media-api" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
 
@@ -781,35 +748,31 @@ assert_evidence_components partial-reopen ""
 assert_in_order "$test_dir/partial-reopen-trace" \
   "graphql stop scope-api old-scope-api" \
   "graphql stop scope-worker old-scope-worker" \
-  "up $test_dir/cache" \
+  "up $test_dir/media-api" \
   "up $test_dir/run-worker" \
   "up $test_dir/api" \
-  "graphql stop scope-worker new-scope-worker" \
-  "graphql stop scope-cache-service new-scope-cache-service"
+  "graphql stop scope-media new-scope-media" \
+  "graphql stop scope-worker new-scope-worker"
 [[ "$(grep -F -c "graphql stop scope-api old-scope-api" "$test_dir/partial-reopen-trace")" == "1" ]]
 [[ "$(grep -F -c "gate reclose scope-api" "$test_dir/partial-reopen-trace")" == "2" ]]
 
-FAKE_LOST_UP_RESPONSE_SERVICE=scope-cache-service run_cutover lost-activation-response
+FAKE_LOST_UP_RESPONSE_SERVICE=scope-media run_cutover lost-activation-response
 [[ "$(cat "$test_dir/lost-activation-response-result")" != "0" ]]
 assert_evidence_components lost-activation-response ""
-[[ -f "$test_dir/lost-activation-response-state/up-scope-cache-service" ]]
-[[ -f "$test_dir/lost-activation-response-state/stopped-scope-cache-service" ]]
-assert_in_order "$test_dir/lost-activation-response-trace" \
-  "up $test_dir/cache" \
-  "graphql stop scope-cache-service new-scope-cache-service"
+[[ -f "$test_dir/lost-activation-response-state/up-scope-media" ]]
+[[ -f "$test_dir/lost-activation-response-state/stopped-scope-media" ]]
 assert_in_order "$test_dir/lost-activation-response-trace" \
   "up $test_dir/media-api" \
-  "graphql stop scope-cache-service new-scope-cache-service"
+  "graphql stop scope-media new-scope-media"
 FAKE_RECOVER_CLOSED_CUTOVER=1 run_cutover lost-activation-response
 [[ "$(cat "$test_dir/lost-activation-response-result")" == "0" ]]
-assert_evidence_components lost-activation-response cache,run-worker,media-api,media-worker,api,git-router,web
+assert_evidence_components lost-activation-response run-worker,media-api,media-worker,api,git-router,web
 
 FAKE_DENY_DEPLOYMENT_ACTION_SERVICE=scope-api run_cutover denied-api
 [[ "$(cat "$test_dir/denied-api-result")" != "0" ]]
 assert_in_order "$test_dir/denied-api-trace" \
   "graphql stop scope-api old-scope-api" \
-  "graphql stop scope-worker old-scope-worker" \
-  "graphql stop scope-cache-service old-scope-cache-service"
+  "graphql stop scope-worker old-scope-worker"
 if grep -E 'graphql stop .* gate-' "$test_dir/denied-api-trace"; then
   echo "failure cleanup must preserve serving gate deployments" >&2
   exit 1
@@ -823,21 +786,20 @@ FAKE_DENY_DEPLOYMENT_ACTION_SERVICE=scope-worker run_cutover denied-worker
 [[ "$(cat "$test_dir/denied-worker-result")" != "0" ]]
 assert_in_order "$test_dir/denied-worker-trace" \
   "graphql stop scope-api old-scope-api" \
-  "graphql stop scope-worker old-scope-worker" \
-  "graphql stop scope-cache-service old-scope-cache-service"
+  "graphql stop scope-worker old-scope-worker"
 if grep -F "graphql restart scope-worker" "$test_dir/denied-worker-trace"; then
   echo "a run-worker shutdown denial must not restore a run-worker that was never closed" >&2
   exit 1
 fi
 
-FAKE_DENY_DEPLOYMENT_ACTION_SERVICE=scope-cache-service run_cutover denied-cache
-[[ "$(cat "$test_dir/denied-cache-result")" != "0" ]]
-assert_in_order "$test_dir/denied-cache-trace" \
+FAKE_DENY_DEPLOYMENT_ACTION_SERVICE=scope-media-worker run_cutover denied-media-worker
+[[ "$(cat "$test_dir/denied-media-worker-result")" != "0" ]]
+assert_in_order "$test_dir/denied-media-worker-trace" \
   "graphql stop scope-api old-scope-api" \
   "graphql stop scope-worker old-scope-worker" \
-  "graphql stop scope-cache-service old-scope-cache-service"
-if grep -F "graphql restart scope-cache-service" "$test_dir/denied-cache-trace"; then
-  echo "a cache shutdown denial must not restore a cache deployment that was never closed" >&2
+  "graphql stop scope-media-worker old-scope-media-worker"
+if grep -F "graphql restart scope-media-worker" "$test_dir/denied-media-worker-trace"; then
+  echo "a media-worker shutdown denial must not restore a media-worker deployment that was never closed" >&2
   exit 1
 fi
 
@@ -855,10 +817,9 @@ FAKE_RECOVER_CLOSED_CUTOVER=1 run_cutover killed-after-commit
 assert_in_order "$test_dir/killed-after-commit-trace" \
   "gate reclose scope-api" \
   "graphql stop scope-worker" \
-  "graphql stop scope-cache-service" \
   "$test_dir/maintenance plan" \
   "$test_dir/maintenance verify" \
-  "up $test_dir/cache" \
+  "up $test_dir/media-api" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"
 if grep -F "$test_dir/maintenance apply" "$test_dir/killed-after-commit-trace"; then

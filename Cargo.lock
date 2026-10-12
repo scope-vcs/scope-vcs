@@ -88,8 +88,6 @@ dependencies = [
  "reqwest",
  "schemars",
  "scope-api-contract",
- "scope-cache-contract",
- "scope-cache-domain",
  "scope-content-lifecycle",
  "scope-domain",
  "scope-git",
@@ -3459,47 +3457,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "scope-cache-contract"
-version = "0.1.0"
-dependencies = [
- "scope-cache-domain",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "scope-cache-domain"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
  "thiserror",
-]
-
-[[package]]
-name = "scope-cache-service"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.22.1",
- "futures-util",
- "getrandom 0.3.4",
- "hex",
- "jsonwebtoken",
- "reqwest",
- "scope-cache-contract",
- "scope-cache-domain",
- "scope-domain",
- "scope-postgres",
- "scope-service-runtime",
- "scope-storage",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tokio",
- "tower",
- "tracing",
 ]
 
 [[package]]
@@ -3685,7 +3648,6 @@ dependencies = [
  "libc",
  "reqwest",
  "scope-api-contract",
- "scope-cache-contract",
  "scope-cache-domain",
  "scope-domain",
  "scope-git-process",

@@ -269,15 +269,18 @@ impl RunAttempt {
         }
     }
 
-    pub fn authorize_cache_access(&self, job: &RunJob, now_unix: u64) -> Result<(), DomainError> {
+    pub fn authorize_cache_access(
+        &self,
+        job: &RunJob,
+        token_hash: &str,
+        now_unix: u64,
+    ) -> Result<(), DomainError> {
         if self.state.is_terminal() {
             return Err(DomainError::authentication_failed(
-                "terminal attempts cannot use cache grants",
+                "terminal attempts cannot use the run cache",
             ));
         }
-        self.ensure_job_alignment(job)?;
-        job.ensure_current_attempt(self)?;
-        self.ensure_lease_active(now_unix)
+        self.authenticate(job, token_hash, now_unix)
     }
 
     pub fn authenticate_cache_observation_report(

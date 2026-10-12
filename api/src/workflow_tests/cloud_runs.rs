@@ -1,10 +1,8 @@
 use super::*;
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use scope_api_contract::{
-    AttemptHeartbeatRequest, AttemptHeartbeatResponse, ClaimRuntimeResponse,
-    CompleteAttemptStepRequest, StepConclusionRequest,
+    AttemptCacheKey, AttemptStatusResponse, ClaimRuntimeResponse, CompleteAttemptStepRequest,
+    RestoreAttemptCacheRequest, StepConclusionRequest,
 };
-use scope_cache_contract::SignedCacheGrantClaims;
 
 #[tokio::test]
 async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
@@ -132,21 +130,6 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     assert!(claim.attempt_token.starts_with("scope_attempt_"));
     let authorization_replayed = app.clone().oneshot(authorize_request()).await.unwrap();
     assert_eq!(authorization_replayed.status(), StatusCode::UNAUTHORIZED);
-    let cache_claims = cache_grant_claims(&claim.cache_grant);
-    assert_eq!(cache_claims.attempt_id, attempt_id);
-    assert_eq!(cache_claims.expires_at_unix, claim.lease_expires_at_unix);
-    assert!(
-        state
-            .metadata
-            .runs()
-            .authorize_cache_grant(
-                &cache_claims.attempt_id,
-                cache_claims.repository_id.as_str(),
-                unix_now(),
-            )
-            .await
-            .unwrap()
-    );
     assert_eq!(
         claim.job.pinned_container_image,
         "alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -156,6 +139,25 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     assert_eq!(replayed.status(), StatusCode::UNAUTHORIZED);
 
     let attempt_auth = format!("Bearer {}", claim.attempt_token);
+    let undeclared_cache_restore = serde_json::to_string(&RestoreAttemptCacheRequest {
+        cache: AttemptCacheKey {
+            cache_name: "cargo".to_string(),
+            compatibility_inputs_digest: "a".repeat(64),
+            exact_inputs_digest: "b".repeat(64),
+        },
+    })
+    .unwrap();
+    let cache_restore_path = scope_api_contract::routes::attempt_cache_restore(attempt_id);
+    let cache_restore = || {
+        api_request(
+            app.clone(),
+            "POST",
+            &cache_restore_path,
+            Some(&attempt_auth),
+            Some(&undeclared_cache_restore),
+        )
+    };
+    assert_eq!(cache_restore().await.status(), StatusCode::BAD_REQUEST);
     let source_response = api_request(
         app.clone(),
         "GET",
@@ -186,16 +188,13 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
         "POST",
         &scope_api_contract::routes::attempt_heartbeat(attempt_id),
         Some(&attempt_auth),
-        Some(&serde_json::to_string(&AttemptHeartbeatRequest { cache_keys: vec![] }).unwrap()),
+        Some("{}"),
     )
     .await;
     assert_eq!(heartbeat.status(), StatusCode::OK);
-    let heartbeat: AttemptHeartbeatResponse =
+    let heartbeat: AttemptStatusResponse =
         serde_json::from_value(response_json(heartbeat).await).unwrap();
-    assert_eq!(
-        cache_grant_claims(&heartbeat.cache_grant).expires_at_unix,
-        heartbeat.status.lease_expires_at_unix
-    );
+    assert!(heartbeat.lease_expires_at_unix > unix_now());
 
     let started = api_request(
         app.clone(),
@@ -270,18 +269,7 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
         recording.property(0, "run_result"),
         Some(serde_json::Value::String("succeeded".into()))
     );
-    assert!(
-        !state
-            .metadata
-            .runs()
-            .authorize_cache_grant(
-                &cache_claims.attempt_id,
-                cache_claims.repository_id.as_str(),
-                unix_now(),
-            )
-            .await
-            .unwrap()
-    );
+    assert_eq!(cache_restore().await.status(), StatusCode::UNAUTHORIZED);
 
     let retried = api_request(
         app.clone(),
@@ -304,17 +292,4 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     .await;
     assert_eq!(canceled.status(), StatusCode::OK);
     assert_eq!(response_json(canceled).await["state"], "canceled");
-}
-
-fn cache_grant_claims(token: &str) -> SignedCacheGrantClaims {
-    let mut validation = Validation::new(Algorithm::EdDSA);
-    validation.required_spec_claims.clear();
-    validation.validate_exp = false;
-    decode::<SignedCacheGrantClaims>(
-        token,
-        &DecodingKey::from_ed_pem(crate::grant_signing::TEST_PUBLIC_KEY.as_bytes()).unwrap(),
-        &validation,
-    )
-    .unwrap()
-    .claims
 }

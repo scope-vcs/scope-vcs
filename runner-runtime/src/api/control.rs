@@ -1,9 +1,6 @@
-use super::{CONTROL_REQUEST_TIMEOUT, CacheAccess, RuntimeClient, json};
+use super::{CONTROL_REQUEST_TIMEOUT, RuntimeClient, json};
 use anyhow::Context as _;
-use scope_api_contract::{
-    AttemptCacheKeyMaterial, AttemptHeartbeatRequest, AttemptHeartbeatResponse,
-    AttemptStatusResponse, ClaimRuntimeResponse,
-};
+use scope_api_contract::{AttemptStatusResponse, ClaimRuntimeResponse};
 
 impl RuntimeClient {
     pub fn claim(&self, bootstrap_token: &str) -> anyhow::Result<ClaimRuntimeResponse> {
@@ -19,13 +16,6 @@ impl RuntimeClient {
             .attempt_token
             .lock()
             .expect("attempt token mutex poisoned") = Some(response.attempt_token.clone());
-        *self
-            .cache_access
-            .lock()
-            .expect("cache access mutex poisoned") = Some(CacheAccess {
-            endpoint: response.cache_endpoint.clone(),
-            grant: response.cache_grant.clone(),
-        });
         Ok(response)
     }
 
@@ -38,41 +28,6 @@ impl RuntimeClient {
     }
 
     pub fn heartbeat(&self) -> anyhow::Result<AttemptStatusResponse> {
-        #[cfg(test)]
-        if let Some(started) = &self.heartbeat_started {
-            let _ = started.send(());
-        }
-        let _heartbeat = self
-            .heartbeat_lock
-            .lock()
-            .expect("heartbeat mutex poisoned");
-        let cache_keys = self
-            .cache_keys
-            .lock()
-            .expect("cache keys mutex poisoned")
-            .clone();
-        let response: AttemptHeartbeatResponse = self.post_json(
-            "heartbeat",
-            &AttemptHeartbeatRequest { cache_keys },
-            "heartbeat attempt",
-        )?;
-        let mut access = self
-            .cache_access
-            .lock()
-            .expect("cache access mutex poisoned");
-        let access = access
-            .as_mut()
-            .context("cache access is unavailable before attempt claim")?;
-        access.grant = response.cache_grant;
-        Ok(response.status)
-    }
-
-    pub fn authorize_cache_keys(
-        &self,
-        cache_keys: Vec<AttemptCacheKeyMaterial>,
-    ) -> anyhow::Result<()> {
-        *self.cache_keys.lock().expect("cache keys mutex poisoned") = cache_keys;
-        self.heartbeat()?;
-        Ok(())
+        self.post_json("heartbeat", &serde_json::json!({}), "heartbeat attempt")
     }
 }

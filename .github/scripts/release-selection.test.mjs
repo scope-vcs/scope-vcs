@@ -18,7 +18,7 @@ function fixture() {
     preparationRunId: sourceRunId,
     maintenanceSha256: "c".repeat(64),
     components: Object.fromEntries(
-      ["api", "run-worker", "cache", "git-router", "media-api", "media-worker", "web"].map((component) => [
+      ["api", "run-worker", "git-router", "media-api", "media-worker", "web"].map((component) => [
         component,
         {
           image: component === "media-worker"
@@ -216,8 +216,8 @@ test('staging resume rejects incomplete deployment, unvalidated images, and unre
 
 for (const [name, selected] of [
   ["web-only", ["web"]],
-  ["backend-only", ["api", "run-worker", "cache", "git-router", "media-api", "media-worker"]],
-  ["full application", ["api", "run-worker", "cache", "git-router", "media-api", "media-worker", "web"]],
+  ["backend-only", ["api", "run-worker", "git-router", "media-api", "media-worker"]],
+  ["full application", ["api", "run-worker", "git-router", "media-api", "media-worker", "web"]],
 ]) {
   test(`${name} prepared replay selects only manifest components`, async () => {
     const state = fixture();

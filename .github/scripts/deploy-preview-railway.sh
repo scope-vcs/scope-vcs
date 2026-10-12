@@ -32,7 +32,7 @@ const manifest = JSON.parse(readFileSync(manifestPath));
 validatePreparedRelease(prepared, {
   sourceSha: process.env.SCOPE_DEPLOYMENT_SOURCE_SHA,
   services: manifest.services,
-  components: ['cache', 'media-api', 'run-worker', 'media-worker', 'api', 'git-router', 'web'],
+  components: ['media-api', 'run-worker', 'media-worker', 'api', 'git-router', 'web'],
 });
 validateMaintenanceArtifact(prepared, readFileSync(binary));
 NODE
@@ -51,7 +51,7 @@ export RAILWAY_PROJECT_ID="$project_id"
 export SCOPE_RAILWAY_ENVIRONMENT_ID="$preview_environment_id"
 export RAILWAY_DEPLOY_MESSAGE="Preview $SCOPE_DEPLOYMENT_SOURCE_SHA"
 
-for component in cache media-api run-worker media-worker api git-router web; do
+for component in media-api run-worker media-worker api git-router web; do
   service="$(jq -er --arg component "$component" '.services[$component].id' "$manifest_path")"
   export SCOPE_DEPLOYMENT_COMPONENT="$component"
   export SCOPE_DEPLOYMENT_EVIDENCE_PATH="$evidence_dir/$component.jsonl"

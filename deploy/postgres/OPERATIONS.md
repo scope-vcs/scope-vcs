@@ -4,9 +4,8 @@
 
 | Service | Database login | Access |
 | --- | --- | --- |
-| API | `scope_api` | Repository, collaboration, identity, runs and media admission data. No cache object tables. |
+| API | `scope_api` | Repository, collaboration, identity, runs, run cache metadata and media admission data. |
 | Run worker | `scope_run_worker` | Run, outbox, compaction, dependency and cleanup writes; repository facts, membership, history and request/revision/user reads. No CLI sessions, identity credentials, cache objects or media tables. |
-| Cache | `scope_cache` | Cache tables; reads runs, jobs and attempts to revalidate signed grants. |
 | Media API | `scope_media_api` | Upload parts and abandoned objects, attachment row locks, media manifests and authorization reads. |
 | Media worker | `scope_media_worker` | Media processing/cleanup tables; reads repositories and requests. |
 | Private maintenance | `scope_migrator` | Database/schema/object owner. Can migrate and restore; inherits `pg_signal_backend` to drain runtime writer sessions. |
@@ -16,7 +15,7 @@ Every runtime login can read the migration ledger and use `public`. None can cre
 ## Initial cutover
 
 1. Prepare and test a restored copy first. Record a tested recovery point for metadata, objects and encryption keys. Record the current service settings without printing secrets in CI logs.
-2. Review the table grants against the release's database callers. The mapping is intentionally explicit. The cache service's `authorize_cache_grant` reads `scope_runs`, `scope_run_jobs` and `scope_run_attempts`. Media authorization reads repository membership and request invitees; media mutations use `scope_metadata_locks`. Worker responsibilities include more than run dispatch.
+2. Review the table grants against the release's database callers. The mapping is intentionally explicit. The API's run cache endpoints authenticate the attempt token against `scope_run_attempts`, `scope_runs`, `scope_run_jobs` and `scope_workflow_revisions` before touching the cache tables. Media authorization reads repository membership and request invitees; media mutations use `scope_metadata_locks`. Worker responsibilities include more than run dispatch.
 3. Pause writers. Render `node deploy/postgres/runtime-roles.mjs` to an access-restricted temporary SQL file. Apply it using `psql -X -v ON_ERROR_STOP=1` through private maintenance as the database administrator. This bootstrap requires role administration and object ownership transfer authority. No public connection string belongs in CI.
 4. New logins have no password. Set separate generated passwords through the private administrator connection using psql's `\password role_name`, then configure each service's private `DATABASE_URL` with its own login. Put `scope_migrator` credentials only in private maintenance. Preserve existing encryption keys. Require SCRAM authentication for database logins; do not use trust authentication in deployed environments.
 5. Restart the paused services with their new credentials. Check readiness, browser and CLI sign-in, Git clone/push, request mutations, media upload/read/processing/deletion, cache restore/upload/GC, run launch/logging/cancel/retry, compaction and content cleanup. Complete a release and staging baseline restore using the migration login. These application canaries are required before declaring live cutover complete; the isolated ACL test does not cover every application transaction.

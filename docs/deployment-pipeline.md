@@ -59,8 +59,8 @@ second list of function IDs.
 
 ## Activation and retries
 
-After writer closure and schema verification, cache and media API activation can
-run together, followed by the two workers. API readiness still precedes router
+After writer closure and schema verification, media API activation runs first,
+followed by the two workers together. API readiness still precedes router
 activation. Each component keeps separate deployment evidence. Predecessor removal
 is checked at a shared bounded barrier after activation instead of blocking each
 next service. The parent waits for both concurrent children before failure cleanup.
@@ -177,7 +177,7 @@ the administrator login, sets each role's password, and switches itself to
 `scope_migrator`. Every deployment then redeploys maintenance so it runs with
 its stored login, and follows the staging path: stop writers, migrate as
 `scope_migrator`, refresh grants from the revision's own role policy, then
-activate cache, media, worker, API, router, and web. Deployment and SSH use a
+activate media, worker, API, router, and web. Deployment and SSH use a
 project token scoped to the preview environment.
 
 Railway copies staging only once. A preview that predates a service the

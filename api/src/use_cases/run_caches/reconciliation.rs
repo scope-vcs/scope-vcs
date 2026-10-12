@@ -1,31 +1,36 @@
-use crate::AppState;
+use crate::{
+    background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness},
+    persistence::unix_now,
+    state::AppState,
+};
 use futures_util::{StreamExt, stream};
-use scope_storage::ObjectBackend;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use scope_storage::{ObjectBackend, S3Backend};
+use std::{sync::Arc, time::Duration};
+use tokio::time::MissedTickBehavior;
 
+const RECONCILIATION_INTERVAL: Duration = Duration::from_secs(60);
 const BATCH_SIZE: u64 = 100;
-const RETRY_SECONDS: u64 = 5 * 60;
-const DELETE_CONCURRENCY: usize = 8;
+pub(super) const RETRY_SECONDS: u64 = 5 * 60;
+pub(super) const DELETE_CONCURRENCY: usize = 8;
 const SWEEP_BUDGET: Duration = Duration::from_secs(30);
 
-pub(crate) fn start(state: AppState) {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(60));
-        loop {
-            interval.tick().await;
-            if let Err(error) = reconcile(&state).await {
-                tracing::error!(%error, "cache reconciliation failed");
-            }
-        }
-    });
+impl BackgroundWork {
+    pub(crate) fn start_run_cache_reconciliation(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "run cache reconciliation",
+                cadence: Cadence::Fixed {
+                    period: RECONCILIATION_INTERVAL,
+                    missed_ticks: MissedTickBehavior::Burst,
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            |state| async move { Ok(reconcile_at(&state, unix_now()?).await?) },
+        );
+    }
 }
 
-async fn reconcile(state: &AppState) -> anyhow::Result<()> {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    reconcile_at(state, now).await
-}
-
-async fn reconcile_at(state: &AppState, now: u64) -> anyhow::Result<()> {
+pub(super) async fn reconcile_at(state: &AppState, now: u64) -> anyhow::Result<()> {
     let started = std::time::Instant::now();
     let mut batches = 0;
     loop {
@@ -36,7 +41,7 @@ async fn reconcile_at(state: &AppState, now: u64) -> anyhow::Result<()> {
                 batches,
                 more,
                 elapsed_ms = started.elapsed().as_millis(),
-                "cache reconciliation finished"
+                "run cache reconciliation finished"
             );
             return Ok(());
         }
@@ -48,11 +53,12 @@ async fn reconcile_batch(state: &AppState, now: u64) -> anyhow::Result<bool> {
         .checked_add(RETRY_SECONDS)
         .ok_or_else(|| anyhow::anyhow!("cache retry timestamp overflow"))?;
     let caches = state.metadata.caches();
+    let object_store = state.run_caches.object_store.clone();
     let orphans = caches
         .claim_orphan_uploads(now, retry_at, BATCH_SIZE)
         .await?;
     let mut more = orphans.len() as u64 == BATCH_SIZE;
-    for (upload, result) in delete_objects(state.object_store.clone(), orphans, |upload| {
+    for (upload, result) in delete_objects(object_store.clone(), orphans, |upload| {
         upload.object_key.clone()
     })
     .await
@@ -76,7 +82,7 @@ async fn reconcile_batch(state: &AppState, now: u64) -> anyhow::Result<bool> {
     more |= uploads.len() as u64 == BATCH_SIZE;
     stream::iter(uploads.into_iter().map(|claim| {
         let caches = &caches;
-        let store = state.object_store.clone();
+        let store = object_store.clone();
         async move {
             let key = claim.object_key.clone();
             if let Err(error) = caches
@@ -97,7 +103,7 @@ async fn reconcile_batch(state: &AppState, now: u64) -> anyhow::Result<bool> {
     .await;
     let deletions = caches.claim_deletions(now, retry_at, BATCH_SIZE).await?;
     more |= deletions.len() as u64 == BATCH_SIZE;
-    for (deletion, result) in delete_objects(state.object_store.clone(), deletions, |deletion| {
+    for (deletion, result) in delete_objects(object_store, deletions, |deletion| {
         deletion.object_key.clone()
     })
     .await
@@ -119,7 +125,7 @@ async fn reconcile_batch(state: &AppState, now: u64) -> anyhow::Result<bool> {
 }
 
 async fn delete_objects<T>(
-    store: std::sync::Arc<scope_storage::S3Backend>,
+    store: Arc<S3Backend>,
     objects: Vec<T>,
     object_key: impl Fn(&T) -> String,
 ) -> Vec<(T, anyhow::Result<()>)> {
@@ -133,13 +139,7 @@ async fn delete_objects<T>(
     .await
 }
 
-async fn delete_object(
-    store: std::sync::Arc<scope_storage::S3Backend>,
-    object_key: String,
-) -> anyhow::Result<()> {
+async fn delete_object(store: Arc<S3Backend>, object_key: String) -> anyhow::Result<()> {
     store.delete(&object_key).await?;
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

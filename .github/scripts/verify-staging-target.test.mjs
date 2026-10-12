@@ -20,7 +20,6 @@ function fixture() {
       staging: {
         apiReplicas: 3,
         apiDomain: 'api-staging.example.test',
-        cacheDomain: 'cache-staging.example.test',
         environmentId: 'staging',
         environmentName: 'staging',
         routerDomain: 'router-staging.example.test',
@@ -30,7 +29,6 @@ function fixture() {
     },
     services: {
       api: { id: 'api', name: 'scope-api' },
-      cache: { id: 'cache', name: 'scope-cache-service' },
       'git-router': { id: 'router', name: 'scope-repo-router' },
       'media-api': { id: 'media', name: 'scope-media' },
       'media-worker': { id: 'media-worker', name: 'scope-media-worker' },
@@ -47,7 +45,6 @@ function fixture() {
   }
   const services = [
     { id: 'database', name: 'scope-postgres' },
-    { id: 'cache', name: 'scope-cache-service', status: 'SUCCESS', replicas: healthyReplicas(1) },
     { id: 'worker', name: 'scope-worker', status: 'SUCCESS', replicas: healthyReplicas(1) },
     { id: 'api', name: 'scope-api', status: 'SUCCESS', replicas: healthyReplicas(3) },
     { id: 'router', name: 'scope-repo-router', status: 'SUCCESS', replicas: healthyReplicas(1) },
@@ -97,7 +94,6 @@ test('staging deploys and records the candidate checkout when the workflow revis
     if (args[0] === 'status') console.log(JSON.stringify(input.status));
     else if (command === 'service list') console.log(JSON.stringify(input.services));
     else if (command === 'variable list') console.log(JSON.stringify(service === 'api' ? {
-      SCOPE_CACHE_URL: 'https://' + input.manifest.environments.staging.cacheDomain,
       SCOPE_GIT_PUBLIC_URL: 'https://' + input.manifest.environments.staging.routerDomain,
     } : { SCOPE_REPO_ROUTER_BACKEND: 'scope-api.railway.internal:8080', SCOPE_REPO_ROUTER_READ_REPLICAS: '3' }));
     else if (command === 'deployment list') console.log(JSON.stringify([{ id: service + '-deployment', status: 'SUCCESS' }]));
@@ -185,7 +181,6 @@ test('accepts only the reviewed healthy staging topology', () => {
     (input) => { input.services.find(({ id }) => id === 'api').replicas.running = 2 },
     (input) => { input.services.find(({ id }) => id === 'router').replicas.configured = 2 },
     (input) => { input.services.find(({ id }) => id === 'worker').status = 'CRASHED' },
-    (input) => { input.services.find(({ id }) => id === 'cache').replicas.crashed = 1 },
     (input) => { input.services.find(({ id }) => id === 'media').replicas.running = 0 },
     (input) => { input.services.find(({ id }) => id === 'media-worker').status = 'CRASHED' },
   ]) {
@@ -244,7 +239,6 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
       else if (args[0] === 'variable') {
         assert.notEqual(serviceId, 'database', 'Runner must never fetch database credentials');
         console.log(JSON.stringify(serviceId === 'api' ? {
-          SCOPE_CACHE_URL: 'https://' + state.manifest.environments.staging.cacheDomain,
           SCOPE_GIT_PUBLIC_URL: 'https://' + state.manifest.environments.staging.routerDomain,
         } : { SCOPE_REPO_ROUTER_BACKEND: 'scope-api.railway.internal:8080', SCOPE_REPO_ROUTER_READ_REPLICAS: '3' }));
       }
@@ -266,7 +260,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
       assert.equal(args.slice(0, 2).join(' '), 'variable set');
     } else if (action === 'maintenance') {
       assert.equal(process.env.DATABASE_URL, 'postgres://scope_migrator@scope-postgres.railway.internal/railway');
-      assert.ok(state.services.filter(s => ['api', 'cache', 'worker', 'media', 'media-worker'].includes(s.id))
+      assert.ok(state.services.filter(s => ['api', 'worker', 'media', 'media-worker'].includes(s.id))
         .every(s => s.replicas.running === 0));
       assert.ok(['plan', 'validate-workflow-catalogs', 'apply', 'verify'].includes(args[0]));
       state.maintenance.push(args[0]);
@@ -338,7 +332,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   const state = JSON.parse(readFileSync(join(root, 'provider.json')))
   assert.deepEqual([...state.activations].sort(), Object.keys(components).sort())
   for (const [dependency, component] of [
-    ['cache', 'run-worker'], ['media-api', 'media-worker'],
+    ['media-api', 'media-worker'],
     ['run-worker', 'api'], ['media-worker', 'api'], ['api', 'git-router'], ['git-router', 'web'],
   ]) {
     assert.ok(state.activations.indexOf(dependency) < state.activations.indexOf(component),
@@ -347,7 +341,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   assert.doesNotThrow(() => verifyStagingTopology(state))
   assert.deepEqual(JSON.parse(readFileSync(join(root, 'evidence.json'))), {
     commit: candidate, environmentId: input.manifest.environments.staging.environmentId, candidateDeployments: 1,
-    deployments: ['cache', 'run-worker', 'media-api', 'media-worker', 'api', 'git-router', 'web'].map(component => ({ service: components[component].serviceId,
+    deployments: ['run-worker', 'media-api', 'media-worker', 'api', 'git-router', 'web'].map(component => ({ service: components[component].serviceId,
       deploymentId: 'new-' + components[component].serviceId, status: 'SUCCESS' })),
   })
 })

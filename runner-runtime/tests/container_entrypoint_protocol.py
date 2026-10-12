@@ -76,14 +76,12 @@ class Fixture:
             return process_tree, 1
         return process_tree, 30
 
-    def claim_response(self, port: int) -> dict:
+    def claim_response(self) -> dict:
         command, timeout_seconds = self.step()
         image = f"fixture.invalid/checks@sha256:{'1' * 64}"
         return {
             "attempt_token": "attempt-token",
             "lease_expires_at_unix": int(time.time()) + 300,
-            "cache_endpoint": f"http://127.0.0.1:{port}",
-            "cache_grant": "unused-cache-grant",
             "job": {
                 "run_id": "container-regression",
                 "job_key": "entrypoint",
@@ -167,14 +165,11 @@ class Handler(BaseHTTPRequestHandler):
             if fixture.scenario == "claim-error":
                 self.empty_response(500)
             else:
-                self.json_response(200, fixture.claim_response(self.server.server_port))
+                self.json_response(200, fixture.claim_response())
             return
         if action == "heartbeat":
             canceled = fixture.scenario == "cancel-tree" and fixture.step_started
-            self.json_response(
-                200,
-                {"status": fixture.status(canceled=canceled), "cache_grant": "unused"},
-            )
+            self.json_response(200, fixture.status(canceled=canceled))
             return
         if action == "steps/0/start" or action == "steps/0/complete":
             self.json_response(200, fixture.status())

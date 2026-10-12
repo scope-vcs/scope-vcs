@@ -56,6 +56,7 @@ impl AppState {
         };
         work.start_repository_cache_pruning();
         work.start_run_attempt_recovery();
+        work.start_run_cache_reconciliation();
         work.start_retention();
         work.start_request_ref_cleanup();
         work.start_invite_email_delivery();
