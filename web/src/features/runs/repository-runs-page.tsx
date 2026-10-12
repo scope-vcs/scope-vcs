@@ -4,7 +4,7 @@ import type {
   RepositoryRunWorkflowListResponse,
 } from '@/api/types.generated'
 import { resourceErrorMessage, useCachedResource } from '@/lib/use-cached-resource'
-import { PageContent, WorkbenchBar, WorkbenchPane } from '@/components/page-header'
+import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
@@ -106,12 +106,14 @@ function RepositoryRunsPageContent({
 
   if (!initialResources || !history) {
     return (
-      <PageContent>
-        <h1 className="sr-only">Runs</h1>
-        <PageErrorAlert title="Runs unavailable">
-          Sign in as the owner or a repository member to view runs.
-        </PageErrorAlert>
-      </PageContent>
+      <WorkbenchPane>
+        <WorkbenchBar title="Runs" />
+        <WorkbenchBody>
+          <PageErrorAlert title="Runs unavailable">
+            Sign in as the owner or a repository member to view runs.
+          </PageErrorAlert>
+        </WorkbenchBody>
+      </WorkbenchPane>
     )
   }
 
@@ -139,55 +141,53 @@ function RepositoryRunsPageContent({
         )}
         title="Runs"
       />
-      <div className="min-w-0 border-t border-border">
-        <main className="min-w-0 px-4 pb-14 sm:px-6 lg:px-8">
-          {nativeRunsAvailable ? null : (
-            <p className="pt-5 text-sm text-muted-foreground">
-              Scope runs are not available for this repository.
-            </p>
-          )}
-          {workflowsError ? (
-            <div className="pt-5">
-              <PageErrorAlert title="Workflow filter unavailable">
-                <div>
-                  <p>Run history is still available.</p>
-                  <p className="mt-1 text-xs">{workflowsError}</p>
-                </div>
-              </PageErrorAlert>
-            </div>
-          ) : null}
-          {refreshError ? (
-            <div className="pt-5">
-              <PageErrorAlert title="Runs could not refresh">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span>{refreshError}</span>
-                  <Button onClick={refreshRuns} size="sm" variant="secondary">
-                    Retry now
-                  </Button>
-                </div>
-              </PageErrorAlert>
-            </div>
-          ) : null}
-          <div className="pt-7">
-            <RunHistoryList
-              empty={github && !workflow ? (
-                <RunsCiEmptyState
-                  github={github}
-                  hasWorkflows={nativeRunsAvailable && workflows.workflows.length > 0}
-                  params={params}
-                />
-              ) : undefined}
-              loadMore={() => void loadMore()}
-              loadingMore={loadingMore}
-              params={params}
-              runs={filteredRuns}
-              selectedWorkflowName={selectedWorkflow?.name}
-              showLoadMore={history.next_cursor !== null}
-              totalRunCount={history.runs.length}
-            />
+      <WorkbenchBody>
+        {nativeRunsAvailable ? null : (
+          <p className="pt-5 text-sm text-muted-foreground">
+            Scope runs are not available for this repository.
+          </p>
+        )}
+        {workflowsError ? (
+          <div className="pt-5">
+            <PageErrorAlert title="Workflow filter unavailable">
+              <div>
+                <p>Run history is still available.</p>
+                <p className="mt-1 text-xs">{workflowsError}</p>
+              </div>
+            </PageErrorAlert>
           </div>
-        </main>
-      </div>
+        ) : null}
+        {refreshError ? (
+          <div className="pt-5">
+            <PageErrorAlert title="Runs could not refresh">
+              <div className="flex flex-wrap items-center gap-3">
+                <span>{refreshError}</span>
+                <Button onClick={refreshRuns} size="sm" variant="secondary">
+                  Retry now
+                </Button>
+              </div>
+            </PageErrorAlert>
+          </div>
+        ) : null}
+        <div className="pt-7">
+          <RunHistoryList
+            empty={github && !workflow ? (
+              <RunsCiEmptyState
+                github={github}
+                hasWorkflows={nativeRunsAvailable && workflows.workflows.length > 0}
+                params={params}
+              />
+            ) : undefined}
+            loadMore={() => void loadMore()}
+            loadingMore={loadingMore}
+            params={params}
+            runs={filteredRuns}
+            selectedWorkflowName={selectedWorkflow?.name}
+            showLoadMore={history.next_cursor !== null}
+            totalRunCount={history.runs.length}
+          />
+        </div>
+      </WorkbenchBody>
     </WorkbenchPane>
   )
 }

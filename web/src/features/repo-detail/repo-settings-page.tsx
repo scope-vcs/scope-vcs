@@ -18,7 +18,6 @@ import type {
   RepositoryMemberResponse,
   RepoSummaryResponse,
 } from '@/api/types.generated'
-import { PageContent } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { SectionRow, SectionRows } from '@/components/section-rows'
 import { TypedConfirmationDialog } from '@/components/typed-confirmation-dialog'
@@ -149,87 +148,84 @@ export function RepoSettingsPage({
 
   return (
     <>
-      <PageContent>
-        <h1 className="sr-only">Settings</h1>
-        {refreshError && (
-          <PageErrorAlert title="Settings refresh failed">
-            {refreshError}
-          </PageErrorAlert>
-        )}
-        {deleteError && !deleteTarget && (
-          <PageErrorAlert title="Repository deletion failed">
-            {deleteError}
-          </PageErrorAlert>
-        )}
+      {refreshError && (
+        <PageErrorAlert title="Settings refresh failed">
+          {refreshError}
+        </PageErrorAlert>
+      )}
+      {deleteError && !deleteTarget && (
+        <PageErrorAlert title="Repository deletion failed">
+          {deleteError}
+        </PageErrorAlert>
+      )}
 
-        {repo.access.actor === 'Public' && (
-          <PageErrorAlert title="Settings unavailable">
-            Sign in as the owner or a repository member to view repository
-            access.
-          </PageErrorAlert>
-        )}
+      {repo.access.actor === 'Public' && (
+        <PageErrorAlert title="Settings unavailable">
+          Sign in as the owner or a repository member to view repository
+          access.
+        </PageErrorAlert>
+      )}
 
-        {repo.access.actor !== 'Public' && (
-          <RepositoryMetadataForm
-            key={repo.id}
-            repo={repo}
-            save={(metadata) => mutateAndRefresh(updateMetadata({ ...params, ...metadata }))}
-          />
-        )}
+      {repo.access.actor !== 'Public' && (
+        <RepositoryMetadataForm
+          key={repo.id}
+          repo={repo}
+          save={(metadata) => mutateAndRefresh(updateMetadata({ ...params, ...metadata }))}
+        />
+      )}
 
-        {repo.access.actor !== 'Public' && <RepositoryViewsSection views={views} />}
+      {repo.access.actor !== 'Public' && <RepositoryViewsSection views={views} />}
 
-        {readsFullView && visibilityLog}
+      {readsFullView && visibilityLog}
 
-        {readsFullView && (
-          <RepoCiSection
-            confirmPublic={() => confirmPublicGitHub(params)}
-            disconnect={() => disconnectGitHub(params)}
-            github={github}
-            setRequiredChecks={(names) => setGitHubRequiredChecks({ ...params, names })}
-            setRunImportCount={(count) => setGitHubRunImportCount({ ...params, count })}
-            startAuthorization={() => startGitHubAuthorization(params)}
-            startRunImport={() => startGitHubRunImport(params)}
-            startSetupCheck={() => startGitHubSetupCheck(params)}
-          />
-        )}
+      {readsFullView && (
+        <RepoCiSection
+          confirmPublic={() => confirmPublicGitHub(params)}
+          disconnect={() => disconnectGitHub(params)}
+          github={github}
+          setRequiredChecks={(names) => setGitHubRequiredChecks({ ...params, names })}
+          setRunImportCount={(count) => setGitHubRunImportCount({ ...params, count })}
+          startAuthorization={() => startGitHubAuthorization(params)}
+          startRunImport={() => startGitHubRunImport(params)}
+          startSetupCheck={() => startGitHubSetupCheck(params)}
+        />
+      )}
 
-        {repo.access.actor === 'Owner' && (
-          <DangerZoneSection onDelete={() => dispatch({ repo, type: 'deleteTargetChanged' })} />
-        )}
+      {repo.access.actor === 'Owner' && (
+        <DangerZoneSection onDelete={() => dispatch({ repo, type: 'deleteTargetChanged' })} />
+      )}
 
-        {repo.access.actor === 'Member' && (
-          <SectionRows>
-            <SectionRow
-              description="These permissions are assigned by the repository owner."
-              icon={<ShieldCheck className="size-4" />}
-              title="Your access"
-            >
-              <MemberAccessSummary permissions={repo.access} viewName={views.name(repo.access.view)} />
-            </SectionRow>
-          </SectionRows>
-        )}
+      {repo.access.actor === 'Member' && (
+        <SectionRows>
+          <SectionRow
+            description="These permissions are assigned by the repository owner."
+            icon={<ShieldCheck className="size-4" />}
+            title="Your access"
+          >
+            <MemberAccessSummary permissions={repo.access} viewName={views.name(repo.access.view)} />
+          </SectionRow>
+        </SectionRows>
+      )}
 
-        {!collaboration && collaborationLoading && repo.access.actor === 'Owner' && (
-          <AccessSection canInvite={repo.lifecycle_state === 'Ready'} ownerHandle={repo.owner_handle} />
-        )}
+      {!collaboration && collaborationLoading && repo.access.actor === 'Owner' && (
+        <AccessSection canInvite={repo.lifecycle_state === 'Ready'} ownerHandle={repo.owner_handle} />
+      )}
 
-        {collaboration && (
-          <RepositoryMembersSection
-            collaboration={collaboration}
-            createInvite={createMemberInvite}
-            createInviteLink={(inviteId) =>
-              createInviteLink({ ...params, invite_id: inviteId })}
-            deleteInvite={removeRepositoryInvite}
-            sendInviteEmail={(inviteId) =>
-              mutateAndRefresh(sendInviteEmail({ ...params, invite_id: inviteId }))}
-            deleteMember={removeRepositoryMember}
-            params={params}
-            repo={repo}
-            updateMember={updateRepositoryMember}
-          />
-        )}
-      </PageContent>
+      {collaboration && (
+        <RepositoryMembersSection
+          collaboration={collaboration}
+          createInvite={createMemberInvite}
+          createInviteLink={(inviteId) =>
+            createInviteLink({ ...params, invite_id: inviteId })}
+          deleteInvite={removeRepositoryInvite}
+          sendInviteEmail={(inviteId) =>
+            mutateAndRefresh(sendInviteEmail({ ...params, invite_id: inviteId }))}
+          deleteMember={removeRepositoryMember}
+          params={params}
+          repo={repo}
+          updateMember={updateRepositoryMember}
+        />
+      )}
 
       {deleteTarget && (
         <TypedConfirmationDialog

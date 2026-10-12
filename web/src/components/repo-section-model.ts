@@ -17,6 +17,10 @@ export function repoSectionsForActor(actor: RepositoryActor) {
     : REPO_SECTIONS
 }
 
+export function pendingRepoSections(signedIn: boolean) {
+  return signedIn ? REPO_SECTIONS : repoSectionsForActor('Public')
+}
+
 export function activeRepoSection(
   matches: (route: RepoRoute) => boolean,
 ): RepoSection {

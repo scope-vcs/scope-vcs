@@ -6,7 +6,7 @@ import type {
 } from '@/api/types.generated'
 import { EmptyState } from '@/components/empty-state'
 import { PageErrorAlert } from '@/components/page-error-alert'
-import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
+import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
@@ -128,87 +128,85 @@ export function GitHubWorkflowRunsPage({
         summary="Workflow runs from GitHub Actions"
         title="Runs"
       />
-      <div className="min-w-0 border-t border-border">
-        <main className="min-w-0 px-4 pb-14 sm:px-6 lg:px-8">
-          {resource.error ? (
-            <div className="pt-5">
-              <PageErrorAlert title="Runs could not refresh">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span>{resource.error}</span>
-                  <Button onClick={resource.retry} size="sm" variant="secondary">
-                    Retry now
-                  </Button>
-                </div>
-              </PageErrorAlert>
-            </div>
-          ) : names.error ? (
-            <div className="pt-5">
-              <PageErrorAlert title="Workflow filter could not refresh">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span>{names.error}</span>
-                  <Button onClick={names.retry} size="sm" variant="secondary">
-                    Retry now
-                  </Button>
-                </div>
-              </PageErrorAlert>
-            </div>
-          ) : null}
-          <div className="pt-7">
-            {!runs ? (
-              resource.error ? null : <GitHubWorkflowRunsSkeleton />
-            ) : rows.length === 0 ? (
-              workflow === null ? (
-                <EmptyState
-                  action={repo.access.actor !== 'Public' ? (
-                    <Button asChild size="sm" variant="secondary">
-                      <Link hash="ci" params={params} to="/$owner/$repo/settings">
-                        <FlaskConical className="size-3.5" />
-                        <span>Test connection</span>
-                      </Link>
-                    </Button>
-                  ) : undefined}
-                  description="Runs appear here once GitHub Actions starts a workflow for this repository."
-                  icon={<TerminalSquare />}
-                  title="No runs yet"
-                />
-              ) : (
-                <EmptyState
-                  description="GitHub has not reported a run of this workflow."
-                  icon={<TerminalSquare />}
-                  title={`No ${workflow} runs`}
-                />
-              )
-            ) : (
-              <>
-                <ul className="divide-y divide-border">
-                  {rows.map((row, index) => <GitHubWorkflowRunItem
-                    key={row.key}
-                    params={params}
-                    row={row}
-                    onOpen={() => {
-                      if (scope && runs) seedGitHubWorkflowRunDetail(scope, runs.workflow_runs[index])
-                    }}
-                  />)}
-                </ul>
-                <div className="flex items-center justify-center gap-3 pt-5">
-                  {runs.next_cursor ? (
-                    <Button
-                      aria-busy={loadingMore}
-                      disabled={loadingMore}
-                      onClick={() => void loadMore()}
-                      variant="secondary"
-                    >
-                      {loadingMore ? <LoaderCircle className="animate-spin" /> : null}
-                      Load older runs
-                    </Button>
-                  ) : null}
-                  <span className="text-xs text-muted-foreground">Showing {rows.length}</span>
-                </div>
-              </>
-            )}
+      <WorkbenchBody>
+        {resource.error ? (
+          <div className="pt-5">
+            <PageErrorAlert title="Runs could not refresh">
+              <div className="flex flex-wrap items-center gap-3">
+                <span>{resource.error}</span>
+                <Button onClick={resource.retry} size="sm" variant="secondary">
+                  Retry now
+                </Button>
+              </div>
+            </PageErrorAlert>
           </div>
-        </main>
-      </div>
+        ) : names.error ? (
+          <div className="pt-5">
+            <PageErrorAlert title="Workflow filter could not refresh">
+              <div className="flex flex-wrap items-center gap-3">
+                <span>{names.error}</span>
+                <Button onClick={names.retry} size="sm" variant="secondary">
+                  Retry now
+                </Button>
+              </div>
+            </PageErrorAlert>
+          </div>
+        ) : null}
+        <div className="pt-7">
+          {!runs ? (
+            resource.error ? null : <GitHubWorkflowRunsSkeleton />
+          ) : rows.length === 0 ? (
+            workflow === null ? (
+              <EmptyState
+                action={repo.access.actor !== 'Public' ? (
+                  <Button asChild size="sm" variant="secondary">
+                    <Link hash="ci" params={params} to="/$owner/$repo/settings">
+                      <FlaskConical className="size-3.5" />
+                      <span>Test connection</span>
+                    </Link>
+                  </Button>
+                ) : undefined}
+                description="Runs appear here once GitHub Actions starts a workflow for this repository."
+                icon={<TerminalSquare />}
+                title="No runs yet"
+              />
+            ) : (
+              <EmptyState
+                description="GitHub has not reported a run of this workflow."
+                icon={<TerminalSquare />}
+                title={`No ${workflow} runs`}
+              />
+            )
+          ) : (
+            <>
+              <ul className="divide-y divide-border">
+                {rows.map((row, index) => <GitHubWorkflowRunItem
+                  key={row.key}
+                  params={params}
+                  row={row}
+                  onOpen={() => {
+                    if (scope && runs) seedGitHubWorkflowRunDetail(scope, runs.workflow_runs[index])
+                  }}
+                />)}
+              </ul>
+              <div className="flex items-center justify-center gap-3 pt-5">
+                {runs.next_cursor ? (
+                  <Button
+                    aria-busy={loadingMore}
+                    disabled={loadingMore}
+                    onClick={() => void loadMore()}
+                    variant="secondary"
+                  >
+                    {loadingMore ? <LoaderCircle className="animate-spin" /> : null}
+                    Load older runs
+                  </Button>
+                ) : null}
+                <span className="text-xs text-muted-foreground">Showing {rows.length}</span>
+              </div>
+            </>
+          )}
+        </div>
+      </WorkbenchBody>
     </WorkbenchPane>
   )
 }

@@ -7,6 +7,7 @@ import {
 import { AppShell } from '@/components/app-shell'
 import {
   activeRepoSection,
+  pendingRepoSections,
   repoSectionsForActor,
 } from '@/components/repo-section-model'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
@@ -31,7 +32,9 @@ export function RepoShell({
     router.buildLocation({ params, to: '/$owner/$repo/requests' }).pathname,
   )
   const pathname = useLocation({ select: (location) => location.pathname })
-  const sections = repoSectionsForActor(repo?.access.actor ?? 'Public')
+  const sections = repo
+    ? repoSectionsForActor(repo.access.actor)
+    : pendingRepoSections(Boolean(userId))
   const openRequestCount = repo?.open_request_count ?? 0
   const active = activeRepoSection((to) => {
     const target = router.buildLocation({ params, to }).pathname

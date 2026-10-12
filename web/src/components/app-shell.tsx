@@ -18,7 +18,7 @@ export function AppShell({
       </a>
       {header?.()}
       <main
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [scrollbar-gutter:stable] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         data-scroll-restoration-id={MAIN_CONTENT_ID}
         id={MAIN_CONTENT_ID}
         tabIndex={-1}

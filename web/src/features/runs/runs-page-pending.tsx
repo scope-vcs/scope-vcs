@@ -1,4 +1,4 @@
-import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
+import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
 import {
   BlockSkeleton,
@@ -29,31 +29,29 @@ export function RunsPagePending() {
     <PendingSurface label="Loading runs">
       <WorkbenchPane>
         <WorkbenchBar actions={PENDING_ACTIONS} title="Runs" />
-        <div className="min-w-0 border-t border-border">
-          <main className="min-w-0 px-4 pb-14 sm:px-6 lg:px-8">
-            <div className="divide-y divide-border pt-7">
-              {PENDING_RUNS.map((run) => (
-                <div className={RUN_ROW_CLASS} key={run.id}>
-                  <BlockSkeleton className="size-3.5 shrink-0 rounded-full" />
-                  <div className={RUN_ROW_PRIMARY_CLASS}>
-                    <TextSkeleton className="h-6 py-1 sm:h-5 sm:py-0.5" length={run.length} />
-                    <TextSkeleton
-                      className="hidden sm:block"
-                      length="short"
-                      size="meta"
-                    />
-                  </div>
-                  <div className={RUN_ROW_DURATION_CLASS}>
-                    <TextSkeleton className="ml-auto" length="tiny" size="meta" />
-                  </div>
-                  <div className={RUN_ROW_TIMESTAMP_CLASS}>
-                    <TextSkeleton className="ml-auto" length="short" size="meta" />
-                  </div>
+        <WorkbenchBody>
+          <div className="divide-y divide-border pt-7">
+            {PENDING_RUNS.map((run) => (
+              <div className={RUN_ROW_CLASS} key={run.id}>
+                <BlockSkeleton className="size-3.5 shrink-0 rounded-full" />
+                <div className={RUN_ROW_PRIMARY_CLASS}>
+                  <TextSkeleton className="h-6 py-1 sm:h-5 sm:py-0.5" length={run.length} />
+                  <TextSkeleton
+                    className="hidden sm:block"
+                    length="short"
+                    size="meta"
+                  />
                 </div>
-              ))}
-            </div>
-          </main>
-        </div>
+                <div className={RUN_ROW_DURATION_CLASS}>
+                  <TextSkeleton className="ml-auto" length="tiny" size="meta" />
+                </div>
+                <div className={RUN_ROW_TIMESTAMP_CLASS}>
+                  <TextSkeleton className="ml-auto" length="short" size="meta" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </WorkbenchBody>
       </WorkbenchPane>
     </PendingSurface>
   )

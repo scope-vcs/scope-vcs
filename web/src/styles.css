@@ -56,6 +56,11 @@ body {
   animation: scope-skeleton-breathe 1.6s ease-in-out infinite;
 }
 
+#main-content .app-rail:not(.app-rail .app-rail) {
+  width: auto;
+  margin-inline: max(0px, (100vw - var(--app-rail)) / 2) auto;
+}
+
 .scope-content-enter {
   animation: scope-content-enter 180ms ease-out both;
 }
@@ -218,6 +223,7 @@ body {
   --destructive: var(--danger);
 
   --app-topbar: 57px;
+  --app-rail: 1280px;
   --app-chrome: 113px;
 
   --terminal-surface: #090b0e;
