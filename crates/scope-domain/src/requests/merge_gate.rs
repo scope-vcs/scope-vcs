@@ -94,15 +94,13 @@ pub fn evaluate_merge_gate(input: MergeGateInput<'_>) -> MergeGateDecision {
             viewer,
             views,
             checks,
-        } => {
-            if repository_lifecycle != RepoLifecycleState::Ready {
-                return MergeGateDecision::RequestMerge(RequestMergeability {
-                    status: RequestMergeabilityStatus::RepositoryNotReady,
-                    reason: Some("repo must be ready before merge"),
-                });
-            }
-            MergeGateDecision::RequestMerge(evaluate_request_merge(subject, viewer, views, checks))
-        }
+        } => MergeGateDecision::RequestMerge(evaluate_request_merge(
+            repository_lifecycle,
+            subject,
+            viewer,
+            views,
+            checks,
+        )),
         MergeGateInput::AuthorizedMainPush {
             repository_lifecycle,
             access,
@@ -133,12 +131,19 @@ impl<'a> From<&'a Request> for RequestMergeSubject<'a> {
     }
 }
 
-fn evaluate_request_merge(
+pub(super) fn evaluate_request_merge(
+    repository_lifecycle: RepoLifecycleState,
     subject: RequestMergeSubject<'_>,
     viewer: &RequestViewer<'_>,
     views: &Views,
     checks: RequestChecksOutcome,
 ) -> RequestMergeability {
+    if repository_lifecycle != RepoLifecycleState::Ready {
+        return RequestMergeability {
+            status: RequestMergeabilityStatus::RepositoryNotReady,
+            reason: Some("repo must be ready before merge"),
+        };
+    }
     let (status, reason) = match subject.state {
         RequestState::Closed => (RequestMergeabilityStatus::Closed, Some("request is closed")),
         RequestState::Merged => (RequestMergeabilityStatus::Merged, Some("request is merged")),

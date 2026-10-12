@@ -1,6 +1,4 @@
-use super::merge_gate::{
-    MergeGateInput, RequestMergeSubject, RequestMergeability, evaluate_merge_gate,
-};
+use super::merge_gate::{RequestMergeSubject, RequestMergeability, evaluate_request_merge};
 use super::{
     Request, RequestActorRole, RequestState, checks::RequestChecksOutcome,
     lifecycle::ensure_request_close_allowed,
@@ -204,15 +202,7 @@ pub fn request_list_mergeability(
     checks: RequestChecksOutcome,
     repository_lifecycle: crate::repository::RepoLifecycleState,
 ) -> RequestMergeability {
-    evaluate_merge_gate(MergeGateInput::RequestMerge {
-        repository_lifecycle,
-        subject,
-        viewer,
-        views,
-        checks,
-    })
-    .request_mergeability()
-    .expect("request operation returns request mergeability")
+    evaluate_request_merge(repository_lifecycle, subject, viewer, views, checks)
 }
 
 pub fn request_mergeability(
