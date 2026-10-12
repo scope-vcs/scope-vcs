@@ -1,41 +1,30 @@
 use crate::lease::{HeartbeatError, supervise_lease};
 use crate::{
-    codec::{
-        CodecDerivative, CodecFailure, CodecFailureKind, CodecPipeline, DerivativeKind, MediaKind,
-        ValidatedSource,
-    },
+    codec::{CodecDerivative, CodecFailure, CodecFailureKind, CodecPipeline, ValidatedSource},
     config::WorkerSettings,
     health::WorkerHealth,
-    runtime::{dependencies_ready, lease_expiry, retry_delay},
+    runtime::{JobLoop, JobOutcome, lease_expiry, retry_delay},
     scratch::ScratchSpace,
 };
 use scope_domain::requests::attachments::{
     RequestAttachmentDerivative, RequestAttachmentDerivativeKind, RequestAttachmentFailure,
-    RequestAttachmentFailureCode, RequestAttachmentProcessingLease, RequestAttachmentStoredObject,
+    RequestAttachmentFailureCode, RequestAttachmentImageMetadata, RequestAttachmentKind,
+    RequestAttachmentProcessingLease, RequestAttachmentSource, RequestAttachmentStagedPart,
+    RequestAttachmentStoredObject, RequestAttachmentVideoMetadata, RequestMediaObject,
 };
 use scope_media_storage::{
-    MAX_CHUNK_BYTES, MediaObject, MediaStorage, MediaStorageError, MediaStorageErrorKind,
-    StagedMediaPart, WriteAttempt,
+    MAX_CHUNK_BYTES, MediaStorage, MediaStorageError, MediaStorageErrorKind, WriteAttempt,
 };
 use scope_postgres::db::{
     CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,
-    CompletedRequestMediaManifest, FailRequestAttachmentProcessingCommand, MediaLeaseMutation,
-    MetadataStore, RequestMediaChunk, RequestMediaManifest, ValidateRequestAttachmentSourceCommand,
-    ValidatedRequestAttachmentSource,
+    FailRequestAttachmentProcessingCommand, MediaLeaseMutation, MetadataStore,
+    ValidateRequestAttachmentSourceCommand,
 };
-use scope_service_runtime::{random_hex, unix_now, wait_or_shutdown};
+use scope_service_runtime::{random_hex, unix_now};
 use sha2::{Digest, Sha256};
-use std::{path::Path, time::Duration};
+use std::path::Path;
 use tokio::io::AsyncReadExt;
 use tracing::Instrument as _;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProcessingOutcome {
-    NoJob,
-    Completed,
-    Failed,
-    LeaseLost,
-}
 
 pub async fn run_processing_loop(
     metadata: MetadataStore,
@@ -45,29 +34,16 @@ pub async fn run_processing_loop(
     settings: WorkerSettings,
     health: WorkerHealth,
 ) -> anyhow::Result<()> {
-    loop {
-        if !dependencies_ready(&metadata, &storage, &health).await {
-            if wait_or_shutdown(settings.poll_interval).await {
-                return Ok(());
-            }
-            continue;
-        }
-        let outcome =
-            process_next_job(&metadata, &storage, &pipeline, &scratch, &settings, &health).await;
-        let should_wait = matches!(&outcome, Ok(ProcessingOutcome::NoJob) | Err(_));
-        match &outcome {
-            Ok(ProcessingOutcome::NoJob) => {}
-            Ok(value) => tracing::info!(outcome = ?value, "media processing job finished"),
-            Err(error) => tracing::error!(%error, "media processing poll failed"),
-        }
-        health.mark_processing_poll(unix_now()?);
-        if !should_wait {
-            continue;
-        }
-        if wait_or_shutdown(settings.poll_interval).await {
-            return Ok(());
-        }
+    JobLoop {
+        kind: "processing",
+        metadata: &metadata,
+        storage: &storage,
+        health: &health,
+        poll_interval: settings.poll_interval,
+        mark_poll: WorkerHealth::mark_processing_poll,
     }
+    .run(|| process_next_job(&metadata, &storage, &pipeline, &scratch, &settings, &health))
+    .await
 }
 
 async fn process_next_job(
@@ -77,7 +53,7 @@ async fn process_next_job(
     scratch: &ScratchSpace,
     settings: &WorkerSettings,
     health: &WorkerHealth,
-) -> anyhow::Result<ProcessingOutcome> {
+) -> anyhow::Result<JobOutcome> {
     let now = unix_now()?;
     let token = random_hex("lease-", 16)?;
     let Some(lease) = metadata
@@ -85,7 +61,7 @@ async fn process_next_job(
         .claim_processing_job(&token, now, lease_expiry(now, settings.lease_duration)?)
         .await?
     else {
-        return Ok(ProcessingOutcome::NoJob);
+        return Ok(JobOutcome::NoJob);
     };
     tracing::info!(
         attachment_id = %lease.attachment_id,
@@ -105,13 +81,22 @@ async fn process_next_job(
     let work = settle_claim(metadata, storage, pipeline, scratch, settings, &lease);
     match supervise_lease(work, settings.lease_duration, || async {
         let now = unix_now()?;
-        renew_processing(metadata, &lease, settings.lease_duration, now).await
+        Ok(metadata
+            .media()
+            .renew_processing_lease(
+                &lease.attachment_id,
+                &lease.lease_token,
+                lease.lease_generation,
+                now,
+                lease_expiry(now, settings.lease_duration)?,
+            )
+            .await?)
     })
     .instrument(span)
     .await
     {
         Ok(outcome) => outcome,
-        Err(HeartbeatError::LeaseLost) => Ok(ProcessingOutcome::LeaseLost),
+        Err(HeartbeatError::LeaseLost) => Ok(JobOutcome::LeaseLost),
         Err(HeartbeatError::Database(error)) => Err(error),
     }
 }
@@ -123,29 +108,34 @@ async fn settle_claim(
     scratch: &ScratchSpace,
     settings: &WorkerSettings,
     lease: &RequestAttachmentProcessingLease,
-) -> anyhow::Result<ProcessingOutcome> {
+) -> anyhow::Result<JobOutcome> {
     let work = process_claim(metadata, storage, pipeline, scratch, settings, lease).await;
     match work {
         Ok(completion) => {
-            let source = completion.source.clone();
-            match mark_source_validated(metadata, lease, source).await {
+            match mark_source_validated(metadata, lease, completion.source.clone()).await {
                 Ok(true) => {}
                 Ok(false) => {
                     delete_objects(storage, &completion.objects).await;
-                    return Ok(ProcessingOutcome::LeaseLost);
+                    return Ok(JobOutcome::LeaseLost);
                 }
                 Err(error) => {
                     delete_objects(storage, &completion.objects).await;
                     return record_source_validation_error(metadata, settings, lease, error).await;
                 }
             }
-            let now = unix_now()?;
-            let command = completion.command(lease, now);
+            let command = CompleteRequestAttachmentProcessingCommand {
+                attachment_id: lease.attachment_id.clone(),
+                lease_token: lease.lease_token.clone(),
+                lease_generation: lease.lease_generation,
+                source: completion.source,
+                derivatives: completion.derivatives,
+                now_unix: unix_now()?,
+            };
             match metadata.media().complete_processing_job(command).await? {
-                MediaLeaseMutation::Applied(_) => Ok(ProcessingOutcome::Completed),
+                MediaLeaseMutation::Applied(_) => Ok(JobOutcome::Completed),
                 MediaLeaseMutation::LeaseLost => {
                     delete_objects(storage, &completion.objects).await;
-                    Ok(ProcessingOutcome::LeaseLost)
+                    Ok(JobOutcome::LeaseLost)
                 }
             }
         }
@@ -154,9 +144,9 @@ async fn settle_claim(
             validated_source,
         }) => {
             if let Some(source) = validated_source {
-                match mark_source_validated(metadata, lease, source).await {
+                match mark_source_validated(metadata, lease, *source).await {
                     Ok(true) => {}
-                    Ok(false) => return Ok(ProcessingOutcome::LeaseLost),
+                    Ok(false) => return Ok(JobOutcome::LeaseLost),
                     Err(error) => {
                         return record_source_validation_error(metadata, settings, lease, error)
                             .await;
@@ -165,38 +155,21 @@ async fn settle_claim(
             }
             record_processing_failure(metadata, settings, lease, failure).await
         }
-        Err(WorkError::LeaseLost) => Ok(ProcessingOutcome::LeaseLost),
+        Err(WorkError::LeaseLost) => Ok(JobOutcome::LeaseLost),
         Err(WorkError::Database(error)) => Err(error),
     }
 }
 
 struct PreparedCompletion {
-    source: ValidatedRequestAttachmentSource,
+    source: RequestAttachmentSource,
     derivatives: Vec<CompletedRequestAttachmentDerivative>,
-    objects: Vec<MediaObject>,
-}
-
-impl PreparedCompletion {
-    fn command(
-        &self,
-        lease: &RequestAttachmentProcessingLease,
-        now_unix: u64,
-    ) -> CompleteRequestAttachmentProcessingCommand {
-        CompleteRequestAttachmentProcessingCommand {
-            attachment_id: lease.attachment_id.clone(),
-            lease_token: lease.lease_token.clone(),
-            lease_generation: lease.lease_generation,
-            source: self.source.clone(),
-            derivatives: self.derivatives.clone(),
-            now_unix,
-        }
-    }
+    objects: Vec<RequestMediaObject>,
 }
 
 enum WorkError {
     Failure {
         failure: RequestAttachmentFailure,
-        validated_source: Option<ValidatedRequestAttachmentSource>,
+        validated_source: Option<Box<RequestAttachmentSource>>,
     },
     LeaseLost,
     Database(anyhow::Error),
@@ -219,83 +192,42 @@ async fn process_claim(
         .await
         .map_err(|error| WorkError::Database(error.into()))?
         .ok_or(WorkError::LeaseLost)?;
-    if manifest.size_bytes > settings.codec_limits.max_source_bytes {
+    if manifest.plaintext_bytes > settings.codec_limits.max_source_bytes {
         return Err(failure(
             RequestAttachmentFailureCode::MediaLimitExceeded,
             "media source exceeds the worker byte limit",
             false,
-            None,
         ));
     }
-    let source_object = media_object_from_manifest(&manifest).map_err(|error| {
-        tracing::warn!(
-            attachment_id = %lease.attachment_id,
-            %error,
-            "stored source manifest is invalid"
-        );
-        failure(
-            RequestAttachmentFailureCode::CorruptMedia,
-            "The uploaded file could not be read. Upload it again.",
-            false,
-            None,
-        )
-    })?;
-    let job_dir = scratch.job().map_err(|error| {
-        tracing::warn!(attachment_id = %lease.attachment_id, %error, "creating media scratch directory failed");
-        failure(
-            RequestAttachmentFailureCode::Internal,
-            "Media processing failed. Retry processing.",
-            true,
-            None,
-        )
-    })?;
+    let job_dir = scratch
+        .job()
+        .map_err(local_failure(lease, "creating media scratch directory"))?;
     let source_path = job_dir.path().join("source.bin");
     let mut source_file = tokio::fs::File::create(&source_path)
         .await
-        .map_err(|error| {
-            tracing::warn!(attachment_id = %lease.attachment_id, %error, "creating local media source failed");
-            failure(
-                RequestAttachmentFailureCode::Internal,
-                "Media processing failed. Retry processing.",
-                true,
-                None,
-            )
-        })?;
+        .map_err(local_failure(lease, "creating local media source"))?;
     storage
-        .download_to_writer(&source_object, &mut source_file)
+        .download_to_writer(&manifest, &mut source_file)
         .await
         .map_err(|error| WorkError::Failure {
             failure: storage_failure(&error),
             validated_source: None,
         })?;
-    source_file.sync_all().await.map_err(|error| {
-        tracing::warn!(attachment_id = %lease.attachment_id, %error, "syncing local media source failed");
-        failure(
-            RequestAttachmentFailureCode::Internal,
-            "Media processing failed. Retry processing.",
-            true,
-            None,
-        )
-    })?;
+    source_file
+        .sync_all()
+        .await
+        .map_err(local_failure(lease, "syncing local media source"))?;
     drop(source_file);
-    let (downloaded_bytes, downloaded_sha256) =
-        sha256_file(&source_path).await.map_err(|error| {
-            tracing::warn!(attachment_id = %lease.attachment_id, %error, "hashing local media source failed");
-            failure(
-                RequestAttachmentFailureCode::Internal,
-                "Media processing failed. Retry processing.",
-                true,
-                None,
-            )
-        })?;
-    if downloaded_bytes != manifest.size_bytes
+    let (downloaded_bytes, downloaded_sha256) = sha256_file(&source_path)
+        .await
+        .map_err(local_failure(lease, "hashing local media source"))?;
+    if downloaded_bytes != manifest.plaintext_bytes
         || !downloaded_sha256.eq_ignore_ascii_case(&manifest.sha256)
     {
         return Err(failure(
             RequestAttachmentFailureCode::CorruptMedia,
             "downloaded source does not match its immutable manifest",
             false,
-            None,
         ));
     }
 
@@ -311,7 +243,7 @@ async fn process_claim(
             let validated = error
                 .validated_source
                 .as_ref()
-                .map(|source| validated_source(source, &manifest));
+                .map(|source| Box::new(validated_source(source, &manifest)));
             return Err(WorkError::Failure {
                 failure: codec_failure(&error),
                 validated_source: validated,
@@ -333,7 +265,7 @@ async fn process_claim(
                 return match error {
                     UploadError::Storage(error) => Err(WorkError::Failure {
                         failure: storage_failure(&error),
-                        validated_source: Some(validated_source),
+                        validated_source: Some(Box::new(validated_source)),
                     }),
                     UploadError::Internal(error) => {
                         tracing::warn!(
@@ -347,7 +279,7 @@ async fn process_claim(
                                 message: "Media processing failed. Retry processing.".to_owned(),
                                 retryable: true,
                             },
-                            validated_source: Some(validated_source),
+                            validated_source: Some(Box::new(validated_source)),
                         })
                     }
                     UploadError::LeaseLost => Err(WorkError::LeaseLost),
@@ -375,11 +307,11 @@ async fn upload_derivative(
     storage: &MediaStorage,
     lease: &RequestAttachmentProcessingLease,
     derivative: &CodecDerivative,
-) -> Result<(CompletedRequestAttachmentDerivative, MediaObject), UploadError> {
+) -> Result<(CompletedRequestAttachmentDerivative, RequestMediaObject), UploadError> {
     let object_name = match derivative.kind {
-        DerivativeKind::ImagePreview => "image-preview",
-        DerivativeKind::VideoPlayback => "video-playback",
-        DerivativeKind::VideoPoster => "video-poster",
+        RequestAttachmentDerivativeKind::ImagePreview => "image-preview",
+        RequestAttachmentDerivativeKind::VideoPlayback => "video-playback",
+        RequestAttachmentDerivativeKind::VideoPoster => "video-poster",
     };
     let attempt = WriteAttempt::new(
         &lease.attachment_id,
@@ -449,90 +381,61 @@ async fn upload_derivative(
         }
     };
     let stored_object = RequestAttachmentStoredObject {
-        object_key: manifest_id.clone(),
+        object_key: manifest_id,
         size_bytes: object.plaintext_bytes,
         sha256: object.sha256.clone(),
     };
     let domain = CompletedRequestAttachmentDerivative {
         derivative: RequestAttachmentDerivative {
             id: derivative_id,
-            kind: domain_derivative_kind(&derivative.kind),
+            kind: derivative.kind,
             media_type: derivative.media_type.to_owned(),
             object: stored_object,
             width: Some(derivative.width),
             height: Some(derivative.height),
             duration_millis: derivative.duration_millis,
         },
-        manifest: completed_manifest(manifest_id, &object),
+        chunks: object.chunks.clone(),
     };
     Ok((domain, object))
 }
 
-fn completed_manifest(id: String, object: &MediaObject) -> CompletedRequestMediaManifest {
-    CompletedRequestMediaManifest {
-        id,
-        media_type: object.media_type.clone(),
-        size_bytes: object.plaintext_bytes,
-        sha256: object.sha256.clone(),
-        chunks: object
-            .chunks
-            .iter()
-            .map(|chunk| RequestMediaChunk {
-                index: chunk.part_number,
-                object_key: chunk.object_key.clone(),
-                plaintext_offset: chunk.plaintext_offset,
-                plaintext_size_bytes: chunk.plaintext_bytes,
-                sha256: chunk.sha256.clone(),
-            })
-            .collect(),
-    }
-}
-
-fn media_object_from_manifest(
-    manifest: &RequestMediaManifest,
-) -> Result<MediaObject, MediaStorageError> {
-    MediaObject::from_chunks(
-        &manifest.media_type,
-        manifest.size_bytes,
-        &manifest.sha256,
-        manifest.chunks.iter().map(|chunk| {
-            (
-                chunk.index,
-                chunk.plaintext_offset,
-                chunk.plaintext_size_bytes,
-                chunk.sha256.clone(),
-                chunk.object_key.clone(),
-            )
-        }),
-    )
-}
-
 fn validated_source(
     source: &ValidatedSource,
-    manifest: &RequestMediaManifest,
-) -> ValidatedRequestAttachmentSource {
-    let (width, height, duration_millis) = match source.kind {
-        MediaKind::Image => (Some(source.width), Some(source.height), None),
-        MediaKind::Video => (
-            Some(source.width),
-            Some(source.height),
-            source.duration_millis,
+    manifest: &RequestMediaObject,
+) -> RequestAttachmentSource {
+    let (image, video) = match source.kind {
+        RequestAttachmentKind::Photo => (
+            Some(RequestAttachmentImageMetadata {
+                width: source.width,
+                height: source.height,
+            }),
+            None,
+        ),
+        RequestAttachmentKind::Video => (
+            None,
+            source
+                .duration_millis
+                .map(|duration_millis| RequestAttachmentVideoMetadata {
+                    width: source.width,
+                    height: source.height,
+                    duration_millis,
+                }),
         ),
     };
-    ValidatedRequestAttachmentSource {
+    RequestAttachmentSource {
         detected_media_type: source.media_type.to_owned(),
-        size_bytes: manifest.size_bytes,
+        size_bytes: manifest.plaintext_bytes,
         sha256: manifest.sha256.clone(),
-        width,
-        height,
-        duration_millis,
+        image,
+        video,
     }
 }
 
 async fn mark_source_validated(
     metadata: &MetadataStore,
     lease: &RequestAttachmentProcessingLease,
-    source: ValidatedRequestAttachmentSource,
+    source: RequestAttachmentSource,
 ) -> anyhow::Result<bool> {
     let result = metadata
         .media()
@@ -552,7 +455,7 @@ async fn record_source_validation_error(
     settings: &WorkerSettings,
     lease: &RequestAttachmentProcessingLease,
     error: anyhow::Error,
-) -> anyhow::Result<ProcessingOutcome> {
+) -> anyhow::Result<JobOutcome> {
     if error
         .downcast_ref::<scope_postgres::error::PostgresError>()
         .is_some_and(|error| error.kind == scope_postgres::error::PostgresErrorKind::InvalidInput)
@@ -571,7 +474,7 @@ async fn record_processing_failure(
     settings: &WorkerSettings,
     lease: &RequestAttachmentProcessingLease,
     failure: RequestAttachmentFailure,
-) -> anyhow::Result<ProcessingOutcome> {
+) -> anyhow::Result<JobOutcome> {
     let now = unix_now()?;
     let retry_at_unix = (failure.retryable && lease.attempt < settings.max_attempts)
         .then(|| now.saturating_add(retry_delay(lease.attempt).as_secs()));
@@ -587,28 +490,9 @@ async fn record_processing_failure(
         })
         .await?;
     Ok(match result {
-        MediaLeaseMutation::Applied(_) => ProcessingOutcome::Failed,
-        MediaLeaseMutation::LeaseLost => ProcessingOutcome::LeaseLost,
+        MediaLeaseMutation::Applied(_) => JobOutcome::Failed,
+        MediaLeaseMutation::LeaseLost => JobOutcome::LeaseLost,
     })
-}
-
-async fn renew_processing(
-    metadata: &MetadataStore,
-    lease: &RequestAttachmentProcessingLease,
-    duration: Duration,
-    now_unix: u64,
-) -> anyhow::Result<bool> {
-    metadata
-        .media()
-        .renew_processing_lease(
-            &lease.attachment_id,
-            &lease.lease_token,
-            lease.lease_generation,
-            now_unix,
-            lease_expiry(now_unix, duration)?,
-        )
-        .await
-        .map_err(anyhow::Error::from)
 }
 
 async fn sha256_file(path: &Path) -> anyhow::Result<(u64, String)> {
@@ -673,27 +557,29 @@ fn storage_failure(error: &MediaStorageError) -> RequestAttachmentFailure {
     }
 }
 
-fn failure(
-    code: RequestAttachmentFailureCode,
-    message: impl AsRef<str>,
-    retryable: bool,
-    validated_source: Option<ValidatedRequestAttachmentSource>,
-) -> WorkError {
+fn failure(code: RequestAttachmentFailureCode, message: &str, retryable: bool) -> WorkError {
     WorkError::Failure {
         failure: RequestAttachmentFailure {
             code,
-            message: message.as_ref().to_owned(),
+            message: message.to_owned(),
             retryable,
         },
-        validated_source,
+        validated_source: None,
     }
 }
 
-fn domain_derivative_kind(kind: &DerivativeKind) -> RequestAttachmentDerivativeKind {
-    match kind {
-        DerivativeKind::ImagePreview => RequestAttachmentDerivativeKind::ImagePreview,
-        DerivativeKind::VideoPlayback => RequestAttachmentDerivativeKind::VideoPlayback,
-        DerivativeKind::VideoPoster => RequestAttachmentDerivativeKind::VideoPoster,
+fn local_failure<E: std::fmt::Display>(
+    lease: &RequestAttachmentProcessingLease,
+    context: &'static str,
+) -> impl FnOnce(E) -> WorkError {
+    let attachment_id = lease.attachment_id.clone();
+    move |error| {
+        tracing::warn!(%attachment_id, %error, "{context} failed");
+        failure(
+            RequestAttachmentFailureCode::Internal,
+            "Media processing failed. Retry processing.",
+            true,
+        )
     }
 }
 
@@ -714,7 +600,7 @@ fn codec_user_message(kind: CodecFailureKind) -> &'static str {
     }
 }
 
-async fn delete_parts(storage: &MediaStorage, parts: &[StagedMediaPart]) {
+async fn delete_parts(storage: &MediaStorage, parts: &[RequestAttachmentStagedPart]) {
     for part in parts {
         if let Err(error) = storage.delete_object_key(&part.object_key).await {
             tracing::warn!(%error, object_key = %part.object_key, "failed to discard staged derivative part");
@@ -722,7 +608,7 @@ async fn delete_parts(storage: &MediaStorage, parts: &[StagedMediaPart]) {
     }
 }
 
-async fn delete_objects(storage: &MediaStorage, objects: &[MediaObject]) {
+async fn delete_objects(storage: &MediaStorage, objects: &[RequestMediaObject]) {
     for object in objects {
         if let Err(error) = storage.delete_object(object).await {
             tracing::warn!(%error, "failed to discard unpublished media derivative");
@@ -737,6 +623,7 @@ mod tests {
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     };
+    use std::time::Duration;
 
     #[tokio::test]
     async fn storage_retry_policy_distinguishes_absence_from_filesystem_failure() {

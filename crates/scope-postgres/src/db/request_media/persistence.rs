@@ -1,4 +1,3 @@
-use super::{RequestMediaChunk, RequestMediaManifest};
 use crate::db::entities::decode_enum;
 pub(super) use crate::db::entities::encode_enum as enum_string;
 use crate::db::integer_columns::{i32_to_u32 as to_u32, i64_to_u64 as to_u64};
@@ -9,6 +8,7 @@ use scope_domain::requests::attachments::{
     RequestAttachmentDerivative, RequestAttachmentDerivativeKind, RequestAttachmentFailure,
     RequestAttachmentImageMetadata, RequestAttachmentKind, RequestAttachmentState,
     RequestAttachmentStoredObject, RequestAttachmentTarget, RequestAttachmentVideoMetadata,
+    RequestMediaChunk, RequestMediaObject,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, QueryResult, Statement};
 use std::collections::BTreeMap;
@@ -60,9 +60,6 @@ struct DerivativeRow {
 
 #[derive(FromQueryResult)]
 struct ManifestRow {
-    id: String,
-    attachment_id: String,
-    derivative_id: Option<String>,
     media_type: String,
     size_bytes: i64,
     sha256: String,
@@ -285,7 +282,7 @@ fn derivative_from_row(row: DerivativeRow) -> Result<RequestAttachmentDerivative
 pub(super) async fn manifest_by_id<C>(
     conn: &C,
     manifest_id: &str,
-) -> Result<Option<RequestMediaManifest>, PostgresError>
+) -> Result<Option<RequestMediaObject>, PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -311,32 +308,68 @@ where
         .map(|chunk| {
             let chunk = ManifestChunkRow::from_query_result(&chunk, "")?;
             Ok(RequestMediaChunk {
-                index: to_u32(
-                    chunk.chunk_index,
-                    "manifest chunk index",
-                )?,
-                object_key: chunk.object_key,
-                plaintext_offset: to_u64(
-                    chunk.plaintext_offset,
-                    "manifest chunk offset",
-                )?,
-                plaintext_size_bytes: to_u64(
-                    chunk.plaintext_size_bytes,
-                    "manifest chunk size",
-                )?,
+                part_number: to_u32(chunk.chunk_index, "manifest chunk index")?,
+                plaintext_offset: to_u64(chunk.plaintext_offset, "manifest chunk offset")?,
+                plaintext_bytes: to_u64(chunk.plaintext_size_bytes, "manifest chunk size")?,
                 sha256: chunk.sha256,
+                object_key: chunk.object_key,
             })
         })
         .collect::<Result<Vec<_>, PostgresError>>()?;
-    Ok(Some(RequestMediaManifest {
-        id: row.id,
-        attachment_id: row.attachment_id,
-        derivative_id: row.derivative_id,
+    Ok(Some(RequestMediaObject {
         media_type: row.media_type,
-        size_bytes: to_u64(row.size_bytes, "manifest size")?,
+        plaintext_bytes: to_u64(row.size_bytes, "manifest size")?,
         sha256: row.sha256,
         chunks,
     }))
+}
+
+pub(super) async fn insert_manifest<C>(
+    conn: &C,
+    manifest_id: &str,
+    attachment_id: &str,
+    derivative_id: Option<&str>,
+    object: &RequestMediaObject,
+    now_unix: u64,
+) -> Result<(), PostgresError>
+where
+    C: ConnectionTrait,
+{
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "INSERT INTO scope_request_media_manifests (
+            id, attachment_id, derivative_id, media_type, size_bytes, sha256, completed_at_unix
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        [
+            manifest_id.into(),
+            attachment_id.into(),
+            derivative_id.map(str::to_owned).into(),
+            object.media_type.clone().into(),
+            as_i64(object.plaintext_bytes, "manifest size")?.into(),
+            object.sha256.clone().into(),
+            as_i64(now_unix, "manifest completion time")?.into(),
+        ],
+    ))
+    .await?;
+    for chunk in &object.chunks {
+        conn.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO scope_request_media_manifest_chunks (
+                manifest_id, chunk_index, object_key, plaintext_offset,
+                plaintext_size_bytes, sha256
+             ) VALUES ($1, $2, $3, $4, $5, $6)",
+            [
+                manifest_id.into(),
+                as_i32(chunk.part_number, "chunk index")?.into(),
+                chunk.object_key.clone().into(),
+                as_i64(chunk.plaintext_offset, "chunk offset")?.into(),
+                as_i64(chunk.plaintext_bytes, "chunk size")?.into(),
+                chunk.sha256.clone().into(),
+            ],
+        ))
+        .await?;
+    }
+    Ok(())
 }
 
 pub(super) async fn bindings_for_attachment<C>(

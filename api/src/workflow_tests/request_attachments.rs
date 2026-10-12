@@ -2,8 +2,10 @@ use super::*;
 use scope_api_contract::attachments::{
     PrepareRequestAttachmentResponse, RequestAttachmentResponse,
 };
-use scope_domain::requests::attachments::RequestAttachmentPartReceipt;
-use scope_postgres::db::StoredRequestAttachmentPart;
+use scope_domain::requests::attachments::{
+    RequestAttachmentImageMetadata, RequestAttachmentPartReceipt, RequestAttachmentSource,
+    RequestAttachmentStagedPart,
+};
 
 const ROOT: &str = "/v1/repos/owner/repo/requests/req_media/attachments";
 
@@ -63,7 +65,7 @@ async fn finish(
             &prepared.attachment.id,
             &prepared.transfer.upload_id,
             &test_owner_id(),
-            StoredRequestAttachmentPart {
+            RequestAttachmentStagedPart {
                 receipt: receipt.clone(),
                 object_key: "encrypted-test-part".into(),
             },
@@ -104,9 +106,7 @@ async fn finish(
 }
 
 async fn validate_source(state: &AppState, attachment_id: &str) {
-    use scope_postgres::db::{
-        ValidateRequestAttachmentSourceCommand, ValidatedRequestAttachmentSource,
-    };
+    use scope_postgres::db::ValidateRequestAttachmentSourceCommand;
     let now = crate::persistence::unix_now().unwrap();
     let media = state.metadata.media();
     let lease = media
@@ -119,13 +119,15 @@ async fn validate_source(state: &AppState, attachment_id: &str) {
             attachment_id: attachment_id.into(),
             lease_token: lease.lease_token,
             lease_generation: lease.lease_generation,
-            source: ValidatedRequestAttachmentSource {
+            source: RequestAttachmentSource {
                 detected_media_type: "image/jpeg".into(),
                 size_bytes: 4,
                 sha256: "a".repeat(64),
-                width: Some(2),
-                height: Some(2),
-                duration_millis: None,
+                image: Some(RequestAttachmentImageMetadata {
+                    width: 2,
+                    height: 2,
+                }),
+                video: None,
             },
             now_unix: now,
         })

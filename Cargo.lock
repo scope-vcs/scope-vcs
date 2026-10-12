@@ -3541,6 +3541,7 @@ dependencies = [
  "bytes",
  "getrandom 0.3.4",
  "hex",
+ "scope-domain",
  "scope-storage",
  "serde",
  "serde_json",

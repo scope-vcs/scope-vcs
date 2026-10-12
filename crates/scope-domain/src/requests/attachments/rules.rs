@@ -1,10 +1,10 @@
 use super::{
-    RequestAttachment, RequestAttachmentBinding, RequestAttachmentBindingTarget,
-    RequestAttachmentDerivative, RequestAttachmentDerivativeKind, RequestAttachmentFailure,
-    RequestAttachmentFailureCode, RequestAttachmentImageMetadata, RequestAttachmentKind,
-    RequestAttachmentLimits, RequestAttachmentPartReceipt, RequestAttachmentProcessingLease,
-    RequestAttachmentState, RequestAttachmentStoredObject, RequestAttachmentTarget,
-    RequestAttachmentVideoMetadata,
+    REQUEST_MEDIA_CHUNK_BYTES, RequestAttachment, RequestAttachmentBinding,
+    RequestAttachmentBindingTarget, RequestAttachmentDerivative, RequestAttachmentDerivativeKind,
+    RequestAttachmentFailure, RequestAttachmentFailureCode, RequestAttachmentImageMetadata,
+    RequestAttachmentKind, RequestAttachmentLimits, RequestAttachmentPartReceipt,
+    RequestAttachmentSource, RequestAttachmentState, RequestAttachmentStoredObject,
+    RequestAttachmentTarget, RequestAttachmentVideoMetadata, RequestMediaObject,
     references::{
         REQUEST_ATTACHMENT_ID_MAX_BYTES, request_attachment_references, validate_attachment_id,
     },
@@ -293,28 +293,13 @@ pub fn transition_attachment(
     Ok(next)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn validate_processing_completion(
     attachment: &RequestAttachment,
-    lease: &RequestAttachmentProcessingLease,
-    lease_token: &str,
-    lease_generation: u64,
-    detected_media_type: String,
-    image: Option<RequestAttachmentImageMetadata>,
-    video: Option<RequestAttachmentVideoMetadata>,
+    source: RequestAttachmentSource,
     derivatives: Vec<RequestAttachmentDerivative>,
     validated_at_unix: u64,
 ) -> Result<RequestAttachment, DomainError> {
-    let mut next = mark_processing_source_validated(
-        attachment,
-        lease,
-        lease_token,
-        lease_generation,
-        detected_media_type,
-        image,
-        video,
-        validated_at_unix,
-    )?;
+    let mut next = mark_processing_source_validated(attachment, source, validated_at_unix)?;
     validate_derivatives(next.kind, &derivatives)?;
     next = transition_attachment(
         &next,
@@ -326,23 +311,24 @@ pub fn validate_processing_completion(
     Ok(next)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn mark_processing_source_validated(
     attachment: &RequestAttachment,
-    lease: &RequestAttachmentProcessingLease,
-    lease_token: &str,
-    lease_generation: u64,
-    detected_media_type: String,
-    image: Option<RequestAttachmentImageMetadata>,
-    video: Option<RequestAttachmentVideoMetadata>,
+    source: RequestAttachmentSource,
     now_unix: u64,
 ) -> Result<RequestAttachment, DomainError> {
-    validate_processing_lease(attachment, lease, lease_token, lease_generation, now_unix)?;
+    if source.size_bytes != attachment.size_bytes
+        || !source.sha256.eq_ignore_ascii_case(&attachment.sha256)
+    {
+        return Err(DomainError::conflict(
+            "validated source does not match prepared attachment",
+        ));
+    }
+    ensure_processable(attachment)?;
     validate_attachment_source(
         attachment,
-        &detected_media_type,
-        image.as_ref(),
-        video.as_ref(),
+        &source.detected_media_type,
+        source.image.as_ref(),
+        source.video.as_ref(),
     )?;
     let mut next = transition_attachment(
         attachment,
@@ -350,33 +336,25 @@ pub fn mark_processing_source_validated(
         None,
         now_unix,
     )?;
-    next.detected_media_type = Some(detected_media_type.trim().to_ascii_lowercase());
+    next.detected_media_type = Some(source.detected_media_type.trim().to_ascii_lowercase());
     next.original_validated_at_unix = Some(now_unix);
-    next.image = image;
-    next.video = video;
+    next.image = source.image;
+    next.video = source.video;
     Ok(next)
 }
 
 pub fn validate_processing_failure(
     attachment: &RequestAttachment,
-    lease: &RequestAttachmentProcessingLease,
-    lease_token: &str,
-    lease_generation: u64,
     failure: RequestAttachmentFailure,
-    original_validated: bool,
     now_unix: u64,
 ) -> Result<RequestAttachment, DomainError> {
-    validate_processing_lease(attachment, lease, lease_token, lease_generation, now_unix)?;
+    ensure_processable(attachment)?;
     let target = if failure.retryable {
         RequestAttachmentState::Failed
     } else {
         RequestAttachmentState::Rejected
     };
-    let mut next = transition_attachment(attachment, target, Some(failure), now_unix)?;
-    next.original_validated_at_unix = attachment
-        .original_validated_at_unix
-        .or_else(|| original_validated.then_some(now_unix));
-    Ok(next)
+    transition_attachment(attachment, target, Some(failure), now_unix)
 }
 
 pub fn retry_attachment_processing(
@@ -496,43 +474,7 @@ pub fn validate_lease_grant(
     Ok(())
 }
 
-pub fn validate_cleanup_lease(
-    attachment_id: &str,
-    lease: &super::RequestAttachmentCleanupLease,
-    lease_token: &str,
-    lease_generation: u64,
-    now_unix: u64,
-) -> Result<(), DomainError> {
-    if lease.attachment_id != attachment_id
-        || lease.lease_token != lease_token
-        || lease.lease_generation != lease_generation
-        || now_unix >= lease.lease_expires_at_unix
-    {
-        return Err(DomainError::conflict(
-            "stale request attachment cleanup lease",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_processing_lease(
-    attachment: &RequestAttachment,
-    lease: &RequestAttachmentProcessingLease,
-    lease_token: &str,
-    lease_generation: u64,
-    now_unix: u64,
-) -> Result<(), DomainError> {
-    if lease.attachment_id != attachment.id
-        || lease.repository_id != attachment.repository_id
-        || lease.request_id != attachment.request_id
-        || lease.lease_token != lease_token
-        || lease.lease_generation != lease_generation
-        || now_unix >= lease.lease_expires_at_unix
-    {
-        return Err(DomainError::conflict(
-            "stale request attachment processing lease",
-        ));
-    }
+fn ensure_processable(attachment: &RequestAttachment) -> Result<(), DomainError> {
     if !matches!(
         attachment.state,
         RequestAttachmentState::Uploaded | RequestAttachmentState::Processing
@@ -540,6 +482,65 @@ fn validate_processing_lease(
         return Err(DomainError::conflict(
             "request attachment is not processable",
         ));
+    }
+    Ok(())
+}
+
+impl RequestMediaObject {
+    pub fn validate(&self) -> Result<(), DomainError> {
+        if self.media_type.is_empty() || self.media_type.len() > 255 {
+            return Err(DomainError::invalid_input(
+                "media manifest contains an invalid content type",
+            ));
+        }
+        validate_media_digest("media object", &self.sha256)?;
+        let mut offset = 0_u64;
+        let mut object_keys = BTreeSet::new();
+        for (index, chunk) in self.chunks.iter().enumerate() {
+            if u32::try_from(index + 1).ok() != Some(chunk.part_number)
+                || chunk.plaintext_offset != offset
+            {
+                return Err(DomainError::invalid_input(
+                    "media manifest chunks are not contiguous",
+                ));
+            }
+            if chunk.plaintext_bytes == 0
+                || chunk.plaintext_bytes > REQUEST_MEDIA_CHUNK_BYTES
+                || (index + 1 < self.chunks.len()
+                    && chunk.plaintext_bytes != REQUEST_MEDIA_CHUNK_BYTES)
+            {
+                return Err(DomainError::invalid_input(
+                    "media manifest contains an invalid chunk size",
+                ));
+            }
+            validate_media_digest("media chunk", &chunk.sha256)?;
+            if chunk.object_key.is_empty() || !object_keys.insert(&chunk.object_key) {
+                return Err(DomainError::invalid_input(
+                    "media manifest contains an invalid or duplicate chunk key",
+                ));
+            }
+            offset = offset.checked_add(chunk.plaintext_bytes).ok_or_else(|| {
+                DomainError::invalid_input("media manifest plaintext size overflowed")
+            })?;
+        }
+        if offset != self.plaintext_bytes {
+            return Err(DomainError::invalid_input(
+                "media manifest plaintext size does not match its chunks",
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn validate_media_digest(label: &str, digest: &str) -> Result<(), DomainError> {
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(DomainError::invalid_input(format!(
+            "{label} has an invalid SHA-256 digest"
+        )));
     }
     Ok(())
 }

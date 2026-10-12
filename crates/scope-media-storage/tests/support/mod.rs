@@ -1,11 +1,12 @@
-use scope_media_storage::{MAX_CHUNK_BYTES, MediaObject, MediaStorage, WriteAttempt};
+use scope_domain::requests::attachments::RequestMediaObject;
+use scope_media_storage::{MAX_CHUNK_BYTES, MediaStorage, WriteAttempt};
 use sha2::{Digest, Sha256};
 
 pub async fn store_bytes(
     storage: &MediaStorage,
     attempt: &WriteAttempt,
     bytes: &[u8],
-) -> MediaObject {
+) -> RequestMediaObject {
     let mut parts = Vec::new();
     for (index, chunk) in bytes.chunks(MAX_CHUNK_BYTES).enumerate() {
         let part = storage.plan_part(attempt, index as u32 + 1, chunk).unwrap();

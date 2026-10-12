@@ -1,9 +1,6 @@
 use crate::config::non_empty_env;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
-use scope_api_contract::attachments::{
-    RequestAttachmentMediaGrantClaims, RequestAttachmentMediaTarget,
-    RequestAttachmentUploadGrantClaims,
-};
+use scope_api_contract::attachments::RequestAttachmentMediaTarget;
 use std::sync::Arc;
 
 const MEDIA_GRANT_LIFETIME_SECONDS: u64 = 300;
@@ -46,21 +43,7 @@ impl MediaGrantIssuer {
             .ok_or_else(|| anyhow::anyhow!("media grant expiry overflow"))
     }
 
-    pub(crate) fn issue_upload(
-        &self,
-        claims: &RequestAttachmentUploadGrantClaims,
-    ) -> anyhow::Result<String> {
-        self.sign(claims)
-    }
-
-    pub(crate) fn issue_media(
-        &self,
-        claims: &RequestAttachmentMediaGrantClaims,
-    ) -> anyhow::Result<String> {
-        self.sign(claims)
-    }
-
-    fn sign(&self, claims: &impl serde::Serialize) -> anyhow::Result<String> {
+    pub(crate) fn sign(&self, claims: &impl serde::Serialize) -> anyhow::Result<String> {
         Ok(encode(
             &Header::new(Algorithm::EdDSA),
             claims,
@@ -119,6 +102,7 @@ impl MediaGrantIssuer {
 mod tests {
     use super::*;
     use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+    use scope_api_contract::attachments::RequestAttachmentUploadGrantClaims;
 
     #[test]
     fn upload_grant_preserves_exact_attachment_and_viewer_scope() {
@@ -131,7 +115,7 @@ mod tests {
             upload_id: "upload-a".into(),
             expires_at_unix: issuer.expires_at(10).unwrap(),
         };
-        let token = issuer.issue_upload(&claims).unwrap();
+        let token = issuer.sign(&claims).unwrap();
         let mut validation = Validation::new(Algorithm::EdDSA);
         validation.required_spec_claims.clear();
         validation.validate_exp = false;

@@ -200,12 +200,10 @@ pub use request_lifecycle_commands::{
 };
 pub use request_media::{
     CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,
-    CompletedRequestMediaManifest, FailRequestAttachmentProcessingCommand,
-    FinishRequestAttachmentUploadCommand, MediaLeaseMutation, PrepareRequestAttachmentCommand,
-    PreparedRequestAttachment, RequestAttachmentCleanupReason, RequestMediaChunk,
-    RequestMediaManifest, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
-    StoredRequestAttachmentPart, ValidateRequestAttachmentSourceCommand,
-    ValidatedRequestAttachmentSource,
+    FailRequestAttachmentProcessingCommand, FinishRequestAttachmentUploadCommand,
+    MediaLeaseMutation, PrepareRequestAttachmentCommand, PreparedRequestAttachment,
+    RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
+    ValidateRequestAttachmentSourceCommand,
 };
 pub use request_merge::{LandedRequestCandidate, LandedRequestCompletion};
 pub use request_queue::{
