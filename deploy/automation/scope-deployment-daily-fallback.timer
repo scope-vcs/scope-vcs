@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for a missed T3 daily start within the Chicago dispatch window
+
+[Timer]
+OnCalendar=*-*-* 07,08:13:00 UTC
+AccuracySec=1s
+RandomizedDelaySec=0
+Persistent=true
+Unit=scope-deployment-daily-fallback.service
+
+[Install]
+WantedBy=timers.target

@@ -7,6 +7,12 @@ ownership, and active or failed release attempts not admitted by supervision.
 An idle daytime is healthy even when its last progress is hours old. There is
 no all-day heartbeat requirement or recurring model poll.
 
+The host's daily code-only fallback checks for a missing T3 start at 02:13 Chicago
+and joins the existing dated intent within its ten-minute dispatch window. It does
+not renew heartbeat progress itself or erase a late-start alert. This covers a
+provider failure before Python can start; the independent observer still reports
+missing starts if the host or fallback is unavailable.
+
 A completed session cycle publishes bounded JSON to
 `SCOPE_DEPLOYMENT_SESSION_STATUS`: lifecycle status, deadline, progress time,
 active releases and repair owners, activation date, installation boundary, daily audit boundary, and

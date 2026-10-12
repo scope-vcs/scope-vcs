@@ -104,8 +104,11 @@ never recorded as a release receipt. This option cannot be combined with
 
 ## Dispatch and supervision
 
-A native T3 daily task at 02:08 America/Chicago is the sole automatic Release
-scheduler; GitHub cron remains removed. A signed, code-only GitHub Actions
+A native T3 daily task at 02:08 America/Chicago is the primary Release
+scheduler; GitHub cron remains removed. A code-only host fallback at 02:13
+joins the same dated intent if the provider never starts the helper. It uses the
+same bounded service and dispatch lock, never retries an ambiguous dispatch, and
+cannot catch up outside the ten-minute start window. A signed, code-only GitHub Actions
 forwarder delivers relevant main Release events to T3 Connect for manual and
 other releases. Each trigger starts or joins bounded deterministic Python
 supervision. Healthy releases need no repair agent; failures use one preserved
