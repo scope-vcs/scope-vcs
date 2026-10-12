@@ -341,6 +341,6 @@ fn evaluation_state_is_explicitly_interpreted() {
     assert_eq!(
         request_auto_merge_readiness("request_1", HEAD, Some(&awaiting), &results(&[]))
             .waiting_reason_message(),
-        Some("Waiting for check approval")
+        Some("Waiting for CI approval")
     );
 }

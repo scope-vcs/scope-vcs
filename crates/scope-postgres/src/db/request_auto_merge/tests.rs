@@ -476,10 +476,7 @@ async fn retention_committing_first_makes_authorization_reject_missing_evidence(
     assert_eq!(retention_task.await.unwrap().unwrap(), 1);
     let error = authorize_task.await.unwrap().unwrap_err();
     assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
-    assert_eq!(
-        error.message,
-        "request check evidence is no longer available"
-    );
+    assert_eq!(error.message, "request CI evidence is no longer available");
     assert!(
         store
             .runs()

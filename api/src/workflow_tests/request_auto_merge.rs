@@ -388,7 +388,7 @@ async fn authorization_is_bound_to_the_exact_revision_and_only_the_current_inten
     assert_eq!(authorized["intent"]["status"], "Active");
     assert_eq!(authorized["intent"]["revision_id"], revision_id);
     assert_eq!(authorized["intent"]["head_oid"], SECOND_HEAD);
-    assert_eq!(authorized["waiting_reason"], "Waiting for check evaluation");
+    assert_eq!(authorized["waiting_reason"], "Waiting for CI evaluation");
     assert_eq!(authorized["can_cancel"], true);
     let intent_id = authorized["intent"]["id"].as_str().unwrap();
 
@@ -453,7 +453,7 @@ async fn active_authorization_reports_pending_checks_and_stops_after_a_new_push(
 
     let pending = authorize(app.clone(), request_id, &revision_id, SECOND_HEAD).await;
     assert_eq!(pending["intent"]["status"], "Active");
-    assert_eq!(pending["waiting_reason"], "Waiting for checks to finish");
+    assert_eq!(pending["waiting_reason"], "Waiting for CI to finish");
 
     record_revision(
         &state,
@@ -578,7 +578,7 @@ async fn terminal_run_failure_stays_stopped_after_retry() {
     let app = router(state.clone());
     let active = authorize(app.clone(), request_id, &revision_id, SECOND_HEAD).await;
     assert_eq!(active["intent"]["status"], "Active");
-    assert_eq!(active["waiting_reason"], "Waiting for checks to finish");
+    assert_eq!(active["waiting_reason"], "Waiting for CI to finish");
 
     let cancellation_time = unix_now();
     let canceled = state
@@ -635,7 +635,7 @@ async fn an_old_heads_terminal_run_cannot_stop_the_current_authorization() {
     let current = authorize(app.clone(), request_id, &third_revision_id, THIRD_HEAD).await;
     assert_eq!(current["intent"]["status"], "Active");
     assert_eq!(current["intent"]["head_oid"], THIRD_HEAD);
-    assert_eq!(current["waiting_reason"], "Waiting for checks to finish");
+    assert_eq!(current["waiting_reason"], "Waiting for CI to finish");
     let current_intent_id = current["intent"]["id"].as_str().unwrap().to_string();
 
     let canceled = state
@@ -650,10 +650,7 @@ async fn an_old_heads_terminal_run_cannot_stop_the_current_authorization() {
     assert_eq!(still_active["intent"]["id"], current_intent_id);
     assert_eq!(still_active["intent"]["status"], "Active");
     assert_eq!(still_active["intent"]["head_oid"], THIRD_HEAD);
-    assert_eq!(
-        still_active["waiting_reason"],
-        "Waiting for checks to finish"
-    );
+    assert_eq!(still_active["waiting_reason"], "Waiting for CI to finish");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

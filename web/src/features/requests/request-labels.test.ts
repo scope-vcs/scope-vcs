@@ -31,11 +31,11 @@ test('a head nobody evaluated says so instead of claiming it asks for no checks'
     ({ state, message: null }) as RequestChecksResponse
   assert.equal(
     requestCheckEvaluationNote(checks(null)),
-    'The checks for this commit have not been worked out yet.',
+    'CI status is not available yet.',
   )
   assert.equal(
     requestCheckEvaluationNote(checks('no-checks')),
-    'This head asks for no checks.',
+    null,
   )
 })
 
@@ -43,7 +43,7 @@ test('checks awaiting approval wait for a maintainer, after any reason they cann
   const awaiting = { state: 'awaiting-approval', message: null } as RequestChecksResponse
   assert.equal(
     requestCheckEvaluationNote(awaiting),
-    'These checks wait for a maintainer to start them.',
+    'A maintainer must allow CI to run for this revision.',
   )
   const disconnected = 'This repository is no longer connected to GitHub.'
   assert.equal(
@@ -61,7 +61,7 @@ test('approving workflow changes warns only the maintainer who can approve', () 
     ({ can_approve, changes_github_workflows }) as RequestChecksResponse
   assert.equal(
     requestChecksWorkflowWarning(checks(true, true)),
-    'This request changes GitHub workflow files. Approving runs them with your repository’s secrets.',
+    'This revision changes GitHub workflow files. Allowing CI runs them with your repository’s secrets.',
   )
   assert.equal(requestChecksWorkflowWarning(checks(false, true)), null)
   assert.equal(requestChecksWorkflowWarning(checks(true, false)), null)
@@ -73,11 +73,11 @@ test('a request outside the anonymous view checked in a public repository names 
   assert.equal(requestPublicChecksNote(checks(false), 'Agent'), null)
   assert.equal(
     requestPublicChecksNote(checks(true), 'Agent'),
-    'Checks run publicly, so this Agent request’s changes are public.',
+    'CI runs publicly, so this Agent request’s changes are public.',
   )
   assert.equal(
     requestPublicChecksNote(checks(true), 'Private'),
-    'Checks run publicly, so this Private request’s changes are public.',
+    'CI runs publicly, so this Private request’s changes are public.',
   )
 })
 
@@ -99,7 +99,7 @@ test('activity describes auto-merge authorization and terminal outcomes', () => 
         revision_id: 'revision',
       },
     })),
-    'Will merge aaaaaaaaaaaa when checks pass.',
+    'Will merge aaaaaaaaaaaa when this revision is ready to merge.',
   )
   assert.equal(
     requestEventBody(event('AutoMergeStopped', {
@@ -110,7 +110,7 @@ test('activity describes auto-merge authorization and terminal outcomes', () => 
         revision_id: 'revision',
       },
     })),
-    'Auto-merge stopped for aaaaaaaaaaaa: checks failed.',
+    'Auto-merge stopped for aaaaaaaaaaaa: CI failed.',
   )
   assert.equal(eventKindLabel('AutoMergeFulfilled'), 'Merged automatically')
 })

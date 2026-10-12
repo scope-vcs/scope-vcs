@@ -151,10 +151,9 @@ pub(crate) async fn merge_request_inner(
         crate::use_cases::request_checks::checks_outcome(state, &context.record, &request).await?;
     if checks != RequestChecksOutcome::Clear {
         let decision = request_mergeability(&request, &viewer, &context.views, checks);
-        return Err(ApiError::conflict(
-            decision.reason.unwrap_or("request checks have not cleared"),
-        )
-        .into());
+        return Err(
+            ApiError::conflict(decision.reason.unwrap_or("request CI has not cleared")).into(),
+        );
     }
 
     let analytics_event = ProductEvent::request_merged(

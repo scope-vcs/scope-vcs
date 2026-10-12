@@ -62,7 +62,7 @@ export function RequestAutoMergeActions({
         >
           <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
             <Clock3 className="size-3.5 text-info-strong" />
-            Will merge when checks pass
+            Auto-merge enabled
           </span>
           <span className="text-muted-foreground">
             {autoMergeAuthorizer(intent.actor, viewerId)} · {shortOid(intent.head_oid)}
@@ -105,7 +105,7 @@ export function RequestAutoMergeActions({
           {autoMerge.pending === 'authorize'
             ? <LoaderCircle className="animate-spin" />
             : <Clock3 />}
-          Merge when checks pass
+          Enable auto-merge
         </Button>
       ) : null}
 
@@ -119,10 +119,10 @@ export function RequestAutoMergeActions({
           onOpenChange={closeDialog}
           open
           pending={autoMerge.pending === 'authorize'}
-          title="Merge when checks pass?"
+          title="Enable auto-merge?"
         >
           <p>
-            Scope will merge “{request.title}” after this exact revision passes its checks.
+            Scope will merge “{request.title}” when this exact revision’s required CI passes and it is ready to merge.
             A new push ends this authorization.
           </p>
           <dl className="grid min-w-0 gap-1 font-mono text-xs">
@@ -146,7 +146,7 @@ export function RequestAutoMergeActions({
           title="Cancel auto-merge?"
         >
           <p>
-            Passing checks will leave this request open. Checks that are already running will continue.
+            This request will stay open when CI passes. CI that is already running will continue.
           </p>
           <p className="font-mono text-xs">{shortOid(dialog.headOid)} → main</p>
         </RequestConfirmDialog>

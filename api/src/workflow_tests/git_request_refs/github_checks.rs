@@ -222,7 +222,7 @@ async fn a_maintainers_push_reaches_github_and_github_results_decide_the_merge()
             StatusCode::CONFLICT
         )
         .await["message"],
-        "a check did not succeed"
+        "a required result did not succeed"
     );
 
     fake.report_check_runs(
@@ -344,7 +344,7 @@ async fn required_checks_gate_auto_merge_and_a_passing_rerun_completes_it() {
 
     let active = auto_merge("POST", authorize(auto_merge("GET", None).await)).await;
     assert_eq!(active["intent"]["status"], "Active");
-    assert_eq!(active["waiting_reason"], "Waiting for checks to finish");
+    assert_eq!(active["waiting_reason"], "Waiting for CI to finish");
 
     fake.report_check_runs(
         &head,
@@ -450,7 +450,7 @@ async fn a_merge_reads_stale_green_checks_again_and_refuses_when_github_cannot_a
     assert_eq!(unreachable.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
         response_json(unreachable).await["message"],
-        "Scope could not confirm this request's checks with GitHub. Try again."
+        "Scope could not confirm this request's CI results with GitHub. Try again."
     );
 
     fake.check_runs_unavailable.store(false, Ordering::SeqCst);
@@ -467,7 +467,7 @@ async fn a_merge_reads_stale_green_checks_again_and_refuses_when_github_cannot_a
             StatusCode::CONFLICT
         )
         .await["message"],
-        "a check did not succeed"
+        "a required result did not succeed"
     );
     assert_eq!(
         request.checks().await["mergeability"]["status"],
@@ -707,7 +707,7 @@ async fn a_merge_waits_for_a_read_still_asking_github() {
             StatusCode::CONFLICT
         )
         .await["message"],
-        "a check did not succeed"
+        "a required result did not succeed"
     );
 }
 
@@ -812,7 +812,7 @@ async fn an_approval_of_a_head_the_maintainer_did_not_review_is_refused() {
     .await;
     assert_eq!(
         expect_json(refused, StatusCode::CONFLICT).await["message"],
-        "This request has a new revision. Review it before approving its checks."
+        "This request has a new revision. Review it before approving its CI."
     );
     assert_eq!(
         checks(&state, REQUEST_ID, &member).await["state"],

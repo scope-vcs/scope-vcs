@@ -173,13 +173,12 @@ export function RepoCiSection({
         {view.kind === 'connected' && (
           <RepoGitHubSetupCheck
             github={github}
-            requireCheck={(name) => setRequiredChecks([...github.required_checks, name])}
             startTest={startSetupCheck}
           />
         )}
 
         {(view.kind === 'connected' || view.kind === 'disconnected') && (
-          <RepoRequiredChecks names={github.required_checks} save={setRequiredChecks} />
+          <RepoRequiredChecks github={github} save={setRequiredChecks} />
         )}
 
         {(view.kind === 'connected' || view.kind === 'disconnected') && (

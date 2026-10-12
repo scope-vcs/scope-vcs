@@ -164,7 +164,7 @@ pub fn run_request_command(
             inspect::checkout_request(git_repo.expect("prepared local command"), api, args)
         }
         RequestCommand::Diff(args) => inspect::diff_request(git_repo, api, args),
-        RequestCommand::Checks(args) => inspect::request_checks(git_repo, api, args),
+        RequestCommand::Ci(args) => inspect::request_ci(git_repo, api, args),
         RequestCommand::Status(args) => {
             show_request_status(git_repo, api, args.remote, args.request)
         }

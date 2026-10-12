@@ -96,7 +96,7 @@ the link. Uninstalling or suspending the app, or removing the repository from
 the installation, keeps the link as disconnected with the reason, and
 settings offer to reconnect. Unsuspending does not reconnect by itself.
 Connecting, or reconnecting, sends again the tested commit of every open
-request whose GitHub checks are started, and queues an import of the GitHub
+request whose GitHub CI is started, and queues an import of the GitHub
 repository's recent runs.
 
 ### Public GitHub repositories
@@ -111,17 +111,17 @@ what setup listed.
 A connected repository can become public later. A `repository` delivery
 saying it was made public or private makes Scope ask GitHub which it is now,
 and every push of a private request asks GitHub first as well. A repository
-that became public receives no private request: their checks become
-configuration errors and their pushes give up. Settings say so, and a
+that became public receives no private request: their CI becomes
+a configuration error and their pushes give up. Settings say so, and a
 maintainer who can change file visibility can allow private requests with
 `POST /v1/repos/{owner}/{repo}/github/public-confirmation`, which sends the
 held requests again. Settings show a public repository as public, and a
-private request's checks say that its changes are public on GitHub.
+private request's CI says that its changes are public on GitHub.
 
-## Request checks
+## Request CI
 
 A repository with a GitHub link, connected or disconnected, answers its
-request checks on GitHub. Any other repository runs its own `.scope/runs`
+request CI on GitHub. Any other repository runs its own `.scope/runs`
 workflows. A repository never uses both.
 
 ### Running workflows on requests
@@ -169,16 +169,19 @@ pushed to: settings stop showing it once the repository is connected to
 another one, and it does not hold up a test of the new one. Deleting the
 branch afterwards retries like any push job. The
 test ends when every workflow run it saw completed, or after 15 minutes, and
-then deletes the branch. The check names it saw are listed, and each can be
-made a required check with one click. A test that ends without any workflow
+then deletes the branch. The result names it saw become candidates in the
+Required before merge selector alongside configured requirements. Maintainers
+select names and choose Save requirements; configured names stay available even
+when the latest connection test did not report them. A test that ends without any workflow
 run says: "No workflows started. Check that your workflows include the
 scope/** push trigger."
 
-### Required checks
+### Required before merge
 
-Maintainers list the check names GitHub must pass under Required checks in
-the CI section of repository settings. They are the names GitHub's own branch
-protection uses, such as `ci / test`.
+Maintainers choose the result names GitHub must pass under Required before
+merge in the CI section of repository settings, then choose Save requirements.
+They are the exact names GitHub's own branch protection uses, such as
+`ci / test`.
 `PUT /v1/repos/{owner}/{repo}/github/required-checks` replaces the list.
 Every push to a request records an evaluation with one GitHub check per
 required name and a tested commit. Changing the list affects heads pushed
@@ -195,23 +198,23 @@ the head, its author and committer lines are the head's, and its message is
 main always give the same commit. The evaluation records the private main and
 merge base it used, and the push builds the commit again from them. A
 contribution that conflicts with private code records a configuration error,
-"This contribution conflicts with private code, so its checks cannot run. A
+"This contribution conflicts with private code, so its CI cannot run. A
 maintainer must resolve the conflict.", and nothing is pushed.
 
 A check commit counts only while private main is the one it was built on,
 because the merge applies the contribution to private main as it is. Once
-private main moves, by a push or a merge, its checks are pending again, even
-if they passed. Scope builds a new check commit on the new private main for
-every open public contribution with started checks and pushes it at once: the
+private main moves, by a push or a merge, its CI is pending again, even
+if it passed. Scope builds a new check commit on the new private main for
+every open public contribution with started CI and pushes it at once: the
 head is the one a maintainer approved, and private main is trusted. The merge
 gate does the same for the request it is asked to merge, so a merge waits for
-the new commit's checks. Results for the old commit no longer count. When the
-contribution conflicts with the new private main, its checks become the
+the new commit's CI. Results for the old commit no longer count. When the
+contribution conflicts with the new private main, its CI becomes the
 conflict configuration error.
 
 The check commit is private code. It exists only in temporary private staging
 repositories and on the connected GitHub repository. Request views and the
-checks response name only the head, for maintainers and contributors alike. A
+CI response name only the head, for maintainers and contributors alike. A
 connected repository that became public receives no check commit until a
 maintainer confirms, the same as a private request.
 
@@ -221,13 +224,18 @@ and decides. A name with no run yet is pending, and the request view lists it
 as waiting. Runs on any other commit never count, so a rebase or amend
 needs its own green runs. Merge and auto-merge both wait for this.
 
-The request view leads with a count of what is left, failed and passed, and
-lists only failed, running and waiting checks. "Show all" lists every check,
-nested under the workflows its name gives, such as `ci / test / unit`. A
-check with a run the viewer may open links to that job on Scope's run page;
-the view never links to GitHub. A
-private request checked in a public GitHub repository says "Checks run
-publicly, so this private request's changes are public."
+The request's CI section leads with an aggregate status and counts of pending,
+failed and passed required results. It lists failed, running and waiting results
+first. Show all N results expands the list; Show less restores the compact view.
+Results are nested under the workflows their names give, such as `ci / test / unit`.
+A result with a run the viewer may open links to that job on Scope's run page;
+the view never links to GitHub. A private request tested in a public GitHub
+repository says "CI runs publicly, so this private request's changes are public."
+
+The section is hidden when the current revision was explicitly evaluated as
+having no required CI. A revision whose evaluation is not available yet still
+shows that CI status is not available; an empty list alone does not establish
+that no CI is required.
 
 ### Pushing revisions
 
@@ -242,10 +250,10 @@ the Scope repository is gone, while the installation exists.
 
 A maintainer's push goes to GitHub at once, even when no check is required,
 so workflows still run. Anyone else's push waits until a maintainer approves
-the checks, because a pushed branch receives the repository's secrets.
+CI, because a pushed branch receives the repository's secrets.
 Approval names the head the maintainer reviewed, and a newer head is
 refused. When the request changes files under `.github/workflows/`, the
-request view warns the maintainer before approving. With no required checks, a contributor's
+request view warns the maintainer before approving. With no required results, a contributor's
 push is never sent.
 
 Pushes are jobs in `scope_github_pushes`, run by a background loop in the API
@@ -258,8 +266,8 @@ sends and records nothing. A commit is pushed only while the repository is
 still connected to the GitHub repository and installation the push was
 queued for. A failed push is tried again after 30
 seconds, then 2, 10 and 30 minutes, and then gives up. While the revision is
-being sent, the request view says its checks are starting, and if sending
-fails, that they couldn't start. Maintainers also see the last error. A push to a repository whose link is
+being sent, the request view says its CI is starting, and if sending
+fails, that it couldn't start. Maintainers also see the last error. A push to a repository whose link is
 gone gives up at once.
 
 ### Reading results
@@ -275,7 +283,7 @@ later read was stored first, so a slow, older answer cannot bring back a
 stale result.
 
 A background reconciler reads the commits of started evaluations of open
-requests every two minutes while their checks are pending and every ten once
+requests every two minutes while their CI is pending and every ten once
 they settle, which covers dropped deliveries, including a failed re-run of a
 check that had passed. Merging, by hand or automatically, reads the commit
 again when what Scope stored is more than a minute old or a newer read is
@@ -289,7 +297,7 @@ configuration errors: they never pass and never wait forever.
 GitHub starts nothing, and reports nothing, for a branch none of whose
 workflows has the push trigger. So when the tested commit has had no check run
 at all for 10 minutes after its push succeeded, the request view (web and
-`scope request checks`) says "No workflows started. Check that your workflows
+`scope request ci`) says "No workflows started. Check that your workflows
 include the scope/** push trigger."
 
 ## Runs page
@@ -362,7 +370,7 @@ Maintainers open every run. When the GitHub repository is public, everything
 its runs print is public on GitHub, so anyone who can see a request also opens
 the runs that tested it; other runs, and every run of a private GitHub
 repository, stay with maintainers. Anyone else is told the run does not exist.
-The request checks response names, for each GitHub check that is a GitHub
+The request CI response names, for each GitHub check that is a GitHub
 Actions job the viewer may open, its run and job (`run: { run_id, job_id }`),
 which link to `/{owner}/{repo}/runs/{run_id}#run-job-{job_id}`; the run page
 opens the job a `#run-job-…` anchor names, for Scope's own runs too.
@@ -465,7 +473,8 @@ After that release:
    must confirm the public-repository acknowledgment on the setup page.
 2. Confirm that workflows start: push a request and check that CI runs on its
    `scope/requests/<id>` branch. Note the check names GitHub reports.
-3. Choose the required checks in the CI section. Expect `Required PR
+3. Choose the required results under Required before merge in the CI section.
+   Expect `Required PR
    checks`, the job that aggregates every other CI result.
 4. Delete what the old checks image left behind, as the last step of the
    operations guide describes: the retained ECR repository

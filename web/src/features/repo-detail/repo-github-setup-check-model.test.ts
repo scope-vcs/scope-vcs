@@ -20,45 +20,37 @@ function check(overrides: Partial<GitHubSetupCheckResponse> = {}): GitHubSetupCh
 }
 
 test('no test has run yet', () => {
-  assert.equal(githubSetupCheckView(null, []), null)
+  assert.equal(githubSetupCheckView(null), null)
 })
 
-test('a running test shows the checks seen so far and which are required', () => {
-  const view = githubSetupCheckView(check({ check_names: ['lint', 'test'] }), ['test'])
+test('a running test shows its branch and revision', () => {
+  const view = githubSetupCheckView(check({ check_names: ['lint', 'test'] }))
   assert.equal(view?.running, true)
   assert.equal(
     view?.status,
     'Sent main (abcdef1) to scope/setup-check. Waiting for workflows to finish.',
   )
-  assert.deepEqual(view?.candidates, [
-    { name: 'lint', required: false },
-    { name: 'test', required: true },
-  ])
 })
 
 test('a finished test offers its checks', () => {
   const view = githubSetupCheckView(
     check({ state: 'finished', finished_at_unix: 20, check_names: ['test'] }),
-    [],
   )
   assert.equal(view?.running, false)
   assert.equal(view?.problem, null)
-  assert.equal(view?.status, 'Workflows ran on main (abcdef1). Choose the checks a request must pass.')
+  assert.equal(view?.status, 'Workflows ran on main (abcdef1). Select the results required before merge.')
 })
 
 test('a test without workflows says to add the trigger', () => {
   const view = githubSetupCheckView(
     check({ state: 'finished', finished_at_unix: 20, message: NO_WORKFLOWS }),
-    [],
   )
   assert.equal(view?.problem, NO_WORKFLOWS)
-  assert.deepEqual(view?.candidates, [])
 })
 
 test('a refused push shows what GitHub answered', () => {
   const view = githubSetupCheckView(
     check({ state: 'failed', finished_at_unix: 20, message: 'GitHub refused the push: ruleset' }),
-    [],
   )
   assert.equal(view?.running, false)
   assert.equal(view?.status, 'The test could not send main (abcdef1) to GitHub.')

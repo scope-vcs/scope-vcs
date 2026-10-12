@@ -36,8 +36,8 @@ impl RequestAutoMergeStopReason {
             Self::RequestChanged => "The request changed after auto-merge was enabled",
             Self::RequestClosed => "The request was closed",
             Self::AccessRevoked => "The authorizing maintainer no longer has access",
-            Self::ChecksFailed => "A required check failed or did not finish successfully",
-            Self::ChecksConfigurationError => "The request checks could not be configured",
+            Self::ChecksFailed => "A required result failed or did not finish successfully",
+            Self::ChecksConfigurationError => "The request CI could not be configured",
             Self::MergeConflict => "The request no longer merges cleanly with main",
             Self::RequestBranchMissing => "The request branch is unavailable",
         }
@@ -107,9 +107,9 @@ pub enum RequestAutoMergeWaitingReason {
 impl RequestAutoMergeWaitingReason {
     pub const fn message(self) -> &'static str {
         match self {
-            Self::CheckEvaluationMissing => "Waiting for check evaluation",
-            Self::ChecksAwaitingApproval => "Waiting for check approval",
-            Self::ChecksPending => "Waiting for checks to finish",
+            Self::CheckEvaluationMissing => "Waiting for CI evaluation",
+            Self::ChecksAwaitingApproval => "Waiting for CI approval",
+            Self::ChecksPending => "Waiting for CI to finish",
         }
     }
 }

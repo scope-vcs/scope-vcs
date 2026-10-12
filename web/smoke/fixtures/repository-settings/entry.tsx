@@ -26,15 +26,20 @@ const members = ['alice', 'bob'].map((name) => ({
   created_at_unix: 1, updated_at_unix: 1,
 })) as RepoMember[]
 const sessions = ['session-a', 'session-b'].map((id) => ({ id, label: id, created_at_unix: 1, expires_at_unix: 100 })) as CliSession[]
-const resolvers = new Map<string, () => void>()
+const resolvers = new Map<string, (error?: string) => void>()
 const calls: unknown[] = []
 Object.assign(window, {
-  finishAction: (key: string) => resolvers.get(key)?.(),
+  finishAction: (key: string, error?: string) => resolvers.get(key)?.(error),
   calls,
   fixtureGitHub: () => repoSettingsResource.peek(settingsScope)?.github,
   setFixtureGitHub: setGitHub,
 })
-function hold(key: string) { return new Promise<void>((resolve) => resolvers.set(key, resolve)) }
+function hold(key: string) {
+  return new Promise<void>((resolve, reject) => resolvers.set(key, (error) => {
+    if (error) reject(new Error(error))
+    else resolve()
+  }))
+}
 const subscribe = () => () => {}
 const settingsScope = 'fixture-owner'
 const githubConnection = {

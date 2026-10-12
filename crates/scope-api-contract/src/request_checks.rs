@@ -70,6 +70,7 @@ pub enum RequestCheckResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestCheckRunResponse {
     pub run_id: String,
+    pub workflow_name: String,
     pub job_id: String,
 }
 

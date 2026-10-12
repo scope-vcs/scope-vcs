@@ -115,7 +115,7 @@ async fn a_maintainers_push_starts_the_request_workflows_at_its_head() {
     assert_eq!(checks["checks"][0]["workflow_name"], "checks");
     assert_eq!(checks["checks"][0]["run_state"], "queued");
     assert_eq!(checks["mergeability"]["status"], "ChecksPending");
-    assert_eq!(checks["mergeability"]["reason"], "checks have not finished");
+    assert_eq!(checks["mergeability"]["reason"], "CI has not finished");
 
     let run = state
         .metadata
@@ -403,7 +403,7 @@ async fn merging_an_unevaluated_head_evaluates_it_instead() {
 
     assert_eq!(
         expect_json(merge, StatusCode::CONFLICT).await["message"],
-        "checks have not finished"
+        "CI has not finished"
     );
     assert_eq!(listed_status(&state, &request_id).await, "ChecksPending");
 }

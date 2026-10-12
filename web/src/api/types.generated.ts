@@ -563,7 +563,7 @@ export type RequestCheckResponse = { "provider": "native", workflow_path: string
  */
 run: RequestCheckRunResponse | null, };
 
-export type RequestCheckRunResponse = { run_id: string, job_id: string, };
+export type RequestCheckRunResponse = { run_id: string, workflow_name: string, job_id: string, };
 
 export type RequestChecksResponse = { request_id: string, head_oid: GitOid, 
 /**

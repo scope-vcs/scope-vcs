@@ -422,7 +422,7 @@ async fn lock_request_check_evidence(
             .is_some();
         if !exists {
             return Err(PostgresError::conflict(
-                "request check evidence is no longer available",
+                "request CI evidence is no longer available",
             ));
         }
     }

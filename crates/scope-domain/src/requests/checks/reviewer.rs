@@ -18,9 +18,9 @@ impl<'a> RequestCheckReviewer<'a> {
         if !access.is_maintainer() {
             "repo maintainer required"
         } else if !access.reads_full_view(views) {
-            "approving checks needs a maintainer who reads the full view"
+            "approving CI needs a maintainer who reads the full view"
         } else {
-            "checks may be approved"
+            "CI may be approved"
         }
     }
 
@@ -80,7 +80,7 @@ mod tests {
         );
         assert_eq!(
             RequestCheckReviewer::refusal(&member(agent()), &views),
-            "approving checks needs a maintainer who reads the full view"
+            "approving CI needs a maintainer who reads the full view"
         );
         let owner =
             repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "owner");

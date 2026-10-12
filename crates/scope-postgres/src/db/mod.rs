@@ -148,7 +148,7 @@ pub use github_setup_checks::GitHubSetupCheckRead;
 pub use github_workflow_job_log_reads::GitHubJobLogReadJob;
 pub use github_workflow_runs::{
     GitHubWorkflowRunCursor, GitHubWorkflowRunDetailRead, GitHubWorkflowRunPageQuery,
-    GitHubWorkflowRunRead, GitHubWorkflowRunReadJob,
+    GitHubWorkflowRunRead, GitHubWorkflowRunReadJob, GitHubWorkflowRunReference,
 };
 pub use history_reads::{
     RepositoryHistoryBoundary, RepositoryHistoryNeighbors, RepositoryHistoryPage,

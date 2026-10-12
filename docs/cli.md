@@ -76,7 +76,7 @@ scope request start fix-parser --title "Handle quoted paths"
 # Edit files, then git add and git commit.
 scope request push
 scope request submit --yes
-scope request checks
+scope request ci
 ```
 
 `scope request start` creates a branch from main named after the request. To
@@ -95,41 +95,42 @@ to the newest main commit the branch contains. If public main moves before a
 public request merges, rebase onto it or merge it, then run
 `scope request push`.
 
-Maintainers can inspect requests and their checks from any directory by naming
+Maintainers can inspect requests and their CI from any directory by naming
 the repository explicitly. Checkout requires a local Git repository:
 
 ```sh
 scope --repo owner/repository request list
 scope --repo owner/repository request show --request fix-parser
 scope --repo owner/repository request diff --request fix-parser
-scope --repo owner/repository request checks --request fix-parser
+scope --repo owner/repository request ci --request fix-parser
 scope request checkout --request fix-parser
 scope request merge --request fix-parser --yes
 scope request merge --request fix-parser --auto --yes
 ```
 
-Every push to a request evaluates the checks its head asks for. In a repository
-connected to GitHub, the checks are the required check names from repository
+Every push to a request evaluates CI for its current revision. In a repository
+connected to GitHub, CI uses the required check names from repository
 settings, answered by GitHub Actions on the pushed commit; any other repository
-runs its own `.scope/runs` workflows. A maintainer's push starts the checks at
+runs its own `.scope/runs` workflows. A maintainer's push starts CI at
 once: Scope starts its runs, or sends the revision to GitHub. An outside
-contributor's push records them until a maintainer runs
-`scope request checks --approve --head <head>`, naming the head they reviewed;
-a newer head is refused. `scope request checks` shows the evaluation,
-each check's provider and state, and where its logs are: the run id for
-`scope run logs` or the GitHub page. For GitHub checks it also shows whether the
+contributor's push waits until a maintainer runs
+`scope request ci --approve --head <head>`, naming the head they reviewed;
+a newer head is refused. `scope request ci` shows the evaluation,
+each job's provider and state, and where its logs are: the run id for
+`scope run logs` or the GitHub page. For GitHub CI it also shows whether the
 revision is waiting for approval, being sent, sent, or failed to send, and warns
 before approving a request that changes GitHub workflow files. It also shows what
-merging still waits on: an open request merges only after every check passes. A
+merging still waits on: an open request merges only after CI passes. A
 GitHub check with no run yet is pending. If evaluating a push failed, the request
-cannot merge until its checks are worked out; `scope request checks` and
-`scope request merge` both work them out again. See
-[the GitHub App guide](github-app.md) for how GitHub checks run.
+cannot merge until CI is evaluated; `scope request ci` and
+`scope request merge` both evaluate CI again. See
+[the GitHub App guide](github-app.md) for how GitHub CI runs.
 
-When checks are still running, a maintainer can authorize the current request
-revision to merge later with `scope request merge --auto --yes`. The command
-returns after the server saves the authorization; a successful exit does not by
-itself mean the request has merged. `scope request show` reports the authorizer,
+When CI is still running, a maintainer can authorize the current request
+revision to merge later with `scope request merge --auto --yes`. CI awaiting
+maintainer permission still requires `scope request ci --approve`; enabling
+auto-merge does not approve CI. The command returns after the server saves the authorization; a
+successful exit does not by itself mean the request has merged. `scope request show` reports the authorizer,
 authorized head, state, and what auto-merge is waiting for. A new request push
 ends that authorization. Cancel an active authorization with
 `scope request merge --cancel-auto --yes`; `--auto` and `--cancel-auto` cannot be
@@ -176,7 +177,7 @@ scope request discussion start --body-file - < review.md
 
 Native runs execute `.scope/runs` workflows on Scope's own runner. They are
 available only to repositories whose owner the server allowlists. Other
-repositories run checks on GitHub Actions through
+repositories run CI on GitHub Actions through
 [the GitHub App](github-app.md).
 
 ```sh

@@ -1,4 +1,7 @@
-use super::{RequestInviteeRead, RequestStore, begin_metadata_read_snapshot, entities};
+use super::{
+    GitHubWorkflowRunReference, RequestInviteeRead, RequestStore, begin_metadata_read_snapshot,
+    entities,
+};
 use crate::error::PostgresError;
 use scope_domain::{
     account::UserAccount,
@@ -25,7 +28,7 @@ pub struct RequestStateSnapshot {
     pub users: BTreeMap<String, UserAccount>,
     pub github_connection: Option<GitHubConnection>,
     pub github_push: Option<GitHubPush>,
-    pub github_runs: HashMap<u64, u64>,
+    pub github_runs: HashMap<u64, GitHubWorkflowRunReference>,
     pub current_main_oid: Option<String>,
 }
 

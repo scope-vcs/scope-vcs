@@ -19,7 +19,7 @@ const request = {
   view: 'private',
   head_oid: headOid,
   mergeability: {
-    reason: 'Checks are still running.',
+    reason: 'CI is still running.',
     status: 'ChecksPending',
   },
   permissions: {
@@ -44,7 +44,7 @@ function App() {
     intent: null,
     request_id: 'request',
     revision_id: revisionId,
-    waiting_reason: 'Checks are still running.',
+    waiting_reason: 'CI is still running.',
   })
   Object.assign(window, {
     refreshAutoMerge: () => setStatus((current) => ({
@@ -90,7 +90,7 @@ function App() {
           status: 'Active',
           updated_at_unix: 1,
         },
-        waiting_reason: 'Checks are still running.',
+        waiting_reason: 'CI is still running.',
       })
       return true
     },

@@ -11,8 +11,8 @@ const reasons: Record<RequestAutoMergeStopReason, string> = {
   RequestChanged: 'the request changed',
   RequestClosed: 'the request closed',
   AccessRevoked: 'the authorizer no longer has access',
-  ChecksFailed: 'checks failed',
-  ChecksConfigurationError: 'the checks configuration is invalid',
+  ChecksFailed: 'CI failed',
+  ChecksConfigurationError: 'the CI configuration is invalid',
   MergeConflict: 'the request conflicts with main',
   RequestBranchMissing: 'the request branch is missing',
 }

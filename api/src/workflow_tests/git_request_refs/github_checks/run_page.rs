@@ -58,7 +58,9 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
     let request = owner_request("github-run-page", &[REQUIRED_CHECK]).await;
     let (state, fake, head) = (&request.state, &request.fake, request.head());
     assert_eq!(push_pass(state, unix_now()).await, 1);
-    fake.report_workflow_runs(vec![workflow_run(RUN_ID, &request.branch(), &head, None)]);
+    let mut workflow = workflow_run(RUN_ID, &request.branch(), &head, None);
+    workflow["name"] = serde_json::json!("Build and test");
+    fake.report_workflow_runs(vec![workflow]);
     deliver(
         state,
         "workflow_run",
@@ -83,7 +85,11 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
     deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
     assert_eq!(
         request.checks().await["checks"][0]["run"],
-        serde_json::json!({ "run_id": RUN_ID.to_string(), "job_id": "901" })
+        serde_json::json!({
+            "run_id": RUN_ID.to_string(),
+            "workflow_name": "Build and test",
+            "job_id": "901",
+        })
     );
 
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);

@@ -62,7 +62,7 @@ export function GitHubWorkflowRunsPage({
       { owner, repo: repoName, ...(workflow === null ? {} : { workflow }), ...(after ? { after } : {}) },
       signal,
     )
-    if (!github) throw new Error('This repository no longer runs its checks on GitHub. Reload to see its runs.')
+    if (!github) throw new Error('This repository no longer uses GitHub for CI. Reload to see its runs.')
     return github
   }, [loadRuns, owner, repoName, workflow])
   const load = useCallback((signal: AbortSignal) => reloadGitHubWorkflowRunPages(

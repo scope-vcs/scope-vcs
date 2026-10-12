@@ -36,11 +36,12 @@ async function workspacePage(t) {
   page.setDefaultTimeout(10_000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  return { page, base: server.resolvedUrls.local[0], errors }
+  const railClosed = () => page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
+  return { page, base: server.resolvedUrls.local[0], errors, railClosed }
 }
 
 test('request rows exchange age and actions and restore the selected view across repository sections', async (t) => {
-  const { page, base, errors } = await workspacePage(t)
+  const { page, base, errors, railClosed } = await workspacePage(t)
   const requestsPath = '/adam/demo/requests'
   const row = page.locator('[data-request-id="request-0"]')
   const age = row.locator('time')
@@ -153,7 +154,6 @@ test('request rows exchange age and actions and restore the selected view across
   const sidebar = page.locator('.request-workspace-sidebar')
   const sidebarWidth = (width) => page.waitForFunction((value) =>
     document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === value, width)
-  const railClosed = () => page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
   const avatars = () => page.locator('.request-workspace-needs-you .request-workspace-row-avatar').evaluateAll((nodes) =>
     nodes.map((node) => node.getBoundingClientRect()).map(({ x, y, width }) => ({ x, y, width })))
   const openRail = async () => {
@@ -252,11 +252,12 @@ test('request rows exchange age and actions and restore the selected view across
 })
 
 test('collapsed request loading keeps its header stable without guessing avatar rows', async (t) => {
-  const { page, base, errors } = await workspacePage(t)
+  const { page, base, errors, railClosed } = await workspacePage(t)
   await page.goto(new URL('/adam/demo/requests/request-0', base).href)
   await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
   const sidebar = page.getByRole('complementary', { name: 'Requests workspace' })
   await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 54)
+  await railClosed()
   const header = sidebar.locator('.request-workspace-needs-you > h2')
   const toggle = page.getByRole('button', { name: 'Expand requests sidebar' })
   const geometry = async () => ({
@@ -291,6 +292,7 @@ test('collapsed request loading keeps its header stable without guessing avatar 
     assert(await sidebar.locator('[data-slot="skeleton"]:visible').count() > 1, 'expanded loading still shows list placeholders')
     await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
     await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 54)
+    await railClosed()
   }
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), pages)
   const selected = sidebar.getByRole('link', { name: /Closed request 0/ })
@@ -312,6 +314,7 @@ test('collapsed request loading keeps its header stable without guessing avatar 
   await sidebar.getByRole('link', { name: /Closed request 1/ }).click()
   await page.waitForURL(/\/request-1$/)
   await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 54)
+  await railClosed()
   assert.equal(await sidebar.getByRole('link', { name: /Closed request 1/ }).getAttribute('aria-current'), 'page')
   await page.evaluate(() => window.setQueue({ pages: undefined, maintainer: false, loading: true }))
   await sidebar.locator('[aria-busy="true"]').waitFor()

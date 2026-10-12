@@ -268,23 +268,23 @@ pub fn request_list_mergeability(
             RequestChecksOutcome::Clear => (RequestMergeabilityStatus::Ready, None),
             RequestChecksOutcome::NotEvaluated => (
                 RequestMergeabilityStatus::ChecksNotEvaluated,
-                Some("checks have not been worked out for this commit yet"),
+                Some("CI has not been evaluated for this commit yet"),
             ),
             RequestChecksOutcome::AwaitingApproval => (
                 RequestMergeabilityStatus::ChecksAwaitingApproval,
-                Some("checks are waiting for a maintainer to start them"),
+                Some("CI is waiting for a maintainer to start it"),
             ),
             RequestChecksOutcome::Pending => (
                 RequestMergeabilityStatus::ChecksPending,
-                Some("checks have not finished"),
+                Some("CI has not finished"),
             ),
             RequestChecksOutcome::Failed => (
                 RequestMergeabilityStatus::ChecksFailed,
-                Some("a check did not succeed"),
+                Some("a required result did not succeed"),
             ),
             RequestChecksOutcome::ConfigurationError => (
                 RequestMergeabilityStatus::ChecksConfigurationError,
-                Some("the request head's checks cannot run as configured"),
+                Some("the request head's CI cannot run as configured"),
             ),
         },
     };

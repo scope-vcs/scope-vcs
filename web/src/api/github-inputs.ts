@@ -97,7 +97,7 @@ export function parseSetRepoGitHubRequiredChecksInput(
   const params = parseRepoParams(input)
   const names = (input as Partial<SetRepoGitHubRequiredChecksInput>).names
   if (!Array.isArray(names) || names.some((name) => typeof name !== 'string')) {
-    throw new Error('Required checks must be a list of check names.')
+    throw new Error('CI requirements must be a list of result names.')
   }
   return { ...params, names }
 }

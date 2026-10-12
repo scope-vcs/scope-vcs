@@ -167,7 +167,7 @@ fn every_request_command_accepts_the_global_json_mode_and_returns_json_failures(
         ],
         vec!["--json", "request", "checkout"],
         vec!["--json", "request", "diff"],
-        vec!["--json", "request", "checks"],
+        vec!["--json", "request", "ci"],
         vec!["--json", "request", "show"],
         vec!["request", "list", "--json"],
         vec!["--json", "request", "status"],
