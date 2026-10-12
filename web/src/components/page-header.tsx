@@ -136,15 +136,27 @@ export function WorkbenchBar({
         className,
       )}
     >
-      <h1 className="sr-only">{title}</h1>
-      {summary && (
-        <div className="min-w-0 text-sm text-muted-foreground">{summary}</div>
+      {summary ? (
+        <>
+          <h1 className="sr-only">{title}</h1>
+          <div className="min-w-0 text-sm text-muted-foreground">{summary}</div>
+        </>
+      ) : (
+        <h1 className="text-sm font-semibold">{title}</h1>
       )}
       {actions && (
         <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
           {actions}
         </div>
       )}
+    </div>
+  )
+}
+
+export function WorkbenchBody({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-w-0 border-t border-border px-5 pb-14 sm:px-6 lg:px-8">
+      {children}
     </div>
   )
 }

@@ -32,7 +32,7 @@ import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
 import { VisibilityLogSection } from '@/features/repo-detail/visibility-log-section'
 import { RepoSettingsPending } from '@/features/repo-detail/repo-settings-pending'
 import { RepoContentError } from '@/components/repo-content-error'
-import { PageContent } from '@/components/page-header'
+import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@clerk/tanstack-react-start'
@@ -147,77 +147,80 @@ function RepoSettingsRoute() {
   }
 
   return (
-    <>
-      {resource.error && (
-        <PageContent>
-          <PageErrorAlert title="Settings refresh failed">{resource.error}</PageErrorAlert>
-          <Button className="mt-3" onClick={resource.retry} size="sm">Try again</Button>
-        </PageContent>
-      )}
-      {!resource.error || resource.value ? (
-        <RepoSettingsPage
-          key={scope}
-          visibilityLog={views.full && <VisibilityLogSection params={params} view={views.full} />}
-          createInvite={(data) => retainResult(
-            createRepoInvite({ data }),
-            (invite) => ({ type: 'inviteUpdated', invite }),
-          )}
-          createInviteLink={(data) => createRepoInviteLink({ data })}
-          sendInviteEmail={(data) => retainResult(
-            sendRepoInviteEmail({ data }),
-            (invite) => ({ type: 'inviteUpdated', invite }),
-          )}
-          deleteInvite={(data) => retainResult(
-            deleteRepoInvite({ data }),
-            (invite) => ({ type: 'inviteUpdated', invite }),
-          )}
-          deleteRepo={(data) => deleteRepo({ data })}
-          confirmPublicGitHub={async (data) => {
-            const github = await confirmRepoGitHubPublic({ data })
-            if (scope) retainGitHubConnection(scope, github)
-            return github
-          }}
-          disconnectGitHub={async (data) => {
-            const github = await disconnectRepoGitHub({ data })
-            if (scope) retainGitHubConnection(scope, github)
-            return github
-          }}
-          github={resource.value?.github ?? null}
-          setGitHubRequiredChecks={async (data) => {
-            const github = await setRepoGitHubRequiredChecks({ data })
-            if (scope) retainGitHubConnection(scope, github)
-            return github
-          }}
-          setGitHubRunImportCount={async (data) => {
-            const github = await setRepoGitHubRunImportCount({ data })
-            if (scope) retainGitHubConnection(scope, github)
-            return github
-          }}
-          startGitHubAuthorization={startRepoGitHubAuthorization}
-          startGitHubRunImport={async (data) => {
-            const github = await startRepoGitHubRunImport({ data })
-            if (scope) retainGitHubConnection(scope, github)
-            return github
-          }}
-          startGitHubSetupCheck={async (data) => {
-            const github = await startRepoGitHubSetupCheck({ data })
-            if (scope) retainGitHubConnection(scope, github)
-            return github
-          }}
-          deleteMember={(data) => retainResult(
-            deleteRepoMember({ data }),
-            (member) => ({ type: 'memberRemoved', member }),
-          )}
-          collaboration={collaboration}
-          collaborationLoading={!resource.value}
-          params={params}
-          updateMember={(data) => retainResult(
-            updateRepoMember({ data }),
-            (member) => ({ type: 'memberUpdated', member }),
-          )}
-          updateMetadata={(data) => updateRepoMetadata({ data })}
-        />
-      ) : null}
-    </>
+    <WorkbenchPane>
+      <WorkbenchBar title="Settings" />
+      <WorkbenchBody>
+        {resource.error && (
+          <>
+            <PageErrorAlert title="Settings refresh failed">{resource.error}</PageErrorAlert>
+            <Button className="mt-3" onClick={resource.retry} size="sm">Try again</Button>
+          </>
+        )}
+        {!resource.error || resource.value ? (
+          <RepoSettingsPage
+            key={scope}
+            visibilityLog={views.full && <VisibilityLogSection params={params} view={views.full} />}
+            createInvite={(data) => retainResult(
+              createRepoInvite({ data }),
+              (invite) => ({ type: 'inviteUpdated', invite }),
+            )}
+            createInviteLink={(data) => createRepoInviteLink({ data })}
+            sendInviteEmail={(data) => retainResult(
+              sendRepoInviteEmail({ data }),
+              (invite) => ({ type: 'inviteUpdated', invite }),
+            )}
+            deleteInvite={(data) => retainResult(
+              deleteRepoInvite({ data }),
+              (invite) => ({ type: 'inviteUpdated', invite }),
+            )}
+            deleteRepo={(data) => deleteRepo({ data })}
+            confirmPublicGitHub={async (data) => {
+              const github = await confirmRepoGitHubPublic({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
+            disconnectGitHub={async (data) => {
+              const github = await disconnectRepoGitHub({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
+            github={resource.value?.github ?? null}
+            setGitHubRequiredChecks={async (data) => {
+              const github = await setRepoGitHubRequiredChecks({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
+            setGitHubRunImportCount={async (data) => {
+              const github = await setRepoGitHubRunImportCount({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
+            startGitHubAuthorization={startRepoGitHubAuthorization}
+            startGitHubRunImport={async (data) => {
+              const github = await startRepoGitHubRunImport({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
+            startGitHubSetupCheck={async (data) => {
+              const github = await startRepoGitHubSetupCheck({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
+            deleteMember={(data) => retainResult(
+              deleteRepoMember({ data }),
+              (member) => ({ type: 'memberRemoved', member }),
+            )}
+            collaboration={collaboration}
+            collaborationLoading={!resource.value}
+            params={params}
+            updateMember={(data) => retainResult(
+              updateRepoMember({ data }),
+              (member) => ({ type: 'memberUpdated', member }),
+            )}
+            updateMetadata={(data) => updateRepoMetadata({ data })}
+          />
+        ) : null}
+      </WorkbenchBody>
+    </WorkbenchPane>
   )
 }

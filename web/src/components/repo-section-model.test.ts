@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   activeRepoSection,
+  pendingRepoSections,
   REPO_SECTIONS,
   repoSectionsForActor,
 } from './repo-section-model'
@@ -24,6 +25,11 @@ describe('repository sections', () => {
       repoSectionsForActor('Public').map(({ label }) => label),
       ['Code', 'Requests'],
     )
+  })
+
+  it('keeps the signed-in section list while the repository loads', () => {
+    assert.deepEqual(pendingRepoSections(true), REPO_SECTIONS)
+    assert.deepEqual(pendingRepoSections(false), repoSectionsForActor('Public'))
   })
 
   it('recognizes every sibling route before falling back to Code', () => {
