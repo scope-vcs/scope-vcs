@@ -5,13 +5,24 @@ use super::{
     git_segments::release_git_segment_references, request_auto_merge::request_id_for_check_run,
 };
 use crate::error::PostgresError;
-use scope_domain::content::SourceBlob;
+use scope_domain::{content::SourceBlob, runs::run::RunState};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
     TransactionTrait,
     sea_query::{Expr, Query},
 };
 use std::collections::BTreeSet;
+
+fn prunable(cutoff: i64) -> Condition {
+    let terminal = RunState::ALL
+        .into_iter()
+        .filter(|state| state.is_terminal())
+        .map(RunState::as_str);
+    Condition::all()
+        .add(entities::run::Column::State.is_in(terminal))
+        .add(entities::run::Column::CompletedAtUnix.lte(cutoff))
+        .add(active_auto_merge_evidence_is_absent())
+}
 
 impl RunStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "prune_terminal_runs"))]
@@ -24,14 +35,7 @@ impl RunStore {
         let cutoff = integer_columns::u64_to_i64(completed_before_unix, "run retention cutoff")?;
         let tx = self.db.begin().await?;
         let candidates = entities::run::Entity::find()
-            .filter(entities::run::Column::State.is_in([
-                "succeeded".to_string(),
-                "failed".to_string(),
-                "canceled".to_string(),
-                "lost".to_string(),
-            ]))
-            .filter(entities::run::Column::CompletedAtUnix.lte(cutoff))
-            .filter(active_auto_merge_evidence_is_absent())
+            .filter(prunable(cutoff))
             .order_by_asc(entities::run::Column::CompletedAtUnix)
             .order_by_asc(entities::run::Column::Id)
             .limit(limit)
@@ -67,14 +71,7 @@ impl RunStore {
 
         let models = entities::run::Entity::find()
             .filter(entities::run::Column::Id.is_in(candidate_ids))
-            .filter(entities::run::Column::State.is_in([
-                "succeeded".to_string(),
-                "failed".to_string(),
-                "canceled".to_string(),
-                "lost".to_string(),
-            ]))
-            .filter(entities::run::Column::CompletedAtUnix.lte(cutoff))
-            .filter(active_auto_merge_evidence_is_absent())
+            .filter(prunable(cutoff))
             .all(&tx)
             .await?;
         let runs = models

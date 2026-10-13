@@ -13,7 +13,7 @@ impl RunStore {
     ) -> Result<DispatchAuthorization, PostgresError> {
         let tx = self.db.begin().await?;
         let (run, job, attempt) =
-            super::run_attempt_persistence::locked_heartbeat_context(&tx, attempt_id).await?;
+            super::run_attempt_persistence::locked_attempt_context(&tx, attempt_id).await?;
         let authorization = dispatch_authorization::authorize_start(
             &run,
             &job,
@@ -32,7 +32,7 @@ impl RunStore {
     ) -> Result<DispatchAuthorization, PostgresError> {
         let tx = self.db.begin().await?;
         let (run, _, attempt) =
-            super::run_attempt_persistence::locked_heartbeat_context(&tx, attempt_id).await?;
+            super::run_attempt_persistence::locked_attempt_context(&tx, attempt_id).await?;
         let authorization = dispatch_authorization::authorize_stop(&run, &attempt)?;
         tx.commit().await?;
         Ok(authorization)

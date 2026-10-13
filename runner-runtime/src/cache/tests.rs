@@ -3,7 +3,7 @@ use super::{
     files::set_modified,
     finalize::save_cache,
     identity::{MAX_CACHE_KEY_FILE_BYTES, digest_inputs_at, open_key_file},
-    types::{CacheFinalizationOutcome, PreparedCache},
+    types::PreparedCache,
 };
 use crate::api::RuntimeClient;
 use scope_domain::runs::cache::definition::CacheKeyInputs;
@@ -264,10 +264,7 @@ fn exact_hit_skips_archive_hash_and_upload() {
         sources: None,
     };
 
-    assert!(matches!(
-        save_cache(&RuntimeClient::disconnected_for_cache_tests(), &cache),
-        CacheFinalizationOutcome::Ready
-    ));
+    save_cache(&RuntimeClient::disconnected_for_cache_tests(), &cache).unwrap();
 }
 
 #[test]

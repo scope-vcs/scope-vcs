@@ -22,19 +22,9 @@
       "reason": "Tree construction, native-range validation, deterministic object identity, and identity fixtures are one algorithm."
     },
     {
-      "path": "crates/scope-postgres/src/db/cache_service.rs",
-      "owner": "workflow cache persistence",
-      "reason": "Object, upload, reference, deletion, and repository-budget operations share one locked cache metadata model."
-    },
-    {
       "path": "crates/scope-postgres/src/db/outbox.rs",
       "owner": "projection read-model outbox",
       "reason": "Enqueue, claim, execute, lease, retry, completion, pruning, and queue tests implement one durable outbox."
-    },
-    {
-      "path": "crates/scope-postgres/src/db/push_triggers.rs",
-      "owner": "push-trigger evaluation persistence",
-      "reason": "Durable evaluation input, trigger selection, atomic run enqueue, source release, and workflow tests form one job."
     },
     {
       "path": "crates/scope-postgres/src/db/request_discussions.rs",

@@ -22,14 +22,7 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     .unwrap();
     run_git(Some(&source), &["add", "."], "stage cloud run source").unwrap();
     commit_all(&source, "cloud run source");
-    let git_oid = git_head_oid(&source);
-    let bundle_path = source.join("source.bundle");
-    run_git(
-        Some(&source),
-        &["bundle", "create", bundle_path.to_str().unwrap(), "HEAD"],
-        "create cloud run bundle",
-    )
-    .unwrap();
+    let (git_oid, bundle) = super::run_resources::head_bundle(&source);
     let resolved = api_request(
         app.clone(),
         "POST",
@@ -52,22 +45,13 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
             .unwrap()
             .is_none()
     );
-    let created = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!(
-                    "{}?workflow=test&git_oid={git_oid}&request_id=11111111111111111111111111111111",
-                    scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME)
-                ))
-                .header(AUTHORIZATION, bearer_header())
-                .header(CONTENT_TYPE, "application/octet-stream")
-                .body(Body::from(fs::read(&bundle_path).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let upload = super::run_resources::manual_run_upload(
+        &git_oid,
+        "11111111111111111111111111111111",
+        bundle.clone(),
+        bearer_header(),
+    );
+    let created = app.clone().oneshot(upload).await.unwrap();
     assert_eq!(created.status(), StatusCode::OK);
     let created = response_json(created).await;
     let run_id = created["id"].as_str().unwrap().to_string();
@@ -158,12 +142,10 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
         )
     };
     assert_eq!(cache_restore().await.status(), StatusCode::BAD_REQUEST);
-    let source_response = api_request(
+    let source_response = get(
         app.clone(),
-        "GET",
         &scope_api_contract::routes::attempt_source(attempt_id),
         Some(&attempt_auth),
-        None,
     )
     .await;
     assert_eq!(source_response.status(), StatusCode::OK);
@@ -180,7 +162,7 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
             .await
             .unwrap()
             .as_ref(),
-        fs::read(&bundle_path).unwrap()
+        bundle
     );
 
     let heartbeat = api_request(

@@ -1,12 +1,24 @@
-use super::{DispatchClaim, RunStore, entities};
-use crate::error::PostgresError;
-use scope_domain::runs::{
-    attempt::RunAttempt,
-    job::{RunJob, reconcile_run},
-    run::Run,
-    step::RunAttemptStep,
+use super::{
+    AttemptMutation, DispatchClaim, RunStore,
+    run_attempt_persistence::{
+        attempt_run_id, locked_attempt, locked_attempt_context, locked_attempt_steps, locked_jobs,
+        locked_run, run_repository, save_attempt, save_attempt_steps, save_job, save_jobs,
+        save_run,
+    },
+    runs::workflow_revision_for_run,
 };
-use sea_orm::{EntityTrait, QuerySelect, TransactionTrait};
+use crate::error::PostgresError;
+use scope_domain::{
+    error::DomainError,
+    runs::{
+        attempt::RunAttempt,
+        job::{RunJob, reconcile_run},
+        run::Run,
+        step::RunAttemptStep,
+        workflow::revision::WorkflowRevision,
+    },
+};
+use sea_orm::{DatabaseTransaction, TransactionTrait};
 
 impl RunStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_runtime"))]
@@ -19,8 +31,8 @@ impl RunStore {
         lease_expires_at_unix: u64,
     ) -> Result<DispatchClaim, PostgresError> {
         let tx = self.db.begin().await?;
-        let (run, job, mut attempt, steps) =
-            super::run_attempt_persistence::locked_attempt_context(&tx, attempt_id).await?;
+        let (run, job, mut attempt) = locked_attempt_context(&tx, attempt_id).await?;
+        let steps = locked_attempt_steps(&tx, attempt_id).await?;
         attempt
             .claim_runtime(
                 &job,
@@ -30,18 +42,11 @@ impl RunStore {
                 lease_expires_at_unix,
             )
             .map_err(PostgresError::from)?;
-        super::run_attempt_persistence::save_attempt(&tx, &attempt).await?;
-        let workflow_revision = super::runs::workflow_revision_for_run(&tx, &run).await?;
-        let repository = super::run_attempt_persistence::run_repository(&tx, &run).await?;
+        save_attempt(&tx, &attempt).await?;
+        let workflow_revision = workflow_revision_for_run(&tx, &run).await?;
+        let claim = dispatch_claim(&tx, run, job, attempt, steps, workflow_revision).await?;
         tx.commit().await?;
-        Ok(DispatchClaim {
-            repository,
-            run,
-            job,
-            attempt,
-            steps,
-            workflow_revision,
-        })
+        Ok(claim)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "authenticate_attempt"))]
@@ -52,22 +57,15 @@ impl RunStore {
         now_unix: u64,
     ) -> Result<DispatchClaim, PostgresError> {
         let tx = self.db.begin().await?;
-        let (run, job, attempt, steps) =
-            super::run_attempt_persistence::locked_attempt_context(&tx, attempt_id).await?;
+        let (run, job, attempt) = locked_attempt_context(&tx, attempt_id).await?;
+        let steps = locked_attempt_steps(&tx, attempt_id).await?;
         attempt
             .authenticate(&job, token_hash, now_unix)
             .map_err(PostgresError::from)?;
-        let workflow_revision = super::runs::workflow_revision_for_run(&tx, &run).await?;
-        let repository = super::run_attempt_persistence::run_repository(&tx, &run).await?;
+        let workflow_revision = workflow_revision_for_run(&tx, &run).await?;
+        let claim = dispatch_claim(&tx, run, job, attempt, steps, workflow_revision).await?;
         tx.commit().await?;
-        Ok(DispatchClaim {
-            repository,
-            run,
-            job,
-            attempt,
-            steps,
-            workflow_revision,
-        })
+        Ok(claim)
     }
 
     pub(super) async fn mutate_attempt(
@@ -78,50 +76,39 @@ impl RunStore {
             &mut RunJob,
             &mut RunAttempt,
             &mut [RunAttemptStep],
-        ) -> Result<(), scope_domain::error::DomainError>,
-    ) -> Result<DispatchClaim, PostgresError> {
+        ) -> Result<(), DomainError>,
+    ) -> Result<AttemptMutation, PostgresError> {
         let tx = self.db.begin().await?;
-        let guard_run_id = super::run_attempt_persistence::attempt_run_id(&tx, attempt_id).await?;
+        let guard_run_id = attempt_run_id(&tx, attempt_id).await?;
         let active_auto_merge =
             super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &guard_run_id).await?;
-        let mut jobs = super::run_attempt_persistence::locked_jobs(&tx, &guard_run_id).await?;
-        let mut run = super::run_attempt_persistence::locked_run(&tx, &guard_run_id).await?;
-        let mut attempt = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
-            .lock_exclusive()
-            .one(&tx)
-            .await?
-            .ok_or_else(|| PostgresError::not_found("run attempt not found"))?
-            .try_into_domain()?;
-        let mut steps =
-            super::run_attempt_persistence::locked_attempt_steps(&tx, attempt_id).await?;
-        let job = jobs
-            .iter_mut()
-            .find(|job| job.key == attempt.job_key)
+        let mut jobs = locked_jobs(&tx, &guard_run_id).await?;
+        let mut run = locked_run(&tx, &guard_run_id).await?;
+        let mut attempt = locked_attempt(&tx, attempt_id).await?;
+        let mut steps = locked_attempt_steps(&tx, attempt_id).await?;
+        let job_index = jobs
+            .iter()
+            .position(|job| job.key == attempt.job_key)
             .ok_or_else(|| PostgresError::internal_message("run attempt job is missing"))?;
+        let transitioned = !attempt.state.is_terminal();
+        let job = &mut jobs[job_index];
         mutate(&run, job, &mut attempt, &mut steps).map_err(PostgresError::from)?;
-        let workflow_revision = super::runs::workflow_revision_for_run(&tx, &run).await?;
+        let workflow_revision = workflow_revision_for_run(&tx, &run).await?;
         let transition_time = attempt.completed_at_unix.unwrap_or(job.updated_at_unix);
         reconcile_run(&mut run, &mut jobs, &workflow_revision, transition_time)
             .map_err(PostgresError::from)?;
-        super::run_attempt_persistence::save_attempt(&tx, &attempt).await?;
-        super::run_attempt_persistence::save_attempt_steps(&tx, &steps).await?;
-        super::run_attempt_persistence::save_jobs(&tx, &jobs).await?;
-        super::run_attempt_persistence::save_run(&tx, &run).await?;
+        save_attempt(&tx, &attempt).await?;
+        save_attempt_steps(&tx, &steps).await?;
+        save_jobs(&tx, &jobs).await?;
+        save_run(&tx, &run).await?;
         super::request_auto_merge::stop_auto_merge_for_terminal_run(&tx, active_auto_merge, &run)
             .await?;
-        let repository = super::run_attempt_persistence::run_repository(&tx, &run).await?;
+        let job = jobs.swap_remove(job_index);
+        let claim = dispatch_claim(&tx, run, job, attempt, steps, workflow_revision).await?;
         tx.commit().await?;
-        let job = jobs
-            .into_iter()
-            .find(|job| job.key == attempt.job_key)
-            .ok_or_else(|| PostgresError::internal_message("run attempt job is missing"))?;
-        Ok(DispatchClaim {
-            repository,
-            run,
-            job,
-            attempt,
-            steps,
-            workflow_revision,
+        Ok(AttemptMutation {
+            claim,
+            transitioned,
         })
     }
 
@@ -133,38 +120,49 @@ impl RunStore {
             &mut RunJob,
             &mut RunAttempt,
             &mut [RunAttemptStep],
-        ) -> Result<(), scope_domain::error::DomainError>,
+        ) -> Result<(), DomainError>,
     ) -> Result<DispatchClaim, PostgresError> {
         let tx = self.db.begin().await?;
-        let guard_run_id = super::run_attempt_persistence::attempt_run_id(&tx, attempt_id).await?;
+        let guard_run_id = attempt_run_id(&tx, attempt_id).await?;
         let active_auto_merge =
             super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &guard_run_id).await?;
-        let (run_snapshot, mut job, mut attempt, mut steps) =
-            super::run_attempt_persistence::locked_attempt_context(&tx, attempt_id).await?;
-        let mut run = super::run_attempt_persistence::locked_run(&tx, &run_snapshot.id).await?;
+        let (run_snapshot, mut job, mut attempt) = locked_attempt_context(&tx, attempt_id).await?;
+        let mut steps = locked_attempt_steps(&tx, attempt_id).await?;
+        let mut run = locked_run(&tx, &run_snapshot.id).await?;
         mutate(&run, &mut job, &mut attempt, &mut steps).map_err(PostgresError::from)?;
-        super::run_attempt_persistence::save_job(&tx, &job).await?;
-        super::run_attempt_persistence::save_attempt(&tx, &attempt).await?;
-        super::run_attempt_persistence::save_attempt_steps(&tx, &steps).await?;
-        let workflow_revision = super::runs::workflow_revision_for_run(&tx, &run).await?;
-        let mut jobs = super::run_attempt_persistence::jobs_for_run(&tx, &run.id).await?;
+        save_job(&tx, &job).await?;
+        save_attempt(&tx, &attempt).await?;
+        save_attempt_steps(&tx, &steps).await?;
+        let workflow_revision = workflow_revision_for_run(&tx, &run).await?;
+        let mut jobs = super::run_operations::required_run_jobs(&tx, &run.id).await?;
         if let Some(stored) = jobs.iter_mut().find(|stored| stored.key == job.key) {
             *stored = job.clone();
         }
         reconcile_run(&mut run, &mut jobs, &workflow_revision, job.updated_at_unix)
             .map_err(PostgresError::from)?;
-        super::run_attempt_persistence::save_run(&tx, &run).await?;
+        save_run(&tx, &run).await?;
         super::request_auto_merge::stop_auto_merge_for_terminal_run(&tx, active_auto_merge, &run)
             .await?;
-        let repository = super::run_attempt_persistence::run_repository(&tx, &run).await?;
+        let claim = dispatch_claim(&tx, run, job, attempt, steps, workflow_revision).await?;
         tx.commit().await?;
-        Ok(DispatchClaim {
-            repository,
-            run,
-            job,
-            attempt,
-            steps,
-            workflow_revision,
-        })
+        Ok(claim)
     }
+}
+
+pub(super) async fn dispatch_claim(
+    tx: &DatabaseTransaction,
+    run: Run,
+    job: RunJob,
+    attempt: RunAttempt,
+    steps: Vec<RunAttemptStep>,
+    workflow_revision: WorkflowRevision,
+) -> Result<DispatchClaim, PostgresError> {
+    Ok(DispatchClaim {
+        repository: run_repository(tx, &run).await?,
+        run,
+        job,
+        attempt,
+        steps,
+        workflow_revision,
+    })
 }

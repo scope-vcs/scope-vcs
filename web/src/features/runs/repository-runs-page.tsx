@@ -6,12 +6,12 @@ import type {
 import { resourceErrorMessage, useCachedResource } from '@/lib/use-cached-resource'
 import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
 import { PageErrorAlert } from '@/components/page-error-alert'
-import { Button } from '@/components/ui/button'
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { RunHistoryList } from './run-history-list'
 import { RunsCiEmptyState, type RunsGitHubActions } from './runs-ci-empty-state'
 import { useRunLiveRefresh } from './run-live-refresh'
 import { RunsFilterBar } from './runs-filter-bar'
+import { RunsRefreshAlert } from './runs-page-error'
 import {
   type RunStatusFilter,
   runMatchesStatusFilter,
@@ -158,16 +158,7 @@ function RepositoryRunsPageContent({
           </div>
         ) : null}
         {refreshError ? (
-          <div className="pt-5">
-            <PageErrorAlert title="Runs could not refresh">
-              <div className="flex flex-wrap items-center gap-3">
-                <span>{refreshError}</span>
-                <Button onClick={refreshRuns} size="sm" variant="secondary">
-                  Retry now
-                </Button>
-              </div>
-            </PageErrorAlert>
-          </div>
+          <RunsRefreshAlert error={refreshError} onRetry={refreshRuns} title="Runs could not refresh" />
         ) : null}
         <div className="pt-7">
           <RunHistoryList

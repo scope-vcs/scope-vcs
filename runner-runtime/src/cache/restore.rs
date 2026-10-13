@@ -7,8 +7,7 @@ use super::{
 use crate::api::{RuntimeClient, cache_client::CacheDownloadError};
 use anyhow::Context as _;
 use scope_api_contract::{
-    AttemptCacheKey, AttemptCachePreparationReport, CacheColdReason as WireCacheColdReason,
-    CachePreparation as WireCachePreparation, CacheRestoreSource,
+    AttemptCacheKey, AttemptCachePreparationReport, CacheRestoreSource,
     ReportAttemptCachePreparationsRequest, RestoreAttemptCacheRequest, RestoreAttemptCacheResponse,
     RunJobResponse,
 };
@@ -85,7 +84,7 @@ pub(crate) fn prepare_caches(
         reports.push(AttemptCachePreparationReport {
             cache_name: cache.as_str().to_string(),
             identity_digest: exact_digest.clone(),
-            preparation: wire_cache_preparation(restore.preparation),
+            preparation: restore.preparation.into(),
             key_ms: timing.key_ms(),
             metadata_ms: timing.metadata_ms(),
             size_bytes: timing.size_bytes(),
@@ -240,19 +239,5 @@ impl CacheRestore {
             timing,
             archive: None,
         }
-    }
-}
-
-fn wire_cache_preparation(preparation: CachePreparation) -> WireCachePreparation {
-    match preparation {
-        CachePreparation::Exact => WireCachePreparation::Exact,
-        CachePreparation::Compatible => WireCachePreparation::Compatible,
-        CachePreparation::Cold { reason } => WireCachePreparation::Cold {
-            reason: match reason {
-                CacheColdReason::MetadataMissing => WireCacheColdReason::MetadataMissing,
-                CacheColdReason::MetadataInvalid => WireCacheColdReason::MetadataInvalid,
-                CacheColdReason::MetadataNotReady => WireCacheColdReason::MetadataNotReady,
-            },
-        },
     }
 }

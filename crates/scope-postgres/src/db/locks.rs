@@ -64,6 +64,19 @@ async fn acquire_aggregate_lock_with_mode<C: ConnectionTrait>(
 }
 
 #[cfg(test)]
+pub(super) async fn backend_pid(conn: &impl ConnectionTrait) -> i32 {
+    conn.query_one_raw(Statement::from_string(
+        DatabaseBackend::Postgres,
+        "SELECT pg_backend_pid() AS pid",
+    ))
+    .await
+    .unwrap()
+    .unwrap()
+    .try_get("", "pid")
+    .unwrap()
+}
+
+#[cfg(test)]
 pub(super) async fn wait_for_transaction_waiter(
     store: &super::MetadataStore,
     blocker_pid: i32,

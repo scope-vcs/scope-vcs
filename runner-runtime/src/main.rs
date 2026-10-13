@@ -4,10 +4,9 @@ mod checkout;
 mod deadline;
 mod execute;
 mod settings;
-mod workflow;
 
 use anyhow::Context as _;
-use execute::{HEARTBEAT_INTERVAL, Heartbeat};
+use execute::{ExecutionSink as _, HEARTBEAT_INTERVAL, Heartbeat};
 use settings::RuntimeSettings;
 use std::sync::Arc;
 
@@ -17,7 +16,8 @@ fn main() -> anyhow::Result<()> {
     deadline::arm(settings.attempt_deadline_unix)?;
     let client = api::RuntimeClient::new(&settings)?;
     let claim = client.claim(&settings.bootstrap_token)?;
-    let job_definition = workflow::domain_workflow_job(&claim.job.definition)?;
+    let job_definition =
+        scope_domain::runs::workflow::definition::WorkflowJob::try_from(&claim.job.definition)?;
     let setup_heartbeat = Heartbeat::start(Arc::new(client.clone()), HEARTBEAT_INTERVAL)?;
     let setup_result = setup(&client, &claim, &job_definition);
     if setup_heartbeat.finish()? {
@@ -39,16 +39,8 @@ fn main() -> anyhow::Result<()> {
         execute::ExecutionOutcome::Terminal => return Ok(()),
     };
     let finalization_heartbeat = Heartbeat::start(Arc::new(client.clone()), HEARTBEAT_INTERVAL)?;
-    for finalization in cache::finalize::save_caches(&client, &caches) {
-        if let cache::types::CacheFinalizationOutcome::Skipped(error) = finalization.outcome {
-            eprintln!(
-                "runtime cache finalization skipped for {}: {error:#}",
-                finalization.identity_digest
-            );
-        }
-    }
-    let cancellation_requested =
-        finalization_heartbeat.finish()? || client.heartbeat()?.cancellation_requested;
+    cache::finalize::save_caches(&client, &caches);
+    let cancellation_requested = finalization_heartbeat.finish()? || client.heartbeat()?;
     if cancellation_requested {
         client.complete_canceled(logs_truncated)
     } else {

@@ -172,14 +172,22 @@ impl RunStore {
             .map_err(|_| PostgresError::invalid_input("run log cursor is too large"))?;
         let limit = i64::try_from(limit)
             .map_err(|_| PostgresError::invalid_input("run log page limit is too large"))?;
-        joined_run_logs(
-            self.db.as_ref(),
-            "WHERE log.run_id = $1 AND log.position > $2
-             ORDER BY log.position ASC
-             LIMIT $3",
+        RunLogReadRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT log.position, log.run_id, log.attempt_id, attempt.job_key, log.step_index,
+                    log.sequence, log.text, log.created_at_unix
+               FROM scope_run_logs AS log
+               JOIN scope_run_attempts AS attempt ON attempt.id = log.attempt_id
+              WHERE log.run_id = $1 AND log.position > $2
+              ORDER BY log.position ASC
+              LIMIT $3",
             [run_id.into(), after.into(), limit.into()],
-        )
-        .await
+        ))
+        .all(self.db.as_ref())
+        .await?
+        .into_iter()
+        .map(RunLogReadRow::try_into_stored)
+        .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "next_attempt_log_sequence"))]
@@ -196,37 +204,4 @@ impl RunStore {
             None => Ok(1),
         }
     }
-}
-
-async fn joined_run_logs<C, const N: usize>(
-    conn: &C,
-    clause: &str,
-    values: [sea_orm::Value; N],
-) -> Result<Vec<StoredRunLog>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let statement = Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        format!(
-            "SELECT log.position,
-                    log.run_id,
-                    log.attempt_id,
-                    attempt.job_key,
-                    log.step_index,
-                    log.sequence,
-                    log.text,
-                    log.created_at_unix
-               FROM scope_run_logs AS log
-               JOIN scope_run_attempts AS attempt ON attempt.id = log.attempt_id
-               {clause}"
-        ),
-        values,
-    );
-    RunLogReadRow::find_by_statement(statement)
-        .all(conn)
-        .await?
-        .into_iter()
-        .map(RunLogReadRow::try_into_stored)
-        .collect()
 }

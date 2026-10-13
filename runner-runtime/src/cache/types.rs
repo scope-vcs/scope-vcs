@@ -15,17 +15,6 @@ pub(crate) struct PreparedCache {
     pub(super) sources: Option<Arc<SourceSnapshot>>,
 }
 
-#[derive(Debug)]
-pub(crate) enum CacheFinalizationOutcome {
-    Ready,
-    Skipped(anyhow::Error),
-}
-
-#[derive(Debug)]
-pub(crate) struct CacheFinalization {
-    pub(crate) identity_digest: String,
-    pub(crate) outcome: CacheFinalizationOutcome,
-}
 pub(crate) fn elapsed_ms(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }

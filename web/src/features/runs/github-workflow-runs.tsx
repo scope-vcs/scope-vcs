@@ -5,7 +5,6 @@ import type {
   GitHubWorkflowRunsResponse,
 } from '@/api/types.generated'
 import { EmptyState } from '@/components/empty-state'
-import { PageErrorAlert } from '@/components/page-error-alert'
 import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
@@ -33,9 +32,8 @@ import {
 } from './github-workflow-runs-resource'
 import { RunStatusIcon } from './run-status-icon'
 import { githubWorkflowNamesResource } from './github-workflow-names-resource'
-import { RUN_ROW_CLASS, RUN_ROW_TIMESTAMP_CLASS } from './run-row-layout'
-
-const LINK_CLASS = 'underline-offset-2 hover:text-foreground hover:underline'
+import { RUN_LINK_CLASS, RUN_ROW_CLASS, RUN_ROW_TIMESTAMP_CLASS } from './run-layout'
+import { RunsRefreshAlert } from './runs-page-error'
 
 export function GitHubWorkflowRunsPage({
   initialRuns,
@@ -130,27 +128,9 @@ export function GitHubWorkflowRunsPage({
       />
       <WorkbenchBody>
         {resource.error ? (
-          <div className="pt-5">
-            <PageErrorAlert title="Runs could not refresh">
-              <div className="flex flex-wrap items-center gap-3">
-                <span>{resource.error}</span>
-                <Button onClick={resource.retry} size="sm" variant="secondary">
-                  Retry now
-                </Button>
-              </div>
-            </PageErrorAlert>
-          </div>
+          <RunsRefreshAlert error={resource.error} onRetry={resource.retry} title="Runs could not refresh" />
         ) : names.error ? (
-          <div className="pt-5">
-            <PageErrorAlert title="Workflow filter could not refresh">
-              <div className="flex flex-wrap items-center gap-3">
-                <span>{names.error}</span>
-                <Button onClick={names.retry} size="sm" variant="secondary">
-                  Retry now
-                </Button>
-              </div>
-            </PageErrorAlert>
-          </div>
+          <RunsRefreshAlert error={names.error} onRetry={names.retry} title="Workflow filter could not refresh" />
         ) : null}
         <div className="pt-7">
           {!runs ? (
@@ -233,7 +213,7 @@ function GitHubWorkflowRunItem({ params, row, onOpen }: {
       <RunStatusIcon state={row.state} />
       <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2">
         <Link
-          className={cn('truncate text-sm font-medium', LINK_CLASS)}
+          className={cn('truncate text-sm font-medium', RUN_LINK_CLASS)}
           onClick={onOpen}
           params={{ ...params, runId: row.key }}
           to="/$owner/$repo/runs/$runId"
@@ -247,7 +227,7 @@ function GitHubWorkflowRunItem({ params, row, onOpen }: {
               <span className="text-muted-foreground/70"> · </span>
               {row.requestId ? (
                 <Link
-                  className={LINK_CLASS}
+                  className={RUN_LINK_CLASS}
                   params={{ ...params, requestId: row.requestId }}
                   title="Open the request"
                   to="/$owner/$repo/requests/$requestId"

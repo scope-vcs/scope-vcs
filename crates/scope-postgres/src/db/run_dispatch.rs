@@ -1,9 +1,7 @@
 use super::integer_columns;
 use super::{
     DispatchClaim, RunStore, entities,
-    run_attempt_persistence::{
-        jobs_for_run, locked_job, locked_run, run_repository, save_job, save_run,
-    },
+    run_attempt_persistence::{locked_job, locked_run, save_job, save_run},
     run_state_sql::{attempt_active_states, attempt_terminal_states},
     runs::{unique_conflict, workflow_revision_for_run},
 };
@@ -276,22 +274,22 @@ impl RunStore {
         if run.cancellation_requested || run.state.is_terminal() {
             return Err(PostgresError::conflict("run is no longer dispatchable"));
         }
-        let mut jobs = jobs_for_run(tx, run_id).await?;
+        let mut jobs = super::run_operations::required_run_jobs(tx, run_id).await?;
         if let Some(stored) = jobs.iter_mut().find(|stored| stored.key == job.key) {
             *stored = job.clone();
         }
         reconcile_run(&mut run, &mut jobs, &workflow_revision, now_unix)
             .map_err(PostgresError::from)?;
         save_run(tx, &run).await?;
-        let repository = run_repository(tx, &run).await?;
-        Ok(DispatchClaim {
-            repository,
+        super::run_attempt_mutations::dispatch_claim(
+            tx,
             run,
             job,
             attempt,
             steps,
             workflow_revision,
-        })
+        )
+        .await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "record_external_run_id"))]

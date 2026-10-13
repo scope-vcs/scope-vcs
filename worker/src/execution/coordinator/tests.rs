@@ -27,15 +27,7 @@ use serde_json::json;
 async fn zero_cloud_concurrency_pauses_admission() {
     let metadata = queued_runs(1).await;
     let provider = FakeEcs::new().await;
-    let mut settings = provider.settings();
-    settings.max_concurrency = 0;
-    let coordinator = CloudExecutionCoordinator {
-        metadata: metadata.clone(),
-        product_analytics: scope_product_analytics::ProductAnalytics::disabled(),
-        ecs: provider.client.clone(),
-        origin_id: "paused-worker".into(),
-        settings,
-    };
+    let coordinator = coordinator(&metadata, &provider, 0);
     assert_eq!(
         coordinator
             .dispatch_available(crate::unix_now().unwrap())
@@ -91,15 +83,7 @@ async fn paused_dispatch_still_checks_cleanup_without_marking_stopping_as_comple
         json!({"status":"stopping", "stuck":false}),
         false,
     );
-    let mut settings = provider.settings();
-    settings.max_concurrency = 0;
-    let coordinator = CloudExecutionCoordinator {
-        metadata: metadata.clone(),
-        product_analytics: scope_product_analytics::ProductAnalytics::disabled(),
-        ecs: provider.client.clone(),
-        origin_id: "paused-worker".into(),
-        settings,
-    };
+    let coordinator = coordinator(&metadata, &provider, 0);
     assert_eq!(coordinator.cleanup_terminal(expired_at).await.unwrap(), 0);
     assert_eq!(provider.count("stop"), 2);
     let pending = metadata
@@ -197,16 +181,10 @@ async fn attempt_analytics_correlates_admission_and_completion_without_replaying
 async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_restart() {
     let metadata = queued_runs(3).await;
     let provider = FakeEcs::new().await;
-    let coordinator = CloudExecutionCoordinator {
-        metadata: metadata.clone(),
-        product_analytics: scope_product_analytics::ProductAnalytics::disabled(),
-        ecs: provider.client.clone(),
-        origin_id: "worker-before-restart".into(),
-        settings: provider.settings(),
-    };
+    let initial = coordinator(&metadata, &provider, 4);
     let now = crate::unix_now().unwrap();
     let mut dispatch = tokio::task::JoinSet::new();
-    dispatch.spawn(async move { coordinator.dispatch_available(now).await });
+    dispatch.spawn(async move { initial.dispatch_available(now).await });
     provider.wait_for("start", 3).await;
     let mut bootstrap_hashes = provider
         .bootstrap_tokens()
@@ -277,13 +255,7 @@ async fn interrupted_provider_starts_and_cleanup_remain_owned_after_worker_resta
         "a retry cannot bypass cleanup of the previous uncertain provider task"
     );
 
-    let restarted = CloudExecutionCoordinator {
-        metadata: metadata.clone(),
-        product_analytics: scope_product_analytics::ProductAnalytics::disabled(),
-        ecs: provider.client.clone(),
-        origin_id: "worker-after-restart".into(),
-        settings: provider.settings(),
-    };
+    let restarted = coordinator(&metadata, &provider, 4);
     let mut cleanup = tokio::task::JoinSet::new();
     cleanup.spawn(async move { restarted.cleanup_terminal(expired_at).await });
     provider.wait_for("stop", 3).await;
@@ -315,16 +287,8 @@ async fn competing_workers_reserve_capacity_before_concurrent_provider_starts() 
     let now = crate::unix_now().unwrap();
     let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(3));
     let mut workers = tokio::task::JoinSet::new();
-    for origin in ["worker-a", "worker-b"] {
-        let mut settings = provider.settings();
-        settings.max_concurrency = 3;
-        let coordinator = CloudExecutionCoordinator {
-            metadata: metadata.clone(),
-            product_analytics: scope_product_analytics::ProductAnalytics::disabled(),
-            ecs: provider.client.clone(),
-            origin_id: origin.into(),
-            settings,
-        };
+    for _ in 0..2 {
+        let coordinator = coordinator(&metadata, &provider, 3);
         let barrier = barrier.clone();
         workers.spawn(async move {
             barrier.wait().await;
@@ -379,6 +343,22 @@ async fn competing_workers_reserve_capacity_before_concurrent_provider_starts() 
         }
     }
     assert_eq!(admitted_runs, 3);
+}
+
+pub(super) fn coordinator(
+    metadata: &MetadataStore,
+    provider: &FakeEcs,
+    max_concurrency: usize,
+) -> CloudExecutionCoordinator {
+    let mut settings = provider.settings();
+    settings.max_concurrency = max_concurrency;
+    CloudExecutionCoordinator {
+        metadata: metadata.clone(),
+        product_analytics: ProductAnalytics::disabled(),
+        ecs: provider.client.clone(),
+        origin_id: "test-worker".into(),
+        settings,
+    }
 }
 
 pub(super) async fn queued_runs(count: usize) -> MetadataStore {

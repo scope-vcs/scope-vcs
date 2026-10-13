@@ -1,7 +1,6 @@
 pub(crate) mod cache_client;
 mod completion;
 pub(crate) mod control;
-mod logs;
 mod sink;
 mod source;
 

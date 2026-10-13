@@ -7,7 +7,7 @@ import {
   RUN_ROW_DURATION_CLASS,
   RUN_ROW_PRIMARY_CLASS,
   RUN_ROW_TIMESTAMP_CLASS,
-} from './run-row-layout'
+} from './run-layout'
 
 const RUN_LENGTHS: TextSkeletonLength[] = ['medium', 'short', 'long', 'medium', 'medium']
 const PENDING_RUNS = Array.from({ length: 16 }, (_, row) => ({

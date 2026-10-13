@@ -25,8 +25,7 @@ use scope_api_contract::{
     PrepareAttemptCacheUploadRequest, PrepareAttemptCacheUploadResponse,
     ReportAttemptCacheFinalizationsRequest, ReportAttemptCachePreparationsRequest,
     RestoreAttemptCacheRequest, RestoreAttemptCacheResponse, RunChangeKind, RunJobResponse,
-    StepConclusionRequest, WorkflowCache, WorkflowCacheKeyInputs, WorkflowContainer, WorkflowJob,
-    WorkflowStep,
+    StepConclusionRequest, WorkflowJob,
 };
 use scope_domain::{
     runs::log::RunLogChunk,
@@ -95,17 +94,16 @@ pub(crate) async fn heartbeat(
 ) -> Result<Json<AttemptStatusResponse>, ApiError> {
     let token_hash = attempt_token_hash(&headers)?;
     let now = unix_now()?;
-    state
+    let (attempt, cancellation_requested) = state
         .metadata
         .runs()
         .heartbeat_attempt(&attempt_id, &token_hash, now, now + ATTEMPT_LEASE_SECONDS)
         .await?;
-    let claim = state
-        .metadata
-        .runs()
-        .authenticate_attempt(&attempt_id, &token_hash, now)
-        .await?;
-    Ok(Json(attempt_status(&claim)))
+    Ok(Json(AttemptStatusResponse {
+        state: attempt.state.into(),
+        cancellation_requested,
+        lease_expires_at_unix: attempt.lease_expires_at_unix,
+    }))
 }
 
 pub(crate) async fn restore_cache(
@@ -295,16 +293,7 @@ pub(crate) async fn append_log(
             )
             .await;
     }
-    let log = appended.log;
-    Ok(Json(scope_api_contract::RunLogResponse {
-        attempt_id: log.chunk.attempt_id,
-        job_key: log.job_key,
-        step_index: log.chunk.step_index,
-        position: log.position,
-        sequence: log.chunk.sequence,
-        text: log.chunk.text,
-        created_at_unix: log.chunk.created_at_unix,
-    }))
+    Ok(Json(super::run_response::run_log_response(appended.log)))
 }
 
 pub(crate) async fn complete_step(
@@ -397,43 +386,12 @@ fn attempt_status(claim: &scope_postgres::db::DispatchClaim) -> AttemptStatusRes
 }
 
 fn claimed_job_definition(claim: &scope_postgres::db::DispatchClaim) -> WorkflowJob {
-    let job = claim
+    claim
         .workflow_revision
         .definition()
         .job(&claim.job.key)
-        .expect("claimed run job definition must exist");
-    WorkflowJob {
-        id: job.id().as_str().to_string(),
-        needs: job
-            .needs()
-            .iter()
-            .map(|dependency| dependency.as_str().to_string())
-            .collect(),
-        container: WorkflowContainer {
-            image: job.container().image().to_string(),
-        },
-        timeout_seconds: job.timeout_seconds(),
-        caches: job
-            .caches()
-            .iter()
-            .map(|cache| WorkflowCache {
-                name: cache.as_str().to_string(),
-                path: cache.mount_path().to_string(),
-                format: cache.format().to_string(),
-                compatibility: workflow_cache_inputs(cache.compatibility_inputs()),
-                exact: workflow_cache_inputs(cache.exact_inputs()),
-            })
-            .collect(),
-        environment: job.environment().clone(),
-        steps: job
-            .steps()
-            .iter()
-            .map(|step| WorkflowStep {
-                name: step.name().to_string(),
-                run: step.run().to_string(),
-            })
-            .collect(),
-    }
+        .expect("claimed run job definition must exist")
+        .into()
 }
 
 fn attempt_step_status(step: &RunAttemptStep) -> AttemptStepStatusResponse {
@@ -443,15 +401,5 @@ fn attempt_step_status(step: &RunAttemptStep) -> AttemptStepStatusResponse {
         started_at_unix: step.started_at_unix,
         completed_at_unix: step.completed_at_unix,
         exit_code: step.exit_code,
-    }
-}
-
-fn workflow_cache_inputs(
-    inputs: &scope_domain::runs::cache::definition::CacheKeyInputs,
-) -> WorkflowCacheKeyInputs {
-    WorkflowCacheKeyInputs {
-        files: inputs.files().to_vec(),
-        environment: inputs.environment().to_vec(),
-        source: inputs.includes_source(),
     }
 }

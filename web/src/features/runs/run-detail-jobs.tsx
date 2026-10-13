@@ -6,7 +6,7 @@ import type {
 import { attemptForJob, jobsHaveDependencies } from './repository-run-detail-model'
 import { RunDetailSteps } from './run-detail-steps'
 import { RunDuration } from './run-duration'
-import { RUN_JOB_ITEM_CLASS, RUN_JOB_LIST_CLASS, runJobButtonClass } from './run-job-layout'
+import { RUN_JOB_ITEM_CLASS, RUN_JOB_LIST_CLASS, runJobButtonClass } from './run-layout'
 import { runJobPanelId } from './run-job-ids'
 import { RunJobGraph } from './run-job-graph'
 import { orderJobsByDependency } from './run-job-graph-model'

@@ -14,3 +14,6 @@ pub mod step;
 pub mod trigger;
 pub(crate) mod validation;
 pub mod workflow;
+
+#[cfg(test)]
+mod fixtures;

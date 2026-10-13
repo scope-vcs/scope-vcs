@@ -193,9 +193,9 @@ The other applications remain narrow:
   `scope-media-storage` for encrypted chunk storage.
 - `media-worker/` validates uploaded originals, generates derivatives, and
   cleans up media objects.
-- `runner-runtime/` converts a claimed wire workflow in `workflow.rs`, uses the
-  control-plane client under `api/`, cache behavior under `cache/`, and process
-  supervision under `execute/`.
+- `runner-runtime/` validates the claimed wire workflow through the contract's
+  `runs/runtime.rs` conversion, uses the control-plane client under `api/`,
+  cache behavior under `cache/`, and process supervision under `execute/`.
 - `web/` consumes generated TypeScript API types and owns browser delivery.
 
 Frontend server data belongs to persistent resource owners under each feature.

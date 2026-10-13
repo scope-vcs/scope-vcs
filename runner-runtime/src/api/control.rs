@@ -1,6 +1,6 @@
 use super::{CONTROL_REQUEST_TIMEOUT, RuntimeClient, json};
 use anyhow::Context as _;
-use scope_api_contract::{AttemptStatusResponse, ClaimRuntimeResponse};
+use scope_api_contract::ClaimRuntimeResponse;
 
 impl RuntimeClient {
     pub fn claim(&self, bootstrap_token: &str) -> anyhow::Result<ClaimRuntimeResponse> {
@@ -17,17 +17,5 @@ impl RuntimeClient {
             .lock()
             .expect("attempt token mutex poisoned") = Some(response.attempt_token.clone());
         Ok(response)
-    }
-
-    pub fn start_step(&self, step: u32) -> anyhow::Result<AttemptStatusResponse> {
-        self.post_json(
-            &format!("steps/{step}/start"),
-            &serde_json::json!({}),
-            "start step",
-        )
-    }
-
-    pub fn heartbeat(&self) -> anyhow::Result<AttemptStatusResponse> {
-        self.post_json("heartbeat", &serde_json::json!({}), "heartbeat attempt")
     }
 }

@@ -1,11 +1,21 @@
 use crate::wire::wire_enum;
 use scope_domain::runs::{
     attempt::AttemptState as DomainAttemptState,
-    cache::observation::{
-        CacheColdReason as DomainCacheColdReason, CacheFinalState as DomainCacheFinalState,
-        CachePreparation as DomainCachePreparation,
+    cache::{
+        definition::{CacheKeyInputs, WorkflowCache as DomainWorkflowCache},
+        observation::{
+            CacheColdReason as DomainCacheColdReason, CacheFinalState as DomainCacheFinalState,
+            CachePreparation as DomainCachePreparation,
+        },
     },
     step::StepState as DomainStepState,
+    workflow::{
+        definition::{
+            ContainerSpec, WorkflowJob as DomainWorkflowJob, WorkflowJobId,
+            WorkflowStep as DomainWorkflowStep,
+        },
+        error::WorkflowError,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -132,6 +142,91 @@ pub struct WorkflowJob {
     pub caches: Vec<WorkflowCache>,
     pub environment: BTreeMap<String, String>,
     pub steps: Vec<WorkflowStep>,
+}
+
+impl From<&DomainWorkflowJob> for WorkflowJob {
+    fn from(job: &DomainWorkflowJob) -> Self {
+        let inputs = |inputs: &CacheKeyInputs| WorkflowCacheKeyInputs {
+            files: inputs.files().to_vec(),
+            environment: inputs.environment().to_vec(),
+            source: inputs.includes_source(),
+        };
+        Self {
+            id: job.id().as_str().to_string(),
+            needs: job
+                .needs()
+                .iter()
+                .map(|id| id.as_str().to_string())
+                .collect(),
+            container: WorkflowContainer {
+                image: job.container().image().to_string(),
+            },
+            timeout_seconds: job.timeout_seconds(),
+            caches: job
+                .caches()
+                .iter()
+                .map(|cache| WorkflowCache {
+                    name: cache.as_str().to_string(),
+                    path: cache.mount_path().to_string(),
+                    format: cache.format().to_string(),
+                    compatibility: inputs(cache.compatibility_inputs()),
+                    exact: inputs(cache.exact_inputs()),
+                })
+                .collect(),
+            environment: job.environment().clone(),
+            steps: job
+                .steps()
+                .iter()
+                .map(|step| WorkflowStep {
+                    name: step.name().to_string(),
+                    run: step.run().to_string(),
+                })
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<&WorkflowJob> for DomainWorkflowJob {
+    type Error = WorkflowError;
+
+    fn try_from(job: &WorkflowJob) -> Result<Self, WorkflowError> {
+        let inputs = |inputs: &WorkflowCacheKeyInputs| {
+            CacheKeyInputs::new(
+                inputs.files.clone(),
+                inputs.environment.clone(),
+                inputs.source,
+            )
+        };
+        let caches = job
+            .caches
+            .iter()
+            .map(|cache| {
+                DomainWorkflowCache::new(
+                    cache.name.clone(),
+                    cache.path.clone(),
+                    cache.format.clone(),
+                    inputs(&cache.compatibility)?,
+                    inputs(&cache.exact)?,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        DomainWorkflowJob::new(
+            WorkflowJobId::parse(job.id.clone())?,
+            job.needs
+                .iter()
+                .cloned()
+                .map(WorkflowJobId::parse)
+                .collect::<Result<Vec<_>, _>>()?,
+            ContainerSpec::new(job.container.image.clone())?,
+            job.timeout_seconds,
+            caches,
+            job.environment.clone(),
+            job.steps
+                .iter()
+                .map(|step| DomainWorkflowStep::new(step.name.clone(), step.run.clone()))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -326,6 +421,14 @@ mod tests {
         });
         let job: WorkflowJob = serde_json::from_value(json.clone()).unwrap();
         assert_eq!(serde_json::to_value(&job).unwrap(), json);
+        let domain = DomainWorkflowJob::try_from(&job).unwrap();
+        assert_eq!(serde_json::to_value(&domain).unwrap(), json);
+        assert_eq!(WorkflowJob::from(&domain), job);
+        let invalid = WorkflowJob {
+            id: "not valid".to_string(),
+            ..job.clone()
+        };
+        assert!(DomainWorkflowJob::try_from(&invalid).is_err());
         assert_eq!(
             serde_json::to_string(&job).unwrap(),
             format!(
