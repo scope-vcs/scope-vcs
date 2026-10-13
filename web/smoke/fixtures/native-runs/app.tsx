@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterContextProvider } from '@tanstack/react-router'
-import { FixtureViewer } from '../request-workspace/clerk'
+import { FixtureViewer } from '../shared/clerk'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
 import { invalidateRepoResources } from '@/features/repo-detail/repo-resource-invalidation'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'

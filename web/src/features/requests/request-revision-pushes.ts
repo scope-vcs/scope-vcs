@@ -1,7 +1,7 @@
 import type { RequestEventResponse } from '@/api/types.generated'
 import { actorHandle } from './request-actor'
 
-export type RequestRevisionPush = {
+type RequestRevisionPush = {
   actor: RequestEventResponse['actor']
   createdAtUnix: number
   id: string

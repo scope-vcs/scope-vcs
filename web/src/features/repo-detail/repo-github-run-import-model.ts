@@ -10,7 +10,7 @@ export function parseRunImportCount(draft: string): number | null {
 
 export const RUN_IMPORT_COUNT_HINT = `Enter a whole number from 0 to ${GITHUB_RUN_IMPORT_MAX_COUNT}.`
 
-export type GitHubRunImportView = {
+type GitHubRunImportView = {
   inProgress: boolean
   retrying: boolean
   status: string

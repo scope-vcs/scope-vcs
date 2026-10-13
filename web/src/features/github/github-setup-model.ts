@@ -6,7 +6,7 @@ export type GitHubSetupSearch = {
   state?: string
 }
 
-export type GitHubSetupStep =
+type GitHubSetupStep =
   | { kind: 'callback'; code: string; state: string }
   | { kind: 'declined' }
   | { kind: 'resume'; target: RepoParams }

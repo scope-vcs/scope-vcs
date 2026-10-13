@@ -24,7 +24,7 @@ export async function loadOwnerProfileForRequest(
   return { ...cliInstall, account, profile }
 }
 
-export async function loadAccountSessionForRequest() {
+async function loadAccountSessionForRequest() {
   const api = createApiClient()
   return api.get(
     buildApiPath(ApiRouteTemplates.accountSession),

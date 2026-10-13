@@ -1,11 +1,7 @@
 import { PendingSurface } from '@/components/pending-surface'
-import {
-  BlockSkeleton,
-  LineSkeleton,
-  TextSkeleton,
-  type LineSkeletonLength,
-  type TextSkeletonLength,
-} from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { LineSkeleton, type LineSkeletonLength } from '@/components/ui/line-skeleton'
+import { TextSkeleton, type TextSkeletonLength } from '@/components/ui/text-skeleton'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
 import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'

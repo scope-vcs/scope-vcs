@@ -1,6 +1,6 @@
 import type { GitHubCheckConclusion, GitHubCheckStatus } from '@/api/types.generated'
 
-export type GitHubRunResult = { state: string; label: string }
+type GitHubRunResult = { state: string; label: string }
 
 const GITHUB_STATUS: Record<GitHubCheckStatus, GitHubRunResult> = {
   queued: { state: 'queued', label: 'queued' },
