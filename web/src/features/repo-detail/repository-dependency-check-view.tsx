@@ -13,7 +13,7 @@ export function RepositoryDependencyCheckView({
 }) {
   if (presentation.kind === 'plain') {
     return (
-      <div aria-label="Repository dependency check" className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-xs sm:px-6 lg:px-8">
+      <div aria-label="Repository dependency check" className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-(--app-inset) py-2.5 text-xs">
         <span className={presentation.tone === 'warning' ? 'text-warning-strong' : 'text-muted-foreground'}>
           {presentation.label}
         </span>
@@ -27,7 +27,7 @@ export function RepositoryDependencyCheckView({
   const { report } = presentation
   return (
     <details aria-label="Repository dependency check" className="group/dependencies">
-      <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-xs text-warning-strong hover:underline focus-visible:outline-2 focus-visible:outline-ring sm:px-6 lg:px-8 [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-(--app-inset) py-2.5 text-xs text-warning-strong hover:underline focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
         <ChevronRight
           aria-hidden="true"
           className="size-3.5 shrink-0 transition-transform group-open/dependencies:rotate-90"
@@ -37,7 +37,7 @@ export function RepositoryDependencyCheckView({
           {presentation.meta}
         </span>
       </summary>
-      <div className="px-5 pb-4 pl-12 text-xs sm:px-6 sm:pl-14 lg:px-8 lg:pl-16">
+      <div className="pr-(--app-inset) pb-4 pl-[calc(var(--app-inset)+1.625rem)] text-xs">
         {report.findings.length > 0 && (
           <ul aria-label="Public files importing private files" className="max-h-72 max-w-4xl overflow-y-auto">
             {report.findings.map((finding, index) => (

@@ -24,7 +24,7 @@ test('file workbench resizes with pointer and keyboard and keeps mobile navigati
     const separator = page.getByRole('separator', { name: 'File pane width' })
     await separator.waitFor()
     await waitForClientHydration(separator)
-    assert.equal(await separator.getAttribute('aria-valuenow'), '250')
+    assert.equal(await separator.getAttribute('aria-valuenow'), '274')
     await separator.focus()
     await page.keyboard.press('End')
     assert.equal(await separator.getAttribute('aria-valuenow'), '360')

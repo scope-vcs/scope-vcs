@@ -100,7 +100,7 @@ function RunDetailView({
         pendingAction={pendingAction}
       />
       {actionError ? (
-        <div className="px-5 pb-5 sm:px-6 lg:px-8">
+        <div className="px-(--app-inset) pb-5">
           <PageErrorAlert title="Run action failed">
             {actionError}
           </PageErrorAlert>

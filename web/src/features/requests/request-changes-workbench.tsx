@@ -362,7 +362,7 @@ function useRequestChangesModel({
 
 function RequestRevisionHeader({ revision }: { revision: RequestRevisionListResponse['revisions'][number] }) {
   return (
-    <header className="border-b border-border px-5 py-4 sm:px-6 lg:px-8">
+    <header className="border-b border-border px-(--app-inset) py-4">
       <h1 className="text-lg font-semibold leading-6 tracking-[-0.01em]">Revision {revision.position}</h1>
       <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
         <span>{actorHandle(revision.actor)} pushed {commitCount(revision)}</span>

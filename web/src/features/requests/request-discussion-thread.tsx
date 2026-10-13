@@ -204,7 +204,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
 
   return (
     <article
-      className="request-discussion-thread group/thread relative grid scroll-mt-32 grid-cols-[2rem_minmax(0,1fr)] gap-x-3 px-5 py-5 before:pointer-events-none before:absolute before:inset-x-5 before:top-0 before:border-t before:border-border before:content-[''] first:before:hidden lg:px-7 lg:before:inset-x-7"
+      className="request-discussion-thread group/thread relative grid scroll-mt-32 grid-cols-[2rem_minmax(0,1fr)] gap-x-3 px-(--app-inset) py-5 before:pointer-events-none before:absolute before:inset-x-(--app-inset) before:top-0 before:border-t before:border-border before:content-[''] first:before:hidden"
       id={`discussion-${discussion.id}`}
     >
       {rootUnread ? (

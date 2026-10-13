@@ -58,7 +58,7 @@ export function HistoryWorkbench({
         <div>
           {commits.length > 1 ? (
             <div className="border-b border-border">
-              <h2 className="px-5 pt-3 pb-1 text-xs font-medium text-muted-foreground sm:px-6 lg:px-8">
+              <h2 className="px-(--app-inset) pt-3 pb-1 text-xs font-medium text-muted-foreground">
                 {commits.length} commits in this revision
               </h2>
               <div className="max-h-72 overflow-y-auto">

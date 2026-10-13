@@ -224,10 +224,25 @@ body {
 
   --app-topbar: 57px;
   --app-rail: 1280px;
+  --app-inset: 20px;
   --app-chrome: 113px;
 
   --terminal-surface: #090b0e;
   --terminal-foreground: #eceae5;
+}
+
+@media (min-width: 40rem) {
+  :root,
+  .dark {
+    --app-inset: 24px;
+  }
+}
+
+@media (min-width: 64rem) {
+  :root,
+  .dark {
+    --app-inset: 32px;
+  }
 }
 
 @layer base {

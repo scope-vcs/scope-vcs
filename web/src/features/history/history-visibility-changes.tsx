@@ -11,10 +11,10 @@ export function ViewsChanges({ transition }: { transition: ViewsTransition | nul
   if (changes.length === 0) return null
   return (
     <section aria-label="Views changes" className="border-b border-border">
-      <h2 className="px-5 pt-3 pb-1 text-sm font-medium sm:px-6">Views changes</h2>
+      <h2 className="px-(--app-inset) pt-3 pb-1 text-sm font-medium">Views changes</h2>
       <ul className="divide-y divide-border">
         {changes.map((change) => (
-          <li className="px-5 py-2 text-xs sm:px-6" key={change}>{change}</li>
+          <li className="px-(--app-inset) py-2 text-xs" key={change}>{change}</li>
         ))}
       </ul>
     </section>
@@ -37,7 +37,7 @@ export function VisibilityChanges({
   const rows = (
     <div className="divide-y divide-border">
       {changes.map((change) => (
-        <div className="flex min-h-10 flex-wrap items-center gap-2 px-5 py-2 sm:px-6" key={change.id}>
+        <div className="flex min-h-10 flex-wrap items-center gap-2 px-(--app-inset) py-2" key={change.id}>
           {change.file ? (
             <button
               aria-pressed={selectedId === change.id}
@@ -68,7 +68,7 @@ export function VisibilityChanges({
   )
   return (
     <section aria-label="Visibility changes" className="border-b border-border">
-      <h2 className="px-5 pt-3 pb-1 text-sm font-medium sm:px-6">Visibility changes</h2>
+      <h2 className="px-(--app-inset) pt-3 pb-1 text-sm font-medium">Visibility changes</h2>
       {rows}
     </section>
   )

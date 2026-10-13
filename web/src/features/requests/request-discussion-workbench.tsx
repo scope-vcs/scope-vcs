@@ -89,7 +89,7 @@ export function RequestDiscussionWorkbench({
     <section aria-label="Request discussion">
       {store.error ? (
         <div
-          className="flex items-center gap-2 border-b border-border px-5 py-3 text-sm text-destructive lg:px-7"
+          className="flex items-center gap-2 border-b border-border px-(--app-inset) py-3 text-sm text-destructive"
           role="alert"
         >
           <CircleAlert className="size-4" />
@@ -98,7 +98,7 @@ export function RequestDiscussionWorkbench({
       ) : null}
 
       {store.collection.nextCursor ? (
-        <div className="border-b border-border px-5 py-4 text-center lg:px-7">
+        <div className="border-b border-border px-(--app-inset) py-4 text-center">
           <Button
             aria-busy={store.loadingMore}
             disabled={store.loadingMore}
@@ -145,7 +145,7 @@ export function RequestDiscussionWorkbench({
       )}
 
       {canStartDiscussion ? (
-        <div className="border-t border-border px-5 py-4 lg:px-7">
+        <div className="border-t border-border px-(--app-inset) py-4">
           <RequestDiscussionComposer onSubmit={store.create} />
         </div>
       ) : null}

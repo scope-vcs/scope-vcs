@@ -159,10 +159,10 @@ export function RequestWorkspaceSidebar({
     const row = (event.target as Element).closest<HTMLElement>('.request-workspace-row[data-rail]')
     const avatar = row?.querySelector('.request-workspace-row-avatar')
     if (state !== 'closed' || !row?.dataset.requestId || !avatar) return setHint(null)
-    const { right, top, height } = avatar.getBoundingClientRect()
+    const { top, height } = avatar.getBoundingClientRect()
     setHint({
       id: row.dataset.requestId,
-      left: right + 14,
+      left: event.currentTarget.getBoundingClientRect().right + 3,
       top: top + height / 2,
       now: Math.floor(Date.now() / 1000),
     })
@@ -273,7 +273,7 @@ export function RequestWorkspaceSidebar({
         </div>
         {viewingAs && <div className="request-workspace-viewing-as">{viewingAs}</div>}
         {actionError && (
-          <p className="px-4 py-2 text-xs text-danger-strong" role="alert">
+          <p className="py-2 pr-4 pl-(--request-workspace-row-inset) text-xs text-danger-strong" role="alert">
             {actionError}
           </p>
         )}

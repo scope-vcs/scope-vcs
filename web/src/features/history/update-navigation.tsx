@@ -16,7 +16,7 @@ export function UpdateNavigation({
   viewingAs?: ReactNode
 }) {
   return (
-    <nav aria-label="Update navigation" className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-5 py-2 text-xs sm:px-6">
+    <nav aria-label="Update navigation" className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-(--app-inset) py-2 text-xs">
       <Link
         className="flex items-center gap-1.5 rounded py-1 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
         params={params}

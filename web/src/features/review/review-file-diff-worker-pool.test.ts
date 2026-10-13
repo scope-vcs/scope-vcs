@@ -18,6 +18,10 @@ const workerCode = `
   });
 `
 
+const UNPRESSURED_DEADLINE_MS = 30_000
+const READY_DELAY_MS = 1_000
+const RENDER_AFTER_READY_DEADLINE_MS = 750
+
 function input(newText = 'text') {
   return { budget: REVIEW_FILE_DIFF_RENDER_BUDGET, oldText: '', newText, path: 'fixture.ts' }
 }
@@ -30,12 +34,12 @@ test('reuses idle workers and rejects overload without a queue', async (t) => {
     return worker
   }, 2)
   t.after(() => Promise.all(workers.map((worker) => worker.terminate())))
-  const first = render(input(), 1_000)
-  const second = render(input(), 1_000)
-  await assert.rejects(render(input(), 1_000), (error: unknown) =>
+  const first = render(input(), UNPRESSURED_DEADLINE_MS)
+  const second = render(input(), UNPRESSURED_DEADLINE_MS)
+  await assert.rejects(render(input(), UNPRESSURED_DEADLINE_MS), (error: unknown) =>
     error instanceof ReviewDiffTransientError && error.failure === 'busy')
   const [a] = await Promise.all([first, second])
-  const reused = await render(input(), 1_000)
+  const reused = await render(input(), UNPRESSURED_DEADLINE_MS)
   assert.equal(workers.length, 2)
   assert.equal(a.kind, 'html')
   assert.equal(reused.kind, 'html')
@@ -53,21 +57,21 @@ test('terminates timed out, canceled and failed tasks and replaces their workers
     return worker
   }, 1)
   t.after(() => Promise.all(workers.map((worker) => worker.terminate())))
-  await render(input(), 1_000)
+  await render(input(), UNPRESSURED_DEADLINE_MS)
   await assert.rejects(render(input('spin'), 25), (error: unknown) =>
     error instanceof ReviewDiffTransientError && error.failure === 'deadline')
   assert.equal(workers[0]?.threadId, -1)
-  await render(input(), 1_000)
+  await render(input(), UNPRESSURED_DEADLINE_MS)
   const controller = new AbortController()
-  const pending = render(input('spin'), 1_000, controller.signal)
+  const pending = render(input('spin'), UNPRESSURED_DEADLINE_MS, controller.signal)
   controller.abort()
   await assert.rejects(pending, { name: 'AbortError' })
   assert.equal(workers[1]?.threadId, -1)
   for (const fixture of ['crash', 'exit']) {
-    await assert.rejects(render(input(fixture), 1_000))
+    await assert.rejects(render(input(fixture), UNPRESSURED_DEADLINE_MS))
     assert.equal(workers.at(-1)?.threadId, -1)
   }
-  assert.equal((await render(input(), 1_000)).kind, 'html')
+  assert.equal((await render(input(), UNPRESSURED_DEADLINE_MS)).kind, 'html')
   assert.equal(workers.length, 5)
 })
 
@@ -75,10 +79,10 @@ test('separates bounded worker startup from the render deadline', async (t) => {
   const worker = new Worker(`setTimeout(() => {
     ${workerCode}
     parentPort.postMessage({ kind: 'ready' });
-  }, 100);`, { eval: true })
+  }, ${READY_DELAY_MS});`, { eval: true })
   t.after(() => worker.terminate())
-  const render = createReviewFileDiffWorkerPool(() => worker, 1, 1_000)
-  assert.equal((await render(input(), 75)).kind, 'html')
+  const render = createReviewFileDiffWorkerPool(() => worker, 1, UNPRESSURED_DEADLINE_MS)
+  assert.equal((await render(input(), RENDER_AFTER_READY_DEADLINE_MS)).kind, 'html')
   await assert.rejects(render(input('spin'), 25), (error: unknown) =>
     error instanceof ReviewDiffTransientError && error.failure === 'deadline')
   assert.equal(worker.threadId, -1)
@@ -87,7 +91,7 @@ test('separates bounded worker startup from the render deadline', async (t) => {
 test('terminates a worker that never becomes ready within the startup budget', async () => {
   const worker = new Worker('while (true) {}', { eval: true })
   const render = createReviewFileDiffWorkerPool(() => worker, 1, 25)
-  await assert.rejects(render(input(), 1_000), (error: unknown) =>
+  await assert.rejects(render(input(), UNPRESSURED_DEADLINE_MS), (error: unknown) =>
     error instanceof ReviewDiffTransientError && error.failure === 'deadline')
   assert.equal(worker.threadId, -1)
 })

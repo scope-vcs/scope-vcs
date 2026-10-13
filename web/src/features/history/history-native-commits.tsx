@@ -9,10 +9,10 @@ export function NativeCommits({ detail }: { detail: HistoryEntryDetailResponse }
   const heading = historyNativeCommitsHeading(detail, views)
   return (
     <section aria-label={heading} className="border-b border-border">
-      <h2 className="px-5 pt-3 pb-1 text-sm font-medium sm:px-6">{heading}</h2>
+      <h2 className="px-(--app-inset) pt-3 pb-1 text-sm font-medium">{heading}</h2>
       <ol className="divide-y divide-border">
         {rows.map((row) => (
-          <li className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 px-5 py-2 text-xs sm:px-6" key={row.oid}>
+          <li className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 px-(--app-inset) py-2 text-xs" key={row.oid}>
             <span className="select-all font-mono text-xs text-muted-foreground" title={row.oid}>
               {row.shortOid}
             </span>
