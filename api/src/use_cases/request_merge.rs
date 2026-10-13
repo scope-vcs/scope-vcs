@@ -527,7 +527,7 @@ async fn prepare_request_merge_for_execution(
                 return Err(RequestMergeFailure::from(error));
             }
         };
-        let stack_children = super::request_stack_landing::prepare_stack_landing(
+        let stack_children = match super::request_stack_landing::prepare_stack_landing(
             state,
             &repo.incarnation(),
             request,
@@ -536,9 +536,22 @@ async fn prepare_request_merge_for_execution(
             view_heads
                 .get(&request.view)
                 .filter(|_| &request.view != views.full())
-                .map(String::as_str),
+                .and_then(Option::as_deref),
         )
-        .await?;
+        .await
+        {
+            Ok(children) => children,
+            Err(error) => {
+                crate::git::import::best_effort_delete_staged_git_segment(
+                    state,
+                    &repo.record.id,
+                    &staged_segment,
+                )
+                .await;
+                write_lease.release().await;
+                return Err(RequestMergeFailure::from(error));
+            }
+        };
         Ok(PreparedRequestMerge {
             stack_children,
             repository_id: repo.record.id.clone(),

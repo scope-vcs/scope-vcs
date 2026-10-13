@@ -499,7 +499,7 @@ pub(crate) fn verify_and_restore_projection(
     state: &AppState,
     projection: &Projection,
     native_source_repo: &FsPath,
-) -> Result<String, ApiError> {
+) -> Result<Option<String>, ApiError> {
     let cache_root = state.repository_engine.cache_root().to_path_buf();
     let attempt = PROJECTION_CACHE_ATTEMPT.fetch_add(1, Ordering::Relaxed);
     let verification_root = cache_root.join(format!(
@@ -518,6 +518,10 @@ pub(crate) fn verify_and_restore_projection(
         |blob| source_content_bytes_from_repo(state, blob, Some(native_source_repo)),
     )
     .and_then(|repo| {
+        let Some(head) = scope_git::projection_head_oid(projection).map_err(ApiError::internal)?
+        else {
+            return Ok(None);
+        };
         let refspec = "+refs/heads/main:refs/scope/internal/stack-view-main";
         crate::git::command::run_git(
             Some(native_source_repo),
@@ -529,15 +533,12 @@ pub(crate) fn verify_and_restore_projection(
             ],
             "restoring prepared view main for stack ancestry",
         )?;
-        let head = scope_git::projection_head_oid(projection)
-            .map_err(ApiError::internal)?
-            .ok_or_else(|| ApiError::conflict("prepared request view has no main"))?;
         crate::git::command::run_git(
             Some(native_source_repo),
             &["update-ref", "-d", "refs/scope/internal/stack-view-main"],
             "removing prepared stack view main ref",
         )?;
-        Ok(head)
+        Ok(Some(head))
     });
     let cleanup = fs::remove_dir_all(&verification_root).map_err(ApiError::internal);
     match (verification, cleanup) {
