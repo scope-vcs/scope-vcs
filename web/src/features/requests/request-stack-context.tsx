@@ -58,7 +58,7 @@ export function RequestStackContext({ detail, params, childrenLoading = false, c
         <span className="text-muted-foreground">Children</span>
         {navigation.children.requests.map((node) => <StackLink key={node.id} node={node} params={params} />)}
       </nav> : null}
-      {navigation.children.next_cursor && onLoadChildren ? <button className="mt-2 underline underline-offset-4 disabled:opacity-50" disabled={childrenLoading} onClick={onLoadChildren} type="button">{childrenLoading ? 'Loading children…' : 'Load more children'}</button> : null}
+      {navigation.children.next_cursor && onLoadChildren ? <button className="mt-2 underline underline-offset-4 disabled:opacity-50" disabled={childrenLoading} onClick={onLoadChildren} type="button">{childrenLoading ? 'Loading children…' : childrenError ? 'Retry children' : 'Load more children'}</button> : null}
       {childrenError ? <p className="mt-1.5 text-danger-strong" role="alert">{childrenError}</p> : null}
       {request.stack_status === 'parent_extended' ? <p className="mt-1.5 text-muted-foreground">The parent has new commits. This request’s pinned layer is unchanged and waits for the parent to land.</p> : null}
       {request.mergeability.status !== 'Ready' && request.mergeability.reason ? <p className="mt-1.5 text-muted-foreground">{request.mergeability.reason}</p> : null}

@@ -9,6 +9,7 @@ import { createContext, use, useCallback, useMemo, type ReactNode } from 'react'
 import { reloadRequestStateValue, requestStateIdentity, requestStateResource, type RequestRouteState } from './request-state-resource'
 
 type RequestStateContextValue = {
+  childrenError: string | null
   error: string | null
   identity: string
   retry: () => void
@@ -30,7 +31,7 @@ export function RequestStateProvider({ children, initial, params }: {
   const viewerId = isLoaded ? userId ?? null : initial.viewerId
   const scope = repoResourceScope(live.repo, viewerId)
   const identity = requestStateIdentity(scope, params.request_id)
-  const initialValue = useMemo(() => scope === initial.scope ? { state: initial.state, childrenPages: initial.childrenPages } : null, [initial.childrenPages, initial.scope, initial.state, scope])
+  const initialValue = useMemo(() => scope === initial.scope ? { state: initial.state, childrenPages: initial.childrenPages, childrenError: initial.childrenError } : null, [initial.childrenError, initial.childrenPages, initial.scope, initial.state, scope])
   const load = useCallback((signal: AbortSignal) => reloadRequestStateValue(identity, (stateSignal) => loadRequestStateForViewer(params, viewerId, stateSignal), (cursor, childSignal) => loadRequestChildrenForViewer({ ...params, cursor }, viewerId, childSignal), signal), [identity, params, viewerId])
   const resource = useCachedResource({
     fallbackError: 'Request state is unavailable.',
@@ -43,6 +44,7 @@ export function RequestStateProvider({ children, initial, params }: {
   const value = resource.value ?? initialValue
   return (
     <RequestStateContext value={{
+      childrenError: value?.childrenError ?? null,
       error: resource.error,
       identity,
       retry: resource.retry,

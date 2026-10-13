@@ -1,9 +1,10 @@
 import type { RequestChildrenPageResponse, RequestStateResponse } from '../../api/types.generated'
 import type { RepoLiveState } from '../../api/types'
 import { createCachedResource } from '../../lib/cached-resource'
+import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 
-export type RequestStateValue = { state: RequestStateResponse | null; childrenPages?: number }
+export type RequestStateValue = { state: RequestStateResponse | null; childrenPages?: number; childrenError?: string | null }
 
 export type RequestRouteState = RequestStateValue & {
   scope: string
@@ -41,11 +42,16 @@ export async function loadRequestStateValue(
 
 export async function reloadRequestStateValue(identity: string, load: (signal: AbortSignal) => Promise<RequestStateValue>, loadChildren: ((cursor: string, signal: AbortSignal) => Promise<RequestChildrenPageResponse>) | undefined, signal: AbortSignal) {
   const pages = requestStateResource.peek(identity)?.childrenPages ?? 1
-  let value = await load(signal)
+  let value: RequestStateValue = { ...await load(signal), childrenPages: 1, childrenError: null }
   for (let page = 1; page < pages && loadChildren; page++) {
     const cursor = value.state?.detail.stack_navigation.children.next_cursor
     if (!cursor) break
-    value = appendChildren(value, await loadChildren(cursor, signal))
+    try {
+      value = appendChildren(value, await loadChildren(cursor, signal))
+    } catch (error) {
+      if (signal.aborted) throw error
+      return { ...value, childrenError: resourceErrorMessage(error, 'Children are unavailable.') }
+    }
   }
   return value
 }
@@ -67,8 +73,12 @@ export async function loadMoreRequestChildren(identity: string, load: (cursor: s
   const value = snapshot.value
   const cursor = value?.state?.detail.stack_navigation.children.next_cursor
   if (!value || !cursor || snapshot.stale || snapshot.pending) return
-  const children = await load(cursor, new AbortController().signal)
-  requestStateResource.writeIfUnchanged(identity, snapshot, appendChildren(value, children))
+  try {
+    const children = await load(cursor, new AbortController().signal)
+    requestStateResource.writeIfUnchanged(identity, snapshot, appendChildren(value, children))
+  } catch (error) {
+    requestStateResource.writeIfUnchanged(identity, snapshot, { ...value, childrenError: resourceErrorMessage(error, 'Children are unavailable.') })
+  }
 }
 
 function appendChildren(value: RequestStateValue, page: RequestChildrenPageResponse): RequestStateValue {
@@ -79,6 +89,7 @@ function appendChildren(value: RequestStateValue, page: RequestChildrenPageRespo
   for (const node of page.requests) requests.set(node.id, node)
   return {
     childrenPages: (value.childrenPages ?? 1) + 1,
+    childrenError: null,
     state: { ...value.state, detail: { ...detail, stack_navigation: { ...navigation, children: { requests: [...requests.values()], next_cursor: page.next_cursor } } } },
   }
 }

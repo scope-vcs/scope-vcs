@@ -144,6 +144,7 @@ function RequestDiscussionLayout() {
 
   return (
     <RequestDetailPage
+      childrenError={page.childrenError}
       approveChecks={(expectedHeadOid) =>
         approveChecks({ data: { ...requestParams, expected_head_oid: expectedHeadOid } })}
       authorizeAutoMerge={(input) =>

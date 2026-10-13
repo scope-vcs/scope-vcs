@@ -87,6 +87,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0085_request_check_identity",
     "m0086_private_request_stacks",
     "m0087_stack_auto_merge_stop_reasons",
+    "m0088_request_navigation_children_index",
 ];
 
 pub(super) async fn isolated_database() -> (

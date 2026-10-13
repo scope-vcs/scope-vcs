@@ -78,6 +78,7 @@ export function RequestUnavailablePage({ params }: { params: RepoParams }) {
 }
 
 type RequestDetailPageProps = {
+  childrenError: string | null
   approveChecks: (expectedHeadOid: string) => Promise<RequestChecksResponse>
   authorizeAutoMerge: (input: Pick<
     AuthorizeRequestAutoMergeInput,
@@ -109,6 +110,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     authorizeAutoMerge,
     cancelAutoMerge,
     children,
+    childrenError,
     attachmentActions,
     state,
     stateError,
@@ -124,15 +126,11 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     viewerId,
   } = props
   const [childrenLoading, setChildrenLoading] = useState(false)
-  const [childrenError, setChildrenError] = useState<string | null>(null)
   const loadChildren = async () => {
     if (childrenLoading) return
     setChildrenLoading(true)
-    setChildrenError(null)
     try {
       await loadMoreRequestChildren(identity, (cursor, signal) => loadRequestChildrenForViewer({ ...params, request_id: state.detail.request.id, cursor }, viewerId, signal))
-    } catch (error) {
-      setChildrenError(error instanceof Error ? error.message : 'Children are unavailable.')
     } finally {
       setChildrenLoading(false)
     }
