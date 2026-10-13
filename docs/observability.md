@@ -37,17 +37,13 @@ the API work it causes share one trace.
 When spans are exported, every stdout line written inside a traced request
 starts with `trace_id=<id>`, which finds the same request in PostHog.
 
-## Railway tracing stays off
+## Railway tracing is off
 
-Railway injects `OTEL_EXPORTER_OTLP_*` variables, including exporter headers,
-into services that have its tracing enabled. OTLP exporters merge those headers
-into every request, so they would send Railway's credentials to PostHog. A
-service that sees them logs an error and exports nothing.
-`.github/scripts/railway-tracing.mjs` owns the Railway settings: it disables
-tracing on every application service and the maintenance runtime, and web
-auto-instrumentation, before each production release and during preview
-provisioning. An unconfirmed Railway mutation blocks the release. Railway applies
-the change on each service's next deployment.
+Railway tracing and web auto-instrumentation are switched off in production and
+staging, and preview provisioning does not switch them on. Do not switch them
+back on: Railway then injects `OTEL_EXPORTER_OTLP_*` variables, and OTLP
+exporters merge those headers into every request, replacing the PostHog token.
+A service that sees them prints an error to stderr and exports nothing.
 
 ## Which traces are kept
 

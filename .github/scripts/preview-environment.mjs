@@ -6,7 +6,6 @@ import { pathToFileURL } from 'node:url';
 import { serviceIds } from './deployment-components.mjs';
 import { loadDeploymentManifest } from './railway-artifact.mjs';
 import { railwayClient } from './railway-client.mjs';
-import { disableRailwayTracing } from './railway-tracing.mjs';
 import { retryRailway } from './railway-retry.mjs';
 import {
   RUNTIME_ROLES, assertPreviewEnvironment, changedVariables, unreviewedStagingVariables, databaseBootstrap, databaseBootstrapPending,
@@ -131,7 +130,6 @@ export function ensurePreviewEnvironment({ manifest, pullRequest, clerk, registr
   }
   const domains = previewDomains(manifest, config);
   ensurePostgresVolume(railway, projectId, environmentId, ids.postgres);
-  disableRailwayTracing(railway, environmentId, ids);
   configureMaintenanceRegistry(railway, environmentId, ids.maintenance, registryCredentials);
 
   const current = currentVariables(railway, projectId, environmentId, ids);

@@ -162,11 +162,10 @@ even when deployment times out, and the pull request comment reports failures.
 The first deployment copies staging with `skipInitialDeploys`. Railway does not
 copy sealed variables, so the workflow generates the Postgres administrator
 password, one login per runtime role, encryption keys, and grant signing keys,
-and points bucket credentials at the environment's own bucket instances. It switches Railway tracing on for every service except
-Postgres, with automatic instrumentation for `scope-web`, before anything
-deploys. Railway also copies staging's unsealed variables. The preview keeps
-only the settings reviewed in `KEPT_STAGING_SETTINGS` and its own variables and
-deletes the rest, so pull request code cannot read staging credentials; add a new
+and points bucket credentials at the environment's own bucket instances. It
+does not configure Railway tracing. Railway also copies staging's unsealed
+variables. The preview keeps only the settings reviewed in
+`KEPT_STAGING_SETTINGS` and its own variables and deletes the rest, so pull request code cannot read staging credentials; add a new
 non-secret staging setting to that list before previews need it. Clerk uses the
 repository's development key pair. Generated keys and passwords are never
 regenerated once set; repairing a partial group reuses the value other services
@@ -190,14 +189,7 @@ The `preview` GitHub environment must allow only `main` and hold
 ## Production telemetry
 
 Services export logs and traces to PostHog; see [observability](observability.md).
-The monitored production deployment wrapper disables Railway tracing through
-`.github/scripts/railway-tracing.mjs` before invoking either the backend
-transition or web deployment, so Railway stops injecting exporter variables
-that would otherwise reach PostHog. Preview provisioning reuses that owner.
-PostgreSQL is excluded. An unconfirmed provider mutation stops the release
-before service activation. The change runs under the existing Release
-concurrency lock, without a separate deployment path, and takes effect on each
-service's next deployment.
+Railway tracing is off in every environment and releases do not change it.
 
 Before the first release that carries PostHog export, set `POSTHOG_PROJECT_TOKEN`
 on every production application service and choose Release scope `all`, so no
