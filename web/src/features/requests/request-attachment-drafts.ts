@@ -337,19 +337,23 @@ function parseDraftKey(key: string) {
   }
 }
 
+const MEDIA_TYPES_BY_EXTENSION: Record<string, string> = {
+  gif: 'image/gif',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  mov: 'video/quicktime',
+  mp4: 'video/mp4',
+  png: 'image/png',
+  webm: 'video/webm',
+  webp: 'image/webp',
+}
+
 export function inferredMediaType(file: File) {
   if (file.type) return file.type
-  const extension = file.name.split('.').at(-1)?.toLowerCase()
-  if (extension === 'heic') return 'image/heic'
-  if (extension === 'heif') return 'image/heif'
-  if (extension === 'mov') return 'video/quicktime'
-  if (extension === 'mp4') return 'video/mp4'
-  if (extension === 'webm') return 'video/webm'
-  if (extension === 'png') return 'image/png'
-  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg'
-  if (extension === 'webp') return 'image/webp'
-  if (extension === 'gif') return 'image/gif'
-  return 'application/octet-stream'
+  const extension = file.name.split('.').at(-1)?.toLowerCase() ?? ''
+  return MEDIA_TYPES_BY_EXTENSION[extension] ?? 'application/octet-stream'
 }
 
 function persist(key: string, draft: RequestAttachmentDraft) {
@@ -363,14 +367,11 @@ function persist(key: string, draft: RequestAttachmentDraft) {
       attachments: draft.attachments.map((attachment) => ({
         attachmentId: attachment.attachmentId,
         contentType: attachment.contentType,
-        error: attachment.attachmentId ? null : 'Select the same file to resume this upload.',
         localId: attachment.localId,
         name: attachment.name,
         operationId: attachment.operationId,
-        progress: attachment.attachmentId ? 1 : 0,
         sha256: attachment.sha256,
         size: attachment.size,
-        status: attachment.attachmentId ? 'uploaded' : 'failed',
       })),
       baseText: draft.baseText,
       initialized: draft.initialized,

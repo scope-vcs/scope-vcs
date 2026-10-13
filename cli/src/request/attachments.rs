@@ -44,15 +44,18 @@ impl UploadedAttachments {
         mut recovery: serde_json::Value,
     ) -> anyhow::Result<Vec<RequestAttachmentResponse>> {
         let attachments = if wait {
-            wait_for_processing(api, target, self.attachments, recovery.clone())?
+            wait_for_processing(
+                api,
+                target,
+                self.attachments,
+                recovery.clone(),
+                WAIT_TIMEOUT,
+                WAIT_POLL_INTERVAL,
+            )?
         } else {
             self.attachments
         };
-        let cleanup = match mutation {
-            Some(mutation) => journal::complete_mutation(mutation, &self.receipt_keys),
-            None => journal::complete_uploads(&self.receipt_keys),
-        };
-        cleanup.map_err(|error| {
+        journal::complete(mutation, &self.receipt_keys).map_err(|error| {
             recovery["saved"] = serde_json::json!(true);
             recovery["recovery"] = serde_json::json!(
                 "The server saved this change. Local attachment receipt cleanup failed; preserve the journal and inspect the saved result before retrying the command."
@@ -468,22 +471,6 @@ pub(super) fn markdown_reference(attachment: &RequestAttachmentResponse) -> Stri
 fn wait_for_processing(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
-    attachments: Vec<RequestAttachmentResponse>,
-    recovery: serde_json::Value,
-) -> anyhow::Result<Vec<RequestAttachmentResponse>> {
-    wait_for_processing_with_policy(
-        api,
-        target,
-        attachments,
-        recovery,
-        WAIT_TIMEOUT,
-        WAIT_POLL_INTERVAL,
-    )
-}
-
-fn wait_for_processing_with_policy(
-    api: ApiSession<'_>,
-    target: RequestTarget<'_>,
     mut attachments: Vec<RequestAttachmentResponse>,
     mut recovery: serde_json::Value,
     timeout: Duration,
@@ -577,9 +564,7 @@ fn print_progress(filename: &str, uploaded_bytes: u64, total_bytes: u64) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        fingerprint, markdown_reference, media_type_for_path, wait_for_processing_with_policy,
-    };
+    use super::{fingerprint, markdown_reference, media_type_for_path, wait_for_processing};
     use crate::api::{ApiSession, RequestTarget};
     use scope_api_contract::attachments::RequestAttachmentResponse;
     use scope_api_contract::attachments::{RequestAttachmentKind, RequestAttachmentState};
@@ -642,7 +627,7 @@ mod tests {
             "created_at_unix":1, "updated_at_unix":1
         }))
         .unwrap();
-        let error = wait_for_processing_with_policy(
+        let error = wait_for_processing(
             ApiSession::new(
                 &reqwest::blocking::Client::new(),
                 "http://127.0.0.1:9",

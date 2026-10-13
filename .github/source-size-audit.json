@@ -14,7 +14,7 @@
     {
       "path": "crates/scope-domain/src/requests/attachments/rules.rs",
       "owner": "request attachment aggregate",
-      "reason": "Upload, processing, binding, access, and cleanup transitions share source, derivative, lease, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."
+      "reason": "Upload, processing, binding, access, and media-manifest rules share source, derivative, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."
     },
     {
       "path": "crates/scope-git/src/projection_identity.rs",
@@ -42,24 +42,9 @@
       "reason": "Discussion and reply mutations, visibility, read state, attachment binding, and notifications share the same request discussion transaction boundary."
     },
     {
-      "path": "crates/scope-postgres/src/db/request_media/cleanup.rs",
-      "owner": "request media deletion lifecycle",
-      "reason": "Request and repository tombstones, orphan inventory, claim revalidation, lease grace, and reconciliation share one deletion-wins lock order; row mapping and supporting SQL are already isolated in cleanup_support."
-    },
-    {
-      "path": "crates/scope-postgres/src/db/request_media/upload.rs",
-      "owner": "request media upload persistence",
-      "reason": "Prepare, part reservation, acknowledgement, and finalization share current authorization, idempotency, repository quota locks, and the durable upload inventory."
-    },
-    {
       "path": "media-worker/src/codec.rs",
       "owner": "request media codec pipeline",
       "reason": "Photo and video conversion share verified codec capabilities, output inspection, bounded subprocess policy, and failure classification; container and source inspection are already isolated in codec/inspection."
-    },
-    {
-      "path": "media-worker/src/jobs.rs",
-      "owner": "leased request media processing",
-      "reason": "Source verification, conversion, durable output reservation, heartbeat renewal, completion, and failure recovery form one leased job; codec execution, storage, scratch, health, and cleanup each have separate owners."
     }
   ]
 }

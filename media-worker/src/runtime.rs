@@ -1,9 +1,54 @@
 use crate::health::WorkerHealth;
 use scope_media_storage::MediaStorage;
 use scope_postgres::db::MetadataStore;
-use std::time::Duration;
+use scope_service_runtime::{unix_now, wait_or_shutdown};
+use std::{future::Future, time::Duration};
 
-pub(crate) async fn dependencies_ready(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum JobOutcome {
+    NoJob,
+    Completed,
+    Failed,
+    LeaseLost,
+}
+
+pub(crate) struct JobLoop<'a> {
+    pub(crate) kind: &'static str,
+    pub(crate) metadata: &'a MetadataStore,
+    pub(crate) storage: &'a MediaStorage,
+    pub(crate) health: &'a WorkerHealth,
+    pub(crate) poll_interval: Duration,
+    pub(crate) mark_poll: fn(&WorkerHealth, u64),
+}
+
+impl JobLoop<'_> {
+    pub(crate) async fn run<F, Fut>(self, mut next_job: F) -> anyhow::Result<()>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = anyhow::Result<JobOutcome>>,
+    {
+        let kind = self.kind;
+        loop {
+            if dependencies_ready(self.metadata, self.storage, self.health).await {
+                let outcome = next_job().await;
+                match &outcome {
+                    Ok(JobOutcome::NoJob) => {}
+                    Ok(outcome) => tracing::info!(?outcome, "media {kind} job finished"),
+                    Err(error) => tracing::error!(%error, "media {kind} poll failed"),
+                }
+                (self.mark_poll)(self.health, unix_now()?);
+                if !matches!(outcome, Ok(JobOutcome::NoJob) | Err(_)) {
+                    continue;
+                }
+            }
+            if wait_or_shutdown(self.poll_interval).await {
+                return Ok(());
+            }
+        }
+    }
+}
+
+async fn dependencies_ready(
     metadata: &MetadataStore,
     storage: &MediaStorage,
     health: &WorkerHealth,

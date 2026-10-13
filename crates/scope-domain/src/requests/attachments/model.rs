@@ -1,3 +1,4 @@
+use crate::requests::RequestPermissions;
 use serde::{Deserialize, Serialize};
 
 pub const REQUEST_ATTACHMENT_PHOTO_MEDIA_TYPES: &[&str] = &[
@@ -8,6 +9,7 @@ pub const REQUEST_ATTACHMENT_PHOTO_MEDIA_TYPES: &[&str] = &[
     "image/heic",
     "image/heif",
 ];
+pub const REQUEST_MEDIA_CHUNK_BYTES: u64 = 8 * 1024 * 1024;
 pub const REQUEST_ATTACHMENT_VIDEO_MEDIA_TYPES: &[&str] =
     &["video/mp4", "video/quicktime", "video/webm"];
 
@@ -51,6 +53,16 @@ pub enum RequestAttachmentTarget {
     Description,
     Discussion { discussion_id: Option<String> },
     Reply { discussion_id: String },
+}
+
+impl RequestAttachmentTarget {
+    pub fn writable_with(&self, permissions: &RequestPermissions) -> bool {
+        match self {
+            Self::Description => permissions.can_edit_identity,
+            Self::Discussion { .. } => permissions.can_open_discussion,
+            Self::Reply { .. } => permissions.can_reply_to_discussion,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -176,25 +188,83 @@ pub struct RequestAttachmentPartReceipt {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RequestAttachmentProcessingLease {
-    pub attachment_id: String,
-    pub repository_id: String,
-    pub request_id: String,
-    pub lease_token: String,
-    pub lease_generation: u64,
-    pub attempt: u32,
-    pub lease_expires_at_unix: u64,
+pub struct RequestAttachmentStagedPart {
+    pub receipt: RequestAttachmentPartReceipt,
+    pub object_key: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RequestMediaChunk {
+    pub part_number: u32,
+    pub plaintext_offset: u64,
+    pub plaintext_bytes: u64,
+    pub sha256: String,
+    pub object_key: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RequestMediaObject {
+    pub media_type: String,
+    pub plaintext_bytes: u64,
+    pub sha256: String,
+    pub chunks: Vec<RequestMediaChunk>,
+}
+
+impl RequestMediaObject {
+    pub fn from_parts(
+        media_type: impl Into<String>,
+        sha256: impl Into<String>,
+        mut parts: Vec<RequestAttachmentStagedPart>,
+    ) -> Self {
+        parts.sort_by_key(|part| part.receipt.part_number);
+        let mut plaintext_bytes = 0_u64;
+        let chunks = parts
+            .into_iter()
+            .map(|part| {
+                let chunk = RequestMediaChunk {
+                    part_number: part.receipt.part_number,
+                    plaintext_offset: plaintext_bytes,
+                    plaintext_bytes: part.receipt.size_bytes,
+                    sha256: part.receipt.sha256,
+                    object_key: part.object_key,
+                };
+                plaintext_bytes = plaintext_bytes.saturating_add(chunk.plaintext_bytes);
+                chunk
+            })
+            .collect();
+        Self {
+            media_type: media_type.into(),
+            plaintext_bytes,
+            sha256: sha256.into(),
+            chunks,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RequestAttachmentSource {
+    pub detected_media_type: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+    pub image: Option<RequestAttachmentImageMetadata>,
+    pub video: Option<RequestAttachmentVideoMetadata>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RequestAttachmentProcessingLease {
+    pub attachment_id: String,
+    pub lease_token: String,
+    pub lease_generation: u64,
+    pub attempt: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequestAttachmentCleanupLease {
     pub attachment_id: String,
-    pub repository_id: String,
     pub object_keys: Vec<String>,
     pub lease_token: String,
     pub lease_generation: u64,
     pub attempt: u32,
-    pub lease_expires_at_unix: u64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -222,7 +292,7 @@ impl Default for RequestAttachmentLimits {
             max_request_source_bytes: 2 * 1024 * 1024 * 1024,
             max_repository_storage_bytes: 20 * 1024 * 1024 * 1024,
             max_photo_pixels: 50_000_000,
-            preferred_part_bytes: 8 * 1024 * 1024,
+            preferred_part_bytes: REQUEST_MEDIA_CHUNK_BYTES,
             max_concurrent_parts: 2,
             incomplete_upload_ttl_seconds: 24 * 60 * 60,
             unbound_attachment_ttl_seconds: 7 * 24 * 60 * 60,

@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn title_only_edit_does_not_read_or_rewrite_the_attachment_journal() {
     let cwd = TempDir::new("title-only-journal");
-    let server = MediaFixture::start(false);
+    let server = MediaFixture::start();
     let journal = server
         .server
         .config
@@ -30,7 +30,7 @@ fn cleanup_failures_preserve_saved_results_and_retry_identities() {
         let cwd = TempDir::new("saved-cleanup");
         let attachment = cwd.path().join("photo.png");
         fs::write(&attachment, b"photo").unwrap();
-        let server = MediaFixture::start(false);
+        let server = MediaFixture::start();
         let journal = server
             .server
             .config

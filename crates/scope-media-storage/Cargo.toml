@@ -10,6 +10,7 @@ base64.workspace = true
 bytes.workspace = true
 getrandom.workspace = true
 hex.workspace = true
+scope_domain.workspace = true
 scope_storage.workspace = true
 serde.workspace = true
 sha2.workspace = true

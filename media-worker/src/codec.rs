@@ -2,6 +2,7 @@ use crate::{
     config::{CodecLimits, CodecPrograms},
     process::{CodecProcessLimits, ProcessFailure, os_args, path_arg, run_bounded},
 };
+use scope_domain::requests::attachments::{RequestAttachmentDerivativeKind, RequestAttachmentKind};
 use serde::Serialize;
 use std::{
     ffi::OsString,
@@ -32,15 +33,9 @@ pub enum InputFormat {
     Webm,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MediaKind {
-    Image,
-    Video,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedSource {
-    pub kind: MediaKind,
+    pub kind: RequestAttachmentKind,
     pub media_type: &'static str,
     pub size_bytes: u64,
     pub width: u32,
@@ -49,15 +44,8 @@ pub struct ValidatedSource {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DerivativeKind {
-    ImagePreview,
-    VideoPlayback,
-    VideoPoster,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CodecDerivative {
-    pub kind: DerivativeKind,
+    pub kind: RequestAttachmentDerivativeKind,
     pub path: PathBuf,
     pub media_type: &'static str,
     pub size_bytes: u64,
@@ -293,7 +281,7 @@ impl CodecPipeline {
         self.validate_full_decode(probe_path, work_dir, false)
             .await?;
         let validated_source = ValidatedSource {
-            kind: MediaKind::Image,
+            kind: RequestAttachmentKind::Photo,
             media_type: media_type(format),
             size_bytes,
             width: display_width,
@@ -360,7 +348,7 @@ impl CodecPipeline {
         }
         let derivative = self
             .derivative(
-                DerivativeKind::ImagePreview,
+                RequestAttachmentDerivativeKind::ImagePreview,
                 preview,
                 if animated_gif {
                     "image/gif"
@@ -406,7 +394,7 @@ impl CodecPipeline {
         }
         self.validate_full_decode(source, work_dir, true).await?;
         let validated_source = ValidatedSource {
-            kind: MediaKind::Video,
+            kind: RequestAttachmentKind::Video,
             media_type: media_type(format),
             size_bytes,
             width: display_width,
@@ -505,7 +493,7 @@ impl CodecPipeline {
             .map_err(|error| error.after_validation(validated_source.clone()))?;
         let playback_derivative = self
             .file_derivative(
-                DerivativeKind::VideoPlayback,
+                RequestAttachmentDerivativeKind::VideoPlayback,
                 playback,
                 "video/mp4",
                 playback_stream.width,
@@ -546,7 +534,7 @@ impl CodecPipeline {
             .map_err(|error| error.after_validation(validated_source.clone()))?;
         let poster_derivative = self
             .derivative(
-                DerivativeKind::VideoPoster,
+                RequestAttachmentDerivativeKind::VideoPoster,
                 poster,
                 "image/webp",
                 None,
@@ -563,7 +551,7 @@ impl CodecPipeline {
 
     async fn derivative(
         &self,
-        kind: DerivativeKind,
+        kind: RequestAttachmentDerivativeKind,
         path: PathBuf,
         media_type: &'static str,
         duration_millis: Option<u64>,
@@ -583,7 +571,7 @@ impl CodecPipeline {
 
     fn file_derivative(
         &self,
-        kind: DerivativeKind,
+        kind: RequestAttachmentDerivativeKind,
         path: PathBuf,
         media_type: &'static str,
         width: u32,

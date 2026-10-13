@@ -1,10 +1,9 @@
 use super::{
     FinishRequestAttachmentUploadCommand, MediaStore, PrepareRequestAttachmentCommand,
     PreparedRequestAttachment, ReserveUploadPartResult, StorePartResult,
-    StoredRequestAttachmentPart,
     budget::{lock_media_budget, media_usage},
     locks::lock_attachment,
-    persistence::{as_i32, as_i64, attachment_by_id, enum_string},
+    persistence::{as_i32, as_i64, attachment_by_id, enum_string, insert_manifest},
 };
 use crate::{
     db::{
@@ -15,9 +14,9 @@ use crate::{
 };
 use scope_domain::requests::attachments::{
     PrepareRequestAttachmentInput, RequestAttachment, RequestAttachmentLimits,
-    RequestAttachmentPartReceipt, RequestAttachmentState, RequestAttachmentStoredObject,
-    RequestAttachmentTarget, finish_attachment_upload, validate_lease_grant,
-    validate_prepare_attachment,
+    RequestAttachmentPartReceipt, RequestAttachmentStagedPart, RequestAttachmentState,
+    RequestAttachmentStoredObject, RequestAttachmentTarget, RequestMediaObject,
+    finish_attachment_upload, validate_lease_grant, validate_prepare_attachment,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, TransactionTrait};
 
@@ -61,7 +60,11 @@ impl MediaStore {
                     "request attachment is being deleted",
                 ));
             }
-            let acknowledged_parts = stored_receipts(&tx, &existing.id).await?;
+            let acknowledged_parts = stored_parts(&tx, &existing.id)
+                .await?
+                .into_iter()
+                .map(|part| part.receipt)
+                .collect();
             tx.commit().await?;
             return Ok(PreparedRequestAttachment {
                 upload_id: existing.upload_id.clone(),
@@ -127,7 +130,7 @@ impl MediaStore {
         attachment_id: &str,
         upload_id: &str,
         uploader_user_id: &str,
-        part: StoredRequestAttachmentPart,
+        part: RequestAttachmentStagedPart,
         write_token: &str,
         now_unix: u64,
         write_expires_at_unix: u64,
@@ -330,11 +333,16 @@ impl MediaStore {
             command.now_unix,
         )?;
         if attachment.state == RequestAttachmentState::Prepared {
-            insert_original_manifest(
+            insert_manifest(
                 &tx,
-                &attachment,
                 &manifest_id,
-                &stored_parts,
+                &attachment.id,
+                None,
+                &RequestMediaObject::from_parts(
+                    attachment.declared_media_type.clone(),
+                    attachment.sha256.clone(),
+                    stored_parts,
+                ),
                 command.now_unix,
             )
             .await?;
@@ -383,19 +391,14 @@ async fn target_is_writable<C>(
 where
     C: ConnectionTrait,
 {
-    match target {
-        RequestAttachmentTarget::Description => Ok(policy.permissions.can_edit_identity),
-        RequestAttachmentTarget::Discussion { discussion_id } => {
-            if let Some(discussion_id) = discussion_id {
-                ensure_discussion_belongs_to_request(conn, request_id, discussion_id).await?;
-            }
-            Ok(policy.permissions.can_open_discussion)
-        }
-        RequestAttachmentTarget::Reply { discussion_id } => {
-            ensure_discussion_belongs_to_request(conn, request_id, discussion_id).await?;
-            Ok(policy.permissions.can_reply_to_discussion)
-        }
+    if let RequestAttachmentTarget::Discussion {
+        discussion_id: Some(discussion_id),
     }
+    | RequestAttachmentTarget::Reply { discussion_id } = target
+    {
+        ensure_discussion_belongs_to_request(conn, request_id, discussion_id).await?;
+    }
+    Ok(target.writable_with(&policy.permissions))
 }
 
 async fn ensure_discussion_belongs_to_request<C>(
@@ -624,7 +627,7 @@ fn authorize_active_upload(
 }
 
 struct UploadPartRow {
-    part: StoredRequestAttachmentPart,
+    part: RequestAttachmentStagedPart,
     stored: bool,
     write_token: Option<String>,
     write_expires_at_unix: Option<u64>,
@@ -655,7 +658,7 @@ where
 fn part_from_row(row: QueryResult) -> Result<UploadPartRow, PostgresError> {
     let state = row.try_get::<String>("", "state")?;
     Ok(UploadPartRow {
-        part: StoredRequestAttachmentPart {
+        part: RequestAttachmentStagedPart {
             receipt: RequestAttachmentPartReceipt {
                 part_number: u32::try_from(row.try_get::<i32>("", "part_number")?)
                     .map_err(PostgresError::internal)?,
@@ -678,7 +681,7 @@ fn part_from_row(row: QueryResult) -> Result<UploadPartRow, PostgresError> {
 async fn stored_parts<C>(
     conn: &C,
     attachment_id: &str,
-) -> Result<Vec<StoredRequestAttachmentPart>, PostgresError>
+) -> Result<Vec<RequestAttachmentStagedPart>, PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -692,68 +695,4 @@ where
     .into_iter()
     .map(|row| part_from_row(row).map(|row| row.part))
     .collect()
-}
-
-async fn stored_receipts<C>(
-    conn: &C,
-    attachment_id: &str,
-) -> Result<Vec<RequestAttachmentPartReceipt>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    Ok(stored_parts(conn, attachment_id)
-        .await?
-        .into_iter()
-        .map(|part| part.receipt)
-        .collect())
-}
-
-async fn insert_original_manifest<C>(
-    conn: &C,
-    attachment: &RequestAttachment,
-    manifest_id: &str,
-    parts: &[StoredRequestAttachmentPart],
-    now_unix: u64,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    conn.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "INSERT INTO scope_request_media_manifests (
-            id, attachment_id, derivative_id, media_type, size_bytes, sha256, completed_at_unix
-         ) VALUES ($1, $2, NULL, $3, $4, $5, $6)",
-        [
-            manifest_id.into(),
-            attachment.id.clone().into(),
-            attachment.declared_media_type.clone().into(),
-            as_i64(attachment.size_bytes, "manifest size")?.into(),
-            attachment.sha256.clone().into(),
-            as_i64(now_unix, "manifest completion time")?.into(),
-        ],
-    ))
-    .await?;
-    let mut offset = 0_u64;
-    for part in parts {
-        conn.execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "INSERT INTO scope_request_media_manifest_chunks (
-                manifest_id, chunk_index, object_key, plaintext_offset,
-                plaintext_size_bytes, sha256
-             ) VALUES ($1, $2, $3, $4, $5, $6)",
-            [
-                manifest_id.into(),
-                as_i32(part.receipt.part_number, "chunk index")?.into(),
-                part.object_key.clone().into(),
-                as_i64(offset, "chunk offset")?.into(),
-                as_i64(part.receipt.size_bytes, "chunk size")?.into(),
-                part.receipt.sha256.clone().into(),
-            ],
-        ))
-        .await?;
-        offset = offset
-            .checked_add(part.receipt.size_bytes)
-            .ok_or_else(|| PostgresError::internal_message("manifest offset overflow"))?;
-    }
-    Ok(())
 }

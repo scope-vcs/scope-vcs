@@ -20,7 +20,7 @@ dependencies:
 | `scope-run-config` | Workflow YAML decoding and compilation | `scope-domain` |
 | `scope-git` | Projection identity and Git snapshot preparation/materialization | `scope-domain`, optionally `scope-storage` |
 | `scope-postgres` | Metadata stores, migrations, read models, and transaction owners | `scope-domain`, `scope-cache-domain`, `scope-git`, `scope-run-config` |
-| `scope-media-storage` | Encrypted, chunked attachment storage and media object manifests | `scope-storage` |
+| `scope-media-storage` | Encrypted, chunked attachment storage for the domain media object manifests | `scope-domain`, `scope-storage` |
 | `scope-media-service` | Grant-authorized attachment upload and media delivery | `scope-api-contract`, `scope-domain`, `scope-media-storage`, `scope-storage`, `scope-postgres` |
 | `scope-media-worker` | Attachment validation, derivative generation, and media cleanup | `scope-domain`, `scope-media-storage`, `scope-storage`, `scope-postgres` |
 | `scope-content-lifecycle` | Shared source-blob cleanup orchestration | `scope-domain`, `scope-storage`, `scope-postgres` |

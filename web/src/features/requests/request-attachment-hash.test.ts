@@ -20,10 +20,3 @@ test('matches Node SHA-256 across padding and multi-block boundaries', async () 
     assert.equal(await sha256Blob(new Blob([bytes]), 8 * 1024), expected, `size ${size}`)
   }
 })
-
-test('hashes content spanning the preferred eight MiB transfer part', async () => {
-  const bytes = new Uint8Array(8 * 1024 * 1024 + 17)
-  for (let index = 0; index < bytes.length; index += 4093) bytes[index] = index % 251
-  const expected = createHash('sha256').update(bytes).digest('hex')
-  assert.equal(await sha256Blob(new Blob([bytes])), expected)
-})

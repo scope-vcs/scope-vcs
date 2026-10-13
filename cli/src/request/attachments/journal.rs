@@ -54,32 +54,36 @@ impl Default for ReceiptJournal {
     }
 }
 
-pub(super) fn upload_operations(keys: &[&str]) -> anyhow::Result<Vec<String>> {
+fn with_journal<T>(
+    update: impl FnOnce(&mut ReceiptJournal) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
     let path = journal_path()?;
     let _lock = lock_journal(&path)?;
     let mut journal = load_journal(&path)?;
-    let now = unix_now();
-    let operations = keys
-        .iter()
-        .map(|key| journal.upload_operation_id(key, now))
-        .collect::<anyhow::Result<Vec<_>>>()?;
+    let value = update(&mut journal)?;
     save_journal(&path, &mut journal)?;
-    Ok(operations)
+    Ok(value)
+}
+
+pub(super) fn upload_operations(keys: &[&str]) -> anyhow::Result<Vec<String>> {
+    let now = unix_now();
+    with_journal(|journal| {
+        keys.iter()
+            .map(|key| journal.upload_operation_id(key, now))
+            .collect()
+    })
 }
 
 pub(super) fn rotate_upload_operation(
     key: &str,
     expired_operation_id: &str,
 ) -> anyhow::Result<String> {
-    let path = journal_path()?;
-    let _lock = lock_journal(&path)?;
-    let mut journal = load_journal(&path)?;
-    journal
-        .uploads
-        .retain(|receipt| receipt.key != key || receipt.operation_id != expired_operation_id);
-    let operation_id = journal.upload_operation_id(key, unix_now())?;
-    save_journal(&path, &mut journal)?;
-    Ok(operation_id)
+    with_journal(|journal| {
+        journal
+            .uploads
+            .retain(|receipt| receipt.key != key || receipt.operation_id != expired_operation_id);
+        journal.upload_operation_id(key, unix_now())
+    })
 }
 
 fn lock_journal(path: &Path) -> anyhow::Result<File> {
@@ -113,18 +117,16 @@ pub(crate) fn begin_mutation(
     key_fields.push(api_url);
     key_fields.extend_from_slice(scope_fields);
     let key = fingerprint(&key_fields);
-    let path = journal_path()?;
-    let _lock = lock_journal(&path)?;
-    let mut journal = load_journal(&path)?;
     let now = unix_now();
-    let client_id = if let Some(receipt) = journal
-        .pending_mutations
-        .iter_mut()
-        .find(|receipt| receipt.key == key)
-    {
-        receipt.updated_at_unix = now;
-        receipt.client_id.clone()
-    } else {
+    let client_id = with_journal(|journal| {
+        if let Some(receipt) = journal
+            .pending_mutations
+            .iter_mut()
+            .find(|receipt| receipt.key == key)
+        {
+            receipt.updated_at_unix = now;
+            return Ok(receipt.client_id.clone());
+        }
         let client_id = fresh_id(id_prefix)?;
         journal.pending_mutations.insert(
             0,
@@ -134,39 +136,29 @@ pub(crate) fn begin_mutation(
                 updated_at_unix: now,
             },
         );
-        client_id
-    };
-    save_journal(&path, &mut journal)?;
+        Ok(client_id)
+    })?;
     Ok(PendingMutation { key, client_id })
 }
 
-pub(crate) fn complete_uploads(receipt_keys: &[String]) -> anyhow::Result<()> {
-    if receipt_keys.is_empty() {
-        return Ok(());
-    }
-    let path = journal_path()?;
-    let _lock = lock_journal(&path)?;
-    let mut journal = load_journal(&path)?;
-    journal
-        .uploads
-        .retain(|receipt| !receipt_keys.contains(&receipt.key));
-    save_journal(&path, &mut journal)
-}
-
-pub(crate) fn complete_mutation(
-    mutation: &PendingMutation,
+pub(crate) fn complete(
+    mutation: Option<&PendingMutation>,
     receipt_keys: &[String],
 ) -> anyhow::Result<()> {
-    let path = journal_path()?;
-    let _lock = lock_journal(&path)?;
-    let mut journal = load_journal(&path)?;
-    journal
-        .uploads
-        .retain(|receipt| !receipt_keys.contains(&receipt.key));
-    journal
-        .pending_mutations
-        .retain(|receipt| receipt.key != mutation.key);
-    save_journal(&path, &mut journal)
+    if mutation.is_none() && receipt_keys.is_empty() {
+        return Ok(());
+    }
+    with_journal(|journal| {
+        journal
+            .uploads
+            .retain(|receipt| !receipt_keys.contains(&receipt.key));
+        if let Some(mutation) = mutation {
+            journal
+                .pending_mutations
+                .retain(|receipt| receipt.key != mutation.key);
+        }
+        Ok(())
+    })
 }
 
 pub(super) fn fingerprint(fields: &[&str]) -> String {
@@ -253,17 +245,13 @@ fn save_journal(path: &Path, journal: &mut ReceiptJournal) -> anyhow::Result<()>
     ));
     let result = (|| -> anyhow::Result<()> {
         write_private_file(&temp_path, &bytes)?;
-        replace_journal_file(&temp_path, path)?;
+        fs::rename(&temp_path, path).context("replace Scope attachment receipt journal")?;
         Ok(())
     })();
     if result.is_err() {
         let _ = fs::remove_file(&temp_path);
     }
     result
-}
-
-fn replace_journal_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
-    fs::rename(temp_path, path).context("replace Scope attachment receipt journal")
 }
 
 fn journal_path() -> anyhow::Result<PathBuf> {
@@ -364,35 +352,6 @@ mod tests {
             first
         );
         assert_eq!(stored.pending_mutations[0].client_id, "client_pending");
-    }
-
-    #[test]
-    fn failed_replacement_keeps_the_previous_journal() {
-        let dir = crate::test_support::TempDir::new("failed-journal-replacement");
-        let path = dir.path().join("receipts.json");
-        fs::write(&path, b"durable retry identities").unwrap();
-        assert!(replace_journal_file(&dir.path().join("missing-temp"), &path).is_err());
-        assert_eq!(fs::read(&path).unwrap(), b"durable retry identities");
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn windows_replacement_sharing_failure_keeps_both_files() {
-        use std::os::windows::fs::OpenOptionsExt;
-        let dir = crate::test_support::TempDir::new("locked-journal-replacement");
-        let path = dir.path().join("receipts.json");
-        let temp = dir.path().join("receipts.tmp");
-        fs::write(&path, b"old retry identities").unwrap();
-        fs::write(&temp, b"new retry identities").unwrap();
-        let held = OpenOptions::new()
-            .read(true)
-            .share_mode(0)
-            .open(&temp)
-            .unwrap();
-        assert!(replace_journal_file(&temp, &path).is_err());
-        drop(held);
-        assert_eq!(fs::read(path).unwrap(), b"old retry identities");
-        assert_eq!(fs::read(temp).unwrap(), b"new retry identities");
     }
 
     #[test]

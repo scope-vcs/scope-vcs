@@ -109,7 +109,7 @@ pub(crate) async fn prepare(
     let expires_at_unix = state.media_grants.expires_at(now)?;
     let grant = state
         .media_grants
-        .issue_upload(&RequestAttachmentUploadGrantClaims {
+        .sign(&RequestAttachmentUploadGrantClaims {
             attachment_id: prepared.attachment.id.clone(),
             repository_id: prepared.attachment.repository_id.clone(),
             request_id: prepared.attachment.request_id.clone(),
@@ -187,25 +187,23 @@ pub(crate) async fn media_grant(
     Json(input): Json<CreateRequestAttachmentMediaGrantRequest>,
 ) -> Result<Json<CreateRequestAttachmentMediaGrantResponse>, ApiError> {
     let viewer = request_viewer(&state, &headers, &owner, &repo, &request_id).await?;
-    let media = state.metadata.media();
-    let attachment = media
-        .request_attachment_for_viewer(&request_id, &attachment_id, viewer.as_deref())
-        .await?
-        .ok_or_else(|| ApiError::not_found("attachment not found"))?;
     let target = match &input.target {
         RequestAttachmentMediaTarget::Original => RequestMediaObjectTarget::Original,
         RequestAttachmentMediaTarget::Derivative { derivative_id } => {
             RequestMediaObjectTarget::Derivative(derivative_id)
         }
     };
-    media
-        .authorized_media_manifest(&request_id, &attachment_id, viewer.as_deref(), target)
+    let (attachment, object) = state
+        .metadata
+        .media()
+        .request_attachment_media_for_viewer(&request_id, &attachment_id, viewer.as_deref(), target)
         .await?
-        .ok_or_else(|| ApiError::not_found("attachment media is not available"))?;
+        .ok_or_else(|| ApiError::not_found("attachment not found"))?;
+    object.ok_or_else(|| ApiError::not_found("attachment media is not available"))?;
     let expires_at_unix = state.media_grants.expires_at(unix_now()?)?;
     let grant = state
         .media_grants
-        .issue_media(&RequestAttachmentMediaGrantClaims {
+        .sign(&RequestAttachmentMediaGrantClaims {
             attachment_id: attachment_id.clone(),
             repository_id: attachment.repository_id,
             request_id,
