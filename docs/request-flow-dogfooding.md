@@ -29,13 +29,15 @@ Exercise navigation with a fork as well as A → B → C. `request show`,
 stack context. Confirm the named ancestor path, saved pin beside the current
 parent revision, visible child names and a next-cursor hint when more children
 exist. Depth measures ancestry, so sibling requests share a depth. An unavailable
-dependency must expose no parent name, link or hidden descendant count.
+dependency must expose no parent name, link or hidden descendant count. The
+visible child's saved review pin remains available without live parent evidence.
 
 Move a parent outside the child's queue section or search results. The child must
 remain actionable in the default queue with the authorized parent name, without
 adding a context row or changing section counts, ordering or pagination. Parent
-extensions preserve the pin and remain quiet. Parent rewrite, close and landing
-attention must respect a child's future snooze deadline.
+extensions, satisfied dependencies and parent landing preserve attention. New
+hard blockers such as parent rewrite, close or conflict can reactivate attention
+but must respect a child's future snooze deadline.
 
 A released service must support the request-base Git headers before this workflow
 can exercise hosted publication. Record a missing deployed capability as a

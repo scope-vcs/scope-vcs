@@ -49,10 +49,10 @@ export function RequestStackContext({ detail, params, childrenLoading = false, c
         {label ? <span className="font-medium text-foreground">· {label}</span> : null}
       </div>
       {request.base.kind === 'request' ? (
-        parent ? <div className="mt-1.5 space-y-1 break-all font-mono text-muted-foreground">
+        <div className="mt-1.5 space-y-1 break-all font-mono text-muted-foreground">
           <p title={request.base.revision_id}>Pinned revision {request.base.revision_id} · {shortOid(request.base.head_oid)}</p>
-          <p title={parent.current_revision_id ?? undefined}>Current revision {parent.current_revision_id ?? 'unavailable'} · {shortOid(parent.head_oid)}</p>
-        </div> : <p className="mt-1.5 text-muted-foreground">Unavailable dependency</p>
+          {parent ? <p title={parent.current_revision_id ?? undefined}>Current revision {parent.current_revision_id ?? 'unavailable'} · {shortOid(parent.head_oid)}</p> : <p>Unavailable dependency</p>}
+        </div>
       ) : null}
       {navigation.children.requests.length ? <nav aria-label="Immediate children" className="mt-2 hidden flex-wrap items-center gap-x-3 gap-y-1 sm:flex">
         <span className="text-muted-foreground">Children</span>
