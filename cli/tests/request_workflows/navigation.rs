@@ -66,7 +66,7 @@ fn request_reads_work_outside_a_checkout_with_explicit_repository() {
             "review pin: parser-core @ rev_parent_pin (aaaaaaa)",
             "parent current: parser-core @ rev_parent_current (bbbbbbb)",
             "children: parser-tests (req_child)",
-            "more children: next_cursor child-page-two",
+            "more children: open this request's web page",
         ] {
             assert!(human.contains(expected), "missing {expected:?} in {human}");
         }

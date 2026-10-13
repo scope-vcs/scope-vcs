@@ -65,6 +65,7 @@ pub(crate) fn request_list_item_response(
     current_main_oid: Option<String>,
     checks: RequestChecksOutcome,
     repository_lifecycle: scope_domain::repository::RepoLifecycleState,
+    parent: Option<scope_domain::requests::RequestStackParent>,
 ) -> Result<RequestListItemResponse, crate::error::ApiError> {
     let decision = request_list_mergeability(
         RequestMergeSubject {
@@ -81,7 +82,7 @@ pub(crate) fn request_list_item_response(
     );
     let request_head_oid = super::git_oid_response(request.head_oid)?;
     Ok(RequestListItemResponse {
-        stack_parent: None,
+        stack_parent: parent.map(request_stack_parent_response).transpose()?,
         id: request.id,
         name: request.name,
         title: request.title,

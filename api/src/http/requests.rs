@@ -99,20 +99,16 @@ pub(crate) async fn list_requests(
                 .get(&request.id)
                 .copied()
                 .unwrap_or(RequestChecksOutcome::NotEvaluated);
-            let parent = parents
-                .remove(&request.id)
-                .map(super::responses::request_stack_parent_response)
-                .transpose()?;
-            let mut response = request_list_item_response(
+            let parent = parents.remove(&request.id);
+            request_list_item_response(
                 request,
                 &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
                 &repo.views,
                 current_main_oid.clone(),
                 checks,
                 repo.record.lifecycle_state,
-            )?;
-            response.stack_parent = parent;
-            Ok(response)
+                parent,
+            )
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
 

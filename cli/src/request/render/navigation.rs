@@ -74,11 +74,8 @@ pub(super) fn lines(
                 .join(", ")
         ));
     }
-    if let Some(cursor) = &navigation.children.next_cursor {
-        lines.push(format!(
-            "  more children: next_cursor {} in stack_navigation.children (--json)",
-            terminal_text(cursor)
-        ));
+    if navigation.children.next_cursor.is_some() {
+        lines.push("  more children: open this request's web page".to_string());
     }
     lines
 }
