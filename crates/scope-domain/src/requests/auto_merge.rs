@@ -440,19 +440,19 @@ fn request_auto_merge_eligibility(
             "auto-merge needs someone who may merge this request",
         ));
     }
-    if matches!(request.base, super::RequestBase::Request { .. }) {
-        if !matches!(
+    if matches!(request.base, super::RequestBase::Request { .. })
+        && !matches!(
             request.stack_status,
             super::RequestStackStatus::WaitingForParent | super::RequestStackStatus::ParentExtended
-        ) {
-            return Err(DomainError::conflict(
-                request
-                    .stack_status
-                    .auto_merge_stop_reason()
-                    .unwrap_or(RequestAutoMergeStopReason::RequestChanged)
-                    .message(),
-            ));
-        }
+        )
+    {
+        return Err(DomainError::conflict(
+            request
+                .stack_status
+                .auto_merge_stop_reason()
+                .unwrap_or(RequestAutoMergeStopReason::RequestChanged)
+                .message(),
+        ));
     }
     if let RequestAutoMergeReadiness::Stop(reason) = readiness {
         return Err(DomainError::conflict(reason.message()));
