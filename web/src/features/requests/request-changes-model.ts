@@ -187,7 +187,6 @@ function commitDetail(
     })),
     logical_commit_id: commit.oid,
     message: commit.message,
-    parent_projected_id: commit.parent_oids[0] ?? null,
     projected_id: requestRevisionCommitId(revisionId, commit.oid),
     repo_id: repoId,
   }
@@ -203,7 +202,6 @@ function comparisonDetail(
     repo_id: repoId,
     projected_id: `${comparison.revision_id}:${comparison.mode}:${comparison.base_oid}:${comparison.head_oid}`,
     logical_commit_id: comparison.head_oid ?? '',
-    parent_projected_id: comparison.base_oid,
     author: null,
     message: comparison.mode === 'request' ? 'Request layer' : 'Changes in this push',
     change_count: comparison.files.length,

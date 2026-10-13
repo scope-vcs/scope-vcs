@@ -1,5 +1,5 @@
 use super::*;
-use crate::requests::{RequestBase, RequestChecksOutcome, RequestStackStatus};
+use crate::requests::{RequestActorRole, RequestBase, RequestChecksOutcome, RequestStackStatus};
 use crate::views::ViewId;
 
 fn child() -> Request {

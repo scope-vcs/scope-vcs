@@ -161,10 +161,8 @@ for (const view of ['public', 'restricted']) {
       assert.equal(model.mode, mode)
       assert.equal(model.diffMode, mode)
       assert.equal(model.selectedCommitOid, null)
-      assert.equal(model.selectedCommit?.parent_projected_id, 'parent-commit')
       assert.equal(model.selectedCommit?.logical_commit_id, 'child-commit')
       assert.deepEqual(model.selectedCommit?.files.map(({ path }) => path), ['/child-commit.txt'])
-      assert.deepEqual(model.commits.map(({ parent_projected_id }) => parent_projected_id), ['parent-commit'])
       const unavailable = requestChangesPresentation({ ...response, comparison: null }, { comparison: mode }, view, 'repo')
       assert.equal(unavailable.selectedCommit, null)
       assert.match(unavailable.error ?? '', /could not be inspected/)
@@ -201,7 +199,6 @@ test('private commit comparison uses inspected files while retaining the bounded
   assert.equal(model.selectedCommit?.author, commit.author)
   assert.equal(model.selectedCommit?.message, commit.message)
   assert.equal(model.selectedCommit?.logical_commit_id, commit.oid)
-  assert.equal(model.selectedCommit?.parent_projected_id, 'base')
 })
 
 function revision(
