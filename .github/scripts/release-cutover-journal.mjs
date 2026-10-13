@@ -18,26 +18,30 @@ const phases = new Set([
   "reclosing", "restoring", "restored", "complete", "recovery-required",
 ]);
 
+function cutoverPhase(status) {
+  const match = /^cutover:([a-z-]+)$/.exec(status.description ?? "");
+  if (!match || !phases.has(match[1])) throw new Error("Unknown cutover journal status");
+  return match[1];
+}
+
 export async function readCutover(id, request) {
   if (!/^\d+$/.test(String(id))) throw new Error("Cutover ID must be a GitHub deployment ID");
   const deployment = await request(`/deployments/${id}`);
   const payload = typeof deployment.payload === "string" ? JSON.parse(deployment.payload) : deployment.payload;
   if (deployment.environment !== environment || payload?.kind !== "scope-release-cutover"
       || deployment.sha !== payload.prepared?.sourceSha) throw new Error("Invalid cutover deployment");
-  validateCutoverArtifacts(payload.prepared);
-  if (!Array.isArray(payload.baseline?.pending) || !payload.previous) throw new Error("Invalid cutover baseline");
   const statuses = [];
   for (let page = 1; ; page += 1) {
     const batch = await request(`/deployments/${id}/statuses?per_page=100&page=${page}`);
     statuses.push(...batch);
     if (batch.length < 100) break;
   }
-  const events = statuses.map((status) => {
-    const match = /^cutover:([a-z-]+)$/.exec(status.description ?? "");
-    if (!match || !phases.has(match[1])) throw new Error("Unknown cutover journal status");
-    return { phase: match[1], at: status.created_at };
-  });
-  return { ...payload, id: String(id), phase: events[0]?.phase ?? "prepared", events };
+  const phase = statuses.length ? cutoverPhase(statuses[0]) : "prepared";
+  if (terminal.has(phase)) return { ...payload, id: String(id), phase };
+  validateCutoverArtifacts(payload.prepared);
+  if (!Array.isArray(payload.baseline?.pending) || !payload.previous) throw new Error("Invalid cutover baseline");
+  const events = statuses.map((status) => ({ phase: cutoverPhase(status), at: status.created_at }));
+  return { ...payload, id: String(id), phase, events };
 }
 
 export async function findOpenCutover(request) {
