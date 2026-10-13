@@ -1,3 +1,4 @@
+import type { IncomingMessage } from 'node:http'
 import { createRequire } from 'node:module'
 import { W3CTraceContextPropagator } from '@opentelemetry/core'
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http'
@@ -11,10 +12,15 @@ import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs
 import { BatchSpanProcessor, NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 import { AllowedAttributesExporter } from './telemetry-allowed-attributes'
 import { getTelemetryConfig, INJECTED_OTLP_VARIABLES_MESSAGE } from './telemetry-config'
+import { requestSpanRoute } from './request-span-route'
 import { requestTraceSampler } from './telemetry-sampler'
 import { registerTelemetryShutdown } from './telemetry-shutdown'
 
 const UNTRACED_PATHS = new Set(['/healthz', '/readyz'])
+
+function requestPathname(request: IncomingMessage) {
+  return new URL(request.url ?? '/', 'http://localhost').pathname
+}
 
 const config = getTelemetryConfig()
 
@@ -55,8 +61,14 @@ if (config.enabled) {
     instrumentations: [
       new HttpInstrumentation({
         disableOutgoingRequestInstrumentation: true,
-        ignoreIncomingRequestHook: (request) =>
-          UNTRACED_PATHS.has(new URL(request.url ?? '/', 'http://localhost').pathname),
+        ignoreIncomingRequestHook: (request) => UNTRACED_PATHS.has(requestPathname(request)),
+        requestHook: (span, request) => {
+          const incoming = request as IncomingMessage
+          const route = requestSpanRoute(requestPathname(incoming))
+          if (!route) return
+          span.setAttribute('http.route', route)
+          span.updateName(`${incoming.method} ${route}`)
+        },
       }),
       new UndiciInstrumentation(),
     ],

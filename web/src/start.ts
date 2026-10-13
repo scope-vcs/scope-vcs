@@ -1,7 +1,6 @@
 import { forceSignedOut } from '@/auth-mode'
 import { fetchServerFunction } from '@/lib/stale-build'
 import { publicRequestOrigin } from '@/server/public-origin'
-import { nameActiveRequestSpan, requestSpanRoute } from '@/server/request-span-route'
 import { serverFunctionFailureResponse } from '@/server/server-function-failure'
 import { signedOutAuthMiddleware } from '@/server/signed-out-auth-middleware'
 import { clerkMiddleware } from '@clerk/tanstack-react-start/server'
@@ -11,11 +10,6 @@ const serverFunctionCsrfMiddleware = createCsrfMiddleware({
   filter: (ctx) => ctx.handlerType === 'serverFn',
   origin: (origin, ctx) =>
     origin === publicRequestOrigin(ctx.request.url, process.env.RAILWAY_ENVIRONMENT_ID),
-})
-
-const requestSpanRouteMiddleware = createMiddleware().server(({ handlerType, request, next }) => {
-  nameActiveRequestSpan(request.method, requestSpanRoute(handlerType, new URL(request.url).pathname))
-  return next()
 })
 
 const serverFunctionRequestFailureMiddleware = createMiddleware().server(async ({ handlerType, next }) => {
@@ -42,7 +36,6 @@ export const startInstance = createStart(() => {
   return {
     functionMiddleware: [serverFunctionFailureMiddleware],
     requestMiddleware: [
-      requestSpanRouteMiddleware,
       serverFunctionRequestFailureMiddleware,
       serverFunctionCsrfMiddleware,
       forceSignedOut ? signedOutAuthMiddleware : clerkMiddleware(),

@@ -4,9 +4,9 @@ import { requestSpanRoute } from './request-span-route'
 
 test('names request spans by route alias without path values', () => {
   assert.equal(
-    requestSpanRoute('router', '/acme/private-app/requests/req_1/changes'),
+    requestSpanRoute('/acme/private-app/requests/req_1/changes'),
     '/repository/request/changes',
   )
-  assert.equal(requestSpanRoute('serverFn', '/_serverFn/abc123'), '/_serverFn')
-  assert.equal(requestSpanRoute('router', '/not/a/known/route/at/all'), null)
+  assert.equal(requestSpanRoute('/_serverFn/abc123'), '/_serverFn')
+  assert.equal(requestSpanRoute('/not/a/known/route/at/all'), null)
 })
