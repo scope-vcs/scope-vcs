@@ -84,9 +84,9 @@ case "${1:-}" in
     fi
     touch "$FAKE_RAILWAY_STATE/plan-read"
     if [[ -f "$FAKE_RAILWAY_STATE/exact" ]]; then
-      echo '{"exact":true,"applied":["m0042_current_schema_baseline","m0043_retire_git_manifests"],"pending":[]}'
+      echo '{"exact":true,"applied":["m0084_current_schema_baseline"],"pending":[]}'
     else
-      echo '{"exact":false,"applied":[],"pending":[{"name":"m0042_current_schema_baseline"},{"name":"m0043_retire_git_manifests"}]}'
+      echo '{"exact":false,"applied":[],"pending":[{"name":"m0084_current_schema_baseline"}]}'
     fi
     ;;
   apply)

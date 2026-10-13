@@ -10,22 +10,12 @@ import { candidateMigrationVersion, renderRuntimeRoleAudit } from './audit-runti
 import { localClusterSkip, pgBin } from './test-cluster.mjs';
 
 const migrationsDir = new URL('../../crates/scope-postgres/src/migrations/', import.meta.url);
-const appliedMigrations = ['m0043_retire_git_manifests.rs', 'm0044_request_attention.rs', 'm0045_dependency_analysis.rs',
-  'm0053_request_ref_cleanup.rs', 'm0055_request_checks.rs', 'm0056_request_auto_merge.rs',
-  'm0057_repository_invite_links.rs', 'm0058_repository_invite_emails.rs', 'm0063_account_deletion.rs',
-  'm0064_repository_content_version.rs', 'm0066_native_runs_accounts.rs',
-  'm0067_provider_neutral_request_checks.rs', 'm0068_github_connections.rs',
-  'm0069_github_request_checks.rs', 'm0070_github_setup_checks_and_workflow_runs.rs',
-  'm0072_github_run_imports.rs', 'm0073_github_workflow_jobs.rs',
-  'm0075_incremental_projection_read_models.rs', 'm0076_view_ids.rs',
-  'm0077_custom_views.rs', 'm0078_repo_config_version.rs',
-  'm0079_request_views.rs',
-  'm0080_github_workflow_job_reads.rs',
-  'm0081_github_job_log_reads.rs'];
+const baselineMigration = 'm0084_current_schema_baseline.sql';
+const appliedMigrations = [];
 
 test('every table-creating migration after the baseline is applied to the role inventory', () => {
   const creators = readdirSync(migrationsDir)
-    .filter((name) => /^m\d+_.+\.rs$/.test(name) && name > appliedMigrations[0]
+    .filter((name) => /^m\d+_.+\.rs$/.test(name) && name > baselineMigration
       && /CREATE TABLE/.test(readFileSync(new URL(name, migrationsDir), 'utf8')));
   assert.deepEqual(creators.filter((name) => !appliedMigrations.includes(name)), []);
 });
@@ -48,7 +38,7 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     execFileSync(join(pgBin, 'initdb'), ['-D', data, '-U', 'postgres', '--auth=trust', '--no-locale'], { stdio: 'pipe' });
     execFileSync(join(pgBin, 'pg_ctl'), ['-D', data, '-l', join(dir, 'log'), '-o', `-k ${dir} -c listen_addresses=''`, '-w', 'start'], { stdio: 'pipe' });
     started = true;
-    const baseline = readFileSync(new URL('../../crates/scope-postgres/src/migrations/current_schema.sql', import.meta.url), 'utf8');
+    const baseline = readFileSync(new URL(baselineMigration, migrationsDir), 'utf8');
     query(baseline);
     for (const filename of appliedMigrations) {
       const source = readFileSync(new URL(filename, migrationsDir), 'utf8');
@@ -196,7 +186,7 @@ test('roles-only bootstrap lets the migration login build and grant an empty dat
     query(renderPolicy({ mode: 'roles' }));
     query(renderPolicy({ mode: 'roles' }));
     query('CREATE TABLE early(id int);', 'scope_api', false);
-    query(readFileSync(new URL('../../crates/scope-postgres/src/migrations/current_schema.sql', import.meta.url), 'utf8'), 'scope_migrator');
+    query(readFileSync(new URL(baselineMigration, migrationsDir), 'utf8'), 'scope_migrator');
     for (const filename of appliedMigrations) {
       const source = readFileSync(new URL(filename, migrationsDir), 'utf8');
       query(`BEGIN; ${source.match(/r#"([\s\S]*?)"#/)[1]} COMMIT;`, 'scope_migrator');

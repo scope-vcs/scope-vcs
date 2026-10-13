@@ -1,8 +1,8 @@
 use super::*;
 
-const BASELINE: &str = "m0042_current_schema_baseline";
+const BASELINE: &str = "m0084_current_schema_baseline";
 
-async fn baseline_database(db: &DatabaseConnection) {
+pub(super) async fn baseline_database(db: &DatabaseConnection) {
     migrations::Migrator::up(db, Some(1)).await.unwrap();
     db.execute_unprepared(
         "INSERT INTO scope_users (id, handle, email, email_verified)
@@ -11,10 +11,10 @@ async fn baseline_database(db: &DatabaseConnection) {
          VALUES ('clerk', 'retained-subject', 'retained-user');
          INSERT INTO scope_repositories (
              id, owner_handle, name, owner_user_id, publication_state,
-             change_version, repo_config, policy, incarnation_id
+             change_version, content_version, repo_config, policy, incarnation_id
          ) VALUES (
              'retained-repo', 'retained', 'repo', 'retained-user', 'Ready',
-             7, '{}'::jsonb, '{}'::jsonb, 'retained-incarnation'
+             7, 7, '{}'::jsonb, '{}'::jsonb, 'retained-incarnation'
          );
          SELECT setval('scope_run_creation_sequence', 41, TRUE);",
     )
@@ -22,7 +22,7 @@ async fn baseline_database(db: &DatabaseConnection) {
     .unwrap();
 }
 
-async fn sequence_state(db: &DatabaseConnection) -> (i64, bool) {
+pub(super) async fn sequence_state(db: &DatabaseConnection) -> (i64, bool) {
     let row = db
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -39,25 +39,17 @@ async fn sequence_state(db: &DatabaseConnection) -> (i64, bool) {
 
 #[tokio::test]
 async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
+    let bridged = BRIDGED_LEDGER.lines().collect::<Vec<_>>();
     for ledger in [
         vec!["m0001_initial_schema", "m0042_request_media"],
         vec![BASELINE, "m9999_unknown"],
-        vec!["m0043_retire_git_manifests"],
+        vec!["m0042_current_schema_baseline"],
+        bridged[..bridged.len() - 1].to_vec(),
+        [bridged.as_slice(), &[BASELINE]].concat(),
     ] {
         let (_target, db, _lease) = isolated_database().await;
         baseline_database(&db).await;
-        db.execute_unprepared("DELETE FROM seaql_migrations")
-            .await
-            .unwrap();
-        for name in &ledger {
-            db.execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "INSERT INTO seaql_migrations (version, applied_at) VALUES ($1, 1)",
-                [(*name).into()],
-            ))
-            .await
-            .unwrap();
-        }
+        replace_ledger(&db, &ledger).await;
         let before = representative_business_snapshot(&db).await;
         let sequence = sequence_state(&db).await;
 
@@ -82,6 +74,10 @@ async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
                     .contains(&format!("found [{}]", ledger.join(", "))),
                 "{ledger:?}: {error}"
             );
+            assert!(
+                error.to_string().contains("original-chain revision"),
+                "{ledger:?}: {error}"
+            );
         }
         assert_eq!(applied_versions(&db).await, ledger);
         assert_eq!(representative_business_snapshot(&db).await, before);
@@ -96,7 +92,7 @@ async fn preflight_refuses_baseline_schema_drift_without_changing_the_ledger() {
         "DROP INDEX idx_scope_runs_history",
         "DROP INDEX idx_scope_run_attempts_expiring; CREATE INDEX idx_scope_run_attempts_expiring ON scope_run_attempts (lease_expires_at_unix, id) WHERE state = 'running'",
         "ALTER TABLE scope_repositories DROP CONSTRAINT scope_repositories_pkey CASCADE",
-        "ALTER TABLE scope_git_heads DROP CONSTRAINT scope_git_head_values, ADD CONSTRAINT scope_git_head_values CHECK (push_sequence >= 5 AND change_version >= 0 AND manifest_size_bytes >= 0)",
+        "ALTER TABLE scope_git_heads DROP CONSTRAINT scope_git_head_values, ADD CONSTRAINT scope_git_head_values CHECK (push_sequence >= 5 AND change_version >= 0)",
         "ALTER SEQUENCE scope_run_creation_sequence INCREMENT BY 2",
         "ALTER SEQUENCE scope_run_creation_sequence OWNED BY NONE",
         "CREATE VIEW unknown_view AS SELECT id FROM scope_users",
