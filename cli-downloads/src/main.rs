@@ -3,7 +3,7 @@ use axum::{
     Router,
     body::Body,
     extract::{Path, State},
-    http::{HeaderValue, StatusCode, header},
+    http::{HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
 };
@@ -116,14 +116,20 @@ async fn install_windows(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-async fn download(State(state): State<AppState>, Path(artifact): Path<String>) -> Response {
+async fn download(
+    method: Method,
+    State(state): State<AppState>,
+    Path(artifact): Path<String>,
+) -> Response {
     let Some(download) = state.manifest.download(&artifact) else {
         return StatusCode::NOT_FOUND.into_response();
     };
 
     match tokio::fs::read(state.artifact_dir.join(download.file_name())).await {
         Ok(bytes) => {
-            if let Download::Archive(target) = download {
+            if method == Method::GET
+                && let Download::Archive(target) = download
+            {
                 state
                     .analytics
                     .capture(ProductEvent::cli_artifact_downloaded(
@@ -172,7 +178,7 @@ mod tests {
     use serde_json::Value;
 
     #[tokio::test]
-    async fn only_served_archives_count_as_downloads() {
+    async fn only_archives_served_by_get_count_as_downloads() {
         let manifest = DistributionManifest::bundled();
         let [served, missing, ..] = manifest.targets() else {
             panic!("bundled manifest has fewer than two targets");
@@ -194,14 +200,15 @@ mod tests {
         };
 
         let mut statuses = Vec::new();
-        for requested in [
-            served.artifact.clone(),
-            served.checksum_artifact(),
-            missing.artifact.clone(),
-            "scope-unknown.tar.gz".to_string(),
+        for (method, requested) in [
+            (Method::GET, served.artifact.clone()),
+            (Method::HEAD, served.artifact.clone()),
+            (Method::GET, served.checksum_artifact()),
+            (Method::GET, missing.artifact.clone()),
+            (Method::GET, "scope-unknown.tar.gz".to_string()),
         ] {
             statuses.push(
-                download(State(state.clone()), Path(requested))
+                download(method, State(state.clone()), Path(requested))
                     .await
                     .status(),
             );
@@ -210,6 +217,7 @@ mod tests {
         assert_eq!(
             statuses,
             [
+                StatusCode::OK,
                 StatusCode::OK,
                 StatusCode::OK,
                 StatusCode::NOT_FOUND,

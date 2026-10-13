@@ -73,8 +73,9 @@ include `environment`, `source`, and the available `release` for diagnosis.
   does not invent a successful domain outcome. Idempotent/no-op transitions do
   not emit a second success event.
 - `cli:artifact_download` is recorded by the CLI download service each time it
-  serves a CLI archive, under the system actor with `target`, `os` and `arch`.
-  Checksum files and missing artifacts are not counted. The installer downloads
+  serves a CLI archive to a GET request, under the system actor with `target`,
+  `os` and `arch`. HEAD probes, checksum files and missing artifacts are not
+  counted. The installer downloads
   the same archive for first installs and upgrades, so the count includes both;
   it identifies neither people nor machines.
 - `workflow:attempt_start` and `workflow:attempt_complete` describe admitted
