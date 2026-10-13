@@ -3,8 +3,8 @@ use super::{
     log::{MAX_RUN_LOG_BYTES_PER_ATTEMPT, RunLogChunk},
     run::Run,
     step::{
-        AttemptConclusion, AttemptTerminalReason, RunAttemptStep, StepInterruption, StepState,
-        interrupt_steps, skip_pending_steps,
+        AttemptConclusion, AttemptTerminalReason, RunAttemptStep, StepState, interrupt_steps,
+        skip_pending_steps,
     },
     validation::{required, validate_sha256_hash},
     workflow::definition::{MAX_WORKFLOW_TIMEOUT_SECONDS, WorkflowJobId},
@@ -375,7 +375,7 @@ impl RunAttempt {
                 )
             }
             AttemptConclusion::TimedOut => {
-                let step_index = interrupt_steps(steps, StepInterruption::Canceled, now_unix);
+                let step_index = interrupt_steps(steps, StepState::Canceled, now_unix);
                 (
                     AttemptState::Failed,
                     RunJobState::Failed,
@@ -386,7 +386,7 @@ impl RunAttempt {
                 if !run.cancellation_requested {
                     return Err(DomainError::conflict("run cancellation was not requested"));
                 }
-                let step_index = interrupt_steps(steps, StepInterruption::Canceled, now_unix);
+                let step_index = interrupt_steps(steps, StepState::Canceled, now_unix);
                 (
                     AttemptState::Canceled,
                     RunJobState::Canceled,
@@ -492,7 +492,7 @@ impl RunAttempt {
         }
         self.validate_execution(steps)?;
         job.ensure_time_not_before_update(now_unix)?;
-        let step_index = interrupt_steps(steps, StepInterruption::Canceled, now_unix);
+        let step_index = interrupt_steps(steps, StepState::Canceled, now_unix);
         self.state = AttemptState::Canceled;
         self.terminal_reason = Some(AttemptTerminalReason::Canceled { step_index });
         self.completed_at_unix = Some(now_unix);
@@ -514,7 +514,7 @@ impl RunAttempt {
         self.validate_execution(steps)?;
         job.ensure_time_not_before_update(now_unix)?;
         let was_running = self.state == AttemptState::Running;
-        let step_index = interrupt_steps(steps, StepInterruption::Lost, now_unix);
+        let step_index = interrupt_steps(steps, StepState::Lost, now_unix);
         self.state = AttemptState::Lost;
         self.terminal_reason = Some(AttemptTerminalReason::ExecutionLost { step_index });
         self.completed_at_unix = Some(now_unix);

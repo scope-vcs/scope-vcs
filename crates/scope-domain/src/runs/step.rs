@@ -195,18 +195,8 @@ impl RunAttemptStep {
         self.exit_code = Some(exit_code);
     }
 
-    pub(crate) fn cancel(&mut self, now_unix: u64) {
-        self.state = StepState::Canceled;
-        self.completed_at_unix = Some(now_unix);
-    }
-
-    pub(crate) fn lose(&mut self, now_unix: u64) {
-        self.state = StepState::Lost;
-        self.completed_at_unix = Some(now_unix);
-    }
-
-    pub(crate) fn skip(&mut self, now_unix: u64) {
-        self.state = StepState::Skipped;
+    fn stop(&mut self, state: StepState, now_unix: u64) {
+        self.state = state;
         self.completed_at_unix = Some(now_unix);
     }
 
@@ -491,6 +481,68 @@ fn valid_setup_failure_message(message: &str) -> bool {
         && !message.contains('\0')
 }
 
+fn step_matches_conclusion(step: Option<&RunAttemptStep>, conclusion: StepConclusion) -> bool {
+    match (step, conclusion) {
+        (Some(step), StepConclusion::Succeeded) => {
+            step.state == StepState::Succeeded && step.exit_code == Some(0)
+        }
+        (Some(step), StepConclusion::Failed { exit_code }) => {
+            step.state == StepState::Failed && step.exit_code == Some(exit_code)
+        }
+        (None, _) => false,
+    }
+}
+
+pub(crate) fn skip_pending_steps(steps: &mut [RunAttemptStep], now_unix: u64) {
+    for step in steps {
+        if step.state == StepState::Pending {
+            step.stop(StepState::Skipped, now_unix);
+        }
+    }
+}
+
+pub(crate) fn interrupt_steps(
+    steps: &mut [RunAttemptStep],
+    interrupted: StepState,
+    now_unix: u64,
+) -> Option<u32> {
+    let active_index = steps
+        .iter()
+        .position(|step| step.state == StepState::Running);
+    if let Some(index) = active_index {
+        steps[index].stop(interrupted, now_unix);
+    }
+    skip_pending_steps(steps, now_unix);
+    active_index.map(|index| index as u32)
+}
+
+fn interrupted_step_matches(
+    steps: &[RunAttemptStep],
+    step_index: Option<u32>,
+    interrupted_state: StepState,
+) -> bool {
+    match step_index {
+        Some(index) => terminal_step_matches(steps, index, interrupted_state, None),
+        None => steps
+            .iter()
+            .all(|step| matches!(step.state, StepState::Succeeded | StepState::Skipped)),
+    }
+}
+
+fn terminal_step_matches(
+    steps: &[RunAttemptStep],
+    step_index: u32,
+    state: StepState,
+    exit_code: Option<i32>,
+) -> bool {
+    let index = step_index as usize;
+    steps.get(index).is_some_and(|step| {
+        step.state == state && exit_code.is_none_or(|code| step.exit_code == Some(code))
+    }) && steps[index + 1..]
+        .iter()
+        .all(|step| step.state == StepState::Skipped)
+}
+
 #[cfg(test)]
 mod setup_failure_message_tests {
     use super::{
@@ -534,75 +586,4 @@ mod setup_failure_message_tests {
             message
         );
     }
-}
-
-fn step_matches_conclusion(step: Option<&RunAttemptStep>, conclusion: StepConclusion) -> bool {
-    match (step, conclusion) {
-        (Some(step), StepConclusion::Succeeded) => {
-            step.state == StepState::Succeeded && step.exit_code == Some(0)
-        }
-        (Some(step), StepConclusion::Failed { exit_code }) => {
-            step.state == StepState::Failed && step.exit_code == Some(exit_code)
-        }
-        (None, _) => false,
-    }
-}
-
-pub(crate) fn skip_pending_steps(steps: &mut [RunAttemptStep], now_unix: u64) {
-    for step in steps {
-        if step.state == StepState::Pending {
-            step.skip(now_unix);
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum StepInterruption {
-    Canceled,
-    Lost,
-}
-
-pub(crate) fn interrupt_steps(
-    steps: &mut [RunAttemptStep],
-    interruption: StepInterruption,
-    now_unix: u64,
-) -> Option<u32> {
-    let active_index = steps
-        .iter()
-        .position(|step| step.state == StepState::Running);
-    if let Some(index) = active_index {
-        match interruption {
-            StepInterruption::Canceled => steps[index].cancel(now_unix),
-            StepInterruption::Lost => steps[index].lose(now_unix),
-        }
-    }
-    skip_pending_steps(steps, now_unix);
-    active_index.map(|index| index as u32)
-}
-
-fn interrupted_step_matches(
-    steps: &[RunAttemptStep],
-    step_index: Option<u32>,
-    interrupted_state: StepState,
-) -> bool {
-    match step_index {
-        Some(index) => terminal_step_matches(steps, index, interrupted_state, None),
-        None => steps
-            .iter()
-            .all(|step| matches!(step.state, StepState::Succeeded | StepState::Skipped)),
-    }
-}
-
-fn terminal_step_matches(
-    steps: &[RunAttemptStep],
-    step_index: u32,
-    state: StepState,
-    exit_code: Option<i32>,
-) -> bool {
-    let index = step_index as usize;
-    steps.get(index).is_some_and(|step| {
-        step.state == state && exit_code.is_none_or(|code| step.exit_code == Some(code))
-    }) && steps[index + 1..]
-        .iter()
-        .all(|step| step.state == StepState::Skipped)
 }

@@ -1,5 +1,21 @@
 import { cn } from '@/lib/utils'
 
+export const RUN_STEP_ROW_CLASS =
+  'grid h-9 w-full grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 px-4'
+
+export const RUN_ROW_CLASS = 'flex min-w-0 items-center gap-3 px-3 py-3'
+export const RUN_ROW_PRIMARY_CLASS = 'min-w-0 flex-1 items-baseline gap-2 truncate sm:flex'
+export const RUN_ROW_DURATION_CLASS = 'w-16 shrink-0'
+export const RUN_ROW_TIMESTAMP_CLASS = 'w-24 shrink-0'
+
+export const RUN_LINK_CLASS = 'underline-offset-2 hover:text-foreground hover:underline'
+
+export const RUN_LOG_TEXT_CLASS = 'bg-background font-mono text-xs leading-5 text-foreground'
+
+export function runLogPreClass(wrap: boolean) {
+  return cn('mt-1 overflow-x-auto break-words pb-4', wrap ? 'whitespace-pre-wrap' : 'whitespace-pre')
+}
+
 export const RUN_JOB_LIST_CLASS =
   'flex min-w-0 flex-1 gap-1 overflow-x-auto p-2 lg:flex-col lg:gap-0 lg:overflow-x-visible lg:p-0'
 

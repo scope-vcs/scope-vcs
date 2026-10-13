@@ -1,14 +1,6 @@
 use crate::{error::ApiError, state::AppState};
 use scope_domain::{repository::access::RepositoryAccessContext, runs::run::Run};
-use scope_postgres::db::{RunDetail, StepLogCursor, StoredRunLog};
-
-pub(crate) struct RunStepLogs {
-    pub(crate) logs: Vec<StoredRunLog>,
-    pub(crate) next_after: u64,
-    pub(crate) logs_truncated: bool,
-    pub(crate) has_earlier: bool,
-    pub(crate) has_more: bool,
-}
+use scope_postgres::db::{RunDetail, StepLogCursor, StoredAttemptStepLogs};
 
 pub(crate) struct InspectedRun {
     pub(crate) run: Run,
@@ -99,25 +91,11 @@ pub(crate) async fn inspect_run_step_logs(
     step_index: u32,
     cursor: StepLogCursor,
     limit: u64,
-) -> Result<RunStepLogs, ApiError> {
+) -> Result<StoredAttemptStepLogs, ApiError> {
     require_run_access(state, user_id, owner, repo_name, run_id).await?;
-    let page = state
+    Ok(state
         .metadata
         .runs()
         .attempt_step_logs(run_id, attempt_id, step_index, cursor, limit)
-        .await?;
-    let next_after = page.logs.last().map_or_else(
-        || match cursor {
-            StepLogCursor::After(position) => position,
-            _ => 0,
-        },
-        |stored| stored.position,
-    );
-    Ok(RunStepLogs {
-        logs: page.logs,
-        next_after,
-        logs_truncated: page.logs_truncated,
-        has_earlier: page.has_earlier,
-        has_more: page.has_more,
-    })
+        .await?)
 }

@@ -3,7 +3,7 @@ use super::{
     cache_client::{CacheDownloadError, copy_hashed},
     source::{MAX_SOURCE_BYTES, retryable_source_status},
 };
-use crate::execute::{AppendLogError, AppendLogOutcome};
+use crate::execute::{AppendLogError, AppendLogOutcome, ExecutionSink as _};
 use reqwest::{StatusCode, blocking::Client};
 use sha2::{Digest as _, Sha256};
 use std::{

@@ -1,22 +1,26 @@
-use super::tests::queued_runs;
-use super::*;
+use super::tests::{coordinator, queued_runs};
 use crate::execution::fake::FakeEcs;
+use axum::http::StatusCode;
 use scope_domain::runs::{
     run::RunState,
     step::{AttemptTerminalReason, MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES},
 };
-use serde_json::json;
+use serde_json::{Value, json};
+
+fn capacity_rejection() -> Value {
+    json!({"status":"rejected","reason":"capacity","message":"capacity unavailable"})
+}
 
 #[tokio::test]
 async fn multibyte_capacity_rejection_records_retry() {
     let metadata = queued_runs(1).await;
     let provider = FakeEcs::new().await;
     provider.reply(
-        axum::http::StatusCode::OK,
+        StatusCode::OK,
         json!({"status":"rejected","reason":"capacity","message":"é".repeat(2048)}),
         false,
     );
-    let execution = coordinator(metadata.clone(), &provider);
+    let execution = coordinator(&metadata, &provider, 4);
     let now = crate::unix_now().unwrap();
 
     assert_eq!(execution.dispatch_available(now).await.unwrap(), 1);
@@ -48,26 +52,12 @@ async fn multibyte_capacity_rejection_records_retry() {
     assert!(message.as_str().len() <= MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES);
 }
 
-fn coordinator(metadata: MetadataStore, provider: &FakeEcs) -> CloudExecutionCoordinator {
-    CloudExecutionCoordinator {
-        metadata,
-        product_analytics: ProductAnalytics::disabled(),
-        ecs: provider.client.clone(),
-        origin_id: "capacity-test".into(),
-        settings: provider.settings(),
-    }
-}
-
 #[tokio::test]
 async fn capacity_rejection_retries_after_restart_and_stops_after_three_extra_attempts() {
     let metadata = queued_runs(1).await;
     let provider = FakeEcs::new().await;
-    provider.reply(
-        axum::http::StatusCode::OK,
-        json!({"status":"rejected","reason":"capacity","message":"capacity unavailable"}),
-        false,
-    );
-    let first = coordinator(metadata.clone(), &provider);
+    provider.reply(StatusCode::OK, capacity_rejection(), false);
+    let first = coordinator(&metadata, &provider, 4);
     let now = crate::unix_now().unwrap();
     assert_eq!(first.dispatch_available(now).await.unwrap(), 1);
     assert_eq!(
@@ -83,7 +73,7 @@ async fn capacity_rejection_retries_after_restart_and_stops_after_three_extra_at
             .is_empty()
     );
     drop(first);
-    let restarted = coordinator(metadata.clone(), &provider);
+    let restarted = coordinator(&metadata, &provider, 4);
     let mut clock = now;
     for expected in 2..=4 {
         let jobs = metadata
@@ -131,8 +121,8 @@ async fn permanent_quota_and_uncertain_launches_do_not_enter_capacity_retries() 
     ] {
         let metadata = queued_runs(1).await;
         let provider = FakeEcs::new().await;
-        provider.reply(axum::http::StatusCode::OK, reply, false);
-        let execution = coordinator(metadata.clone(), &provider);
+        provider.reply(StatusCode::OK, reply, false);
+        let execution = coordinator(&metadata, &provider, 4);
         let now = crate::unix_now().unwrap();
         assert_eq!(execution.dispatch_available(now).await.unwrap(), 1);
         assert_eq!(
@@ -149,12 +139,8 @@ async fn capacity_retry_can_start_and_expired_waits_settle_even_when_dispatch_is
     for recover in [true, false] {
         let metadata = queued_runs(1).await;
         let provider = FakeEcs::new().await;
-        provider.reply(
-            axum::http::StatusCode::OK,
-            json!({"status":"rejected","reason":"capacity","message":"capacity unavailable"}),
-            false,
-        );
-        let mut execution = coordinator(metadata.clone(), &provider);
+        provider.reply(StatusCode::OK, capacity_rejection(), false);
+        let mut execution = coordinator(&metadata, &provider, 4);
         let now = crate::unix_now().unwrap();
         execution.dispatch_available(now).await.unwrap();
         let jobs = metadata
@@ -167,7 +153,7 @@ async fn capacity_retry_can_start_and_expired_waits_settle_even_when_dispatch_is
         let retry = jobs[0].capacity_retry.as_ref().unwrap();
         if recover {
             provider.reply(
-                axum::http::StatusCode::OK,
+                StatusCode::OK,
                 json!({"status":"started","task_arn":"task-recovered"}),
                 false,
             );

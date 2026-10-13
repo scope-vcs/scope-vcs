@@ -34,8 +34,7 @@ where
     entities::repository_workflow_file::Entity::delete_many()
         .filter(entities::repository_workflow_file::Column::RepoId.eq(&repo_id))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     entities::repository_workflow_catalog::Entity::insert(header.into_active_model())
         .on_conflict(
             OnConflict::column(entities::repository_workflow_catalog::Column::RepoId)
@@ -47,15 +46,13 @@ where
                 .to_owned(),
         )
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
 
     for file in catalog.files().unwrap_or_default() {
         workflow_file_from_domain(&repo_id, file)?
             .into_active_model()
             .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     Ok(())
 }
@@ -69,18 +66,11 @@ where
 {
     let Some(header) = entities::repository_workflow_catalog::Entity::find_by_id(repo_id)
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     else {
         return Ok(None);
     };
-    let files = entities::repository_workflow_file::Entity::find()
-        .filter(entities::repository_workflow_file::Column::RepoId.eq(repo_id))
-        .order_by_asc(entities::repository_workflow_file::Column::Path)
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
-    catalog_from_rows(header, files).map(Some)
+    catalog_from_rows(conn, header).await.map(Some)
 }
 
 impl RepositoryStore {
@@ -102,22 +92,20 @@ impl RepositoryStore {
             .column(entities::repository::Column::Id)
             .into_tuple::<String>()
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         {
             Some(repository_id) => Some(CurrentRepositoryWorkflowCatalog {
                 repository_id,
                 git_head: entities::git_head::Entity::find_by_id(repo_id)
                     .one(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?
+                    .await?
                     .map(entities::git_head::Model::try_into_domain)
                     .transpose()?,
                 catalog: repository_workflow_catalog(&tx, repo_id).await?,
             }),
             None => None,
         };
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(snapshot)
     }
 
@@ -128,8 +116,7 @@ impl RepositoryStore {
     ) -> Result<(), PostgresError> {
         entities::repository_workflow_catalog::Entity::delete_by_id(repo_id)
             .exec(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -146,10 +133,7 @@ impl RepositoryStore {
              WHERE repo_id = $1",
             [repo_id.into(), source_head_oid.into()],
         );
-        self.db
-            .execute_raw(statement)
-            .await
-            .map_err(PostgresError::internal)?;
+        self.db.execute_raw(statement).await?;
         Ok(())
     }
 
@@ -168,10 +152,7 @@ impl RepositoryStore {
              WHERE repo_id = $1 AND path = $2",
             [repo_id.into(), path.into(), content_bytes.into()],
         );
-        self.db
-            .execute_raw(statement)
-            .await
-            .map_err(PostgresError::internal)?;
+        self.db.execute_raw(statement).await?;
         Ok(())
     }
 }
@@ -183,19 +164,12 @@ pub(super) async fn load_repository_workflow_catalogs(
     let headers = entities::repository_workflow_catalog::Entity::find()
         .order_by_asc(entities::repository_workflow_catalog::Column::RepoId)
         .all(&tx)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let mut catalogs = Vec::with_capacity(headers.len());
     for header in headers {
-        let files = entities::repository_workflow_file::Entity::find()
-            .filter(entities::repository_workflow_file::Column::RepoId.eq(header.repo_id.clone()))
-            .order_by_asc(entities::repository_workflow_file::Column::Path)
-            .all(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        catalogs.push(catalog_from_rows(header, files)?);
+        catalogs.push(catalog_from_rows(&tx, header).await?);
     }
-    tx.commit().await.map_err(PostgresError::internal)?;
+    tx.commit().await?;
     Ok(catalogs)
 }
 
@@ -233,10 +207,15 @@ fn workflow_file_from_domain(
     })
 }
 
-fn catalog_from_rows(
+async fn catalog_from_rows(
+    conn: &impl ConnectionTrait,
     header: entities::repository_workflow_catalog::Model,
-    files: Vec<entities::repository_workflow_file::Model>,
 ) -> Result<RepositoryWorkflowCatalog, PostgresError> {
+    let files = entities::repository_workflow_file::Entity::find()
+        .filter(entities::repository_workflow_file::Column::RepoId.eq(header.repo_id.clone()))
+        .order_by_asc(entities::repository_workflow_file::Column::Path)
+        .all(conn)
+        .await?;
     let source_change_version = u64::try_from(header.source_change_version).map_err(|_| {
         PostgresError::internal_message(
             "repository workflow catalog change version cannot be negative",

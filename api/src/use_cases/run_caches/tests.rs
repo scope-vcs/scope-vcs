@@ -22,17 +22,8 @@ use scope_domain::{
     content_ref::ContentRef,
     repository::{RepoLifecycleState, Repository},
     runs::{
-        cache::definition::{CacheKeyInputs, WorkflowCache},
         run::Run,
         source::{RunSource, RunTrigger},
-        workflow::{
-            definition::{
-                CompiledWorkflow, ContainerSpec, WorkflowJob, WorkflowJobId, WorkflowStep,
-                WorkflowTriggers,
-            },
-            identity::{WorkflowIdentity, WorkflowPath},
-            revision::WorkflowRevision,
-        },
     },
     views::ViewId,
 };
@@ -243,38 +234,15 @@ fn seed_repository(state: &AppState) -> String {
 }
 
 async fn dispatch_attempt(fixture: &Fixture) {
-    let workflow = WorkflowIdentity::new(
-        fixture.repository_id.as_str(),
-        WorkflowPath::parse("/.scope/runs/caches.yml").unwrap(),
-    )
-    .unwrap();
-    let definition = CompiledWorkflow::new(
-        "Caches",
-        WorkflowTriggers::new(true, false, false).unwrap(),
-        vec![
-            WorkflowJob::new(
-                WorkflowJobId::parse("checks").unwrap(),
-                vec![],
-                ContainerSpec::new(format!("alpine@sha256:{}", "a".repeat(64))).unwrap(),
-                600,
-                vec![
-                    WorkflowCache::new(
-                        "cargo",
-                        "/scope/cache/cargo",
-                        "tar-zstd-v1",
-                        CacheKeyInputs::default(),
-                        CacheKeyInputs::default(),
-                    )
-                    .unwrap(),
-                ],
-                Default::default(),
-                vec![WorkflowStep::new("Test", "true").unwrap()],
-            )
-            .unwrap(),
-        ],
-    )
-    .unwrap();
-    let revision = WorkflowRevision::new(workflow.clone(), definition).unwrap();
+    let image = format!("alpine@sha256:{}", "a".repeat(64));
+    let cache = "{ name: cargo, path: /scope/cache/cargo, format: tar-zstd-v1, compatibility: { source: false }, exact: { source: false } }";
+    let yaml = format!(
+        "name: Caches\non: {{ manual: true }}\ncontainer: {{ image: {image} }}\ntimeout: 10m\ncaches: [{cache}]\njobs:\n  checks:\n    steps: [{{ name: Test, run: \"true\" }}]\n"
+    );
+    let revision = scope_run_config::parse_workflow("/.scope/runs/caches.yml", yaml.as_bytes())
+        .unwrap()
+        .into_revision(fixture.repository_id.as_str())
+        .unwrap();
     let source_digest = "c".repeat(64);
     let source = RunSource::ephemeral_git_bundle(scope_domain::content::SourceBlob {
         content_ref: ContentRef::git_bundle_sha256(source_digest.clone()),
@@ -289,7 +257,7 @@ async fn dispatch_attempt(fixture: &Fixture) {
         Run::new(
             "run-cache-run",
             "run-cache-test",
-            workflow,
+            revision.workflow().clone(),
             revision.digest(),
             RunTrigger::Manual,
             Some("user_run_cache".to_string()),

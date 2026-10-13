@@ -10,7 +10,7 @@ import { RunDuration } from './run-duration'
 import { RunJobHeader } from './run-job-header'
 import { RunLogView } from './run-log-view'
 import { RunStatusIcon } from './run-status-icon'
-import { RUN_STEP_ROW_CLASS } from './run-step-layout'
+import { RUN_STEP_ROW_CLASS } from './run-layout'
 import type {
   RepositoryRunAttemptResponse,
   RepositoryRunJobDetailResponse,

@@ -23,8 +23,10 @@ impl RunStore {
         now_unix: u64,
     ) -> Result<AppendRunLogResult, PostgresError> {
         let tx = self.db.begin().await?;
-        let (run, job, mut attempt, steps) =
+        let (run, job, mut attempt) =
             super::run_attempt_persistence::locked_attempt_context(&tx, &chunk.attempt_id).await?;
+        let steps =
+            super::run_attempt_persistence::locked_attempt_steps(&tx, &chunk.attempt_id).await?;
         attempt
             .authenticate(&job, token_hash, now_unix)
             .map_err(PostgresError::from)?;

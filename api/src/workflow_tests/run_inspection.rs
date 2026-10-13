@@ -40,107 +40,68 @@ async fn active_run(log_chunks: usize) -> InspectableRun {
         1,
     )
     .unwrap();
-    state
-        .metadata
-        .runs()
-        .enqueue_run(run, revision)
-        .await
-        .unwrap();
+    let runs = state.metadata.runs();
+    runs.enqueue_run(run, revision).await.unwrap();
 
     let attempt_id = format!("attempt_{run_id}");
     let bootstrap_token_hash = "c".repeat(64);
     let attempt_token_hash = "d".repeat(64);
-    state
-        .metadata
-        .runs()
-        .dispatch_job(
-            &run_id,
-            "checks",
-            &attempt_id,
-            &bootstrap_token_hash,
-            "test-runtime",
-            2,
-            100,
-        )
+    runs.dispatch_job(
+        &run_id,
+        "checks",
+        &attempt_id,
+        &bootstrap_token_hash,
+        "test-runtime",
+        2,
+        100,
+    )
+    .await
+    .unwrap();
+    runs.claim_runtime(
+        &attempt_id,
+        &bootstrap_token_hash,
+        &attempt_token_hash,
+        3,
+        100,
+    )
+    .await
+    .unwrap();
+    runs.start_attempt_step(&attempt_id, &attempt_token_hash, 0, 4)
         .await
         .unwrap();
-    state
-        .metadata
-        .runs()
-        .claim_runtime(
-            &attempt_id,
-            &bootstrap_token_hash,
-            &attempt_token_hash,
-            3,
-            100,
-        )
-        .await
-        .unwrap();
-    state
-        .metadata
-        .runs()
-        .start_attempt_step(&attempt_id, &attempt_token_hash, 0, 4)
-        .await
-        .unwrap();
-    let first = state
-        .metadata
-        .runs()
-        .append_attempt_log(
-            RunLogChunk::new(&attempt_id, 0, 1, "first\n", 5).unwrap(),
-            &attempt_token_hash,
-            5,
-        )
-        .await
-        .unwrap();
-    let second = state
-        .metadata
-        .runs()
-        .append_attempt_log(
-            RunLogChunk::new(&attempt_id, 0, 2, "second\n", 6).unwrap(),
-            &attempt_token_hash,
-            6,
-        )
-        .await
-        .unwrap();
-    for sequence in 3..=log_chunks as u64 {
-        state
-            .metadata
-            .runs()
-            .append_attempt_log(
-                RunLogChunk::new(&attempt_id, 0, sequence, "x".repeat(64 * 1024), 6).unwrap(),
-                &attempt_token_hash,
-                6,
-            )
+    let mut positions = Vec::new();
+    for sequence in 1..=log_chunks as u64 {
+        let (text, at) = match sequence {
+            1 => ("first\n".to_string(), 5),
+            2 => ("second\n".to_string(), 6),
+            _ => ("x".repeat(64 * 1024), 6),
+        };
+        let chunk = RunLogChunk::new(&attempt_id, 0, sequence, text, at).unwrap();
+        let appended = runs
+            .append_attempt_log(chunk, &attempt_token_hash, at)
             .await
             .unwrap();
+        positions.push(appended.log.position);
     }
 
     InspectableRun {
         state,
         run_id,
         attempt_id,
-        first_log_position: first.log.position,
-        second_log_position: second.log.position,
+        first_log_position: positions[0],
+        second_log_position: positions[1],
     }
 }
 
 #[tokio::test]
 async fn run_detail_reconstructs_jobs_attempts_and_steps() {
     let fixture = inspectable_run(false, 2).await;
-    let response = router(fixture.state)
-        .oneshot(
-            Request::builder()
-                .uri(scope_api_contract::routes::repo_run_detail(
-                    TEST_REPO_OWNER,
-                    TEST_REPO_NAME,
-                    &fixture.run_id,
-                ))
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let uri = scope_api_contract::routes::repo_run_detail(
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        &fixture.run_id,
+    );
+    let response = get_as(&fixture.state, &uri, &bearer_header()).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_json(response).await;
     assert_eq!(body["run"]["id"], fixture.run_id);
@@ -157,26 +118,12 @@ async fn run_detail_reconstructs_jobs_attempts_and_steps() {
 #[tokio::test]
 async fn step_log_inspection_applies_the_cursor_and_preserves_truncation() {
     let fixture = inspectable_run(true, 2).await;
-    let response = router(fixture.state)
-        .oneshot(
-            Request::builder()
-                .uri(format!(
-                    "{}?after={}",
-                    scope_api_contract::routes::repo_run_step_logs(
-                        TEST_REPO_OWNER,
-                        TEST_REPO_NAME,
-                        &fixture.run_id,
-                        &fixture.attempt_id,
-                        0,
-                    ),
-                    fixture.first_log_position
-                ))
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let uri = format!(
+        "{}?after={}",
+        step_logs_path(&fixture),
+        fixture.first_log_position
+    );
+    let response = get_as(&fixture.state, &uri, &bearer_header()).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_json(response).await;
     assert_eq!(body["logs"].as_array().unwrap().len(), 1);
@@ -188,25 +135,11 @@ async fn step_log_inspection_applies_the_cursor_and_preserves_truncation() {
 #[tokio::test]
 async fn long_step_logs_open_at_the_tail_and_page_back_without_gaps() {
     let fixture = inspectable_run(false, 18).await;
-    let path = scope_api_contract::routes::repo_run_step_logs(
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &fixture.run_id,
-        &fixture.attempt_id,
-        0,
-    );
-    let app = router(fixture.state);
+    let path = step_logs_path(&fixture);
     let mut query = String::new();
     let mut sequences = Vec::new();
     loop {
-        let response = api_request(
-            app.clone(),
-            "GET",
-            &format!("{path}{query}"),
-            Some(&bearer_header()),
-            None,
-        )
-        .await;
+        let response = get_as(&fixture.state, &format!("{path}{query}"), &bearer_header()).await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         let logs = body["logs"].as_array().unwrap();
@@ -242,24 +175,23 @@ async fn long_step_logs_open_at_the_tail_and_page_back_without_gaps() {
 #[tokio::test]
 async fn step_log_inspection_rejects_conflicting_cursors() {
     let fixture = inspectable_run(false, 2).await;
-    let path = scope_api_contract::routes::repo_run_step_logs(
+    let uri = format!("{}?before=9&after=1", step_logs_path(&fixture));
+    let response = get_as(&fixture.state, &uri, &bearer_header()).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+async fn get_as(state: &AppState, uri: &str, bearer: &str) -> axum::response::Response {
+    get(router(state.clone()), uri, Some(bearer)).await
+}
+
+fn step_logs_path(fixture: &InspectableRun) -> String {
+    scope_api_contract::routes::repo_run_step_logs(
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &fixture.run_id,
         &fixture.attempt_id,
         0,
-    );
-    let response = router(fixture.state)
-        .oneshot(
-            Request::builder()
-                .uri(format!("{path}?before=9&after=1"))
-                .header(AUTHORIZATION, bearer_header())
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    )
 }
 
 async fn inspectable_run(logs_truncated: bool, log_chunks: usize) -> InspectableRun {
@@ -335,14 +267,9 @@ async fn append_attempt_log_rejects_nul_text_as_bad_request() {
 #[tokio::test]
 async fn run_inspection_enforces_repository_access() {
     let fixture = inspectable_run(false, 2).await;
-    let response = api_request(
-        router(fixture.state.clone()),
-        "GET",
-        &scope_api_contract::routes::repo_run(TEST_REPO_OWNER, TEST_REPO_NAME, &fixture.run_id),
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
+    let run_path =
+        scope_api_contract::routes::repo_run(TEST_REPO_OWNER, TEST_REPO_NAME, &fixture.run_id);
+    let response = get_as(&fixture.state, &run_path, &bearer_header()).await;
     assert_eq!(response.status(), StatusCode::OK);
 
     let member_subject = "user_run_member";
@@ -372,14 +299,8 @@ async fn run_inspection_enforces_repository_access() {
         .await
         .unwrap();
 
-    let response = api_request(
-        router(fixture.state.clone()),
-        "GET",
-        &scope_api_contract::routes::repo_run(TEST_REPO_OWNER, TEST_REPO_NAME, &fixture.run_id),
-        Some(&bearer_header_for(member_subject, "run-member@example.com")),
-        None,
-    )
-    .await;
+    let member = bearer_header_for(member_subject, "run-member@example.com");
+    let response = get_as(&fixture.state, &run_path, &member).await;
     assert_eq!(response.status(), StatusCode::OK);
 
     let public_subject = "user_run_public";
@@ -392,14 +313,8 @@ async fn run_inspection_enforces_repository_access() {
         .await
         .unwrap();
 
-    let response = api_request(
-        router(fixture.state.clone()),
-        "GET",
-        &scope_api_contract::routes::repo_run(TEST_REPO_OWNER, TEST_REPO_NAME, &fixture.run_id),
-        Some(&bearer_header_for(public_subject, "run-public@example.com")),
-        None,
-    )
-    .await;
+    let public = bearer_header_for(public_subject, "run-public@example.com");
+    let response = get_as(&fixture.state, &run_path, &public).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     let mut other = test_repo(&test_owner_id());
@@ -415,13 +330,8 @@ async fn run_inspection_enforces_repository_access() {
         .await
         .unwrap();
 
-    let response = api_request(
-        router(fixture.state.clone()),
-        "GET",
-        &scope_api_contract::routes::repo_run(TEST_REPO_OWNER, "other", &fixture.run_id),
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
+    let other_path =
+        scope_api_contract::routes::repo_run(TEST_REPO_OWNER, "other", &fixture.run_id);
+    let response = get_as(&fixture.state, &other_path, &bearer_header()).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

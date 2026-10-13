@@ -1,11 +1,8 @@
 use super::{RunStore, entities};
 use crate::error::PostgresError;
-use scope_domain::runs::{
-    cache::observation::{
-        AttemptCacheObservation, AttemptCachePreparationTiming, AttemptCacheSetupObservation,
-        CacheFinalState, CachePreparation,
-    },
-    workflow::identity::WorkflowPath,
+use scope_domain::runs::cache::observation::{
+    AttemptCacheObservation, AttemptCachePreparationTiming, AttemptCacheSetupObservation,
+    CacheFinalState, CachePreparation,
 };
 use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QuerySelect, TransactionTrait};
 
@@ -64,8 +61,7 @@ impl RunStore {
                 .await?;
             true
         };
-        let workflow_path = WorkflowPath::parse(claim.run.workflow.path().as_str().to_string())
-            .map_err(PostgresError::invalid_input)?;
+        let workflow_path = claim.run.workflow.path().clone();
         let job_definition = claim
             .workflow_revision
             .definition()
@@ -177,19 +173,13 @@ async fn authenticated_attempt(
     token_hash: &str,
     now_unix: u64,
 ) -> Result<super::DispatchClaim, PostgresError> {
-    let (run, job, attempt, steps) =
+    let (run, job, attempt) =
         super::run_attempt_persistence::locked_attempt_context(tx, attempt_id).await?;
+    let steps = super::run_attempt_persistence::locked_attempt_steps(tx, attempt_id).await?;
     attempt
         .authenticate_cache_observation_report(&job, token_hash, now_unix)
         .map_err(PostgresError::from)?;
     let workflow_revision = super::runs::workflow_revision_for_run(tx, &run).await?;
-    let repository = super::run_attempt_persistence::run_repository(tx, &run).await?;
-    Ok(super::DispatchClaim {
-        repository,
-        run,
-        job,
-        attempt,
-        steps,
-        workflow_revision,
-    })
+    super::run_attempt_mutations::dispatch_claim(tx, run, job, attempt, steps, workflow_revision)
+        .await
 }

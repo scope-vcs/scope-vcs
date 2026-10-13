@@ -1,8 +1,9 @@
 use super::*;
-use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
-use scope_domain::{
-    account::UserAccount, content::DEFAULT_GIT_FILE_MODE, repository::Repository, views::ViewId,
+use crate::db::{
+    MetadataStore,
+    test_support::fixtures::{repository, store_with_repositories, user},
 };
+use scope_domain::{content::DEFAULT_GIT_FILE_MODE, views::ViewId};
 use sea_orm::{DatabaseBackend, Statement, TransactionTrait};
 use std::time::Duration;
 
@@ -10,20 +11,8 @@ const REPO_ID: &str = "workflow-owner/repo";
 const HEAD_OID: &str = "1111111111111111111111111111111111111111";
 
 fn fixture() -> MetadataStore {
-    let store =
-        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
-    let owner = UserAccount {
-        id: "workflow-owner".into(),
-        handle: "workflow-owner".into(),
-        email: "workflow@scope.test".into(),
-        email_verified: true,
-    };
-    let repo = Repository::new(&owner, "repo", ViewId::private(), "repoi_workflows").unwrap();
-    let mut catalog = CatalogFixture::default();
-    catalog.users.insert(owner.id.clone(), owner);
-    catalog.repositories.insert(repo.record.id.clone(), repo);
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
-    store
+    let owner = user("workflow-owner", "workflow-owner");
+    store_with_repositories([repository(&owner, "repo", ViewId::private())])
 }
 
 async fn insert_head(store: &MetadataStore) -> GitHead {

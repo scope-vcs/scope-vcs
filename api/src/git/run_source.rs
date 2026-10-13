@@ -22,7 +22,7 @@ use scope_git_process::{ProcessLimits, run as run_process};
 use scope_storage::source_blob_bytes;
 use sha2::{Digest as _, Sha256};
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     future::Future,
     os::unix::{fs::DirBuilderExt as _, fs::OpenOptionsExt as _},
     path::{Path, PathBuf},
@@ -110,32 +110,16 @@ fn run_source_cache_key(
             "run bundle cache requires an accepted Git head",
         ));
     };
-    let identity = serde_json::to_vec(&(
+    source_cache_key(&(
         "run-source-bundle",
         incarnation.repository_id(),
         incarnation.incarnation_id(),
         &head.head_oid,
     ))
-    .map_err(ApiError::internal)?;
-    Ok(format!(
-        "run-source-{}",
-        hex::encode(Sha256::digest(identity))
-    ))
 }
 
-fn request_source_cache_key(
-    incarnation: &RepositoryIncarnation,
-    bundle: &scope_domain::content::SourceBlob,
-    base_oid: &str,
-) -> Result<String, ApiError> {
-    let identity = serde_json::to_vec(&(
-        "standalone-request-run-source-v1",
-        incarnation,
-        &bundle.sha256,
-        &bundle.git_oid,
-        base_oid,
-    ))
-    .map_err(ApiError::internal)?;
+fn source_cache_key(identity: &impl serde::Serialize) -> Result<String, ApiError> {
+    let identity = serde_json::to_vec(identity).map_err(ApiError::internal)?;
     Ok(format!(
         "run-source-{}",
         hex::encode(Sha256::digest(identity))
@@ -149,7 +133,13 @@ async fn materialize_request_git_bundle(
     base_oid: &str,
     max_bytes: usize,
 ) -> Result<MaterializedRunSource, ApiError> {
-    let key = request_source_cache_key(incarnation, snapshot, base_oid)?;
+    let key = source_cache_key(&(
+        "standalone-request-run-source-v1",
+        incarnation,
+        &snapshot.sha256,
+        &snapshot.git_oid,
+        base_oid,
+    ))?;
     let build_state = state.clone();
     let build_incarnation = incarnation.clone();
     let snapshot = snapshot.clone();
@@ -282,19 +272,7 @@ async fn build_accepted_source_bundle(
             owner.clone(),
         )
         .await?;
-        let temporary = TemporarySourceDirectory::new(state.repository_engine.cache_root())?;
-        operation::spawn_blocking(&owner, move || {
-            write_private_file(&temporary.path.join("source.bundle"), &bytes)?;
-            write_private_file(
-                &temporary.path.join("sha256"),
-                hex::encode(Sha256::digest(&bytes)).as_bytes(),
-            )?;
-            fs::rename(&temporary.path, path).map_err(ApiError::internal)
-        })
-        .await
-        .map_err(|error| {
-            ApiError::internal_message(format!("run source cache publication task failed: {error}"))
-        })?
+        publish_source_bundle(&state, &owner, bytes, path).await
     })
     .await
 }
@@ -364,21 +342,28 @@ async fn build_request_source_bundle(
             owner.clone(),
         )
         .await?;
-        let temporary = TemporarySourceDirectory::new(state.repository_engine.cache_root())?;
-        operation::spawn_blocking(&owner, move || {
-            write_private_file(&temporary.path.join("source.bundle"), &bundle)?;
-            write_private_file(
-                &temporary.path.join("sha256"),
-                hex::encode(Sha256::digest(&bundle)).as_bytes(),
-            )?;
-            fs::rename(&temporary.path, path).map_err(ApiError::internal)
-        })
-        .await
-        .map_err(|error| {
-            ApiError::internal_message(format!("run source cache publication task failed: {error}"))
-        })?
+        publish_source_bundle(&state, &owner, bundle, path).await
     })
     .await
+}
+
+async fn publish_source_bundle(
+    state: &AppState,
+    owner: &std::sync::Arc<operation::RunSourceOperation>,
+    bundle: Vec<u8>,
+    path: PathBuf,
+) -> Result<(), ApiError> {
+    let temporary = TemporarySourceDirectory::new(state.repository_engine.cache_root())?;
+    operation::spawn_blocking(owner, move || {
+        write_private_file(&temporary.path.join("source.bundle"), &bundle)?;
+        let digest = hex::encode(Sha256::digest(&bundle));
+        write_private_file(&temporary.path.join("sha256"), digest.as_bytes())?;
+        fs::rename(&temporary.path, path).map_err(ApiError::internal)
+    })
+    .await
+    .map_err(|error| {
+        ApiError::internal_message(format!("run source cache publication task failed: {error}"))
+    })?
 }
 
 struct RequestSnapshot {
@@ -693,17 +678,13 @@ fn run_git_inspection(
 }
 
 fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), ApiError> {
-    let mut file = create_private_file(path)?;
-    std::io::Write::write_all(&mut file, bytes).map_err(ApiError::internal)
-}
-
-fn create_private_file(path: &Path) -> Result<File, ApiError> {
-    OpenOptions::new()
+    let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
         .open(path)
-        .map_err(ApiError::internal)
+        .map_err(ApiError::internal)?;
+    std::io::Write::write_all(&mut file, bytes).map_err(ApiError::internal)
 }
 
 struct TemporarySourceDirectory {

@@ -1,124 +1,39 @@
 use super::*;
 use crate::{
-    content::SourceBlob,
-    content_ref::ContentRef,
+    error::DomainError,
     runs::{
+        fixtures::{IMAGE_DIGEST, dispatch, dispatched_attempt, run, workflow},
         job::{create_run_jobs, reconcile_run, request_run_cancellation},
         run::RunState,
-        source::{RunSource, RunTrigger},
         step::{SetupFailureMessage, StepConclusion},
-        workflow::{
-            definition::{
-                CompiledWorkflow, ContainerSpec, WorkflowJob, WorkflowJobId, WorkflowStep,
-                WorkflowTriggers,
-            },
-            identity::{WorkflowIdentity, WorkflowPath},
-            revision::WorkflowRevision,
-        },
+        workflow::revision::WorkflowRevision,
     },
 };
 
-const IMAGE_DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
-fn workflow() -> WorkflowRevision {
-    let identity = WorkflowIdentity::new(
-        "repo-1",
-        WorkflowPath::parse("/.scope/runs/test.yml").unwrap(),
-    )
-    .unwrap();
-    let job = WorkflowJob::new(
-        WorkflowJobId::parse("checks").unwrap(),
-        vec![],
-        ContainerSpec::new(format!("rust@sha256:{IMAGE_DIGEST}")).unwrap(),
-        600,
-        vec![],
-        Default::default(),
-        vec![WorkflowStep::new("Test", "cargo test").unwrap()],
-    )
-    .unwrap();
-    WorkflowRevision::new(
-        identity,
-        CompiledWorkflow::new(
-            "Test",
-            WorkflowTriggers::new(true, false, false).unwrap(),
-            vec![job],
-        )
-        .unwrap(),
-    )
-    .unwrap()
+fn reject(
+    attempt: &mut RunAttempt,
+    run: &Run,
+    job: &mut RunJob,
+    steps: &mut [RunAttemptStep],
+    token: &str,
+    at: u64,
+) -> Result<(), DomainError> {
+    let message = SetupFailureMessage::new("provider full").unwrap();
+    attempt.reject_capacity(run, job, steps, &token.repeat(64), &message, at)
 }
 
-fn run(revision: &WorkflowRevision) -> Run {
-    Run::new(
-        "run-1",
-        "manual:test",
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::Manual,
-        Some("user-1".into()),
-        RunSource::ephemeral_git_bundle(SourceBlob {
-            content_ref: ContentRef::git_bundle_sha256("c".repeat(64)),
-            sha256: "c".repeat(64),
-            git_oid: "d".repeat(40),
-            git_file_mode: "100644".into(),
-            size_bytes: 42,
-        })
-        .unwrap(),
-        10,
-    )
-    .unwrap()
-}
-
-fn dispatched_attempt() -> (
-    WorkflowRevision,
-    Run,
-    RunJob,
-    RunAttempt,
-    Vec<RunAttemptStep>,
-) {
-    let revision = workflow();
-    let run = run(&revision);
-    let mut job = create_run_jobs(&run, &revision).unwrap().remove(0);
-    let (attempt, steps) = job
-        .dispatch(
-            &run,
-            revision.definition().only_job().unwrap(),
-            "attempt-1",
-            "b".repeat(64),
-            "runtime-1",
-            11,
-            911,
-        )
-        .unwrap();
-    (revision, run, job, attempt, steps)
+fn reconcile(run: &mut Run, job: &mut RunJob, revision: &WorkflowRevision, at: u64) {
+    reconcile_run(run, std::slice::from_mut(job), revision, at).unwrap();
 }
 
 #[test]
 fn capacity_rejection_retries_three_times_within_two_minutes() {
     let (revision, mut run, mut job, mut attempt, mut steps) = dispatched_attempt();
     for (rejection, at, due) in [(1, 12, 22), (2, 23, 53), (3, 54, 114), (4, 115, 0)] {
-        attempt
-            .reject_capacity(
-                &run,
-                &mut job,
-                &mut steps,
-                &"b".repeat(64),
-                &SetupFailureMessage::new("provider full").unwrap(),
-                at,
-            )
-            .unwrap();
-        attempt
-            .reject_capacity(
-                &run,
-                &mut job,
-                &mut steps,
-                &"b".repeat(64),
-                &SetupFailureMessage::new("provider full").unwrap(),
-                at,
-            )
-            .unwrap();
+        reject(&mut attempt, &run, &mut job, &mut steps, "b", at).unwrap();
+        reject(&mut attempt, &run, &mut job, &mut steps, "b", at).unwrap();
         assert_eq!(job.capacity_retry.as_ref().unwrap().rejections, rejection);
-        reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, at).unwrap();
+        reconcile(&mut run, &mut job, &revision, at);
         if rejection == 4 {
             assert_eq!(job.state, RunJobState::Failed);
             assert_eq!(run.state, RunState::Failed);
@@ -129,31 +44,28 @@ fn capacity_rejection_retries_three_times_within_two_minutes() {
             Some(due)
         );
         assert!(
-            job.dispatch(
+            dispatch(
+                &mut job,
                 &run,
-                revision.definition().only_job().unwrap(),
+                &revision,
                 format!("early-{rejection}"),
-                "b".repeat(64),
-                "runtime",
                 due - 1,
                 due + 900
             )
             .is_err()
         );
-        let dispatched = job
-            .dispatch(
-                &run,
-                revision.definition().only_job().unwrap(),
-                format!("attempt-{}", rejection + 1),
-                "b".repeat(64),
-                "runtime",
-                due,
-                due + 900,
-            )
-            .unwrap();
+        let dispatched = dispatch(
+            &mut job,
+            &run,
+            &revision,
+            format!("attempt-{}", rejection + 1),
+            due,
+            due + 900,
+        )
+        .unwrap();
         attempt = dispatched.0;
         steps = dispatched.1;
-        reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, due).unwrap();
+        reconcile(&mut run, &mut job, &revision, due);
     }
     crate::runs::job::retry_run(&mut run, std::slice::from_mut(&mut job), &revision, 116).unwrap();
     assert!(job.capacity_retry.is_none());
@@ -163,51 +75,32 @@ fn capacity_rejection_retries_three_times_within_two_minutes() {
 #[test]
 fn capacity_retry_expires_and_cancellation_prevents_rejection() {
     let (revision, mut run, mut job, mut attempt, mut steps) = dispatched_attempt();
-    attempt
-        .reject_capacity(
-            &run,
-            &mut job,
-            &mut steps,
-            &"b".repeat(64),
-            &SetupFailureMessage::new("provider full").unwrap(),
-            12,
-        )
-        .unwrap();
-    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 12).unwrap();
+    reject(&mut attempt, &run, &mut job, &mut steps, "b", 12).unwrap();
+    reconcile(&mut run, &mut job, &revision, 12);
     assert!(!job.expire_capacity_retry(131).unwrap());
     assert!(job.expire_capacity_retry(132).unwrap());
-    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 132).unwrap();
+    reconcile(&mut run, &mut job, &revision, 132);
     assert_eq!(run.state, RunState::Failed);
 
     let (_, mut canceled_run, mut canceled_job, mut canceled_attempt, mut canceled_steps) =
         dispatched_attempt();
     canceled_run.cancellation_requested = true;
     assert!(
-        canceled_attempt
-            .reject_capacity(
-                &canceled_run,
-                &mut canceled_job,
-                &mut canceled_steps,
-                &"b".repeat(64),
-                &SetupFailureMessage::new("provider full").unwrap(),
-                12
-            )
-            .is_err()
+        reject(
+            &mut canceled_attempt,
+            &canceled_run,
+            &mut canceled_job,
+            &mut canceled_steps,
+            "b",
+            12
+        )
+        .is_err()
     );
     assert!(canceled_job.capacity_retry.is_none());
 
     let (revision, mut run, mut job, mut attempt, mut steps) = dispatched_attempt();
-    attempt
-        .reject_capacity(
-            &run,
-            &mut job,
-            &mut steps,
-            &"b".repeat(64),
-            &SetupFailureMessage::new("provider full").unwrap(),
-            12,
-        )
-        .unwrap();
-    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 12).unwrap();
+    reject(&mut attempt, &run, &mut job, &mut steps, "b", 12).unwrap();
+    reconcile(&mut run, &mut job, &revision, 12);
     request_run_cancellation(&mut run, std::slice::from_mut(&mut job), 13).unwrap();
     assert_eq!(job.state, RunJobState::Canceled);
     assert_eq!(
@@ -219,39 +112,12 @@ fn capacity_retry_expires_and_cancellation_prevents_rejection() {
 #[test]
 fn capacity_rejection_stops_when_next_delay_exceeds_window() {
     let (revision, mut run, mut job, mut first, mut steps) = dispatched_attempt();
-    first
-        .reject_capacity(
-            &run,
-            &mut job,
-            &mut steps,
-            &"b".repeat(64),
-            &SetupFailureMessage::new("provider full").unwrap(),
-            12,
-        )
-        .unwrap();
-    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 12).unwrap();
-    let (mut second, mut second_steps) = job
-        .dispatch(
-            &run,
-            revision.definition().only_job().unwrap(),
-            "attempt-2",
-            "c".repeat(64),
-            "runtime",
-            100,
-            200,
-        )
-        .unwrap();
-    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 100).unwrap();
-    second
-        .reject_capacity(
-            &run,
-            &mut job,
-            &mut second_steps,
-            &"c".repeat(64),
-            &SetupFailureMessage::new("provider full").unwrap(),
-            103,
-        )
-        .unwrap();
+    reject(&mut first, &run, &mut job, &mut steps, "b", 12).unwrap();
+    reconcile(&mut run, &mut job, &revision, 12);
+    let (mut second, mut second_steps) =
+        dispatch(&mut job, &run, &revision, "attempt-2", 100, 200).unwrap();
+    reconcile(&mut run, &mut job, &revision, 100);
+    reject(&mut second, &run, &mut job, &mut second_steps, "b", 103).unwrap();
     assert_eq!(job.state, RunJobState::Failed);
     assert_eq!(job.capacity_retry.as_ref().unwrap().rejections, 2);
 }
@@ -259,7 +125,7 @@ fn capacity_rejection_stops_when_next_delay_exceeds_window() {
 #[test]
 fn cloud_dispatch_pins_the_workflow_image_and_rotates_the_bootstrap_credential() {
     let (revision, mut run, mut job, mut attempt, steps) = dispatched_attempt();
-    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 11).unwrap();
+    reconcile(&mut run, &mut job, &revision, 11);
 
     assert_eq!(job.state, RunJobState::Dispatching);
     assert_eq!(run.state, RunState::Dispatching);
@@ -286,14 +152,14 @@ fn cloud_dispatch_pins_the_workflow_image_and_rotates_the_bootstrap_credential()
 #[test]
 fn successful_attempt_finishes_only_after_runtime_finalization() {
     let (revision, mut run, mut job, mut attempt, mut steps) = dispatched_attempt();
-    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 11).unwrap();
+    reconcile(&mut run, &mut job, &revision, 11);
     attempt
         .claim_runtime(&job, &"b".repeat(64), "a".repeat(64), 12, 102)
         .unwrap();
     attempt
         .start_step(&run, &mut job, &mut steps, &"a".repeat(64), 0, 13)
         .unwrap();
-    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 13).unwrap();
+    reconcile(&mut run, &mut job, &revision, 13);
     attempt
         .complete_step(
             &mut job,
@@ -353,7 +219,7 @@ fn successful_attempt_finishes_only_after_runtime_finalization() {
             15,
         )
         .unwrap();
-    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 15).unwrap();
+    reconcile(&mut run, &mut job, &revision, 15);
 
     assert_eq!(attempt.state, AttemptState::Succeeded);
     assert_eq!(job.state, RunJobState::Succeeded);
@@ -382,7 +248,7 @@ fn provider_confirmed_abort_terminalizes_a_running_attempt_as_canceled() {
     attempt
         .confirm_provider_cancellation(&run, &mut job, &mut steps, 15)
         .unwrap();
-    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 15).unwrap();
+    reconcile(&mut run, &mut job, &revision, 15);
 
     assert_eq!(attempt.state, AttemptState::Canceled);
     assert_eq!(job.state, RunJobState::Canceled);
@@ -394,20 +260,11 @@ fn provider_confirmed_abort_terminalizes_a_running_attempt_as_canceled() {
 fn maximum_attempt_age_expires_even_a_renewed_lease() {
     let revision = workflow();
     let run = run(&revision);
-    let definition = revision.definition().only_job().unwrap();
     let mut job = create_run_jobs(&run, &revision).unwrap().remove(0);
     let created_at = 11;
-    let (mut attempt, mut steps) = job
-        .dispatch(
-            &run,
-            definition,
-            "attempt-1",
-            "b".repeat(64),
-            "runtime-1",
-            created_at,
-            created_at + MAX_RUN_ATTEMPT_AGE_SECONDS + 100,
-        )
-        .unwrap();
+    let lease = created_at + MAX_RUN_ATTEMPT_AGE_SECONDS + 100;
+    let (mut attempt, mut steps) =
+        dispatch(&mut job, &run, &revision, "attempt-1", created_at, lease).unwrap();
 
     assert!(
         attempt
@@ -439,19 +296,10 @@ fn final_pre_start_loss_is_terminal_but_penultimate_loss_requeues() {
         let mut run = run(&revision);
         let mut job = create_run_jobs(&run, &revision).unwrap().remove(0);
         job.last_attempt_number = number - 1;
-        let (mut attempt, mut steps) = job
-            .dispatch(
-                &run,
-                revision.definition().only_job().unwrap(),
-                "last-attempt",
-                "b".repeat(64),
-                "runtime",
-                11,
-                12,
-            )
-            .unwrap();
+        let (mut attempt, mut steps) =
+            dispatch(&mut job, &run, &revision, "last-attempt", 11, 12).unwrap();
         attempt.expire(&run, &mut job, &mut steps, 12).unwrap();
-        reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 12).unwrap();
+        reconcile(&mut run, &mut job, &revision, 12);
         attempt.validate_execution(&steps).unwrap();
         if number == MAX_RUN_ATTEMPTS {
             assert_eq!(job.state, RunJobState::Lost);
@@ -484,20 +332,11 @@ fn cancellation_wins_over_pre_start_attempt_exhaustion() {
     let mut run = run(&revision);
     let mut job = create_run_jobs(&run, &revision).unwrap().remove(0);
     job.last_attempt_number = MAX_RUN_ATTEMPTS - 1;
-    let (mut attempt, mut steps) = job
-        .dispatch(
-            &run,
-            revision.definition().only_job().unwrap(),
-            "last-attempt",
-            "b".repeat(64),
-            "runtime",
-            11,
-            12,
-        )
-        .unwrap();
+    let (mut attempt, mut steps) =
+        dispatch(&mut job, &run, &revision, "last-attempt", 11, 12).unwrap();
     request_run_cancellation(&mut run, std::slice::from_mut(&mut job), 11).unwrap();
     attempt.expire(&run, &mut job, &mut steps, 12).unwrap();
-    reconcile_run(&mut run, std::slice::from_mut(&mut job), &revision, 12).unwrap();
+    reconcile(&mut run, &mut job, &revision, 12);
     assert_eq!(job.state, RunJobState::Canceled);
     assert_eq!(run.state, RunState::Canceled);
     assert!(!crate::runs::job::can_retry_run(&run, &[job]));

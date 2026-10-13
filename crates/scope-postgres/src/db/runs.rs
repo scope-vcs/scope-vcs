@@ -5,8 +5,7 @@ use super::{
     native_runs::lock_native_runs_availability,
     object_references::insert_object_reference,
     run_attempt_persistence::{
-        attempt_run_id, locked_attempt_steps, locked_heartbeat_context, locked_jobs, locked_run,
-        run_repository, save_attempt, save_attempt_steps, save_jobs, save_run,
+        locked_attempt_context, locked_jobs, locked_run, save_attempt, save_jobs, save_run,
     },
 };
 use crate::error::PostgresError;
@@ -14,7 +13,7 @@ use scope_domain::{
     repository::RepositoryIncarnation,
     runs::{
         attempt::RunAttempt,
-        job::{RunJob, create_run_jobs, reconcile_run, request_run_cancellation, retry_run},
+        job::{RunJob, create_run_jobs, request_run_cancellation, retry_run},
         run::Run,
         step::{AttemptConclusion, RunAttemptStep},
         workflow::revision::WorkflowRevision,
@@ -71,15 +70,15 @@ impl RunStore {
         token_hash: &str,
         now_unix: u64,
         lease_expires_at_unix: u64,
-    ) -> Result<bool, PostgresError> {
+    ) -> Result<(RunAttempt, bool), PostgresError> {
         let tx = self.db.begin().await?;
-        let (run, job, mut attempt) = locked_heartbeat_context(&tx, attempt_id).await?;
+        let (run, job, mut attempt) = locked_attempt_context(&tx, attempt_id).await?;
         let cancellation_requested = attempt
             .heartbeat(&run, &job, token_hash, now_unix, lease_expires_at_unix)
             .map_err(PostgresError::from)?;
         save_attempt(&tx, &attempt).await?;
         tx.commit().await?;
-        Ok(cancellation_requested)
+        Ok((attempt, cancellation_requested))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_attempt"))]
@@ -91,25 +90,18 @@ impl RunStore {
         logs_truncated: bool,
         now_unix: u64,
     ) -> Result<AttemptMutation, PostgresError> {
-        let mut transitioned = false;
-        let claim = self
-            .mutate_attempt(attempt_id, |run, job, attempt, steps| {
-                transitioned = !attempt.state.is_terminal();
-                attempt.complete(
-                    run,
-                    job,
-                    steps,
-                    token_hash,
-                    conclusion,
-                    logs_truncated,
-                    now_unix,
-                )
-            })
-            .await?;
-        Ok(AttemptMutation {
-            claim,
-            transitioned,
+        self.mutate_attempt(attempt_id, |run, job, attempt, steps| {
+            attempt.complete(
+                run,
+                job,
+                steps,
+                token_hash,
+                conclusion,
+                logs_truncated,
+                now_unix,
+            )
         })
+        .await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "reject_capacity_attempt"))]
@@ -120,17 +112,10 @@ impl RunStore {
         message: &scope_domain::runs::step::SetupFailureMessage,
         now_unix: u64,
     ) -> Result<AttemptMutation, PostgresError> {
-        let mut transitioned = false;
-        let claim = self
-            .mutate_attempt(attempt_id, |run, job, attempt, steps| {
-                transitioned = !attempt.state.is_terminal();
-                attempt.reject_capacity(run, job, steps, token_hash, message, now_unix)
-            })
-            .await?;
-        Ok(AttemptMutation {
-            claim,
-            transitioned,
+        self.mutate_attempt(attempt_id, |run, job, attempt, steps| {
+            attempt.reject_capacity(run, job, steps, token_hash, message, now_unix)
         })
+        .await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "abandon_attempt"))]
@@ -140,17 +125,10 @@ impl RunStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<AttemptMutation, PostgresError> {
-        let mut transitioned = false;
-        let claim = self
-            .mutate_attempt(attempt_id, |run, job, attempt, steps| {
-                transitioned = !attempt.state.is_terminal();
-                attempt.abandon(run, job, steps, token_hash, now_unix)
-            })
-            .await?;
-        Ok(AttemptMutation {
-            claim,
-            transitioned,
+        self.mutate_attempt(attempt_id, |run, job, attempt, steps| {
+            attempt.abandon(run, job, steps, token_hash, now_unix)
         })
+        .await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "confirm_provider_cancellation"))]
@@ -159,20 +137,10 @@ impl RunStore {
         attempt_id: &str,
         now_unix: u64,
     ) -> Result<AttemptMutation, PostgresError> {
-        let mut transitioned = false;
-        let claim = self
-            .mutate_attempt(attempt_id, |run, job, attempt, steps| {
-                transitioned = !(attempt.state
-                    == scope_domain::runs::attempt::AttemptState::Canceled
-                    && job.state == scope_domain::runs::job::RunJobState::Canceled
-                    && job.current_attempt_id.is_none());
-                attempt.confirm_provider_cancellation(run, job, steps, now_unix)
-            })
-            .await?;
-        Ok(AttemptMutation {
-            claim,
-            transitioned,
+        self.mutate_attempt(attempt_id, |run, job, attempt, steps| {
+            attempt.confirm_provider_cancellation(run, job, steps, now_unix)
         })
+        .await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "expire_attempt"))]
@@ -181,53 +149,10 @@ impl RunStore {
         attempt_id: &str,
         now_unix: u64,
     ) -> Result<AttemptMutation, PostgresError> {
-        let tx = self.db.begin().await?;
-        let guard_run_id = attempt_run_id(&tx, attempt_id).await?;
-        let active_auto_merge =
-            super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &guard_run_id).await?;
-        let mut jobs = locked_jobs(&tx, &guard_run_id).await?;
-        let mut run = locked_run(&tx, &guard_run_id).await?;
-        let mut attempt = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
-            .lock_exclusive()
-            .one(&tx)
-            .await?
-            .ok_or_else(|| PostgresError::not_found("run attempt not found"))?
-            .try_into_domain()?;
-        let mut steps = locked_attempt_steps(&tx, attempt_id).await?;
-        let job = jobs
-            .iter_mut()
-            .find(|job| job.key == attempt.job_key)
-            .ok_or_else(|| PostgresError::internal_message("run attempt job is missing"))?;
-        let transitioned = !attempt.state.is_terminal();
-        attempt
-            .expire(&run, job, &mut steps, now_unix)
-            .map_err(PostgresError::from)?;
-        let workflow_revision = workflow_revision_for_run(&tx, &run).await?;
-        reconcile_run(&mut run, &mut jobs, &workflow_revision, now_unix)
-            .map_err(PostgresError::from)?;
-        save_attempt(&tx, &attempt).await?;
-        save_attempt_steps(&tx, &steps).await?;
-        save_jobs(&tx, &jobs).await?;
-        save_run(&tx, &run).await?;
-        super::request_auto_merge::stop_auto_merge_for_terminal_run(&tx, active_auto_merge, &run)
-            .await?;
-        let repository = run_repository(&tx, &run).await?;
-        tx.commit().await?;
-        let job = jobs
-            .into_iter()
-            .find(|job| job.key == attempt.job_key)
-            .ok_or_else(|| PostgresError::internal_message("run attempt job is missing"))?;
-        Ok(AttemptMutation {
-            claim: DispatchClaim {
-                repository,
-                run,
-                job,
-                attempt,
-                steps,
-                workflow_revision,
-            },
-            transitioned,
+        self.mutate_attempt(attempt_id, |run, job, attempt, steps| {
+            attempt.expire(run, job, steps, now_unix)
         })
+        .await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "expired_attempt_ids"))]

@@ -6,6 +6,11 @@ use scope_domain::{
     policy::ScopePath,
     projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repository::{RepoLifecycleState, Repository},
+    runs::{
+        run::Run,
+        source::{RunSource, RunTrigger},
+        workflow::revision::WorkflowRevision,
+    },
     views::ViewId,
 };
 
@@ -74,6 +79,31 @@ pub fn source_blob(git_oid: &str, sha256: &str, size_bytes: u64) -> SourceBlob {
         git_file_mode: "100644".into(),
         size_bytes,
     }
+}
+
+pub fn manual_workflow(repository_id: &str) -> WorkflowRevision {
+    let image = format!("rust@sha256:{}", "a".repeat(64));
+    let yaml = format!(
+        "name: Test\non: {{ manual: true }}\ncontainer: {{ image: {image} }}\ntimeout: 10m\njobs:\n  checks:\n    steps:\n      - {{ name: Test, run: cargo test }}\n"
+    );
+    scope_run_config::parse_workflow("/.scope/runs/test.yml", yaml.as_bytes())
+        .unwrap()
+        .into_revision(repository_id)
+        .unwrap()
+}
+
+pub fn manual_run(revision: &WorkflowRevision, id: &str, requester: &str) -> Run {
+    Run::new(
+        id,
+        id,
+        revision.workflow().clone(),
+        revision.digest(),
+        RunTrigger::Manual,
+        Some(requester.into()),
+        RunSource::ephemeral_git_bundle(source_blob(&"d".repeat(40), &"c".repeat(64), 42)).unwrap(),
+        10,
+    )
+    .unwrap()
 }
 
 pub fn canonical_commit(author_id: &str, index: usize, path: &str, label: ViewId) -> LogicalCommit {

@@ -94,7 +94,7 @@ mod run_resources;
 mod runtime_budgets;
 
 use auth_fixtures::*;
-use http::api_request;
+use http::{api_request, get};
 
 const TEST_REPO_OWNER: &str = "owner";
 const TEST_REPO_NAME: &str = "repo";

@@ -279,20 +279,7 @@ impl CacheStore {
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "upload"))]
     pub async fn upload(&self, upload_id: &str) -> Result<CacheUploadRecord, PostgresError> {
-        let row = self
-            .db
-            .query_one_raw(statement(
-                "SELECT upload_id, repository_id, identity_digest, compatibility_group_digest,
-                        checksum_sha256,
-                        storage_backend, object_key, size_bytes,
-                        state, created_at_unix, expires_at_unix
-                 FROM scope_cache_uploads
-                 WHERE upload_id = $1 AND state IN ('active', 'committed')",
-                vec![upload_id.into()],
-            ))
-            .await?
-            .ok_or_else(|| PostgresError::not_found("cache upload lease not found"))?;
-        decode_upload(&row)
+        live_upload(self.db.as_ref(), upload_id, "").await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "commit_upload"))]
@@ -303,19 +290,7 @@ impl CacheStore {
     ) -> Result<CacheCommitResult, PostgresError> {
         let now = u64_to_i64(now_unix, "current time")?;
         let tx = self.db.begin().await?;
-        let row = tx
-            .query_one_raw(statement(
-                "SELECT upload_id, repository_id, identity_digest, compatibility_group_digest,
-                        checksum_sha256,
-                        storage_backend, object_key, size_bytes,
-                        state, created_at_unix, expires_at_unix
-                 FROM scope_cache_uploads
-                 WHERE upload_id = $1 AND state IN ('active', 'committed') FOR UPDATE",
-                vec![upload_id.into()],
-            ))
-            .await?
-            .ok_or_else(|| PostgresError::not_found("cache upload lease not found"))?;
-        let upload = decode_upload(&row)?;
+        let upload = live_upload(&tx, upload_id, "FOR UPDATE").await?;
         lock_repository(&tx, &upload.repository_id).await?;
         let current =
             current_reference(&tx, &upload.repository_id, &upload.identity_digest).await?;
@@ -584,6 +559,27 @@ async fn insert_reference(
 
 fn cache_object_key(repository_id: &str, checksum_sha256: &str) -> String {
     format!("repos/{repository_id}/objects/sha256/{checksum_sha256}")
+}
+
+async fn live_upload(
+    conn: &impl ConnectionTrait,
+    upload_id: &str,
+    locking: &str,
+) -> Result<CacheUploadRecord, PostgresError> {
+    let row = conn
+        .query_one_raw(statement(
+            &format!(
+                "SELECT upload_id, repository_id, identity_digest, compatibility_group_digest,
+                        checksum_sha256, storage_backend, object_key, size_bytes,
+                        state, created_at_unix, expires_at_unix
+                 FROM scope_cache_uploads
+                 WHERE upload_id = $1 AND state IN ('active', 'committed') {locking}"
+            ),
+            vec![upload_id.into()],
+        ))
+        .await?
+        .ok_or_else(|| PostgresError::not_found("cache upload lease not found"))?;
+    decode_upload(&row)
 }
 
 fn statement(sql: &str, values: Vec<sea_orm::Value>) -> Statement {

@@ -63,13 +63,6 @@ async fn enqueue_history_run(
         .unwrap();
 }
 
-fn history_url(query: &str) -> String {
-    format!(
-        "{}?{query}",
-        scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME),
-    )
-}
-
 async fn assert_error(response: Response, status: StatusCode, message: &str) {
     assert_eq!(response.status(), status);
     assert_eq!(response_json(response).await["message"], message);
@@ -92,17 +85,15 @@ async fn owners_and_members_can_read_run_resources_before_the_first_push() {
                 serde_json::json!({"runs": [], "next_cursor": null}),
             ),
         ] {
-            let response = api_request(router(state.clone()), "GET", &url, Some(&auth), None).await;
+            let response = get(router(state.clone()), &url, Some(&auth)).await;
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(response_json(response).await, expected);
         }
         assert_error(
-            api_request(
+            get(
                 router(state.clone()),
-                "GET",
                 &history_url("workflow=test&after=invalid"),
                 Some(&auth),
-                None,
             )
             .await,
             StatusCode::BAD_REQUEST,
@@ -135,20 +126,20 @@ async fn run_resource_access_errors_precede_workflow_and_cursor_errors() {
     ] {
         let missing = format!("{}?{invalid_query}", route(TEST_REPO_OWNER, "missing"));
         assert_error(
-            api_request(router(state.clone()), "GET", &missing, None, None).await,
+            get(router(state.clone()), &missing, None).await,
             StatusCode::UNAUTHORIZED,
             "sign in required",
         )
         .await;
         assert_error(
-            api_request(router(state.clone()), "GET", &missing, Some(&public), None).await,
+            get(router(state.clone()), &missing, Some(&public)).await,
             StatusCode::NOT_FOUND,
             "repo owner/missing not found",
         )
         .await;
         let existing = format!("{}?{invalid_query}", route(TEST_REPO_OWNER, TEST_REPO_NAME));
         assert_error(
-            api_request(router(state.clone()), "GET", &existing, Some(&public), None).await,
+            get(router(state.clone()), &existing, Some(&public)).await,
             StatusCode::FORBIDDEN,
             "repo membership required",
         )
@@ -168,14 +159,7 @@ async fn workflow_selection_precedes_cursor_validation() {
         ("workflow=test&after=invalid", "invalid run history cursor"),
     ] {
         assert_error(
-            api_request(
-                router(state.clone()),
-                "GET",
-                &history_url(query),
-                Some(&auth),
-                None,
-            )
-            .await,
+            get(router(state.clone()), &history_url(query), Some(&auth)).await,
             StatusCode::BAD_REQUEST,
             message,
         )
@@ -187,24 +171,20 @@ async fn workflow_selection_precedes_cursor_validation() {
     for (initial_query, changed_query) in
         [("limit=1", "workflow=test"), ("workflow=test&limit=1", "")]
     {
-        let first = api_request(
+        let first = get(
             router(state.clone()),
-            "GET",
             &history_url(initial_query),
             Some(&auth),
-            None,
         )
         .await;
         assert_eq!(first.status(), StatusCode::OK);
         let first = response_json(first).await;
         let cursor = first["next_cursor"].as_str().unwrap();
         assert_error(
-            api_request(
+            get(
                 router(state.clone()),
-                "GET",
                 &history_url(&format!("{changed_query}&after={cursor}")),
                 Some(&auth),
-                None,
             )
             .await,
             StatusCode::BAD_REQUEST,
@@ -254,13 +234,7 @@ async fn all_run_resource_reads_ignore_locked_history_and_invitations() {
     for auth in &auths {
         let workflows = tokio::time::timeout(
             read_timeout,
-            api_request(
-                router(state.clone()),
-                "GET",
-                &workflows_url,
-                Some(auth),
-                None,
-            ),
+            get(router(state.clone()), &workflows_url, Some(auth)),
         )
         .await
         .expect("workflow lists must not wait for history or invitation tables");
@@ -278,13 +252,7 @@ async fn all_run_resource_reads_ignore_locked_history_and_invitations() {
         ] {
             let history = tokio::time::timeout(
                 read_timeout,
-                api_request(
-                    router(state.clone()),
-                    "GET",
-                    &history_url(query),
-                    Some(auth),
-                    None,
-                ),
+                get(router(state.clone()), &history_url(query), Some(auth)),
             )
             .await
             .expect("run history must not wait for repository history or invitation tables");
@@ -327,12 +295,10 @@ async fn unfiltered_history_does_not_read_or_validate_the_workflow_catalog() {
         .unwrap();
     let auth = bearer_header();
     assert_error(
-        api_request(
+        get(
             router(state.clone()),
-            "GET",
             &history_url("workflow=test&after=invalid"),
             Some(&auth),
-            None,
         )
         .await,
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -340,14 +306,7 @@ async fn unfiltered_history_does_not_read_or_validate_the_workflow_catalog() {
     )
     .await;
     for query in ["", "workflow=%20%20"] {
-        let response = api_request(
-            router(state.clone()),
-            "GET",
-            &history_url(query),
-            Some(&auth),
-            None,
-        )
-        .await;
+        let response = get(router(state.clone()), &history_url(query), Some(&auth)).await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(body["runs"].as_array().unwrap().len(), 1);
@@ -382,14 +341,7 @@ async fn invalid_workflow_catalogs_keep_their_errors_ahead_of_cursor_validation(
             history_url("workflow=test&after=invalid"),
         ] {
             assert_error(
-                api_request(
-                    router(state.clone()),
-                    "GET",
-                    &url,
-                    Some(&bearer_header()),
-                    None,
-                )
-                .await,
+                get(router(state.clone()), &url, Some(&bearer_header())).await,
                 StatusCode::BAD_REQUEST,
                 &message,
             )
@@ -415,14 +367,7 @@ async fn catalog_without_an_accepted_head_fails_before_cursor_validation() {
         history_url("workflow=test&after=invalid"),
     ] {
         assert_error(
-            api_request(
-                router(state.clone()),
-                "GET",
-                &url,
-                Some(&bearer_header()),
-                None,
-            )
-            .await,
+            get(router(state.clone()), &url, Some(&bearer_header())).await,
             StatusCode::INTERNAL_SERVER_ERROR,
             "Scope hit an internal error.",
         )
@@ -452,14 +397,7 @@ async fn run_history_keeps_page_limits_and_creation_sequence_order() {
         ("limit=101", 100),
         ("workflow=%20test%20&limit=100", 100),
     ] {
-        let response = api_request(
-            router(state.clone()),
-            "GET",
-            &history_url(query),
-            Some(&auth),
-            None,
-        )
-        .await;
+        let response = get(router(state.clone()), &history_url(query), Some(&auth)).await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         let runs = body["runs"].as_array().unwrap();
@@ -472,14 +410,7 @@ async fn run_history_keeps_page_limits_and_creation_sequence_order() {
         let cursor = body["next_cursor"].as_str().unwrap();
         if expected_len == 100 {
             let query = format!("{query}&after={cursor}");
-            let last = api_request(
-                router(state.clone()),
-                "GET",
-                &history_url(&query),
-                Some(&auth),
-                None,
-            )
-            .await;
+            let last = get(router(state.clone()), &history_url(&query), Some(&auth)).await;
             assert_eq!(last.status(), StatusCode::OK);
             let last = response_json(last).await;
             assert_eq!(last["runs"].as_array().unwrap().len(), 1);
@@ -511,18 +442,16 @@ async fn run_history_filters_source_revisions_before_pagination() {
     let auth = bearer_header();
     for workflow_filter in ["", "workflow=test&"] {
         let query = format!("{workflow_filter}git_oid={matching_oid}&limit=1");
-        let first = api_request(app.clone(), "GET", &history_url(&query), Some(&auth), None).await;
+        let first = get(app.clone(), &history_url(&query), Some(&auth)).await;
         assert_eq!(first.status(), StatusCode::OK);
         let first = response_json(first).await;
         assert_eq!(first["runs"].as_array().unwrap().len(), 1);
         assert_eq!(first["runs"][0]["id"], "matching_new");
         let cursor = first["next_cursor"].as_str().unwrap();
-        let second = api_request(
+        let second = get(
             app.clone(),
-            "GET",
             &history_url(&format!("{query}&after={cursor}")),
             Some(&auth),
-            None,
         )
         .await;
         assert_eq!(second.status(), StatusCode::OK);
@@ -535,8 +464,7 @@ async fn run_history_filters_source_revisions_before_pagination() {
             format!("{workflow_filter}git_oid={other_oid}&after={cursor}"),
             format!("{workflow_filter}after={cursor}"),
         ] {
-            let response =
-                api_request(app.clone(), "GET", &history_url(&query), Some(&auth), None).await;
+            let response = get(app.clone(), &history_url(&query), Some(&auth)).await;
             assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{query}");
         }
     }

@@ -59,16 +59,11 @@ async fn run_attempt_details_with<C>(
 where
     C: ConnectionTrait,
 {
-    let max_attempts = u64::from(MAX_RUN_ATTEMPTS)
-        .checked_mul(u64::try_from(MAX_WORKFLOW_JOBS).map_err(|_| {
-            PostgresError::internal_message("workflow job limit does not fit the database query")
-        })?)
-        .ok_or_else(|| PostgresError::internal_message("run attempt query limit overflow"))?;
     let attempts = entities::run_attempt::Entity::find()
         .filter(entities::run_attempt::Column::RunId.eq(run_id))
         .order_by_desc(entities::run_attempt::Column::CreatedAtUnix)
         .order_by_desc(entities::run_attempt::Column::Number)
-        .limit(max_attempts)
+        .limit(MAX_RUN_ATTEMPTS as u64 * MAX_WORKFLOW_JOBS as u64)
         .all(conn)
         .await?;
     if attempts.is_empty() {
@@ -97,18 +92,14 @@ where
     let mut steps_by_attempt = HashMap::<String, Vec<RunAttemptStep>>::new();
     for step in step_models {
         let attempt_id = step.attempt_id.clone();
-        steps_by_attempt
-            .entry(attempt_id)
-            .or_default()
-            .push(step.try_into_domain()?);
+        let step = step.try_into_domain()?;
+        steps_by_attempt.entry(attempt_id).or_default().push(step);
     }
     let mut caches_by_attempt = HashMap::<String, Vec<AttemptCacheObservation>>::new();
     for cache in cache_models {
         let attempt_id = cache.attempt_id.clone();
-        caches_by_attempt
-            .entry(attempt_id)
-            .or_default()
-            .push(cache.try_into_domain()?);
+        let cache = cache.try_into_domain()?;
+        caches_by_attempt.entry(attempt_id).or_default().push(cache);
     }
     let mut cache_setups_by_attempt = cache_setup_models
         .into_iter()

@@ -1,5 +1,6 @@
 use super::run_resources::{
-    state_with_pushed_workflow_checkout, state_with_pushed_workflow_source,
+    head_bundle, manual_run_upload, state_with_pushed_workflow_checkout,
+    state_with_pushed_workflow_source,
 };
 use super::*;
 use scope_domain::views::ViewId;
@@ -77,30 +78,13 @@ async fn uploaded_manual_run_revocation_queues_cleanup_and_preserves_shared_sour
             })
             .await
             .unwrap();
-        let git_oid = git_head_oid(&checkout);
-        let bundle_path = checkout.join("source.bundle");
-        run_git(
-            Some(&checkout),
-            &["bundle", "create", bundle_path.to_str().unwrap(), "HEAD"],
-            "create uploaded authorization bundle",
-        )
-        .unwrap();
-        let bundle = fs::read(bundle_path).unwrap();
+        let (git_oid, bundle) = head_bundle(&checkout);
         let mut object =
             scope_storage::content_object_for_bytes(ContentObjectKind::GitBundle, &bundle);
         object.git_oid = git_oid.clone();
         let key = scope_storage::object_key(&object);
         let upload_request = |request_id: &str, auth: String| {
-            Request::builder()
-                .method("POST")
-                .uri(format!(
-                    "{}?workflow=test&git_oid={git_oid}&request_id={request_id}",
-                    scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME),
-                ))
-                .header(AUTHORIZATION, auth)
-                .header(CONTENT_TYPE, "application/octet-stream")
-                .body(Body::from(bundle.clone()))
-                .unwrap()
+            manual_run_upload(&git_oid, request_id, bundle.clone(), auth)
         };
         if shared_source {
             let response = router(state.clone())
@@ -402,12 +386,10 @@ async fn an_unlisted_owner_starts_no_manual_runs_and_hides_workflow_controls() {
     let (state, checkout) =
         state_with_pushed_workflow_checkout("manual-unlisted-owner", WORKFLOW).await;
     let workflows = expect_json(
-        api_request(
+        get(
             router(state.clone()),
-            "GET",
             &scope_api_contract::routes::repo_run_workflows(TEST_REPO_OWNER, TEST_REPO_NAME),
             Some(&bearer_header()),
-            None,
         )
         .await,
         StatusCode::OK,
@@ -432,22 +414,13 @@ async fn an_unlisted_owner_starts_no_manual_runs_and_hides_workflow_controls() {
         .await
         .unwrap();
     assert_eq!(resolved.status(), StatusCode::FORBIDDEN);
-    let uploaded = router(state.clone())
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!(
-                    "{}?workflow=test&git_oid={git_oid}&request_id={}",
-                    scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME),
-                    "88888888888888888888888888888888",
-                ))
-                .header(AUTHORIZATION, bearer_header())
-                .header(CONTENT_TYPE, "application/octet-stream")
-                .body(Body::from(b"not inspected".to_vec()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let upload = manual_run_upload(
+        &git_oid,
+        "88888888888888888888888888888888",
+        b"not inspected".to_vec(),
+        bearer_header(),
+    );
+    let uploaded = router(state.clone()).oneshot(upload).await.unwrap();
     let status = uploaded.status();
     assert_eq!(
         response_json(uploaded).await["message"],
@@ -462,12 +435,10 @@ async fn an_unlisted_owner_starts_no_manual_runs_and_hides_workflow_controls() {
     }
 
     let workflows = expect_json(
-        api_request(
+        get(
             router(state),
-            "GET",
             &scope_api_contract::routes::repo_run_workflows(TEST_REPO_OWNER, TEST_REPO_NAME),
             Some(&bearer_header()),
-            None,
         )
         .await,
         StatusCode::OK,
