@@ -355,7 +355,7 @@ function useRequestChangesModel({
   }
 
   return {
-    closeDiff: () => replaceSelection(selectedRevision, selectedCommitOid, null),
+    closeDiff: () => onSearchChange({ ...search, path: undefined, revision: selectedRevision?.id }),
     commits,
     commitState,
     mode,
@@ -369,7 +369,7 @@ function useRequestChangesModel({
       replaceSelection(selected?.revision ?? null, selected?.commitOid ?? null, null)
     },
     selectFile: (file: CommitFileResponse) =>
-      replaceSelection(selectedRevision, selectedCommitOid, file.path),
+      onSearchChange({ ...search, path: file.path, revision: selectedRevision?.id }),
     selectedCommitId: selectedCommit?.projected_id ?? selectedCommitId,
     selectedCommitOid,
     selectedCommitSummary,

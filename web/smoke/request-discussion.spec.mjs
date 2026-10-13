@@ -187,12 +187,12 @@ test('changes navigation preserves the request shell and collapsed replies', asy
     await waitForClientHydration(changesMenu)
     await changesMenu.click()
     const menu = page.getByRole('dialog', { name: 'Request changes' })
-    const revisions = menu.getByRole('link')
+    const revisions = menu.getByRole('link').filter({ hasText: /Revision \d+/ })
     await revisions.first().waitFor()
     const pushCount = await revisions.count()
     assert(pushCount > 1, 'expected more than one push')
     await menu.getByRole('searchbox', { name: 'Search revisions' }).fill('jitter')
-    await page.waitForFunction((count) => document.querySelectorAll('dialog[aria-label="Request changes"] a').length < count, pushCount)
+    await page.waitForFunction((count) => [...document.querySelectorAll('dialog[aria-label="Request changes"] a')].filter((link) => /Revision \d+/.test(link.textContent ?? '')).length < count, pushCount)
     const changesLink = revisions.first()
     const transitionServerFunctions = []
     const recordServerFunction = (request) => {

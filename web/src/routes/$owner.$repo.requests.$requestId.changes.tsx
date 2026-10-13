@@ -15,7 +15,7 @@ import {
   loadRequestDiscussionsForRequest,
 } from '@/features/requests/request-discussion-api'
 import { loadDiscussionReferencePage, selectedDiscussionReferenceQuery } from '@/features/requests/request-changes-discussion-references'
-import { requestChangesSelectionIdentity, retainPinnedRequestChanges } from '@/features/requests/request-changes-resource'
+import { requestChangesSelectionIdentity, requestChangesQuery, retainPinnedRequestChanges } from '@/features/requests/request-changes-resource'
 import { useRequestChangesResource } from '@/features/requests/use-request-changes-resource'
 import {
   RequestChangesWorkbench,
@@ -91,18 +91,16 @@ export const Route = createFileRoute(
   '/$owner/$repo/requests/$requestId/changes',
 )({
   validateSearch: (search: Record<string, unknown>): RequestChangesSearch => ({
-    comparison: search.comparison === 'push' ? 'push' : search.comparison === 'commit' || search.commit ? 'commit' : search.comparison === 'request' ? 'request' : undefined,
+    comparison: search.comparison === 'push' ? 'push' : search.comparison === 'commit' ? 'commit' : search.comparison === 'request' ? 'request' : search.commit ? 'commit' : undefined,
     commit: searchText(search.commit),
     path: parseRouteFilePathSearch(search.path),
     revision: searchText(search.revision),
   }),
-  loaderDeps: ({ search }) => ({ comparison: search.comparison, commit: search.commit, revision: search.revision }),
+  loaderDeps: ({ search }) => requestChangesQuery(search),
   loader: async ({ deps: selectionSearch, params }) => {
     const input = {
       ...requestParamsForRoute(params),
-      comparison: selectionSearch.comparison,
-      commit_oid: selectionSearch.commit,
-      revision_id: selectionSearch.revision,
+      ...selectionSearch,
     }
     if (typeof window !== 'undefined') return null
     return loadChangesPage({ data: input })
@@ -126,20 +124,23 @@ function RequestChangesRoute() {
   )
   const { userId, isLoaded } = useAuth()
   const scope = isLoaded ? repoResourceScope(live.repo, userId ?? null) : null
+  const allowRequestComparison = live.repo.access.view === views.full
+  const query = useMemo(
+    () => requestChangesQuery({ comparison: search.comparison, commit: search.commit, revision: search.revision }, allowRequestComparison ? 'request' : 'push'),
+    [allowRequestComparison, search.comparison, search.commit, search.revision],
+  )
   const identity = scope
-    ? requestChangesSelectionIdentity(scope, requestId, search.revision, search.commit, search.comparison)
+    ? requestChangesSelectionIdentity(scope, requestId, query.revision_id, query.commit_oid, query.comparison)
     : null
   const load = useCallback(
     (signal: AbortSignal) => loadRevisions({
       data: {
         ...requestParams,
-        comparison: search.comparison,
-        commit_oid: search.commit,
-        revision_id: search.revision,
+        ...query,
       },
       signal,
     }),
-    [requestParams, search.commit, search.revision, search.comparison],
+    [requestParams, query],
   )
   const { initial, resource } = useRequestChangesResource({
     access: JSON.stringify(live.repo.access),
@@ -153,12 +154,12 @@ function RequestChangesRoute() {
     ? requestChangeSelection(revisions.revisions, revisions.review_revision_id, search)
     : null
   const pin = useMemo(
-    () => requestRevisionPin(selection?.revision ?? null, search.comparison === 'commit' ? selection?.commit ?? null : null, search.revision),
-    [search.revision, selection?.commit, selection?.revision, search.comparison],
+    () => requestRevisionPin(selection?.revision ?? null, query.comparison === 'commit' ? selection?.commit ?? null : null, search.revision),
+    [search.revision, selection?.commit, selection?.revision, query.comparison],
   )
   useEffect(() => {
     if (!pin || !scope || !revisions) return
-    retainPinnedRequestChanges(scope, requestId, { ...pin, comparison: search.comparison }, revisions)
+    retainPinnedRequestChanges(scope, requestId, { ...pin, comparison: query.comparison }, revisions)
     void navigate({
       params,
       replace: true,
@@ -166,7 +167,7 @@ function RequestChangesRoute() {
       search: (current) => ({ ...current, ...pin }),
       to: '/$owner/$repo/requests/$requestId/changes',
     })
-  }, [navigate, params, pin, requestId, revisions, scope, search.comparison])
+  }, [navigate, params, pin, requestId, revisions, scope, query.comparison])
 
   if (!page.state) return null
 
@@ -181,7 +182,7 @@ function RequestChangesRoute() {
         ? (
             <RequestChangesWorkbench
               accessScope={scope}
-              allowRequestComparison={live.repo.access.view === views.full}
+              allowRequestComparison={allowRequestComparison}
               view={live.repo.access.view}
               initialDiscussionReferences={initial?.discussionReferences ?? { commitKey: null, page: null }}
               loadDiff={loadDiffForView}
