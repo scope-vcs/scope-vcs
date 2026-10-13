@@ -34,7 +34,7 @@ const SCHEMA_WAIT_RETRY_SECS: u64 = 2;
 
 fn main() -> anyhow::Result<()> {
     scope_git_process::install_pid1_reaper_if_needed()?;
-    let telemetry = init_telemetry("worker=info,scope_postgres=info")?;
+    let telemetry = init_telemetry("run-worker", "worker=info,scope_postgres=info")?;
     let result = run();
     telemetry.shutdown();
     result

@@ -14,7 +14,7 @@ pub async fn send_traced(
     route: &'static str,
 ) -> reqwest::Result<Response> {
     let (client, request) = request.build_split();
-    let mut request = request?;
+    let mut request = request.map_err(reqwest::Error::without_url)?;
     let span = tracing::info_span!(
         target: "scope_service_runtime",
         "HTTP request",
@@ -32,7 +32,7 @@ pub async fn send_traced(
         Ok(response) => response,
         Err(error) => {
             span.record("otel.status_code", "ERROR");
-            return Err(error);
+            return Err(error.without_url());
         }
     };
     span.record("http.response.status_code", response.status().as_u16());
@@ -104,6 +104,21 @@ mod tests {
     };
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tracing_subscriber::prelude::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn failed_requests_do_not_expose_signed_urls() {
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = closed.local_addr().unwrap();
+        drop(closed);
+        let error = send_traced(
+            reqwest::Client::new().head(format!("http://{address}/object?X-Amz-Signature=secret")),
+            "/{object_key}",
+        )
+        .await
+        .unwrap_err();
+        assert!(error.is_connect(), "{error}");
+        assert!(!error.to_string().contains("X-Amz-Signature"), "{error}");
+    }
 
     #[tokio::test(flavor = "current_thread")]
     async fn outbound_request_carries_current_trace_context() {

@@ -8,7 +8,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() -> anyhow::Result<()> {
     scope_git_process::install_pid1_reaper_if_needed()?;
-    let telemetry = init_telemetry("api=info,scope_postgres=info")?;
+    let telemetry = init_telemetry("api", "api=info,scope_postgres=info")?;
     let result = run();
     telemetry.shutdown();
     result

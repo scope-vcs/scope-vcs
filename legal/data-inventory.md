@@ -19,9 +19,11 @@ period.
 | Database recovery sets | AWS S3 `scope-recovery-*`, SSE-S3 encrypted | 42 days | S3 lifecycle in `deploy/aws/recovery/storage.yaml` |
 | Product analytics events | PostHog US project, through the web `/e` proxy and backend transport | PostHog project retention | PostHog; events are keyed by opaque `scope_usr_…` IDs that become unlinkable once the user row is deleted |
 | Server logs: request method, path, timing, errors; Railway HTTP logs also record client IP addresses | Railway logs | Railway log retention | Railway |
+| Application logs and request traces: service log lines, which can include repository names, file paths and error details; spans with internal IDs, routes and timing | PostHog US project, sent by each service over OpenTelemetry | PostHog log and trace retention, 14 days by default | PostHog |
 
 The analytics collection contract, including excluded fields, is in
-[docs/product-analytics.md](../docs/product-analytics.md).
+[docs/product-analytics.md](../docs/product-analytics.md). What services export
+as logs and traces is in [docs/observability.md](../docs/observability.md).
 
 ## Browser storage
 
@@ -43,7 +45,7 @@ requires a consent mechanism first.
 | Clerk | Authentication | US |
 | Railway | Hosting, Postgres, object storage, logs | US |
 | Amazon Web Services | Workflow runners, recovery backups, audit logs | us-east-1 |
-| PostHog | Product analytics | US |
+| PostHog | Product analytics, application logs and traces | US |
 | Resend | Invitation email | US |
 
 Vercel hosts DNS for scopevcs.com and receives no user data.

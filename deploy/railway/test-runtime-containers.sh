@@ -10,7 +10,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$context/bin" "$context/.output/server"
+mkdir -p "$context/bin" "$context/.output/server/_instrumentation"
 cat > "$context/bin/scope-worker" <<'SH'
 #!/bin/sh
 set -eu
@@ -89,6 +89,7 @@ const scratch = mkdtempSync(join(tmpdir(), 'scope-web-'));
 writeFileSync(join(scratch, 'probe'), 'ok');
 rmSync(scratch, { recursive: true });
 JS
+printf 'export {}\n' > "$context/.output/server/_instrumentation/instrumentation.mjs"
 printf 'permission-test\n' > "$context/.scope-deployment-sha"
 docker build -f "$repo_root/deploy/railway/web.Dockerfile" \
   -t "$image_prefix-web" "$context"
