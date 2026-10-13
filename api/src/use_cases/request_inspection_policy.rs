@@ -29,6 +29,9 @@ pub(crate) fn resolve_revision(
 ) -> Result<Policy, ApiError> {
     let mut paths = BTreeSet::new();
     let comparison = scope_domain::requests::RequestComparison::push(revision, reader.clone());
+    let push_base =
+        super::request_revision_inspection::request_comparison_base_oid(raw_repo, &comparison)?
+            .expect("push base exists");
     let mut commits = super::request_revision_inspection::request_revision_commit_oids(
         raw_repo,
         &comparison,
@@ -62,7 +65,7 @@ pub(crate) fn resolve_revision(
     )?;
     collect_paths(
         raw_repo,
-        &[&revision.old_head_oid, &revision.new_head_oid],
+        &[&push_base, &revision.new_head_oid],
         None,
         &mut paths,
     )?;
