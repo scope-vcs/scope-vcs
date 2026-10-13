@@ -23,7 +23,7 @@ pub(super) async fn merged_event_stream(state: &AppState) -> axum::body::BodyDat
 
 pub(super) async fn assert_merged_event(
     stream: &mut axum::body::BodyDataStream,
-    request_id: &str,
+    expected_version: u64,
     private_oid: &str,
 ) {
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
@@ -31,8 +31,12 @@ pub(super) async fn assert_merged_event(
             let event = stream.next().await.unwrap().unwrap();
             let event = String::from_utf8(event.to_vec()).unwrap();
             assert!(!event.contains(private_oid), "{event}");
-            if event.contains("RequestStateChanged") && event.contains(request_id) {
-                assert!(event.contains(request_id), "{event}");
+            let Some(data) = event.lines().find_map(|line| line.strip_prefix("data:")) else {
+                continue;
+            };
+            let data: serde_json::Value = serde_json::from_str(data.trim()).unwrap();
+            if data["kind"]["RepositoryChanged"]["reason"] == "request-merged" {
+                assert_eq!(data["version"], expected_version);
                 return;
             }
         }
