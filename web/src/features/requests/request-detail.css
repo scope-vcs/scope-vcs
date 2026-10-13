@@ -66,33 +66,7 @@
 }
 
 .request-detail-document {
-  position: relative;
   min-width: 0;
-}
-
-.request-detail-document::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0 0 auto;
-  height: 90px;
-  content: '';
-  pointer-events: none;
-}
-
-.request-detail-document[data-state='Merged']::before {
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--success) 10%, transparent),
-    transparent
-  );
-}
-
-.request-detail-document[data-state='Closed']::before {
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--muted-foreground) 10%, transparent),
-    transparent
-  );
 }
 
 @media (max-width: 700px) {

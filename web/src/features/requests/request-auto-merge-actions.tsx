@@ -125,10 +125,10 @@ export function RequestAutoMergeActions({
             Scope will merge “{request.title}” when this exact revision’s required CI passes and it is ready to merge.
             A new push ends this authorization.
           </p>
-          <dl className="grid min-w-0 gap-1 font-mono text-xs">
+          <dl className="grid min-w-0 gap-1 text-xs">
             <div className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
               <dt>Commit</dt>
-              <dd className="break-all text-foreground">{dialog.expectedHeadOid}</dd>
+              <dd className="break-all font-mono text-foreground">{dialog.expectedHeadOid}</dd>
             </div>
           </dl>
         </RequestConfirmDialog>

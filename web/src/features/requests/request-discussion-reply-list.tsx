@@ -275,7 +275,7 @@ function DiscussionBoundary({
   return (
     <div
       className={cn(
-        'my-3 flex items-center gap-3 text-[11px] font-semibold',
+        'my-3 flex items-center gap-3 text-xs font-semibold',
         unread ? 'text-foreground' : 'text-muted-foreground',
       )}
     >

@@ -39,7 +39,7 @@ export function RequestChecksSection({
       aria-label="CI"
       className={CHECKS_SECTION_CLASS}
     >
-      <h2 className="label-mono text-muted-foreground">CI</h2>
+      <h2 className="section-label">CI</h2>
       {error ? (
         <p className="mt-2 text-[13px] text-danger-strong" role="alert">
           {error}
@@ -58,7 +58,7 @@ export function RequestChecksSection({
             {summary.lead.text}
           </span>
           {summary.counts ? (
-            <span className="font-mono text-xs text-muted-foreground">· {summary.counts}</span>
+            <span className="text-xs text-muted-foreground">· {summary.counts}</span>
           ) : null}
         </p>
       ) : null}
@@ -83,7 +83,7 @@ export function RequestChecksSection({
         <button
           aria-controls={expanded ? listId : undefined}
           aria-expanded={expanded}
-          className="mt-1.5 flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground"
+          className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           onClick={() => setExpanded((open) => !open)}
           type="button"
         >

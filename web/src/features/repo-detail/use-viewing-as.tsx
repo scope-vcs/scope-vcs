@@ -2,7 +2,7 @@ import type { ViewId } from '@/api/types.generated'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useCallback } from 'react'
 import { useRepoLayout, useRepoViews } from './repo-layout-context'
-import { resolveViewingAs, viewingAsSearch } from './viewing-as'
+import { resolveViewingAs, viewHasMixedVisibility, viewingAsSearch } from './viewing-as'
 import { ViewingAsPicker } from './viewing-as-picker'
 
 export function useViewingAs() {
@@ -19,11 +19,13 @@ export function useViewingAs() {
     }),
     [navigate, reader],
   )
+  const view = resolveViewingAs(views, reader, requested)
   return {
+    hasMixedVisibility: viewHasMixedVisibility(views, view),
     options: views.readableBy(reader),
     reader,
     select,
-    view: resolveViewingAs(views, reader, requested),
+    view,
   }
 }
 

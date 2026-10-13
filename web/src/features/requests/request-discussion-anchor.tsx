@@ -31,7 +31,7 @@ export function RequestDiscussionAnchor({
       to="/$owner/$repo/requests/$requestId/changes"
     >
       <GitCommit aria-hidden="true" className="size-3.5" />
-      <span aria-hidden="true" className="font-mono text-[11px]">rev {anchor.revision_position}</span>
+      <span aria-hidden="true" className="text-xs">rev {anchor.revision_position}</span>
     </Link>
   )
 }

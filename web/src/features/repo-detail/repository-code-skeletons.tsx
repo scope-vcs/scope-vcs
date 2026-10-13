@@ -18,13 +18,13 @@ const PENDING_SOURCE_LINES: { id: string; length: LineSkeletonLength }[] = [
   { id: 'ninth', length: 'short' },
 ]
 
-export function FileNavigatorSkeleton() {
+export function FileNavigatorSkeleton({ showVisibility = true }: { showVisibility?: boolean }) {
   return (
     <div>
       <div className="mb-2 px-1">
         <BlockSkeleton className="h-8 w-full" />
       </div>
-      <FileSystemTreeSkeleton metaColumnLabel={null} />
+      <FileSystemTreeSkeleton metaColumnLabel={null} showVisibility={showVisibility} />
     </div>
   )
 }
@@ -44,7 +44,7 @@ export function SourceCodeSkeleton() {
 
 export function SourceTabStripSkeleton() {
   return (
-    <div className="flex min-h-10 items-center border-b border-border px-3">
+    <div className="flex min-h-10 items-center px-3">
       <TextSkeleton length="short" size="meta" />
     </div>
   )

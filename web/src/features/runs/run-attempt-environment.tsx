@@ -87,7 +87,7 @@ export function RunEnvironmentPanel({
         </div>
       ))}
       <div className={ENVIRONMENT_ROW_CLASS}>
-        <span className="font-mono">image</span>
+        <span>Image</span>
         <code
           className="col-span-2 truncate text-muted-foreground sm:col-span-3"
           title={pinnedContainerImage ?? undefined}

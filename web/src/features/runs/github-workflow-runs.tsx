@@ -240,8 +240,8 @@ function GitHubWorkflowRunItem({ params, row, onOpen }: {
         >
           {row.name}
         </Link>
-        <span className="truncate font-mono text-xs text-muted-foreground">
-          #{row.commit}
+        <span className="truncate text-xs text-muted-foreground">
+          <span className="font-mono">#{row.commit}</span>
           {row.branch ? (
             <>
               <span className="text-muted-foreground/70"> · </span>
@@ -252,9 +252,9 @@ function GitHubWorkflowRunItem({ params, row, onOpen }: {
                   title="Open the request"
                   to="/$owner/$repo/requests/$requestId"
                 >
-                  {row.branch}
+                  <span className="font-mono">{row.branch}</span>
                 </Link>
-              ) : row.branch}
+              ) : <span className="font-mono">{row.branch}</span>}
             </>
           ) : null}
           <span className="text-muted-foreground/70"> · {row.event}</span>

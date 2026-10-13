@@ -30,7 +30,7 @@ export function RequestCheckWorkflows({ id, params, rows }: {
                     <Link className="min-w-0 break-words hover:underline" params={{ ...params, runId: group.runId }} to="/$owner/$repo/runs/$runId">
                       {group.name}
                     </Link>
-                    <span className="shrink-0 font-mono text-[10px] font-normal uppercase tracking-wide text-muted-foreground">Workflow</span>
+                    <span className="shrink-0 text-xs font-normal text-muted-foreground">Workflow</span>
                   </>
                 ) : 'Other results'}
               </h3>
@@ -57,12 +57,12 @@ function ResultRow({ params, row, workflow = false }: {
         <span className={cn('block break-words', workflow && 'font-medium', row.tone === 'inert' && 'text-muted-foreground')}>
           {workflow ? row.name : row.leaf}
         </span>
-        {!workflow && row.parents.length ? <span className="block break-words text-[11px] text-muted-foreground">{row.parents.join(' / ')}</span> : null}
+        {!workflow && row.parents.length ? <span className="block break-words text-xs text-muted-foreground">{row.parents.join(' / ')}</span> : null}
       </span>
-      {workflow ? <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">Workflow</span> : null}
+      {workflow ? <span className="text-xs text-muted-foreground">Workflow</span> : null}
       {workflow ? <RunStatusIcon state={row.state} /> : null}
       {row.tone === 'success' || row.tone === 'inert' ? null : (
-        <span className={cn('shrink-0 font-mono text-xs', row.tone === 'danger' ? 'text-danger-strong' : 'text-muted-foreground')}>{row.label}</span>
+        <span className={cn('shrink-0 text-xs', row.tone === 'danger' ? 'text-danger-strong' : 'text-muted-foreground')}>{row.label}</span>
       )}
       <ChevronRight aria-hidden="true" className={cn('size-3 shrink-0', row.run ? 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100' : 'invisible')} />
     </>

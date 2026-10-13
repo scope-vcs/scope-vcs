@@ -90,7 +90,7 @@ export function NavigationSearch({
         !status && (
           <kbd
             aria-hidden="true"
-            className="pointer-events-none absolute right-2 text-[11px] text-muted-foreground"
+            className="pointer-events-none absolute right-2 text-xs text-muted-foreground"
           >
             /
           </kbd>

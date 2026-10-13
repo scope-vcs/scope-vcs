@@ -20,6 +20,10 @@ export function resolveViewingAs(
   return requested && views.mayRead(reader, requested) ? requested : reader
 }
 
+export function viewHasMixedVisibility(views: RepoViews, view: ViewId): boolean {
+  return views.readableBy(view).length > 1
+}
+
 export function viewingAsSearch(view: ViewId, reader: ViewId): { view: ViewId | undefined } {
   return { view: view === reader ? undefined : view }
 }

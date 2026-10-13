@@ -273,7 +273,7 @@ export function RequestWorkspaceSidebar({
         </div>
         {viewingAs && <div className="request-workspace-viewing-as">{viewingAs}</div>}
         {actionError && (
-          <p className="px-4 py-2 text-[11px] text-danger-strong" role="alert">
+          <p className="px-4 py-2 text-xs text-danger-strong" role="alert">
             {actionError}
           </p>
         )}

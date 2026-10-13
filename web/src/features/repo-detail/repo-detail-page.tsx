@@ -4,6 +4,7 @@ import type {
   RepoSummaryResponse,
 } from '@/api/types.generated'
 import { RepoPrimaryActionButton } from '@/components/repo-primary-action'
+import { BlockSkeleton } from '@/components/ui/skeleton'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
 import { RepositoryCodeView } from './repository-code-view'
@@ -43,18 +44,18 @@ export function RepoDetailPage({
   return (
     <WorkbenchPane>
       <WorkbenchBar
-        className="items-start border-b border-border"
+        className="min-h-0 items-start pb-0"
         actions={(
           <>
             <RepoViewingAsPicker />
-            {content.value && repo.lifecycle_state === 'Ready' && (
+            {repo.lifecycle_state === 'Ready' && (content.value ? (
               <RepoCloneDropdown
                 cloneRemoteUrl={content.value.clone_remote_url}
                 repo={repo}
                 view={view}
                 viewName={views.name(view)}
               />
-            )}
+            ) : content.status === 'loading' && <BlockSkeleton className="h-8 w-24" />)}
             <RepoPrimaryActionButton
               includeOpen={false}
               repo={repo}
@@ -74,12 +75,12 @@ export function RepoDetailPage({
         )}
         title="Code"
       />
+      <RepositoryLatestActivity params={params} repo={repo} />
       <RepositoryDependencyCheck
         onSelectFilePath={selectResource}
         params={params}
         repo={repo}
       />
-      <RepositoryLatestActivity params={params} repo={repo} />
       <RepositoryCodeView
         content={content}
         file={file}

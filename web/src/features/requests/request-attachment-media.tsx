@@ -192,7 +192,7 @@ function AttachmentNotReady({ attachment }: { attachment: RequestAttachmentRespo
       ) : null}
       {retryError ? <span className="text-destructive" role="alert">{retryError}</span> : null}
       {attachment.original_download_available ? (
-        <><OriginalDownload attachment={attachment} /><span className="text-[11px]">Original may retain location and camera metadata.</span></>
+        <><OriginalDownload attachment={attachment} /><span className="text-xs">Original may retain location and camera metadata.</span></>
       ) : null}
     </AttachmentStatus>
   )
@@ -205,7 +205,7 @@ function AttachmentCaption({ attachment }: { attachment: RequestAttachmentRespon
       <span>{attachment.filename} · {formatBytes(attachment.size_bytes)}{isGif ? ' · Still preview' : ''}</span>
       {attachment.original_download_available ? <OriginalDownload attachment={attachment} /> : null}
       {attachment.original_download_available ? (
-        <span className="basis-full text-[11px]">Original downloads may retain location and camera metadata.</span>
+        <span className="basis-full text-xs">Original downloads may retain location and camera metadata.</span>
       ) : null}
     </figcaption>
   )

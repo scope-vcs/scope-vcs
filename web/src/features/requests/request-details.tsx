@@ -60,7 +60,7 @@ export function RequestDetails() {
     <div className="@container min-w-0">
       <section aria-label="Request details" className="min-w-0 px-5 py-6 @md:px-6 @3xl:px-8">
         <div className="grid min-w-0 gap-x-12 gap-y-8 @3xl:grid-cols-2">
-          <DetailsSection title="lifecycle">
+          <DetailsSection title="Lifecycle">
             <DetailsValue label="Author" value={requestAuthorRoleLabel(request)} />
             <DetailsValue label="View" value={requestViewLabel(request, views)} />
             <DetailsValue
@@ -86,7 +86,7 @@ export function RequestDetails() {
           ) : null}
 
           {ratings ? <RequestRatingsSection initial={ratings} onRate={onRate} params={params} /> : (
-            <DetailsSection title="participant ratings">
+            <DetailsSection title="Participant ratings">
               <p className="text-xs text-muted-foreground" role={ratingsError ? 'alert' : 'status'}>
                 {ratingsError ?? 'Loading participant ratings…'}
               </p>
@@ -94,10 +94,10 @@ export function RequestDetails() {
             </DetailsSection>
           )}
 
-          <DetailsSection title="git state">
-            <DetailsValue label="Base" value={shortOid(request.base_main_oid)} />
-            <DetailsValue label="Head" value={shortOid(request.head_oid)} />
-            <pre className="mt-1 min-w-0 whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 text-[11px] leading-5"><code>{`git fetch origin\ngit switch --track origin/${request.name}`}</code></pre>
+          <DetailsSection title="Git state">
+            <DetailsValue label="Base" value={<code className="font-mono">{shortOid(request.base_main_oid)}</code>} />
+            <DetailsValue label="Head" value={<code className="font-mono">{shortOid(request.head_oid)}</code>} />
+            <pre className="mt-1 min-w-0 whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 font-mono text-xs leading-5"><code>{`git fetch origin\ngit switch --track origin/${request.name}`}</code></pre>
           </DetailsSection>
         </div>
       </section>

@@ -73,7 +73,7 @@ export function RequestRatingsSection({
   return (
     <details open={ratings.length > 0 || Boolean(eligibleSubject) ? true : undefined}>
       <summary className="cursor-pointer list-item items-center gap-2 text-muted-foreground">
-        <h2 className="label-mono inline">participant ratings</h2>
+        <h2 className="section-label inline text-foreground">Participant ratings</h2>
       </summary>
       {ratings.length ? (
         <div className="mt-3 divide-y divide-border">

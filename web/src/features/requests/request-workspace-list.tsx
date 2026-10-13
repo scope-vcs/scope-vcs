@@ -54,11 +54,11 @@ export function RequestWorkspaceList({
     <div className="request-workspace-rows">
       {rows}
       {!items.length && !error && (
-        <p className="px-4 py-3 text-[11px] text-muted-foreground">{emptyLabel}</p>
+        <p className="px-4 py-2 text-[13px] text-muted-foreground">{emptyLabel}</p>
       )}
       {error && (
         <div
-          className="flex items-center gap-2 px-4 py-3 text-[11px] text-danger-strong"
+          className="flex items-center gap-2 px-4 py-3 text-xs text-danger-strong"
           role="alert"
         >
           <p className="min-w-0 flex-1">{error}</p>
@@ -143,7 +143,6 @@ function RequestWorkspaceRow({
   return (
     <article
       className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
-      data-group={attention.group}
       data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
       data-rail={rail ? '' : undefined}
       data-request-id={request.id}
@@ -172,7 +171,7 @@ function RequestWorkspaceRow({
           >
             {request.title}
           </span>
-          <span className="request-workspace-row-meta mt-[3px] flex items-center gap-2 text-[11px] leading-[1.4]">
+          <span className="request-workspace-row-meta mt-[3px] flex items-center gap-2 text-xs leading-[1.4]">
             <span
               className={cn(
                 'flex min-w-0 items-center gap-1.5 truncate',
@@ -191,7 +190,7 @@ function RequestWorkspaceRow({
               </span>
             </span>
             <time
-              className="request-workspace-row-age ml-auto shrink-0 font-mono text-[10px] text-muted-foreground/80"
+              className="request-workspace-row-age ml-auto shrink-0 text-xs text-muted-foreground"
               dateTime={new Date(item.attention_at_unix * 1_000).toISOString()}
               suppressHydrationWarning
             >

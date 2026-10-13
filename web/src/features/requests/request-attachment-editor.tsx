@@ -476,7 +476,7 @@ function DraftAttachmentRow({
       )}
       <div className="min-w-0">
         <p className="truncate text-xs font-medium">{attachment.name}</p>
-        <p className={cn('text-[11px] text-muted-foreground', attachment.status === 'failed' && 'text-destructive')}>
+        <p className={cn('text-xs text-muted-foreground', attachment.status === 'failed' && 'text-destructive')}>
           {attachment.status === 'failed'
             ? attachment.error
             : attachment.status === 'uploaded'

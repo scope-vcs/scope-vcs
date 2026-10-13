@@ -41,7 +41,7 @@ function RepoListRow({ isOwner, repo }: { isOwner: boolean; repo: RepoSummaryRes
     <div className="group relative flex items-center gap-3 rounded-md py-3 transition-colors hover:bg-accent/50">
       <div className="min-w-0 flex-1">
         <Link
-          className="font-mono text-sm leading-5 outline-none after:absolute after:inset-0"
+          className="text-sm leading-5 outline-none after:absolute after:inset-0"
           params={{ owner: repo.owner_handle, repo: repo.name }}
           to="/$owner/$repo"
         >

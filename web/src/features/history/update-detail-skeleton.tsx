@@ -17,7 +17,7 @@ export function UpdateDetailSkeleton() {
         onNavigationOpenChange={setNavigationOpen}
         selectedPath={null}
       >
-        <FileSystemTreeSkeleton metaColumnLabel="change" />
+        <FileSystemTreeSkeleton metaColumnLabel="Change" />
         <PanelState><TextSkeleton length="medium" /></PanelState>
       </FileWorkbench>
     </div>
