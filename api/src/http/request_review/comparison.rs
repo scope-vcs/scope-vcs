@@ -10,23 +10,15 @@ pub(crate) struct RequestComparisonFileDiffRequest {
 pub(super) fn selected_mode(
     mode: Option<RequestComparisonMode>,
     has_commit: bool,
-    private: bool,
 ) -> Result<RequestComparisonMode, ApiError> {
     let mode = mode.unwrap_or(if has_commit {
         RequestComparisonMode::Commit
-    } else if private {
-        RequestComparisonMode::Request
     } else {
-        RequestComparisonMode::Push
+        RequestComparisonMode::Request
     });
     if has_commit != (mode == RequestComparisonMode::Commit) {
         return Err(ApiError::bad_request(
             "commit comparison requires a selected commit",
-        ));
-    }
-    if !private && mode == RequestComparisonMode::Request {
-        return Err(ApiError::bad_request(
-            "request comparison requires private access",
         ));
     }
     Ok(mode)
@@ -151,10 +143,7 @@ pub(crate) async fn get_request_revision_file_diff(
 ) -> Result<Json<ReviewFileDiffResponse>, ApiError> {
     let (repo, viewer_user_id) = repo_and_access(&state, &headers, &owner, &repo_name).await?;
     let access = repo.context.access.clone();
-    if !access.view.is_private() {
-        return Err(ApiError::not_found("request comparison not found"));
-    }
-    let mode = selected_mode(input.comparison, false, true)?;
+    let mode = selected_mode(input.comparison, false)?;
     let (request, _) = visible_request(
         &state,
         &repo.context.record.id,

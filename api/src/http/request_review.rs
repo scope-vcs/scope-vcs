@@ -87,11 +87,7 @@ pub(crate) async fn list_request_revisions(
             "selecting a request commit requires a revision",
         ));
     }
-    let mode = comparison::selected_mode(
-        input.comparison,
-        input.commit.is_some(),
-        access.view.is_private(),
-    )?;
+    let mode = comparison::selected_mode(input.comparison, input.commit.is_some())?;
     let revision_window = state
         .metadata
         .requests()
@@ -138,8 +134,7 @@ pub(crate) async fn list_request_revisions(
                 .flatten();
             let file_limit = work_budget.remaining_files;
             let inspection_access = access.clone();
-            let selected_comparison =
-                Some(index) == selected_revision_index && access.view.is_private();
+            let selected_comparison = Some(index) == selected_revision_index;
             let inspected = with_request_revision_store_repo(
                 &state,
                 &repo.context.incarnation(),
@@ -190,7 +185,7 @@ pub(crate) async fn list_request_revisions(
             );
             (inspected.visible, inspected.inspection)
         } else {
-            if Some(index) == selected_revision_index && access.view.is_private() {
+            if Some(index) == selected_revision_index {
                 comparison_response = Some(comparison::unavailable_comparison(revision, mode));
             }
             (Vec::new(), RequestRevisionInspectionState::Unavailable)

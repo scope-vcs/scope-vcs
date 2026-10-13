@@ -7,6 +7,7 @@ use super::*;
 use scope_domain::projection::LogicalCommitOrigin;
 
 mod privacy;
+mod stacks;
 
 pub(super) struct AgentCheckout {
     pub(super) path: TempGitRepo,
