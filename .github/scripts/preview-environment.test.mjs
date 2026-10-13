@@ -75,7 +75,7 @@ function fakeRailway({ environments = [] } = {}) {
         return { volumeCreate: { id: 'volume' } };
       }
       if (query.startsWith('mutation PreviewRegistry')) return { serviceInstanceUpdate: true };
-      if (query.startsWith('mutation ConfigureTracing')) {
+      if (query.startsWith('mutation DisableRailwayTracing')) {
         assert.equal(variables.environmentId, preview);
         state.tracing[variables.serviceId] = variables.input;
         return { serviceInstanceUpdate: true };
@@ -197,9 +197,9 @@ test('creates, configures, and bootstraps a preview copy of staging once', () =>
   assert.equal(result.urls.web, 'https://scope-web-pr-7.up.railway.app');
   assert.deepEqual(railway.state.volumes, [{ serviceId: ids.postgres, mountPath: '/var/lib/postgresql/data' }]);
   assert.equal(railway.state.tracing[ids.postgres], undefined);
-  assert.deepEqual(railway.state.tracing[ids.web], { tracingEnabled: true, autoInstrumentationEnabled: true });
+  assert.deepEqual(railway.state.tracing[ids.web], { tracingEnabled: false, autoInstrumentationEnabled: false });
   for (const component of ['api', 'run-worker', 'cache', 'git-router', 'media-api', 'media-worker', 'maintenance']) {
-    assert.deepEqual(railway.state.tracing[ids[component]], { tracingEnabled: true });
+    assert.deepEqual(railway.state.tracing[ids[component]], { tracingEnabled: false });
   }
   assert.deepEqual(railway.state.deployments, [ids.postgres, ids.maintenance, ids.maintenance]);
   assert.equal(railway.state.bootstraps.length, 1);
@@ -219,7 +219,7 @@ test('creates, configures, and bootstraps a preview copy of staging once', () =>
   assert.deepEqual(railway.state.copy.variables, before);
   assert.equal(railway.state.bootstraps.length, 1);
   assert.deepEqual([...new Set(railway.state.calls.slice(calls).map(([name]) => name))],
-    ['mutation ConfigureTracing', 'mutation PreviewRegistry', 'mutation PreviewDeploy']);
+    ['mutation DisableRailwayTracing', 'mutation PreviewRegistry', 'mutation PreviewDeploy']);
 });
 
 test('refuses release and persistent environments that share the preview name', () => {

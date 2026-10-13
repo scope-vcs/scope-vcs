@@ -12,7 +12,8 @@ Analytics is disabled unless explicitly configured. Web and backend use
 `production` is rejected when Railway's environment name is present and differs
 from `production`; `test` is rejected in Railway production. Local development
 leaves these variables unset. A test deployment must use its own PostHog project
-token.
+token. The same token also turns on log and trace export for every service; see
+[observability](observability.md).
 
 The web service additionally requires `SCOPE_ANALYTICS_ORIGIN`, an exact HTTP(S)
 origin without a path, query, credentials, or fragment. Requests on other origins

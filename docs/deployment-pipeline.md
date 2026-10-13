@@ -188,21 +188,22 @@ label to recreate it.
 The `preview` GitHub environment must allow only `main` and hold
 `RAILWAY_API_TOKEN` and `SCOPE_RAILWAY_SSH_PRIVATE_KEY`.
 
-## Production tracing activation
+## Production telemetry
 
-The monitored production deployment wrapper configures application tracing
-through `.github/scripts/railway-tracing.mjs` before invoking either the backend
-transition or web deployment. Preview provisioning reuses that owner.
-PostgreSQL is excluded; web also enables runtime auto-instrumentation.
-An unconfirmed provider mutation stops the release before service activation.
-Configuration runs under the existing Release concurrency lock, without a
-separate deployment path. Railway injects exporter variables on the subsequent
-service deployment; it does not retrofit a running deployment.
+Services export logs and traces to PostHog; see [observability](observability.md).
+The monitored production deployment wrapper disables Railway tracing through
+`.github/scripts/railway-tracing.mjs` before invoking either the backend
+transition or web deployment, so Railway stops injecting exporter variables
+that would otherwise reach PostHog. Preview provisioning reuses that owner.
+PostgreSQL is excluded. An unconfirmed provider mutation stops the release
+before service activation. The change runs under the existing Release
+concurrency lock, without a separate deployment path, and takes effect on each
+service's next deployment.
 
-Choose Release scope `all` for the initial rollout so the application services
-are actually replaced. A selective release leaves carried deployments pending
-exporter activation. Follow the [deployed coverage verification](tracing.md#deployed-coverage-verification)
-after release: real API/database spans with matching log trace IDs, claimed-job
-consumer spans, and useful web runtime spans. Preserve normal forward recovery
-if a transition fails. At actual release completion, create T3 checks for one
-hour and 24 hours later as described in [tracing follow-up](tracing.md#follow-up-after-release).
+Before the first release that carries PostHog export, set `POSTHOG_PROJECT_TOKEN`
+on every production application service and choose Release scope `all`, so no
+carried deployment keeps Railway's injected variables. Follow the
+[deployed coverage verification](observability.md#deployed-coverage-verification)
+after release. Preserve normal forward recovery if a transition fails. At actual
+release completion, create T3 checks for one hour and 24 hours later as
+described in [observability follow-up](observability.md#follow-up-after-release).

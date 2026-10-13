@@ -36,7 +36,9 @@ cookies or browser storage for analytics. Browser analytics stops completely if
 your browser sends Do Not Track or Global Privacy Control.
 
 **Operational logs.** Scope's servers log request paths, timing and errors to
-operate and secure the service. Railway, Scope's hosting provider, also records
+operate and secure the service. These logs, and traces of how long each step of
+a request took, are sent to PostHog. Log lines can include repository names,
+file paths and error details. Railway, Scope's hosting provider, also records
 your IP address in its HTTP logs. The analytics proxy removes your IP address
 before events are sent to PostHog.
 
@@ -66,7 +68,7 @@ job.
 | Clerk | Sign-in and account identity | United States |
 | Railway | Application hosting, database and file storage | United States |
 | Amazon Web Services | Workflow runners and encrypted database backups | United States |
-| PostHog | Product analytics | United States |
+| PostHog | Product analytics, application logs and traces | United States |
 | Resend | Sending invitation emails | United States |
 
 Scope stores data in the United States. If you use Scope from elsewhere, your
@@ -85,6 +87,7 @@ repositories are visible to everyone.
 | Repository invitations, including the invited email | 30 days after the invitation is accepted, revoked or expires |
 | Database backups | 42 days |
 | Server and hosting logs, including IP addresses | Railway's log retention period |
+| Application logs and traces in PostHog | 14 days |
 | Analytics events | Deleted on the retention schedule of Scope's PostHog project |
 
 ## Deleting your account

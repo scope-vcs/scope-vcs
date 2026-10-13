@@ -4,16 +4,16 @@ import { serviceIds } from './deployment-components.mjs';
 import { railwayClient } from './railway-client.mjs';
 import { retryRailway } from './railway-retry.mjs';
 
-export function configureTracing(railway, environmentId, ids) {
+export function disableRailwayTracing(railway, environmentId, ids) {
   for (const [component, serviceId] of Object.entries(ids)) {
     if (component === 'postgres') continue;
     const input = component === 'web'
-      ? { tracingEnabled: true, autoInstrumentationEnabled: true }
-      : { tracingEnabled: true };
+      ? { tracingEnabled: false, autoInstrumentationEnabled: false }
+      : { tracingEnabled: false };
     retryRailway(() => {
-      const data = railway.mutate('mutation ConfigureTracing($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}',
+      const data = railway.mutate('mutation DisableRailwayTracing($serviceId:String!,$environmentId:String!,$input:ServiceInstanceUpdateInput!){serviceInstanceUpdate(serviceId:$serviceId,environmentId:$environmentId,input:$input)}',
         { serviceId, environmentId, input });
-      if (data?.serviceInstanceUpdate !== true) throw new Error('Railway did not confirm tracing configuration.');
+      if (data?.serviceInstanceUpdate !== true) throw new Error('Railway did not confirm disabling tracing.');
     });
   }
 }
@@ -24,12 +24,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (process.argv.length !== 3 || process.argv[2] !== 'production' ||
         process.env.SCOPE_RAILWAY_ENVIRONMENT_ID !== manifest.environments.production.environmentId ||
         process.env.RAILWAY_PROJECT_ID !== manifest.railway.projectId) {
-      throw new Error('Tracing configuration requires the manifest production target.');
+      throw new Error('Disabling Railway tracing requires the manifest production target.');
     }
-    configureTracing(railwayClient(), manifest.environments.production.environmentId, serviceIds(manifest));
-    console.log('Production application tracing configured; exporter activation requires deployment.');
+    disableRailwayTracing(railwayClient(), manifest.environments.production.environmentId, serviceIds(manifest));
+    console.log('Production Railway tracing disabled; services export to PostHog after deployment.');
   } catch (error) {
-    console.error(`Production tracing configuration failed: ${error.message} Release activation blocked.`);
+    console.error(`Disabling production Railway tracing failed: ${error.message} Release activation blocked.`);
     process.exitCode = 1;
   }
 }

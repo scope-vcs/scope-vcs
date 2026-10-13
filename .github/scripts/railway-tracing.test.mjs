@@ -28,7 +28,7 @@ process.stdout.write(JSON.stringify({ data: { serviceInstanceUpdate: ${confirmed
   };
 }
 
-test('production configures application services without deployments or database tracing', (t) => {
+test('production disables Railway tracing on application services without deployments or database changes', (t) => {
   const fixture = providerFixture(t, true);
   const result = spawnSync(process.execPath, ['.github/scripts/railway-tracing.mjs', 'production'],
     { env: fixture.env, encoding: 'utf8' });
@@ -39,17 +39,17 @@ test('production configures application services without deployments or database
   for (const { serviceId, environmentId, input } of calls) {
     assert.equal(environmentId, manifest.environments.production.environmentId);
     assert.deepEqual(input, serviceId === manifest.services.web.id
-      ? { tracingEnabled: true, autoInstrumentationEnabled: true } : { tracingEnabled: true });
+      ? { tracingEnabled: false, autoInstrumentationEnabled: false } : { tracingEnabled: false });
   }
   assert.doesNotMatch(result.stdout + result.stderr, /private-exporter-auth/);
 });
 
-test('failed production tracing prevents the monitored release command from activating', (t) => {
+test('failing to disable Railway tracing prevents the monitored release command from activating', (t) => {
   const fixture = providerFixture(t, false);
   const activated = join(fixture.directory, 'activated');
   const result = spawnSync('bash', ['.github/scripts/deploy-monitored-railway.sh', 'backend',
     'touch', activated], { env: { ...fixture.env, RAILWAY_TOKEN: 'private-project-auth' }, encoding: 'utf8', timeout: 15_000 });
-  assert.equal(existsSync(fixture.calls), true, 'release must configure tracing before activation');
+  assert.equal(existsSync(fixture.calls), true, 'release must disable Railway tracing before activation');
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /failed after 3 attempts\. Release activation blocked/);
   assert.equal(existsSync(activated), false);
@@ -59,7 +59,7 @@ test('failed production tracing prevents the monitored release command from acti
   assert.doesNotMatch(result.stdout + result.stderr, /private-exporter-auth|private-project-auth/);
 });
 
-test('wrong production target fails before configuring any service', (t) => {
+test('wrong production target fails before changing any service', (t) => {
   const fixture = providerFixture(t, true);
   const result = spawnSync(process.execPath, ['.github/scripts/railway-tracing.mjs', 'production'],
     { env: { ...fixture.env, SCOPE_RAILWAY_ENVIRONMENT_ID: manifest.environments.staging.environmentId }, encoding: 'utf8' });
