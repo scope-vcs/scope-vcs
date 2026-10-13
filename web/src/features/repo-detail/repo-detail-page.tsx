@@ -4,6 +4,7 @@ import type {
   RepoSummaryResponse,
 } from '@/api/types.generated'
 import { RepoPrimaryActionButton } from '@/components/repo-primary-action'
+import { BlockSkeleton } from '@/components/ui/skeleton'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
 import { RepositoryCodeView } from './repository-code-view'
@@ -47,14 +48,14 @@ export function RepoDetailPage({
         actions={(
           <>
             <RepoViewingAsPicker />
-            {content.value && repo.lifecycle_state === 'Ready' && (
+            {repo.lifecycle_state === 'Ready' && (content.value ? (
               <RepoCloneDropdown
                 cloneRemoteUrl={content.value.clone_remote_url}
                 repo={repo}
                 view={view}
                 viewName={views.name(view)}
               />
-            )}
+            ) : content.status === 'loading' && <BlockSkeleton className="h-8 w-24" />)}
             <RepoPrimaryActionButton
               includeOpen={false}
               repo={repo}
