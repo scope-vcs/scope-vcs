@@ -67,7 +67,7 @@ async fn github_push_claim_and_completion_wait_for_rewritten_dependencies_then_r
             .finish_github_push(
                 &child_push.id,
                 "claim",
-                crate::db::GitHubPushOutcome::Succeeded,
+                crate::db::GitHubJobOutcome::Succeeded(()),
                 t + 2
             )
             .await
