@@ -1,16 +1,13 @@
 use super::GitHubApp;
-use super::client::{parse_enum, parse_time, send, unavailable};
+use super::client::{first_attempt, outcome, parse_time, unavailable, unreadable};
 use crate::error::ApiError;
 use reqwest::{
     Method, StatusCode,
     header::{CONTENT_RANGE, RANGE},
 };
-use scope_domain::{
-    github_workflow_jobs::{
-        GITHUB_JOB_LOG_LIMIT_BYTES, GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob,
-        GitHubWorkflowStep,
-    },
-    requests::{GitHubCheckConclusion, GitHubCheckStatus},
+use scope_domain::github_workflow_jobs::{
+    GITHUB_JOB_LOG_LIMIT_BYTES, GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob,
+    GitHubWorkflowStep,
 };
 use serde::Deserialize;
 use std::time::Duration;
@@ -48,39 +45,22 @@ struct Step {
     completed_at: Option<String>,
 }
 
-fn first_attempt() -> u32 {
-    1
-}
-
-fn outcome(
-    status: &str,
-    conclusion: Option<&str>,
-) -> Option<(GitHubCheckStatus, Option<GitHubCheckConclusion>)> {
-    let status: GitHubCheckStatus = parse_enum(status)?;
-    let conclusion = match conclusion {
-        Some(conclusion) => Some(parse_enum(conclusion)?),
-        None => None,
-    };
-    ((status == GitHubCheckStatus::Completed) == conclusion.is_some())
-        .then_some((status, conclusion))
-}
-
 impl Job {
     fn into_domain(self) -> Option<GitHubWorkflowJob> {
-        let Some((status, conclusion)) = outcome(&self.status, self.conclusion.as_deref()) else {
-            tracing::warn!(
-                github_job_id = self.id,
-                status = self.status,
-                conclusion = ?self.conclusion,
-                "skipping a GitHub job Scope cannot read"
+        let Some((status, conclusion)) = outcome(Some(&self.status), self.conclusion.as_deref())
+        else {
+            return unreadable(
+                "job",
+                self.id,
+                Some(&self.status),
+                self.conclusion.as_deref(),
             );
-            return None;
         };
         let steps = self
             .steps
             .into_iter()
             .filter_map(|step| {
-                let (status, conclusion) = outcome(&step.status, step.conclusion.as_deref())?;
+                let (status, conclusion) = outcome(Some(&step.status), step.conclusion.as_deref())?;
                 Some(GitHubWorkflowStep {
                     number: step.number,
                     name: step.name,
@@ -116,12 +96,9 @@ impl GitHubApp {
         run_id: u64,
         run_attempt: u32,
     ) -> Result<Option<Vec<GitHubWorkflowJob>>, ApiError> {
-        let Some(token) = self.installation_token(installation_id).await? else {
-            return Ok(None);
-        };
         Ok(self
-            .pages::<JobsPage, _>(
-                &token,
+            .installation_pages::<JobsPage, _>(
+                installation_id,
                 &format!("/repos/{full_name}/actions/runs/{run_id}/attempts/{run_attempt}/jobs"),
                 "/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{run_attempt}/jobs",
                 |page| page.jobs,
@@ -136,20 +113,14 @@ impl GitHubApp {
         full_name: &str,
         job_id: u64,
     ) -> Result<Option<GitHubWorkflowJob>, ApiError> {
-        let Some(token) = self.installation_token(installation_id).await? else {
-            return Ok(None);
-        };
-        let request = self
-            .request(
-                Method::GET,
+        Ok(self
+            .installation_get::<Job>(
+                installation_id,
                 &format!("/repos/{full_name}/actions/jobs/{job_id}"),
+                "/repos/{owner}/{repo}/actions/jobs/{job_id}",
             )
-            .bearer_auth(token);
-        Ok(
-            send::<Job>(request, "/repos/{owner}/{repo}/actions/jobs/{job_id}")
-                .await?
-                .and_then(Job::into_domain),
-        )
+            .await?
+            .and_then(Job::into_domain))
     }
 
     pub(crate) async fn job_log(
@@ -253,6 +224,7 @@ fn ranged_length(response: &reqwest::Response) -> Result<Option<u64>, ApiError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use scope_domain::requests::GitHubCheckConclusion;
 
     #[test]
     fn a_partial_log_answer_must_name_the_full_length() {

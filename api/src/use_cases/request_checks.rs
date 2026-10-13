@@ -409,10 +409,7 @@ async fn evaluate_request_checks(
         .repository_record(&request.repo_id)
         .await?
         .ok_or_else(|| ApiError::not_found("repo not found"))?;
-    let connection = repositories
-        .github_connection(&request.repo_id)
-        .await?
-        .map(|read| read.connection);
+    let connection = repositories.github_connection(&request.repo_id).await?;
     if repo.incarnation() != *incarnation {
         return Err(ApiError::conflict("repository changed while evaluating CI"));
     }

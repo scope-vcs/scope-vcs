@@ -70,6 +70,10 @@ impl GitHubConnection {
         self.status == GitHubConnectionStatus::Connected
     }
 
+    pub fn is_connected_to(&self, github_repository_id: u64) -> bool {
+        self.is_connected() && self.github_repository_id == github_repository_id
+    }
+
     pub fn may_receive_private_requests(&self) -> bool {
         self.visibility
             != GitHubRepositoryVisibility::Public {

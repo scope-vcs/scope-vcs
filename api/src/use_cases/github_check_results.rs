@@ -61,7 +61,13 @@ pub(crate) async fn confirm_recent_github_checks(
     else {
         return Ok(());
     };
-    let Some(connection) = connected(state, &request.repo_id).await? else {
+    let Some(connection) = state
+        .metadata
+        .repositories()
+        .github_connection(&request.repo_id)
+        .await?
+        .filter(GitHubConnection::is_connected)
+    else {
         return Ok(());
     };
     let read_at = state
@@ -91,25 +97,12 @@ fn check_commit(connection: &GitHubConnection, commit_oid: &str) -> GitHubCheckC
     }
 }
 
-async fn connected(state: &AppState, repo_id: &str) -> Result<Option<GitHubConnection>, ApiError> {
-    Ok(state
-        .metadata
-        .repositories()
-        .github_connection(repo_id)
-        .await?
-        .map(|read| read.connection)
-        .filter(GitHubConnection::is_connected))
-}
-
 pub(crate) async fn refresh_commit_checks(
     state: &AppState,
     connection: &GitHubConnection,
     commit_oid: &str,
 ) -> Result<(), ApiError> {
-    let app = state
-        .github
-        .as_deref()
-        .ok_or_else(|| ApiError::not_found("GitHub is not configured on this server"))?;
+    let app = state.github_app()?;
     let commit = check_commit(connection, commit_oid);
     let requests = state.metadata.requests();
     let started_at = unix_now()?;
@@ -136,10 +129,8 @@ pub(crate) async fn refresh_commit_checks(
     {
         return Ok(());
     }
-    if let Some(record) = state
-        .metadata
-        .repositories()
-        .repository_record(&connection.repository_id)
+    if let Some(incarnation) = state
+        .repository_incarnation(&connection.repository_id)
         .await?
     {
         let associated = requests
@@ -159,14 +150,14 @@ pub(crate) async fn refresh_commit_checks(
         {
             state
                 .publish_request_summary_refresh(
-                    &record.incarnation(),
+                    &incarnation,
                     RepoChangeReason::RequestChecksUpdated,
                 )
                 .await;
         }
         for request in associated {
             state
-                .publish_known_request_state_refresh(&record.incarnation(), &request)
+                .publish_known_request_state_refresh(&incarnation, &request)
                 .await;
         }
     }
@@ -199,9 +190,12 @@ pub(crate) async fn reconcile_github_checks_once(
         {
             continue;
         }
-        let Some(connection) = connected(state, &commit.repo_id)
+        let Some(connection) = state
+            .metadata
+            .repositories()
+            .github_connection(&commit.repo_id)
             .await?
-            .filter(|connection| connection.github_repository_id == commit.github_repository_id)
+            .filter(|connection| connection.is_connected_to(commit.github_repository_id))
         else {
             continue;
         };

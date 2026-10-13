@@ -5,6 +5,7 @@ use crate::{
     requests::{GitHubCheckConclusion, GitHubCheckStatus, github_retry_at},
     views::Views,
 };
+use serde::{Deserialize, Serialize};
 
 pub const GITHUB_JOBS_READ_INTERVAL_SECS: u64 = 30;
 pub const GITHUB_JOB_LOG_LIMIT_BYTES: usize = 1024 * 1024;
@@ -24,7 +25,7 @@ pub struct GitHubWorkflowJob {
     pub steps: Vec<GitHubWorkflowStep>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitHubWorkflowStep {
     pub number: u32,
     pub name: String,

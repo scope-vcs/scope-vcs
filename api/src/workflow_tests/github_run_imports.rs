@@ -1,6 +1,6 @@
 use super::fake_github::{
-    GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, connect_test_repository, deliver_event, github_state,
-    reconnect_test_repository, workflow_run_started_at,
+    GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, connect_test_repository, deliver_event, github_api,
+    github_json, github_state, reconnect_test_repository, workflow_run_started_at,
 };
 use super::*;
 use crate::use_cases::github_run_imports::import_due_github_runs;
@@ -21,54 +21,16 @@ fn history(first_id: u64, count: u64) -> Vec<serde_json::Value> {
         .collect()
 }
 
-async fn github(
-    state: &AppState,
-    method: &str,
-    path: &str,
-    bearer: &str,
-    body: Option<serde_json::Value>,
-) -> Response {
-    api_request(
-        router(state.clone()),
-        method,
-        &format!("/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/github{path}"),
-        Some(bearer),
-        body.map(|body| body.to_string()).as_deref(),
-    )
-    .await
-}
-
 async fn connection(state: &AppState) -> serde_json::Value {
-    expect_json(
-        github(state, "GET", "", &bearer_header(), None).await,
-        StatusCode::OK,
-    )
-    .await
+    github_json(state, "GET", "").await
 }
 
 async fn runs_page(state: &AppState, query: &str) -> serde_json::Value {
-    let listed = expect_json(
-        github(
-            state,
-            "GET",
-            &format!("/workflow-runs{query}"),
-            &bearer_header(),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
-    listed["github"].clone()
+    github_json(state, "GET", &format!("/workflow-runs{query}")).await["github"].clone()
 }
 
 async fn workflow_names(state: &AppState) -> serde_json::Value {
-    expect_json(
-        github(state, "GET", "/workflow-names", &bearer_header(), None).await,
-        StatusCode::OK,
-    )
-    .await["workflows"]
-        .clone()
+    github_json(state, "GET", "/workflow-names").await["workflows"].clone()
 }
 
 fn ids(page: &serde_json::Value) -> Vec<u64> {
@@ -139,7 +101,7 @@ async fn connecting_imports_recent_runs_page_by_page_and_the_runs_page_pages_thr
         ids(&lint_rest),
         (131..=149).rev().step_by(2).collect::<Vec<_>>()
     );
-    let invalid = github(
+    let invalid = github_api(
         &state,
         "GET",
         "/workflow-runs?after=nonsense",
@@ -163,7 +125,7 @@ async fn a_repository_that_imports_nothing_reads_nothing_from_github() {
     assert_eq!(settings["run_import_count"], 0);
     assert_eq!(settings["run_import"], serde_json::Value::Null);
     assert_eq!(ids(&runs_page(&state, "").await), Vec::<u64>::new());
-    let refused = github(&state, "POST", "/run-import", &bearer_header(), None).await;
+    let refused = github_api(&state, "POST", "/run-import", &bearer_header(), None).await;
     assert_eq!(refused.status(), StatusCode::CONFLICT);
 }
 
@@ -192,11 +154,7 @@ async fn an_import_and_github_reports_never_move_a_run_backwards() {
         "completed"
     );
 
-    expect_json(
-        github(&state, "POST", "/run-import", &bearer_header(), None).await,
-        StatusCode::OK,
-    )
-    .await;
+    github_json(&state, "POST", "/run-import").await;
     let other = workflow_run_started_at(8, "main", &head, None, started);
     fake.report_workflow_runs(vec![other.clone()]);
     import_pass(&state, unix_now()).await;
@@ -215,11 +173,7 @@ async fn an_import_and_github_reports_never_move_a_run_backwards() {
     )
     .await;
     fake.report_workflow_runs(vec![other, running]);
-    expect_json(
-        github(&state, "POST", "/run-import", &bearer_header(), None).await,
-        StatusCode::OK,
-    )
-    .await;
+    github_json(&state, "POST", "/run-import").await;
     import_pass(&state, unix_now()).await;
     let runs = runs_page(&state, "").await;
     assert_eq!(runs["workflow_runs"][0]["conclusion"], "failure");
@@ -281,7 +235,7 @@ async fn only_maintainers_change_the_count_within_its_bounds_and_import_again() 
     import_pass(&state, unix_now()).await;
     assert_eq!(ids(&runs_page(&state, "").await).len(), 10);
 
-    let too_many = github(
+    let too_many = github_api(
         &state,
         "PUT",
         "/run-import",
@@ -290,7 +244,7 @@ async fn only_maintainers_change_the_count_within_its_bounds_and_import_again() 
     )
     .await;
     assert_eq!(too_many.status(), StatusCode::BAD_REQUEST);
-    let negative = github(
+    let negative = github_api(
         &state,
         "PUT",
         "/run-import",
@@ -304,13 +258,13 @@ async fn only_maintainers_change_the_count_within_its_bounds_and_import_again() 
         ("PUT", Some(serde_json::json!({ "count": 20 }))),
         ("POST", None),
     ] {
-        let denied = github(&state, method, "/run-import", &stranger, body).await;
+        let denied = github_api(&state, method, "/run-import", &stranger, body).await;
         assert!(denied.status().is_client_error(), "{}", denied.status());
     }
     assert_eq!(connection(&state).await["run_import_count"], 10);
 
     let changed = expect_json(
-        github(
+        github_api(
             &state,
             "PUT",
             "/run-import",
@@ -323,11 +277,7 @@ async fn only_maintainers_change_the_count_within_its_bounds_and_import_again() 
     .await;
     assert_eq!(changed["run_import_count"], 25);
     assert_eq!(changed["run_import"]["run_count"], 10);
-    let started = expect_json(
-        github(&state, "POST", "/run-import", &bearer_header(), None).await,
-        StatusCode::OK,
-    )
-    .await;
+    let started = github_json(&state, "POST", "/run-import").await;
     assert_eq!(started["run_import"]["state"], "queued");
     assert_eq!(started["run_import"]["run_count"], 25);
     import_pass(&state, unix_now()).await;

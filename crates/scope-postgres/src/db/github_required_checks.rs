@@ -1,12 +1,9 @@
-use super::{
-    RepositoryStore, acquire_aggregate_lock, locks::acquire_shared_repository_lock,
-    repository_access::repository_access,
-};
+use super::RepositoryStore;
 use crate::error::PostgresError;
 use scope_domain::{
     github_connection::set_github_required_checks, repository::RepositoryIncarnation,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 impl RepositoryStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_required_checks"))]
@@ -24,12 +21,9 @@ impl RepositoryStore {
         user_id: &str,
         names: Vec<String>,
     ) -> Result<(Vec<String>, RepositoryIncarnation), PostgresError> {
-        let tx = self.db.begin().await?;
-        acquire_shared_repository_lock(&tx, repo_id).await?;
-        acquire_aggregate_lock(&tx, "github-required-checks", repo_id).await?;
-        let context = repository_access(&tx, repo_id, Some(user_id))
-            .await?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        let (tx, context) = self
+            .begin_github_change(repo_id, user_id, &["github-required-checks"])
+            .await?;
         let names = set_github_required_checks(context.access.clone(), names)?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,

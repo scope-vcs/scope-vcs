@@ -11,6 +11,36 @@ use scope_domain::{
 use scope_postgres::db::{GitHubConnectionRead, GitHubSetupCheckRead, GitHubWorkflowRunRead};
 use serde::{Deserialize, Serialize};
 
+macro_rules! response_enum {
+    ($response:ident => $domain:ident { $($variant:ident),+ $(,)? }) => {
+        #[derive(Debug, Serialize)]
+        #[serde(rename_all = "snake_case")]
+        #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+        #[cfg_attr(feature = "type-export", ts(rename_all = "snake_case"))]
+        pub(crate) enum $response {
+            $($variant),+
+        }
+
+        impl From<$domain> for $response {
+            fn from(value: $domain) -> Self {
+                match value {
+                    $($domain::$variant => Self::$variant),+
+                }
+            }
+        }
+    };
+}
+
+response_enum!(GitHubRunImportStateResponse => GitHubRunImportState {
+    Queued, Running, Succeeded, Failed,
+});
+response_enum!(GitHubSetupCheckStateResponse => GitHubSetupCheckState {
+    Pushing, Waiting, Finished, Failed,
+});
+response_enum!(GitHubDisconnectReasonResponse => GitHubDisconnectReason {
+    AppUninstalled, InstallationSuspended, RepositoryRemoved,
+});
+
 /// A repository's GitHub connection as its maintainers see it.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -31,17 +61,6 @@ pub(crate) struct GitHubConnectionResponse {
     pub(crate) run_import: Option<GitHubRunImportResponse>,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "type-export", ts(rename_all = "snake_case"))]
-pub(crate) enum GitHubRunImportStateResponse {
-    Queued,
-    Running,
-    Succeeded,
-    Failed,
-}
-
 /// An import of the GitHub repository's most recent workflow runs.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -56,17 +75,6 @@ pub(crate) struct GitHubRunImportResponse {
     pub(crate) error: Option<String>,
     pub(crate) queued_at_unix: u64,
     pub(crate) finished_at_unix: Option<u64>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "type-export", ts(rename_all = "snake_case"))]
-pub(crate) enum GitHubSetupCheckStateResponse {
-    Pushing,
-    Waiting,
-    Finished,
-    Failed,
 }
 
 /// A test that pushes main to a branch of its own and waits for workflows.
@@ -221,16 +229,6 @@ pub(crate) struct GitHubDisconnectionResponse {
     pub(crate) at_unix: u64,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
-#[cfg_attr(feature = "type-export", ts(rename_all = "snake_case"))]
-pub(crate) enum GitHubDisconnectReasonResponse {
-    AppUninstalled,
-    InstallationSuspended,
-    RepositoryRemoved,
-}
-
 /// Starts authorizing the app for a repository.
 #[derive(Debug, Default, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -301,12 +299,7 @@ pub(crate) fn github_setup_check_response(read: GitHubSetupCheckRead) -> GitHubS
         branch: GitHubSetupCheck::branch().name(),
         message: check.message(read.workflows_started),
         commit_oid: check.commit_oid,
-        state: match check.state {
-            GitHubSetupCheckState::Pushing => GitHubSetupCheckStateResponse::Pushing,
-            GitHubSetupCheckState::Waiting => GitHubSetupCheckStateResponse::Waiting,
-            GitHubSetupCheckState::Finished => GitHubSetupCheckStateResponse::Finished,
-            GitHubSetupCheckState::Failed => GitHubSetupCheckStateResponse::Failed,
-        },
+        state: check.state.into(),
         started_at_unix: check.started_at_unix,
         finished_at_unix: check.finished_at_unix,
         check_names: read.check_names,
@@ -369,23 +362,17 @@ pub(crate) fn github_connection_response(
     configured: bool,
     parts: GitHubConnectionParts,
 ) -> GitHubConnectionResponse {
-    let GitHubConnectionParts {
-        read,
-        required_checks,
-        can_confirm_public,
-        setup_check,
-        run_import_count,
-        run_import,
-    } = parts;
-    let read = read.filter(|_| configured);
-    let setup_check = setup_check.filter(|setup| {
+    let read = parts.read.filter(|_| configured);
+    let linked = |github_repository_id: u64| {
         read.as_ref()
-            .is_some_and(|read| setup.check.is_of(&read.connection))
-    });
-    let run_import = run_import.filter(|import| {
-        read.as_ref()
-            .is_some_and(|read| import.is_of(&read.connection))
-    });
+            .is_some_and(|read| read.connection.github_repository_id == github_repository_id)
+    };
+    let setup_check = parts
+        .setup_check
+        .filter(|setup| linked(setup.check.github_repository_id));
+    let run_import = parts
+        .run_import
+        .filter(|import| linked(import.github_repository_id));
     let connection = read.map(|read| {
         let connection = read.connection;
         let (public_on_github, public_confirmed) = match connection.visibility {
@@ -406,17 +393,7 @@ pub(crate) fn github_connection_response(
                 GitHubConnectionStatus::Connected => None,
                 GitHubConnectionStatus::Disconnected { reason, at_unix } => {
                     Some(GitHubDisconnectionResponse {
-                        reason: match reason {
-                            GitHubDisconnectReason::AppUninstalled => {
-                                GitHubDisconnectReasonResponse::AppUninstalled
-                            }
-                            GitHubDisconnectReason::InstallationSuspended => {
-                                GitHubDisconnectReasonResponse::InstallationSuspended
-                            }
-                            GitHubDisconnectReason::RepositoryRemoved => {
-                                GitHubDisconnectReasonResponse::RepositoryRemoved
-                            }
-                        },
+                        reason: reason.into(),
                         at_unix,
                     })
                 }
@@ -427,21 +404,16 @@ pub(crate) fn github_connection_response(
         configured,
         setup_check: setup_check.map(github_setup_check_response),
         connection,
-        required_checks,
-        can_confirm_public,
-        run_import_count,
+        required_checks: parts.required_checks,
+        can_confirm_public: parts.can_confirm_public,
+        run_import_count: parts.run_import_count,
         run_import: run_import.map(github_run_import_response),
     }
 }
 
 fn github_run_import_response(import: GitHubRunImport) -> GitHubRunImportResponse {
     GitHubRunImportResponse {
-        state: match import.state {
-            GitHubRunImportState::Queued => GitHubRunImportStateResponse::Queued,
-            GitHubRunImportState::Running => GitHubRunImportStateResponse::Running,
-            GitHubRunImportState::Succeeded => GitHubRunImportStateResponse::Succeeded,
-            GitHubRunImportState::Failed => GitHubRunImportStateResponse::Failed,
-        },
+        state: import.state.into(),
         run_count: import.run_count,
         imported_count: import.imported_count,
         error: import.last_error,

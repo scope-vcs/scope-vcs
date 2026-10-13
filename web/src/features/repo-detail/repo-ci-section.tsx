@@ -1,10 +1,7 @@
 import type { GitHubConnectionResponse, GitHubAuthorizeResponse } from '@/api/types.generated'
-import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
-import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { LoaderCircle, Plug, Unplug } from 'lucide-react'
-import { useState } from 'react'
 import { openGitHubAuthorization } from '../github/github-authorization'
 import {
   githubConnectionView,
@@ -16,6 +13,7 @@ import { RepoGitHubRunImport } from './repo-github-run-import'
 import { RepoGitHubSetupCheck } from './repo-github-setup-check'
 import { RepoRequiredChecks } from './repo-required-checks'
 import { CiSection } from './repo-settings-sections'
+import { useSettingsAction } from './use-settings-action'
 
 export function RepoCiSection({
   confirmPublic,
@@ -36,44 +34,10 @@ export function RepoCiSection({
   startRunImport: () => Promise<GitHubConnectionResponse>
   startSetupCheck: () => Promise<GitHubConnectionResponse>
 }) {
-  const [pending, setPending] = useState<'connect' | 'disconnect' | 'confirm' | null>(null)
+  const { act, errorAlert, pending } = useSettingsAction<'connect' | 'disconnect' | 'confirm'>()
   const withheldRequests = githubWithheldRequestsText(useRepoViews())
-  const [error, setError] = useState<{ title: string; message: string } | null>(null)
-
-  async function connect() {
-    setError(null)
-    setPending('connect')
-    try {
-      await openGitHubAuthorization(startAuthorization)
-    } catch (cause) {
-      setPending(null)
-      setError({ title: 'GitHub could not be opened', message: resourceErrorMessage(cause, 'Try again.') })
-    }
-  }
-
-  async function disconnectRepository() {
-    setError(null)
-    setPending('disconnect')
-    try {
-      await disconnect()
-    } catch (cause) {
-      setError({ title: 'Disconnect failed', message: resourceErrorMessage(cause, 'Try again.') })
-    } finally {
-      setPending(null)
-    }
-  }
-
-  async function confirmPublicRepository() {
-    setError(null)
-    setPending('confirm')
-    try {
-      await confirmPublic()
-    } catch (cause) {
-      setError({ title: 'Confirmation failed', message: resourceErrorMessage(cause, 'Try again.') })
-    } finally {
-      setPending(null)
-    }
-  }
+  const connect = () =>
+    act('connect', 'GitHub could not be opened', () => openGitHubAuthorization(startAuthorization), true)
 
   if (!github) {
     return (
@@ -120,7 +84,7 @@ export function RepoCiSection({
             </div>
             <Button
               disabled={pending !== null}
-              onClick={() => void disconnectRepository()}
+              onClick={() => void act('disconnect', 'Disconnect failed', disconnect)}
               size="sm"
               type="button"
               variant="secondary"
@@ -158,7 +122,7 @@ export function RepoCiSection({
             {visibility.canConfirm && (
               <Button
                 disabled={pending !== null}
-                onClick={() => void confirmPublicRepository()}
+                onClick={() => void act('confirm', 'Confirmation failed', confirmPublic)}
                 size="sm"
                 type="button"
                 variant="secondary"
@@ -191,7 +155,7 @@ export function RepoCiSection({
           />
         )}
 
-        {error && <PageErrorAlert className="mt-0" title={error.title}>{error.message}</PageErrorAlert>}
+        {errorAlert}
       </div>
     </CiSection>
   )
