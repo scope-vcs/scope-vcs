@@ -1,6 +1,6 @@
 # Privacy policy
 
-Effective September 24, 2026
+Effective October 13, 2026
 
 Scope is a version control service at scopevcs.com, run by Adam Blumoff as an
 individual. This policy explains what personal data Scope handles, why, who
