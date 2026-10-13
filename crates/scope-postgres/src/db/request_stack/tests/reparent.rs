@@ -344,6 +344,21 @@ async fn explicit_main_publication_rejects_stale_or_incomplete_main_evidence() {
                     .change_version,
             }),
         ));
+        let Some(RequestBasePublicationFacts::Main {
+            expected_repo_change_version,
+            ..
+        }) = &facts
+        else {
+            unreachable!()
+        };
+        cases.push((
+            publication.clone(),
+            Some(RequestBasePublicationFacts::Main {
+                main_head_oid: selected.clone(),
+                child_contains_main: true,
+                expected_repo_change_version: expected_repo_change_version + 1,
+            }),
+        ));
         for (publication, facts) in cases {
             let error = publish(&store, &child, publication, facts, same_head)
                 .await
@@ -370,13 +385,14 @@ async fn reparenting_rejects_changed_parent_and_cycles_without_committing() {
     publication.new_base = Some(base.clone());
     let facts = selected_parent_facts(&store, &child, &base).await.unwrap();
     let mut cases = Vec::new();
-    for field in ["head", "version", "revision"] {
+    for field in ["head", "version", "revision", "repository_version"] {
         let RequestBasePublicationFacts::Request(mut changed) = facts.clone() else {
             unreachable!()
         };
         match field {
             "head" => changed.head_oid = "e".repeat(40),
             "version" => changed.base_version += 1,
+            "repository_version" => changed.expected_repo_change_version += 1,
             _ => changed.revision_id = "missing_revision".into(),
         }
         cases.push((base.clone(), RequestBasePublicationFacts::Request(changed)));
