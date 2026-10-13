@@ -25,9 +25,10 @@ function Stack() {
   const isPrivate = view === 'private'
   const visibleFiles = files.map((file) => ({ ...file, label: isPrivate ? 'private' : 'public' }))
   const [opaque, setOpaque] = useState(false)
+  const [childrenError, setChildrenError] = useState<string | null>(null)
   const [stackStatus, setStackStatus] = useState<RequestStackStatus>(isPrivate ? 'waiting_for_parent' : 'main')
   const [search, setSearch] = useState<RequestChangesSearch>({ revision: revision.id })
-  Object.assign(window, { setStackStatus, setOpaque, calls })
+  Object.assign(window, { setStackStatus, setOpaque, setChildrenError, calls })
   const requestBase = isPrivate ? revision.base : { kind: 'main' as const, review_base_oid: base }
   const status = stackStatus === 'main' ? 'Ready' : stackStatus === 'parent_rewritten' ? 'ParentRewritten'
     : stackStatus === 'parent_closed' ? 'ParentClosed'
@@ -40,7 +41,7 @@ function Stack() {
   } as RequestSummaryResponse
   const parent = { id: 'parent', name: 'parent', title: 'Parent foundation', state: 'Open', stack_status: 'main', stack_depth: 1, current_revision_id: 'current-parent-revision', head_oid: 'c'.repeat(40) }
   const child = { ...parent, id: 'grandchild', name: 'grandchild', title: 'Follow-up child', stack_depth: 3 }
-  const detail = { request, stack_navigation: { parent: opaque ? { kind: 'unavailable' } : { kind: 'available', request: parent }, ancestors: opaque ? [] : [parent], ancestors_unavailable: opaque, children: { requests: [child], next_cursor: null } } } as RequestDetailResponse
+  const detail = { request, stack_navigation: { parent: opaque ? { kind: 'unavailable' } : { kind: 'available', request: parent }, ancestors: opaque ? [] : [parent], ancestors_unavailable: opaque, children: { requests: [child], next_cursor: childrenError ? 'child-cursor' : null } } } as RequestDetailResponse
   const mode = search.comparison ?? (isPrivate ? 'request' : 'push')
   const revisions = {
     revisions: [{ ...revision, base: requestBase, commits: revision.commits.map((commit) => ({ ...commit, files: isPrivate && mode === 'commit' ? [] : visibleFiles, files_truncated: isPrivate && mode === 'commit' })) }], review_revision_id: revision.id, has_earlier_revisions: false,
@@ -48,7 +49,7 @@ function Stack() {
   } as RequestRevisionListResponse
   return <RepoLayoutProvider live={{ repo: { views: [{ id: view, name: view, readers: view === 'public' ? 'anyone' : 'assigned', includes: isPrivate ? 'all' : [] }] } } as RepoLiveState} subscribe={() => () => {}}>
   <>
-    {isPrivate ? <RequestStackContext detail={detail} params={{ owner: 'adam', repo: 'demo' }} /> : null}
+    {isPrivate ? <RequestStackContext childrenError={childrenError} detail={detail} onLoadChildren={() => { calls.push({ kind: 'children' }) }} params={{ owner: 'adam', repo: 'demo' }} /> : null}
     <div className="p-3">
       <RequestLifecycleActions
         request={request} viewerId="adam"

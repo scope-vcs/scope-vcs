@@ -148,6 +148,7 @@ test('child pagination survives reopening and refresh refills loaded depth while
   const updated = state('updated-head')
   updated.detail.stack_navigation = initial.detail.stack_navigation
   updated.detail.request.mergeability = { ...updated.detail.request.mergeability, status: 'Ready' }
+  updated.checks.mergeability = updated.detail.request.mergeability
   const failedRefill = mock.fn(async () => { throw new Error('Children are offline.') })
   const updatedValue = await loadRequestStateValue(identity, async () => ({ state: updated }), failedRefill)
   assert.equal(updatedValue.state?.detail.request.head_oid, 'updated-head')
