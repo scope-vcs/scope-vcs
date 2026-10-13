@@ -177,7 +177,7 @@ function RequestDiscussionLayout() {
           throw error
         }
       }}
-      viewerId={page.viewerId ?? 'anonymous'}
+      viewerId={page.viewerId}
     >
       <Outlet />
     </RequestDetailPage>

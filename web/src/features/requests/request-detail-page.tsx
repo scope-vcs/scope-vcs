@@ -100,7 +100,7 @@ type RequestDetailPageProps = {
   >) => Promise<RequestAutoMergeResponse>
   rateRequest: (input: RateRequestInput) => Promise<RequestRatingResponse>
   updateDescription: (input: UpdateDescriptionInput) => Promise<RequestMutationResponse>
-  viewerId: string
+  viewerId: string | null
 }
 
 export function RequestDetailPage(props: RequestDetailPageProps) {
@@ -200,7 +200,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       actions={attachmentActions}
       live={live}
       requestId={request.id}
-      viewerId={viewerId}
+      viewerId={viewerId ?? 'anonymous'}
     >
       <div
         className="request-detail-pane scope-content-enter w-full"
