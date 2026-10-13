@@ -247,7 +247,7 @@ test('registry configuration retries the same service credentials without deploy
 });
 
 test('CLI images start the download service from the image root with its readiness check', () => {
-  const cliConfig = JSON.parse(readFileSync(new URL('../../cli/railway.json', import.meta.url), 'utf8'));
+  const cliConfig = JSON.parse(readFileSync(new URL('../../cli-downloads/railway.json', import.meta.url), 'utf8'));
   const input = artifactDeploymentInput('cli-downloads', release().components.api, cliConfig);
   assert.equal(input.startCommand, '/app/bin/scope-cli-service');
   assert.equal(input.rootDirectory, '/');

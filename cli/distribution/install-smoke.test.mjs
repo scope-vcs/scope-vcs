@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
 
@@ -21,7 +21,7 @@ const windows = process.platform === 'win32';
 const executable = windows ? 'scope.exe' : 'scope';
 const binary = resolve(requiredEnv('SCOPE_TEST_BINARY'));
 const artifact = resolve(requiredEnv('SCOPE_TEST_ARTIFACT'));
-const service = join(dirname(binary), windows ? 'scope-cli-service.exe' : 'scope-cli-service');
+const service = resolve(requiredEnv('SCOPE_TEST_SERVICE'));
 const configuration = JSON.parse(await readFile(new URL('./targets.json', import.meta.url), 'utf8'));
 const platform = { linux: 'linux', darwin: 'macos', win32: 'windows' }[process.platform];
 const target = configuration.targets.find(({ os, arch }) => os === platform && arch === process.arch);

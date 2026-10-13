@@ -3479,6 +3479,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "scope-cli-downloads"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "reqwest",
+ "scope-product-analytics",
+ "scope-service-runtime",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "scope-content-lifecycle"
 version = "0.1.0"
 dependencies = [

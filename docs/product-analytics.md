@@ -1,9 +1,9 @@
 # Product analytics
 
 Scope captures product outcomes with PostHog. The browser sends explicit pageviews
-and sanitized diagnostics through the web service's `/e` endpoint. API and worker
-use `scope-product-analytics` to send committed domain outcomes directly to
-PostHog. Analytics delivery is best effort and does not gate product mutations.
+and sanitized diagnostics through the web service's `/e` endpoint. API, worker
+and the CLI download service use `scope-product-analytics` to send outcomes
+directly to PostHog. Analytics delivery is best effort and does not gate product mutations.
 
 ## Runtime configuration
 
@@ -34,15 +34,15 @@ and SDK query, and does not cache submissions or log their bodies. Other paths
 under `/e` are rejected. New SDK endpoints require an explicit routing change and
 a browser test; replay and remote feature loading remain disabled.
 
-The API and worker accept `POSTHOG_HOST`, defaulting to PostHog US ingestion.
+The API, worker and CLI download service accept `POSTHOG_HOST`, defaulting to PostHog US ingestion.
 They share the web project's token and region in production. They do not use the
 web proxy. The project token is public; a personal API key must never be placed in
 application configuration.
 
 `SCOPE_ANALYTICS_RELEASE` is the immutable source SHA embedded in prepared API,
-worker, and web images. Do not override it with a persistent Railway variable.
-Explicit local test configurations may omit it. Events include `environment`,
-`source`, and the available `release` for diagnosis.
+worker, web and CLI download images. Do not override it with a persistent
+Railway variable. Explicit local test configurations may omit it. Events
+include `environment`, `source`, and the available `release` for diagnosis.
 
 ## Collection contract
 
@@ -73,6 +73,12 @@ Explicit local test configurations may omit it. Events include `environment`,
 - Failures use stable operation and reason classifications. A transport failure
   does not invent a successful domain outcome. Idempotent/no-op transitions do
   not emit a second success event.
+- `cli:artifact_download` is recorded by the CLI download service each time it
+  serves a CLI archive to a GET request, under the system actor with `target`,
+  `os` and `arch`. HEAD probes, checksum files and missing artifacts are not
+  counted. The installer downloads
+  the same archive for first installs and upgrades, so the count includes both;
+  it identifies neither people nor machines.
 - `workflow:attempt_start` and `workflow:attempt_complete` describe admitted
   attempts, including provisioning and retries. `duration_ms` measures the
   attempt. `run_result` is present only when the overall run is terminal. Count
@@ -143,8 +149,8 @@ References: [PostHog proxy routing](https://posthog.com/docs/advanced/proxy/prox
 
 ## Release checks
 
-1. Before releasing this code, configure production API, worker and web with
-   `SCOPE_ANALYTICS_ENVIRONMENT=production` and the same
+1. Before releasing this code, configure production API, worker, web and CLI
+   downloads with `SCOPE_ANALYTICS_ENVIRONMENT=production` and the same
    `POSTHOG_PROJECT_TOKEN`. Configure the web origin. Keep staging unset or use
    an explicitly separate test project. Confirm the API's host is the US region
    used by the browser proxy.

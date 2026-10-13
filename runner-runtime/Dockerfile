@@ -12,6 +12,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates crates
 COPY api api
+COPY cli-downloads cli-downloads
 COPY media-service media-service
 COPY media-worker media-worker
 COPY repo-router repo-router
