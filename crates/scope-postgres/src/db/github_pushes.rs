@@ -118,7 +118,7 @@ impl RequestStore {
             DatabaseBackend::Postgres,
             format!(
                 "SELECT {} FROM scope_github_pushes push WHERE push.id IN ({selection})",
-                prefixed("push.")
+                prefixed_columns(SELECT_PUSH, "push.")
             ),
             observed_values,
         ))
@@ -146,7 +146,7 @@ impl RequestStore {
             SET state = 'running', lease_until_unix = $2, claim_token = $3,
                 attempts = push.attempts + 1, updated_at_unix = greatest($1, push.updated_at_unix)
             FROM due WHERE push.id = due.id RETURNING {}",
-            prefixed("push.")
+            prefixed_columns(SELECT_PUSH, "push.")
         );
         let values = vec![
             now.into(),
