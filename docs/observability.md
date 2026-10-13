@@ -11,8 +11,11 @@ not.
 Each Rust binary calls `scope_service_runtime::init_telemetry` with its
 deployment component name before starting its async runtime, and
 `Telemetry::shutdown` after the runtime returns, which flushes the last batch of
-spans and logs. The web server preloads its own OpenTelemetry setup before the
-application bundle starts.
+spans and logs. The web image preloads `web/src/server/instrumentation.ts`,
+built into its own bundle, with `node --import` before the application starts.
+It traces incoming requests and outgoing `fetch` calls, applies the same
+sampling and attribute rules as the Rust services, and exports server logs
+written through `serverLog`. Nitro's close hook flushes the last batch.
 
 Export switches on only when `POSTHOG_PROJECT_TOKEN` is set. Spans go to
 `$POSTHOG_HOST/i/v1/traces` and logs to `$POSTHOG_HOST/i/v1/logs`, with the
