@@ -92,17 +92,20 @@ impl Drop for TestSchemaLease {
         let database = Arc::clone(&self.database);
         let cleanup = self.cleanup.clone();
         test_runtime().spawn(async move {
-            let _ = database.close_by_ref().await;
             match cleanup {
                 TestDatabaseCleanup::Database {
                     admin_url,
                     database_name,
-                } => database_templates::drop_database(&admin_url, &database_name).await,
+                } => {
+                    database_templates::drop_database(&admin_url, &database_name).await;
+                    drop(database);
+                }
                 #[cfg(test)]
                 TestDatabaseCleanup::Schema {
                     database_url,
                     schema_name,
                 } => {
+                    let _ = database.close_by_ref().await;
                     let dropped = async {
                         let db = Database::connect(database_url).await?;
                         let dropped = db

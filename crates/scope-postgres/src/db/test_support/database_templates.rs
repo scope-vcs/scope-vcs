@@ -208,7 +208,7 @@ fn cleanup_process_databases() {
     }
     let mut servers = databases
         .iter()
-        .map(|(admin_url, _, _)| admin_url.clone())
+        .map(|(admin_url, _)| admin_url.clone())
         .collect::<Vec<_>>();
     servers.sort_unstable();
     servers.dedup();
@@ -216,15 +216,9 @@ fn cleanup_process_databases() {
     let cleanup = run_test_future(async move {
         tokio::time::timeout(EXIT_CLEANUP_TIMEOUT, async move {
             let mut cleanups = tokio::task::JoinSet::new();
-            for (admin_url, database_name, database) in databases {
+            for (admin_url, database_name) in databases {
                 cleanups.spawn(async move {
-                    let result = async {
-                        if let Some(database) = database.upgrade() {
-                            drop(database.get_postgres_connection_pool().close());
-                        }
-                        try_drop_database(&admin_url, &database_name).await
-                    }
-                    .await;
+                    let result = try_drop_database(&admin_url, &database_name).await;
                     (database_name, result)
                 });
             }
@@ -256,7 +250,7 @@ fn cleanup_process_databases() {
             let remaining = registered_process_databases();
             let names = remaining
                 .iter()
-                .map(|(_, name, _)| name.as_str())
+                .map(|(_, name)| name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
             eprintln!(
@@ -277,7 +271,7 @@ fn cleanup_process_databases() {
     });
 }
 
-fn registered_process_databases() -> Vec<(String, String, Weak<DatabaseConnection>)> {
+fn registered_process_databases() -> Vec<(String, String)> {
     let Some(databases) = PROCESS_DATABASES.get() else {
         return Vec::new();
     };
@@ -288,7 +282,7 @@ fn registered_process_databases() -> Vec<(String, String, Weak<DatabaseConnectio
         .flat_map(|(admin_url, names)| {
             names
                 .iter()
-                .map(|(name, database)| (admin_url.clone(), name.clone(), database.clone()))
+                .map(|(name, _)| (admin_url.clone(), name.clone()))
         })
         .collect()
 }
@@ -323,6 +317,17 @@ async fn try_drop_database(admin_url: &str, database_name: &str) -> anyhow::Resu
         .acquire()
         .await
         .expect("test database cleanup semaphore should stay open");
+    let database = PROCESS_DATABASES.get().and_then(|databases| {
+        databases
+            .lock()
+            .expect("test database registry should not be poisoned")
+            .get(admin_url)
+            .and_then(|names| names.get(database_name))
+            .and_then(Weak::upgrade)
+    });
+    if let Some(database) = database {
+        drop(database.get_postgres_connection_pool().close());
+    }
     let admin = Database::connect(admin_url).await?;
     let drop_result = async {
         admin
@@ -445,6 +450,33 @@ mod tests {
         if let Some(mode) = std::env::var_os(EXIT_CLEANUP_CHILD) {
             let target = TestDatabaseTarget::required().unwrap();
             let store = connect_postgres_test_store(&target).unwrap();
+            if mode == "orphaned-lease" {
+                let name = orphaned_client_with_idle_connection(&store, &target);
+                drop(store);
+                let admin_url = target.database_url.clone();
+                let database_name = name.clone();
+                let absent = run_test_future(async move {
+                    let admin = Database::connect(&admin_url).await.unwrap();
+                    let deadline = tokio::time::Instant::now() + EXIT_CLEANUP_TIMEOUT;
+                    let absent = loop {
+                        let row = admin.query_one_raw(Statement::from_sql_and_values(
+                            admin.get_database_backend(),
+                            "SELECT NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS absent",
+                            [database_name.clone().into()],
+                        )).await.unwrap().unwrap();
+                        let absent = row.try_get::<bool>("", "absent").unwrap();
+                        if absent || tokio::time::Instant::now() >= deadline {
+                            break absent;
+                        }
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    };
+                    admin.close().await.unwrap();
+                    absent
+                });
+                unregister_process_database(&target.database_url, &name);
+                assert!(absent, "normal lease cleanup left owned database {name}");
+                return;
+            }
             if mode == "orphaned-client" {
                 let name = orphaned_client_with_idle_connection(&store, &target);
                 cleanup_process_databases();
@@ -493,6 +525,13 @@ mod tests {
             "orphaned client cleanup child failed:\nstdout:\n{}\nstderr:\n{}",
             String::from_utf8_lossy(&orphan_child.stdout),
             String::from_utf8_lossy(&orphan_child.stderr)
+        );
+        let (_, lease_child) = cleanup_child(&target, "orphaned-lease");
+        assert!(
+            lease_child.status.success(),
+            "normal lease cleanup child failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&lease_child.stdout),
+            String::from_utf8_lossy(&lease_child.stderr)
         );
         let external_database = unique_database_name("external_process");
         let admin_url = target.database_url.clone();
