@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider, useParams } from '@tanstack/react-router'
 import { RepoShell } from '@/components/repo-shell'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
+import { RepoViewingAsPicker } from '@/features/repo-detail/use-viewing-as'
 import { RequestWorkspaceSidebar } from '@/features/requests/request-workspace-sidebar'
 import { RequestWorkspaceShell } from '@/features/requests/request-workspace-shell'
 import type { RepoLiveState } from '@/api/types'
@@ -54,7 +55,7 @@ function Workspace() {
         query="" onSearch={noop} loading={queue.loading} skeleton={!queue.pages} error={null} actionError={null}
         maintainer={queue.maintainer} onRetry={noop} onLoadMore={noop} onAction={noop}
         params={{ owner: owner!, repo: repo! }} pendingId={null} selectedId={requestId}
-        focus={false} onFocusToggle={noop} />
+        focus={false} onFocusToggle={noop} viewingAs={<RepoViewingAsPicker compact />} />
     }><Outlet /></RequestWorkspaceShell>
 }
 

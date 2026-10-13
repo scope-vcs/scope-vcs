@@ -97,7 +97,8 @@
     background: color-mix(in srgb, var(--foreground) 3%, var(--background));
   }
 
-  .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-tools > search {
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-tools > search,
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-viewing-as {
     visibility: hidden;
   }
 
@@ -122,7 +123,6 @@
   }
 
   .request-workspace-sidebar[data-state="closed"] .request-workspace-open,
-  .request-workspace-sidebar[data-state="closed"] .request-workspace-viewing-as,
   .request-workspace-sidebar[data-state="closed"] .request-workspace-disclosures,
   .request-workspace-sidebar[data-state="closed"] .request-workspace-rows--pending,
   .request-workspace-sidebar[data-state="closed"] .request-workspace-rows > :not(.request-workspace-row),
