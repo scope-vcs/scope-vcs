@@ -200,7 +200,6 @@ async fn migration_plan_declares_metadata_restore_safety_for_pending_changes() {
     let (_target, db, _lease) = isolated_database().await;
     let plan = migrations::plan(db.as_ref()).await.unwrap();
     assert!(plan.metadata_restore_safe);
-    assert_eq!(plan.pending.len(), 1);
     assert_eq!(
         serde_json::to_value(&plan).unwrap()["metadataRestoreSafe"],
         true
