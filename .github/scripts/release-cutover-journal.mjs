@@ -24,7 +24,6 @@ export async function readCutover(id, request) {
   const payload = typeof deployment.payload === "string" ? JSON.parse(deployment.payload) : deployment.payload;
   if (deployment.environment !== environment || payload?.kind !== "scope-release-cutover"
       || deployment.sha !== payload.prepared?.sourceSha) throw new Error("Invalid cutover deployment");
-  validateCutoverArtifacts(payload.prepared);
   if (!Array.isArray(payload.baseline?.pending) || !payload.previous) throw new Error("Invalid cutover baseline");
   const statuses = [];
   for (let page = 1; ; page += 1) {
@@ -32,12 +31,15 @@ export async function readCutover(id, request) {
     statuses.push(...batch);
     if (batch.length < 100) break;
   }
-  const events = statuses.map((status) => {
-    const match = /^cutover:([a-z-]+)$/.exec(status.description ?? "");
-    if (!match || !phases.has(match[1])) throw new Error("Unknown cutover journal status");
-    return { phase: match[1], at: status.created_at };
-  });
-  return { ...payload, id: String(id), phase: events[0]?.phase ?? "prepared", events };
+  const events = statuses.map((status) => ({
+    phase: /^cutover:([a-z-]+)$/.exec(status.description ?? "")?.[1], at: status.created_at,
+  }));
+  const phase = events[0]?.phase ?? "prepared";
+  if (!terminal.has(phase)) {
+    if (events.some((event) => !phases.has(event.phase))) throw new Error("Unknown cutover journal status");
+    validateCutoverArtifacts(payload.prepared);
+  }
+  return { ...payload, id: String(id), phase, events };
 }
 
 export async function findOpenCutover(request) {

@@ -165,6 +165,25 @@ test("find-open returns null, the sole open journal, and fails on ambiguity", as
   await assert.rejects(findOpenCutover(store.request), /Multiple unresolved/);
 });
 
+test("completed cutovers that deployed a since-retired component do not block later releases", async () => {
+  const store = storage();
+  const retire = (id) => {
+    store.deployments[0].payload.prepared.components.retired = structuredClone(prepared.components.api);
+    store.statuses.get(String(id)).splice(1, 0, { description: "cutover:activating-retired", created_at: new Date().toISOString() });
+  };
+  const completed = await beginCutover({ prepared, baseline, previous: {} }, store.request);
+  await recordCutoverPhase(completed, "complete", store.request);
+  retire(completed);
+  assert.equal(await findOpenCutover(store.request), null);
+  await guardCutovers(store.request);
+  const open = await beginCutover({ prepared, baseline, previous: {} }, store.request);
+  await recordCutoverPhase(open, "closing", store.request);
+  retire(open);
+  await assert.rejects(findOpenCutover(store.request), /Unknown cutover journal status/);
+  store.statuses.get(String(open)).splice(1, 1);
+  await assert.rejects(findOpenCutover(store.request), /Unknown release component retired/);
+});
+
 test("maintenance rejects missing web artifacts before recording closure intent", async () => {
   const store = storage();
   const incomplete = structuredClone(prepared);
