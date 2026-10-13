@@ -47,12 +47,12 @@ pub(crate) async fn prepare_request_base_publication(
     ),
     ApiError,
 > {
-    if let Some(headers) = &headers {
-        if headers.expected_base_version != request.base_version {
-            return Err(ApiError::conflict(
-                "request base publication context changed; refresh and retry",
-            ));
-        }
+    if let Some(headers) = &headers
+        && headers.expected_base_version != request.base_version
+    {
+        return Err(ApiError::conflict(
+            "request base publication context changed; refresh and retry",
+        ));
     }
     let selected_base = headers
         .as_ref()
