@@ -73,7 +73,7 @@ function RequestDiscussionRoute() {
   const viewer = page.state.viewer
   if (scope !== page.scope) return <RequestDiscussionPending />
   const renderDiscussion = (initialPage: RequestDiscussionPage | null) => !initialPage ? (
-    <section className="px-5 py-14 text-center lg:px-7">
+    <section className="px-(--app-inset) py-14 text-center">
       <MessageSquare className="mx-auto size-5 text-muted-foreground" />
       <h2 className="mt-3 text-sm font-semibold">Discussion is unavailable</h2>
       <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-muted-foreground">

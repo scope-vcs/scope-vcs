@@ -46,7 +46,7 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
   const detail = resource.value
   return (
     <div className="scope-content-enter min-w-0">
-      <header className="border-b border-border px-5 py-5 sm:px-6">
+      <header className="border-b border-border px-(--app-inset) py-5">
         <h1 className="break-words text-lg font-semibold leading-6 tracking-[-0.01em]">
           {historyCommitTitle(detail)}
         </h1>

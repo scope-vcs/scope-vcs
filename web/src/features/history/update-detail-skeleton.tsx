@@ -8,7 +8,7 @@ export function UpdateDetailSkeleton() {
   const [navigationOpen, setNavigationOpen] = useState(true)
   return (
     <div className="min-w-0">
-      <div className="border-b border-border px-5 py-5 sm:px-6">
+      <div className="border-b border-border px-(--app-inset) py-5">
         <TextSkeleton length="long" size="title" />
         <TextSkeleton className="mt-1.5" length="medium" size="meta" />
       </div>

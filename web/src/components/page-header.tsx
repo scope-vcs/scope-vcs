@@ -38,7 +38,7 @@ export function PageRail({
   return (
     <AppRail
       as={as}
-      className={cn('px-5 sm:px-6 lg:px-8', className)}
+      className={cn('px-(--app-inset)', className)}
       id={id}
       tabIndex={tabIndex}
     >
@@ -132,7 +132,7 @@ export function WorkbenchBar({
   return (
     <div
       className={cn(
-        'flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-3 sm:px-6 lg:px-8',
+        'flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-(--app-inset) py-3',
         className,
       )}
     >
@@ -155,7 +155,7 @@ export function WorkbenchBar({
 
 export function WorkbenchBody({ children }: { children: ReactNode }) {
   return (
-    <div className="min-w-0 border-t border-border px-5 pb-14 sm:px-6 lg:px-8">
+    <div className="min-w-0 border-t border-border px-(--app-inset) pb-14">
       {children}
     </div>
   )

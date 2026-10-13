@@ -44,7 +44,7 @@ export function RepositoryFileNavigator({
 
   return (
     <>
-      <div className="mb-2 px-1">
+      <div className="mb-2">
         <NavigationSearch
           clearLabel="Clear file search"
           describedBy={`${listId}-instructions`}

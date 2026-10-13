@@ -92,7 +92,7 @@ export function RepositoryCodeView({
       >
         <div
           aria-label="Repository file navigator"
-          className="min-w-0 px-2 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="min-w-0 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           ref={fileNavigatorRef}
           tabIndex={-1}
         >

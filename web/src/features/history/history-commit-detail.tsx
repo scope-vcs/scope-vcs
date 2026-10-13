@@ -36,7 +36,7 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
   const filesTruncated = commit.files_truncated
   return (
     <div className="scope-content-enter min-w-0">
-      <div className="border-b border-border px-5 py-4 sm:px-6 lg:px-8">
+      <div className="border-b border-border px-(--app-inset) py-4">
         <h3 className="break-words text-sm font-semibold leading-5">
           {historyCommitTitle(commit)}
         </h3>

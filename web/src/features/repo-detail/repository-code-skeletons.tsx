@@ -21,7 +21,7 @@ const PENDING_SOURCE_LINES: { id: string; length: LineSkeletonLength }[] = [
 export function FileNavigatorSkeleton({ showVisibility = true }: { showVisibility?: boolean }) {
   return (
     <div>
-      <div className="mb-2 px-1">
+      <div className="mb-2">
         <BlockSkeleton className="h-8 w-full" />
       </div>
       <FileSystemTreeSkeleton metaColumnLabel={null} showVisibility={showVisibility} />

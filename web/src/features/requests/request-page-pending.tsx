@@ -33,7 +33,7 @@ export function RequestDetailPagePending() {
   return (
     <PendingSurface label="Loading request">
       <div className="request-detail-pane w-full">
-        <header className="request-detail-header border-b border-border px-5 pb-4 pt-6 sm:px-6 lg:px-8">
+        <header className="request-detail-header border-b border-border px-(--app-inset) pb-4 pt-6">
           <TextSkeleton length="xlong" size="heading" />
           <div className="request-detail-header-secondary mt-4">
             <div className="request-detail-header-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs leading-5">
@@ -53,13 +53,13 @@ export function RequestDetailPagePending() {
             </div>
           </div>
         </header>
-        <div className="request-detail-actions px-5 py-2.5 min-[701px]:hidden">
+        <div className="request-detail-actions px-(--app-inset) py-2.5 min-[701px]:hidden">
           <BlockSkeleton className="size-8" />
         </div>
         <RequestChecksPending />
         <div className="request-detail-layout">
           <div className="request-detail-document pt-4">
-            <section className="min-w-0 border-b border-border px-5 pb-5 lg:px-7">
+            <section className="min-w-0 border-b border-border px-(--app-inset) pb-5">
               <TextSkeleton className="h-6 py-1" length="xlong" />
             </section>
             <div className="min-w-0">
@@ -131,7 +131,7 @@ export function RequestChangesBodyPending() {
 
 function DiscussionSkeleton() {
   return (
-    <section className="divide-y divide-border px-5 lg:px-7">
+    <section className="divide-y divide-border px-(--app-inset)">
       {PENDING_THREADS.map((thread) => (
         <article className="py-5" key={thread.id}>
           <div className="flex items-center gap-2">
