@@ -1,5 +1,6 @@
 use super::*;
-use crate::http::request_review::tests::{git, read_policy};
+use crate::git::test_repo::pinned_identity_git as git;
+use crate::http::request_review::tests::read_policy;
 use scope_domain::{
     account::UserAccount,
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
