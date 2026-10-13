@@ -20,6 +20,7 @@ use axum::{
 use scope_api_contract::{RequestRevisionContextRequest, RequestRevisionContextResponse};
 use scope_domain::requests::{RecordRequestRevisionInput, RequestBase, RequestRevisionGitFacts};
 use scope_postgres::db::RequestRevisionContextPublication;
+use scope_product_analytics::ProductEvent;
 
 pub(crate) async fn publish(
     State(state): State<AppState>,
@@ -56,6 +57,7 @@ pub(crate) async fn publish(
         super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
     let request = &snapshot.request;
     let incarnation = snapshot.repository.incarnation();
+    let event_id = generate_prefixed_id("event_request_revision_context")?;
     let mutation = if let Some(receipt) = state
         .metadata
         .requests()
@@ -136,7 +138,7 @@ pub(crate) async fn publish(
                             contained_main_oid: None,
                             contained_main_descends_from_base: false,
                         },
-                        event_id: generate_prefixed_id("event_request_revision_context")?,
+                        event_id: event_id.clone(),
                         body: None,
                         now_unix: unix_now()?,
                     },
@@ -152,6 +154,16 @@ pub(crate) async fn publish(
         let _ = std::fs::remove_dir_all(staging);
         publication?
     };
+    if mutation.event.id == event_id {
+        state
+            .product_analytics
+            .capture(ProductEvent::request_revised(
+                &actor.id,
+                incarnation.incarnation_id(),
+                &request.id,
+                request.view.clone(),
+            ));
+    }
     state
         .publish_request_summary_refresh(
             &incarnation,

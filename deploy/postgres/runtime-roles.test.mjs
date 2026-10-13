@@ -13,15 +13,18 @@ const migrationsDir = new URL('../../crates/scope-postgres/src/migrations/', imp
 const appliedMigrations = ['m0043_retire_git_manifests.rs', 'm0044_request_attention.rs', 'm0045_dependency_analysis.rs',
   'm0053_request_ref_cleanup.rs', 'm0055_request_checks.rs', 'm0056_request_auto_merge.rs',
   'm0057_repository_invite_links.rs', 'm0058_repository_invite_emails.rs', 'm0063_account_deletion.rs',
-  'm0064_repository_content_version.rs', 'm0066_native_runs_accounts.rs',
+  'm0064_repository_content_version.rs', 'm0065_request_revision_rewrites.rs',
+  'm0066_native_runs_accounts.rs',
   'm0067_provider_neutral_request_checks.rs', 'm0068_github_connections.rs',
   'm0069_github_request_checks.rs', 'm0070_github_setup_checks_and_workflow_runs.rs',
-  'm0072_github_run_imports.rs', 'm0073_github_workflow_jobs.rs',
+  'm0071_public_check_commits.rs', 'm0072_github_run_imports.rs', 'm0073_github_workflow_jobs.rs',
   'm0075_incremental_projection_read_models.rs', 'm0076_view_ids.rs',
   'm0077_custom_views.rs', 'm0078_repo_config_version.rs',
   'm0079_request_views.rs',
   'm0080_github_workflow_job_reads.rs',
-  'm0081_github_job_log_reads.rs'];
+  'm0081_github_job_log_reads.rs',
+  'm0084_request_review_bases.rs', 'm0085_request_check_identity.rs',
+  'm0086_private_request_stacks.rs'];
 
 test('every table-creating migration after the baseline is applied to the role inventory', () => {
   const creators = readdirSync(migrationsDir)
@@ -121,6 +124,16 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
       query('SET ROLE scope_migrator;', role, false);
       query('UPDATE seaql_migrations SET version = version;', role, false);
       query('CREATE ROLE forbidden;', role, false);
+    }
+    query(`SELECT * FROM scope_request_revision_context_receipts;
+      INSERT INTO scope_request_revision_context_receipts
+        SELECT * FROM scope_request_revision_context_receipts WHERE false;
+      UPDATE scope_request_revision_context_receipts SET payload_digest = payload_digest;
+      DELETE FROM scope_request_revision_context_receipts WHERE false;`, 'scope_api');
+    for (const role of Object.keys(grants).filter((role) => role !== 'scope_api')) {
+      query('SELECT * FROM scope_request_revision_context_receipts;', role, false);
+      query(`INSERT INTO scope_request_revision_context_receipts
+        SELECT * FROM scope_request_revision_context_receipts WHERE false;`, role, false);
     }
     query('SELECT * FROM scope_runs; SELECT * FROM scope_run_jobs; SELECT * FROM scope_run_attempts;', 'scope_cache');
     query('UPDATE scope_runs SET id = id;', 'scope_cache', false);

@@ -72,7 +72,11 @@ fn child_start_and_adoption_use_the_parent_pin_and_preserve_existing_upstreams()
 
 #[test]
 fn same_head_repin_recovers_after_lost_response_or_definitive_rejection() {
-    for mode in [ContextResponse::LostResponse, ContextResponse::RejectedOnce] {
+    for mode in [
+        ContextResponse::LostResponse,
+        ContextResponse::LostResponseAdvanced,
+        ContextResponse::RejectedOnce,
+    ] {
         let dir = TempDir::new("stack-context");
         create_repo_with_head(dir.path());
         let main = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
@@ -122,12 +126,50 @@ fn same_head_repin_recovers_after_lost_response_or_definitive_rejection() {
         let first = push("rev_parent");
         assert_eq!(
             first.status.code(),
-            Some(if mode == ContextResponse::LostResponse {
+            Some(if mode != ContextResponse::RejectedOnce {
                 6
             } else {
                 5
             })
         );
+        if mode == ContextResponse::LostResponseAdvanced {
+            fs::write(dir.path().join("later.txt"), "later accepted head\n").unwrap();
+            run_git(dir.path(), ["add", "."]);
+            commit_all(dir.path(), "Advance child after receipt was lost");
+            let advanced_head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+            run_git(
+                dir.path(),
+                [
+                    "push",
+                    bare.path().to_str().unwrap(),
+                    "HEAD:refs/heads/child",
+                ],
+            );
+            run_git(dir.path(), ["reset", "--hard", &parent_head]);
+            run_git(
+                dir.path(),
+                ["update-ref", "refs/remotes/scope/child", &advanced_head],
+            );
+            let recovered = push("rev_parent");
+            assert_eq!(recovered.status.code(), Some(5), "{recovered:?}");
+            let error: Value = serde_json::from_slice(&recovered.stderr).unwrap();
+            assert_eq!(error["code"], "conflict");
+            assert_eq!(error["recovery"]["request"]["head_oid"], advanced_head);
+            assert_eq!(
+                git_stdout(dir.path(), ["rev-parse", "refs/remotes/scope/child"]),
+                advanced_head,
+                "receipt recovery must not rewind tracking to a historical head"
+            );
+            assert_eq!(
+                git_stdout(bare.path(), ["rev-parse", "refs/heads/child"]),
+                advanced_head
+            );
+            assert_eq!(git_stdout(dir.path(), ["rev-parse", "HEAD"]), parent_head);
+            let bodies = bodies.lock().unwrap();
+            assert_eq!(bodies.len(), 2);
+            assert_eq!(bodies[0], bodies[1]);
+            continue;
+        }
         let second = success(push(if mode == ContextResponse::LostResponse {
             "rev_parent"
         } else {
@@ -348,6 +390,7 @@ done
 enum ContextResponse {
     None,
     LostResponse,
+    LostResponseAdvanced,
     RejectedOnce,
 }
 
@@ -435,7 +478,7 @@ fn stack_server(
             let mut child=child.lock().unwrap();
             if accepted.lock().unwrap().is_none() {
                 *accepted.lock().unwrap()=Some(json!({"id":"rev_context","position":2,"actor":null,"base":body["base"],"base_version":2,"old_head_oid":body["expected_head_oid"],"new_head_oid":body["expected_head_oid"],"commits":[],"inspection":"Complete","created_at_unix":2}));
-                if context_response == ContextResponse::LostResponse {
+                if matches!(context_response, ContextResponse::LostResponse | ContextResponse::LostResponseAdvanced) {
                     child["base"]=json!({"kind":"main","review_base_oid":body["base"]["head_oid"]});
                     child["base_version"]=3.into();
                     child["stack_status"]="main".into();
@@ -445,7 +488,7 @@ fn stack_server(
                     child["base_version"]=2.into();
                 }
             }
-            if context_response == ContextResponse::LostResponse && bodies.len()==1 {
+            if matches!(context_response, ContextResponse::LostResponse | ContextResponse::LostResponseAdvanced) && bodies.len()==1 {
                 (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"code":"service_unavailable","message":"response lost after publication","retryable":true})))
             } else {
                 (StatusCode::OK, Json(json!({"request":child.clone(),"revision_id":"rev_context"})))

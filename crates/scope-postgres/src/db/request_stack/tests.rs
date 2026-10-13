@@ -441,6 +441,7 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
             request_id: parent.id.clone(),
             actor_user_id: "user_owner".into(),
             actor_is_maintainer: true,
+            landing: scope_domain::requests::MergeRequestLanding::NativeMerge,
             merged_head_oid: parent.head_oid.clone(),
             merged_main_oid: "landed_main".into(),
             merged_event_id: "merge".into(),

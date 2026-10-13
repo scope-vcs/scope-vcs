@@ -11,7 +11,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 const require = createRequire(import.meta.url)
 
-test('private stack preserves its pin, blocks landing and isolates layer, push and commit file comparisons', async (t) => {
+test('private stack comparisons and public visible commits render selected files without aggregate leakage', async (t) => {
   const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-request-stack-'))
   t.after(() => rm(cacheDir, { recursive: true, force: true }))
   const server = await createServer({
@@ -28,10 +28,32 @@ test('private stack preserves its pin, blocks landing and isolates layer, push a
   })
   t.after(() => server.close())
   await server.listen()
+  await server.environments.client.warmupRequest('/entry.tsx')
+  await server.waitForRequestsIdle()
   const browser = await chromium.launch({ headless: true })
   t.after(() => browser.close())
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   page.setDefaultTimeout(10_000)
+  async function captureComparison(name) {
+    for (const [viewport, size] of [
+      ['desktop', { width: 1280, height: 900 }],
+      ['mobile', { width: 390, height: 844 }],
+    ]) {
+      await page.setViewportSize(size)
+      if (viewport === 'mobile') {
+        const navigator = page.getByRole('button', { name: 'files src/child.ts', exact: true })
+        if (await navigator.getAttribute('aria-expanded') === 'false') await navigator.click()
+      }
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      const file = page.getByRole('button', { name: 'child.ts', exact: true })
+      assert.equal(await file.isVisible(), true)
+      const bounds = await file.boundingBox()
+      assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= size.width)
+      if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+        await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.${name}.${viewport}.png`, fullPage: true })
+      }
+    }
+  }
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(new URL('/adam/demo/requests/child/changes', server.resolvedUrls.local[0]).href)
@@ -57,6 +79,10 @@ test('private stack preserves its pin, blocks landing and isolates layer, push a
   const commit = await page.evaluate(() => window.calls[2])
   assert.equal(commit.comparison, 'commit')
   assert.equal(commit.commit_oid, 'b'.repeat(40))
+  assert.equal(commit.path, '/src/child.ts')
+  assert.equal(await page.getByRole('heading', { name: 'Add child UI', exact: true }).isVisible(), true)
+  assert.equal(await page.getByText('No file changes in this commit.', { exact: true }).count(), 0)
+  await captureComparison('private-commit')
   for (const [status, label] of [
     ['parent_extended', 'Parent extended'], ['parent_rewritten', 'Parent rewritten'],
     ['parent_closed', 'Parent closed'], ['ancestor_blocked', 'Ancestor blocked'],
@@ -70,5 +96,26 @@ test('private stack preserves its pin, blocks landing and isolates layer, push a
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.mobile.png`, fullPage: true })
+  for (const view of ['public', 'restricted']) {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.goto(new URL(`/adam/demo/requests/child/changes?view=${view}`, server.resolvedUrls.local[0]).href)
+    assert.equal(await page.getByRole('region', { name: 'Request dependency' }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Request layer', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Push changes', exact: true }).getAttribute('aria-current'), 'page')
+    await page.getByRole('button', { name: 'child.ts', exact: true }).click()
+    await page.waitForFunction(() => window.calls.length === 1)
+    const visibleCommitDiff = await page.evaluate(() => window.calls[0])
+    assert.equal(visibleCommitDiff.comparison, 'commit')
+    assert.equal(visibleCommitDiff.commit_oid, 'b'.repeat(40))
+    assert.equal(visibleCommitDiff.path, '/src/child.ts')
+    if (view === 'public') await captureComparison('public-push')
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.getByRole('button', { name: 'Commits', exact: true }).click()
+    await page.getByRole('button', { name: 'child.ts', exact: true }).click()
+    assert.equal(await page.evaluate(() => window.calls.length), 1)
+    await page.getByRole('button', { name: 'Push changes', exact: true }).click()
+    assert.equal(await page.getByRole('button', { name: 'child.ts', exact: true }).isVisible(), true)
+    assert.equal(await page.getByRole('button', { name: 'Request layer', exact: true }).count(), 0)
+  }
   assert.deepEqual(errors, [])
 })

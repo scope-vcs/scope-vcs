@@ -21,26 +21,30 @@ const revision = {
 const calls: unknown[] = []
 
 function Stack() {
-  const [stackStatus, setStackStatus] = useState<RequestStackStatus>('waiting_for_parent')
+  const view = new URL(location.href).searchParams.get('view') ?? 'private'
+  const isPrivate = view === 'private'
+  const visibleFiles = files.map((file) => ({ ...file, label: isPrivate ? 'private' : 'public' }))
+  const [stackStatus, setStackStatus] = useState<RequestStackStatus>(isPrivate ? 'waiting_for_parent' : 'main')
   const [search, setSearch] = useState<RequestChangesSearch>({ revision: revision.id })
   Object.assign(window, { setStackStatus, calls })
-  const status = stackStatus === 'parent_rewritten' ? 'ParentRewritten'
+  const requestBase = isPrivate ? revision.base : { kind: 'main' as const, review_base_oid: base }
+  const status = stackStatus === 'main' ? 'Ready' : stackStatus === 'parent_rewritten' ? 'ParentRewritten'
     : stackStatus === 'parent_closed' ? 'ParentClosed'
     : stackStatus === 'ancestor_blocked' ? 'AncestorBlocked'
     : stackStatus === 'integration_conflict' ? 'IntegrationConflict' : 'WaitingForParent'
   const request = {
-    id: 'child', title: 'Child UI', author_role: 'Member', head_oid: head, stack_status: stackStatus, stack_depth: 2, base_version: 1,
-    base: { kind: 'request', request_id: 'parent', revision_id: 'parent-revision', head_oid: base },
+    id: 'child', title: 'Child UI', author_role: 'Member', head_oid: head, view, stack_status: stackStatus, stack_depth: isPrivate ? 2 : 1, base_version: 1,
+    base: requestBase,
     permissions: { can_merge: true, can_submit: false }, mergeability: { status, reason: status },
   } as RequestSummaryResponse
-  const mode = search.comparison ?? 'request'
+  const mode = search.comparison ?? (isPrivate ? 'request' : 'push')
   const revisions = {
-    revisions: [revision], review_revision_id: revision.id, has_earlier_revisions: false,
-    comparison: { revision_id: revision.id, mode, base_oid: base, head_oid: head, inspection: 'Complete', files },
+    revisions: [{ ...revision, base: requestBase, commits: revision.commits.map((commit) => ({ ...commit, files: isPrivate && mode === 'commit' ? [] : visibleFiles, files_truncated: isPrivate && mode === 'commit' })) }], review_revision_id: revision.id, has_earlier_revisions: false,
+    comparison: isPrivate ? { revision_id: revision.id, mode, base_oid: base, head_oid: head, inspection: 'Complete', files: visibleFiles } : null,
   } as RequestRevisionListResponse
-  return <RepoLayoutProvider live={{ repo: { views: [{ id: 'private', name: 'Private', readers: 'assigned', includes: 'all' }] } } as RepoLiveState} subscribe={() => () => {}}>
+  return <RepoLayoutProvider live={{ repo: { views: [{ id: view, name: view, readers: view === 'public' ? 'anyone' : 'assigned', includes: isPrivate ? 'all' : [] }] } } as RepoLiveState} subscribe={() => () => {}}>
   <>
-    <RequestStackContext request={request} params={{ owner: 'adam', repo: 'demo' }} />
+    {isPrivate ? <RequestStackContext request={request} params={{ owner: 'adam', repo: 'demo' }} /> : null}
     <div className="p-3">
       <RequestLifecycleActions
         request={request} viewerId="adam"
@@ -49,7 +53,7 @@ function Stack() {
       />
     </div>
     <RequestChangesWorkbench
-      accessScope="fixture:private:adam" view="private" repoId="repo" params={{ owner: 'adam', repo: 'demo', request_id: 'child' }}
+      accessScope={`fixture:${view}:adam`} allowRequestComparison={isPrivate} view={view} repoId="repo" params={{ owner: 'adam', repo: 'demo', request_id: 'child' }}
       initialDiscussionReferences={{ commitKey: null, page: null }} revisions={revisions} search={search}
       onSearchChange={setSearch}
       loadDiscussions={async () => ({ discussions: [], next_cursor: null, snapshot_version: 0 })}

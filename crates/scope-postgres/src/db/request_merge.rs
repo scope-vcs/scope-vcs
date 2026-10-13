@@ -22,10 +22,11 @@ use {
     scope_domain::{
         repository::git::GitHead,
         requests::{
-            MergeGateAuthority, MergeGateInput, MergeRequestInput, RequestAutoMergeReadiness,
-            RequestAutoMergeStopReason, RequestLifecycleMutation, RequestViewer,
-            evaluate_merge_gate, fulfill_request_auto_merge, lands_with_main, merge_request,
-            request_auto_merge_readiness, request_checks_outcome, stop_request_auto_merge,
+            MergeGateAuthority, MergeGateInput, MergeRequestInput, MergeRequestLanding,
+            RequestAutoMergeReadiness, RequestAutoMergeStopReason, RequestLifecycleMutation,
+            RequestViewer, evaluate_merge_gate, fulfill_request_auto_merge, lands_with_main,
+            merge_request, request_auto_merge_readiness, request_checks_outcome,
+            stop_request_auto_merge,
         },
     },
 };
@@ -236,6 +237,7 @@ impl RequestStore {
                 request_id,
                 actor_user_id,
                 actor_is_maintainer: context.access.is_maintainer(),
+                landing: MergeRequestLanding::NativeMerge,
                 merged_head_oid: expected_request_head_oid,
                 merged_main_oid: update.git_head.head_oid.clone(),
                 merged_event_id,
@@ -371,6 +373,9 @@ pub(super) async fn complete_landed_requests(
                 request_id: candidate.request_id,
                 actor_user_id: completion.actor_user_id.clone(),
                 actor_is_maintainer: repo.access.is_maintainer(),
+                landing: MergeRequestLanding::ContainingMain {
+                    contains_request_head: true,
+                },
                 merged_head_oid: candidate.head_oid,
                 merged_main_oid: main_oid.to_string(),
                 merged_event_id: generate_id(generated_ids, GeneratedIdKind::RequestMergedEvent)?,

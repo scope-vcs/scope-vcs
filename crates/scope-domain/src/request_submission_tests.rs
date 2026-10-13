@@ -50,6 +50,7 @@ fn merge_input() -> MergeRequestInput {
         request_id: "request_1".to_string(),
         actor_user_id: "maintainer".to_string(),
         actor_is_maintainer: true,
+        landing: MergeRequestLanding::NativeMerge,
         merged_head_oid: "head".to_string(),
         merged_main_oid: "main-after".to_string(),
         merged_event_id: "event_merged".to_string(),

@@ -172,3 +172,120 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
     );
     migrations::assert_exact_state(db.as_ref()).await.unwrap();
 }
+
+#[tokio::test]
+async fn stack_migration_backfills_revision_versions_from_ordered_base_transitions() {
+    let (_target, db, _lease) = isolated_database().await;
+    let review_base_count = migrations::Migrator::migrations()
+        .iter()
+        .position(|migration| migration.name() == "m0084_request_review_bases")
+        .unwrap();
+    migrations::Migrator::up(db.as_ref(), Some(review_base_count as u32))
+        .await
+        .unwrap();
+    db.execute_unprepared(
+        r#"
+        INSERT INTO scope_users (id, handle, email, email_verified)
+        VALUES ('version-owner', 'version-owner', 'versions@example.test', TRUE);
+        INSERT INTO scope_repositories (
+            id, owner_handle, name, owner_user_id, publication_state,
+            change_version, content_version, repo_config, policy, incarnation_id
+        ) VALUES ('version-owner/repo', 'version-owner', 'repo', 'version-owner',
+            'Ready', 1, 1, '{}', '{}', 'repoi_revision_versions');
+        INSERT INTO scope_requests (
+            id, repo_id, name, author_user_id, author_role, audience,
+            base_main_oid, head_oid, title, description_markdown, activity_version,
+            created_at_unix, updated_at_unix
+        ) SELECT name, 'version-owner/repo', name, 'version-owner', 'Owner', 'private',
+            repeat('a',40), repeat('f',40), name, '', 6, 1, 6
+          FROM (VALUES ('history'), ('first-change'), ('legacy'), ('draft')) AS fixture(name);
+        INSERT INTO scope_request_revisions (
+            id, request_id, position, actor_user_id, old_head_oid, new_head_oid,
+            base_main_oid, rewrote_history, git_snapshot, created_at_unix
+        ) SELECT 'legacy-' || position, 'legacy', position, 'version-owner',
+            repeat('f',40), repeat('f',40), repeat(base,40), FALSE, '{}', position
+          FROM (VALUES (1,'b'), (2,'a')) AS fixture(position,base);
+    "#,
+    )
+    .await
+    .unwrap();
+    migrations::Migrator::up(db.as_ref(), Some(2))
+        .await
+        .unwrap();
+    db.execute_unprepared(r#"
+        UPDATE scope_requests SET base_version = CASE id
+            WHEN 'history' THEN 3 WHEN 'first-change' THEN 2 ELSE 1 END;
+        UPDATE scope_requests SET review_base_oid = repeat('b',40), main_ancestor_oid = repeat('b',40)
+            WHERE id = 'first-change';
+        INSERT INTO scope_request_revisions (
+            id, request_id, position, actor_user_id, old_head_oid, new_head_oid,
+            base_kind, review_base_oid, main_ancestor_oid, rewrote_history, git_snapshot, created_at_unix
+        ) SELECT 'history-' || position, 'history', position, 'version-owner',
+            repeat('f',40), repeat('f',40), 'Main', repeat(base,40), repeat(base,40),
+            rewrote, '{}', position
+          FROM (VALUES (1,'a',FALSE), (2,'a',TRUE), (3,'b',TRUE),
+            (4,'b',FALSE), (5,'a',TRUE), (6,'a',FALSE)) AS fixture(position,base,rewrote);
+        INSERT INTO scope_request_revisions (
+            id, request_id, position, actor_user_id, old_head_oid, new_head_oid,
+            base_kind, review_base_oid, main_ancestor_oid, rewrote_history, git_snapshot, created_at_unix
+        ) VALUES ('first-change-1', 'first-change', 1, 'version-owner', repeat('a',40),
+            repeat('f',40), 'Main', repeat('b',40), repeat('b',40), TRUE, '{}', 1);
+    "#).await.unwrap();
+    migrations::Migrator::up(db.as_ref(), None).await.unwrap();
+    let versions = db
+        .query_all_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT id, base_version FROM scope_request_revisions ORDER BY request_id, position",
+        ))
+        .await
+        .unwrap();
+    let actual: Vec<(String, i64)> = versions
+        .iter()
+        .map(|row| {
+            (
+                row.try_get("", "id").unwrap(),
+                row.try_get("", "base_version").unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        actual,
+        [
+            ("first-change-1".into(), 2),
+            ("history-1".into(), 1),
+            ("history-2".into(), 1),
+            ("history-3".into(), 2),
+            ("history-4".into(), 2),
+            ("history-5".into(), 3),
+            ("history-6".into(), 3),
+            ("legacy-1".into(), 1),
+            ("legacy-2".into(), 1),
+        ]
+    );
+    let requests = db
+        .query_all_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT id, base_version FROM scope_requests ORDER BY id",
+        ))
+        .await
+        .unwrap();
+    let request_versions: Vec<(String, i64)> = requests
+        .iter()
+        .map(|row| {
+            (
+                row.try_get("", "id").unwrap(),
+                row.try_get("", "base_version").unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        request_versions,
+        [
+            ("draft".into(), 1),
+            ("first-change".into(), 2),
+            ("history".into(), 3),
+            ("legacy".into(), 1),
+        ]
+    );
+    migrations::assert_exact_state(db.as_ref()).await.unwrap();
+}

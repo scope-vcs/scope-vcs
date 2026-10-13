@@ -1,4 +1,4 @@
-import type { CommitDetail, CommitSummary, ReviewFileDiff } from '@/api/types'
+import type { CommitSummary, ReviewFileDiff } from '@/api/types'
 import type {
   CommitFileResponse,
   ViewId,
@@ -23,7 +23,6 @@ import { AbsoluteTimestamp } from '@/components/timestamp'
 import { commitCount } from './request-revision-stepper'
 import { Link } from '@tanstack/react-router'
 import { MessageSquare } from 'lucide-react'
-import { displayRouteFilePath } from '@/lib/route-file'
 import { useCallback, useMemo } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
 import {
@@ -37,10 +36,8 @@ import type { LoadDiscussionsInput } from './request-discussion-api'
 import {
   discussionsForRequestCommit,
   missingRequestCommitFileError,
-  orderedRequestCommits,
   requestCommitForListId,
-  requestChangeSelection,
-  requestRevisionCommitId,
+  requestChangesPresentation,
 } from './request-changes-model'
 import type {
   RequestDiscussion,
@@ -99,6 +96,7 @@ export function RequestChangesWorkbench({
 }) {
   const model = useRequestChangesModel({
     accessScope,
+    allowRequestComparison,
     view,
     loadDiff,
     onSearchChange,
@@ -170,7 +168,7 @@ export function RequestChangesWorkbench({
         header={model.selectedRevision ? (
           <>
             <RequestRevisionHeader revision={model.selectedRevision} />
-            {model.mode !== 'commit' && revisions.comparison?.inspection === 'Incomplete' ? (
+            {revisions.comparison?.inspection === 'Incomplete' ? (
               <p role="status" className="border-b border-border px-5 py-2 text-xs text-muted-foreground sm:px-6 lg:px-8">
                 This comparison’s file inspection is incomplete. Showing the available files.
               </p>
@@ -248,6 +246,7 @@ function useRequestDiscussionReferences({
 
 function useRequestChangesModel({
   accessScope,
+  allowRequestComparison,
   view,
   loadDiff,
   onSearchChange,
@@ -257,6 +256,7 @@ function useRequestChangesModel({
   search,
 }: {
   accessScope: string | null
+  allowRequestComparison: boolean
   view: ViewId
   loadDiff: (
     input: LoadRequestRevisionDiffInput,
@@ -269,43 +269,24 @@ function useRequestChangesModel({
   search: RequestChangesSearch
 }) {
   const orderedRevisions = revisions.revisions
-  const selection = useMemo(
-    () => requestChangeSelection(
-      orderedRevisions,
-      revisions.review_revision_id,
-      search,
-    ),
-    [orderedRevisions, revisions.review_revision_id, search],
-  )
-  const selectedRevision = selection.revision
-  const mode = search.comparison ?? (search.commit ? 'commit' : revisions.comparison?.mode ?? 'request')
-  const comparison = revisions.comparison
-  const aggregate = mode !== 'commit' && selectedRevision && comparison?.revision_id === selectedRevision.id && comparison.mode === mode
-    ? comparison : null
-  const commits = useMemo(
-    () => orderedRequestCommits(selectedRevision ? [selectedRevision] : []),
-    [selectedRevision],
+  const {
+    aggregate,
+    commits,
+    diffMode,
+    error: inspectionError,
+    mode,
+    selectedCommit,
+    selectedCommitId,
+    selectedCommitOid,
+    selectedCommitSummary,
+    selectedRevision,
+  } = useMemo(
+    () => requestChangesPresentation(revisions, search, view, repoId, allowRequestComparison),
+    [revisions, search, view, repoId, allowRequestComparison],
   )
   const selectedRevisionId = selectedRevision?.id ?? null
-  const selectedCommitOid = mode === 'commit' ? selection.commit : null
-  const selectedCommitId = selectedRevision && selectedCommitOid
-    ? requestRevisionCommitId(selectedRevision.id, selectedCommitOid)
-    : null
-  const generation = mode === 'commit' ? `${selectedRevision?.position ?? 0}` : `${aggregate?.base_oid ?? ''}:${aggregate?.head_oid ?? ''}`
-  const revisionKey = `request:${params.request_id}:${selectedRevision?.id ?? 'none'}:${mode}`
-  const selectedCommitSummary = selectedRevision?.commits.find(
-    ({ oid }) => oid === selectedCommitOid,
-  ) ?? null
-  const selectedCommit = aggregate
-    ? comparisonDetail(aggregate, view, repoId)
-    : mode === 'commit' && selectedRevision && selectedCommitSummary
-    ? commitDetail(
-        selectedRevision.id,
-        selectedCommitSummary,
-        view,
-        repoId,
-      )
-    : null
+  const generation = selectedCommitOid ? `${selectedRevision?.position ?? 0}` : `${aggregate?.base_oid ?? ''}:${aggregate?.head_oid ?? ''}`
+  const revisionKey = `request:${params.request_id}:${selectedRevision?.id ?? 'none'}:${diffMode}`
   const selectedFilePath = search.path ?? null
   const selectedFile = selectedCommit?.files.find(
     ({ path }) => path === selectedFilePath,
@@ -325,18 +306,18 @@ function useRequestChangesModel({
     : null
   const loadSelectedDiff = useCallback(
     async (signal: AbortSignal) => {
-      if (!selectedRevisionId || !selectedFilePath || mode === 'commit' && !selectedCommitOid) {
+      if (!selectedRevisionId || !selectedFilePath || diffMode === 'commit' && !selectedCommitOid) {
         throw new Error('Select a changed file.')
       }
       return loadDiff({
         ...params,
-        comparison: mode,
+        comparison: diffMode,
         commit_oid: selectedCommitOid ?? undefined,
         path: selectedFilePath,
         revision_id: selectedRevisionId,
       }, signal)
     },
-    [loadDiff, params, selectedCommitOid, selectedFilePath, selectedRevisionId, mode],
+    [loadDiff, params, selectedCommitOid, selectedFilePath, selectedRevisionId, diffMode],
   )
   const diffResource = useCachedResource({
     fallbackError: 'Request file diff is unavailable.',
@@ -344,9 +325,6 @@ function useRequestChangesModel({
     load: loadSelectedDiff,
     resource: historyDiffResource,
   })
-  const inspectionError = mode !== 'commit'
-    ? !selectedRevision ? selection.error : !aggregate || aggregate.inspection === 'Unavailable' ? 'This comparison could not be inspected.' : null
-    : selection.error
   const commitState: CommitDetailState = inspectionError
     ? { commit: null, error: inspectionError, status: 'failed' }
     : selectedCommit
@@ -378,7 +356,7 @@ function useRequestChangesModel({
 
   return {
     closeDiff: () => replaceSelection(selectedRevision, selectedCommitOid, null),
-    commits: aggregate && selectedCommit ? [selectedCommit] : mode === 'commit' ? commits : [],
+    commits,
     commitState,
     mode,
     diffIdentity,
@@ -530,46 +508,4 @@ function RequestCommitContext({
       ) : null}
     </div>
   )
-}
-
-function commitDetail(
-  revisionId: string,
-  commit: RequestRevisionListResponse['revisions'][number]['commits'][number],
-  view: ViewId,
-  repoId: string,
-): CommitDetail {
-  return {
-    view,
-    author: commit.author,
-    change_count: commit.change_count,
-    files_truncated: commit.files_truncated,
-    files: commit.files.map((file) => ({
-      ...file,
-      path: `/${displayRouteFilePath(file.path)}`,
-    })),
-    logical_commit_id: commit.oid,
-    message: commit.message,
-    parent_projected_id: commit.parent_oids[0] ?? null,
-    projected_id: requestRevisionCommitId(revisionId, commit.oid),
-    repo_id: repoId,
-  }
-}
-
-function comparisonDetail(
-  comparison: NonNullable<RequestRevisionListResponse['comparison']>,
-  view: ViewId,
-  repoId: string,
-): CommitDetail {
-  return {
-    view,
-    repo_id: repoId,
-    projected_id: `${comparison.revision_id}:${comparison.mode}:${comparison.base_oid}:${comparison.head_oid}`,
-    logical_commit_id: comparison.head_oid ?? '',
-    parent_projected_id: comparison.base_oid,
-    author: null,
-    message: comparison.mode === 'request' ? 'Request layer' : 'Changes in this push',
-    change_count: comparison.files.length,
-    files_truncated: comparison.inspection !== 'Complete',
-    files: comparison.files.map((file) => ({ ...file, path: `/${displayRouteFilePath(file.path)}` })),
-  }
 }

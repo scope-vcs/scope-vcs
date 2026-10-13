@@ -184,7 +184,15 @@ pub(crate) fn attach_visible_request_refs(
     target_repo: &FsPath,
     view_bases: &RequestViewBases,
 ) -> Result<(), ApiError> {
-    for request in requests {
+    for request in requests
+        .iter()
+        .filter(|request| request.git_snapshot.is_some())
+        .chain(
+            requests
+                .iter()
+                .filter(|request| request.git_snapshot.is_none()),
+        )
+    {
         let request_ref = canonical_request_ref(&request.name);
         if let Some(snapshot) = request.git_snapshot.as_ref() {
             fetch_snapshot_into(

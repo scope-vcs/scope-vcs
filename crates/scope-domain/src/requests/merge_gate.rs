@@ -174,26 +174,9 @@ pub(super) fn evaluate_request_merge(
             RequestMergeabilityStatus::MissingRequestBranch,
             Some("request branch has not been pushed"),
         ),
-        RequestState::Open if subject.stack_status != super::RequestStackStatus::Main => (
-            match subject.stack_status {
-                super::RequestStackStatus::WaitingForParent
-                | super::RequestStackStatus::ParentExtended => {
-                    RequestMergeabilityStatus::WaitingForParent
-                }
-                super::RequestStackStatus::ParentRewritten => {
-                    RequestMergeabilityStatus::ParentRewritten
-                }
-                super::RequestStackStatus::ParentClosed => RequestMergeabilityStatus::ParentClosed,
-                super::RequestStackStatus::AncestorBlocked => {
-                    RequestMergeabilityStatus::AncestorBlocked
-                }
-                super::RequestStackStatus::IntegrationConflict => {
-                    RequestMergeabilityStatus::IntegrationConflict
-                }
-                super::RequestStackStatus::Main => unreachable!(),
-            },
-            subject.stack_status.blocking_reason(),
-        ),
+        RequestState::Open if subject.stack_status != super::RequestStackStatus::Main => {
+            return request_stack_mergeability(subject.stack_status).unwrap();
+        }
         RequestState::Open => match checks {
             RequestChecksOutcome::Clear => (RequestMergeabilityStatus::Ready, None),
             RequestChecksOutcome::NotEvaluated => (
@@ -219,6 +202,55 @@ pub(super) fn evaluate_request_merge(
         },
     };
     RequestMergeability { status, reason }
+}
+
+fn request_stack_mergeability(status: super::RequestStackStatus) -> Option<RequestMergeability> {
+    let mergeability = match status {
+        super::RequestStackStatus::Main => return None,
+        super::RequestStackStatus::WaitingForParent | super::RequestStackStatus::ParentExtended => {
+            RequestMergeabilityStatus::WaitingForParent
+        }
+        super::RequestStackStatus::ParentRewritten => RequestMergeabilityStatus::ParentRewritten,
+        super::RequestStackStatus::ParentClosed => RequestMergeabilityStatus::ParentClosed,
+        super::RequestStackStatus::AncestorBlocked => RequestMergeabilityStatus::AncestorBlocked,
+        super::RequestStackStatus::IntegrationConflict => {
+            RequestMergeabilityStatus::IntegrationConflict
+        }
+    };
+    Some(RequestMergeability {
+        status: mergeability,
+        reason: status.blocking_reason(),
+    })
+}
+
+pub(super) fn validate_request_merge_execution(
+    request: &Request,
+    landing: super::MergeRequestLanding,
+) -> Result<(), crate::error::DomainError> {
+    if let super::MergeRequestLanding::ContainingMain {
+        contains_request_head,
+    } = landing
+    {
+        if !contains_request_head {
+            return Err(crate::error::DomainError::conflict(
+                "containing main must contain the request head",
+            ));
+        }
+        if !matches!(request.base, super::RequestBase::Main { .. }) {
+            return Err(crate::error::DomainError::conflict(
+                "parent request must land first",
+            ));
+        }
+        if request.stack_status == super::RequestStackStatus::IntegrationConflict {
+            return Ok(());
+        }
+    }
+    if let Some(decision) = request_stack_mergeability(request.stack_status) {
+        return Err(crate::error::DomainError::conflict(
+            decision.reason.unwrap(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

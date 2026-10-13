@@ -105,7 +105,7 @@ impl PrivateStackFixture {
         });
         let child_id = start_private_request(&state, "stack-child", Some(base)).await;
         commit_file(&source, "child.txt", "child layer\n");
-        assert_git_push(&source, &remote, "stack-child", None, &[]);
+        assert_git_push(&source, &remote, "stack-child", Some(&parent.head_oid), &[]);
         submit_private_request(&state, &child_id).await;
         let child_head = git_head_oid(&source);
         Self {
@@ -454,7 +454,7 @@ async fn private_stack_rewrite_requires_current_explicit_pin_and_closed_parent_r
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn same_head_repin_receipt_replays_once_and_rejects_another_payload() {
-    let fixture = PrivateStackFixture::create("private-stack-same-head-receipt").await;
+    let mut fixture = PrivateStackFixture::create("private-stack-same-head-receipt").await;
     let parent_extension = fixture.extend_parent().await;
     reset_stack_source(&fixture.source, &fixture.child_head);
     run_git(
@@ -504,6 +504,8 @@ async fn same_head_repin_receipt_replays_once_and_rejects_another_payload() {
         "/v1/repos/owner/repo/requests/{}/revision-context",
         fixture.child_id
     );
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
+    fixture.state.product_analytics = analytics;
     let accepted = api_request(
         router(fixture.state.clone()),
         "POST",
@@ -532,6 +534,11 @@ async fn same_head_repin_receipt_replays_once_and_rejects_another_payload() {
         accepted["revision_id"]
     );
     assert_eq!(fixture.latest_child_revision().await, saved);
+    assert_eq!(recording.event_names(), ["request:revision_create"]);
+    assert_eq!(
+        recording.property(0, "request_id"),
+        Some(serde_json::json!(fixture.child_id))
+    );
     body["expected_base_version"] = serde_json::json!(child.base_version + 1);
     let incompatible = api_request(
         router(fixture.state.clone()),

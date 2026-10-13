@@ -282,5 +282,22 @@ pub(super) fn retry_pending_context(
         base_version: body.expected_parent_base_version,
     };
     publish_context(git_repo, api, context, request, &pin, head)?;
+    let current = get_request(
+        api,
+        &context.target.owner,
+        &context.target.repo,
+        &request.id,
+    )?;
+    if !accepted_pin(api, context, &current.request, head, revision, None)? {
+        return Err(crate::error::CliError::with_recovery(
+            ErrorResponse::new(
+                ErrorCode::Conflict,
+                "the recovered revision-context publication is no longer the current request revision",
+            )
+            .with_instruction("Inspect the current request and revision history before publishing again."),
+            serde_json::json!({ "request": current.request }),
+        )
+        .into());
+    }
     Ok(true)
 }

@@ -37,7 +37,7 @@ impl MigrationTrait for Migration {
                     REFERENCES scope_request_revisions(request_id, id);
             ALTER TABLE scope_request_revisions
                 DROP CONSTRAINT scope_request_revisions_base_kind_check,
-                ADD COLUMN base_version bigint NOT NULL DEFAULT 1 CHECK (base_version > 0),
+                ADD COLUMN base_version bigint CHECK (base_version > 0),
                 ADD COLUMN parent_request_id text,
                 ADD COLUMN parent_revision_id text,
                 ADD COLUMN parent_head_oid text,
@@ -53,7 +53,26 @@ impl MigrationTrait for Migration {
                 ADD CONSTRAINT fk_scope_request_revisions_parent_revision
                     FOREIGN KEY (parent_request_id, parent_revision_id)
                     REFERENCES scope_request_revisions(request_id, id);
-            ALTER TABLE scope_request_revisions ALTER COLUMN base_version DROP DEFAULT;
+            WITH revision_bases AS (
+                SELECT revision.id, revision.request_id, revision.position, revision.review_base_oid,
+                    request.base_version,
+                    lead(revision.review_base_oid, 1, request.review_base_oid) OVER (
+                        PARTITION BY revision.request_id ORDER BY revision.position, revision.id
+                    ) AS next_review_base_oid
+                FROM scope_request_revisions revision
+                JOIN scope_requests request ON request.id = revision.request_id
+            ), revision_versions AS (
+                SELECT id, greatest(1, base_version - sum(
+                    CASE WHEN review_base_oid <> next_review_base_oid THEN 1 ELSE 0 END
+                ) OVER (
+                    PARTITION BY request_id ORDER BY position DESC, id DESC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                )) AS base_version
+                FROM revision_bases
+            )
+            UPDATE scope_request_revisions revision SET base_version = version.base_version
+                FROM revision_versions version WHERE version.id = revision.id;
+            ALTER TABLE scope_request_revisions ALTER COLUMN base_version SET NOT NULL;
             ALTER TABLE scope_requests
                 ALTER COLUMN stack_status DROP DEFAULT,
                 ALTER COLUMN stack_depth DROP DEFAULT;
