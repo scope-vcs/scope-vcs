@@ -88,15 +88,13 @@ struct Exporters {
 }
 
 pub fn init_telemetry(service: &'static str, log_filter: &str) -> anyhow::Result<Telemetry> {
-    let log_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| log_filter.to_owned());
+    let log_filter = service_log_filter(std::env::var("RUST_LOG").ok(), log_filter);
     let destination = PostHogDestination::from_env(|name| std::env::var(name).ok());
-    let exporters = destination
-        .as_ref()
-        .ok()
-        .and_then(Option::as_ref)
-        .map(|destination| destination.exporters(service))
-        .transpose()?;
-    subscriber(&log_filter, exporters.as_ref(), std::io::stdout).try_init()?;
+    let exporters = match &destination {
+        Ok(Some(destination)) => Some(destination.exporters(service)?),
+        _ => None,
+    };
+    subscriber(log_filter, exporters.as_ref(), std::io::stdout).try_init()?;
     if let Err(InjectedExporterHeaders(variable)) = destination {
         eprintln!(
             "PostHog telemetry export disabled because Railway still injects {variable}; disable Railway tracing for this service"
@@ -105,8 +103,14 @@ pub fn init_telemetry(service: &'static str, log_filter: &str) -> anyhow::Result
     Ok(Telemetry { exporters })
 }
 
+fn service_log_filter(rust_log: Option<String>, service_default: &str) -> EnvFilter {
+    rust_log
+        .and_then(|directives| EnvFilter::try_new(directives).ok())
+        .unwrap_or_else(|| service_default.into())
+}
+
 fn subscriber<W>(
-    log_filter: &str,
+    log_filter: EnvFilter,
     exporters: Option<&Exporters>,
     writer: W,
 ) -> impl Subscriber + Send + Sync
@@ -118,7 +122,7 @@ where
             tracing_subscriber::fmt::layer()
                 .event_format(WithTraceId(tracing_subscriber::fmt::format()))
                 .with_writer(writer)
-                .with_filter(EnvFilter::new(log_filter)),
+                .with_filter(log_filter.clone()),
         )
         .with(exporters.map(|exporters| {
             tracing_opentelemetry::layer()
@@ -126,13 +130,13 @@ where
                 .with_filter(EnvFilter::new(EXPORTED_SPANS))
         }))
         .with(exporters.map(|exporters| {
-            OpenTelemetryTracingBridge::new(&exporters.logger).with_filter(
-                EnvFilter::new(log_filter).and(filter_fn(|metadata| {
+            OpenTelemetryTracingBridge::new(&exporters.logger).with_filter(log_filter.and(
+                filter_fn(|metadata| {
                     !UNEXPORTED_LOG_TARGETS
                         .iter()
                         .any(|target| metadata.target().starts_with(target))
-                })),
-            )
+                }),
+            ))
         }))
 }
 
@@ -196,12 +200,12 @@ impl PostHogDestination {
             ("service.version", &self.release),
             ("deployment.environment.name", &self.environment),
         ];
-        attributes
-            .into_iter()
-            .filter_map(|(key, value)| value.clone().map(|value| KeyValue::new(key, value)))
-            .fold(
-                Resource::builder().with_service_name(service),
-                |resource, attribute| resource.with_attribute(attribute),
+        Resource::builder()
+            .with_service_name(service)
+            .with_attributes(
+                attributes.into_iter().filter_map(|(key, value)| {
+                    value.clone().map(|value| KeyValue::new(key, value))
+                }),
             )
             .build()
     }
@@ -370,13 +374,24 @@ mod tests {
 
     fn logged_inside_span(exporters: Option<&Exporters>) -> String {
         let captured = Captured::default();
-        let subscriber = subscriber("info", exporters, captured.clone());
+        let subscriber = subscriber(EnvFilter::new("info"), exporters, captured.clone());
         tracing::subscriber::with_default(subscriber, || {
             let span = tracing::info_span!(target: "scope_test", "request");
             let _entered = span.enter();
             tracing::info!(target: "scope_test", "handled");
         });
         String::from_utf8(captured.0.lock().unwrap().clone()).unwrap()
+    }
+
+    #[test]
+    fn an_invalid_log_filter_keeps_the_service_default() {
+        let captured = Captured::default();
+        let filter = service_log_filter(Some("scope_test=invalid".to_owned()), "scope_test=info");
+        tracing::subscriber::with_default(subscriber(filter, None, captured.clone()), || {
+            tracing::info!(target: "scope_test", "handled");
+        });
+        let logged = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+        assert!(logged.ends_with("handled\n"), "{logged}");
     }
 
     #[test]
@@ -401,7 +416,7 @@ mod tests {
         let logs = InMemoryLogExporter::default();
         let exporters = exporters(&logs);
         let subscriber = subscriber(
-            "info,reqwest::connect=debug,opentelemetry_sdk=debug",
+            EnvFilter::new("info,reqwest::connect=debug,opentelemetry_sdk=debug"),
             Some(&exporters),
             Captured::default(),
         );
