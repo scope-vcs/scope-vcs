@@ -3,7 +3,6 @@ use super::{
     request_auto_merge::{
         automatic_event_id, lock_active_intent_for_request, persist_existing_auto_merge_mutation,
     },
-    request_revision_rows::latest_revision_for_request,
     request_rows::{request_by_id, save_request_row},
 };
 use crate::error::PostgresError;

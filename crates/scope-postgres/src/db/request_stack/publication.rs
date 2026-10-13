@@ -13,7 +13,7 @@ use scope_domain::{
 };
 use sea_orm::{ConnectionTrait, DatabaseTransaction, EntityTrait};
 
-pub(super) async fn validate_start<C: ConnectionTrait>(
+pub(in crate::db) async fn validate_start<C: ConnectionTrait>(
     conn: &C,
     input: &mut scope_domain::requests::StartRequestInput,
     repo: &RepositoryAccessContext,
@@ -38,7 +38,7 @@ pub(super) async fn validate_start<C: ConnectionTrait>(
     Ok(depth)
 }
 
-pub(super) async fn validate_publication(
+pub(in crate::db) async fn validate_publication(
     tx: &DatabaseTransaction,
     request: &Request,
     input: &RecordRequestRevisionInput,

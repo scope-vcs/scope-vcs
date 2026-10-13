@@ -214,6 +214,7 @@ wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
     ParentClosed,
     AncestorBlocked,
     IntegrationConflict,
+    NeedsMainUpdate,
     Ready,
     RepositoryNotReady,
     Draft,
