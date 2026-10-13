@@ -38,7 +38,7 @@ pub(super) enum RequestCommandResult {
     Restack(RestackResult),
     Diff(DiffResult),
     Checks(ChecksResult),
-    Detail(DetailResult),
+    Detail(Box<DetailResult>),
     List(ListResult),
     Mutation(MutationResult),
     AutoMerge(RepoResponse<crate::api::RequestAutoMergeResponse>),
