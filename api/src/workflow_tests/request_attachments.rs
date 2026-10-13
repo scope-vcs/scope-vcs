@@ -202,8 +202,8 @@ async fn request_attachment_original_grant_requires_fenced_source_validation() {
     let state = fixture().await;
     let prepared = prepare(&state, "validated-original").await;
     finish(&state, &prepared).await;
-    let now = crate::persistence::unix_now().unwrap();
     validate_source(&state, &prepared.attachment.id).await;
+    let requested_at = crate::persistence::unix_now().unwrap();
     let response = api_request(
         router(state),
         "POST",
@@ -212,6 +212,7 @@ async fn request_attachment_original_grant_requires_fenced_source_validation() {
         Some(r#"{"target":{"kind":"original"}}"#),
     )
     .await;
+    let responded_at = crate::persistence::unix_now().unwrap();
     let status = response.status();
     let body = response_json(response).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -236,7 +237,8 @@ async fn request_attachment_original_grant_requires_fenced_source_validation() {
             .media_url
             .starts_with("http://127.0.0.1:8083/v1/attachments/")
     );
-    assert!(grant.expires_at_unix <= now + 301);
+    assert_eq!(claims.expires_at_unix, grant.expires_at_unix);
+    assert!((requested_at + 300..=responded_at + 300).contains(&grant.expires_at_unix));
 }
 
 #[tokio::test]

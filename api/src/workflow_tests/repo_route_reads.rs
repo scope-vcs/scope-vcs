@@ -1,5 +1,4 @@
 use super::*;
-use std::time::Duration;
 
 async fn state_with_docs() -> AppState {
     let state = test_state_with_repo();
@@ -23,10 +22,30 @@ async fn get(app: &axum::Router, uri: &str, authorization: Option<&str>) -> Resp
     api_request(app.clone(), "GET", uri, authorization, None).await
 }
 
-async fn within_lock(response: impl std::future::Future<Output = Response>) -> Response {
-    tokio::time::timeout(Duration::from_secs(2), response)
-        .await
-        .expect("the route must not wait on locked tables")
+async fn hide_tables(state: &AppState, tables: &[&str]) {
+    for table in tables {
+        state
+            .metadata
+            .admin()
+            .execute_for_tests(&format!(
+                "ALTER TABLE {table} RENAME TO unavailable_{table}"
+            ))
+            .await
+            .unwrap();
+    }
+}
+
+async fn restore_tables(state: &AppState, tables: &[&str]) {
+    for table in tables {
+        state
+            .metadata
+            .admin()
+            .execute_for_tests(&format!(
+                "ALTER TABLE unavailable_{table} RENAME TO {table}"
+            ))
+            .await
+            .unwrap();
+    }
 }
 
 #[tokio::test]
@@ -41,20 +60,16 @@ async fn file_content_and_config_routes_read_no_commit_history() {
         StatusCode::OK
     );
 
-    let held = state
-        .metadata
-        .admin()
-        .lock_tables_for_tests(&[
-            "scope_logical_commits",
-            "scope_file_changes",
-            "scope_visibility_change_sets",
-            "scope_visibility_changes",
-        ])
-        .await
-        .unwrap();
-    let file = within_lock(get(&app, content, Some(&owner))).await;
-    let config = within_lock(get(&app, "/v1/repos/owner/repo/config", Some(&outsider))).await;
-    held.rollback().await.unwrap();
+    let history = [
+        "scope_logical_commits",
+        "scope_file_changes",
+        "scope_visibility_change_sets",
+        "scope_visibility_changes",
+    ];
+    hide_tables(&state, &history).await;
+    let file = get(&app, content, Some(&owner)).await;
+    let config = get(&app, "/v1/repos/owner/repo/config", Some(&outsider)).await;
+    restore_tables(&state, &history).await;
 
     assert_eq!(file.status(), StatusCode::OK);
     assert_eq!(response_json(file).await["content"]["text"], "docs");
@@ -68,20 +83,16 @@ async fn projection_preview_reads_history_but_no_live_files() {
     let preview = "/v1/repos/owner/repo/projection-preview?view=public";
     assert_eq!(get(&app, preview, None).await.status(), StatusCode::OK);
 
-    let held = state
-        .metadata
-        .admin()
-        .lock_tables_for_tests(&["scope_live_files", "scope_repository_invites"])
-        .await
-        .unwrap();
-    let public = within_lock(get(&app, preview, None)).await;
-    let private = within_lock(get(
+    let history = ["scope_live_files", "scope_repository_invites"];
+    hide_tables(&state, &history).await;
+    let public = get(&app, preview, None).await;
+    let private = get(
         &app,
         "/v1/repos/owner/repo/projection-preview?view=private",
         None,
-    ))
+    )
     .await;
-    held.rollback().await.unwrap();
+    restore_tables(&state, &history).await;
 
     assert_eq!(public.status(), StatusCode::OK);
     let public = response_json(public).await;
@@ -126,19 +137,15 @@ async fn git_backed_file_content_reads_no_commit_history() {
         StatusCode::OK
     );
 
-    let held = state
-        .metadata
-        .admin()
-        .lock_tables_for_tests(&[
-            "scope_logical_commits",
-            "scope_file_changes",
-            "scope_visibility_change_sets",
-            "scope_visibility_changes",
-        ])
-        .await
-        .unwrap();
-    let file = within_lock(get(&app, content, Some(&owner))).await;
-    held.rollback().await.unwrap();
+    let history = [
+        "scope_logical_commits",
+        "scope_file_changes",
+        "scope_visibility_change_sets",
+        "scope_visibility_changes",
+    ];
+    hide_tables(&state, &history).await;
+    let file = get(&app, content, Some(&owner)).await;
+    restore_tables(&state, &history).await;
 
     assert_eq!(file.status(), StatusCode::OK);
     assert_eq!(
