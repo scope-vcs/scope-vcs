@@ -7,21 +7,32 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use scope_cli::{
-    distribution::DistributionManifest,
-    installers::{posix_install_script, windows_install_script},
-};
+use distribution::{DistributionManifest, Download};
+use installers::{posix_install_script, windows_install_script};
+use scope_product_analytics::{EventSource, ProductAnalytics, ProductEvent};
+use scope_service_runtime::{init_telemetry, shutdown_signal};
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
+
+mod distribution;
+mod installers;
 
 #[derive(Clone)]
 struct AppState {
     artifact_dir: Arc<PathBuf>,
     manifest: &'static DistributionManifest,
     public_url: Arc<str>,
+    analytics: ProductAnalytics,
+}
+
+fn main() -> anyhow::Result<()> {
+    let telemetry = init_telemetry("scope_cli_service=info,scope_product_analytics=info")?;
+    let result = run();
+    telemetry.shutdown();
+    result
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn run() -> anyhow::Result<()> {
     let port = env::var("PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
@@ -38,7 +49,9 @@ async fn main() -> anyhow::Result<()> {
                 .context("set SCOPE_CLI_PUBLIC_URL to the public CLI service origin")?,
         )?
         .into(),
+        analytics: ProductAnalytics::from_env(EventSource::CliDownloads).await?,
     };
+    let analytics = state.analytics.clone();
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
@@ -51,9 +64,12 @@ async fn main() -> anyhow::Result<()> {
         .await
         .with_context(|| format!("bind {addr}"))?;
 
-    axum::serve(listener, app)
+    let served = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
         .await
-        .context("serve CLI service")
+        .context("serve CLI service");
+    analytics.shutdown().await;
+    served
 }
 
 async fn healthz() -> impl IntoResponse {
@@ -101,12 +117,21 @@ async fn install_windows(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn download(State(state): State<AppState>, Path(artifact): Path<String>) -> Response {
-    let Some(file_name) = state.manifest.downloadable_file(&artifact) else {
+    let Some(download) = state.manifest.download(&artifact) else {
         return StatusCode::NOT_FOUND.into_response();
     };
 
-    match tokio::fs::read(state.artifact_dir.join(file_name)).await {
+    match tokio::fs::read(state.artifact_dir.join(download.file_name())).await {
         Ok(bytes) => {
+            if let Download::Archive(target) = download {
+                state
+                    .analytics
+                    .capture(ProductEvent::cli_artifact_downloaded(
+                        &target.triple,
+                        &target.os,
+                        &target.arch,
+                    ));
+            }
             let mut response = Body::from(bytes).into_response();
             response.headers_mut().insert(
                 header::CONTENT_TYPE,
@@ -144,6 +169,66 @@ fn missing_downloads(state: &AppState) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
+
+    #[tokio::test]
+    async fn only_served_archives_count_as_downloads() {
+        let manifest = DistributionManifest::bundled();
+        let [served, missing, ..] = manifest.targets() else {
+            panic!("bundled manifest has fewer than two targets");
+        };
+        let artifacts = tempfile::tempdir().unwrap();
+        std::fs::write(artifacts.path().join(&served.artifact), b"archive").unwrap();
+        std::fs::write(
+            artifacts.path().join(served.checksum_artifact()),
+            b"checksum",
+        )
+        .unwrap();
+        let (analytics, recording) =
+            ProductAnalytics::recording_for_source(EventSource::CliDownloads);
+        let state = AppState {
+            artifact_dir: Arc::new(artifacts.path().to_path_buf()),
+            manifest,
+            public_url: "https://example.test".into(),
+            analytics,
+        };
+
+        let mut statuses = Vec::new();
+        for requested in [
+            served.artifact.clone(),
+            served.checksum_artifact(),
+            missing.artifact.clone(),
+            "scope-unknown.tar.gz".to_string(),
+        ] {
+            statuses.push(
+                download(State(state.clone()), Path(requested))
+                    .await
+                    .status(),
+            );
+        }
+
+        assert_eq!(
+            statuses,
+            [
+                StatusCode::OK,
+                StatusCode::OK,
+                StatusCode::NOT_FOUND,
+                StatusCode::NOT_FOUND
+            ]
+        );
+        assert_eq!(recording.event_names(), ["cli:artifact_download"]);
+        for (property, value) in [
+            ("target", served.triple.as_str()),
+            ("os", served.os.as_str()),
+            ("arch", served.arch.as_str()),
+            ("source", "cli_downloads"),
+        ] {
+            assert_eq!(
+                recording.property(0, property),
+                Some(Value::String(value.to_string()))
+            );
+        }
+    }
 
     #[test]
     fn public_origin_rejects_credentials_paths_and_script_syntax() {
