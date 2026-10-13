@@ -1,5 +1,4 @@
 use super::*;
-use scope_domain::requests::RequestComparisonMode as DomainComparisonMode;
 
 #[derive(Deserialize)]
 pub(crate) struct RequestComparisonFileDiffRequest {
@@ -84,31 +83,10 @@ pub(super) fn inspect_comparison(
 ) -> Result<RequestComparisonResponse, ApiError> {
     let comparison = resolve_comparison(raw_repo, revision, access, mode, selected_commit)?;
     let identity = comparison.identity();
-    let base_oid = if identity.mode == DomainComparisonMode::Request {
-        let output = run_git_output_bounded(
-            Some(raw_repo),
-            &[
-                "merge-base",
-                identity.base_oid.as_deref().expect("request base exists"),
-                &identity.head_oid,
-            ],
-            "resolving request comparison base",
-            130,
-        )?;
-        if !output.status.success() {
-            return Err(ApiError::infrastructure_unavailable(
-                "request comparison has no merge base",
-            ));
-        }
-        Some(
-            String::from_utf8(output.stdout)
-                .map_err(ApiError::bad_request)?
-                .trim()
-                .to_string(),
-        )
-    } else {
-        identity.base_oid.clone()
-    };
+    let base_oid = crate::use_cases::request_revision_inspection::request_comparison_base_oid(
+        raw_repo,
+        &comparison,
+    )?;
     let (files, incomplete) = inspection::inspect_comparison_files(
         raw_repo,
         &repo.policy,
@@ -162,12 +140,21 @@ pub(crate) async fn get_request_revision_file_diff(
     let path = normalized_path(&input.path)?;
     let inspected_path = path.clone();
     let incarnation = repo.context.incarnation();
+    let inspection_state = state.clone();
     let (file, old_content, new_content) = with_request_revision_store_repo(
         &state,
         &incarnation,
         &request,
         &revision,
         move |raw_repo, revision| {
+            let mut repo = repo;
+            repo.policy = crate::use_cases::request_inspection_policy::resolve_paths(
+                &inspection_state,
+                &repo,
+                &access.view,
+                std::collections::BTreeSet::from([ScopePath::parse(format!("/{inspected_path}"))
+                    .map_err(ApiError::bad_request)?]),
+            )?;
             let comparison = inspect_comparison(
                 raw_repo,
                 &repo,

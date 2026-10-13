@@ -31,6 +31,7 @@ pub(super) fn read_policy(repo: &Repository) -> RepositoryReadPolicy {
             views: repo.repo_config.views().clone(),
         },
         policy: repo.policy.clone(),
+        repo_config: repo.repo_config.clone(),
     }
 }
 

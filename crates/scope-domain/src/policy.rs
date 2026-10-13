@@ -199,6 +199,52 @@ impl Policy {
             .unwrap_or_else(|| self.default.clone())
     }
 
+    pub fn for_request_paths(
+        &self,
+        config: &crate::repo_config::RepoConfig,
+        history: &crate::requests::PathHistory,
+        reader: &ViewId,
+        paths: &[ScopePath],
+    ) -> Self {
+        let mut historical_labels = BTreeMap::<&ScopePath, Vec<&ViewId>>::new();
+        for (path, label) in &history.file_change_labels {
+            historical_labels.entry(path).or_default().push(label);
+        }
+        for (path, old_label, new_label) in &history.visibility_changes {
+            historical_labels
+                .entry(path)
+                .or_default()
+                .extend([old_label, new_label]);
+        }
+        let rules = paths
+            .iter()
+            .map(|path| {
+                let view = if history.live_paths.contains(path)
+                    || self.rules.iter().any(|rule| rule.path == *path)
+                {
+                    self.label(path, config.views())
+                } else if let Some(labels) = historical_labels.get(path) {
+                    (**labels
+                        .iter()
+                        .find(|label| !config.views().shows(reader, path, label))
+                        .or_else(|| labels.first())
+                        .expect("accepted path history has labels"))
+                    .clone()
+                } else {
+                    config.label_for_path(path)
+                };
+                LabelRule {
+                    path: path.clone(),
+                    view,
+                }
+            })
+            .collect();
+        Self {
+            default: config.views().full().clone(),
+            rules,
+        }
+    }
+
     pub fn remove_rule(&mut self, path: &ScopePath) {
         self.rules.retain(|rule| &rule.path != path);
     }

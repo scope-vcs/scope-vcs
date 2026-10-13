@@ -20,6 +20,7 @@ pub(crate) mod request_checks;
 pub(crate) mod request_close;
 pub(crate) mod request_discussion_mutation;
 pub(crate) mod request_identity;
+pub(crate) mod request_inspection_policy;
 pub(crate) mod request_invitee;
 pub(crate) mod request_merge;
 pub(crate) mod request_ref_cleanup;
