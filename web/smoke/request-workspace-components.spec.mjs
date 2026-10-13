@@ -249,6 +249,13 @@ test('request rows exchange age and actions and restore the selected view across
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.mobile.png` })
   }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.keyboard.press('[')
+  await railClosed()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.locator('[data-request-id="request-2"] .request-workspace-row-avatar').hover()
+  await hint.waitFor({ state: 'attached' })
+  assert.equal(await hint.isVisible(), false, 'phone layouts have no rail, so rail hints stay hidden')
   assert.deepEqual(errors, [])
 })
 

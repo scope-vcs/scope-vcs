@@ -452,7 +452,8 @@ html[data-focus] .application-topbar {
     border-right: 0;
   }
 
-  .request-workspace-resize-handle {
+  .request-workspace-resize-handle,
+  .request-workspace-rail-hint {
     display: none;
   }
 
