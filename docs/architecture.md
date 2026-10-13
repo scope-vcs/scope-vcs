@@ -6,7 +6,7 @@ layers.
 
 ## Dependency direction
 
-The root Cargo workspace contains nineteen packages and excludes `cli/`, which
+The root Cargo workspace contains eighteen packages and excludes `cli/`, which
 is a separate workspace. Current `cargo metadata` gives these internal
 dependencies:
 
@@ -17,7 +17,6 @@ dependencies:
 | `scope-git-process` | Git subprocess lifetime, limits, reaping, and telemetry | none |
 | `scope-storage` | Object backends (S3, filesystem, memory), the framed encryption envelope, verified object reads, presigning, and bounded Git segment ingest, restore, and cleanup | `scope-domain`, `scope-git-process` |
 | `scope-api-contract` | API routes and serialized API/runtime DTOs | `scope-domain` |
-| `scope-cache-contract` | Cache grant and endpoint DTOs | `scope-cache-domain` |
 | `scope-run-config` | Workflow YAML decoding and compilation | `scope-domain` |
 | `scope-git` | Projection identity and Git snapshot preparation/materialization | `scope-domain`, optionally `scope-storage` |
 | `scope-postgres` | Metadata stores, migrations, read models, and transaction owners | `scope-domain`, `scope-cache-domain`, `scope-git`, `scope-run-config` |
@@ -27,9 +26,8 @@ dependencies:
 | `scope-content-lifecycle` | Shared source-blob cleanup orchestration | `scope-domain`, `scope-storage`, `scope-postgres` |
 | `api` | Authentication, HTTP/SSE delivery, application use cases, and composition | the contracts, domain crates, orchestration crate, and infrastructure adapters |
 | `worker` | Run control, Git compaction, and cleanup polling | domain, API contract, orchestration, and infrastructure adapters |
-| `scope-cache-service` | Cache authorization, signed transfers, and reconciliation | cache contract/domain, object store, Postgres |
 | `scope-repo-router` | Repository Git/HTTP routing proxy | none |
-| `scope-runner-runtime` | Claimed-job setup, cache transfer, process execution, logs, and completion | API/cache contracts and domain crates |
+| `scope-runner-runtime` | Claimed-job setup, cache transfer, process execution, logs, and completion | API contract and domain crates |
 
 The dependency rules are:
 
@@ -40,8 +38,7 @@ The dependency rules are:
   storage consumer; it does not own subprocess policy.
 - Contract crates may depend only on their corresponding domain crate.
 - Reusable crates do not depend on application packages, including `api`,
-  `worker`, the cache and media services, the media worker, and
-  `scope-runner-runtime`.
+  `worker`, the media service, the media worker, and `scope-runner-runtime`.
 - Shared application orchestration must have at least two real application
   consumers. `scope-content-lifecycle` is currently consumed by both `api` and
   `worker`.
@@ -148,6 +145,14 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   and raw diff execution used by review and discussion anchors;
 - `run_control.rs` and `run_inspection.rs` for run mutations and authorized run,
   detail, and log reads;
+- `run_caches.rs` for the runner cache endpoints and cache reconciliation. The
+  runtime-protocol cache routes authenticate the attempt token, derive the
+  allowed cache identity from the claimed job through
+  `scope-domain/src/runs/cache/identity.rs`, persist metadata through
+  `scope-postgres/src/db/cache_service.rs`, and presign object transfers
+  against the cache bucket (`SCOPE_CACHE_BUCKET_*`, labeled by
+  `SCOPE_CACHE_BACKEND`). Reconciliation claims expired uploads, references and
+  deletions with expiring database claims, so every API replica can run it;
 - `native_runs.rs` for the list of accounts that may use Scope's hosted
   runner, which operators manage with `scope-maintenance native-runs`.
   `scope-domain/src/runs/availability.rs` owns the rule:
@@ -161,9 +166,9 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   coordination.
 
 API background loops, such as auto-merge, request check recovery, GitHub
-pushes and reads, invite email delivery, Clerk user deletion, retention, and
-recovery sweeps, are declared next to the use case they drive and run on the
-single runner in `api/src/background_work.rs`. It owns the cadence, wakeups,
+pushes and reads, invite email delivery, Clerk user deletion, retention, run
+cache reconciliation, and recovery sweeps, are declared next to the use case
+they drive and run on the single runner in `api/src/background_work.rs`. It owns the cadence, wakeups,
 optional schema-readiness gating, panic isolation, and shutdown;
 `AppState::start_background_work` starts them all once.
 
@@ -184,8 +189,6 @@ The other applications remain narrow:
 
 - `worker/` runs independent control, compaction, and cleanup roles and pauses
   them when the schema is not ready.
-- `cache-service/` verifies cache grants, persists cache metadata, issues signed
-  object transfers, and runs reconciliation.
 - `media-service/` authorizes upload and media requests with grants and uses
   `scope-media-storage` for encrypted chunk storage.
 - `media-worker/` validates uploaded originals, generates derivatives, and

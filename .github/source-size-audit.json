@@ -12,11 +12,6 @@
       "reason": "Discussion queries and mutations share visibility projection, cursor, anchor, and response mapping rules."
     },
     {
-      "path": "cache-service/src/handlers.rs",
-      "owner": "workflow cache HTTP delivery",
-      "reason": "Restore and upload handlers share grant authorization, lease timing, signed-transfer behavior, and focused endpoint tests."
-    },
-    {
       "path": "crates/scope-domain/src/requests/attachments/rules.rs",
       "owner": "request attachment aggregate",
       "reason": "Upload, processing, binding, access, and cleanup transitions share source, derivative, lease, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."

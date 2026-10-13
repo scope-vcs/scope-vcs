@@ -1,6 +1,5 @@
-#[cfg(any(test, feature = "local-dev"))]
-use crate::grant_signing::TEST_PRIVATE_KEY;
-use crate::grant_signing::{GrantSigner, required_env};
+use crate::config::non_empty_env;
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use scope_api_contract::attachments::{
     RequestAttachmentMediaGrantClaims, RequestAttachmentMediaTarget,
     RequestAttachmentUploadGrantClaims,
@@ -9,10 +8,20 @@ use std::sync::Arc;
 
 const MEDIA_GRANT_LIFETIME_SECONDS: u64 = 300;
 
+#[cfg(any(test, feature = "local-dev"))]
+const TEST_PRIVATE_KEY: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIGrD/e7uKYqSY4twDEsRfMMuLSrODf14dpTiTK6K1YI0\n-----END PRIVATE KEY-----\n";
+
+#[cfg(test)]
+pub(crate) const TEST_PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA2+Jj2UvNCvQiUPNYRgSi0cJSPiJI6Rs6D0UTeEpQVj8=\n-----END PUBLIC KEY-----\n";
+
 #[derive(Clone)]
 pub(crate) struct MediaGrantIssuer {
     endpoint: Arc<str>,
-    signer: GrantSigner,
+    signing_key: Arc<EncodingKey>,
+}
+
+fn required_env(name: &str) -> anyhow::Result<String> {
+    non_empty_env(name).ok_or_else(|| anyhow::anyhow!("{name} is required"))
 }
 
 impl MediaGrantIssuer {
@@ -28,7 +37,7 @@ impl MediaGrantIssuer {
             .map_err(|error| anyhow::anyhow!("SCOPE_MEDIA_PUBLIC_URL: {error}"))?;
         Ok(Self {
             endpoint: Arc::from(endpoint.as_str()),
-            signer: GrantSigner::from_ed25519_pem(&private_key_pem)?,
+            signing_key: Arc::new(EncodingKey::from_ed_pem(private_key_pem.as_bytes())?),
         })
     }
 
@@ -41,14 +50,22 @@ impl MediaGrantIssuer {
         &self,
         claims: &RequestAttachmentUploadGrantClaims,
     ) -> anyhow::Result<String> {
-        self.signer.sign(claims)
+        self.sign(claims)
     }
 
     pub(crate) fn issue_media(
         &self,
         claims: &RequestAttachmentMediaGrantClaims,
     ) -> anyhow::Result<String> {
-        self.signer.sign(claims)
+        self.sign(claims)
+    }
+
+    fn sign(&self, claims: &impl serde::Serialize) -> anyhow::Result<String> {
+        Ok(encode(
+            &Header::new(Algorithm::EdDSA),
+            claims,
+            &self.signing_key,
+        )?)
     }
 
     pub(crate) fn endpoint(&self) -> &str {
@@ -120,7 +137,7 @@ mod tests {
         validation.validate_exp = false;
         let decoded = decode::<RequestAttachmentUploadGrantClaims>(
             &token,
-            &DecodingKey::from_ed_pem(crate::grant_signing::TEST_PUBLIC_KEY.as_bytes()).unwrap(),
+            &DecodingKey::from_ed_pem(TEST_PUBLIC_KEY.as_bytes()).unwrap(),
             &validation,
         )
         .unwrap()

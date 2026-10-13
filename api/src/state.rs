@@ -2,7 +2,6 @@ use crate::storage_runtime::{StorageRuntime, StorageSource};
 use crate::{
     auth::clerk::ClerkVerifier,
     background_work::BackgroundWakeups,
-    cache_grants::CacheGrantIssuer,
     clerk_users::ClerkUsers,
     config::{
         SCOPE_DISPATCH_BROKER_TOKEN_ENV, database_url_from_env, git_public_url_from_env,
@@ -14,7 +13,10 @@ use crate::{
     media_grants::MediaGrantIssuer,
     repo_events::RepoChangeBus,
     runtime_budgets::RuntimeBudgets,
-    use_cases::content_cleanup::best_effort_drain_pending_repo_storage_deletions,
+    use_cases::{
+        content_cleanup::best_effort_drain_pending_repo_storage_deletions,
+        run_caches::RunCacheStorage,
+    },
 };
 use scope_postgres::db::MetadataStore;
 use scope_product_analytics::{EventSource, ProductAnalytics};
@@ -33,7 +35,7 @@ pub struct AppState {
     pub(crate) clerk: ClerkVerifier,
     pub(crate) object_store: Arc<dyn ObjectStore>,
     pub(crate) git_segment_store: Arc<GitSegmentStore>,
-    pub(crate) cache_grants: CacheGrantIssuer,
+    pub(crate) run_caches: RunCacheStorage,
     pub(crate) media_grants: MediaGrantIssuer,
     pub(crate) runtime_budgets: Arc<RuntimeBudgets>,
     pub(crate) dispatch_broker_token: Option<Arc<str>>,
@@ -49,7 +51,7 @@ pub struct AppState {
 pub(crate) struct AppServices {
     pub(crate) storage: StorageRuntime,
     pub(crate) metadata: MetadataStore,
-    pub(crate) cache_grants: CacheGrantIssuer,
+    pub(crate) run_caches: RunCacheStorage,
     pub(crate) media_grants: MediaGrantIssuer,
     pub(crate) product_analytics: ProductAnalytics,
     pub(crate) git_public_url: String,
@@ -102,7 +104,7 @@ impl AppState {
         let state = Self::connect(AppServices {
             storage,
             metadata,
-            cache_grants: CacheGrantIssuer::from_env()?,
+            run_caches: RunCacheStorage::from_env()?,
             media_grants: MediaGrantIssuer::from_env()?,
             product_analytics: ProductAnalytics::from_env(EventSource::Api).await?,
             git_public_url,
@@ -135,7 +137,7 @@ impl AppState {
         let AppServices {
             storage,
             metadata,
-            cache_grants,
+            run_caches,
             media_grants,
             product_analytics,
             git_public_url,
@@ -150,7 +152,7 @@ impl AppState {
             clerk: integrations.clerk,
             object_store: storage.object_store,
             git_segment_store: storage.git_segment_store,
-            cache_grants,
+            run_caches,
             media_grants,
             runtime_budgets: storage.runtime_budgets,
             dispatch_broker_token: integrations.dispatch_broker_token,
@@ -176,7 +178,7 @@ impl AppState {
             AppServices {
                 storage: StorageRuntime::for_tests(),
                 metadata: MetadataStore::connect_fresh_for_tests(&target).unwrap(),
-                cache_grants: CacheGrantIssuer::test(),
+                run_caches: RunCacheStorage::unreachable(),
                 media_grants: MediaGrantIssuer::test(),
                 product_analytics: ProductAnalytics::disabled(),
                 git_public_url: crate::config::LOCAL_API_ORIGIN.to_string(),

@@ -6,12 +6,9 @@ use crate::api::RuntimeClient;
 use anyhow::Context as _;
 use scope_api_contract::{
     AttemptCacheFinalizationReport, CacheFinalState as WireCacheFinalState,
-    ReportAttemptCacheFinalizationsRequest,
+    CommitAttemptCacheUploadRequest, PrepareAttemptCacheUploadRequest,
+    PrepareAttemptCacheUploadResponse, ReportAttemptCacheFinalizationsRequest,
 };
-use scope_cache_contract::{
-    CommitCacheUploadRequest, PrepareCacheUploadRequest, PrepareCacheUploadResponse,
-};
-use scope_cache_domain::CacheDigest;
 use std::time::Instant;
 
 pub(crate) fn save_caches(
@@ -59,31 +56,17 @@ pub(super) fn save_cache(
             Ok(identity) => identity,
             Err(error) => return CacheFinalizationOutcome::Skipped(error),
         };
-    let exact_identity_digest = match CacheDigest::parse(cache.exact_digest.clone()) {
-        Ok(digest) => digest,
-        Err(error) => return CacheFinalizationOutcome::Skipped(error.into()),
-    };
-    let object_digest = match CacheDigest::parse(checksum_sha256.clone()) {
-        Ok(digest) => digest,
-        Err(error) => return CacheFinalizationOutcome::Skipped(error.into()),
-    };
-    let session = match client.prepare_cache_upload(&PrepareCacheUploadRequest {
-        exact_identity_digest: exact_identity_digest.clone(),
-        compatibility_group_digest: match CacheDigest::parse(
-            cache.compatibility_group_digest.clone(),
-        ) {
-            Ok(digest) => digest,
-            Err(error) => return CacheFinalizationOutcome::Skipped(error.into()),
-        },
-        object_digest: object_digest.clone(),
+    let session = match client.prepare_cache_upload(&PrepareAttemptCacheUploadRequest {
+        cache: cache.key.clone(),
+        object_digest: checksum_sha256.clone(),
         size_bytes,
     }) {
         Ok(session) => session,
         Err(error) => return CacheFinalizationOutcome::Skipped(error),
     };
     match session {
-        PrepareCacheUploadResponse::UseObject { .. } => CacheFinalizationOutcome::Ready,
-        PrepareCacheUploadResponse::Upload {
+        PrepareAttemptCacheUploadResponse::UseObject { .. } => CacheFinalizationOutcome::Ready,
+        PrepareAttemptCacheUploadResponse::Upload {
             lease_id,
             upload_url,
             upload_headers,
@@ -92,9 +75,10 @@ pub(super) fn save_cache(
             if let Err(error) = client.upload_cache(&upload_url, &upload_headers, temp.path()) {
                 return CacheFinalizationOutcome::Skipped(error);
             }
-            if let Err(error) = client.commit_cache_upload(&CommitCacheUploadRequest {
+            if let Err(error) = client.commit_cache_upload(&CommitAttemptCacheUploadRequest {
+                cache: cache.key.clone(),
                 lease_id,
-                object_digest,
+                object_digest: checksum_sha256,
                 size_bytes,
             }) {
                 return CacheFinalizationOutcome::Skipped(error);

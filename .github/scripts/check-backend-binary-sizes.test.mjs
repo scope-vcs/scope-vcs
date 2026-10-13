@@ -69,8 +69,8 @@ test('caps must be positive integers', () => {
   }
 });
 
-test('the deployment manifest caps all six backend release binaries', () => {
+test('the deployment manifest caps all five backend release binaries', () => {
   assert.deepEqual(backendBinaryCaps().map(({ binary }) => binary).sort(), [
-    'scope-cache-service', 'scope-maintenance', 'scope-media-service', 'scope-repo-router', 'scope-vcs', 'scope-worker',
+    'scope-maintenance', 'scope-media-service', 'scope-repo-router', 'scope-vcs', 'scope-worker',
   ]);
 });

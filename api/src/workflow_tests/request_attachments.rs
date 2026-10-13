@@ -220,7 +220,7 @@ async fn request_attachment_original_grant_requires_fenced_source_validation() {
     validation.validate_exp = false;
     let claims = decode::<RequestAttachmentMediaGrantClaims>(
         &grant.grant,
-        &DecodingKey::from_ed_pem(crate::grant_signing::TEST_PUBLIC_KEY.as_bytes()).unwrap(),
+        &DecodingKey::from_ed_pem(crate::media_grants::TEST_PUBLIC_KEY.as_bytes()).unwrap(),
         &validation,
     )
     .unwrap()

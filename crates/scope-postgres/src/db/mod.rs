@@ -214,6 +214,7 @@ pub use request_queue::{
 pub use request_rows::{RequestListPageQuery, RequestListRow};
 pub use request_state::RequestStateSnapshot;
 pub use run_admission::DispatchAdmission;
+pub use run_cache_authorization::CacheAttemptAccess;
 pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePreparationCommand};
 pub use run_details::{RunAttemptDetail, RunDetail};
 pub use run_dispatch::CloudTaskStop;

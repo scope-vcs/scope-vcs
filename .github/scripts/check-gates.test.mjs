@@ -272,9 +272,9 @@ function releaseJobs() {
 
 function releasePath(selected, { reuse = false, resumeStaging = false, failure = '', cancelled = false, ref = 'refs/heads/main', backendActivatesWeb = false, replaceRedeployedComponent = '' } = {}) {
   const jobs = releaseJobs();
-  const outputs = Object.fromEntries(['runner_image', 'cache', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
+  const outputs = Object.fromEntries(['runner_image', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
     .map((key) => [key, String(selected.includes(key))]));
-  outputs.backend_selected = String(['cache', 'worker', 'media_worker', 'router', 'media', 'api']
+  outputs.backend_selected = String(['worker', 'media_worker', 'router', 'media', 'api']
     .some((key) => outputs[key] === 'true'));
   outputs.prepared_run_id = reuse || resumeStaging ? '123' : '';
   outputs.recover_cutover_id = reuse ? '456' : '';
@@ -321,7 +321,7 @@ test('failed preflight, staging or activation cannot publish a successful releas
 });
 
 test('interrupted releases reuse images and finish through the same final receipt', () => {
-  const result = releasePath(['api', 'worker', 'cache', 'router', 'media', 'media_worker', 'web'], { reuse: true });
+  const result = releasePath(['api', 'worker', 'router', 'media', 'media_worker', 'web'], { reuse: true });
   assert.equal(result['release-preparation'].result, 'success');
   assert.equal(result.staging.result, 'skipped');
   assert.equal(result['backend-deploy'].result, 'success');
@@ -330,7 +330,7 @@ test('interrupted releases reuse images and finish through the same final receip
 });
 
 test('resumed staging reuses prepared images but must pass smoke before any production activation', () => {
-  const selected = ['api', 'worker', 'cache', 'router', 'media', 'media_worker', 'web'];
+  const selected = ['api', 'worker', 'router', 'media', 'media_worker', 'web'];
   const result = releasePath(selected, { resumeStaging: true });
   assert.equal(result['production-preflight'].result, 'skipped');
   for (const job of ['release-preparation', 'staging', 'backend-deploy', 'web-deploy', 'production-health-gate']) {

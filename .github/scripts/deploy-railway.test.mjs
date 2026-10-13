@@ -14,8 +14,8 @@ function providerStatus(activeDeployments) {
       id: "staging-id",
       name: "staging",
       serviceInstances: { edges: [{ node: {
-        serviceId: "cache-id",
-        serviceName: "scope-cache",
+        serviceId: "router-id",
+        serviceName: "scope-git-router",
         latestDeployment: { id: "stale-failed", status: "FAILED" },
         activeDeployments,
       } }] },
@@ -23,7 +23,7 @@ function providerStatus(activeDeployments) {
   };
 }
 
-function deploy(t, status, predecessors = [], failedPolls = [], component = "cache", defer = false) {
+function deploy(t, status, predecessors = [], failedPolls = [], component = "git-router", defer = false) {
   const root = mkdtempSync(join(tmpdir(), "scope-railway-teardown-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const scripts = join(root, ".github/scripts");
@@ -39,20 +39,20 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "cac
   writeFileSync(join(root, ".github/deployment-services.json"), readFileSync(new URL("../deployment-services.json", import.meta.url)));
   writeFileSync(join(root, "status.json"), JSON.stringify(status));
   writeFileSync(join(root, "prepared.json"), JSON.stringify({
-    components: { [component]: { serviceId: "cache-id" } },
+    components: { [component]: { serviceId: "router-id" } },
   }));
   writeFileSync(join(scripts, "railway-artifact.mjs"), `
     import { appendFileSync } from "node:fs";
     const command = process.argv[2];
     appendFileSync("events", command + "\\n");
-    if (command === "activate") console.log(JSON.stringify({ deploymentId: "new-cache" }));
+    if (command === "activate") console.log(JSON.stringify({ deploymentId: "new-router" }));
   `);
   writeFileSync(join(bin, "railway"), `#!/usr/bin/env node
     const { appendFileSync, existsSync, readFileSync, writeFileSync } = require("node:fs");
     const command = process.argv.slice(2, 4).join(" ");
     appendFileSync("events", command + "\\n");
     if (command === "service list") {
-      console.log(JSON.stringify([{ id: "cache-id", deploymentId: "stale-failed", status: "FAILED" }]));
+      console.log(JSON.stringify([{ id: "router-id", deploymentId: "stale-failed", status: "FAILED" }]));
     } else if (process.argv[2] === "status") {
       console.log(readFileSync("status.json", "utf8"));
     } else if (command === "deployment list") {
@@ -65,7 +65,7 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "cac
       }
       if (count > 10) process.exit(1);
       console.log(JSON.stringify([
-        { id: "new-cache", status: "SUCCESS" },
+        { id: "new-router", status: "SUCCESS" },
         { id: "stale-failed", status: "FAILED" },
         ...${JSON.stringify(predecessors)}.map((id, index) => ({
           id, status: count >= 4 + index * 2 ? "REMOVED" : "SUCCESS",
@@ -74,7 +74,7 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "cac
     } else { process.exit(1); }
   `, { mode: 0o755 });
   writeFileSync(join(bin, "sleep"), "#!/bin/sh\nprintf 'sleep\\n' >> events\n", { mode: 0o755 });
-  const result = spawnSync("bash", [deployScript, "cache-id"], {
+  const result = spawnSync("bash", [deployScript, "router-id"], {
     cwd: root,
     encoding: "utf8",
     timeout: 60_000,
@@ -108,14 +108,14 @@ test("stale FAILED latest deployment without active predecessors needs no teardo
 });
 
 test("waits for the actual active predecessor even when latest deployment is FAILED", (t) => {
-  const result = deploy(t, providerStatus([{ id: "old-cache", status: "SUCCESS" }]), ["old-cache"]);
+  const result = deploy(t, providerStatus([{ id: "old-router", status: "SUCCESS" }]), ["old-router"]);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.events.filter((event) => event === "sleep").length, 1);
-  assert.match(result.stdout, /Previous deployment old-cache completed teardown/);
+  assert.match(result.stdout, /Previous deployment old-router completed teardown/);
 });
 
 test("waits for every active predecessor to finish teardown", (t) => {
-  const predecessors = ["old-cache-1", "old-cache-2"];
+  const predecessors = ["old-router-1", "old-router-2"];
   const result = deploy(t, providerStatus(predecessors.map((id) => ({ id, status: "SUCCESS" }))), predecessors);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.events.filter((event) => event === "sleep").length, 2);
@@ -123,9 +123,9 @@ test("waits for every active predecessor to finish teardown", (t) => {
 });
 
 test("deferred activation records predecessors before mutation and leaves removal to the shared barrier", (t) => {
-  const result = deploy(t, providerStatus([{ id: 'old-cache', status: 'SUCCESS' }]), ['old-cache'], [], 'cache', true);
+  const result = deploy(t, providerStatus([{ id: 'old-router', status: 'SUCCESS' }]), ['old-router'], [], 'git-router', true);
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(result.snapshot, { component: 'cache', service: 'cache-id', ids: ['old-cache'] });
+  assert.deepEqual(result.snapshot, { component: 'git-router', service: 'router-id', ids: ['old-router'] });
   assert.equal(result.events.filter((event) => event === 'sleep').length, 0);
   assert.ok(result.events.indexOf('status --project') < result.events.indexOf('activate'));
 });
@@ -141,11 +141,11 @@ test("missing or malformed provider state fails before activation", (t) => {
 });
 
 test("retries metadata and teardown reads without repeating activation", (t) => {
-  const result = deploy(t, providerStatus([{ id: "old-cache", status: "SUCCESS" }]), ["old-cache"], [2, 4]);
+  const result = deploy(t, providerStatus([{ id: "old-router", status: "SUCCESS" }]), ["old-router"], [2, 4]);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.events.filter((event) => event === "activate").length, 1);
   assert.equal(result.events.filter((event) => event === "verify").length, 1);
-  assert.match(result.stdout, /Previous deployment old-cache completed teardown/);
+  assert.match(result.stdout, /Previous deployment old-router completed teardown/);
   assert.ok(!result.stdout.includes("incomplete provider response"));
 });
 

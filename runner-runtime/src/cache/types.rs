@@ -1,4 +1,5 @@
 use super::sources::SourceSnapshot;
+use scope_api_contract::AttemptCacheKey;
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
 const _: () = assert!(
@@ -7,8 +8,8 @@ const _: () = assert!(
 );
 
 pub(crate) struct PreparedCache {
+    pub(super) key: AttemptCacheKey,
     pub(super) exact_digest: String,
-    pub(super) compatibility_group_digest: String,
     pub(super) path: PathBuf,
     pub(super) exact_hit: bool,
     pub(super) sources: Option<Arc<SourceSnapshot>>,
