@@ -1,11 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
   <title id="title">Scope mark</title>
-  <desc id="desc">One source branches into two equally weighted views.</desc>
-  <g fill="none" stroke="#111722" stroke-linecap="round" stroke-linejoin="round" stroke-width="9">
-    <path d="M33 48C49 48 48 27 62 27H66"/>
-    <path d="M33 48C49 48 48 69 62 69H66"/>
-    <circle cx="76" cy="27" r="8"/>
-    <circle cx="76" cy="69" r="8"/>
-  </g>
-  <circle cx="24" cy="48" r="9" fill="#111722"/>
+  <desc id="desc">A kaleidoscope eyepiece: one solid source petal and its outlined views.</desc>
+  <circle cx="48" cy="48" r="43" fill="none" stroke="#111722" stroke-width="6"/>
+  <path fill="#111722" fill-opacity=".3" d="M54.48 36.78L55.34 25.4L64.2 19.94L63.9 30.34ZM60.96 48L71.24 43.06L80.4 48L71.24 52.94ZM54.48 59.22L63.9 65.66L64.2 76.06L55.34 70.6ZM41.52 59.22L40.66 70.6L31.8 76.06L32.1 65.66ZM35.04 48L24.76 52.94L15.6 48L24.76 43.06ZM41.52 36.78L32.1 30.34L31.8 19.94L40.66 25.4Z"/>
+  <path fill="none" stroke="#111722" stroke-width="4" stroke-linejoin="round" d="M54.55 44.22L62.58 30.63L79.8 29.64L70.34 44.06ZM54.55 51.78L70.34 51.94L79.8 66.36L62.58 65.37ZM48 55.56L55.76 69.31L48 84.72L40.24 69.31ZM41.45 51.78L33.42 65.37L16.2 66.36L25.66 51.94ZM41.45 44.22L25.66 44.06L16.2 29.64L33.42 30.63Z"/>
+  <path fill="#111722" stroke="#111722" stroke-width="4" stroke-linejoin="round" d="M48 40.44L40.24 26.69L48 11.28L55.76 26.69Z"/>
+  <circle cx="48" cy="48" r="4.86" fill="#111722"/>
 </svg>
