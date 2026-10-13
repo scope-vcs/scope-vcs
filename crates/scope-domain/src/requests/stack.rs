@@ -262,6 +262,7 @@ pub fn refresh_request_stack(
 
 #[derive(Clone, Debug)]
 pub struct RetargetRequestAfterParentMergeInput {
+    pub parent_head_oid: String,
     pub event_id: String,
     pub now_unix: u64,
     pub parent_contains_pin: bool,
@@ -301,6 +302,7 @@ pub fn retarget_request_after_parent_merge(
         || parent.repo_id != child.repo_id
         || parent.view != child.view
         || parent.state() != RequestState::Merged
+        || parent.merged_head_oid.as_deref() != Some(input.parent_head_oid.as_str())
         || !input.parent_contains_pin
     {
         return Err(DomainError::conflict(

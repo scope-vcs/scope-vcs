@@ -45,6 +45,11 @@ pub(super) async fn landed_request_candidates(
             .request_by_id(&candidate.request_id)
             .await?
             .ok_or_else(|| ApiError::conflict("landed request changed during preparation"))?;
+        if parent.head_oid != candidate.head_oid {
+            return Err(ApiError::conflict(
+                "landed request changed during preparation",
+            ));
+        }
         candidate.stack_children = crate::use_cases::request_stack_landing::prepare_stack_landing(
             state,
             &incarnation,

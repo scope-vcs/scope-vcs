@@ -143,8 +143,9 @@ async fn pin(store: &MetadataStore, parent: &Request) -> RequestBase {
     }
 }
 
-fn fact(child: &Request, contains: bool) -> RequestStackChildFacts {
+fn fact(parent_head_oid: &str, child: &Request, contains: bool) -> RequestStackChildFacts {
     RequestStackChildFacts {
+        parent_head_oid: parent_head_oid.to_string(),
         request_id: child.id.clone(),
         head_oid: child.head_oid.clone(),
         base_version: child.base_version,
@@ -187,13 +188,15 @@ async fn parent_publication_requires_complete_child_evidence_and_preserves_exten
         .unwrap_err();
     assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
     assert_eq!(load(&store, "parent").await.head_oid, parent.head_oid);
+    let publication = input(&parent, "parent_extended", "extend", 10);
+    let child_facts = vec![fact(&publication.new_head_oid, &child, true)];
     store
         .requests()
         .record_request_revision_with_stack(
-            input(&parent, "parent_extended", "extend", 10),
+            publication,
             parent.base_version,
             None,
-            vec![fact(&child, true)],
+            child_facts,
             IDS,
         )
         .await
@@ -218,7 +221,7 @@ async fn parent_publication_requires_complete_child_evidence_and_preserves_exten
             stale_repin,
             child.base_version,
             parent_facts(&store, &child).await,
-            vec![fact(&grandchild, true)],
+            vec![fact(&child.head_oid, &grandchild, true)],
             IDS,
         )
         .await
@@ -234,13 +237,15 @@ async fn parent_publication_requires_complete_child_evidence_and_preserves_exten
         revision
     );
     let current_parent = load(&store, "parent").await;
+    let publication = input(&current_parent, "rewritten_parent", "rewrite", 13);
+    let child_facts = vec![fact(&publication.new_head_oid, &child, false)];
     store
         .requests()
         .record_request_revision_with_stack(
-            input(&current_parent, "rewritten_parent", "rewrite", 13),
+            publication,
             current_parent.base_version,
             None,
-            vec![fact(&child, false)],
+            child_facts,
             IDS,
         )
         .await
@@ -307,13 +312,15 @@ async fn committed_context_receipt_survives_parent_close_and_rejects_changed_pay
     )
     .await;
     let child = start(&store, "child", pin(&store, &parent).await, 6).await;
+    let publication = input(&parent, "parent_extended", "extend", 10);
+    let child_facts = vec![fact(&publication.new_head_oid, &child, true)];
     let parent = store
         .requests()
         .record_request_revision_with_stack(
-            input(&parent, "parent_extended", "extend", 10),
+            publication,
             parent.base_version,
             None,
-            vec![fact(&child, true)],
+            child_facts,
             IDS,
         )
         .await
@@ -453,7 +460,7 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
     )
     .await
     .unwrap();
-    let mut stale = fact(&child, true);
+    let mut stale = fact(&parent.head_oid, &child, true);
     stale.base_version += 1;
     assert!(
         retarget_children(&tx, &merged.request, &[stale], 14, IDS)
@@ -477,9 +484,15 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
     )
     .await
     .unwrap();
-    retarget_children(&tx, &merged.request, &[fact(&child, true)], 14, IDS)
-        .await
-        .unwrap();
+    retarget_children(
+        &tx,
+        &merged.request,
+        &[fact(&parent.head_oid, &child, true)],
+        14,
+        IDS,
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
     let retargeted = load(&store, "child").await;
     assert_eq!(
@@ -531,6 +544,38 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
     .await;
     let child = start(&store, "child", pin(&store, &parent).await, 6).await;
     let grandchild = start(&store, "grandchild", pin(&store, &child).await, 10).await;
+    for contains_pin in [false, true] {
+        let tx = store.db.begin().await.unwrap();
+        acquire_aggregate_lock(&tx, "repository", &parent.repo_id)
+            .await
+            .unwrap();
+        let error = super::super::request_merge::complete_landed_requests(
+            &tx,
+            &parent.repo_id,
+            &"d".repeat(40),
+            super::super::request_merge::LandedRequestCompletion {
+                actor_user_id: "user_owner".into(),
+                candidates: vec![super::super::request_merge::LandedRequestCandidate {
+                    request_id: parent.id.clone(),
+                    head_oid: parent.head_oid.clone(),
+                    stack_children: vec![fact(
+                        "different_prepared_parent_head",
+                        &child,
+                        contains_pin,
+                    )],
+                }],
+            },
+            14,
+            IDS,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
+        tx.rollback().await.unwrap();
+        assert_eq!(load(&store, &parent.id).await, parent);
+        assert_eq!(load(&store, &child.id).await, child);
+        assert_eq!(load(&store, &grandchild.id).await, grandchild);
+    }
     let tx = store.db.begin().await.unwrap();
     acquire_aggregate_lock(&tx, "repository", &parent.repo_id)
         .await
@@ -545,12 +590,12 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
                 super::super::request_merge::LandedRequestCandidate {
                     request_id: child.id.clone(),
                     head_oid: child.head_oid.clone(),
-                    stack_children: vec![fact(&grandchild, true)],
+                    stack_children: vec![fact(&child.head_oid, &grandchild, true)],
                 },
                 super::super::request_merge::LandedRequestCandidate {
                     request_id: parent.id.clone(),
                     head_oid: parent.head_oid.clone(),
-                    stack_children: vec![fact(&child, true)],
+                    stack_children: vec![fact(&parent.head_oid, &child, true)],
                 },
             ],
         },

@@ -192,18 +192,18 @@ fn containing_landing_preserves_child_evidence_and_separate_main_ancestor() {
     parent.merged_at_unix = Some(parent.updated_at_unix);
     parent.merged_head_oid = Some("extended-parent".into());
     parent.merged_main_oid = Some("landed-main".into());
-    let result = retarget_request_after_parent_merge(
-        child.clone(),
-        &parent,
-        RetargetRequestAfterParentMergeInput {
-            event_id: "retarget".into(),
-            now_unix: child.updated_at_unix + 1,
-            parent_contains_pin: true,
-            contained_main_oid: Some("unproven-main".into()),
-            contained_main_descends_from_ancestor: false,
-        },
-    )
-    .unwrap();
+    let input = RetargetRequestAfterParentMergeInput {
+        parent_head_oid: "extended-parent".into(),
+        event_id: "retarget".into(),
+        now_unix: child.updated_at_unix + 1,
+        parent_contains_pin: true,
+        contained_main_oid: Some("unproven-main".into()),
+        contained_main_descends_from_ancestor: false,
+    };
+    let mut mismatched = input.clone();
+    mismatched.parent_head_oid = "other-parent-head".into();
+    assert!(retarget_request_after_parent_merge(child.clone(), &parent, mismatched).is_err());
+    let result = retarget_request_after_parent_merge(child.clone(), &parent, input).unwrap();
     assert_eq!(
         result.request.base.review_base_oid(),
         child.base.review_base_oid()

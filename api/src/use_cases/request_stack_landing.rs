@@ -113,6 +113,7 @@ pub(crate) async fn prepare_stack_landing(
                     None => false,
                 };
                 Ok(RequestStackChildFacts {
+                    parent_head_oid: parent_head,
                     request_id: child_id,
                     head_oid: child_head,
                     base_version,

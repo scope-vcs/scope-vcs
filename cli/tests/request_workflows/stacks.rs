@@ -135,6 +135,8 @@ fn same_head_repin_recovers_after_lost_response_or_definitive_rejection() {
         }));
         if mode == ContextResponse::LostResponse {
             assert_eq!(second["result"]["request"]["base"]["kind"], "main");
+            let repeated = success(push("rev_parent"));
+            assert_eq!(repeated["result"]["request"]["base"]["kind"], "main");
         } else {
             assert_eq!(
                 second["result"]["request"]["base"]["revision_id"],
@@ -265,6 +267,52 @@ done
         git_stdout(dir.path(), ["rev-parse", "--abbrev-ref", "@{upstream}"]),
         "scope/main"
     );
+    fs::write(dir.path().join("child.txt"), "second accepted child head\n").unwrap();
+    run_git(dir.path(), ["add", "."]);
+    commit_all(dir.path(), "Advance the accepted child");
+    let second_head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+    success(
+        transport
+            .command(&server, dir.path())
+            .env("SCOPE_STACK_HEADERS", &headers)
+            .args([
+                "--json",
+                "request",
+                "push",
+                "--request",
+                "req_child",
+                "--base-revision",
+                "rev_parent",
+            ])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(
+        git_stdout(dir.path(), ["rev-parse", "refs/remotes/scope/child"]),
+        second_head
+    );
+    run_git(dir.path(), ["reset", "--hard", &head]);
+    success(
+        transport
+            .command(&server, dir.path())
+            .env("SCOPE_STACK_HEADERS", &headers)
+            .args([
+                "--json",
+                "request",
+                "push",
+                "--request",
+                "req_child",
+                "--base-revision",
+                "rev_parent",
+            ])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(
+        git_stdout(bare.path(), ["rev-parse", "refs/heads/child"]),
+        head,
+        "a historical matching revision suppressed an intentional rollback"
+    );
     run_git(bare.path(), ["update-ref", "refs/heads/child", &main]);
     fs::write(
         dir.path().join("child.txt"),
@@ -342,8 +390,9 @@ fn stack_server(
     let accepted = Arc::new(Mutex::new(None::<Value>));
     let accepted_read = accepted.clone();
     let accepted_write = accepted.clone();
-    let main_oid = main.to_string();
     let bare = bare.to_path_buf();
+    let show_bare = bare.clone();
+    let revisions = Arc::new(Mutex::new(Vec::<Value>::new()));
     let repo = repository_response(
         json!({"access":{"actor":"Owner","view":"private","visibility":"private"}}),
     );
@@ -353,8 +402,13 @@ fn stack_server(
         .route("/v1/repos/owner/repo/requests/req_parent", get(move || { let parent=parent.clone(); async move { Json(json!({"request":parent})) } }))
         .route("/v1/repos/owner/repo/requests/req_parent/changes", get(move || { let revision=parent_revision_read.clone(); async move { Json(json!({"comparison":null,"review_revision_id":revision.lock().unwrap().clone(),"revisions":[],"has_earlier_revisions":false})) } }))
         .route("/v1/repos/owner/repo/requests", post(move |Json(body):Json<Value>| { let bodies=start_bodies.clone(); let child=start_child.clone(); async move { bodies.lock().unwrap().push(body); Json(json!({"request":child.lock().unwrap().clone()})) } }))
-        .route("/v1/repos/owner/repo/requests/req_child", get(move || { let child=show_child.clone(); async move { Json(json!({"request":child.lock().unwrap().clone()})) } }))
-        .route("/v1/repos/owner/repo/requests/req_child/changes", get(move |Query(query):Query<HashMap<String,String>>| { let child=history_child.clone(); let accepted=accepted_read.clone(); let bare=bare.clone(); async move {
+        .route("/v1/repos/owner/repo/requests/req_child", get(move || { let child=show_child.clone(); let bare=show_bare.clone(); async move {
+            let mut request=child.lock().unwrap().clone();
+            let head=Command::new("git").arg("--git-dir").arg(bare).args(["rev-parse","refs/heads/child"]).output().unwrap();
+            request["head_oid"]=String::from_utf8_lossy(&head.stdout).trim().into();
+            Json(json!({"request":request}))
+        } }))
+        .route("/v1/repos/owner/repo/requests/req_child/changes", get(move |Query(query):Query<HashMap<String,String>>| { let child=history_child.clone(); let accepted=accepted_read.clone(); let bare=bare.clone(); let revisions=revisions.clone(); async move {
             if query.get("revision").is_some_and(|revision| revision == "rev_context") {
                 let accepted=accepted.lock().unwrap().clone().unwrap();
                 return Json(json!({"comparison":null,"review_revision_id":"rev_context","revisions":[accepted],"has_earlier_revisions":false}));
@@ -362,9 +416,16 @@ fn stack_server(
             let child=child.lock().unwrap().clone();
             let head=Command::new("git").arg("--git-dir").arg(bare).args(["rev-parse","refs/heads/child"]).output().unwrap();
             let head=String::from_utf8_lossy(&head.stdout).trim().to_string();
-            Json(json!({"comparison":null,"review_revision_id":"rev_child","revisions":[{"id":"rev_child","position":1,"actor":null,"base":child["base"],"base_version":child["base_version"],"old_head_oid":null,"new_head_oid":head,"commits":[],"inspection":"Complete","created_at_unix":1}],"has_earlier_revisions":false}))
+            let mut revisions=revisions.lock().unwrap();
+            if let Some(accepted)=accepted.lock().unwrap().clone() && !revisions.iter().any(|revision| revision["id"]==accepted["id"]) { revisions.push(accepted); }
+            if revisions.last().is_none_or(|revision| revision["new_head_oid"] != head) {
+                let position=revisions.len()+1;
+                let old_head=revisions.last().map(|revision| revision["new_head_oid"].clone());
+                revisions.push(json!({"id":format!("rev_child_{position}"),"position":position,"actor":null,"base":child["base"],"base_version":child["base_version"],"old_head_oid":old_head,"new_head_oid":head,"commits":[],"inspection":"Complete","created_at_unix":position}));
+            }
+            Json(json!({"comparison":null,"review_revision_id":revisions.last().unwrap()["id"],"revisions":revisions.clone(),"has_earlier_revisions":false}))
         } }))
-        .route("/v1/repos/owner/repo/requests/req_child/revision-context", post(move |Json(body):Json<Value>| { let bodies=context_bodies.clone(); let child=context_child.clone(); let accepted=accepted_write.clone(); let main_oid=main_oid.clone(); let parent_revision=parent_revision_write.clone(); async move {
+        .route("/v1/repos/owner/repo/requests/req_child/revision-context", post(move |Json(body):Json<Value>| { let bodies=context_bodies.clone(); let child=context_child.clone(); let accepted=accepted_write.clone(); let parent_revision=parent_revision_write.clone(); async move {
             let mut bodies=bodies.lock().unwrap();
             bodies.push(body.clone());
             if context_response == ContextResponse::RejectedOnce && bodies.len()==1 {
@@ -375,7 +436,7 @@ fn stack_server(
             if accepted.lock().unwrap().is_none() {
                 *accepted.lock().unwrap()=Some(json!({"id":"rev_context","position":2,"actor":null,"base":body["base"],"base_version":2,"old_head_oid":body["expected_head_oid"],"new_head_oid":body["expected_head_oid"],"commits":[],"inspection":"Complete","created_at_unix":2}));
                 if context_response == ContextResponse::LostResponse {
-                    child["base"]=json!({"kind":"main","review_base_oid":main_oid});
+                    child["base"]=json!({"kind":"main","review_base_oid":body["base"]["head_oid"]});
                     child["base_version"]=3.into();
                     child["stack_status"]="main".into();
                     child["stack_depth"]=1.into();

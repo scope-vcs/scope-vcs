@@ -226,11 +226,34 @@ pub(super) fn accepted_pin(
 ) -> anyhow::Result<bool> {
     let revisions =
         crate::api::request_revisions(api, api_target(context, &request.id), None, None, None)?;
-    Ok(revisions.revisions.iter().any(|revision| {
-        revision.new_head_oid.as_deref() == Some(head)
-            && expected_publication.is_none_or(|(base, version)| revision.base == *base && revision.base_version == version)
-            && matches!(&revision.base, RequestBase::Request { revision_id, .. } if revision_id == parent_revision)
-    }))
+    let Some(revision) = revisions.review_revision_id.as_ref().and_then(|id| {
+        revisions
+            .revisions
+            .iter()
+            .find(|revision| &revision.id == id)
+    }) else {
+        return Ok(false);
+    };
+    if revision.new_head_oid.as_deref() != Some(head)
+        || !matches!(&revision.base, RequestBase::Request { revision_id, .. } if revision_id == parent_revision)
+    {
+        return Ok(false);
+    }
+    if let Some((base, version)) = expected_publication {
+        return Ok(revision.base == *base && revision.base_version == version);
+    }
+    if request.head_oid.as_str() != head {
+        return Ok(false);
+    }
+    Ok(match &request.base {
+        RequestBase::Request { .. } => {
+            request.base == revision.base && request.base_version == revision.base_version
+        }
+        RequestBase::Main { review_base_oid } => {
+            matches!(&revision.base, RequestBase::Request { head_oid, .. } if head_oid == review_base_oid)
+                && revision.base_version.checked_add(1) == Some(request.base_version)
+        }
+    })
 }
 
 pub(super) fn retry_pending_context(

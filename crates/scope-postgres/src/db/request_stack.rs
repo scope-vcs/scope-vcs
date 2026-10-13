@@ -29,6 +29,7 @@ pub struct RequestParentPublicationFacts {
 
 #[derive(Clone, Debug)]
 pub struct RequestStackChildFacts {
+    pub parent_head_oid: String,
     pub request_id: String,
     pub head_oid: String,
     pub base_version: u64,
@@ -98,6 +99,7 @@ impl RequestStore {
             .await?
             .into_iter()
             .map(|child| RequestStackChildFacts {
+                parent_head_oid: request.head_oid.clone(),
                 request_id: child.id,
                 head_oid: child.head_oid,
                 base_version: child.base_version,
@@ -281,7 +283,10 @@ pub(super) async fn refresh_children(
         let fact = by_id.get(child.id.as_str()).ok_or_else(|| {
             PostgresError::conflict("request children changed during preparation")
         })?;
-        if fact.head_oid != child.head_oid || fact.base_version != child.base_version {
+        if fact.parent_head_oid != parent.head_oid
+            || fact.head_oid != child.head_oid
+            || fact.base_version != child.base_version
+        {
             return Err(PostgresError::conflict(
                 "request child changed during preparation",
             ));
@@ -365,6 +370,7 @@ pub(super) async fn close_children(
         .await?
         .into_iter()
         .map(|child| RequestStackChildFacts {
+            parent_head_oid: parent.head_oid.clone(),
             request_id: child.id,
             head_oid: child.head_oid,
             base_version: child.base_version,
@@ -427,6 +433,11 @@ pub(super) async fn retarget_children(
                 "request child changed during preparation",
             ));
         }
+        if parent.merged_head_oid.as_deref() != Some(fact.parent_head_oid.as_str()) {
+            return Err(PostgresError::conflict(
+                "landed parent ancestry changed during preparation",
+            ));
+        }
         if !fact.parent_contains_pin {
             continue;
         }
@@ -434,6 +445,7 @@ pub(super) async fn retarget_children(
             child,
             parent,
             scope_domain::requests::RetargetRequestAfterParentMergeInput {
+                parent_head_oid: fact.parent_head_oid.clone(),
                 event_id: super::generated_ids::generate_id(
                     generated_ids,
                     super::GeneratedIdKind::RequestMergedEvent,
@@ -468,6 +480,7 @@ pub(super) async fn retarget_children(
             .await?
             .into_iter()
             .map(|child| RequestStackChildFacts {
+                parent_head_oid: mutation.request.head_oid.clone(),
                 request_id: child.id,
                 head_oid: child.head_oid,
                 base_version: child.base_version,

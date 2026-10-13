@@ -242,6 +242,7 @@ pub(crate) async fn request_stack_child_publication_facts(
         })
         .await?;
         facts.push(RequestStackChildFacts {
+            parent_head_oid: new_head_oid.to_string(),
             request_id: child.id,
             head_oid: child.head_oid,
             base_version: child.base_version,
