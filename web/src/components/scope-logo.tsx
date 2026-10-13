@@ -6,9 +6,9 @@ export function ScopeLogo({ className }: { className?: string }) {
       alt="Scope"
       className={cn('block h-auto brightness-0 dark:invert', className)}
       decoding="async"
-      height={96}
+      height={70}
       src="/brand/scope-lockup.svg"
-      width={361}
+      width={270}
     />
   )
 }
