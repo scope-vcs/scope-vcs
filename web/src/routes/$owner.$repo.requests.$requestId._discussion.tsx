@@ -168,7 +168,7 @@ function RequestDiscussionLayout() {
         const snapshot = requestStateResource.getSnapshot(page.identity)
         try {
           const result = await updateDescription({ data })
-          reconcileRequestState(page.identity, snapshot, (current) => ({ ...current, detail: { request: result.request } }))
+          reconcileRequestState(page.identity, snapshot, (current) => ({ ...current, detail: { ...current.detail, request: result.request } }))
           requestStateResource.invalidate(page.identity)
           return result
         } catch (error) {

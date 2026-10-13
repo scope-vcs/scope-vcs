@@ -12,6 +12,11 @@
       "reason": "Discussion queries and mutations share visibility projection, cursor, anchor, and response mapping rules."
     },
     {
+      "path": "api/src/http/requests.rs",
+      "owner": "request HTTP translation",
+      "reason": "Existing list, queue, lifecycle and start endpoints share HTTP input and response translation; dependency policy lives in scope-domain, metadata reads in scope-postgres and the new paged children handler in its own module."
+    },
+    {
       "path": "cache-service/src/handlers.rs",
       "owner": "workflow cache HTTP delivery",
       "reason": "Restore and upload handlers share grant authorization, lease timing, signed-transfer behavior, and focused endpoint tests."
