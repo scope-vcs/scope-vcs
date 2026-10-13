@@ -279,11 +279,7 @@ fn registered_process_databases() -> Vec<(String, String)> {
         .lock()
         .expect("test database registry should not be poisoned")
         .iter()
-        .flat_map(|(admin_url, names)| {
-            names
-                .iter()
-                .map(|(name, _)| (admin_url.clone(), name.clone()))
-        })
+        .flat_map(|(admin_url, names)| names.keys().map(|name| (admin_url.clone(), name.clone())))
         .collect()
 }
 
