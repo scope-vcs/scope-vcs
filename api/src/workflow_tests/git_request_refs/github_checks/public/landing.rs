@@ -204,6 +204,17 @@ async fn exact_public_parent_landing_preserves_child_review_and_worker_renews_ap
     }
     let parent = fixture.evaluation(REQUEST_ID, &fixture.parent_head).await;
     fixture.green(&old.tested_oid, 1).await;
+    let auto_path = scope_api_contract::routes::repo_request_auto_merge(
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        &fixture.child_id,
+    );
+    let enabled = expect_json(api_request(router(fixture.state.clone()), "POST", &auto_path, Some(&member), Some(&serde_json::json!({"expected_revision_id": original.id, "expected_head_oid": fixture.child_head}).to_string())).await, StatusCode::OK).await;
+    assert_eq!(enabled["intent"]["status"], "Active");
+    assert_eq!(
+        enabled["waiting_reason"],
+        "Waiting for the parent request to land"
+    );
     assert_eq!(
         merge(&fixture.state, &fixture.child_id).await.status(),
         StatusCode::CONFLICT
@@ -251,12 +262,47 @@ async fn exact_public_parent_landing_preserves_child_review_and_worker_renews_ap
         fixture.fake.branch_head(&child_branch),
         Some(renewed.tested_oid.clone())
     );
-    fixture.green(&renewed.tested_oid, 4).await;
-    expect_json(
-        merge(&fixture.state, &fixture.child_id).await,
+    let pending = expect_json(
+        api_request(
+            router(fixture.state.clone()),
+            "GET",
+            &auto_path,
+            Some(&member),
+            None,
+        )
+        .await,
         StatusCode::OK,
     )
     .await;
+    assert_eq!(pending["intent"]["id"], enabled["intent"]["id"]);
+    assert_eq!(pending["intent"]["status"], "Active");
+    fixture.green(&renewed.tested_oid, 4).await;
+    assert_eq!(
+        crate::use_cases::request_auto_merge::reconcile_once(&fixture.state, unix_now())
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        stored_request(&fixture.state, &fixture.child_id)
+            .await
+            .state(),
+        scope_domain::requests::RequestState::Merged
+    );
+    let fulfilled = expect_json(
+        api_request(
+            router(fixture.state.clone()),
+            "GET",
+            &auto_path,
+            Some(&member),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(fulfilled["intent"]["id"], enabled["intent"]["id"]);
+    assert_eq!(fulfilled["intent"]["status"], "Fulfilled");
     assert_eq!(
         live_file_content(&fixture.state, "/parent.txt")
             .await
