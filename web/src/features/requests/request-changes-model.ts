@@ -125,17 +125,15 @@ export function requestChangesPresentation(
   search: RequestChangeSelection & { comparison?: 'request' | 'push' | 'commit' },
   view: ViewId,
   repoId: string,
-  allowRequestComparison: boolean,
 ) {
   const selection = requestChangeSelection(revisions.revisions, revisions.review_revision_id, search)
   const selectedRevision = selection.revision
-  const requestedMode = search.comparison ?? (search.commit ? 'commit' : revisions.comparison?.mode ?? (allowRequestComparison ? 'request' : 'push'))
-  const mode = !allowRequestComparison && requestedMode === 'request' ? 'push' : requestedMode
+  const mode = search.comparison ?? (search.commit ? 'commit' : revisions.comparison?.mode ?? 'request')
   const comparison = revisions.comparison
-  const aggregate = allowRequestComparison && selectedRevision && comparison?.revision_id === selectedRevision.id && comparison.mode === mode
+  const aggregate = selectedRevision && comparison?.revision_id === selectedRevision.id && comparison.mode === mode
     && (mode !== 'commit' || comparison.head_oid === selection.commit)
     ? comparison : null
-  const usesCommitFiles = mode === 'commit' || !allowRequestComparison
+  const usesCommitFiles = mode === 'commit'
   const commits = orderedRequestCommits(selectedRevision ? [selectedRevision] : [])
   const selectedCommitOid = usesCommitFiles ? selection.commit : null
   const selectedCommitId = selectedRevision && selectedCommitOid

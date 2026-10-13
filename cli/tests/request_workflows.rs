@@ -267,41 +267,60 @@ fn request_diff_uses_server_revision_and_path_with_no_local_private_data() {
 
 #[test]
 fn request_diff_defaults_to_the_server_pinned_layer_manifest() {
-    let dir = TempDir::new("request-layer-diff");
-    let mut detail = request();
-    detail["view"] = "private".into();
-    detail["author_role"] = "Owner".into();
-    let server = FixtureServer::with_request(detail);
-    let value = success(
-        server
-            .command(dir.path())
-            .args([
-                "--json",
-                "--repo",
-                "owner/repo",
-                "request",
-                "diff",
-                "--request",
-                "req_one",
-            ])
-            .output()
-            .unwrap(),
-    );
-    assert_eq!(
-        value["result"]["revisions"]["comparison"]["mode"],
-        "request"
-    );
-    assert_eq!(value["result"]["files"].as_array().unwrap().len(), 1);
-    assert_eq!(
-        value["result"]["files"][0]["diff"]["new_content"]["text"],
-        "server-layer\n"
-    );
-    let seen = server.seen.lock().unwrap();
-    assert!(seen.iter().any(|uri| uri.ends_with("changes")));
-    assert!(seen.iter().any(
-        |uri| uri.contains("/changes/rev_old/file-diff?") && uri.contains("comparison=request")
-    ));
-    assert!(!seen.iter().any(|uri| uri.contains("/commits/")));
+    for (view, mode) in [
+        ("private", None),
+        ("public", None),
+        ("agent", Some("request")),
+    ] {
+        let dir = TempDir::new("request-layer-diff");
+        let parent_head = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let child_head = "cccccccccccccccccccccccccccccccccccccccc";
+        let mut detail = request();
+        detail["view"] = view.into();
+        detail["base"] = json!({"kind":"request","request_id":"req_parent","revision_id":"rev_parent","head_oid":parent_head});
+        detail["head_oid"] = child_head.into();
+        let server = FixtureServer::with_request(detail);
+        let mut command = server.command(dir.path());
+        command.args([
+            "--json",
+            "--repo",
+            "owner/repo",
+            "request",
+            "diff",
+            "--request",
+            "req_one",
+        ]);
+        if let Some(mode) = mode {
+            command.args(["--comparison", mode]);
+        }
+        let value = success(command.output().unwrap());
+        let comparison = &value["result"]["revisions"]["comparison"];
+        assert_eq!(comparison["mode"], "request");
+        assert_eq!(comparison["base_oid"], parent_head);
+        assert_eq!(comparison["head_oid"], child_head);
+        assert_eq!(value["result"]["files"].as_array().unwrap().len(), 1);
+        assert_eq!(value["result"]["files"][0]["commit_oid"], child_head);
+        assert_eq!(
+            value["result"]["files"][0]["diff"]["new_content"]["text"],
+            "server-layer\n"
+        );
+        let seen = server.seen.lock().unwrap();
+        assert!(
+            seen.iter()
+                .any(|uri| uri.ends_with("changes?comparison=request")),
+            "{seen:?}"
+        );
+        assert!(
+            seen.iter()
+                .any(|uri| uri.contains("/changes/rev_old/file-diff?")
+                    && uri.contains("comparison=request")),
+            "{seen:?}"
+        );
+        assert!(
+            !seen.iter().any(|uri| uri.contains("/commits/")),
+            "{seen:?}"
+        );
+    }
 }
 
 #[test]
@@ -348,14 +367,15 @@ fn request_diff_rejects_a_commit_absent_from_visible_revision_inspection() {
 }
 
 #[test]
-fn request_diff_defaults_to_visible_text_changes() {
+fn request_diff_renders_aggregate_comparisons_and_filters_selected_paths() {
     let dir = TempDir::new("request-default-diff");
-    let server = FixtureServer::start();
     for (mode, path) in [
         (None, None),
         (Some("push"), None),
         (Some("push"), Some("/space name.txt")),
+        (Some("request"), Some("/unselected.txt")),
     ] {
+        let server = FixtureServer::start();
         let mut command = server.command(dir.path());
         command.args([
             "--repo",
@@ -378,11 +398,29 @@ fn request_diff_defaults_to_visible_text_changes() {
             String::from_utf8_lossy(&output.stderr)
         );
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("-old\n+server-visible"), "{stdout}");
-        if path.is_some() {
-            assert_eq!(stdout.matches("diff --git").count(), 1, "{stdout}");
-            assert!(!stdout.contains("unselected-public"));
+        if path == Some("/unselected.txt") {
+            assert!(!stdout.contains("diff --git"), "{stdout}");
+            assert!(
+                !server
+                    .seen
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|uri| uri.contains("file-diff"))
+            );
+            continue;
         }
+        assert!(stdout.contains("-old\n+server-layer"), "{stdout}");
+        assert_eq!(stdout.matches("diff --git").count(), 1, "{stdout}");
+        assert!(!stdout.contains("unselected-public"), "{stdout}");
+        let expected = mode.unwrap_or("request");
+        let seen = server.seen.lock().unwrap();
+        assert!(
+            seen.iter()
+                .any(|uri| uri.contains("/changes/rev_old/file-diff?")
+                    && uri.contains(&format!("comparison={expected}"))),
+            "{seen:?}"
+        );
     }
 }
 
@@ -575,7 +613,23 @@ impl FixtureServer {
 
     fn with_navigation(start_detail: Value, show_detail: Value, navigation: Value) -> Self {
         let private = show_detail["view"] == "private";
+        let revision_base = show_detail["base"].clone();
+        let comparison_base = if revision_base["kind"] == "request" {
+            revision_base["head_oid"].clone()
+        } else {
+            revision_base["review_base_oid"].clone()
+        };
+        let comparison_head = show_detail["head_oid"].clone();
         let mut repo = repository();
+        if show_detail["view"] == "agent" {
+            repo["views"] = json!([
+                {"id":"public","name":"Public","includes":[],"readers":"anyone"},
+                {"id":"private","name":"Private","includes":"all","readers":"assigned"},
+                {"id":"agent","name":"Agent","includes":["public"],"readers":"assigned"}
+            ]);
+            repo["access"]["view"] = "agent".into();
+            repo["access"]["actor"] = "Member".into();
+        }
         if private {
             repo["access"]["view"] = "private".into();
             repo["access"]["actor"] = "Owner".into();
@@ -641,10 +695,9 @@ impl FixtureServer {
                     }))
                     .route("/v1/repos/owner/repo/requests", get(|| async { Json(json!({"requests":[list_item("req_one", "fix-one", "Open"), list_item("req_two", "fix-two", "Closed"), list_item("req_three", "fix-three", "Open")], "next_cursor":null})) }).post(move || { let started=started.clone(); let detail=start_detail.clone(); async move { started.lock().unwrap().push("POST request".to_string()); Json(json!({"request":detail})) } }))
                     .route("/v1/repos/owner/repo/requests/req_one", get(move || { let detail=show_detail.clone(); let navigation=navigation.clone(); async move { Json(json!({"request":detail,"stack_navigation":navigation})) } }).patch(move |Json(body): Json<Value>| { let captured=captured.clone(); async move { *captured.lock().unwrap()=body; Json(json!({"request":request()})) } }))
-                    .route("/v1/repos/owner/repo/requests/req_one/changes", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| { let inspected=revisions_seen.clone(); async move { inspected.lock().unwrap().push(uri.to_string());
-                    let mode = query.get("comparison").map(String::as_str).unwrap_or(if query.contains_key("commit") { "commit" } else if private { "request" } else { "push" });
-                    if !private && mode == "request" { return (axum::http::StatusCode::BAD_REQUEST, Json(json!({"code":"bad_request","message":"request comparison requires private access","retryable":false}))); }
-                    (axum::http::StatusCode::OK, Json(json!({"comparison":if private && (mode == "request" || mode == "push") { json!({"revision_id":"rev_old","mode":mode,"base_oid":OID,"head_oid":OID,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"label":"public"}],"inspection":"Complete"}) } else {Value::Null},"review_revision_id":query.get("revision").map(String::as_str).unwrap_or("rev_old"), "revisions":[{"id":"rev_old","base":{"kind":"main","review_base_oid":OID},"base_version":1,"position":1,"actor":{"id":"usr_test","handle":"owner"},"old_head_oid":null,"new_head_oid":OID,"commits":[{"oid":OID,"parent_oids":[],"author":"owner","authored_at_unix":1,"message":"Old revision","change_count":1,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"label":"public"},{"path":"unselected.txt","kind":"Added","old_mode":null,"new_mode":"100644","old_oid":null,"new_oid":OID,"label":"public"}],"files_truncated":false}],"inspection":"Complete","created_at_unix":1}],"has_earlier_revisions":false}))) } }))
+                    .route("/v1/repos/owner/repo/requests/req_one/changes", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| { let inspected=revisions_seen.clone(); let revision_base=revision_base.clone(); let comparison_base=comparison_base.clone(); let comparison_head=comparison_head.clone(); async move { inspected.lock().unwrap().push(uri.to_string());
+                    let mode = query.get("comparison").map(String::as_str).unwrap_or(if query.contains_key("commit") { "commit" } else { "request" });
+                    (axum::http::StatusCode::OK, Json(json!({"comparison":if mode == "request" || mode == "push" { json!({"revision_id":"rev_old","mode":mode,"base_oid":comparison_base,"head_oid":comparison_head,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"label":"public"}],"inspection":"Complete"}) } else {Value::Null},"review_revision_id":query.get("revision").map(String::as_str).unwrap_or("rev_old"), "revisions":[{"id":"rev_old","base":revision_base,"base_version":1,"position":1,"actor":{"id":"usr_test","handle":"owner"},"old_head_oid":null,"new_head_oid":OID,"commits":[{"oid":OID,"parent_oids":[],"author":"owner","authored_at_unix":1,"message":"Old revision","change_count":1,"files":[{"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_oid":OID,"new_oid":OID,"label":"public"},{"path":"unselected.txt","kind":"Added","old_mode":null,"new_mode":"100644","old_oid":null,"new_oid":OID,"label":"public"}],"files_truncated":false}],"inspection":"Complete","created_at_unix":1}],"has_earlier_revisions":false}))) } }))
                     .route("/v1/repos/owner/repo/requests/req_one/changes/rev_old/file-diff", get(move |OriginalUri(uri):OriginalUri| { let seen=aggregate_seen.clone(); async move { seen.lock().unwrap().push(uri.to_string()); Json(json!({"path":"space name.txt","kind":"Modified","old_mode":"100644","new_mode":"100644","old_content":{"kind":"text","text":"old\n"},"new_content":{"kind":"text","text":"server-layer\n"}})) } }))
                     .route("/v1/repos/owner/repo/requests/req_one/changes/rev_old/commits/{commit}/file-diff", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| { let inspected=inspected.clone(); async move { inspected.lock().unwrap().push(uri.to_string()); Json(json!({"path":query["path"],"kind":"Modified","old_mode":"100644","new_mode":"100644","old_content":{"kind":"text","text":"old\n"},"new_content":{"kind":"text","text":if query["path"]=="unselected.txt" {"unselected-public\n"} else {"server-visible\n"}}})) } }));
         Self {

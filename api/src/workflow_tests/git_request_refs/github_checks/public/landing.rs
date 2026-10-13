@@ -17,8 +17,13 @@ struct PublicStack {
 impl PublicStack {
     async fn create(label: &str) -> Self {
         let (state, fake, _owner_source) = private_file_repository(label).await;
-        let (source, remote, server, parent_head) =
-            approved_contribution(&state, label, "parent.txt", "parent layer\n").await;
+        let (source, remote, server, parent_head) = approved_contribution(
+            &state,
+            &format!("{label}-push"),
+            "parent.txt",
+            "parent layer\n",
+        )
+        .await;
         assert_eq!(push_pass(&state, unix_now()).await, 1);
         let parent_revision = state
             .metadata

@@ -1,4 +1,5 @@
 use super::*;
+#[path = "stacks/server.rs"]
 mod server;
 use server::stack_server;
 pub(super) use server::{ContextResponse, require_view_transport, stack_server_with_base};
