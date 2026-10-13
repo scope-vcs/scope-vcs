@@ -64,7 +64,9 @@ arguments. A new attribute is exported only after it is added to that list.
 Logs are exported as written: every event that passes the service's log filter,
 `info` and above from Scope's own crates by default, with its fields as
 attributes. Log lines can name repositories, paths, and error details, which is
-why they are not span attributes. The OpenTelemetry SDK and the HTTP client
+why they are not span attributes. Errors from `outbound_http::send_traced` drop
+their URL, so presigned object links and query credentials never reach a log
+line. The OpenTelemetry SDK and the HTTP client
 crates are never exported, so the exporter cannot log its own requests. PostHog
 keeps logs and traces for 14 days by default. Restrict project access
 accordingly and record any retention change in the
