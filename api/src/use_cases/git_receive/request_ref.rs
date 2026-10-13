@@ -304,7 +304,6 @@ pub(super) async fn persist_request_ref_revision(
         .requests()
         .record_request_revision_with_stack(
             RecordRequestRevisionInput {
-                new_base: None,
                 request_id: request.id.clone(),
                 actor_user_id: actor_user_id.to_string(),
                 actor_can_edit: false,
