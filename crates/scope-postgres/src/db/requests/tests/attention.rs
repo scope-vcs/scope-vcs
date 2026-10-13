@@ -416,14 +416,11 @@ async fn reactivated_and_expired_requests_sort_before_older_active_pages() {
         .unwrap();
     store
         .requests()
-        .record_working_request_upload(
-            RecordWorkingRequestUploadInput {
-                request_id: "req_2".into(),
-                now_unix: 11,
-                ..public_upload_input()
-            },
-            &super::super::super::generated_ids::test_generated_id,
-        )
+        .record_working_request_upload(RecordWorkingRequestUploadInput {
+            request_id: "req_2".into(),
+            now_unix: 11,
+            ..public_upload_input()
+        })
         .await
         .unwrap();
     let mut newer = store

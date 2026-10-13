@@ -22,7 +22,7 @@ impl RunStore {
         revision: WorkflowRevision,
         now_unix: u64,
     ) -> Result<EnqueueRunResult, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", request.repository_id()).await?;
         let context = repository_access(&tx, request.repository_id(), Some(request.user_id()))
             .await?
@@ -34,7 +34,7 @@ impl RunStore {
             now_unix,
         )?;
         let enqueued = enqueue_run_in_transaction(&tx, run, revision).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(enqueued)
     }
 
@@ -44,7 +44,7 @@ impl RunStore {
         request: &ManualRunRequest,
         now_unix: u64,
     ) -> Result<Option<EnqueueRunResult>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", request.repository_id()).await?;
         let context = git_push_context_for_id(&tx, request.repository_id(), request.user_id())
             .await?
@@ -52,12 +52,11 @@ impl RunStore {
         request.require_access(&context.access, context.repo_config.views())?;
         if let Some(stored) = entities::run::Entity::find_by_id(request.run_id())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         {
             let run = stored.try_into_domain()?;
             request.require_matching_run(&run)?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(Some(EnqueueRunResult {
                 run,
                 inserted: false,
@@ -90,7 +89,7 @@ impl RunStore {
             RunSource::accepted_git_head(request.repository_id(), head, context.git_pack_spans)?;
         let run = request.create_run(&revision, source, now_unix)?;
         let enqueued = enqueue_run_in_transaction(&tx, run, revision).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(enqueued))
     }
 }

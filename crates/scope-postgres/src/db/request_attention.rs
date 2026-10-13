@@ -39,7 +39,7 @@ impl RequestStore {
         command: ApplyRequestAttentionCommand,
     ) -> Result<RequestAttentionResult, PostgresError> {
         let db = Arc::clone(&self.db);
-        let tx = db.begin().await.map_err(PostgresError::internal)?;
+        let tx = db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         if request.repo_id != command.repo_id {
@@ -81,7 +81,7 @@ impl RequestStore {
             claim: mutation.claim.as_ref(),
             now_unix: command.now_unix,
         });
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(RequestAttentionResult {
             attention: classification,
             claim: mutation.claim,
@@ -104,14 +104,12 @@ pub(super) async fn remove_member_attention<C: ConnectionTrait>(
         .filter(entities::request_claim::Column::ClaimerUserId.eq(user_id))
         .filter(entities::request_claim::Column::RequestId.in_subquery(requests.clone()))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     entities::request_attention_state::Entity::delete_many()
         .filter(entities::request_attention_state::Column::UserId.eq(user_id))
         .filter(entities::request_attention_state::Column::RequestId.in_subquery(requests))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -153,8 +151,7 @@ pub(super) async fn reactivate_attention_for_activity<C: ConnectionTrait>(
     let states = entities::request_attention_state::Entity::find()
         .filter(entities::request_attention_state::Column::RequestId.eq(request_id))
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     for state in states {
         let state = state.try_into_domain()?;
         if let Some(active) =
@@ -176,8 +173,7 @@ async fn attention_for_user<C: ConnectionTrait>(
         user_id.to_string(),
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .map(entities::request_attention_state::Model::try_into_domain)
     .transpose()
 }
@@ -188,8 +184,7 @@ async fn claim_for_request<C: ConnectionTrait>(
 ) -> Result<Option<RequestClaim>, PostgresError> {
     entities::request_claim::Entity::find_by_id(request_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::request_claim::Model::try_into_domain)
         .transpose()
 }
@@ -217,8 +212,7 @@ async fn save_attention<C: ConnectionTrait>(
         .to_owned(),
     )
     .exec(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -232,16 +226,14 @@ async fn delete_attention<C: ConnectionTrait>(
         user_id.to_string(),
     ))
     .exec(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
 async fn delete_claim<C: ConnectionTrait>(conn: &C, request_id: &str) -> Result<(), PostgresError> {
     entities::request_claim::Entity::delete_by_id(request_id.to_string())
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -261,7 +253,6 @@ async fn save_claim<C: ConnectionTrait>(
             .to_owned(),
     )
     .exec(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }

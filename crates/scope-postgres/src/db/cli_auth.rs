@@ -36,15 +36,12 @@ impl AuthStore {
             completed_at_unix: None,
             consumed_at_unix: None,
         };
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "cli-auth", "start").await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         enforce_browser_login_start_limits(&tx, now_unix).await?;
-        row.into_active_model()
-            .insert(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        row.into_active_model().insert(&tx).await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -56,14 +53,12 @@ impl AuthStore {
         user: &UserAccount,
         now_unix: u64,
     ) -> Result<BrowserLoginCompletion, PostgresError> {
-        let request_id = request_id.to_string();
         let user_id = user.id.clone();
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "cli-browser-request", &request_id).await?;
-        let Some(login) = entities::cli_browser_login::Entity::find_by_id(request_id.clone())
+        let tx = self.db.begin().await?;
+        acquire_aggregate_lock(&tx, "cli-browser-request", request_id).await?;
+        let Some(login) = entities::cli_browser_login::Entity::find_by_id(request_id)
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Err(PostgresError::not_found("CLI browser login not found"));
         };
@@ -82,7 +77,7 @@ impl AuthStore {
         }
 
         entities::cli_browser_login::Entity::update_many()
-            .filter(entities::cli_browser_login::Column::RequestId.eq(request_id.clone()))
+            .filter(entities::cli_browser_login::Column::RequestId.eq(request_id))
             .col_expr(
                 entities::cli_browser_login::Column::CallbackCodeHash,
                 Expr::value(callback_code_hash),
@@ -96,11 +91,10 @@ impl AuthStore {
                 Expr::value(u64_to_i64(now_unix, "current time")?),
             )
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+            .await?;
+        tx.commit().await?;
         Ok(BrowserLoginCompletion {
-            request_id,
+            request_id: request_id.to_string(),
             callback_url: login.callback_url,
         })
     }
@@ -114,13 +108,11 @@ impl AuthStore {
         session: NewCliSession,
         now_unix: u64,
     ) -> Result<SessionIdentity, PostgresError> {
-        let request_id = request_id.to_string();
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "cli-browser-request", &request_id).await?;
-        let Some(login) = entities::cli_browser_login::Entity::find_by_id(request_id.clone())
+        let tx = self.db.begin().await?;
+        acquire_aggregate_lock(&tx, "cli-browser-request", request_id).await?;
+        let Some(login) = entities::cli_browser_login::Entity::find_by_id(request_id)
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Err(PostgresError::not_found("CLI browser login not found"));
         };
@@ -149,10 +141,9 @@ impl AuthStore {
                 Expr::value(u64_to_i64(now_unix, "current time")?),
             )
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let identity = insert_cli_session_in_tx(&tx, &user_id, session).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(identity)
     }
 
@@ -170,14 +161,11 @@ impl AuthStore {
             expires_at_unix: u64_to_i64(command.expires_at_unix, "CLI login expiry")?,
             consumed_at_unix: None,
         };
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "cli-exchange-grant", &row.grant_hash).await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
-        row.into_active_model()
-            .insert(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        row.into_active_model().insert(&tx).await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -188,12 +176,11 @@ impl AuthStore {
         session: NewCliSession,
         now_unix: u64,
     ) -> Result<SessionIdentity, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "cli-exchange-grant", grant_hash).await?;
         let Some(grant) = entities::cli_exchange_grant::Entity::find_by_id(grant_hash)
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Err(PostgresError::unauthenticated("invalid CLI exchange token"));
         };
@@ -218,10 +205,9 @@ impl AuthStore {
                 Expr::value(u64_to_i64(now_unix, "current time")?),
             )
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let identity = insert_cli_session_in_tx(&tx, &user_id, session).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(identity)
     }
 
@@ -232,7 +218,7 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<Vec<CliSessionSummary>, PostgresError> {
         let user_id = user.id.clone();
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let sessions = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::UserId.eq(user_id))
             .filter(entities::cli_session::Column::RevokedAtUnix.is_null())
@@ -242,12 +228,11 @@ impl AuthStore {
             )
             .order_by_desc(entities::cli_session::Column::CreatedAtUnix)
             .all(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(cli_session_summary_from_model)
             .collect::<Result<Vec<_>, _>>()?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(sessions)
     }
 
@@ -259,9 +244,8 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         let user_id = user.id.clone();
-        let session_id = session_id.to_string();
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "cli-session", &session_id).await?;
+        let tx = self.db.begin().await?;
+        acquire_aggregate_lock(&tx, "cli-session", session_id).await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         let result = entities::cli_session::Entity::update_many()
             .filter(entities::cli_session::Column::Id.eq(session_id))
@@ -272,9 +256,8 @@ impl AuthStore {
                 Expr::value(u64_to_i64(now_unix, "current time")?),
             )
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+            .await?;
+        tx.commit().await?;
         if result.rows_affected == 0 {
             return Err(PostgresError::not_found("CLI session not found"));
         }

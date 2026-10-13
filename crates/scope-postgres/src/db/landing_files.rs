@@ -30,15 +30,13 @@ where
                         .to_owned(),
                 )
                 .exec(conn)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
             Ok(())
         }
         RepositoryLandingFileMutation::Delete => {
             entities::repository_landing_file::Entity::delete_by_id(repo_id.to_string())
                 .exec(conn)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
             Ok(())
         }
     }
@@ -53,8 +51,7 @@ where
 {
     entities::repository_landing_file::Entity::find_by_id(repo_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::repository_landing_file::Model::try_into_domain)
         .transpose()
 }

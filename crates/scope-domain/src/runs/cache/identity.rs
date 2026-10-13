@@ -1,7 +1,10 @@
 use super::definition::WorkflowCache;
 use crate::{
     error::DomainError,
-    runs::workflow::{definition::WorkflowJobId, identity::WorkflowPath},
+    runs::workflow::{
+        definition::{WorkflowJob, WorkflowJobId},
+        identity::{WorkflowIdentity, WorkflowPath},
+    },
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -98,6 +101,28 @@ impl CacheIdentity {
             compatibility_inputs_digest,
             exact_inputs_digest,
         })
+    }
+
+    pub fn for_job(
+        workflow: &WorkflowIdentity,
+        job: &WorkflowJob,
+        cache_name: &str,
+        compatibility_inputs_digest: impl Into<String>,
+        exact_inputs_digest: impl Into<String>,
+    ) -> Result<Self, DomainError> {
+        let cache = job
+            .caches()
+            .iter()
+            .find(|cache| cache.as_str() == cache_name)
+            .ok_or_else(|| DomainError::invalid_input("cache does not belong to the job"))?;
+        Self::new(
+            workflow.repository_id(),
+            CacheNamespace::workflow(workflow.path(), job.id()),
+            cache.clone(),
+            CachePlatform::LinuxAmd64,
+            compatibility_inputs_digest,
+            exact_inputs_digest,
+        )
     }
 
     pub fn repository_id(&self) -> &str {

@@ -30,15 +30,12 @@ validate_maintenance_artifact() {
 
 begin_cutover() {
   local temporary
-  if plan_requires_maintenance "$plan_json" && ! node --input-type=module -e '
-import { readFileSync } from "node:fs";
-const manifest = JSON.parse(readFileSync(process.env.SCOPE_DEPLOYMENT_MANIFEST || ".github/deployment-services.json", "utf8"));
-if (manifest.releasePolicy?.maintenanceEnabled !== true) process.exit(1);
-'; then
+  if plan_requires_maintenance "$plan_json" \
+    && ! jq -e '.releasePolicy.maintenanceEnabled == true' "$policy_manifest" >/dev/null; then
     echo "Automatic maintenance is disabled in the release policy; writers remain open." >&2
     return 1
   fi
-  validate_prepared_release api run-worker cache git-router media-api media-worker web
+  validate_prepared_release api run-worker git-router media-api media-worker web
   validate_maintenance_artifact
   prepare_maintenance_gates
   temporary="$(mktemp -d)"
@@ -62,7 +59,7 @@ recover_cutover() {
     echo "Recovery artifacts do not match the durable cutover manifest." >&2
     return 1
   fi
-  validate_prepared_release api run-worker cache git-router media-api media-worker web
+  validate_prepared_release api run-worker git-router media-api media-worker web
   validate_maintenance_artifact
   recover_maintenance_gates "$record"
   successful_deployments="$(jq -c .previous <<< "$record")"

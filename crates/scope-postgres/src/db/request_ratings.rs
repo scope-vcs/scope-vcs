@@ -25,7 +25,7 @@ impl RequestStore {
         &self,
         input: CreateRequestRatingInput,
     ) -> Result<RequestRating, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (_repo, request) =
             lock_request_repository(&tx, &input.request_id, &input.actor_user_id).await?;
         ensure_user_exists(&tx, &input.actor_user_id).await?;
@@ -34,9 +34,8 @@ impl RequestStore {
         entities::request_rating::Model::from_domain(&rating)?
             .into_active_model()
             .insert(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+            .await?;
+        tx.commit().await?;
         Ok(rating)
     }
 
@@ -57,17 +56,14 @@ impl RequestStore {
                 "#,
                 [user_id.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::internal_message("request reputation row is missing"))?;
         let score_sum = row
-            .try_get::<i64>("", "score_sum")
-            .map_err(PostgresError::internal)?
+            .try_get::<i64>("", "score_sum")?
             .try_into()
             .map_err(PostgresError::internal)?;
         let rating_count = row
-            .try_get::<i64>("", "rating_count")
-            .map_err(PostgresError::internal)?
+            .try_get::<i64>("", "rating_count")?
             .try_into()
             .map_err(PostgresError::internal)?;
         RequestReputation::from_totals(score_sum, rating_count).map_err(Into::into)
@@ -86,8 +82,7 @@ where
         .order_by_asc(entities::request_rating::Column::CreatedAtUnix)
         .order_by_asc(entities::request_rating::Column::Id)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::request_rating::Model::try_into_domain)
         .collect()
@@ -98,7 +93,6 @@ mod tests {
     use super::*;
     use crate::db::{
         CloseRequestCommand, SubmitRequestCommand,
-        generated_ids::test_generated_id,
         requests::tests::{postgres_store, start_public_request},
     };
 
@@ -118,15 +112,12 @@ mod tests {
             .unwrap();
         store
             .requests()
-            .close_request(
-                CloseRequestCommand {
-                    request_id: "req_1".to_string(),
-                    actor_user_id: "user_owner".to_string(),
-                    event_id: "event_closed".to_string(),
-                    now_unix: 5,
-                },
-                &test_generated_id,
-            )
+            .close_request(CloseRequestCommand {
+                request_id: "req_1".to_string(),
+                actor_user_id: "user_owner".to_string(),
+                event_id: "event_closed".to_string(),
+                now_unix: 5,
+            })
             .await
             .unwrap();
 

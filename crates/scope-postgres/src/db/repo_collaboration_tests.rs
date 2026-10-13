@@ -1,21 +1,16 @@
 use crate::db::{
     CatalogFixture, CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,
-    MetadataStore, RequestRepositoryInviteEmailCommand, TestDatabaseTarget,
-    UpdateRepositoryMemberPermissionsCommand, entities, generated_ids::test_generated_id,
+    MetadataStore, RequestRepositoryInviteEmailCommand, UpdateRepositoryMemberPermissionsCommand,
+    entities, test_support::fixtures,
 };
 use crate::error::PostgresErrorKind;
 use scope_domain::{
     account::UserAccount,
-    content::SourceBlob,
-    content_ref::ContentRef,
-    policy::ScopePath,
-    projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repo_collaboration::{
         AcceptRepositoryInviteOutcome, REPOSITORY_INVITE_RETENTION_SECS, REPOSITORY_INVITE_TTL_SECS,
     },
     repo_invite_email::{InviteEmailAttempt, RepositoryInviteEmailState},
     repository::{
-        RepoLifecycleState, Repository,
         collaboration::{RepositoryMember, RepositoryMemberPermissions},
         git::GitHead,
     },
@@ -32,12 +27,7 @@ pub(in crate::db) const HISTORY_TABLES: &str = "scope_logical_commits, scope_fil
     scope_git_segment_uploads";
 
 fn user(id: &str) -> UserAccount {
-    UserAccount {
-        id: id.into(),
-        handle: id.into(),
-        email: format!("{id}@example.com"),
-        email_verified: true,
-    }
+    fixtures::user(id, id)
 }
 
 async fn fixture() -> MetadataStore {
@@ -45,37 +35,18 @@ async fn fixture() -> MetadataStore {
 }
 
 async fn fixture_with_views(views: Views) -> MetadataStore {
-    let store =
-        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let owner = user("owner");
     let member = user("member");
     let invitee = user("invitee");
-    let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_repo").unwrap();
+    let mut repo = fixtures::repository(&owner, "repo", ViewId::public());
     repo.repo_config.views = views;
-    repo.record.lifecycle_state = RepoLifecycleState::Ready;
     for index in 0..20 {
-        let oid = format!("{:040x}", index + 1);
-        repo.graph.commits.push(LogicalCommit {
-            occurred_at_unix: None,
-            id: format!("logical_{index}"),
-            origin: LogicalCommitOrigin::CanonicalPush {
-                source_head_oid: oid.clone(),
-            },
-            author_id: owner.id.clone(),
-            message: format!("Change {index}"),
-            changes: vec![FileChange {
-                path: ScopePath::parse(format!("/file-{index}.txt")).unwrap(),
-                old_content: None,
-                new_content: Some(SourceBlob {
-                    content_ref: ContentRef::git_bundle_sha256(format!("bundle-{index}")),
-                    sha256: format!("hash-{index}"),
-                    git_oid: oid,
-                    git_file_mode: "100644".into(),
-                    size_bytes: 100,
-                }),
-                label: ViewId::public(),
-            }],
-        });
+        repo.graph.commits.push(fixtures::canonical_commit(
+            &owner.id,
+            index,
+            &format!("/file-{index}.txt"),
+            ViewId::public(),
+        ));
     }
     repo.git_head = Some(GitHead::new(format!("{:040x}", 20), 1, 1));
     repo.collaboration.members.push(RepositoryMember {
@@ -91,7 +62,7 @@ async fn fixture_with_views(views: Views) -> MetadataStore {
     catalog.users.insert(invitee.id.clone(), invitee);
     catalog.users.insert("agent".into(), user("agent"));
     catalog.repositories.insert(repo.record.id.clone(), repo);
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
+    let store = fixtures::seeded_store(catalog);
     store
         .repositories()
         .create_repository_invite(CreateRepositoryInviteMutation {
@@ -602,9 +573,7 @@ async fn collaboration_mutations_touch_no_history_or_pack_spans() {
     let deleted = without_history(
         &store,
         "deleting a member's account",
-        store
-            .auth()
-            .delete_account("invitee", NOW, &test_generated_id),
+        store.auth().delete_account("invitee", NOW),
     )
     .await
     .unwrap();

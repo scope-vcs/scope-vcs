@@ -4,7 +4,7 @@ import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider, use
 import { RequestCiApproval } from '@/features/requests/request-ci-approval'
 import { RequestChecksSection } from '@/features/requests/request-checks-section'
 import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.generated'
-import './styles.css'
+import '../shared/styles.css'
 
 type GitHubCheck = Extract<RequestCheckResponse, { provider: 'github' }>
 const github = (name: string, status: GitHubCheck['status'], conclusion: GitHubCheck['conclusion'] = null, run: GitHubCheck['run'] = null): RequestCheckResponse => ({

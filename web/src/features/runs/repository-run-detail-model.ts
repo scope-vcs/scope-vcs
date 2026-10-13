@@ -55,65 +55,35 @@ export function selectInitialView(
     ? undefined
     : jobs.find(({ job }) => job.key === linkedJobKey)
   if (linkedJob) {
-    const attempt = latestAttempt(linkedJob.attempts)
-    const step = attempt?.steps.find((candidate) => candidate.state === 'failed')
-      ?? attempt?.steps.find((candidate) => candidate.state === 'running')
-      ?? attempt?.steps.at(-1)
-    return {
-      selectedJobKey: linkedJob.job.key,
-      selection: attempt && step
-        ? { attemptId: attempt.id, jobKey: linkedJob.job.key, stepIndex: step.index }
-        : null,
-    }
+    return viewOf(linkedJob, (steps) => stepIn(steps, 'failed') ?? stepIn(steps, 'running') ?? steps.at(-1))
   }
-
   const failedJob = jobs.find(({ job }) => job.state === 'failed')
-  const failedAttempt = failedJob ? latestAttempt(failedJob.attempts) : null
-  const failedStep = failedAttempt?.steps.find((step) => step.state === 'failed')
-  if (failedJob && failedAttempt && failedStep) {
-    return {
-      selectedJobKey: failedJob.job.key,
-      selection: {
-        attemptId: failedAttempt.id,
-        jobKey: failedJob.job.key,
-        stepIndex: failedStep.index,
-      },
-    }
-  }
-  if (failedJob) {
-    return { selectedJobKey: failedJob.job.key, selection: null }
-  }
-
+  if (failedJob) return viewOf(failedJob, (steps) => stepIn(steps, 'failed'))
   for (const jobDetail of jobs) {
-    const attempt = latestAttempt(jobDetail.attempts)
-    const runningStep = attempt?.steps.find((step) => step.state === 'running')
-    if (attempt && runningStep) {
-      return {
-        selectedJobKey: jobDetail.job.key,
-        selection: {
-          attemptId: attempt.id,
-          jobKey: jobDetail.job.key,
-          stepIndex: runningStep.index,
-        },
-      }
-    }
+    const view = viewOf(jobDetail, (steps) => stepIn(steps, 'running'))
+    if (view.selection) return view
   }
-
   const lastJob = jobs.at(-1)
-  const lastJobAttempt = lastJob ? latestAttempt(lastJob.attempts) : null
-  const lastStep = lastJobAttempt?.steps.at(-1)
-  if (lastJob && lastJobAttempt && lastStep) {
-    return {
-      selectedJobKey: lastJob.job.key,
-      selection: {
-        attemptId: lastJobAttempt.id,
-        jobKey: lastJob.job.key,
-        stepIndex: lastStep.index,
-      },
-    }
-  }
+  const last = lastJob ? viewOf(lastJob, (steps) => steps.at(-1)) : null
+  return last?.selection ? last : { selectedJobKey: null, selection: null }
+}
 
-  return { selectedJobKey: null, selection: null }
+function stepIn(steps: readonly StepLike[], state: string) {
+  return steps.find((step) => step.state === state)
+}
+
+function viewOf(
+  jobDetail: JobLike,
+  pick: (steps: readonly StepLike[]) => StepLike | undefined,
+): InitialRunView {
+  const attempt = latestAttempt(jobDetail.attempts)
+  const step = attempt ? pick(attempt.steps) : undefined
+  return {
+    selectedJobKey: jobDetail.job.key,
+    selection: attempt && step
+      ? { attemptId: attempt.id, jobKey: jobDetail.job.key, stepIndex: step.index }
+      : null,
+  }
 }
 
 export function attemptForJob<Attempt extends AttemptLike>(

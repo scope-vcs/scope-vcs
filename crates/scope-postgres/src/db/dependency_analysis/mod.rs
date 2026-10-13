@@ -1,6 +1,6 @@
 use super::{
-    GeneratedIdKind, GeneratedIdSource, JobStore, acquire_aggregate_lock, decode_json,
-    generated_ids::generate_id, git_segments::load_git_pack_spans,
+    GeneratedIdKind, JobStore, acquire_aggregate_lock, decode_json, generated_ids::generate_id,
+    git_segments::load_git_pack_spans,
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -77,7 +77,6 @@ impl JobStore {
         analyzer_version: &str,
         now_unix: u64,
         lease_seconds: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<Option<DependencyAnalysisClaim>, PostgresError> {
         if worker_id.trim().is_empty() {
             return Err(PostgresError::internal_message(
@@ -87,13 +86,11 @@ impl JobStore {
         validate_analyzer_version(analyzer_version)?;
         let now = dependency_time(now_unix)?;
         let lease_expires = lease_expiry(now, lease_seconds)?;
-        let lease_generation =
-            generate_id(generated_ids, GeneratedIdKind::DependencyAnalysisLease)?;
+        let lease_generation = generate_id(GeneratedIdKind::DependencyAnalysisLease)?;
         let tx = self
             .db
             .begin_with_config(Some(IsolationLevel::RepeatableRead), None)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let Some(job) = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -120,10 +117,9 @@ impl JobStore {
                     analyzer_version.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         };
         let repo_id = database_value::<String>(&job, "repo_id")?;
@@ -133,13 +129,11 @@ impl JobStore {
                 "SELECT incarnation_id, change_version, content_version FROM scope_repositories WHERE id = $1",
                 [repo_id.clone().into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::internal_message("dependency job has no repository"))?;
         let head = super::entities::git_head::Entity::find_by_id(repo_id.clone())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::internal_message("dependency job has no Git head"))?
             .try_into_domain()?;
         let incarnation = RepositoryIncarnation::new(
@@ -164,15 +158,14 @@ impl JobStore {
                 now_unix,
             )
             .await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         }
         let rows = super::entities::live_file::Entity::find()
             .filter(super::entities::live_file::Column::RepoId.eq(repo_id.clone()))
             .order_by_asc(super::entities::live_file::Column::Path)
             .all(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let files = rows
             .into_iter()
             .map(|row| {
@@ -206,7 +199,7 @@ impl JobStore {
             files,
             reusable_analysis,
         };
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(claim))
     }
 
@@ -233,8 +226,7 @@ impl JobStore {
                     claim.lease_generation.clone().into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -283,10 +275,10 @@ impl JobStore {
             ));
         }
         let now = dependency_time(now_unix)?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", claim.incarnation.repository_id()).await?;
         let Some(repository) = current_claim_repository(&tx, claim, now).await? else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(DependencyCompletion::Stale);
         };
         let config: RepoConfig = decode_json(database_value::<serde_json::Value>(
@@ -317,8 +309,7 @@ impl JobStore {
                 now.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
@@ -349,8 +340,7 @@ impl JobStore {
                 now.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         let deleted = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -361,13 +351,12 @@ impl JobStore {
                     claim.lease_generation.clone().into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if deleted.rows_affected() != 1 {
-            tx.rollback().await.map_err(PostgresError::internal)?;
+            tx.rollback().await?;
             return Ok(DependencyCompletion::Stale);
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(DependencyCompletion::Completed)
     }
 
@@ -380,10 +369,10 @@ impl JobStore {
     ) -> Result<bool, PostgresError> {
         let now = dependency_time(now_unix)?;
         let error = bounded_dependency_error(error);
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", claim.incarnation.repository_id()).await?;
         if current_claim_repository(&tx, claim, now).await?.is_none() {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(false);
         }
         let updated = tx
@@ -405,13 +394,12 @@ impl JobStore {
                     MAX_DEPENDENCY_RETRY_SECONDS.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if updated.rows_affected() != 1 {
-            tx.rollback().await.map_err(PostgresError::internal)?;
+            tx.rollback().await?;
             return Ok(false);
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(true)
     }
 }
@@ -468,8 +456,7 @@ pub(super) async fn enqueue_dependency_analysis_target<C: ConnectionTrait>(
             now.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -532,8 +519,7 @@ async fn load_reusable_analysis<C: ConnectionTrait>(
                 analyzer_version.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     row.map(|row| decode_json(database_value::<serde_json::Value>(&row, "analysis")?))
         .transpose()
 }

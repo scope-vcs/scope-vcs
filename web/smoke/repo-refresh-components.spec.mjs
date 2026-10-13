@@ -1,38 +1,10 @@
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { chromium } from 'playwright'
-import { createServer } from 'vite'
-
-const require = createRequire(import.meta.url)
+import { fixtureClerk, openFixture } from './support/fixture-server.mjs'
 
 test('accepted summaries and reconnects reconcile the retained request queue without restarting the stream', async t => {
-  const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-refresh-'))
-  t.after(() => rm(cacheDir, { recursive: true, force: true }))
-  const server = await createServer({
-    configFile: false, cacheDir,
-    root: fileURLToPath(new URL('./fixtures/repo-refresh', import.meta.url)),
-    server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } },
-    resolve: { alias: [
-      { find: '@clerk/tanstack-react-start', replacement: fileURLToPath(new URL('./fixtures/repo-refresh/auth.ts', import.meta.url)) },
-      { find: '@', replacement: fileURLToPath(new URL('../src', import.meta.url)) },
-      ...['react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom/client', 'react'].map(name => ({ find: name, replacement: require.resolve(name) })),
-    ] },
-    oxc: { jsx: { runtime: 'automatic' } },
-  })
-  await server.listen()
-  t.after(() => server.close())
-  const browser = await chromium.launch({ headless: true })
-  t.after(() => browser.close())
-  const page = await browser.newPage()
-  page.setDefaultTimeout(5_000)
-  const errors = []
-  page.on('pageerror', error => errors.push(error.message))
-  await page.goto(server.resolvedUrls.local[0], { timeout: 30_000 })
+  const { base, errors, page } = await openFixture(t, 'repo-refresh', { aliases: [fixtureClerk], timeout: 5_000 })
+  await page.goto(base, { timeout: 30_000 })
   await page.waitForFunction(() => window.fixture?.server.queueReads >= 4)
   await page.evaluate(async () => { window.fixture.submit(['new-request']); await window.fixture.refresh() })
   await page.locator('[data-count]').filter({ hasText: '1' }).waitFor()

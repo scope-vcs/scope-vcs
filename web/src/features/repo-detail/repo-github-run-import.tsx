@@ -1,8 +1,6 @@
 import type { GitHubConnectionResponse } from '@/api/types.generated'
-import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { cn } from '@/lib/utils'
 import { Download, LoaderCircle } from 'lucide-react'
 import { useState } from 'react'
@@ -11,6 +9,7 @@ import {
   githubRunImportView,
   parseRunImportCount,
 } from './repo-github-run-import-model'
+import { useSettingsAction } from './use-settings-action'
 
 export function RepoGitHubRunImport({
   connected,
@@ -24,8 +23,7 @@ export function RepoGitHubRunImport({
   saveCount: (count: number) => Promise<unknown>
 }) {
   const [draft, setDraft] = useState(String(github.run_import_count))
-  const [pending, setPending] = useState<'save' | 'import' | null>(null)
-  const [error, setError] = useState<{ title: string; message: string } | null>(null)
+  const { act, errorAlert, pending } = useSettingsAction<'save' | 'import'>()
   const count = parseRunImportCount(draft)
   const view = githubRunImportView(github.run_import)
   const canSave = count !== null && count !== github.run_import_count && pending === null
@@ -33,18 +31,6 @@ export function RepoGitHubRunImport({
     && github.run_import_count > 0
     && !(view?.inProgress && !view.retrying)
     && pending === null
-
-  async function act(key: 'save' | 'import', title: string, action: () => Promise<unknown>) {
-    setError(null)
-    setPending(key)
-    try {
-      await action()
-    } catch (cause) {
-      setError({ title, message: resourceErrorMessage(cause, 'Try again.') })
-    } finally {
-      setPending(null)
-    }
-  }
 
   return (
     <div className="space-y-2 border-t border-border pt-3">
@@ -102,7 +88,7 @@ export function RepoGitHubRunImport({
           {view.status}
         </p>
       )}
-      {error && <PageErrorAlert className="mt-0" title={error.title}>{error.message}</PageErrorAlert>}
+      {errorAlert}
     </div>
   )
 }

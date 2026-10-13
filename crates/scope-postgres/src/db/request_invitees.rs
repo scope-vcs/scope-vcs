@@ -78,7 +78,7 @@ impl RequestStore {
         &self,
         command: AddRequestInviteeCommand,
     ) -> Result<RequestInviteeRead, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -110,7 +110,7 @@ impl RequestStore {
             &repo.views,
         )?;
         insert_request_invitee(&tx, &invitee).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(RequestInviteeRead {
             invitee,
             user: target,
@@ -122,7 +122,7 @@ impl RequestStore {
         &self,
         command: RemoveRequestInviteeCommand,
     ) -> Result<RequestInviteeRead, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -144,7 +144,7 @@ impl RequestStore {
             &repo.views,
         )?;
         delete_request_invitee(&tx, &invitee.request_id, &invitee.user_id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(RequestInviteeRead {
             invitee,
             user: target,
@@ -156,7 +156,7 @@ impl RequestStore {
         &self,
         command: LeaveRequestCommand,
     ) -> Result<RequestInviteeRead, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         let actor = user_by_id(&tx, &command.actor_user_id)
@@ -176,7 +176,7 @@ impl RequestStore {
             &repo.views,
         )?;
         delete_request_invitee(&tx, &invitee.request_id, &invitee.user_id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(RequestInviteeRead {
             invitee,
             user: actor,
@@ -207,8 +207,7 @@ async fn requests_with_invitee_status<C: ConnectionTrait>(
                  WHERE r.repo_id = $1 AND i.user_id = $2",
                 [repository_id.into(), user_id.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(|row| {
                 row.try_get::<String>("", "request_id")
@@ -237,8 +236,7 @@ where
         .filter(entities::request_invitee::Column::RequestId.eq(request_id.to_string()))
         .order_by_asc(entities::request_invitee::Column::UserId)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::request_invitee::Model::try_into_domain)
         .collect::<Result<Vec<_>, _>>()?
@@ -272,8 +270,7 @@ where
     entities::request_invitee::Entity::delete_many()
         .filter(entities::request_invitee::Column::RequestId.eq(request_id.to_string()))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -287,8 +284,7 @@ where
     entities::user::Entity::find()
         .filter(entities::user::Column::Handle.eq(handle.to_string()))
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::user::Model::try_into_domain)
         .transpose()
 }
@@ -299,8 +295,7 @@ where
 {
     entities::user::Entity::find_by_id(user_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::user::Model::try_into_domain)
         .transpose()
 }
@@ -342,8 +337,7 @@ where
     entities::request_invitee::Model::from_domain(invitee)?
         .into_active_model()
         .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -360,8 +354,7 @@ where
         user_id.to_string(),
     ))
     .exec(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     if result.rows_affected == 1 {
         Ok(())
     } else {
@@ -374,11 +367,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{MetadataStore, TestDatabaseTarget};
+    use crate::db::{MetadataStore, test_support::fixtures};
     use crate::error::PostgresErrorKind;
     use scope_domain::{
-        account::UserAccount,
-        repository::{RepoLifecycleState, Repository},
         requests::{RequestActorRole, StartRequestInput},
         views::ViewId,
     };
@@ -387,7 +378,7 @@ mod tests {
 
     #[tokio::test]
     async fn exact_handle_management_returns_canonical_users_and_leave_revokes_membership() {
-        let store = postgres_store(3);
+        let store = postgres_store(3).await;
         start_public_request(&store, "request_exact").await;
 
         assert!(
@@ -479,7 +470,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn active_invitee_cap_is_serialized_under_repository_and_request_locks() {
-        let store = postgres_store(31);
+        let store = postgres_store(31).await;
         start_public_request(&store, "request_cap").await;
         for index in 0..29 {
             store
@@ -535,7 +526,7 @@ mod tests {
 
     #[tokio::test]
     async fn maintainer_can_manage_invitees_after_submission() {
-        let store = postgres_store(2);
+        let store = postgres_store(2).await;
         start_public_request(&store, "request_override").await;
         store
             .requests()
@@ -582,30 +573,15 @@ mod tests {
         assert!(error.message.contains("maintainers do not need"));
     }
 
-    fn postgres_store(target_count: usize) -> MetadataStore {
-        let target = TestDatabaseTarget::required().unwrap();
-        let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-        store
-            .admin()
-            .seed_catalog_for_tests(catalog(target_count))
-            .unwrap();
-        store
-    }
-
-    fn catalog(target_count: usize) -> crate::db::CatalogFixture {
-        let owner = user("user_owner", "owner");
-        let author = user("user_author", "author");
-        let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_test").unwrap();
-        repo.record.lifecycle_state = RepoLifecycleState::Ready;
-        let mut catalog = crate::db::CatalogFixture::default();
-        catalog.users.insert(owner.id.clone(), owner);
-        catalog.users.insert(author.id.clone(), author);
-        for index in 0..target_count {
-            let target = user(&format!("user_target_{index}"), &format!("target-{index}"));
-            catalog.users.insert(target.id.clone(), target);
+    async fn postgres_store(target_count: usize) -> MetadataStore {
+        let store = crate::db::requests::tests::postgres_store();
+        let targets = (0..target_count).map(|index| {
+            fixtures::user(&format!("user_target_{index}"), &format!("target-{index}"))
+        });
+        for user in std::iter::once(fixtures::user("user_author", "author")).chain(targets) {
+            store.auth().insert_user_for_tests(user).await.unwrap();
         }
-        catalog.repositories.insert(repo.record.id.clone(), repo);
-        catalog
+        store
     }
 
     async fn start_public_request(store: &MetadataStore, request_id: &str) {
@@ -629,14 +605,5 @@ mod tests {
             })
             .await
             .unwrap();
-    }
-
-    fn user(id: &str, handle: &str) -> UserAccount {
-        UserAccount {
-            id: id.to_string(),
-            handle: handle.to_string(),
-            email: format!("{handle}@example.com"),
-            email_verified: true,
-        }
     }
 }

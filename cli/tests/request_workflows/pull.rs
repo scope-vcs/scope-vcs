@@ -95,7 +95,6 @@ exec "$SCOPE_TEST_REAL_GIT" "$@"
         ],
     );
     fs::write(writer.path().join("remote.txt"), "remote update").unwrap();
-    run_git(writer.path(), ["add", "."]);
     commit_all(writer.path(), "advance remote request");
     run_git(writer.path(), ["push", "origin", "fix-one"]);
     let advanced = git_stdout(writer.path(), ["rev-parse", "HEAD"]);
@@ -108,11 +107,8 @@ exec "$SCOPE_TEST_REAL_GIT" "$@"
     );
 
     fs::write(dir.path().join("local.txt"), "local commit").unwrap();
-    run_git(dir.path(), ["add", "."]);
-    commit_all(dir.path(), "local divergence");
-    let local_head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+    let local_head = commit_all(dir.path(), "local divergence");
     fs::write(writer.path().join("remote.txt"), "second remote update").unwrap();
-    run_git(writer.path(), ["add", "."]);
     commit_all(writer.path(), "remote divergence");
     run_git(writer.path(), ["push", "origin", "fix-one"]);
     let output = command().args(["--json", "pull"]).output().unwrap();

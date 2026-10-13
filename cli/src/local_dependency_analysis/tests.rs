@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::TempDir;
+use crate::test_support::{TempDir, commit_all};
 use scope_domain::{
     dependency_analysis::{
         DependencyEdge, DependencyEdgeKind, DependencyGap, evaluate_dependency_analysis,
@@ -36,25 +36,8 @@ fn repository() -> (TempDir, String) {
         b"large asset contents are not analyzer inputs",
     )
     .unwrap();
-    let commit = commit_all(&repo, "snapshot");
+    let commit = commit_all(repo.path(), "snapshot");
     (repo, commit)
-}
-
-fn commit_all(repo: &TempDir, message: &str) -> String {
-    repo.run_git(["add", "."]);
-    repo.run_git([
-        "-c",
-        "user.name=Scope Test",
-        "-c",
-        "user.email=scope@example.test",
-        "commit",
-        "-qm",
-        message,
-    ]);
-    String::from_utf8(repo.run_git(["rev-parse", "HEAD"]).stdout)
-        .unwrap()
-        .trim()
-        .to_owned()
 }
 
 fn output() -> AnalyzerOutput {
@@ -151,7 +134,7 @@ fn new_commit_and_wrong_cached_analyzer_version_require_new_analysis() {
         "export const publicValue = 1;",
     )
     .unwrap();
-    let next = commit_all(&repo, "change imports");
+    let next = commit_all(repo.path(), "change imports");
     assert_ne!(commit, next);
     let result = analyze_cached(repo.path(), &next, &token, |source, _| {
         calls.fetch_add(1, Ordering::SeqCst);

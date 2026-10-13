@@ -1,4 +1,3 @@
-use scope_service_runtime::{init_telemetry, shutdown_signal};
 mod cleanup;
 mod compaction;
 mod control;
@@ -11,15 +10,14 @@ mod settings;
 
 use crate::{
     health::WorkerHealth,
-    settings::{
-        CONTROL_POLL_BATCH_SIZE, GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings,
-        non_empty_env,
-    },
+    settings::{CONTROL_POLL_BATCH_SIZE, GIT_COMPACTION_TIMEOUT, POLL_INTERVAL, WorkerSettings},
 };
-use scope_postgres::db::{GeneratedIdKind, MetadataStore};
+use scope_postgres::db::MetadataStore;
+use scope_service_runtime::{init_telemetry, unix_now, wait_or_shutdown};
 use scope_storage::{
     EncryptedObjectStore, EncryptionKey, FileBackend, GitSegmentStore, ObjectBackend, ObjectStore,
     S3Backend, S3Settings,
+    config::{encryption_key_from_env, nonempty_env},
 };
 use std::{
     path::{Path, PathBuf},
@@ -37,16 +35,12 @@ const SCHEMA_WAIT_RETRY_SECS: u64 = 2;
 fn main() -> anyhow::Result<()> {
     scope_git_process::install_pid1_reaper_if_needed()?;
     let telemetry = init_telemetry("worker=info,scope_postgres=info")?;
-    let result = run_service();
+    let result = run();
     telemetry.shutdown();
     result
 }
 
 #[tokio::main]
-async fn run_service() -> anyhow::Result<()> {
-    run().await
-}
-
 async fn run() -> anyhow::Result<()> {
     let settings = WorkerSettings::from_env()?;
     tracing::info!(
@@ -80,7 +74,10 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
     )
     .await?;
     let backend = object_backend_from_env(&settings.data_dir)?;
-    let encryption_key = EncryptionKey::new("primary", encryption_key_from_env()?)?;
+    let encryption_key = EncryptionKey::new(
+        "primary",
+        encryption_key_from_env(SCOPE_OBJECT_ENCRYPTION_KEY_ENV)?,
+    )?;
     let object_store: Arc<dyn ObjectStore> = Arc::new(EncryptedObjectStore::new(
         backend.clone(),
         encryption_key.clone(),
@@ -175,17 +172,6 @@ async fn schema_ready_or_wait(metadata: &MetadataStore, health: &WorkerHealth) -
     }
 }
 
-async fn wait_or_shutdown(duration: Duration) -> bool {
-    tokio::select! {
-        () = shutdown_signal() => true,
-        () = tokio::time::sleep(duration) => false,
-    }
-}
-
-fn unix_now() -> anyhow::Result<u64> {
-    Ok(scope_service_runtime::unix_now()?)
-}
-
 fn elapsed_ms(started: Instant) -> u64 {
     duration_ms(started.elapsed())
 }
@@ -194,44 +180,16 @@ fn duration_ms(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
-fn random_hex(prefix: &str, bytes: usize) -> anyhow::Result<String> {
-    let mut random = vec![0_u8; bytes];
-    getrandom::fill(&mut random).map_err(|error| anyhow::anyhow!(error.to_string()))?;
-    Ok(format!("{prefix}{}", hex::encode(random)))
-}
-
-fn generate_persistence_id(kind: GeneratedIdKind) -> Result<String, String> {
-    let prefix = match kind {
-        GeneratedIdKind::CleanupGeneration => "",
-        GeneratedIdKind::DependencyAnalysisLease => "dependency_",
-        GeneratedIdKind::OutboxJob => "outbox_",
-        GeneratedIdKind::RepositoryIncarnation => "repoi_",
-        GeneratedIdKind::RequestAutoMergeClaim => "auto_merge_claim_",
-        GeneratedIdKind::RequestMergedEvent => "event_request_merged_",
-    };
-    random_hex(prefix, 16).map_err(|error| error.to_string())
-}
-
 fn object_backend_from_env(data_dir: &Path) -> anyhow::Result<Arc<dyn ObjectBackend>> {
-    Ok(match non_empty_env(SCOPE_OBJECT_STORE_ENV).as_deref() {
+    Ok(match nonempty_env(SCOPE_OBJECT_STORE_ENV).as_deref() {
         Some("filesystem") => Arc::new(FileBackend::new(
-            non_empty_env(SCOPE_OBJECT_STORE_DIR_ENV)
+            nonempty_env(SCOPE_OBJECT_STORE_DIR_ENV)
                 .map(PathBuf::from)
                 .unwrap_or_else(|| data_dir.join("objects")),
         )?),
         Some(value) if value != "s3" => {
             anyhow::bail!("unsupported {SCOPE_OBJECT_STORE_ENV} value {value}")
         }
-        _ => Arc::new(S3Backend::new(s3_settings_from_env()?)?),
+        _ => Arc::new(S3Backend::new(S3Settings::from_env("SCOPE_BUCKET")?)?),
     })
-}
-
-fn s3_settings_from_env() -> anyhow::Result<S3Settings> {
-    Ok(S3Settings::from_env("SCOPE_BUCKET")?)
-}
-
-fn encryption_key_from_env() -> anyhow::Result<[u8; 32]> {
-    Ok(scope_storage::config::encryption_key_from_env(
-        SCOPE_OBJECT_ENCRYPTION_KEY_ENV,
-    )?)
 }

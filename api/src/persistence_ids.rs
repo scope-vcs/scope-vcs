@@ -1,19 +1,3 @@
-use scope_postgres::db::GeneratedIdKind;
-
-pub(crate) fn generate_persistence_id(kind: GeneratedIdKind) -> Result<String, String> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).map_err(|error| error.to_string())?;
-    let random = hex::encode(bytes);
-    Ok(match kind {
-        GeneratedIdKind::CleanupGeneration => random,
-        GeneratedIdKind::DependencyAnalysisLease => format!("dependency_{random}"),
-        GeneratedIdKind::OutboxJob => format!("outbox_{random}"),
-        GeneratedIdKind::RepositoryIncarnation => format!("repoi_{random}"),
-        GeneratedIdKind::RequestAutoMergeClaim => format!("auto_merge_claim_{random}"),
-        GeneratedIdKind::RequestMergedEvent => format!("event_request_merged_{random}"),
-    })
-}
-
 pub(crate) fn generate_prefixed_id(prefix: &str) -> Result<String, crate::error::ApiError> {
     let mut bytes = [0_u8; 16];
     getrandom::fill(&mut bytes).map_err(|error| {

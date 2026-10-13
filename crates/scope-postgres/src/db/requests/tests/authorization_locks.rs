@@ -111,10 +111,7 @@ async fn submission_waits_for_membership_revocation_and_rechecks_permissions() {
     store.requests().start_request(input).await.unwrap();
     store
         .requests()
-        .record_working_request_upload(
-            public_upload_input(),
-            &super::super::super::generated_ids::test_generated_id,
-        )
+        .record_working_request_upload(public_upload_input())
         .await
         .unwrap();
     let draft = store

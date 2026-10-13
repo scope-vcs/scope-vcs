@@ -52,8 +52,7 @@ impl RepositoryStore {
                 format!("SELECT pg_notify('{POSTGRES_REPO_CHANGE_CHANNEL}', $1)"),
                 [payload.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 }

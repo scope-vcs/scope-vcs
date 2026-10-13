@@ -1,10 +1,8 @@
 import type { GitHubConnectionResponse } from '@/api/types.generated'
-import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
-import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { FlaskConical, LoaderCircle } from 'lucide-react'
-import { useState } from 'react'
 import { GITHUB_TRIGGER_SNIPPET, githubSetupCheckView } from './repo-github-setup-check-model'
+import { useSettingsAction } from './use-settings-action'
 
 export function RepoGitHubSetupCheck({
   github,
@@ -13,23 +11,9 @@ export function RepoGitHubSetupCheck({
   github: GitHubConnectionResponse
   startTest: () => Promise<unknown>
 }) {
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<{ title: string; message: string } | null>(null)
+  const { act, errorAlert, pending } = useSettingsAction<'test'>()
   const view = githubSetupCheckView(github.setup_check)
-
-  async function testConnection() {
-    setError(null)
-    setPending(true)
-    try {
-      await startTest()
-    } catch (cause) {
-      setError({ title: 'The test could not start', message: resourceErrorMessage(cause, 'Try again.') })
-    } finally {
-      setPending(false)
-    }
-  }
-
-  const testing = view?.running ?? false
+  const busy = pending !== null || (view?.running ?? false)
   return (
     <div className="space-y-2 border-t border-border pt-3">
       <div>
@@ -47,13 +31,13 @@ export function RepoGitHubSetupCheck({
           {view?.status ?? 'Test the connection to check that workflows start on Scope’s branches.'}
         </p>
         <Button
-          disabled={pending || testing}
-          onClick={() => void testConnection()}
+          disabled={busy}
+          onClick={() => void act('test', 'The test could not start', startTest)}
           size="sm"
           type="button"
           variant="secondary"
         >
-          {pending || testing
+          {busy
             ? <LoaderCircle className="size-3.5 animate-spin" />
             : <FlaskConical className="size-3.5" />}
           <span>Test connection</span>
@@ -62,7 +46,7 @@ export function RepoGitHubSetupCheck({
       {view?.problem && (
         <p className="break-words leading-5 text-danger-strong" role="alert">{view.problem}</p>
       )}
-      {error && <PageErrorAlert className="mt-0" title={error.title}>{error.message}</PageErrorAlert>}
+      {errorAlert}
     </div>
   )
 }

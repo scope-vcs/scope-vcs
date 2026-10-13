@@ -7,7 +7,7 @@ const roles = ['scope_migrator', ...runtimeRoles];
 const sqlString = value => `'${value.replaceAll("'", "''")}'`;
 const migrationSources = JSON.parse(readFileSync(new URL('../../crates/scope-postgres/src/migrations/sources.lock.json', import.meta.url)));
 export const candidateMigrationVersion = Object.keys(migrationSources)
-  .filter(name => /^m\d+_.+\.rs$/.test(name)).sort().at(-1)?.slice(0, -3);
+  .filter(name => /^m\d+_.+\.(rs|sql)$/.test(name)).sort().at(-1)?.replace(/\.(rs|sql)$/, '');
 if (!candidateMigrationVersion) throw new Error('Cannot establish candidate migration version for role audit');
 
 export function renderRuntimeRoleAudit({ exactPolicy = true } = {}) {

@@ -2,23 +2,18 @@ use super::*;
 use crate::{
     db::{
         MetadataStore, acquire_aggregate_lock,
-        locks::wait_for_transaction_waiter,
+        locks::{backend_pid, wait_for_transaction_waiter},
         test_support::fixtures::{
-            repository, source_blob, store_with_native_run_repositories, user,
+            manual_run, manual_workflow, repository, store_with_native_run_repositories, user,
         },
     },
     error::PostgresErrorKind,
 };
 use scope_domain::{
     repository::collaboration::{RepositoryMember, RepositoryMemberPermissions},
-    runs::{
-        job::RunJobState,
-        run::RunState,
-        source::{RunSource, RunTrigger},
-    },
+    runs::{job::RunJobState, run::RunState},
     views::ViewId,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use std::time::Duration;
 
 const REPO: &str = "owner/repo";
@@ -74,36 +69,8 @@ async fn fixture(command: Command) -> MetadataStore {
     });
     let store =
         store_with_native_run_repositories([repo, repository(&owner, "other", ViewId::public())]);
-    let revision = scope_run_config::parse_workflow(
-        "/.scope/runs/test.yml",
-        br#"
-name: Test
-on:
-  manual: true
-container:
-  image: alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-timeout: 5m
-jobs:
-  checks:
-    steps:
-      - name: Test
-        run: echo ok
-"#,
-    )
-    .unwrap()
-    .into_revision(REPO)
-    .unwrap();
-    let run = Run::new(
-        RUN,
-        RUN,
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::Manual,
-        Some(OWNER.into()),
-        RunSource::ephemeral_git_bundle(source_blob(&"c".repeat(40), &"b".repeat(64), 12)).unwrap(),
-        10,
-    )
-    .unwrap();
+    let revision = manual_workflow(REPO);
+    let run = manual_run(&revision, RUN, OWNER);
     store.runs().enqueue_run(run, revision).await.unwrap();
     if matches!(command, Command::Retry) {
         store
@@ -115,22 +82,10 @@ jobs:
     store
 }
 
-async fn backend_pid(tx: &DatabaseTransaction) -> i32 {
-    tx.query_one_raw(Statement::from_string(
-        DatabaseBackend::Postgres,
-        "SELECT pg_backend_pid() AS pid",
-    ))
-    .await
-    .unwrap()
-    .unwrap()
-    .try_get("", "pid")
-    .unwrap()
-}
-
 async fn assert_success(store: &MetadataStore, command: Command, run: Run) {
     assert_eq!(run.state, command.expected_state());
     assert_eq!(store.runs().run(RUN).await.unwrap().unwrap(), run);
-    let jobs = store.runs().run_jobs(RUN).await.unwrap();
+    let jobs = store.runs().run_snapshot(RUN).await.unwrap().unwrap().jobs;
     assert_eq!(jobs.len(), 1);
     assert_eq!(
         jobs[0].state,
@@ -151,7 +106,7 @@ async fn run_control_preserves_owner_and_member_access_and_rejects_outsiders() {
         }
         let store = fixture(command).await;
         let before = store.runs().run(RUN).await.unwrap();
-        let jobs = store.runs().run_jobs(RUN).await.unwrap();
+        let jobs = store.runs().run_snapshot(RUN).await.unwrap().unwrap().jobs;
         assert_eq!(
             command
                 .execute(&store, "outsider", REPO)
@@ -169,7 +124,10 @@ async fn run_control_preserves_owner_and_member_access_and_rejects_outsiders() {
             PostgresErrorKind::NotFound
         );
         assert_eq!(store.runs().run(RUN).await.unwrap(), before);
-        assert_eq!(store.runs().run_jobs(RUN).await.unwrap(), jobs);
+        assert_eq!(
+            store.runs().run_snapshot(RUN).await.unwrap().unwrap().jobs,
+            jobs
+        );
     }
 }
 
@@ -178,7 +136,7 @@ async fn run_control_waits_for_revocation_and_rejects_without_mutating() {
     for command in [Command::Cancel, Command::Retry] {
         let store = fixture(command).await;
         let before = store.runs().run(RUN).await.unwrap();
-        let jobs = store.runs().run_jobs(RUN).await.unwrap();
+        let jobs = store.runs().run_snapshot(RUN).await.unwrap().unwrap().jobs;
         let revocation = store.db.begin().await.unwrap();
         acquire_aggregate_lock(&revocation, "repository", REPO)
             .await
@@ -202,7 +160,10 @@ async fn run_control_waits_for_revocation_and_rejects_without_mutating() {
             PostgresErrorKind::PermissionDenied
         );
         assert_eq!(store.runs().run(RUN).await.unwrap(), before);
-        assert_eq!(store.runs().run_jobs(RUN).await.unwrap(), jobs);
+        assert_eq!(
+            store.runs().run_snapshot(RUN).await.unwrap().unwrap().jobs,
+            jobs
+        );
     }
 }
 
@@ -253,7 +214,7 @@ async fn run_control_that_wins_repository_lock_completes_before_real_revocation(
 async fn authorized_retry_still_rejects_active_runs_without_changing_jobs() {
     let store = fixture(Command::Cancel).await;
     let before = store.runs().run(RUN).await.unwrap();
-    let jobs = store.runs().run_jobs(RUN).await.unwrap();
+    let jobs = store.runs().run_snapshot(RUN).await.unwrap().unwrap().jobs;
     assert_eq!(
         Command::Retry
             .execute(&store, MEMBER, REPO)
@@ -263,5 +224,8 @@ async fn authorized_retry_still_rejects_active_runs_without_changing_jobs() {
         PostgresErrorKind::Conflict
     );
     assert_eq!(store.runs().run(RUN).await.unwrap(), before);
-    assert_eq!(store.runs().run_jobs(RUN).await.unwrap(), jobs);
+    assert_eq!(
+        store.runs().run_snapshot(RUN).await.unwrap().unwrap().jobs,
+        jobs
+    );
 }

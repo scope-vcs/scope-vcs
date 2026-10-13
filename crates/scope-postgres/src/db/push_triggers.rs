@@ -1,5 +1,5 @@
 use super::{
-    GeneratedIdKind, GeneratedIdSource, RunStore, entities,
+    GeneratedIdKind, RunStore, entities,
     generated_ids::generate_id,
     git_segments::{insert_git_segment_references, release_git_segment_references},
     native_runs::lock_native_runs_availability,
@@ -15,6 +15,7 @@ use scope_domain::{
         trigger::{
             PushTriggerCheck, PushTriggerEvaluation, PushTriggerEvaluationState, PushTriggerInput,
         },
+        workflow::revision::WorkflowRevision,
     },
 };
 use sea_orm::{
@@ -41,7 +42,6 @@ pub async fn enqueue_push_main_trigger_evaluation<C>(
     pack_spans: &[GitPackSpan],
     input: &PushTriggerInput,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -59,10 +59,9 @@ where
     entities::push_trigger_evaluation::Model::from_domain(&evaluation)?
         .into_active_model()
         .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let job = entities::outbox_job::Model::push_main_trigger_evaluation(
-        generate_id(generated_ids, GeneratedIdKind::OutboxJob)?,
+        generate_id(GeneratedIdKind::OutboxJob)?,
         JOB_KIND,
         repo_id,
         head,
@@ -72,8 +71,7 @@ where
     )?;
     entities::outbox_job::Entity::insert(job.into_active_model())
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let reference_id = format!("{repo_id}:{}", head.change_version);
     insert_git_segment_references(
         conn,
@@ -96,24 +94,23 @@ where
     let payload = load_job_payload(conn, &job.id).await?;
     let change_version = u64::try_from(job.repo_version)
         .map_err(|_| PostgresError::internal_message("push trigger change version is negative"))?;
-    let tx = conn.begin().await.map_err(PostgresError::internal)?;
+    let tx = conn.begin().await?;
     let Some(model) = entities::push_trigger_evaluation::Entity::find_by_id((
         job.repo_id.clone(),
         job.repo_version,
     ))
     .lock_exclusive()
     .one(&tx)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     else {
         release_push_trigger_sources(&tx, &job.repo_id, change_version, now_unix).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         return Ok(Vec::new());
     };
     let mut evaluation = model.try_into_domain()?;
     if evaluation.state != PushTriggerEvaluationState::Pending {
         release_push_trigger_sources(&tx, &job.repo_id, change_version, now_unix).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         return Ok(Vec::new());
     }
     let native_runs = lock_native_runs_availability(&tx, &job.repo_id).await?;
@@ -149,30 +146,7 @@ where
     if evaluation.state == PushTriggerEvaluationState::Pending {
         for revision in revisions {
             let path = revision.workflow().path().as_str().to_string();
-            let idempotency_key = format!(
-                "push-main:{}:{}:{}",
-                change_version,
-                payload.input.head_oid,
-                revision.workflow().path().as_str()
-            );
-            let run_id = stable_push_run_id(&job.repo_id, &idempotency_key);
-            let source = RunSource::accepted_git_head(
-                &job.repo_id,
-                payload.head.clone(),
-                payload.pack_spans.clone(),
-            )
-            .map_err(PostgresError::from)?;
-            let run = Run::new(
-                run_id,
-                idempotency_key,
-                revision.workflow().clone(),
-                revision.digest(),
-                RunTrigger::PushMain,
-                None,
-                source,
-                now_unix,
-            )
-            .map_err(PostgresError::from)?;
+            let run = push_main_run(&job.repo_id, change_version, &payload, &revision, now_unix)?;
             let stored = enqueue_run_in_transaction(&tx, run, revision).await?;
             if stored.inserted {
                 created_run_ids.push(stored.run.id.clone());
@@ -189,7 +163,7 @@ where
     }
     save_evaluation(&tx, &evaluation).await?;
     release_push_trigger_sources(&tx, &job.repo_id, change_version, now_unix).await?;
-    tx.commit().await.map_err(PostgresError::internal)?;
+    tx.commit().await?;
     Ok(created_run_ids)
 }
 
@@ -202,8 +176,7 @@ where
 {
     let payload = entities::outbox_job::Entity::find_by_id(job_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::not_found("push trigger outbox job not found"))?;
     let payload: PushMainTriggerJobPayload =
         serde_json::from_value(payload.payload).map_err(PostgresError::internal)?;
@@ -231,8 +204,7 @@ pub(super) async fn mark_terminal_failure(
     ))
     .lock_exclusive()
     .one(tx)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     else {
         release_push_trigger_sources(tx, &job.repo_id, change_version, now_unix).await?;
         return Ok(());
@@ -271,14 +243,35 @@ async fn save_evaluation(
             .reset_all(),
     )
     .exec(tx)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
-fn stable_push_run_id(repo_id: &str, idempotency_key: &str) -> String {
+fn push_main_run(
+    repo_id: &str,
+    change_version: u64,
+    payload: &PushMainTriggerJobPayload,
+    revision: &WorkflowRevision,
+    now_unix: u64,
+) -> Result<Run, PostgresError> {
+    let idempotency_key = format!(
+        "push-main:{change_version}:{}:{}",
+        payload.input.head_oid,
+        revision.workflow().path().as_str()
+    );
     let digest = Sha256::digest(format!("{repo_id}\0{idempotency_key}").as_bytes());
-    format!("run_push_{}", hex::encode(digest))
+    let source =
+        RunSource::accepted_git_head(repo_id, payload.head.clone(), payload.pack_spans.clone())?;
+    Ok(Run::new(
+        format!("run_push_{}", hex::encode(digest)),
+        idempotency_key,
+        revision.workflow().clone(),
+        revision.digest(),
+        RunTrigger::PushMain,
+        None,
+        source,
+        now_unix,
+    )?)
 }
 
 impl RunStore {
@@ -293,8 +286,7 @@ impl RunStore {
             .filter(entities::push_trigger_evaluation::Column::HeadOid.eq(head_oid.to_string()))
             .order_by_desc(entities::push_trigger_evaluation::Column::ChangeVersion)
             .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::push_trigger_evaluation::Model::try_into_domain)
             .transpose()
     }
@@ -307,8 +299,7 @@ impl RunStore {
         entities::run::Entity::find()
             .filter(entities::run::Column::Id.is_in(run_ids.to_vec()))
             .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(entities::run::Model::try_into_domain)
             .collect()
@@ -327,55 +318,11 @@ mod tests {
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         let repo_id = seed_repo(&store).await;
         let head_oid = "1111111111111111111111111111111111111111";
-        enqueue_push_main_trigger_evaluation(
-            store.db.as_ref(),
-            &repo_id,
-            &trigger_head(head_oid, 1),
-            &trigger_pack_spans(head_oid, 1),
-            &PushTriggerInput::new(
-                head_oid,
-                vec![
-                    PushWorkflowFile::new(
-                        "/.scope/runs/test.yml",
-                        br#"
-name: Pinned Test
-on: { push: true }
-container: { image: alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa }
-timeout: 1m
-caches: []
-jobs:
-  backend:
-    steps:
-      - { name: Backend, run: "true" }
-  web:
-    needs: [backend]
-    steps:
-      - { name: Web, run: "true" }
-"#
-                        .to_vec(),
-                    )
-                    .unwrap(),
-                ],
-                None,
-            )
-            .unwrap(),
-            now(),
-            &crate::db::generated_ids::test_generated_id,
-        )
-        .await
-        .unwrap();
+        let jobs = "  backend:\n    steps: [{ name: Backend, run: \"true\" }]\n  web:\n    needs: [backend]\n    steps: [{ name: Web, run: \"true\" }]\n";
+        let workflows = vec![workflow_file("test", jobs)];
+        enqueue(&store, &repo_id, head_oid, 1, workflows).await;
         let later_head_oid = "3333333333333333333333333333333333333333";
-        enqueue_push_main_trigger_evaluation(
-            store.db.as_ref(),
-            &repo_id,
-            &trigger_head(later_head_oid, 3),
-            &trigger_pack_spans(later_head_oid, 3),
-            &PushTriggerInput::new(later_head_oid, Vec::new(), None).unwrap(),
-            now(),
-            &crate::db::generated_ids::test_generated_id,
-        )
-        .await
-        .unwrap();
+        enqueue(&store, &repo_id, later_head_oid, 3, Vec::new()).await;
 
         let summary = store
             .jobs()
@@ -444,39 +391,14 @@ jobs:
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         let repo_id = seed_repo(&store).await;
         let head_oid = "7777777777777777777777777777777777777777";
-        enqueue_push_main_trigger_evaluation(
-            store.db.as_ref(),
+        enqueue(
+            &store,
             &repo_id,
-            &trigger_head(head_oid, 7),
-            &trigger_pack_spans(head_oid, 7),
-            &PushTriggerInput::new(
-                head_oid,
-                vec![
-                    PushWorkflowFile::new(
-                        "/.scope/runs/idempotent.yml",
-                        br#"
-name: Idempotent
-on: { push: true }
-container: { image: alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa }
-timeout: 1m
-caches: []
-jobs:
-  checks:
-    steps:
-      - { name: Test, run: "true" }
-"#
-                        .to_vec(),
-                    )
-                    .unwrap(),
-                ],
-                None,
-            )
-            .unwrap(),
-            now(),
-            &crate::db::generated_ids::test_generated_id,
+            head_oid,
+            7,
+            vec![workflow_file("idempotent", CHECKS)],
         )
-        .await
-        .unwrap();
+        .await;
         let job = entities::outbox_job::Entity::find()
             .filter(entities::outbox_job::Column::RepoId.eq(repo_id.clone()))
             .filter(entities::outbox_job::Column::Kind.eq(JOB_KIND))
@@ -504,23 +426,7 @@ jobs:
         )
         .unwrap();
         let revision = revisions.remove(0);
-        let idempotency_key = format!(
-            "push-main:{}:{}:{}",
-            claimed.repo_version,
-            payload.input.head_oid,
-            revision.workflow().path().as_str()
-        );
-        let run = Run::new(
-            stable_push_run_id(&repo_id, &idempotency_key),
-            idempotency_key,
-            revision.workflow().clone(),
-            revision.digest(),
-            RunTrigger::PushMain,
-            None,
-            RunSource::accepted_git_head(&repo_id, payload.head, payload.pack_spans).unwrap(),
-            now(),
-        )
-        .unwrap();
+        let run = push_main_run(&repo_id, 7, &payload, &revision, now()).unwrap();
         store.runs().enqueue_run(run, revision).await.unwrap();
 
         let replayed_enqueue = evaluate(store.db.as_ref(), &claimed, now()).await.unwrap();
@@ -536,28 +442,12 @@ jobs:
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         let repo_id = seed_repo(&store).await;
         let head_oid = "2222222222222222222222222222222222222222";
-        enqueue_push_main_trigger_evaluation(
-            store.db.as_ref(),
-            &repo_id,
-            &trigger_head(head_oid, 2),
-            &trigger_pack_spans(head_oid, 2),
-            &PushTriggerInput::new(
-                head_oid,
-                vec![
-                    PushWorkflowFile::new(
-                        "/.scope/runs/broken.yml",
-                        b"name: broken\nunknown: true\n".to_vec(),
-                    )
-                    .unwrap(),
-                ],
-                None,
-            )
-            .unwrap(),
-            now(),
-            &crate::db::generated_ids::test_generated_id,
+        let broken = PushWorkflowFile::new(
+            "/.scope/runs/broken.yml",
+            b"name: broken\nunknown: true\n".to_vec(),
         )
-        .await
         .unwrap();
+        enqueue(&store, &repo_id, head_oid, 2, vec![broken]).await;
         store
             .jobs()
             .run_ready_outbox_jobs("push-worker", 10, &|| Ok(now()))
@@ -594,7 +484,6 @@ jobs:
             .cleanup()
             .source_blob_cleanup_batch(
                 now() + crate::db::cleanup_queue::queue::SOURCE_BLOB_DELETE_GRACE_SECONDS + 1,
-                &crate::db::generated_ids::test_generated_id,
             )
             .await
             .unwrap();
@@ -607,17 +496,7 @@ jobs:
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         let repo_id = seed_repo(&store).await;
         let head_oid = "5555555555555555555555555555555555555555";
-        enqueue_push_main_trigger_evaluation(
-            store.db.as_ref(),
-            &repo_id,
-            &trigger_head(head_oid, 5),
-            &trigger_pack_spans(head_oid, 5),
-            &PushTriggerInput::new(head_oid, Vec::new(), None).unwrap(),
-            now(),
-            &crate::db::generated_ids::test_generated_id,
-        )
-        .await
-        .unwrap();
+        enqueue(&store, &repo_id, head_oid, 5, Vec::new()).await;
         store
             .db
             .execute_raw(sea_orm::Statement::from_sql_and_values(
@@ -671,36 +550,9 @@ jobs:
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         let repo_id = seed_repo(&store).await;
         let head_oid = "4444444444444444444444444444444444444444";
-        let workflow = || {
-            PushWorkflowFile::new(
-                "/.scope/runs/repeat.yml",
-                br#"
-name: Repeat
-on: { push: true }
-container: { image: alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa }
-timeout: 1m
-caches: []
-jobs:
-  checks:
-    steps:
-      - { name: Test, run: "true" }
-"#
-                .to_vec(),
-            )
-            .unwrap()
-        };
         for change_version in [2, 4] {
-            enqueue_push_main_trigger_evaluation(
-                store.db.as_ref(),
-                &repo_id,
-                &trigger_head(head_oid, change_version),
-                &trigger_pack_spans(head_oid, change_version),
-                &PushTriggerInput::new(head_oid, vec![workflow()], None).unwrap(),
-                now(),
-                &crate::db::generated_ids::test_generated_id,
-            )
-            .await
-            .unwrap();
+            let workflows = vec![workflow_file("repeat", CHECKS)];
+            enqueue(&store, &repo_id, head_oid, change_version, workflows).await;
         }
 
         let summary = store
@@ -724,6 +576,35 @@ jobs:
             .unwrap();
         assert_eq!(runs.len(), 2);
         assert_ne!(runs[0].id, runs[1].id);
+    }
+
+    const CHECKS: &str = "  checks:\n    steps: [{ name: Test, run: \"true\" }]\n";
+
+    fn workflow_file(name: &str, jobs: &str) -> PushWorkflowFile {
+        let image = format!("alpine@sha256:{}", "a".repeat(64));
+        let yaml = format!(
+            "name: {name}\non: {{ push: true }}\ncontainer: {{ image: {image} }}\ntimeout: 1m\njobs:\n{jobs}"
+        );
+        PushWorkflowFile::new(format!("/.scope/runs/{name}.yml"), yaml.into_bytes()).unwrap()
+    }
+
+    async fn enqueue(
+        store: &MetadataStore,
+        repo_id: &str,
+        head_oid: &str,
+        change_version: u64,
+        workflows: Vec<PushWorkflowFile>,
+    ) {
+        enqueue_push_main_trigger_evaluation(
+            store.db.as_ref(),
+            repo_id,
+            &trigger_head(head_oid, change_version),
+            &trigger_pack_spans(head_oid, change_version),
+            &PushTriggerInput::new(head_oid, workflows, None).unwrap(),
+            now(),
+        )
+        .await
+        .unwrap();
     }
 
     async fn seed_repo(store: &MetadataStore) -> String {

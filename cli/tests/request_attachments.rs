@@ -27,21 +27,10 @@ fn expired_upload_operations_rotate_without_manual_journal_edits() {
     let cwd = TempDir::new("expired-upload-cwd");
     let file = cwd.path().join("photo.png");
     fs::write(&file, b"photo").unwrap();
-    let server = MediaFixture::start(false);
+    let server = MediaFixture::start();
     server.state.lock().unwrap().fail_expired_upload_once = true;
     let output = server
-        .command(cwd.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "edit",
-            "--request",
-            "req_one",
-            "--attach",
-            file.to_str().unwrap(),
-        ])
+        .request_command(cwd.path(), ["edit", "--attach", file.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
@@ -61,39 +50,18 @@ fn attachment_only_edit_resumes_parts_and_preserves_machine_output() {
     let mut bytes = vec![7_u8; 8 * 1024 * 1024];
     bytes.extend_from_slice(b"trailer");
     fs::write(&file, bytes).unwrap();
-    let server = MediaFixture::start(true);
+    let server = MediaFixture::start();
+    server.state.lock().unwrap().fail_second_part_once = true;
 
     let first = server
-        .command(cwd.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "edit",
-            "--request",
-            "req_one",
-            "--attach",
-            file.to_str().unwrap(),
-        ])
+        .request_command(cwd.path(), ["edit", "--attach", file.to_str().unwrap()])
         .output()
         .unwrap();
     assert_eq!(first.status.code(), Some(6), "{first:?}");
     assert!(first.stdout.is_empty());
 
     let second = server
-        .command(cwd.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "edit",
-            "--request",
-            "req_one",
-            "--attach",
-            file.to_str().unwrap(),
-        ])
+        .request_command(cwd.path(), ["edit", "--attach", file.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(
@@ -139,25 +107,15 @@ fn attachment_only_discussion_retry_reuses_the_client_mutation_id() {
     let cwd = TempDir::new("attachment-discussion-cwd");
     let file = cwd.path().join("walkthrough.mp4");
     fs::write(&file, b"video bytes").unwrap();
-    let server = MediaFixture::start_with_failures(false, true);
-    let args = [
-        "--json",
-        "--repo",
-        "owner/repo",
-        "request",
-        "discussion",
-        "start",
-        "--request",
-        "req_one",
-        "--attach",
-        file.to_str().unwrap(),
-    ];
+    let server = MediaFixture::start();
+    server.state.lock().unwrap().fail_discussion_once = true;
+    let args = ["discussion", "start", "--attach", file.to_str().unwrap()];
 
-    let first = server.command(cwd.path()).args(args).output().unwrap();
+    let first = server.request_command(cwd.path(), args).output().unwrap();
     assert_eq!(first.status.code(), Some(6), "{first:?}");
     assert!(first.stdout.is_empty());
 
-    let second = server.command(cwd.path()).args(args).output().unwrap();
+    let second = server.request_command(cwd.path(), args).output().unwrap();
     assert!(
         second.status.success(),
         "{}",
@@ -167,7 +125,7 @@ fn attachment_only_discussion_retry_reuses_the_client_mutation_id() {
     assert_eq!(output["command"], "request.discussion.start");
     assert_eq!(output["result"]["attachments"][0]["id"], "att_one");
 
-    let third = server.command(cwd.path()).args(args).output().unwrap();
+    let third = server.request_command(cwd.path(), args).output().unwrap();
     assert!(third.status.success(), "{third:?}");
 
     let state = server.state.lock().unwrap();
@@ -202,23 +160,17 @@ fn wait_failure_keeps_the_saved_post_and_upload_receipts_for_retry() {
     let cwd = TempDir::new("attachment-discussion-wait-retry-cwd");
     let file = cwd.path().join("walkthrough.mp4");
     fs::write(&file, b"video bytes").unwrap();
-    let server = MediaFixture::start(false);
+    let server = MediaFixture::start();
     server.state.lock().unwrap().fail_get_once = true;
     let args = [
-        "--json",
-        "--repo",
-        "owner/repo",
-        "request",
         "discussion",
         "start",
-        "--request",
-        "req_one",
         "--attach",
         file.to_str().unwrap(),
         "--wait",
     ];
 
-    let first = server.command(cwd.path()).args(args).output().unwrap();
+    let first = server.request_command(cwd.path(), args).output().unwrap();
     assert_eq!(first.status.code(), Some(6), "{first:?}");
     assert!(first.stdout.is_empty());
     let failure: Value = serde_json::from_str(
@@ -234,7 +186,7 @@ fn wait_failure_keeps_the_saved_post_and_upload_receipts_for_retry() {
     assert_eq!(failure["recovery"]["discussion"]["id"], "dsc_one");
     assert_eq!(failure["recovery"]["attachments"][0]["id"], "att_one");
 
-    let second = server.command(cwd.path()).args(args).output().unwrap();
+    let second = server.request_command(cwd.path(), args).output().unwrap();
     assert!(second.status.success(), "{second:?}");
     let success: Value = serde_json::from_slice(&second.stdout).unwrap();
     assert_eq!(success["result"]["attachments"][0]["state"], "Ready");
@@ -259,22 +211,11 @@ fn expired_media_grant_is_renewed_and_receipts_are_reconciled() {
     let mut bytes = vec![3_u8; 8 * 1024 * 1024];
     bytes.extend_from_slice(b"renewed");
     fs::write(&file, bytes).unwrap();
-    let server = MediaFixture::start(false);
+    let server = MediaFixture::start();
     server.state.lock().unwrap().fail_grant_once = true;
 
     let output = server
-        .command(cwd.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "edit",
-            "--request",
-            "req_one",
-            "--attach",
-            file.to_str().unwrap(),
-        ])
+        .request_command(cwd.path(), ["edit", "--attach", file.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(
@@ -302,23 +243,13 @@ fn lost_edit_response_reuses_finished_upload_without_duplicate_reference() {
     let cwd = TempDir::new("attachment-edit-response-cwd");
     let file = cwd.path().join("walkthrough.mp4");
     fs::write(&file, b"short clip").unwrap();
-    let server = MediaFixture::start(false);
+    let server = MediaFixture::start();
     server.state.lock().unwrap().fail_edit_once = true;
-    let args = [
-        "--json",
-        "--repo",
-        "owner/repo",
-        "request",
-        "edit",
-        "--request",
-        "req_one",
-        "--attach",
-        file.to_str().unwrap(),
-    ];
+    let args = ["edit", "--attach", file.to_str().unwrap()];
 
-    let first = server.command(cwd.path()).args(args).output().unwrap();
+    let first = server.request_command(cwd.path(), args).output().unwrap();
     assert_eq!(first.status.code(), Some(6), "{first:?}");
-    let second = server.command(cwd.path()).args(args).output().unwrap();
+    let second = server.request_command(cwd.path(), args).output().unwrap();
     assert!(
         second.status.success(),
         "{}",
@@ -347,19 +278,9 @@ fn changed_file_content_starts_a_new_upload_operation() {
     let cwd = TempDir::new("attachment-changed-cwd");
     let file = cwd.path().join("walkthrough.mp4");
     fs::write(&file, b"first clip").unwrap();
-    let server = MediaFixture::start(false);
-    let args = [
-        "--json",
-        "--repo",
-        "owner/repo",
-        "request",
-        "edit",
-        "--request",
-        "req_one",
-        "--attach",
-        file.to_str().unwrap(),
-    ];
-    let first = server.command(cwd.path()).args(args).output().unwrap();
+    let server = MediaFixture::start();
+    let args = ["edit", "--attach", file.to_str().unwrap()];
+    let first = server.request_command(cwd.path(), args).output().unwrap();
     assert!(first.status.success(), "{first:?}");
 
     fs::write(&file, b"second clip with changed bytes").unwrap();
@@ -368,7 +289,7 @@ fn changed_file_content_starts_a_new_upload_operation() {
         state.finished = false;
         state.acknowledged.clear();
     }
-    let second = server.command(cwd.path()).args(args).output().unwrap();
+    let second = server.request_command(cwd.path(), args).output().unwrap();
     assert!(second.status.success(), "{second:?}");
 
     let state = server.state.lock().unwrap();
@@ -385,21 +306,12 @@ fn wait_polls_processing_attachment_to_a_terminal_state() {
     let cwd = TempDir::new("attachment-wait-cwd");
     let file = cwd.path().join("walkthrough.mp4");
     fs::write(&file, b"clip").unwrap();
-    let server = MediaFixture::start(false);
+    let server = MediaFixture::start();
     let output = server
-        .command(cwd.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "edit",
-            "--request",
-            "req_one",
-            "--attach",
-            file.to_str().unwrap(),
-            "--wait",
-        ])
+        .request_command(
+            cwd.path(),
+            ["edit", "--attach", file.to_str().unwrap(), "--wait"],
+        )
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
@@ -414,22 +326,18 @@ fn attachment_only_reply_and_reopen_use_the_reply_target() {
         let cwd = TempDir::new(&format!("attachment-{command}-cwd"));
         let file = cwd.path().join("walkthrough.mp4");
         fs::write(&file, b"clip").unwrap();
-        let server = MediaFixture::start(false);
+        let server = MediaFixture::start();
         let output = server
-            .command(cwd.path())
-            .args([
-                "--json",
-                "--repo",
-                "owner/repo",
-                "request",
-                "discussion",
-                command,
-                "dsc_one",
-                "--request",
-                "req_one",
-                "--attach",
-                file.to_str().unwrap(),
-            ])
+            .request_command(
+                cwd.path(),
+                [
+                    "discussion",
+                    command,
+                    "dsc_one",
+                    "--attach",
+                    file.to_str().unwrap(),
+                ],
+            )
             .output()
             .unwrap();
         assert!(output.status.success(), "{command}: {output:?}");
@@ -455,22 +363,18 @@ fn request_edit_appends_attachment_to_supplied_description_file() {
     let description = cwd.path().join("description.md");
     fs::write(&media, b"clip").unwrap();
     fs::write(&description, "Details from a file\n").unwrap();
-    let server = MediaFixture::start(false);
+    let server = MediaFixture::start();
     let output = server
-        .command(cwd.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "edit",
-            "--request",
-            "req_one",
-            "--description-file",
-            description.to_str().unwrap(),
-            "--attach",
-            media.to_str().unwrap(),
-        ])
+        .request_command(
+            cwd.path(),
+            [
+                "edit",
+                "--description-file",
+                description.to_str().unwrap(),
+                "--attach",
+                media.to_str().unwrap(),
+            ],
+        )
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
@@ -511,16 +415,8 @@ struct MediaFixture {
 }
 
 impl MediaFixture {
-    fn start(fail_second_part_once: bool) -> Self {
-        Self::start_with_failures(fail_second_part_once, false)
-    }
-
-    fn start_with_failures(fail_second_part_once: bool, fail_discussion_once: bool) -> Self {
-        let state = Arc::new(Mutex::new(FixtureState {
-            fail_second_part_once,
-            fail_discussion_once,
-            ..FixtureState::default()
-        }));
+    fn start() -> Self {
+        let state = Arc::new(Mutex::new(FixtureState::default()));
         let server = TestServer::with_url(|api_url| {
             state.lock().unwrap().api_url = api_url.to_string();
             Router::new()
@@ -568,16 +464,12 @@ impl MediaFixture {
         Self { server, state }
     }
 
-    fn command(&self, cwd: &std::path::Path) -> Command {
-        self.server.command(cwd)
-    }
-
     fn request_command(
         &self,
         cwd: &std::path::Path,
         args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
     ) -> Command {
-        let mut command = self.command(cwd);
+        let mut command = self.server.command(cwd);
         command
             .args(["--json", "--repo", "owner/repo", "request"])
             .args(args)

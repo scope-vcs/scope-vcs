@@ -75,7 +75,7 @@ test('allows doc comments only on API contract items', () => {
 
 test('does not mistake shell globs or dereferences for comments', () => {
   const source = 'case "$candidate" in\n  /*)\n    echo "#not-a-comment"\n'
-  assert.deepEqual(findComments('cli/src/installers.rs', source), [])
+  assert.deepEqual(findComments('cli-downloads/src/installers.rs', source), [])
   assert.deepEqual(findComments('src/deref.rs', '    *clock += 1;\n'), [])
 })
 

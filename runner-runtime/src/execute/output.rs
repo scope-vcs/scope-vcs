@@ -484,47 +484,25 @@ fn incomplete_utf8_suffix(bytes: &[u8]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::execute::tests::{Call, FakeSink};
     use std::{
         io::{Cursor, Error},
-        sync::{Mutex, mpsc::RecvTimeoutError},
+        sync::mpsc::RecvTimeoutError,
     };
 
-    #[derive(Default)]
-    struct RecordingSink(Mutex<Vec<(u64, String)>>);
-
-    impl ExecutionSink for RecordingSink {
-        fn start_step(&self, _: u32) -> anyhow::Result<bool> {
-            Ok(false)
-        }
-        fn append_log(
-            &self,
-            _: u32,
-            sequence: u64,
-            text: &str,
-        ) -> Result<AppendLogOutcome, AppendLogError> {
-            self.0.lock().unwrap().push((sequence, text.to_owned()));
-            Ok(AppendLogOutcome::Accepted)
-        }
-        fn heartbeat(&self) -> anyhow::Result<bool> {
-            Ok(false)
-        }
-        fn complete_step(&self, _: u32, _: i32, _: bool) -> anyhow::Result<()> {
-            Ok(())
-        }
-        fn complete_timeout(&self, _: bool) -> anyhow::Result<()> {
-            Ok(())
-        }
-        fn complete_canceled(&self, _: bool) -> anyhow::Result<()> {
-            Ok(())
-        }
-        fn abandon(&self) -> anyhow::Result<()> {
-            Ok(())
-        }
+    fn appends(sink: &FakeSink) -> Vec<(u64, String)> {
+        sink.calls()
+            .into_iter()
+            .filter_map(|call| match call {
+                Call::Append { sequence, text, .. } => Some((sequence, text)),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
     fn hundred_lines_per_second_batch_within_deadline() {
-        let sink = RecordingSink::default();
+        let sink = FakeSink::new([]);
         let (notices, _) = mpsc::channel();
         let stop = AtomicBool::new(false);
         let mut upload = LogUpload {
@@ -552,7 +530,7 @@ mod tests {
             }
         }
         upload.flush(true).unwrap();
-        let uploads = sink.0.lock().unwrap();
+        let uploads = appends(&sink);
         assert!(uploads.len() <= 45, "{} uploads", uploads.len());
         assert_eq!(first_upload_after, Some(LOG_BATCH_DEADLINE));
         assert_eq!(
@@ -572,7 +550,7 @@ mod tests {
 
     #[test]
     fn size_cut_prefers_a_nearby_complete_line() {
-        let sink = RecordingSink::default();
+        let sink = FakeSink::new([]);
         let (notices, _) = mpsc::channel();
         let stop = AtomicBool::new(false);
         let mut upload = LogUpload {
@@ -590,7 +568,7 @@ mod tests {
             ),
         };
         upload.flush(false).unwrap();
-        let uploads = sink.0.lock().unwrap();
+        let uploads = appends(&sink);
         assert_eq!(uploads.len(), 1);
         assert!(uploads[0].1.ends_with('\n'));
         assert_eq!(upload.pending, "b".repeat(1_024));

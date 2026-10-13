@@ -34,6 +34,7 @@ fn fetch_error(destination: &str) -> anyhow::Error {
         "scope",
         "main",
         "fixture-token",
+        None,
         "refresh request before publishing failed; the request was not changed",
     )
     .context("refresh request before publishing")
@@ -163,13 +164,13 @@ fn refused_git_fetch_preserves_caller_context_and_retryability() {
         for cancellable in [false, true] {
             let (_directory, repo) = test_repo();
             let error = if cancellable {
-                fetch_scope_remote_with_bearer_cancellable(
+                fetch_scope_remote_with_bearer(
                     &repo,
                     &destination,
                     "scope",
                     "main",
                     "fixture-token",
-                    &CancellationToken::new(),
+                    Some(&CancellationToken::new()),
                     failure,
                 )
             } else {
@@ -179,6 +180,7 @@ fn refused_git_fetch_preserves_caller_context_and_retryability() {
                     "scope",
                     "main",
                     "fixture-token",
+                    None,
                     failure,
                 )
             }

@@ -97,7 +97,6 @@ async fn open_run(
     let connection = repositories
         .github_connection(&repo.record.id)
         .await?
-        .map(|read| read.connection)
         .ok_or_else(not_found)?;
     let detail = repositories
         .github_workflow_run(&repo.record.id, connection.github_repository_id, run_id)

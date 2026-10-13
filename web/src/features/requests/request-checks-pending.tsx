@@ -1,4 +1,4 @@
-import { TextSkeleton } from '@/components/ui/skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 
 export const CHECKS_SECTION_CLASS = 'px-(--app-inset) pt-4 pb-2'
 

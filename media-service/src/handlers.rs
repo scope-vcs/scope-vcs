@@ -18,24 +18,14 @@ use axum::{
 };
 use bytes::Bytes;
 use scope_api_contract::{RequestAttachmentMediaTarget, RequestAttachmentPartReceiptResponse};
-use scope_domain::requests::attachments::RequestAttachmentPartReceipt;
-use scope_media_storage::{
-    MAX_CHUNK_BYTES, MediaByteStream, MediaObject, StagedMediaPart, WriteAttempt,
-};
-use scope_postgres::db::{
-    RequestMediaManifest, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
-    StoredRequestAttachmentPart,
-};
-use scope_service_runtime::http::ServiceError;
+use scope_domain::requests::attachments::RequestMediaObject;
+use scope_media_storage::{MAX_CHUNK_BYTES, WriteAttempt};
+use scope_postgres::db::{RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult};
+use scope_service_runtime::{http::ServiceError, random_hex, unix_now};
 use serde::Deserialize;
-use std::{
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::OwnedSemaphorePermit;
-use tokio_stream::Stream;
+use tokio_stream::StreamExt;
 
 #[derive(Deserialize)]
 pub(crate) struct GrantQuery {
@@ -96,8 +86,9 @@ pub(crate) async fn put_upload_part(
         .storage
         .plan_part(&attempt, part_number, &part_bytes)
         .map_err(media_storage_error)?;
-    let proposed = stored_part(&planned);
-    let write_token = random_token("mpw_")?;
+    let write_token = random_hex("mpw_", 16).map_err(|error| {
+        ServiceError::internal(format!("media token generation failed: {error}"))
+    })?;
     let write_started_at_unix = unix_now()?;
     let write_expires_at_unix = write_started_at_unix
         .checked_add(60)
@@ -109,7 +100,7 @@ pub(crate) async fn put_upload_part(
             &claims.attachment_id,
             &claims.upload_id,
             &claims.uploader_user_id,
-            proposed,
+            planned,
             &write_token,
             write_started_at_unix,
             write_expires_at_unix,
@@ -125,15 +116,9 @@ pub(crate) async fn put_upload_part(
             ));
         }
     };
-    let reserved_part = StagedMediaPart {
-        part_number: reserved.receipt.part_number,
-        size_bytes: reserved.receipt.size_bytes,
-        sha256: reserved.receipt.sha256.clone(),
-        object_key: reserved.object_key.clone(),
-    };
     state
         .storage
-        .write_part(&reserved_part, part_bytes)
+        .write_part(&reserved, part_bytes)
         .await
         .map_err(media_storage_error)?;
     let store_result = state
@@ -165,17 +150,6 @@ pub(crate) async fn put_upload_part(
         Err(error) => return Err(error),
     }
     Ok(Json(reserved.receipt.into()))
-}
-
-fn stored_part(part: &StagedMediaPart) -> StoredRequestAttachmentPart {
-    StoredRequestAttachmentPart {
-        receipt: RequestAttachmentPartReceipt {
-            part_number: part.part_number,
-            size_bytes: part.size_bytes,
-            sha256: part.sha256.clone(),
-        },
-        object_key: part.object_key.clone(),
-    }
 }
 
 async fn buffer_upload_body(
@@ -238,27 +212,14 @@ async fn serve_media(
     let claims = state
         .verifier
         .verify_media(&grant, &attachment_id, &target, unix_now()?)?;
-    let authorized = state
-        .metadata
-        .media()
-        .request_attachment_for_viewer(
-            &claims.request_id,
-            &attachment_id,
-            claims.viewer_user_id.as_deref(),
-        )
-        .await
-        .map_err(media_metadata_error)?
-        .filter(|authorized| authorized.repository_id == claims.repository_id)
-        .ok_or_else(media_not_found)?;
-    let original_filename = derivative_id.is_none().then(|| authorized.filename.clone());
     let db_target = match derivative_id.as_deref() {
         Some(id) => RequestMediaObjectTarget::Derivative(id),
         None => RequestMediaObjectTarget::Original,
     };
-    let manifest = state
+    let (attachment, object) = state
         .metadata
         .media()
-        .authorized_media_manifest(
+        .request_attachment_media_for_viewer(
             &claims.request_id,
             &attachment_id,
             claims.viewer_user_id.as_deref(),
@@ -266,8 +227,10 @@ async fn serve_media(
         )
         .await
         .map_err(media_metadata_error)?
+        .filter(|(attachment, _)| attachment.repository_id == claims.repository_id)
         .ok_or_else(media_not_found)?;
-    let object = media_object(&manifest)?;
+    let object = object.ok_or_else(media_not_found)?;
+    let original_filename = derivative_id.is_none().then_some(attachment.filename);
     let range = requested_range(&headers, object.plaintext_bytes)?;
     let permit = if method == Method::GET && object.plaintext_bytes > 0 {
         Some(
@@ -291,27 +254,9 @@ async fn serve_media(
     .await
 }
 
-fn media_object(manifest: &RequestMediaManifest) -> Result<MediaObject, ServiceError> {
-    MediaObject::from_chunks(
-        &manifest.media_type,
-        manifest.size_bytes,
-        &manifest.sha256,
-        manifest.chunks.iter().map(|chunk| {
-            (
-                chunk.index,
-                chunk.plaintext_offset,
-                chunk.plaintext_size_bytes,
-                chunk.sha256.clone(),
-                chunk.object_key.clone(),
-            )
-        }),
-    )
-    .map_err(media_storage_error)
-}
-
 async fn media_response(
     storage: &scope_media_storage::MediaStorage,
-    object: &MediaObject,
+    object: &RequestMediaObject,
     requested: RequestedRange,
     method: Method,
     permit: Option<OwnedSemaphorePermit>,
@@ -334,10 +279,11 @@ async fn media_response(
             .read_range(object, start..=end.expect("nonempty media range"))
             .await
             .map_err(media_storage_error)?;
-        Body::from_stream(PermittedStream::new(
-            stream,
-            permit.expect("GET read permit"),
-        ))
+        let permit = permit.expect("GET read permit");
+        Body::from_stream(stream.map(move |bytes| {
+            let _held = &permit;
+            bytes
+        }))
     };
     let mut response = Response::new(body);
     *response.status_mut() = status;
@@ -423,40 +369,6 @@ fn content_disposition(filename: &str) -> String {
     format!("attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}")
 }
 
-struct PermittedStream {
-    inner: MediaByteStream,
-    _permit: OwnedSemaphorePermit,
-}
-
-impl PermittedStream {
-    fn new(inner: MediaByteStream, permit: OwnedSemaphorePermit) -> Self {
-        Self {
-            inner,
-            _permit: permit,
-        }
-    }
-}
-
-impl Stream for PermittedStream {
-    type Item = Result<Bytes, scope_media_storage::MediaStorageError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.inner.as_mut().poll_next(context)
-    }
-}
-
-fn unix_now() -> Result<u64, ServiceError> {
-    scope_service_runtime::unix_now().map_err(|error| ServiceError::internal(error.to_string()))
-}
-
-fn random_token(prefix: &str) -> Result<String, ServiceError> {
-    let mut random = [0_u8; 16];
-    getrandom::fill(&mut random).map_err(|error| {
-        ServiceError::internal(format!("media token generation failed: {error}"))
-    })?;
-    Ok(format!("{prefix}{}", hex::encode(random)))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -467,7 +379,7 @@ mod tests {
     use tokio::sync::Semaphore;
     use tokio_stream::wrappers::ReceiverStream;
 
-    async fn fixture() -> (scope_media_storage::MediaStorage, MediaObject) {
+    async fn fixture() -> (scope_media_storage::MediaStorage, RequestMediaObject) {
         let storage = scope_media_storage::MediaStorage::encrypted(
             Arc::new(MemoryBackend::default()),
             [21; 32],

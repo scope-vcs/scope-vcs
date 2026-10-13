@@ -1,16 +1,15 @@
 use super::isolated_database;
 use crate::migrations;
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
-use sea_orm_migration::MigratorTrait;
 
 const FIXTURE_SQL: &str = r#"
     INSERT INTO scope_users (id, handle, email, email_verified)
     VALUES ('attempt_user', 'attempt-user', 'attempt@scope.test', TRUE);
     INSERT INTO scope_repositories (
         id, owner_handle, name, owner_user_id, publication_state,
-        change_version, repo_config, policy, incarnation_id
+        change_version, content_version, repo_config, policy, incarnation_id
     ) VALUES (
-        'attempt-user/repo', 'attempt-user', 'repo', 'attempt_user', 'Ready', 1,
+        'attempt-user/repo', 'attempt-user', 'repo', 'attempt_user', 'Ready', 1, 1,
         '{"kind":"scope.repo-config","version":1,"visibility":{"default":"private","rules":[]}}',
         '{"default_visibility":"Private","rules":[]}', 'repoi_attempt_test'
     );
@@ -38,25 +37,14 @@ const FIXTURE_SQL: &str = r#"
     );
 "#;
 
-fn dispatching_attempt_sql(
-    attempt_id: &str,
-    number: u32,
-    token: char,
-    before_expiry_removal: bool,
-) -> String {
-    let expiry_column = if before_expiry_removal {
-        ", token_expires_at_unix"
-    } else {
-        ""
-    };
-    let expiry_value = if before_expiry_removal { ", 100" } else { "" };
+fn dispatching_attempt_sql(attempt_id: &str, number: u32, token: char) -> String {
     format!(
         "INSERT INTO scope_run_attempts (
-            id, run_id, job_key, number, token_hash{expiry_column}, state,
+            id, run_id, job_key, number, token_hash, state,
             lease_expires_at_unix, last_heartbeat_at_unix, created_at_unix, log_bytes,
             runtime_version
          ) VALUES (
-            '{attempt_id}', 'run-1', 'build', {number}, repeat('{token}', 64){expiry_value},
+            '{attempt_id}', 'run-1', 'build', {number}, repeat('{token}', 64),
             'dispatching', 100, 1, 1, 0, 'runner-1'
          )"
     )
@@ -80,23 +68,15 @@ async fn index_predicates(db: &DatabaseConnection) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn m0048_rejects_a_second_dispatching_attempt_for_one_job() {
+async fn one_job_rejects_a_second_active_attempt() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(4))
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap();
     db.execute_unprepared(FIXTURE_SQL).await.unwrap();
-    db.execute_unprepared(&dispatching_attempt_sql("attempt-1", 1, 'a', true))
+    db.execute_unprepared(&dispatching_attempt_sql("attempt-1", 1, 'a'))
         .await
         .unwrap();
-    db.execute_unprepared(&dispatching_attempt_sql("attempt-2", 2, 'b', true))
-        .await
-        .unwrap();
-    db.execute_unprepared("DELETE FROM scope_run_attempts WHERE id = 'attempt-2'")
-        .await
-        .unwrap();
-
-    migrations::Migrator::up(db.as_ref(), None).await.unwrap();
 
     let predicates = index_predicates(db.as_ref()).await;
     assert_eq!(predicates.len(), 3, "{predicates:?}");
@@ -111,7 +91,7 @@ async fn m0048_rejects_a_second_dispatching_attempt_for_one_job() {
         "{predicates:?}"
     );
     let error = db
-        .execute_unprepared(&dispatching_attempt_sql("attempt-2", 2, 'b', false))
+        .execute_unprepared(&dispatching_attempt_sql("attempt-2", 2, 'b'))
         .await
         .unwrap_err()
         .to_string();
@@ -124,7 +104,7 @@ async fn m0048_rejects_a_second_dispatching_attempt_for_one_job() {
     )
     .await
     .unwrap();
-    db.execute_unprepared(&dispatching_attempt_sql("attempt-2", 2, 'b', false))
+    db.execute_unprepared(&dispatching_attempt_sql("attempt-2", 2, 'b'))
         .await
         .unwrap();
 }

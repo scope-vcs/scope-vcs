@@ -1,15 +1,25 @@
 use crate::git_repo::GitRepo;
 use anyhow::{Context, bail};
-use std::{env, fs, path::PathBuf, process::Command};
+use std::{fs, process::Command};
 
 pub(super) fn create_bundle(
     repo: &GitRepo,
     request_id: &str,
     oid: &str,
 ) -> anyhow::Result<Vec<u8>> {
-    let temp = BundleTemp::new(request_id)?;
-    let bundle_path = temp.path.join("source.bundle");
-    let git_dir = temp.path.join("git");
+    let prefix = format!("scope-run-upload-{request_id}-");
+    let mut temp = tempfile::Builder::new();
+    temp.prefix(&prefix);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        temp.permissions(fs::Permissions::from_mode(0o700));
+    }
+    let temp = temp
+        .tempdir()
+        .context("create private run upload directory")?;
+    let bundle_path = temp.path().join("source.bundle");
+    let git_dir = temp.path().join("git");
     let init = Command::new("git")
         .args(["init", "--bare", "--quiet"])
         .arg(&git_dir)
@@ -55,31 +65,4 @@ pub(super) fn random_request_id() -> anyhow::Result<String> {
     getrandom::fill(&mut bytes)
         .map_err(|error| anyhow::anyhow!("generate run request id: {error}"))?;
     Ok(hex::encode(bytes))
-}
-
-struct BundleTemp {
-    path: PathBuf,
-}
-
-impl BundleTemp {
-    fn new(request_id: &str) -> anyhow::Result<Self> {
-        let path = env::temp_dir().join(format!("scope-run-upload-{request_id}"));
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            fs::DirBuilder::new()
-                .mode(0o700)
-                .create(&path)
-                .context("create private run upload directory")?;
-        }
-        #[cfg(not(unix))]
-        fs::create_dir(&path).context("create run upload directory")?;
-        Ok(Self { path })
-    }
-}
-
-impl Drop for BundleTemp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
 }

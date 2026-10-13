@@ -1,6 +1,9 @@
 use anyhow::Context as _;
 use axum::Router;
-use std::net::{Ipv6Addr, SocketAddr};
+use std::{
+    net::{Ipv6Addr, SocketAddr},
+    time::Duration,
+};
 
 pub fn port_from_env(default: u16) -> u16 {
     std::env::var("PORT")
@@ -39,5 +42,12 @@ pub async fn shutdown_signal() {
     tokio::select! {
         () = ctrl_c => {},
         () = terminate => {},
+    }
+}
+
+pub async fn wait_or_shutdown(duration: Duration) -> bool {
+    tokio::select! {
+        () = shutdown_signal() => true,
+        () = tokio::time::sleep(duration) => false,
     }
 }

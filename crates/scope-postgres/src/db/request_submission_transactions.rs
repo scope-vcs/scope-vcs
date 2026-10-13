@@ -18,7 +18,7 @@ impl RequestStore {
         &self,
         command: SubmitRequestCommand,
     ) -> Result<RequestLifecycleMutation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_submission_context(&tx, &command.actor_user_id, &command.request_id).await?;
         let actor_can_submit =
@@ -38,7 +38,7 @@ impl RequestStore {
             },
         )?;
         persist_lifecycle_mutation(&tx, &mutation.request, &mutation.events).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(mutation)
     }
 }

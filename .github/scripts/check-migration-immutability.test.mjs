@@ -7,14 +7,15 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkMigrationSources, migrationDigest } from './check-migration-immutability.mjs';
 
-const name = 'm0043_retire_git_manifests.rs';
+const name = 'm0085_add_example.rs';
+const baseline = 'm0084_current_schema_baseline.sql';
 const original = 'CREATE TABLE example (state text);';
-const sources = { [name]: original, 'current_schema.sql': original };
+const sources = { [name]: original, [baseline]: original, 'm0084_bridged_ledger.txt': 'm0042\n' };
 const locked = Object.fromEntries(Object.entries(sources).map(([path, contents]) => [path, migrationDigest(contents)]));
 
 test('unchanged definitions and appended migrations pass', () => {
   assert.deepEqual(checkMigrationSources(sources, locked, locked), []);
-  const next = 'm0044_update_example.rs';
+  const next = 'm0086_update_example.rs';
   assert.deepEqual(checkMigrationSources({ ...sources, [next]: 'ALTER TABLE example;' },
     { ...locked, [next]: migrationDigest('ALTER TABLE example;') }, locked), []);
 });
@@ -39,18 +40,24 @@ test('removing migration sources or both source and checksum fails', () => {
 });
 
 test('new definitions must be locked and lock entries must identify migration definitions', () => {
-  assert.match(checkMigrationSources({ ...sources, 'm0044_next.rs': 'new' }, locked).join('\n'), /new migration needs/);
-  assert.match(checkMigrationSources(sources, { ...locked, 'mod.rs': migrationDigest('module') }).join('\n'), /invalid migration lock entry/);
+  assert.match(checkMigrationSources({ ...sources, 'm0086_next.rs': 'new' }, locked).join('\n'), /new migration needs/);
+  for (const path of ['mod.rs', 'schema_inventory.sql', 'current_schema.sql']) {
+    assert.match(checkMigrationSources(sources, { ...locked, [path]: migrationDigest('module') }).join('\n'), /invalid migration lock entry|must not reappear/);
+  }
 });
 
 test('only explicitly retired lock entries may disappear from the base lock', () => {
-  const base = { ...locked, 'baseline_ledger.txt': migrationDigest('m0042\n') };
+  const squashed = ['baseline_ledger.txt', 'current_schema.sql', 'm0043_retire_git_manifests.rs', 'm0083_request_workflow_changes.rs'];
+  const base = { ...locked, ...Object.fromEntries(squashed.map((path) => [path, migrationDigest(path)])) };
   assert.deepEqual(checkMigrationSources(sources, locked, base), []);
-  const reappeared = { ...locked, 'baseline_ledger.txt': base['baseline_ledger.txt'] };
-  assert.match(checkMigrationSources(sources, reappeared, base).join('\n'), /retired migration lock entry must not reappear/);
-  const unlisted = { ...locked, 'm0044_request_attention.rs': migrationDigest('ALTER TABLE example ADD attention text;') };
-  assert.match(checkMigrationSources(sources, locked, unlisted).join('\n'), /m0044_request_attention.rs: an existing migration lock cannot change or disappear/);
-  assert.match(checkMigrationSources(sources, locked, { ...locked, 'current_schema.sql': migrationDigest('other') }).join('\n'), /current_schema.sql: an existing migration lock cannot change or disappear/);
+  for (const path of squashed) {
+    const reappeared = { ...locked, [path]: base[path] };
+    assert.match(checkMigrationSources({ ...sources, [path]: path }, reappeared, base).join('\n'), /retired migration lock entry must not reappear/);
+    assert.match(checkMigrationSources({ ...sources, [path]: path }, reappeared).join('\n'), /retired migration lock entry must not reappear/);
+  }
+  const unlisted = { ...locked, 'm0086_request_attention.rs': migrationDigest('ALTER TABLE example ADD attention text;') };
+  assert.match(checkMigrationSources(sources, locked, unlisted).join('\n'), /m0086_request_attention.rs: an existing migration lock cannot change or disappear/);
+  assert.match(checkMigrationSources(sources, locked, { ...locked, [baseline]: migrationDigest('other') }).join('\n'), /m0084_current_schema_baseline.sql: an existing migration lock cannot change or disappear/);
 });
 
 test('the CLI reads the PR base lock even when both migration and current checksum change', () => {

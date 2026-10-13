@@ -1,7 +1,7 @@
 import { createRoot, hydrateRoot } from 'react-dom/client'
 import { RouterProvider } from '@tanstack/react-router'
 import { createFixtureRouter, FixtureHydrationPage } from './app'
-import './styles.css'
+import '../shared/styles.css'
 
 const handoff = window.__nativeRunHandoff
 const router = handoff ? createFixtureRouter(handoff) : createFixtureRouter()

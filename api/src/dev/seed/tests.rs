@@ -292,7 +292,51 @@ fn seed_snapshot_test_data_dir() -> std::path::PathBuf {
 }
 
 #[tokio::test]
-async fn seeded_readme_is_readable_without_startup_backfill_or_git_materialization() {
+async fn seeded_public_demo_workflows_are_cataloged_for_runs() {
+    let state = AppState::test_state();
+    let catalog = super::catalog(
+        state.object_store.as_ref(),
+        state.git_segment_store.as_ref(),
+        DevSeedUser {
+            email: "dev@example.com".into(),
+            handle: "dev".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let public_demo = catalog
+        .repository("dev", "public-demo")
+        .unwrap()
+        .record
+        .id
+        .clone();
+    state
+        .metadata
+        .admin()
+        .seed_catalog_for_tests(catalog)
+        .unwrap();
+
+    let stored = state
+        .metadata
+        .repositories()
+        .current_repository_workflow_catalog(&public_demo)
+        .await
+        .unwrap()
+        .unwrap()
+        .catalog
+        .unwrap();
+    let paths = stored
+        .files()
+        .unwrap()
+        .iter()
+        .map(|file| file.path().as_str().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(paths, ["/.scope/runs/checks.yml", "/.scope/runs/lint.yml"]);
+    assert!(state.validate_repository_workflow_catalogs().await.unwrap() >= 1);
+}
+
+#[tokio::test]
+async fn seeded_readme_is_readable_without_git_materialization() {
     use axum::{
         body::{Body, to_bytes},
         http::{Request, StatusCode},

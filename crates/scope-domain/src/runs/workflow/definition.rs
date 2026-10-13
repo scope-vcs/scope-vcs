@@ -8,18 +8,18 @@ use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_WORKFLOW_NAME_BYTES: usize = 100;
-pub const MAX_WORKFLOW_JOB_ID_BYTES: usize = 64;
+pub(crate) const MAX_WORKFLOW_JOB_ID_BYTES: usize = 64;
 pub const MAX_WORKFLOW_JOBS: usize = 64;
-pub const MAX_CONTAINER_IMAGE_BYTES: usize = 512;
-pub const MAX_WORKFLOW_STEPS: usize = 64;
-pub const MAX_WORKFLOW_CACHES: usize = 16;
-pub const MAX_WORKFLOW_ENVIRONMENT_VARIABLES: usize = 64;
-pub const MAX_WORKFLOW_ENVIRONMENT_BYTES: usize = 64 * 1024;
-pub const MAX_ENVIRONMENT_KEY_BYTES: usize = 128;
-pub const MAX_ENVIRONMENT_VALUE_BYTES: usize = 64 * 1024;
-pub const MAX_STEP_NAME_BYTES: usize = 100;
-pub const MAX_STEP_COMMAND_BYTES: usize = 64 * 1024;
-pub const MAX_WORKFLOW_TIMEOUT_SECONDS: u64 = 24 * 60 * 60;
+pub(crate) const MAX_CONTAINER_IMAGE_BYTES: usize = 512;
+pub(crate) const MAX_WORKFLOW_STEPS: usize = 64;
+pub(crate) const MAX_WORKFLOW_CACHES: usize = 16;
+pub(crate) const MAX_WORKFLOW_ENVIRONMENT_VARIABLES: usize = 64;
+pub(crate) const MAX_WORKFLOW_ENVIRONMENT_BYTES: usize = 64 * 1024;
+pub(crate) const MAX_ENVIRONMENT_KEY_BYTES: usize = 128;
+pub(crate) const MAX_ENVIRONMENT_VALUE_BYTES: usize = 64 * 1024;
+pub(crate) const MAX_STEP_NAME_BYTES: usize = 100;
+pub(crate) const MAX_STEP_COMMAND_BYTES: usize = 64 * 1024;
+pub(crate) const MAX_WORKFLOW_TIMEOUT_SECONDS: u64 = 24 * 60 * 60;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct WorkflowTriggers {
@@ -466,7 +466,8 @@ impl CompiledWorkflow {
             .map(|index| &self.jobs[index])
     }
 
-    pub fn only_job(&self) -> Option<&WorkflowJob> {
+    #[cfg(test)]
+    pub(crate) fn only_job(&self) -> Option<&WorkflowJob> {
         if self.jobs.len() == 1 {
             self.jobs.first()
         } else {

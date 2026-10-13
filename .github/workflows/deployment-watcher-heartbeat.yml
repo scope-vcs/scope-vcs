@@ -21,9 +21,13 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scope-vcs/release-supervisor
+          ref: 9a98202d5bcb718a26a9506068b5b6a98b8c368b
+          path: release-supervisor
       - name: Check expected daily starts and active supervision health
         env:
           GH_TOKEN: ${{ github.token }}
           SCOPE_DEPLOYMENT_WATCHER_HEARTBEAT: ${{ vars.SCOPE_DEPLOYMENT_WATCHER_HEARTBEAT }}
           SCOPE_DEPLOYMENT_SESSION_STATUS: ${{ vars.SCOPE_DEPLOYMENT_SESSION_STATUS }}
-        run: python3 deploy/automation/heartbeat.py check
+        run: python3 release-supervisor/heartbeat.py check

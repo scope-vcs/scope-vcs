@@ -1,7 +1,7 @@
 use scope_domain::content::SourceBlob;
 use scope_postgres::{
     db::{
-        GeneratedIdSource, MetadataStore,
+        MetadataStore,
         cleanup_queue::types::{SourceBlobCleanupBatch, SourceBlobCleanupDecision},
     },
     error::PostgresError,
@@ -30,12 +30,9 @@ pub async fn drain_source_blob_cleanup(
     metadata: &MetadataStore,
     object_store: &dyn ObjectStore,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<SourceBlobCleanupReport, PostgresError> {
     let cleanup = metadata.cleanup();
-    let batch = cleanup
-        .source_blob_cleanup_batch(now_unix, generated_ids)
-        .await?;
+    let batch = cleanup.source_blob_cleanup_batch(now_unix).await?;
     let span = if batch.pending.is_empty() {
         tracing::Span::none()
     } else {
@@ -47,7 +44,7 @@ pub async fn drain_source_blob_cleanup(
             scope.blob.count = batch.pending.len(),
         )
     };
-    clean_up_batch(metadata, object_store, batch, now_unix, generated_ids)
+    clean_up_batch(metadata, object_store, batch, now_unix)
         .instrument(span)
         .await
 }
@@ -57,7 +54,6 @@ async fn clean_up_batch(
     object_store: &dyn ObjectStore,
     batch: SourceBlobCleanupBatch,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<SourceBlobCleanupReport, PostgresError> {
     let cleanup = metadata.cleanup();
     let mut pending_by_key = BTreeMap::new();
@@ -94,7 +90,7 @@ async fn clean_up_batch(
     }
     report.retained = retained.len();
     cleanup
-        .finish_source_blob_cleanup(batch, &retained, now_unix, generated_ids)
+        .finish_source_blob_cleanup(batch, &retained, now_unix)
         .await?;
     Ok(report)
 }

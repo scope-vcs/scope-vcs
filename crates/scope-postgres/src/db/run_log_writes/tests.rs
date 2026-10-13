@@ -2,15 +2,9 @@ use super::*;
 use crate::db::{
     MetadataStore,
     locks::wait_for_transaction_waiter,
-    test_support::fixtures::{repository, source_blob, store_with_native_run_repositories, user},
+    test_support::fixtures::{manual_run, repository, store_with_native_run_repositories, user},
 };
-use scope_domain::{
-    runs::{
-        run::Run,
-        source::{RunSource, RunTrigger},
-    },
-    views::ViewId,
-};
+use scope_domain::views::ViewId;
 
 async fn fixture() -> MetadataStore {
     let store = store_with_native_run_repositories([repository(
@@ -21,19 +15,7 @@ async fn fixture() -> MetadataStore {
     let revision = scope_run_config::parse_workflow("/.scope/runs/checks.yml", format!(
         "name: Checks\non:\n  manual: true\ncontainer: {{ image: rust@sha256:{} }}\ntimeout: 10m\njobs:\n  a:\n    steps:\n      - {{ name: A, run: echo a }}\n  b:\n    steps:\n      - {{ name: B, run: echo b }}\n", "a".repeat(64)).as_bytes())
         .unwrap().into_revision("owner/repo").unwrap();
-    let source =
-        RunSource::ephemeral_git_bundle(source_blob(&"d".repeat(40), &"c".repeat(64), 42)).unwrap();
-    let run = Run::new(
-        "run",
-        "run",
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::Manual,
-        Some("owner".into()),
-        source,
-        10,
-    )
-    .unwrap();
+    let run = manual_run(&revision, "run", "owner");
     let runs = store.runs();
     runs.enqueue_run(run, revision).await.unwrap();
     for (job, token) in [("a", "a".repeat(64)), ("b", "b".repeat(64))] {
