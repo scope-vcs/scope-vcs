@@ -20,7 +20,7 @@ pub enum DispatchAdmission {
 pub(super) async fn lock_admission(tx: &DatabaseTransaction) -> Result<(), PostgresError> {
     tx.execute_raw(Statement::from_string(DatabaseBackend::Postgres,
         "SELECT pg_advisory_xact_lock(hashtextextended('scope:cloud-admission:' || current_schema(), 0))"))
-        .await.map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -36,7 +36,7 @@ impl RunStore {
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<DispatchAdmission, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         lock_admission(&tx).await?;
         let row = tx
             .query_one_raw(Statement::from_string(
@@ -47,14 +47,10 @@ impl RunStore {
                     attempt_active_states(), attempt_terminal_states()
                 ),
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::internal_message("active attempt count is missing"))?;
-        let active = u64::try_from(
-            row.try_get::<i64>("", "count")
-                .map_err(PostgresError::internal)?,
-        )
-        .map_err(PostgresError::internal)?;
+        let active =
+            u64::try_from(row.try_get::<i64>("", "count")?).map_err(PostgresError::internal)?;
         if active >= max_concurrency {
             return Ok(DispatchAdmission::AtCapacity);
         }
@@ -90,20 +86,13 @@ impl RunStore {
                     window = scope_domain::runs::job::CAPACITY_RETRY_WINDOW_SECONDS,
                 ),
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Ok(DispatchAdmission::Empty);
         };
-        let run_id = row
-            .try_get::<String>("", "run_id")
-            .map_err(PostgresError::internal)?;
-        let job_key = row
-            .try_get::<String>("", "job_key")
-            .map_err(PostgresError::internal)?;
-        let repository_id = row
-            .try_get::<String>("", "repo_id")
-            .map_err(PostgresError::internal)?;
+        let run_id = row.try_get::<String>("", "run_id")?;
+        let job_key = row.try_get::<String>("", "job_key")?;
+        let repository_id = row.try_get::<String>("", "repo_id")?;
         if !lock_native_runs_availability(&tx, &repository_id)
             .await?
             .is_available()
@@ -134,7 +123,7 @@ impl RunStore {
                 lease_expires_at_unix,
             )
             .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(DispatchAdmission::Admitted(Box::new(claim)))
     }
 }

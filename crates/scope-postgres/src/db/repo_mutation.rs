@@ -1,5 +1,5 @@
 use super::{
-    GeneratedIdSource, RepositoryStore, acquire_aggregate_lock,
+    RepositoryStore, acquire_aggregate_lock,
     cleanup_queue::queue::queue_pending_source_blob_deletion_rows,
     entities,
     landing_files::apply_repository_landing_file_mutation,
@@ -100,14 +100,13 @@ impl RepositoryStore {
         owner: &str,
         name: &str,
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
         op: F,
     ) -> Result<RepositoryMutationResult<R>, RepositoryMutationError>
     where
         F: FnOnce(&mut Repository) -> Result<RepositoryMutation<R>, DomainError>,
     {
         let (tx, repo) = self.lock_repository(owner, name).await?;
-        save_repository_mutation(tx, repo, now_unix, generated_ids, op).await
+        save_repository_mutation(tx, repo, now_unix, op).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mutate_repository_with_open_requests"))]
@@ -116,7 +115,6 @@ impl RepositoryStore {
         owner: &str,
         name: &str,
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
         op: F,
     ) -> Result<RepositoryMutationResult<R>, RepositoryMutationError>
     where
@@ -127,10 +125,7 @@ impl RepositoryStore {
     {
         let (tx, repo) = self.lock_repository(owner, name).await?;
         let open_requests_by_view = open_request_counts_by_view(&tx, &repo.record.id).await?;
-        save_repository_mutation(tx, repo, now_unix, generated_ids, |repo| {
-            op(repo, open_requests_by_view)
-        })
-        .await
+        save_repository_mutation(tx, repo, now_unix, |repo| op(repo, open_requests_by_view)).await
     }
 
     async fn lock_repository(
@@ -139,12 +134,11 @@ impl RepositoryStore {
         name: &str,
     ) -> Result<(DatabaseTransaction, Repository), PostgresError> {
         let repo_id = repo_id(owner, name);
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let repo = entities::repository::Entity::find_by_id(&repo_id)
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
         let repo = repository_from_model(&tx, repo).await?;
         Ok((tx, repo))
@@ -155,7 +149,6 @@ async fn save_repository_mutation<R, F>(
     tx: DatabaseTransaction,
     mut repo: Repository,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
     op: F,
 ) -> Result<RepositoryMutationResult<R>, RepositoryMutationError>
 where
@@ -173,7 +166,7 @@ where
             .verify_source(&repo.record.id, &head.head_oid, head.change_version)
             .map_err(PostgresError::internal)?;
     }
-    save_repository_delta(&tx, &before, &repo, now_unix, generated_ids).await?;
+    save_repository_delta(&tx, &before, &repo, now_unix).await?;
     apply_repository_landing_file_mutation(&tx, &repo.record.id, mutation.landing_file_mutation)
         .await?;
     if let Some(catalog) = &mutation.workflow_catalog {
@@ -190,7 +183,6 @@ where
             &repo.git_pack_spans,
             &input,
             now_unix,
-            generated_ids,
         )
         .await?;
     }
@@ -198,20 +190,11 @@ where
         let head = repo.git_head.as_ref().ok_or_else(|| {
             PostgresError::internal_message("landed requests require an accepted Git head")
         })?;
-        complete_landed_requests(
-            &tx,
-            &repo.record.id,
-            &head.head_oid,
-            completion,
-            now_unix,
-            generated_ids,
-        )
-        .await?
+        complete_landed_requests(&tx, &repo.record.id, &head.head_oid, completion, now_unix).await?
     } else {
         0
     };
-    queue_pending_source_blob_deletion_rows(&tx, mutation.orphan_objects, now_unix, generated_ids)
-        .await?;
+    queue_pending_source_blob_deletion_rows(&tx, mutation.orphan_objects, now_unix).await?;
     tx.commit().await.map_err(PostgresError::internal)?;
     Ok(RepositoryMutationResult {
         result: mutation.result,

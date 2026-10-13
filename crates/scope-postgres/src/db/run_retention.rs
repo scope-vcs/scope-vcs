@@ -1,17 +1,28 @@
 use super::integer_columns;
 use super::{
-    GeneratedIdSource, RunStore, acquire_aggregate_lock,
+    RunStore, acquire_aggregate_lock,
     cleanup_queue::queue::queue_pending_source_blob_deletion_rows, entities,
     git_segments::release_git_segment_references, request_auto_merge::request_id_for_check_run,
 };
 use crate::error::PostgresError;
-use scope_domain::content::SourceBlob;
+use scope_domain::{content::SourceBlob, runs::run::RunState};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
     TransactionTrait,
     sea_query::{Expr, Query},
 };
 use std::collections::BTreeSet;
+
+fn prunable(cutoff: i64) -> Condition {
+    let terminal = RunState::ALL
+        .into_iter()
+        .filter(|state| state.is_terminal())
+        .map(RunState::as_str);
+    Condition::all()
+        .add(entities::run::Column::State.is_in(terminal))
+        .add(entities::run::Column::CompletedAtUnix.lte(cutoff))
+        .add(active_auto_merge_evidence_is_absent())
+}
 
 impl RunStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "prune_terminal_runs"))]
@@ -20,28 +31,19 @@ impl RunStore {
         completed_before_unix: u64,
         now_unix: u64,
         limit: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<usize, PostgresError> {
         let cutoff = integer_columns::u64_to_i64(completed_before_unix, "run retention cutoff")?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let candidates = entities::run::Entity::find()
-            .filter(entities::run::Column::State.is_in([
-                "succeeded".to_string(),
-                "failed".to_string(),
-                "canceled".to_string(),
-                "lost".to_string(),
-            ]))
-            .filter(entities::run::Column::CompletedAtUnix.lte(cutoff))
-            .filter(active_auto_merge_evidence_is_absent())
+            .filter(prunable(cutoff))
             .order_by_asc(entities::run::Column::CompletedAtUnix)
             .order_by_asc(entities::run::Column::Id)
             .limit(limit)
             .all(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let candidate_ids = candidates.into_iter().map(|run| run.id).collect::<Vec<_>>();
         if candidate_ids.is_empty() {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(0);
         }
 
@@ -64,30 +66,21 @@ impl RunStore {
             entities::run::Entity::find_by_id(run_id)
                 .lock_exclusive()
                 .one(&tx)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
         }
 
         let models = entities::run::Entity::find()
             .filter(entities::run::Column::Id.is_in(candidate_ids))
-            .filter(entities::run::Column::State.is_in([
-                "succeeded".to_string(),
-                "failed".to_string(),
-                "canceled".to_string(),
-                "lost".to_string(),
-            ]))
-            .filter(entities::run::Column::CompletedAtUnix.lte(cutoff))
-            .filter(active_auto_merge_evidence_is_absent())
+            .filter(prunable(cutoff))
             .all(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let runs = models
             .into_iter()
             .map(entities::run::Model::try_into_domain)
             .collect::<Result<Vec<_>, _>>()?;
         let run_ids = runs.iter().map(|run| run.id.clone()).collect::<Vec<_>>();
         if run_ids.is_empty() {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(0);
         }
         let sources = runs
@@ -103,26 +96,22 @@ impl RunStore {
         entities::run_log::Entity::delete_many()
             .filter(entities::run_log::Column::RunId.is_in(run_ids.clone()))
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let attempt_ids = entities::run_attempt::Entity::find()
             .select_only()
             .column(entities::run_attempt::Column::Id)
             .filter(entities::run_attempt::Column::RunId.is_in(run_ids.clone()))
             .into_tuple::<String>()
             .all(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         entities::run_attempt_step::Entity::delete_many()
             .filter(entities::run_attempt_step::Column::AttemptId.is_in(attempt_ids))
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         entities::run_attempt::Entity::delete_many()
             .filter(entities::run_attempt::Column::RunId.is_in(run_ids.clone()))
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         delete_run_source_references(&tx, &run_ids).await?;
         for run_id in &run_ids {
             release_git_segment_references(&tx, "run_source", run_id, now_unix).await?;
@@ -130,12 +119,11 @@ impl RunStore {
         entities::run::Entity::delete_many()
             .filter(entities::run::Column::Id.is_in(run_ids))
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         delete_orphaned_workflow_revisions(&tx, workflow_digests).await?;
         let queued_blob_count = sources.len();
-        queue_pending_source_blob_deletion_rows(&tx, sources, now_unix, generated_ids).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        queue_pending_source_blob_deletion_rows(&tx, sources, now_unix).await?;
+        tx.commit().await?;
 
         Ok(queued_blob_count)
     }
@@ -175,8 +163,7 @@ pub(super) async fn delete_run_source_references<C: ConnectionTrait>(
         .filter(entities::object_reference::Column::RefKind.eq("run_source"))
         .filter(entities::object_reference::Column::RefId.is_in(run_ids.to_vec()))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -198,7 +185,6 @@ pub(super) async fn delete_orphaned_workflow_revisions<C: ConnectionTrait>(
             ),
         )
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }

@@ -83,8 +83,7 @@ runs browser, Git, and media smoke checks before production. It issues a tempora
 staging-scoped token and revokes it when the job finishes. The media receipt records
 the tested revision and deployments.
 
-Use `deployment-tests.yml` with a prepared release run ID for repeated transition
-tests. Staging and production have distinct physical bucket instances and keys.
+Staging and production have distinct physical bucket instances and keys.
 
 ## Lifecycle and cleanup
 

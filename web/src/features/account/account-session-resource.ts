@@ -1,7 +1,7 @@
 import type { AccountSessionResponse } from '../../api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 
-export type AccountSessionResourceValue = {
+type AccountSessionResourceValue = {
   account: AccountSessionResponse | null
 }
 

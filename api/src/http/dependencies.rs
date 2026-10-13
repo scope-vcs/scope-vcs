@@ -5,11 +5,10 @@ use axum::{
     http::HeaderMap,
 };
 use scope_api_contract::{
-    RepositoryDependencyCheckResponse, RepositoryDependencyCheckStatus,
-    RepositoryDependencyFindingResponse, RepositoryDependencyGapResponse,
-    RepositoryDependencyReportResponse,
+    RepositoryDependencyCheckResponse, RepositoryDependencyFindingResponse,
+    RepositoryDependencyGapResponse, RepositoryDependencyReportResponse,
 };
-use scope_domain::dependency_analysis::{DependencyCheck, DependencyCheckStatus};
+use scope_domain::dependency_analysis::DependencyCheck;
 
 pub(crate) async fn get_repository_dependencies(
     State(state): State<AppState>,
@@ -28,13 +27,7 @@ pub(crate) async fn get_repository_dependencies(
 
 fn dependency_check_response(check: DependencyCheck) -> RepositoryDependencyCheckResponse {
     RepositoryDependencyCheckResponse {
-        status: match check.status {
-            DependencyCheckStatus::Pending => RepositoryDependencyCheckStatus::Pending,
-            DependencyCheckStatus::Ready => RepositoryDependencyCheckStatus::Ready,
-            DependencyCheckStatus::Updating => RepositoryDependencyCheckStatus::Updating,
-            DependencyCheckStatus::Failed => RepositoryDependencyCheckStatus::Failed,
-            DependencyCheckStatus::Unsupported => RepositoryDependencyCheckStatus::Unsupported,
-        },
+        status: check.status.into(),
         report: check
             .report
             .map(|report| RepositoryDependencyReportResponse {

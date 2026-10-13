@@ -75,7 +75,6 @@ async fn integration_conflict_marker_fences_main_and_request_then_propagates_and
             blocked.base_version,
             None,
             vec![fact(&blocked.head_oid, &child, true)],
-            IDS,
         )
         .await
         .unwrap()
@@ -88,13 +87,7 @@ async fn integration_conflict_marker_fences_main_and_request_then_propagates_and
     let child_facts = vec![fact(&publication.new_head_oid, &child, true)];
     let repaired = store
         .requests()
-        .record_request_revision_with_stack(
-            publication,
-            unchanged.base_version,
-            None,
-            child_facts,
-            IDS,
-        )
+        .record_request_revision_with_stack(publication, unchanged.base_version, None, child_facts)
         .await
         .unwrap()
         .request;

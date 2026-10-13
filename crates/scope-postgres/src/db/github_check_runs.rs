@@ -60,14 +60,9 @@ impl RequestStore {
                  RETURNING started_reads",
                 commit.key_values()?,
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::internal_message("GitHub check read was not numbered"))?;
-        i64_to_u64(
-            row.try_get("", "started_reads")
-                .map_err(PostgresError::internal)?,
-            "GitHub check read",
-        )
+        i64_to_u64(row.try_get("", "started_reads")?, "GitHub check read")
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "apply_github_check_read"))]
@@ -78,7 +73,7 @@ impl RequestStore {
         started_at_unix: u64,
         runs: &[GitHubCheckRun],
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let applied = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -87,11 +82,9 @@ impl RequestStore {
                   FOR UPDATE",
                 commit.key_values()?,
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::internal_message("GitHub check read was not started"))?
-            .try_get::<i64>("", "applied_read")
-            .map_err(PostgresError::internal)?;
+            .try_get::<i64>("", "applied_read")?;
         if i64_to_u64(applied, "GitHub check read")? >= read {
             return Ok(false);
         }
@@ -103,8 +96,7 @@ impl RequestStore {
               WHERE repo_id = $1 AND github_repository_id = $2 AND commit_oid = $3",
             commit.key_values()?,
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         for run in runs
             .iter()
             .filter(|run| run.commit_oid == commit.commit_oid)
@@ -137,8 +129,7 @@ impl RequestStore {
                     check_suite_id = EXCLUDED.check_suite_id",
                 values,
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         }
         let mut values = commit.key_values()?;
         values.extend([
@@ -152,9 +143,8 @@ impl RequestStore {
               WHERE repo_id = $1 AND github_repository_id = $2 AND commit_oid = $3",
             values,
         ))
-        .await
-        .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        .await?;
+        tx.commit().await?;
         Ok(true)
     }
 
@@ -172,14 +162,12 @@ impl RequestStore {
                     AND started_reads = applied_read",
                 commit.key_values()?,
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Ok(None);
         };
         optional_i64_to_u64(
-            row.try_get("", "applied_read_started_at_unix")
-                .map_err(PostgresError::internal)?,
+            row.try_get("", "applied_read_started_at_unix")?,
             "GitHub check read time",
         )
     }
@@ -200,8 +188,7 @@ impl RequestStore {
             [repo_id.into(), commit_oid.into()],
         ))
         .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(super::entities::request::Model::try_into_domain)
         .collect()
@@ -265,8 +252,7 @@ impl RequestStore {
                  ) AS tested",
                 [repo_id.into(), commit_oid.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::internal_message("tested commit query returned no row"))?
             .try_get("", "tested")
             .map_err(PostgresError::internal)
@@ -309,8 +295,7 @@ impl RequestStore {
             ],
         ))
         .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|row| {
             Ok(GitHubCheckRefreshCandidate {
@@ -354,8 +339,7 @@ impl RequestStore {
                  RETURNING 1 AS claimed",
                 values,
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .is_some())
     }
 
@@ -374,8 +358,7 @@ impl RequestStore {
                   WHERE repo_id = $1 AND github_repository_id = $2 AND commit_oid = $3",
                 values,
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 }
@@ -407,8 +390,7 @@ pub(super) async fn latest_github_check_runs<C: ConnectionTrait>(
             serde_json::json!(commit_oids).into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .into_iter()
     .map(|row| {
         let get_text = |column| {
@@ -419,22 +401,17 @@ pub(super) async fn latest_github_check_runs<C: ConnectionTrait>(
             commit_oid: get_text("commit_oid")?,
             name: get_text("name")?,
             github_check_run_id: i64_to_u64(
-                row.try_get("", "github_check_run_id")
-                    .map_err(PostgresError::internal)?,
+                row.try_get("", "github_check_run_id")?,
                 "GitHub check run id",
             )?,
             status: decode_enum(get_text("status")?)?,
             conclusion: row
-                .try_get::<Option<String>>("", "conclusion")
-                .map_err(PostgresError::internal)?
+                .try_get::<Option<String>>("", "conclusion")?
                 .map(decode_enum)
                 .transpose()?,
-            details_url: row
-                .try_get("", "details_url")
-                .map_err(PostgresError::internal)?,
+            details_url: row.try_get("", "details_url")?,
             check_suite_id: optional_i64_to_u64(
-                row.try_get("", "check_suite_id")
-                    .map_err(PostgresError::internal)?,
+                row.try_get("", "check_suite_id")?,
                 "GitHub check suite id",
             )?,
         })

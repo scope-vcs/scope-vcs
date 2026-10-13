@@ -157,7 +157,7 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         let projected = state
             .metadata
             .repositories()
-            .repo_live_file_content(
+            .repo_live_file_with_landing_content(
                 TEST_REPO_OWNER,
                 TEST_REPO_NAME,
                 None,
@@ -166,7 +166,8 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
             )
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .projected;
         let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
             .await
             .unwrap();
@@ -192,13 +193,7 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
     let compaction = state
         .metadata
         .jobs()
-        .claim_git_compaction(
-            "content-push-test",
-            u64::MAX,
-            now_unix,
-            30,
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .claim_git_compaction("content-push-test", u64::MAX, now_unix, 30)
         .await
         .unwrap()
         .expect("accepted pushes schedule durable compaction work");
@@ -414,11 +409,7 @@ async fn pending_object_cleanup_uses_transactional_reference_rows() {
         state
             .metadata
             .cleanup()
-            .queue_pending_source_blob_deletions(
-                vec![live_blob.clone()],
-                unix_now(),
-                &crate::persistence_ids::generate_persistence_id,
-            )
+            .queue_pending_source_blob_deletions(vec![live_blob.clone()], unix_now())
             .await
             .unwrap();
     }
@@ -429,13 +420,11 @@ async fn pending_object_cleanup_uses_transactional_reference_rows() {
         .await
         .unwrap();
 
-    let report = drain_pending_source_blob_deletions_report(&state)
-        .await
-        .unwrap();
+    let report = drain_pending_source_blob_deletions(&state).await.unwrap();
 
     assert_eq!(
         report,
-        SourceBlobCleanupDrainReport {
+        scope_content_lifecycle::SourceBlobCleanupReport {
             skipped_referenced: 1,
             ..Default::default()
         }

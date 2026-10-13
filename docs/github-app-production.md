@@ -69,4 +69,4 @@ shows deliveries answered with 204.
       concurrency group and checkout), so they need a fallback for a branch
       push. Then use Test connection.
 - [ ] Under Required checks, require `Required PR checks`, the CI job that
-      main's branch protection requires (`deploy/automation/main-protection.json`).
+      main's branch protection requires (`.github/main-protection.json`).

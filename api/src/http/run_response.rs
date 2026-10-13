@@ -1,11 +1,12 @@
 use scope_api_contract::{
-    RepositoryRunListItemResponse, RepositoryRunSummaryResponse, RunResponse,
+    RepositoryRunListItemResponse, RepositoryRunSummaryResponse, RunLogResponse, RunResponse,
 };
 use scope_domain::runs::{
     availability::NativeRunsAvailability,
     job::{RunJob, can_retry_run},
     run::Run,
 };
+use scope_postgres::db::StoredRunLog;
 
 pub(super) fn run_response(run: &Run, logs_truncated: bool) -> RunResponse {
     RunResponse {
@@ -53,5 +54,17 @@ pub(super) fn repository_run_list_item(run: &Run) -> RepositoryRunListItemRespon
         created_at_unix: run.created_at_unix,
         updated_at_unix: run.updated_at_unix,
         completed_at_unix: run.completed_at_unix,
+    }
+}
+
+pub(super) fn run_log_response(log: StoredRunLog) -> RunLogResponse {
+    RunLogResponse {
+        attempt_id: log.chunk.attempt_id,
+        job_key: log.job_key,
+        step_index: log.chunk.step_index,
+        position: log.position,
+        sequence: log.chunk.sequence,
+        text: log.chunk.text,
+        created_at_unix: log.chunk.created_at_unix,
     }
 }

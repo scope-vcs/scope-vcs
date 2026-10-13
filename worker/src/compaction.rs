@@ -87,7 +87,6 @@ pub(crate) async fn compact_one_git_repository(
             u64::try_from(settings.git_storage_limits.max_object_bytes()).unwrap_or(u64::MAX),
             claim_now_unix,
             LEASE_SECONDS,
-            &crate::generate_persistence_id,
         )
         .await
         .map_err(|error| anyhow::anyhow!(error.message))?

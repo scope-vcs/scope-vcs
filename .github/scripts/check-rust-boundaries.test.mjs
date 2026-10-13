@@ -29,11 +29,9 @@ function validMainMetadata() {
     packageFixture('scope-cache-domain'),
     packageFixture('scope-git-process'),
     packageFixture('scope-api-contract', [dependency('scope-domain')]),
-    packageFixture('scope-cache-contract', [dependency('scope-cache-domain')]),
     packageFixture('scope-content-lifecycle', [dependency('scope-domain')]),
     packageFixture('api', [dependency('scope-content-lifecycle')]),
     packageFixture('worker', [dependency('scope-content-lifecycle')]),
-    packageFixture('scope-cache-service'),
     packageFixture('scope-repo-router'),
     packageFixture('scope-runner-runtime'),
   ])
@@ -88,12 +86,12 @@ test('rejects OpenTelemetry dependencies outside scope-service-runtime', () => {
 
 test('ignores dev-only test support and protects CLI independence', () => {
   const main = validMainMetadata()
-  main.packages.find(({ name }) => name === 'scope-cache-service').dependencies.push(dependency('scope-domain', 'dev'))
+  main.packages.find(({ name }) => name === 'scope-domain').dependencies.push(dependency('scope-api-contract', 'dev'))
   const cli = validCliMetadata()
   cli.workspace_root = '/repo'
   cli.packages[0].dependencies.push(dependency('scope-content-lifecycle'))
   const result = validateRustBoundaries(main, cli, cliRoot)
-  assert.ok(!result.errors.some((error) => error.includes('scope-cache-service')))
+  assert.ok(!result.errors.some((error) => error.includes('scope-domain')))
   assert.ok(result.errors.some((error) => error.includes('workspace root')))
   assert.ok(result.errors.some((error) => error.includes('unexpected local dependency')))
 })

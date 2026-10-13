@@ -1,8 +1,7 @@
 use crate::requests::{
-    CreateRequestRatingInput, Request, RequestActorRole, RequestReputation, create_request_rating,
-    eligible_rating_subject_user_id,
+    CreateRequestRatingInput, Request, RequestReputation, create_request_rating,
+    eligible_rating_subject_user_id, fixtures::open_request,
 };
-use crate::views::ViewId;
 
 #[test]
 fn reputation_accepts_only_possible_rating_totals() {
@@ -21,40 +20,20 @@ fn reputation_accepts_only_possible_rating_totals() {
 
 fn terminal_request(merged: bool) -> Request {
     Request {
-        id: "request".to_string(),
-        repo_id: "repo".to_string(),
-        name: "change".to_string(),
-        author_user_id: Some("author".to_string()),
-        author_role: RequestActorRole::Public,
-        view: ViewId::public(),
-        base: crate::requests::RequestBase::Main {
-            review_base_oid: "a".repeat(40),
-        },
-        base_version: 1,
-        stack_status: crate::requests::RequestStackStatus::Main,
-        stack_depth: 1,
-        main_ancestor_oid: "a".repeat(40),
-        head_oid: "b".repeat(40),
-        git_snapshot: None,
-        title: "Change".to_string(),
-        description_markdown: String::new(),
-        activity_version: 3,
-        submitted_at_unix: Some(2),
-        closed_at_unix: (!merged).then_some(3),
+        closed_at_unix: (!merged).then_some(30),
         closed_by_user_id: (!merged).then(|| "maintainer".to_string()),
-        merged_at_unix: merged.then_some(3),
+        merged_at_unix: merged.then_some(30),
         merged_by_user_id: merged.then(|| "maintainer".to_string()),
-        merged_head_oid: merged.then(|| "b".repeat(40)),
-        merged_main_oid: merged.then(|| "c".repeat(40)),
-        created_at_unix: 1,
-        updated_at_unix: 3,
+        merged_head_oid: merged.then(|| "head".to_string()),
+        merged_main_oid: merged.then(|| "main".to_string()),
+        ..open_request()
     }
 }
 
 fn input(actor: &str, score: u8, reason: &str) -> CreateRequestRatingInput {
     CreateRequestRatingInput {
         id: format!("rating-{actor}"),
-        request_id: "request".to_string(),
+        request_id: "request_1".to_string(),
         actor_user_id: actor.to_string(),
         score,
         reason: reason.to_string(),

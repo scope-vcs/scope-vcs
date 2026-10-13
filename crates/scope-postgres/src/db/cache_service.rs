@@ -36,7 +36,7 @@ impl CacheStore {
         now_unix: u64,
     ) -> Result<Option<CacheRestoreRecord>, PostgresError> {
         let now = u64_to_i64(now_unix, "current time")?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         lock_repository(&tx, repository_id).await?;
         let row = tx
             .query_one_raw(statement(
@@ -62,16 +62,13 @@ impl CacheStore {
                     now.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let Some(row) = row else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         };
         let object = decode_object(&row)?;
-        let restored_identity: String = row
-            .try_get("", "reference_identity_digest")
-            .map_err(PostgresError::internal)?;
+        let restored_identity: String = row.try_get("", "reference_identity_digest")?;
         let current = decode_reference(&row)?;
         let reference = scope_cache_domain::access_reference(
             &domain_reference(repository_id, &restored_identity, &current)?,
@@ -88,8 +85,7 @@ impl CacheStore {
                 u64_to_i64(reference.expires_at_unix(), "cache reference expiry")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         tx.execute_raw(statement(
             "UPDATE scope_cache_objects SET last_accessed_at_unix = $3
              WHERE repository_id = $1 AND checksum_sha256 = $2",
@@ -99,9 +95,8 @@ impl CacheStore {
                 now.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        .await?;
+        tx.commit().await?;
         Ok(Some(CacheRestoreRecord {
             source: if restored_identity == identity_digest {
                 CacheRestoreKind::Exact
@@ -135,7 +130,7 @@ impl CacheStore {
         let identity = CacheDigest::parse(identity_digest.to_string())?;
         let lease_id = UploadLeaseId::parse(upload_id.to_string())?;
         let object_key = cache_object_key(repository_id, checksum_sha256);
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         lock_repository(&tx, repository_id).await?;
         expire_repository_references(&tx, repository_id, now_unix).await?;
 
@@ -149,7 +144,7 @@ impl CacheStore {
             let object = stored_object(&tx, repository_id, &current.checksum_sha256)
                 .await?
                 .ok_or_else(|| PostgresError::internal_message("cache reference object missing"))?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(CachePrepareResult::UseObject {
                 object,
                 expires_at_unix: current.expires_at_unix,
@@ -199,9 +194,8 @@ impl CacheStore {
                  WHERE repository_id = $1 AND checksum_sha256 = $2",
                 vec![repository_id.into(), checksum_sha256.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            .await?;
+            tx.commit().await?;
             return Ok(CachePrepareResult::UseObject {
                 object,
                 expires_at_unix: reference.expires_at_unix(),
@@ -261,14 +255,13 @@ impl CacheStore {
                     u64_to_i64(lease.expires_at_unix(), "cache upload lease expiry")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if inserted.rows_affected() != 1 {
             return Err(PostgresError::conflict(
                 "an active cache upload already exists for this logical identity",
             ));
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(CachePrepareResult::Upload(CacheUploadRecord {
             upload_id: upload_id.to_string(),
             repository_id: repository_id.to_string(),
@@ -286,21 +279,7 @@ impl CacheStore {
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "upload"))]
     pub async fn upload(&self, upload_id: &str) -> Result<CacheUploadRecord, PostgresError> {
-        let row = self
-            .db
-            .query_one_raw(statement(
-                "SELECT upload_id, repository_id, identity_digest, compatibility_group_digest,
-                        checksum_sha256,
-                        storage_backend, object_key, size_bytes,
-                        state, created_at_unix, expires_at_unix
-                 FROM scope_cache_uploads
-                 WHERE upload_id = $1 AND state IN ('active', 'committed')",
-                vec![upload_id.into()],
-            ))
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| PostgresError::not_found("cache upload lease not found"))?;
-        decode_upload(&row)
+        live_upload(self.db.as_ref(), upload_id, "").await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "commit_upload"))]
@@ -310,21 +289,8 @@ impl CacheStore {
         now_unix: u64,
     ) -> Result<CacheCommitResult, PostgresError> {
         let now = u64_to_i64(now_unix, "current time")?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let row = tx
-            .query_one_raw(statement(
-                "SELECT upload_id, repository_id, identity_digest, compatibility_group_digest,
-                        checksum_sha256,
-                        storage_backend, object_key, size_bytes,
-                        state, created_at_unix, expires_at_unix
-                 FROM scope_cache_uploads
-                 WHERE upload_id = $1 AND state IN ('active', 'committed') FOR UPDATE",
-                vec![upload_id.into()],
-            ))
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| PostgresError::not_found("cache upload lease not found"))?;
-        let upload = decode_upload(&row)?;
+        let tx = self.db.begin().await?;
+        let upload = live_upload(&tx, upload_id, "FOR UPDATE").await?;
         lock_repository(&tx, &upload.repository_id).await?;
         let current =
             current_reference(&tx, &upload.repository_id, &upload.identity_digest).await?;
@@ -348,7 +314,7 @@ impl CacheStore {
             let object = stored_object(&tx, &upload.repository_id, &upload.checksum_sha256)
                 .await?
                 .ok_or_else(|| PostgresError::internal_message("cache reference object missing"))?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(CacheCommitResult::AlreadyCommitted {
                 object,
                 expires_at_unix: current.expires_at_unix,
@@ -376,9 +342,8 @@ impl CacheStore {
                         u64_to_i64(now_unix, "cache cleanup lease expiry")?.into(),
                     ],
                 ))
-                .await
-                .map_err(PostgresError::internal)?;
-                tx.commit().await.map_err(PostgresError::internal)?;
+                .await?;
+                tx.commit().await?;
                 return Ok(CacheCommitResult::Stale);
             }
             Err(error) => return Err(error.into()),
@@ -394,9 +359,8 @@ impl CacheStore {
                     "UPDATE scope_cache_uploads SET state = 'committed' WHERE upload_id = $1",
                     vec![upload_id.into()],
                 ))
-                .await
-                .map_err(PostgresError::internal)?;
-                tx.commit().await.map_err(PostgresError::internal)?;
+                .await?;
+                tx.commit().await?;
                 return Ok(CacheCommitResult::AlreadyCommitted {
                     object,
                     expires_at_unix: reference.expires_at_unix(),
@@ -424,8 +388,7 @@ impl CacheStore {
                 .into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         let object = stored_object(&tx, &upload.repository_id, &upload.checksum_sha256)
             .await?
             .ok_or_else(|| PostgresError::internal_message("committed cache object missing"))?;
@@ -451,8 +414,7 @@ impl CacheStore {
             "UPDATE scope_cache_uploads SET state = 'committed' WHERE upload_id = $1",
             vec![upload_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         tx.execute_raw(statement(
             "DELETE FROM scope_cache_deletion_queue
              WHERE repository_id = $1 AND checksum_sha256 = $2",
@@ -461,9 +423,8 @@ impl CacheStore {
                 upload.checksum_sha256.clone().into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        .await?;
+        tx.commit().await?;
         Ok(CacheCommitResult::Committed {
             object,
             expires_at_unix: reference.expires_at_unix(),
@@ -488,7 +449,7 @@ struct StoredReferenceRow {
 }
 
 fn decode_reference(row: &QueryResult) -> Result<ReferenceRow, PostgresError> {
-    let row = StoredReferenceRow::from_query_result(row, "").map_err(PostgresError::internal)?;
+    let row = StoredReferenceRow::from_query_result(row, "")?;
     Ok(ReferenceRow {
         checksum_sha256: row.checksum_sha256,
         compatibility_group_digest: row.compatibility_group_digest,
@@ -508,8 +469,7 @@ async fn lock_repository(
         "SELECT pg_advisory_xact_lock(hashtextextended('scope:cache:' || $1, 0))",
         vec![repository_id.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -525,8 +485,7 @@ async fn current_reference(
          WHERE repository_id = $1 AND identity_digest = $2 FOR UPDATE",
         vec![repository_id.into(), identity_digest.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .map(|row| decode_reference(&row))
     .transpose()
 }
@@ -543,8 +502,7 @@ async fn stored_object<C: ConnectionTrait>(
          WHERE repository_id = $1 AND checksum_sha256 = $2",
         vec![repository_id.into(), checksum_sha256.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .map(|row| decode_object(&row))
     .transpose()
 }
@@ -560,8 +518,7 @@ async fn deletion_is_claimed(
              WHERE repository_id = $1 AND checksum_sha256 = $2 FOR UPDATE",
             vec![repository_id.into(), checksum_sha256.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     row.map(|row| {
         row.try_get::<i32>("", "attempts")
             .map(|attempts| attempts > 0)
@@ -596,13 +553,33 @@ async fn insert_reference(
             expires.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
 fn cache_object_key(repository_id: &str, checksum_sha256: &str) -> String {
     format!("repos/{repository_id}/objects/sha256/{checksum_sha256}")
+}
+
+async fn live_upload(
+    conn: &impl ConnectionTrait,
+    upload_id: &str,
+    locking: &str,
+) -> Result<CacheUploadRecord, PostgresError> {
+    let row = conn
+        .query_one_raw(statement(
+            &format!(
+                "SELECT upload_id, repository_id, identity_digest, compatibility_group_digest,
+                        checksum_sha256, storage_backend, object_key, size_bytes,
+                        state, created_at_unix, expires_at_unix
+                 FROM scope_cache_uploads
+                 WHERE upload_id = $1 AND state IN ('active', 'committed') {locking}"
+            ),
+            vec![upload_id.into()],
+        ))
+        .await?
+        .ok_or_else(|| PostgresError::not_found("cache upload lease not found"))?;
+    decode_upload(&row)
 }
 
 fn statement(sql: &str, values: Vec<sea_orm::Value>) -> Statement {
@@ -635,7 +612,7 @@ struct UploadRow {
 }
 
 fn decode_object(row: &QueryResult) -> Result<CacheObjectRecord, PostgresError> {
-    let row = ObjectRow::from_query_result(row, "").map_err(PostgresError::internal)?;
+    let row = ObjectRow::from_query_result(row, "")?;
     Ok(CacheObjectRecord {
         repository_id: row.repository_id,
         checksum_sha256: row.checksum_sha256,
@@ -647,7 +624,7 @@ fn decode_object(row: &QueryResult) -> Result<CacheObjectRecord, PostgresError> 
 }
 
 fn decode_upload(row: &QueryResult) -> Result<CacheUploadRecord, PostgresError> {
-    let row = UploadRow::from_query_result(row, "").map_err(PostgresError::internal)?;
+    let row = UploadRow::from_query_result(row, "")?;
     Ok(CacheUploadRecord {
         upload_id: row.upload_id,
         repository_id: row.repository_id,

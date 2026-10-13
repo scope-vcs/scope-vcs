@@ -35,10 +35,7 @@ fn adopted_branch_compares_with_scope_request_despite_external_upstream() {
         ["branch", "--set-upstream-to=origin/main", "work"],
     );
     fs::write(dir.path().join("fix.txt"), "first\n").unwrap();
-    run_git(dir.path(), ["add", "fix.txt"]);
-    commit_all(dir.path(), "First request commit");
-
-    let head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+    let head = commit_all(dir.path(), "First request commit");
     let mut started = request();
     started["main_ancestor_oid"] = base.clone().into();
     started["head_oid"] = base.clone().into();
@@ -128,7 +125,6 @@ fn adopted_branch_compares_with_scope_request_despite_external_upstream() {
     );
 
     fs::write(dir.path().join("fix.txt"), "second\n").unwrap();
-    run_git(dir.path(), ["add", "fix.txt"]);
     commit_all(dir.path(), "Second request commit");
     let local = status();
     assert_eq!(
@@ -226,7 +222,6 @@ fn request_push_replaces_amended_history_unless_someone_else_pushed() {
 
     run_git(dir.path(), ["switch", "--quiet", "-c", "fix-one"]);
     fs::write(dir.path().join("fix.txt"), "first\n").unwrap();
-    run_git(dir.path(), ["add", "fix.txt"]);
     commit_all(dir.path(), "Fix one");
     assert_eq!(success(push())["command"], "request.push");
     assert_eq!(
@@ -266,7 +261,6 @@ fn request_push_replaces_amended_history_unless_someone_else_pushed() {
         ],
     );
     fs::write(other.path().join("other.txt"), "someone else\n").unwrap();
-    run_git(other.path(), ["add", "other.txt"]);
     commit_all(other.path(), "Someone else's change");
     run_git(other.path(), ["push", "--quiet", "origin", "fix-one"]);
     let someone_else = git_stdout(other.path(), ["rev-parse", "HEAD"]);
@@ -310,7 +304,6 @@ fn request_push_replaces_amended_history_unless_someone_else_pushed() {
 
     run_git(dir.path(), ["reset", "--quiet", "--hard", &someone_else]);
     fs::write(dir.path().join("fix.txt"), "rebased\n").unwrap();
-    run_git(dir.path(), ["add", "fix.txt"]);
     commit_all(dir.path(), "Fix one on top");
     run_git(
         dir.path(),
@@ -362,7 +355,6 @@ fn request_push_without_a_seen_head_only_builds_on_the_current_head() {
         ],
     );
     fs::write(other.path().join("other.txt"), "someone else\n").unwrap();
-    run_git(other.path(), ["add", "other.txt"]);
     commit_all(other.path(), "Someone else's change");
     run_git(other.path(), ["push", "--quiet", "origin", "fix-one"]);
     let someone_else = git_stdout(other.path(), ["rev-parse", "HEAD"]);
@@ -377,7 +369,6 @@ fn request_push_without_a_seen_head_only_builds_on_the_current_head() {
     let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
     run_git(dir.path(), ["switch", "--quiet", "-c", "fix-one"]);
     fs::write(dir.path().join("fix.txt"), "mine\n").unwrap();
-    run_git(dir.path(), ["add", "fix.txt"]);
     commit_all(dir.path(), "My change");
 
     let output = transport

@@ -17,9 +17,7 @@ project_id="$(jq -er '.railway.projectId' "$manifest_path")"
 production_environment_id="$(jq -er '.environments.production.environmentId' "$manifest_path")"
 staging_environment_id="$(jq -er '.environments.staging.environmentId' "$manifest_path")"
 staging_api_replicas="$(jq -er '.environments.staging.apiReplicas' "$manifest_path")"
-staging_cache_url="https://$(jq -er '.environments.staging.cacheDomain' "$manifest_path")"
 staging_router_url="https://$(jq -er '.environments.staging.routerDomain' "$manifest_path")"
-cache_service="$(jq -er '.services.cache.id' "$manifest_path")"
 worker_service="$(jq -er '.services["run-worker"].id' "$manifest_path")"
 api_service="$(jq -er '.services.api.id' "$manifest_path")"
 router_service="$(jq -er '.services["git-router"].id' "$manifest_path")"
@@ -30,9 +28,7 @@ if [[ "$staging_environment_id" == "$production_environment_id" ]]; then
   exit 1
 fi
 
-railway_read() {
-  node "$(dirname "${BASH_SOURCE[0]}")/railway-read.mjs" "$@"
-}
+source "$(dirname "${BASH_SOURCE[0]}")/railway-service-health.sh"
 
 railway_scope=(
   --project "$project_id"
@@ -52,11 +48,6 @@ railway variable set "${railway_scope[@]}" --service "$router_service" --skip-de
   "SCOPE_REPO_ROUTER_READ_REPLICAS=$staging_api_replicas" >/dev/null
 
 api_variables="$(railway_read variable list "${railway_scope[@]}" --service "$api_service" --json)"
-if ! jq -e --arg expected "$staging_cache_url" '.SCOPE_CACHE_URL == $expected' \
-  <<< "$api_variables" >/dev/null; then
-  echo "Staging API SCOPE_CACHE_URL does not match the reviewed staging cache domain." >&2
-  exit 1
-fi
 if ! jq -e --arg expected "$staging_router_url" '.SCOPE_GIT_PUBLIC_URL == $expected' \
   <<< "$api_variables" >/dev/null; then
   echo "Staging API SCOPE_GIT_PUBLIC_URL does not match the reviewed staging router domain." >&2
@@ -75,33 +66,15 @@ fi
 
 export RAILWAY_PROJECT_ID="$project_id"
 export SCOPE_RAILWAY_ENVIRONMENT_ID="$staging_environment_id"
-export RAILWAY_DEPLOY_MESSAGE="Staging $SCOPE_DEPLOYMENT_SOURCE_SHA"
 
-assert_writer_state() {
-  local expected_running="$1"
-  local current_services
-  current_services="$(railway_read service list "${railway_scope[@]}" --json)"
-  SERVICES_JSON="$current_services" \
-    API_SERVICE="$api_service" \
-    CACHE_SERVICE="$cache_service" \
-    WORKER_SERVICE="$worker_service" \
-    MEDIA_SERVICE="$media_service" \
-    MEDIA_WORKER_SERVICE="$media_worker_service" \
-    EXPECTED_RUNNING="$expected_running" \
-    node -e '
-const services = JSON.parse(process.env.SERVICES_JSON || "[]");
-const expected = Number(process.env.EXPECTED_RUNNING);
-for (const id of [process.env.API_SERVICE, process.env.CACHE_SERVICE, process.env.WORKER_SERVICE,
-  process.env.MEDIA_SERVICE, process.env.MEDIA_WORKER_SERVICE]) {
-  const service = services.find((candidate) => candidate.id === id);
-  if (!service) process.exit(1);
-  const replicas = service.replicas || {};
-  if (expected === 0 && (replicas.running || 0) === 0 && (replicas.crashed || 0) === 0) continue;
-  if (expected === 1 && service.status === "SUCCESS" && (replicas.configured || 0) >= 1 &&
-      (replicas.running || 0) >= 1 && (replicas.crashed || 0) === 0) continue;
-  process.exit(1);
-}
-'
+assert_writers_stopped() {
+  railway_read service list "${railway_scope[@]}" --json | jq -e \
+    --arg api "$api_service" --arg worker "$worker_service" \
+    --arg media "$media_service" --arg media_worker "$media_worker_service" '
+      . as $services | all($api, $worker, $media, $media_worker;
+        . as $id | first($services[] | select(.id == $id)) // null
+        | . != null and (.replicas.running // 0) == 0 and (.replicas.crashed // 0) == 0)
+    ' >/dev/null
 }
 
 assert_staging_topology() {
@@ -115,18 +88,11 @@ assert_staging_topology() {
 }
 
 : "${SCOPE_PREPARED_RELEASE_PATH:?Prepared release manifest is required}"
-node --input-type=module - "$SCOPE_PREPARED_RELEASE_PATH" "$manifest_path" "$maintenance_binary" <<'NODE'
-import { readFileSync } from 'node:fs';
-import { validatePreparedRelease, validateMaintenanceArtifact } from './.github/scripts/railway-artifact.mjs';
-const [path, manifestPath, binary] = process.argv.slice(2);
-const prepared = JSON.parse(readFileSync(path));
-const manifest = JSON.parse(readFileSync(manifestPath));
-validatePreparedRelease(prepared, { sourceSha: process.env.SCOPE_DEPLOYMENT_SOURCE_SHA, services: manifest.services });
-if (prepared.components.api) validateMaintenanceArtifact(prepared, readFileSync(binary));
-NODE
+node .github/scripts/railway-artifact.mjs validate "$SCOPE_PREPARED_RELEASE_PATH" "$SCOPE_DEPLOYMENT_SOURCE_SHA" >/dev/null
 
 if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
-  assert_writer_state 0
+  node .github/scripts/railway-artifact.mjs verify-maintenance "$SCOPE_PREPARED_RELEASE_PATH" "$maintenance_binary" >/dev/null
+  assert_writers_stopped
   run_maintenance() {
     SCOPE_MAINTENANCE_BINARY="$maintenance_binary" \
       bash .github/scripts/railway-private-maintenance.sh "$staging_environment_id" "$1"
@@ -137,7 +103,6 @@ if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
     run_maintenance plan >/dev/null
     run_maintenance validate-workflow-catalogs
     run_maintenance apply
-    run_maintenance backfill-workflow-catalogs
   fi
   run_maintenance verify
 fi
@@ -161,16 +126,10 @@ activate_staging() {
       bash .github/scripts/deploy-railway.sh "$service"
       ;;
   esac
-  EVIDENCE_PATH="$SCOPE_DEPLOYMENT_EVIDENCE_PATH" \
-    COMPONENT="$component" \
-    SOURCE_SHA="$SCOPE_DEPLOYMENT_SOURCE_SHA" \
-    node -e '
-const { readFileSync } = require("node:fs");
-const records = readFileSync(process.env.EVIDENCE_PATH, "utf8").trim().split(/\r?\n/).map(JSON.parse);
-if (records.length !== 1 || records[0].component !== process.env.COMPONENT ||
-    records[0].sourceSha !== process.env.SOURCE_SHA ||
-    typeof records[0].evidenceId !== "string" || !records[0].evidenceId) process.exit(1);
-'
+  jq -se --arg component "$component" --arg sha "$SCOPE_DEPLOYMENT_SOURCE_SHA" '
+    length == 1 and .[0].component == $component and .[0].sourceSha == $sha
+    and (.[0].evidenceId | type == "string" and length > 0)
+  ' "$SCOPE_DEPLOYMENT_EVIDENCE_PATH" >/dev/null
 }
 
 activate_staging_pair() {
@@ -184,7 +143,7 @@ activate_staging_pair() {
   return "$failed"
 }
 
-activate_staging_pair cache media-api
+activate_staging media-api
 activate_staging_pair run-worker media-worker
 activate_staging api
 activate_staging git-router
@@ -192,7 +151,7 @@ activate_staging web
 assert_staging_topology
 node .github/scripts/railway-predecessor-teardown.mjs wait "$predecessor_teardown_dir"
 evidence_files=()
-for component in cache run-worker media-api media-worker api git-router web; do
+for component in run-worker media-api media-worker api git-router web; do
   [[ ! -f "$evidence_dir/$component.jsonl" ]] || evidence_files+=("$evidence_dir/$component.jsonl")
 done
 jq -s --slurpfile manifest "$manifest_path" --arg commit "$SCOPE_DEPLOYMENT_SOURCE_SHA" --arg environmentId "$staging_environment_id" \

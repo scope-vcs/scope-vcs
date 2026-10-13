@@ -49,12 +49,11 @@ impl RepositoryStore {
         }
         let git_head = entities::git_head::Entity::find_by_id(incarnation.repository_id())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::git_head::Model::try_into_domain)
             .transpose()?;
         let git_pack_spans = load_git_pack_spans(&tx, incarnation.repository_id()).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(RepositoryGitState {
             content_version: record.content_version,
             git_head,
@@ -77,12 +76,11 @@ impl RepositoryStore {
         };
         let git_head = entities::git_head::Entity::find_by_id(context.record.id.as_str())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::git_head::Model::try_into_domain)
             .transpose()?;
         let git_pack_spans = load_git_pack_spans(&tx, &context.record.id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(GitReadSource {
             context,
             public_files_visible,
@@ -104,7 +102,7 @@ impl RepositoryStore {
             .await?
             .remove(&repo_ids[0])
             .ok_or_else(|| PostgresError::internal_message("repository history missing"))?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(source)
     }
 
@@ -117,7 +115,7 @@ impl RepositoryStore {
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let record = load_record_at_version(&tx, incarnation, content_version).await?;
         let views = repository_views(&tx, &record.id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(views)
     }
 
@@ -133,7 +131,7 @@ impl RepositoryStore {
             let record = load_record_at_version(&tx, incarnation, content_version).await?;
             let read_model =
                 live_projection_read_model(&tx, &record.id, content_version, view).await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             if let Some(read_model) = read_model {
                 return Ok(read_model.head_oid);
             }
@@ -165,8 +163,7 @@ impl RepositoryStore {
                 .filter(live_file::Column::Path.is_in(paths.clone()))
                 .into_tuple::<String>()
                 .all(&tx)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
             {
                 history.live_paths.insert(scope_path(path)?);
             }
@@ -177,8 +174,7 @@ impl RepositoryStore {
                 .filter(file_change::Column::Path.is_in(paths.clone()))
                 .into_tuple::<(String, String)>()
                 .all(&tx)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
             {
                 history
                     .file_change_labels
@@ -195,8 +191,7 @@ impl RepositoryStore {
                 .filter(visibility_change::Column::Path.is_in(paths))
                 .into_tuple::<(String, String, String)>()
                 .all(&tx)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
             {
                 history.visibility_changes.push((
                     scope_path(path)?,
@@ -205,7 +200,7 @@ impl RepositoryStore {
                 ));
             }
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(history)
     }
 }

@@ -32,27 +32,24 @@ async fn revision_window_bounds_recent_rows_and_keeps_an_explicit_older_revision
         let new_head = format!("head_{number}");
         let mutation = store
             .requests()
-            .record_request_revision(
-                RecordRequestRevisionInput {
-                    new_base: None,
-                    new_base_stack_depth: None,
-                    request_id: "req_1".to_string(),
-                    actor_user_id: "user_public".to_string(),
-                    actor_can_edit: true,
-                    expected_old_head_oid: Some(old_head),
-                    new_head_oid: new_head.clone(),
-                    git_snapshot: source_blob(&new_head),
-                    git_facts: RequestRevisionGitFacts {
-                        contains_old_head: true,
-                        contained_main_oid: None,
-                        contained_main_descends_from_base: false,
-                    },
-                    event_id: format!("revision_event_{number}"),
-                    body: None,
-                    now_unix: 3 + number,
+            .record_request_revision(RecordRequestRevisionInput {
+                new_base: None,
+                new_base_stack_depth: None,
+                request_id: "req_1".to_string(),
+                actor_user_id: "user_public".to_string(),
+                actor_can_edit: true,
+                expected_old_head_oid: Some(old_head),
+                new_head_oid: new_head.clone(),
+                git_snapshot: source_blob(&new_head),
+                git_facts: RequestRevisionGitFacts {
+                    contains_old_head: true,
+                    contained_main_oid: None,
+                    contained_main_descends_from_base: false,
                 },
-                &super::super::generated_ids::test_generated_id,
-            )
+                event_id: format!("revision_event_{number}"),
+                body: None,
+                now_unix: 3 + number,
+            })
             .await
             .unwrap();
         old_head = new_head;
@@ -82,27 +79,24 @@ async fn rewritten_revision_moves_the_stored_request_base() {
 
     let mutation = store
         .requests()
-        .record_request_revision(
-            RecordRequestRevisionInput {
-                new_base: None,
-                new_base_stack_depth: None,
-                request_id: "req_1".to_string(),
-                actor_user_id: "user_public".to_string(),
-                actor_can_edit: true,
-                expected_old_head_oid: Some("head".to_string()),
-                new_head_oid: "rebased".to_string(),
-                git_snapshot: source_blob("rebased"),
-                git_facts: RequestRevisionGitFacts {
-                    contains_old_head: false,
-                    contained_main_oid: Some("newer-main".to_string()),
-                    contained_main_descends_from_base: true,
-                },
-                event_id: "event_rebased".to_string(),
-                body: None,
-                now_unix: 4,
+        .record_request_revision(RecordRequestRevisionInput {
+            new_base: None,
+            new_base_stack_depth: None,
+            request_id: "req_1".to_string(),
+            actor_user_id: "user_public".to_string(),
+            actor_can_edit: true,
+            expected_old_head_oid: Some("head".to_string()),
+            new_head_oid: "rebased".to_string(),
+            git_snapshot: source_blob("rebased"),
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: false,
+                contained_main_oid: Some("newer-main".to_string()),
+                contained_main_descends_from_base: true,
             },
-            &super::super::generated_ids::test_generated_id,
-        )
+            event_id: "event_rebased".to_string(),
+            body: None,
+            now_unix: 4,
+        })
         .await
         .unwrap();
 
@@ -272,7 +266,7 @@ async fn completed_private_discussion_transitions_persist_nothing() {
     let mut upload = public_upload_input();
     upload.actor_user_id = "user_owner".to_string();
     requests
-        .record_working_request_upload(upload, &super::super::generated_ids::test_generated_id)
+        .record_working_request_upload(upload)
         .await
         .unwrap();
     for id in [
@@ -518,27 +512,24 @@ async fn close_draft_request_deletes_request_and_events() {
     assert!(initial_references.contains(&snapshot_refs[0]));
     store
         .requests()
-        .record_request_revision(
-            RecordRequestRevisionInput {
-                new_base: None,
-                new_base_stack_depth: None,
-                request_id: "req_1".to_string(),
-                actor_user_id: "user_public".to_string(),
-                actor_can_edit: false,
-                expected_old_head_oid: Some("head".to_string()),
-                new_head_oid: "head-2".to_string(),
-                git_snapshot: source_blob("head-2"),
-                git_facts: RequestRevisionGitFacts {
-                    contains_old_head: true,
-                    contained_main_oid: None,
-                    contained_main_descends_from_base: false,
-                },
-                event_id: "event_revision".to_string(),
-                body: None,
-                now_unix: 4,
+        .record_request_revision(RecordRequestRevisionInput {
+            new_base: None,
+            new_base_stack_depth: None,
+            request_id: "req_1".to_string(),
+            actor_user_id: "user_public".to_string(),
+            actor_can_edit: false,
+            expected_old_head_oid: Some("head".to_string()),
+            new_head_oid: "head-2".to_string(),
+            git_snapshot: source_blob("head-2"),
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
             },
-            &super::super::generated_ids::test_generated_id,
-        )
+            event_id: "event_revision".to_string(),
+            body: None,
+            now_unix: 4,
+        })
         .await
         .unwrap();
     store
@@ -567,15 +558,12 @@ async fn close_draft_request_deletes_request_and_events() {
 
     let mutation = store
         .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: "req_1".to_string(),
-                actor_user_id: "user_public".to_string(),
-                event_id: "event_closed".to_string(),
-                now_unix: 6,
-            },
-            &super::super::generated_ids::test_generated_id,
-        )
+        .close_request(CloseRequestCommand {
+            request_id: "req_1".to_string(),
+            actor_user_id: "user_public".to_string(),
+            event_id: "event_closed".to_string(),
+            now_unix: 6,
+        })
         .await
         .unwrap();
 
@@ -610,7 +598,11 @@ async fn close_draft_request_deletes_request_and_events() {
     assert_eq!(ref_cleanup[0].head_oid, "head-2");
     assert_eq!(ref_cleanup[0].incarnation.repository_id(), "owner/repo");
     assert_eq!(ref_cleanup[0].incarnation.incarnation_id(), "repoi_test");
-    let (_, pending_blobs) = store.cleanup().pending_cleanup_queues().await.unwrap();
+    let pending_blobs = store
+        .cleanup()
+        .pending_source_blob_cleanups_for_tests()
+        .await
+        .unwrap();
     let pending_refs = pending_blobs
         .iter()
         .map(|blob| blob.content_ref.clone())
@@ -641,15 +633,12 @@ async fn maintainer_cannot_delete_another_authors_draft() {
 
     let error = store
         .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: "req_1".to_string(),
-                actor_user_id: "user_owner".to_string(),
-                event_id: "event_closed_by_maintainer".to_string(),
-                now_unix: 4,
-            },
-            &super::super::generated_ids::test_generated_id,
-        )
+        .close_request(CloseRequestCommand {
+            request_id: "req_1".to_string(),
+            actor_user_id: "user_owner".to_string(),
+            event_id: "event_closed_by_maintainer".to_string(),
+            now_unix: 4,
+        })
         .await
         .unwrap_err();
 
@@ -680,15 +669,12 @@ async fn close_open_request_persists_exact_closer() {
 
     let mutation = store
         .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: request.id.clone(),
-                actor_user_id: request.author_user_id.clone().unwrap(),
-                event_id: "event_closed".to_string(),
-                now_unix: 4,
-            },
-            &super::super::generated_ids::test_generated_id,
-        )
+        .close_request(CloseRequestCommand {
+            request_id: request.id.clone(),
+            actor_user_id: request.author_user_id.clone().unwrap(),
+            event_id: "event_closed".to_string(),
+            now_unix: 4,
+        })
         .await
         .unwrap();
 
@@ -753,10 +739,7 @@ pub(crate) async fn start_public_request(store: &MetadataStore) {
         .unwrap();
     store
         .requests()
-        .record_working_request_upload(
-            public_upload_input(),
-            &super::super::generated_ids::test_generated_id,
-        )
+        .record_working_request_upload(public_upload_input())
         .await
         .unwrap();
 }

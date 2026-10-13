@@ -28,7 +28,7 @@ impl AuthStore {
         command: StartDeviceLoginCommand,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "cli-auth", "start").await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         enforce_device_login_start_limits(&tx, now_unix).await?;
@@ -43,9 +43,8 @@ impl AuthStore {
         }
         .into_active_model()
         .insert(&tx)
-        .await
-        .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -56,16 +55,14 @@ impl AuthStore {
         user: &UserAccount,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let user_code_hash = user_code_hash.to_string();
         let user_id = user.id.clone();
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "cli-device-user-code", &user_code_hash).await?;
+        let tx = self.db.begin().await?;
+        acquire_aggregate_lock(&tx, "cli-device-user-code", user_code_hash).await?;
 
         let Some(login) = entities::cli_device_login::Entity::find()
             .filter(entities::cli_device_login::Column::UserCodeHash.eq(user_code_hash))
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Err(PostgresError::not_found("CLI login code not found"));
         };
@@ -95,9 +92,8 @@ impl AuthStore {
                 Expr::value(u64_to_i64(now_unix, "current time")?),
             )
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -108,14 +104,12 @@ impl AuthStore {
         session: NewCliSession,
         now_unix: u64,
     ) -> Result<DeviceLoginPoll, PostgresError> {
-        let device_code_hash = device_code_hash.to_string();
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "cli-device-code", &device_code_hash).await?;
+        let tx = self.db.begin().await?;
+        acquire_aggregate_lock(&tx, "cli-device-code", device_code_hash).await?;
 
         let Some(login) = entities::cli_device_login::Entity::find_by_id(device_code_hash)
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Err(PostgresError::not_found("CLI device login not found"));
         };
@@ -131,7 +125,7 @@ impl AuthStore {
                 Err(PostgresError::conflict("CLI device login expired"))
             }
             cli_auth_rules::DeviceLoginPollDecision::Pending { expires_at_unix } => {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 Ok(DeviceLoginPoll::Pending { expires_at_unix })
             }
             cli_auth_rules::DeviceLoginPollDecision::Complete { user_id } => {
@@ -147,9 +141,8 @@ impl AuthStore {
                         Expr::value(u64_to_i64(now_unix, "current time")?),
                     )
                     .exec(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?;
-                tx.commit().await.map_err(PostgresError::internal)?;
+                    .await?;
+                tx.commit().await?;
                 Ok(DeviceLoginPoll::Complete { identity })
             }
         }
@@ -161,12 +154,11 @@ impl AuthStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<UserAccount, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(session) = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::TokenHash.eq(token_hash))
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Err(PostgresError::unauthenticated("invalid CLI token"));
         };
@@ -185,7 +177,7 @@ impl AuthStore {
         };
         let user = load_user_by_id(&tx, &user_id).await?;
         record_cli_session_use(&tx, &session.id, now_unix).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(user)
     }
 
@@ -195,14 +187,12 @@ impl AuthStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let token_hash = token_hash.to_string();
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "cli-session-token", &token_hash).await?;
+        let tx = self.db.begin().await?;
+        acquire_aggregate_lock(&tx, "cli-session-token", token_hash).await?;
         let Some(session) = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::TokenHash.eq(token_hash))
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Err(PostgresError::unauthenticated("invalid CLI token"));
         };
@@ -222,9 +212,8 @@ impl AuthStore {
                 Expr::value(u64_to_i64(now_unix, "current time")?),
             )
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 }
@@ -237,23 +226,19 @@ where
     entities::cli_device_login::Entity::delete_many()
         .filter(entities::cli_device_login::Column::ExpiresAtUnix.lte(now_unix))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     entities::cli_browser_login::Entity::delete_many()
         .filter(entities::cli_browser_login::Column::ExpiresAtUnix.lte(now_unix))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     entities::cli_exchange_grant::Entity::delete_many()
         .filter(entities::cli_exchange_grant::Column::ExpiresAtUnix.lte(now_unix))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     entities::cli_session::Entity::delete_many()
         .filter(entities::cli_session::Column::ExpiresAtUnix.lte(now_unix))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -284,16 +269,12 @@ where
     E::Model: sea_orm::FromQueryResult + Send + Sync,
     C: sea_orm::ConnectionTrait,
 {
-    let pending_count = E::find()
-        .count(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+    let pending_count = E::find().count(conn).await?;
     let window_start = u64_to_i64(window_start_unix, "login rate-limit window start")?;
     let window_count = E::find()
         .filter(created_at.gte(window_start))
         .count(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok((pending_count, window_count))
 }
 
@@ -311,8 +292,7 @@ where
     entities::user::Entity::find()
         .filter(entities::user::Column::Id.is_in(user_ids))
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|row| {
             let user = row.try_into_domain()?;
@@ -327,8 +307,7 @@ where
 {
     entities::user::Entity::find_by_id(user_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::internal_message("signed-in user was not persisted"))?
         .try_into_domain()
 }

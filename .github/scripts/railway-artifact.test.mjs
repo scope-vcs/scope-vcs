@@ -139,7 +139,7 @@ test('maintenance binary is bound to the original prepared release', () => {
 
 
 test('checked-in Railway string durations become GraphQL integers', () => {
-  for (const [component, directory] of [['api', 'api'], ['run-worker', 'worker'], ['cache', 'cache-service'], ['git-router', 'repo-router'], ['media-api', 'media-service'], ['web', 'web']]) {
+  for (const [component, directory] of [['api', 'api'], ['run-worker', 'worker'], ['git-router', 'repo-router'], ['media-api', 'media-service'], ['web', 'web']]) {
     const actualConfig = JSON.parse(readFileSync(new URL(`../../${directory}/railway.json`, import.meta.url), 'utf8'));
     const input = artifactDeploymentInput(component, release().components.api, actualConfig);
     assert.equal(input.overlapSeconds, 30);
@@ -159,9 +159,9 @@ test('trusted staging registry configuration touches only fixed environment cred
     calls.push({ query, variables });
     return { data: { serviceInstanceUpdate: true } };
   });
-  assert.deepEqual(result, { configured: true, serviceCount: 7 });
-  assert.equal(calls.length, 7);
-  assert.deepEqual(calls.map(({ variables }) => variables.serviceId), [manifest.services.cache.id, manifest.services['run-worker'].id, manifest.services['git-router'].id, manifest.services['media-api'].id, manifest.services['media-worker'].id, manifest.services.api.id, manifest.services.web.id]);
+  assert.deepEqual(result, { configured: true, serviceCount: 6 });
+  assert.equal(calls.length, 6);
+  assert.deepEqual(calls.map(({ variables }) => variables.serviceId), [manifest.services['run-worker'].id, manifest.services['git-router'].id, manifest.services['media-api'].id, manifest.services['media-worker'].id, manifest.services.api.id, manifest.services.web.id]);
   for (const { query, variables } of calls) {
     assert.equal(variables.environmentId, manifest.environments.staging.environmentId);
     assert.deepEqual(variables.input, { registryCredentials: credentials });
@@ -238,14 +238,14 @@ test('registry configuration retries the same service credentials without deploy
     if (calls.length === 2) return { errors: [{ message: 'SECRET' }], data: { serviceInstanceUpdate: true } };
     return { data: { serviceInstanceUpdate: true } };
   });
-  assert.equal(calls.length, 9);
+  assert.equal(calls.length, 8);
   assert.deepEqual(calls[0], calls[1]);
   assert.deepEqual(calls[1], calls[2]);
   assert.ok(calls.every(({ query }) => !query.includes('Deploy')));
 });
 
 test('CLI images start the download service from the image root with its readiness check', () => {
-  const cliConfig = JSON.parse(readFileSync(new URL('../../cli/railway.json', import.meta.url), 'utf8'));
+  const cliConfig = JSON.parse(readFileSync(new URL('../../cli-downloads/railway.json', import.meta.url), 'utf8'));
   const input = artifactDeploymentInput('cli-downloads', release().components.api, cliConfig);
   assert.equal(input.startCommand, '/app/bin/scope-cli-service');
   assert.equal(input.rootDirectory, '/');

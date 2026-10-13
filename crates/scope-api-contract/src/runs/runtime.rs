@@ -1,11 +1,21 @@
 use crate::wire::wire_enum;
 use scope_domain::runs::{
     attempt::AttemptState as DomainAttemptState,
-    cache::observation::{
-        CacheColdReason as DomainCacheColdReason, CacheFinalState as DomainCacheFinalState,
-        CachePreparation as DomainCachePreparation,
+    cache::{
+        definition::{CacheKeyInputs, WorkflowCache as DomainWorkflowCache},
+        observation::{
+            CacheColdReason as DomainCacheColdReason, CacheFinalState as DomainCacheFinalState,
+            CachePreparation as DomainCachePreparation,
+        },
     },
     step::StepState as DomainStepState,
+    workflow::{
+        definition::{
+            ContainerSpec, WorkflowJob as DomainWorkflowJob, WorkflowJobId,
+            WorkflowStep as DomainWorkflowStep,
+        },
+        error::WorkflowError,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -134,12 +144,95 @@ pub struct WorkflowJob {
     pub steps: Vec<WorkflowStep>,
 }
 
+impl From<&DomainWorkflowJob> for WorkflowJob {
+    fn from(job: &DomainWorkflowJob) -> Self {
+        let inputs = |inputs: &CacheKeyInputs| WorkflowCacheKeyInputs {
+            files: inputs.files().to_vec(),
+            environment: inputs.environment().to_vec(),
+            source: inputs.includes_source(),
+        };
+        Self {
+            id: job.id().as_str().to_string(),
+            needs: job
+                .needs()
+                .iter()
+                .map(|id| id.as_str().to_string())
+                .collect(),
+            container: WorkflowContainer {
+                image: job.container().image().to_string(),
+            },
+            timeout_seconds: job.timeout_seconds(),
+            caches: job
+                .caches()
+                .iter()
+                .map(|cache| WorkflowCache {
+                    name: cache.as_str().to_string(),
+                    path: cache.mount_path().to_string(),
+                    format: cache.format().to_string(),
+                    compatibility: inputs(cache.compatibility_inputs()),
+                    exact: inputs(cache.exact_inputs()),
+                })
+                .collect(),
+            environment: job.environment().clone(),
+            steps: job
+                .steps()
+                .iter()
+                .map(|step| WorkflowStep {
+                    name: step.name().to_string(),
+                    run: step.run().to_string(),
+                })
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<&WorkflowJob> for DomainWorkflowJob {
+    type Error = WorkflowError;
+
+    fn try_from(job: &WorkflowJob) -> Result<Self, WorkflowError> {
+        let inputs = |inputs: &WorkflowCacheKeyInputs| {
+            CacheKeyInputs::new(
+                inputs.files.clone(),
+                inputs.environment.clone(),
+                inputs.source,
+            )
+        };
+        let caches = job
+            .caches
+            .iter()
+            .map(|cache| {
+                DomainWorkflowCache::new(
+                    cache.name.clone(),
+                    cache.path.clone(),
+                    cache.format.clone(),
+                    inputs(&cache.compatibility)?,
+                    inputs(&cache.exact)?,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        DomainWorkflowJob::new(
+            WorkflowJobId::parse(job.id.clone())?,
+            job.needs
+                .iter()
+                .cloned()
+                .map(WorkflowJobId::parse)
+                .collect::<Result<Vec<_>, _>>()?,
+            ContainerSpec::new(job.container.image.clone())?,
+            job.timeout_seconds,
+            caches,
+            job.environment.clone(),
+            job.steps
+                .iter()
+                .map(|step| DomainWorkflowStep::new(step.name.clone(), step.run.clone()))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ClaimRuntimeResponse {
     pub attempt_token: String,
     pub lease_expires_at_unix: u64,
-    pub cache_endpoint: String,
-    pub cache_grant: String,
     pub job: RunJobResponse,
 }
 
@@ -163,12 +256,6 @@ pub struct AttemptStatusResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AttemptHeartbeatResponse {
-    pub status: AttemptStatusResponse,
-    pub cache_grant: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AttemptRecoveryStatusResponse {
     pub next_log_sequence: u64,
     pub steps: Vec<AttemptStepStatusResponse>,
@@ -181,23 +268,6 @@ pub struct AttemptStepStatusResponse {
     pub started_at_unix: Option<u64>,
     pub completed_at_unix: Option<u64>,
     pub exit_code: Option<i32>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AttemptHeartbeatRequest {
-    pub cache_keys: Vec<AttemptCacheKeyMaterial>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AttemptCacheKeyMaterial {
-    pub cache_name: String,
-    pub compatibility_inputs_digest: String,
-    pub exact_inputs_digest: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AttemptCacheFinalizationRequest {
-    pub outcome: AttemptCacheFinalizationOutcome,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -231,13 +301,6 @@ pub struct AttemptCacheFinalizationReport {
     pub identity_digest: String,
     pub final_state: CacheFinalState,
     pub finalize_ms: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum AttemptCacheFinalizationOutcome {
-    Succeeded,
-    Failed,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -358,31 +421,19 @@ mod tests {
         });
         let job: WorkflowJob = serde_json::from_value(json.clone()).unwrap();
         assert_eq!(serde_json::to_value(&job).unwrap(), json);
+        let domain = DomainWorkflowJob::try_from(&job).unwrap();
+        assert_eq!(serde_json::to_value(&domain).unwrap(), json);
+        assert_eq!(WorkflowJob::from(&domain), job);
+        let invalid = WorkflowJob {
+            id: "not valid".to_string(),
+            ..job.clone()
+        };
+        assert!(DomainWorkflowJob::try_from(&invalid).is_err());
         assert_eq!(
             serde_json::to_string(&job).unwrap(),
             format!(
                 "{{\"id\":\"checks\",\"needs\":[\"build\"],\"container\":{{\"image\":\"{image}\"}},\"timeout_seconds\":1200,\"caches\":[{{\"name\":\"cargo\",\"path\":\"/scope/cache/cargo\",\"format\":\"tar-zstd-v1\",\"compatibility\":{{\"files\":[\"Cargo.lock\"],\"environment\":[],\"source\":false}},\"exact\":{{\"files\":[\"Cargo.lock\"],\"environment\":[\"RUSTFLAGS\"],\"source\":true}}}}],\"environment\":{{\"RUSTFLAGS\":\"-Dwarnings\"}},\"steps\":[{{\"name\":\"Test\",\"run\":\"cargo test\"}}]}}"
             )
-        );
-    }
-
-    #[test]
-    fn cache_finalization_is_typed() {
-        let succeeded = AttemptCacheFinalizationRequest {
-            outcome: AttemptCacheFinalizationOutcome::Succeeded,
-        };
-        let failed = AttemptCacheFinalizationRequest {
-            outcome: AttemptCacheFinalizationOutcome::Failed,
-        };
-        assert_eq!(
-            serde_json::to_value(&succeeded).unwrap()["outcome"]["kind"],
-            "succeeded"
-        );
-        let json = serde_json::to_value(&failed).unwrap();
-        assert_eq!(json["outcome"]["kind"], "failed");
-        assert_eq!(
-            serde_json::from_value::<AttemptCacheFinalizationRequest>(json).unwrap(),
-            failed
         );
     }
 }

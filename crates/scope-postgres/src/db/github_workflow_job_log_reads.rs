@@ -1,9 +1,10 @@
 use super::{
     RepositoryStore,
+    github_read_queue::GitHubReadQueue,
     integer_columns::{i32_to_u32, i64_to_u64, u32_to_i32, u64_to_i64},
 };
 use crate::error::PostgresError;
-use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Value};
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubJobLogReadJob {
@@ -22,6 +23,15 @@ struct LogReadRow {
     github_job_id: i64,
     attempts: i32,
 }
+
+const LOG_READS: GitHubReadQueue = GitHubReadQueue {
+    table: "scope_github_workflow_job_log_reads",
+    key: &["github_job_id"],
+    joined: ", scope_github_workflow_jobs job",
+    joined_on: " AND job.github_job_id = read.github_job_id",
+    returning: "job.repo_id, job.github_repository_id, job.github_run_id, read.github_job_id, read.attempts",
+    label: "GitHub job log read",
+};
 
 impl RepositoryStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "queue_github_job_log_read"))]
@@ -44,8 +54,7 @@ impl RepositoryStore {
                     u64_to_i64(now_unix, "GitHub job log read time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -56,41 +65,23 @@ impl RepositoryStore {
         retry_at_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubJobLogReadJob>, PostgresError> {
-        LogReadRow::find_by_statement(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "UPDATE scope_github_workflow_job_log_reads read
-                SET attempts = read.attempts + 1, next_attempt_at_unix = $2
-               FROM (SELECT github_job_id
-                       FROM scope_github_workflow_job_log_reads
-                      WHERE next_attempt_at_unix <= $1
-                      ORDER BY next_attempt_at_unix
-                      LIMIT $3
-                      FOR UPDATE SKIP LOCKED) due,
-                    scope_github_workflow_jobs job
-              WHERE read.github_job_id = due.github_job_id
-                AND job.github_job_id = read.github_job_id
-          RETURNING job.repo_id, job.github_repository_id, job.github_run_id,
-                    read.github_job_id, read.attempts",
-            [
-                u64_to_i64(now_unix, "GitHub job log read time")?.into(),
-                u64_to_i64(retry_at_unix, "GitHub job log read time")?.into(),
-                u64_to_i64(limit, "GitHub job log read batch size")?.into(),
-            ],
-        ))
-        .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(|row| {
-            Ok(GitHubJobLogReadJob {
-                repo_id: row.repo_id,
-                github_repository_id: i64_to_u64(row.github_repository_id, "GitHub repository id")?,
-                github_run_id: i64_to_u64(row.github_run_id, "GitHub workflow run id")?,
-                github_job_id: i64_to_u64(row.github_job_id, "GitHub job id")?,
-                attempts: i32_to_u32(row.attempts, "GitHub job log read attempts")?,
+        LOG_READS
+            .claim_due::<LogReadRow>(self.db.as_ref(), now_unix, retry_at_unix, limit)
+            .await?
+            .into_iter()
+            .map(|row| {
+                Ok(GitHubJobLogReadJob {
+                    repo_id: row.repo_id,
+                    github_repository_id: i64_to_u64(
+                        row.github_repository_id,
+                        "GitHub repository id",
+                    )?,
+                    github_run_id: i64_to_u64(row.github_run_id, "GitHub workflow run id")?,
+                    github_job_id: i64_to_u64(row.github_job_id, "GitHub job id")?,
+                    attempts: i32_to_u32(row.attempts, "GitHub job log read attempts")?,
+                })
             })
-        })
-        .collect()
+            .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_job_log_read"))]
@@ -99,33 +90,17 @@ impl RepositoryStore {
         read: &GitHubJobLogReadJob,
         retry_at_unix: Option<u64>,
     ) -> Result<(), PostgresError> {
-        let claim: Vec<Value> = vec![
-            u64_to_i64(read.github_job_id, "GitHub job id")?.into(),
-            u32_to_i32(read.attempts, "GitHub job log read attempts")?.into(),
-        ];
-        let statement = match retry_at_unix {
-            None => Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "DELETE FROM scope_github_workflow_job_log_reads
-                  WHERE github_job_id = $1 AND attempts = $2",
-                claim,
-            ),
-            Some(retry_at) => {
-                let mut values = claim;
-                values.push(u64_to_i64(retry_at, "GitHub job log read time")?.into());
-                Statement::from_sql_and_values(
-                    DatabaseBackend::Postgres,
-                    "UPDATE scope_github_workflow_job_log_reads SET next_attempt_at_unix = $3
-                      WHERE github_job_id = $1 AND attempts = $2",
-                    values,
-                )
-            }
-        };
-        self.db
-            .execute_raw(statement)
+        LOG_READS
+            .finish(
+                self.db.as_ref(),
+                &["attempts"],
+                vec![
+                    u64_to_i64(read.github_job_id, "GitHub job id")?.into(),
+                    u32_to_i32(read.attempts, "GitHub job log read attempts")?.into(),
+                ],
+                retry_at_unix,
+            )
             .await
-            .map_err(PostgresError::internal)?;
-        Ok(())
     }
 }
 

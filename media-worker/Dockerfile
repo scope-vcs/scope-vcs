@@ -46,7 +46,7 @@ ENV SCOPE_MEDIA_HEIF_CONVERT=/opt/libheif/bin/heif-convert \
 WORKDIR /scope
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY api ./api
-COPY cache-service ./cache-service
+COPY cli-downloads ./cli-downloads
 COPY crates ./crates
 COPY media-service ./media-service
 COPY media-worker/Cargo.toml ./media-worker/Cargo.toml

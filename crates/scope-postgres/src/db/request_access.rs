@@ -63,8 +63,7 @@ where
 {
     if entities::user::Entity::find_by_id(user_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .is_some()
     {
         Ok(())

@@ -12,7 +12,7 @@ import {
   RUN_ROW_DURATION_CLASS,
   RUN_ROW_PRIMARY_CLASS,
   RUN_ROW_TIMESTAMP_CLASS,
-} from './run-row-layout'
+} from './run-layout'
 
 export function RunRow({
   params,

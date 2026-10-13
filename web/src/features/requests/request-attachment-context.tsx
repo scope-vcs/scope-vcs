@@ -19,8 +19,6 @@ import type {
   AttachmentUploadParams,
 } from './request-attachment-upload'
 import { activateRequestAttachmentDraftScope } from './request-attachment-drafts'
-import { activateRequestMermaidScope } from './request-mermaid-resource'
-import { activateRequestAttachmentMediaScope } from './request-attachment-media-resource'
 
 export type RequestAttachmentActions = AttachmentUploadActions & {
   grant: (input: AttachmentUploadParams & {
@@ -74,8 +72,6 @@ export function RequestAttachmentProvider({
   const identity = requestAttachmentResourceIdentity(accessScope, requestId)
   useEffect(() => {
     activateRequestAttachmentDraftScope({ accessScope, repoId: live.repo.id, viewerId })
-    activateRequestAttachmentMediaScope(accessScope)
-    activateRequestMermaidScope(accessScope)
     activateRequestAttachmentResourceScope(accessScope)
   }, [accessScope, live.repo.id, viewerId])
   const params = useMemo(() => ({

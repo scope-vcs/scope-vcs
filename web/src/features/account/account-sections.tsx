@@ -1,6 +1,7 @@
 import { SectionRow, SectionRows } from '@/components/section-rows'
 import { Button } from '@/components/ui/button'
-import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { KeyRound, Monitor, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 

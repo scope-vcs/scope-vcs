@@ -1,20 +1,19 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { chromium } from 'playwright'
-import { createServer } from 'vite'
-import tailwindcss from '@tailwindcss/vite'
+import { fixtureClerk, fixturePath, openFixture } from './support/fixture-server.mjs'
 
 test('seeded native run navigation makes one read per resource on cold load and reopen', async (t) => {
-  const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-native-runs-'))
-  t.after(() => rm(cacheDir, { recursive: true, force: true }))
-  const server = await createServer({
-    cacheDir,
-    configFile: false, root: fileURLToPath(new URL('./fixtures/native-runs', import.meta.url)),
-    plugins: [tailwindcss(), {
+  const { base, browser, errors, page } = await openFixture(t, 'native-runs', {
+    ssr: true,
+    timeout: 30_000,
+    tailwind: true,
+    aliases: [
+      fixtureClerk,
+      { find: '@/routes/-run-history-actions', replacement: fixturePath('native-runs', 'actions.ts') },
+      { find: '@/routes/-repo-settings-actions', replacement: fixturePath('native-runs', 'actions.ts') },
+    ],
+    plugins: [{
       name: 'native-run-hydration-fixture',
       configureServer(server) {
         server.middlewares.use(async (request, response, next) => {
@@ -22,7 +21,7 @@ test('seeded native run navigation makes one read per resource on cold load and 
           try {
             const { renderFixture } = await server.ssrLoadModule('/server.tsx')
             const { markup, handoff } = await renderFixture(request.url)
-            const template = await readFile(new URL('./fixtures/native-runs/index.html', import.meta.url), 'utf8')
+            const template = await readFile(fixturePath('shared', 'index.html'), 'utf8')
             const payload = JSON.stringify(handoff).replaceAll('<', '\\u003c')
             const html = template.replace('<div id="root"></div>',
               `<div id="root">${markup}</div><script>window.__nativeRunHandoff=${payload}</script>`)
@@ -31,25 +30,13 @@ test('seeded native run navigation makes one read per resource on cold load and 
           } catch (error) { next(error) }
         })
       },
-    }], server: { host: '0.0.0.0', port: 0, fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } },
-    resolve: { dedupe: ['react', 'react-dom'], alias: [
-      { find: '@clerk/tanstack-react-start', replacement: fileURLToPath(new URL('./fixtures/request-workspace/clerk.tsx', import.meta.url)) },
-      { find: '@/routes/-run-history-actions', replacement: fileURLToPath(new URL('./fixtures/native-runs/actions.ts', import.meta.url)) },
-      { find: '@/routes/-repo-settings-actions', replacement: fileURLToPath(new URL('./fixtures/native-runs/actions.ts', import.meta.url)) },
-      { find: '@', replacement: fileURLToPath(new URL('../src', import.meta.url)) },
-    ] }, oxc: { jsx: { runtime: 'automatic' } },
+    }],
   })
-  t.after(() => server.close())
-  await server.listen()
-  const browser = await chromium.launch({ headless: true })
-  t.after(() => browser.close())
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-  const errors = []
   for (const [path, resource] of [['/owner/repo/runs', 'history'], ['/owner/repo/runs/run-1', 'detail']]) {
     const hydrated = await browser.newPage()
     hydrated.on('pageerror', (error) => errors.push(error.message))
     hydrated.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
-    const url = new URL(`${path}?hydrate=true`, server.resolvedUrls.local[0]).href
+    const url = new URL(`${path}?hydrate=true`, base).href
     const ssr = await hydrated.request.get(url)
     assert.match(await ssr.text(), /<h1[^>]*>/, 'the server must render run markup before hydration')
     await hydrated.goto(url)
@@ -61,8 +48,7 @@ test('seeded native run navigation makes one read per resource on cold load and 
       'hydration must retain the server resource without another metadata read')
     await hydrated.close()
   }
-  page.on('pageerror', (error) => errors.push(error.message))
-  await page.goto(new URL('/owner/repo/runs', server.resolvedUrls.local[0]).href)
+  await page.goto(new URL('/owner/repo/runs', base).href)
   await page.getByRole('heading', { name: 'Runs', exact: true }).waitFor()
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)))
   assert.equal(await page.evaluate(() => window.loads.history), 1, 'seeded cold history load must not read again on mount')
@@ -134,7 +120,7 @@ test('seeded native run navigation makes one read per resource on cold load and 
 
   const cold = await browser.newPage()
   cold.on('pageerror', (error) => errors.push(error.message))
-  await cold.goto(new URL('/owner/repo/runs?client=true', server.resolvedUrls.local[0]).href)
+  await cold.goto(new URL('/owner/repo/runs?client=true', base).href)
   await cold.getByRole('heading', { name: 'Runs', exact: true }).waitFor()
   assert.equal(await cold.evaluate(() => window.loads.history), 1)
   await cold.getByRole('link', { name: 'Detail', exact: true }).click()

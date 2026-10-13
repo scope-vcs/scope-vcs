@@ -236,7 +236,7 @@ export async function readDeploymentIds(release) {
     throw new Error("release deployment evidence is not valid JSON");
   }
   if (!isObject(value)) throw new Error("release deployment evidence must be an object");
-  const allowed = new Set(["api", "cache", "cli-downloads", "media-api", "media-worker", "git-router", "web", "run-worker"]);
+  const allowed = new Set(["api", "cli-downloads", "media-api", "media-worker", "git-router", "web", "run-worker"]);
   const entries = Object.entries(value);
   if (entries.length === 0) throw new Error("release deployment evidence must not be empty");
   for (const [component, deploymentId] of entries) {

@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { ArrowDown } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { StepLogs } from './repository-run-detail-controller'
-import { RUN_LOG_TEXT_CLASS, runLogPreClass } from './run-log-layout'
+import { RUN_LOG_TEXT_CLASS, runLogPreClass } from './run-layout'
 import type { RepositoryRunStepResponse } from '@/api/types.generated'
 
 const FOLLOW_THRESHOLD_PX = 32

@@ -1,7 +1,8 @@
 import { FileWorkbench } from '@/components/file-workbench'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
-import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { useState } from 'react'
 import {
   FileNavigatorSkeleton,

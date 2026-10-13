@@ -21,10 +21,6 @@ impl LabelledTree {
         &self.0
     }
 
-    pub fn into_files(self) -> LabelledFiles {
-        self.0
-    }
-
     pub fn fold(&mut self, graph: &SourceGraph, sets: &[VisibilityChangeSet]) {
         for step in fold_steps(graph, sets) {
             match step {

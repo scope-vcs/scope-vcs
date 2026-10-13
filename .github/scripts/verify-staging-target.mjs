@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const requiredServices = ['cache', 'run-worker', 'git-router', 'media-api', 'media-worker', 'api', 'web']
+const requiredServices = ['run-worker', 'git-router', 'media-api', 'media-worker', 'api', 'web']
 
 export function verifyStagingTarget({ manifest, services, status }) {
   const railway = manifest?.railway
@@ -71,7 +71,7 @@ export function verifyStagingTarget({ manifest, services, status }) {
     )
   }
 
-  for (const key of ['apiDomain', 'cacheDomain', 'routerDomain', 'webDomain']) {
+  for (const key of ['apiDomain', 'routerDomain', 'webDomain']) {
     const domain = requiredString(manifest.environments.staging[key], `staging ${key}`)
     assert.match(
       domain,
@@ -105,7 +105,6 @@ export function verifyStagingTopology({ manifest, services }) {
 
   const expected = [
     ['api', manifest.services.api?.id, manifest.environments.staging.apiReplicas],
-    ['cache', manifest.services.cache?.id, 1],
     ['git-router', manifest.services['git-router']?.id, manifest.environments.staging.routerReplicas],
     ['run-worker', manifest.services['run-worker']?.id, 1],
     ['media-api', manifest.services['media-api']?.id, 1],

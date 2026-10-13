@@ -9,8 +9,11 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { CircleAlert, Download, Expand, LoaderCircle, RotateCcw, X } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { useRequestAttachments } from './request-attachment-context'
-import { requestAttachmentResource, requestAttachmentResourceIdentity } from './request-attachment-resource'
-import { requestAttachmentMediaGrantResource } from './request-attachment-media-resource'
+import {
+  requestAttachmentMediaGrantResource,
+  requestAttachmentResource,
+  requestAttachmentResourceIdentity,
+} from './request-attachment-resource'
 
 export function RequestAttachmentMedia({
   attachmentId,

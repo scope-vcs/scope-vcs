@@ -28,29 +28,55 @@ pub(super) async fn state_with_pushed_workflow_checkout(
     (state, source)
 }
 
+pub(super) fn head_bundle(checkout: &FsPath) -> (String, Vec<u8>) {
+    let bundle_path = checkout.join("source.bundle");
+    let path = bundle_path.to_str().unwrap();
+    run_git(
+        Some(checkout),
+        &["bundle", "create", path, "HEAD"],
+        "create run bundle",
+    )
+    .unwrap();
+    (git_head_oid(checkout), fs::read(bundle_path).unwrap())
+}
+
+pub(super) fn manual_run_upload(
+    git_oid: &str,
+    request_id: &str,
+    bundle: Vec<u8>,
+    auth: String,
+) -> Request<Body> {
+    let runs = scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME);
+    Request::builder()
+        .method("POST")
+        .uri(format!(
+            "{runs}?workflow=test&git_oid={git_oid}&request_id={request_id}"
+        ))
+        .header(AUTHORIZATION, auth)
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(Body::from(bundle))
+        .unwrap()
+}
+
+fn history_url(query: &str) -> String {
+    format!(
+        "{}?{query}",
+        scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME),
+    )
+}
+
 async fn workflow_list_response(state: AppState) -> Response {
-    api_request(
+    get(
         router(state),
-        "GET",
         &scope_api_contract::routes::repo_run_workflows(TEST_REPO_OWNER, TEST_REPO_NAME),
         Some(&bearer_header()),
-        None,
     )
     .await
 }
 
 #[tokio::test]
 async fn workflow_catalog_and_filtered_history_follow_current_main() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    let source = temp_git_repo("run-history-pages");
-    fs::create_dir_all(source.join(".scope/runs")).unwrap();
-    fs::write(source.join(".scope/runs/test.yml"), WORKFLOW).unwrap();
-    run_git(Some(&source), &["add", "."], "stage workflow source").unwrap();
-    commit_all(&source, "add workflow");
-    let bare = clone_test_repo(&source, "run-history-pages-bare", true);
-    apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::public())).await;
-    allow_native_runs(&state).await;
+    let (state, source) = state_with_pushed_workflow_checkout("run-history-pages", WORKFLOW).await;
 
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
@@ -73,12 +99,10 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
     }
     let app = router(state);
 
-    let workflows = api_request(
+    let workflows = get(
         app.clone(),
-        "GET",
         &scope_api_contract::routes::repo_run_workflows(TEST_REPO_OWNER, TEST_REPO_NAME),
         Some(&bearer_header()),
-        None,
     )
     .await;
     assert_eq!(workflows.status(), StatusCode::OK);
@@ -87,36 +111,14 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
     assert_eq!(workflows["workflows"][0]["name"], "Test");
     assert_eq!(workflows["workflows"][0]["job_count"], 1);
 
-    let git_oid = git_head_oid(&source);
-    let bundle_path = source.join("source.bundle");
-    run_git(
-        Some(&source),
-        &["bundle", "create", bundle_path.to_str().unwrap(), "HEAD"],
-        "create run history bundle",
-    )
-    .unwrap();
-    let bundle = fs::read(bundle_path).unwrap();
+    let (git_oid, bundle) = head_bundle(&source);
     let mut created_run_ids = Vec::new();
     for request_id in [
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     ] {
-        let created = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(format!(
-                        "{}?workflow=test&git_oid={git_oid}&request_id={request_id}",
-                        scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME)
-                    ))
-                    .header(AUTHORIZATION, bearer_header())
-                    .header(CONTENT_TYPE, "application/octet-stream")
-                    .body(Body::from(bundle.clone()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let upload = manual_run_upload(&git_oid, request_id, bundle.clone(), bearer_header());
+        let created = app.clone().oneshot(upload).await.unwrap();
         created_run_ids.push(
             expect_json(created, StatusCode::OK).await["id"]
                 .as_str()
@@ -125,15 +127,10 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
         );
     }
 
-    let first = api_request(
+    let first = get(
         app.clone(),
-        "GET",
-        &format!(
-            "{}?workflow=test&limit=1",
-            scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME)
-        ),
+        &history_url("workflow=test&limit=1"),
         Some(&bearer_header()),
-        None,
     )
     .await;
     assert_eq!(first.status(), StatusCode::OK);
@@ -142,15 +139,10 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
     let first_id = first["runs"][0]["id"].as_str().unwrap();
     assert_eq!(first_id, created_run_ids[1]);
     let cursor = first["next_cursor"].as_str().unwrap();
-    let second = api_request(
+    let second = get(
         app.clone(),
-        "GET",
-        &format!(
-            "{}?workflow=test&limit=1&after={cursor}",
-            scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME)
-        ),
+        &history_url(&format!("workflow=test&limit=1&after={cursor}")),
         Some(&bearer_header()),
-        None,
     )
     .await;
     assert_eq!(second.status(), StatusCode::OK);
@@ -160,15 +152,10 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
     assert_eq!(second["runs"][0]["id"], created_run_ids[0]);
     assert!(second["next_cursor"].is_null());
 
-    let wrong_filter = api_request(
+    let wrong_filter = get(
         app,
-        "GET",
-        &format!(
-            "{}?workflow=missing&after={cursor}",
-            scope_api_contract::routes::repo_runs(TEST_REPO_OWNER, TEST_REPO_NAME)
-        ),
+        &history_url(&format!("workflow=missing&after={cursor}")),
         Some(&bearer_header()),
-        None,
     )
     .await;
     assert_eq!(wrong_filter.status(), StatusCode::BAD_REQUEST);
@@ -179,8 +166,8 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
 }
 
 #[tokio::test]
-async fn workflow_catalog_backfill_is_idempotent() {
-    let state = state_with_pushed_workflow("workflow-catalog-backfill").await;
+async fn pushed_workflow_catalog_validates_and_survives_unrelated_change_versions() {
+    let state = state_with_pushed_workflow("workflow-catalog-change-version").await;
     assert_eq!(
         state.validate_repository_workflow_catalogs().await.unwrap(),
         1
@@ -191,31 +178,6 @@ async fn workflow_catalog_backfill_is_idempotent() {
         .mutate_repository_for_tests(TEST_REPO_ID, Repository::bump_change_version)
         .await
         .unwrap();
-    assert_eq!(
-        workflow_list_response(state.clone()).await.status(),
-        StatusCode::OK
-    );
-    state
-        .metadata
-        .repositories()
-        .delete_repository_workflow_catalog_for_tests(TEST_REPO_ID)
-        .await
-        .unwrap();
-    let cache_path = state
-        .repository_engine
-        .repository_path(&test_repo_incarnation());
-    if cache_path.exists() {
-        fs::remove_dir_all(cache_path).unwrap();
-    }
-
-    assert_eq!(
-        state.backfill_repository_workflow_catalogs().await.unwrap(),
-        1
-    );
-    assert_eq!(
-        state.backfill_repository_workflow_catalogs().await.unwrap(),
-        0
-    );
     assert_eq!(workflow_list_response(state).await.status(), StatusCode::OK);
 }
 
@@ -271,7 +233,7 @@ async fn missing_or_inconsistent_workflow_catalog_fails_closed() {
     wrong_source
         .metadata
         .repositories()
-        .corrupt_repository_workflow_catalog_source_for_tests(
+        .set_repository_workflow_catalog_source_for_tests(
             TEST_REPO_ID,
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         )

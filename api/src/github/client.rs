@@ -154,27 +154,52 @@ struct ErrorBody {
     message: String,
 }
 
-fn first_attempt() -> u32 {
+pub(super) fn first_attempt() -> u32 {
     1
+}
+
+pub(super) fn outcome(
+    status: Option<&str>,
+    conclusion: Option<&str>,
+) -> Option<(GitHubCheckStatus, Option<GitHubCheckConclusion>)> {
+    let status: GitHubCheckStatus = parse_enum(status?)?;
+    let conclusion = match conclusion {
+        Some(conclusion) => Some(parse_enum(conclusion)?),
+        None => None,
+    };
+    ((status == GitHubCheckStatus::Completed) == conclusion.is_some())
+        .then_some((status, conclusion))
+}
+
+pub(super) fn unreadable<T>(
+    kind: &str,
+    id: u64,
+    status: Option<&str>,
+    conclusion: Option<&str>,
+) -> Option<T> {
+    tracing::warn!(
+        id,
+        status,
+        conclusion,
+        "skipping a GitHub {kind} Scope cannot read"
+    );
+    None
 }
 
 impl WorkflowRun {
     fn into_domain(self) -> Option<GitHubWorkflowRun> {
-        let status: Option<GitHubCheckStatus> = self.status.as_deref().and_then(parse_enum);
-        let conclusion: Option<Option<GitHubCheckConclusion>> = match &self.conclusion {
-            Some(conclusion) => parse_enum(conclusion).map(Some),
-            None => Some(None),
+        let (Some((status, conclusion)), Some(updated_at_unix), true) = (
+            outcome(self.status.as_deref(), self.conclusion.as_deref()),
+            parse_time(&self.updated_at),
+            is_commit_oid(&self.head_sha),
+        ) else {
+            return unreadable(
+                "workflow run",
+                self.id,
+                self.status.as_deref(),
+                self.conclusion.as_deref(),
+            );
         };
-        let (Some(status), Some(conclusion), Some(updated_at_unix)) =
-            (status, conclusion, parse_time(&self.updated_at))
-        else {
-            return self.skip();
-        };
-        if (status == GitHubCheckStatus::Completed) != conclusion.is_some()
-            || !is_commit_oid(&self.head_sha)
-        {
-            return self.skip();
-        }
         Some(GitHubWorkflowRun {
             github_run_id: self.id,
             workflow_name: self
@@ -193,16 +218,6 @@ impl WorkflowRun {
             updated_at_unix,
         })
     }
-
-    fn skip(&self) -> Option<GitHubWorkflowRun> {
-        tracing::warn!(
-            workflow_run_id = self.id,
-            status = ?self.status,
-            conclusion = ?self.conclusion,
-            "skipping a GitHub workflow run Scope cannot read"
-        );
-        None
-    }
 }
 
 pub(super) fn parse_time(value: &str) -> Option<u64> {
@@ -213,17 +228,15 @@ pub(super) fn parse_time(value: &str) -> Option<u64> {
 
 impl CheckRun {
     fn into_domain(self, commit_oid: &str) -> Option<GitHubCheckRun> {
-        let status: Option<GitHubCheckStatus> = parse_enum(&self.status);
-        let conclusion: Option<Option<GitHubCheckConclusion>> = match &self.conclusion {
-            Some(conclusion) => parse_enum(conclusion).map(Some),
-            None => Some(None),
+        let Some((status, conclusion)) = outcome(Some(&self.status), self.conclusion.as_deref())
+        else {
+            return unreadable(
+                "check run",
+                self.id,
+                Some(&self.status),
+                self.conclusion.as_deref(),
+            );
         };
-        let (Some(status), Some(conclusion)) = (status, conclusion) else {
-            return self.skip();
-        };
-        if (status == GitHubCheckStatus::Completed) != conclusion.is_some() {
-            return self.skip();
-        }
         Some(GitHubCheckRun {
             commit_oid: commit_oid.to_string(),
             name: self.name,
@@ -233,16 +246,6 @@ impl CheckRun {
             details_url: self.details_url.or(self.html_url),
             check_suite_id: self.check_suite.map(|suite| suite.id),
         })
-    }
-
-    fn skip(&self) -> Option<GitHubCheckRun> {
-        tracing::warn!(
-            check_run_id = self.id,
-            status = self.status,
-            conclusion = ?self.conclusion,
-            "skipping a GitHub check run Scope cannot read"
-        );
-        None
     }
 }
 
@@ -339,12 +342,9 @@ impl GitHubApp {
         &self,
         installation_id: u64,
     ) -> Result<Vec<GitHubRepository>, ApiError> {
-        let Some(token) = self.installation_token(installation_id).await? else {
-            return Ok(Vec::new());
-        };
         Ok(self
-            .pages::<RepositoriesPage, _>(
-                &token,
+            .installation_pages::<RepositoriesPage, _>(
+                installation_id,
                 "/installation/repositories",
                 "/installation/repositories",
                 |page| page.repositories,
@@ -388,25 +388,19 @@ impl GitHubApp {
         full_name: &str,
         commit_oid: &str,
     ) -> Result<Option<Vec<GitHubCheckRun>>, ApiError> {
-        let Some(token) = self.installation_token(installation_id).await? else {
-            return Ok(None);
-        };
-        let Some(runs) = self
-            .pages::<CheckRunsPage, _>(
-                &token,
+        Ok(self
+            .installation_pages::<CheckRunsPage, _>(
+                installation_id,
                 &format!("/repos/{full_name}/commits/{commit_oid}/check-runs?filter=all"),
                 "/repos/{owner}/{repo}/commits/{commit_oid}/check-runs",
                 |page| page.check_runs,
             )
             .await?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(
-            runs.into_iter()
-                .filter_map(|run| run.into_domain(commit_oid))
-                .collect(),
-        ))
+            .map(|runs| {
+                runs.into_iter()
+                    .filter_map(|run| run.into_domain(commit_oid))
+                    .collect()
+            }))
     }
 
     pub(crate) async fn workflow_run(
@@ -415,20 +409,14 @@ impl GitHubApp {
         full_name: &str,
         run_id: u64,
     ) -> Result<Option<GitHubWorkflowRun>, ApiError> {
-        let Some(token) = self.installation_token(installation_id).await? else {
-            return Ok(None);
-        };
-        let request = self
-            .request(
-                Method::GET,
+        Ok(self
+            .installation_get::<WorkflowRun>(
+                installation_id,
                 &format!("/repos/{full_name}/actions/runs/{run_id}"),
+                "/repos/{owner}/{repo}/actions/runs/{run_id}",
             )
-            .bearer_auth(token);
-        Ok(
-            send::<WorkflowRun>(request, "/repos/{owner}/{repo}/actions/runs/{run_id}")
-                .await?
-                .and_then(WorkflowRun::into_domain),
-        )
+            .await?
+            .and_then(WorkflowRun::into_domain))
     }
 
     pub(crate) async fn branch_workflow_runs(
@@ -438,17 +426,14 @@ impl GitHubApp {
         branch: &str,
         commit_oid: &str,
     ) -> Result<Option<Vec<GitHubWorkflowRun>>, ApiError> {
-        let Some(token) = self.installation_token(installation_id).await? else {
-            return Ok(None);
-        };
         let query = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("branch", branch)
             .append_pair("head_sha", commit_oid)
             .finish();
         let path = format!("/repos/{full_name}/actions/runs?{query}");
         Ok(self
-            .pages::<WorkflowRunsPage, _>(
-                &token,
+            .installation_pages::<WorkflowRunsPage, _>(
+                installation_id,
                 &path,
                 "/repos/{owner}/{repo}/actions/runs",
                 |page| page.workflow_runs,
@@ -467,30 +452,21 @@ impl GitHubApp {
         full_name: &str,
         page: usize,
     ) -> Result<Option<WorkflowRunListPage>, ApiError> {
-        let Some(token) = self.installation_token(installation_id).await? else {
-            return Ok(None);
-        };
-        let request = self
-            .request(
-                Method::GET,
+        Ok(self
+            .installation_get::<WorkflowRunsPage>(
+                installation_id,
                 &format!("/repos/{full_name}/actions/runs?per_page={PAGE_SIZE}&page={page}"),
+                "/repos/{owner}/{repo}/actions/runs",
             )
-            .bearer_auth(token);
-        Ok(
-            send::<WorkflowRunsPage>(request, "/repos/{owner}/{repo}/actions/runs")
-                .await?
-                .map(|page| {
-                    let more = page.workflow_runs.len() == PAGE_SIZE;
-                    WorkflowRunListPage {
-                        runs: page
-                            .workflow_runs
-                            .into_iter()
-                            .filter_map(WorkflowRun::into_domain)
-                            .collect(),
-                        more,
-                    }
-                }),
-        )
+            .await?
+            .map(|page| WorkflowRunListPage {
+                more: page.workflow_runs.len() == PAGE_SIZE,
+                runs: page
+                    .workflow_runs
+                    .into_iter()
+                    .filter_map(WorkflowRun::into_domain)
+                    .collect(),
+            }))
     }
 
     pub(crate) async fn installation_token(
@@ -521,15 +497,12 @@ impl GitHubApp {
         else {
             return Ok(None);
         };
-        let expires_at_unix = OffsetDateTime::parse(&minted.expires_at, &Rfc3339)
-            .ok()
-            .and_then(|expires_at| u64::try_from(expires_at.unix_timestamp()).ok())
-            .ok_or_else(|| {
-                unavailable(format!(
-                    "GitHub sent an unreadable token expiry {}",
-                    minted.expires_at
-                ))
-            })?;
+        let expires_at_unix = parse_time(&minted.expires_at).ok_or_else(|| {
+            unavailable(format!(
+                "GitHub sent an unreadable token expiry {}",
+                minted.expires_at
+            ))
+        })?;
         self.installation_tokens
             .lock()
             .expect("installation token cache lock must not be poisoned")
@@ -557,7 +530,32 @@ impl GitHubApp {
         .map_err(ApiError::internal)
     }
 
-    pub(super) async fn pages<P: DeserializeOwned, T>(
+    pub(super) async fn installation_get<T: DeserializeOwned>(
+        &self,
+        installation_id: u64,
+        path: &str,
+        route: &'static str,
+    ) -> Result<Option<T>, ApiError> {
+        let Some(token) = self.installation_token(installation_id).await? else {
+            return Ok(None);
+        };
+        send(self.request(Method::GET, path).bearer_auth(token), route).await
+    }
+
+    pub(super) async fn installation_pages<P: DeserializeOwned, T>(
+        &self,
+        installation_id: u64,
+        path: &str,
+        route: &'static str,
+        items: impl Fn(P) -> Vec<T>,
+    ) -> Result<Option<Vec<T>>, ApiError> {
+        let Some(token) = self.installation_token(installation_id).await? else {
+            return Ok(None);
+        };
+        self.pages(&token, path, route, items).await
+    }
+
+    async fn pages<P: DeserializeOwned, T>(
         &self,
         token: &str,
         path: &str,

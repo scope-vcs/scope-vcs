@@ -5,11 +5,10 @@ import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const execFileAsync = promisify(execFile)
-const applicationPackages = new Set(['api', 'scope-cache-service', 'scope-repo-router', 'scope-runner-runtime', 'worker'])
+const applicationPackages = new Set(['api', 'scope-cli-downloads', 'scope-repo-router', 'scope-runner-runtime', 'worker'])
 const leafPackages = new Set(['scope-cache-domain', 'scope-domain', 'scope-git-process'])
 const contractDependencies = new Map([
   ['scope-api-contract', new Set(['scope-domain'])],
-  ['scope-cache-contract', new Set(['scope-cache-domain'])],
 ])
 const telemetryDependencies = /^(?:opentelemetry.*|tracing-opentelemetry|axum-tracing-opentelemetry)$/
 function workspacePackages(metadata) {

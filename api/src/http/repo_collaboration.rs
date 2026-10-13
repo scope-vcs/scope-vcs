@@ -81,7 +81,7 @@ pub(crate) async fn create_repository_invite(
         },
     )
     .await?;
-    state.invite_email_wakeup.notify_one();
+    state.wakeups.invite_emails.notify_one();
 
     Ok(Json(response))
 }
@@ -121,7 +121,7 @@ pub(crate) async fn create_repository_invite_email(
         },
     )
     .await?;
-    state.invite_email_wakeup.notify_one();
+    state.wakeups.invite_emails.notify_one();
 
     Ok(Json(response))
 }

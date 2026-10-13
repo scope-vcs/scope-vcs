@@ -12,7 +12,7 @@ use thiserror::Error;
 
 pub const MAX_REPOSITORY_WORKFLOW_FILES: usize = 64;
 pub const MAX_WORKFLOW_DEFINITION_BYTES: usize = 64 * 1024;
-pub const MAX_REPOSITORY_WORKFLOW_CONFIGURATION_ERROR_BYTES: usize = 4 * 1024;
+const MAX_REPOSITORY_WORKFLOW_CONFIGURATION_ERROR_BYTES: usize = 4 * 1024;
 
 #[derive(Debug, Error)]
 pub enum RepositoryWorkflowCatalogError {

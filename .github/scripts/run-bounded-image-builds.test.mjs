@@ -29,7 +29,7 @@ printf 'end %s\\n' "$1" >> "$BUILD_EVENTS"
 }
 
 test('runs image builds two at a time and waits for every selected component', () => {
-  const { result, lines } = run(['api', 'worker', 'cache', 'web']);
+  const { result, lines } = run(['api', 'worker', 'router', 'web']);
   assert.equal(result.status, 0, result.stderr);
   let active = 0;
   let peak = 0;
@@ -52,7 +52,7 @@ test('a failed build prevents later launches and drains active builds', () => {
 });
 
 test('retains exit status when both children finish before collection', () => {
-  const success = run(['api', 'worker', 'cache', 'web'], true);
+  const success = run(['api', 'worker', 'router', 'web'], true);
   assert.equal(success.result.status, 0, success.result.stderr);
   assert.equal(success.lines.filter(line => line.startsWith('end ')).length, 4);
   const failure = run(['slow', 'fastfail', 'never'], true);

@@ -1,11 +1,8 @@
 use super::{RunStore, entities};
 use crate::error::PostgresError;
-use scope_domain::runs::{
-    cache::observation::{
-        AttemptCacheObservation, AttemptCachePreparationTiming, AttemptCacheSetupObservation,
-        CacheFinalState, CachePreparation,
-    },
-    workflow::identity::WorkflowPath,
+use scope_domain::runs::cache::observation::{
+    AttemptCacheObservation, AttemptCachePreparationTiming, AttemptCacheSetupObservation,
+    CacheFinalState, CachePreparation,
 };
 use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QuerySelect, TransactionTrait};
 
@@ -41,7 +38,7 @@ impl RunStore {
         reports: Vec<AttemptCachePreparationCommand>,
         now_unix: u64,
     ) -> Result<Option<super::DispatchClaim>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let claim = authenticated_attempt(&tx, attempt_id, token_hash, now_unix).await?;
         let setup = AttemptCacheSetupObservation::new(attempt_id, authorization_ms, wall_ms)
             .map_err(PostgresError::from)?;
@@ -49,8 +46,7 @@ impl RunStore {
             entities::run_attempt_cache_setup::Entity::find_by_id(attempt_id.to_string())
                 .lock_exclusive()
                 .one(&tx)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
         let mut changed = if let Some(existing) = existing_setup {
             if existing.try_into_domain()? != setup {
                 return Err(PostgresError::conflict(
@@ -62,12 +58,10 @@ impl RunStore {
             entities::run_attempt_cache_setup::Model::from_domain(&setup)?
                 .into_active_model()
                 .insert(&tx)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
             true
         };
-        let workflow_path = WorkflowPath::parse(claim.run.workflow.path().as_str().to_string())
-            .map_err(PostgresError::invalid_input)?;
+        let workflow_path = claim.run.workflow.path().clone();
         let job_definition = claim
             .workflow_revision
             .definition()
@@ -111,8 +105,7 @@ impl RunStore {
             ))
             .lock_exclusive()
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
             if let Some(existing) = existing {
                 if !existing
                     .try_into_domain()?
@@ -127,11 +120,10 @@ impl RunStore {
             entities::run_attempt_cache::Model::from_domain(&observation)?
                 .into_active_model()
                 .insert(&tx)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
             changed = true;
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(changed.then_some(claim))
     }
 
@@ -143,7 +135,7 @@ impl RunStore {
         reports: Vec<AttemptCacheFinalizationCommand>,
         now_unix: u64,
     ) -> Result<Option<super::DispatchClaim>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let claim = authenticated_attempt(&tx, attempt_id, token_hash, now_unix).await?;
         let mut changed = false;
         for report in reports {
@@ -153,8 +145,7 @@ impl RunStore {
             ))
             .lock_exclusive()
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::conflict("cache preparation was not reported"))?;
             let mut observation = model.try_into_domain()?;
             if observation
@@ -167,12 +158,11 @@ impl RunStore {
                         .reset_all(),
                 )
                 .exec(&tx)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
                 changed = true;
             }
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(changed.then_some(claim))
     }
 }
@@ -183,19 +173,13 @@ async fn authenticated_attempt(
     token_hash: &str,
     now_unix: u64,
 ) -> Result<super::DispatchClaim, PostgresError> {
-    let (run, job, attempt, steps) =
+    let (run, job, attempt) =
         super::run_attempt_persistence::locked_attempt_context(tx, attempt_id).await?;
+    let steps = super::run_attempt_persistence::locked_attempt_steps(tx, attempt_id).await?;
     attempt
         .authenticate_cache_observation_report(&job, token_hash, now_unix)
         .map_err(PostgresError::from)?;
     let workflow_revision = super::runs::workflow_revision_for_run(tx, &run).await?;
-    let repository = super::run_attempt_persistence::run_repository(tx, &run).await?;
-    Ok(super::DispatchClaim {
-        repository,
-        run,
-        job,
-        attempt,
-        steps,
-        workflow_revision,
-    })
+    super::run_attempt_mutations::dispatch_claim(tx, run, job, attempt, steps, workflow_revision)
+        .await
 }

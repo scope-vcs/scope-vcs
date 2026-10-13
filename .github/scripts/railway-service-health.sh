@@ -2,6 +2,10 @@
 
 railway_service_health_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+railway_read() {
+  node "$railway_service_health_scripts/railway-read.mjs" "$@"
+}
+
 railway_config_path() {
   local component="$1" manifest path
   manifest="${SCOPE_DEPLOYMENT_MANIFEST:-$railway_service_health_scripts/../deployment-services.json}"
@@ -18,12 +22,7 @@ railway_config_path() {
 
 service_is_healthy() {
   local service="$1" expected_deployment_id="${2:-}" expected_config="${3:-}" services_json
-  services_json="$(
-    node "$railway_service_health_scripts/railway-read.mjs" status \
-      --project "$RAILWAY_PROJECT_ID" \
-      --environment "$SCOPE_RAILWAY_ENVIRONMENT_ID" \
-      --json
-  )"
+  services_json="$(railway_read status --project "$RAILWAY_PROJECT_ID" --environment "$SCOPE_RAILWAY_ENVIRONMENT_ID" --json)"
   SCOPE_RAILWAY_ENVIRONMENT_ID="$SCOPE_RAILWAY_ENVIRONMENT_ID" \
     SCOPE_EXPECTED_RAILWAY_CONFIG="$expected_config" \
     SCOPE_RAILWAY_SERVICES_JSON="$services_json" \

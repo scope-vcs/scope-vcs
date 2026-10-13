@@ -2,7 +2,7 @@ import { SIGN_IN_REQUIRED_HEADER } from '../api/sign-in-required'
 
 export const SESSION_READY_BOUND_MS = 10_000
 
-export type SessionReadiness = {
+type SessionReadiness = {
   ready: () => boolean
   whenReady: (boundMs: number) => Promise<void>
 }
