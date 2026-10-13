@@ -60,7 +60,7 @@ export function ApplicationTopbar({
         {items.length > 0 && (
           <nav
             aria-label="Primary"
-            className="scrollbar-none order-last -mx-5 flex h-11 w-[calc(100%+2.5rem)] items-center gap-5 overflow-x-auto border-t border-border px-5 text-[13px] font-medium md:order-none md:mx-0 md:ml-auto md:h-auto md:w-auto md:gap-1 md:overflow-visible md:border-t-0 md:px-0"
+            className="scrollbar-none order-last -mx-(--app-inset) flex h-11 w-[calc(100%+2*var(--app-inset))] items-center gap-5 overflow-x-auto border-t border-border px-(--app-inset) text-[13px] font-medium md:order-none md:mx-0 md:ml-auto md:h-auto md:w-auto md:gap-1 md:overflow-visible md:border-t-0 md:px-0"
           >
             {items.map((item) => (
               <div

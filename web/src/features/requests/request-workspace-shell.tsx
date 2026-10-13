@@ -1,6 +1,5 @@
 import { type CSSProperties, type ReactNode, useId, useState } from 'react'
 import {
-  REQUEST_WORKSPACE_COLLAPSED_WIDTH,
   requestWorkspaceWidthFromDrag,
   requestWorkspaceWidthFromKey,
 } from './request-workspace-width'
@@ -46,7 +45,7 @@ export function RequestWorkspaceShell({
           controls={sidebarId}
           label="Requests sidebar width"
           max={FILE_PANE_MAX_WIDTH}
-          min={REQUEST_WORKSPACE_COLLAPSED_WIDTH}
+          min={0}
           onDrag={(distance) => {
             const next = requestWorkspaceWidthFromDrag(
               { startedCollapsed: collapsed, width, x: 0 },
@@ -64,7 +63,7 @@ export function RequestWorkspaceShell({
             return true
           }}
           valueText={collapsed ? 'Collapsed' : `${width} pixels`}
-          width={collapsed ? REQUEST_WORKSPACE_COLLAPSED_WIDTH : width}
+          width={collapsed ? 0 : width}
         />
         <section className="request-workspace-detail">{children}</section>
         {focus ? (

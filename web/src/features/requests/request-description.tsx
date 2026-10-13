@@ -19,7 +19,7 @@ export function RequestDescription({
   const editing = editorMinHeight !== null
 
   return (
-    <section className="relative min-w-0 border-b border-border px-5 pb-5 lg:px-7">
+    <section className="relative min-w-0 border-b border-border px-(--app-inset) pb-5">
       {canEdit && !editing ? (
         <Button
           aria-label="Edit description"

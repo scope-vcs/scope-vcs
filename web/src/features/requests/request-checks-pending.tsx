@@ -1,6 +1,6 @@
 import { TextSkeleton } from '@/components/ui/skeleton'
 
-export const CHECKS_SECTION_CLASS = 'border-b border-border px-5 py-4 sm:px-6 lg:px-8'
+export const CHECKS_SECTION_CLASS = 'border-b border-border px-(--app-inset) py-4'
 
 export function RequestChecksPending() {
   return (

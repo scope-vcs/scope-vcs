@@ -241,7 +241,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           request={request}
           viewName={requestViewName}
         />
-        <div className="request-detail-actions px-5 py-2.5 min-[701px]:hidden">
+        <div className="request-detail-actions px-(--app-inset) py-2.5 min-[701px]:hidden">
           <Button asChild size="icon-sm" variant="secondary">
             <Link
               aria-label="Back to requests"
@@ -254,7 +254,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
         </div>
         {requestActions.error || autoMerge.error || stateError ? (
           <p
-            className="border-b border-border px-5 py-2 text-sm text-danger-strong sm:px-6 lg:px-8"
+            className="border-b border-border px-(--app-inset) py-2 text-sm text-danger-strong"
             role="alert"
           >
             {requestActions.error ?? autoMerge.error ?? stateError}

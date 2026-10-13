@@ -27,7 +27,7 @@ export function RepositoryCodePending() {
         onNavigationOpenChange={setNavigationOpen}
         selectedPath={null}
       >
-        <div className="min-w-0 px-2 py-3">
+        <div className="min-w-0 py-3">
           <PendingSurface className="min-h-[220px]" label="Loading repository files">
             <FileNavigatorSkeleton />
           </PendingSurface>

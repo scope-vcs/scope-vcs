@@ -5,8 +5,6 @@ import {
   FILE_PANE_MAX_WIDTH,
 } from '../../components/file-workbench-width'
 
-export const REQUEST_WORKSPACE_COLLAPSED_WIDTH = 54
-
 const COLLAPSE_DRAG_THRESHOLD = 150
 const REOPEN_DRAG_DISTANCE = 32
 

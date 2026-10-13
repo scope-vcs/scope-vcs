@@ -86,7 +86,7 @@ export function ChangedFilesWorkbench({
             }}
             selectedFilePath={selectedVisibilityId ? null : selectedFilePath}
           />
-        ) : <EmptyState inline className="px-5 py-8 sm:px-6" title={emptyFilesMessage ?? ''} />}
+        ) : <EmptyState inline className="py-8" title={emptyFilesMessage ?? ''} />}
       </div>
       {preview ?? placeholder}
     </FileWorkbench>

@@ -54,11 +54,11 @@ export function RequestWorkspaceList({
     <div className="request-workspace-rows">
       {rows}
       {!items.length && !error && (
-        <p className="px-4 py-3 text-[11px] text-muted-foreground">{emptyLabel}</p>
+        <p className="py-3 pr-4 pl-(--request-workspace-row-inset) text-[11px] text-muted-foreground">{emptyLabel}</p>
       )}
       {error && (
         <div
-          className="flex items-center gap-2 px-4 py-3 text-[11px] text-danger-strong"
+          className="flex items-center gap-2 py-3 pr-4 pl-(--request-workspace-row-inset) text-[11px] text-danger-strong"
           role="alert"
         >
           <p className="min-w-0 flex-1">{error}</p>

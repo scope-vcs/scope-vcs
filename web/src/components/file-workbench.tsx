@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   clampFilePaneWidth,
   filePaneKeyboardWidth,
+  FILE_PANE_DEFAULT_WIDTH,
   FILE_PANE_MIN_WIDTH,
   FILE_PANE_MAX_WIDTH,
 } from './file-workbench-width'
@@ -24,7 +25,7 @@ export function FileWorkbench({
   className?: string
 }) {
   const [navigator, content] = children
-  const [width, setWidth] = useState(250)
+  const [width, setWidth] = useState(FILE_PANE_DEFAULT_WIDTH)
   const navigatorId = useId()
   return (
     <div
@@ -37,7 +38,7 @@ export function FileWorkbench({
       <button
         aria-controls={navigatorId}
         aria-expanded={navigationOpen}
-        className="flex w-full min-w-0 items-center gap-2 border-b border-border px-4 py-3 text-left text-xs lg:hidden"
+        className="flex w-full min-w-0 items-center gap-2 border-b border-border px-(--app-inset) py-3 text-left text-xs lg:hidden"
         onClick={() => onNavigationOpenChange(!navigationOpen)}
         type="button"
       >
@@ -51,7 +52,7 @@ export function FileWorkbench({
       </button>
       <div
         className={cn(
-          'min-w-0 overflow-x-auto border-b border-border lg:block lg:border-b-0',
+          'min-w-0 overflow-x-auto border-b border-border px-(--app-inset) lg:block lg:border-b-0 lg:pr-2',
           !navigationOpen && 'hidden',
         )}
         id={navigatorId}

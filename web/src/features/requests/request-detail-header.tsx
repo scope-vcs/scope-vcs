@@ -22,7 +22,7 @@ export function RequestDetailHeader({
   const queueItem = workspace?.selected ?? null
 
   return (
-    <header className="request-detail-header border-b border-border px-5 pb-4 pt-6 sm:px-6 lg:px-8">
+    <header className="request-detail-header border-b border-border px-(--app-inset) pb-4 pt-6">
       <h1 className="min-w-0 break-words text-[28px] font-medium leading-[1.1] tracking-[-0.03em] sm:text-[32px]">
         {request.title}
       </h1>

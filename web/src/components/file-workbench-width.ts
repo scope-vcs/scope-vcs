@@ -1,5 +1,6 @@
 export const FILE_PANE_MIN_WIDTH = 180
 export const FILE_PANE_MAX_WIDTH = 360
+export const FILE_PANE_DEFAULT_WIDTH = 274
 
 export function clampFilePaneWidth(width: number) {
   return Math.min(FILE_PANE_MAX_WIDTH, Math.max(FILE_PANE_MIN_WIDTH, width))
