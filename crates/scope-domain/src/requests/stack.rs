@@ -328,10 +328,10 @@ pub fn retarget_request_after_parent_merge(
         child.stack_status = RequestStackStatus::Main;
     }
     child.stack_depth = 1;
-    if input.contained_main_descends_from_ancestor {
-        if let Some(oid) = input.contained_main_oid {
-            child.main_ancestor_oid = oid;
-        }
+    if input.contained_main_descends_from_ancestor
+        && let Some(oid) = input.contained_main_oid
+    {
+        child.main_ancestor_oid = oid;
     }
     child.updated_at_unix = input.now_unix;
     let position = advance_request_activity(&mut child)?;

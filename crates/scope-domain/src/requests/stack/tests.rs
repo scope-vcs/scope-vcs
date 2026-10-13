@@ -58,7 +58,7 @@ fn parent_pin_rejects_wrong_revision_view_cycles_and_overdepth() {
             &child.repo_id,
             &child.view,
             &child.base,
-            &[parent.clone()],
+            std::slice::from_ref(&parent),
             Some(&revision)
         )
         .unwrap(),
@@ -71,7 +71,7 @@ fn parent_pin_rejects_wrong_revision_view_cycles_and_overdepth() {
             &child.repo_id,
             &child.view,
             &child.base,
-            &[parent.clone()],
+            std::slice::from_ref(&parent),
             Some(&revision)
         )
         .is_err()
@@ -83,7 +83,7 @@ fn parent_pin_rejects_wrong_revision_view_cycles_and_overdepth() {
             &child.repo_id,
             &ViewId::public(),
             &child.base,
-            &[parent.clone()],
+            std::slice::from_ref(&parent),
             Some(&revision)
         )
         .is_err()

@@ -300,10 +300,12 @@ async fn receive_pack_request(
         &state,
         &org,
         &repo,
-        request.into_body(),
+        ReceivePackBody {
+            body: request.into_body(),
+            content_length,
+            content_type,
+        },
         base_publication,
-        content_length,
-        content_type,
         access,
     )
     .await
@@ -441,16 +443,20 @@ pub(crate) async fn handle_git_receive_pack(
     Ok(cgi.into_response())
 }
 
+struct ReceivePackBody {
+    body: Body,
+    content_length: Option<u64>,
+    content_type: Option<String>,
+}
+
 async fn handle_git_receive_pack_body(
     state: &AppState,
     owner: &str,
     repo_name: &str,
-    body: Body,
+    input: ReceivePackBody,
     base_publication: Option<
         crate::use_cases::request_base_publication::RequestBasePublicationHeaders,
     >,
-    content_length: Option<u64>,
-    content_type: Option<String>,
     access: ReceivePackAccess,
 ) -> Result<Response, ApiError> {
     let mut preparation = git_receive::prepare(state, owner, repo_name, access, false).await?;
@@ -461,10 +467,10 @@ async fn handle_git_receive_pack_body(
     let cgi = git_http_backend_streaming(
         &staging_repo,
         "git-receive-pack",
-        body,
-        content_length,
+        input.body,
+        input.content_length,
         MAX_RECEIVE_PACK_BYTES,
-        content_type,
+        input.content_type,
         &remote_user,
     )
     .await?;
