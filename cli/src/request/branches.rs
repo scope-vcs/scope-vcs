@@ -279,7 +279,7 @@ pub(super) fn push_request_branch(
     };
     Ok(RequestCommandOutcome::new(
         "request.push",
-        RequestCommandResult::Detail(result),
+        RequestCommandResult::Detail(Box::new(result)),
         human_lines,
     ))
 }

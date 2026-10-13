@@ -361,7 +361,7 @@ test('stack context preserves actionable children and row order when parents are
   assert.equal(await child.getByRole('link', { name: 'Safe parent' }).isVisible(), true)
   assert.equal(await page.locator('[data-request-id="parent"]').count(), 0)
   assert.equal(await child.evaluate((node) => node.classList.contains('request-workspace-row--stacked')), false)
-  assert.equal(await page.locator('.request-workspace-needs-you > h2').textContent(), 'Needs you1')
+  assert.deepEqual(await page.locator('.request-workspace-rows [data-request-id]').evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId)), ['child'])
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await child.isVisible(), true)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)

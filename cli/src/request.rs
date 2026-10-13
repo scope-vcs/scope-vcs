@@ -202,13 +202,13 @@ fn show_request_status(
         ));
         return Ok(RequestCommandOutcome::new(
             "request.status",
-            RequestCommandResult::Detail(DetailResult {
+            RequestCommandResult::Detail(Box::new(DetailResult {
                 repo: context.repo,
                 request: detail.request,
                 stack_navigation: detail.stack_navigation,
                 activity: None,
                 auto_merge: None,
-            }),
+            })),
             human_lines,
         ));
     }

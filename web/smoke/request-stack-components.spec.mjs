@@ -85,6 +85,7 @@ test('private stack comparisons and public visible commits render selected files
   assert.equal(await page.getByRole('heading', { name: 'Add child UI', exact: true }).isVisible(), true)
   assert.equal(await page.getByText('No file changes in this commit.', { exact: true }).count(), 0)
   await captureComparison('private-commit')
+  await page.setViewportSize({ width: 1280, height: 900 })
   for (const [status, label] of [
     ['parent_extended', 'Parent extended'], ['parent_rewritten', 'Parent rewritten'],
     ['parent_closed', 'Parent closed'], ['ancestor_blocked', 'Ancestor blocked'],

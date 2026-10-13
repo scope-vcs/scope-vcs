@@ -376,13 +376,13 @@ pub(super) fn show_one_request(
     human_lines.extend(request_activity_lines_for_response(&activity));
     Ok(RequestCommandOutcome::new(
         "request.show",
-        RequestCommandResult::Detail(DetailResult {
+        RequestCommandResult::Detail(Box::new(DetailResult {
             repo: context.repo,
             request: detail.request,
             stack_navigation: detail.stack_navigation,
             activity: Some(activity),
             auto_merge: Some(auto_merge),
-        }),
+        })),
         human_lines,
     ))
 }
