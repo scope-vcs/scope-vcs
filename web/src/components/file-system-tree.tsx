@@ -23,35 +23,48 @@ import {
 const VISIBLE_TREE_COLUMNS = 'grid-cols-[minmax(0,1fr)_auto_20px]'
 const HIDDEN_VISIBILITY_TREE_COLUMNS = 'grid-cols-[minmax(0,1fr)_auto]'
 
+function treeColumnsClassName(showVisibility: boolean) {
+  return showVisibility ? VISIBLE_TREE_COLUMNS : HIDDEN_VISIBILITY_TREE_COLUMNS
+}
+
 const TREE_HEADER_CLASS =
   'hidden gap-3 px-3 pb-1.5 pt-1 text-xs font-medium text-muted-foreground sm:grid sm:items-center'
 const TREE_ROW_CLASS =
   'grid min-h-9 items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm'
 const PENDING_TREE_ROWS: TextSkeletonLength[] = ['medium', 'long', 'short', 'long', 'medium', 'long']
 
-export function FileSystemTreeSkeleton({ metaColumnLabel }: { metaColumnLabel: ReactNode }) {
+export function FileSystemTreeSkeleton({
+  metaColumnLabel,
+  showVisibility = true,
+}: {
+  metaColumnLabel: ReactNode
+  showVisibility?: boolean
+}) {
+  const columnsClassName = treeColumnsClassName(showVisibility)
   return (
     <div>
       {metaColumnLabel !== null && (
-        <div className={cn(TREE_HEADER_CLASS, VISIBLE_TREE_COLUMNS)}>
+        <div className={cn(TREE_HEADER_CLASS, columnsClassName)}>
           <div>Path</div>
           <div>{metaColumnLabel}</div>
-          <div />
+          {showVisibility && <div />}
         </div>
       )}
       <ul className="space-y-0.5">
         {PENDING_TREE_ROWS.map((length, row) => (
-          <li className={cn(TREE_ROW_CLASS, VISIBLE_TREE_COLUMNS)} key={`file-${row}`}>
+          <li className={cn(TREE_ROW_CLASS, columnsClassName)} key={`file-${row}`}>
             <div className="flex min-w-0 items-center gap-2">
               <BlockSkeleton className="size-4 shrink-0" />
               <TextSkeleton length={length} size="meta" />
             </div>
             <div />
-            <BlockSkeleton className="size-3.5 rounded-full" />
+            {showVisibility && <BlockSkeleton className="size-3.5 rounded-full" />}
           </li>
         ))}
       </ul>
-      <div className="px-3 pt-4 pb-2"><TextSkeleton length="medium" size="meta" /></div>
+      {showVisibility && (
+        <div className="px-3 pt-4 pb-2"><TextSkeleton length="medium" size="meta" /></div>
+      )}
     </div>
   )
 }
@@ -80,9 +93,7 @@ export function FileSystemTree<TFile extends FileSystemTreeFileBase>({
     () => files.map((file) => normalizeFilePath(file.path)).join('\0'),
     [files],
   )
-  const columnsClassName = showVisibility
-    ? VISIBLE_TREE_COLUMNS
-    : HIDDEN_VISIBILITY_TREE_COLUMNS
+  const columnsClassName = treeColumnsClassName(showVisibility)
 
   return (
     <FileSystemTreeRows

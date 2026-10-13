@@ -117,7 +117,7 @@ export function RepositoryCodeView({
               label="Loading repository files"
               onRetry={content.retry}
             >
-              <FileNavigatorSkeleton />
+              <FileNavigatorSkeleton showVisibility={hasMixedVisibility} />
             </PendingSurface>
           )}
         </div>
