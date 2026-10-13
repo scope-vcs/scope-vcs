@@ -11,6 +11,23 @@ pub(super) struct GitHubReadQueue {
     pub label: &'static str,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitHubJobOutcome<T = ()> {
+    Succeeded(T),
+    Failed {
+        error: String,
+        retry_at_unix: Option<u64>,
+    },
+}
+
+pub(super) fn prefixed_columns(columns: &str, prefix: &str) -> String {
+    columns
+        .split(", ")
+        .map(|column| format!("{prefix}{}", column.trim()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 impl GitHubReadQueue {
     pub(super) async fn claim_due<R: FromQueryResult>(
         &self,

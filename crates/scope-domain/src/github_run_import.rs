@@ -1,12 +1,14 @@
 use crate::{
     error::DomainError, github_connection::GitHubConnection, repository::access::RepositoryAccess,
 };
+use serde::{Deserialize, Serialize};
 
 pub const GITHUB_RUN_IMPORT_DEFAULT_COUNT: u32 = 50;
 pub const GITHUB_RUN_IMPORT_MAX_COUNT: u32 = 1000;
 const GITHUB_RUN_IMPORT_ERROR_MAX_CHARS: usize = 500;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum GitHubRunImportState {
     Queued,
     Running,

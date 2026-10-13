@@ -10,7 +10,7 @@ use scope_domain::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
     requests::{GitHubBranch, GitHubPush, github_push_retry_at},
 };
-use scope_postgres::db::{GitHubPushOutcome, GitHubPushStanding};
+use scope_postgres::db::{GitHubJobOutcome, GitHubPushStanding};
 use std::path::Path;
 use std::time::Duration;
 
@@ -18,15 +18,39 @@ const POLL_INTERVAL: Duration = Duration::from_secs(5);
 const BATCH_SIZE: usize = 4;
 const LEASE_SECS: u64 = 45 * 60;
 
-enum PushFailure {
+pub(super) enum JobFailure {
     Retry(String),
     GiveUp(String),
     Stale,
 }
 
-impl From<ApiError> for PushFailure {
+impl From<ApiError> for JobFailure {
     fn from(error: ApiError) -> Self {
         Self::Retry(error.into_public_message())
+    }
+}
+
+impl From<scope_postgres::error::PostgresError> for JobFailure {
+    fn from(error: scope_postgres::error::PostgresError) -> Self {
+        ApiError::from(error).into()
+    }
+}
+
+pub(super) fn job_outcome<T>(
+    result: Result<T, JobFailure>,
+    retry_at_unix: Option<u64>,
+) -> Option<GitHubJobOutcome<T>> {
+    match result {
+        Ok(value) => Some(GitHubJobOutcome::Succeeded(value)),
+        Err(JobFailure::Retry(error)) => Some(GitHubJobOutcome::Failed {
+            error,
+            retry_at_unix,
+        }),
+        Err(JobFailure::GiveUp(error)) => Some(GitHubJobOutcome::Failed {
+            error,
+            retry_at_unix: None,
+        }),
+        Err(JobFailure::Stale) => None,
     }
 }
 
@@ -65,19 +89,10 @@ pub(crate) async fn run_claimed_push(
 ) {
     let sent = send(state, push, claim_token).await;
     let now_unix = unix_now().map_or(now_unix, |finished| finished.max(now_unix));
-    let outcome = match sent {
-        Ok(()) => GitHubPushOutcome::Succeeded,
-        Err(PushFailure::Retry(error)) => GitHubPushOutcome::Failed {
-            error,
-            retry_at_unix: github_push_retry_at(push, now_unix),
-        },
-        Err(PushFailure::GiveUp(error)) => GitHubPushOutcome::Failed {
-            error,
-            retry_at_unix: None,
-        },
-        Err(PushFailure::Stale) => return,
+    let Some(outcome) = job_outcome(sent, github_push_retry_at(push, now_unix)) else {
+        return;
     };
-    if let GitHubPushOutcome::Failed { error, .. } = &outcome {
+    if let GitHubJobOutcome::Failed { error, .. } = &outcome {
         tracing::warn!(
             push_id = push.id,
             branch = push.branch.name(),
@@ -107,22 +122,17 @@ async fn ensure_current(
     push: &GitHubPush,
     claim_token: &str,
     view: Option<ViewId>,
-) -> Result<(), PushFailure> {
+) -> Result<(), JobFailure> {
     let requests = state.metadata.requests();
-    match requests
-        .github_push_standing(&push.id, claim_token)
-        .await
-        .map_err(ApiError::from)?
-    {
+    match requests.github_push_standing(&push.id, claim_token).await? {
         GitHubPushStanding::Current => {}
         GitHubPushStanding::Superseded => {
             requests
                 .drop_superseded_github_push(&push.id, claim_token)
-                .await
-                .map_err(ApiError::from)?;
-            return Err(PushFailure::Stale);
+                .await?;
+            return Err(JobFailure::Stale);
         }
-        GitHubPushStanding::Lost => return Err(PushFailure::Stale),
+        GitHubPushStanding::Lost => return Err(JobFailure::Stale),
     }
     if push.target_oid.is_none() {
         return Ok(());
@@ -131,12 +141,10 @@ async fn ensure_current(
         .metadata
         .repositories()
         .github_connection(&push.repo_id)
-        .await
-        .map_err(ApiError::from)?
-        .map(|read| read.connection)
+        .await?
         .filter(|connection| push.destination.is_connected_through(connection))
         .ok_or_else(|| {
-            PushFailure::GiveUp(
+            JobFailure::GiveUp(
                 "This repository is no longer connected to that GitHub repository. Reconnect it in repository settings."
                     .to_string(),
             )
@@ -147,11 +155,11 @@ async fn ensure_current(
 fn ensure_may_receive(
     connection: &GitHubConnection,
     view: Option<ViewId>,
-) -> Result<(), PushFailure> {
+) -> Result<(), JobFailure> {
     if view.as_ref().is_some_and(|view| !view.is_public())
         && !connection.may_receive_private_requests()
     {
-        return Err(PushFailure::GiveUp(
+        return Err(JobFailure::GiveUp(
             PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string(),
         ));
     }
@@ -162,11 +170,8 @@ pub(crate) async fn refresh_github_visibility(
     state: &AppState,
     connection: &GitHubConnection,
 ) -> Result<GitHubConnection, ApiError> {
-    let app = state
-        .github
-        .as_deref()
-        .ok_or_else(|| ApiError::not_found("GitHub is not configured on this server"))?;
-    let repository = app
+    let repository = state
+        .github_app()?
         .installation_repository(connection.installation_id, connection.github_repository_id)
         .await?
         .ok_or_else(|| {
@@ -196,9 +201,9 @@ pub(crate) async fn refresh_github_visibility(
     Ok(refreshed)
 }
 
-async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<(), PushFailure> {
+async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<(), JobFailure> {
     let app = state.github.clone().ok_or_else(|| {
-        PushFailure::GiveUp("GitHub is not configured on this server.".to_string())
+        JobFailure::GiveUp("GitHub is not configured on this server.".to_string())
     })?;
     let destination = &push.destination;
     let Some(target_oid) = push.target_oid.clone() else {
@@ -208,21 +213,16 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         let git_ref = push.branch.git_ref();
         return crate::git::blocking::run(move || Ok(remote.delete(&git_ref)))
             .await?
-            .map_err(PushFailure::Retry);
+            .map_err(JobFailure::Retry);
     };
     let requests = state.metadata.requests();
-    let gone = || PushFailure::GiveUp("Scope no longer has this revision.".to_string());
+    let gone = || JobFailure::GiveUp("Scope no longer has this revision.".to_string());
     let tested = match &push.branch {
         GitHubBranch::Request(request_id) => {
-            let request = requests
-                .request_by_id(request_id)
-                .await
-                .map_err(ApiError::from)?
-                .ok_or_else(gone)?;
+            let request = requests.request_by_id(request_id).await?.ok_or_else(gone)?;
             let evaluation = requests
                 .request_check_evaluation_testing(&request.id, &target_oid)
-                .await
-                .map_err(ApiError::from)?
+                .await?
                 .ok_or_else(gone)?;
             Some((request, evaluation))
         }
@@ -241,11 +241,10 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             .metadata
             .repositories()
             .github_connection(&push.repo_id)
-            .await
-            .map_err(ApiError::from)?
+            .await?
     {
         ensure_may_receive(
-            &refresh_github_visibility(state, &connection.connection).await?,
+            &refresh_github_visibility(state, &connection).await?,
             view.clone(),
         )?;
     }
@@ -256,8 +255,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         .metadata
         .repositories()
         .repository_record(&push.repo_id)
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .ok_or_else(gone)?
         .incarnation();
     let (check_state, check_push, claim_token) =
@@ -273,7 +271,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         .and_then(|()| {
             remote
                 .push(repo, &target_oid, &git_ref)
-                .map_err(PushFailure::Retry)
+                .map_err(JobFailure::Retry)
         })
     };
     let Some((request, evaluation)) = tested else {
@@ -281,8 +279,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             .metadata
             .repositories()
             .repository_content_source(&incarnation)
-            .await
-            .map_err(ApiError::from)?
+            .await?
         else {
             return Err(gone());
         };
@@ -295,8 +292,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
     };
     let revision = requests
         .request_revision_with_head(&request.id, &evaluation.head_oid)
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .ok_or_else(gone)?;
     match &evaluation.check_commit_base {
         Some(base) => {
@@ -328,7 +324,7 @@ async fn record_setup_check_baseline(
     state: &AppState,
     app: &GitHubApp,
     push: &GitHubPush,
-) -> Result<(), PushFailure> {
+) -> Result<(), JobFailure> {
     let destination = &push.destination;
     let target_oid = push.target_oid.as_deref().unwrap_or_default();
     let runs = app
@@ -340,7 +336,7 @@ async fn record_setup_check_baseline(
         )
         .await?
         .ok_or_else(|| {
-            PushFailure::GiveUp(
+            JobFailure::GiveUp(
                 "The Scope GitHub App can no longer reach this GitHub repository.".to_string(),
             )
         })?;
@@ -352,53 +348,48 @@ async fn record_setup_check_baseline(
             &push.id,
             runs.iter().map(|run| run.github_run_id).collect(),
         )
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
     if recorded {
         Ok(())
     } else {
-        Err(PushFailure::GiveUp(
+        Err(JobFailure::GiveUp(
             "The connection test this push belonged to has ended.".to_string(),
         ))
     }
 }
 
-async fn installation_token(app: &GitHubApp, installation_id: u64) -> Result<String, PushFailure> {
+async fn installation_token(app: &GitHubApp, installation_id: u64) -> Result<String, JobFailure> {
     app.installation_token(installation_id)
         .await?
         .ok_or_else(|| {
-            PushFailure::GiveUp(
+            JobFailure::GiveUp(
                 "The Scope GitHub App is no longer installed for this repository.".to_string(),
             )
         })
 }
 
 async fn publish_push_change(state: &AppState, push: &GitHubPush) {
-    let repo_id = &push.repo_id;
-    match state
-        .metadata
-        .repositories()
-        .repository_record(repo_id)
-        .await
-    {
-        Ok(Some(record)) => {
-            if let GitHubBranch::Request(request_id) = &push.branch {
-                state
-                    .publish_request_state_refresh(&record.incarnation(), request_id)
-                    .await;
-                return;
-            }
+    match (
+        state.repository_incarnation(&push.repo_id).await,
+        &push.branch,
+    ) {
+        (Ok(Some(incarnation)), GitHubBranch::Request(request_id)) => {
+            state
+                .publish_request_state_refresh(&incarnation, request_id)
+                .await;
+        }
+        (Ok(Some(incarnation)), GitHubBranch::SetupCheck) => {
             state
                 .publish_request_summary_refresh(
-                    &record.incarnation(),
+                    &incarnation,
                     RepoChangeReason::RequestChecksUpdated,
                 )
                 .await;
         }
-        Ok(None) => {}
-        Err(error) => tracing::warn!(
-            repo_id,
-            error = %error,
+        (Ok(None), _) => {}
+        (Err(error), _) => tracing::warn!(
+            repo_id = push.repo_id,
+            error = %error.operator_diagnostic(),
             "could not announce a GitHub push"
         ),
     }

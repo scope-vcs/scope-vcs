@@ -141,8 +141,8 @@ pub use git_segments::RepositoryGitWriteLease;
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
-pub use github_pushes::{GitHubPushOutcome, GitHubPushStanding};
-pub use github_run_imports::GitHubRunImportOutcome;
+pub use github_pushes::GitHubPushStanding;
+pub use github_read_queue::GitHubJobOutcome;
 pub use github_setup_checks::GitHubSetupCheckRead;
 pub use github_workflow_job_log_reads::GitHubJobLogReadJob;
 pub use github_workflow_runs::{

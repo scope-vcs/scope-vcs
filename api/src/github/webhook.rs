@@ -2,7 +2,7 @@ use super::{GitHubApp, InstallationStatus};
 use crate::error::ApiError;
 use hmac::{Hmac, KeyInit, Mac};
 use scope_domain::github_connection::GitHubInstallationChange;
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::Deserialize;
 use sha2::Sha256;
 use std::collections::BTreeSet;
 
@@ -44,78 +44,85 @@ pub(crate) enum GitHubWebhookEvent {
 
 impl GitHubWebhookEvent {
     pub(crate) fn parse(event: &str, body: &[u8]) -> Result<Self, ApiError> {
-        match event {
-            "repository" => {
-                let payload: RepositoryPayload = payload(body)?;
-                match (payload.action.as_str(), payload.repository) {
-                    ("publicized" | "privatized", Some(repository)) => {
-                        Ok(Self::RepositoryVisibilityChanged {
-                            github_repository_id: repository.id,
-                        })
+        if !matches!(
+            event,
+            "repository"
+                | "check_run"
+                | "check_suite"
+                | "workflow_run"
+                | "workflow_job"
+                | "installation"
+                | "installation_repositories"
+        ) {
+            return Ok(Self::Ignored);
+        }
+        let payload: Payload = serde_json::from_slice(body).map_err(malformed)?;
+        let installation_id = || -> Result<u64, ApiError> {
+            Ok(required(payload.installation.as_ref(), "installation")?.id)
+        };
+        Ok(match event {
+            "repository" => match (
+                required(payload.action.as_deref(), "action")?,
+                payload.repository,
+            ) {
+                ("publicized" | "privatized", Some(repository)) => {
+                    Self::RepositoryVisibilityChanged {
+                        github_repository_id: repository.id,
                     }
-                    _ => Ok(Self::Ignored),
                 }
-            }
+                _ => Self::Ignored,
+            },
             "check_run" | "check_suite" | "workflow_run" => {
-                let payload: ChecksPayload = payload(body)?;
                 let subject = match event {
                     "check_run" => payload.check_run,
                     "check_suite" => payload.check_suite,
                     _ => payload.workflow_run,
                 };
-                let (Some(repository), Some(subject)) = (payload.repository, subject) else {
-                    return Ok(Self::Ignored);
-                };
-                if !is_commit_oid(&subject.head_sha) {
-                    return Ok(Self::Ignored);
+                match (payload.repository, subject) {
+                    (Some(repository), Some(subject)) if is_commit_oid(&subject.head_sha) => {
+                        Self::ChecksChanged {
+                            github_repository_id: repository.id,
+                            commit_oid: subject.head_sha,
+                            workflow_run_id: subject.id.filter(|_| event == "workflow_run"),
+                        }
+                    }
+                    _ => Self::Ignored,
                 }
-                Ok(Self::ChecksChanged {
-                    github_repository_id: repository.id,
-                    commit_oid: subject.head_sha,
-                    workflow_run_id: subject.id.filter(|_| event == "workflow_run"),
-                })
             }
-            "workflow_job" => {
-                let payload: WorkflowJobPayload = payload(body)?;
-                let (Some(repository), Some(job)) = (payload.repository, payload.workflow_job)
-                else {
-                    return Ok(Self::Ignored);
-                };
-                Ok(Self::WorkflowJobChanged {
+            "workflow_job" => match (payload.repository, payload.workflow_job) {
+                (Some(repository), Some(job)) => Self::WorkflowJobChanged {
                     github_repository_id: repository.id,
                     job_id: job.id,
-                })
-            }
+                },
+                _ => Self::Ignored,
+            },
             "installation" => {
-                let payload: InstallationPayload = payload(body)?;
-                let change = match payload.action.as_str() {
+                let change = match required(payload.action.as_deref(), "action")? {
                     "deleted" => GitHubInstallationChange::Uninstalled,
                     "suspend" => GitHubInstallationChange::Suspended,
                     _ => return Ok(Self::Ignored),
                 };
-                Ok(Self::InstallationChanged {
-                    installation_id: payload.installation.id,
+                Self::InstallationChanged {
+                    installation_id: installation_id()?,
                     change,
-                })
+                }
             }
-            "installation_repositories" => {
-                let payload: InstallationRepositoriesPayload = payload(body)?;
-                if payload.action != "removed" {
+            _ => {
+                if required(payload.action.as_deref(), "action")? != "removed" {
                     return Ok(Self::Ignored);
                 }
-                Ok(Self::InstallationChanged {
-                    installation_id: payload.installation.id,
+                Self::InstallationChanged {
+                    installation_id: installation_id()?,
                     change: GitHubInstallationChange::RepositoriesRemoved(
                         payload
                             .repositories_removed
-                            .into_iter()
+                            .iter()
                             .map(|repository| repository.id)
                             .collect(),
                     ),
-                })
+                }
             }
-            _ => Ok(Self::Ignored),
-        }
+        })
     }
 }
 
@@ -147,46 +154,20 @@ pub(crate) async fn confirmed_installation_change(
 }
 
 #[derive(Deserialize)]
-struct InstallationPayload {
-    action: String,
-    installation: Installation,
-}
-
-#[derive(Deserialize)]
-struct InstallationRepositoriesPayload {
-    action: String,
-    installation: Installation,
+struct Payload {
+    action: Option<String>,
+    installation: Option<Id>,
+    repository: Option<Id>,
     #[serde(default)]
-    repositories_removed: Vec<Repository>,
-}
-
-#[derive(Deserialize)]
-struct Installation {
-    id: u64,
-}
-
-#[derive(Deserialize)]
-struct RepositoryPayload {
-    action: String,
-    repository: Option<Repository>,
-}
-
-#[derive(Deserialize)]
-struct ChecksPayload {
-    repository: Option<Repository>,
+    repositories_removed: Vec<Id>,
     check_run: Option<ChecksSubject>,
     check_suite: Option<ChecksSubject>,
     workflow_run: Option<ChecksSubject>,
+    workflow_job: Option<Id>,
 }
 
 #[derive(Deserialize)]
-struct WorkflowJobPayload {
-    repository: Option<Repository>,
-    workflow_job: Option<WorkflowJob>,
-}
-
-#[derive(Deserialize)]
-struct WorkflowJob {
+struct Id {
     id: u64,
 }
 
@@ -203,15 +184,12 @@ pub(super) fn is_commit_oid(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-#[derive(Deserialize)]
-struct Repository {
-    id: u64,
+fn required<T>(value: Option<T>, field: &str) -> Result<T, ApiError> {
+    value.ok_or_else(|| malformed(format!("missing field `{field}`")))
 }
 
-fn payload<T: DeserializeOwned>(body: &[u8]) -> Result<T, ApiError> {
-    serde_json::from_slice(body).map_err(|error| {
-        ApiError::bad_request(format!("malformed GitHub webhook payload: {error}"))
-    })
+fn malformed(error: impl std::fmt::Display) -> ApiError {
+    ApiError::bad_request(format!("malformed GitHub webhook payload: {error}"))
 }
 
 #[cfg(test)]

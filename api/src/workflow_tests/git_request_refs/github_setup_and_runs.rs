@@ -1,8 +1,9 @@
 use super::super::fake_github::{
-    FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, WEBHOOK_SECRET, deliver_event,
-    reconnect_test_repository, suite_check_run, webhook, workflow_run, workflow_run_started_at,
+    FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, WEBHOOK_SECRET, deliver_event, github_api,
+    github_json, reconnect_test_repository, suite_check_run, webhook, workflow_run,
+    workflow_run_started_at,
 };
-use super::github_checks::{connect_github, owner_request, push_pass};
+use super::github_checks::{connect_github, owner_request, push_pass, record_github_checks};
 use super::*;
 use crate::use_cases::{
     github_setup_checks::reconcile_github_setup_checks_once,
@@ -22,34 +23,14 @@ async fn connected_repository(label: &str) -> (AppState, Arc<FakeGitHub>, String
     (state, fake, main)
 }
 
-async fn github_request(
-    state: &AppState,
-    method: &str,
-    path: &str,
-    bearer: &str,
-) -> serde_json::Value {
-    expect_json(
-        api_request(
-            router(state.clone()),
-            method,
-            &format!("/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/github{path}"),
-            Some(bearer),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await
-}
-
 async fn setup_check(state: &AppState) -> serde_json::Value {
-    github_request(state, "GET", "", &bearer_header()).await["setup_check"].clone()
+    github_json(state, "GET", "").await["setup_check"].clone()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_connection_test_pushes_main_lists_the_checks_it_saw_and_deletes_its_branch() {
     let (state, fake, main) = connected_repository("github-setup-happy").await;
-    let started = github_request(&state, "POST", "/setup-check", &bearer_header()).await;
+    let started = github_json(&state, "POST", "/setup-check").await;
     assert_eq!(started["setup_check"]["state"], "pushing");
     assert_eq!(started["setup_check"]["commit_oid"], main);
     assert_eq!(started["setup_check"]["branch"], SETUP_BRANCH);
@@ -111,12 +92,12 @@ async fn a_connection_test_pushes_main_lists_the_checks_it_saw_and_deletes_its_b
     assert_eq!(fake.branch_head(SETUP_BRANCH), None);
 
     let required = expect_json(
-        api_request(
-            router(state.clone()),
+        github_api(
+            &state,
             "PUT",
-            &format!("/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/github/required-checks"),
-            Some(&bearer_header()),
-            Some(r#"{"names":["test"]}"#),
+            "/required-checks",
+            &bearer_header(),
+            Some(serde_json::json!({ "names": ["test"] })),
         )
         .await,
         StatusCode::OK,
@@ -127,7 +108,7 @@ async fn a_connection_test_pushes_main_lists_the_checks_it_saw_and_deletes_its_b
 }
 
 async fn finished_test(state: &AppState, fake: &FakeGitHub, main: &str, run_id: u64) -> u64 {
-    github_request(state, "POST", "/setup-check", &bearer_header()).await;
+    github_json(state, "POST", "/setup-check").await;
     push_pass(state, unix_now()).await;
     let started_at = unix_now();
     fake.report_workflow_runs(vec![workflow_run_started_at(
@@ -162,34 +143,8 @@ async fn request_check_deliveries_refresh_a_running_setup_test_of_the_same_commi
     let (state, fake, main) = connected_repository("github-setup-request-checks").await;
     let request_id = "req_setup_commit";
     super::super::requests::create_owner_request(&state, request_id, &main).await;
-    let requests = state.metadata.requests();
-    requests
-        .record_request_checks(scope_postgres::db::RecordRequestChecksCommand {
-            expected_canonical_main_oid: requests.request_check_base(TEST_REPO_ID).await.unwrap(),
-            repository_incarnation: state
-                .metadata
-                .repositories()
-                .repository_record(TEST_REPO_ID)
-                .await
-                .unwrap()
-                .unwrap()
-                .incarnation(),
-            evaluation: scope_domain::requests::RequestCheckEvaluation::started(
-                request_id,
-                &main,
-                vec![scope_domain::requests::RequestCheck::GitHub {
-                    name: "test".into(),
-                }],
-                unix_now(),
-            )
-            .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
-            push_to_github: false,
-        })
-        .await
-        .unwrap();
-    github_request(&state, "POST", "/setup-check", &bearer_header()).await;
+    record_github_checks(&state, request_id, &main, &["test"]).await;
+    github_json(&state, "POST", "/setup-check").await;
     push_pass(&state, unix_now()).await;
     let running = workflow_run(11, SETUP_BRANCH, &main, None);
     fake.report_workflow_runs(vec![running.clone()]);
@@ -248,7 +203,7 @@ async fn testing_unchanged_main_again_waits_for_its_own_runs() {
     let (state, fake, main) = connected_repository("github-setup-again").await;
     let earlier_run_started_at = finished_test(&state, &fake, &main, 11).await;
 
-    github_request(&state, "POST", "/setup-check", &bearer_header()).await;
+    github_json(&state, "POST", "/setup-check").await;
     assert_eq!(push_pass(&state, unix_now()).await, 1);
     assert_eq!(fake.branch_head(SETUP_BRANCH), Some(main.clone()));
     assert_eq!(
@@ -297,7 +252,7 @@ async fn a_test_of_another_github_repository_is_not_shown_after_reconnecting() {
     assert_eq!(setup_check(&state).await["state"], "finished");
 
     reconnect_test_repository(&state, GITHUB_REPOSITORY_ID + 1, "octo/other", 0).await;
-    let connection = github_request(&state, "GET", "", &bearer_header()).await;
+    let connection = github_json(&state, "GET", "").await;
     assert_eq!(connection["connection"]["github_full_name"], "octo/other");
     assert_eq!(connection["setup_check"], serde_json::Value::Null);
 }
@@ -306,7 +261,7 @@ async fn a_test_of_another_github_repository_is_not_shown_after_reconnecting() {
 async fn a_refused_setup_push_reports_what_github_answered() {
     let (state, fake, _main) = connected_repository("github-setup-refused").await;
     fake.refuse_pushes("Cannot create ref due to creations being restricted.");
-    github_request(&state, "POST", "/setup-check", &bearer_header()).await;
+    github_json(&state, "POST", "/setup-check").await;
     push_pass(&state, unix_now()).await;
 
     let failed = setup_check(&state).await;
@@ -317,23 +272,16 @@ async fn a_refused_setup_push_reports_what_github_answered() {
         message.contains("Cannot create ref due to creations being restricted."),
         "{message}"
     );
-    github_request(&state, "POST", "/setup-check", &bearer_header()).await;
+    github_json(&state, "POST", "/setup-check").await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_test_without_workflows_says_to_add_the_trigger_once_it_stops_waiting() {
     let (state, fake, main) = connected_repository("github-setup-timeout").await;
-    github_request(&state, "POST", "/setup-check", &bearer_header()).await;
+    github_json(&state, "POST", "/setup-check").await;
     let started_at = unix_now();
     push_pass(&state, started_at).await;
-    let busy = api_request(
-        router(state.clone()),
-        "POST",
-        &format!("/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/github/setup-check"),
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
+    let busy = github_api(&state, "POST", "/setup-check", &bearer_header(), None).await;
     assert_eq!(busy.status(), StatusCode::CONFLICT);
 
     let timeout = started_at + GITHUB_SETUP_CHECK_TIMEOUT_SECS + 1;
@@ -357,14 +305,7 @@ async fn only_maintainers_test_the_connection() {
     let (state, _fake, _main) = connected_repository("github-setup-member-only").await;
     insert_member_user(&state).await;
     let public = bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL);
-    let denied = api_request(
-        router(state.clone()),
-        "POST",
-        &format!("/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/github/setup-check"),
-        Some(&public),
-        None,
-    )
-    .await;
+    let denied = github_api(&state, "POST", "/setup-check", &public, None).await;
     assert!(denied.status().is_client_error(), "{}", denied.status());
     assert_eq!(setup_check(&state).await, serde_json::Value::Null);
 }
@@ -405,7 +346,7 @@ async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
     .await;
     assert_eq!(unknown.status(), StatusCode::NO_CONTENT);
 
-    let listed = github_request(state, "GET", "/workflow-runs", &bearer_header()).await;
+    let listed = github_json(state, "GET", "/workflow-runs").await;
     let github = &listed["github"];
     assert_eq!(
         github["actions_url"],
@@ -435,7 +376,7 @@ async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
         completed.clone(),
     )
     .await;
-    let listed = github_request(state, "GET", "/workflow-runs", &bearer_header()).await;
+    let listed = github_json(state, "GET", "/workflow-runs").await;
     assert_eq!(
         listed["github"]["workflow_runs"][1]["conclusion"],
         "success"
@@ -446,13 +387,13 @@ async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
 async fn a_repository_without_github_keeps_its_native_runs() {
     let (mut state, _source, _main) =
         super::super::push_intent_completion::published_git_fixture("github-runs-native").await;
-    let listed = github_request(&state, "GET", "/workflow-runs", &bearer_header()).await;
+    let listed = github_json(&state, "GET", "/workflow-runs").await;
     assert_eq!(
         listed,
         serde_json::json!({ "configured": false, "github": null })
     );
     FakeGitHub::install(&mut state).await;
-    let listed = github_request(&state, "GET", "/workflow-runs", &bearer_header()).await;
+    let listed = github_json(&state, "GET", "/workflow-runs").await;
     assert_eq!(
         listed,
         serde_json::json!({ "configured": true, "github": null })
@@ -462,7 +403,7 @@ async fn a_repository_without_github_keeps_its_native_runs() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn deleting_the_setup_branch_is_tried_again_when_github_refuses() {
     let (state, fake, main) = connected_repository("github-setup-delete-retry").await;
-    github_request(&state, "POST", "/setup-check", &bearer_header()).await;
+    github_json(&state, "POST", "/setup-check").await;
     push_pass(&state, unix_now()).await;
     let timeout = unix_now() + GITHUB_SETUP_CHECK_TIMEOUT_SECS;
     reconcile_github_setup_checks_once(&state, timeout)
@@ -480,9 +421,9 @@ async fn deleting_the_setup_branch_is_tried_again_when_github_refuses() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_test_still_running_for_a_former_github_repository_does_not_block_a_new_one() {
     let (state, _fake, _main) = connected_repository("github-setup-former-running").await;
-    github_request(&state, "POST", "/setup-check", &bearer_header()).await;
+    github_json(&state, "POST", "/setup-check").await;
     reconnect_test_repository(&state, GITHUB_REPOSITORY_ID + 1, "octo/other", 0).await;
-    let started = github_request(&state, "POST", "/setup-check", &bearer_header()).await;
+    let started = github_json(&state, "POST", "/setup-check").await;
     assert_eq!(started["setup_check"]["state"], "pushing");
 }
 
@@ -501,7 +442,7 @@ async fn a_workflow_run_github_could_not_be_asked_about_is_read_again() {
         run.clone(),
     )
     .await;
-    let listed = github_request(state, "GET", "/workflow-runs", &bearer_header()).await;
+    let listed = github_json(state, "GET", "/workflow-runs").await;
     assert_eq!(listed["github"]["workflow_runs"], serde_json::json!([]));
 
     assert_eq!(
@@ -517,7 +458,7 @@ async fn a_workflow_run_github_could_not_be_asked_about_is_read_again() {
             .unwrap(),
         1
     );
-    let listed = github_request(state, "GET", "/workflow-runs", &bearer_header()).await;
+    let listed = github_json(state, "GET", "/workflow-runs").await;
     assert_eq!(listed["github"]["workflow_runs"][0]["id"], 31);
     assert_eq!(
         retry_github_workflow_run_reads_once(state, unix_now() + 10_000)

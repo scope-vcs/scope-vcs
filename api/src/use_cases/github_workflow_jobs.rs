@@ -1,4 +1,4 @@
-use super::{github_job_logs, github_workflow_runs::configured_app};
+use super::github_job_logs;
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use scope_domain::{
@@ -40,7 +40,8 @@ pub(crate) async fn refresh_job_for_delivery(
     else {
         return Ok(());
     };
-    let Some(job) = configured_app(state)?
+    let Some(job) = state
+        .github_app()?
         .workflow_job(
             connection.installation_id,
             &connection.github_full_name,
@@ -128,29 +129,18 @@ pub(crate) async fn retry_github_workflow_job_reads_once(
         let connection = repositories
             .github_connection(&job.repo_id)
             .await?
-            .map(|read| read.connection)
-            .filter(|connection| {
-                connection.is_connected()
-                    && connection.github_repository_id == job.github_repository_id
-            });
-        let mut publish_for = None;
-        let outcome = match connection.as_ref() {
+            .filter(|connection| connection.is_connected_to(job.github_repository_id));
+        let outcome = match &connection {
             Some(connection) => {
-                Some(read_queued_jobs(state, connection, job.github_run_id, claimed_at).await)
+                read_queued_jobs(state, connection, job.github_run_id, claimed_at).await
             }
-            None => None,
+            None => Ok(QueuedJobsRead::Missing),
         };
         let finished_at = clock();
-        let retry_at = match outcome {
-            None | Some(Ok(QueuedJobsRead::Missing)) => None,
-            Some(Ok(QueuedJobsRead::Saved)) => {
-                publish_for = connection.as_ref();
-                None
-            }
-            Some(Ok(QueuedJobsRead::ClaimLost)) => {
-                Some(github_jobs_retry_at(job.attempts, finished_at))
-            }
-            Some(Err(error)) => {
+        let retry_at = match &outcome {
+            Ok(QueuedJobsRead::Missing | QueuedJobsRead::Saved) => None,
+            Ok(QueuedJobsRead::ClaimLost) => Some(github_jobs_retry_at(job.attempts, finished_at)),
+            Err(error) => {
                 tracing::warn!(
                     run_id = job.github_run_id,
                     attempts = job.attempts,
@@ -163,7 +153,7 @@ pub(crate) async fn retry_github_workflow_job_reads_once(
         repositories
             .finish_github_workflow_job_read(&job, retry_at, finished_at)
             .await?;
-        if let Some(connection) = publish_for {
+        if let (Ok(QueuedJobsRead::Saved), Some(connection)) = (outcome, &connection) {
             publish(state, connection, job.github_run_id).await?;
             answered += 1;
         }
@@ -240,7 +230,8 @@ async fn read_run_jobs(
     connection: &GitHubConnection,
     run: &GitHubWorkflowRun,
 ) -> Result<(), ApiError> {
-    let Some(jobs) = configured_app(state)?
+    let Some(jobs) = state
+        .github_app()?
         .run_attempt_jobs(
             connection.installation_id,
             &connection.github_full_name,
@@ -269,14 +260,12 @@ pub(super) async fn publish(
     connection: &GitHubConnection,
     github_run_id: u64,
 ) -> Result<(), ApiError> {
-    if let Some(record) = state
-        .metadata
-        .repositories()
-        .repository_record(&connection.repository_id)
+    if let Some(incarnation) = state
+        .repository_incarnation(&connection.repository_id)
         .await?
     {
         state
-            .publish_github_workflow_run_change(&record.incarnation(), github_run_id)
+            .publish_github_workflow_run_change(&incarnation, github_run_id)
             .await;
     }
     Ok(())

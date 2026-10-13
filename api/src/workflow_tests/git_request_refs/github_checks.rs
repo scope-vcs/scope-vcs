@@ -124,6 +124,41 @@ pub(in crate::workflow_tests) async fn push_pass(state: &AppState, now_unix: u64
         .unwrap()
 }
 
+pub(super) async fn record_github_checks(
+    state: &AppState,
+    request_id: &str,
+    head: &str,
+    names: &[&str],
+) {
+    let requests = state.metadata.requests();
+    requests
+        .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: requests.request_check_base(TEST_REPO_ID).await.unwrap(),
+            repository_incarnation: state
+                .repository_incarnation(TEST_REPO_ID)
+                .await
+                .unwrap()
+                .unwrap(),
+            evaluation: scope_domain::requests::RequestCheckEvaluation::started(
+                request_id,
+                head,
+                names
+                    .iter()
+                    .map(|name| scope_domain::requests::RequestCheck::GitHub {
+                        name: name.to_string(),
+                    })
+                    .collect(),
+                unix_now(),
+            )
+            .unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+            push_to_github: false,
+        })
+        .await
+        .unwrap();
+}
+
 async fn deliver_check_run(state: &AppState, repository_id: u64, commit_oid: &str) {
     deliver_event(
         state,
@@ -662,42 +697,7 @@ async fn a_commit_is_read_every_two_minutes_while_any_request_testing_it_is_pend
         .insert_request_for_tests(other.clone())
         .await
         .unwrap();
-    requests
-        .record_request_checks(RecordRequestChecksCommand {
-            expected_canonical_main_oid: state
-                .metadata
-                .requests()
-                .request_check_base(TEST_REPO_ID)
-                .await
-                .unwrap(),
-            repository_incarnation: state
-                .metadata
-                .repositories()
-                .repository_record(TEST_REPO_ID)
-                .await
-                .unwrap()
-                .unwrap()
-                .incarnation(),
-            evaluation: scope_domain::requests::RequestCheckEvaluation::started(
-                &other.id,
-                &head,
-                vec![
-                    scope_domain::requests::RequestCheck::GitHub {
-                        name: REQUIRED_CHECK.into(),
-                    },
-                    scope_domain::requests::RequestCheck::GitHub {
-                        name: "ci / lint".into(),
-                    },
-                ],
-                unix_now(),
-            )
-            .unwrap(),
-            revisions: Vec::new(),
-            runs: Vec::new(),
-            push_to_github: false,
-        })
-        .await
-        .unwrap();
+    record_github_checks(state, &other.id, &head, &[REQUIRED_CHECK, "ci / lint"]).await;
     fake.report_check_runs(
         &head,
         vec![check_run(1, REQUIRED_CHECK, &head, Some("success"))],

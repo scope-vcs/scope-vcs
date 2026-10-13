@@ -1,27 +1,22 @@
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
-    auth::tokens::random_token, error::ApiError, persistence::unix_now,
-    repo_events::RepoChangeReason, state::AppState, use_cases::github_workflow_runs,
+    auth::tokens::random_token,
+    error::ApiError,
+    persistence::unix_now,
+    repo_events::RepoChangeReason,
+    state::AppState,
+    use_cases::{
+        github_pushes::{JobFailure, job_outcome},
+        github_workflow_runs,
+    },
 };
 use scope_domain::{github_run_import::GitHubRunImport, requests::github_retry_at};
-use scope_postgres::db::GitHubRunImportOutcome;
+use scope_postgres::db::GitHubJobOutcome;
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
 const BATCH_SIZE: usize = 2;
 const LEASE_SECS: u64 = 10 * 60;
-
-enum ImportFailure {
-    Retry(String),
-    GiveUp(String),
-    Stale,
-}
-
-impl From<ApiError> for ImportFailure {
-    fn from(error: ApiError) -> Self {
-        Self::Retry(error.into_public_message())
-    }
-}
 
 pub(crate) async fn import_due_github_runs(
     state: &AppState,
@@ -60,19 +55,10 @@ async fn run_claimed_import(
 ) {
     let imported = import_runs(state, import, claim_token).await;
     let now_unix = unix_now().map_or(now_unix, |finished| finished.max(now_unix));
-    let outcome = match imported {
-        Ok(imported) => GitHubRunImportOutcome::Succeeded { imported },
-        Err(ImportFailure::Retry(error)) => GitHubRunImportOutcome::Failed {
-            error,
-            retry_at_unix: github_retry_at(import.attempts, now_unix),
-        },
-        Err(ImportFailure::GiveUp(error)) => GitHubRunImportOutcome::Failed {
-            error,
-            retry_at_unix: None,
-        },
-        Err(ImportFailure::Stale) => return,
+    let Some(outcome) = job_outcome(imported, github_retry_at(import.attempts, now_unix)) else {
+        return;
     };
-    if let GitHubRunImportOutcome::Failed { error, .. } = &outcome {
+    if let GitHubJobOutcome::Failed { error, .. } = &outcome {
         tracing::warn!(
             repo_id = import.repository_id,
             attempts = import.attempts,
@@ -85,11 +71,11 @@ async fn run_claimed_import(
         .finish_github_run_import(&import.repository_id, claim_token, outcome, now_unix)
         .await
     {
-        Ok(true) => match repositories.repository_record(&import.repository_id).await {
-            Ok(Some(record)) => {
+        Ok(true) => match state.repository_incarnation(&import.repository_id).await {
+            Ok(Some(incarnation)) => {
                 state
                     .publish_request_summary_refresh(
-                        &record.incarnation(),
+                        &incarnation,
                         RepoChangeReason::GitHubConnectionChanged,
                     )
                     .await;
@@ -97,7 +83,7 @@ async fn run_claimed_import(
             Ok(None) => {}
             Err(error) => tracing::warn!(
                 repo_id = import.repository_id,
-                error = %error,
+                error = %error.operator_diagnostic(),
                 "could not announce a GitHub run import"
             ),
         },
@@ -114,17 +100,15 @@ async fn import_runs(
     state: &AppState,
     import: &GitHubRunImport,
     claim_token: &str,
-) -> Result<u32, ImportFailure> {
-    let app = github_workflow_runs::configured_app(state)?;
+) -> Result<u32, JobFailure> {
+    let app = state.github_app()?;
     let repositories = state.metadata.repositories();
     let Some(connection) = repositories
         .github_connection(&import.repository_id)
-        .await
-        .map_err(ApiError::from)?
-        .map(|read| read.connection)
-        .filter(|connection| connection.is_connected() && import.is_of(connection))
+        .await?
+        .filter(|connection| connection.is_connected_to(import.github_repository_id))
     else {
-        return Err(ImportFailure::GiveUp(
+        return Err(JobFailure::GiveUp(
             "This repository is no longer connected to that GitHub repository.".to_string(),
         ));
     };
@@ -138,9 +122,9 @@ async fn import_runs(
                 page,
             )
             .await
-            .map_err(|error| ImportFailure::Retry(error.into_operator_diagnostic()))?
+            .map_err(|error| JobFailure::Retry(error.into_operator_diagnostic()))?
         else {
-            return Err(ImportFailure::GiveUp(
+            return Err(JobFailure::GiveUp(
                 "The Scope GitHub App can no longer reach this GitHub repository.".to_string(),
             ));
         };
@@ -148,10 +132,9 @@ async fn import_runs(
         let runs = listed.runs.into_iter().take(wanted).collect::<Vec<_>>();
         if !repositories
             .store_github_run_import_page(&import.repository_id, claim_token, &runs)
-            .await
-            .map_err(ApiError::from)?
+            .await?
         {
-            return Err(ImportFailure::Stale);
+            return Err(JobFailure::Stale);
         }
         if !runs.is_empty() {
             github_workflow_runs::publish(state, &connection).await?;

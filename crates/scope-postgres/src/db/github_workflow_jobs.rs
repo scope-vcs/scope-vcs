@@ -7,14 +7,8 @@ use super::{
     },
 };
 use crate::error::PostgresError;
-use scope_domain::{
-    github_workflow_jobs::{
-        GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob, GitHubWorkflowStep,
-    },
-    requests::{GitHubCheckConclusion, GitHubCheckStatus},
-};
+use scope_domain::github_workflow_jobs::{GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob};
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
-use serde::{Deserialize, Serialize};
 
 #[derive(FromQueryResult)]
 struct JobRow {
@@ -28,16 +22,6 @@ struct JobRow {
     completed_at_unix: Option<i64>,
     html_url: String,
     steps: serde_json::Value,
-}
-
-#[derive(Deserialize, Serialize)]
-struct StoredStep {
-    number: u32,
-    name: String,
-    status: GitHubCheckStatus,
-    conclusion: Option<GitHubCheckConclusion>,
-    started_at_unix: Option<u64>,
-    completed_at_unix: Option<u64>,
 }
 
 #[derive(FromQueryResult)]
@@ -291,18 +275,6 @@ async fn save_job<C: ConnectionTrait>(
     job: &GitHubWorkflowJob,
 ) -> Result<(), PostgresError> {
     let progress = job.progress();
-    let steps = job
-        .steps
-        .iter()
-        .map(|step| StoredStep {
-            number: step.number,
-            name: step.name.clone(),
-            status: step.status,
-            conclusion: step.conclusion,
-            started_at_unix: step.started_at_unix,
-            completed_at_unix: step.completed_at_unix,
-        })
-        .collect::<Vec<_>>();
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_github_workflow_jobs (github_job_id, repo_id, github_repository_id,
@@ -341,7 +313,7 @@ async fn save_job<C: ConnectionTrait>(
             optional_u64_to_i64(job.started_at_unix, "GitHub job start")?.into(),
             optional_u64_to_i64(job.completed_at_unix, "GitHub job completion")?.into(),
             job.html_url.clone().into(),
-            serde_json::to_value(steps)
+            serde_json::to_value(&job.steps)
                 .map_err(PostgresError::internal)?
                 .into(),
             i16::from(progress.stage).into(),
@@ -355,8 +327,6 @@ async fn save_job<C: ConnectionTrait>(
 
 impl JobRow {
     fn into_domain(self) -> Result<GitHubWorkflowJob, PostgresError> {
-        let steps: Vec<StoredStep> =
-            serde_json::from_value(self.steps).map_err(PostgresError::internal)?;
         Ok(GitHubWorkflowJob {
             github_job_id: i64_to_u64(self.github_job_id, "GitHub job id")?,
             github_run_id: i64_to_u64(self.github_run_id, "GitHub workflow run id")?,
@@ -370,17 +340,7 @@ impl JobRow {
                 "GitHub job completion",
             )?,
             html_url: self.html_url,
-            steps: steps
-                .into_iter()
-                .map(|step| GitHubWorkflowStep {
-                    number: step.number,
-                    name: step.name,
-                    status: step.status,
-                    conclusion: step.conclusion,
-                    started_at_unix: step.started_at_unix,
-                    completed_at_unix: step.completed_at_unix,
-                })
-                .collect(),
+            steps: serde_json::from_value(self.steps).map_err(PostgresError::internal)?,
         })
     }
 }

@@ -1,16 +1,16 @@
 use super::{
-    RepositoryStore, acquire_aggregate_lock,
+    RepositoryStore,
+    entities::decode_enum,
     github_connections::repository_github_connection,
+    github_read_queue::{GitHubJobOutcome, prefixed_columns},
     github_workflow_runs::save_workflow_run,
     integer_columns::{i32_to_u32, i64_to_u64, optional_i64_to_u64, u32_to_i32, u64_to_i64},
-    locks::acquire_shared_repository_lock,
-    repository_access::repository_access,
 };
 use crate::error::PostgresError;
 use scope_domain::{
     github_run_import::{
-        GITHUB_RUN_IMPORT_DEFAULT_COUNT, GitHubRunImport, GitHubRunImportState,
-        github_run_import_error, set_github_run_import_count, start_github_run_import,
+        GITHUB_RUN_IMPORT_DEFAULT_COUNT, GitHubRunImport, github_run_import_error,
+        set_github_run_import_count, start_github_run_import,
     },
     github_workflow_runs::GitHubWorkflowRun,
     repository::RepositoryIncarnation,
@@ -33,17 +33,6 @@ struct ImportRow {
     finished_at_unix: Option<i64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum GitHubRunImportOutcome {
-    Succeeded {
-        imported: u32,
-    },
-    Failed {
-        error: String,
-        retry_at_unix: Option<u64>,
-    },
-}
-
 impl RepositoryStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_run_import_count"))]
     pub async fn github_run_import_count(&self, repo_id: &str) -> Result<u32, PostgresError> {
@@ -57,12 +46,9 @@ impl RepositoryStore {
         user_id: &str,
         count: u32,
     ) -> Result<(u32, RepositoryIncarnation), PostgresError> {
-        let tx = self.db.begin().await?;
-        acquire_shared_repository_lock(&tx, repo_id).await?;
-        acquire_aggregate_lock(&tx, "github-run-import", repo_id).await?;
-        let context = repository_access(&tx, repo_id, Some(user_id))
-            .await?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        let (tx, context) = self
+            .begin_github_change(repo_id, user_id, &["github-run-import"])
+            .await?;
         let count = set_github_run_import_count(context.access.clone(), count)?;
         save_run_import_count(&tx, repo_id, count).await?;
         tx.commit().await?;
@@ -76,13 +62,13 @@ impl RepositoryStore {
         user_id: &str,
         now_unix: u64,
     ) -> Result<(GitHubRunImport, RepositoryIncarnation), PostgresError> {
-        let tx = self.db.begin().await?;
-        acquire_shared_repository_lock(&tx, repo_id).await?;
-        acquire_aggregate_lock(&tx, "github-connection", repo_id).await?;
-        acquire_aggregate_lock(&tx, "github-run-import", repo_id).await?;
-        let context = repository_access(&tx, repo_id, Some(user_id))
-            .await?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        let (tx, context) = self
+            .begin_github_change(
+                repo_id,
+                user_id,
+                &["github-connection", "github-run-import"],
+            )
+            .await?;
         let connection = repository_github_connection(&tx, repo_id).await?;
         let current = load_import(&tx, repo_id).await?;
         let count = run_import_count(&tx, repo_id).await?;
@@ -114,11 +100,6 @@ impl RepositoryStore {
         lease_until_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubRunImport>, PostgresError> {
-        if lease_until_unix <= now_unix {
-            return Err(PostgresError::invalid_input(
-                "GitHub run import lease must end in the future",
-            ));
-        }
         ImportRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
@@ -134,7 +115,7 @@ impl RepositoryStore {
                           FOR UPDATE SKIP LOCKED) due
                   WHERE import.repo_id = due.repo_id
               RETURNING {}",
-                prefixed("import.")
+                prefixed_columns(SELECT_IMPORT, "import.")
             ),
             [
                 u64_to_i64(now_unix, "GitHub run import claim time")?.into(),
@@ -193,15 +174,13 @@ impl RepositoryStore {
         &self,
         repo_id: &str,
         claim_token: &str,
-        outcome: GitHubRunImportOutcome,
+        outcome: GitHubJobOutcome<u32>,
         now_unix: u64,
     ) -> Result<bool, PostgresError> {
         let now = u64_to_i64(now_unix, "GitHub run import time")?;
         let (state, imported, error, retry_at, finished) = match outcome {
-            GitHubRunImportOutcome::Succeeded { imported } => {
-                ("succeeded", imported, None, None, Some(now))
-            }
-            GitHubRunImportOutcome::Failed {
+            GitHubJobOutcome::Succeeded(imported) => ("succeeded", imported, None, None, Some(now)),
+            GitHubJobOutcome::Failed {
                 error,
                 retry_at_unix: Some(retry_at),
             } => (
@@ -211,7 +190,7 @@ impl RepositoryStore {
                 Some(u64_to_i64(retry_at, "GitHub run import retry time")?),
                 None,
             ),
-            GitHubRunImportOutcome::Failed {
+            GitHubJobOutcome::Failed {
                 error,
                 retry_at_unix: None,
             } => (
@@ -287,11 +266,6 @@ pub(super) async fn queue_github_run_import<C: ConnectionTrait>(
     conn: &C,
     import: &GitHubRunImport,
 ) -> Result<(), PostgresError> {
-    if import.state != GitHubRunImportState::Queued {
-        return Err(PostgresError::internal_message(
-            "only a queued GitHub run import can be queued",
-        ));
-    }
     let queued_at = u64_to_i64(import.queued_at_unix, "GitHub run import time")?;
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
@@ -347,31 +321,13 @@ async fn load_import<C: ConnectionTrait>(
     .transpose()
 }
 
-fn prefixed(prefix: &str) -> String {
-    SELECT_IMPORT
-        .split(", ")
-        .map(|column| format!("{prefix}{}", column.trim()))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 impl ImportRow {
     fn into_domain(self) -> Result<GitHubRunImport, PostgresError> {
         Ok(GitHubRunImport {
             repository_id: self.repo_id,
             github_repository_id: i64_to_u64(self.github_repository_id, "GitHub repository id")?,
             run_count: i32_to_u32(self.run_count, "GitHub run import count")?,
-            state: match self.state.as_str() {
-                "queued" => GitHubRunImportState::Queued,
-                "running" => GitHubRunImportState::Running,
-                "succeeded" => GitHubRunImportState::Succeeded,
-                "failed" => GitHubRunImportState::Failed,
-                other => {
-                    return Err(PostgresError::internal_message(format!(
-                        "unknown GitHub run import state {other}"
-                    )));
-                }
-            },
+            state: decode_enum(self.state)?,
             attempts: i32_to_u32(self.attempts, "GitHub run import attempts")?,
             imported_count: i32_to_u32(self.imported_count, "GitHub run import count")?,
             last_error: self.last_error,

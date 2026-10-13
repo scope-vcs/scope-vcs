@@ -1,11 +1,13 @@
 use super::{
     RequestStore, acquire_aggregate_lock,
+    entities::decode_enum,
+    github_read_queue::{GitHubJobOutcome, prefixed_columns},
     integer_columns::{i32_to_u32, i64_to_u64, u64_to_i64},
 };
 use crate::error::PostgresError;
 use scope_domain::{
     github_setup_check::GitHubSetupCheck,
-    requests::{GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState},
+    requests::{GitHubBranch, GitHubPush, GitHubPushDestination},
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
 
@@ -28,15 +30,6 @@ struct PushRow {
     attempts: i32,
     last_error: Option<String>,
     updated_at_unix: i64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum GitHubPushOutcome {
-    Succeeded,
-    Failed {
-        error: String,
-        retry_at_unix: Option<u64>,
-    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -105,11 +98,6 @@ impl RequestStore {
         lease_until_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubPush>, PostgresError> {
-        if lease_until_unix <= now_unix {
-            return Err(PostgresError::invalid_input(
-                "GitHub push lease must end in the future",
-            ));
-        }
         let now = u64_to_i64(now_unix, "GitHub push claim time")?;
         PushRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -139,7 +127,7 @@ impl RequestStore {
                    FROM due
                   WHERE push.id = due.id
               RETURNING {}",
-                prefixed("push.")
+                prefixed_columns(SELECT_PUSH, "push.")
             ),
             [
                 now.into(),
@@ -160,32 +148,25 @@ impl RequestStore {
         &self,
         id: &str,
         claim_token: &str,
-        outcome: GitHubPushOutcome,
+        outcome: GitHubJobOutcome,
         now_unix: u64,
     ) -> Result<Option<GitHubPush>, PostgresError> {
         let now = u64_to_i64(now_unix, "GitHub push time")?;
-        let push_result = match &outcome {
-            GitHubPushOutcome::Succeeded => Some(Ok(())),
-            GitHubPushOutcome::Failed {
-                error,
-                retry_at_unix: None,
-            } => Some(Err(error.clone())),
-            GitHubPushOutcome::Failed { .. } => None,
-        };
-        let (state, next_attempt, last_error) = match outcome {
-            GitHubPushOutcome::Succeeded => ("succeeded", None, None),
-            GitHubPushOutcome::Failed {
+        let (state, next_attempt, last_error, push_result) = match outcome {
+            GitHubJobOutcome::Succeeded(()) => ("succeeded", None, None, Some(Ok(()))),
+            GitHubJobOutcome::Failed {
                 error,
                 retry_at_unix: Some(retry_at),
             } => (
                 "queued",
                 Some(u64_to_i64(retry_at, "GitHub push retry time")?),
                 Some(error),
+                None,
             ),
-            GitHubPushOutcome::Failed {
+            GitHubJobOutcome::Failed {
                 error,
                 retry_at_unix: None,
-            } => ("failed", None, Some(error)),
+            } => ("failed", None, Some(error.clone()), Some(Err(error))),
         };
         let tx = self.db.begin().await?;
         let Some(push) = PushRow::find_by_statement(Statement::from_sql_and_values(
@@ -375,14 +356,6 @@ pub(super) async fn queue_github_branch_deletions_for_repository<C: ConnectionTr
     Ok(())
 }
 
-fn prefixed(prefix: &str) -> String {
-    SELECT_PUSH
-        .split(", ")
-        .map(|column| format!("{prefix}{}", column.trim()))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 impl PushRow {
     fn into_domain(self) -> Result<GitHubPush, PostgresError> {
         let branch = match self.request_id {
@@ -402,17 +375,7 @@ impl PushRow {
                 )?,
                 github_full_name: self.github_full_name,
             },
-            state: match self.state.as_str() {
-                "queued" => GitHubPushState::Queued,
-                "running" => GitHubPushState::Running,
-                "succeeded" => GitHubPushState::Succeeded,
-                "failed" => GitHubPushState::Failed,
-                other => {
-                    return Err(PostgresError::internal_message(format!(
-                        "unknown GitHub push state {other}"
-                    )));
-                }
-            },
+            state: decode_enum(self.state)?,
             attempts: i32_to_u32(self.attempts, "GitHub push attempts")?,
             last_error: self.last_error,
             updated_at_unix: i64_to_u64(self.updated_at_unix, "GitHub push time")?,

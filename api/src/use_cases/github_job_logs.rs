@@ -1,4 +1,4 @@
-use super::{github_workflow_jobs::publish, github_workflow_runs::configured_app};
+use super::github_workflow_jobs::publish;
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use scope_domain::{
@@ -130,9 +130,7 @@ async fn read_log(
     let Some(connection) = repositories
         .github_connection(&read.repo_id)
         .await?
-        .map(|read| read.connection)
-        .filter(|connection| connection.is_connected())
-        .filter(|connection| connection.github_repository_id == read.github_repository_id)
+        .filter(|connection| connection.is_connected_to(read.github_repository_id))
     else {
         return Ok(LogReadOutcome::Settled);
     };
@@ -148,7 +146,8 @@ async fn read_log(
     else {
         return Ok(LogReadOutcome::Settled);
     };
-    let log = match configured_app(state)?
+    let log = match state
+        .github_app()?
         .job_log(
             connection.installation_id,
             &connection.github_full_name,

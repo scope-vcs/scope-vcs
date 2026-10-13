@@ -1,27 +1,10 @@
 use super::fake_github::{
     GITHUB_REPOSITORY_ID, GOOD_CODE, INSTALLATION_ID, InstallationState, WEBHOOK_SECRET,
-    github_repository, github_state, user_repository, webhook,
+    github_api, github_json, github_repository, github_state, user_repository, webhook,
 };
 use super::*;
 use scope_domain::github_connection::ConnectGitHubRepository;
 use std::sync::atomic::Ordering;
-
-async fn request(
-    state: &AppState,
-    method: &str,
-    uri: &str,
-    bearer: Option<&str>,
-    body: Option<serde_json::Value>,
-) -> Response {
-    api_request(
-        router(state.clone()),
-        method,
-        uri,
-        bearer,
-        body.map(|body| body.to_string()).as_deref(),
-    )
-    .await
-}
 
 async fn setup_state(state: &AppState, bearer: &str) -> String {
     authorize(state, bearer, serde_json::json!({})).await["state"].clone()
@@ -45,23 +28,16 @@ async fn authorize(
 }
 
 async fn authorize_response(state: &AppState, bearer: &str, body: serde_json::Value) -> Response {
-    request(
-        state,
-        "POST",
-        "/v1/repos/owner/repo/github/authorize",
-        Some(bearer),
-        Some(body),
-    )
-    .await
+    github_api(state, "POST", "/authorize", bearer, Some(body)).await
 }
 
 async fn setup(state: &AppState, bearer: &str, setup_state: &str, code: &str) -> Response {
-    request(
-        state,
+    api_request(
+        router(state.clone()),
         "POST",
         "/v1/github/setup",
         Some(bearer),
-        Some(serde_json::json!({ "state": setup_state, "code": code })),
+        Some(&serde_json::json!({ "state": setup_state, "code": code }).to_string()),
     )
     .await
 }
@@ -77,11 +53,11 @@ async fn grant(state: &AppState) -> String {
 }
 
 async fn connect(state: &AppState, bearer: &str, grant: &str, repository_id: u64) -> Response {
-    request(
+    github_api(
         state,
         "POST",
-        "/v1/repos/owner/repo/github",
-        Some(bearer),
+        "",
+        bearer,
         Some(serde_json::json!({
             "grant": grant,
             "github_repository_id": repository_id,
@@ -92,18 +68,7 @@ async fn connect(state: &AppState, bearer: &str, grant: &str, repository_id: u64
 }
 
 async fn connection(state: &AppState) -> serde_json::Value {
-    expect_json(
-        request(
-            state,
-            "GET",
-            "/v1/repos/owner/repo/github",
-            Some(&bearer_header()),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await
+    github_json(state, "GET", "").await
 }
 
 async fn add_member(state: &AppState) -> String {
@@ -202,6 +167,8 @@ async fn a_maintainer_connects_through_github_setup() {
         connected["connection"]["disconnected"],
         serde_json::Value::Null
     );
+    assert_eq!(connected["connection"]["public_on_github"], false);
+    assert_eq!(connected["connection"]["public_confirmed"], true);
     assert_eq!(connected["run_import"]["state"], "queued");
     assert_eq!(connected["run_import"]["run_count"], 50);
     let owner_view = connection(&state).await;
@@ -280,27 +247,6 @@ async fn setup_offers_only_repositories_the_github_user_can_push() {
 }
 
 #[tokio::test]
-async fn setup_without_installations_offers_nothing_to_connect() {
-    let (state, fake) = github_state().await;
-    fake.user_installations.lock().unwrap().clear();
-    let setup_state = setup_state(&state, &bearer_header()).await;
-    let body = expect_json(
-        setup(&state, &bearer_header(), &setup_state, GOOD_CODE).await,
-        StatusCode::OK,
-    )
-    .await;
-    assert_eq!(body["repositories"], serde_json::json!([]));
-    let response = connect(
-        &state,
-        &bearer_header(),
-        body["grant"].as_str().unwrap(),
-        GITHUB_REPOSITORY_ID,
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-}
-
-#[tokio::test]
 async fn setup_belongs_to_the_maintainer_who_started_it() {
     let (state, _fake) = github_state().await;
     let setup_state = setup_state(&state, &bearer_header()).await;
@@ -316,19 +262,9 @@ async fn setup_belongs_to_the_maintainer_who_started_it() {
 async fn non_maintainers_cannot_start_or_finish_a_connection() {
     let (state, _fake) = github_state().await;
     let outsider = bearer_header_for("user_github_outsider", "outsider@example.com");
-    for (method, uri) in [
-        ("GET", "/v1/repos/owner/repo/github"),
-        ("POST", "/v1/repos/owner/repo/github/authorize"),
-        ("DELETE", "/v1/repos/owner/repo/github"),
-    ] {
-        let response = request(
-            &state,
-            method,
-            uri,
-            Some(&outsider),
-            Some(serde_json::json!({})),
-        )
-        .await;
+    for (method, uri) in [("GET", ""), ("POST", "/authorize"), ("DELETE", "")] {
+        let response =
+            github_api(&state, method, uri, &outsider, Some(serde_json::json!({}))).await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {uri}");
     }
 
@@ -443,11 +379,11 @@ async fn a_public_github_repository_connects_only_with_a_confirmation_from_who_m
     let connect_public = |bearer: String, grant: String, acknowledge_public: bool| {
         let state = state.clone();
         async move {
-            request(
+            github_api(
                 &state,
                 "POST",
-                "/v1/repos/owner/repo/github",
-                Some(&bearer),
+                "",
+                &bearer,
                 Some(serde_json::json!({
                     "grant": grant,
                     "github_repository_id": 45,
@@ -493,29 +429,16 @@ async fn a_public_github_repository_connects_only_with_a_confirmation_from_who_m
 }
 
 #[tokio::test]
-async fn a_private_github_repository_needs_no_confirmation() {
-    let (state, _fake) = github_state().await;
-    let grant = grant(&state).await;
-    let connected = expect_json(
-        connect(&state, &bearer_header(), &grant, GITHUB_REPOSITORY_ID).await,
-        StatusCode::OK,
-    )
-    .await;
-    assert_eq!(connected["connection"]["public_on_github"], false);
-    assert_eq!(connected["connection"]["public_confirmed"], true);
-}
-
-#[tokio::test]
 async fn maintainers_name_the_checks_github_must_pass() {
     let (state, _fake) = github_state().await;
     let set = |bearer: String, names: serde_json::Value| {
         let state = state.clone();
         async move {
-            request(
+            github_api(
                 &state,
                 "PUT",
-                "/v1/repos/owner/repo/github/required-checks",
-                Some(&bearer),
+                "/required-checks",
+                &bearer,
                 Some(serde_json::json!({ "names": names })),
             )
             .await
@@ -567,30 +490,12 @@ async fn a_maintainer_disconnects() {
         StatusCode::OK,
     )
     .await;
-    let body = expect_json(
-        request(
-            &state,
-            "DELETE",
-            "/v1/repos/owner/repo/github",
-            Some(&bearer_header()),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
+    let body = github_json(&state, "DELETE", "").await;
     assert_eq!(
         body,
         serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null, "run_import_count": 50, "run_import": null })
     );
-    let again = request(
-        &state,
-        "DELETE",
-        "/v1/repos/owner/repo/github",
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
+    let again = github_api(&state, "DELETE", "", &bearer_header(), None).await;
     assert_eq!(again.status(), StatusCode::NOT_FOUND);
 }
 
