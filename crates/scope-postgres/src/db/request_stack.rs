@@ -9,7 +9,7 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::requests::{
     REQUEST_STACK_MAX_ANCESTORS, Request, RequestAutoMergeStopReason, RequestBase,
-    RequestParentGitFacts, refresh_request_stack, stop_request_auto_merge,
+    RequestParentGitFacts, RequestRevisionGitFacts, refresh_request_stack, stop_request_auto_merge,
     validate_request_stack_base,
 };
 use sea_orm::{
@@ -25,6 +25,20 @@ pub struct RequestParentPublicationFacts {
     pub base_version: u64,
     pub parent_contains_pin: bool,
     pub child_contains_pin: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum RequestBasePublicationFacts {
+    Main {
+        main_head_oid: String,
+        child_contains_main: bool,
+    },
+    Request(RequestParentPublicationFacts),
+}
+
+pub(super) struct ValidatedRequestPublication {
+    pub parent: Option<Request>,
+    pub depth: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -61,7 +75,7 @@ impl RequestStore {
             .await?
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
         acquire_aggregate_lock(&tx, "repository", &observed.repo_id).await?;
-        lock_graph(&tx, &observed).await?;
+        lock_graph(&tx, &observed, None).await?;
         let (repo, request) =
             super::request_access::lock_request_repository(&tx, request_id, actor_user_id).await?;
         if !super::request_access::request_policy_for_user(&tx, &repo, &request, actor_user_id)
@@ -189,32 +203,70 @@ pub(super) async fn validate_publication(
     selected_base: &RequestBase,
     expected_base_version: u64,
     explicit_repin: bool,
-    facts: Option<&RequestParentPublicationFacts>,
-) -> Result<Option<Request>, PostgresError> {
+    facts: Option<&RequestBasePublicationFacts>,
+    git_facts: &RequestRevisionGitFacts,
+) -> Result<ValidatedRequestPublication, PostgresError> {
     if request.base_version != expected_base_version {
         return Err(PostgresError::conflict(
             "request base changed during publication",
         ));
     }
-    let RequestBase::Request {
-        request_id,
-        head_oid,
-        ..
-    } = selected_base
-    else {
-        if facts.is_some() {
-            return Err(PostgresError::conflict(
-                "main publication cannot carry parent facts",
-            ));
-        }
-        return Ok(None);
-    };
-    let facts =
-        facts.ok_or_else(|| PostgresError::conflict("parent publication requires Git evidence"))?;
-    let ancestors = ancestry(tx, selected_base).await?;
-    for ancestor in &ancestors {
-        acquire_aggregate_lock(tx, "request", &ancestor.id).await?;
+    if explicit_repin && !request.view.is_private() {
+        return Err(PostgresError::permission_denied(
+            "request base publication requires the private view",
+        ));
     }
+    let RequestBase::Request { request_id, .. } = selected_base else {
+        match (explicit_repin, facts) {
+            (
+                true,
+                Some(RequestBasePublicationFacts::Main {
+                    main_head_oid,
+                    child_contains_main,
+                }),
+            ) => {
+                let main = entities::git_head::Entity::find_by_id(&request.repo_id)
+                    .one(tx)
+                    .await
+                    .map_err(PostgresError::internal)?
+                    .ok_or_else(|| PostgresError::conflict("repository has no accepted main"))?;
+                if main.head_oid != *main_head_oid
+                    || selected_base.review_base_oid() != main_head_oid
+                    || !child_contains_main
+                    || git_facts.contained_main_oid.as_ref() != Some(main_head_oid)
+                    || !git_facts.contained_main_descends_from_base
+                {
+                    return Err(PostgresError::conflict(
+                        "main changed or publication does not contain selected main",
+                    ));
+                }
+            }
+            (false, None) => {}
+            _ => {
+                return Err(PostgresError::conflict(
+                    "main publication has invalid Git evidence",
+                ));
+            }
+        }
+        let depth = validate_request_stack_base(
+            &request.id,
+            &request.repo_id,
+            &request.view,
+            selected_base,
+            &[],
+            None,
+        )?;
+        return Ok(ValidatedRequestPublication {
+            parent: None,
+            depth,
+        });
+    };
+    let Some(RequestBasePublicationFacts::Request(facts)) = facts else {
+        return Err(PostgresError::conflict(
+            "parent publication requires Git evidence",
+        ));
+    };
+    let ancestors = ancestry(tx, selected_base).await?;
     let parent = ancestors
         .first()
         .ok_or_else(|| PostgresError::conflict("request parent is unavailable"))?;
@@ -237,7 +289,7 @@ pub(super) async fn validate_publication(
         revision_id: revision.id.clone(),
         head_oid: parent.head_oid.clone(),
     };
-    validate_request_stack_base(
+    let depth = validate_request_stack_base(
         &request.id,
         &request.repo_id,
         &request.view,
@@ -249,17 +301,10 @@ pub(super) async fn validate_publication(
         &ancestors,
         Some(&revision),
     )?;
-    if selected_base != &request.base && selected_base != &current_base {
-        return Err(PostgresError::conflict(
-            "repinning requires the parent's current saved revision",
-        ));
-    }
-    if selected_base.review_base_oid() != head_oid {
-        return Err(PostgresError::conflict(
-            "parent review base does not match the pin",
-        ));
-    }
-    Ok(Some(parent.clone()))
+    Ok(ValidatedRequestPublication {
+        parent: Some(parent.clone()),
+        depth,
+    })
 }
 
 pub(super) async fn refresh_children(
@@ -385,6 +430,7 @@ pub(super) async fn close_children(
 pub(super) async fn lock_graph(
     tx: &DatabaseTransaction,
     request: &Request,
+    selected_base: Option<&RequestBase>,
 ) -> Result<(), PostgresError> {
     let request = request_by_id(tx, &request.id)
         .await?
@@ -400,6 +446,16 @@ pub(super) async fn lock_graph(
             return Err(PostgresError::conflict("request stack contains a cycle"));
         }
         pending.extend(children(tx, &id).await?.into_iter().map(|child| child.id));
+    }
+    if let Some(selected_base) = selected_base {
+        for ancestor in ancestry(tx, selected_base).await? {
+            if ancestor.repo_id != request.repo_id || ancestor.view != request.view {
+                return Err(PostgresError::conflict(
+                    "request parent must share the repository and view",
+                ));
+            }
+            ids.insert(ancestor.id);
+        }
     }
     for id in ids {
         acquire_aggregate_lock(tx, "request", &id).await?;

@@ -111,20 +111,50 @@ pub fn validate_request_stack_base(
     Ok(ancestors.len() as u32 + 1)
 }
 
-pub fn validate_request_repin(old: &RequestBase, new: &RequestBase) -> Result<(), DomainError> {
-    match (old, new) {
-        (
-            RequestBase::Request {
-                request_id: old_id, ..
-            },
-            RequestBase::Request {
-                request_id: new_id, ..
-            },
-        ) if old_id == new_id => Ok(()),
-        _ if old == new => Ok(()),
-        _ => Err(DomainError::conflict(
-            "request publication may only repin its existing parent",
-        )),
+pub(super) fn validate_request_base_selection(
+    request: &Request,
+    base: &RequestBase,
+    stack_depth: Option<u32>,
+    git_facts: &super::RequestRevisionGitFacts,
+) -> Result<u32, DomainError> {
+    if !request.view.is_private() {
+        return Err(DomainError::forbidden(
+            "base selection requires the private full view",
+        ));
+    }
+    match base {
+        RequestBase::Request { .. } => {
+            let depth = stack_depth
+                .filter(|depth| (2..=REQUEST_STACK_MAX_DEPTH).contains(depth))
+                .ok_or_else(|| {
+                    DomainError::conflict("parent selection requires a validated stack depth")
+                })?;
+            if !git_facts.contains_old_head
+                && !(git_facts.contained_main_oid.is_some()
+                    && git_facts.contained_main_descends_from_base)
+            {
+                return Err(DomainError::conflict(
+                    "base selection must preserve accepted main ancestry",
+                ));
+            }
+            Ok(depth)
+        }
+        RequestBase::Main { review_base_oid } => {
+            if stack_depth.is_some() {
+                return Err(DomainError::conflict(
+                    "main selection derives its stack depth",
+                ));
+            }
+            if review_base_oid.is_empty()
+                || git_facts.contained_main_oid.as_deref() != Some(review_base_oid.as_str())
+                || !git_facts.contained_main_descends_from_base
+            {
+                return Err(DomainError::conflict(
+                    "main selection requires a containing main ancestor",
+                ));
+            }
+            Ok(1)
+        }
     }
 }
 

@@ -110,6 +110,7 @@ fn open_request_edits_and_revisions_stay_open() {
         false,
         RecordRequestRevisionInput {
             new_base: None,
+            new_base_stack_depth: None,
             request_id: "request_1".to_string(),
             actor_user_id: "author".to_string(),
             actor_can_edit: true,

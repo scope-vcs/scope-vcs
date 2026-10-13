@@ -174,6 +174,21 @@ fn git_is_ancestor(git_repo: &GitRepo, ancestor: &str, descendant: &str) -> anyh
     .success())
 }
 
+pub(super) fn attached_request_id(
+    git_repo: &GitRepo,
+    branch: &str,
+    context: &RequestContext,
+) -> anyhow::Result<String> {
+    let attachment = request_attachment(git_repo, branch)?.ok_or_else(|| CliError::usage("restack requires a branch attached to a Scope request; use scope request checkout first"))?;
+    validate_stored_request_target(&attachment, context)?;
+    if attachment.remote.as_deref() != Some(context.target.remote.as_str()) {
+        return Err(
+            CliError::usage("the branch is attached through a different Scope remote").into(),
+        );
+    }
+    Ok(attachment.id)
+}
+
 pub(super) fn request_id_for_context(
     git_repo: Option<&GitRepo>,
     api: ApiSession<'_>,

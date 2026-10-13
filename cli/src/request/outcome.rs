@@ -35,6 +35,7 @@ impl RequestCommandOutcome {
 pub(super) enum RequestCommandResult {
     Started(StartResult),
     Checkout(CheckoutResult),
+    Restack(RestackResult),
     Diff(DiffResult),
     Checks(ChecksResult),
     Detail(DetailResult),
@@ -141,4 +142,17 @@ pub(super) struct InspectedFile {
 pub(super) struct ChecksResult {
     pub(super) repo: RepoSummaryResponse,
     pub(super) checks: scope_api_contract::RequestChecksResponse,
+}
+
+#[derive(Serialize)]
+pub(super) struct RestackResult {
+    pub(super) request_id: String,
+    pub(super) branch: String,
+    pub(super) status: &'static str,
+    pub(super) head_oid: String,
+    pub(super) original_head_oid: String,
+    pub(super) original_base: scope_api_contract::RequestBase,
+    pub(super) selected_base: scope_api_contract::RequestBase,
+    pub(super) backup_ref: String,
+    pub(super) remote: String,
 }

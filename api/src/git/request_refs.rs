@@ -38,9 +38,9 @@ mod snapshot;
 mod view_bases;
 #[cfg(test)]
 use crate::persistence::unix_now;
+pub(crate) use ancestry::request_revision_git_facts;
 use ancestry::{
-    ensure_request_ref_descends_from_base, request_ref_oid_is_commit, request_revision_git_facts,
-    thin_snapshot_base,
+    ensure_request_ref_descends_from_base, request_ref_oid_is_commit, thin_snapshot_base,
 };
 use locks::acquire_request_ref_store_lock;
 pub(crate) use locks::acquire_request_ref_update_lock_async;

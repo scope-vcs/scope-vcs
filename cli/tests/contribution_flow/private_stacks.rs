@@ -83,6 +83,49 @@ pub(super) fn exercise(contributor: &Actor, maintainer: &Actor, suffix: &str) {
         blocked["result"]["request"]["mergeability"]["status"],
         "ParentClosed"
     );
+    let original_head = string_at(&blocked, "/result/request/head_oid");
+    let restacked = maintainer.json(["request", "restack", "--onto", "main"]);
+    assert_eq!(restacked["result"]["status"], "ready_to_publish");
+    assert_eq!(restacked["result"]["request_id"], child_id);
+    assert_eq!(restacked["result"]["selected_base"]["kind"], "main");
+    assert_eq!(restacked["result"]["original_head_oid"], original_head);
+    let backup_ref = string_at(&restacked, "/result/backup_ref");
+    assert_eq!(
+        git_stdout(&maintainer.repo, ["rev-parse", &backup_ref]),
+        original_head
+    );
+    assert!(!maintainer.repo.join(&parent_path).exists());
+    assert_eq!(
+        fs::read_to_string(maintainer.repo.join(&child_path)).unwrap(),
+        "child layer\n"
+    );
+    let published = maintainer.json(["request", "push"]);
+    assert_eq!(published["result"]["request"]["id"], child_id);
+    assert_eq!(published["result"]["request"]["base"]["kind"], "main");
+    assert_eq!(published["result"]["request"]["stack_depth"], 1);
+    let recovered_diff = maintainer.json(["request", "diff"]);
+    let recovered_files = recovered_diff["result"]["files"].as_array().unwrap();
+    assert_eq!(
+        recovered_files.len(),
+        1,
+        "reparented review included removed parent work: {recovered_diff}"
+    );
+    assert_eq!(
+        recovered_files[0]["diff"]["path"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches('/'),
+        child_path
+    );
+    assert_eq!(
+        recovered_files[0]["diff"]["new_content"]["text"],
+        "child layer\n"
+    );
+    assert_error(
+        contributor,
+        ["request", "show", "--request", &child_id],
+        "not_found",
+    );
     maintainer.json(["request", "close", "--request", &child_id, "--yes"]);
     run_git(&maintainer.repo, ["switch", "main"]);
     maintainer.json(["pull"]);

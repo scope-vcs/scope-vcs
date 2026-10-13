@@ -537,6 +537,7 @@ fn seed_owner_request(
             catalog.request_events.contains_key(&event_id),
             RecordRequestRevisionInput {
                 new_base: None,
+                new_base_stack_depth: None,
                 request_id: id.to_string(),
                 actor_user_id: owner.id.clone(),
                 actor_can_edit: true,

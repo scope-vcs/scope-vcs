@@ -226,6 +226,7 @@ pub fn start_main_push_request(
         false,
         RecordRequestRevisionInput {
             new_base: None,
+            new_base_stack_depth: None,
             request_id: input.id.clone(),
             actor_user_id: input.pusher_user_id.clone(),
             actor_can_edit: true,

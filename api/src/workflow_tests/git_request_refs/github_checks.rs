@@ -793,6 +793,7 @@ async fn a_commit_is_read_every_two_minutes_while_any_request_testing_it_is_pend
         .record_request_revision(
             scope_domain::requests::RecordRequestRevisionInput {
                 new_base: None,
+                new_base_stack_depth: None,
                 request_id: other.id.clone(),
                 actor_user_id: test_owner_id(),
                 actor_can_edit: true,

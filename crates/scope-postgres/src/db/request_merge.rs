@@ -72,7 +72,7 @@ impl RequestStore {
             .await?
             .filter(|request| request.repo_id == repo_id)
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
-        super::request_stack::lock_graph(&tx, &request).await?;
+        super::request_stack::lock_graph(&tx, &request, None).await?;
         let locked_auto_merge = if let Some(expected) = &expected_auto_merge {
             let row = entities::request_auto_merge_intent::Entity::find_by_id(&expected.intent_id)
                 .lock_exclusive()
@@ -366,7 +366,7 @@ pub(super) async fn complete_landed_requests(
         else {
             continue;
         };
-        super::request_stack::lock_graph(tx, &request).await?;
+        super::request_stack::lock_graph(tx, &request, None).await?;
         if request_main_push_completion(&request, true)?
             == RequestMainPushCompletion::DeferUntilParentLands
         {

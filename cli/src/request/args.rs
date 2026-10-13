@@ -14,6 +14,8 @@ pub(super) enum RequestCommand {
     Start(RequestStartArgs),
     #[command(about = "Push the current commit to a request branch")]
     Push(RequestPushArgs),
+    #[command(about = "Replay the current request layer onto its parent or an explicit base")]
+    Restack(RequestRestackArgs),
     #[command(about = "Submit a request to its maintainers")]
     Submit(RequestSubmitArgs),
     #[command(about = "Close a request")]
@@ -81,6 +83,12 @@ pub(super) struct RequestStartArgs {
 
 #[derive(Parser)]
 pub(super) struct RequestPushArgs {
+    #[arg(
+        long,
+        conflicts_with = "base_revision",
+        help = "Explicitly select an Open request or main as the base"
+    )]
+    pub(super) base: Option<String>,
     #[command(flatten)]
     pub(super) target: RequestTargetArgs,
     #[arg(
@@ -88,6 +96,22 @@ pub(super) struct RequestPushArgs {
         help = "Explicitly pin the current revision of the same parent after manual restacking"
     )]
     pub(super) base_revision: Option<String>,
+}
+
+#[derive(Parser)]
+pub(super) struct RequestRestackArgs {
+    #[arg(long, help = "Scope Git remote for the attached request")]
+    pub(super) remote: Option<String>,
+    #[arg(long, conflicts_with_all = ["continue_rebase", "abort"], help = "Replay onto an Open request or main")]
+    pub(super) onto: Option<String>,
+    #[arg(
+        long = "continue",
+        conflicts_with = "abort",
+        help = "Continue after staging resolved conflicts"
+    )]
+    pub(super) continue_rebase: bool,
+    #[arg(long, help = "Abort the active restack and restore its original head")]
+    pub(super) abort: bool,
 }
 
 #[derive(Args)]

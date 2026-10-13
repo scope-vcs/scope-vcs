@@ -43,7 +43,7 @@ pub(super) fn ensure_request_ref_descends_from_base(
     ))
 }
 
-pub(super) fn request_revision_git_facts(
+pub(crate) fn request_revision_git_facts(
     repo: &FsPath,
     base_oid: &str,
     old_head_oid: &str,

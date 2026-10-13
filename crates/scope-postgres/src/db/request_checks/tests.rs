@@ -102,6 +102,7 @@ async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) 
         .record_request_revision(
             RecordRequestRevisionInput {
                 new_base: None,
+                new_base_stack_depth: None,
                 request_id: request_id.into(),
                 actor_user_id: "user_public".into(),
                 actor_can_edit: true,
@@ -139,6 +140,7 @@ async fn record_no_checks(store: &MetadataStore, request_id: &str, head_oid: &st
         .record_request_revision(
             RecordRequestRevisionInput {
                 new_base: None,
+                new_base_stack_depth: None,
                 request_id: request_id.into(),
                 actor_user_id: "user_public".into(),
                 actor_can_edit: true,
@@ -428,6 +430,7 @@ async fn recovery_pages_advance_past_unrepaired_requests_and_restart_from_the_be
             .record_request_revision(
                 RecordRequestRevisionInput {
                     new_base: None,
+                    new_base_stack_depth: None,
                     request_id: request_id.into(),
                     actor_user_id: "user_public".into(),
                     actor_can_edit: true,

@@ -238,24 +238,7 @@ fn explicit_existing_pin_push_keeps_base_version_and_targeted_source_tracking() 
     );
     let (server, _) = stack_server(&parent_head, &main, bare.path(), ContextResponse::None);
     let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
-    let shim = transport.shim.path().join("git");
-    let script = fs::read_to_string(&shim).unwrap();
-    let capture = r#"for ((i=0; i<${GIT_CONFIG_COUNT:-0}; i++)); do
-  key="GIT_CONFIG_VALUE_$i"
-  value="${!key}"
-  if [[ "$value" == Scope-Request-* ]]; then
-    printf '%s\n' "$value" >> "$SCOPE_STACK_HEADERS"
-  fi
-done
-"#;
-    fs::write(
-        &shim,
-        script.replace(
-            "exec \"$SCOPE_TEST_REAL_GIT\"",
-            &format!("{capture}exec \"$SCOPE_TEST_REAL_GIT\""),
-        ),
-    )
-    .unwrap();
+    transport.capture_request_headers();
     run_git(dir.path(), ["switch", "--quiet", "-c", "source"]);
     run_git(
         dir.path(),
@@ -386,8 +369,193 @@ done
     );
 }
 
+#[test]
+fn same_head_explicit_reparent_publishes_main_or_another_request_without_changing_source_binding() {
+    for selector in ["main", "req_other"] {
+        let dir = TempDir::new("same-head-reparent");
+        create_repo_with_head(dir.path());
+        let head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+        let bare = TempDir::new("same-head-reparent-bare");
+        run_git(bare.path(), ["init", "--bare"]);
+        run_git(
+            dir.path(),
+            [
+                "push",
+                bare.path().to_str().unwrap(),
+                "HEAD:refs/heads/main",
+                "HEAD:refs/heads/parent",
+                "HEAD:refs/heads/other",
+                "HEAD:refs/heads/child",
+            ],
+        );
+        let (server, bodies) = stack_server(&head, &head, bare.path(), ContextResponse::None);
+        let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
+        run_git(dir.path(), ["switch", "-c", "source"]);
+        run_git(
+            dir.path(),
+            ["config", "branch.source.scopeRequestId", "req_source"],
+        );
+        run_git(dir.path(), ["update-ref", "refs/remotes/scope/main", &head]);
+        run_git(
+            dir.path(),
+            ["branch", "--set-upstream-to=scope/main", "source"],
+        );
+        let value = success(
+            transport
+                .command(&server, dir.path())
+                .args([
+                    "--json",
+                    "request",
+                    "push",
+                    "--request",
+                    "req_child",
+                    "--base",
+                    selector,
+                ])
+                .output()
+                .unwrap(),
+        );
+        assert_eq!(
+            value["result"]["request"]["base"]["kind"],
+            if selector == "main" {
+                "main"
+            } else {
+                "request"
+            }
+        );
+        assert_eq!(value["result"]["request"]["base_version"], 2);
+        let bodies = bodies.lock().unwrap();
+        assert_eq!(bodies.len(), 1);
+        if selector == "main" {
+            assert_eq!(bodies[0]["base"]["review_base_oid"], head);
+            assert!(bodies[0]["expected_parent_base_version"].is_null());
+        } else {
+            assert_eq!(bodies[0]["base"]["request_id"], "req_other");
+            assert_eq!(bodies[0]["expected_parent_base_version"], 1);
+        }
+        assert_eq!(
+            git_stdout(dir.path(), ["config", "branch.source.scopeRequestId"]),
+            "req_source"
+        );
+        assert_eq!(
+            git_stdout(dir.path(), ["rev-parse", "--abbrev-ref", "@{upstream}"]),
+            "scope/main"
+        );
+        assert_eq!(
+            git_stdout(bare.path(), ["rev-parse", "refs/heads/child"]),
+            head
+        );
+    }
+}
+
+#[test]
+fn changed_head_explicit_main_publication_sends_only_main_base_headers() {
+    let dir = TempDir::new("main-publication-headers");
+    create_repo_with_head(dir.path());
+    let main = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+    let bare = TempDir::new("main-publication-headers-bare");
+    run_git(bare.path(), ["init", "--bare"]);
+    run_git(
+        dir.path(),
+        [
+            "push",
+            bare.path().to_str().unwrap(),
+            "HEAD:refs/heads/main",
+            "HEAD:refs/heads/parent",
+            "HEAD:refs/heads/child",
+        ],
+    );
+    let (server, _) = stack_server_with_base(
+        &main,
+        &main,
+        bare.path(),
+        ContextResponse::None,
+        Some(json!({"kind":"main","review_base_oid":main})),
+        true,
+    );
+    let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
+    transport.capture_request_headers();
+    fs::write(dir.path().join("new.txt"), "main based change\n").unwrap();
+    run_git(dir.path(), ["add", "."]);
+    commit_all(dir.path(), "New main based head");
+    let head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+    let headers = dir.path().join("headers");
+    success(
+        transport
+            .command(&server, dir.path())
+            .env("SCOPE_STACK_HEADERS", &headers)
+            .args([
+                "--json",
+                "request",
+                "push",
+                "--request",
+                "req_child",
+                "--base",
+                "main",
+            ])
+            .output()
+            .unwrap(),
+    );
+    let headers = fs::read_to_string(headers).unwrap();
+    assert!(headers.contains(&format!("Scope-Request-Base: main:{main}")));
+    assert!(headers.contains("Scope-Request-Base-Version: 1"));
+    assert!(!headers.contains("Scope-Request-Parent-"));
+    assert!(!headers.contains("fixture-token"));
+    assert_eq!(
+        git_stdout(bare.path(), ["rev-parse", "refs/heads/child"]),
+        head
+    );
+    use std::os::unix::fs::PermissionsExt;
+    let hook = bare.path().join("hooks/pre-receive");
+    fs::write(
+        &hook,
+        "#!/bin/sh\nprintf 'opaque publication refusal\\n' >&2\nexit 1\n",
+    )
+    .unwrap();
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(dir.path().join("new.txt"), "second main based change\n").unwrap();
+    run_git(dir.path(), ["add", "."]);
+    commit_all(dir.path(), "Main based publication rejected remotely");
+    let attempted = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+    let rejected = transport
+        .command(&server, dir.path())
+        .env("SCOPE_STACK_HEADERS", dir.path().join("headers"))
+        .args([
+            "--json",
+            "request",
+            "push",
+            "--request",
+            "req_child",
+            "--base",
+            "main",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(rejected.status.code(), Some(5), "{rejected:?}");
+    let error: Value = serde_json::from_slice(&rejected.stderr).unwrap();
+    assert_eq!(error["code"], "conflict");
+    assert_eq!(error["recovery"]["request"]["head_oid"], head);
+    assert_eq!(error["recovery"]["selected_base"]["kind"], "main");
+    assert_eq!(error["recovery"]["intended_head_oid"], attempted);
+    assert!(
+        error["recovery"]["transport_error"]
+            .as_str()
+            .unwrap()
+            .contains("opaque publication refusal")
+    );
+    assert_eq!(
+        git_stdout(bare.path(), ["rev-parse", "refs/heads/child"]),
+        head
+    );
+    assert_eq!(
+        git_stdout(dir.path(), ["rev-parse", "refs/remotes/scope/child"]),
+        head
+    );
+    assert_eq!(git_stdout(dir.path(), ["rev-parse", "HEAD"]), attempted);
+}
+
 #[derive(Clone, Copy, PartialEq)]
-enum ContextResponse {
+pub(super) enum ContextResponse {
     None,
     LostResponse,
     LostResponseAdvanced,
@@ -400,10 +568,21 @@ fn stack_server(
     bare: &std::path::Path,
     context_response: ContextResponse,
 ) -> (FixtureServer, Arc<Mutex<Vec<Value>>>) {
+    stack_server_with_base(parent_head, main, bare, context_response, None, true)
+}
+
+pub(super) fn stack_server_with_base(
+    parent_head: &str,
+    main: &str,
+    bare: &std::path::Path,
+    context_response: ContextResponse,
+    child_base: Option<Value>,
+    parent_open: bool,
+) -> (FixtureServer, Arc<Mutex<Vec<Value>>>) {
     let mut parent = request();
     parent["id"] = "req_parent".into();
     parent["name"] = "parent".into();
-    parent["state"] = "Open".into();
+    parent["state"] = if parent_open { "Open" } else { "Closed" }.into();
     parent["view"] = "private".into();
     parent["head_oid"] = parent_head.into();
     parent["main_ancestor_oid"] = main.into();
@@ -419,6 +598,13 @@ fn stack_server(
     if context_response != ContextResponse::None {
         child["base"]["revision_id"] = "rev_previous".into();
     }
+    if let Some(base) = child_base {
+        child["base"] = base;
+    }
+    let mut other = parent.clone();
+    other["id"] = "req_other".into();
+    other["name"] = "other".into();
+    other["state"] = "Open".into();
     let child = Arc::new(Mutex::new(child));
     let bodies = Arc::new(Mutex::new(Vec::new()));
     let parent_revision = Arc::new(Mutex::new("rev_parent".to_string()));
@@ -442,6 +628,8 @@ fn stack_server(
     let app = Router::new()
         .route("/v1/session", get(|| async { Json(support::session_response("usr_test", "owner", "test@example.test")) }))
         .route("/v1/repos/owner/repo", get(move || { let repo=repo.clone(); async move { Json(repo) } }))
+        .route("/v1/repos/owner/repo/requests/req_other", get(move || { let other=other.clone(); async move { Json(json!({"request":other})) } }))
+        .route("/v1/repos/owner/repo/requests/req_other/changes", get(|| async { Json(json!({"comparison":null,"review_revision_id":"rev_parent","revisions":[],"has_earlier_revisions":false})) }))
         .route("/v1/repos/owner/repo/requests/req_parent", get(move || { let parent=parent.clone(); async move { Json(json!({"request":parent})) } }))
         .route("/v1/repos/owner/repo/requests/req_parent/changes", get(move || { let revision=parent_revision_read.clone(); async move { Json(json!({"comparison":null,"review_revision_id":revision.lock().unwrap().clone(),"revisions":[],"has_earlier_revisions":false})) } }))
         .route("/v1/repos/owner/repo/requests", post(move |Json(body):Json<Value>| { let bodies=start_bodies.clone(); let child=start_child.clone(); async move { bodies.lock().unwrap().push(body); Json(json!({"request":child.lock().unwrap().clone()})) } }))

@@ -31,6 +31,7 @@ fn input(request: &Request, head: &str, event: &str, now: u64) -> RecordRequestR
     let head = encoded.as_str();
     RecordRequestRevisionInput {
         new_base: None,
+        new_base_stack_depth: None,
         request_id: request.id.clone(),
         actor_user_id: "user_owner".into(),
         actor_can_edit: true,
@@ -59,7 +60,7 @@ fn input(request: &Request, head: &str, event: &str, now: u64) -> RecordRequestR
 async fn parent_facts(
     store: &MetadataStore,
     request: &Request,
-) -> Option<RequestParentPublicationFacts> {
+) -> Option<RequestBasePublicationFacts> {
     let RequestBase::Request { request_id, .. } = &request.base else {
         return None;
     };
@@ -70,14 +71,16 @@ async fn parent_facts(
         .await
         .unwrap()
         .unwrap();
-    Some(RequestParentPublicationFacts {
-        request_id: parent.id,
-        revision_id: revision.id,
-        head_oid: parent.head_oid,
-        base_version: parent.base_version,
-        parent_contains_pin: true,
-        child_contains_pin: true,
-    })
+    Some(RequestBasePublicationFacts::Request(
+        RequestParentPublicationFacts {
+            request_id: parent.id,
+            revision_id: revision.id,
+            head_oid: parent.head_oid,
+            base_version: parent.base_version,
+            parent_contains_pin: true,
+            child_contains_pin: true,
+        },
+    ))
 }
 
 async fn start(store: &MetadataStore, id: &str, base: RequestBase, now: u64) -> Request {
@@ -338,7 +341,7 @@ async fn committed_context_receipt_survives_parent_close_and_rejects_changed_pay
         expected_head_oid: child.head_oid.clone(),
         expected_base_version: child.base_version,
         base: pin(&store, &parent).await,
-        expected_parent_base_version: parent.base_version,
+        expected_parent_base_version: Some(parent.base_version),
     };
     let mut publication = input(&child, &child.head_oid, "repin_event", 11);
     publication.new_base = Some(context.base.clone());
@@ -347,7 +350,7 @@ async fn committed_context_receipt_survives_parent_close_and_rejects_changed_pay
         .record_request_revision_context(
             publication.clone(),
             context.clone(),
-            parent_facts(&store, &child).await.unwrap(),
+            parent_facts(&store, &child).await,
             Vec::new(),
             IDS,
         )
@@ -380,7 +383,8 @@ async fn committed_context_receipt_survives_parent_close_and_rejects_changed_pay
         RequestStackStatus::ParentClosed
     );
     let mut changed = context;
-    changed.expected_parent_base_version += 1;
+    changed.expected_parent_base_version =
+        changed.expected_parent_base_version.map(|value| value + 1);
     let error = store
         .requests()
         .request_revision_context_receipt(&child.id, "user_owner", &changed)
@@ -453,7 +457,7 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
     acquire_aggregate_lock(&tx, "repository", &parent.repo_id)
         .await
         .unwrap();
-    lock_graph(&tx, &parent).await.unwrap();
+    lock_graph(&tx, &parent, None).await.unwrap();
     super::super::request_lifecycle_effects::persist_lifecycle_mutation(
         &tx,
         &merged.request,
@@ -477,7 +481,7 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
     acquire_aggregate_lock(&tx, "repository", &parent.repo_id)
         .await
         .unwrap();
-    lock_graph(&tx, &parent).await.unwrap();
+    lock_graph(&tx, &parent, None).await.unwrap();
     super::super::request_lifecycle_effects::persist_lifecycle_mutation(
         &tx,
         &merged.request,
@@ -532,3 +536,4 @@ mod github_pushes;
 mod integration_conflict;
 
 mod carried;
+mod reparent;

@@ -4,6 +4,7 @@ use scope_domain::requests::{
 };
 
 mod carried;
+mod reparent;
 
 #[tokio::test]
 async fn request_base_headers_reject_partial_duplicate_and_malformed_publication_before_receiving_git()

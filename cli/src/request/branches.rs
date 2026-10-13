@@ -163,6 +163,7 @@ pub(super) fn push_request_branch(
     api: ApiSession<'_>,
     remote: Option<String>,
     request_id: Option<String>,
+    base: Option<String>,
     base_revision: Option<String>,
 ) -> anyhow::Result<RequestCommandOutcome> {
     if !crate::execution::json() {
@@ -198,115 +199,50 @@ pub(super) fn push_request_branch(
         &current_main_oid,
         &request_head_oid,
     )?;
-    let already_accepted = if let Some(revision) = base_revision.as_deref() {
-        stack::retry_pending_context(
+    let pending = restack::state::load(git_repo)?.filter(|pending| {
+        pending.owner == context.target.owner
+            && pending.repository == context.target.repo
+            && pending.remote == context.target.remote
+            && pending.request_id == detail.request.id
+    });
+    if let Some(pending) = &pending
+        && (pending.branch != branch || crate::git_repo::active_rebase_branch(git_repo)?.is_some())
+    {
+        return Err(restack::recovery(
             git_repo,
-            api,
-            &context,
-            &detail.request,
-            &request_head_oid,
-            revision,
-        )? || stack::accepted_pin(
-            api,
-            &context,
-            &detail.request,
-            &request_head_oid,
-            revision,
-            None,
-        )?
-    } else {
-        false
-    };
-    let pin = if already_accepted {
-        None
-    } else if let Some(revision) = base_revision.as_deref() {
-        let scope_api_contract::RequestBase::Request { request_id, .. } = &detail.request.base
-        else {
-            return Err(crate::error::CliError::usage(
-                "--base-revision requires a request with a parent",
-            )
-            .into());
-        };
-        let (_, pin) = stack::current_parent(
-            git_repo,
-            api,
-            &context,
-            request_id.clone(),
-            Some(&detail.request.view),
-            Some(revision),
-        )?;
-        stack::require_contains_pin(git_repo, &pin.base, &request_head_oid)?;
-        Some(pin)
-    } else {
-        stack::require_contains_pin(git_repo, &detail.request.base, &request_head_oid)?;
-        None
-    };
-    let expected_head_oid = last_seen_request_head(
-        git_repo,
-        &context.target,
-        &detail.request,
-        &branch,
-        &request_head_oid,
-    )?;
-    if !already_accepted && let Some(pin) = &pin {
-        if request_head_oid == detail.request.head_oid.as_str() {
-            stack::publish_context(
-                git_repo,
-                api,
-                &context,
-                &detail.request,
-                pin,
-                &request_head_oid,
-            )?;
-        } else {
-            let result = crate::git_repo::push_head_to_ref_with_bearer(
-                &context
-                    .target
-                    .url_for_view(&detail.request.view.clone().into()),
-                &request_head_oid,
-                &format!("refs/heads/{}", detail.request.name),
-                &expected_head_oid,
-                api.token,
-                &stack::publication_headers(&detail.request, pin),
-            )
-            .map_err(|error| local::request_push_error(error, &detail.request.id));
-            let revision = base_revision.as_deref().expect("explicit pin");
-            let expected_base_version = if detail.request.base == pin.base {
-                detail.request.base_version
-            } else {
-                detail
-                    .request
-                    .base_version
-                    .checked_add(1)
-                    .context("request base version cannot advance")?
-            };
-            if !stack::accepted_pin(
-                api,
-                &context,
-                &detail.request,
-                &request_head_oid,
-                revision,
-                Some((&pin.base, expected_base_version)),
-            )? {
-                result?;
-                return Err(crate::error::CliError::new(ErrorResponse::new(
-                    ErrorCode::Conflict,
-                    "revision history cannot confirm the intended head and parent pin",
-                ))
-                .into());
-            }
-        }
-    } else if !already_accepted {
-        push_request_head(
-            &context.target,
-            &detail.request.view,
-            api.token,
-            &request_head_oid,
-            &expected_head_oid,
-            &detail.request.id,
-            &detail.request.name,
-        )?;
+            pending,
+            "verify_local_restack",
+            "finish the restack on its original branch before publishing",
+        ));
     }
+    let selected = publication::selected_for_push(
+        git_repo,
+        api,
+        &context,
+        &detail.request,
+        &request_head_oid,
+        base.as_deref()
+            .map(publication::ExplicitBase::Base)
+            .or_else(|| {
+                base_revision
+                    .as_deref()
+                    .map(publication::ExplicitBase::Revision)
+            }),
+        pending.as_ref(),
+    )?;
+    publication::publish_selected(
+        git_repo,
+        api,
+        &context,
+        &detail.request,
+        (&branch, &request_head_oid),
+        selected.as_ref(),
+        pending.as_ref(),
+    )
+    .map_err(|error| match &pending {
+        Some(pending) => restack::publication_failure(git_repo, pending, error),
+        None => error,
+    })?;
     let recover = |stage, error| {
         recovery::request_partial(&context, &detail.request, &branch, stage, true, error)
     };
@@ -324,6 +260,10 @@ pub(super) fn push_request_branch(
         &request_id,
     )
     .map_err(|error| recover("refresh_request", error))?;
+    if pending.is_some() {
+        restack::state::clear(git_repo)
+            .map_err(|error| recover("clear_restack_selection", error))?;
+    }
     let mut human_lines = repo_access_lines(&context.repo);
     human_lines.extend(request_detail_lines(&detail.request, &context.views));
     let result = DetailResult {

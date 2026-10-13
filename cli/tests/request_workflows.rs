@@ -5,6 +5,9 @@ mod pull;
 #[path = "request_workflows/recovery.rs"]
 mod recovery;
 #[cfg(unix)]
+#[path = "request_workflows/restack.rs"]
+mod restack;
+#[cfg(unix)]
 #[path = "request_workflows/rewrites.rs"]
 mod rewrites;
 #[cfg(unix)]
@@ -711,6 +714,27 @@ exec "$SCOPE_TEST_REAL_GIT" "${args[@]}"
             private_remote,
             file_url: reqwest::Url::from_directory_path(bare).unwrap().to_string(),
         }
+    }
+
+    fn capture_request_headers(&self) {
+        let shim = self.shim.path().join("git");
+        let script = fs::read_to_string(&shim).unwrap();
+        let capture = r#"for ((i=0; i<${GIT_CONFIG_COUNT:-0}; i++)); do
+  key="GIT_CONFIG_VALUE_$i"
+  value="${!key}"
+  if [[ "$value" == Scope-Request-* ]]; then
+    printf '%s\n' "$value" >> "$SCOPE_STACK_HEADERS"
+  fi
+done
+"#;
+        fs::write(
+            &shim,
+            script.replace(
+                "exec \"$SCOPE_TEST_REAL_GIT\"",
+                &format!("{capture}exec \"$SCOPE_TEST_REAL_GIT\""),
+            ),
+        )
+        .unwrap();
     }
 
     fn command(&self, server: &FixtureServer, cwd: &std::path::Path) -> Command {

@@ -40,6 +40,7 @@ fn revise(git_facts: RequestRevisionGitFacts) -> RequestRevisionMutation {
         false,
         RecordRequestRevisionInput {
             new_base: None,
+            new_base_stack_depth: None,
             request_id: "request_change".to_string(),
             actor_user_id: "author".to_string(),
             actor_can_edit: true,

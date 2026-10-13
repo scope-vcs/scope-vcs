@@ -38,6 +38,8 @@ const SCOPE_GIT_ORIGIN_CONFIG_KEY: &str = "scope.gitOrigin";
 
 mod changes;
 mod config;
+mod rebase;
+pub use rebase::*;
 mod transport;
 pub use changes::*;
 pub use config::*;

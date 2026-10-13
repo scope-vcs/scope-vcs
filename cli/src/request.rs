@@ -30,6 +30,8 @@ mod branches;
 mod confirm;
 mod diff;
 mod discussion;
+mod publication;
+mod restack;
 mod stack;
 use discussion::{DiscussionMutation, discussion_mutation};
 mod inspect;
@@ -84,6 +86,7 @@ pub fn prepare_request_command(args: RequestArgs) -> anyhow::Result<PreparedRequ
         RequestCommand::Start(_) => Some(("scope request start", true)),
         RequestCommand::Push(_) => Some(("scope request push", false)),
         RequestCommand::Checkout(_) => Some(("scope request checkout", true)),
+        RequestCommand::Restack(_) => Some(("scope request restack", false)),
         _ => None,
     };
     let git_repo = if let Some((name, clean)) = local_command {
@@ -120,8 +123,12 @@ pub fn run_request_command(
             api,
             args.target.remote,
             args.target.request,
+            args.base,
             args.base_revision,
         ),
+        RequestCommand::Restack(args) => {
+            restack::run(git_repo.expect("prepared local command"), api, args)
+        }
         RequestCommand::Submit(args) => {
             submit_request_command(git_repo, api, args.target, args.yes)
         }
