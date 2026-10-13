@@ -39,6 +39,7 @@ pub(crate) async fn prepare_request_base_publication(
     headers: Option<RequestBasePublicationHeaders>,
     staging_repo: &Path,
     new_head_oid: &str,
+    expected_repo_change_version: u64,
 ) -> Result<
     (
         Option<RequestBasePublication>,
@@ -47,11 +48,6 @@ pub(crate) async fn prepare_request_base_publication(
     ApiError,
 > {
     if let Some(headers) = &headers {
-        if !request.view.is_private() {
-            return Err(ApiError::forbidden(
-                "explicit base publication requires the private view",
-            ));
-        }
         if headers.expected_base_version != request.base_version {
             return Err(ApiError::conflict(
                 "request base publication context changed; refresh and retry",
@@ -68,7 +64,12 @@ pub(crate) async fn prepare_request_base_publication(
     } = selected_base
     else {
         let Some(headers) = headers else {
-            return Ok((None, None));
+            return Ok((
+                None,
+                Some(RequestBasePublicationFacts::Unchanged {
+                    expected_repo_change_version,
+                }),
+            ));
         };
         if headers.expected_parent_base_version.is_some() {
             return Err(ApiError::bad_request(
@@ -78,7 +79,8 @@ pub(crate) async fn prepare_request_base_publication(
         let RequestBase::Main { review_base_oid } = &headers.base else {
             return Err(ApiError::bad_request("main selection requires a main base"));
         };
-        let main_head = restore_current_main(state, incarnation, staging_repo).await?;
+        let main_head =
+            restore_request_main(state, incarnation, &request.view, staging_repo).await?;
         if review_base_oid != &main_head {
             return Err(ApiError::conflict(
                 "main moved; refresh and retry base publication",
@@ -104,6 +106,7 @@ pub(crate) async fn prepare_request_base_publication(
             Some(RequestBasePublicationFacts::Main {
                 main_head_oid: main_head,
                 child_contains_main: true,
+                expected_repo_change_version,
             }),
         ));
     };
@@ -175,6 +178,7 @@ pub(crate) async fn prepare_request_base_publication(
         base_version: parent.base_version,
         parent_contains_pin,
         child_contains_pin,
+        expected_repo_change_version,
     });
     Ok((
         headers.map(|headers| RequestBasePublication {
@@ -224,6 +228,46 @@ pub(crate) async fn restore_current_main(
     Ok(main)
 }
 
+pub(crate) async fn restore_request_main(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    view: &scope_domain::views::ViewId,
+    staging_repo: &Path,
+) -> Result<String, ApiError> {
+    if view.is_private() {
+        return restore_current_main(state, incarnation, staging_repo).await;
+    }
+    let git = crate::git::repository_git::RepositoryGit::load(state, incarnation).await?;
+    let views = git.views(state).await?;
+    let head = git
+        .view_head(state, view)
+        .await?
+        .ok_or_else(|| ApiError::conflict("request view has no accepted main"))?;
+    let source = git.view_repo_at(state, &views, view, Some(&head)).await?;
+    let path = staging_repo.to_path_buf();
+    let main = head.clone();
+    blocking::run(move || {
+        let refspec = format!("{main}:refs/scope/internal/base-view-main");
+        run_git(
+            Some(&path),
+            &[
+                "fetch",
+                "--no-tags",
+                source.to_string_lossy().as_ref(),
+                &refspec,
+            ],
+            "restoring request view main objects",
+        )?;
+        run_git(
+            Some(&path),
+            &["update-ref", "-d", "refs/scope/internal/base-view-main"],
+            "removing request view main preparation ref",
+        )
+    })
+    .await?;
+    Ok(head)
+}
+
 pub(crate) async fn request_stack_child_publication_facts(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -253,6 +297,7 @@ pub(crate) async fn request_stack_child_publication_facts(
             base_version: child.base_version,
             parent_contains_pin,
             contained_main_oid: None,
+            accepted_view_main_oid: None,
             contained_main_descends_from_ancestor: false,
         });
     }

@@ -30,6 +30,7 @@ pub enum RequestAutoMergeStopReason {
     ParentRewritten,
     ParentClosed,
     AncestorBlocked,
+    NeedsMainUpdate,
 }
 
 impl RequestAutoMergeStopReason {
@@ -45,6 +46,7 @@ impl RequestAutoMergeStopReason {
             Self::ParentRewritten => "The parent no longer contains the pinned revision",
             Self::ParentClosed => "The parent request was closed",
             Self::AncestorBlocked => "An ancestor request is blocked",
+            Self::NeedsMainUpdate => "The request must contain the latest view main",
         }
     }
 }
@@ -187,6 +189,9 @@ pub fn request_auto_merge_readiness(gate: super::MergeGateDecision) -> RequestAu
         }
         RequestMergeabilityStatus::AncestorBlocked => {
             RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::AncestorBlocked)
+        }
+        RequestMergeabilityStatus::NeedsMainUpdate => {
+            RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::NeedsMainUpdate)
         }
         RequestMergeabilityStatus::IntegrationConflict => {
             RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::MergeConflict)
@@ -436,11 +441,6 @@ fn request_auto_merge_eligibility(
         ));
     }
     if matches!(request.base, super::RequestBase::Request { .. }) {
-        if !request.view.is_private() {
-            return Err(DomainError::forbidden(
-                "stack auto-merge requires the private full view",
-            ));
-        }
         if !matches!(
             request.stack_status,
             super::RequestStackStatus::WaitingForParent | super::RequestStackStatus::ParentExtended

@@ -79,6 +79,13 @@ async fn parent_facts(
             base_version: parent.base_version,
             parent_contains_pin: true,
             child_contains_pin: true,
+            expected_repo_change_version: store
+                .repositories()
+                .repository_record(&request.repo_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .change_version,
         },
     ))
 }
@@ -154,6 +161,7 @@ fn fact(parent_head_oid: &str, child: &Request, contains: bool) -> RequestStackC
         base_version: child.base_version,
         parent_contains_pin: contains,
         contained_main_oid: None,
+        accepted_view_main_oid: None,
         contained_main_descends_from_ancestor: false,
     }
 }

@@ -206,6 +206,7 @@ pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
                     request.stack_status,
                     super::RequestStackStatus::Main
                         | super::RequestStackStatus::IntegrationConflict
+                        | super::RequestStackStatus::NeedsMainUpdate
                 ) =>
         {
             return Err(DomainError::conflict(

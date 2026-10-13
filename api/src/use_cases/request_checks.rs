@@ -353,6 +353,8 @@ async fn changes_github_workflow_files(
     state: &AppState,
     repo: &RepoRecord,
     request: &Request,
+    evaluation: &RequestCheckEvaluation,
+    views: &Views,
 ) -> Result<bool, ApiError> {
     const ACTION: &str = "reading request workflow changes";
     let changed = async {
@@ -363,6 +365,15 @@ async fn changes_github_workflow_files(
             .await?
         else {
             return Ok(true);
+        };
+        let execution_base_oid = match GitHubCheckTarget::for_request(request, views) {
+            GitHubCheckTarget::Head => None,
+            GitHubCheckTarget::CheckCommit => {
+                let Some(base) = &evaluation.check_commit_base else {
+                    return Ok(true);
+                };
+                Some(base.view_base_oid.clone())
+            }
         };
         let request_view = request.view.clone();
         with_request_revision_store_repo(
@@ -380,9 +391,12 @@ async fn changes_github_workflow_files(
                             "diff",
                             "--name-only",
                             "-z",
-                            comparison.identity().base_oid.as_deref().ok_or_else(|| {
-                                ApiError::conflict("request comparison has no review base")
-                            })?,
+                            execution_base_oid
+                                .as_deref()
+                                .or(comparison.identity().base_oid.as_deref())
+                                .ok_or_else(|| {
+                                    ApiError::conflict("request comparison has no review base")
+                                })?,
                             range.head_oid(),
                             "--",
                             ".github/workflows",
@@ -492,7 +506,9 @@ async fn evaluate_request_checks(
     };
     if plan.evaluation.asks_github() {
         plan.evaluation.changes_github_workflows =
-            match changes_github_workflow_files(state, &repo, request).await {
+            match changes_github_workflow_files(state, &repo, request, &plan.evaluation, views)
+                .await
+            {
                 Ok(changed) => Some(changed),
                 Err(error) => {
                     tracing::warn!(
@@ -615,10 +631,14 @@ pub(crate) async fn reconcile_request_checks_once(
                 return Ok(false);
             };
             let view = checks_view(state, &repo, &request).await?;
-            if view.evaluation.as_ref().is_some_and(|evaluation| {
+            if let Some(evaluation) = view.evaluation.as_ref().filter(|evaluation| {
                 evaluation.asks_github() && evaluation.changes_github_workflows.is_none()
             }) {
-                let changed = changes_github_workflow_files(state, &repo, &request).await?;
+                let git = RepositoryGit::load(state, &repo.incarnation()).await?;
+                let views = git.views(state).await?;
+                let changed =
+                    changes_github_workflow_files(state, &repo, &request, evaluation, &views)
+                        .await?;
                 if state
                     .metadata
                     .requests()

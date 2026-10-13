@@ -10,7 +10,7 @@ use crate::{
     state::AppState,
     use_cases::request_base_publication::{
         RequestBasePublicationHeaders, prepare_request_base_publication,
-        request_stack_child_publication_facts, restore_current_main,
+        request_stack_child_publication_facts, restore_request_main,
     },
 };
 use axum::{
@@ -99,14 +99,38 @@ pub(crate) async fn publish(
                 Some(publication_headers),
                 &staging,
                 &request.head_oid,
+                snapshot.repository.record.change_version,
             )
             .await?;
             let main = match &parent {
                 Some(RequestBasePublicationFacts::Main { main_head_oid, .. }) => {
                     main_head_oid.clone()
                 }
-                _ => restore_current_main(&state, &incarnation, &staging).await?,
+                _ => restore_request_main(&state, &incarnation, &request.view, &staging).await?,
             };
+            if &request.view != snapshot.repository.views.full() {
+                let git =
+                    crate::git::repository_git::RepositoryGit::load(&state, &incarnation).await?;
+                let push_context = state
+                    .metadata
+                    .repositories()
+                    .git_push_context(&owner, &repo_name, &actor.id)
+                    .await?
+                    .ok_or_else(|| ApiError::not_found("repo not found"))?;
+                let repo_config = push_context.repo_config;
+                crate::git::request_ref_view_safety::ensure_request_ref_is_view_safe(
+                    crate::git::request_ref_view_safety::RequestView::new(
+                        &git,
+                        &snapshot.repository.views,
+                        &request.view,
+                    ),
+                    &repo_config,
+                    &state,
+                    &staging,
+                    &request.head_oid,
+                )
+                .await?;
+            }
             let path = staging.clone();
             let old_main = request.main_ancestor_oid.clone();
             let head = request.head_oid.clone();

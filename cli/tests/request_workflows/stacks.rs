@@ -1,9 +1,16 @@
 use super::*;
-use axum::http::StatusCode;
+mod server;
+use server::stack_server;
+pub(super) use server::{ContextResponse, require_view_transport, stack_server_with_base};
 
 #[test]
 fn child_start_and_adoption_use_the_parent_pin_and_preserve_existing_upstreams() {
-    for adopt in [false, true] {
+    for (view, adopt) in [
+        ("private", false),
+        ("private", true),
+        ("public", false),
+        ("agent", true),
+    ] {
         let dir = TempDir::new("stack-start");
         create_repo_with_head(dir.path());
         let main = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
@@ -23,14 +30,49 @@ fn child_start_and_adoption_use_the_parent_pin_and_preserve_existing_upstreams()
                 "HEAD:refs/heads/child",
             ],
         );
-        let (server, bodies) =
-            stack_server(&parent_head, &main, bare.path(), ContextResponse::None);
+        let (server, bodies) = stack_server_with_base(
+            &parent_head,
+            &main,
+            bare.path(),
+            ContextResponse::None,
+            None,
+            true,
+            view,
+        );
         let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
+        require_view_transport(&transport, &server, view);
         run_git(dir.path(), ["switch", "--quiet", "-c", "existing"]);
         run_git(dir.path(), ["update-ref", "refs/remotes/scope/main", &main]);
         run_git(
             dir.path(),
             ["branch", "--set-upstream-to=scope/main", "existing"],
+        );
+        let mismatched_view = if view == "public" {
+            "private"
+        } else {
+            "public"
+        };
+        let rejected = transport
+            .command(&server, dir.path())
+            .args([
+                "--json",
+                "request",
+                "start",
+                "child",
+                "--base",
+                "req_parent",
+                "--view",
+                mismatched_view,
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(rejected.status.code(), Some(2), "{rejected:?}");
+        let error: Value = serde_json::from_slice(&rejected.stderr).unwrap();
+        assert_eq!(error["message"], "stacked requests require the same view");
+        assert!(bodies.lock().unwrap().is_empty());
+        assert_eq!(
+            git_stdout(dir.path(), ["branch", "--show-current"]),
+            "existing"
         );
         let mut command = transport.command(&server, dir.path());
         command.args([
@@ -43,6 +85,9 @@ fn child_start_and_adoption_use_the_parent_pin_and_preserve_existing_upstreams()
         ]);
         if adopt {
             command.arg("--current-branch");
+        }
+        if view == "public" {
+            command.args(["--view", view]);
         }
         let value = success(command.output().unwrap());
         assert_eq!(value["result"]["base_oid"], parent_head);
@@ -66,16 +111,29 @@ fn child_start_and_adoption_use_the_parent_pin_and_preserve_existing_upstreams()
         let bodies = bodies.lock().unwrap();
         assert_eq!(bodies[0]["base"]["request_id"], "req_parent");
         assert_eq!(bodies[0]["base"]["head_oid"], parent_head);
-        assert_eq!(bodies[0]["view"], "private");
+        assert_eq!(bodies[0]["view"], view);
+        assert_eq!(
+            git_stdout(
+                dir.path(),
+                [
+                    "config",
+                    &format!(
+                        "branch.{}.scopeRequestView",
+                        if adopt { "existing" } else { "child" }
+                    )
+                ]
+            ),
+            view
+        );
     }
 }
 
 #[test]
 fn same_head_repin_recovers_after_lost_response_or_definitive_rejection() {
-    for mode in [
-        ContextResponse::LostResponse,
-        ContextResponse::LostResponseAdvanced,
-        ContextResponse::RejectedOnce,
+    for (view, mode) in [
+        ("private", ContextResponse::LostResponse),
+        ("public", ContextResponse::LostResponseAdvanced),
+        ("agent", ContextResponse::RejectedOnce),
     ] {
         let dir = TempDir::new("stack-context");
         create_repo_with_head(dir.path());
@@ -96,8 +154,10 @@ fn same_head_repin_recovers_after_lost_response_or_definitive_rejection() {
                 "HEAD:refs/heads/child",
             ],
         );
-        let (server, bodies) = stack_server(&parent_head, &main, bare.path(), mode);
+        let (server, bodies) =
+            stack_server_with_base(&parent_head, &main, bare.path(), mode, None, true, view);
         let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
+        require_view_transport(&transport, &server, view);
         run_git(dir.path(), ["switch", "--quiet", "-c", "source"]);
         run_git(
             dir.path(),
@@ -371,7 +431,12 @@ fn explicit_existing_pin_push_keeps_base_version_and_targeted_source_tracking() 
 
 #[test]
 fn same_head_explicit_reparent_publishes_main_or_another_request_without_changing_source_binding() {
-    for selector in ["main", "req_other"] {
+    for (view, selector) in [
+        ("private", "main"),
+        ("public", "main"),
+        ("agent", "main"),
+        ("agent", "req_other"),
+    ] {
         let dir = TempDir::new("same-head-reparent");
         create_repo_with_head(dir.path());
         let head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
@@ -388,8 +453,17 @@ fn same_head_explicit_reparent_publishes_main_or_another_request_without_changin
                 "HEAD:refs/heads/child",
             ],
         );
-        let (server, bodies) = stack_server(&head, &head, bare.path(), ContextResponse::None);
+        let (server, bodies) = stack_server_with_base(
+            &head,
+            &head,
+            bare.path(),
+            ContextResponse::None,
+            None,
+            true,
+            view,
+        );
         let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
+        require_view_transport(&transport, &server, view);
         run_git(dir.path(), ["switch", "-c", "source"]);
         run_git(
             dir.path(),
@@ -472,8 +546,10 @@ fn changed_head_explicit_main_publication_sends_only_main_base_headers() {
         ContextResponse::None,
         Some(json!({"kind":"main","review_base_oid":main})),
         true,
+        "public",
     );
     let transport = BareRepoTransport::new(&server, dir.path(), bare.path());
+    require_view_transport(&transport, &server, "public");
     transport.capture_request_headers();
     fs::write(dir.path().join("new.txt"), "main based change\n").unwrap();
     run_git(dir.path(), ["add", "."]);
@@ -552,141 +628,4 @@ fn changed_head_explicit_main_publication_sends_only_main_base_headers() {
         head
     );
     assert_eq!(git_stdout(dir.path(), ["rev-parse", "HEAD"]), attempted);
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub(super) enum ContextResponse {
-    None,
-    LostResponse,
-    LostResponseAdvanced,
-    RejectedOnce,
-}
-
-fn stack_server(
-    parent_head: &str,
-    main: &str,
-    bare: &std::path::Path,
-    context_response: ContextResponse,
-) -> (FixtureServer, Arc<Mutex<Vec<Value>>>) {
-    stack_server_with_base(parent_head, main, bare, context_response, None, true)
-}
-
-pub(super) fn stack_server_with_base(
-    parent_head: &str,
-    main: &str,
-    bare: &std::path::Path,
-    context_response: ContextResponse,
-    child_base: Option<Value>,
-    parent_open: bool,
-) -> (FixtureServer, Arc<Mutex<Vec<Value>>>) {
-    let mut parent = request();
-    parent["id"] = "req_parent".into();
-    parent["name"] = "parent".into();
-    parent["state"] = if parent_open { "Open" } else { "Closed" }.into();
-    parent["view"] = "private".into();
-    parent["head_oid"] = parent_head.into();
-    parent["main_ancestor_oid"] = main.into();
-    parent["base"]["review_base_oid"] = main.into();
-    let pin = json!({"kind":"request","request_id":"req_parent","revision_id":"rev_parent","head_oid":parent_head});
-    let mut child = parent.clone();
-    child["id"] = "req_child".into();
-    child["name"] = "child".into();
-    child["state"] = "Draft".into();
-    child["base"] = pin.clone();
-    child["stack_status"] = "waiting_for_parent".into();
-    child["stack_depth"] = 2.into();
-    if context_response != ContextResponse::None {
-        child["base"]["revision_id"] = "rev_previous".into();
-    }
-    if let Some(base) = child_base {
-        child["base"] = base;
-    }
-    let mut other = parent.clone();
-    other["id"] = "req_other".into();
-    other["name"] = "other".into();
-    other["state"] = "Open".into();
-    let child = Arc::new(Mutex::new(child));
-    let bodies = Arc::new(Mutex::new(Vec::new()));
-    let parent_revision = Arc::new(Mutex::new("rev_parent".to_string()));
-    let parent_revision_read = parent_revision.clone();
-    let parent_revision_write = parent_revision.clone();
-    let start_bodies = bodies.clone();
-    let context_bodies = bodies.clone();
-    let start_child = child.clone();
-    let show_child = child.clone();
-    let context_child = child.clone();
-    let history_child = child.clone();
-    let accepted = Arc::new(Mutex::new(None::<Value>));
-    let accepted_read = accepted.clone();
-    let accepted_write = accepted.clone();
-    let bare = bare.to_path_buf();
-    let show_bare = bare.clone();
-    let revisions = Arc::new(Mutex::new(Vec::<Value>::new()));
-    let repo = repository_response(
-        json!({"access":{"actor":"Owner","view":"private","visibility":"private"}}),
-    );
-    let app = Router::new()
-        .route("/v1/session", get(|| async { Json(support::session_response("usr_test", "owner", "test@example.test")) }))
-        .route("/v1/repos/owner/repo", get(move || { let repo=repo.clone(); async move { Json(repo) } }))
-        .route("/v1/repos/owner/repo/requests/req_other", get(move || { let other=other.clone(); async move { Json(json!({"request":other,"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})})) } }))
-        .route("/v1/repos/owner/repo/requests/req_other/changes", get(|| async { Json(json!({"comparison":null,"review_revision_id":"rev_parent","revisions":[],"has_earlier_revisions":false})) }))
-        .route("/v1/repos/owner/repo/requests/req_parent", get(move || { let parent=parent.clone(); async move { Json(json!({"request":parent,"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})})) } }))
-        .route("/v1/repos/owner/repo/requests/req_parent/changes", get(move || { let revision=parent_revision_read.clone(); async move { Json(json!({"comparison":null,"review_revision_id":revision.lock().unwrap().clone(),"revisions":[],"has_earlier_revisions":false})) } }))
-        .route("/v1/repos/owner/repo/requests", post(move |Json(body):Json<Value>| { let bodies=start_bodies.clone(); let child=start_child.clone(); async move { bodies.lock().unwrap().push(body); Json(json!({"request":child.lock().unwrap().clone()})) } }))
-        .route("/v1/repos/owner/repo/requests/req_child", get(move || { let child=show_child.clone(); let bare=show_bare.clone(); async move {
-            let mut request=child.lock().unwrap().clone();
-            let head=Command::new("git").arg("--git-dir").arg(bare).args(["rev-parse","refs/heads/child"]).output().unwrap();
-            request["head_oid"]=String::from_utf8_lossy(&head.stdout).trim().into();
-            Json(json!({"request":request,"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})}))
-        } }))
-        .route("/v1/repos/owner/repo/requests/req_child/changes", get(move |Query(query):Query<HashMap<String,String>>| { let child=history_child.clone(); let accepted=accepted_read.clone(); let bare=bare.clone(); let revisions=revisions.clone(); async move {
-            if query.get("revision").is_some_and(|revision| revision == "rev_context") {
-                let accepted=accepted.lock().unwrap().clone().unwrap();
-                return Json(json!({"comparison":null,"review_revision_id":"rev_context","revisions":[accepted],"has_earlier_revisions":false}));
-            }
-            let child=child.lock().unwrap().clone();
-            let head=Command::new("git").arg("--git-dir").arg(bare).args(["rev-parse","refs/heads/child"]).output().unwrap();
-            let head=String::from_utf8_lossy(&head.stdout).trim().to_string();
-            let mut revisions=revisions.lock().unwrap();
-            if let Some(accepted)=accepted.lock().unwrap().clone() && !revisions.iter().any(|revision| revision["id"]==accepted["id"]) { revisions.push(accepted); }
-            if revisions.last().is_none_or(|revision| revision["new_head_oid"] != head) {
-                let position=revisions.len()+1;
-                let old_head=revisions.last().map(|revision| revision["new_head_oid"].clone());
-                revisions.push(json!({"id":format!("rev_child_{position}"),"position":position,"actor":null,"base":child["base"],"base_version":child["base_version"],"old_head_oid":old_head,"new_head_oid":head,"commits":[],"inspection":"Complete","created_at_unix":position}));
-            }
-            Json(json!({"comparison":null,"review_revision_id":revisions.last().unwrap()["id"],"revisions":revisions.clone(),"has_earlier_revisions":false}))
-        } }))
-        .route("/v1/repos/owner/repo/requests/req_child/revision-context", post(move |Json(body):Json<Value>| { let bodies=context_bodies.clone(); let child=context_child.clone(); let accepted=accepted_write.clone(); let parent_revision=parent_revision_write.clone(); async move {
-            let mut bodies=bodies.lock().unwrap();
-            bodies.push(body.clone());
-            if context_response == ContextResponse::RejectedOnce && bodies.len()==1 {
-                *parent_revision.lock().unwrap()="rev_parent_retry".to_string();
-                return (StatusCode::CONFLICT, Json(json!({"code":"conflict","message":"parent changed before publication","retryable":false})));
-            }
-            let mut child=child.lock().unwrap();
-            if accepted.lock().unwrap().is_none() {
-                *accepted.lock().unwrap()=Some(json!({"id":"rev_context","position":2,"actor":null,"base":body["base"],"base_version":2,"old_head_oid":body["expected_head_oid"],"new_head_oid":body["expected_head_oid"],"commits":[],"inspection":"Complete","created_at_unix":2}));
-                if matches!(context_response, ContextResponse::LostResponse | ContextResponse::LostResponseAdvanced) {
-                    child["base"]=json!({"kind":"main","review_base_oid":body["base"]["head_oid"]});
-                    child["base_version"]=3.into();
-                    child["stack_status"]="main".into();
-                    child["stack_depth"]=1.into();
-                } else {
-                    child["base"]=body["base"].clone();
-                    child["base_version"]=2.into();
-                }
-            }
-            if matches!(context_response, ContextResponse::LostResponse | ContextResponse::LostResponseAdvanced) && bodies.len()==1 {
-                (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"code":"service_unavailable","message":"response lost after publication","retryable":true})))
-            } else {
-                (StatusCode::OK, Json(json!({"request":child.clone(),"revision_id":"rev_context"})))
-            }
-        } }));
-    let server = FixtureServer {
-        server: TestServer::new(app),
-        seen: Arc::new(Mutex::new(Vec::new())),
-        edited: Arc::new(Mutex::new(Value::Null)),
-        auto_merge: Arc::new(Mutex::new(Value::Null)),
-    };
-    (server, bodies)
 }

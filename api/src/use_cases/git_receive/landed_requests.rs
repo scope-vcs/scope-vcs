@@ -56,6 +56,7 @@ pub(super) async fn landed_request_candidates(
             &parent,
             staging_repo,
             main_oid,
+            None,
         )
         .await?;
     }

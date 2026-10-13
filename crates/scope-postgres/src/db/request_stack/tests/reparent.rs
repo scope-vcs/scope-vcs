@@ -191,6 +191,13 @@ async fn reparenting_recovers_from_closed_or_rewritten_parent_to_main_or_other_p
             Some(RequestBasePublicationFacts::Main {
                 main_head_oid: main.clone(),
                 child_contains_main: true,
+                expected_repo_change_version: store
+                    .repositories()
+                    .repository_record(&child.repo_id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .change_version,
             })
         } else {
             selected_parent_facts(&store, &child, &base).await
@@ -296,6 +303,13 @@ async fn explicit_main_publication_rejects_stale_or_incomplete_main_evidence() {
         let facts = Some(RequestBasePublicationFacts::Main {
             main_head_oid: selected.clone(),
             child_contains_main: true,
+            expected_repo_change_version: store
+                .repositories()
+                .repository_record(&child.repo_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .change_version,
         });
         let error = publish(
             &store,
@@ -321,6 +335,13 @@ async fn explicit_main_publication_rejects_stale_or_incomplete_main_evidence() {
             Some(RequestBasePublicationFacts::Main {
                 main_head_oid: selected.clone(),
                 child_contains_main: false,
+                expected_repo_change_version: store
+                    .repositories()
+                    .repository_record(&child.repo_id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .change_version,
             }),
         ));
         for (publication, facts) in cases {
@@ -511,6 +532,13 @@ async fn context_receipt_replays_after_main_reparent_and_requires_current_edit_r
     let detach_facts = Some(RequestBasePublicationFacts::Main {
         main_head_oid: main,
         child_contains_main: true,
+        expected_repo_change_version: store
+            .repositories()
+            .repository_record(&child.repo_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .change_version,
     });
     let detach_context = context_for(
         &store,
@@ -601,6 +629,13 @@ async fn context_publication_rejects_mismatched_base_and_parent_version_shape() 
             Some(RequestBasePublicationFacts::Main {
                 main_head_oid: main.clone(),
                 child_contains_main: true,
+                expected_repo_change_version: store
+                    .repositories()
+                    .repository_record(&child.repo_id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .change_version,
             })
         } else {
             selected_parent_facts(&store, &child, &base).await

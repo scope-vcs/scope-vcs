@@ -125,7 +125,7 @@ impl RequestStore {
         ensure_user_exists(&tx, &input.author_user_id).await?;
         let repo = repo_by_id(&tx, &input.repo_id, &input.author_user_id).await?;
         let mut input = authorize_start_request(&repo, input)?;
-        let stack_depth = super::request_stack::validate_start(&tx, &mut input).await?;
+        let stack_depth = super::request_stack::validate_start(&tx, &mut input, &repo).await?;
 
         let facts = StartRequestFacts {
             stack_depth,
@@ -293,15 +293,13 @@ impl RequestStore {
             )
             .await?;
         }
-        let selected_base = input.new_base.as_ref().unwrap_or(&request.base);
         let publication = super::request_stack::validate_publication(
             &tx,
             &request,
-            selected_base,
+            &input,
             expected_base_version,
-            input.new_base.is_some(),
             facts.as_ref(),
-            &input.git_facts,
+            &repo,
         )
         .await?;
         ensure_user_exists(&tx, &input.actor_user_id).await?;

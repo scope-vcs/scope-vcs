@@ -269,7 +269,6 @@ pub fn record_request_revision(
     let (base, stack_depth) = match input.new_base {
         Some(base) => {
             let depth = super::stack::validate_request_base_selection(
-                &request,
                 &base,
                 input.new_base_stack_depth,
                 &input.git_facts,
@@ -301,8 +300,11 @@ pub fn record_request_revision(
     }
     if selected_base
         || base_changed
-        || (request.stack_status == super::RequestStackStatus::IntegrationConflict
-            && old_head_oid != input.new_head_oid)
+        || (matches!(
+            request.stack_status,
+            super::RequestStackStatus::IntegrationConflict
+                | super::RequestStackStatus::NeedsMainUpdate
+        ) && old_head_oid != input.new_head_oid)
     {
         request.stack_status = if matches!(request.base, super::RequestBase::Main { .. }) {
             super::RequestStackStatus::Main

@@ -54,7 +54,12 @@ async fn stack_stop_reason_migration_preserves_intents_and_enforces_transition_s
         .try_get::<String>("", "value")
         .unwrap();
     assert_eq!(after, before);
-    for reason in ["ParentRewritten", "ParentClosed", "AncestorBlocked"] {
+    for reason in [
+        "ParentRewritten",
+        "ParentClosed",
+        "AncestorBlocked",
+        "NeedsMainUpdate",
+    ] {
         db.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_auto_merge_intents SET reason = $1 WHERE id = 'stopped-intent'",

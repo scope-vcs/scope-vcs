@@ -106,6 +106,7 @@ test('activity describes auto-merge authorization and terminal outcomes', () => 
     ['ParentRewritten', 'the parent request was rewritten'],
     ['ParentClosed', 'the parent request was closed'],
     ['AncestorBlocked', 'an ancestor request is blocked'],
+    ['NeedsMainUpdate', 'the request must contain the latest view main'],
   ] as const) {
     assert.equal(
       requestEventBody(event('AutoMergeStopped', {
@@ -118,6 +119,15 @@ test('activity describes auto-merge authorization and terminal outcomes', () => 
       })),
       `Auto-merge stopped for aaaaaaaaaaaa: ${message}.`,
     )
+  }
+  for (const main_oid of [null, 'b'.repeat(40)]) {
+    const expected = main_oid ? 'aaaaaaaaaaaa → bbbbbbbbbbbb' : 'aaaaaaaaaaaa'
+    assert.equal(requestEventBody(event('Merged', {
+      Merged: { head_oid: 'a'.repeat(40), main_oid },
+    })), expected)
+    assert.equal(requestEventBody(event('AutoMergeFulfilled', {
+      AutoMergeFulfilled: { head_oid: 'a'.repeat(40), main_oid, intent_id: 'intent', revision_id: 'revision' },
+    })), expected)
   }
   assert.equal(eventKindLabel('AutoMergeFulfilled'), 'Merged automatically')
 })

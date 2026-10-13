@@ -429,7 +429,7 @@ pub(crate) async fn activity(
     };
     if !request_policy(
         &request,
-        RequestViewer::new(access, viewer_user_id.as_deref(), is_invitee),
+        RequestViewer::new(access.clone(), viewer_user_id.as_deref(), is_invitee),
         &repo.views,
     )
     .activity_stream_visible
@@ -475,7 +475,7 @@ pub(crate) async fn activity(
         .into_iter()
         .map(|event| {
             let actor = recorded_actor_response(event.actor_user_id.as_deref(), &users)?;
-            request_event_response(event, actor)
+            request_event_response(event, actor, &access, &repo.views)
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
     Ok(Json(RequestActivityPageResponse {

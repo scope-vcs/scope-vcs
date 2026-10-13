@@ -169,6 +169,7 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
                     head_oid: child.head_oid.clone(),
                     stack_children: vec![RequestStackChildFacts {
                         contained_main_oid: Some(child.head_oid.clone()),
+                        accepted_view_main_oid: None,
                         contained_main_descends_from_ancestor: true,
                         ..fact(&child.head_oid, &grandchild, true)
                     }],
@@ -178,6 +179,7 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
                     head_oid: parent.head_oid.clone(),
                     stack_children: vec![RequestStackChildFacts {
                         contained_main_oid: Some(child.head_oid.clone()),
+                        accepted_view_main_oid: None,
                         contained_main_descends_from_ancestor: true,
                         ..fact(&parent.head_oid, &child, true)
                     }],

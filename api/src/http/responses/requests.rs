@@ -14,11 +14,12 @@ use scope_domain::{
 };
 use scope_postgres::db::RequestListRow;
 
-pub(crate) fn request_summary_response(
+fn request_summary_response(
     request: Request,
     invitees: Vec<RequestInviteeResponse>,
     permissions: RequestPermissionsResponse,
     mergeability: RequestMergeabilityResponse,
+    reads_full_view: bool,
 ) -> Result<RequestSummaryResponse, crate::error::ApiError> {
     let state = request.state();
     Ok(RequestSummaryResponse {
@@ -46,10 +47,11 @@ pub(crate) fn request_summary_response(
             .merged_head_oid
             .map(super::git_oid_response)
             .transpose()?,
-        merged_main_oid: request
-            .merged_main_oid
-            .map(super::git_oid_response)
-            .transpose()?,
+        merged_main_oid: if reads_full_view {
+            request.merged_main_oid.map(git_oid_response).transpose()?
+        } else {
+            None
+        },
         created_at_unix: request.created_at_unix,
         updated_at_unix: request.updated_at_unix,
         invitees,
@@ -109,13 +111,27 @@ pub(crate) fn request_list_item_response(
 pub(crate) fn request_event_response(
     event: RequestEvent,
     actor: Option<RequestActorSummaryResponse>,
+    access: &scope_domain::repository::access::RepositoryAccess,
+    views: &Views,
 ) -> Result<RequestEventResponse, ApiError> {
+    let mut payload: scope_api_contract::RequestEventPayload =
+        event.payload.try_into().map_err(ApiError::internal)?;
+    if !access.reads_full_view(views) {
+        match &mut payload {
+            scope_api_contract::RequestEventPayload::BaseRetargeted { main_oid, .. }
+            | scope_api_contract::RequestEventPayload::Merged { main_oid, .. }
+            | scope_api_contract::RequestEventPayload::AutoMergeFulfilled { main_oid, .. } => {
+                *main_oid = None;
+            }
+            _ => {}
+        }
+    }
     Ok(RequestEventResponse {
         id: event.id,
         position: event.position,
         actor,
         kind: event.kind.into(),
-        payload: event.payload.try_into().map_err(ApiError::internal)?,
+        payload,
         created_at_unix: event.created_at_unix,
     })
 }
@@ -153,7 +169,13 @@ pub(crate) fn request_response(
         request_head_oid: git_oid_response(request.head_oid.clone())?,
         reason: decision.reason.map(str::to_string),
     };
-    request_summary_response(request, invitees, permissions, mergeability)
+    request_summary_response(
+        request,
+        invitees,
+        permissions,
+        mergeability,
+        viewer.access.reads_full_view(views),
+    )
 }
 
 pub(crate) fn request_base_response(
@@ -206,3 +228,6 @@ pub(crate) fn request_children_page_response(
         next_cursor: page.next_cursor.clone(),
     })
 }
+
+#[cfg(test)]
+mod privacy_tests;

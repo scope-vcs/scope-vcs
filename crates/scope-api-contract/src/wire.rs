@@ -288,7 +288,7 @@ pub enum RequestEventPayload {
     BaseRetargeted {
         old_base: crate::RequestBase,
         landed_head_oid: String,
-        main_oid: String,
+        main_oid: Option<String>,
     },
     Started {
         identity: RequestIdentityAuditFact,
@@ -303,7 +303,7 @@ pub enum RequestEventPayload {
     },
     Merged {
         head_oid: String,
-        main_oid: String,
+        main_oid: Option<String>,
     },
     Closed {
         head_oid: String,
@@ -338,7 +338,7 @@ pub enum RequestEventPayload {
         intent_id: String,
         revision_id: String,
         head_oid: String,
-        main_oid: String,
+        main_oid: Option<String>,
     },
 }
 
@@ -354,7 +354,7 @@ impl TryFrom<DomainRequestEventPayload> for RequestEventPayload {
             } => Self::BaseRetargeted {
                 old_base: old_base.try_into()?,
                 landed_head_oid,
-                main_oid,
+                main_oid: Some(main_oid),
             },
             DomainRequestEventPayload::Started { identity } => Self::Started {
                 identity: identity.into(),
@@ -369,9 +369,10 @@ impl TryFrom<DomainRequestEventPayload> for RequestEventPayload {
                 new_head_oid,
                 note,
             },
-            DomainRequestEventPayload::Merged { head_oid, main_oid } => {
-                Self::Merged { head_oid, main_oid }
-            }
+            DomainRequestEventPayload::Merged { head_oid, main_oid } => Self::Merged {
+                head_oid,
+                main_oid: Some(main_oid),
+            },
             DomainRequestEventPayload::Closed { head_oid } => Self::Closed { head_oid },
             DomainRequestEventPayload::IdentityEdited { before, after } => Self::IdentityEdited {
                 before: before.into(),
@@ -421,7 +422,7 @@ impl TryFrom<DomainRequestEventPayload> for RequestEventPayload {
                 intent_id,
                 revision_id,
                 head_oid,
-                main_oid,
+                main_oid: Some(main_oid),
             },
         })
     }

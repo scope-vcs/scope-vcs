@@ -264,6 +264,7 @@ pub(super) async fn persist_request_ref_revision(
             base_publication,
             staging_repo,
             &update.new_head_oid,
+            context.change_version,
         )
         .await?;
     let child_facts =

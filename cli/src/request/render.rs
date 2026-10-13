@@ -231,6 +231,14 @@ pub(super) fn request_detail_lines(
     lines
 }
 
+fn landed_activity_line(action: &str, head_oid: &str, main_oid: Option<&str>) -> String {
+    let mut line = format!("{action} · head {}", short_oid(head_oid));
+    if let Some(main_oid) = main_oid {
+        line.push_str(&format!(" · main {}", short_oid(main_oid)));
+    }
+    line
+}
+
 fn request_activity_lines(activity: &RequestActivityPageResponse) -> Vec<String> {
     let mut events = activity.events.iter().collect::<Vec<_>>();
     events.sort_by_key(|event| event.position);
@@ -241,11 +249,7 @@ fn request_activity_lines(activity: &RequestActivityPageResponse) -> Vec<String>
                 landed_head_oid,
                 main_oid,
                 ..
-            } => format!(
-                "Parent landed · head {} · main {}",
-                short_oid(landed_head_oid),
-                short_oid(main_oid)
-            ),
+            } => landed_activity_line("Parent landed", landed_head_oid, main_oid.as_deref()),
             RequestEventPayload::Started { .. } => "Started request".to_string(),
             RequestEventPayload::Submitted { head_oid } => {
                 format!("Submitted · head {}", short_oid(head_oid))
@@ -265,11 +269,9 @@ fn request_activity_lines(activity: &RequestActivityPageResponse) -> Vec<String>
                 }
                 line
             }
-            RequestEventPayload::Merged { head_oid, main_oid } => format!(
-                "Merged · head {} · main {}",
-                short_oid(head_oid),
-                short_oid(main_oid)
-            ),
+            RequestEventPayload::Merged { head_oid, main_oid } => {
+                landed_activity_line("Merged", head_oid, main_oid.as_deref())
+            }
             RequestEventPayload::Closed { head_oid } => {
                 format!("Closed · head {}", short_oid(head_oid))
             }
@@ -495,6 +497,9 @@ fn mergeability_label(mergeability: &RequestMergeabilityResponse) -> String {
             .reason
             .clone()
             .unwrap_or_else(|| "request branch has not been pushed".to_string()),
+        RequestMergeabilityStatus::NeedsMainUpdate => {
+            "request view main moved; restack onto main".to_string()
+        }
         RequestMergeabilityStatus::WaitingForParent
         | RequestMergeabilityStatus::ParentRewritten
         | RequestMergeabilityStatus::ParentClosed
