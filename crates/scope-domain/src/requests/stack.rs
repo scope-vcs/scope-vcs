@@ -194,6 +194,15 @@ pub fn mark_request_integration_conflict(
     {
         return Err(DomainError::conflict("request integration context changed"));
     }
+    if !request.view.is_private() {
+        return Ok(RequestStackRefreshMutation {
+            request,
+            effects: RequestStackRefreshEffects {
+                stop_auto_merge: false,
+                refresh_queue: false,
+            },
+        });
+    }
     let changed = request.stack_status != RequestStackStatus::IntegrationConflict;
     request.stack_status = RequestStackStatus::IntegrationConflict;
     request.updated_at_unix = request.updated_at_unix.max(now_unix);

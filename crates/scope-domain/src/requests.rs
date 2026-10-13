@@ -18,7 +18,8 @@ pub use view_paths::{PathHistory, RequestViewPathError, RequestViewPaths};
 pub mod merge_gate;
 pub use merge_gate::{
     GITHUB_CHECK_MERGE_FRESHNESS_SECS, MergeGateAuthority, MergeGateDecision, MergeGateInput,
-    RequestMergeSubject, RequestMergeability, RequestMergeabilityStatus, evaluate_merge_gate,
+    RequestMainPushCompletion, RequestMergeSubject, RequestMergeability, RequestMergeabilityStatus,
+    evaluate_merge_gate, request_main_push_completion,
 };
 mod access;
 pub use access::{

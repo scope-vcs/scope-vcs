@@ -24,8 +24,9 @@ use {
         requests::{
             MergeGateAuthority, MergeGateInput, MergeRequestInput, MergeRequestLanding,
             RequestAutoMergeReadiness, RequestAutoMergeStopReason, RequestLifecycleMutation,
-            RequestViewer, evaluate_merge_gate, fulfill_request_auto_merge, lands_with_main,
-            merge_request, request_auto_merge_readiness, request_checks_outcome,
+            RequestMainPushCompletion, RequestViewer, evaluate_merge_gate,
+            fulfill_request_auto_merge, lands_with_main, merge_request,
+            request_auto_merge_readiness, request_checks_outcome, request_main_push_completion,
             stop_request_auto_merge,
         },
     },
@@ -366,6 +367,11 @@ pub(super) async fn complete_landed_requests(
             continue;
         };
         super::request_stack::lock_graph(tx, &request).await?;
+        if request_main_push_completion(&request, true)?
+            == RequestMainPushCompletion::DeferUntilParentLands
+        {
+            continue;
+        }
         let active_auto_merge = lock_active_intent_for_request(tx, &request.id).await?;
         let mutation = merge_request(
             &request,

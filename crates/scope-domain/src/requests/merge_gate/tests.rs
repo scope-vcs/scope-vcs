@@ -139,3 +139,36 @@ fn clear_checks_cannot_authorize_a_child_before_containing_parent_landing() {
         );
     }
 }
+
+#[test]
+fn containing_main_completion_requires_head_proof_and_defers_every_unlanded_parent() {
+    use crate::requests::{RequestBase, RequestStackStatus};
+    let mut child = open_request();
+    child.view = crate::views::ViewId::private();
+    child.base = RequestBase::Request {
+        request_id: "parent".into(),
+        revision_id: "parent-revision".into(),
+        head_oid: "parent-head".into(),
+    };
+    child.stack_depth = 2;
+    for status in [
+        RequestStackStatus::WaitingForParent,
+        RequestStackStatus::ParentExtended,
+        RequestStackStatus::ParentRewritten,
+        RequestStackStatus::ParentClosed,
+        RequestStackStatus::AncestorBlocked,
+        RequestStackStatus::IntegrationConflict,
+    ] {
+        child.stack_status = status;
+        assert_eq!(
+            request_main_push_completion(&child, false)
+                .unwrap_err()
+                .message,
+            "containing main must contain the request head"
+        );
+        assert_eq!(
+            request_main_push_completion(&child, true).unwrap(),
+            RequestMainPushCompletion::DeferUntilParentLands
+        );
+    }
+}

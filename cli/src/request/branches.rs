@@ -259,7 +259,7 @@ pub(super) fn push_request_branch(
                 &request_head_oid,
             )?;
         } else {
-            let result = crate::git_repo::push_head_to_ref_with_headers(
+            let result = crate::git_repo::push_head_to_ref_with_bearer(
                 &context
                     .target
                     .url_for_view(&detail.request.view.clone().into()),

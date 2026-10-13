@@ -367,6 +367,18 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
 #[test]
 fn integration_conflict_preserves_review_evidence_until_a_changed_publication() {
     let request = parent();
+    let mut public = request.clone();
+    public.view = ViewId::public();
+    let unmarked = mark_request_integration_conflict(
+        public.clone(),
+        &public.head_oid,
+        public.base_version,
+        public.updated_at_unix + 1,
+    )
+    .unwrap();
+    assert_eq!(unmarked.request, public);
+    assert!(!unmarked.effects.stop_auto_merge);
+    assert!(!unmarked.effects.refresh_queue);
     let original = revision(&request);
     let marked = mark_request_integration_conflict(
         request.clone(),

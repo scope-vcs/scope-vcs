@@ -51,6 +51,7 @@ fn containing_main_lands_conflicted_child_after_parent_retarget_without_changing
     let parent = merge_request(&parent, merge_input(&parent))
         .unwrap()
         .request;
+    let contained_child_head = child.head_oid.clone();
     let retargeted = retarget_request_after_parent_merge(
         child,
         &parent,
@@ -59,13 +60,18 @@ fn containing_main_lands_conflicted_child_after_parent_retarget_without_changing
             event_id: "retarget-child".into(),
             now_unix: 32,
             parent_contains_pin: true,
-            contained_main_oid: None,
-            contained_main_descends_from_ancestor: false,
+            contained_main_oid: Some(contained_child_head),
+            contained_main_descends_from_ancestor: true,
         },
     )
     .unwrap();
     assert!(matches!(retargeted.request.base, RequestBase::Main { .. }));
     assert_eq!(retargeted.request.base.review_base_oid(), review_pin);
+    assert_eq!(
+        retargeted.request.main_ancestor_oid,
+        retargeted.request.head_oid
+    );
+    assert!(lands_with_main(&retargeted.request));
     assert_eq!(
         retargeted.request.stack_status,
         RequestStackStatus::IntegrationConflict

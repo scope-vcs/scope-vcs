@@ -38,11 +38,9 @@ const SCOPE_GIT_ORIGIN_CONFIG_KEY: &str = "scope.gitOrigin";
 
 mod changes;
 mod config;
-mod request_stack_transport;
 mod transport;
 pub use changes::*;
 pub use config::*;
-pub use request_stack_transport::*;
 pub use transport::*;
 
 pub fn discover_git_repo(command_name: &str) -> anyhow::Result<GitRepo> {

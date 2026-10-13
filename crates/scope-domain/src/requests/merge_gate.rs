@@ -2,6 +2,7 @@ pub const GITHUB_CHECK_MERGE_FRESHNESS_SECS: u64 = 60;
 
 use super::access::request_merger;
 use super::{Request, RequestChecksOutcome, RequestState, RequestViewer};
+use crate::error::DomainError;
 use crate::repository::{
     RepoLifecycleState,
     access::{MainPushMode, RepositoryAccess},
@@ -223,32 +224,56 @@ fn request_stack_mergeability(status: super::RequestStackStatus) -> Option<Reque
     })
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RequestMainPushCompletion {
+    Complete,
+    DeferUntilParentLands,
+}
+
+pub fn request_main_push_completion(
+    request: &Request,
+    contains_request_head: bool,
+) -> Result<RequestMainPushCompletion, DomainError> {
+    validate_containing_main_head(contains_request_head)?;
+    if matches!(request.base, super::RequestBase::Request { .. }) {
+        return Ok(RequestMainPushCompletion::DeferUntilParentLands);
+    }
+    validate_request_merge_execution(
+        request,
+        super::MergeRequestLanding::ContainingMain {
+            contains_request_head,
+        },
+    )?;
+    Ok(RequestMainPushCompletion::Complete)
+}
+
+fn validate_containing_main_head(contains_request_head: bool) -> Result<(), DomainError> {
+    if !contains_request_head {
+        return Err(DomainError::conflict(
+            "containing main must contain the request head",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn validate_request_merge_execution(
     request: &Request,
     landing: super::MergeRequestLanding,
-) -> Result<(), crate::error::DomainError> {
+) -> Result<(), DomainError> {
     if let super::MergeRequestLanding::ContainingMain {
         contains_request_head,
     } = landing
     {
-        if !contains_request_head {
-            return Err(crate::error::DomainError::conflict(
-                "containing main must contain the request head",
-            ));
-        }
+        validate_containing_main_head(contains_request_head)?;
         if !matches!(request.base, super::RequestBase::Main { .. }) {
-            return Err(crate::error::DomainError::conflict(
-                "parent request must land first",
-            ));
+            return Err(DomainError::conflict("parent request must land first"));
         }
         if request.stack_status == super::RequestStackStatus::IntegrationConflict {
             return Ok(());
         }
     }
     if let Some(decision) = request_stack_mergeability(request.stack_status) {
-        return Err(crate::error::DomainError::conflict(
-            decision.reason.unwrap(),
-        ));
+        return Err(DomainError::conflict(decision.reason.unwrap()));
     }
     Ok(())
 }

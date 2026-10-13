@@ -105,6 +105,7 @@ pub(super) fn push_request_head(
         &request_ref,
         expected_head_oid,
         session_token,
+        &[],
     )
     .map_err(|error| request_push_error(error, request_id))
 }
