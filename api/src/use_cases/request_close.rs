@@ -1,9 +1,6 @@
 use crate::{
-    error::ApiError,
-    persistence::unix_now,
-    persistence_ids::{generate_persistence_id, generate_prefixed_id},
-    repo_events::RepoChangeReason,
-    state::AppState,
+    error::ApiError, persistence::unix_now, persistence_ids::generate_prefixed_id,
+    repo_events::RepoChangeReason, state::AppState,
 };
 use scope_domain::{
     repository::access::RepositoryAccessContext,
@@ -22,15 +19,12 @@ pub(crate) async fn close_request(
     let mutation = state
         .metadata
         .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: request.id.clone(),
-                actor_user_id: user_id.to_string(),
-                event_id: generate_prefixed_id("event_request_closed_")?,
-                now_unix: unix_now()?,
-            },
-            &generate_persistence_id,
-        )
+        .close_request(CloseRequestCommand {
+            request_id: request.id.clone(),
+            actor_user_id: user_id.to_string(),
+            event_id: generate_prefixed_id("event_request_closed_")?,
+            now_unix: unix_now()?,
+        })
         .await?;
     let (outcome, reason) = match &mutation {
         CloseRequestMutation::DeletedDraft { .. } => (

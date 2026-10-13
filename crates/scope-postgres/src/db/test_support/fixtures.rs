@@ -3,6 +3,8 @@ use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
     content_ref::ContentRef,
+    policy::ScopePath,
+    projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repository::{RepoLifecycleState, Repository},
     views::ViewId,
 };
@@ -57,7 +59,7 @@ pub fn store_with_native_run_repositories(
     })
 }
 
-fn seeded_store(catalog: CatalogFixture) -> MetadataStore {
+pub fn seeded_store(catalog: CatalogFixture) -> MetadataStore {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     store.admin().seed_catalog_for_tests(catalog).unwrap();
@@ -71,5 +73,30 @@ pub fn source_blob(git_oid: &str, sha256: &str, size_bytes: u64) -> SourceBlob {
         git_oid: git_oid.into(),
         git_file_mode: "100644".into(),
         size_bytes,
+    }
+}
+
+pub fn canonical_commit(author_id: &str, index: usize, path: &str, label: ViewId) -> LogicalCommit {
+    let oid = format!("{:040x}", index + 1);
+    LogicalCommit {
+        occurred_at_unix: None,
+        id: format!("logical_{index}"),
+        origin: LogicalCommitOrigin::CanonicalPush {
+            source_head_oid: oid.clone(),
+        },
+        author_id: author_id.into(),
+        message: format!("Change {index}"),
+        changes: vec![FileChange {
+            path: ScopePath::parse(path).unwrap(),
+            old_content: None,
+            new_content: Some(SourceBlob {
+                content_ref: ContentRef::git_bundle_sha256(format!("bundle-{index}")),
+                sha256: format!("hash-{index}"),
+                git_oid: oid,
+                git_file_mode: "100644".into(),
+                size_bytes: 100,
+            }),
+            label,
+        }],
     }
 }

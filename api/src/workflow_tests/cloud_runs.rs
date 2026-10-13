@@ -74,21 +74,13 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
     let created = response_json(created).await;
     let run_id = created["id"].as_str().unwrap().to_string();
 
-    let offer = state
-        .metadata
-        .runs()
-        .next_dispatchable_job()
-        .await
-        .unwrap()
-        .unwrap();
     let attempt_id = "attempt_cloud_protocol";
     let bootstrap_token = format!("scope_bootstrap_{}", "test-token");
-    state
+    let scope_postgres::db::DispatchAdmission::Admitted(offer) = state
         .metadata
         .runs()
-        .dispatch_job(
-            &offer.run.id,
-            offer.job.key.as_str(),
+        .admit_next_job(
+            1,
             attempt_id,
             &machine_token_hash(&bootstrap_token),
             "test-runtime",
@@ -96,7 +88,10 @@ async fn cloud_runtime_claim_is_one_use_and_completes_the_job() {
             unix_now() + 900,
         )
         .await
-        .unwrap();
+        .unwrap()
+    else {
+        panic!("expected the queued job to be admitted");
+    };
 
     let authorize_request = || {
         let body = serde_json::json!({
@@ -317,7 +312,7 @@ fn cache_grant_claims(token: &str) -> SignedCacheGrantClaims {
     validation.validate_exp = false;
     decode::<SignedCacheGrantClaims>(
         token,
-        &DecodingKey::from_ed_pem(crate::cache_grants::TEST_PUBLIC_KEY.as_bytes()).unwrap(),
+        &DecodingKey::from_ed_pem(crate::grant_signing::TEST_PUBLIC_KEY.as_bytes()).unwrap(),
         &validation,
     )
     .unwrap()

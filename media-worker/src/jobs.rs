@@ -6,9 +6,7 @@ use crate::{
     },
     config::WorkerSettings,
     health::WorkerHealth,
-    runtime::{
-        db_error, dependencies_ready, lease_expiry, random_id, retry_delay, wait_or_shutdown,
-    },
+    runtime::{dependencies_ready, lease_expiry, retry_delay},
     scratch::ScratchSpace,
 };
 use scope_domain::requests::attachments::{
@@ -25,6 +23,7 @@ use scope_postgres::db::{
     MetadataStore, RequestMediaChunk, RequestMediaManifest, ValidateRequestAttachmentSourceCommand,
     ValidatedRequestAttachmentSource,
 };
+use scope_service_runtime::{random_hex, unix_now, wait_or_shutdown};
 use sha2::{Digest, Sha256};
 use std::{path::Path, time::Duration};
 use tokio::io::AsyncReadExt;
@@ -61,7 +60,7 @@ pub async fn run_processing_loop(
             Ok(value) => tracing::info!(outcome = ?value, "media processing job finished"),
             Err(error) => tracing::error!(%error, "media processing poll failed"),
         }
-        health.mark_processing_poll(crate::unix_now()?);
+        health.mark_processing_poll(unix_now()?);
         if !should_wait {
             continue;
         }
@@ -79,13 +78,12 @@ async fn process_next_job(
     settings: &WorkerSettings,
     health: &WorkerHealth,
 ) -> anyhow::Result<ProcessingOutcome> {
-    let now = crate::unix_now()?;
-    let token = random_id("lease")?;
+    let now = unix_now()?;
+    let token = random_hex("lease-", 16)?;
     let Some(lease) = metadata
         .media()
         .claim_processing_job(&token, now, lease_expiry(now, settings.lease_duration)?)
-        .await
-        .map_err(db_error)?
+        .await?
     else {
         return Ok(ProcessingOutcome::NoJob);
     };
@@ -106,7 +104,7 @@ async fn process_next_job(
     let _activity = health.processing_activity();
     let work = settle_claim(metadata, storage, pipeline, scratch, settings, &lease);
     match supervise_lease(work, settings.lease_duration, || async {
-        let now = crate::unix_now()?;
+        let now = unix_now()?;
         renew_processing(metadata, &lease, settings.lease_duration, now).await
     })
     .instrument(span)
@@ -141,14 +139,9 @@ async fn settle_claim(
                     return record_source_validation_error(metadata, settings, lease, error).await;
                 }
             }
-            let now = crate::unix_now()?;
+            let now = unix_now()?;
             let command = completion.command(lease, now);
-            match metadata
-                .media()
-                .complete_processing_job(command)
-                .await
-                .map_err(db_error)?
-            {
+            match metadata.media().complete_processing_job(command).await? {
                 MediaLeaseMutation::Applied(_) => Ok(ProcessingOutcome::Completed),
                 MediaLeaseMutation::LeaseLost => {
                     delete_objects(storage, &completion.objects).await;
@@ -219,9 +212,12 @@ async fn process_claim(
 ) -> Result<PreparedCompletion, WorkError> {
     let manifest = metadata
         .media()
-        .processing_source_manifest(lease, crate::unix_now().map_err(WorkError::Database)?)
+        .processing_source_manifest(
+            lease,
+            unix_now().map_err(|error| WorkError::Database(error.into()))?,
+        )
         .await
-        .map_err(|error| WorkError::Database(db_error(error)))?
+        .map_err(|error| WorkError::Database(error.into()))?
         .ok_or(WorkError::LeaseLost)?;
     if manifest.size_bytes > settings.codec_limits.max_source_bytes {
         return Err(failure(
@@ -391,8 +387,10 @@ async fn upload_derivative(
         format!("{}-{}", lease.lease_token, lease.lease_generation),
     )
     .map_err(UploadError::Storage)?;
-    let manifest_id = random_id("media").map_err(UploadError::Internal)?;
-    let derivative_id = random_id("derivative").map_err(UploadError::Internal)?;
+    let manifest_id =
+        random_hex("media-", 16).map_err(|error| UploadError::Internal(error.into()))?;
+    let derivative_id =
+        random_hex("derivative-", 16).map_err(|error| UploadError::Internal(error.into()))?;
     let mut file = tokio::fs::File::open(&derivative.path)
         .await
         .map_err(io_storage_error)?;
@@ -426,10 +424,10 @@ async fn upload_derivative(
                 &lease.lease_token,
                 lease.lease_generation,
                 &part.object_key,
-                crate::unix_now().map_err(UploadError::Database)?,
+                unix_now().map_err(|error| UploadError::Database(error.into()))?,
             )
             .await
-            .map_err(|error| UploadError::Database(db_error(error)))?;
+            .map_err(|error| UploadError::Database(error.into()))?;
         if matches!(reserved, MediaLeaseMutation::LeaseLost) {
             delete_parts(storage, &staged).await;
             return Err(UploadError::LeaseLost);
@@ -543,10 +541,9 @@ async fn mark_source_validated(
             lease_token: lease.lease_token.clone(),
             lease_generation: lease.lease_generation,
             source,
-            now_unix: crate::unix_now()?,
+            now_unix: unix_now()?,
         })
-        .await
-        .map_err(db_error)?;
+        .await?;
     Ok(matches!(result, MediaLeaseMutation::Applied(_)))
 }
 
@@ -575,7 +572,7 @@ async fn record_processing_failure(
     lease: &RequestAttachmentProcessingLease,
     failure: RequestAttachmentFailure,
 ) -> anyhow::Result<ProcessingOutcome> {
-    let now = crate::unix_now()?;
+    let now = unix_now()?;
     let retry_at_unix = (failure.retryable && lease.attempt < settings.max_attempts)
         .then(|| now.saturating_add(retry_delay(lease.attempt).as_secs()));
     let result = metadata
@@ -588,8 +585,7 @@ async fn record_processing_failure(
             now_unix: now,
             retry_at_unix,
         })
-        .await
-        .map_err(db_error)?;
+        .await?;
     Ok(match result {
         MediaLeaseMutation::Applied(_) => ProcessingOutcome::Failed,
         MediaLeaseMutation::LeaseLost => ProcessingOutcome::LeaseLost,
@@ -612,7 +608,7 @@ async fn renew_processing(
             lease_expiry(now_unix, duration)?,
         )
         .await
-        .map_err(db_error)
+        .map_err(anyhow::Error::from)
 }
 
 async fn sha256_file(path: &Path) -> anyhow::Result<(u64, String)> {

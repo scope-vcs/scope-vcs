@@ -165,7 +165,7 @@ impl RepositoryStore {
         github_repository_id: u64,
         github_private: bool,
     ) -> Result<Option<RepositoryIncarnation>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(read) = load_connection(
             &tx,
             "WHERE connection.github_repository_id = $1 AND connection.status = 'Connected'
@@ -184,7 +184,7 @@ impl RepositoryStore {
         let changed = load_repo_record(&tx, &connection.repository_id)
             .await?
             .map(|record| record.incarnation());
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(changed)
     }
 
@@ -194,7 +194,7 @@ impl RepositoryStore {
         repo_id: &str,
         user_id: &str,
     ) -> Result<RepositoryIncarnation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, repo_id).await?;
         acquire_aggregate_lock(&tx, "github-connection", repo_id).await?;
         let context = repository_access(&tx, repo_id, Some(user_id))
@@ -207,7 +207,7 @@ impl RepositoryStore {
             acknowledge_public_github_repository(context.access.clone(), current.as_ref())?;
         save_visibility(&tx, &connection).await?;
         requeue_started_github_evaluations(&tx, &connection).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(context.incarnation())
     }
 
@@ -217,7 +217,7 @@ impl RepositoryStore {
         repo_id: &str,
         user_id: &str,
     ) -> Result<RepositoryIncarnation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, repo_id).await?;
         acquire_aggregate_lock(&tx, "github-connection", repo_id).await?;
         let context = repository_access(&tx, repo_id, Some(user_id))
@@ -232,10 +232,9 @@ impl RepositoryStore {
             "DELETE FROM scope_github_connections WHERE repo_id = $1",
             [repo_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         delete_github_run_import(&tx, repo_id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(context.incarnation())
     }
 
@@ -324,16 +323,11 @@ async fn requeue_started_github_evaluations<C: ConnectionTrait>(
             "#,
             [connection.repository_id.clone().into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let destination = GitHubPushDestination::of(connection);
     for row in rows {
-        let request_id: String = row
-            .try_get("", "request_id")
-            .map_err(PostgresError::internal)?;
-        let tested_oid: String = row
-            .try_get("", "tested_oid")
-            .map_err(PostgresError::internal)?;
+        let request_id: String = row.try_get("", "request_id")?;
+        let tested_oid: String = row.try_get("", "tested_oid")?;
         super::github_pushes::queue_github_push(
             conn,
             &connection.repository_id,
@@ -359,8 +353,7 @@ async fn save_visibility<C: ConnectionTrait>(
             visibility_name(connection.visibility).into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -393,8 +386,7 @@ async fn load_connection<C: ConnectionTrait>(
         values,
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .map(ConnectionRow::into_domain)
     .transpose()
 }

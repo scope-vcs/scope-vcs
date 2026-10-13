@@ -1,13 +1,13 @@
 use super::super::fake_github::{
     FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, INSTALLATION_ID, InstallationState,
-    WEBHOOK_SECRET, check_run, github_repository, webhook,
+    WEBHOOK_SECRET, check_run, connect_test_repository, deliver_event, github_repository,
+    reconnect_test_repository, webhook,
 };
 use super::*;
 use crate::use_cases::{github_check_results, github_pushes};
 use scope_api_contract::routes::{
     repo_request_auto_merge, repo_request_checks, repo_request_checks_approve, repo_request_merge,
 };
-use scope_domain::github_connection::ConnectGitHubRepository;
 use scope_postgres::db::RecordRequestChecksCommand;
 use std::sync::atomic::Ordering;
 
@@ -23,24 +23,8 @@ pub(in crate::workflow_tests) async fn connect_github(
     required: &[&str],
 ) -> Arc<FakeGitHub> {
     let fake = FakeGitHub::install(state).await;
+    connect_test_repository(state, GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME, 0).await;
     let repositories = state.metadata.repositories();
-    repositories
-        .connect_github_repository(
-            ConnectGitHubRepository {
-                repository_id: TEST_REPO_ID.to_string(),
-                installation_id: INSTALLATION_ID,
-                github_repository_id: GITHUB_REPOSITORY_ID,
-                github_full_name: GITHUB_FULL_NAME.to_string(),
-                github_private: true,
-                acknowledge_public: false,
-                run_import_count: 0,
-                user_id: test_owner_id(),
-                now_unix: unix_now(),
-            },
-            async || Ok::<_, scope_postgres::error::PostgresError>(true),
-        )
-        .await
-        .unwrap();
     repositories
         .set_github_required_checks(
             TEST_REPO_ID,
@@ -90,15 +74,7 @@ pub(super) async fn owner_request(label: &str, required: &[&str]) -> OwnerReques
         "request change",
     )
     .unwrap();
-    let submitted = api_request(
-        router(state.clone()),
-        "POST",
-        &format!("/v1/repos/{TEST_REPO_ID}/requests/{request_id}/submit"),
-        Some(&bearer),
-        Some("{}"),
-    )
-    .await;
-    assert_eq!(submitted.status(), StatusCode::OK);
+    submit_request(router(state.clone()), &request_id, &bearer).await;
     OwnerRequest {
         state,
         fake,
@@ -149,18 +125,14 @@ pub(in crate::workflow_tests) async fn push_pass(state: &AppState, now_unix: u64
 }
 
 async fn deliver_check_run(state: &AppState, repository_id: u64, commit_oid: &str) {
-    let delivery = webhook(
+    deliver_event(
         state,
         "check_run",
-        serde_json::json!({
-            "action": "completed",
-            "repository": { "id": repository_id, "full_name": GITHUB_FULL_NAME },
-            "check_run": { "id": 1, "head_sha": commit_oid },
-        }),
-        WEBHOOK_SECRET,
+        "completed",
+        repository_id,
+        serde_json::json!({ "id": 1, "head_sha": commit_oid }),
     )
     .await;
-    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
 }
 
 async fn merge(state: &AppState, request_id: &str) -> Response {
@@ -486,28 +458,7 @@ async fn a_repository_reconnected_to_another_github_repository_ignores_the_old_r
     deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
     assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
 
-    let repositories = state.metadata.repositories();
-    repositories
-        .disconnect_github_repository(TEST_REPO_ID, &test_owner_id())
-        .await
-        .unwrap();
-    repositories
-        .connect_github_repository(
-            ConnectGitHubRepository {
-                repository_id: TEST_REPO_ID.to_string(),
-                installation_id: INSTALLATION_ID,
-                github_repository_id: GITHUB_REPOSITORY_ID + 1,
-                github_full_name: "octo/other".to_string(),
-                github_private: true,
-                acknowledge_public: false,
-                run_import_count: 0,
-                user_id: test_owner_id(),
-                now_unix: unix_now(),
-            },
-            async || Ok::<_, scope_postgres::error::PostgresError>(true),
-        )
-        .await
-        .unwrap();
+    reconnect_test_repository(state, GITHUB_REPOSITORY_ID + 1, "octo/other", 0).await;
     let checks = request.checks().await;
     assert_eq!(checks["checks"][0]["status"], serde_json::Value::Null);
     assert_eq!(checks["mergeability"]["status"], "ChecksPending");
@@ -532,9 +483,15 @@ async fn a_push_whose_claim_lapsed_neither_pushes_nor_records() {
     github_pushes::run_claimed_push(state, &push, "first_claim", now).await;
     assert_eq!(fake.branch_head(&request.branch()), None);
     let latest = requests
-        .latest_github_push(&request.request_id)
+        .request_state_snapshot(
+            TEST_REPO_OWNER,
+            TEST_REPO_NAME,
+            &request.request_id,
+            Some(&test_owner_id()),
+        )
         .await
         .unwrap()
+        .github_push
         .unwrap();
     assert_eq!(
         latest.state,
@@ -603,28 +560,6 @@ async fn deliveries_about_unknown_repositories_or_commits_are_acknowledged() {
     assert_eq!(request.fake.check_run_reads.load(Ordering::SeqCst), 0);
 }
 
-async fn reconnect(state: &AppState) {
-    state
-        .metadata
-        .repositories()
-        .connect_github_repository(
-            ConnectGitHubRepository {
-                repository_id: TEST_REPO_ID.to_string(),
-                installation_id: INSTALLATION_ID,
-                github_repository_id: GITHUB_REPOSITORY_ID,
-                github_full_name: GITHUB_FULL_NAME.to_string(),
-                github_private: true,
-                acknowledge_public: false,
-                run_import_count: 0,
-                user_id: test_owner_id(),
-                now_unix: unix_now(),
-            },
-            async || Ok::<_, scope_postgres::error::PostgresError>(true),
-        )
-        .await
-        .unwrap();
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_push_gives_up_when_the_connection_changes_and_reconnecting_sends_it_again() {
     let request = owner_request("github-checks-connection-changed", &[REQUIRED_CHECK]).await;
@@ -646,7 +581,7 @@ async fn a_push_gives_up_when_the_connection_changes_and_reconnecting_sends_it_a
     assert_eq!(fake.branch_head(&request.branch()), None);
     assert_eq!(request.checks().await["github_push"]["state"], "failed");
 
-    reconnect(state).await;
+    connect_test_repository(state, GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME, 0).await;
     assert_eq!(request.checks().await["github_push"]["state"], "sending");
     assert_eq!(push_pass(state, unix_now()).await, 1);
     assert_eq!(fake.branch_head(&request.branch()), Some(request.head()));
@@ -793,15 +728,12 @@ async fn an_approval_of_a_head_the_maintainer_did_not_review_is_refused() {
     let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
     let (_source, _remote, _server, _head) =
         request_checkout(&state, "github-checks-stale-approval-push").await;
-    let submitted = api_request(
+    submit_request(
         router(state.clone()),
-        "POST",
-        &format!("/v1/repos/{TEST_REPO_ID}/requests/{REQUEST_ID}/submit"),
-        Some(&bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL)),
-        Some("{}"),
+        REQUEST_ID,
+        &bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
     )
     .await;
-    assert_eq!(submitted.status(), StatusCode::OK);
     let refused = api_request(
         router(state.clone()),
         "POST",
@@ -836,9 +768,15 @@ async fn a_pushed_head_without_any_run_says_no_workflow_started_after_ten_minute
     github_pushes::run_claimed_push(state, &push, "claim", now).await;
     assert_eq!(fake.branch_head(&request.branch()), Some(head.clone()));
     let sent = requests
-        .latest_github_push(&request.request_id)
+        .request_state_snapshot(
+            TEST_REPO_OWNER,
+            TEST_REPO_NAME,
+            &request.request_id,
+            Some(&test_owner_id()),
+        )
         .await
         .unwrap()
+        .github_push
         .unwrap();
     assert!(
         sent.updated_at_unix > now,

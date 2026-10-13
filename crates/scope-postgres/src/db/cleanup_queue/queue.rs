@@ -1,44 +1,32 @@
-use super::types::{LoadedRepoStorageCleanup, LoadedSourceBlobCleanup};
 use crate::{
     db::{
-        CleanupStore, GeneratedIdKind, GeneratedIdSource, entities, generated_ids::generate_id,
+        CleanupStore, GeneratedIdKind, entities, generated_ids::generate_id,
         integer_columns::u64_to_i64,
     },
     error::PostgresError,
 };
 use scope_domain::{content::SourceBlob, repo_actions::RepoStorageCleanup};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
-    TransactionTrait, sea_query::OnConflict,
+    ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set, TransactionTrait,
+    sea_query::OnConflict,
 };
 
 pub(crate) const SOURCE_BLOB_DELETE_GRACE_SECONDS: u64 = 600;
 
 impl CleanupStore {
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "pending_cleanup_queues"))]
-    pub async fn pending_cleanup_queues(
-        &self,
-    ) -> Result<(Vec<RepoStorageCleanup>, Vec<SourceBlob>), PostgresError> {
-        Ok((
-            load_pending_repo_storage_deletions(self.db.as_ref()).await?,
-            load_pending_source_blob_deletions(self.db.as_ref()).await?,
-        ))
-    }
-
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "queue_pending_source_blob_deletions"))]
     pub async fn queue_pending_source_blob_deletions(
         &self,
         blobs: Vec<SourceBlob>,
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<(), PostgresError> {
         if blobs.is_empty() {
             return Ok(());
         }
 
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        queue_pending_source_blob_deletion_rows(&tx, blobs, now_unix, generated_ids).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
+        queue_pending_source_blob_deletion_rows(&tx, blobs, now_unix).await?;
+        tx.commit().await?;
         Ok(())
     }
 }
@@ -47,12 +35,11 @@ pub(crate) async fn queue_pending_repo_storage_cleanup_row<C>(
     conn: &C,
     cleanup: RepoStorageCleanup,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {
-    let generation = generate_id(generated_ids, GeneratedIdKind::CleanupGeneration)?;
+    let generation = generate_id(GeneratedIdKind::CleanupGeneration)?;
     entities::repo_storage_cleanup_job::Entity::insert(
         entities::repo_storage_cleanup_job::Model::from_domain(&cleanup, generation, now_unix)?
             .into_active_model(),
@@ -73,8 +60,7 @@ where
             .to_owned(),
     )
     .exec(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -82,7 +68,6 @@ pub(crate) async fn queue_pending_source_blob_deletion_rows<C>(
     conn: &C,
     blobs: impl IntoIterator<Item = SourceBlob>,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -94,7 +79,7 @@ where
         })?;
     let first_attempt = u64_to_i64(first_attempt, "source blob cleanup first attempt")?;
     for blob in blobs {
-        let generation = generate_id(generated_ids, GeneratedIdKind::CleanupGeneration)?;
+        let generation = generate_id(GeneratedIdKind::CleanupGeneration)?;
         let mut cleanup =
             entities::source_blob_cleanup_job::Model::from_domain(&blob, generation, now_unix)?
                 .into_active_model();
@@ -116,46 +101,11 @@ where
                     .to_owned(),
             )
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     Ok(())
 }
 
-pub async fn load_pending_repo_storage_deletions<C>(
-    conn: &C,
-) -> Result<Vec<RepoStorageCleanup>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let pending = load_pending_repo_storage_cleanup_rows(conn)
-        .await?
-        .into_iter()
-        .map(|row| row.cleanup)
-        .collect::<Vec<_>>();
-    Ok(pending)
-}
-
-async fn load_pending_repo_storage_cleanup_rows<C>(
-    conn: &C,
-) -> Result<Vec<LoadedRepoStorageCleanup>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let pending = entities::repo_storage_cleanup_job::Entity::find()
-        .filter(entities::repo_storage_cleanup_job::Column::CompletedAtUnix.is_null())
-        .order_by_asc(entities::repo_storage_cleanup_job::Column::RepoId)
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(|cleanup| LoadedRepoStorageCleanup {
-            generation: cleanup.generation.clone(),
-            cleanup: cleanup.into_domain(),
-        })
-        .collect::<Vec<_>>();
-    Ok(pending)
-}
 #[cfg(any(test, feature = "seeding"))]
 pub async fn save_pending_repo_storage_deletions<C>(
     conn: &C,
@@ -166,13 +116,7 @@ where
     C: ConnectionTrait,
 {
     for cleanup in pending_repo_storage_deletions {
-        queue_pending_repo_storage_cleanup_row(
-            conn,
-            cleanup.clone(),
-            now_unix,
-            &crate::db::generated_ids::test_generated_id,
-        )
-        .await?;
+        queue_pending_repo_storage_cleanup_row(conn, cleanup.clone(), now_unix).await?;
     }
     Ok(())
 }
@@ -187,48 +131,10 @@ where
     let row = entities::repo_storage_cleanup_job::Entity::find_by_id(cleanup_repo_id.to_string())
         .filter(entities::repo_storage_cleanup_job::Column::CompletedAtUnix.is_null())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(row.is_some())
 }
 
-pub async fn load_pending_source_blob_deletions<C>(
-    conn: &C,
-) -> Result<Vec<SourceBlob>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let pending = load_pending_source_blob_cleanup_rows(conn)
-        .await?
-        .into_iter()
-        .map(|row| row.blob)
-        .collect::<Vec<_>>();
-    Ok(pending)
-}
-
-async fn load_pending_source_blob_cleanup_rows<C>(
-    conn: &C,
-) -> Result<Vec<LoadedSourceBlobCleanup>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let pending = entities::source_blob_cleanup_job::Entity::find()
-        .filter(entities::source_blob_cleanup_job::Column::CompletedAtUnix.is_null())
-        .order_by_asc(entities::source_blob_cleanup_job::Column::ObjectKey)
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(|blob| {
-            let generation = blob.generation.clone();
-            Ok(LoadedSourceBlobCleanup {
-                generation,
-                blob: blob.try_into_domain()?,
-            })
-        })
-        .collect::<Result<Vec<_>, PostgresError>>()?;
-    Ok(pending)
-}
 #[cfg(any(test, feature = "seeding"))]
 pub async fn save_pending_source_blob_deletions<C>(
     conn: &C,
@@ -242,7 +148,6 @@ where
         conn,
         pending_source_blob_deletions.iter().cloned(),
         now_unix,
-        &crate::db::generated_ids::test_generated_id,
     )
     .await
 }

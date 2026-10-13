@@ -196,11 +196,6 @@ pub struct AttemptCacheKeyMaterial {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AttemptCacheFinalizationRequest {
-    pub outcome: AttemptCacheFinalizationOutcome,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ReportAttemptCachePreparationsRequest {
     pub authorization_ms: u64,
     pub wall_ms: u64,
@@ -231,13 +226,6 @@ pub struct AttemptCacheFinalizationReport {
     pub identity_digest: String,
     pub final_state: CacheFinalState,
     pub finalize_ms: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum AttemptCacheFinalizationOutcome {
-    Succeeded,
-    Failed,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -363,26 +351,6 @@ mod tests {
             format!(
                 "{{\"id\":\"checks\",\"needs\":[\"build\"],\"container\":{{\"image\":\"{image}\"}},\"timeout_seconds\":1200,\"caches\":[{{\"name\":\"cargo\",\"path\":\"/scope/cache/cargo\",\"format\":\"tar-zstd-v1\",\"compatibility\":{{\"files\":[\"Cargo.lock\"],\"environment\":[],\"source\":false}},\"exact\":{{\"files\":[\"Cargo.lock\"],\"environment\":[\"RUSTFLAGS\"],\"source\":true}}}}],\"environment\":{{\"RUSTFLAGS\":\"-Dwarnings\"}},\"steps\":[{{\"name\":\"Test\",\"run\":\"cargo test\"}}]}}"
             )
-        );
-    }
-
-    #[test]
-    fn cache_finalization_is_typed() {
-        let succeeded = AttemptCacheFinalizationRequest {
-            outcome: AttemptCacheFinalizationOutcome::Succeeded,
-        };
-        let failed = AttemptCacheFinalizationRequest {
-            outcome: AttemptCacheFinalizationOutcome::Failed,
-        };
-        assert_eq!(
-            serde_json::to_value(&succeeded).unwrap()["outcome"]["kind"],
-            "succeeded"
-        );
-        let json = serde_json::to_value(&failed).unwrap();
-        assert_eq!(json["outcome"]["kind"], "failed");
-        assert_eq!(
-            serde_json::from_value::<AttemptCacheFinalizationRequest>(json).unwrap(),
-            failed
         );
     }
 }

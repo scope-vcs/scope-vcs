@@ -138,7 +138,7 @@ enum SeededRun {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::demo_seed::DevSeedUser;
+    use crate::seed_user::DevSeedUser;
     use scope_domain::runs::run::RunState;
     use scope_postgres::db::RunHistoryPageQuery;
     use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend};

@@ -89,7 +89,10 @@ async fn a_branch_is_pushed_by_one_claim_at_a_time_and_the_newest_push_wins() {
     assert_eq!(next.len(), 1);
     assert_eq!(next[0].target_oid.as_deref(), Some(oid('b').as_str()));
     assert_eq!(
-        requests.latest_github_push("req_1").await.unwrap().unwrap(),
+        crate::db::github_pushes::latest_github_push(requests.db.as_ref(), "req_1")
+            .await
+            .unwrap()
+            .unwrap(),
         next[0]
     );
 }
@@ -208,9 +211,7 @@ async fn only_a_branch_scope_pushed_is_deleted_from_where_it_was_pushed() {
         .await
         .unwrap();
     assert!(
-        store
-            .requests()
-            .latest_github_push("req_never_pushed")
+        crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_never_pushed")
             .await
             .unwrap()
             .is_none()
@@ -220,9 +221,7 @@ async fn only_a_branch_scope_pushed_is_deleted_from_where_it_was_pushed() {
     queue_github_branch_deletion(db, REPO, "req_1", t + 1)
         .await
         .unwrap();
-    let deletion = store
-        .requests()
-        .latest_github_push("req_1")
+    let deletion = crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
         .await
         .unwrap()
         .unwrap();

@@ -1,4 +1,5 @@
 use super::{github_workflow_jobs::publish, github_workflow_runs::configured_app};
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use scope_domain::{
     github_connection::GitHubConnection,
@@ -70,7 +71,7 @@ async fn queue(state: &AppState, github_job_id: u64, now_unix: u64) -> Result<()
         .repositories()
         .queue_github_job_log_read(github_job_id, now_unix)
         .await?;
-    state.github_job_log_wakeup.notify_one();
+    state.wakeups.github_job_logs.notify_one();
     Ok(())
 }
 
@@ -166,28 +167,25 @@ async fn read_log(
     Ok(LogReadOutcome::Settled)
 }
 
-impl AppState {
-    pub(crate) fn start_github_job_log_reads(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            loop {
-                let pass = async {
-                    state.metadata.admin().readiness_check().await?;
-                    read_due_github_job_logs_once(&state, unix_now()?).await
-                };
-                match pass.await {
-                    Ok(claimed) if claimed as u64 == READ_BATCH_SIZE => continue,
-                    Ok(_) => {}
-                    Err(error) => tracing::warn!(
-                        error = %error.operator_diagnostic(),
-                        "GitHub job log read pass failed; retrying"
-                    ),
+impl BackgroundWork {
+    pub(crate) fn start_github_job_log_reads(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "GitHub job log read pass",
+                cadence: Cadence::AfterPass {
+                    delay: POLL_INTERVAL,
+                    wakeup: Some(|wakeups| &wakeups.github_job_logs),
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            |state| async move {
+                loop {
+                    let claimed = read_due_github_job_logs_once(&state, unix_now()?).await?;
+                    if claimed as u64 != READ_BATCH_SIZE {
+                        return Ok(());
+                    }
                 }
-                tokio::select! {
-                    _ = state.github_job_log_wakeup.notified() => {},
-                    _ = tokio::time::sleep(POLL_INTERVAL) => {},
-                }
-            }
-        });
+            },
+        );
     }
 }

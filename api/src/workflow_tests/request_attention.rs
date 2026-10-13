@@ -222,25 +222,22 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
     state
         .metadata
         .requests()
-        .record_request_revision(
-            RecordRequestRevisionInput {
-                request_id: "req_attention_activity".to_string(),
-                actor_user_id: author_id,
-                actor_can_edit: true,
-                expected_old_head_oid: Some(REQUEST_HEAD.to_string()),
-                new_head_oid: revision_head.to_string(),
-                git_snapshot: snapshot,
-                git_facts: RequestRevisionGitFacts {
-                    contains_old_head: true,
-                    contained_main_oid: None,
-                    contained_main_descends_from_base: false,
-                },
-                event_id: "attention-incoming-revision".to_string(),
-                body: None,
-                now_unix: 50,
+        .record_request_revision(RecordRequestRevisionInput {
+            request_id: "req_attention_activity".to_string(),
+            actor_user_id: author_id,
+            actor_can_edit: true,
+            expected_old_head_oid: Some(REQUEST_HEAD.to_string()),
+            new_head_oid: revision_head.to_string(),
+            git_snapshot: snapshot,
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
             },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+            event_id: "attention-incoming-revision".to_string(),
+            body: None,
+            now_unix: 50,
+        })
         .await
         .unwrap();
     let woke_from_revision =

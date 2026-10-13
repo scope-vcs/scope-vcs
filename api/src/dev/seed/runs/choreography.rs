@@ -41,7 +41,7 @@ pub(super) async fn enqueue(
     created_at_unix: u64,
 ) -> Result<String, ApiError> {
     let requested_by_user_id = matches!(trigger, RunTrigger::Manual)
-        .then(|| crate::demo_seed::DEV_SEED_USER_ID.to_string());
+        .then(|| crate::seed_user::DEV_SEED_USER_ID.to_string());
     let run = Run::new(
         format!("run_dev_seed_{slug}"),
         format!("dev-seed:{slug}"),

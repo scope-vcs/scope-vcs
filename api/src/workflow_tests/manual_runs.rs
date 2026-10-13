@@ -142,10 +142,12 @@ async fn uploaded_manual_run_revocation_queues_cleanup_and_preserves_shared_sour
                 .is_none()
         );
         assert!(
-            cleanup_status(&state)
+            state
+                .metadata
+                .cleanup()
+                .pending_source_blob_cleanups_for_tests()
                 .await
                 .unwrap()
-                .source_blob_deletes
                 .contains(&object)
         );
         state
@@ -154,9 +156,7 @@ async fn uploaded_manual_run_revocation_queues_cleanup_and_preserves_shared_sour
             .expire_source_blob_cleanup_grace_for_tests()
             .await
             .unwrap();
-        drain_pending_source_blob_deletions_report(&state)
-            .await
-            .unwrap();
+        drain_pending_source_blob_deletions(&state).await.unwrap();
         let stored =
             scope_storage::read_bounded(state.object_store.as_ref(), &key, usize::MAX).await;
         if shared_source {

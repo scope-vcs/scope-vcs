@@ -119,8 +119,7 @@ impl RequestStore {
             ],
         ))
         .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
 
         let mut user_ids = Vec::with_capacity(rows.len() * 2);
         let mut projected = Vec::with_capacity(rows.len());
@@ -438,8 +437,7 @@ async fn next_snooze_expiry<C: ConnectionTrait>(
         ],
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .ok_or_else(|| PostgresError::internal_message("snooze expiry query returned no row"))?;
     optional_u64(result.next_attention_at_unix, "request snooze time")
 }

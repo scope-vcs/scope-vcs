@@ -1,6 +1,6 @@
 use super::super::fake_github::{
-    FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, WEBHOOK_SECRET, suite_check_run, webhook,
-    workflow_run, workflow_run_started_at,
+    FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, WEBHOOK_SECRET, deliver_event,
+    reconnect_test_repository, suite_check_run, webhook, workflow_run, workflow_run_started_at,
 };
 use super::github_checks::{connect_github, owner_request, push_pass};
 use super::*;
@@ -46,21 +46,6 @@ async fn setup_check(state: &AppState) -> serde_json::Value {
     github_request(state, "GET", "", &bearer_header()).await["setup_check"].clone()
 }
 
-async fn deliver_workflow_run(state: &AppState, run: &serde_json::Value) {
-    let delivery = webhook(
-        state,
-        "workflow_run",
-        serde_json::json!({
-            "action": "in_progress",
-            "repository": { "id": GITHUB_REPOSITORY_ID, "full_name": GITHUB_FULL_NAME },
-            "workflow_run": run,
-        }),
-        WEBHOOK_SECRET,
-    )
-    .await;
-    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_connection_test_pushes_main_lists_the_checks_it_saw_and_deletes_its_branch() {
     let (state, fake, main) = connected_repository("github-setup-happy").await;
@@ -86,7 +71,14 @@ async fn a_connection_test_pushes_main_lists_the_checks_it_saw_and_deletes_its_b
             suite_check_run(3, "deploy", &main, Some("success"), 12),
         ],
     );
-    deliver_workflow_run(&state, &running).await;
+    deliver_event(
+        &state,
+        "workflow_run",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
+        running.clone(),
+    )
+    .await;
     assert_eq!(
         reconcile_github_setup_checks_once(&state, unix_now())
             .await
@@ -201,7 +193,14 @@ async fn request_check_deliveries_refresh_a_running_setup_test_of_the_same_commi
     push_pass(&state, unix_now()).await;
     let running = workflow_run(11, SETUP_BRANCH, &main, None);
     fake.report_workflow_runs(vec![running.clone()]);
-    deliver_workflow_run(&state, &running).await;
+    deliver_event(
+        &state,
+        "workflow_run",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
+        running.clone(),
+    )
+    .await;
     let before = setup_check(&state).await;
     assert_eq!(before["state"], "waiting");
     assert_eq!(before["check_names"], serde_json::json!([]));
@@ -297,35 +296,10 @@ async fn a_test_of_another_github_repository_is_not_shown_after_reconnecting() {
     finished_test(&state, &fake, &main, 11).await;
     assert_eq!(setup_check(&state).await["state"], "finished");
 
-    reconnect_to_another_repository(&state).await;
+    reconnect_test_repository(&state, GITHUB_REPOSITORY_ID + 1, "octo/other", 0).await;
     let connection = github_request(&state, "GET", "", &bearer_header()).await;
     assert_eq!(connection["connection"]["github_full_name"], "octo/other");
     assert_eq!(connection["setup_check"], serde_json::Value::Null);
-}
-
-async fn reconnect_to_another_repository(state: &AppState) {
-    let repositories = state.metadata.repositories();
-    repositories
-        .disconnect_github_repository(TEST_REPO_ID, &test_owner_id())
-        .await
-        .unwrap();
-    repositories
-        .connect_github_repository(
-            scope_domain::github_connection::ConnectGitHubRepository {
-                repository_id: TEST_REPO_ID.to_string(),
-                installation_id: super::super::fake_github::INSTALLATION_ID,
-                github_repository_id: GITHUB_REPOSITORY_ID + 1,
-                github_full_name: "octo/other".to_string(),
-                github_private: true,
-                acknowledge_public: false,
-                run_import_count: 0,
-                user_id: test_owner_id(),
-                now_unix: unix_now(),
-            },
-            async || Ok::<_, scope_postgres::error::PostgresError>(true),
-        )
-        .await
-        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -403,8 +377,22 @@ async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
     let on_request = workflow_run_started_at(21, &request.branch(), &head, None, started);
     let on_main = workflow_run_started_at(22, "main", &"b".repeat(40), Some("failure"), started);
     fake.report_workflow_runs(vec![on_request.clone(), on_main.clone()]);
-    deliver_workflow_run(state, &on_request).await;
-    deliver_workflow_run(state, &on_main).await;
+    deliver_event(
+        state,
+        "workflow_run",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
+        on_request.clone(),
+    )
+    .await;
+    deliver_event(
+        state,
+        "workflow_run",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
+        on_main.clone(),
+    )
+    .await;
     let unknown = webhook(
         state,
         "workflow_run",
@@ -439,7 +427,14 @@ async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
 
     let completed = workflow_run_started_at(21, &request.branch(), &head, Some("success"), started);
     fake.report_workflow_runs(vec![completed.clone(), on_main]);
-    deliver_workflow_run(state, &completed).await;
+    deliver_event(
+        state,
+        "workflow_run",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
+        completed.clone(),
+    )
+    .await;
     let listed = github_request(state, "GET", "/workflow-runs", &bearer_header()).await;
     assert_eq!(
         listed["github"]["workflow_runs"][1]["conclusion"],
@@ -486,7 +481,7 @@ async fn deleting_the_setup_branch_is_tried_again_when_github_refuses() {
 async fn a_test_still_running_for_a_former_github_repository_does_not_block_a_new_one() {
     let (state, _fake, _main) = connected_repository("github-setup-former-running").await;
     github_request(&state, "POST", "/setup-check", &bearer_header()).await;
-    reconnect_to_another_repository(&state).await;
+    reconnect_test_repository(&state, GITHUB_REPOSITORY_ID + 1, "octo/other", 0).await;
     let started = github_request(&state, "POST", "/setup-check", &bearer_header()).await;
     assert_eq!(started["setup_check"]["state"], "pushing");
 }
@@ -498,7 +493,14 @@ async fn a_workflow_run_github_could_not_be_asked_about_is_read_again() {
     let run = workflow_run(31, &request.branch(), &head, Some("success"));
     fake.report_workflow_runs(vec![run.clone()]);
     fake.workflow_run_unavailable.store(true, Ordering::SeqCst);
-    deliver_workflow_run(state, &run).await;
+    deliver_event(
+        state,
+        "workflow_run",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
+        run.clone(),
+    )
+    .await;
     let listed = github_request(state, "GET", "/workflow-runs", &bearer_header()).await;
     assert_eq!(listed["github"]["workflow_runs"], serde_json::json!([]));
 

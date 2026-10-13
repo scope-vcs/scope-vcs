@@ -23,7 +23,7 @@ fn failed(id: u64) -> GitHubWorkflowJob {
 }
 
 #[tokio::test]
-async fn a_queued_log_read_is_claimed_once_retried_when_due_and_skipped_once_stored() {
+async fn a_log_read_is_queued_once_per_unstored_log_and_names_its_job() {
     let store = postgres_store();
     let repositories = store.repositories();
     repositories
@@ -54,35 +54,6 @@ async fn a_queued_log_read_is_claimed_once_retried_when_due_and_skipped_once_sto
             github_job_id: 12,
             attempts: 1,
         }]
-    );
-    assert!(
-        repositories
-            .claim_due_github_job_log_reads(399, 700, 10)
-            .await
-            .unwrap()
-            .is_empty()
-    );
-
-    repositories
-        .finish_github_job_log_read(&claimed[0], Some(130))
-        .await
-        .unwrap();
-    let retried = repositories
-        .claim_due_github_job_log_reads(130, 430, 10)
-        .await
-        .unwrap();
-    assert_eq!(retried[0].attempts, 2);
-
-    repositories
-        .finish_github_job_log_read(&retried[0], None)
-        .await
-        .unwrap();
-    assert!(
-        repositories
-            .claim_due_github_job_log_reads(10_000, 10_300, 10)
-            .await
-            .unwrap()
-            .is_empty()
     );
 }
 

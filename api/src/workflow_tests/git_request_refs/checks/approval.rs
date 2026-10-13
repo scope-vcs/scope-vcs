@@ -64,7 +64,7 @@ async fn checks_awaiting_approval_wait_for_a_maintainer_and_gate_the_merge() {
     let app = router(state.clone());
     let public = bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL);
     let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
-    submit(app.clone(), REQUEST_ID, &public).await;
+    submit_request(app.clone(), REQUEST_ID, &public).await;
 
     let waiting = expect_json(
         api_request(
@@ -175,7 +175,7 @@ async fn recorded_checks_can_be_approved_by_a_maintainer_after_the_request_close
     let app = router(state.clone());
     let public = bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL);
     let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
-    submit(app.clone(), REQUEST_ID, &public).await;
+    submit_request(app.clone(), REQUEST_ID, &public).await;
 
     let closed = expect_json(
         api_request(

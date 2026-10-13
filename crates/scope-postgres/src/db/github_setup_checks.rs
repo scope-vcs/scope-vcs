@@ -48,7 +48,7 @@ impl RepositoryStore {
         user_id: &str,
         now_unix: u64,
     ) -> Result<(GitHubSetupCheck, RepositoryIncarnation), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, repo_id).await?;
         acquire_aggregate_lock(&tx, "github-setup-check", repo_id).await?;
         let context = repository_access(&tx, repo_id, Some(user_id))
@@ -58,8 +58,7 @@ impl RepositoryStore {
         let current = load_check(&tx, repo_id, false).await?;
         let main_oid = entities::git_head::Entity::find_by_id(repo_id)
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(|head| head.head_oid);
         let check = start_github_setup_check(
             context.access.clone(),
@@ -85,7 +84,7 @@ impl RepositoryStore {
             ..check
         };
         save_check(&tx, &check).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok((check, context.incarnation()))
     }
 
@@ -96,7 +95,7 @@ impl RepositoryStore {
         push_id: &str,
         run_ids: Vec<u64>,
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(mut check) = load_check(&tx, repo_id, true).await? else {
             return Ok(false);
         };
@@ -104,7 +103,7 @@ impl RepositoryStore {
             return Ok(false);
         }
         save_check(&tx, &check).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(true)
     }
 
@@ -148,8 +147,7 @@ impl RepositoryStore {
                     serde_json::json!(suites).into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(|row| row.try_get("", "name").map_err(PostgresError::internal))
             .collect::<Result<_, _>>()?;
@@ -176,8 +174,7 @@ impl RepositoryStore {
             [u64_to_i64(limit, "GitHub setup check batch size")?.into()],
         ))
         .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(SetupCheckRow::into_domain)
         .collect()
@@ -190,7 +187,7 @@ impl RepositoryStore {
         commit_oid: &str,
         now_unix: u64,
     ) -> Result<Option<GitHubSetupCheck>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(mut check) = load_check(&tx, repo_id, true)
             .await?
             .filter(|check| check.commit_oid == commit_oid)
@@ -210,7 +207,7 @@ impl RepositoryStore {
         }
         save_check(&tx, &check).await?;
         queue_pushed_branch_deletion(&tx, repo_id, &GitHubSetupCheck::branch(), now_unix).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(check))
     }
 }
@@ -253,8 +250,7 @@ async fn load_check<C: ConnectionTrait>(
         [repo_id.into()],
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .map(SetupCheckRow::into_domain)
     .transpose()
 }
@@ -290,8 +286,7 @@ async fn save_check<C: ConnectionTrait>(
                 .into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 

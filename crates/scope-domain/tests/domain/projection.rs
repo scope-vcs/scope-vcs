@@ -24,15 +24,10 @@ use scope_domain::{
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 
-#[path = "domain_projection/history_metadata.rs"]
 mod history_metadata;
-#[path = "domain_projection/history_rewrite_baselines.rs"]
 mod history_rewrite_baselines;
-#[path = "domain_projection/request_views.rs"]
 mod request_views;
-#[path = "domain_projection/rules.rs"]
 mod rules;
-#[path = "domain_projection/views.rs"]
 mod views;
 
 fn blob(content: &str) -> SourceBlob {

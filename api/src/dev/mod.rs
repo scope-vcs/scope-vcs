@@ -4,11 +4,11 @@ mod env;
 use crate::demo_seed as seed;
 use crate::{
     AppState,
-    auth::{clerk::ClerkVerifier, cli::CliAuthService},
-    config::{LOCAL_API_ORIGIN, SCOPE_OPERATOR_TOKEN_ENV, git_public_url_from_env, non_empty_env},
+    auth::cli::CliAuthService,
+    config::{LOCAL_API_ORIGIN, git_public_url_from_env},
     error::ApiError,
     persistence::unix_now,
-    repo_events::RepoChangeBus,
+    state::AppServices,
 };
 use axum::{
     Json,
@@ -17,7 +17,6 @@ use axum::{
 use scope_api_contract::CliSessionTokenResponse;
 use scope_postgres::db::MetadataStore;
 use scope_product_analytics::ProductAnalytics;
-use std::sync::Arc;
 
 pub use env::is_local_dev_env;
 
@@ -71,57 +70,14 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
             error.into_operator_diagnostic()
         )
     })?;
-    let repo_events = RepoChangeBus::default();
-    let listener_bus = repo_events.clone();
-    metadata
-        .repositories()
-        .start_repo_change_listener(move |payload| {
-            listener_bus.publish_notification_payload(&payload)
-        })?;
-    let state = AppState {
-        auto_merge_wakeup: Arc::new(tokio::sync::Notify::new()),
-        clerk_user_deletion_wakeup: Arc::new(tokio::sync::Notify::new()),
-        clerk_users: crate::clerk_users::ClerkUsers::from_env(),
-        github: crate::github::GitHubApp::from_env()?.map(Arc::new),
-        github_job_log_wakeup: Arc::new(tokio::sync::Notify::new()),
-        github_push_wakeup: Arc::new(tokio::sync::Notify::new()),
-        github_run_import_wakeup: Arc::new(tokio::sync::Notify::new()),
-        github_job_read_wakeup: Arc::new(tokio::sync::Notify::new()),
-        invite_email_wakeup: Arc::new(tokio::sync::Notify::new()),
-        invite_mailer: crate::invite_mailer::InviteMailer::from_env(),
+    AppState::connect(AppServices {
+        storage,
         metadata,
-        data_dir: storage.data_dir,
-        clerk: ClerkVerifier::from_env(),
-        object_store: storage.object_store,
-        git_segment_store: storage.git_segment_store,
         cache_grants: crate::cache_grants::CacheGrantIssuer::test(),
         media_grants: crate::media_grants::MediaGrantIssuer::local()?,
-        runtime_budgets: storage.runtime_budgets,
-        dispatch_broker_token: non_empty_env(crate::config::SCOPE_DISPATCH_BROKER_TOKEN_ENV)
-            .map(Arc::from),
-        operator_token: non_empty_env(SCOPE_OPERATOR_TOKEN_ENV).map(Arc::from),
         product_analytics: ProductAnalytics::disabled(),
-        repo_events,
-        push_intent_signing_key: storage.push_intent_signing_key,
-        repository_engine: storage.repository_engine,
-        git_public_url: Arc::from(git_public_url),
-        #[cfg(test)]
-        test_object_backend: Arc::new(scope_storage::MemoryBackend::default()),
-    };
-    state.backfill_repository_workflow_catalogs().await?;
-    state.repository_engine.start_reaper();
-    state.start_run_attempt_recovery();
-    state.start_retention();
-    state.start_request_ref_cleanup();
-    state.start_invite_email_delivery();
-    state.start_github_pushes();
-    state.start_github_run_imports();
-    state.start_github_job_reads();
-    state.start_github_job_log_reads();
-    state.start_github_check_reconciliation();
-    state.start_clerk_user_deletion();
-    state.start_git_segment_recovery();
-    Ok(state)
+        git_public_url,
+    })
 }
 
 pub(crate) async fn create_bench_cli_session(
@@ -136,7 +92,7 @@ pub(crate) async fn create_bench_cli_session(
     let settings = env::validate_local_dev_environment().map_err(|error| {
         ApiError::internal_message(format!("validating local dev benchmark auth: {error}"))
     })?;
-    let user = seed::seed_user_account(settings.seed_user);
+    let user = crate::seed_user::seed_user_account(settings.seed_user);
     mint_cli_session(&state, &user).await
 }
 

@@ -73,7 +73,6 @@ export function generatePreviewSecrets() {
     mediaEncryptionKey: randomBytes(32).toString('base64'),
     cacheGrant: signingKeyPair(),
     mediaGrant: signingKeyPair(),
-    operatorToken: password(),
   };
 }
 
@@ -147,7 +146,6 @@ export function previewVariables({ manifest, domains, current, secrets, clerk })
 
   shared(['api', 'run-worker', 'maintenance'], 'SCOPE_OBJECT_ENCRYPTION_KEY', secrets.objectEncryptionKey);
   shared(['media-api', 'media-worker'], 'SCOPE_MEDIA_ENCRYPTION_KEY', secrets.mediaEncryptionKey);
-  shared(['api'], 'SCOPE_OPERATOR_TOKEN', secrets.operatorToken);
   signingPair(['api', 'SCOPE_CACHE_GRANT_PRIVATE_KEY'], ['cache', 'SCOPE_CACHE_GRANT_PUBLIC_KEY'], secrets.cacheGrant);
   signingPair(['api', 'SCOPE_MEDIA_GRANT_PRIVATE_KEY'], ['media-api', 'SCOPE_MEDIA_GRANT_PUBLIC_KEY'], secrets.mediaGrant);
 

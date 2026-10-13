@@ -137,7 +137,6 @@ if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
     run_maintenance plan >/dev/null
     run_maintenance validate-workflow-catalogs
     run_maintenance apply
-    run_maintenance backfill-workflow-catalogs
   fi
   run_maintenance verify
 fi

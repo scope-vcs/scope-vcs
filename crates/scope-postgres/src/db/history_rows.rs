@@ -104,8 +104,7 @@ where
         entities::visibility_change_set::Entity::delete_many()
             .filter(entities::visibility_change_set::Column::RepoId.eq(after_graph.repo_id.clone()))
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         insert_visibility_change_sets(conn, &after_graph.repo_id, 0, after_visibility_change_sets)
             .await?;
     } else if after_visibility_change_sets.len() > before_visibility_change_sets.len() {
@@ -237,8 +236,7 @@ where
         .order_by_asc(entities::live_file::Column::RepoId)
         .order_by_asc(entities::live_file::Column::Path)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     {
         if let Some(history) = histories.get_mut(&row.repo_id) {
             history.live_files.insert(
@@ -281,8 +279,7 @@ where
         .order_by_asc(entities::logical_commit::Column::RepoId)
         .order_by_asc(entities::logical_commit::Column::Ordinal)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let mut changes_by_commit = BTreeMap::<(String, String), Vec<FileChange>>::new();
     if !commits.is_empty() {
         for row in entities::file_change::Entity::find()
@@ -291,8 +288,7 @@ where
             .order_by_asc(entities::file_change::Column::CommitId)
             .order_by_asc(entities::file_change::Column::Ordinal)
             .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         {
             let key = (row.repo_id.clone(), row.commit_id.clone());
             changes_by_commit
@@ -318,8 +314,7 @@ where
         .order_by_asc(entities::visibility_change_set::Column::RepoId)
         .order_by_asc(entities::visibility_change_set::Column::Ordinal)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let mut changes_by_set = BTreeMap::<(String, String), Vec<VisibilityChange>>::new();
     if !set_rows.is_empty() {
         for row in entities::visibility_change::Entity::find()
@@ -328,8 +323,7 @@ where
             .order_by_asc(entities::visibility_change::Column::ChangeSetId)
             .order_by_asc(entities::visibility_change::Column::Ordinal)
             .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         {
             let key = (row.repo_id.clone(), row.change_set_id.clone());
             changes_by_set
@@ -380,8 +374,7 @@ where
     entities::live_file::Entity::delete_many()
         .filter(entities::live_file::Column::RepoId.eq(repo_id.to_string()))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     insert_repository_live_files(conn, repo_id, live_files).await
 }
 
@@ -415,14 +408,12 @@ where
                     .is_in(batch.iter().map(|(path, _)| path.as_str().to_string())),
             )
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     for batch in rows.chunks(PERSISTENCE_BATCH_SIZE) {
         entities::live_file::Entity::insert_many(batch.iter().cloned())
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     Ok(())
 }
@@ -434,8 +425,7 @@ where
     entities::logical_commit::Entity::delete_many()
         .filter(entities::logical_commit::Column::RepoId.eq(graph.repo_id.clone()))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     insert_commits(conn, &graph.repo_id, 0, &graph.commits).await
 }
 
@@ -470,8 +460,7 @@ where
     for batch in commit_rows.chunks(PERSISTENCE_BATCH_SIZE) {
         entities::logical_commit::Entity::insert_many(batch.iter().cloned())
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     let change_rows = commits
         .iter()
@@ -497,8 +486,7 @@ where
     for batch in change_rows.chunks(PERSISTENCE_BATCH_SIZE) {
         entities::file_change::Entity::insert_many(batch.iter().cloned())
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     for commit in commits {
         for (ordinal, change) in commit.changes.iter().enumerate() {
@@ -549,8 +537,7 @@ where
         }
         .into_active_model()
         .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         for (ordinal, change) in set.changes.iter().enumerate() {
             entities::visibility_change::Model {
                 repo_id: repo_id.to_string(),
@@ -563,8 +550,7 @@ where
             }
             .into_active_model()
             .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
             if let Some(content) = change.current_content.as_ref()
                 && !matches!(
                     content.content_ref,
@@ -596,8 +582,7 @@ where
         .filter(entities::object_reference::Column::RefKind.eq(ref_kind.to_string()))
         .filter(entities::object_reference::Column::RefId.starts_with(format!("{repo_id}:")))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 

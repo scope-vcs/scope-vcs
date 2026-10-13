@@ -1,5 +1,6 @@
-use crate::http::{responses::*, routes};
+use crate::http::responses::*;
 use schemars::JsonSchema;
+use scope_api_contract::routes;
 use scope_api_contract::{
     AccountSessionResponse, AddRequestInviteeRequest, ApproveRequestChecksRequest, AttemptState,
     AuthorizeRequestAutoMergeRequest, BrowserLoginExchangeRequest, BrowserLoginStartRequest,

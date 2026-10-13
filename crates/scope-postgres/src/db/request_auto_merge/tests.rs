@@ -1,7 +1,6 @@
 use super::*;
 use crate::db::{
     RecordRequestChecksCommand, SubmitRequestCommand, acquire_aggregate_lock,
-    generated_ids::test_generated_id,
     locks::wait_for_transaction_waiter,
     requests::tests::{postgres_store, start_public_request},
     test_support::fixtures::source_blob,
@@ -237,14 +236,11 @@ async fn latest_same_second_intent_and_expired_claims_remain_fenced() {
         .await
         .unwrap();
     let first_claim = requests
-        .claim_due_request_auto_merges(
-            ClaimDueRequestAutoMergesCommand {
-                now_unix: 7,
-                lease_expires_at_unix: 10,
-                limit: 1,
-            },
-            &test_generated_id,
-        )
+        .claim_due_request_auto_merges(ClaimDueRequestAutoMergesCommand {
+            now_unix: 7,
+            lease_expires_at_unix: 10,
+            limit: 1,
+        })
         .await
         .unwrap()
         .pop()
@@ -252,14 +248,11 @@ async fn latest_same_second_intent_and_expired_claims_remain_fenced() {
     assert_eq!(first_claim.attempt, 1);
 
     let reclaimed = requests
-        .claim_due_request_auto_merges(
-            ClaimDueRequestAutoMergesCommand {
-                now_unix: 11,
-                lease_expires_at_unix: 20,
-                limit: 1,
-            },
-            &test_generated_id,
-        )
+        .claim_due_request_auto_merges(ClaimDueRequestAutoMergesCommand {
+            now_unix: 11,
+            lease_expires_at_unix: 20,
+            limit: 1,
+        })
         .await
         .unwrap()
         .pop()
@@ -327,14 +320,11 @@ async fn lease_bookkeeping_does_not_advance_the_domain_transition_clock() {
         .await
         .unwrap();
     let claim = requests
-        .claim_due_request_auto_merges(
-            ClaimDueRequestAutoMergesCommand {
-                now_unix: 20,
-                lease_expires_at_unix: 30,
-                limit: 1,
-            },
-            &test_generated_id,
-        )
+        .claim_due_request_auto_merges(ClaimDueRequestAutoMergesCommand {
+            now_unix: 20,
+            lease_expires_at_unix: 30,
+            limit: 1,
+        })
         .await
         .unwrap()
         .pop()
@@ -419,7 +409,7 @@ async fn authorization_committing_first_fences_a_selected_retention_candidate() 
     let retention_task = tokio::spawn(async move {
         retention_store
             .runs()
-            .prune_terminal_runs(100, 100, 1, &test_generated_id)
+            .prune_terminal_runs(100, 100, 1)
             .await
     });
     wait_for_blocked_transaction_count(&store, guard_pid, 2).await;
@@ -453,7 +443,7 @@ async fn retention_committing_first_makes_authorization_reject_missing_evidence(
     let retention_task = tokio::spawn(async move {
         retention_store
             .runs()
-            .prune_terminal_runs(100, 100, 1, &test_generated_id)
+            .prune_terminal_runs(100, 100, 1)
             .await
     });
     wait_for_transaction_waiter(&store, guard_pid).await;
@@ -509,31 +499,28 @@ async fn open_request_with_revision(store: &super::super::MetadataStore) -> Stri
         .unwrap();
     store
         .requests()
-        .record_request_revision(
-            RecordRequestRevisionInput {
-                request_id: "req_1".into(),
-                actor_user_id: "user_public".into(),
-                actor_can_edit: true,
-                expected_old_head_oid: Some("head".into()),
-                new_head_oid: "a".repeat(40),
-                git_snapshot: SourceBlob {
-                    content_ref: ContentRef::git_bundle_sha256("sha256-auto-merge"),
-                    sha256: "sha256-auto-merge".into(),
-                    git_oid: "a".repeat(40),
-                    git_file_mode: DEFAULT_GIT_FILE_MODE.into(),
-                    size_bytes: 1,
-                },
-                git_facts: RequestRevisionGitFacts {
-                    contains_old_head: true,
-                    contained_main_oid: None,
-                    contained_main_descends_from_base: false,
-                },
-                event_id: "revision_current".into(),
-                body: None,
-                now_unix: 5,
+        .record_request_revision(RecordRequestRevisionInput {
+            request_id: "req_1".into(),
+            actor_user_id: "user_public".into(),
+            actor_can_edit: true,
+            expected_old_head_oid: Some("head".into()),
+            new_head_oid: "a".repeat(40),
+            git_snapshot: SourceBlob {
+                content_ref: ContentRef::git_bundle_sha256("sha256-auto-merge"),
+                sha256: "sha256-auto-merge".into(),
+                git_oid: "a".repeat(40),
+                git_file_mode: DEFAULT_GIT_FILE_MODE.into(),
+                size_bytes: 1,
             },
-            &test_generated_id,
-        )
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
+            },
+            event_id: "revision_current".into(),
+            body: None,
+            now_unix: 5,
+        })
         .await
         .unwrap()
         .revision

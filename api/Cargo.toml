@@ -9,7 +9,7 @@ repository.workspace = true
 [features]
 default = []
 local-dev = ["scope_postgres/local-dev"]
-smoke-seed = ["scope_postgres/smoke-seed"]
+smoke-seed = []
 type-export = ["dep:schemars", "dep:ts-rs", "scope_api_contract/ts"]
 
 [[bin]]

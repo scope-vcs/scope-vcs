@@ -1,3 +1,4 @@
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     auth::tokens::random_token, error::ApiError, persistence::unix_now,
     repo_events::RepoChangeReason, state::AppState, use_cases::github_workflow_runs,
@@ -164,26 +165,18 @@ async fn import_runs(
     Ok(imported)
 }
 
-impl AppState {
-    pub(crate) fn start_github_run_imports(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            loop {
-                let pass = async {
-                    state.metadata.admin().readiness_check().await?;
-                    import_due_github_runs(&state, unix_now()?).await
-                };
-                if let Err(error) = pass.await {
-                    tracing::warn!(
-                        error = %error.operator_diagnostic(),
-                        "GitHub run import pass failed; retrying"
-                    );
-                }
-                tokio::select! {
-                    _ = state.github_run_import_wakeup.notified() => {},
-                    _ = tokio::time::sleep(POLL_INTERVAL) => {},
-                }
-            }
-        });
+impl BackgroundWork {
+    pub(crate) fn start_github_run_imports(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "GitHub run import pass",
+                cadence: Cadence::AfterPass {
+                    delay: POLL_INTERVAL,
+                    wakeup: Some(|wakeups| &wakeups.github_run_imports),
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            |state| async move { import_due_github_runs(&state, unix_now()?).await },
+        );
     }
 }

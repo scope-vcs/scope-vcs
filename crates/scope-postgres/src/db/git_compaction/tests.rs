@@ -1,5 +1,5 @@
 use super::*;
-use crate::db::{MetadataStore, TestDatabaseTarget, generated_ids::test_generated_id};
+use crate::db::{MetadataStore, TestDatabaseTarget};
 use crate::error::PostgresErrorKind;
 use scope_domain::repository::git::{GitSegmentRef, GitSegmentUploadState};
 use sea_orm::{ActiveModelTrait, IntoActiveModel};
@@ -166,21 +166,21 @@ async fn lease_reclaim_rejects_the_old_workers_completion() {
 
     let first = store
         .jobs()
-        .claim_git_compaction("worker-a", u64::MAX, 10, 10, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 10)
         .await
         .unwrap()
         .unwrap();
     assert!(
         store
             .jobs()
-            .claim_git_compaction("worker-b", u64::MAX, 10, 10, &test_generated_id)
+            .claim_git_compaction("worker-b", u64::MAX, 10, 10)
             .await
             .unwrap()
             .is_none()
     );
     let reclaimed = store
         .jobs()
-        .claim_git_compaction("worker-b", u64::MAX, 21, 10, &test_generated_id)
+        .claim_git_compaction("worker-b", u64::MAX, 21, 10)
         .await
         .unwrap()
         .unwrap();
@@ -222,7 +222,7 @@ async fn lease_renewal_prevents_reclaim_until_the_extended_expiry() {
 
     let claim = store
         .jobs()
-        .claim_git_compaction("worker-a", u64::MAX, 10, 10, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 10)
         .await
         .unwrap()
         .unwrap();
@@ -236,7 +236,7 @@ async fn lease_renewal_prevents_reclaim_until_the_extended_expiry() {
     assert!(
         store
             .jobs()
-            .claim_git_compaction("worker-b", u64::MAX, 21, 10, &test_generated_id)
+            .claim_git_compaction("worker-b", u64::MAX, 21, 10)
             .await
             .unwrap()
             .is_none()
@@ -244,7 +244,7 @@ async fn lease_renewal_prevents_reclaim_until_the_extended_expiry() {
     assert!(
         store
             .jobs()
-            .claim_git_compaction("worker-b", u64::MAX, 25, 10, &test_generated_id)
+            .claim_git_compaction("worker-b", u64::MAX, 25, 10)
             .await
             .unwrap()
             .is_some()
@@ -268,7 +268,7 @@ async fn push_scheduled_during_a_claim_survives_completion() {
         .unwrap();
     let first = store
         .jobs()
-        .claim_git_compaction("worker-a", u64::MAX, 10, 30, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 30)
         .await
         .unwrap()
         .unwrap();
@@ -284,7 +284,7 @@ async fn push_scheduled_during_a_claim_survives_completion() {
 
     let next = store
         .jobs()
-        .claim_git_compaction("worker-b", u64::MAX, 12, 30, &test_generated_id)
+        .claim_git_compaction("worker-b", u64::MAX, 12, 30)
         .await
         .unwrap()
         .unwrap();
@@ -301,7 +301,7 @@ async fn new_push_does_not_bypass_a_failed_compactions_backoff() {
         .unwrap();
     let failed = store
         .jobs()
-        .claim_git_compaction("worker-a", u64::MAX, 10, 30, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 30)
         .await
         .unwrap()
         .unwrap();
@@ -317,14 +317,14 @@ async fn new_push_does_not_bypass_a_failed_compactions_backoff() {
     assert!(
         store
             .jobs()
-            .claim_git_compaction("worker-b", u64::MAX, 14, 30, &test_generated_id)
+            .claim_git_compaction("worker-b", u64::MAX, 14, 30)
             .await
             .unwrap()
             .is_none()
     );
     let retry = store
         .jobs()
-        .claim_git_compaction("worker-b", u64::MAX, 15, 30, &test_generated_id)
+        .claim_git_compaction("worker-b", u64::MAX, 15, 30)
         .await
         .unwrap()
         .unwrap();
@@ -343,7 +343,7 @@ async fn compaction_replaces_an_interior_pair_and_preserves_both_sides() {
         .unwrap();
     let claim = store
         .jobs()
-        .claim_git_compaction("worker-a", u64::MAX, 10, 60, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 60)
         .await
         .unwrap()
         .unwrap();
@@ -433,7 +433,7 @@ async fn stale_claim_retires_its_unused_replacement_and_preserves_the_winning_co
         .unwrap();
     let stale_plan = store
         .jobs()
-        .claim_git_compaction("worker-a", u64::MAX, 10, 60, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 60)
         .await
         .unwrap()
         .unwrap()
@@ -515,7 +515,7 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
         .unwrap();
     let stale_plan = store
         .jobs()
-        .claim_git_compaction("worker-a", u64::MAX, 10, 60, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 60)
         .await
         .unwrap()
         .unwrap()
@@ -600,7 +600,7 @@ async fn adapter_preserves_compaction_validation_diagnostics() {
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let error = store
         .jobs()
-        .claim_git_compaction("worker-a", u64::MAX, 10, 0, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 0)
         .await
         .unwrap_err();
     assert_eq!(error.kind, PostgresErrorKind::Internal);
@@ -615,7 +615,7 @@ async fn adapter_preserves_compaction_validation_diagnostics() {
         .unwrap();
     let plan = store
         .jobs()
-        .claim_git_compaction("worker-a", u64::MAX, 10, 60, &test_generated_id)
+        .claim_git_compaction("worker-a", u64::MAX, 10, 60)
         .await
         .unwrap()
         .unwrap()

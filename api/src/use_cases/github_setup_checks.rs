@@ -26,7 +26,7 @@ pub(crate) async fn reconcile_github_setup_checks_once(
             .is_some()
         {
             ended += 1;
-            state.github_push_wakeup.notify_one();
+            state.wakeups.github_pushes.notify_one();
             publish_setup_check_change(state, &check.repository_id).await?;
         }
     }

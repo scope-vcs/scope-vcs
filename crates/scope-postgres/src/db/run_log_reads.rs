@@ -77,8 +77,7 @@ impl RunStore {
         let attempt = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
             .filter(entities::run_attempt::Column::RunId.eq(run_id))
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::not_found("run attempt not found"))?;
         let job_key = WorkflowJobId::parse(attempt.job_key)
             .map_err(PostgresError::invalid_input)?
@@ -89,8 +88,7 @@ impl RunStore {
         let step_exists =
             entities::run_attempt_step::Entity::find_by_id((attempt_id.to_string(), step_index))
                 .one(&tx)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
                 .is_some();
         if !step_exists {
             return Err(PostgresError::not_found("run attempt step not found"));
@@ -127,8 +125,7 @@ impl RunStore {
             ],
         ))
         .all(&tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|model| -> Result<StoredRunLog, PostgresError> {
             let position = integer_columns::i64_to_u64(model.position, "run log position")?;
@@ -148,18 +145,14 @@ impl RunStore {
             "SELECT EXISTS(SELECT 1 FROM scope_run_logs WHERE attempt_id = $1 AND step_index = $2 AND position < $3) AS has_earlier,
                     EXISTS(SELECT 1 FROM scope_run_logs WHERE attempt_id = $1 AND step_index = $2 AND position > $4) AS has_more",
             [attempt_id.into(), step_index.into(), first.into(), last.into()],
-        )).await.map_err(PostgresError::internal)?
+        )).await?
             .ok_or_else(|| PostgresError::internal_message("run log page bounds missing"))?;
-        let has_earlier = bounds
-            .try_get("", "has_earlier")
-            .map_err(PostgresError::internal)?;
-        let has_more = bounds
-            .try_get("", "has_more")
-            .map_err(PostgresError::internal)?;
+        let has_earlier = bounds.try_get("", "has_earlier")?;
+        let has_more = bounds.try_get("", "has_more")?;
         let logs_truncated = attempt
             .first_truncated_step_index
             .is_some_and(|first| step_index >= first);
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(StoredAttemptStepLogs {
             logs,
             logs_truncated,
@@ -195,8 +188,7 @@ impl RunStore {
             .filter(entities::run_log::Column::AttemptId.eq(attempt_id))
             .order_by_desc(entities::run_log::Column::Sequence)
             .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         match last {
             Some(log) => integer_columns::i64_to_u64(log.sequence, "run log sequence")?
                 .checked_add(1)
@@ -233,8 +225,7 @@ where
     );
     RunLogReadRow::find_by_statement(statement)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(RunLogReadRow::try_into_stored)
         .collect()

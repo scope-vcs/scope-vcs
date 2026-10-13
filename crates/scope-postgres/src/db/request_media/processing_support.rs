@@ -83,22 +83,15 @@ where
             "SELECT 1 AS present FROM scope_repositories WHERE id = $1",
             [attachment.repository_id.clone().into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .is_some();
     if !repository_exists {
         return Ok(None);
     }
-    let attempt = u32::try_from(
-        job.try_get::<i32>("", "attempt")
-            .map_err(PostgresError::internal)?,
-    )
-    .map_err(PostgresError::internal)?;
-    let expiry = u64::try_from(
-        job.try_get::<i64>("", "lease_expires_at_unix")
-            .map_err(PostgresError::internal)?,
-    )
-    .map_err(PostgresError::internal)?;
+    let attempt =
+        u32::try_from(job.try_get::<i32>("", "attempt")?).map_err(PostgresError::internal)?;
+    let expiry = u64::try_from(job.try_get::<i64>("", "lease_expires_at_unix")?)
+        .map_err(PostgresError::internal)?;
     Ok(Some((
         RequestAttachmentProcessingLease {
             attachment_id: attachment.id.clone(),
@@ -190,8 +183,7 @@ where
             as_i64(attachment.updated_at_unix, "attachment update time")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -260,8 +252,7 @@ where
             as_i64(attachment.updated_at_unix, "attachment update time")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -358,8 +349,7 @@ where
                     as_i64(lease_generation, "processing lease generation")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .is_some();
         if !reserved {
             return Err(PostgresError::conflict(
@@ -394,8 +384,7 @@ where
             as_i64(now_unix, "derivative completion time")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     for chunk in &value.manifest.chunks {
         conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -412,8 +401,7 @@ where
                 chunk.sha256.clone().into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     }
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
@@ -450,8 +438,7 @@ where
             as_i64(now_unix, "derivative creation time")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -481,8 +468,7 @@ where
                     as_i64(now_unix, "processing object adoption time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if result.rows_affected() != 1 {
             return Err(PostgresError::conflict(
                 "processing object reservation changed before completion",
@@ -556,8 +542,7 @@ where
             as_i64(attachment.updated_at_unix, "attachment update time")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -579,7 +564,6 @@ where
             as_i64(now_unix, "processing completion time")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }

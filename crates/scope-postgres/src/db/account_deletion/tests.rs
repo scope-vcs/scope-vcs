@@ -1,7 +1,6 @@
 use super::*;
 use crate::db::{
     MetadataStore,
-    generated_ids::test_generated_id,
     test_support::fixtures::{repository, store_with_repositories, user},
 };
 use crate::error::PostgresErrorKind;
@@ -106,11 +105,7 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
     let store = store_with_repositories([shared, repository(&leaver, "solo", ViewId::private())]);
     store.db.execute_unprepared(CONTRIBUTIONS).await.unwrap();
 
-    let deleted = store
-        .auth()
-        .delete_account("leaver", 10, &test_generated_id)
-        .await
-        .unwrap();
+    let deleted = store.auth().delete_account("leaver", 10).await.unwrap();
 
     assert_eq!(deleted.deleted_repositories.len(), 1);
     assert_eq!(
@@ -250,11 +245,7 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
         .await
         .unwrap();
 
-    let deleted = store
-        .auth()
-        .delete_account("leaver", 10, &test_generated_id)
-        .await
-        .unwrap();
+    let deleted = store.auth().delete_account("leaver", 10).await.unwrap();
 
     assert!(deleted.changed_repositories.is_empty());
     assert_eq!(
@@ -290,11 +281,7 @@ async fn owning_a_repository_with_another_member_blocks_deletion() {
     team.collaboration.members = vec![member("leaver/team", "friend")];
     let store = store_with_repositories([team, repository(&leaver, "solo", ViewId::private())]);
 
-    let refused = store
-        .auth()
-        .delete_account("leaver", 10, &test_generated_id)
-        .await
-        .unwrap_err();
+    let refused = store.auth().delete_account("leaver", 10).await.unwrap_err();
 
     let AccountDeletionError::SharedRepositories(shared) = refused else {
         panic!("expected a refusal, got {refused:?}");

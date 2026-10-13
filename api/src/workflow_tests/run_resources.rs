@@ -179,8 +179,8 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
 }
 
 #[tokio::test]
-async fn workflow_catalog_backfill_is_idempotent() {
-    let state = state_with_pushed_workflow("workflow-catalog-backfill").await;
+async fn pushed_workflow_catalog_validates_and_survives_unrelated_change_versions() {
+    let state = state_with_pushed_workflow("workflow-catalog-change-version").await;
     assert_eq!(
         state.validate_repository_workflow_catalogs().await.unwrap(),
         1
@@ -191,31 +191,6 @@ async fn workflow_catalog_backfill_is_idempotent() {
         .mutate_repository_for_tests(TEST_REPO_ID, Repository::bump_change_version)
         .await
         .unwrap();
-    assert_eq!(
-        workflow_list_response(state.clone()).await.status(),
-        StatusCode::OK
-    );
-    state
-        .metadata
-        .repositories()
-        .delete_repository_workflow_catalog_for_tests(TEST_REPO_ID)
-        .await
-        .unwrap();
-    let cache_path = state
-        .repository_engine
-        .repository_path(&test_repo_incarnation());
-    if cache_path.exists() {
-        fs::remove_dir_all(cache_path).unwrap();
-    }
-
-    assert_eq!(
-        state.backfill_repository_workflow_catalogs().await.unwrap(),
-        1
-    );
-    assert_eq!(
-        state.backfill_repository_workflow_catalogs().await.unwrap(),
-        0
-    );
     assert_eq!(workflow_list_response(state).await.status(), StatusCode::OK);
 }
 
@@ -271,7 +246,7 @@ async fn missing_or_inconsistent_workflow_catalog_fails_closed() {
     wrong_source
         .metadata
         .repositories()
-        .corrupt_repository_workflow_catalog_source_for_tests(
+        .set_repository_workflow_catalog_source_for_tests(
             TEST_REPO_ID,
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         )

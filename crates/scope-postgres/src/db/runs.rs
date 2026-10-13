@@ -50,13 +50,6 @@ impl AttemptMutation {
     }
 }
 
-#[cfg(any(test, feature = "seeding"))]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DispatchOffer {
-    pub run: Run,
-    pub job: RunJob,
-}
-
 impl RunStore {
     #[cfg(any(test, feature = "seeding"))]
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "enqueue_run"))]
@@ -65,9 +58,9 @@ impl RunStore {
         run: Run,
         revision: WorkflowRevision,
     ) -> Result<EnqueueRunResult, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let stored = enqueue_run_in_transaction(&tx, run, revision).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(stored)
     }
 
@@ -79,13 +72,13 @@ impl RunStore {
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (run, job, mut attempt) = locked_heartbeat_context(&tx, attempt_id).await?;
         let cancellation_requested = attempt
             .heartbeat(&run, &job, token_hash, now_unix, lease_expires_at_unix)
             .map_err(PostgresError::from)?;
         save_attempt(&tx, &attempt).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(cancellation_requested)
     }
 
@@ -188,7 +181,7 @@ impl RunStore {
         attempt_id: &str,
         now_unix: u64,
     ) -> Result<AttemptMutation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let guard_run_id = attempt_run_id(&tx, attempt_id).await?;
         let active_auto_merge =
             super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &guard_run_id).await?;
@@ -197,8 +190,7 @@ impl RunStore {
         let mut attempt = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
             .lock_exclusive()
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::not_found("run attempt not found"))?
             .try_into_domain()?;
         let mut steps = locked_attempt_steps(&tx, attempt_id).await?;
@@ -220,7 +212,7 @@ impl RunStore {
         super::request_auto_merge::stop_auto_merge_for_terminal_run(&tx, active_auto_merge, &run)
             .await?;
         let repository = run_repository(&tx, &run).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         let job = jobs
             .into_iter()
             .find(|job| job.key == attempt.job_key)
@@ -261,8 +253,7 @@ impl RunStore {
             .order_by_asc(entities::run_attempt::Column::Id)
             .limit(limit)
             .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(|attempt| attempt.id)
             .collect())
@@ -276,7 +267,7 @@ impl RunStore {
         run_id: &str,
         now_unix: u64,
     ) -> Result<Run, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         authorize_run_control(&tx, actor_user_id, repository_id).await?;
         let active_auto_merge =
             super::request_auto_merge::lock_active_auto_merge_for_run(&tx, run_id).await?;
@@ -288,7 +279,7 @@ impl RunStore {
         save_run(&tx, &run).await?;
         super::request_auto_merge::stop_auto_merge_for_terminal_run(&tx, active_auto_merge, &run)
             .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(run)
     }
 
@@ -300,7 +291,7 @@ impl RunStore {
         run_id: &str,
         now_unix: u64,
     ) -> Result<Run, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         authorize_run_control(&tx, actor_user_id, repository_id).await?;
         let _active_auto_merge =
             super::request_auto_merge::lock_active_auto_merge_for_run(&tx, run_id).await?;
@@ -314,7 +305,7 @@ impl RunStore {
         retry_run(&mut run, &mut jobs, &revision, now_unix).map_err(PostgresError::from)?;
         save_jobs(&tx, &jobs).await?;
         save_run(&tx, &run).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(run)
     }
 
@@ -322,8 +313,7 @@ impl RunStore {
     pub async fn run(&self, run_id: &str) -> Result<Option<Run>, PostgresError> {
         entities::run::Entity::find_by_id(run_id.to_string())
             .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::run::Model::try_into_domain)
             .transpose()
     }
@@ -373,16 +363,14 @@ pub(super) async fn enqueue_run_in_transaction(
         .on_conflict(OnConflict::new().do_nothing().to_owned())
         .try_insert()
         .exec(tx)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let inserted = matches!(result, TryInsertResult::Inserted(_));
     if !inserted {
         let stored = entities::run::Entity::find()
             .filter(entities::run::Column::RepoId.eq(run.workflow.repository_id().to_string()))
             .filter(entities::run::Column::IdempotencyKey.eq(run.idempotency_key.clone()))
             .one(tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| {
                 PostgresError::conflict("run id is already used by another idempotency key")
             })?
@@ -406,8 +394,7 @@ pub(super) async fn enqueue_run_in_transaction(
             .map(IntoActiveModel::into_active_model),
     )
     .exec(tx)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     for object in run.source.retained_objects() {
         insert_object_reference(tx, "run_source", &run.id, object).await?;
     }
@@ -440,12 +427,10 @@ pub(super) async fn save_workflow_revision(
     )
     .try_insert()
     .exec(tx)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     let persisted = entities::workflow_revision::Entity::find_by_id(revision.digest().to_string())
         .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::internal_message("workflow revision was not stored"))?;
     let persisted = persisted.try_into_domain(revision.workflow().clone())?;
     if &persisted != revision {
@@ -462,8 +447,7 @@ pub(super) async fn workflow_revision_for_run(
 ) -> Result<WorkflowRevision, PostgresError> {
     entities::workflow_revision::Entity::find_by_id(run.workflow_revision_digest.clone())
         .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::internal_message("run workflow revision is missing"))?
         .try_into_domain(run.workflow.clone())
 }

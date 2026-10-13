@@ -104,8 +104,7 @@ async fn ids(
         sql,
         [user_id.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .into_iter()
     .map(|row| {
         row.try_get::<String>("", "id")
@@ -119,7 +118,7 @@ async fn withdraw_evaluation(
     request_id: &str,
     now_unix: u64,
 ) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
-    let tx = db.begin().await.map_err(PostgresError::internal)?;
+    let tx = db.begin().await?;
     acquire_aggregate_lock(&tx, "request", request_id).await?;
     let active_auto_merge = lock_active_intent_for_request(&tx, request_id).await?;
     let Some(request) = request_by_id(&tx, request_id).await? else {
@@ -139,8 +138,7 @@ async fn withdraw_evaluation(
     let run_states = entities::run::Entity::find()
         .filter(entities::run::Column::Id.is_in(run_ids))
         .all(&tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|row| row.try_into_domain().map(|run| (run.id, run.state)))
         .collect::<Result<Vec<_>, _>>()?;
@@ -149,7 +147,7 @@ async fn withdraw_evaluation(
     };
     save_evaluation(&tx, &withdrawn).await?;
     stop_auto_merge_for_evaluation(&tx, active_auto_merge, &request, &withdrawn).await?;
-    tx.commit().await.map_err(PostgresError::internal)?;
+    tx.commit().await?;
     Ok(Some(withdrawn))
 }
 
@@ -158,7 +156,7 @@ async fn cancel_run(
     run_id: &str,
     now_unix: u64,
 ) -> Result<Option<Run>, PostgresError> {
-    let tx = db.begin().await.map_err(PostgresError::internal)?;
+    let tx = db.begin().await?;
     let active_auto_merge = lock_active_auto_merge_for_run(&tx, run_id).await?;
     let mut jobs = locked_jobs(&tx, run_id).await?;
     let mut run = locked_run(&tx, run_id).await?;
@@ -173,6 +171,6 @@ async fn cancel_run(
     save_run(&tx, &run).await?;
     crate::db::request_auto_merge::stop_auto_merge_for_terminal_run(&tx, active_auto_merge, &run)
         .await?;
-    tx.commit().await.map_err(PostgresError::internal)?;
+    tx.commit().await?;
     Ok(Some(run))
 }

@@ -28,6 +28,7 @@ mod git_transport_reads;
 mod github_check_runs;
 mod github_connections;
 mod github_pushes;
+mod github_read_queue;
 mod github_required_checks;
 mod github_run_imports;
 mod github_setup_checks;
@@ -46,8 +47,6 @@ mod locks;
 mod main_push_requests;
 mod maintenance;
 mod manual_runs;
-#[cfg(test)]
-mod migration_harness_tests;
 #[cfg(test)]
 mod migration_tests;
 mod native_runs;
@@ -135,7 +134,7 @@ pub use dependency_analysis::{
     DependencyAnalysisClaim, DependencyCompletion, DependencySnapshotFile,
 };
 pub use fast_push::ApplyContentOnlyPushCommand;
-pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
+use generated_ids::GeneratedIdKind;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::{GitPushContext, GitPushCredentials};
 pub use git_segments::RepositoryGitWriteLease;
@@ -228,6 +227,4 @@ pub use stores::{
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use test_support::TestDatabaseTarget;
-pub use workflow_catalogs::{
-    CurrentRepositoryWorkflowCatalog, RepositoryWorkflowCatalogBackfillCandidate,
-};
+pub use workflow_catalogs::CurrentRepositoryWorkflowCatalog;

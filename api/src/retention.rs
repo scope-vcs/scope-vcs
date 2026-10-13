@@ -1,13 +1,15 @@
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     persistence::unix_now,
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
-        content_cleanup::drain_pending_source_blob_deletions_report,
+        content_cleanup::drain_pending_source_blob_deletions,
         repository_collaboration::publish_committed_mutation,
     },
 };
 use std::time::Duration;
+use tokio::time::MissedTickBehavior;
 
 const RUN_RETENTION_SECONDS: u64 = 30 * 24 * 60 * 60;
 const RETENTION_BATCH_SIZE: u64 = 100;
@@ -18,15 +20,10 @@ pub(crate) async fn apply_run_retention(state: &AppState, now_unix: u64) -> anyh
     let pruned = state
         .metadata
         .runs()
-        .prune_terminal_runs(
-            cutoff,
-            now_unix,
-            RETENTION_BATCH_SIZE,
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .prune_terminal_runs(cutoff, now_unix, RETENTION_BATCH_SIZE)
         .await
         .map_err(|error| anyhow::anyhow!(error.message))?;
-    let report = drain_pending_source_blob_deletions_report(state)
+    let report = drain_pending_source_blob_deletions(state)
         .await
         .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
     if !report.failed_object_deletes.is_empty() {
@@ -61,20 +58,19 @@ pub(crate) async fn apply_invite_retention(
     Ok(pruned)
 }
 
-impl AppState {
-    pub(crate) fn start_retention(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(RETENTION_INTERVAL);
-            loop {
-                interval.tick().await;
-                let now_unix = match unix_now() {
-                    Ok(now) => now,
-                    Err(error) => {
-                        tracing::warn!(?error, "failed to read time for retention");
-                        continue;
-                    }
-                };
+impl BackgroundWork {
+    pub(crate) fn start_retention(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "retention",
+                cadence: Cadence::Fixed {
+                    period: RETENTION_INTERVAL,
+                    missed_ticks: MissedTickBehavior::Burst,
+                },
+                readiness: Readiness::Ungated,
+            },
+            |state| async move {
+                let now_unix = unix_now()?;
                 match apply_run_retention(&state, now_unix).await {
                     Ok(0) => {}
                     Ok(objects) => {
@@ -93,7 +89,8 @@ impl AppState {
                         tracing::warn!(%error, "failed to apply invite retention");
                     }
                 }
-            }
-        });
+                Ok(())
+            },
+        );
     }
 }

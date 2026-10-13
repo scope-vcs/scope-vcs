@@ -1,3 +1,4 @@
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     error::ApiError,
     persistence::unix_now,
@@ -13,6 +14,7 @@ use scope_domain::{
 };
 use scope_postgres::db::GitHubCheckCommit;
 use std::{collections::BTreeSet, time::Duration};
+use tokio::time::MissedTickBehavior;
 
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
 const PENDING_REFRESH_SECS: u64 = 2 * 60;
@@ -168,7 +170,7 @@ pub(crate) async fn refresh_commit_checks(
                 .await;
         }
     }
-    state.auto_merge_wakeup.notify_one();
+    state.wakeups.auto_merge.notify_one();
     Ok(())
 }
 
@@ -248,32 +250,26 @@ async fn any_checks_pending(
     }))
 }
 
-impl AppState {
-    pub(crate) fn start_github_check_reconciliation(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(RECONCILE_INTERVAL);
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                interval.tick().await;
-                let pass = async {
-                    state.metadata.admin().readiness_check().await?;
-                    let now = unix_now()?;
-                    let checks = reconcile_github_checks_once(&state, now).await;
-                    let setup_checks =
-                        github_setup_checks::reconcile_github_setup_checks_once(&state, now).await;
-                    let workflow_runs =
-                        github_workflow_runs::retry_github_workflow_run_reads_once(&state, now)
-                            .await;
-                    checks.and(setup_checks).and(workflow_runs)
-                };
-                if let Err(error) = pass.await {
-                    tracing::warn!(
-                        error = %error.operator_diagnostic(),
-                        "GitHub check reconciliation failed; retrying"
-                    );
-                }
-            }
-        });
+impl BackgroundWork {
+    pub(crate) fn start_github_check_reconciliation(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "GitHub check reconciliation",
+                cadence: Cadence::Fixed {
+                    period: RECONCILE_INTERVAL,
+                    missed_ticks: MissedTickBehavior::Skip,
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            |state| async move {
+                let now = unix_now()?;
+                let checks = reconcile_github_checks_once(&state, now).await;
+                let setup_checks =
+                    github_setup_checks::reconcile_github_setup_checks_once(&state, now).await;
+                let workflow_runs =
+                    github_workflow_runs::retry_github_workflow_run_reads_once(&state, now).await;
+                checks.and(setup_checks).and(workflow_runs)
+            },
+        );
     }
 }

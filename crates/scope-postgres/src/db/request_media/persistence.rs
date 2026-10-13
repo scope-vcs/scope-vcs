@@ -102,12 +102,11 @@ where
              WHERE attachment.id = $1",
             [attachment_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     else {
         return Ok(None);
     };
-    let row = AttachmentRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+    let row = AttachmentRow::from_query_result(&row, "")?;
     let derivatives = derivatives_for_attachment(conn, &row.id).await?;
     Ok(Some(attachment_from_row(row, derivatives)?))
 }
@@ -125,7 +124,7 @@ pub(super) async fn attachments_for_request<C: ConnectionTrait>(
              SELECT 1 FROM scope_request_media_cleanup_jobs cleanup WHERE cleanup.attachment_id = attachment.id
          ) ORDER BY attachment.created_at_unix, attachment.id",
         [request_id.into()],
-    )).await.map_err(PostgresError::internal)?;
+    )).await?;
     if rows.is_empty() {
         return Ok(Vec::new());
     }
@@ -138,14 +137,13 @@ pub(super) async fn attachments_for_request<C: ConnectionTrait>(
              SELECT 1 FROM scope_request_media_cleanup_jobs cleanup WHERE cleanup.attachment_id = attachment.id
          ) ORDER BY derivative.id",
         [request_id.into()],
-    )).await.map_err(PostgresError::internal)? {
-        let row = DerivativeRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+    )).await? {
+        let row = DerivativeRow::from_query_result(&row, "")?;
         derivatives.entry(row.attachment_id.clone()).or_default().push(derivative_from_row(row)?);
     }
     rows.into_iter()
         .map(|row| {
-            let row =
-                AttachmentRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+            let row = AttachmentRow::from_query_result(&row, "")?;
             let values = derivatives.remove(&row.id).unwrap_or_default();
             attachment_from_row(row, values)
         })
@@ -247,11 +245,10 @@ where
         "SELECT * FROM scope_request_media_derivatives WHERE attachment_id = $1 ORDER BY id",
         [attachment_id.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .into_iter()
     .map(|row| {
-        let row = DerivativeRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+        let row = DerivativeRow::from_query_result(&row, "")?;
         derivative_from_row(row)
     })
     .collect()
@@ -298,23 +295,21 @@ where
             "SELECT * FROM scope_request_media_manifests WHERE id = $1",
             [manifest_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     else {
         return Ok(None);
     };
-    let row = ManifestRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+    let row = ManifestRow::from_query_result(&row, "")?;
     let chunks = conn
         .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT * FROM scope_request_media_manifest_chunks WHERE manifest_id = $1 ORDER BY chunk_index",
             [manifest_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|chunk| {
-            let chunk = ManifestChunkRow::from_query_result(&chunk, "").map_err(PostgresError::internal)?;
+            let chunk = ManifestChunkRow::from_query_result(&chunk, "")?;
             Ok(RequestMediaChunk {
                 index: to_u32(
                     chunk.chunk_index,
@@ -356,8 +351,7 @@ where
         "SELECT * FROM scope_request_media_bindings WHERE attachment_id = $1 ORDER BY target_key",
         [attachment_id.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .into_iter()
     .map(binding_from_row)
     .collect()
@@ -375,7 +369,7 @@ pub(super) async fn bindings_for_request<C: ConnectionTrait>(
              SELECT 1 FROM scope_request_media_cleanup_jobs cleanup WHERE cleanup.attachment_id = binding.attachment_id
          ) ORDER BY binding.target_key",
         [request_id.into()],
-    )).await.map_err(PostgresError::internal)? {
+    )).await? {
         let binding = binding_from_row(row)?;
         bindings.entry(binding.attachment_id.clone()).or_default().push(binding);
     }
@@ -383,7 +377,7 @@ pub(super) async fn bindings_for_request<C: ConnectionTrait>(
 }
 
 fn binding_from_row(row: QueryResult) -> Result<RequestAttachmentBinding, PostgresError> {
-    let row = BindingRow::from_query_result(&row, "").map_err(PostgresError::internal)?;
+    let row = BindingRow::from_query_result(&row, "")?;
     let target = match (row.target_kind.as_str(), row.discussion_id, row.reply_id) {
         ("Description", None, None) => RequestAttachmentBindingTarget::Description,
         ("Discussion", Some(discussion_id), None) => {

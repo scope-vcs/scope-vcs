@@ -123,11 +123,6 @@ case "${1:-}" in
     [[ -f "$FAKE_RAILWAY_STATE/exact" ]]
     echo '{"exact":true}'
     ;;
-  backfill-workflow-catalogs)
-    [[ -f "$FAKE_RAILWAY_STATE/exact" ]]
-    touch "$FAKE_RAILWAY_STATE/workflow-catalogs-backfilled"
-    echo '{"workflowCatalogsBackfilled":1}'
-    ;;
   *)
     exit 2
     ;;
@@ -379,7 +374,6 @@ assert_in_order "$test_dir/success-trace" \
   "$test_dir/maintenance validate-workflow-catalogs" \
   "$test_dir/maintenance apply" \
   "$test_dir/maintenance verify" \
-  "$test_dir/maintenance backfill-workflow-catalogs" \
   "up $test_dir/cache" \
   "up $test_dir/run-worker" \
   "up $test_dir/api"

@@ -189,8 +189,8 @@ pub(crate) async fn connect_github_repository(
         )
         .await?;
     publish_connection_change(&state, &incarnation).await;
-    state.github_push_wakeup.notify_one();
-    state.github_run_import_wakeup.notify_one();
+    state.wakeups.github_pushes.notify_one();
+    state.wakeups.github_run_imports.notify_one();
     connection_response(&state, &context).await.map(Json)
 }
 
@@ -240,7 +240,7 @@ pub(crate) async fn confirm_public_github_repository(
         .acknowledge_public_github_repository(&context.record.id, &user.id)
         .await?;
     publish_connection_change(&state, &incarnation).await;
-    state.github_push_wakeup.notify_one();
+    state.wakeups.github_pushes.notify_one();
     connection_response(&state, &context).await.map(Json)
 }
 
@@ -257,7 +257,7 @@ pub(crate) async fn start_github_setup_check(
         .repositories()
         .start_github_setup_check(&context.record.id, &user.id, unix_now()?)
         .await?;
-    state.github_push_wakeup.notify_one();
+    state.wakeups.github_pushes.notify_one();
     publish_setup_check_change(&state, &context.record.id).await?;
     connection_response(&state, &context).await.map(Json)
 }
@@ -292,7 +292,7 @@ pub(crate) async fn start_github_run_import(
         .repositories()
         .start_github_run_import(&context.record.id, &user.id, unix_now()?)
         .await?;
-    state.github_run_import_wakeup.notify_one();
+    state.wakeups.github_run_imports.notify_one();
     publish_connection_change(&state, &incarnation).await;
     connection_response(&state, &context).await.map(Json)
 }

@@ -1,4 +1,6 @@
-use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+#[cfg(any(test, feature = "local-dev"))]
+use crate::grant_signing::TEST_PRIVATE_KEY;
+use crate::grant_signing::{GrantSigner, required_env};
 use scope_cache_contract::{AuthorizedCache, SignedCacheGrantClaims};
 #[cfg(test)]
 use scope_cache_domain::CacheDigest;
@@ -9,7 +11,7 @@ use std::sync::Arc;
 pub(crate) struct CacheGrantIssuer {
     endpoint: Arc<str>,
     backend: Arc<str>,
-    key: Arc<EncodingKey>,
+    signer: GrantSigner,
 }
 
 impl CacheGrantIssuer {
@@ -40,7 +42,7 @@ impl CacheGrantIssuer {
         Ok(Self {
             endpoint: Arc::from(endpoint.as_str()),
             backend: Arc::from(backend),
-            key: Arc::new(EncodingKey::from_ed_pem(private_key_pem.as_bytes())?),
+            signer: GrantSigner::from_ed25519_pem(&private_key_pem)?,
         })
     }
 
@@ -51,17 +53,13 @@ impl CacheGrantIssuer {
         allowed_caches: Vec<AuthorizedCache>,
         expires_at_unix: u64,
     ) -> anyhow::Result<String> {
-        Ok(encode(
-            &Header::new(Algorithm::EdDSA),
-            &SignedCacheGrantClaims {
-                attempt_id,
-                repository_id,
-                allowed_caches,
-                backend: self.backend.to_string(),
-                expires_at_unix,
-            },
-            &self.key,
-        )?)
+        self.signer.sign(&SignedCacheGrantClaims {
+            attempt_id,
+            repository_id,
+            allowed_caches,
+            backend: self.backend.to_string(),
+            expires_at_unix,
+        })
     }
 
     pub(crate) fn endpoint(&self) -> &str {
@@ -79,23 +77,11 @@ impl CacheGrantIssuer {
     }
 }
 
-fn required_env(name: &str) -> anyhow::Result<String> {
-    std::env::var(name)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("{name} is required"))
-}
-
-#[cfg(any(test, feature = "local-dev"))]
-const TEST_PRIVATE_KEY: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIGrD/e7uKYqSY4twDEsRfMMuLSrODf14dpTiTK6K1YI0\n-----END PRIVATE KEY-----\n";
-
-#[cfg(test)]
-pub(crate) const TEST_PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA2+Jj2UvNCvQiUPNYRgSi0cJSPiJI6Rs6D0UTeEpQVj8=\n-----END PUBLIC KEY-----\n";
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jsonwebtoken::{DecodingKey, Validation, decode};
+    use crate::grant_signing::TEST_PUBLIC_KEY;
+    use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 
     #[test]
     fn configured_endpoint_is_validated_and_canonicalized_before_issuance() {

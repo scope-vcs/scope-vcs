@@ -206,14 +206,7 @@ async fn repository_deletion_keeps_segment_ledger_for_physical_cleanup() {
         .incarnation();
 
     repositories
-        .delete_repo(
-            "segment-user",
-            "repo",
-            &incarnation,
-            "segment_user",
-            20,
-            &crate::db::generated_ids::test_generated_id,
-        )
+        .delete_repo("segment-user", "repo", &incarnation, "segment_user", 20)
         .await
         .unwrap();
 

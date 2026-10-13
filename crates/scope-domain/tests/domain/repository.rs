@@ -1,11 +1,11 @@
 use scope_domain::{
     account::UserAccount,
-    policy::{Principal, PrincipalKind, ScopePath},
+    policy::ScopePath,
     repo_collaboration::{CreateRepositoryInviteCommand, create_repository_invite},
     repository::{
         RepoLifecycleState::{AwaitingFirstPush, Ready},
         Repository, RepositoryIncarnation,
-        access::MainPushMode,
+        access::{MainPushMode, RepositoryAccess, RepositoryActor, can_read_repository},
         collaboration::{CollaborationState, RepositoryMember, RepositoryMemberPermissions},
         credentials::{FirstPushToken, FirstPushTokenStatus},
     },
@@ -27,13 +27,6 @@ fn test_repo(visibility: ViewId) -> Repository {
     let mut repo = Repository::new(&test_owner(), "repo", visibility, "repoi_test").unwrap();
     repo.record.lifecycle_state = Ready;
     repo
-}
-
-fn user_principal(id: &str) -> Principal {
-    Principal {
-        id: id.to_string(),
-        kind: PrincipalKind::User,
-    }
 }
 
 fn add_member(repo: &mut Repository, user_id: &str, can_push: bool) {
@@ -68,9 +61,9 @@ fn create_repository_makes_private_owner_repo_pending_first_push() {
         ViewId::private()
     );
 
-    let principal = user_principal(TEST_OWNER_ID);
-    assert!(repo.can_read_path(&principal, &root));
-    assert!(!repo.can_read_path(&Principal::public(), &root));
+    let root_view = repo.policy.label(&root, repo.repo_config.views());
+    assert!(repo.can_read_view(&repo.access_for_user_id(TEST_OWNER_ID), &root_view));
+    assert!(!repo.can_read_view(&RepositoryAccess::public(), &root_view));
     for (user, mode) in [
         (TEST_OWNER_ID, MainPushMode::FirstPush),
         ("user_other", MainPushMode::Denied),
@@ -126,18 +119,28 @@ fn unpublished_repo_is_owner_only_even_with_reader_membership() {
     let mut repo = test_repo(ViewId::public());
     repo.record.lifecycle_state = AwaitingFirstPush;
     add_member(&mut repo, "user_reader", false);
-    let owner_principal = user_principal(TEST_OWNER_ID);
-    let reader_principal = user_principal("user_reader");
+    let lifecycle = repo.record.lifecycle_state;
 
-    assert!(repo.can_read_path(&owner_principal, &ScopePath::root()));
-    assert!(!repo.can_read_path(&reader_principal, &ScopePath::root()));
-    assert!(!repo.can_read_path(&Principal::public(), &ScopePath::root()));
+    assert!(can_read_repository(
+        lifecycle,
+        &repo.access_for_user_id(TEST_OWNER_ID),
+        true
+    ));
+    assert!(!can_read_repository(
+        lifecycle,
+        &repo.access_for_user_id("user_reader"),
+        true
+    ));
+    assert!(!can_read_repository(
+        lifecycle,
+        &RepositoryAccess::public(),
+        true
+    ));
 }
 
 #[test]
 fn pending_invite_does_not_grant_private_access() {
     let mut repo = test_repo(ViewId::private());
-    let private_path = ScopePath::parse("/private.txt").unwrap();
     let mut collaboration = CollaborationState {
         record: repo.record.clone(),
         views: repo.repo_config.views.clone(),
@@ -156,7 +159,8 @@ fn pending_invite_does_not_grant_private_access() {
     )
     .unwrap();
     repo.collaboration = collaboration.collaboration;
-    let principal = user_principal("user_invited");
+    let access = repo.access_for_user_id("user_invited");
 
-    assert!(!repo.can_read_path(&principal, &private_path));
+    assert_eq!(access.actor, RepositoryActor::Public);
+    assert!(!repo.can_read_view(&access, &ViewId::private()));
 }

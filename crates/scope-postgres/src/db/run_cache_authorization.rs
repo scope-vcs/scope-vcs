@@ -15,22 +15,20 @@ impl RunStore {
         let Some(attempt_record) =
             entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
                 .one(&tx)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(false);
         };
         let Some(run_record) = entities::run::Entity::find_by_id(attempt_record.run_id.clone())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(false);
         };
         if run_record.repo_id != repository_id {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(false);
         }
         let Some(job_record) = entities::run_job::Entity::find_by_id((
@@ -38,10 +36,9 @@ impl RunStore {
             attempt_record.job_key.clone(),
         ))
         .one(&tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(false);
         };
         let attempt = attempt_record.try_into_domain()?;
@@ -58,7 +55,7 @@ impl RunStore {
             }
             Err(error) => return Err(error.into()),
         };
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(authorized)
     }
 }

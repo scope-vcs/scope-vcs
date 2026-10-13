@@ -110,9 +110,9 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
 - `request_merge.rs` for preparing, validating, persisting, publishing, and
   cleaning up a request merge;
 - `request_auto_merge.rs` for reconciling durable authorization for one request
-  revision through the existing merge use case. `request_auto_merge_runtime.rs`
-  supervises polling in the API process; database leases allow multiple API
-  processes to share the work and recover abandoned attempts;
+  revision through the existing merge use case and polling for it in the API
+  process; database leases allow multiple API processes to share the work and
+  recover abandoned attempts;
 - `invite_email_delivery.rs` for sending queued repository invite emails. It
   creates the invite link at send time, so only the link's hash is ever stored,
   sends through `invite_mailer.rs` (Resend, keyed per email so a repeated
@@ -141,15 +141,16 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   retries; and `github_check_results.rs` for reading GitHub's check runs when
   a webhook names a tested commit and for the reconciler that reads pending
   ones a delivery missed;
-- `public_check_commits.rs` for building the check commit GitHub tests for a
+- `view_check_commits.rs` for building the check commit GitHub tests for a
   public contribution, the contribution merged onto private main in a
   temporary private staging repository, at evaluation and again at push;
 - `request_revision_inspection.rs` for shared Git revision membership checks
   and raw diff execution used by review and discussion anchors;
 - `run_control.rs` and `run_inspection.rs` for run mutations and authorized run,
   detail, and log reads;
-- `native_runs.rs` for the operator-managed list of accounts that may use
-  Scope's hosted runner. `scope-domain/src/runs/availability.rs` owns the rule:
+- `native_runs.rs` for the list of accounts that may use Scope's hosted
+  runner, which operators manage with `scope-maintenance native-runs`.
+  `scope-domain/src/runs/availability.rs` owns the rule:
   a repository may create native runs only while its owning account is listed.
   Run creation, retry, push-to-main triggers, request CI evaluation, and
   admission share-lock the listing in `scope-postgres/src/db/native_runs.rs`.
@@ -158,6 +159,13 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   unfinished runs; and
 - `content_cleanup.rs` for repository-storage cleanup and source-blob cleanup
   coordination.
+
+API background loops, such as auto-merge, request check recovery, GitHub
+pushes and reads, invite email delivery, Clerk user deletion, retention, and
+recovery sweeps, are declared next to the use case they drive and run on the
+single runner in `api/src/background_work.rs`. It owns the cadence, wakeups,
+optional schema-readiness gating, panic isolation, and shutdown;
+`AppState::start_background_work` starts them all once.
 
 `api/src/github/` owns the Scope GitHub App: its configuration, app and
 installation tokens (installation tokens are cached until shortly before they
@@ -203,11 +211,7 @@ to `.output/client-chunk-graph.json`, outside the served `public` directory.
 `web/scripts/check-client-bundle.mjs` gzips every emitted script and fails when
 the entry chunks plus their static imports exceed 300 KiB, or when any single
 chunk exceeds 512 KiB. The caps and their references are constants at the top of
-that script. `web/smoke/request-mermaid-components.budget.mjs` separately caps the
-lazy JavaScript for a cold diagram render at 256 KiB and the render at 1,000 ms.
-`pnpm test:smoke` runs `*.budget.mjs` files one at a time after the concurrent
-`*.spec.mjs` suite, so wall-clock budgets never share the CPU with other browser
-tests.
+that script.
 
 ## Reading important behavior
 

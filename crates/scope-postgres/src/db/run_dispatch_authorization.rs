@@ -11,7 +11,7 @@ impl RunStore {
         bootstrap_hash: &str,
         now_unix: u64,
     ) -> Result<DispatchAuthorization, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (run, job, attempt) =
             super::run_attempt_persistence::locked_heartbeat_context(&tx, attempt_id).await?;
         let authorization = dispatch_authorization::authorize_start(
@@ -21,7 +21,7 @@ impl RunStore {
             bootstrap_hash,
             now_unix,
         )?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(authorization)
     }
 
@@ -30,11 +30,11 @@ impl RunStore {
         &self,
         attempt_id: &str,
     ) -> Result<DispatchAuthorization, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (run, _, attempt) =
             super::run_attempt_persistence::locked_heartbeat_context(&tx, attempt_id).await?;
         let authorization = dispatch_authorization::authorize_stop(&run, &attempt)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(authorization)
     }
 }

@@ -663,3 +663,79 @@ pub(super) async fn webhook(
         .await
         .unwrap()
 }
+
+pub(super) async fn github_state() -> (AppState, Arc<FakeGitHub>) {
+    let mut state = test_state_with_readme().await;
+    cache_test_jwks(&state);
+    let fake = FakeGitHub::install(&mut state).await;
+    (state, fake)
+}
+
+pub(super) async fn connect_test_repository(
+    state: &AppState,
+    github_repository_id: u64,
+    github_full_name: &str,
+    run_import_count: u32,
+) {
+    state
+        .metadata
+        .repositories()
+        .connect_github_repository(
+            scope_domain::github_connection::ConnectGitHubRepository {
+                repository_id: TEST_REPO_ID.to_string(),
+                installation_id: INSTALLATION_ID,
+                github_repository_id,
+                github_full_name: github_full_name.to_string(),
+                github_private: true,
+                acknowledge_public: false,
+                run_import_count,
+                user_id: test_owner_id(),
+                now_unix: unix_now(),
+            },
+            async || Ok::<_, scope_postgres::error::PostgresError>(true),
+        )
+        .await
+        .unwrap();
+}
+
+pub(super) async fn reconnect_test_repository(
+    state: &AppState,
+    github_repository_id: u64,
+    github_full_name: &str,
+    run_import_count: u32,
+) {
+    state
+        .metadata
+        .repositories()
+        .disconnect_github_repository(TEST_REPO_ID, &test_owner_id())
+        .await
+        .unwrap();
+    connect_test_repository(
+        state,
+        github_repository_id,
+        github_full_name,
+        run_import_count,
+    )
+    .await;
+}
+
+pub(super) async fn deliver_event(
+    state: &AppState,
+    event: &str,
+    action: &str,
+    github_repository_id: u64,
+    subject: serde_json::Value,
+) {
+    let delivery = webhook(
+        state,
+        event,
+        serde_json::json!({
+            "action": action,
+            "repository": { "id": github_repository_id, "full_name": GITHUB_FULL_NAME },
+            (event): subject,
+        }),
+        WEBHOOK_SECRET,
+    )
+    .await;
+    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
+}

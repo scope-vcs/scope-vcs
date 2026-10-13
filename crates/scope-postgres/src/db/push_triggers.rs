@@ -1,5 +1,5 @@
 use super::{
-    GeneratedIdKind, GeneratedIdSource, RunStore, entities,
+    GeneratedIdKind, RunStore, entities,
     generated_ids::generate_id,
     git_segments::{insert_git_segment_references, release_git_segment_references},
     native_runs::lock_native_runs_availability,
@@ -41,7 +41,6 @@ pub async fn enqueue_push_main_trigger_evaluation<C>(
     pack_spans: &[GitPackSpan],
     input: &PushTriggerInput,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -59,10 +58,9 @@ where
     entities::push_trigger_evaluation::Model::from_domain(&evaluation)?
         .into_active_model()
         .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let job = entities::outbox_job::Model::push_main_trigger_evaluation(
-        generate_id(generated_ids, GeneratedIdKind::OutboxJob)?,
+        generate_id(GeneratedIdKind::OutboxJob)?,
         JOB_KIND,
         repo_id,
         head,
@@ -72,8 +70,7 @@ where
     )?;
     entities::outbox_job::Entity::insert(job.into_active_model())
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let reference_id = format!("{repo_id}:{}", head.change_version);
     insert_git_segment_references(
         conn,
@@ -96,24 +93,23 @@ where
     let payload = load_job_payload(conn, &job.id).await?;
     let change_version = u64::try_from(job.repo_version)
         .map_err(|_| PostgresError::internal_message("push trigger change version is negative"))?;
-    let tx = conn.begin().await.map_err(PostgresError::internal)?;
+    let tx = conn.begin().await?;
     let Some(model) = entities::push_trigger_evaluation::Entity::find_by_id((
         job.repo_id.clone(),
         job.repo_version,
     ))
     .lock_exclusive()
     .one(&tx)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     else {
         release_push_trigger_sources(&tx, &job.repo_id, change_version, now_unix).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         return Ok(Vec::new());
     };
     let mut evaluation = model.try_into_domain()?;
     if evaluation.state != PushTriggerEvaluationState::Pending {
         release_push_trigger_sources(&tx, &job.repo_id, change_version, now_unix).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         return Ok(Vec::new());
     }
     let native_runs = lock_native_runs_availability(&tx, &job.repo_id).await?;
@@ -189,7 +185,7 @@ where
     }
     save_evaluation(&tx, &evaluation).await?;
     release_push_trigger_sources(&tx, &job.repo_id, change_version, now_unix).await?;
-    tx.commit().await.map_err(PostgresError::internal)?;
+    tx.commit().await?;
     Ok(created_run_ids)
 }
 
@@ -202,8 +198,7 @@ where
 {
     let payload = entities::outbox_job::Entity::find_by_id(job_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::not_found("push trigger outbox job not found"))?;
     let payload: PushMainTriggerJobPayload =
         serde_json::from_value(payload.payload).map_err(PostgresError::internal)?;
@@ -231,8 +226,7 @@ pub(super) async fn mark_terminal_failure(
     ))
     .lock_exclusive()
     .one(tx)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     else {
         release_push_trigger_sources(tx, &job.repo_id, change_version, now_unix).await?;
         return Ok(());
@@ -271,8 +265,7 @@ async fn save_evaluation(
             .reset_all(),
     )
     .exec(tx)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -293,8 +286,7 @@ impl RunStore {
             .filter(entities::push_trigger_evaluation::Column::HeadOid.eq(head_oid.to_string()))
             .order_by_desc(entities::push_trigger_evaluation::Column::ChangeVersion)
             .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::push_trigger_evaluation::Model::try_into_domain)
             .transpose()
     }
@@ -307,8 +299,7 @@ impl RunStore {
         entities::run::Entity::find()
             .filter(entities::run::Column::Id.is_in(run_ids.to_vec()))
             .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(entities::run::Model::try_into_domain)
             .collect()
@@ -360,7 +351,6 @@ jobs:
             )
             .unwrap(),
             now(),
-            &crate::db::generated_ids::test_generated_id,
         )
         .await
         .unwrap();
@@ -372,7 +362,6 @@ jobs:
             &trigger_pack_spans(later_head_oid, 3),
             &PushTriggerInput::new(later_head_oid, Vec::new(), None).unwrap(),
             now(),
-            &crate::db::generated_ids::test_generated_id,
         )
         .await
         .unwrap();
@@ -473,7 +462,6 @@ jobs:
             )
             .unwrap(),
             now(),
-            &crate::db::generated_ids::test_generated_id,
         )
         .await
         .unwrap();
@@ -554,7 +542,6 @@ jobs:
             )
             .unwrap(),
             now(),
-            &crate::db::generated_ids::test_generated_id,
         )
         .await
         .unwrap();
@@ -594,7 +581,6 @@ jobs:
             .cleanup()
             .source_blob_cleanup_batch(
                 now() + crate::db::cleanup_queue::queue::SOURCE_BLOB_DELETE_GRACE_SECONDS + 1,
-                &crate::db::generated_ids::test_generated_id,
             )
             .await
             .unwrap();
@@ -614,7 +600,6 @@ jobs:
             &trigger_pack_spans(head_oid, 5),
             &PushTriggerInput::new(head_oid, Vec::new(), None).unwrap(),
             now(),
-            &crate::db::generated_ids::test_generated_id,
         )
         .await
         .unwrap();
@@ -697,7 +682,6 @@ jobs:
                 &trigger_pack_spans(head_oid, change_version),
                 &PushTriggerInput::new(head_oid, vec![workflow()], None).unwrap(),
                 now(),
-                &crate::db::generated_ids::test_generated_id,
             )
             .await
             .unwrap();

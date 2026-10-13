@@ -27,8 +27,7 @@ where
              ORDER BY object_key",
             [attachment_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     rows.into_iter()
         .map(|row| {
             row.try_get::<String>("", "object_key")
@@ -54,8 +53,7 @@ where
              ORDER BY object_key",
             [attachment_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     rows.into_iter()
         .map(|row| {
             row.try_get::<String>("", "object_key")
@@ -79,16 +77,14 @@ where
          WHERE attachment_id = $1",
         [attachment_id.into(), now.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_processing_objects
          SET state = 'Deleted', updated_at_unix = $2 WHERE attachment_id = $1",
         [attachment_id.into(), now.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -107,8 +103,7 @@ where
          WHERE attachment_id = $1 AND deleted_at_unix IS NULL",
         [attachment_id.into(), now.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_processing_objects
@@ -116,8 +111,7 @@ where
          WHERE attachment_id = $1 AND state = 'Orphaned'",
         [attachment_id.into(), now.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -145,8 +139,7 @@ where
          FROM due WHERE cleanup.attachment_id = due.attachment_id",
         [now.into(), cutoff.into(), RECONCILIATION_BATCH_SIZE.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "WITH due AS (
@@ -166,8 +159,7 @@ where
          FROM due WHERE abandoned.object_key = due.object_key",
         [cutoff.into(), RECONCILIATION_BATCH_SIZE.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "WITH due AS (
@@ -187,8 +179,7 @@ where
          FROM due WHERE object.object_key = due.object_key",
         [now.into(), cutoff.into(), RECONCILIATION_BATCH_SIZE.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -215,11 +206,9 @@ where
              ) active",
             [attachment_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::internal_message("upload write lease query missing"))?
-        .try_get::<Option<i64>>("", "expires")
-        .map_err(PostgresError::internal)?
+        .try_get::<Option<i64>>("", "expires")?
         .map(u64::try_from)
         .transpose()
         .map_err(PostgresError::internal)?;
@@ -236,23 +225,15 @@ pub(super) async fn attachment_cleanup_is_due<C>(
 where
     C: ConnectionTrait,
 {
-    let attachment_id = row
-        .try_get::<String>("", "id")
-        .map_err(PostgresError::internal)?;
-    let state = row
-        .try_get::<String>("", "state")
-        .map_err(PostgresError::internal)?;
+    let attachment_id = row.try_get::<String>("", "id")?;
+    let state = row.try_get::<String>("", "state")?;
     if state == "Prepared" {
-        let expiry = u64::try_from(
-            row.try_get::<i64>("", "upload_expires_at_unix")
-                .map_err(PostgresError::internal)?,
-        )
-        .map_err(PostgresError::internal)?;
+        let expiry = u64::try_from(row.try_get::<i64>("", "upload_expires_at_unix")?)
+            .map_err(PostgresError::internal)?;
         return Ok(expiry <= now_unix);
     }
     let expiry = row
-        .try_get::<Option<i64>>("", "unbound_expires_at_unix")
-        .map_err(PostgresError::internal)?
+        .try_get::<Option<i64>>("", "unbound_expires_at_unix")?
         .map(u64::try_from)
         .transpose()
         .map_err(PostgresError::internal)?;
@@ -266,8 +247,7 @@ where
              WHERE attachment_id = $1 LIMIT 1",
             [attachment_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .is_none())
 }
 
@@ -287,8 +267,7 @@ where
              updated_at_unix = $2 WHERE attachment_id = $1 AND state <> 'Completed'",
         [attachment_id.into(), now.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_processing_objects
@@ -296,7 +275,6 @@ where
          WHERE attachment_id = $1 AND state = 'Pending'",
         [attachment_id.into(), now.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }

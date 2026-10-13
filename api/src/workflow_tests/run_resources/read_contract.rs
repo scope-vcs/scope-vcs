@@ -369,10 +369,10 @@ async fn invalid_workflow_catalogs_keep_their_errors_ahead_of_cursor_validation(
         ),
         (
             "run-resource-rejected-catalog",
-            "x".repeat(scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES + 1),
+            "x".repeat(scope_domain::runs::catalog::MAX_WORKFLOW_DEFINITION_BYTES + 1),
             format!(
                 "workflow /.scope/runs/test.yml exceeds {} bytes",
-                scope_run_config::MAX_WORKFLOW_DEFINITION_BYTES,
+                scope_domain::runs::catalog::MAX_WORKFLOW_DEFINITION_BYTES,
             ),
         ),
     ] {

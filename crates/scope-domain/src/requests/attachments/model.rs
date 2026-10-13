@@ -18,7 +18,7 @@ pub enum RequestAttachmentKind {
 }
 
 impl RequestAttachmentKind {
-    pub fn from_media_type(media_type: &str) -> Option<Self> {
+    pub(crate) fn from_media_type(media_type: &str) -> Option<Self> {
         let media_type = media_type.trim();
         if REQUEST_ATTACHMENT_PHOTO_MEDIA_TYPES
             .iter()

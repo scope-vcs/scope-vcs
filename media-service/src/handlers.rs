@@ -26,7 +26,7 @@ use scope_postgres::db::{
     RequestMediaManifest, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
     StoredRequestAttachmentPart,
 };
-use scope_service_runtime::http::ServiceError;
+use scope_service_runtime::{http::ServiceError, random_hex, unix_now};
 use serde::Deserialize;
 use std::{
     pin::Pin,
@@ -97,7 +97,9 @@ pub(crate) async fn put_upload_part(
         .plan_part(&attempt, part_number, &part_bytes)
         .map_err(media_storage_error)?;
     let proposed = stored_part(&planned);
-    let write_token = random_token("mpw_")?;
+    let write_token = random_hex("mpw_", 16).map_err(|error| {
+        ServiceError::internal(format!("media token generation failed: {error}"))
+    })?;
     let write_started_at_unix = unix_now()?;
     let write_expires_at_unix = write_started_at_unix
         .checked_add(60)
@@ -443,18 +445,6 @@ impl Stream for PermittedStream {
     fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.inner.as_mut().poll_next(context)
     }
-}
-
-fn unix_now() -> Result<u64, ServiceError> {
-    scope_service_runtime::unix_now().map_err(|error| ServiceError::internal(error.to_string()))
-}
-
-fn random_token(prefix: &str) -> Result<String, ServiceError> {
-    let mut random = [0_u8; 16];
-    getrandom::fill(&mut random).map_err(|error| {
-        ServiceError::internal(format!("media token generation failed: {error}"))
-    })?;
-    Ok(format!("{prefix}{}", hex::encode(random)))
 }
 
 #[cfg(test)]

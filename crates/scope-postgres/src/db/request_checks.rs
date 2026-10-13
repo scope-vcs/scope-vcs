@@ -55,7 +55,7 @@ impl RequestStore {
         &self,
         command: RecordRequestChecksCommand,
     ) -> Result<RequestChecksMutation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         super::locks::acquire_shared_repository_lock(
             &tx,
             command.repository_incarnation.repository_id(),
@@ -130,7 +130,7 @@ impl RequestStore {
             .await?;
         stop_auto_merge_for_evaluation(&tx, active_auto_merge, &request, &command.evaluation)
             .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(RequestChecksMutation {
             evaluation: command.evaluation,
             created_runs,
@@ -143,7 +143,7 @@ impl RequestStore {
         &self,
         command: ApproveRequestChecksCommand,
     ) -> Result<RequestChecksMutation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         super::run_retention::lock_run_evidence_retention(&tx).await?;
@@ -175,8 +175,7 @@ impl RequestStore {
                 check.workflow_revision_digest.clone(),
             )
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::internal_message("recorded check revision is missing"))?
             .try_into_domain(identity)?;
             revisions.push(revision);
@@ -197,7 +196,7 @@ impl RequestStore {
         let queued_github_push = push_to_github
             && queue_tested_commit_push(&tx, &request, &evaluation.tested_oid, command.now_unix)
                 .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(RequestChecksMutation {
             evaluation,
             created_runs,
@@ -247,8 +246,7 @@ impl RequestStore {
             .filter(entities::request_check_evaluation::Column::RequestId.eq(request_id))
             .filter(entities::request_check_evaluation::Column::TestedOid.eq(tested_oid))
             .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::request_check_evaluation::Model::try_into_domain)
             .transpose()
     }
@@ -273,8 +271,7 @@ impl RequestStore {
         entities::request_check_evaluation::Entity::find()
             .filter(head_pairs_condition(heads))
             .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(entities::request_check_evaluation::Model::try_into_domain)
             .collect()
@@ -322,8 +319,7 @@ pub(super) async fn request_check_results<'a, C: ConnectionTrait>(
         entities::run::Entity::find()
             .filter(entities::run::Column::Id.is_in(run_ids))
             .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(|row| Ok((row.id.clone(), row.try_into_domain()?.state)))
             .collect::<Result<_, PostgresError>>()?
@@ -385,8 +381,7 @@ async fn requests_outside_anyone_view<C: ConnectionTrait>(
     }
     Ok(query
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|row| row.id)
         .collect())
@@ -465,8 +460,7 @@ pub(super) async fn evaluation_for_head<C: ConnectionTrait>(
         head_oid.to_string(),
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .map(entities::request_check_evaluation::Model::try_into_domain)
     .transpose()
 }
@@ -496,8 +490,7 @@ pub(super) async fn save_evaluation(
             .to_owned(),
         )
         .exec(tx)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 

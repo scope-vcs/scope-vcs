@@ -145,22 +145,19 @@ pub(crate) async fn persist_main_push(
         && let Some(git_head) = match state
             .metadata
             .repositories()
-            .apply_content_only_push(
-                scope_postgres::db::ApplyContentOnlyPushCommand {
-                    incarnation: incarnation.clone(),
-                    owner: owner.to_string(),
-                    name: repo_name.to_string(),
-                    author_id: author_id.clone(),
-                    expected_git_frontier: expected_git_frontier.clone(),
-                    update: update.clone().into_reviewed_update(),
-                    workflow_catalog: workflow_catalog.clone(),
-                    push_trigger_input: push_trigger_input.clone(),
-                    landing_file_mutation: update.landing_file_mutation.clone(),
-                    landed_request_candidates: landed_request_candidates.clone(),
-                    now_unix,
-                },
-                &crate::persistence_ids::generate_persistence_id,
-            )
+            .apply_content_only_push(scope_postgres::db::ApplyContentOnlyPushCommand {
+                incarnation: incarnation.clone(),
+                owner: owner.to_string(),
+                name: repo_name.to_string(),
+                author_id: author_id.clone(),
+                expected_git_frontier: expected_git_frontier.clone(),
+                update: update.clone().into_reviewed_update(),
+                workflow_catalog: workflow_catalog.clone(),
+                push_trigger_input: push_trigger_input.clone(),
+                landing_file_mutation: update.landing_file_mutation.clone(),
+                landed_request_candidates: landed_request_candidates.clone(),
+                now_unix,
+            })
             .await
         {
             Ok(result) => result,
@@ -189,7 +186,6 @@ pub(crate) async fn persist_main_push(
             owner,
             repo_name,
             now_unix,
-            &crate::persistence_ids::generate_persistence_id,
             move |repo, open_requests_by_view| {
                 if repo.incarnation() != expected_incarnation {
                     return Err(DomainError::conflict(
