@@ -141,6 +141,9 @@ fn resume(
     let active = active_rebase_branch(repo)?;
     if active.is_none() {
         if abort {
+            if head_oid(repo)? == pending.original_head {
+                return finish(repo, pending, true);
+            }
             return Err(recovery(
                 repo,
                 &pending,

@@ -197,7 +197,8 @@ fn restack_replays_only_the_child_layer_and_leaves_publication_explicit() {
 
 #[test]
 fn restack_conflict_can_continue_staged_resolutions_or_abort_to_the_backup() {
-    for abort in [false, true] {
+    for mode in ["continue", "abort", "manual_abort"] {
+        let abort = mode != "continue";
         let layer = Layer::new(true, false, true);
         let output = layer.command(&[]);
         assert_eq!(output.status.code(), Some(5), "{output:?}");
@@ -214,6 +215,9 @@ fn restack_conflict_can_continue_staged_resolutions_or_abort_to_the_backup() {
             )
             .unwrap();
             run_git(layer.checkout.path(), ["add", "parent.txt"]);
+        }
+        if mode == "manual_abort" {
+            run_git(layer.checkout.path(), ["rebase", "--abort"]);
         }
         let value = success(layer.command(&[if abort { "--abort" } else { "--continue" }]));
         assert_eq!(
@@ -242,7 +246,21 @@ fn restack_conflict_can_continue_staged_resolutions_or_abort_to_the_backup() {
                 "resolved child edit\n"
             );
         }
+        let backup = failure["recovery"]["backup_ref"].as_str().unwrap();
+        assert_eq!(
+            git_stdout(layer.checkout.path(), ["rev-parse", backup]),
+            layer.original_head
+        );
         layer.assert_binding();
+        if mode == "manual_abort" {
+            let restarted = layer.command(&["--onto", "main"]);
+            assert_eq!(restarted.status.code(), Some(5), "{restarted:?}");
+            let failure: Value = serde_json::from_slice(&restarted.stderr).unwrap();
+            assert_eq!(failure["recovery"]["failed_step"], "rebase");
+            assert!(layer.checkout.path().join(".git/rebase-merge").exists());
+            success(layer.command(&["--abort"]));
+            layer.assert_binding();
+        }
     }
 }
 
