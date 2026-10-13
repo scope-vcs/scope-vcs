@@ -11,8 +11,10 @@ not.
 Each Rust binary calls `scope_service_runtime::init_telemetry` with its
 deployment component name before starting its async runtime, and
 `Telemetry::shutdown` after the runtime returns, which flushes the last batch of
-spans and logs. The web image preloads `web/src/server/instrumentation.ts`,
-built into its own bundle, with `node --import` before the application starts.
+spans and logs. The web service preloads `web/src/server/instrumentation.ts`,
+built into its own bundle, with `node --import` before the application starts;
+both the image command and the Railway artifact start command include it, and
+release extraction rejects a web build without it.
 It traces incoming requests, named by their analytics route alias rather than
 the raw path, and outgoing `fetch` calls, and applies the same
 sampling and attribute rules as the Rust services, and exports server logs

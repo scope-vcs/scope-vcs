@@ -187,6 +187,8 @@ test('release package naming has one validated manifest owner', () => {
     assert.equal(releaseImageRepository(manifest, 'Scope-VCS/Scope-VCS', component), `ghcr.io/scope-vcs/scope-vcs/railway-private-${imageSuffix}`);
     assert.equal(artifactDeploymentInput(component, release().components.api, config).startCommand, `/app/bin/${binary}`);
   }
+  assert.equal(artifactDeploymentInput('web', release().components.api, config).startCommand,
+    'node --import /app/.output/server/_instrumentation/instrumentation.mjs /app/.output/server/index.mjs');
   assert.throws(() => releaseImageRepository(manifest, 'Scope-VCS/Scope-VCS', 'worker'), /Unknown release component/);
   assert.equal(releaseImageRepository({ railway: { releaseImagePrefix: 'another-release-set' } }, 'owner/repo', 'web'), 'ghcr.io/owner/repo/another-release-set-web');
   for (const prefix of [undefined, '', '../escape', 'registry/package', 'MixedCase']) {
