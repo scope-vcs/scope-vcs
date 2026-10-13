@@ -291,8 +291,9 @@ and `--limit` caps each section. Maintainers move an open request through the
 queue. Each row carries authorized parent context even when the parent is
 outside the selected section, search or page; that context does not add a queue
 item or change ordering, limits or cursors. Actionable children remain in the
-default queue when their parent is off-page. A parent extension stays quiet;
-rewrites, closes and newly satisfied dependencies can bring children back to
+default queue when their parent is off-page. Parent extensions, satisfied
+dependencies and parent landing preserve attention. A new hard dependency
+blocker, including a rewrite, close or conflict, can bring children back to
 attention, while a future snooze keeps its deadline.
 
 ```sh

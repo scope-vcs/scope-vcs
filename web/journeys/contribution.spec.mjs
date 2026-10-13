@@ -243,7 +243,7 @@ test('signed-in private stack navigation preserves the pin across parent extensi
     const contributor = web.contributor.page
     for (const id of [parentId, childId]) {
       await openRequest(contributor, id)
-      await contributor.getByRole('heading', { name: 'Request not found', exact: true }).waitFor()
+      await contributor.getByText('Request not found', { exact: true }).waitFor()
       assert.equal(await contributor.getByText(parentTitle, { exact: true }).count(), 0)
       assert.equal(await contributor.getByText(childTitle, { exact: true }).count(), 0)
       assert.equal(await contributor.getByRole('region', { name: 'Request dependency' }).count(), 0)
