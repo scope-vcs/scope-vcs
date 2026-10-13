@@ -180,7 +180,6 @@ export async function loadRequestStateForRequest(
   return createApiClient().get(
     requestRoute(ApiRouteTemplates.repoRequestState, data),
     RequestStateResponseValidator,
-  RequestChildrenPageResponseValidator,
     { auth: 'optional', signal },
   )
 }
