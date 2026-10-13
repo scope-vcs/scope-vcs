@@ -93,30 +93,6 @@ pub fn clone_with_bearer(
     )
 }
 
-pub fn fetch_scope_remote_with_bearer(
-    repo: &GitRepo,
-    destination: &str,
-    remote: &str,
-    branch: &str,
-    bearer_token: &str,
-    failure: &str,
-) -> anyhow::Result<()> {
-    let plan = git_fetch_auth_plan(
-        destination,
-        remote,
-        branch,
-        bearer_token,
-        inherited_git_config_count(),
-    );
-    run_git_plan_output(
-        plan,
-        Some(&repo.root),
-        "refresh Scope Git remote before push review",
-        failure,
-        GitRetrySafety::Idempotent,
-    )
-}
-
 pub fn fetch_scope_remote_refs_with_bearer(
     repo: &GitRepo,
     destination: &str,
@@ -138,13 +114,13 @@ pub fn fetch_scope_remote_refs_with_bearer(
     )
 }
 
-pub fn fetch_scope_remote_with_bearer_cancellable(
+pub fn fetch_scope_remote_with_bearer(
     repo: &GitRepo,
     destination: &str,
     remote: &str,
     branch: &str,
     bearer_token: &str,
-    cancellation: &CancellationToken,
+    cancellation: Option<&CancellationToken>,
     failure: &str,
 ) -> anyhow::Result<()> {
     let plan = git_fetch_auth_plan(
@@ -155,13 +131,16 @@ pub fn fetch_scope_remote_with_bearer_cancellable(
         inherited_git_config_count(),
     );
     let mut command = git_command(plan, Some(&repo.root));
-    let output = run_cancellable(
-        &mut command,
-        None,
-        cancellation,
-        GIT_OPERATION_TIMEOUT,
-        MAX_GIT_STDOUT_BYTES,
-    )
+    let output = match cancellation {
+        Some(cancellation) => run_cancellable(
+            &mut command,
+            None,
+            cancellation,
+            GIT_OPERATION_TIMEOUT,
+            MAX_GIT_STDOUT_BYTES,
+        ),
+        None => command.output().map_err(Into::into),
+    }
     .context("refresh Scope Git remote before push review")?;
     finish_git_plan_output(output, failure, GitRetrySafety::Idempotent)
 }
@@ -378,6 +357,7 @@ mod tests {
             "scope",
             "main",
             "fixture-token",
+            None,
             "refresh request before publishing failed; the request was not changed",
         )
         .context("refresh request before publishing")
@@ -505,26 +485,16 @@ mod tests {
         ] {
             for cancellable in [false, true] {
                 let (_directory, repo) = test_repo();
-                let error = if cancellable {
-                    fetch_scope_remote_with_bearer_cancellable(
-                        &repo,
-                        &destination,
-                        "scope",
-                        "main",
-                        "fixture-token",
-                        &CancellationToken::new(),
-                        failure,
-                    )
-                } else {
-                    fetch_scope_remote_with_bearer(
-                        &repo,
-                        &destination,
-                        "scope",
-                        "main",
-                        "fixture-token",
-                        failure,
-                    )
-                }
+                let token = CancellationToken::new();
+                let error = fetch_scope_remote_with_bearer(
+                    &repo,
+                    &destination,
+                    "scope",
+                    "main",
+                    "fixture-token",
+                    cancellable.then_some(&token),
+                    failure,
+                )
                 .unwrap_err();
                 let response = json_response(&error).error;
                 assert_eq!(response.code, ErrorCode::ServiceUnavailable);

@@ -18,7 +18,6 @@ jobs:
 "#,
     )
     .unwrap();
-    run_git(&maintainer.repo, ["add", ".scope/runs/request.yml"]);
     commit_all(&maintainer.repo, "Require checks on contributed revisions");
     maintainer.json(["push", "--main", "--no-review", "--wait"]);
     run_git(&contributor.repo, ["switch", "main"]);
@@ -35,7 +34,6 @@ jobs:
         "first revision\n",
     )
     .unwrap();
-    run_git(&contributor.repo, ["add", "check-revision.txt"]);
     commit_all(&contributor.repo, "Exercise request check approval");
     let pushed = contributor.json(["request", "push"]);
     let first_head = string_at(&pushed, "/result/request/head_oid");
@@ -100,7 +98,6 @@ jobs:
         "new revision\n",
     )
     .unwrap();
-    run_git(&contributor.repo, ["add", "check-revision.txt"]);
     commit_all(
         &contributor.repo,
         "Invalidate prior check approval and auto merge",

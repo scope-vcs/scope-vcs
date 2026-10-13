@@ -144,11 +144,6 @@ pub fn mark_scope_remote_pushed(
     Ok(())
 }
 
-pub fn run_git(args: &[&str]) -> anyhow::Result<()> {
-    let output = Command::new("git").args(args).output().context("run Git")?;
-    finish_git_output(output, args)
-}
-
 pub fn run_git_in_repo(repo: &Path, args: &[&str]) -> anyhow::Result<()> {
     finish_git_output(git_output_in_repo(repo, args)?, args)
 }

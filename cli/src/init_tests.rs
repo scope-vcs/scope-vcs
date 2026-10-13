@@ -1,9 +1,5 @@
-#[allow(dead_code)]
-#[path = "test_fixtures.rs"]
-mod fixtures;
 use super::*;
-use crate::test_support::TempDir;
-use fixtures::repository_response;
+use crate::test_support::{TempDir, repository_response, run_git};
 use std::{path::Path, process::Command};
 
 const OLD_REMOTE: &str = "https://old.scope.example/git/adam/sample";
@@ -154,28 +150,16 @@ fn git_config(path: &Path, key: &str) -> Vec<String> {
 }
 
 fn git_remote_url(path: &Path, push: bool) -> String {
-    let mut args = vec!["remote", "get-url"];
-    if push {
-        args.push("--push");
-    }
-    args.push("scope");
-    let output = Command::new("git")
-        .current_dir(path)
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(output.status.success());
+    let output = if push {
+        run_git(path, ["remote", "get-url", "--push", "scope"])
+    } else {
+        run_git(path, ["remote", "get-url", "scope"])
+    };
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
 fn git_remotes(path: &Path) -> Vec<String> {
-    let output = Command::new("git")
-        .current_dir(path)
-        .arg("remote")
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    String::from_utf8(output.stdout)
+    String::from_utf8(run_git(path, ["remote"]).stdout)
         .unwrap()
         .lines()
         .map(str::to_string)

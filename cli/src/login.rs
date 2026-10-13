@@ -1,4 +1,5 @@
 use crate::api::ApiSession;
+use crate::unix_now;
 use crate::{
     api::{
         AuthenticatedSession, BrowserLoginExchangeRequest, BrowserLoginStartRequest,
@@ -21,7 +22,7 @@ use std::{
     net::{TcpListener, TcpStream},
     path::Path,
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 pub fn login(
@@ -394,13 +395,6 @@ fn format_user_code(code: &str) -> String {
         .map(|chunk| String::from_utf8_lossy(chunk).to_string())
         .collect::<Vec<_>>()
         .join("-")
-}
-
-fn unix_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
 }
 
 #[cfg(test)]

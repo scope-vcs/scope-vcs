@@ -5,9 +5,10 @@ use crate::api::{
     get_request_attachment_limits, prepare_request_attachment, upload_request_attachment_part,
 };
 use crate::display::terminal_text;
+use crate::unix_now;
 use anyhow::{Context, bail};
 pub(super) use journal::begin_mutation;
-use journal::{fingerprint, rotate_upload_operation, unix_now, upload_operations};
+use journal::{fingerprint, rotate_upload_operation, upload_operations};
 use scope_api_contract::attachments::{
     FinishRequestAttachmentRequest, PrepareRequestAttachmentRequest, RequestAttachmentKind,
     RequestAttachmentPartReceiptResponse, RequestAttachmentResponse, RequestAttachmentState,
@@ -227,7 +228,7 @@ fn transfer_and_finish(
                 }
                 receipt.clone()
             } else {
-                if unix_now()?.saturating_add(15) >= transfer.expires_at_unix {
+                if unix_now().saturating_add(15) >= transfer.expires_at_unix {
                     prepared = refresh_preparation(
                         api,
                         target,
