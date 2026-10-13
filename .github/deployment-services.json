@@ -152,7 +152,7 @@
       ],
       "deployment": {
         "backend": false,
-        "runtimeConfig": "cli/railway.json",
+        "runtimeConfig": "cli-downloads/railway.json",
         "verifyTransitionConfig": false,
         "artifact": {
           "kind": "binary",
@@ -429,6 +429,7 @@
       "prefixes": [
         "api/",
         "cli/",
+        "cli-downloads/",
         "crates/",
         "dependency-analyzer/",
         "worker/"
@@ -455,6 +456,7 @@
       "prefixes": [
         "cli/distribution/",
         "cli/src/",
+        "cli-downloads/",
         "dependency-analyzer/"
       ]
     }

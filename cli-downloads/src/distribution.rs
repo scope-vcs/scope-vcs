@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::sync::OnceLock;
 
-const TARGET_MANIFEST_JSON: &str = include_str!("../distribution/targets.json");
+const TARGET_MANIFEST_JSON: &str = include_str!("../../cli/distribution/targets.json");
 
 #[derive(Debug, Deserialize)]
 struct RawManifest {
@@ -15,7 +15,6 @@ pub struct DistributionTarget {
     pub artifact: String,
     pub os: String,
     pub arch: String,
-    pub label: String,
 }
 
 #[derive(Clone, Debug)]
@@ -43,19 +42,22 @@ impl DistributionManifest {
         &self.targets
     }
 
-    pub fn downloadable_file(&self, requested: &str) -> Option<String> {
-        self.required_downloads()
-            .any(|file| file == requested)
-            .then(|| requested.to_string())
+    pub fn download(&self, requested: &str) -> Option<Download<'_>> {
+        self.targets.iter().find_map(|target| {
+            if target.artifact == requested {
+                Some(Download::Archive(target))
+            } else if target.checksum_artifact() == requested {
+                Some(Download::Checksum)
+            } else {
+                None
+            }
+        })
     }
 
     pub fn required_downloads(&self) -> impl Iterator<Item = String> + '_ {
-        self.targets.iter().flat_map(|target| {
-            [
-                target.artifact.clone(),
-                target.checksum_artifact().to_string(),
-            ]
-        })
+        self.targets
+            .iter()
+            .flat_map(|target| [target.artifact.clone(), target.checksum_artifact()])
     }
 }
 
@@ -63,4 +65,10 @@ impl DistributionTarget {
     pub fn checksum_artifact(&self) -> String {
         format!("{}.sha256", self.artifact)
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Download<'a> {
+    Archive(&'a DistributionTarget),
+    Checksum,
 }

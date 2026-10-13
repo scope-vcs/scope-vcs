@@ -77,7 +77,9 @@ jobs:
           cache-bin: false
           shared-key: cli-checks
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
-          workspaces: cli -> target
+          workspaces: |
+            cli -> target
+            . -> target
 
       - name: Install cargo-deny
         run: ./dev/install-cargo-deny.sh
@@ -150,7 +152,9 @@ jobs:
           cache-bin: ${{ matrix.builder == 'cross' }}
           shared-key: cli-build-${{ matrix.target }}
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
-          workspaces: cli -> target
+          workspaces: |
+            cli -> target
+            . -> target
 
       - name: Install cross
         if: matrix.builder == 'cross'
@@ -195,14 +199,14 @@ jobs:
         shell: bash
         run: |
           cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib request::attachments::journal::tests::windows_replacement_sharing_failure_keeps_both_files -- --exact
-          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib installers::tests::powershell_origin_assignment_is_literal_data -- --exact
+          cargo test -p scope-cli-downloads --release --locked --target "${{ matrix.target }}" --bin scope-cli-service installers::tests::powershell_origin_assignment_is_literal_data -- --exact
 
       - name: Build native installer service
         if: matrix.smoke
         shell: bash
         run: >
-          cargo build --manifest-path cli/Cargo.toml --release --locked
-          --target "${{ matrix.target }}" --bin scope-cli-service
+          cargo build -p scope-cli-downloads --release --locked
+          --target "${{ matrix.target }}"
 
       - name: Install Node for analyzer packaging
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -255,6 +259,7 @@ jobs:
         env:
           SCOPE_TEST_BINARY: cli/${{ matrix.binary }}
           SCOPE_TEST_ARTIFACT: cli/dist/${{ matrix.artifact }}
+          SCOPE_TEST_SERVICE: target/${{ matrix.target }}/release/scope-cli-service${{ runner.os == 'Windows' && '.exe' || '' }}
         run: node --test cli/distribution/install-smoke.test.mjs
 
       - name: Upload artifact
@@ -269,7 +274,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
-          release=cli/target/${{ matrix.target }}/release
+          release=target/${{ matrix.target }}/release
           cp LICENSE NOTICE legal/third-party-rust.txt "$release/"
           tar --create --gzip \
             --file artifacts/scope-cli-service.tar.gz \
