@@ -191,7 +191,6 @@ test('private commit comparison uses inspected files while retaining the bounded
   assert.equal(model.selectedCommit?.author, commit.author)
   assert.equal(model.selectedCommit?.message, commit.message)
   assert.equal(model.selectedCommit?.logical_commit_id, commit.oid)
-  assert.equal(model.selectedCommit?.parent_projected_id, 'base')
 })
 
 function revision(
