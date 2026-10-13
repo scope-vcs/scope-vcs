@@ -3,7 +3,7 @@ use crate::{
         DispatchAdmission, MetadataStore, RecordRequestChecksCommand,
         requests::tests::postgres_store,
         test_support::fixtures::{
-            manual_run, manual_workflow, repository, store_with_repositories, user,
+            manual_run, manual_workflow, repository, source_blob, store_with_repositories, user,
         },
     },
     error::{PostgresError, PostgresErrorKind},
