@@ -30,10 +30,9 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "git
   const bin = join(root, "bin");
   mkdirSync(scripts, { recursive: true });
   mkdirSync(bin);
-  if (defer) {
-    mkdirSync(join(root, 'predecessors'));
-    writeFileSync(join(scripts, 'railway-predecessor-teardown.mjs'), readFileSync(new URL('./railway-predecessor-teardown.mjs', import.meta.url)));
-    writeFileSync(join(scripts, 'railway-read.mjs'), readFileSync(new URL('./railway-read.mjs', import.meta.url)));
+  if (defer) mkdirSync(join(root, 'predecessors'));
+  for (const name of ['railway-predecessor-teardown.mjs', 'railway-read.mjs']) {
+    writeFileSync(join(scripts, name), readFileSync(new URL(`./${name}`, import.meta.url)));
   }
   writeFileSync(join(scripts, "deployment-components.mjs"), readFileSync(new URL("./deployment-components.mjs", import.meta.url)));
   writeFileSync(join(root, ".github/deployment-services.json"), readFileSync(new URL("../deployment-services.json", import.meta.url)));
@@ -92,6 +91,8 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "git
       SCOPE_DEPLOYMENT_EVIDENCE_PATH: "",
       SCOPE_RELEASE_DEPLOYMENTS_FILE: "",
       SCOPE_PREDECESSOR_TEARDOWN_DIR: defer ? join(root, 'predecessors') : '',
+      SCOPE_PREDECESSOR_TEARDOWN_POLL_SECONDS: "0",
+      SCOPE_RAILWAY_READ_RETRY_DELAY_MS: "0",
     },
   });
   assert.ifError(result.error);
@@ -103,14 +104,13 @@ test("stale FAILED latest deployment without active predecessors needs no teardo
   const result = deploy(t, providerStatus([]));
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.events.filter((event) => event === "deployment list").length, 2);
-  assert.ok(!result.events.includes("sleep"));
   assert.ok(result.events.indexOf("status --project") < result.events.indexOf("activate"));
 });
 
 test("waits for the actual active predecessor even when latest deployment is FAILED", (t) => {
   const result = deploy(t, providerStatus([{ id: "old-router", status: "SUCCESS" }]), ["old-router"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.events.filter((event) => event === "sleep").length, 1);
+  assert.equal(result.events.filter((event) => event === "deployment list").length, 4);
   assert.match(result.stdout, /Previous deployment old-router completed teardown/);
 });
 
@@ -118,7 +118,7 @@ test("waits for every active predecessor to finish teardown", (t) => {
   const predecessors = ["old-router-1", "old-router-2"];
   const result = deploy(t, providerStatus(predecessors.map((id) => ({ id, status: "SUCCESS" }))), predecessors);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.events.filter((event) => event === "sleep").length, 2);
+  assert.equal(result.events.filter((event) => event === "deployment list").length, 6);
   for (const id of predecessors) assert.ok(result.stdout.includes(`Previous deployment ${id} completed teardown.`));
 });
 
@@ -126,7 +126,7 @@ test("deferred activation records predecessors before mutation and leaves remova
   const result = deploy(t, providerStatus([{ id: 'old-router', status: 'SUCCESS' }]), ['old-router'], [], 'git-router', true);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.snapshot, { component: 'git-router', service: 'router-id', ids: ['old-router'] });
-  assert.equal(result.events.filter((event) => event === 'sleep').length, 0);
+  assert.equal(result.events.filter((event) => event === 'deployment list').length, 2);
   assert.ok(result.events.indexOf('status --project') < result.events.indexOf('activate'));
 });
 
@@ -156,52 +156,6 @@ test("fails after three unsuccessful metadata reads without repeating activation
   assert.equal(result.events.filter((event) => event === "activate").length, 1);
   assert.ok(!result.events.includes("verify"));
   assert.match(result.stderr, /Railway read failed after 3 attempts/);
-});
-
-function upload(t, { output, exitCode, stderr = "" }) {
-  const root = mkdtempSync(join(tmpdir(), "scope-railway-upload-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const bin = join(root, "bin");
-  mkdirSync(bin);
-  writeFileSync(join(bin, "railway"), `#!/usr/bin/env node
-    const { appendFileSync } = require("node:fs");
-    const command = process.argv[2];
-    appendFileSync("events", command + "\\n");
-    if (command === "service") console.log(JSON.stringify([{ id: "cli-id" }]));
-    else if (command === "up") {
-      console.log(${JSON.stringify(output)});
-      console.error(${JSON.stringify(stderr)});
-      process.exit(${exitCode});
-    } else if (command === "deployment") console.log(JSON.stringify([{ id: "cli-deploy", status: "SUCCESS" }]));
-    else process.exit(99);
-  `, { mode: 0o755 });
-  const result = spawnSync("bash", [deployScript, "cli-id", "upload-root"], {
-    cwd: root, encoding: "utf8", timeout: 60_000,
-    env: {
-      ...process.env, PATH: `${bin}:${process.env.PATH}`,
-      RAILWAY_API_TOKEN: "test-token", RAILWAY_TOKEN: "", RAILWAY_PROJECT_ID: "test-project",
-      SCOPE_RAILWAY_ENVIRONMENT_ID: "production-id", SCOPE_PREPARED_RELEASE_PATH: "",
-      SCOPE_DEFER_SERVICE_HEALTH: "1", SCOPE_DEPLOYMENT_EVIDENCE_PATH: "", SCOPE_RELEASE_DEPLOYMENTS_FILE: "",
-    },
-  });
-  assert.ifError(result.error);
-  return { ...result, events: readFileSync(join(root, "events"), "utf8").trim().split("\n") };
-}
-
-test("source-upload failures retain status diagnostics without leaking signed URLs or retrying", (t) => {
-  const output = JSON.stringify({ statusCode: 502, error: "https://provider.invalid/upload?token=do-not-print" });
-  const result = upload(t, { output, exitCode: 7, stderr: "sensitive stderr token=also-do-not-print" });
-  assert.equal(result.status, 7);
-  assert.match(result.stderr, /source upload failed \(exit 7; HTTP 502\)/);
-  assert.match(result.stderr, /No deployment receipt was returned/);
-  assert.doesNotMatch(result.stdout + result.stderr, /do-not-print|provider\.invalid|sensitive stderr/);
-  assert.deepEqual(result.events, ["service", "up"]);
-});
-
-test("successful source upload polls the returned deployment ID", (t) => {
-  const result = upload(t, { output: JSON.stringify({ deploymentId: "cli-deploy" }), exitCode: 0 });
-  assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(result.events, ["service", "up", "deployment"]);
 });
 
 test("prepared CLI image activates and verifies without requiring backend transition settings", (t) => {

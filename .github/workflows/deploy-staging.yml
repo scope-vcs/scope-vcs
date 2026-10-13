@@ -75,10 +75,7 @@ jobs:
       - name: Verify staging Git version
         run: node dev/check-git-version.mjs
 
-      - name: Install Railway CLI
-        run: |
-          railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
-          npm install -g "@railway/cli@$railway_cli_version"
+      - uses: ./.github/actions/install-railway-cli
 
       - name: Create staging-scoped Railway token
         env:
@@ -386,10 +383,7 @@ jobs:
             echo "SCOPE_RAILWAY_TOKEN_ENVIRONMENT_ID=$(jq -er '.environments.staging.environmentId' .github/deployment-services.json)"
           } >> "$GITHUB_ENV"
 
-      - name: Install Railway CLI
-        run: |
-          railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
-          npm install -g "@railway/cli@$railway_cli_version"
+      - uses: ./.github/actions/install-railway-cli
 
       - name: Keep staging writers fenced after unsuccessful deployment
         if: needs.prove.outputs.writers_fenced == 'true' && needs.prove.result != 'success' && needs.prove.result != 'skipped' && steps.target.outcome == 'success'

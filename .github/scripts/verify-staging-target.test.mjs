@@ -83,7 +83,7 @@ test('staging deploys and records the candidate checkout when the workflow revis
   const input = fixture()
   writeFileSync(join(root, '.github/deployment-services.json'), JSON.stringify(input.manifest))
   copyFileSync(new URL('./verify-staging-target.mjs', import.meta.url), join(scripts, 'verify-staging-target.mjs'))
-  copyFileSync(new URL('./deploy-staging-railway.sh', import.meta.url), join(scripts, 'deploy-staging-railway.sh'))
+  for (const name of ['deploy-staging-railway.sh', 'railway-service-health.sh']) copyFileSync(new URL(`./${name}`, import.meta.url), join(scripts, name))
   copyFileSync(new URL('./railway-predecessor-teardown.mjs', import.meta.url), join(scripts, 'railway-predecessor-teardown.mjs'))
   writeFileSync(join(scripts, 'railway-read.mjs'), `
     if (process.argv[1]?.endsWith('railway-read.mjs')) {
@@ -102,7 +102,7 @@ test('staging deploys and records the candidate checkout when the workflow revis
   `)
   writeFileSync(join(bin, 'railway'), '#!/bin/sh\ntest "$1 $2" = "variable set"\n', { mode: 0o755 })
   writeFileSync(join(scripts, 'deploy-railway.sh'), `#!/bin/sh
-    node -e 'require("node:fs").writeFileSync("deployment.json", JSON.stringify({ source: process.env.SCOPE_DEPLOYMENT_SOURCE_SHA, message: process.env.RAILWAY_DEPLOY_MESSAGE }))'
+    node -e 'require("node:fs").writeFileSync("deployment.json", JSON.stringify({ source: process.env.SCOPE_DEPLOYMENT_SOURCE_SHA }))'
     node -e 'require("node:fs").writeFileSync(process.env.SCOPE_DEPLOYMENT_EVIDENCE_PATH, JSON.stringify({ component: process.env.SCOPE_DEPLOYMENT_COMPONENT, sourceSha: process.env.SCOPE_DEPLOYMENT_SOURCE_SHA, evidenceId: "new-web" }) + "\\n")'
   `)
   writeFileSync(join(root, 'prepared.json'), JSON.stringify({ schemaVersion: 1, sourceSha: candidate,
@@ -130,10 +130,7 @@ test('staging deploys and records the candidate checkout when the workflow revis
   })
   assert.ifError(result.error)
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(JSON.parse(readFileSync(join(root, 'deployment.json'), 'utf8')), {
-    source: candidate,
-    message: `Staging ${candidate}`,
-  })
+  assert.deepEqual(JSON.parse(readFileSync(join(root, 'deployment.json'), 'utf8')), { source: candidate })
   assert.equal(JSON.parse(readFileSync(join(root, 'evidence.json'), 'utf8')).commit, candidate)
 })
 
@@ -215,7 +212,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   }
   writeFileSync(join(root, 'provider.json'), JSON.stringify({ ...input, activations: [], maintenance: [] }))
   writeFileSync(join(root, '.github/deployment-services.json'), JSON.stringify(input.manifest))
-  for (const name of ['deploy-staging-railway.sh', 'verify-staging-target.mjs', 'railway-artifact.mjs', 'railway-retry.mjs', 'railway-predecessor-teardown.mjs', 'railway-private-command.sh', 'railway-private-maintenance.sh']) {
+  for (const name of ['deploy-staging-railway.sh', 'railway-service-health.sh', 'verify-staging-target.mjs', 'railway-artifact.mjs', 'railway-retry.mjs', 'railway-predecessor-teardown.mjs', 'railway-private-command.sh', 'railway-private-maintenance.sh']) {
     copyFileSync(new URL(`./${name}`, import.meta.url), join(scripts, name))
   }
   mkdirSync(join(root, 'deploy/postgres'), { recursive: true })

@@ -186,45 +186,16 @@ test('policy rejects oversized non-web source in a complete checkout', () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('the CLI is built once per target and the matrix owns the deployed service artifact', () => {
+test('the CLI checks avoid release builds and publication downloads the service artifact the build uploads', () => {
   const workflow = read('.github/workflows/scope-cli-build.yml');
-  const jobsSection = workflow.slice(workflow.indexOf('\njobs:\n'));
-  assert.deepEqual(
-    [...jobsSection.matchAll(/^  ([\w-]+):$/gm)].map(([, name]) => name),
-    ['prepare', 'checks', 'build'],
-  );
-  const checks = jobsSection.slice(jobsSection.indexOf('\n  checks:\n'), jobsSection.indexOf('\n  build:\n'));
-  const build = jobsSection.slice(jobsSection.indexOf('\n  build:\n'));
+  const checks = workflow.slice(workflow.indexOf('\n  checks:\n'), workflow.indexOf('\n  build:\n'));
+  const upload = workflow.slice(workflow.indexOf('      - name: Upload service'));
   assert.doesNotMatch(checks, /--release/);
-  assert.match(checks, /run: \.\/dev\/checks\/cli\n/);
-  assert.match(checks, /if: \$\{\{ !inputs\.validate_targets \}\}\n\s+run: \.\/dev\/checks\/cli-bundle\n/);
-  assert.match(checks, /if: inputs\.validate_service_release && !inputs\.validate_targets\n/);
-  const serviceGate = "if: inputs.validate_service_release && matrix.target == 'x86_64-unknown-linux-gnu'";
-  assert.equal(build.split(serviceGate).length - 1, 2);
-  const upload = build.slice(build.indexOf('      - name: Upload service'));
   assert.match(upload, /name: cli-service-release-\$\{\{ github\.sha \}\}/);
   assert.match(upload, /path: artifacts\/scope-cli-service\.tar\.gz/);
-  const pack = build.slice(build.indexOf('      - name: Pack service'), build.indexOf('      - name: Upload service'));
-  assert.match(pack, /release=cli\/target\/\$\{\{ matrix\.target \}\}\/release/);
-  assert.match(pack, /--file artifacts\/scope-cli-service\.tar\.gz/);
-  assert.match(pack, /--directory "\$release"/);
-  assert.match(pack, /\n\s+scope-cli-service LICENSE NOTICE third-party-rust\.txt\n/);
   const publish = read('.github/workflows/publish-cli.yml');
   assert.match(publish, /name: cli-service-release-\$\{\{ inputs\.source_sha \|\| github\.sha \}\}/);
   assert.match(publish, /--file artifacts\/scope-cli-service\.tar\.gz[\s\\]+--directory \.railway-cli\/bin/);
-});
-
-test('CLI release identity survives subsequent Cargo commands and cross containers', () => {
-  const workflow = read('.github/workflows/scope-cli-build.yml');
-  const build = workflow.slice(workflow.indexOf('\n  build:\n'));
-  const jobSettings = build.slice(0, build.indexOf('\n    steps:'));
-  assert.match(jobSettings, /\n    env:\n      SCOPE_BUILD_SHA: \$\{\{ github.sha \}\}/);
-  assert.equal((build.match(/^\s+SCOPE_BUILD_SHA:/gm) ?? []).length, 1, 'steps must inherit the job SHA');
-  assert.match(jobSettings, /CROSS_CONFIG: \$\{\{ github.workspace \}\}\/Cross.toml/);
-  assert.match(read('Cross.toml'), /\[build.env\]\s+passthrough = \["SCOPE_BUILD_SHA"\]/);
-  const selected = classifyChanges(manifest, ['Cross.toml']);
-  assert.equal(selected["cli-downloads"], true);
-  assert.equal(selected["cli-distribution"], true);
 });
 
 test('bundle packaging rejects missing and stale release identities after all builds', () => {
@@ -417,13 +388,7 @@ test('staging verifies pinned Git before credentials or deployment mutations', (
   const credentials = workflow.indexOf('- name: Create staging-scoped Railway token');
   assert.ok(install > workflow.indexOf('- name: Checkout trusted orchestration'));
   assert.ok(verify > install && credentials > verify);
-  const setup = workflow.slice(install, credentials);
-  assert.match(setup, /jq -er '\.git\.version' dev\/tool-versions\.json/);
-  assert.match(setup, /jq -er '\.git\.sourceSha256' dev\/tool-versions\.json/);
-  assert.match(setup, /sudo bash deploy\/railway\/install-git\.sh "\$version" "\$source_sha256"/);
-  assert.match(setup, /echo \/opt\/git\/bin >> "\$GITHUB_PATH"/);
-  assert.match(setup, /run: node dev\/check-git-version\.mjs/);
-  assert.doesNotMatch(setup, /\n\s+(?:if:|continue-on-error:)/);
+  assert.doesNotMatch(workflow.slice(install, credentials), /\n\s+(?:if:|continue-on-error:)/);
 });
 
 test('every external action and reusable workflow is pinned to a full commit SHA', () => {

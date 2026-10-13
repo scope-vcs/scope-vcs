@@ -228,8 +228,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Install Railway CLI
-        run: npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
+      - uses: ./.github/actions/install-railway-cli
       - name: Verify current production before preparing a cutover
         id: verify
         env:
@@ -307,8 +306,7 @@ jobs:
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
         run: bash .github/scripts/extract-railway-maintenance.sh prepared-release.json target/release/scope-maintenance
-      - name: Install Railway CLI
-        run: npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
+      - uses: ./.github/actions/install-railway-cli
       - name: Validate production baseline schema and migration plan
         env:
           SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
@@ -402,7 +400,6 @@ jobs:
     uses: ./.github/workflows/deploy-web.yml
     with:
       source_sha: ${{ needs.plan.outputs.release_sha }}
-      verified_successful_sha: ${{ fromJSON(needs.plan.outputs.deployed_revisions || '{}').web || '' }}
     secrets: inherit
 
   cli-deploy:
@@ -426,8 +423,6 @@ jobs:
       deployments: write
       packages: write
     uses: ./.github/workflows/publish-cli.yml
-    with:
-      verified_successful_sha: ${{ fromJSON(needs.plan.outputs.deployed_revisions || '{}')['cli-downloads'] || '' }}
     secrets: inherit
 
   production-health-gate:
@@ -468,11 +463,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/scripts/production-deployment-progress.mjs read
 
-      - name: Install Railway CLI
+      - uses: ./.github/actions/install-railway-cli
         if: needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true'
-        run: |
-          railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
-          npm install -g "@railway/cli@$railway_cli_version"
 
       - name: Verify exact live production deployments
         if: needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true'
