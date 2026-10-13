@@ -37,12 +37,12 @@ export function CommitList({
                 <span className="block truncate text-[13px] font-medium">
                   {labels.title}
                 </span>
-                <span className="mt-0.5 block truncate font-mono text-[11px] leading-4 text-muted-foreground">
+                <span className="mt-0.5 block truncate font-mono text-xs leading-4 text-muted-foreground">
                   {labels.compactId}
                 </span>
               </span>
             </span>
-            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            <span className="text-xs tabular-nums text-muted-foreground">
               {commit.change_count}
             </span>
           </button>

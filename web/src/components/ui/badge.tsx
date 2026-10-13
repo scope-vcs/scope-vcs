@@ -17,15 +17,14 @@ export type BadgeVariant = keyof typeof variants
 
 function Badge({
   className,
-  stamp = false,
   variant = "outline",
   ...props
-}: React.ComponentProps<"span"> & { stamp?: boolean; variant?: BadgeVariant }) {
+}: React.ComponentProps<"span"> & { variant?: BadgeVariant }) {
   return (
     <span
       data-slot="badge"
       data-variant={variant}
-      className={cn(base, variants[variant], stamp ? "label-mono rounded-full px-2" : "text-xs font-medium", className)}
+      className={cn(base, variants[variant], "text-xs font-medium", className)}
       {...props}
     />
   )

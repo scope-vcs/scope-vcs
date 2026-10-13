@@ -135,7 +135,7 @@ function RequestChangesMenuPanel({
                     <RelativeTimestamp value={push.createdAtUnix} />
                   </span>
                 </span>
-                <span className="hidden font-mono text-[11px] text-muted-foreground sm:inline">{shortOid(push.newHeadOid)}</span>
+                <span className="hidden font-mono text-xs text-muted-foreground sm:inline">{shortOid(push.newHeadOid)}</span>
               </Link>
             </li>
           ))}

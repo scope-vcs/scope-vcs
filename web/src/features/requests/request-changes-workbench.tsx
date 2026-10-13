@@ -371,7 +371,7 @@ function RequestRevisionHeader({ revision }: { revision: RequestRevisionListResp
         {revision.old_head_oid && revision.new_head_oid ? (
           <>
             <span aria-hidden="true">·</span>
-            <span className="font-mono text-[11px]">
+            <span className="font-mono text-xs">
               {shortOid(revision.old_head_oid)} → {shortOid(revision.new_head_oid)}
             </span>
           </>

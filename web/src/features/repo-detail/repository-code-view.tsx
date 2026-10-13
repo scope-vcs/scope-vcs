@@ -43,6 +43,7 @@ import {
   SourceTabStripSkeleton,
 } from './repository-code-skeletons'
 import { RepositoryFileNavigator } from './repository-file-navigator'
+import { useViewingAs } from './use-viewing-as'
 
 const CODE_TAB_SET_ID = 'repository-code-files'
 
@@ -62,6 +63,7 @@ export function RepositoryCodeView({
   workspaceTabs: ReturnType<typeof useWorkspaceTabs>
 }) {
   const [navigationOpen, setNavigationOpen] = useState(false)
+  const { hasMixedVisibility } = useViewingAs()
   const fileNavigatorRef = useRef<HTMLDivElement>(null)
   const tree = content.value
   const openPath = workspaceTabs.state.openIds.includes(selectedPath ?? '')
@@ -83,7 +85,7 @@ export function RepositoryCodeView({
   return (
     <section>
       <FileWorkbench
-        className="lg:min-h-[calc(100dvh-var(--app-chrome))]"
+        className="border-t border-border lg:min-h-[calc(100dvh-var(--app-chrome))]"
         navigationOpen={navigationOpen}
         onNavigationOpenChange={setNavigationOpen}
         selectedPath={openPath}
@@ -104,6 +106,7 @@ export function RepositoryCodeView({
                   tree.files,
                   openPath ?? undefined,
                 )}
+                showVisibility={hasMixedVisibility}
               />
             </div>
           ) : content.error ? (
@@ -138,6 +141,7 @@ export function RepositoryCodeView({
           retry={selectedPath ? file.retry : content.retry}
           scrollKey={file.identity}
           selectedPath={openPath}
+          showVisibility={hasMixedVisibility}
           workspaceTabs={workspaceTabs}
         />
       </FileWorkbench>
@@ -176,6 +180,7 @@ function SourcePane({
   retry,
   scrollKey,
   selectedPath,
+  showVisibility,
   workspaceTabs,
 }: {
   availablePaths: string[]
@@ -190,6 +195,7 @@ function SourcePane({
   retry: () => void
   scrollKey: string | null
   selectedPath: string | null
+  showVisibility: boolean
   workspaceTabs: ReturnType<typeof useWorkspaceTabs>
 }) {
   const activeTabDomIds = selectedPath
@@ -214,7 +220,7 @@ function SourcePane({
           path={file.path}
         />
       )}
-      <FileMeta file={file} />
+      <FileMeta file={file} showVisibility={showVisibility} />
     </>
   ) : undefined
 
@@ -381,7 +387,13 @@ function SourceContent({
   )
 }
 
-function FileMeta({ file }: { file: RepoFileContentResponse }) {
+function FileMeta({
+  file,
+  showVisibility,
+}: {
+  file: RepoFileContentResponse
+  showVisibility: boolean
+}) {
   return (
     <>
       <Popover
@@ -409,7 +421,7 @@ function FileMeta({ file }: { file: RepoFileContentResponse }) {
           </button>
         )}
       />
-      <VisibilityBadge compact visibility={file.label} />
+      {showVisibility && <VisibilityBadge compact visibility={file.label} />}
     </>
   )
 }

@@ -59,7 +59,7 @@ export function RepoShell({
           >
             {section.label}
             {section.key === 'requests' && openRequestCount > 0 && (
-              <span aria-hidden="true" className="text-[11px] tabular-nums text-muted-foreground">
+              <span aria-hidden="true" className="text-xs tabular-nums text-muted-foreground">
                 {openRequestCount}
               </span>
             )}

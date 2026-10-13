@@ -44,7 +44,7 @@ export function SourceCodeSkeleton() {
 
 export function SourceTabStripSkeleton() {
   return (
-    <div className="flex min-h-10 items-center border-b border-border px-3">
+    <div className="flex min-h-10 items-center px-3">
       <TextSkeleton length="short" size="meta" />
     </div>
   )

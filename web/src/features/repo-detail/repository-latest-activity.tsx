@@ -38,7 +38,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
   }
   if (current.status === 'failed') {
     return (
-      <div className="flex items-center gap-3 border-b border-border px-5 py-3 text-xs text-muted-foreground sm:px-6 lg:px-8">
+      <div className="flex items-center gap-3 px-5 pb-3 pt-2.5 text-xs text-muted-foreground sm:px-6 lg:px-8">
         <output>Latest change unavailable.</output>
         <button className="rounded underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" onClick={current.retry} type="button">
           Retry latest change
@@ -50,7 +50,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
   if (!entry) return null
   const message = entry.message.split('\n', 1)[0] || 'Repository updated'
   return (
-    <div aria-label="Latest repository change" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-5 py-3 text-xs sm:px-6 lg:px-8">
+    <div aria-label="Latest repository change" className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 pb-3 pt-2.5 text-xs sm:px-6 lg:px-8">
       <Link
         className="min-w-0 basis-full truncate rounded font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring sm:flex-1 sm:basis-auto"
         params={{ ...params, entryId: entry.source_id }}
@@ -64,7 +64,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
         {entry.author && <span className="max-w-40 truncate" title={entry.author}>{entry.author}</span>}
         {entry.occurred_at_unix !== null && <RelativeTimestamp value={entry.occurred_at_unix} />}
         {headOid && (
-          <span className="font-mono text-[11px]" title={`Current revision: ${headOid}`}>
+          <span className="font-mono text-xs" title={`Current revision: ${headOid}`}>
             <span className="sr-only">Current revision </span>{headOid.slice(0, 7)}
           </span>
         )}
@@ -78,7 +78,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
 export function RepositoryLatestActivityPending({ onRetry }: { onRetry?: () => void }) {
   return (
     <PendingSurface label="Loading latest repository change" onRetry={onRetry}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-5 py-3 text-xs sm:px-6 lg:px-8">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 pb-3 pt-2.5 text-xs sm:px-6 lg:px-8">
         <span className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
           <TextSkeleton length="long" size="meta" />
         </span>

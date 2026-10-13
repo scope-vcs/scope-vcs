@@ -43,7 +43,7 @@ export function RepoDetailPage({
   return (
     <WorkbenchPane>
       <WorkbenchBar
-        className="items-start border-b border-border"
+        className="min-h-0 items-start pb-0"
         actions={(
           <>
             <RepoViewingAsPicker />
@@ -74,12 +74,12 @@ export function RepoDetailPage({
         )}
         title="Code"
       />
+      <RepositoryLatestActivity params={params} repo={repo} />
       <RepositoryDependencyCheck
         onSelectFilePath={selectResource}
         params={params}
         repo={repo}
       />
-      <RepositoryLatestActivity params={params} repo={repo} />
       <RepositoryCodeView
         content={content}
         file={file}

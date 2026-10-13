@@ -15,9 +15,9 @@ import { ViewerSessionBoundary } from '@/components/viewer-session-boundary'
 import '../styles.css'
 import commitMono400 from '@fontsource/commit-mono/files/commit-mono-latin-400-normal.woff2?url'
 import commitMono500 from '@fontsource/commit-mono/files/commit-mono-latin-500-normal.woff2?url'
-import ibmPlexSans from '@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-latin-wght-normal.woff2?url'
+import inter from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url'
 
-const preloadedFonts = [ibmPlexSans, commitMono400, commitMono500]
+const preloadedFonts = [inter, commitMono400, commitMono500]
 
 const AnalyticsRoot = lazy(() => import('@/analytics/analytics-root').then(
   ({ AnalyticsRoot: component }) => ({ default: component }),

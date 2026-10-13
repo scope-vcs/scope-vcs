@@ -47,7 +47,7 @@ export function RequestDiscussionActorAvatar({
         'grid shrink-0 place-items-center rounded-full font-medium uppercase',
         'bg-[oklch(0.9_0.045_var(--actor-hue))] text-[oklch(0.42_0.08_var(--actor-hue))]',
         'dark:bg-[oklch(0.34_0.05_var(--actor-hue))] dark:text-[oklch(0.86_0.06_var(--actor-hue))]',
-        small ? 'size-5 text-[9px]' : 'size-8 text-[11px]',
+        small ? 'size-5 text-[9px]' : 'size-8 text-xs',
       )}
       style={{ '--actor-hue': actorHue(handle) } as CSSProperties}
     >
