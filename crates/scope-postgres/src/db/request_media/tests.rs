@@ -24,6 +24,7 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 use std::time::Duration;
 
 const OWNER_ID: &str = "media_owner";
+const VIEWER_ID: &str = "media_viewer";
 const SOURCE_SHA256: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 struct Fixture {
@@ -46,6 +47,15 @@ fn fixture() -> Fixture {
     let repository_id = repository.record.id.clone();
     let mut catalog = CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner);
+    catalog.users.insert(
+        VIEWER_ID.to_string(),
+        UserAccount {
+            id: VIEWER_ID.to_string(),
+            handle: "media-viewer".to_string(),
+            email: "media-viewer@example.com".to_string(),
+            email_verified: true,
+        },
+    );
     catalog
         .repositories
         .insert(repository_id.clone(), repository);
@@ -846,3 +856,6 @@ async fn expired_upload_operations_report_expiry_before_and_after_cleanup_discov
     assert_ne!(replacement.attachment.id, prepared.attachment.id);
     assert_ne!(replacement.upload_id, prepared.upload_id);
 }
+
+mod access;
+mod cleanup;
