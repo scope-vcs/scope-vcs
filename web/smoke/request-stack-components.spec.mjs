@@ -107,7 +107,7 @@ test('private stack comparisons and public visible commits render selected files
   assert.equal(await dependency.locator('[title="parent-revision"]').count(), 1)
   assert.equal(await dependency.locator('[title="current-parent-revision"]').count(), 0)
   assert.equal(await dependency.getByText('Pinned revision parent-revision · aaaaaaaaaaaa', { exact: true }).isVisible(), true)
-  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.mobile.png`, fullPage: true })
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.unavailable-parent.mobile.png`, fullPage: true })
   for (const view of ['public', 'restricted']) {
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto(new URL(`/adam/demo/requests/child/changes?view=${view}`, server.resolvedUrls.local[0]).href)
