@@ -13,12 +13,7 @@ use super::{
 };
 #[cfg(any(test, feature = "test-support"))]
 use super::{
-    AuthStore, CleanupStore, MetadataStore, RepositoryStore, RequestStore,
-    cleanup_queue::queue::{
-        load_pending_repo_storage_deletions, load_pending_source_blob_deletions,
-        queue_pending_repo_storage_cleanup_row,
-    },
-    repository_from_model,
+    AuthStore, CleanupStore, MetadataStore, RepositoryStore, RequestStore, repository_from_model,
     repository_rows::{refresh_content_read_models, save_repository_delta, save_repository_rows},
     request_rows::{request_by_id, save_request_row},
 };
@@ -200,13 +195,12 @@ impl AdminStore {
     pub async fn lock_repository_history_and_invites_for_tests(
         &self,
     ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         tx.execute_unprepared(
             "LOCK TABLE scope_logical_commits, scope_file_changes, scope_live_files,
                         scope_repository_invites IN ACCESS EXCLUSIVE MODE",
         )
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         Ok(tx)
     }
 
@@ -229,17 +223,16 @@ impl AdminStore {
         &self,
         tables: &[&str],
     ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         tx.execute_unprepared(&format!(
             "LOCK TABLE {} IN ACCESS EXCLUSIVE MODE",
             tables.join(", ")
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         Ok(tx)
     }
 
-    #[cfg(any(feature = "local-dev", feature = "smoke-seed"))]
+    #[cfg(feature = "local-dev")]
     pub async fn replace_catalog_for_seed(
         &self,
         catalog: CatalogFixture,
@@ -249,10 +242,7 @@ impl AdminStore {
 
     #[cfg(any(test, feature = "test-support"))]
     pub async fn execute_for_tests(&self, sql: &str) -> Result<(), PostgresError> {
-        self.db
-            .execute_unprepared(sql)
-            .await
-            .map_err(PostgresError::internal)?;
+        self.db.execute_unprepared(sql).await?;
         Ok(())
     }
 
@@ -265,20 +255,6 @@ impl AdminStore {
 
 #[cfg(any(test, feature = "test-support"))]
 impl CleanupStore {
-    pub async fn queue_repo_storage_cleanup_for_tests(
-        &self,
-        cleanup: RepoStorageCleanup,
-        now_unix: u64,
-    ) -> Result<(), PostgresError> {
-        queue_pending_repo_storage_cleanup_row(
-            self.db.as_ref(),
-            cleanup,
-            now_unix,
-            &super::generated_ids::test_generated_id,
-        )
-        .await
-    }
-
     pub async fn expire_source_blob_cleanup_grace_for_tests(&self) -> Result<(), PostgresError> {
         use sea_orm::{ColumnTrait, QueryFilter};
         entities::source_blob_cleanup_job::Entity::update_many()
@@ -288,21 +264,36 @@ impl CleanupStore {
                 sea_orm::sea_query::Expr::value(0_i64),
             )
             .exec(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
     pub async fn pending_repo_storage_cleanups_for_tests(
         &self,
     ) -> Result<Vec<RepoStorageCleanup>, PostgresError> {
-        load_pending_repo_storage_deletions(self.db.as_ref()).await
+        use sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
+        Ok(entities::repo_storage_cleanup_job::Entity::find()
+            .filter(entities::repo_storage_cleanup_job::Column::CompletedAtUnix.is_null())
+            .order_by_asc(entities::repo_storage_cleanup_job::Column::RepoId)
+            .all(self.db.as_ref())
+            .await?
+            .into_iter()
+            .map(|cleanup| cleanup.into_domain())
+            .collect())
     }
 
     pub async fn pending_source_blob_cleanups_for_tests(
         &self,
     ) -> Result<Vec<SourceBlob>, PostgresError> {
-        load_pending_source_blob_deletions(self.db.as_ref()).await
+        use sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
+        entities::source_blob_cleanup_job::Entity::find()
+            .filter(entities::source_blob_cleanup_job::Column::CompletedAtUnix.is_null())
+            .order_by_asc(entities::source_blob_cleanup_job::Column::ObjectKey)
+            .all(self.db.as_ref())
+            .await?
+            .into_iter()
+            .map(|blob| blob.try_into_domain())
+            .collect()
     }
 }
 
@@ -314,8 +305,7 @@ impl AuthStore {
         entities::user::Model::from_domain(&user)
             .into_active_model()
             .insert(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -325,8 +315,7 @@ impl AuthStore {
     ) -> Result<Option<UserAccount>, PostgresError> {
         entities::user::Entity::find_by_id(user_id.to_string())
             .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::user::Model::try_into_domain)
             .transpose()
     }
@@ -346,13 +335,12 @@ impl RepositoryStore {
         &self,
         repo: Repository,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         ensure_repository_users_for_tests(&tx, &repo).await?;
         acquire_aggregate_lock(&tx, "repository", &repo.record.id).await?;
         match entities::repository::Entity::find_by_id(repo.record.id.clone())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         {
             Some(row) => {
                 let before = repository_from_model(&tx, row).await?;
@@ -366,23 +354,9 @@ impl RepositoryStore {
                     .await?;
                 }
                 save_repository_rows(&tx, &before, &repo, CATALOG_SEED_NOW_UNIX).await?;
-                refresh_content_read_models(
-                    &tx,
-                    &repo,
-                    CATALOG_SEED_NOW_UNIX,
-                    &super::generated_ids::test_generated_id,
-                )
-                .await?;
+                refresh_content_read_models(&tx, &repo, CATALOG_SEED_NOW_UNIX).await?;
             }
-            None => {
-                insert_repository(
-                    &tx,
-                    &repo,
-                    CATALOG_SEED_NOW_UNIX,
-                    &super::generated_ids::test_generated_id,
-                )
-                .await?
-            }
+            None => insert_repository(&tx, &repo, CATALOG_SEED_NOW_UNIX).await?,
         }
         tx.commit().await.map_err(PostgresError::internal)
     }
@@ -391,20 +365,13 @@ impl RepositoryStore {
         &self,
         repo: Repository,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         ensure_repository_users_for_tests(&tx, &repo).await?;
         acquire_aggregate_lock(&tx, "repository", &repo.record.id).await?;
         entities::repository::Entity::delete_by_id(repo.record.id.clone())
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        insert_repository(
-            &tx,
-            &repo,
-            CATALOG_SEED_NOW_UNIX,
-            &super::generated_ids::test_generated_id,
-        )
-        .await?;
+            .await?;
+        insert_repository(&tx, &repo, CATALOG_SEED_NOW_UNIX).await?;
         tx.commit().await.map_err(PostgresError::internal)
     }
 
@@ -413,24 +380,16 @@ impl RepositoryStore {
         repo_id: &str,
         op: impl FnOnce(&mut scope_domain::repository::Repository),
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", repo_id).await?;
         let row = entities::repository::Entity::find_by_id(repo_id)
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::not_found("test repository not found"))?;
         let mut repo = repository_from_model(&tx, row).await?;
         let before = repo.clone();
         op(&mut repo);
-        save_repository_delta(
-            &tx,
-            &before,
-            &repo,
-            CATALOG_SEED_NOW_UNIX,
-            &super::generated_ids::test_generated_id,
-        )
-        .await?;
+        save_repository_delta(&tx, &before, &repo, CATALOG_SEED_NOW_UNIX).await?;
         tx.commit().await.map_err(PostgresError::internal)
     }
 
@@ -440,8 +399,7 @@ impl RepositoryStore {
     ) -> Result<Option<Repository>, PostgresError> {
         let row = entities::repository::Entity::find_by_id(repo_id.to_string())
             .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         match row {
             Some(row) => repository_from_model(self.db.as_ref(), row).await.map(Some),
             None => Ok(None),
@@ -471,8 +429,7 @@ impl RequestStore {
         super::entities::request_check_evaluation::Entity::delete_many()
             .filter(super::entities::request_check_evaluation::Column::RequestId.eq(request_id))
             .exec(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -493,8 +450,7 @@ impl RequestStore {
                     super::integer_columns::u64_to_i64(seconds, "test age")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -520,8 +476,7 @@ impl RequestStore {
     pub async fn request_events_for_tests(&self) -> Result<Vec<RequestEvent>, PostgresError> {
         entities::request_event::Entity::find()
             .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(entities::request_event::Model::try_into_domain)
             .collect()
@@ -549,8 +504,7 @@ where
     for (id, handle) in users {
         if entities::user::Entity::find_by_id(id.to_string())
             .one(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .is_none()
         {
             entities::user::Model::from_domain(&UserAccount {
@@ -561,19 +515,18 @@ where
             })
             .into_active_model()
             .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         }
     }
     Ok(())
 }
 
-#[cfg(any(feature = "local-dev", feature = "smoke-seed"))]
+#[cfg(feature = "local-dev")]
 async fn replace_catalog(
     db: &sea_orm::DatabaseConnection,
     catalog: CatalogFixture,
 ) -> Result<(), PostgresError> {
-    let tx = db.begin().await.map_err(PostgresError::internal)?;
+    let tx = db.begin().await?;
     let tables = tx
         .query_one_raw(sea_orm::Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
@@ -588,14 +541,11 @@ async fn replace_catalog(
             "
             .to_string(),
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::internal_message("PostgreSQL did not list catalog tables"))?
-        .try_get::<String>("", "tables")
-        .map_err(PostgresError::internal)?;
+        .try_get::<String>("", "tables")?;
     tx.execute_unprepared(&format!("TRUNCATE TABLE {tables} RESTART IDENTITY CASCADE"))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     seed_catalog_rows(&tx, catalog).await?;
     tx.commit().await.map_err(PostgresError::internal)
 }
@@ -631,7 +581,7 @@ async fn seed_catalog(
     conn: &sea_orm::DatabaseConnection,
     catalog: CatalogFixture,
 ) -> Result<(), PostgresError> {
-    let tx = conn.begin().await.map_err(PostgresError::internal)?;
+    let tx = conn.begin().await?;
     seed_catalog_rows(&tx, catalog).await?;
     tx.commit().await.map_err(PostgresError::internal)
 }
@@ -646,8 +596,7 @@ async fn seed_catalog_rows(
         entities::user::Model::from_domain(user)
             .into_active_model()
             .insert(tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     for user_id in &catalog.native_runs_accounts {
         tx.execute_raw(sea_orm::Statement::from_sql_and_values(
@@ -658,24 +607,16 @@ async fn seed_catalog_rows(
                 (CATALOG_SEED_NOW_UNIX as i64).into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     }
     for upload in &catalog.git_segment_uploads {
         entities::git_segment_upload::Model::from_domain(upload)?
             .into_active_model()
             .insert(tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     for repo in catalog.repositories.values() {
-        insert_repository(
-            tx,
-            repo,
-            CATALOG_SEED_NOW_UNIX,
-            &super::generated_ids::test_generated_id,
-        )
-        .await?;
+        insert_repository(tx, repo, CATALOG_SEED_NOW_UNIX).await?;
         if let Some(landing) = catalog.repository_landing_files.remove(&repo.record.id) {
             let path = scope_domain::policy::ScopePath::parse(
                 scope_domain::landing_file::REPOSITORY_LANDING_FILE_PATH,
@@ -694,7 +635,8 @@ async fn seed_catalog_rows(
             )
             .await?;
         }
-        seed_empty_repository_workflow_catalog(tx, repo).await?;
+        let workflow_catalog = catalog.repository_workflow_catalogs.remove(&repo.record.id);
+        seed_repository_workflow_catalog(tx, repo, workflow_catalog).await?;
     }
     for request in catalog.requests.values() {
         insert_request_row(tx, request).await?;
@@ -729,27 +671,36 @@ async fn seed_catalog_rows(
     Ok(())
 }
 
-async fn seed_empty_repository_workflow_catalog(
+async fn seed_repository_workflow_catalog(
     tx: &sea_orm::DatabaseTransaction,
     repo: &Repository,
+    catalog: Option<RepositoryWorkflowCatalog>,
 ) -> Result<(), PostgresError> {
     let Some(head) = &repo.git_head else {
-        return Ok(());
+        return match catalog {
+            Some(_) => Err(PostgresError::internal_message(
+                "seeded workflow catalog has no Git head",
+            )),
+            None => Ok(()),
+        };
     };
-    if repo
-        .live_files
-        .keys()
-        .any(|path| path.as_str().starts_with("/.scope/runs/"))
-    {
-        return Ok(());
-    }
-    let catalog = RepositoryWorkflowCatalog::captured(
-        &repo.record.id,
-        &head.head_oid,
-        repo.record.change_version,
-        Vec::new(),
-    )
-    .map_err(PostgresError::internal)?;
+    let catalog = match catalog {
+        Some(catalog) => catalog,
+        None if repo
+            .live_files
+            .keys()
+            .any(|path| path.as_str().starts_with("/.scope/runs/")) =>
+        {
+            return Ok(());
+        }
+        None => RepositoryWorkflowCatalog::captured(
+            &repo.record.id,
+            &head.head_oid,
+            repo.record.change_version,
+            Vec::new(),
+        )
+        .map_err(PostgresError::internal)?,
+    };
     catalog
         .verify_source(&repo.record.id, &head.head_oid, head.change_version)
         .map_err(PostgresError::internal)?;

@@ -1,9 +1,7 @@
 use crate::{
     error::ApiError,
-    git::{
-        GitContext,
-        command::{prepare_git_subprocess, record_git_exit, run_git, truncated_git_stderr},
-    },
+    git::command::{prepare_git_subprocess, record_git_exit, run_git, truncated_git_stderr},
+    state::AppState,
 };
 use futures_util::{StreamExt as _, stream};
 use scope_domain::repository::{
@@ -20,8 +18,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(crate) async fn restore_git_pack_spans<C: GitContext>(
-    context: &C,
+pub(crate) async fn restore_git_pack_spans(
+    state: &AppState,
     incarnation: &RepositoryIncarnation,
     head: &GitHead,
     pack_spans: &[GitPackSpan],
@@ -34,7 +32,7 @@ pub(crate) async fn restore_git_pack_spans<C: GitContext>(
         .map(|span| span.segment.plaintext_bytes)
         .sum::<u64>();
     let result =
-        restore_git_pack_spans_inner(context, incarnation, head, pack_spans, repo_root).await;
+        restore_git_pack_spans_inner(state, incarnation, head, pack_spans, repo_root).await;
     tracing::info!(
         repository_id,
         operation = "restore_pack_layout",
@@ -48,8 +46,8 @@ pub(crate) async fn restore_git_pack_spans<C: GitContext>(
     result
 }
 
-async fn restore_git_pack_spans_inner<C: GitContext>(
-    context: &C,
+async fn restore_git_pack_spans_inner(
+    state: &AppState,
     incarnation: &RepositoryIncarnation,
     head: &GitHead,
     pack_spans: &[GitPackSpan],
@@ -89,7 +87,7 @@ async fn restore_git_pack_spans_inner<C: GitContext>(
         "initializing Git snapshot repo",
     )
     .await?;
-    hydrate_git_pack_spans(context, repo_root, incarnation, pack_spans).await?;
+    hydrate_git_pack_spans(state, repo_root, incarnation, pack_spans).await?;
     advance_head_and_verify(
         repository_id,
         repo_root,
@@ -146,8 +144,8 @@ pub(crate) async fn advance_head_and_verify(
     .await
 }
 
-pub(crate) async fn hydrate_git_pack_spans<C: GitContext>(
-    context: &C,
+pub(crate) async fn hydrate_git_pack_spans(
+    state: &AppState,
     repo_root: &Path,
     incarnation: &RepositoryIncarnation,
     spans: &[GitPackSpan],
@@ -155,8 +153,8 @@ pub(crate) async fn hydrate_git_pack_spans<C: GitContext>(
     let mut packs = stream::iter(spans.iter().cloned().enumerate().map(
         |(index, span)| async move {
             let started = Instant::now();
-            let pack = context
-                .git_segment_store()
+            let pack = state
+                .git_segment_store
                 .get_verified_pack(incarnation, &span.segment)
                 .await;
             tracing::info!(
@@ -177,7 +175,7 @@ pub(crate) async fn hydrate_git_pack_spans<C: GitContext>(
         let repository_id = incarnation.repository_id().to_string();
         let root = repo_root.to_path_buf();
         let count = spans.len();
-        let timeout = context.runtime_budgets().git_command_timeout();
+        let timeout = state.runtime_budgets.git_command_timeout();
         let parent_span = tracing::Span::current();
         tokio::task::spawn_blocking(move || {
             let _entered = parent_span.enter();

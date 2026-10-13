@@ -91,8 +91,7 @@ impl RepositoryStore {
                     u32_to_i32(segment.encoding_version, "Git segment encoding version")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         require_one_transition(result.rows_affected(), &segment.segment_id, "ready")
     }
 
@@ -115,8 +114,7 @@ impl RepositoryStore {
                     u64_to_i64(now_unix, "Git segment upload heartbeat time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -181,8 +179,7 @@ impl RepositoryStore {
             .order_by_asc(entities::git_segment_upload::Column::SegmentId)
             .limit(limit)
             .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(entities::git_segment_upload::Model::try_into_domain)
             .collect()
@@ -229,8 +226,7 @@ where
                 u64_to_i64(now_unix, "Git segment transition time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(result.rows_affected())
 }
 

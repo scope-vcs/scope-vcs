@@ -16,7 +16,7 @@ async fn same_agent_view_stack_retargets_to_actual_view_main_and_lands_native_co
         "{}",
         String::from_utf8_lossy(&pushed.stderr)
     );
-    submit(&state, &parent_id).await;
+    submit_request(router(state.clone()), &parent_id, &member_bearer()).await;
     let parent_revision = state
         .metadata
         .requests()
@@ -55,7 +55,7 @@ async fn same_agent_view_stack_retargets_to_actual_view_main_and_lands_native_co
         "{}",
         String::from_utf8_lossy(&pushed.stderr)
     );
-    submit(&state, child_id).await;
+    submit_request(router(state.clone()), child_id, &member_bearer()).await;
     let child_revision = state
         .metadata
         .requests()

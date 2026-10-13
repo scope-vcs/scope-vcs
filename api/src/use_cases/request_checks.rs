@@ -1,4 +1,5 @@
 use crate::{
+    background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness},
     error::ApiError,
     git::{
         command::{run_git_output, successful_git_output},
@@ -25,7 +26,9 @@ use scope_domain::{
 use scope_postgres::db::{
     RebuildCheckCommitCommand, RecordRequestChecksCommand, RequestChecksMutation, RequestListRow,
 };
-use std::{collections::HashMap, future::Future, path::Path};
+use std::{collections::HashMap, future::Future, path::Path, time::Duration};
+
+const CHECK_RECOVERY_INTERVAL: Duration = Duration::from_secs(30);
 
 type NativeRevisions = Result<Vec<WorkflowRevision>, String>;
 
@@ -442,10 +445,7 @@ async fn evaluate_request_checks(
         .repository_record(&request.repo_id)
         .await?
         .ok_or_else(|| ApiError::not_found("repo not found"))?;
-    let connection = repositories
-        .github_connection(&request.repo_id)
-        .await?
-        .map(|read| read.connection);
+    let connection = repositories.github_connection(&request.repo_id).await?;
     if repo.incarnation() != *incarnation {
         return Err(ApiError::conflict("repository changed while evaluating CI"));
     }
@@ -591,7 +591,7 @@ pub(crate) async fn publish_request_checks_change(
             .await;
     }
     if mutation.queued_github_push {
-        state.github_push_wakeup.notify_one();
+        state.wakeups.github_pushes.notify_one();
     }
     state
         .publish_request_state_refresh(incarnation, &mutation.evaluation.request_id)
@@ -604,6 +604,28 @@ pub(crate) struct RequestCheckRecoveryCursor {
 }
 
 const RECOVERY_BATCH_SIZE: u64 = 8;
+
+impl BackgroundWork {
+    pub(crate) fn start_request_check_recovery(&mut self) {
+        self.spawn_with_progress(
+            BackgroundLoop {
+                name: "request check recovery",
+                cadence: Cadence::AfterPass {
+                    delay: CHECK_RECOVERY_INTERVAL,
+                    wakeup: None,
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            RequestCheckRecoveryCursor::default(),
+            |state, mut cursor| async move {
+                let result = reconcile_request_checks_once(&state, &mut cursor)
+                    .await
+                    .map(drop);
+                (cursor, result)
+            },
+        );
+    }
+}
 
 pub(crate) async fn reconcile_request_checks_once(
     state: &AppState,

@@ -90,7 +90,7 @@ export const REQUEST_SNOOZE_OPTIONS = [
   { label: 'Next week', value: 'next_week' },
 ] as const
 
-export type RequestSnoozeOption = (typeof REQUEST_SNOOZE_OPTIONS)[number]['value']
+type RequestSnoozeOption = (typeof REQUEST_SNOOZE_OPTIONS)[number]['value']
 
 export function requestSnoozeUntil(value: RequestSnoozeOption, now = new Date()): number {
   const until = new Date(now)

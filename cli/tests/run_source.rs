@@ -19,12 +19,7 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
     for known in [true, false] {
         let checkout = TempDir::new("run-source");
         create_repo_with_head(checkout.path());
-        let oid = std::process::Command::new("git")
-            .current_dir(checkout.path())
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .unwrap();
-        let oid = String::from_utf8(oid.stdout).unwrap().trim().to_string();
+        let oid = git_stdout(checkout.path(), ["rev-parse", "HEAD"]);
         let upload = Arc::new(Mutex::new(None));
         let uploaded = upload.clone();
         let known_oid = oid.clone();
@@ -52,7 +47,6 @@ fn run_resolves_before_bundling_and_uploads_only_unknown_sources() {
                         async move {
                             if !known {
                                 fs::write(checkout.join("concurrent.txt"), "later commit").unwrap();
-                                run_git(&checkout, ["add", "."]);
                                 commit_all(&checkout, "concurrent commit");
                             }
                             assert_eq!(headers["authorization"], "Bearer test-token");

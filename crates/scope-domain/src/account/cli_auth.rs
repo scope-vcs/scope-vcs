@@ -2,10 +2,10 @@ use crate::error::DomainError;
 
 pub const MAX_PENDING_DEVICE_LOGINS: u64 = 1024;
 pub const MAX_DEVICE_LOGIN_STARTS_PER_WINDOW: u64 = 60;
-pub const DEVICE_LOGIN_START_WINDOW_SECS: u64 = 60;
-pub const MAX_PENDING_BROWSER_LOGINS: u64 = 1024;
+const DEVICE_LOGIN_START_WINDOW_SECS: u64 = 60;
+const MAX_PENDING_BROWSER_LOGINS: u64 = 1024;
 pub const MAX_BROWSER_LOGIN_STARTS_PER_WINDOW: u64 = 60;
-pub const BROWSER_LOGIN_START_WINDOW_SECS: u64 = 60;
+const BROWSER_LOGIN_START_WINDOW_SECS: u64 = 60;
 
 pub fn enforce_device_login_start_rate_limit(
     pending_count: u64,

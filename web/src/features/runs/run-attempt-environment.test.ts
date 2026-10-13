@@ -3,47 +3,52 @@ import { describe, it } from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { RunEnvironmentPanel } from './run-attempt-environment'
+import {
+  cacheSetupLabel,
+  cacheSizeLabel,
+  cacheStateClass,
+  cacheTimingLabel,
+  cachesNeedAttention,
+  pinnedImageLabel,
+} from './run-attempt-environment-model'
 import type { RepositoryRunCacheResponse } from '@/api/types.generated'
 
 const image = `registry/scope@sha256:${'c'.repeat(64)}`
+
+function observed(
+  identity: string,
+  preparation: NonNullable<RepositoryRunCacheResponse['observation']>['preparation'],
+  timing: { key_ms: number; metadata_ms: number; size_bytes: number; prepare_ms: number },
+): RepositoryRunCacheResponse['observation'] {
+  return {
+    workflow_path: '/.scope/runs/checks.yml',
+    job_key: 'backend',
+    identity_digest: identity.repeat(64),
+    preparation,
+    download_verify_ms: 0,
+    sync_ms: 0,
+    extraction_ms: timing.prepare_ms - timing.key_ms - timing.metadata_ms,
+    final_state: 'ready',
+    finalize_ms: 8,
+    ...timing,
+  }
+}
+
 const caches: RepositoryRunCacheResponse[] = [
   {
     name: 'cargo',
     path: '/scope/cache/cargo',
-    observation: {
-      workflow_path: '/.scope/runs/checks.yml',
-      job_key: 'backend',
-      identity_digest: 'a'.repeat(64),
-      preparation: { kind: 'exact' },
-      key_ms: 2,
-      metadata_ms: 3,
-      size_bytes: 1_024 ** 2,
-      download_verify_ms: 4,
-      sync_ms: 1,
-      extraction_ms: 2,
-      prepare_ms: 12,
-      final_state: 'ready',
-      finalize_ms: 8,
-    },
+    observation: observed('a', { kind: 'exact' }, { key_ms: 2, metadata_ms: 3, size_bytes: 1_024 ** 2, prepare_ms: 12 }),
   },
   {
     name: 'target',
     path: '/workspace/target',
-    observation: {
-      workflow_path: '/.scope/runs/checks.yml',
-      job_key: 'backend',
-      identity_digest: 'b'.repeat(64),
-      preparation: { kind: 'cold', reason: 'metadata-missing' },
-      key_ms: 1,
-      metadata_ms: 2,
-      size_bytes: 0,
-      download_verify_ms: 0,
-      sync_ms: 0,
-      extraction_ms: 0,
-      prepare_ms: 3,
-      final_state: 'pending',
-      finalize_ms: null,
-    },
+    observation: observed('b', { kind: 'cold', reason: 'metadata-missing' }, { key_ms: 100, metadata_ms: 1_000, size_bytes: 0, prepare_ms: 1_100 }),
+  },
+  {
+    name: 'cargo-target',
+    path: '/scope/cache/cargo-target',
+    observation: observed('c', { kind: 'compatible' }, { key_ms: 1, metadata_ms: 1, size_bytes: 1_024, prepare_ms: 900 }),
   },
   {
     name: 'playwright',
@@ -72,5 +77,26 @@ describe('run attempt environment', () => {
     assert.match(html, /Set up in 20ms/)
     assert.doesNotMatch(html, /authorized|finalize|key 2ms|checks\.yml/)
     assert.doesNotMatch(html, /rounded|shadow/)
+  })
+
+  it('flags a cold or unreported cache for the collapsed control', () => {
+    assert.equal(cachesNeedAttention(caches), true)
+    assert.equal(cachesNeedAttention([caches[0]!, caches[2]!]), false)
+    assert.equal(cachesNeedAttention([caches[3]!]), true)
+    assert.equal(cachesNeedAttention([]), false)
+  })
+
+  it('styles results and labels only observed facts', () => {
+    assert.deepEqual(caches.map(cacheStateClass), ['text-success', 'text-warning', 'text-success', 'text-muted-foreground'])
+    assert.equal(cacheTimingLabel(caches[1]!), '1.1s')
+    assert.equal(cacheSizeLabel(caches[3]!), null)
+    assert.equal(cacheTimingLabel(caches[3]!), null)
+    assert.equal(cacheSetupLabel({ authorization_ms: 75, wall_ms: 2_200 }), 'Set up in 2.2s')
+    assert.equal(cacheSetupLabel(null), null)
+  })
+
+  it('formats immutable image identity without the registry noise', () => {
+    assert.equal(pinnedImageLabel(image), `sha256:${'c'.repeat(12)}`)
+    assert.equal(pinnedImageLabel(null), 'Image not pinned yet')
   })
 })

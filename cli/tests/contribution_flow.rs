@@ -62,7 +62,6 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         "published directly to main\n",
     )
     .unwrap();
-    run_git(&maintainer.repo, ["add", main_path.as_str()]);
     commit_all(&maintainer.repo, "Exercise explicit main publication");
     let published = maintainer.json(["push", "--main", "--no-review", "--wait"]);
     assert_command(&published, "push");
@@ -111,7 +110,6 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         "first public revision\n",
     )
     .unwrap();
-    run_git(&contributor.repo, ["add", "contribution.txt"]);
     commit_all(&contributor.repo, "Add contribution flow fixture");
     let first_push = contributor.json(["request", "push"]);
     assert_command(&first_push, "request.push");
@@ -266,7 +264,6 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         "second public revision\n",
     )
     .unwrap();
-    run_git(&contributor.repo, ["add", "contribution.txt"]);
     commit_all(
         &contributor.repo,
         "Advance contribution without resubmitting",
@@ -362,7 +359,6 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
     let close_started = contributor.json(["request", "start", close_name.as_str()]);
     let close_id = string_at(&close_started, "/result/request/id");
     fs::write(contributor.repo.join("closed.txt"), "terminal request\n").unwrap();
-    run_git(&contributor.repo, ["add", "closed.txt"]);
     commit_all(&contributor.repo, "Add close flow fixture");
     contributor.json(["request", "push"]);
     contributor.json(["request", "submit", "--yes"]);

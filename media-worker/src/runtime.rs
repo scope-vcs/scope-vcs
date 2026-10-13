@@ -1,9 +1,54 @@
 use crate::health::WorkerHealth;
 use scope_media_storage::MediaStorage;
 use scope_postgres::db::MetadataStore;
-use std::time::Duration;
+use scope_service_runtime::{unix_now, wait_or_shutdown};
+use std::{future::Future, time::Duration};
 
-pub(crate) async fn dependencies_ready(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum JobOutcome {
+    NoJob,
+    Completed,
+    Failed,
+    LeaseLost,
+}
+
+pub(crate) struct JobLoop<'a> {
+    pub(crate) kind: &'static str,
+    pub(crate) metadata: &'a MetadataStore,
+    pub(crate) storage: &'a MediaStorage,
+    pub(crate) health: &'a WorkerHealth,
+    pub(crate) poll_interval: Duration,
+    pub(crate) mark_poll: fn(&WorkerHealth, u64),
+}
+
+impl JobLoop<'_> {
+    pub(crate) async fn run<F, Fut>(self, mut next_job: F) -> anyhow::Result<()>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = anyhow::Result<JobOutcome>>,
+    {
+        let kind = self.kind;
+        loop {
+            if dependencies_ready(self.metadata, self.storage, self.health).await {
+                let outcome = next_job().await;
+                match &outcome {
+                    Ok(JobOutcome::NoJob) => {}
+                    Ok(outcome) => tracing::info!(?outcome, "media {kind} job finished"),
+                    Err(error) => tracing::error!(%error, "media {kind} poll failed"),
+                }
+                (self.mark_poll)(self.health, unix_now()?);
+                if !matches!(outcome, Ok(JobOutcome::NoJob) | Err(_)) {
+                    continue;
+                }
+            }
+            if wait_or_shutdown(self.poll_interval).await {
+                return Ok(());
+            }
+        }
+    }
+}
+
+async fn dependencies_ready(
     metadata: &MetadataStore,
     storage: &MediaStorage,
     health: &WorkerHealth,
@@ -24,13 +69,6 @@ pub(crate) async fn dependencies_ready(
     false
 }
 
-pub(crate) fn random_id(prefix: &str) -> anyhow::Result<String> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes)
-        .map_err(|error| anyhow::anyhow!("secure random generation failed: {error}"))?;
-    Ok(format!("{prefix}-{}", hex::encode(bytes)))
-}
-
 pub(crate) fn lease_expiry(now_unix: u64, duration: Duration) -> anyhow::Result<u64> {
     now_unix
         .checked_add(duration.as_secs())
@@ -39,33 +77,4 @@ pub(crate) fn lease_expiry(now_unix: u64, duration: Duration) -> anyhow::Result<
 
 pub(crate) fn retry_delay(attempt: u32) -> Duration {
     Duration::from_secs(5_u64.saturating_mul(1_u64 << attempt.min(7)).min(600))
-}
-
-pub(crate) fn db_error(error: scope_postgres::error::PostgresError) -> anyhow::Error {
-    anyhow::Error::new(error)
-}
-
-pub(crate) async fn wait_or_shutdown(duration: Duration) -> bool {
-    tokio::select! {
-        _ = crate::shutdown_signal() => true,
-        _ = tokio::time::sleep(duration) => false,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn database_error_preserves_kind_for_recovery_decisions() {
-        let error = db_error(scope_postgres::error::PostgresError::conflict("lease lost"));
-        let source = error
-            .downcast_ref::<scope_postgres::error::PostgresError>()
-            .unwrap();
-        assert_eq!(
-            source.kind,
-            scope_postgres::error::PostgresErrorKind::Conflict
-        );
-        assert_eq!(source.message, "lease lost");
-        assert_eq!(error.to_string(), "lease lost");
-    }
 }

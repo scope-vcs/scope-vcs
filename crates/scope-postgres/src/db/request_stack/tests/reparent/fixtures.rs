@@ -78,18 +78,12 @@ pub(super) async fn publish(
             .git_snapshot;
         store
             .requests()
-            .record_request_revision_context(publication, context, facts, Vec::new(), IDS)
+            .record_request_revision_context(publication, context, facts, Vec::new())
             .await
     } else {
         store
             .requests()
-            .record_request_revision_with_stack(
-                publication,
-                child.base_version,
-                facts,
-                Vec::new(),
-                IDS,
-            )
+            .record_request_revision_with_stack(publication, child.base_version, facts, Vec::new())
             .await
     }
 }

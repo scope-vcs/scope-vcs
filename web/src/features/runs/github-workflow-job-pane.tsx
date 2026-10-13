@@ -20,9 +20,8 @@ import {
 } from './github-workflow-run-detail-resource'
 import { RunDuration } from './run-duration'
 import { RunLogControls } from './run-job-header'
-import { RUN_LOG_TEXT_CLASS, runLogPreClass } from './run-log-layout'
+import { RUN_LOG_TEXT_CLASS, RUN_STEP_ROW_CLASS, runLogPreClass } from './run-layout'
 import { RunStatusIcon } from './run-status-icon'
-import { RUN_STEP_ROW_CLASS } from './run-step-layout'
 
 const LINK_CLASS = 'underline underline-offset-2 hover:text-foreground'
 

@@ -30,7 +30,6 @@ use scope_domain::projection::{FileChange, LogicalCommit, SourceGraph, project_g
 use scope_domain::{
     account::UserAccount,
     projection::LogicalCommitOrigin,
-    repo_actions::RepoStorageCleanup,
     repo_config::RepoConfig,
     repository::collaboration::{RepositoryInvite, RepositoryMember, RepositoryMemberPermissions},
     repository::credentials::GitPushToken,
@@ -49,7 +48,6 @@ use std::{
 use tower::ServiceExt;
 
 mod account_deletion;
-mod admin;
 mod auth;
 mod auth_fixtures;
 mod cli_auth;
@@ -76,6 +74,7 @@ mod history;
 mod http;
 mod landing_file;
 mod manual_runs;
+mod native_runs_accounts;
 mod push_intent_completion;
 mod repo_cleanup;
 mod repo_collaboration_access;
@@ -96,7 +95,7 @@ mod run_resources;
 mod runtime_budgets;
 
 use auth_fixtures::*;
-use http::api_request;
+use http::{api_request, get};
 
 const TEST_REPO_OWNER: &str = "owner";
 const TEST_REPO_NAME: &str = "repo";
@@ -920,6 +919,18 @@ fn history_change(
         old_content: old,
         new_content: new,
     }
+}
+
+async fn submit_request(app: axum::Router, request_id: &str, bearer: &str) {
+    let submitted = api_request(
+        app,
+        "POST",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests/{request_id}/submit"),
+        Some(bearer),
+        Some("{}"),
+    )
+    .await;
+    assert_eq!(submitted.status(), StatusCode::OK);
 }
 
 async fn drain_outbox(state: &AppState, label: &str) -> scope_postgres::db::OutboxRunSummary {

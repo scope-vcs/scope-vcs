@@ -29,6 +29,7 @@ use scope_api_contract::{
     RepositoryRunDetailResponse, ResolveManualRunResponse, RunResponse,
 };
 use scope_domain::runs::manual::ManualRunRequest;
+use scope_postgres::db::StepLogCursor;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -137,6 +138,14 @@ pub(crate) async fn get_repository_run_step_logs(
     Query(query): Query<RepositoryStepLogsQuery>,
 ) -> Result<Json<RepositoryRunStepLogPageResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
+    let cursor = match (query.after, query.before) {
+        (Some(after), None) => StepLogCursor::After(after),
+        (None, Some(before)) => StepLogCursor::Before(before),
+        (None, None) => StepLogCursor::Tail,
+        (Some(_), Some(_)) => {
+            return Err(ApiError::bad_request("choose after or before, not both"));
+        }
+    };
     let page = inspect_run_step_logs(
         &state,
         &user.id,
@@ -145,18 +154,17 @@ pub(crate) async fn get_repository_run_step_logs(
         &run_id,
         &attempt_id,
         step_index,
-        match (query.after, query.before) {
-            (Some(after), None) => scope_postgres::db::StepLogCursor::After(after),
-            (None, Some(before)) => scope_postgres::db::StepLogCursor::Before(before),
-            (None, None) => scope_postgres::db::StepLogCursor::Tail,
-            (Some(_), Some(_)) => {
-                return Err(ApiError::bad_request("choose after or before, not both"));
-            }
-        },
+        cursor,
         REPOSITORY_STEP_LOG_LIMIT,
     )
     .await?;
-
+    let next_after = page.logs.last().map_or(
+        match cursor {
+            StepLogCursor::After(position) => position,
+            _ => 0,
+        },
+        |stored| stored.position,
+    );
     Ok(Json(RepositoryRunStepLogPageResponse {
         logs: page
             .logs
@@ -169,7 +177,7 @@ pub(crate) async fn get_repository_run_step_logs(
                 created_at_unix: stored.chunk.created_at_unix,
             })
             .collect(),
-        next_after: page.next_after,
+        next_after,
         logs_truncated: page.logs_truncated,
         has_earlier: page.has_earlier,
         has_more: page.has_more,
@@ -196,9 +204,8 @@ pub(crate) async fn get_push_trigger_evaluation(
         .map(|check| check.run_id.clone())
         .collect::<Vec<_>>();
     let runs_store = state.metadata.runs();
-    let (runs, mut jobs, truncated_run_ids) = tokio::try_join!(
+    let (runs, truncated_run_ids) = tokio::try_join!(
         runs_store.runs_by_ids(&run_ids),
-        runs_store.run_jobs_by_ids(&run_ids),
         runs_store.run_ids_with_truncated_logs(&run_ids),
     )?;
     let mut runs = runs
@@ -217,13 +224,6 @@ pub(crate) async fn get_push_trigger_evaluation(
             let run = runs
                 .remove(&check.run_id)
                 .ok_or_else(|| ApiError::internal_message("push trigger check run is missing"))?;
-            jobs.remove(&run.id)
-                .filter(|jobs| !jobs.is_empty())
-                .ok_or_else(|| {
-                    ApiError::internal_message(
-                        "push trigger check run is missing its persisted jobs",
-                    )
-                })?;
             Ok(PushTriggerCheckResponse {
                 workflow_path: check.workflow_path,
                 workflow_name: check.workflow_name,
@@ -280,32 +280,16 @@ mod tests {
     };
 
     #[test]
-    fn run_summary_allows_retry_when_every_job_has_capacity() {
-        let run = terminal_run();
-        let available = terminal_job(1);
-        assert!(
-            repository_run_summary(&run, &[available], NativeRunsAvailability::Available).can_retry
-        );
-    }
-
-    #[test]
-    fn run_summary_hides_retry_when_any_job_is_exhausted() {
-        let run = terminal_run();
-        let exhausted = terminal_job(MAX_RUN_ATTEMPTS);
-        assert!(
-            !repository_run_summary(&run, &[exhausted], NativeRunsAvailability::Available)
-                .can_retry
-        );
-    }
-
-    #[test]
-    fn run_summary_hides_retry_without_native_runs() {
-        let run = terminal_run();
-        let available = terminal_job(1);
-        assert!(
-            !repository_run_summary(&run, &[available], NativeRunsAvailability::Unavailable)
-                .can_retry
-        );
+    fn run_summary_offers_retry_only_with_attempts_left_and_native_runs() {
+        for (attempts, availability, can_retry) in [
+            (1, NativeRunsAvailability::Available, true),
+            (MAX_RUN_ATTEMPTS, NativeRunsAvailability::Available, false),
+            (1, NativeRunsAvailability::Unavailable, false),
+        ] {
+            let summary =
+                repository_run_summary(&terminal_run(), &[terminal_job(attempts)], availability);
+            assert_eq!(summary.can_retry, can_retry);
+        }
     }
 
     fn terminal_run() -> Run {

@@ -79,27 +79,6 @@ impl fmt::Display for ScopePath {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PrincipalKind {
-    User,
-    Public,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Principal {
-    pub id: String,
-    pub kind: PrincipalKind,
-}
-
-impl Principal {
-    pub fn public() -> Self {
-        Self {
-            id: "public".to_string(),
-            kind: PrincipalKind::Public,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LabelRule {
     pub path: ScopePath,
     pub view: ViewId,

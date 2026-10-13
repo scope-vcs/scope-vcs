@@ -7,18 +7,7 @@ pub(super) fn make_github_repository_public(fake: &FakeGitHub) {
 }
 
 async fn github_settings(state: &AppState) -> serde_json::Value {
-    expect_json(
-        api_request(
-            router(state.clone()),
-            "GET",
-            "/v1/repos/owner/repo/github",
-            Some(&bearer_header()),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await
+    super::super::super::fake_github::github_json(state, "GET", "").await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

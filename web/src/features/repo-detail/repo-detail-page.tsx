@@ -4,7 +4,7 @@ import type {
   RepoSummaryResponse,
 } from '@/api/types.generated'
 import { RepoPrimaryActionButton } from '@/components/repo-primary-action'
-import { BlockSkeleton } from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
 import { RepositoryCodeView } from './repository-code-view'

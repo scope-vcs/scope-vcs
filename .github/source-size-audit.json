@@ -14,22 +14,12 @@
     {
       "path": "api/src/http/requests.rs",
       "owner": "request HTTP translation",
-      "reason": "Existing list, queue, lifecycle and start endpoints share HTTP input and response translation; dependency policy lives in scope-domain, metadata reads in scope-postgres and the new paged children handler in its own module."
-    },
-    {
-      "path": "cache-service/src/handlers.rs",
-      "owner": "workflow cache HTTP delivery",
-      "reason": "Restore and upload handlers share grant authorization, lease timing, signed-transfer behavior, and focused endpoint tests."
-    },
-    {
-      "path": "cli/src/api/requests.rs",
-      "owner": "CLI request API client",
-      "reason": "Typed request and discussion calls share URL construction, authenticated execution, decoding, and client tests."
+      "reason": "Existing list, queue, lifecycle and start endpoints share HTTP input and response translation; dependency policy lives in scope-domain, metadata reads in scope-postgres and the paged children handler in its own module."
     },
     {
       "path": "crates/scope-domain/src/requests/attachments/rules.rs",
       "owner": "request attachment aggregate",
-      "reason": "Upload, processing, binding, access, and cleanup transitions share source, derivative, lease, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."
+      "reason": "Upload, processing, binding, access, and media-manifest rules share source, derivative, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."
     },
     {
       "path": "crates/scope-git/src/projection_identity.rs",
@@ -37,19 +27,9 @@
       "reason": "Tree construction, native-range validation, deterministic object identity, and identity fixtures are one algorithm."
     },
     {
-      "path": "crates/scope-postgres/src/db/cache_service.rs",
-      "owner": "workflow cache persistence",
-      "reason": "Object, upload, reference, deletion, and repository-budget operations share one locked cache metadata model."
-    },
-    {
       "path": "crates/scope-postgres/src/db/outbox.rs",
       "owner": "projection read-model outbox",
       "reason": "Enqueue, claim, execute, lease, retry, completion, pruning, and queue tests implement one durable outbox."
-    },
-    {
-      "path": "crates/scope-postgres/src/db/push_triggers.rs",
-      "owner": "push-trigger evaluation persistence",
-      "reason": "Durable evaluation input, trigger selection, atomic run enqueue, source release, and workflow tests form one job."
     },
     {
       "path": "crates/scope-postgres/src/db/request_discussions.rs",
@@ -57,24 +37,9 @@
       "reason": "Discussion and reply mutations, visibility, read state, attachment binding, and notifications share the same request discussion transaction boundary."
     },
     {
-      "path": "crates/scope-postgres/src/db/request_media/cleanup.rs",
-      "owner": "request media deletion lifecycle",
-      "reason": "Request and repository tombstones, orphan inventory, claim revalidation, lease grace, and reconciliation share one deletion-wins lock order; row mapping and supporting SQL are already isolated in cleanup_support."
-    },
-    {
-      "path": "crates/scope-postgres/src/db/request_media/upload.rs",
-      "owner": "request media upload persistence",
-      "reason": "Prepare, part reservation, acknowledgement, and finalization share current authorization, idempotency, repository quota locks, and the durable upload inventory."
-    },
-    {
       "path": "media-worker/src/codec.rs",
       "owner": "request media codec pipeline",
       "reason": "Photo and video conversion share verified codec capabilities, output inspection, bounded subprocess policy, and failure classification; container and source inspection are already isolated in codec/inspection."
-    },
-    {
-      "path": "media-worker/src/jobs.rs",
-      "owner": "leased request media processing",
-      "reason": "Source verification, conversion, durable output reservation, heartbeat renewal, completion, and failure recovery form one leased job; codec execution, storage, scratch, health, and cleanup each have separate owners."
     }
   ]
 }

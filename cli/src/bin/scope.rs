@@ -123,7 +123,7 @@ struct CloneArgs {
     destination: Option<PathBuf>,
     #[arg(
         long,
-        value_parser = parse_view,
+        value_parser = scope_cli::view::parse_view_id,
         help = "View to clone (defaults to the view Scope assigns you)"
     )]
     view: Option<ViewId>,
@@ -265,10 +265,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
     }
 }
-fn parse_view(value: &str) -> Result<ViewId, String> {
-    ViewId::parse(value).map_err(|error| error.message)
-}
-
 fn run_request(args: RequestArgs) -> anyhow::Result<()> {
     let command = prepare_request_command(args)?;
     let api_url = api_url()?;

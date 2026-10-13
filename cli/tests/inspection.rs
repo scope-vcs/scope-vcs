@@ -4,7 +4,6 @@ use scope_cli::repo_config::{
 };
 use serde_json::Value;
 use std::fs;
-use std::process::Command;
 use support::*;
 
 #[test]
@@ -34,42 +33,21 @@ fn status_counts_unpublished_scope_commits_even_when_github_is_up_to_date() {
         ["update-ref", "refs/remotes/scope/main", "HEAD"],
     );
     fs::write(dir.path().join("new.txt"), "not yet on Scope\n").unwrap();
-    run_git(dir.path(), ["add", "new.txt"]);
-    run_git(
-        dir.path(),
-        [
-            "-c",
-            "user.name=Fixture",
-            "-c",
-            "user.email=fixture@example.invalid",
-            "commit",
-            "-m",
-            "Unpublished",
-        ],
-    );
+    commit_all(dir.path(), "Unpublished");
     run_git(
         dir.path(),
         ["update-ref", "refs/remotes/origin/main", "HEAD"],
     );
-    let branch = Command::new("git")
-        .current_dir(dir.path())
-        .args(["branch", "--show-current"])
-        .output()
-        .unwrap();
-    let branch = String::from_utf8(branch.stdout).unwrap();
+    let branch = git_stdout(dir.path(), ["branch", "--show-current"]);
     run_git(
         dir.path(),
-        [
-            "config",
-            &format!("branch.{}.remote", branch.trim()),
-            "origin",
-        ],
+        ["config", &format!("branch.{branch}.remote"), "origin"],
     );
     run_git(
         dir.path(),
         [
             "config",
-            &format!("branch.{}.merge", branch.trim()),
+            &format!("branch.{branch}.merge"),
             "refs/heads/main",
         ],
     );
@@ -115,7 +93,6 @@ fn status_compares_unattached_work_with_the_selected_push_remote() {
         ["update-ref", "refs/remotes/scope/main", "HEAD"],
     );
     fs::write(dir.path().join("new.txt"), "unpublished\n").unwrap();
-    run_git(dir.path(), ["add", "new.txt"]);
     commit_all(dir.path(), "Unpublished work");
     run_git(
         dir.path(),

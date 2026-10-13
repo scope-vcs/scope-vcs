@@ -1,14 +1,12 @@
 mod support;
 
 use super::{
-    MediaLeaseMutation, MediaStore, RequestAttachmentCleanupReason,
+    MediaLeaseMutation, MediaStore,
     persistence::{as_i32, as_i64},
 };
 use crate::{db::locks::acquire_shared_repository_lock, error::PostgresError};
-use scope_domain::requests::attachments::{
-    RequestAttachmentCleanupLease, validate_cleanup_lease, validate_lease_grant,
-};
-use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, TransactionTrait};
+use scope_domain::requests::attachments::{RequestAttachmentCleanupLease, validate_lease_grant};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
 use super::locks::{lock_attachment_row, lock_processing_job};
 use support::{
@@ -53,28 +51,21 @@ impl MediaStore {
                  ORDER BY attachment.repository_id, attachment.id",
                 [as_i64(now_unix, "cleanup discovery time")?.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let mut inserted = 0_u64;
         for candidate in candidates {
-            let attachment_id = candidate
-                .try_get::<String>("", "id")
-                .map_err(PostgresError::internal)?;
-            let repository_id = candidate
-                .try_get::<String>("", "repository_id")
-                .map_err(PostgresError::internal)?;
-            let reason = candidate
-                .try_get::<String>("", "reason")
-                .map_err(PostgresError::internal)?;
-            let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+            let attachment_id = candidate.try_get::<String>("", "id")?;
+            let repository_id = candidate.try_get::<String>("", "repository_id")?;
+            let reason = candidate.try_get::<String>("", "reason")?;
+            let tx = self.db.begin().await?;
             acquire_shared_repository_lock(&tx, &repository_id).await?;
             lock_processing_job(&tx, &attachment_id).await?;
             let Some(row) = lock_attachment_row(&tx, &attachment_id).await? else {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 continue;
             };
             if !attachment_cleanup_is_due(&tx, &row, now_unix).await? {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 continue;
             }
             let available_at = cleanup_available_at(&tx, &attachment_id, now_unix).await?;
@@ -94,13 +85,12 @@ impl MediaStore {
                         as_i64(now_unix, "cleanup creation time")?.into(),
                     ],
                 ))
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
             if result.rows_affected() == 1 {
                 cancel_processing_and_orphan_outputs(&tx, &attachment_id, now_unix).await?;
                 inserted = inserted.saturating_add(1);
             }
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
         }
         Ok(inserted)
     }
@@ -158,8 +148,7 @@ impl MediaStore {
                     as_i64(lease_expires_at_unix, "cleanup lease expiry")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if updated.rows_affected() == 1 {
             return Ok(true);
         }
@@ -179,8 +168,7 @@ impl MediaStore {
                     as_i64(lease_expires_at_unix, "cleanup lease expiry")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(orphan_updated.rows_affected() == 1)
     }
 
@@ -192,25 +180,20 @@ impl MediaStore {
         lease_generation: u64,
         now_unix: u64,
     ) -> Result<MediaLeaseMutation<()>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        if let Some(lease) =
-            locked_attachment_cleanup_lease(&tx, attachment_id, lease_token, lease_generation)
-                .await?
+        let tx = self.db.begin().await?;
+        if let Some(expires_at) = locked_cleanup_lease_expiry(
+            &tx,
+            TOMBSTONE_LEASE,
+            attachment_id,
+            lease_token,
+            lease_generation,
+        )
+        .await?
         {
-            if validate_cleanup_lease(
-                attachment_id,
-                &lease,
-                lease_token,
-                lease_generation,
-                now_unix,
-            )
-            .is_err()
+            if now_unix >= expires_at
+                || cleanup_available_at(&tx, attachment_id, now_unix).await? > now_unix
             {
-                tx.commit().await.map_err(PostgresError::internal)?;
-                return Ok(MediaLeaseMutation::LeaseLost);
-            }
-            if cleanup_available_at(&tx, attachment_id, now_unix).await? > now_unix {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 return Ok(MediaLeaseMutation::LeaseLost);
             }
             tx.execute_raw(Statement::from_sql_and_values(
@@ -224,8 +207,7 @@ impl MediaStore {
                     as_i64(now_unix, "cleanup completion time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
             tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_attachments
@@ -236,25 +218,22 @@ impl MediaStore {
                     as_i64(now_unix, "media budget release time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
             mark_all_inventory_deleted(&tx, attachment_id, now_unix).await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(MediaLeaseMutation::Applied(()));
         }
-        if let Some(lease) =
-            locked_orphan_cleanup_lease(&tx, attachment_id, lease_token, lease_generation).await?
+        if let Some(expires_at) = locked_cleanup_lease_expiry(
+            &tx,
+            ORPHAN_LEASE,
+            attachment_id,
+            lease_token,
+            lease_generation,
+        )
+        .await?
         {
-            if validate_cleanup_lease(
-                attachment_id,
-                &lease,
-                lease_token,
-                lease_generation,
-                now_unix,
-            )
-            .is_err()
-            {
-                tx.commit().await.map_err(PostgresError::internal)?;
+            if now_unix >= expires_at {
+                tx.commit().await?;
                 return Ok(MediaLeaseMutation::LeaseLost);
             }
             mark_orphan_inventory_deleted(&tx, attachment_id, now_unix).await?;
@@ -263,12 +242,11 @@ impl MediaStore {
                 "DELETE FROM scope_request_media_orphan_cleanup_leases WHERE attachment_id = $1",
                 [attachment_id.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            .await?;
+            tx.commit().await?;
             return Ok(MediaLeaseMutation::Applied(()));
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(MediaLeaseMutation::LeaseLost)
     }
 
@@ -288,10 +266,16 @@ impl MediaStore {
                 "cleanup retry time cannot be in the past",
             ));
         }
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        if locked_attachment_cleanup_lease(&tx, attachment_id, lease_token, lease_generation)
-            .await?
-            .is_some()
+        let tx = self.db.begin().await?;
+        if locked_cleanup_lease_expiry(
+            &tx,
+            TOMBSTONE_LEASE,
+            attachment_id,
+            lease_token,
+            lease_generation,
+        )
+        .await?
+        .is_some()
         {
             let result = tx
                 .execute_raw(Statement::from_sql_and_values(
@@ -310,18 +294,23 @@ impl MediaStore {
                         error.into(),
                     ],
                 ))
-                .await
-                .map_err(PostgresError::internal)?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+                .await?;
+            tx.commit().await?;
             return Ok(if result.rows_affected() == 1 {
                 MediaLeaseMutation::Applied(())
             } else {
                 MediaLeaseMutation::LeaseLost
             });
         }
-        if locked_orphan_cleanup_lease(&tx, attachment_id, lease_token, lease_generation)
-            .await?
-            .is_some()
+        if locked_cleanup_lease_expiry(
+            &tx,
+            ORPHAN_LEASE,
+            attachment_id,
+            lease_token,
+            lease_generation,
+        )
+        .await?
+        .is_some()
         {
             let result = tx
                 .execute_raw(Statement::from_sql_and_values(
@@ -338,16 +327,15 @@ impl MediaStore {
                         as_i64(retry_at_unix, "cleanup retry time")?.into(),
                     ],
                 ))
-                .await
-                .map_err(PostgresError::internal)?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+                .await?;
+            tx.commit().await?;
             return Ok(if result.rows_affected() == 1 {
                 MediaLeaseMutation::Applied(())
             } else {
                 MediaLeaseMutation::LeaseLost
             });
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(MediaLeaseMutation::LeaseLost)
     }
 }
@@ -364,7 +352,7 @@ where
         conn,
         "repository_id",
         repository_id,
-        RequestAttachmentCleanupReason::RepositoryDeleted,
+        "RepositoryDeleted",
         now_unix,
     )
     .await
@@ -378,21 +366,14 @@ pub(crate) async fn tombstone_request_attachments<C>(
 where
     C: ConnectionTrait,
 {
-    tombstone_matching_attachments(
-        conn,
-        "request_id",
-        request_id,
-        RequestAttachmentCleanupReason::RequestDeleted,
-        now_unix,
-    )
-    .await
+    tombstone_matching_attachments(conn, "request_id", request_id, "RequestDeleted", now_unix).await
 }
 
 async fn tombstone_matching_attachments<C>(
     conn: &C,
     column: &str,
     id: &str,
-    reason: RequestAttachmentCleanupReason,
+    reason: &'static str,
     now_unix: u64,
 ) -> Result<(), PostgresError>
 where
@@ -407,8 +388,7 @@ where
             ),
             [id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let attachment_ids = observed
         .into_iter()
         .map(|row| {
@@ -425,17 +405,12 @@ where
         let Some(row) = lock_attachment_row(conn, attachment_id).await? else {
             continue;
         };
-        if row
-            .try_get::<String>("", column)
-            .map_err(PostgresError::internal)?
-            != id
-        {
+        if row.try_get::<String>("", column)? != id {
             continue;
         }
         locked_attachments.push((
             attachment_id.clone(),
-            row.try_get::<String>("", "repository_id")
-                .map_err(PostgresError::internal)?,
+            row.try_get::<String>("", "repository_id")?,
         ));
     }
 
@@ -468,13 +443,12 @@ where
             [
                 attachment_id.clone().into(),
                 repository_id.into(),
-                reason.as_str().into(),
+                reason.into(),
                 as_i64(available_at, "cleanup available time")?.into(),
                 as_i64(now_unix, "cleanup creation time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         cancel_processing_and_orphan_outputs(conn, &attachment_id, now_unix).await?;
     }
     Ok(())
@@ -486,7 +460,7 @@ async fn claim_attachment_tombstone(
     now_unix: u64,
     lease_expires_at_unix: u64,
 ) -> Result<Option<RequestAttachmentCleanupLease>, PostgresError> {
-    let tx = db.begin().await.map_err(PostgresError::internal)?;
+    let tx = db.begin().await?;
     let candidate = tx
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -498,29 +472,21 @@ async fn claim_attachment_tombstone(
              LIMIT 1",
             [as_i64(now_unix, "cleanup claim time")?.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let Some(candidate) = candidate else {
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         return Ok(None);
     };
-    let attachment_id = candidate
-        .try_get::<String>("", "attachment_id")
-        .map_err(PostgresError::internal)?;
-    let observed_repository_id = candidate
-        .try_get::<String>("", "repository_id")
-        .map_err(PostgresError::internal)?;
+    let attachment_id = candidate.try_get::<String>("", "attachment_id")?;
+    let observed_repository_id = candidate.try_get::<String>("", "repository_id")?;
     acquire_shared_repository_lock(&tx, &observed_repository_id).await?;
     lock_processing_job(&tx, &attachment_id).await?;
     let Some(attachment) = lock_attachment_row(&tx, &attachment_id).await? else {
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         return Ok(None);
     };
-    let repository_id = attachment
-        .try_get::<String>("", "repository_id")
-        .map_err(PostgresError::internal)?;
-    if repository_id != observed_repository_id {
-        tx.commit().await.map_err(PostgresError::internal)?;
+    if attachment.try_get::<String>("", "repository_id")? != observed_repository_id {
+        tx.commit().await?;
         return Ok(None);
     }
     let row = tx
@@ -536,10 +502,9 @@ async fn claim_attachment_tombstone(
                 as_i64(now_unix, "cleanup claim time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let Some(row) = row else {
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         return Ok(None);
     };
     let available_at = cleanup_available_at(&tx, &attachment_id, now_unix).await?;
@@ -556,25 +521,18 @@ async fn claim_attachment_tombstone(
                 as_i64(now_unix, "cleanup deferral time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        .await?;
+        tx.commit().await?;
         return Ok(None);
     }
-    let generation = u64::try_from(
-        row.try_get::<i64>("", "lease_generation")
-            .map_err(PostgresError::internal)?,
-    )
-    .map_err(PostgresError::internal)?
-    .checked_add(1)
-    .ok_or_else(|| PostgresError::internal_message("cleanup generation overflow"))?;
-    let attempt = u32::try_from(
-        row.try_get::<i32>("", "attempt")
-            .map_err(PostgresError::internal)?,
-    )
-    .map_err(PostgresError::internal)?
-    .checked_add(1)
-    .ok_or_else(|| PostgresError::internal_message("cleanup attempt overflow"))?;
+    let generation = u64::try_from(row.try_get::<i64>("", "lease_generation")?)
+        .map_err(PostgresError::internal)?
+        .checked_add(1)
+        .ok_or_else(|| PostgresError::internal_message("cleanup generation overflow"))?;
+    let attempt = u32::try_from(row.try_get::<i32>("", "attempt")?)
+        .map_err(PostgresError::internal)?
+        .checked_add(1)
+        .ok_or_else(|| PostgresError::internal_message("cleanup attempt overflow"))?;
     tx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_cleanup_jobs
@@ -590,18 +548,15 @@ async fn claim_attachment_tombstone(
             as_i64(now_unix, "cleanup claim time")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     let object_keys = all_attachment_object_keys(&tx, &attachment_id).await?;
-    tx.commit().await.map_err(PostgresError::internal)?;
+    tx.commit().await?;
     Ok(Some(RequestAttachmentCleanupLease {
         attachment_id,
-        repository_id,
         object_keys,
         lease_token: lease_token.to_string(),
         lease_generation: generation,
         attempt,
-        lease_expires_at_unix,
     }))
 }
 
@@ -611,11 +566,11 @@ async fn claim_orphan_objects(
     now_unix: u64,
     lease_expires_at_unix: u64,
 ) -> Result<Option<RequestAttachmentCleanupLease>, PostgresError> {
-    let tx = db.begin().await.map_err(PostgresError::internal)?;
+    let tx = db.begin().await?;
     let candidate = tx
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "SELECT attachment.id, attachment.repository_id
+            "SELECT attachment.id
              FROM scope_request_media_attachments attachment
              WHERE NOT EXISTS (
                     SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
@@ -633,15 +588,12 @@ async fn claim_orphan_objects(
              ORDER BY attachment.id FOR UPDATE OF attachment SKIP LOCKED LIMIT 1",
             [as_i64(now_unix, "orphan cleanup claim time")?.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let Some(candidate) = candidate else {
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         return Ok(None);
     };
-    let attachment_id = candidate
-        .try_get::<String>("", "id")
-        .map_err(PostgresError::internal)?;
+    let attachment_id = candidate.try_get::<String>("", "id")?;
     let existing = tx
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -649,36 +601,23 @@ async fn claim_orphan_objects(
              WHERE attachment_id = $1 FOR UPDATE",
             [attachment_id.clone().into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let (generation, attempt) = if let Some(existing) = existing {
-        let expires = u64::try_from(
-            existing
-                .try_get::<i64>("", "lease_expires_at_unix")
-                .map_err(PostgresError::internal)?,
-        )
-        .map_err(PostgresError::internal)?;
+        let expires = u64::try_from(existing.try_get::<i64>("", "lease_expires_at_unix")?)
+            .map_err(PostgresError::internal)?;
         if expires > now_unix {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         }
         (
-            u64::try_from(
-                existing
-                    .try_get::<i64>("", "lease_generation")
-                    .map_err(PostgresError::internal)?,
-            )
-            .map_err(PostgresError::internal)?
-            .checked_add(1)
-            .ok_or_else(|| PostgresError::internal_message("cleanup generation overflow"))?,
-            u32::try_from(
-                existing
-                    .try_get::<i32>("", "attempt")
-                    .map_err(PostgresError::internal)?,
-            )
-            .map_err(PostgresError::internal)?
-            .checked_add(1)
-            .ok_or_else(|| PostgresError::internal_message("cleanup attempt overflow"))?,
+            u64::try_from(existing.try_get::<i64>("", "lease_generation")?)
+                .map_err(PostgresError::internal)?
+                .checked_add(1)
+                .ok_or_else(|| PostgresError::internal_message("cleanup generation overflow"))?,
+            u32::try_from(existing.try_get::<i32>("", "attempt")?)
+                .map_err(PostgresError::internal)?
+                .checked_add(1)
+                .ok_or_else(|| PostgresError::internal_message("cleanup attempt overflow"))?,
         )
     } else {
         (1, 1)
@@ -704,123 +643,50 @@ async fn claim_orphan_objects(
             as_i64(now_unix, "cleanup claim time")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
-    let repository_id = candidate
-        .try_get::<String>("", "repository_id")
-        .map_err(PostgresError::internal)?;
+    .await?;
     let object_keys = orphan_object_keys(&tx, &attachment_id).await?;
-    tx.commit().await.map_err(PostgresError::internal)?;
+    tx.commit().await?;
     Ok(Some(RequestAttachmentCleanupLease {
         attachment_id,
-        repository_id,
         object_keys,
         lease_token: lease_token.to_string(),
         lease_generation: generation,
         attempt,
-        lease_expires_at_unix,
     }))
 }
 
-async fn locked_attachment_cleanup_lease<C>(
+const TOMBSTONE_LEASE: &str = "SELECT lease_expires_at_unix FROM scope_request_media_cleanup_jobs
+     WHERE attachment_id = $1 AND state = 'Leased' AND lease_token = $2
+       AND lease_generation = $3 FOR UPDATE";
+const ORPHAN_LEASE: &str = "SELECT lease.lease_expires_at_unix
+     FROM scope_request_media_orphan_cleanup_leases lease
+     JOIN scope_request_media_attachments attachment ON attachment.id = lease.attachment_id
+     WHERE lease.attachment_id = $1 AND lease.lease_token = $2
+       AND lease.lease_generation = $3 FOR UPDATE OF lease";
+
+async fn locked_cleanup_lease_expiry<C>(
     conn: &C,
+    query: &'static str,
     attachment_id: &str,
     lease_token: &str,
     lease_generation: u64,
-) -> Result<Option<RequestAttachmentCleanupLease>, PostgresError>
+) -> Result<Option<u64>, PostgresError>
 where
     C: ConnectionTrait,
 {
-    let row = conn
-        .query_one_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "SELECT * FROM scope_request_media_cleanup_jobs
-             WHERE attachment_id = $1 AND state = 'Leased' AND lease_token = $2
-               AND lease_generation = $3 FOR UPDATE",
-            [
-                attachment_id.into(),
-                lease_token.into(),
-                as_i64(lease_generation, "cleanup generation")?.into(),
-            ],
-        ))
-        .await
-        .map_err(PostgresError::internal)?;
-    match row {
-        Some(row) => cleanup_lease_from_row(conn, row, true).await.map(Some),
-        None => Ok(None),
-    }
-}
-
-async fn locked_orphan_cleanup_lease<C>(
-    conn: &C,
-    attachment_id: &str,
-    lease_token: &str,
-    lease_generation: u64,
-) -> Result<Option<RequestAttachmentCleanupLease>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let row = conn
-        .query_one_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "SELECT lease.*, attachment.repository_id
-             FROM scope_request_media_orphan_cleanup_leases lease
-             JOIN scope_request_media_attachments attachment ON attachment.id = lease.attachment_id
-             WHERE lease.attachment_id = $1 AND lease.lease_token = $2
-               AND lease.lease_generation = $3 FOR UPDATE OF lease",
-            [
-                attachment_id.into(),
-                lease_token.into(),
-                as_i64(lease_generation, "cleanup generation")?.into(),
-            ],
-        ))
-        .await
-        .map_err(PostgresError::internal)?;
-    match row {
-        Some(row) => cleanup_lease_from_row(conn, row, false).await.map(Some),
-        None => Ok(None),
-    }
-}
-
-async fn cleanup_lease_from_row<C>(
-    conn: &C,
-    row: QueryResult,
-    tombstone: bool,
-) -> Result<RequestAttachmentCleanupLease, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let attachment_id = row
-        .try_get::<String>("", "attachment_id")
-        .map_err(PostgresError::internal)?;
-    let object_keys = if tombstone {
-        all_attachment_object_keys(conn, &attachment_id).await?
-    } else {
-        orphan_object_keys(conn, &attachment_id).await?
-    };
-    Ok(RequestAttachmentCleanupLease {
-        attachment_id,
-        repository_id: row
-            .try_get("", "repository_id")
-            .map_err(PostgresError::internal)?,
-        object_keys,
-        lease_token: row
-            .try_get("", "lease_token")
-            .map_err(PostgresError::internal)?,
-        lease_generation: u64::try_from(
-            row.try_get::<i64>("", "lease_generation")
-                .map_err(PostgresError::internal)?,
-        )
-        .map_err(PostgresError::internal)?,
-        attempt: u32::try_from(
-            row.try_get::<i32>("", "attempt")
-                .map_err(PostgresError::internal)?,
-        )
-        .map_err(PostgresError::internal)?,
-        lease_expires_at_unix: u64::try_from(
-            row.try_get::<i64>("", "lease_expires_at_unix")
-                .map_err(PostgresError::internal)?,
-        )
-        .map_err(PostgresError::internal)?,
+    conn.query_one_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        query,
+        [
+            attachment_id.into(),
+            lease_token.into(),
+            as_i64(lease_generation, "cleanup generation")?.into(),
+        ],
+    ))
+    .await?
+    .map(|row| {
+        u64::try_from(row.try_get::<i64>("", "lease_expires_at_unix")?)
+            .map_err(PostgresError::internal)
     })
+    .transpose()
 }

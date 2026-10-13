@@ -29,13 +29,7 @@ async fn root(store: &MetadataStore) -> Request {
     publication.git_facts.contained_main_descends_from_base = true;
     store
         .requests()
-        .record_request_revision_with_stack(
-            publication,
-            request.base_version,
-            None,
-            Vec::new(),
-            IDS,
-        )
+        .record_request_revision_with_stack(publication, request.base_version, None, Vec::new())
         .await
         .unwrap()
         .request
@@ -101,7 +95,7 @@ async fn authorize(store: &MetadataStore, request: &Request, now: u64) -> Reques
 async fn land(store: &MetadataStore, request: &Request, child: &Request, main: &str, now: u64) {
     let completed = store
         .repositories()
-        .mutate_repository("owner", "repo", now, IDS, |repo| {
+        .mutate_repository("owner", "repo", now, |repo| {
             repo.record.change_version += 1;
             repo.record.content_version += 1;
             let push_sequence = repo
@@ -146,13 +140,7 @@ async fn containing_parent_landings_preserve_independent_authorizations_and_wake
         let child_facts = vec![fact(&publication.new_head_oid, &child, true)];
         let parent = store
             .requests()
-            .record_request_revision_with_stack(
-                publication,
-                parent.base_version,
-                None,
-                child_facts,
-                IDS,
-            )
+            .record_request_revision_with_stack(publication, parent.base_version, None, child_facts)
             .await
             .unwrap()
             .request;
@@ -174,14 +162,11 @@ async fn containing_parent_landings_preserve_independent_authorizations_and_wake
             .unwrap();
         let claimed = store
             .requests()
-            .claim_due_request_auto_merges(
-                ClaimDueRequestAutoMergesCommand {
-                    now_unix: 25,
-                    lease_expires_at_unix: 35,
-                    limit: 10,
-                },
-                IDS,
-            )
+            .claim_due_request_auto_merges(ClaimDueRequestAutoMergesCommand {
+                now_unix: 25,
+                lease_expires_at_unix: 35,
+                limit: 10,
+            })
             .await
             .unwrap();
         assert_eq!(claimed.len(), if authorize_grandchild { 3 } else { 2 });
@@ -255,14 +240,11 @@ async fn containing_parent_landings_preserve_independent_authorizations_and_wake
         );
         let wake = store
             .requests()
-            .claim_due_request_auto_merges(
-                ClaimDueRequestAutoMergesCommand {
-                    now_unix: 30,
-                    lease_expires_at_unix: 40,
-                    limit: 10,
-                },
-                IDS,
-            )
+            .claim_due_request_auto_merges(ClaimDueRequestAutoMergesCommand {
+                now_unix: 30,
+                lease_expires_at_unix: 40,
+                limit: 10,
+            })
             .await
             .unwrap();
         assert_eq!(wake.len(), 1);
@@ -270,14 +252,11 @@ async fn containing_parent_landings_preserve_independent_authorizations_and_wake
         assert!(
             store
                 .requests()
-                .claim_due_request_auto_merges(
-                    ClaimDueRequestAutoMergesCommand {
-                        now_unix: 31,
-                        lease_expires_at_unix: 41,
-                        limit: 10,
-                    },
-                    IDS
-                )
+                .claim_due_request_auto_merges(ClaimDueRequestAutoMergesCommand {
+                    now_unix: 31,
+                    lease_expires_at_unix: 41,
+                    limit: 10,
+                })
                 .await
                 .unwrap()
                 .is_empty()
@@ -321,14 +300,11 @@ async fn containing_parent_landings_preserve_independent_authorizations_and_wake
         );
         let wake = store
             .requests()
-            .claim_due_request_auto_merges(
-                ClaimDueRequestAutoMergesCommand {
-                    now_unix: 33,
-                    lease_expires_at_unix: 43,
-                    limit: 10,
-                },
-                IDS,
-            )
+            .claim_due_request_auto_merges(ClaimDueRequestAutoMergesCommand {
+                now_unix: 33,
+                lease_expires_at_unix: 43,
+                limit: 10,
+            })
             .await
             .unwrap();
         assert_eq!(wake.len(), usize::from(authorize_grandchild));
@@ -376,13 +352,7 @@ async fn parent_extensions_preserve_child_intents_and_hard_dependencies_stop_wit
         let child_facts = vec![fact(&publication.new_head_oid, &child, true)];
         let parent = store
             .requests()
-            .record_request_revision_with_stack(
-                publication,
-                parent.base_version,
-                None,
-                child_facts,
-                IDS,
-            )
+            .record_request_revision_with_stack(publication, parent.base_version, None, child_facts)
             .await
             .unwrap()
             .request;
@@ -436,7 +406,6 @@ async fn parent_extensions_preserve_child_intents_and_hard_dependencies_stop_wit
                         parent.base_version,
                         None,
                         facts,
-                        IDS,
                     )
                     .await
                     .unwrap();
@@ -445,15 +414,12 @@ async fn parent_extensions_preserve_child_intents_and_hard_dependencies_stop_wit
             "close" => {
                 store
                     .requests()
-                    .close_request(
-                        CloseRequestCommand {
-                            request_id: parent.id.clone(),
-                            actor_user_id: "user_owner".into(),
-                            event_id: "close_parent".into(),
-                            now_unix: 21,
-                        },
-                        IDS,
-                    )
+                    .close_request(CloseRequestCommand {
+                        request_id: parent.id.clone(),
+                        actor_user_id: "user_owner".into(),
+                        event_id: "close_parent".into(),
+                        now_unix: 21,
+                    })
                     .await
                     .unwrap();
                 RequestAutoMergeStopReason::ParentClosed

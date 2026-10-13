@@ -15,31 +15,10 @@
     "nativeAutodeploy": false
   },
   "services": {
-    "cache": {
-      "name": "scope-cache",
-      "id": "668d47df-8f68-4f96-b52f-7c02324829e3",
-      "dependsOn": [],
-      "deployment": {
-        "backend": true,
-        "runtimeConfig": "cache-service/railway.json",
-        "verifyTransitionConfig": true,
-        "artifact": {
-          "kind": "binary",
-          "binary": "scope-cache-service",
-          "imageName": "cache",
-          "dockerfile": "deploy/railway/prebuilt.Dockerfile",
-          "installGit": false,
-          "sourceBinary": "scope-cache-service",
-          "maxBytes": 24117248
-        }
-      }
-    },
     "run-worker": {
       "name": "scope-run-worker",
       "id": "a474a0d1-3000-4a95-9ca3-cd3a7f3ef669",
-      "dependsOn": [
-        "cache"
-      ],
+      "dependsOn": [],
       "deployment": {
         "backend": true,
         "runtimeConfig": "worker/railway.json",
@@ -173,7 +152,7 @@
       ],
       "deployment": {
         "backend": false,
-        "runtimeConfig": "cli/railway.json",
+        "runtimeConfig": "cli-downloads/railway.json",
         "verifyTransitionConfig": false,
         "artifact": {
           "kind": "binary",
@@ -242,35 +221,10 @@
       "prefixes": [
         "runner-runtime/",
         "crates/scope-api-contract/",
-        "crates/scope-cache-contract/",
         "crates/scope-cache-domain/",
         "crates/scope-domain/",
         "crates/scope-git-process/",
         "crates/scope-service-runtime/"
-      ]
-    },
-    "cache": {
-      "files": [
-        "Cargo.lock",
-        "Cargo.toml",
-        "rust-toolchain.toml",
-        "deploy/railway/prebuilt.Dockerfile",
-        ".github/workflows/scope-api-ci.yml",
-        ".github/workflows/rust-workspace-checks.yml",
-        ".github/workflows/deploy-backend.yml",
-        "dev/checks/backend",
-        "deny.toml",
-        "dev/install-cargo-deny.sh",
-        ".github/scripts/deployment-components.mjs",
-        ".github/scripts/check-backend-binary-sizes.mjs",
-        ".github/scripts/prepare-railway-artifact.sh",
-        ".github/scripts/extract-railway-release.py",
-        ".github/scripts/railway-artifact.mjs",
-        ".github/scripts/deploy-monitored-railway.sh"
-      ],
-      "prefixes": [
-        "cache-service/",
-        "crates/"
       ]
     },
     "run-worker": {
@@ -304,7 +258,6 @@
     },
     "media-worker": {
       "files": [
-        "dev/run-ci-local-stack",
         "dev/scope-dev",
         "dev/cargo-target-dir",
         "media-worker/Dockerfile",
@@ -365,7 +318,6 @@
     "media-api": {
       "files": [
         "dev/media-smoke.mjs",
-        "dev/run-ci-local-stack",
         "dev/scope-dev",
         "dev/cargo-target-dir",
         "Cargo.lock",
@@ -432,7 +384,6 @@
         ".github/scripts/railway-artifact.mjs",
         "dev/scope-dev",
         "dev/cargo-target-dir",
-        "dev/run-ci-local-stack",
         "dev/local-process.py",
         "dev/dotenv.sh",
         ".github/scripts/deploy-monitored-railway.sh",
@@ -471,7 +422,6 @@
         ".github/scripts/deploy-railway.sh",
         "dev/scope-dev",
         "dev/cargo-target-dir",
-        "dev/run-ci-local-stack",
         "dev/local-process.py",
         "dev/dotenv.sh",
         "dev/checks/dependency-analyzer"
@@ -479,6 +429,7 @@
       "prefixes": [
         "api/",
         "cli/",
+        "cli-downloads/",
         "crates/",
         "dependency-analyzer/",
         "worker/"
@@ -505,6 +456,7 @@
       "prefixes": [
         "cli/distribution/",
         "cli/src/",
+        "cli-downloads/",
         "dependency-analyzer/"
       ]
     }
@@ -541,7 +493,6 @@
       "environmentName": "staging",
       "apiReplicas": 3,
       "apiDomain": "scope-api-staging.up.railway.app",
-      "cacheDomain": "scope-cache-staging.up.railway.app",
       "routerDomain": "scope-git-router-staging.up.railway.app",
       "routerReplicas": 1,
       "webDomain": "scope-web-staging.up.railway.app"

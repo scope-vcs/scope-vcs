@@ -109,18 +109,6 @@ async fn start_agent_request(state: &AppState, name: &str) -> String {
     started["request"]["id"].as_str().unwrap().to_string()
 }
 
-async fn submit(state: &AppState, request_id: &str) {
-    let submitted = api_request(
-        router(state.clone()),
-        "POST",
-        &format!("/v1/repos/{TEST_REPO_ID}/requests/{request_id}/submit"),
-        Some(&member_bearer()),
-        Some("{}"),
-    )
-    .await;
-    expect_json(submitted, StatusCode::OK).await;
-}
-
 async fn merged_request_native_view(state: &AppState, history_view: &str) -> serde_json::Value {
     let page = expect_json(
         api_request(
@@ -178,7 +166,7 @@ async fn an_agent_request_merge_keeps_its_commits_only_in_the_agent_view() {
         "{}",
         String::from_utf8_lossy(&pushed.stderr)
     );
-    submit(&state, &request_id).await;
+    submit_request(router(state.clone()), &request_id, &member_bearer()).await;
     let mut events = privacy::merged_event_stream(&state).await;
 
     let merged = api_request(
@@ -298,7 +286,7 @@ async fn an_agent_request_reaches_github_on_a_canonical_check_commit_only_after_
         "{}",
         String::from_utf8_lossy(&pushed.stderr)
     );
-    submit(&state, &request_id).await;
+    submit_request(router(state.clone()), &request_id, &member_bearer()).await;
 
     let evaluation = state
         .metadata

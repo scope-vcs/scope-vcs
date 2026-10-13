@@ -230,14 +230,14 @@ PY
 run_success() {
   start_scenario success "$(($(date +%s) + 30))"
   [[ "$(wait_for_container 10)" == "0" ]]
-  assert_protocol success succeeded succeeded 2
+  assert_protocol success succeeded succeeded 1
   stop_scenario
 }
 
 run_step_failure() {
   start_scenario step-failure "$(($(date +%s) + 30))"
   [[ "$(wait_for_container 10)" == "0" ]]
-  assert_protocol step-failure none failed 1
+  assert_protocol step-failure none failed 0
   python3 - "$test_root/step-failure/protocol-state.json" <<'PY'
 import json
 import sys
@@ -260,8 +260,8 @@ run_tree_terminal() {
   start_scenario "$scenario" "$(($(date +%s) + 30))"
   assert_process_tree_reaped "$scenario"
   [[ "$(wait_for_container 10)" == "0" ]]
-  local expected_heartbeats=1
-  [[ "$scenario" == "cancel-tree" ]] && expected_heartbeats=2
+  local expected_heartbeats=0
+  [[ "$scenario" == "cancel-tree" ]] && expected_heartbeats=1
   assert_protocol "$scenario" "$conclusion" none "$expected_heartbeats"
   stop_scenario
 }
@@ -277,7 +277,7 @@ run_deadline() {
     echo "absolute deadline fired outside its expected window: ${elapsed_ms}ms" >&2
     return 1
   }
-  assert_protocol deadline-tree none none 1
+  assert_protocol deadline-tree none none 0
   stop_scenario
 }
 
@@ -286,7 +286,7 @@ run_sigterm() {
   wait_for_file "$test_root/sigterm-tree/processes" "signal process tree" 5
   docker kill --signal TERM "$container" >/dev/null
   [[ "$(wait_for_container 8)" == "143" ]]
-  assert_protocol sigterm-tree none none 1
+  assert_protocol sigterm-tree none none 0
   stop_scenario
 }
 

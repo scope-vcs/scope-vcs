@@ -93,13 +93,9 @@ async fn a_repository_mutation_counts_requests_started_while_it_waited_for_the_l
 async fn open_counts_under_lock(store: &MetadataStore) -> BTreeMap<ViewId, usize> {
     store
         .repositories()
-        .mutate_repository_with_open_requests(
-            "owner",
-            "repo",
-            5,
-            &crate::db::generated_ids::test_generated_id,
-            |_, open_requests_by_view| Ok(RepositoryMutation::new(open_requests_by_view)),
-        )
+        .mutate_repository_with_open_requests("owner", "repo", 5, |_, open_requests_by_view| {
+            Ok(RepositoryMutation::new(open_requests_by_view))
+        })
         .await
         .unwrap()
         .result

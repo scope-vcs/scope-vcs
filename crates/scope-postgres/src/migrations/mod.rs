@@ -1,45 +1,5 @@
 mod baseline;
-mod m0043_retire_git_manifests;
-mod m0044_request_attention;
-mod m0045_dependency_analysis;
-mod m0046_drop_attempt_token_expiry;
-mod m0047_drop_git_manifest_orphan_jobs;
-mod m0048_run_attempt_active_state_indexes;
-mod m0049_run_execution_invariants;
-mod m0050_cache_upload_cleanup_leases;
-mod m0051_request_media_budget_release;
-mod m0052_retire_apply_changes_permission;
-mod m0053_request_ref_cleanup;
-mod m0054_request_attention_revision;
-mod m0055_request_checks;
-mod m0056_request_auto_merge;
-mod m0057_repository_invite_links;
-mod m0058_repository_invite_emails;
-mod m0059_worker_history_permissions;
-mod m0060_capacity_retries;
-mod m0061_public_request_check_source;
-mod m0062_request_run_source_base;
-mod m0063_account_deletion;
-mod m0064_repository_content_version;
-mod m0065_request_revision_rewrites;
-mod m0066_native_runs_accounts;
-mod m0067_provider_neutral_request_checks;
-mod m0068_github_connections;
-mod m0069_github_request_checks;
-mod m0070_github_setup_checks_and_workflow_runs;
-mod m0071_public_check_commits;
-mod m0072_github_run_imports;
-mod m0073_github_workflow_jobs;
-mod m0074_history_path_indexes;
-mod m0075_incremental_projection_read_models;
-mod m0076_view_ids;
-mod m0077_custom_views;
-mod m0078_repo_config_version;
-mod m0079_request_views;
-mod m0080_github_workflow_job_reads;
-mod m0081_github_job_log_reads;
-mod m0082_github_workflow_run_list;
-mod m0083_request_workflow_changes;
+mod bridge;
 mod m0084_request_review_bases;
 mod m0085_request_check_identity;
 mod m0086_private_request_stacks;
@@ -94,170 +54,6 @@ fn migration_registry() -> Vec<RegisteredMigration> {
             metadata_restore_safe: true,
         },
         RegisteredMigration {
-            migration: Box::new(m0043_retire_git_manifests::Migration),
-            metadata_restore_safe: false,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0044_request_attention::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0045_dependency_analysis::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0046_drop_attempt_token_expiry::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0047_drop_git_manifest_orphan_jobs::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0048_run_attempt_active_state_indexes::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0049_run_execution_invariants::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0050_cache_upload_cleanup_leases::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0051_request_media_budget_release::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0052_retire_apply_changes_permission::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0053_request_ref_cleanup::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0054_request_attention_revision::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0055_request_checks::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0056_request_auto_merge::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0057_repository_invite_links::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0058_repository_invite_emails::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0059_worker_history_permissions::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0060_capacity_retries::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0061_public_request_check_source::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0062_request_run_source_base::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0063_account_deletion::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0064_repository_content_version::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0065_request_revision_rewrites::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0066_native_runs_accounts::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0067_provider_neutral_request_checks::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0068_github_connections::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0069_github_request_checks::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0070_github_setup_checks_and_workflow_runs::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0071_public_check_commits::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0072_github_run_imports::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0073_github_workflow_jobs::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0074_history_path_indexes::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0075_incremental_projection_read_models::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0076_view_ids::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0077_custom_views::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0078_repo_config_version::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0079_request_views::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0080_github_workflow_job_reads::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0081_github_job_log_reads::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0082_github_workflow_run_list::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0083_request_workflow_changes::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
             migration: Box::new(m0084_request_review_bases::Migration),
             metadata_restore_safe: true,
         },
@@ -306,7 +102,9 @@ pub async fn apply_in_maintenance(
     let tx = db.begin().await?;
     set_operation_limits(&tx, limits).await?;
     lock_migration_inventory(&tx).await?;
-    plan(&tx).await?;
+    if bridge::is_bridged_chain(&plan(&tx).await?.applied) {
+        bridge::bridge(&tx).await?;
+    }
     Migrator::up(&tx, None).await?;
     assert_exact_state(&tx).await?;
     tx.commit().await
@@ -323,7 +121,7 @@ pub async fn preflight(
         let plan = plan(&tx).await?;
         if plan.applied.is_empty() {
             baseline::assert_empty_schema(&tx).await?;
-        } else if plan.applied == [baseline::NAME] {
+        } else if bridge::is_bridged_chain(&plan.applied) || plan.applied == [baseline::NAME] {
             baseline::assert_baseline_schema(&tx).await?;
         }
         Ok(plan)
@@ -364,16 +162,18 @@ where
         .iter()
         .map(|entry| entry.migration.name().to_string())
         .collect::<Vec<_>>();
-    if !expected.starts_with(&actual) {
+    let bridged = bridge::is_bridged_chain(&actual);
+    if !bridged && !expected.starts_with(&actual) {
         return Err(DbErr::Custom(format!(
-            "Scope metadata migration ledger is not a canonical prefix: expected [{}], found [{}]",
+            "Scope metadata migration ledger is not a canonical prefix: expected [{}], found [{}]. {}",
             expected.join(", "),
-            actual.join(", ")
+            actual.join(", "),
+            bridge::unsupported_ledger_hint()
         )));
     }
     let pending_entries = migrations
         .into_iter()
-        .skip(actual.len())
+        .skip(if bridged { 0 } else { actual.len() })
         .collect::<Vec<_>>();
     let metadata_restore_safe = pending_entries
         .iter()

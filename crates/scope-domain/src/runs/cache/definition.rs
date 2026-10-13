@@ -4,10 +4,10 @@ use std::path::{Component, Path};
 use thiserror::Error;
 
 pub const MAX_WORKFLOW_CACHE_NAME_BYTES: usize = 64;
-pub const MAX_WORKFLOW_CACHE_PATH_BYTES: usize = 1024;
-pub const MAX_WORKFLOW_CACHE_FORMAT_BYTES: usize = 64;
-pub const MAX_WORKFLOW_CACHE_KEY_INPUTS: usize = 128;
-pub const MAX_WORKFLOW_CACHE_INPUT_PATH_BYTES: usize = 1024;
+const MAX_WORKFLOW_CACHE_PATH_BYTES: usize = 1024;
+const MAX_WORKFLOW_CACHE_FORMAT_BYTES: usize = 64;
+const MAX_WORKFLOW_CACHE_KEY_INPUTS: usize = 128;
+const MAX_WORKFLOW_CACHE_INPUT_PATH_BYTES: usize = 1024;
 const RESERVED_CACHE_NAME_PREFIX: &str = "scope-";
 const RESERVED_CACHE_PATHS: &[&str] = &[
     "/scope-steps",

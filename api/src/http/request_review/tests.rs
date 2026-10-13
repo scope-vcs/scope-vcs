@@ -3,6 +3,7 @@ use super::{
     RequestRevisionListWorkBudget, inspect_request_changes as inspect_request_changes_with_views,
     request_file_response, request_revision_commits,
 };
+use crate::git::test_repo::pinned_identity_git as git;
 use scope_api_contract::{FileChangeKind as ApiFileChangeKind, ViewId as ApiViewId};
 use scope_domain::views::ViewId;
 use scope_domain::{
@@ -17,11 +18,6 @@ use scope_domain::{
     requests::{RequestBase, RequestRevision},
 };
 use scope_postgres::db::RepositoryReadPolicy;
-use std::{
-    io::Write,
-    path::Path,
-    process::{Command, Stdio},
-};
 
 pub(super) fn read_policy(repo: &Repository) -> RepositoryReadPolicy {
     RepositoryReadPolicy {
@@ -318,42 +314,6 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
     .unwrap();
     assert_eq!(public_response.visible.len(), 1);
     assert_eq!(public_response.visible[0].oid, empty);
-}
-
-pub(super) fn git(repo: &Path, args: &[&str], stdin: Option<&str>) -> String {
-    let mut command = Command::new("git");
-    command
-        .arg("-C")
-        .arg(repo)
-        .args(args)
-        .env("GIT_AUTHOR_NAME", "Scope Test")
-        .env("GIT_AUTHOR_EMAIL", "scope@example.test")
-        .env("GIT_AUTHOR_DATE", "1700000000 +0000")
-        .env("GIT_COMMITTER_NAME", "Scope Test")
-        .env("GIT_COMMITTER_EMAIL", "scope@example.test")
-        .env("GIT_COMMITTER_DATE", "1700000000 +0000")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if stdin.is_some() {
-        command.stdin(Stdio::piped());
-    }
-    let mut child = command.spawn().unwrap();
-    if let Some(input) = stdin {
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(input.as_bytes())
-            .unwrap();
-    }
-    let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "git {} failed: {}",
-        args.join(" "),
-        String::from_utf8_lossy(&output.stderr),
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
 #[test]

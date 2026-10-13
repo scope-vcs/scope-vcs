@@ -1,5 +1,5 @@
 use super::*;
-use crate::db::{MetadataStore, TestDatabaseTarget, generated_ids::test_generated_id};
+use crate::db::{MetadataStore, TestDatabaseTarget};
 use scope_domain::{
     account::UserAccount,
     dependency_analysis::{
@@ -64,13 +64,7 @@ async fn claim_job(
 ) -> Option<DependencyAnalysisClaim> {
     store
         .jobs()
-        .claim_dependency_analysis(
-            worker,
-            DEPENDENCY_ANALYZER_VERSION,
-            now,
-            lease_seconds,
-            &test_generated_id,
-        )
+        .claim_dependency_analysis(worker, DEPENDENCY_ANALYZER_VERSION, now, lease_seconds)
         .await
         .unwrap()
 }

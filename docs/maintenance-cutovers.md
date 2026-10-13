@@ -22,7 +22,7 @@ intents and run/attempt ownership prevent duplicate dispatch and repair. The
 external GitHub observer reports missed starts, stalled sessions, and missed
 release events; idle daytime needs no heartbeat renewal. During an incident,
 inspect `session.json`, `triggers.json`, `supervision.json`, signed event delivery,
-and the bounded service. See [release supervision operations](../deploy/automation/OPERATIONS.md)
+and the bounded service. See [release supervision operations](https://github.com/scope-vcs/release-supervisor/blob/main/OPERATIONS.md)
 for commands, ownership, and verified cutover. The installed minute timer remains
 the operating owner only until that cutover succeeds or when it is restored.
 The shared automation client resolves T3's active native executable from
@@ -31,8 +31,7 @@ rollbacks do not pin automation to an obsolete executable.
 
 Preparation publishes private GHCR images and records their immutable digests.
 Staging activates the candidate once and checks browser, Git, and media behavior.
-Production uses those exact images. Optional `deployment-tests.yml` runs repeated
-transition tests using a prepared release, outside the normal release path.
+Production uses those exact images.
 
 ## Environments and names
 
@@ -42,7 +41,7 @@ is the former release-proof environment. Its existing generated domains stay
 valid after the environment is renamed. GitHub uses the credential environment
 `staging` for staging work.
 
-Component keys describe their roles: `api`, `run-worker`, `cache`, `git-router`,
+Component keys describe their roles: `api`, `run-worker`, `git-router`,
 `media-api`, `media-worker`, `web`, and `cli-downloads`. `runner-image` and
 `cli-distribution` track the other published artifacts. Runtime executable names
 and existing image repositories are independent of these orchestration keys.
@@ -50,7 +49,9 @@ and existing image repositories are independent of these orchestration keys.
 ## Migration policy
 
 Every pending migration requires maintenance. Runtime startup checks the exact
-migration ledger and refuses a mismatch; it never applies migrations. Development
+migration ledger and refuses a mismatch; it never applies migrations. The
+one-time [current schema baseline bridge](operations/current-schema-baseline.md#baseline-bridge)
+is planned and applied as an ordinary pending migration. Development
 and test setup invoke migration application explicitly. A production migration
 requires a complete prepared application set so schema participants move together.
 
@@ -74,7 +75,7 @@ API, Git, and media clients, with `Retry-After`. It needs no database connection
 Only its `/readyz` endpoint returns success.
 
 The cutover stops metadata writers, acquires the database writer fence, applies
-migrations and required backfills, and verifies the exact ledger. It then activates
+migrations, and verifies the exact ledger. It then activates
 prepared services in dependency order. Public services reopen as their dependencies
 become ready; API activation follows its backend dependencies, and web opens last.
 The journal completes only after the coordinated activation succeeds.
@@ -91,7 +92,7 @@ An unknown or unreadable ledger leaves writers closed.
 
 Once a maintenance gate starts replacing deployments, recovery proceeds forward:
 Railway may already have removed the previous deployment IDs. A committed migration
-or an uncertain external backfill also prevents old-binary restoration. Runtime
+also prevents old-binary restoration. Runtime
 schema verification and the exclusive database fence remain the final write boundary.
 
 To deploy an already prepared, validated release through the same workflow:
@@ -126,7 +127,7 @@ digests, and an exact candidate migration ledger with nothing pending.
 
 Cleanup may have removed the staging deployments after the smoke failure. Resume
 reactivates those pinned images with writers closed first, without restoring the
-pre-migration database, applying migrations, or repeating backfills. Browser smoke
+pre-migration database or applying migrations. Browser smoke
 checks come from the current trusted workflow revision so a corrected smoke test
 does not require rebuilding the application images. Production stays blocked
 until the resumed browser, Git, and media smoke checks succeed. An unresolved
@@ -150,9 +151,8 @@ Plaintext archives and snapshots encrypted under another key are rejected.
 Matching ledgers with no pending migrations require neither the key nor an archive
 upload. If a failed candidate leaves staging ahead, the next attempt restores a
 matching retained baseline while writers are fenced. Unknown baselines and snapshots
-that cross known external storage transformations fail explicitly. Required
-backfills run in staging as well as production; physical object cleanup does not
-run as part of candidate testing.
+that cross known external storage transformations fail explicitly. Physical
+object cleanup does not run as part of candidate testing.
 
 A database snapshot does not back up object storage. Preserve the staging object
 stores and keys across these tests. Unseeded or incompatible staging needs an
@@ -179,7 +179,7 @@ carry their source SHA as `SCOPE_ANALYTICS_RELEASE`. See
 
 ## Private database maintenance
 
-Release preflight, migrations, workflow backfills, and staging database operations
+Release preflight, migrations, and staging database operations
 run through `railway-private-maintenance.sh` and `railway-private-command.sh`.
 They use SSH into the dedicated maintenance service. Its `DATABASE_URL` points
 to the private database hostname and uses the migration role. CI does not fetch

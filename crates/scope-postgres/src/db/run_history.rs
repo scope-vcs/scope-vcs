@@ -55,8 +55,7 @@ impl RunStore {
             .order_by_desc(entities::run::Column::CreationSequence)
             .limit(query.limit)
             .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         models
             .into_iter()
             .map(|model| {

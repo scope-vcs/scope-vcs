@@ -7,11 +7,10 @@ const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const ROLE_PASSWORD = /^[a-f0-9]{64}$/;
 const POSTGRES = 'scope-postgres';
 const ADMIN_DATABASE_URL = `\${{${POSTGRES}.DATABASE_URL}}`;
-const PUBLIC_COMPONENTS = ['api', 'web', 'cache', 'git-router', 'media-api'];
+const PUBLIC_COMPONENTS = ['api', 'web', 'git-router', 'media-api'];
 export const RUNTIME_ROLES = Object.freeze({
   api: 'scope_api',
   'run-worker': 'scope_run_worker',
-  cache: 'scope_cache',
   'media-api': 'scope_media_api',
   'media-worker': 'scope_media_worker',
 });
@@ -71,9 +70,7 @@ export function generatePreviewSecrets() {
     rolePasswords: Object.fromEntries(Object.keys(RUNTIME_ROLES).map((component) => [component, password()])),
     objectEncryptionKey: randomBytes(32).toString('base64'),
     mediaEncryptionKey: randomBytes(32).toString('base64'),
-    cacheGrant: signingKeyPair(),
     mediaGrant: signingKeyPair(),
-    operatorToken: password(),
   };
 }
 
@@ -121,9 +118,9 @@ export function previewVariables({ manifest, domains, current, secrets, clerk })
     CLERK_AUTHORIZED_PARTIES: url('web'),
     SCOPE_API_PUBLIC_URL: url('api'),
     SCOPE_APP_ORIGIN: url('web'),
-    SCOPE_CACHE_URL: url('cache'),
     SCOPE_GIT_PUBLIC_URL: url('git-router'),
     SCOPE_BUCKET_SECRET_ACCESS_KEY: blobs('SECRET_ACCESS_KEY'),
+    SCOPE_CACHE_BUCKET_SECRET_ACCESS_KEY: '${{scope-cache-blobs.SECRET_ACCESS_KEY}}',
   });
   set('web', {
     CLERK_SECRET_KEY: secretKey,
@@ -132,7 +129,6 @@ export function previewVariables({ manifest, domains, current, secrets, clerk })
     SCOPE_API_PUBLIC_URL: url('api'),
   });
   set('run-worker', { SCOPE_PUBLIC_API_URL: url('api'), SCOPE_BUCKET_SECRET_ACCESS_KEY: blobs('SECRET_ACCESS_KEY') });
-  set('cache', { SCOPE_CACHE_BUCKET_SECRET_ACCESS_KEY: '${{scope-cache-blobs.SECRET_ACCESS_KEY}}' });
   set('media-api', {
     SCOPE_MEDIA_ALLOWED_ORIGIN: url('web'),
     SCOPE_MEDIA_BUCKET_SECRET_ACCESS_KEY: '${{scope-request-media.SECRET_ACCESS_KEY}}',
@@ -147,8 +143,6 @@ export function previewVariables({ manifest, domains, current, secrets, clerk })
 
   shared(['api', 'run-worker', 'maintenance'], 'SCOPE_OBJECT_ENCRYPTION_KEY', secrets.objectEncryptionKey);
   shared(['media-api', 'media-worker'], 'SCOPE_MEDIA_ENCRYPTION_KEY', secrets.mediaEncryptionKey);
-  shared(['api'], 'SCOPE_OPERATOR_TOKEN', secrets.operatorToken);
-  signingPair(['api', 'SCOPE_CACHE_GRANT_PRIVATE_KEY'], ['cache', 'SCOPE_CACHE_GRANT_PUBLIC_KEY'], secrets.cacheGrant);
   signingPair(['api', 'SCOPE_MEDIA_GRANT_PRIVATE_KEY'], ['media-api', 'SCOPE_MEDIA_GRANT_PUBLIC_KEY'], secrets.mediaGrant);
 
   return Object.fromEntries(Object.entries(variables).filter(([, values]) => Object.keys(values).length > 0));
@@ -181,17 +175,18 @@ export function databaseBootstrap(rolePasswords, migratorPassword) {
 const GIT_SEGMENT_SETTINGS = ['SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY', 'SCOPE_GIT_SEGMENT_CHUNK_BYTES',
   'SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES'];
 const BLOB_REFERENCES = ['SCOPE_BUCKET_ACCESS_KEY_ID', 'SCOPE_BUCKET_ENDPOINT', 'SCOPE_BUCKET_NAME', 'SCOPE_BUCKET_REGION'];
+const CACHE_BUCKET = ['SCOPE_CACHE_BACKEND', 'SCOPE_CACHE_BUCKET_ACCESS_KEY_ID', 'SCOPE_CACHE_BUCKET_ENDPOINT',
+  'SCOPE_CACHE_BUCKET_FORCE_PATH_STYLE', 'SCOPE_CACHE_BUCKET_NAME', 'SCOPE_CACHE_BUCKET_REGION'];
 const MEDIA_BUCKET = ['SCOPE_MEDIA_BUCKET_ACCESS_KEY_ID', 'SCOPE_MEDIA_BUCKET_ENDPOINT', 'SCOPE_MEDIA_BUCKET_NAME',
   'SCOPE_MEDIA_BUCKET_REGION'];
 export const KEPT_STAGING_SETTINGS = Object.freeze({
-  api: ['PORT', 'RAILPACK_CONFIG_FILE', 'SCOPE_CACHE_BACKEND', 'SCOPE_DATA_DIR', 'SCOPE_GIT_COMMAND_TIMEOUT_SECS',
+  api: ['PORT', 'RAILPACK_CONFIG_FILE', 'SCOPE_DATA_DIR', 'SCOPE_GIT_COMMAND_TIMEOUT_SECS',
     'SCOPE_GIT_RECEIVE_PACK_CONCURRENCY', 'SCOPE_GIT_SEGMENT_INGEST_CONCURRENCY', 'SCOPE_MEDIA_PUBLIC_URL',
-    'SCOPE_OBJECT_STORE_MAX_BYTES', 'SCOPE_RUNTIME_TELEMETRY_INTERVAL_SECS', ...GIT_SEGMENT_SETTINGS, ...BLOB_REFERENCES],
+    'SCOPE_OBJECT_STORE_MAX_BYTES', 'SCOPE_RUNTIME_TELEMETRY_INTERVAL_SECS', ...GIT_SEGMENT_SETTINGS, ...BLOB_REFERENCES,
+    ...CACHE_BUCKET],
   web: ['PAGENT_ENABLED', 'SCOPE_API_INTERNAL_URL', 'SCOPE_CLI_INSTALL_URL', 'VITE_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL',
     'VITE_CLERK_SIGN_IN_URL', 'VITE_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL', 'VITE_CLERK_SIGN_UP_URL',
     'VITE_SCOPE_WEB_FORCE_SIGNED_OUT'],
-  cache: ['SCOPE_CACHE_BACKEND', 'SCOPE_CACHE_BUCKET_ACCESS_KEY_ID', 'SCOPE_CACHE_BUCKET_ENDPOINT',
-    'SCOPE_CACHE_BUCKET_FORCE_PATH_STYLE', 'SCOPE_CACHE_BUCKET_NAME', 'SCOPE_CACHE_BUCKET_REGION'],
   'run-worker': ['SCOPE_CLOUD_RUNS_ENABLED', 'SCOPE_CLOUD_RUNS_MAX_CONCURRENCY', 'SCOPE_DATA_DIR',
     'SCOPE_GIT_COMPACTION_TIMEOUT_SECS', 'SCOPE_OBJECT_STORE_MAX_BYTES', 'SCOPE_RUNTIME_TELEMETRY_INTERVAL_SECS',
     'SCOPE_RUNTIME_VERSION', ...GIT_SEGMENT_SETTINGS, ...BLOB_REFERENCES],

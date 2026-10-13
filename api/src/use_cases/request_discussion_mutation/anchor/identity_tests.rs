@@ -1,6 +1,7 @@
 use super::{
     request_commit_visible_paths as request_commit_visible_paths_with_views, visible_commit_paths,
 };
+use crate::git::test_repo::pinned_identity_git as git;
 use axum::http::StatusCode;
 use scope_domain::views::{ViewId, Views};
 use scope_domain::{
@@ -10,11 +11,7 @@ use scope_domain::{
     repository::access::RepositoryAccess,
     requests::RequestRevision,
 };
-use std::{
-    io::Write,
-    path::Path,
-    process::{Command, Stdio},
-};
+use std::path::Path;
 
 fn request_commit_visible_paths(
     repo: &Path,
@@ -211,40 +208,4 @@ fn fixture() -> Fixture {
         commit,
         outsider,
     }
-}
-
-fn git(repo: &Path, args: &[&str], stdin: Option<&str>) -> String {
-    let mut command = Command::new("git");
-    command
-        .arg("-C")
-        .arg(repo)
-        .args(args)
-        .env("GIT_AUTHOR_NAME", "Scope Test")
-        .env("GIT_AUTHOR_EMAIL", "scope@example.test")
-        .env("GIT_AUTHOR_DATE", "1700000000 +0000")
-        .env("GIT_COMMITTER_NAME", "Scope Test")
-        .env("GIT_COMMITTER_EMAIL", "scope@example.test")
-        .env("GIT_COMMITTER_DATE", "1700000000 +0000")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if stdin.is_some() {
-        command.stdin(Stdio::piped());
-    }
-    let mut child = command.spawn().unwrap();
-    if let Some(input) = stdin {
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(input.as_bytes())
-            .unwrap();
-    }
-    let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "git {} failed: {}",
-        args.join(" "),
-        String::from_utf8_lossy(&output.stderr),
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
 }

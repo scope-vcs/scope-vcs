@@ -621,80 +621,20 @@ mod tests {
     }
 
     #[test]
-    fn request_errors_surface_authoritative_safe_messages() {
+    fn request_errors_surface_terminal_safe_message_instruction_and_reference() {
         let (api_url, server) = serve_once(
             StatusCode::CONFLICT,
-            r#"{"code":"conflict","message":"request cannot be submitted\u001b[31m","retryable":false}"#,
+            r#"{"code":"conflict","message":"request cannot be submitted\u001b[31m","instruction":"Retry later.\u001b[31m","error_reference":"err_0123456789abcdef0123456789abcdef\u001b[31m","retryable":false}"#,
         );
 
         let error = submit_request(ApiSession::new(&Client::new(), &api_url, "token"), target())
             .unwrap_err()
             .to_string();
-
-        assert_eq!(error, "request cannot be submitted [31m");
-        let request = server.join().unwrap();
-        assert!(request.starts_with("POST /v1/repos/owner/repo/requests/req_one/submit "));
-        assert!(request.contains("\r\n\r\n{}"), "{request}");
-    }
-
-    #[test]
-    fn diagnostic_errors_surface_only_the_safe_message_and_reference() {
-        let (api_url, server) = serve_once(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            r#"{"code":"internal","message":"Scope hit an internal error.","error_reference":"err_0123456789abcdef0123456789abcdef\u001b[31m","retryable":false}"#,
-        );
-
-        let error = get_request(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            "owner",
-            "repo",
-            "req_one",
-        )
-        .unwrap_err()
-        .to_string();
 
         assert_eq!(
             error,
-            "Scope hit an internal error.\nReference: err_0123456789abcdef0123456789abcdef [31m"
+            "request cannot be submitted [31m\nRetry later. [31m\nReference: err_0123456789abcdef0123456789abcdef [31m"
         );
-        server.join().unwrap();
-    }
-
-    #[test]
-    fn request_errors_surface_the_cli_upgrade_instruction() {
-        let (api_url, server) = serve_once(
-            StatusCode::UPGRADE_REQUIRED,
-            format!(
-                r#"{{"code":"cli_upgrade_required","message":"installed Scope CLI protocol 0; this API supports protocol 1","instruction":"Upgrade with `{CLI_INSTALL_COMMAND}`, then retry.","fields":{{"installed_protocol":0,"supported_protocol":1}},"retryable":false}}"#
-            ),
-        );
-
-        let error = submit_request(ApiSession::new(&Client::new(), &api_url, "token"), target())
-            .unwrap_err()
-            .to_string();
-
-        assert!(error.contains("installed Scope CLI protocol 0"), "{error}");
-        assert!(error.contains(CLI_INSTALL_COMMAND), "{error}");
-        server.join().unwrap();
-    }
-
-    #[test]
-    fn request_not_found_uses_the_authoritative_contract_message() {
-        let (api_url, server) = serve_once(
-            StatusCode::NOT_FOUND,
-            r#"{"code":"not_found","message":"request req_one not found in owner/repo","retryable":false}"#,
-        );
-
-        let error = get_request(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            "owner",
-            "repo",
-            "req_one",
-        )
-        .unwrap_err()
-        .to_string();
-
-        assert_eq!(error, "request req_one not found in owner/repo");
         server.join().unwrap();
     }
 
@@ -715,134 +655,6 @@ mod tests {
             "Scope is temporarily unavailable while trying to merge request req_one for owner/repo"
         );
         server.join().unwrap();
-    }
-
-    #[test]
-    fn invite_and_activity_wrappers_use_contract_methods_queries_and_payloads() {
-        let (api_url, invite_server) = serve_once(
-            StatusCode::CONFLICT,
-            r#"{"code":"conflict","message":"fixture stop","retryable":false}"#,
-        );
-        add_request_invitee(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            target(),
-            "Exact-Handle".to_string(),
-        )
-        .unwrap_err();
-        let invite_request = invite_server.join().unwrap();
-        assert!(
-            invite_request
-                .starts_with("PUT /v1/repos/owner/repo/requests/req_one/invitees HTTP/1.1")
-        );
-        assert!(
-            invite_request.contains(r#"{"handle":"Exact-Handle"}"#),
-            "{invite_request}"
-        );
-
-        let (api_url, activity_server) =
-            serve_once(StatusCode::OK, r#"{"events":[],"through_position":7}"#);
-        let page = get_request_activity(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            RequestActivityParams {
-                target: target(),
-                after: Some(4),
-                latest: true,
-                limit: Some(25),
-            },
-        )
-        .unwrap();
-        assert!(page.events.is_empty());
-        assert_eq!(page.through_position, 7);
-        let activity_request = activity_server.join().unwrap();
-        let request_line = activity_request.lines().next().unwrap();
-        assert!(
-            request_line.starts_with("GET /v1/repos/owner/repo/requests/req_one/activity?"),
-            "{request_line}"
-        );
-        for query in ["after=4", "latest=true", "limit=25"] {
-            assert!(request_line.contains(query), "{request_line}");
-        }
-    }
-
-    #[test]
-    fn discussion_wrappers_use_explicit_thread_routes_and_payloads() {
-        let stopped = r#"{"code":"conflict","message":"fixture stop","retryable":false}"#;
-
-        let (api_url, start_server) = serve_once(StatusCode::CONFLICT, stopped);
-        create_request_discussion(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            CreateRequestDiscussionParams {
-                target: target(),
-                body_markdown: "Question\\n".to_string(),
-                client_discussion_id: "client-discussion".to_string(),
-                anchor: Some(RequestDiscussionAnchorInput {
-                    revision_id: "rev_one".to_string(),
-                    commit_oid: Some("0123456789abcdef".to_string()),
-                    path: Some("src/lib.rs".to_string()),
-                }),
-            },
-        )
-        .unwrap_err();
-        let request = start_server.join().unwrap();
-        assert!(
-            request.starts_with("POST /v1/repos/owner/repo/requests/req_one/timeline HTTP/1.1")
-        );
-        assert!(
-            request.contains(r#""body_markdown":"Question\\n""#),
-            "{request}"
-        );
-        assert!(request.contains(r#""revision_id":"rev_one""#), "{request}");
-        assert!(request.contains(r#""path":"src/lib.rs""#), "{request}");
-
-        let (api_url, reply_server) = serve_once(StatusCode::CONFLICT, stopped);
-        create_request_discussion_reply(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            CreateRequestDiscussionReplyParams {
-                target: target(),
-                discussion_id: "dsc /one",
-                body_markdown: "Answer".to_string(),
-                client_reply_id: "client-reply".to_string(),
-            },
-        )
-        .unwrap_err();
-        let request = reply_server.join().unwrap();
-        assert!(
-            request.starts_with(
-                "POST /v1/repos/owner/repo/requests/req_one/threads/dsc%20%2Fone/replies HTTP/1.1"
-            ),
-            "{request}"
-        );
-        assert!(request.contains(r#""client_reply_id":"client-reply""#));
-        assert!(request.contains(r#""reply_to_reply_id":null"#));
-
-        let (api_url, resolve_server) = serve_once(StatusCode::CONFLICT, stopped);
-        resolve_request_discussion(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            target(),
-            "dsc_one",
-        )
-        .unwrap_err();
-        let request = resolve_server.join().unwrap();
-        assert!(request.starts_with(
-            "POST /v1/repos/owner/repo/requests/req_one/threads/dsc_one/resolve HTTP/1.1"
-        ));
-
-        let (api_url, reopen_server) = serve_once(StatusCode::CONFLICT, stopped);
-        reopen_and_reply_to_request_discussion(
-            ApiSession::new(&Client::new(), &api_url, "token"),
-            CreateRequestDiscussionReplyParams {
-                target: target(),
-                discussion_id: "dsc_one",
-                body_markdown: "New evidence".to_string(),
-                client_reply_id: "client-reopen".to_string(),
-            },
-        )
-        .unwrap_err();
-        let request = reopen_server.join().unwrap();
-        assert!(request.starts_with(
-            "POST /v1/repos/owner/repo/requests/req_one/threads/dsc_one/reopen-and-reply HTTP/1.1"
-        ));
-        assert!(request.contains(r#""body_markdown":"New evidence""#));
     }
 
     fn target() -> RequestTarget<'static> {

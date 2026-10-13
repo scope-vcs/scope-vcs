@@ -23,11 +23,11 @@ impl RepositoryStore {
         let repo_id = repo_id(owner, name);
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let Some(access) = repository_access(&tx, &repo_id, Some(user_id)).await? else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         };
         if !access.access.is_maintainer() || access.ensure_run_reader().is_err() {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         }
         let Some(current) = tx
@@ -39,10 +39,9 @@ impl RepositoryStore {
                  WHERE repository.id = $1",
                 [repo_id.clone().into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         };
         let current_incarnation = database_value::<String>(&current, "incarnation_id")?;
@@ -56,8 +55,7 @@ impl RepositoryStore {
                  FROM scope_dependency_reports WHERE repo_id = $1",
                 [repo_id.clone().into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let report = report_row
             .as_ref()
             .map(|row| decode_json(database_value::<serde_json::Value>(row, "report")?))
@@ -77,8 +75,7 @@ impl RepositoryStore {
                 "SELECT last_error FROM scope_dependency_analysis_jobs WHERE repo_id = $1",
                 [repo_id.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let error = job
             .as_ref()
             .map(|row| database_value::<Option<String>>(row, "last_error"))
@@ -105,7 +102,7 @@ impl RepositoryStore {
             report,
             error,
         };
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(check))
     }
 }

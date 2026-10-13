@@ -1,6 +1,8 @@
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{persistence::unix_now, run_attempt_effects::settle_attempt_mutation, state::AppState};
 use scope_postgres::error::PostgresErrorKind;
 use std::time::Duration;
+use tokio::time::MissedTickBehavior;
 
 const RECOVERY_BATCH_SIZE: u64 = 100;
 const RECOVERY_INTERVAL: Duration = Duration::from_secs(15);
@@ -53,37 +55,28 @@ pub(crate) async fn reconcile_expired_attempts(
     Ok(report)
 }
 
-impl AppState {
-    pub(crate) fn start_run_attempt_recovery(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(RECOVERY_INTERVAL);
-            loop {
-                interval.tick().await;
-                let now_unix = match unix_now() {
-                    Ok(now) => now,
-                    Err(error) => {
-                        tracing::warn!(?error, "failed to read time for run attempt recovery");
-                        continue;
-                    }
-                };
-                match reconcile_expired_attempts(&state, now_unix).await {
-                    Ok(report) if report != AttemptRecoveryReport::default() => {
-                        tracing::info!(
-                            requeued = report.requeued,
-                            lost = report.lost,
-                            "reconciled expired run attempt leases"
-                        );
-                    }
-                    Ok(_) => {}
-                    Err(error) => {
-                        tracing::warn!(
-                            error = %error.message,
-                            "failed to reconcile expired run attempt leases"
-                        );
-                    }
+impl BackgroundWork {
+    pub(crate) fn start_run_attempt_recovery(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "run attempt lease recovery",
+                cadence: Cadence::Fixed {
+                    period: RECOVERY_INTERVAL,
+                    missed_ticks: MissedTickBehavior::Burst,
+                },
+                readiness: Readiness::Ungated,
+            },
+            |state| async move {
+                let report = reconcile_expired_attempts(&state, unix_now()?).await?;
+                if report != AttemptRecoveryReport::default() {
+                    tracing::info!(
+                        requeued = report.requeued,
+                        lost = report.lost,
+                        "reconciled expired run attempt leases"
+                    );
                 }
-            }
-        });
+                Ok(())
+            },
+        );
     }
 }

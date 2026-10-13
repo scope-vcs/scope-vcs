@@ -48,7 +48,6 @@ where
              WHERE attachment_id = $1 FOR UPDATE",
             [attachment_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .is_some())
 }

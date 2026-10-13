@@ -18,13 +18,7 @@ async fn reparenting_main_request_commits_revision_and_ends_evidence_and_intent(
         publication.git_facts.contained_main_descends_from_base = true;
         let child = store
             .requests()
-            .record_request_revision_with_stack(
-                publication,
-                child.base_version,
-                None,
-                Vec::new(),
-                IDS,
-            )
+            .record_request_revision_with_stack(publication, child.base_version, None, Vec::new())
             .await
             .unwrap()
             .request;
@@ -143,15 +137,12 @@ async fn reparenting_recovers_from_closed_or_rewritten_parent_to_main_or_other_p
         if close_old {
             store
                 .requests()
-                .close_request(
-                    CloseRequestCommand {
-                        request_id: old.id.clone(),
-                        actor_user_id: "user_owner".into(),
-                        event_id: "close_old_parent".into(),
-                        now_unix: 22,
-                    },
-                    IDS,
-                )
+                .close_request(CloseRequestCommand {
+                    request_id: old.id.clone(),
+                    actor_user_id: "user_owner".into(),
+                    event_id: "close_old_parent".into(),
+                    now_unix: 22,
+                })
                 .await
                 .unwrap();
         } else {
@@ -159,13 +150,7 @@ async fn reparenting_recovers_from_closed_or_rewritten_parent_to_main_or_other_p
             let child_facts = vec![fact(&rewritten.new_head_oid, &child, false)];
             store
                 .requests()
-                .record_request_revision_with_stack(
-                    rewritten,
-                    old.base_version,
-                    None,
-                    child_facts,
-                    IDS,
-                )
+                .record_request_revision_with_stack(rewritten, old.base_version, None, child_facts)
                 .await
                 .unwrap();
         }
@@ -225,7 +210,7 @@ async fn reparenting_recovers_from_closed_or_rewritten_parent_to_main_or_other_p
             publication.git_snapshot = original.git_snapshot.clone();
             store
                 .requests()
-                .record_request_revision_context(publication, context, facts, child_facts, IDS)
+                .record_request_revision_context(publication, context, facts, child_facts)
                 .await
                 .unwrap()
         } else {
@@ -236,7 +221,6 @@ async fn reparenting_recovers_from_closed_or_rewritten_parent_to_main_or_other_p
                     child.base_version,
                     facts,
                     child_facts,
-                    IDS,
                 )
                 .await
                 .unwrap()
@@ -415,7 +399,6 @@ async fn reparenting_rejects_changed_parent_and_cycles_without_committing() {
                 child.base_version,
                 Some(facts),
                 child_facts,
-                IDS,
             )
             .await
             .unwrap_err();
@@ -424,15 +407,12 @@ async fn reparenting_rejects_changed_parent_and_cycles_without_committing() {
     }
     store
         .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: parent.id,
-                actor_user_id: "user_owner".into(),
-                event_id: "close_new_parent".into(),
-                now_unix: 19,
-            },
-            IDS,
-        )
+        .close_request(CloseRequestCommand {
+            request_id: parent.id,
+            actor_user_id: "user_owner".into(),
+            event_id: "close_new_parent".into(),
+            now_unix: 19,
+        })
         .await
         .unwrap();
     let child_facts = vec![fact(&publication.new_head_oid, &descendant, true)];
@@ -443,7 +423,6 @@ async fn reparenting_rejects_changed_parent_and_cycles_without_committing() {
             child.base_version,
             Some(facts),
             child_facts,
-            IDS,
         )
         .await
         .unwrap_err();
@@ -485,7 +464,6 @@ async fn deeper_reparenting_rolls_back_revision_receipt_and_descendant_depth_ove
             context.clone(),
             facts,
             vec![fact(&child.head_oid, &descendant, true)],
-            IDS,
         )
         .await
         .unwrap_err();
@@ -528,13 +506,7 @@ async fn context_receipt_replays_after_main_reparent_and_requires_current_edit_r
     publication.new_base = Some(base);
     let accepted = store
         .requests()
-        .record_request_revision_context(
-            publication.clone(),
-            context.clone(),
-            facts,
-            Vec::new(),
-            IDS,
-        )
+        .record_request_revision_context(publication.clone(), context.clone(), facts, Vec::new())
         .await
         .unwrap();
     let main = "e".repeat(40);
@@ -571,34 +543,30 @@ async fn context_receipt_replays_after_main_reparent_and_requires_current_edit_r
             detach_context.clone(),
             detach_facts,
             Vec::new(),
-            IDS,
         )
         .await
         .unwrap();
     store
         .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: parent.id,
-                actor_user_id: "user_owner".into(),
-                event_id: "closed_after_detach".into(),
-                now_unix: 12,
-            },
-            IDS,
-        )
+        .close_request(CloseRequestCommand {
+            request_id: parent.id,
+            actor_user_id: "user_owner".into(),
+            event_id: "closed_after_detach".into(),
+            now_unix: 12,
+        })
         .await
         .unwrap();
     set_main(&store, &"f".repeat(40)).await;
     let main_receipt = store
         .requests()
-        .record_request_revision_context(detach, detach_context, None, Vec::new(), IDS)
+        .record_request_revision_context(detach, detach_context, None, Vec::new())
         .await
         .unwrap();
     assert_eq!(main_receipt.revision, detached.revision);
     let events = store.requests().request_events_for_tests().await.unwrap();
     let replay = store
         .requests()
-        .record_request_revision_context(publication, context.clone(), None, Vec::new(), IDS)
+        .record_request_revision_context(publication, context.clone(), None, Vec::new())
         .await
         .unwrap();
     assert_eq!(replay.revision, accepted.revision);
@@ -665,7 +633,7 @@ async fn context_publication_rejects_mismatched_base_and_parent_version_shape() 
         publication.git_facts.contained_main_descends_from_base = true;
         let error = store
             .requests()
-            .record_request_revision_context(publication, context, facts, Vec::new(), IDS)
+            .record_request_revision_context(publication, context, facts, Vec::new())
             .await
             .unwrap_err();
         assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);

@@ -53,6 +53,7 @@ devYjVgcWWz1N5F0wHsGA68ppkppNUQeDKoG05CHMCChPdD8onOqyFdw/mPPgXGi
 fAFIvg2Ihs8lJFryn8Z/kFk=
 -----END PRIVATE KEY-----"#;
 
+#[derive(Default)]
 pub(super) struct FakeGitHub {
     pub(super) user_installations: Mutex<Vec<u64>>,
     pub(super) user_repositories: Mutex<Vec<(u64, serde_json::Value)>>,
@@ -74,7 +75,15 @@ pub(super) struct FakeGitHub {
     pub(super) job_log_bytes_served: AtomicUsize,
     pub(super) run_list_reads: AtomicUsize,
     pub(super) run_list_unavailable: AtomicBool,
-    git_root: tempfile::TempDir,
+    git_root: GitRoot,
+}
+
+struct GitRoot(tempfile::TempDir);
+
+impl Default for GitRoot {
+    fn default() -> Self {
+        Self(tempfile::tempdir().unwrap())
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -219,24 +228,7 @@ impl FakeGitHub {
                 INSTALLATION_ID,
                 github_repository(GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME),
             )]),
-            installation_states: Mutex::default(),
-            token_mints: AtomicUsize::new(0),
-            installation_listings: AtomicUsize::new(0),
-            revoke_at_listing: Mutex::default(),
-            check_runs: Mutex::default(),
-            check_run_reads: AtomicUsize::new(0),
-            check_runs_unavailable: AtomicBool::new(false),
-            workflow_runs: Mutex::default(),
-            workflow_run_unavailable: AtomicBool::new(false),
-            workflow_jobs: Mutex::default(),
-            job_list_reads: AtomicUsize::new(0),
-            job_list_unavailable: AtomicBool::new(false),
-            job_logs: Mutex::default(),
-            job_log_reads: AtomicUsize::new(0),
-            job_log_bytes_served: AtomicUsize::new(0),
-            run_list_reads: AtomicUsize::new(0),
-            run_list_unavailable: AtomicBool::new(false),
-            git_root: tempfile::tempdir().unwrap(),
+            ..Self::default()
         });
         let repository = fake.repository_path();
         fs::create_dir_all(repository.parent().unwrap()).unwrap();
@@ -255,7 +247,7 @@ impl FakeGitHub {
             client_secret: "client-secret".to_string(),
             webhook_secret: WEBHOOK_SECRET.to_string(),
         };
-        let git_url = fake.git_root.path().to_str().unwrap().to_string();
+        let git_url = fake.git_root.0.path().to_str().unwrap().to_string();
         state.github = Some(Arc::new(
             GitHubApp::new(config, &url, &url, &git_url).unwrap(),
         ));
@@ -263,7 +255,10 @@ impl FakeGitHub {
     }
 
     pub(super) fn repository_path(&self) -> PathBuf {
-        self.git_root.path().join(format!("{GITHUB_FULL_NAME}.git"))
+        self.git_root
+            .0
+            .path()
+            .join(format!("{GITHUB_FULL_NAME}.git"))
     }
 
     pub(super) fn branch_head(&self, branch: &str) -> Option<String> {
@@ -662,4 +657,105 @@ pub(super) async fn webhook(
         )
         .await
         .unwrap()
+}
+
+pub(super) async fn github_state() -> (AppState, Arc<FakeGitHub>) {
+    let mut state = test_state_with_readme().await;
+    cache_test_jwks(&state);
+    let fake = FakeGitHub::install(&mut state).await;
+    (state, fake)
+}
+
+pub(super) async fn connect_test_repository(
+    state: &AppState,
+    github_repository_id: u64,
+    github_full_name: &str,
+    run_import_count: u32,
+) {
+    state
+        .metadata
+        .repositories()
+        .connect_github_repository(
+            scope_domain::github_connection::ConnectGitHubRepository {
+                repository_id: TEST_REPO_ID.to_string(),
+                installation_id: INSTALLATION_ID,
+                github_repository_id,
+                github_full_name: github_full_name.to_string(),
+                github_private: true,
+                acknowledge_public: false,
+                run_import_count,
+                user_id: test_owner_id(),
+                now_unix: unix_now(),
+            },
+            async || Ok::<_, scope_postgres::error::PostgresError>(true),
+        )
+        .await
+        .unwrap();
+}
+
+pub(super) async fn reconnect_test_repository(
+    state: &AppState,
+    github_repository_id: u64,
+    github_full_name: &str,
+    run_import_count: u32,
+) {
+    state
+        .metadata
+        .repositories()
+        .disconnect_github_repository(TEST_REPO_ID, &test_owner_id())
+        .await
+        .unwrap();
+    connect_test_repository(
+        state,
+        github_repository_id,
+        github_full_name,
+        run_import_count,
+    )
+    .await;
+}
+
+pub(super) async fn deliver_event(
+    state: &AppState,
+    event: &str,
+    action: &str,
+    github_repository_id: u64,
+    subject: serde_json::Value,
+) {
+    let delivery = webhook(
+        state,
+        event,
+        serde_json::json!({
+            "action": action,
+            "repository": { "id": github_repository_id, "full_name": GITHUB_FULL_NAME },
+            (event): subject,
+        }),
+        WEBHOOK_SECRET,
+    )
+    .await;
+    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
+}
+
+pub(super) async fn github_api(
+    state: &AppState,
+    method: &str,
+    path: &str,
+    bearer: &str,
+    body: Option<serde_json::Value>,
+) -> Response {
+    api_request(
+        router(state.clone()),
+        method,
+        &format!("/v1/repos/{TEST_REPO_OWNER}/{TEST_REPO_NAME}/github{path}"),
+        Some(bearer),
+        body.map(|body| body.to_string()).as_deref(),
+    )
+    .await
+}
+
+pub(super) async fn github_json(state: &AppState, method: &str, path: &str) -> serde_json::Value {
+    expect_json(
+        github_api(state, method, path, &bearer_header(), None).await,
+        StatusCode::OK,
+    )
+    .await
 }

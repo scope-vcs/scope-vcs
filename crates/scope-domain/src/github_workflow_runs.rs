@@ -24,7 +24,7 @@ pub struct GitHubWorkflowRunProgress {
 }
 
 impl GitHubWorkflowRun {
-    pub fn scope_branch(&self) -> Option<GitHubBranch> {
+    pub(crate) fn scope_branch(&self) -> Option<GitHubBranch> {
         self.head_branch.as_deref().and_then(GitHubBranch::parse)
     }
 

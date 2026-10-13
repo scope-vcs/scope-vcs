@@ -1,5 +1,5 @@
 use super::{
-    GeneratedIdKind, GeneratedIdSource, RepositoryStore, acquire_aggregate_lock,
+    GeneratedIdKind, RepositoryStore, acquire_aggregate_lock,
     cleanup_queue::{
         claim::claim_pending_repo_storage_cleanup,
         completion::complete_claimed_repo_storage_cleanup,
@@ -59,7 +59,6 @@ impl RepositoryStore {
     pub async fn create_repo_with_init_tokens<F, E>(
         &self,
         command: CreateRepositoryCommand,
-        generated_ids: &dyn GeneratedIdSource,
         cleanup_pending_storage: F,
     ) -> Result<Repository, RepositoryCreationError<E>>
     where
@@ -81,7 +80,7 @@ impl RepositoryStore {
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::internal_message("signed-in user was not persisted"))?
             .try_into_domain()?;
-        let incarnation_id = generate_id(generated_ids, GeneratedIdKind::RepositoryIncarnation)?;
+        let incarnation_id = generate_id(GeneratedIdKind::RepositoryIncarnation)?;
         let repo = create_repo_command(
             &owner,
             &name,
@@ -96,13 +95,8 @@ impl RepositoryStore {
             let claim_tx = self.db.begin().await.map_err(PostgresError::internal)?;
             acquire_aggregate_lock(&claim_tx, "repository", &repo.record.id).await?;
             ensure_repository_absent(&claim_tx, &repo.record.id).await?;
-            let cleanup_claim = claim_pending_repo_storage_cleanup(
-                &claim_tx,
-                &repo.record.id,
-                now_unix,
-                generated_ids,
-            )
-            .await?;
+            let cleanup_claim =
+                claim_pending_repo_storage_cleanup(&claim_tx, &repo.record.id, now_unix).await?;
             claim_tx.commit().await.map_err(PostgresError::internal)?;
 
             if let Some(claim) = cleanup_claim.as_ref() {
@@ -127,7 +121,7 @@ impl RepositoryStore {
                 None => {}
             }
 
-            insert_repository(&tx, &repo, now_unix, generated_ids).await?;
+            insert_repository(&tx, &repo, now_unix).await?;
             tx.commit().await.map_err(PostgresError::internal)?;
             Ok(repo)
         })
@@ -142,29 +136,22 @@ impl RepositoryStore {
         expected_incarnation: &RepositoryIncarnation,
         user_id: &str,
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<String, PostgresError> {
         let repo_id = repo_id(owner, name);
-        let owner = owner.to_string();
-        let name = name.to_string();
-        let user_id = user_id.to_string();
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let repo = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| scope_domain::repo_actions::hidden_repo_not_found(&owner, &name))?;
+            .await?
+            .ok_or_else(|| scope_domain::repo_actions::hidden_repo_not_found(owner, name))?;
         let repo = repository_from_model(&tx, repo).await?;
         if &repo.incarnation() != expected_incarnation {
             return Err(PostgresError::conflict(
                 "repository changed during deletion; retry",
             ));
         }
-        let deleted =
-            delete_locked_repository(&tx, &repo, &user_id, &owner, &name, now_unix, generated_ids)
-                .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        let deleted = delete_locked_repository(&tx, &repo, user_id, owner, name, now_unix).await?;
+        tx.commit().await?;
         Ok(deleted)
     }
 }
@@ -176,7 +163,6 @@ pub(super) async fn delete_locked_repository(
     owner: &str,
     name: &str,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<String, PostgresError> {
     let repo_id = repo.record.id.clone();
     let mutation = delete_repo_command(repo, user_id, owner, name)?;
@@ -196,8 +182,7 @@ pub(super) async fn delete_locked_repository(
     let runs = entities::run::Entity::find()
         .filter(entities::run::Column::RepoId.eq(repo_id.clone()))
         .all(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::run::Model::try_into_domain)
         .collect::<Result<Vec<_>, _>>()?;
@@ -216,18 +201,15 @@ pub(super) async fn delete_locked_repository(
     entities::repository_invite::Entity::delete_many()
         .filter(entities::repository_invite::Column::RepoId.eq(repo_id.clone()))
         .exec(tx)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     entities::repository_member::Entity::delete_many()
         .filter(entities::repository_member::Column::RepoId.eq(repo_id.clone()))
         .exec(tx)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     entities::git_pack_span::Entity::delete_many()
         .filter(entities::git_pack_span::Column::RepoId.eq(repo_id.clone()))
         .exec(tx)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     tx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "DELETE FROM scope_git_segment_references refs
@@ -235,8 +217,7 @@ pub(super) async fn delete_locked_repository(
          WHERE refs.segment_id = uploads.segment_id AND uploads.repo_id = $1",
         [repo_id.clone().into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     tx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_git_segment_uploads
@@ -253,18 +234,16 @@ pub(super) async fn delete_locked_repository(
                 .into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     super::github_pushes::queue_github_branch_deletions_for_repository(tx, &repo_id, now_unix)
         .await?;
     entities::repository::Entity::delete_by_id(repo_id.clone())
         .exec(tx)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     delete_orphaned_workflow_revisions(tx, workflow_digests).await?;
 
-    save_repo_effects(tx, &mutation.effects, now_unix, generated_ids).await?;
-    queue_pending_source_blob_deletion_rows(tx, retained_sources, now_unix, generated_ids).await?;
+    save_repo_effects(tx, &mutation.effects, now_unix).await?;
+    queue_pending_source_blob_deletion_rows(tx, retained_sources, now_unix).await?;
     Ok(mutation.result)
 }
 
@@ -274,8 +253,7 @@ where
 {
     if entities::repository::Entity::find_by_id(repo_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .is_some()
     {
         Err(PostgresError::conflict(format!(
@@ -391,7 +369,6 @@ mod tests {
                 .unwrap(),
             },
             1_700_000_000,
-            &super::super::generated_ids::test_generated_id,
         )
         .await
         .unwrap();
@@ -411,7 +388,6 @@ mod tests {
                         init_tokens: (first_push_token, git_push_token),
                         now_unix: 1_700_000_000,
                     },
-                    &super::super::generated_ids::test_generated_id,
                     move |cleanup| {
                         assert_eq!(cleanup.incarnation.incarnation_id(), "repoi_deleted");
                         cleanup_started_tx.send(()).unwrap();
@@ -443,7 +419,6 @@ mod tests {
                         init_tokens: (first_push_token, git_push_token),
                         now_unix: 1_700_000_000,
                     },
-                    &super::super::generated_ids::test_generated_id,
                     move |_| {
                         second_cleanup_called.store(true, Ordering::SeqCst);
                         Ok::<(), PostgresError>(())
@@ -504,14 +479,7 @@ mod tests {
 
         let error = store
             .repositories()
-            .delete_repo(
-                "owner",
-                "repo",
-                &predecessor,
-                "user_owner",
-                1_700_000_001,
-                &super::super::generated_ids::test_generated_id,
-            )
+            .delete_repo("owner", "repo", &predecessor, "user_owner", 1_700_000_001)
             .await
             .unwrap_err();
 
@@ -541,7 +509,6 @@ mod tests {
                 .unwrap(),
             },
             1_700_000_000,
-            &super::super::generated_ids::test_generated_id,
         )
         .await
         .unwrap();
@@ -550,15 +517,10 @@ mod tests {
         acquire_aggregate_lock(&claim_tx, "repository", "owner/repo")
             .await
             .unwrap();
-        let claim = claim_pending_repo_storage_cleanup(
-            &claim_tx,
-            "owner/repo",
-            1_700_000_000,
-            &super::super::generated_ids::test_generated_id,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        let claim = claim_pending_repo_storage_cleanup(&claim_tx, "owner/repo", 1_700_000_000)
+            .await
+            .unwrap()
+            .unwrap();
         claim_tx.commit().await.unwrap();
 
         entities::repo_storage_cleanup_job::Entity::update_many()
@@ -572,10 +534,7 @@ mod tests {
             .unwrap();
         let _worker_batch = store
             .cleanup()
-            .repo_storage_cleanup_batch(
-                1_700_000_000,
-                &super::super::generated_ids::test_generated_id,
-            )
+            .repo_storage_cleanup_batch(1_700_000_000)
             .await
             .unwrap();
 

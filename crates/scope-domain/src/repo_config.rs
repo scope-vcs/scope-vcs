@@ -178,7 +178,7 @@ pub struct HistoryRewriteRequest {
 }
 
 impl HistoryRewriteRequest {
-    pub fn matches_path(&self, path: &ScopePath) -> bool {
+    pub(crate) fn matches_path(&self, path: &ScopePath) -> bool {
         pattern_matches_path(&self.path, path.as_str())
     }
 }

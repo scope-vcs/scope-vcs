@@ -253,36 +253,13 @@ impl Run {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::runs::workflow::identity::WorkflowPath;
-    use crate::{content::SourceBlob, content_ref::ContentRef};
+    use crate::runs::fixtures::{run, workflow};
 
     #[test]
     fn run_repository_association_comes_from_its_workflow_identity() {
-        let run = Run::new(
-            "run-1",
-            "manual:run-1",
-            WorkflowIdentity::new(
-                "owner/repo",
-                WorkflowPath::parse("/.scope/runs/checks.yml").unwrap(),
-            )
-            .unwrap(),
-            "a".repeat(64),
-            RunTrigger::Manual,
-            Some("user-1".to_string()),
-            RunSource::ephemeral_git_bundle(SourceBlob {
-                content_ref: ContentRef::git_bundle_sha256("b".repeat(64)),
-                sha256: "b".repeat(64),
-                git_oid: "c".repeat(40),
-                git_file_mode: "100644".to_string(),
-                size_bytes: 1,
-            })
-            .unwrap(),
-            1,
-        )
-        .unwrap();
+        let run = run(&workflow());
 
-        assert!(run.belongs_to_repository("owner/repo"));
+        assert!(run.belongs_to_repository("repo-1"));
         assert!(!run.belongs_to_repository("owner/other"));
     }
 }

@@ -1,7 +1,13 @@
 use super::{
-    ensure_request_paths_allowed, new_client_mutation_id, text::discussion_body_with_stdin,
+    ViewId, ensure_request_paths_allowed, new_client_mutation_id, start_view,
+    text::discussion_body_with_stdin,
 };
-use crate::{error::CliError, git_repo::GitRepo, test_support::TempDir};
+use crate::{
+    api::RepositoryActor,
+    error::CliError,
+    git_repo::GitRepo,
+    test_support::{TempDir, commit_all},
+};
 use scope_domain::views::Views;
 use std::{fs, io::Cursor, path::PathBuf};
 
@@ -45,25 +51,19 @@ fn discussion_body_reads_files_without_rewriting_content() {
 #[test]
 fn request_preflight_rejects_protected_add_edit_delete_and_rename_outside_the_full_view() {
     let dir = TempDir::git_repo("request-protected-path-operations", "main");
-    dir.run_git(["config", "user.email", "scope@example.test"]);
-    dir.run_git(["config", "user.name", "Scope Test"]);
     fs::write(dir.path().join("README.md"), "base\n").unwrap();
     fs::create_dir_all(dir.path().join(".scope")).unwrap();
     fs::write(dir.path().join(".scope/edited.md"), "before\n").unwrap();
     fs::write(dir.path().join(".scope/deleted.md"), "delete me\n").unwrap();
     fs::write(dir.path().join(".scope/renamed.md"), "rename me\n").unwrap();
-    dir.run_git(["add", "-A"]);
-    dir.run_git(["commit", "-m", "base"]);
-    let base_oid = git_oid(&dir);
+    let base_oid = commit_all(dir.path(), "base");
 
     fs::write(dir.path().join(".scope/added.md"), "added\n").unwrap();
     fs::write(dir.path().join(".scope/edited.md"), "after\n").unwrap();
     fs::remove_file(dir.path().join(".scope/deleted.md")).unwrap();
     fs::create_dir_all(dir.path().join("docs")).unwrap();
     dir.run_git(["mv", ".scope/renamed.md", "docs/renamed.md"]);
-    dir.run_git(["add", "-A"]);
-    dir.run_git(["commit", "-m", "change protected paths"]);
-    let head_oid = git_oid(&dir);
+    let head_oid = commit_all(dir.path(), "change protected paths");
     let repo = GitRepo {
         root: dir.path().to_path_buf(),
     };
@@ -104,25 +104,17 @@ fn request_preflight_rejects_protected_add_edit_delete_and_rename_outside_the_fu
 #[test]
 fn public_request_preflight_excludes_main_only_protected_paths_after_true_divergence() {
     let dir = TempDir::git_repo("request-current-public-main", "main");
-    dir.run_git(["config", "user.email", "scope@example.test"]);
-    dir.run_git(["config", "user.name", "Scope Test"]);
     fs::write(dir.path().join("README.md"), "base\n").unwrap();
-    dir.run_git(["add", "README.md"]);
-    dir.run_git(["commit", "-m", "base"]);
-    let original_base_oid = git_oid(&dir);
+    let original_base_oid = commit_all(dir.path(), "base");
     dir.run_git(["branch", "request"]);
 
     fs::create_dir_all(dir.path().join(".scope")).unwrap();
     fs::write(dir.path().join(".scope/RULES.md"), "maintainer change\n").unwrap();
-    dir.run_git(["add", ".scope/RULES.md"]);
-    dir.run_git(["commit", "-m", "advance public main"]);
-    let current_main_oid = git_oid(&dir);
+    let current_main_oid = commit_all(dir.path(), "advance public main");
 
     dir.run_git(["checkout", "request"]);
     fs::write(dir.path().join("README.md"), "request change\n").unwrap();
-    dir.run_git(["add", "README.md"]);
-    dir.run_git(["commit", "-m", "request change"]);
-    let head_oid = git_oid(&dir);
+    let head_oid = commit_all(dir.path(), "request change");
     let request = request_summary("public", &original_base_oid, &head_oid);
     let repo = GitRepo {
         root: dir.path().to_path_buf(),
@@ -249,4 +241,67 @@ fn request_summary(
     }))
     .unwrap();
     detail.request
+}
+
+fn access(actor: RepositoryActor, view: &str) -> crate::api::RepositoryAccessResponse {
+    crate::api::RepositoryAccessResponse {
+        actor,
+        view: ViewId::parse(view).unwrap(),
+        can_push: false,
+        can_change_file_visibility: false,
+        can_manage_members: false,
+        can_delete_repo: false,
+    }
+}
+
+fn requested(view: &str) -> Option<ViewId> {
+    Some(ViewId::parse(view).unwrap())
+}
+
+#[test]
+fn request_view_defaults_follow_repository_access() {
+    let views = agent_views();
+    for (actor, view) in [
+        (RepositoryActor::Owner, "private"),
+        (RepositoryActor::Member, "private"),
+        (RepositoryActor::Member, "agent"),
+        (RepositoryActor::Public, "public"),
+    ] {
+        assert_eq!(
+            start_view(&access(actor, view), &views, None).unwrap(),
+            ViewId::parse(view).unwrap()
+        );
+    }
+}
+
+#[test]
+fn requests_start_in_any_view_their_author_can_read() {
+    let views = agent_views();
+    let agent_member = access(RepositoryActor::Member, "agent");
+    let owner = access(RepositoryActor::Owner, "private");
+    for (author, view) in [
+        (&agent_member, "public"),
+        (&owner, "agent"),
+        (&owner, "public"),
+    ] {
+        assert_eq!(
+            start_view(author, &views, requested(view)).unwrap(),
+            ViewId::parse(view).unwrap()
+        );
+    }
+
+    let refusal = |author, view| {
+        let error = start_view(author, &views, requested(view)).unwrap_err();
+        assert_eq!(crate::error::exit_code(&error), 2);
+        error.to_string()
+    };
+    assert!(
+        refusal(&agent_member, "private")
+            .contains("requests in the Private view need an author who can read it")
+    );
+    assert!(refusal(&owner, "ops").contains("this repository has no ops view"));
+    assert!(
+        refusal(&access(RepositoryActor::Public, "public"), "agent")
+            .contains("public contributors can only create requests in the Public view")
+    );
 }

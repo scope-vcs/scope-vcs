@@ -1,7 +1,8 @@
 use super::RepositoryEngine;
 use crate::{
     error::ApiError,
-    git::{GitContext, cache::GitRepoHandle, command::run_git},
+    git::{cache::GitRepoHandle, command::run_git},
+    state::AppState,
 };
 use scope_domain::repository::{
     RepositoryIncarnation,
@@ -16,16 +17,16 @@ pub(crate) struct GitRevision {
 }
 
 impl RepositoryEngine {
-    pub(crate) async fn materialize_revision<C: GitContext>(
+    pub(crate) async fn materialize_revision(
         self: &Arc<Self>,
-        context: &C,
+        state: &AppState,
         incarnation: &RepositoryIncarnation,
         head: &GitHead,
         pack_spans: &[GitPackSpan],
     ) -> Result<GitRevision, ApiError> {
         Ok(GitRevision {
             repository: self
-                .materialize_repository(context, incarnation, head, pack_spans)
+                .materialize_repository(state, incarnation, head, pack_spans)
                 .await?,
             head_oid: head.head_oid.clone(),
         })

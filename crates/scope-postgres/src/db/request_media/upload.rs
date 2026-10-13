@@ -1,10 +1,9 @@
 use super::{
     FinishRequestAttachmentUploadCommand, MediaStore, PrepareRequestAttachmentCommand,
     PreparedRequestAttachment, ReserveUploadPartResult, StorePartResult,
-    StoredRequestAttachmentPart,
     budget::{lock_media_budget, media_usage},
     locks::lock_attachment,
-    persistence::{as_i32, as_i64, attachment_by_id, enum_string},
+    persistence::{as_i32, as_i64, attachment_by_id, enum_string, insert_manifest},
 };
 use crate::{
     db::{
@@ -15,9 +14,9 @@ use crate::{
 };
 use scope_domain::requests::attachments::{
     PrepareRequestAttachmentInput, RequestAttachment, RequestAttachmentLimits,
-    RequestAttachmentPartReceipt, RequestAttachmentState, RequestAttachmentStoredObject,
-    RequestAttachmentTarget, finish_attachment_upload, validate_lease_grant,
-    validate_prepare_attachment,
+    RequestAttachmentPartReceipt, RequestAttachmentStagedPart, RequestAttachmentState,
+    RequestAttachmentStoredObject, RequestAttachmentTarget, RequestMediaObject,
+    finish_attachment_upload, validate_lease_grant, validate_prepare_attachment,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, TransactionTrait};
 
@@ -27,7 +26,7 @@ impl MediaStore {
         &self,
         command: PrepareRequestAttachmentCommand,
     ) -> Result<PreparedRequestAttachment, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -61,8 +60,12 @@ impl MediaStore {
                     "request attachment is being deleted",
                 ));
             }
-            let acknowledged_parts = stored_receipts(&tx, &existing.id).await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            let acknowledged_parts = stored_parts(&tx, &existing.id)
+                .await?
+                .into_iter()
+                .map(|part| part.receipt)
+                .collect();
+            tx.commit().await?;
             return Ok(PreparedRequestAttachment {
                 upload_id: existing.upload_id.clone(),
                 attachment: existing,
@@ -112,7 +115,7 @@ impl MediaStore {
             decision.reserved_derivative_bytes,
         )
         .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(PreparedRequestAttachment {
             upload_id: decision.attachment.upload_id.clone(),
             attachment: decision.attachment,
@@ -127,13 +130,13 @@ impl MediaStore {
         attachment_id: &str,
         upload_id: &str,
         uploader_user_id: &str,
-        part: StoredRequestAttachmentPart,
+        part: RequestAttachmentStagedPart,
         write_token: &str,
         now_unix: u64,
         write_expires_at_unix: u64,
     ) -> Result<ReserveUploadPartResult, PostgresError> {
         validate_lease_grant(write_token, now_unix, write_expires_at_unix)?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let attachment = lock_authorized_upload(&tx, attachment_id, uploader_user_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("request attachment upload not found"))?;
@@ -150,14 +153,14 @@ impl MediaStore {
                 ));
             }
             if existing.stored {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 return Ok(ReserveUploadPartResult::Stored(existing.part));
             }
             if existing
                 .write_expires_at_unix
                 .is_some_and(|expires| expires > now_unix)
             {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 return Ok(ReserveUploadPartResult::Busy);
             }
             if existing.part.object_key == part.object_key {
@@ -176,8 +179,7 @@ impl MediaStore {
                     as_i64(now_unix, "abandoned upload object time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
             tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_upload_parts
@@ -193,9 +195,8 @@ impl MediaStore {
                     as_i64(now_unix, "part reservation time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            .await?;
+            tx.commit().await?;
             return Ok(ReserveUploadPartResult::Write(part));
         }
         tx.execute_raw(Statement::from_sql_and_values(
@@ -217,9 +218,8 @@ impl MediaStore {
                 as_i64(now_unix, "part reservation time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        .await?;
+        tx.commit().await?;
         Ok(ReserveUploadPartResult::Write(part))
     }
 
@@ -235,25 +235,25 @@ impl MediaStore {
         write_token: &str,
         now_unix: u64,
     ) -> Result<StorePartResult, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(attachment) = lock_authorized_upload(&tx, attachment_id, uploader_user_id).await?
         else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(StorePartResult::WriteLeaseLost);
         };
         let existing = part_by_number(&tx, attachment_id, part_number)
             .await?
             .ok_or_else(|| PostgresError::not_found("upload part reservation not found"))?;
         if existing.part.object_key != object_key {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(StorePartResult::WriteLeaseLost);
         }
         if existing.stored {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(StorePartResult::AlreadyRecorded(existing.part));
         }
         if authorize_active_upload(&attachment, upload_id, uploader_user_id, now_unix).is_err() {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(StorePartResult::WriteLeaseLost);
         }
         if existing.write_token.as_deref() != Some(write_token)
@@ -261,7 +261,7 @@ impl MediaStore {
                 .write_expires_at_unix
                 .is_none_or(|expires| expires <= now_unix)
         {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(StorePartResult::WriteLeaseLost);
         }
         let updated = tx
@@ -279,13 +279,12 @@ impl MediaStore {
                     write_token.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if updated.rows_affected() != 1 {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(StorePartResult::WriteLeaseLost);
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(StorePartResult::Recorded)
     }
 
@@ -294,7 +293,7 @@ impl MediaStore {
         &self,
         command: FinishRequestAttachmentUploadCommand,
     ) -> Result<RequestAttachment, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;
@@ -334,11 +333,16 @@ impl MediaStore {
             command.now_unix,
         )?;
         if attachment.state == RequestAttachmentState::Prepared {
-            insert_original_manifest(
+            insert_manifest(
                 &tx,
-                &attachment,
                 &manifest_id,
-                &stored_parts,
+                &attachment.id,
+                None,
+                &RequestMediaObject::from_parts(
+                    attachment.declared_media_type.clone(),
+                    attachment.sha256.clone(),
+                    stored_parts,
+                ),
                 command.now_unix,
             )
             .await?;
@@ -359,8 +363,7 @@ impl MediaStore {
                     as_i64(unbound_expires_at_unix, "unbound expiry")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
             tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_request_media_processing_jobs (
@@ -372,10 +375,9 @@ impl MediaStore {
                     as_i64(command.now_unix, "processing enqueue time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(next)
     }
 }
@@ -389,19 +391,14 @@ async fn target_is_writable<C>(
 where
     C: ConnectionTrait,
 {
-    match target {
-        RequestAttachmentTarget::Description => Ok(policy.permissions.can_edit_identity),
-        RequestAttachmentTarget::Discussion { discussion_id } => {
-            if let Some(discussion_id) = discussion_id {
-                ensure_discussion_belongs_to_request(conn, request_id, discussion_id).await?;
-            }
-            Ok(policy.permissions.can_open_discussion)
-        }
-        RequestAttachmentTarget::Reply { discussion_id } => {
-            ensure_discussion_belongs_to_request(conn, request_id, discussion_id).await?;
-            Ok(policy.permissions.can_reply_to_discussion)
-        }
+    if let RequestAttachmentTarget::Discussion {
+        discussion_id: Some(discussion_id),
     }
+    | RequestAttachmentTarget::Reply { discussion_id } = target
+    {
+        ensure_discussion_belongs_to_request(conn, request_id, discussion_id).await?;
+    }
+    Ok(target.writable_with(&policy.permissions))
 }
 
 async fn ensure_discussion_belongs_to_request<C>(
@@ -418,8 +415,7 @@ where
             "SELECT 1 AS present FROM scope_request_discussions WHERE id = $1 AND request_id = $2",
             [discussion_id.into(), request_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .is_some();
     if exists {
         Ok(())
@@ -460,11 +456,9 @@ where
                 target_json.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::internal_message("attachment target count missing"))?
-        .try_get::<i64>("", "count")
-        .map_err(PostgresError::internal)?;
+        .try_get::<i64>("", "count")?;
     usize::try_from(count).map_err(PostgresError::internal)
 }
 
@@ -489,13 +483,10 @@ where
                 operation_id.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     match row {
         Some(row) => {
-            let id = row
-                .try_get::<String>("", "id")
-                .map_err(PostgresError::internal)?;
+            let id = row.try_get::<String>("", "id")?;
             attachment_by_id(conn, &id).await
         }
         None => Ok(None),
@@ -561,8 +552,7 @@ where
             as_i64(attachment.upload_expires_at_unix, "upload expiry")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -637,7 +627,7 @@ fn authorize_active_upload(
 }
 
 struct UploadPartRow {
-    part: StoredRequestAttachmentPart,
+    part: RequestAttachmentStagedPart,
     stored: bool,
     write_token: Option<String>,
     write_expires_at_unix: Option<u64>,
@@ -661,41 +651,27 @@ where
                 as_i32(part_number, "part number")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     row.map(part_from_row).transpose()
 }
 
 fn part_from_row(row: QueryResult) -> Result<UploadPartRow, PostgresError> {
-    let state = row
-        .try_get::<String>("", "state")
-        .map_err(PostgresError::internal)?;
+    let state = row.try_get::<String>("", "state")?;
     Ok(UploadPartRow {
-        part: StoredRequestAttachmentPart {
+        part: RequestAttachmentStagedPart {
             receipt: RequestAttachmentPartReceipt {
-                part_number: u32::try_from(
-                    row.try_get::<i32>("", "part_number")
-                        .map_err(PostgresError::internal)?,
-                )
-                .map_err(PostgresError::internal)?,
-                size_bytes: u64::try_from(
-                    row.try_get::<i64>("", "plaintext_size_bytes")
-                        .map_err(PostgresError::internal)?,
-                )
-                .map_err(PostgresError::internal)?,
-                sha256: row.try_get("", "sha256").map_err(PostgresError::internal)?,
+                part_number: u32::try_from(row.try_get::<i32>("", "part_number")?)
+                    .map_err(PostgresError::internal)?,
+                size_bytes: u64::try_from(row.try_get::<i64>("", "plaintext_size_bytes")?)
+                    .map_err(PostgresError::internal)?,
+                sha256: row.try_get("", "sha256")?,
             },
-            object_key: row
-                .try_get("", "object_key")
-                .map_err(PostgresError::internal)?,
+            object_key: row.try_get("", "object_key")?,
         },
         stored: state == "Stored",
-        write_token: row
-            .try_get("", "write_token")
-            .map_err(PostgresError::internal)?,
+        write_token: row.try_get("", "write_token")?,
         write_expires_at_unix: row
-            .try_get::<Option<i64>>("", "write_expires_at_unix")
-            .map_err(PostgresError::internal)?
+            .try_get::<Option<i64>>("", "write_expires_at_unix")?
             .map(u64::try_from)
             .transpose()
             .map_err(PostgresError::internal)?,
@@ -705,7 +681,7 @@ fn part_from_row(row: QueryResult) -> Result<UploadPartRow, PostgresError> {
 async fn stored_parts<C>(
     conn: &C,
     attachment_id: &str,
-) -> Result<Vec<StoredRequestAttachmentPart>, PostgresError>
+) -> Result<Vec<RequestAttachmentStagedPart>, PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -715,75 +691,8 @@ where
          WHERE attachment_id = $1 AND state = 'Stored' ORDER BY part_number",
         [attachment_id.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .into_iter()
     .map(|row| part_from_row(row).map(|row| row.part))
     .collect()
-}
-
-async fn stored_receipts<C>(
-    conn: &C,
-    attachment_id: &str,
-) -> Result<Vec<RequestAttachmentPartReceipt>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    Ok(stored_parts(conn, attachment_id)
-        .await?
-        .into_iter()
-        .map(|part| part.receipt)
-        .collect())
-}
-
-async fn insert_original_manifest<C>(
-    conn: &C,
-    attachment: &RequestAttachment,
-    manifest_id: &str,
-    parts: &[StoredRequestAttachmentPart],
-    now_unix: u64,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    conn.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "INSERT INTO scope_request_media_manifests (
-            id, attachment_id, derivative_id, media_type, size_bytes, sha256, completed_at_unix
-         ) VALUES ($1, $2, NULL, $3, $4, $5, $6)",
-        [
-            manifest_id.into(),
-            attachment.id.clone().into(),
-            attachment.declared_media_type.clone().into(),
-            as_i64(attachment.size_bytes, "manifest size")?.into(),
-            attachment.sha256.clone().into(),
-            as_i64(now_unix, "manifest completion time")?.into(),
-        ],
-    ))
-    .await
-    .map_err(PostgresError::internal)?;
-    let mut offset = 0_u64;
-    for part in parts {
-        conn.execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "INSERT INTO scope_request_media_manifest_chunks (
-                manifest_id, chunk_index, object_key, plaintext_offset,
-                plaintext_size_bytes, sha256
-             ) VALUES ($1, $2, $3, $4, $5, $6)",
-            [
-                manifest_id.into(),
-                as_i32(part.receipt.part_number, "chunk index")?.into(),
-                part.object_key.clone().into(),
-                as_i64(offset, "chunk offset")?.into(),
-                as_i64(part.receipt.size_bytes, "chunk size")?.into(),
-                part.receipt.sha256.clone().into(),
-            ],
-        ))
-        .await
-        .map_err(PostgresError::internal)?;
-        offset = offset
-            .checked_add(part.receipt.size_bytes)
-            .ok_or_else(|| PostgresError::internal_message("manifest offset overflow"))?;
-    }
-    Ok(())
 }

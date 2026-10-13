@@ -26,11 +26,10 @@ impl RunStore {
             .order_by_asc(entities::run_job::Column::CapacityRetryFirstRejectedAtUnix)
             .limit(limit)
             .all(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let mut settled = Vec::new();
         for candidate in candidates {
-            let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+            let tx = self.db.begin().await?;
             let active_auto_merge =
                 super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &candidate.run_id)
                     .await?;
@@ -61,7 +60,7 @@ impl RunStore {
                 .await?;
                 settled.push(run);
             }
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
         }
         Ok(settled)
     }

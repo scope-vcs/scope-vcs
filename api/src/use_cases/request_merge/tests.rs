@@ -1,44 +1,18 @@
 use super::*;
-use crate::git::command::run_git_output;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use crate::git::{command::run_git_output, test_repo::TestRepo};
+use std::{fs, path::Path};
 
 #[test]
 fn explicit_request_base_preserves_private_main_files() {
-    let repo = temp_repo_path("preserves-private");
-    run_git(
-        None,
-        &[
-            "init",
-            "--initial-branch=main",
-            repo.to_string_lossy().as_ref(),
-        ],
-        "initializing merge test repository",
-    )
-    .unwrap();
-    run_git(
-        Some(&repo),
-        &["config", "user.name", "Test"],
-        "configuring test name",
-    )
-    .unwrap();
-    run_git(
-        Some(&repo),
-        &["config", "user.email", "test@scope.local"],
-        "configuring test email",
-    )
-    .unwrap();
+    let repo = TestRepo::init();
 
     fs::write(repo.join("public.txt"), "public base\n").unwrap();
-    commit_all(&repo, "public base");
-    let request_base = oid(&repo, "HEAD");
+    repo.commit_all("public base");
+    let request_base = repo.oid("HEAD");
 
     fs::write(repo.join("private.txt"), "private main\n").unwrap();
-    commit_all(&repo, "private main change");
-    let current_main = oid(&repo, "HEAD");
+    repo.commit_all("private main change");
+    let current_main = repo.oid("HEAD");
 
     run_git(
         Some(&repo),
@@ -47,8 +21,8 @@ fn explicit_request_base_preserves_private_main_files() {
     )
     .unwrap();
     fs::write(repo.join("public.txt"), "public request\n").unwrap();
-    commit_all(&repo, "request change");
-    let request_head = oid(&repo, "HEAD");
+    repo.commit_all("request change");
+    let request_head = repo.oid("HEAD");
 
     let merged = merge_main_oid(
         &repo,
@@ -71,42 +45,19 @@ fn explicit_request_base_preserves_private_main_files() {
         parents.split_ascii_whitespace().collect::<Vec<_>>(),
         [current_main.as_str(), request_head.as_str()]
     );
-    let _ = fs::remove_dir_all(repo);
 }
 
 #[test]
 fn explicit_request_base_merges_non_overlapping_file_edits() {
-    let repo = temp_repo_path("content-merge");
-    run_git(
-        None,
-        &[
-            "init",
-            "--initial-branch=main",
-            repo.to_string_lossy().as_ref(),
-        ],
-        "initializing merge test repository",
-    )
-    .unwrap();
-    run_git(
-        Some(&repo),
-        &["config", "user.name", "Test"],
-        "configuring test name",
-    )
-    .unwrap();
-    run_git(
-        Some(&repo),
-        &["config", "user.email", "test@scope.local"],
-        "configuring test email",
-    )
-    .unwrap();
+    let repo = TestRepo::init();
 
     fs::write(repo.join("shared.txt"), "top\nmiddle\nbottom\n").unwrap();
-    commit_all(&repo, "shared base");
-    let request_base = oid(&repo, "HEAD");
+    repo.commit_all("shared base");
+    let request_base = repo.oid("HEAD");
 
     fs::write(repo.join("shared.txt"), "main top\nmiddle\nbottom\n").unwrap();
-    commit_all(&repo, "main edit");
-    let current_main = oid(&repo, "HEAD");
+    repo.commit_all("main edit");
+    let current_main = repo.oid("HEAD");
 
     run_git(
         Some(&repo),
@@ -115,8 +66,8 @@ fn explicit_request_base_merges_non_overlapping_file_edits() {
     )
     .unwrap();
     fs::write(repo.join("shared.txt"), "top\nmiddle\nrequest bottom\n").unwrap();
-    commit_all(&repo, "request edit");
-    let request_head = oid(&repo, "HEAD");
+    repo.commit_all("request edit");
+    let request_head = repo.oid("HEAD");
 
     let merged = merge_main_oid(
         &repo,
@@ -130,42 +81,19 @@ fn explicit_request_base_merges_non_overlapping_file_edits() {
         git_text(&repo, &["show", &format!("{merged}:shared.txt")]),
         "main top\nmiddle\nrequest bottom\n"
     );
-    let _ = fs::remove_dir_all(repo);
 }
 
 #[test]
 fn content_conflict_is_the_only_typed_merge_conflict() {
-    let repo = temp_repo_path("typed-content-conflict");
-    run_git(
-        None,
-        &[
-            "init",
-            "--initial-branch=main",
-            repo.to_string_lossy().as_ref(),
-        ],
-        "initializing merge test repository",
-    )
-    .unwrap();
-    run_git(
-        Some(&repo),
-        &["config", "user.name", "Test"],
-        "configuring test name",
-    )
-    .unwrap();
-    run_git(
-        Some(&repo),
-        &["config", "user.email", "test@scope.local"],
-        "configuring test email",
-    )
-    .unwrap();
+    let repo = TestRepo::init();
 
     fs::write(repo.join("shared.txt"), "base\n").unwrap();
-    commit_all(&repo, "shared base");
-    let request_base = oid(&repo, "HEAD");
+    repo.commit_all("shared base");
+    let request_base = repo.oid("HEAD");
 
     fs::write(repo.join("shared.txt"), "main\n").unwrap();
-    commit_all(&repo, "main edit");
-    let current_main = oid(&repo, "HEAD");
+    repo.commit_all("main edit");
+    let current_main = repo.oid("HEAD");
 
     run_git(
         Some(&repo),
@@ -174,8 +102,8 @@ fn content_conflict_is_the_only_typed_merge_conflict() {
     )
     .unwrap();
     fs::write(repo.join("shared.txt"), "request\n").unwrap();
-    commit_all(&repo, "request edit");
-    let request_head = oid(&repo, "HEAD");
+    repo.commit_all("request edit");
+    let request_head = repo.oid("HEAD");
 
     let failure = merge_main_oid_for_execution(
         &repo,
@@ -196,35 +124,21 @@ fn content_conflict_is_the_only_typed_merge_conflict() {
     )
     .unwrap_err();
     assert!(matches!(non_conflict_failure, MergeMainFailure::Other(_)));
-
-    let _ = fs::remove_dir_all(repo);
 }
 
 #[test]
 fn merge_preserves_rename_executable_mode_and_binary_content() {
-    let repo = temp_repo_path("rename-mode-binary");
-    run_git(
-        None,
-        &["init", "-b", "main", repo.to_string_lossy().as_ref()],
-        "init",
-    )
-    .unwrap();
+    let repo = TestRepo::init();
     run_git(Some(&repo), &["config", "user.name", "Test"], "config name").unwrap();
-    run_git(
-        Some(&repo),
-        &["config", "user.email", "test@scope.local"],
-        "config email",
-    )
-    .unwrap();
     fs::write(repo.join("old.txt"), "one\ntwo\nthree\nfour\nfive\n").unwrap();
     fs::write(repo.join("script.sh"), "#!/bin/sh\n").unwrap();
     fs::write(repo.join("data.bin"), [0, 1, 2, 255]).unwrap();
-    commit_all(&repo, "base");
-    let base = oid(&repo, "HEAD");
+    repo.commit_all("base");
+    let base = repo.oid("HEAD");
 
     fs::rename(repo.join("old.txt"), repo.join("new.txt")).unwrap();
-    commit_all(&repo, "rename on main");
-    let main = oid(&repo, "HEAD");
+    repo.commit_all("rename on main");
+    let main = repo.oid("HEAD");
 
     run_git(
         Some(&repo),
@@ -247,7 +161,7 @@ fn merge_preserves_rename_executable_mode_and_binary_content() {
         "commit request",
     )
     .unwrap();
-    let request = oid(&repo, "HEAD");
+    let request = repo.oid("HEAD");
 
     let merged = merge_main_oid(&repo, &base, &main, &request, "request").unwrap();
     assert_eq!(
@@ -262,39 +176,26 @@ fn merge_preserves_rename_executable_mode_and_binary_content() {
     .unwrap();
     assert_eq!(blob.stdout, [0, 9, 2, 255]);
     assert!(git_text(&repo, &["ls-tree", &merged, "script.sh"]).starts_with("100755 blob "));
-    let _ = fs::remove_dir_all(repo);
 }
 
 #[test]
 fn recorded_base_controls_merge_even_when_git_finds_a_newer_common_ancestor() {
-    let repo = temp_repo_path("recorded-base");
-    run_git(
-        None,
-        &["init", "-b", "main", repo.to_string_lossy().as_ref()],
-        "init",
-    )
-    .unwrap();
+    let repo = TestRepo::init();
     run_git(Some(&repo), &["config", "user.name", "Test"], "config name").unwrap();
-    run_git(
-        Some(&repo),
-        &["config", "user.email", "test@scope.local"],
-        "config email",
-    )
-    .unwrap();
     fs::write(repo.join("shared.txt"), "base\n").unwrap();
-    commit_all(&repo, "recorded base");
-    let recorded_base = oid(&repo, "HEAD");
+    repo.commit_all("recorded base");
+    let recorded_base = repo.oid("HEAD");
     fs::write(repo.join("shared.txt"), "intermediate\n").unwrap();
-    commit_all(&repo, "newer common ancestor");
-    let newer_base = oid(&repo, "HEAD");
+    repo.commit_all("newer common ancestor");
+    let newer_base = repo.oid("HEAD");
     run_git(Some(&repo), &["switch", "-c", "request"], "request branch").unwrap();
     fs::write(repo.join("request.txt"), "request\n").unwrap();
-    commit_all(&repo, "request");
-    let request = oid(&repo, "HEAD");
+    repo.commit_all("request");
+    let request = repo.oid("HEAD");
     run_git(Some(&repo), &["switch", "main"], "main branch").unwrap();
     fs::write(repo.join("shared.txt"), "latest\n").unwrap();
-    commit_all(&repo, "main changed again");
-    let main = oid(&repo, "HEAD");
+    repo.commit_all("main changed again");
+    let main = repo.oid("HEAD");
 
     assert_eq!(
         git_text(&repo, &["merge-base", &main, &request]).trim(),
@@ -305,21 +206,6 @@ fn recorded_base_controls_merge_even_when_git_finds_a_newer_common_ancestor() {
         Err(MergeMainFailure::Conflict(_))
     ));
     assert!(merge_main_oid(&repo, &newer_base, &main, &request, "request").is_ok());
-    let _ = fs::remove_dir_all(repo);
-}
-
-fn commit_all(repo: &Path, message: &str) {
-    run_git(Some(repo), &["add", "."], "staging merge test files").unwrap();
-    run_git(
-        Some(repo),
-        &["commit", "-m", message],
-        "committing merge test files",
-    )
-    .unwrap();
-}
-
-fn oid(repo: &Path, revision: &str) -> String {
-    git_text(repo, &["rev-parse", revision]).trim().to_string()
 }
 
 fn git_text(repo: &Path, args: &[&str]) -> String {
@@ -330,17 +216,4 @@ fn git_text(repo: &Path, args: &[&str]) -> String {
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8(output.stdout).unwrap()
-}
-
-fn temp_repo_path(label: &str) -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "scope-vcs-request-merge-{label}-{}-{nonce}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&path);
-    path
 }

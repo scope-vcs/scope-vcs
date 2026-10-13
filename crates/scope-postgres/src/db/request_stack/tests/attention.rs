@@ -80,7 +80,7 @@ async fn dependencies_preserve_claims_and_future_snoozes_and_only_wake_on_hard_b
         .collect();
     let extended = store
         .requests()
-        .record_request_revision_with_stack(publication, parent.base_version, None, facts, IDS)
+        .record_request_revision_with_stack(publication, parent.base_version, None, facts)
         .await
         .unwrap()
         .request;
@@ -98,7 +98,7 @@ async fn dependencies_preserve_claims_and_future_snoozes_and_only_wake_on_hard_b
         .collect();
     store
         .requests()
-        .record_request_revision_with_stack(publication, extended.base_version, None, facts, IDS)
+        .record_request_revision_with_stack(publication, extended.base_version, None, facts)
         .await
         .unwrap();
     for (child, (before, claim)) in children {
