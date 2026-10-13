@@ -22,7 +22,12 @@ async fn a_restricted_child_warns_about_inherited_workflows_and_needs_its_own_ch
     )
     .unwrap();
     let parent_head = git_head_oid(&source);
-    submit_public_request(&state).await;
+    submit_request(
+        router(state.clone()),
+        REQUEST_ID,
+        &bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
+    )
+    .await;
     expect_json(approve(&state, &parent_head).await, StatusCode::OK).await;
     assert_eq!(push_pass(&state, unix_now()).await, 1);
     let parent_tested = tested_oid(&state, &parent_head).await;
