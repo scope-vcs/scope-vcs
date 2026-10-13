@@ -13,7 +13,8 @@ deployment component name before starting its async runtime, and
 `Telemetry::shutdown` after the runtime returns, which flushes the last batch of
 spans and logs. The web image preloads `web/src/server/instrumentation.ts`,
 built into its own bundle, with `node --import` before the application starts.
-It traces incoming requests and outgoing `fetch` calls, applies the same
+It traces incoming requests, named by their analytics route alias rather than
+the raw path, and outgoing `fetch` calls, and applies the same
 sampling and attribute rules as the Rust services, and exports server logs
 written through `serverLog`. Nitro's close hook flushes the last batch.
 

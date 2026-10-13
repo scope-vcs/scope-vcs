@@ -23,6 +23,7 @@ use std::{collections::HashMap, fmt, time::Duration};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::{
     EnvFilter, Layer as _,
+    filter::{FilterExt as _, filter_fn},
     fmt::{FmtContext, FormatEvent, FormatFields, MakeWriter, format::Writer},
     layer::SubscriberExt as _,
     registry::LookupSpan,
@@ -31,7 +32,7 @@ use tracing_subscriber::{
 
 const EXPORTED_SPANS: &str =
     "off,otel::tracing=trace,api=info,worker=info,scope_=info,aws_sdk_s3::operation=debug";
-const UNEXPORTED_LOGS: &str = "opentelemetry=off,reqwest=off,hyper=off,h2=off,tower=off";
+const UNEXPORTED_LOG_TARGETS: [&str; 5] = ["opentelemetry", "reqwest", "hyper", "h2", "tower"];
 const DEFAULT_POSTHOG_HOST: &str = "https://us.i.posthog.com";
 const INJECTED_EXPORTER_HEADERS: [&str; 3] = [
     "OTEL_EXPORTER_OTLP_HEADERS",
@@ -125,8 +126,13 @@ where
                 .with_filter(EnvFilter::new(EXPORTED_SPANS))
         }))
         .with(exporters.map(|exporters| {
-            OpenTelemetryTracingBridge::new(&exporters.logger)
-                .with_filter(EnvFilter::new(format!("{log_filter},{UNEXPORTED_LOGS}")))
+            OpenTelemetryTracingBridge::new(&exporters.logger).with_filter(
+                EnvFilter::new(log_filter).and(filter_fn(|metadata| {
+                    !UNEXPORTED_LOG_TARGETS
+                        .iter()
+                        .any(|target| metadata.target().starts_with(target))
+                })),
+            )
         }))
 }
 
@@ -394,12 +400,17 @@ mod tests {
     fn exported_logs_join_their_request_trace_without_exporter_internals() {
         let logs = InMemoryLogExporter::default();
         let exporters = exporters(&logs);
-        let subscriber = subscriber("info", Some(&exporters), Captured::default());
+        let subscriber = subscriber(
+            "info,reqwest::connect=debug,opentelemetry_sdk=debug",
+            Some(&exporters),
+            Captured::default(),
+        );
         let trace_id = tracing::subscriber::with_default(subscriber, || {
             let span = tracing::info_span!(target: "scope_test", "request", otel.kind = "server");
             let _entered = span.enter();
             tracing::info!(target: "scope_test", "handled");
-            tracing::info!(target: "reqwest::connect", "connecting");
+            tracing::debug!(target: "reqwest::connect", "connecting");
+            tracing::debug!(target: "opentelemetry_sdk", "exporting");
             current_trace_id().unwrap()
         });
         let emitted = logs.get_emitted_logs().unwrap();
