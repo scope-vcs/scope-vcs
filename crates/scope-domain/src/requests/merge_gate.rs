@@ -175,7 +175,16 @@ pub(super) fn evaluate_request_merge(
             RequestMergeabilityStatus::MissingRequestBranch,
             Some("request branch has not been pushed"),
         ),
-        RequestState::Open if subject.stack_status != super::RequestStackStatus::Main => {
+        RequestState::Open if subject.stack_status.requires_restack() => {
+            return request_stack_mergeability(subject.stack_status).unwrap();
+        }
+        RequestState::Open
+            if subject.stack_status != super::RequestStackStatus::Main
+                && !matches!(
+                    checks,
+                    RequestChecksOutcome::Failed | RequestChecksOutcome::ConfigurationError
+                ) =>
+        {
             return request_stack_mergeability(subject.stack_status).unwrap();
         }
         RequestState::Open => match checks {

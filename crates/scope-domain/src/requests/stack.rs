@@ -23,13 +23,18 @@ pub enum RequestStackStatus {
 
 impl RequestStackStatus {
     pub const fn requires_restack(self) -> bool {
-        matches!(
-            self,
-            Self::ParentRewritten
-                | Self::ParentClosed
-                | Self::AncestorBlocked
-                | Self::IntegrationConflict
-        )
+        self.auto_merge_stop_reason().is_some()
+    }
+
+    pub const fn auto_merge_stop_reason(self) -> Option<super::RequestAutoMergeStopReason> {
+        use super::RequestAutoMergeStopReason;
+        match self {
+            Self::Main | Self::WaitingForParent | Self::ParentExtended => None,
+            Self::ParentRewritten => Some(RequestAutoMergeStopReason::ParentRewritten),
+            Self::ParentClosed => Some(RequestAutoMergeStopReason::ParentClosed),
+            Self::AncestorBlocked => Some(RequestAutoMergeStopReason::AncestorBlocked),
+            Self::IntegrationConflict => Some(RequestAutoMergeStopReason::MergeConflict),
+        }
     }
 
     pub const fn blocking_reason(self) -> Option<&'static str> {
@@ -202,7 +207,7 @@ pub fn classify_request_stack(
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestStackRefreshEffects {
-    pub stop_auto_merge: bool,
+    pub stop_auto_merge: Option<super::RequestAutoMergeStopReason>,
     pub refresh_queue: bool,
 }
 
@@ -228,7 +233,7 @@ pub fn mark_request_integration_conflict(
         return Ok(RequestStackRefreshMutation {
             request,
             effects: RequestStackRefreshEffects {
-                stop_auto_merge: false,
+                stop_auto_merge: None,
                 refresh_queue: false,
             },
         });
@@ -243,7 +248,7 @@ pub fn mark_request_integration_conflict(
     Ok(RequestStackRefreshMutation {
         request,
         effects: RequestStackRefreshEffects {
-            stop_auto_merge: true,
+            stop_auto_merge: Some(super::RequestAutoMergeStopReason::MergeConflict),
             refresh_queue: changed,
         },
     })
@@ -259,7 +264,7 @@ pub fn refresh_request_stack(
         return Ok(RequestStackRefreshMutation {
             request,
             effects: RequestStackRefreshEffects {
-                stop_auto_merge: false,
+                stop_auto_merge: None,
                 refresh_queue: false,
             },
         });
@@ -293,7 +298,7 @@ pub fn refresh_request_stack(
     Ok(RequestStackRefreshMutation {
         request,
         effects: RequestStackRefreshEffects {
-            stop_auto_merge: status.requires_restack(),
+            stop_auto_merge: status.auto_merge_stop_reason(),
             refresh_queue,
         },
     })

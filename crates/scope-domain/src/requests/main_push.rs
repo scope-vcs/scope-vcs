@@ -268,6 +268,9 @@ pub fn start_main_push_request(
             request_id: input.id,
             actor_user_id: input.pusher_user_id,
             actor_can_merge: pusher_can_merge,
+            readiness: super::RequestAutoMergeReadiness::Waiting(
+                super::RequestAutoMergeWaitingReason::CheckEvaluationMissing,
+            ),
             expected_revision_id: revised.revision.id.clone(),
             expected_head_oid: input.head_oid,
             event_id: input.auto_merge_event_id,

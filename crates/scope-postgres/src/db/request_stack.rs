@@ -8,8 +8,8 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
-    REQUEST_STACK_MAX_ANCESTORS, Request, RequestAutoMergeStopReason, RequestBase,
-    RequestParentGitFacts, RequestRevisionGitFacts, refresh_request_stack, stop_request_auto_merge,
+    REQUEST_STACK_MAX_ANCESTORS, Request, RequestBase, RequestParentGitFacts,
+    RequestRevisionGitFacts, refresh_request_stack, stop_request_auto_merge,
     validate_request_stack_base,
 };
 use sea_orm::{
@@ -102,13 +102,7 @@ impl RequestStore {
             expected_base_version,
             now_unix,
         )?;
-        let request = persist_refresh(
-            &tx,
-            mutation,
-            RequestAutoMergeStopReason::MergeConflict,
-            now_unix,
-        )
-        .await?;
+        let request = persist_refresh(&tx, mutation, now_unix).await?;
         let facts = children(&tx, &request.id)
             .await?
             .into_iter()
@@ -355,13 +349,7 @@ pub(super) async fn refresh_children(
             },
             now_unix,
         )?;
-        let updated = persist_refresh(
-            tx,
-            mutation,
-            RequestAutoMergeStopReason::RequestChanged,
-            now_unix,
-        )
-        .await?;
+        let updated = persist_refresh(tx, mutation, now_unix).await?;
         for descendant in children(tx, &updated.id).await? {
             let contains = descendant.stack_status
                 != scope_domain::requests::RequestStackStatus::ParentRewritten;
@@ -374,11 +362,10 @@ pub(super) async fn refresh_children(
 async fn persist_refresh(
     tx: &DatabaseTransaction,
     mutation: scope_domain::requests::RequestStackRefreshMutation,
-    stop_reason: RequestAutoMergeStopReason,
     now_unix: u64,
 ) -> Result<Request, PostgresError> {
     let mut request = mutation.request;
-    if mutation.effects.stop_auto_merge
+    if let Some(stop_reason) = mutation.effects.stop_auto_merge
         && let Some(stored) = lock_active_intent_for_request(tx, &request.id).await?
     {
         let stopped = stop_request_auto_merge(

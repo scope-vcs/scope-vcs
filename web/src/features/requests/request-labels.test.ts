@@ -101,17 +101,24 @@ test('activity describes auto-merge authorization and terminal outcomes', () => 
     })),
     'Will merge aaaaaaaaaaaa when this revision is ready to merge.',
   )
-  assert.equal(
-    requestEventBody(event('AutoMergeStopped', {
-      AutoMergeStopped: {
-        head_oid: 'a'.repeat(40),
-        intent_id: 'intent',
-        reason: 'ChecksFailed',
-        revision_id: 'revision',
-      },
-    })),
-    'Auto-merge stopped for aaaaaaaaaaaa: CI failed.',
-  )
+  for (const [reason, message] of [
+    ['ChecksFailed', 'CI failed'],
+    ['ParentRewritten', 'the parent request was rewritten'],
+    ['ParentClosed', 'the parent request was closed'],
+    ['AncestorBlocked', 'an ancestor request is blocked'],
+  ] as const) {
+    assert.equal(
+      requestEventBody(event('AutoMergeStopped', {
+        AutoMergeStopped: {
+          head_oid: 'a'.repeat(40),
+          intent_id: 'intent',
+          reason,
+          revision_id: 'revision',
+        },
+      })),
+      `Auto-merge stopped for aaaaaaaaaaaa: ${message}.`,
+    )
+  }
   assert.equal(eventKindLabel('AutoMergeFulfilled'), 'Merged automatically')
 })
 

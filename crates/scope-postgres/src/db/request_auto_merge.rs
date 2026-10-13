@@ -3,15 +3,16 @@ use super::{
     generated_ids::generate_id,
     integer_columns::u64_to_i64,
     request_access::{ensure_user_exists, lock_request_repository},
-    request_checks::evaluation_for_head,
+    request_checks::{evaluation_for_head, request_check_results},
     request_revision_rows::latest_revision_for_request,
     request_rows::{insert_request_event_row, request_by_id, save_request_row},
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
-    AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, RequestAutoMergeIntent,
-    RequestAutoMergeMutation, RequestAutoMergeStopReason, RequestCheckEvaluation, RequestViewer,
-    authorize_request_auto_merge, cancel_request_auto_merge, request_policy,
+    AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, MergeGateInput,
+    RequestAutoMergeIntent, RequestAutoMergeMutation, RequestAutoMergeStopReason,
+    RequestCheckEvaluation, RequestViewer, authorize_request_auto_merge, cancel_request_auto_merge,
+    evaluate_merge_gate, request_auto_merge_readiness, request_checks_outcome, request_policy,
     stop_request_auto_merge, stop_request_auto_merge_for_check_run,
 };
 use sea_orm::{
@@ -91,6 +92,31 @@ impl RequestStore {
             .await?
             .ok_or_else(|| PostgresError::conflict("request has no recorded revision"))?;
         let current = lock_active_intent_for_request(&tx, &request.id).await?;
+        let viewer = RequestViewer::new(repo.access.clone(), Some(&command.actor_user_id), false);
+        let actor_can_merge = request_policy(&request, viewer.clone(), &repo.views)
+            .permissions
+            .can_merge;
+        if actor_can_merge {
+            lock_request_check_evidence(&tx, &request.id, &revision.new_head_oid).await?;
+        }
+        let evaluation = evaluation_for_head(&tx, &request.id, &request.head_oid)
+            .await?
+            .filter(|evaluation| {
+                evaluation.revision_id == revision.id && evaluation.matches_request(&request)
+            });
+        let results = request_check_results(&tx, &request.repo_id, evaluation.as_ref()).await?;
+        let gate = evaluate_merge_gate(MergeGateInput::RequestMerge {
+            repository_lifecycle: repo.record.lifecycle_state,
+            subject: (&request).into(),
+            viewer: &viewer,
+            views: &repo.views,
+            checks: request_checks_outcome(
+                &request.id,
+                &request.head_oid,
+                evaluation.as_ref(),
+                &results,
+            ),
+        });
         let mutation = authorize_request_auto_merge(
             &request,
             &revision,
@@ -100,13 +126,8 @@ impl RequestStore {
                 repo_id: request.repo_id.clone(),
                 repository_incarnation_id: repo.record.incarnation_id.clone(),
                 request_id: command.request_id,
-                actor_can_merge: request_policy(
-                    &request,
-                    RequestViewer::new(repo.access.clone(), Some(&command.actor_user_id), false),
-                    &repo.views,
-                )
-                .permissions
-                .can_merge,
+                actor_can_merge,
+                readiness: request_auto_merge_readiness(gate),
                 actor_user_id: command.actor_user_id,
                 expected_revision_id: command.expected_revision_id,
                 expected_head_oid: command.expected_head_oid,
@@ -114,7 +135,6 @@ impl RequestStore {
                 now_unix: command.now_unix,
             },
         )?;
-        lock_request_check_evidence(&tx, &request.id, &revision.new_head_oid).await?;
         persist_new_auto_merge_mutation(&tx, &mutation).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(mutation)

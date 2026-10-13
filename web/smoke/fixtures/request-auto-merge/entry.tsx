@@ -40,17 +40,25 @@ const requestActions: RequestActionController = {
   run: async () => false,
 }
 
+const initialStatus: RequestAutoMergeResponse = {
+  can_cancel: false,
+  can_enable: true,
+  head_oid: headOid,
+  intent: null,
+  request_id: 'request',
+  revision_id: revisionId,
+  waiting_reason: 'CI is still running.',
+}
+const parentWaitingReason = 'Waiting for the parent request to land'
+
 function App() {
-  const [status, setStatus] = useState<RequestAutoMergeResponse>({
-    can_cancel: false,
-    can_enable: true,
-    head_oid: headOid,
-    intent: null,
-    request_id: 'request',
-    revision_id: revisionId,
-    waiting_reason: 'CI is still running.',
-  })
+  const [stackWaiting, setStackWaiting] = useState(false)
+  const [status, setStatus] = useState<RequestAutoMergeResponse>(initialStatus)
   Object.assign(window, {
+    selectStackWaiting: () => {
+      setStackWaiting(true)
+      setStatus({ ...initialStatus, waiting_reason: parentWaitingReason })
+    },
     refreshAutoMerge: () => setStatus((current) => ({
       ...current,
       can_enable: false,
@@ -94,7 +102,7 @@ function App() {
           status: 'Active',
           updated_at_unix: 1,
         },
-        waiting_reason: 'CI is still running.',
+        waiting_reason: stackWaiting ? parentWaitingReason : 'CI is still running.',
       })
       return true
     },
@@ -114,15 +122,26 @@ function App() {
     status,
   }
 
+  const selectedRequest: RequestSummaryResponse = stackWaiting ? {
+    ...request,
+    id: status.request_id,
+    state: 'Open',
+    title: 'Handle quoted paths in child layer',
+    base: { kind: 'request', request_id: 'parent-request', revision_id: 'parent-revision', head_oid: 'b'.repeat(40) },
+    stack_status: 'waiting_for_parent',
+    stack_depth: 2,
+    mergeability: { ...request.mergeability, reason: parentWaitingReason, status: 'WaitingForParent' },
+  } : request
+
   return (
     <main className="min-h-screen bg-background p-5 text-foreground">
-      <h1 className="text-xl font-medium">Handle quoted paths</h1>
+      <h1 className="text-xl font-medium">{selectedRequest.title}</h1>
       <p className="mt-2 text-sm text-muted-foreground">Request fixture</p>
       <RequestLifecycleActions
         actions={requestActions}
         autoMerge={autoMerge}
         className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:mt-6 min-[701px]:justify-start min-[701px]:border-0 min-[701px]:p-0"
-        request={request}
+        request={selectedRequest}
         viewerId="viewer"
       />
     </main>

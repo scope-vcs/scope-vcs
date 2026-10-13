@@ -554,7 +554,7 @@ export type RequestCheckEvaluationState = "no-checks" | "awaiting-approval" | "s
 
 export type RequestAutoMergeIntentStatus = "Active" | "Cancelled" | "Stopped" | "Fulfilled";
 
-export type RequestAutoMergeStopReason = "RequestChanged" | "RequestClosed" | "AccessRevoked" | "ChecksFailed" | "ChecksConfigurationError" | "MergeConflict" | "RequestBranchMissing";
+export type RequestAutoMergeStopReason = "RequestChanged" | "RequestClosed" | "AccessRevoked" | "ChecksFailed" | "ChecksConfigurationError" | "MergeConflict" | "RequestBranchMissing" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked";
 
 export type AuthorizeRequestAutoMergeRequest = { expected_revision_id: string, expected_head_oid: GitOid, };
 

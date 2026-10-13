@@ -4,8 +4,8 @@ use crate::db::{
 };
 use scope_domain::{
     requests::{
-        RecordRequestRevisionInput, RequestActorRole, RequestRevisionGitFacts, RequestStackStatus,
-        StartRequestInput,
+        RecordRequestRevisionInput, RequestActorRole, RequestAutoMergeStopReason,
+        RequestRevisionGitFacts, RequestStackStatus, StartRequestInput,
     },
     views::ViewId,
 };
@@ -535,5 +535,6 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
 mod github_pushes;
 mod integration_conflict;
 
+mod auto_merge;
 mod carried;
 mod reparent;

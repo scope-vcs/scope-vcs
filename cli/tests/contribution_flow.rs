@@ -1,5 +1,7 @@
 #[path = "contribution_flow/checks.rs"]
 mod checks;
+#[path = "contribution_flow/private_auto_merge.rs"]
+mod private_auto_merge;
 #[path = "contribution_flow/private_stacks.rs"]
 mod private_stacks;
 mod support;
@@ -398,6 +400,7 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         "second public revision\n"
     );
     private_stacks::exercise(&contributor, &maintainer, &suffix);
+    private_auto_merge::exercise(&contributor, &maintainer, &suffix);
     checks::exercise(&contributor, &maintainer, &suffix);
 }
 

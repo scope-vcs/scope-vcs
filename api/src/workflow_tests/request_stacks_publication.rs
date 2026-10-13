@@ -3,6 +3,7 @@ use scope_domain::requests::{
     Request as StackRequest, RequestBase, RequestRevision, RequestStackStatus,
 };
 
+mod auto_merge;
 mod carried;
 mod reparent;
 

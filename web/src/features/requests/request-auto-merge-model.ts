@@ -15,6 +15,9 @@ const reasons: Record<RequestAutoMergeStopReason, string> = {
   ChecksConfigurationError: 'the CI configuration is invalid',
   MergeConflict: 'the request conflicts with main',
   RequestBranchMissing: 'the request branch is missing',
+  ParentRewritten: 'the parent request was rewritten',
+  ParentClosed: 'the parent request was closed',
+  AncestorBlocked: 'an ancestor request is blocked',
 }
 
 export const autoMergeStopReasonText = (reason: RequestAutoMergeStopReason) => reasons[reason] ?? 'auto-merge stopped'

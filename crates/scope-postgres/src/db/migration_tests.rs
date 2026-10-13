@@ -37,6 +37,7 @@ mod request_views;
 mod run_attempt_active_indexes;
 mod run_execution_invariants;
 mod run_state_constraints;
+mod stack_auto_merge;
 mod view_ids;
 
 const LATEST_MIGRATIONS: &[&str] = &[
@@ -85,6 +86,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0084_request_review_bases",
     "m0085_request_check_identity",
     "m0086_private_request_stacks",
+    "m0087_stack_auto_merge_stop_reasons",
 ];
 
 pub(super) async fn isolated_database() -> (

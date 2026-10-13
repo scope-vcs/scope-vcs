@@ -73,6 +73,9 @@ pub(super) fn stop_reason_label(reason: RequestAutoMergeStopReason) -> &'static 
         RequestAutoMergeStopReason::ChecksConfigurationError => "CI has a configuration error",
         RequestAutoMergeStopReason::MergeConflict => "the request conflicts with main",
         RequestAutoMergeStopReason::RequestBranchMissing => "the request branch is missing",
+        RequestAutoMergeStopReason::ParentRewritten => "the parent request was rewritten",
+        RequestAutoMergeStopReason::ParentClosed => "the parent request was closed",
+        RequestAutoMergeStopReason::AncestorBlocked => "an ancestor request is blocked",
     }
 }
 
