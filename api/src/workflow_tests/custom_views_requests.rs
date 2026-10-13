@@ -203,7 +203,7 @@ async fn an_agent_request_merge_keeps_its_commits_only_in_the_agent_view() {
         "done",
     )
     .await;
-    privacy::assert_merged_event(&mut events, repo.record.change_version, &canonical_main).await;
+    privacy::assert_merged_event(&mut events, &canonical_main).await;
     assert_eq!(merged["request"]["merged_main_oid"], canonical_main);
     match &repo.graph.commits.last().unwrap().origin {
         LogicalCommitOrigin::RequestMerge {
