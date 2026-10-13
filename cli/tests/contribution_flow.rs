@@ -4,6 +4,8 @@ mod checks;
 mod private_auto_merge;
 #[path = "contribution_flow/private_stacks.rs"]
 mod private_stacks;
+#[path = "contribution_flow/public_stacks.rs"]
+mod public_stacks;
 mod support;
 
 use serde_json::Value;
@@ -399,6 +401,7 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         fs::read_to_string(maintainer_after.join("contribution.txt")).unwrap(),
         "second public revision\n"
     );
+    public_stacks::exercise(&contributor, &maintainer, &suffix);
     private_stacks::exercise(&contributor, &maintainer, &suffix);
     private_auto_merge::exercise(&contributor, &maintainer, &suffix);
     checks::exercise(&contributor, &maintainer, &suffix);
