@@ -161,7 +161,7 @@ fn a_new_request_takes_the_current_branch_only_when_it_holds_scope_main() {
 
     assert!(refusal(&new_main).contains("main cannot become a request branch"));
     dir.run_git(["switch", "docs/rules"]);
-    assert!(refusal(&new_main).contains("does not contain Scope main"));
+    assert!(refusal(&new_main).contains("does not contain the selected base"));
     assert_eq!(
         super::local::adoptable_current_branch(&repo, &old_main).unwrap(),
         "docs/rules"
@@ -232,7 +232,7 @@ fn request_summary(
             "id":"req_one","name":"change","title":"Change",
             "description_markdown":"","author_user_id":"scope_usr_author",
             "author_role":"Member","view":view,
-            "base":{"kind":"main","review_base_oid":base_oid},"base_version":1,"main_ancestor_oid":base_oid,"head_oid":head_oid,"state":"Draft",
+            "base":{"kind":"main","review_base_oid":base_oid},"base_version":1,"stack_status":"main","stack_depth":1,"main_ancestor_oid":base_oid,"head_oid":head_oid,"state":"Draft",
             "activity_version":1,"submitted_at_unix":null,"closed_at_unix":null,
             "closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,
             "merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,

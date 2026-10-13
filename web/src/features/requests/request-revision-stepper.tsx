@@ -45,7 +45,7 @@ export function RequestRevisionStepper({
                   className="grid gap-0.5 px-3 py-2 hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring aria-[current]:bg-muted"
                   onClick={close}
                   params={params}
-                  search={{ revision: revision.id }}
+                  search={(current) => ({ revision: revision.id, comparison: current.comparison, commit: current.comparison === 'commit' ? revision.commits.at(-1)?.oid : undefined })}
                   to="/$owner/$repo/requests/$requestId/changes"
                 >
                   <span className="font-medium text-foreground">
@@ -98,7 +98,7 @@ function StepLink({
     <Link
       className={cn(STEP_CLASS, 'hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring')}
       params={params}
-      search={{ revision: revision.id }}
+      search={(current) => ({ revision: revision.id, comparison: current.comparison, commit: current.comparison === 'commit' ? revision.commits.at(-1)?.oid : undefined })}
       title={`Revision ${revision.position}`}
       to="/$owner/$repo/requests/$requestId/changes"
     >

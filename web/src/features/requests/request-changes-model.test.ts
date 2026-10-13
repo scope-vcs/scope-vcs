@@ -144,6 +144,8 @@ function revision(
   inspection: RequestRevisionListResponse['revisions'][number]['inspection'] = 'Complete',
 ) {
   return {
+    base: { kind: 'main' as const, review_base_oid: 'base' },
+    base_version: 1,
     actor: { handle: 'adam', id: 'user-1' },
     commits: commits.map((oid) => ({
       author: 'Adam <adam@example.com>',

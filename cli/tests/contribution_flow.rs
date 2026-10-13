@@ -1,5 +1,7 @@
 #[path = "contribution_flow/checks.rs"]
 mod checks;
+#[path = "contribution_flow/private_stacks.rs"]
+mod private_stacks;
 mod support;
 
 use serde_json::Value;
@@ -395,6 +397,7 @@ fn two_actor_contribution_flow_agrees_across_cli_api_and_git() {
         fs::read_to_string(maintainer_after.join("contribution.txt")).unwrap(),
         "second public revision\n"
     );
+    private_stacks::exercise(&contributor, &maintainer, &suffix);
     checks::exercise(&contributor, &maintainer, &suffix);
 }
 

@@ -76,6 +76,7 @@ export function parseLoadRequestRevisionsInput(input: unknown) {
   const data = object(input)
   return {
     ...parseRequestParams(data),
+    comparison: data.comparison === undefined ? undefined : parseRequestComparison(data.comparison),
     commit_oid: optionalId(data.commit_oid, 'commit_oid'),
     revision_id: optionalId(data.revision_id, 'revision_id'),
   }
@@ -85,7 +86,8 @@ export function parseLoadRequestRevisionDiffInput(input: unknown) {
   const data = object(input)
   return {
     ...parseRequestParams(data),
-    commit_oid: id(data.commit_oid, 'commit_oid'),
+    comparison: parseRequestComparison(data.comparison),
+    commit_oid: data.comparison === 'commit' ? id(data.commit_oid, 'commit_oid') : optionalId(data.commit_oid, 'commit_oid'),
     revision_id: id(data.revision_id, 'revision_id'),
     path: parseFilePath(data.path),
   }
@@ -281,4 +283,10 @@ export function parseCancelRequestAutoMergeInput(
     { expected_intent_id: id(data.expected_intent_id, 'expected_intent_id') },
   )
   return { ...parseRequestParams(data), ...body }
+}
+
+function parseRequestComparison(input: unknown): 'request' | 'push' | 'commit' {
+  if (input === undefined) return 'request'
+  if (input === 'request' || input === 'push' || input === 'commit') return input
+  throw new Error('comparison must be request, push or commit.')
 }

@@ -54,8 +54,11 @@ test('continuation preserves snapshot consistency and rejects a repeated cursor'
 
 test('many revisions and commits produce only the selected reference query', () => {
   const revisions = {
+    comparison: null,
+    has_earlier_revisions: false,
     review_revision_id: 'revision-19',
     revisions: Array.from({ length: 20 }, (_, i) => ({
+      base: { kind: 'main', review_base_oid: 'base' }, base_version: 1,
       id: `revision-${i}`, position: i, inspection: 'Complete',
       commits: Array.from({ length: 100 }, (_, j) => ({ oid: `commit-${i}-${j}` })),
     })),
@@ -64,7 +67,8 @@ test('many revisions and commits produce only the selected reference query', () 
   assert.equal(selected?.input.revision_id, 'revision-3')
   assert.equal(selected?.input.commit_oid, 'commit-3-7')
   assert.equal(selected?.input.include_revision_anchor, false)
-  const latest = selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request' }, revisions)
+  assert.equal(selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request' }, revisions), null)
+  const latest = selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request', comparison: 'commit', commit_oid: 'commit-19-99' }, revisions)
   assert.equal(latest?.input.commit_oid, 'commit-19-99')
   assert.equal(latest?.input.include_revision_anchor, true)
 })

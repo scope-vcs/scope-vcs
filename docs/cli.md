@@ -108,6 +108,60 @@ scope request merge --request fix-parser --yes
 scope request merge --request fix-parser --auto --yes
 ```
 
+Private maintainers can create a child of an Open request in the same full view:
+
+```sh
+scope request start parser-ui --base parser-core
+scope request start parser-tests --base parser-ui --current-branch
+```
+
+Omitting `--view` inherits the parent's exact view. Start pins its current saved
+revision and head, fetches that head with the CLI session, and creates the child
+branch there. Adoption keeps the current branch and upstream and requires that
+branch to contain the selected parent head. Checkout keeps each child's own
+request branch and upstream; parent objects use `refs/scope/parents/`.
+
+`scope request diff` lets the server select the comparison. Private requests
+default to the complete layer between the saved parent pin and the child's head;
+public and restricted views retain visible push comparisons until aggregate
+review is available for those views. Use `--comparison push` for one push or
+`--comparison commit --revision <revision-id> --commit <full-oid>` for one commit.
+Show and list report the base, depth and dependency status. A child waits for its
+parent to land. An extension that still contains the saved pin is informational:
+ordinary pushes retain that pin and the child keeps its existing review and CI.
+A rewritten or closed parent blocks landing until the author repairs the child.
+
+Manual Git restacking is available before the native restack helper. Start with a
+clean worktree and read the child's saved parent head and the parent's current
+revision and head from these reports. The child’s `result.request.base.head_oid`
+is the saved pin. The parent’s `result.request.head_oid` and
+`result.auto_merge.revision_id` identify its current head and saved revision:
+
+```sh
+scope request show --request parser-ui --json
+scope request show --request parser-core --json
+scope request checkout --request parser-ui
+git branch backup/parser-ui-before-restack
+git fetch scope +refs/heads/parser-core:refs/scope/parents/parser-core
+git rev-parse refs/scope/parents/parser-core
+git rebase --onto <current-parent-full-oid> <saved-parent-full-oid>
+git diff <current-parent-full-oid>...HEAD
+scope request push --base-revision <current-parent-revision-id>
+scope request diff
+```
+
+Replace `scope` with the request's configured remote and verify the fetched head
+matches the parent's reported full OID before rebasing. When Git credentials are
+unavailable, `scope request checkout --request parser-core --branch inspect-parent`
+fetches the parent through the CLI bearer transport; return to the child before
+creating its backup and rebasing. Resolve conflicts with `git add` and
+`git rebase --continue`, or return to the original state with `git rebase --abort`.
+The explicit revision must be the same parent's current saved revision. A race
+with another publication stops the push. Even if rebasing leaves HEAD unchanged,
+`--base-revision` publishes a revision context with a committed retry receipt.
+After a lost response, retry the same head and revision. For a closed parent,
+create a new main-based replacement request; this slice has no reparent helper.
+
 Every push to a request evaluates CI for its current revision. In a repository
 connected to GitHub, CI uses the required check names from repository
 settings, answered by GitHub Actions on the pushed commit; any other repository

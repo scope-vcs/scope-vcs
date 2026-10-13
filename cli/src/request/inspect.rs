@@ -61,6 +61,47 @@ pub(super) fn checkout_request(
             "request {request_id} changed during checkout; no branch was switched; retry scope request checkout --request {request_id}"
         );
     }
+    if let scope_api_contract::RequestBase::Request {
+        request_id: parent_id,
+        head_oid,
+        ..
+    } = &detail.request.base
+    {
+        if !try_run_git_in_repo(
+            git_repo,
+            &["cat-file", "-e", &format!("{head_oid}^{{commit}}")],
+        )? {
+            let parent =
+                get_request(api, &context.target.owner, &context.target.repo, parent_id)?.request;
+            crate::git_repo::fetch_scope_parent_with_bearer(
+                git_repo,
+                &context
+                    .target
+                    .url_for_view(&detail.request.view.clone().into()),
+                &parent.name,
+                parent_id,
+                api.token,
+            )?;
+        }
+        if !try_run_git_in_repo(
+            git_repo,
+            &["cat-file", "-e", &format!("{head_oid}^{{commit}}")],
+        )? {
+            return Err(crate::error::CliError::new(ErrorResponse::new(
+                ErrorCode::Conflict,
+                "the pinned parent object is unavailable; no branch was switched",
+            ))
+            .into());
+        }
+        run_git_in_repo(
+            git_repo,
+            &[
+                "update-ref",
+                &format!("refs/scope/parents/{parent_id}"),
+                head_oid.as_str(),
+            ],
+        )?;
+    }
     let recovery = |step: &str, error: anyhow::Error| -> anyhow::Error {
         crate::error::CliError::partial(
             format!("request {request_id} was fetched, but {step} failed: {error}. After resolving the Git error, retry `scope request checkout --remote {} --request {request_id} --branch {branch}`", context.target.remote),
@@ -159,6 +200,19 @@ pub(super) fn diff_request(
     api: ApiSession<'_>,
     args: RequestDiffArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
+    if args.comparison == Some(args::ComparisonArg::Commit) && args.commit.is_none() {
+        return Err(crate::error::CliError::usage(
+            "--comparison commit requires --commit and --revision",
+        )
+        .into());
+    }
+    if args.commit.is_some()
+        && args
+            .comparison
+            .is_some_and(|mode| mode != args::ComparisonArg::Commit)
+    {
+        return Err(crate::error::CliError::usage("--commit requires --comparison commit").into());
+    }
     let (context, request_id, _) = load_exact_request(git_repo, api, args.target)?;
     let target = api_target(&context, &request_id);
     let revisions = request_revisions(
@@ -166,7 +220,18 @@ pub(super) fn diff_request(
         target,
         args.revision.as_deref(),
         args.commit.as_deref(),
+        args.comparison.map(args::ComparisonArg::wire),
     )?;
+    let comparison_mode = revisions
+        .comparison
+        .as_ref()
+        .map(|comparison| args::ComparisonArg::from(comparison.mode))
+        .or(args.comparison)
+        .unwrap_or(if args.commit.is_some() {
+            args::ComparisonArg::Commit
+        } else {
+            args::ComparisonArg::Push
+        });
     let selected = revisions.review_revision_id.as_deref().and_then(|id| {
         revisions
             .revisions
@@ -190,30 +255,65 @@ pub(super) fn diff_request(
             "Request {request_id}, revision {}",
             terminal_text(&revision.id)
         ));
-        if revision.inspection != RequestRevisionInspectionState::Complete {
+        let inspection = revisions
+            .comparison
+            .as_ref()
+            .map_or(revision.inspection, |comparison| comparison.inspection);
+        if inspection != RequestRevisionInspectionState::Complete {
             lines.push(format!(
                 "Inspection is {:?}; the server has not provided a complete file list.",
-                revision.inspection
+                inspection
             ));
         }
-        for commit in revision
-            .commits
-            .iter()
-            .filter(|commit| args.commit.as_deref().is_none_or(|oid| commit.oid == oid))
-        {
+        if let Some(comparison) = &revisions.comparison {
+            for changed in comparison.files.iter().filter(|file| {
+                args.path.as_ref().is_none_or(|path| {
+                    path.trim_start_matches('/') == file.path.trim_start_matches('/')
+                })
+            }) {
+                let diff = request_file_diff(
+                    api,
+                    RequestFileDiffParams {
+                        target,
+                        revision: &comparison.revision_id,
+                        commit: args.commit.as_deref(),
+                        comparison: comparison_mode.wire(),
+                        path: &changed.path,
+                    },
+                )?;
+                lines.extend(super::diff::file_diff_lines(&diff));
+                files.push(InspectedFile {
+                    commit_oid: comparison
+                        .head_oid
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_default(),
+                    diff,
+                });
+            }
+        }
+        for commit in revision.commits.iter().filter(|commit| {
+            revisions.comparison.is_none()
+                && args.commit.as_deref().is_none_or(|oid| commit.oid == oid)
+        }) {
             lines.push(format!(
                 "{} {}",
                 short_oid(&commit.oid),
                 terminal_text(&commit.message)
             ));
-            if args.path.is_none() {
-                for changed in &commit.files {
+            if args.path.is_none() || comparison_mode == args::ComparisonArg::Push {
+                for changed in commit.files.iter().filter(|file| {
+                    args.path.as_ref().is_none_or(|path| {
+                        path.trim_start_matches('/') == file.path.trim_start_matches('/')
+                    })
+                }) {
                     let diff = request_file_diff(
                         api,
                         RequestFileDiffParams {
                             target,
                             revision: &revision.id,
-                            commit: &commit.oid,
+                            commit: Some(&commit.oid),
+                            comparison: comparison_mode.wire(),
                             path: &changed.path,
                         },
                     )?;
@@ -228,13 +328,16 @@ pub(super) fn diff_request(
                 lines.push("  File list is truncated.".to_string());
             }
         }
-        if let (Some(commit), Some(path)) = (args.commit.as_deref(), args.path.as_deref()) {
+        if revisions.comparison.is_none()
+            && let (Some(commit), Some(path)) = (args.commit.as_deref(), args.path.as_deref())
+        {
             let diff = request_file_diff(
                 api,
                 RequestFileDiffParams {
                     target,
                     revision: &revision.id,
-                    commit,
+                    commit: Some(commit),
+                    comparison: comparison_mode.wire(),
                     path,
                 },
             )?;

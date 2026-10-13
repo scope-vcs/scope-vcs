@@ -4,6 +4,18 @@ Dogfooding should expose weaknesses in Scope's request lifecycle and verify thei
 fixes. A successful mirrored push proves only the part of the lifecycle it
 exercised. GitHub remains authoritative for this repository's merges and releases.
 
+Private stack exercises use the seeded local service or a designated native
+Scope repository. The [CLI workflow](cli.md#contribute-and-review) covers pinned
+start, child review, manual restacking and `push --base-revision`. Inspect a parent
+extension without repinning, then exercise rewrite recovery and a lost response
+followed by parent landing. A committed revision receipt must recover even when
+the live child has already retargeted to main.
+
+A released service must support the request-base Git headers before this workflow
+can exercise hosted publication. Record a missing deployed capability as a
+Scope dogfood limitation; it does not block GitHub delivery. Do not start Scope
+runs or use mirrored main for native stack landing.
+
 ## Choose the next exercise from the missing evidence
 
 Use a real contribution for ordinary setup, push, revision, review, and recovery

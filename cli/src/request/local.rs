@@ -106,17 +106,19 @@ pub(super) fn push_request_head(
         expected_head_oid,
         session_token,
     )
-    .map_err(|error| {
-        if error.is::<StaleRefLease>() {
-            CliError::new(ErrorResponse::new(
-                ErrorCode::Conflict,
-                STALE_REQUEST_PUSH_ERROR,
-            ))
-            .into()
-        } else {
-            error.context(format!("push request branch for {request_id}"))
-        }
-    })
+    .map_err(|error| request_push_error(error, request_id))
+}
+
+pub(super) fn request_push_error(error: anyhow::Error, request_id: &str) -> anyhow::Error {
+    if error.is::<StaleRefLease>() {
+        CliError::new(ErrorResponse::new(
+            ErrorCode::Conflict,
+            STALE_REQUEST_PUSH_ERROR,
+        ))
+        .into()
+    } else {
+        error.context(format!("push request branch for {request_id}"))
+    }
 }
 
 pub(super) fn last_seen_request_head(
@@ -370,7 +372,7 @@ pub(super) fn adoptable_current_branch(
     }
     if !try_run_git_in_repo(git_repo, &["merge-base", "--is-ancestor", base_oid, "HEAD"])? {
         return Err(crate::error::CliError::usage(format!(
-            "branch '{branch}' does not contain Scope main at {}; merge or rebase onto it, then retry",
+            "branch '{branch}' does not contain the selected base at {}; merge or rebase onto it, then retry",
             short_oid(base_oid)
         ))
         .into());
@@ -408,10 +410,6 @@ pub(super) fn update_request_remote_ref(
 ) -> anyhow::Result<()> {
     let remote_ref = request_remote_ref(&target.remote, request_name);
     run_git_in_repo(git_repo, &["update-ref", &remote_ref, request_head_oid])
-}
-
-pub(super) fn remote_main_ref(remote: &str) -> String {
-    format!("refs/remotes/{remote}/{DEFAULT_SCOPE_BRANCH}")
 }
 
 pub(super) fn request_remote_ref(remote: &str, request_name: &str) -> String {

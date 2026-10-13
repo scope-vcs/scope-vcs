@@ -12,6 +12,7 @@ pub struct RequestTarget<'a> {
 }
 
 pub struct StartRequestParams<'a> {
+    pub base: Option<RequestBase>,
     pub owner: &'a str,
     pub repo: &'a str,
     pub name: String,
@@ -122,11 +123,15 @@ pub fn request_revisions(
     target: RequestTarget<'_>,
     revision: Option<&str>,
     commit: Option<&str>,
+    comparison: Option<&str>,
 ) -> anyhow::Result<RequestRevisionListResponse> {
     let mut request = api.request(
         reqwest::Method::GET,
         routes::repo_request_revisions(target.owner, target.repo, target.request_id),
     );
+    if let Some(comparison) = comparison {
+        request = request.query(&[("comparison", comparison)]);
+    }
     if let Some(revision) = revision {
         request = request.query(&[("revision", revision)]);
     }
@@ -145,7 +150,8 @@ pub fn request_revisions(
 pub struct RequestFileDiffParams<'a> {
     pub target: RequestTarget<'a>,
     pub revision: &'a str,
-    pub commit: &'a str,
+    pub commit: Option<&'a str>,
+    pub comparison: &'a str,
     pub path: &'a str,
 }
 
@@ -156,15 +162,23 @@ pub fn request_file_diff(
     execute(
         api.request(
             reqwest::Method::GET,
-            routes::repo_request_revision_commit_file_diff(
-                params.target.owner,
-                params.target.repo,
-                params.target.request_id,
-                params.revision,
-                params.commit,
-            ),
+            match params.commit {
+                Some(commit) => routes::repo_request_revision_commit_file_diff(
+                    params.target.owner,
+                    params.target.repo,
+                    params.target.request_id,
+                    params.revision,
+                    commit,
+                ),
+                None => routes::repo_request_revision_file_diff(
+                    params.target.owner,
+                    params.target.repo,
+                    params.target.request_id,
+                    params.revision,
+                ),
+            },
         )
-        .query(&[("path", params.path)]),
+        .query(&[("path", params.path), ("comparison", params.comparison)]),
         format!(
             "inspect request file diff {} for {}/{}",
             params.target.request_id, params.target.owner, params.target.repo
@@ -235,11 +249,27 @@ pub fn start_request(
     execute(
         api.request(reqwest::Method::POST, routes::repo_requests(owner, repo))
             .json(&StartRequestRequest {
+                base: params.base,
                 name: params.name,
                 title: params.title,
                 view: params.view,
             }),
         format!("start request for {owner}/{repo}"),
+    )
+}
+
+pub fn request_revision_context(
+    api: ApiSession<'_>,
+    target: RequestTarget<'_>,
+    body: &RequestRevisionContextRequest,
+) -> anyhow::Result<RequestRevisionContextResponse> {
+    execute(
+        api.request(
+            reqwest::Method::POST,
+            routes::repo_request_revision_context(target.owner, target.repo, target.request_id),
+        )
+        .json(body),
+        format!("publish review context for request {}", target.request_id),
     )
 }
 

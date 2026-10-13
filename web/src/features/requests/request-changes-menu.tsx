@@ -95,6 +95,15 @@ function RequestChangesMenuPanel({
         </search>
       )}
     >
+      <Link
+        className="flex items-center gap-2 border-b border-border px-3 py-2.5 text-xs font-medium hover:bg-muted"
+        onClick={onNavigate}
+        params={params}
+        search={{}}
+        to="/$owner/$repo/requests/$requestId/changes"
+      >
+        <GitCommit className="size-3.5" /> Current changes
+      </Link>
       {resource.status === 'failed' ? (
         <PanelState tone="error">
           <span>{resource.error}</span>
@@ -120,7 +129,7 @@ function RequestChangesMenuPanel({
                 className={MENU_LIST_ROW_CLASS}
                 onClick={onNavigate}
                 params={params}
-                search={{ revision: push.id }}
+                search={{ revision: push.id, comparison: 'push' }}
                 title={push.note ?? undefined}
                 to="/$owner/$repo/requests/$requestId/changes"
               >

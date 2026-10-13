@@ -8,7 +8,7 @@ import { useRequestChangesResource } from '@/features/requests/use-request-chang
 const originalViewer = 'user_clerk_original'
 const initial = {
   viewerId: originalViewer,
-  revisions: { revisions: [], review_revision_id: 'server-seed' } as RequestRevisionListResponse,
+  revisions: { comparison: null, has_earlier_revisions: false, revisions: [], review_revision_id: 'server-seed' } satisfies RequestRevisionListResponse,
   discussionReferences: { commitKey: null, page: null },
 }
 
@@ -20,7 +20,7 @@ export function ChangesResourceFixture() {
   const identity = requestChangesSelectionIdentity(`${viewerId}:${access}`, 'request-fixture')
   const load = useCallback(async () => {
     setLoads(count => count + 1)
-    return { revisions: [], review_revision_id: `${viewerId}:${access}` } as RequestRevisionListResponse
+    return { comparison: null, has_earlier_revisions: false, revisions: [], review_revision_id: `${viewerId}:${access}` } satisfies RequestRevisionListResponse
   }, [access, viewerId])
   return <section>
     <h2>Changes resource</h2>

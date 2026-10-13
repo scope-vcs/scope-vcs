@@ -5,7 +5,7 @@ use std::time::Duration;
 
 const GIT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const MAX_GIT_STDOUT_BYTES: usize = 16 * 1024 * 1024;
-const GIT_STALE_LEASE_STATUS: &str = "(stale info)";
+pub(super) const GIT_STALE_LEASE_STATUS: &str = "(stale info)";
 
 pub fn push_head_with_bearer(
     destination: &str,
@@ -274,7 +274,7 @@ pub fn git_fetch_refs_auth_plan(
     )
 }
 
-fn git_auth_plan(
+pub(super) fn git_auth_plan(
     args: Vec<String>,
     destination: &str,
     headers: &[String],
@@ -296,13 +296,13 @@ fn git_auth_plan(
     GitCommandPlan { args, env }
 }
 
-fn inherited_git_config_count() -> Option<usize> {
+pub(super) fn inherited_git_config_count() -> Option<usize> {
     env::var("GIT_CONFIG_COUNT")
         .ok()
         .and_then(|value| value.parse().ok())
 }
 
-fn git_command(plan: GitCommandPlan, cwd: Option<&Path>) -> Command {
+pub(super) fn git_command(plan: GitCommandPlan, cwd: Option<&Path>) -> Command {
     let mut command = Command::new("git");
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
@@ -314,7 +314,7 @@ fn git_command(plan: GitCommandPlan, cwd: Option<&Path>) -> Command {
     command
 }
 
-fn run_git_plan_output(
+pub(super) fn run_git_plan_output(
     plan: GitCommandPlan,
     cwd: Option<&Path>,
     context: &str,
@@ -327,7 +327,7 @@ fn run_git_plan_output(
     finish_git_plan_output(output, failure, retry_safety)
 }
 
-fn finish_git_plan_output(
+pub(super) fn finish_git_plan_output(
     output: Output,
     failure: &str,
     retry_safety: GitRetrySafety,

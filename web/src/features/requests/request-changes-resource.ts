@@ -8,16 +8,16 @@ function requestChangesIdentity(scope: string, requestId: string) {
   return `${scope}\0${requestId}`
 }
 
-export function requestChangesSelectionIdentity(scope: string, requestId: string, revision?: string, commit?: string) {
-  return `${requestChangesIdentity(scope, requestId)}\0${revision ?? ''}\0${commit ?? ''}`
+export function requestChangesSelectionIdentity(scope: string, requestId: string, revision?: string, commit?: string, comparison = commit ? 'commit' : 'default') {
+  return `${requestChangesIdentity(scope, requestId)}\0${revision ?? ''}\0${comparison}\0${commit ?? ''}`
 }
 
 export function retainPinnedRequestChanges(
   scope: string,
   requestId: string,
-  pin: { revision?: string; commit?: string },
+  pin: { revision?: string; commit?: string; comparison?: string },
   revisions: RequestRevisionListResponse,
 ) {
-  const identity = requestChangesSelectionIdentity(scope, requestId, pin.revision, pin.commit)
+  const identity = requestChangesSelectionIdentity(scope, requestId, pin.revision, pin.commit, pin.comparison)
   requestChangesResource.seed(identity, revisions)
 }

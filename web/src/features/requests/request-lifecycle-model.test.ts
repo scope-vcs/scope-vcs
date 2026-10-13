@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { RequestSummaryResponse } from '@/api/types.generated'
 import {
   canMergeRequest,
-  checksHoldRequestMerge,
+  requestMergeHeld,
   hasRequestAutoMergeActions,
   hasRequestLifecycleActions,
   requestShowsInvitees,
@@ -14,11 +14,11 @@ import { repoViews } from '../../api/repo-views'
 test('only a ready request merges, and checks hold the merge from a viewer who can merge instead of hiding it', () => {
   assert.equal(canMergeRequest(request('Ready')), true)
   assert.equal(canMergeRequest(request('ChecksPending')), false)
-  assert.equal(checksHoldRequestMerge(request('ChecksPending')), true)
-  assert.equal(checksHoldRequestMerge(request('ChecksAwaitingApproval')), true)
-  assert.equal(checksHoldRequestMerge(request('ChecksNotEvaluated')), true)
-  assert.equal(checksHoldRequestMerge(request('Ready')), false)
-  assert.equal(checksHoldRequestMerge(request('ChecksFailed', false)), false)
+  assert.equal(requestMergeHeld(request('ChecksPending')), true)
+  assert.equal(requestMergeHeld(request('ChecksAwaitingApproval')), true)
+  assert.equal(requestMergeHeld(request('ChecksNotEvaluated')), true)
+  assert.equal(requestMergeHeld(request('Ready')), false)
+  assert.equal(requestMergeHeld(request('ChecksFailed', false)), false)
   assert.equal(hasRequestLifecycleActions(request('ChecksFailed')), true)
   assert.equal(hasRequestLifecycleActions(request('ChecksFailed', false)), false)
 })
