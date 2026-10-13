@@ -1,15 +1,15 @@
 use super::*;
 use anyhow::Context as _;
 use std::{
-    collections::{HashMap, HashSet},
-    sync::Mutex,
+    collections::HashMap,
+    sync::{Mutex, Weak},
     time::Duration,
 };
 
 const TEMPLATE_SCHEMA: &str = "scope_test_template";
 const EXIT_CLEANUP_TIMEOUT: Duration = Duration::from_secs(90);
 
-type ProcessDatabases = Mutex<HashMap<String, HashSet<String>>>;
+type ProcessDatabases = Mutex<HashMap<String, HashMap<String, Weak<DatabaseConnection>>>>;
 static PROCESS_DATABASES: OnceLock<ProcessDatabases> = OnceLock::new();
 static EXIT_HOOK: OnceLock<Result<(), i32>> = OnceLock::new();
 
@@ -49,6 +49,12 @@ async fn clone_test_database(target: &TestDatabaseTarget) -> anyhow::Result<Arc<
             return Err(error.into());
         }
     };
+
+    register_process_database(
+        &target.database_url,
+        &database_name,
+        Arc::downgrade(&database),
+    )?;
 
     Ok(Arc::new(TestSchemaLease {
         database,
@@ -117,7 +123,7 @@ async fn create_database(
     database_name: &str,
     template_name: &str,
 ) -> anyhow::Result<()> {
-    register_process_database(admin_url, database_name)?;
+    register_process_database(admin_url, database_name, Weak::new())?;
     let admin = match Database::connect(admin_url).await {
         Ok(admin) => admin,
         Err(error) => {
@@ -151,7 +157,11 @@ async fn create_database(
     Ok(())
 }
 
-fn register_process_database(admin_url: &str, database_name: &str) -> anyhow::Result<()> {
+fn register_process_database(
+    admin_url: &str,
+    database_name: &str,
+    database: Weak<DatabaseConnection>,
+) -> anyhow::Result<()> {
     match EXIT_HOOK.get_or_init(|| {
         let result = unsafe { libc::atexit(cleanup_process_databases_at_exit) };
         (result == 0).then_some(()).ok_or(result)
@@ -165,7 +175,7 @@ fn register_process_database(admin_url: &str, database_name: &str) -> anyhow::Re
         .expect("test database registry should not be poisoned")
         .entry(admin_url.to_owned())
         .or_default()
-        .insert(database_name.to_owned());
+        .insert(database_name.to_owned(), database);
     Ok(())
 }
 
@@ -186,7 +196,9 @@ fn unregister_process_database(admin_url: &str, database_name: &str) {
 }
 
 extern "C" fn cleanup_process_databases_at_exit() {
-    let _ = std::panic::catch_unwind(cleanup_process_databases);
+    if std::panic::catch_unwind(cleanup_process_databases).is_err() {
+        eprintln!("PostgreSQL test database process cleanup panicked");
+    }
 }
 
 fn cleanup_process_databases() {
@@ -196,37 +208,64 @@ fn cleanup_process_databases() {
     }
     let mut servers = databases
         .iter()
-        .map(|(admin_url, _)| admin_url.clone())
+        .map(|(admin_url, _, _)| admin_url.clone())
         .collect::<Vec<_>>();
     servers.sort_unstable();
     servers.dedup();
 
-    let completed = run_test_future(async move {
+    let cleanup = run_test_future(async move {
         tokio::time::timeout(EXIT_CLEANUP_TIMEOUT, async move {
             let mut cleanups = tokio::task::JoinSet::new();
-            for (admin_url, database_name) in databases {
+            for (admin_url, database_name, database) in databases {
                 cleanups.spawn(async move {
-                    drop_database(&admin_url, &database_name).await;
+                    let result = async {
+                        if let Some(database) = database.upgrade() {
+                            drop(database.get_postgres_connection_pool().close());
+                        }
+                        try_drop_database(&admin_url, &database_name).await
+                    }
+                    .await;
+                    (database_name, result)
                 });
             }
-            while cleanups.join_next().await.is_some() {}
+            let mut failures = 0;
+            while let Some(cleanup) = cleanups.join_next().await {
+                match cleanup {
+                    Ok((_, Ok(()))) => {}
+                    Ok((name, Err(error))) => {
+                        failures += 1;
+                        eprintln!("test database cleanup failed for {name}: {error}");
+                    }
+                    Err(error) => {
+                        failures += 1;
+                        eprintln!("test database cleanup task failed: {error}");
+                    }
+                }
+            }
+            failures
         })
         .await
-        .is_ok()
     });
-    if !completed {
-        let remaining = registered_process_databases();
-        let names = remaining
-            .iter()
-            .map(|(_, name)| name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        eprintln!(
-            "PostgreSQL test database cleanup exceeded {} seconds with {} process-owned databases still registered: {names}. A later test process sweeps them once they are an hour old",
-            EXIT_CLEANUP_TIMEOUT.as_secs(),
-            remaining.len()
-        );
-        return;
+    match cleanup {
+        Ok(0) => {}
+        Ok(failures) => {
+            eprintln!("PostgreSQL test database process cleanup failed for {failures} tasks");
+            return;
+        }
+        Err(_) => {
+            let remaining = registered_process_databases();
+            let names = remaining
+                .iter()
+                .map(|(_, name, _)| name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            eprintln!(
+                "PostgreSQL test database cleanup exceeded {} seconds with {} process-owned databases still registered: {names}. A later test process sweeps them once they are an hour old",
+                EXIT_CLEANUP_TIMEOUT.as_secs(),
+                remaining.len()
+            );
+            return;
+        }
     }
     run_test_future(async move {
         let deadline = tokio::time::Instant::now() + stale_cleanup::SWEEP_BUDGET;
@@ -238,7 +277,7 @@ fn cleanup_process_databases() {
     });
 }
 
-fn registered_process_databases() -> Vec<(String, String)> {
+fn registered_process_databases() -> Vec<(String, String, Weak<DatabaseConnection>)> {
     let Some(databases) = PROCESS_DATABASES.get() else {
         return Vec::new();
     };
@@ -246,7 +285,11 @@ fn registered_process_databases() -> Vec<(String, String)> {
         .lock()
         .expect("test database registry should not be poisoned")
         .iter()
-        .flat_map(|(admin_url, names)| names.iter().map(|name| (admin_url.clone(), name.clone())))
+        .flat_map(|(admin_url, names)| {
+            names
+                .iter()
+                .map(|(name, database)| (admin_url.clone(), name.clone(), database.clone()))
+        })
         .collect()
 }
 
@@ -281,13 +324,22 @@ async fn try_drop_database(admin_url: &str, database_name: &str) -> anyhow::Resu
         .await
         .expect("test database cleanup semaphore should stay open");
     let admin = Database::connect(admin_url).await?;
-    let drop_result = execute(
-        &admin,
-        format!(
-            "DROP DATABASE IF EXISTS {} WITH (FORCE)",
-            quote_pg_ident(database_name)
-        ),
-    )
+    let drop_result = async {
+        admin
+            .query_all_raw(Statement::from_sql_and_values(
+                admin.get_database_backend(),
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+                 WHERE datname = $1 AND usename = current_user
+                 AND backend_type = 'client backend' AND pid <> pg_backend_pid()",
+                [database_name.into()],
+            ))
+            .await?;
+        execute(
+            &admin,
+            format!("DROP DATABASE IF EXISTS {}", quote_pg_ident(database_name)),
+        )
+        .await
+    }
     .await;
     let close_result = admin.close().await;
     drop_result?;
@@ -314,6 +366,7 @@ fn unique_database_name(kind: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sea_orm::sqlx::Connection as _;
 
     const EXIT_CLEANUP_CHILD: &str = "SCOPE_TEST_DATABASE_EXIT_CLEANUP_CHILD";
 
@@ -389,18 +442,62 @@ mod tests {
 
     #[test]
     fn process_exit_removes_only_its_registered_databases() {
-        if std::env::var_os(EXIT_CLEANUP_CHILD).is_some() {
-            let store =
-                connect_postgres_test_store(&TestDatabaseTarget::required().unwrap()).unwrap();
+        if let Some(mode) = std::env::var_os(EXIT_CLEANUP_CHILD) {
+            let target = TestDatabaseTarget::required().unwrap();
+            let store = connect_postgres_test_store(&target).unwrap();
+            if mode == "orphaned-client" {
+                let name = orphaned_client_with_idle_connection(&store, &target);
+                cleanup_process_databases();
+                let admin_url = target.database_url.clone();
+                let database_name = name.clone();
+                let absent = run_test_future(async move {
+                    let admin = Database::connect(&admin_url).await.unwrap();
+                    let row = admin.query_one_raw(Statement::from_sql_and_values(
+                        admin.get_database_backend(),
+                        "SELECT NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS absent",
+                        [database_name.into()],
+                    )).await.unwrap().unwrap();
+                    let absent = row.try_get::<bool>("", "absent").unwrap();
+                    admin.close().await.unwrap();
+                    absent
+                });
+                unregister_process_database(&target.database_url, &name);
+                assert!(
+                    absent,
+                    "process cleanup left owned database {name} after its checked-out backend exited"
+                );
+                assert!(store.db.get_postgres_connection_pool().is_closed());
+            }
+            if mode == "pool-close" {
+                cleanup_process_databases();
+                assert!(
+                    store.db.get_postgres_connection_pool().is_closed(),
+                    "process cleanup left the registered database pool open"
+                );
+            }
             std::mem::forget(store);
             return;
         }
 
         let target = TestDatabaseTarget::required().unwrap();
+        let (_, pool_child) = cleanup_child(&target, "pool-close");
+        assert!(
+            pool_child.status.success(),
+            "pool cleanup child failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&pool_child.stdout),
+            String::from_utf8_lossy(&pool_child.stderr)
+        );
+        let (_, orphan_child) = cleanup_child(&target, "orphaned-client");
+        assert!(
+            orphan_child.status.success(),
+            "orphaned client cleanup child failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&orphan_child.stdout),
+            String::from_utf8_lossy(&orphan_child.stderr)
+        );
         let external_database = unique_database_name("external_process");
         let admin_url = target.database_url.clone();
         let external_name = external_database.clone();
-        run_test_future(async move {
+        let mut external_connection = run_test_future(async move {
             let admin = Database::connect(&admin_url).await.unwrap();
             execute(
                 &admin,
@@ -412,27 +509,28 @@ mod tests {
             .await
             .unwrap();
             admin.close().await.unwrap();
+            sea_orm::sqlx::PgConnection::connect(&database_url(&admin_url, &external_name).unwrap())
+                .await
+                .unwrap()
         });
 
-        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
-        command
-            .arg("--exact")
-            .arg(
-                "db::test_support::database_templates::tests::process_exit_removes_only_its_registered_databases",
-            )
-            .env(EXIT_CLEANUP_CHILD, "1")
-            .env("SCOPE_TEST_DATABASE_URL", &target.database_url)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        let child = command.spawn().unwrap();
-        let child_id = child.id();
-        let child = child.wait_with_output().unwrap();
+        let (child_id, child) = cleanup_child(&target, "exit");
         assert!(
             child.status.success(),
             "cleanup child failed:\nstdout:\n{}\nstderr:\n{}",
             String::from_utf8_lossy(&child.stdout),
             String::from_utf8_lossy(&child.stderr)
         );
+
+        let external_value = run_test_future(async move {
+            let value: (i32,) = sea_orm::sqlx::query_as("SELECT 1")
+                .fetch_one(&mut external_connection)
+                .await
+                .unwrap();
+            external_connection.close().await.unwrap();
+            value.0
+        });
+        assert_eq!(external_value, 1);
 
         let admin_url = target.database_url.clone();
         let external_name = external_database.clone();
@@ -477,7 +575,76 @@ mod tests {
                 |name| !name.starts_with(&format!("scope_test_db_{child_id}_"))
                     && !name.starts_with(&format!("scope_test_template_{child_id}_"))
             ),
-            "cleanup child left a registered database behind: {databases:?}"
+            "cleanup child left a registered database behind: {databases:?}\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&child.stdout),
+            String::from_utf8_lossy(&child.stderr)
         );
+    }
+
+    fn orphaned_client_with_idle_connection(
+        store: &MetadataStore,
+        target: &TestDatabaseTarget,
+    ) -> String {
+        let database = Arc::clone(&store.db);
+        let admin_url = target.database_url.clone();
+        let (name, terminated, idle_clients) = run_test_future(async move {
+            let pool = database.get_postgres_connection_pool();
+            let mut orphan = pool.acquire().await.unwrap();
+            let (name, pid) = sea_orm::sqlx::query_as::<_, (String, i32)>(
+                "SELECT current_database(), pg_backend_pid()",
+            )
+            .fetch_one(&mut *orphan)
+            .await
+            .unwrap();
+            let mut idle = pool.acquire().await.unwrap();
+            idle.return_to_pool().await;
+            drop(idle);
+            let admin = Database::connect(&admin_url).await.unwrap();
+            let terminated = admin
+                .query_one_raw(Statement::from_sql_and_values(
+                    admin.get_database_backend(),
+                    "SELECT pg_terminate_backend($1) AS terminated",
+                    [pid.into()],
+                ))
+                .await
+                .unwrap()
+                .unwrap()
+                .try_get::<bool>("", "terminated")
+                .unwrap();
+            let idle_clients = admin.query_one_raw(Statement::from_sql_and_values(
+                admin.get_database_backend(),
+                "SELECT count(*)::bigint AS count FROM pg_stat_activity
+                 WHERE datname = $1 AND pid <> $2 AND usename = current_user AND backend_type = 'client backend'",
+                [name.clone().into(), pid.into()],
+            )).await.unwrap().unwrap().try_get::<i64>("", "count").unwrap();
+            admin.close().await.unwrap();
+            std::mem::forget(orphan);
+            (name, terminated, idle_clients)
+        });
+        assert!(
+            terminated,
+            "failed to terminate only the borrowed backend for {name}"
+        );
+        assert_eq!(
+            idle_clients, 1,
+            "regression requires one live idle client for {name}"
+        );
+        name
+    }
+
+    fn cleanup_child(target: &TestDatabaseTarget, mode: &str) -> (u32, std::process::Output) {
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .arg("--exact")
+            .arg(
+                "db::test_support::database_templates::tests::process_exit_removes_only_its_registered_databases",
+            )
+            .env(EXIT_CLEANUP_CHILD, mode)
+            .env("SCOPE_TEST_DATABASE_URL", &target.database_url)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let child = command.spawn().unwrap();
+        let id = child.id();
+        (id, child.wait_with_output().unwrap())
     }
 }
