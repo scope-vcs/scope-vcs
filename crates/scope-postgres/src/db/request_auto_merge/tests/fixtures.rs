@@ -209,18 +209,6 @@ jobs:
         .unwrap();
 }
 
-pub(super) async fn backend_pid(tx: &sea_orm::DatabaseTransaction) -> i32 {
-    tx.query_one_raw(Statement::from_string(
-        DatabaseBackend::Postgres,
-        "SELECT pg_backend_pid() AS pid",
-    ))
-    .await
-    .unwrap()
-    .unwrap()
-    .try_get("", "pid")
-    .unwrap()
-}
-
 pub(super) async fn wait_for_blocked_transaction_count(
     store: &crate::db::MetadataStore,
     blocker_pid: i32,
