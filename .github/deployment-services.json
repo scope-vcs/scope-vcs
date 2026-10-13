@@ -304,7 +304,6 @@
     },
     "media-worker": {
       "files": [
-        "dev/run-ci-local-stack",
         "dev/scope-dev",
         "dev/cargo-target-dir",
         "media-worker/Dockerfile",
@@ -365,7 +364,6 @@
     "media-api": {
       "files": [
         "dev/media-smoke.mjs",
-        "dev/run-ci-local-stack",
         "dev/scope-dev",
         "dev/cargo-target-dir",
         "Cargo.lock",
@@ -432,7 +430,6 @@
         ".github/scripts/railway-artifact.mjs",
         "dev/scope-dev",
         "dev/cargo-target-dir",
-        "dev/run-ci-local-stack",
         "dev/local-process.py",
         "dev/dotenv.sh",
         ".github/scripts/deploy-monitored-railway.sh",
@@ -471,7 +468,6 @@
         ".github/scripts/deploy-railway.sh",
         "dev/scope-dev",
         "dev/cargo-target-dir",
-        "dev/run-ci-local-stack",
         "dev/local-process.py",
         "dev/dotenv.sh",
         "dev/checks/dependency-analyzer"

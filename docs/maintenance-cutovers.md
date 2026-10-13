@@ -22,7 +22,7 @@ intents and run/attempt ownership prevent duplicate dispatch and repair. The
 external GitHub observer reports missed starts, stalled sessions, and missed
 release events; idle daytime needs no heartbeat renewal. During an incident,
 inspect `session.json`, `triggers.json`, `supervision.json`, signed event delivery,
-and the bounded service. See [release supervision operations](../deploy/automation/OPERATIONS.md)
+and the bounded service. See [release supervision operations](https://github.com/scope-vcs/release-supervisor/blob/main/OPERATIONS.md)
 for commands, ownership, and verified cutover. The installed minute timer remains
 the operating owner only until that cutover succeeds or when it is restored.
 The shared automation client resolves T3's active native executable from
@@ -31,8 +31,7 @@ rollbacks do not pin automation to an obsolete executable.
 
 Preparation publishes private GHCR images and records their immutable digests.
 Staging activates the candidate once and checks browser, Git, and media behavior.
-Production uses those exact images. Optional `deployment-tests.yml` runs repeated
-transition tests using a prepared release, outside the normal release path.
+Production uses those exact images.
 
 ## Environments and names
 

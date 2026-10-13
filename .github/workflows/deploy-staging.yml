@@ -15,9 +15,6 @@ on:
       resume_staging:
         type: boolean
         default: false
-      run_transition_tests:
-        type: boolean
-        default: false
 
 permissions:
   actions: read
@@ -240,7 +237,7 @@ jobs:
         run: bash .github/scripts/staging-baseline.sh
 
       - name: Retain staging baseline before migration
-        if: steps.baseline.outputs.artifact_name != '' && !inputs.run_transition_tests
+        if: steps.baseline.outputs.artifact_name != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.baseline.outputs.artifact_name }}
@@ -286,15 +283,6 @@ jobs:
           SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
           SCOPE_SMOKE_SEED_BINARY: ./target/release/scope-smoke-seed
         run: bash ../.github/scripts/staging-smoke-seed.sh
-
-      - name: Exercise optional release transitions
-        if: inputs.run_transition_tests
-        working-directory: candidate
-        env:
-          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
-          SCOPE_REHEARSAL_EVIDENCE_DIR: ${{ github.workspace }}/release-rehearsal
-          SCOPE_STAGING_EVIDENCE_PATH: ${{ github.workspace }}/staging-deployments.json
-        run: node .github/scripts/rehearse-release.mjs
 
       - name: Read exact staging web server manifest
         env:
@@ -359,15 +347,6 @@ jobs:
           if [[ -n "${SCOPE_GIT_SMOKE_DIR:-}" && "$SCOPE_GIT_SMOKE_DIR" == "${RUNNER_TEMP}/"* ]]; then
             rm -rf -- "$SCOPE_GIT_SMOKE_DIR"
           fi
-
-      - name: Upload release transition evidence
-        if: always() && inputs.run_transition_tests
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-rehearsal-${{ inputs.source_sha }}
-          path: release-rehearsal/
-          if-no-files-found: warn
-          retention-days: 14
 
       - name: Upload staging deployment evidence
         if: always() && hashFiles('staging-deployments.json') != ''
