@@ -1,5 +1,5 @@
 use super::{
-    GeneratedIdSource, RequestStore, acquire_aggregate_lock, entities,
+    RequestStore, acquire_aggregate_lock, entities,
     request_auto_merge::{
         automatic_event_id, lock_active_intent_for_request, persist_existing_auto_merge_mutation,
     },
@@ -412,7 +412,6 @@ pub(super) async fn retarget_children(
     parent: &Request,
     facts: &[RequestStackChildFacts],
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError> {
     let direct = children(tx, &parent.id).await?;
     let by_id = facts
@@ -447,7 +446,6 @@ pub(super) async fn retarget_children(
             scope_domain::requests::RetargetRequestAfterParentMergeInput {
                 parent_head_oid: fact.parent_head_oid.clone(),
                 event_id: super::generated_ids::generate_id(
-                    generated_ids,
                     super::GeneratedIdKind::RequestMergedEvent,
                 )?,
                 now_unix,

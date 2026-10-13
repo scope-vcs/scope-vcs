@@ -158,10 +158,6 @@ impl Repository {
         self.record.lifecycle_state == RepoLifecycleState::AwaitingFirstPush
     }
 
-    pub fn live_file_exists(&self, path: &ScopePath) -> bool {
-        self.live_files.contains_key(path)
-    }
-
     pub fn bump_change_version(&mut self) {
         self.record.bump_change_version();
     }

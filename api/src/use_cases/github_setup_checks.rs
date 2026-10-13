@@ -26,7 +26,7 @@ pub(crate) async fn reconcile_github_setup_checks_once(
             .is_some()
         {
             ended += 1;
-            state.github_push_wakeup.notify_one();
+            state.wakeups.github_pushes.notify_one();
             publish_setup_check_change(state, &check.repository_id).await?;
         }
     }
@@ -39,11 +39,7 @@ async fn read_from_github(state: &AppState, check: &GitHubSetupCheck) -> Result<
         .repositories()
         .github_connection(&check.repository_id)
         .await?
-        .map(|read| read.connection)
-        .filter(|connection| {
-            connection.is_connected()
-                && connection.github_repository_id == check.github_repository_id
-        })
+        .filter(|connection| connection.is_connected_to(check.github_repository_id))
     else {
         return Ok(());
     };
@@ -57,19 +53,11 @@ async fn read_from_github(state: &AppState, check: &GitHubSetupCheck) -> Result<
     refresh_commit_checks(state, &connection, &check.commit_oid).await
 }
 
-pub(crate) async fn publish_setup_check_change(
-    state: &AppState,
-    repo_id: &str,
-) -> Result<(), ApiError> {
-    if let Some(record) = state
-        .metadata
-        .repositories()
-        .repository_record(repo_id)
-        .await?
-    {
+async fn publish_setup_check_change(state: &AppState, repo_id: &str) -> Result<(), ApiError> {
+    if let Some(incarnation) = state.repository_incarnation(repo_id).await? {
         state
             .publish_request_summary_refresh(
-                &record.incarnation(),
+                &incarnation,
                 RepoChangeReason::GitHubConnectionChanged,
             )
             .await;

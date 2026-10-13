@@ -109,26 +109,23 @@ async fn record_revision(
     state
         .metadata
         .requests()
-        .record_request_revision(
-            RecordRequestRevisionInput {
-                new_base: None,
-                request_id: request_id.to_string(),
-                actor_user_id: actor_user_id.to_string(),
-                actor_can_edit: true,
-                expected_old_head_oid: expected_old_head_oid.map(str::to_string),
-                new_head_oid: new_head_oid.to_string(),
-                git_snapshot,
-                git_facts: RequestRevisionGitFacts {
-                    contains_old_head: true,
-                    contained_main_oid: None,
-                    contained_main_descends_from_base: false,
-                },
-                event_id: event_id.clone(),
-                body: None,
-                now_unix,
+        .record_request_revision(RecordRequestRevisionInput {
+            new_base: None,
+            request_id: request_id.to_string(),
+            actor_user_id: actor_user_id.to_string(),
+            actor_can_edit: true,
+            expected_old_head_oid: expected_old_head_oid.map(str::to_string),
+            new_head_oid: new_head_oid.to_string(),
+            git_snapshot,
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
             },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+            event_id: event_id.clone(),
+            body: None,
+            now_unix,
+        })
         .await
         .unwrap();
     event_id
@@ -361,15 +358,7 @@ async fn native_open_request(
         "push auto merge request",
     );
     let request_head = git_head_oid(request_source);
-    let submitted = api_request(
-        app,
-        "POST",
-        &format!("/v1/repos/{TEST_REPO_ID}/requests/{request_id}/submit"),
-        Some(&bearer),
-        Some("{}"),
-    )
-    .await;
-    assert_eq!(submitted.status(), StatusCode::OK);
+    submit_request(app, &request_id, &bearer).await;
     (state, source, remote, request_id, request_head, server)
 }
 

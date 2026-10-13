@@ -201,15 +201,7 @@ async function uploadParts({
   draftKey: string
   file: File
   localId: string
-  transfer: {
-    acknowledged_parts: AttachmentPartReceipt[]
-    grant: string
-    media_base_url: string
-    max_concurrent_parts: number
-    preferred_part_bytes: number
-    upload_id: string
-    expires_at_unix: number
-  }
+  transfer: Awaited<ReturnType<AttachmentUploadActions['prepare']>>['transfer']
 }) {
   const partBytes = Math.max(1, transfer.preferred_part_bytes)
   const count = Math.ceil(file.size / partBytes)

@@ -36,10 +36,9 @@ pub(crate) async fn refresh_workflow_run_for_delivery(
         attempts: 0,
     };
     match read_workflow_run(state, &connection, run_id).await {
-        Ok(()) => repositories
+        Ok(()) => Ok(repositories
             .finish_github_workflow_run_read(&job, None)
-            .await
-            .map_err(ApiError::from),
+            .await?),
         Err(error) => {
             tracing::warn!(
                 github_repository_id,
@@ -69,11 +68,7 @@ pub(crate) async fn retry_github_workflow_run_reads_once(
         let connection = repositories
             .github_connection(&job.repo_id)
             .await?
-            .map(|read| read.connection)
-            .filter(|connection| {
-                connection.is_connected()
-                    && connection.github_repository_id == job.github_repository_id
-            });
+            .filter(|connection| connection.is_connected_to(job.github_repository_id));
         let retry_at = match connection {
             None => None,
             Some(connection) => {
@@ -108,7 +103,8 @@ async fn read_workflow_run(
     connection: &GitHubConnection,
     run_id: u64,
 ) -> Result<(), ApiError> {
-    let Some(run) = configured_app(state)?
+    let Some(run) = state
+        .github_app()?
         .workflow_run(
             connection.installation_id,
             &connection.github_full_name,
@@ -118,16 +114,7 @@ async fn read_workflow_run(
     else {
         return Ok(());
     };
-    state
-        .metadata
-        .repositories()
-        .save_github_workflow_run(
-            &connection.repository_id,
-            connection.github_repository_id,
-            &run,
-        )
-        .await?;
-    publish(state, connection).await
+    save_runs(state, connection, &[run]).await
 }
 
 pub(crate) async fn refresh_branch_workflow_runs(
@@ -136,7 +123,8 @@ pub(crate) async fn refresh_branch_workflow_runs(
     branch: &GitHubBranch,
     commit_oid: &str,
 ) -> Result<(), ApiError> {
-    let Some(runs) = configured_app(state)?
+    let Some(runs) = state
+        .github_app()?
         .branch_workflow_runs(
             connection.installation_id,
             &connection.github_full_name,
@@ -147,8 +135,16 @@ pub(crate) async fn refresh_branch_workflow_runs(
     else {
         return Ok(());
     };
+    save_runs(state, connection, &runs).await
+}
+
+async fn save_runs(
+    state: &AppState,
+    connection: &GitHubConnection,
+    runs: &[scope_domain::github_workflow_runs::GitHubWorkflowRun],
+) -> Result<(), ApiError> {
     let repositories = state.metadata.repositories();
-    for run in &runs {
+    for run in runs {
         repositories
             .save_github_workflow_run(
                 &connection.repository_id,
@@ -157,32 +153,23 @@ pub(crate) async fn refresh_branch_workflow_runs(
             )
             .await?;
     }
-    if !runs.is_empty() {
-        publish(state, connection).await?;
+    if runs.is_empty() {
+        return Ok(());
     }
-    Ok(())
+    publish(state, connection).await
 }
 
 pub(crate) async fn publish(
     state: &AppState,
     connection: &GitHubConnection,
 ) -> Result<(), ApiError> {
-    if let Some(record) = state
-        .metadata
-        .repositories()
-        .repository_record(&connection.repository_id)
+    if let Some(incarnation) = state
+        .repository_incarnation(&connection.repository_id)
         .await?
     {
         state
-            .publish_github_workflow_runs_change(&record.incarnation())
+            .publish_github_workflow_runs_change(&incarnation)
             .await;
     }
     Ok(())
-}
-
-pub(crate) fn configured_app(state: &AppState) -> Result<&crate::github::GitHubApp, ApiError> {
-    state
-        .github
-        .as_deref()
-        .ok_or_else(|| ApiError::not_found("GitHub is not configured on this server"))
 }

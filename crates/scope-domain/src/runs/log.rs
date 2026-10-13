@@ -2,7 +2,7 @@ use super::validation::required;
 use crate::error::DomainError;
 
 pub const MAX_RUN_LOG_CHUNK_BYTES: usize = 64 * 1024;
-pub const MAX_RUN_LOG_BYTES_PER_ATTEMPT: u64 = 10 * 1024 * 1024;
+pub(crate) const MAX_RUN_LOG_BYTES_PER_ATTEMPT: u64 = 10 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunLogChunk {

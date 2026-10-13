@@ -1,29 +1,18 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
 import test from 'node:test'
-import { chromium } from 'playwright'
-import { createServer } from 'vite'
+import { launchBrowser, startFixtureServer } from './support/fixture-server.mjs'
 
 test('browser analytics transport uses the bounded proxy while analytics domains are blocked', async (t) => {
-  const cacheDir = await mkdtemp(join(tmpdir(), 'scope-analytics-sdk-'))
-  t.after(() => rm(cacheDir, { recursive: true, force: true }))
   let runtime
   const deliveries = []
-  const server = await createServer({
-    configFile: false, cacheDir,
-    root: fileURLToPath(new URL('./fixtures/analytics', import.meta.url)),
-    resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
-    server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } },
+  const server = await startFixtureServer(t, 'analytics', {
     plugins: [{ name: 'scope-analytics-proxy-test', configureServer(vite) {
       vite.middlewares.use(async (incoming, outgoing, next) => {
         if (!incoming.url.startsWith('/e/')) return next()
         try {
-          const { analyticsEndpointResponse } = await vite.ssrLoadModule(fileURLToPath(new URL('../src/server/analytics-endpoint-handler.ts', import.meta.url)))
+          const { analyticsEndpointResponse } = await vite.ssrLoadModule('@/server/analytics-endpoint-handler.ts')
           const request = new Request(new URL(incoming.url, runtime.SCOPE_ANALYTICS_ORIGIN), {
             method: incoming.method, headers: incoming.headers,
             ...(incoming.method === 'POST' ? { body: Readable.toWeb(incoming), duplex: 'half' } : {}),
@@ -38,15 +27,12 @@ test('browser analytics transport uses the bounded proxy while analytics domains
       })
     } }],
   })
-  await server.listen()
-  t.after(() => server.close())
   const origin = server.resolvedUrls.local[0].replace(/\/$/, '')
   runtime = {
     SCOPE_ANALYTICS_ENVIRONMENT: 'test', SCOPE_ANALYTICS_ORIGIN: origin,
     POSTHOG_PROJECT_TOKEN: 'phc_fixture_only', SCOPE_ANALYTICS_RELEASE: 'fixture-release',
   }
-  const browser = await chromium.launch({ headless: true })
-  t.after(() => browser.close())
+  const browser = await launchBrowser(t)
   const browserOptions = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36' }
   const context = await browser.newContext(browserOptions)
   await context.addInitScript(normalVisitor)

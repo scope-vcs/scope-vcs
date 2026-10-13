@@ -93,13 +93,6 @@ fn snooze_until<Tz: TimeZone>(preset: SnoozeFor, now: DateTime<Tz>) -> anyhow::R
     u64::try_from(until.timestamp()).context("snooze time is before the Unix epoch")
 }
 
-fn now_unix() -> anyhow::Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system clock is before Unix epoch")?
-        .as_secs())
-}
-
 fn load_queue(
     api: ApiSession<'_>,
     context: &local::RequestContext,
@@ -201,7 +194,7 @@ pub(super) fn queue_outcome(
     let sections = section.map_or(DEFAULT_SECTIONS.to_vec(), |section| vec![section]);
     let rows = load_queue(api, &context, &sections, search, limit)?;
     let mut human_lines = repo_access_lines(&context.repo);
-    human_lines.extend(queue_lines(&rows, section.is_none(), now_unix()?));
+    human_lines.extend(queue_lines(&rows, section.is_none(), crate::unix_now()));
     Ok(RequestCommandOutcome::new(
         command,
         RequestCommandResult::List(ListResult {

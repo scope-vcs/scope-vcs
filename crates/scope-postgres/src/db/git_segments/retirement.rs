@@ -33,7 +33,6 @@ where
                 u64_to_i64(now_unix, "Git segment retirement time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(result.rows_affected() == 1)
 }

@@ -26,7 +26,6 @@ async function fixture() {
     },
     services: {
       api: { id: 'api' },
-      cache: { id: 'cache' },
       'media-api': { id: 'media' },
       'media-worker': { id: 'media-worker' },
       'run-worker': { id: 'worker' },
@@ -50,8 +49,6 @@ if [[ "$*" == *"deployment list"* ]]; then
   fi
   if [[ "$*" == *"--service api"* ]]; then
     printf '%s\\n' '[{"id":"api-deployment","status":"SUCCESS"}]'
-  elif [[ "$*" == *"--service cache"* ]]; then
-    printf '%s\\n' '[{"id":"cache-deployment","status":"SUCCESS"}]'
   elif [[ "$*" == *"--service media-worker"* ]]; then
     printf '%s\\n' '[{"id":"media-worker-deployment","status":"SUCCESS"}]'
   elif [[ "$*" == *"--service media"* ]]; then
@@ -64,7 +61,7 @@ elif [[ "$*" == *"service list"* ]]; then
     printf '%s\\n' "$SCOPE_TEST_REPLICA_STATE"
     exit 0
   fi
-  printf '%s\\n' '[{"id":"api","replicas":{"running":0,"crashed":0}},{"id":"cache","replicas":{"running":0,"crashed":0}},{"id":"worker","replicas":{"running":0,"crashed":0}},{"id":"media","replicas":{"running":0,"crashed":0}},{"id":"media-worker","replicas":{"running":0,"crashed":0}}]'
+  printf '%s\\n' '[{"id":"api","replicas":{"running":0,"crashed":0}},{"id":"worker","replicas":{"running":0,"crashed":0}},{"id":"media","replicas":{"running":0,"crashed":0}},{"id":"media-worker","replicas":{"running":0,"crashed":0}}]'
 else
   exit 2
 fi
@@ -115,7 +112,6 @@ test('stops only the reviewed staging metadata-writer deployments', async () => 
   assert.deepEqual(requests.map(({ variables }) => variables.id), [
     'api-deployment',
     'worker-deployment',
-    'cache-deployment',
     'media-deployment',
     'media-worker-deployment',
   ])
@@ -183,7 +179,7 @@ for (const replicas of [undefined, { running: 0 }, { running: null, crashed: 0 }
 
 test('already removed staging writers allow baseline capture without another removal', async () => {
   const { manifest, removals, root } = await fixture()
-  const services = ['api', 'worker', 'cache', 'media', 'media-worker'].map(id => ({
+  const services = ['api', 'worker', 'media', 'media-worker'].map(id => ({
     id, status: null, deploymentId: null, latestDeployment: null, replicas: null,
   }))
   const result = spawnSync('bash', ['-c', 'bash .github/scripts/stop-railway-writers.sh && echo capture-baseline'], {
@@ -221,7 +217,7 @@ test('stops writers in a named preview environment', async () => {
 
   assert.equal(result.status, 0, result.stderr)
   const requests = (await readFile(removals, 'utf8')).trim().split('\n').map(JSON.parse)
-  assert.equal(requests.length, 5)
+  assert.equal(requests.length, 4)
 })
 
 for (const preview of ['production', 'staging']) {

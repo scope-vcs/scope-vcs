@@ -1,63 +1,72 @@
+use scope_api_contract::{
+    RepoLifecycleState, RepoSummaryResponse, RepositoryAccessResponse, RepositoryActor,
+};
+use serde_json::Value;
 use std::{
-    fs,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, Output},
-    sync::atomic::{AtomicU64, Ordering},
 };
 
-static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
-
-pub struct TempDir {
-    pub path: PathBuf,
-}
+pub struct TempDir(tempfile::TempDir);
 
 impl TempDir {
     pub fn new(label: &str) -> Self {
-        let path = std::env::temp_dir().join(format!(
-            "scope-cli-{label}-{}-{}",
-            std::process::id(),
-            NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).unwrap();
-        Self { path }
+        Self(
+            tempfile::Builder::new()
+                .prefix(&format!("scope-cli-{label}-"))
+                .tempdir()
+                .unwrap(),
+        )
     }
 
     pub fn git_repo(label: &str, branch: &str) -> Self {
         let dir = Self::new(label);
-        let status = Command::new("git")
-            .current_dir(&dir.path)
-            .args(["init", "--quiet", "-b", branch])
-            .status()
-            .unwrap();
-        assert!(status.success());
+        dir.run_git(["init", "--quiet", "-b", branch]);
         dir
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.0.path()
     }
 
     pub fn run_git<const N: usize>(&self, args: [&str; N]) -> Output {
-        let output = Command::new("git")
-            .current_dir(&self.path)
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "git failed\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        output
+        run_git(self.path(), args)
     }
 }
 
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
+pub fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) -> Output {
+    let output = Command::new("git")
+        .current_dir(cwd)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+pub fn commit_all(cwd: &Path, message: &str) -> String {
+    run_git(cwd, ["add", "-A"]);
+    run_git(
+        cwd,
+        [
+            "-c",
+            "user.name=Scope Test",
+            "-c",
+            "user.email=scope@example.test",
+            "commit",
+            "-qm",
+            message,
+        ],
+    );
+    String::from_utf8(run_git(cwd, ["rev-parse", "HEAD"]).stdout)
+        .unwrap()
+        .trim()
+        .to_owned()
 }
 
 pub(crate) fn read_http_request(stream: &mut std::net::TcpStream) -> std::io::Result<String> {
@@ -111,35 +120,42 @@ pub(crate) fn read_http_request(stream: &mut std::net::TcpStream) -> std::io::Re
     String::from_utf8(request).map_err(std::io::Error::other)
 }
 
-#[test]
-fn request_capture_waits_for_fragmented_body() {
-    use std::{
-        io::Write,
-        net::{TcpListener, TcpStream},
-        sync::mpsc,
-        time::Duration,
-    };
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let (captured, received) = mpsc::channel();
-    let thread = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        captured
-            .send(read_http_request(&mut stream).unwrap())
-            .unwrap();
-    });
-    let mut client = TcpStream::connect(address).unwrap();
-    client
-        .write_all(b"POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\n")
-        .unwrap();
-    assert!(received.recv_timeout(Duration::from_millis(30)).is_err());
-    client.write_all(b"he").unwrap();
-    client.write_all(b"llo").unwrap();
-    assert!(
-        received
-            .recv_timeout(Duration::from_secs(5))
-            .unwrap()
-            .ends_with("\r\n\r\nhello")
-    );
-    thread.join().unwrap();
+pub fn repository_response(overrides: Value) -> Value {
+    let mut repo = serde_json::to_value(RepoSummaryResponse {
+        description: None,
+        website_url: None,
+        id: "repo_one".into(),
+        owner_handle: "owner".into(),
+        name: "repo".into(),
+        git_remote_url: "https://scope.example/git/public/owner/repo".into(),
+        lifecycle_state: RepoLifecycleState::Ready,
+        change_version: 1,
+        content_version: 1,
+        access: RepositoryAccessResponse {
+            actor: RepositoryActor::Public,
+            view: scope_api_contract::ViewId::public(),
+            can_push: false,
+            can_change_file_visibility: false,
+            can_manage_members: false,
+            can_delete_repo: false,
+        },
+        views: scope_api_contract::view_definitions(&scope_domain::views::Views::builtin()),
+        open_request_count: 0,
+    })
+    .unwrap();
+    merge(&mut repo, overrides);
+    repo
+}
+
+fn merge(value: &mut Value, overrides: Value) {
+    if let (Some(value), Some(overrides)) = (value.as_object_mut(), overrides.as_object()) {
+        for (key, replacement) in overrides {
+            merge(
+                value.entry(key.clone()).or_insert(Value::Null),
+                replacement.clone(),
+            );
+        }
+    } else {
+        *value = overrides;
+    }
 }

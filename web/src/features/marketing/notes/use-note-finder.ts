@@ -5,7 +5,7 @@ const CHECK_INTERVAL_MS = 150
 const MIN_RADIUS = 60
 const FLASH_MS = 2200
 
-export interface NoteProgress {
+interface NoteProgress {
   found: number
   total: number
   moreBelow: boolean

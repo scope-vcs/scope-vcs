@@ -1,4 +1,4 @@
-import { TextSkeleton } from '@/components/ui/skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import type { ReactNode } from 'react'
 
 export function DetailsSection({

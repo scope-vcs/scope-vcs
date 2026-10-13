@@ -347,7 +347,7 @@ impl RequestStore {
         &self,
         command: CreateRequestDiscussionCommand,
     ) -> Result<CreateRequestDiscussionMutation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -388,7 +388,7 @@ impl RequestStore {
                     .await?
                 }
             };
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(CreateRequestDiscussionMutation {
                 created: false,
                 request,
@@ -423,7 +423,7 @@ impl RequestStore {
             now_unix,
         )
         .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(mutation)
     }
 
@@ -448,7 +448,7 @@ impl RequestStore {
             now_unix,
             transition,
         } = command;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) = lock_request_repository(&tx, &request_id, &actor_user_id).await?;
         ensure_user_exists(&tx, &actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &actor_user_id).await?;
@@ -500,7 +500,7 @@ impl RequestStore {
             now_unix,
         )
         .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(mutation.discussion)
     }
 
@@ -543,7 +543,7 @@ impl RequestStore {
         command: CreateRequestDiscussionReplyCommand,
         reopen_event_id: Option<String>,
     ) -> Result<CreateRequestDiscussionReplyMutation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -580,7 +580,7 @@ impl RequestStore {
                 command.now_unix,
             )
             .await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(CreateRequestDiscussionReplyMutation {
                 created: false,
                 request,
@@ -675,7 +675,7 @@ impl RequestStore {
             now_unix,
         )
         .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(mutation)
     }
 
@@ -684,7 +684,7 @@ impl RequestStore {
         &self,
         input: MarkRequestDiscussionReadInput,
     ) -> Result<RequestDiscussionReadState, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         ensure_user_exists(&tx, &input.user_id).await?;
         let discussion = discussion_by_id(&tx, &input.discussion_id)
             .await?
@@ -700,7 +700,7 @@ impl RequestStore {
         let existing_state = read_state(&tx, &input.discussion_id, &input.user_id).await?;
         let state = mark_request_discussion_read(&discussion, existing_state, input)?;
         save_read_state(&tx, &state).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(state)
     }
 }

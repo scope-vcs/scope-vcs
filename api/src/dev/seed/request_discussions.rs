@@ -299,7 +299,7 @@ fn user(id: &str, handle: &str, email: &str) -> UserAccount {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::demo_seed::DevSeedUser;
+    use crate::seed_user::DevSeedUser;
     use scope_domain::requests::RequestDiscussionStatus;
     use scope_domain::requests::RequestEventKind;
     use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend};
@@ -344,7 +344,7 @@ mod tests {
             .requests()
             .request_discussions_page(scope_postgres::db::RequestDiscussionsPageQuery {
                 request_id: REQUEST_ID,
-                viewer_user_id: Some(super::super::DEV_SEED_USER_ID),
+                viewer_user_id: Some(crate::seed_user::DEV_SEED_USER_ID),
                 snapshot_version: request.activity_version,
                 cursor: None,
                 discussion_id: None,

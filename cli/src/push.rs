@@ -1,4 +1,5 @@
 use crate::api::ApiSession;
+use crate::unix_now;
 use crate::{
     api::{
         CreatePushIntentParams, CreatePushIntentResponse, PushTriggerEvaluationResponse,
@@ -7,9 +8,8 @@ use crate::{
     },
     git_repo::{
         GitRepo, changed_paths_since_scope_base_at_commit, ensure_git_repo_ready,
-        fetch_scope_remote_with_bearer, fetch_scope_remote_with_bearer_cancellable,
-        git_remote_push_url, head_oid, mark_scope_remote_pushed, push_head_with_bearer,
-        scope_git_origin, scope_remote_head_oid, warn_if_dirty_working_tree,
+        fetch_scope_remote_with_bearer, git_remote_push_url, head_oid, mark_scope_remote_pushed,
+        push_head_with_bearer, scope_git_origin, scope_remote_head_oid, warn_if_dirty_working_tree,
     },
     git_transport::{ScopeRemote, select_scope_push_remote},
     login::session_from_cache_or_browser_with_progress,
@@ -33,10 +33,7 @@ use scope_domain::{
     views::{ViewId, Views},
 };
 use serde_json::json;
-use std::{
-    thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{thread, time::Duration};
 
 mod through_view;
 
@@ -147,13 +144,13 @@ fn push_to_main(
         && local_remote_head.as_deref() != push_context.head_oid.as_deref()
     {
         progress.set_stage("Refreshing Scope main…")?;
-        fetch_scope_remote_with_bearer_cancellable(
+        fetch_scope_remote_with_bearer(
             git_repo,
             &target.url(),
             remote,
             DEFAULT_SCOPE_BRANCH,
             &session.token,
-            &progress.cancellation(),
+            Some(&progress.cancellation()),
             "refresh Scope main before push review failed; main was not changed",
         )?;
     }
@@ -344,6 +341,7 @@ fn ensure_review_base_matches_intent(
         remote,
         DEFAULT_SCOPE_BRANCH,
         session_token,
+        None,
         "refresh Scope main before push review failed; main was not changed",
     )?;
     if scope_remote_head_oid(git_repo, remote, DEFAULT_SCOPE_BRANCH)?.as_deref()
@@ -370,13 +368,6 @@ fn ensure_reviewed_base_matches_intent(
         .into());
     }
     Ok(())
-}
-
-fn unix_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
 }
 
 fn load_scope_remote(

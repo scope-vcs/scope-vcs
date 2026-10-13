@@ -168,7 +168,7 @@ pub(super) async fn seed_canceled_run(
     .await?;
     clock += 1;
     runs.request_run_cancellation(
-        crate::demo_seed::DEV_SEED_USER_ID,
+        crate::seed_user::DEV_SEED_USER_ID,
         revision.workflow().repository_id(),
         &run_id,
         clock,
@@ -211,7 +211,7 @@ pub(super) async fn seed_retried_lint_run(
     .await?;
     clock += 1;
     runs.retry_run(
-        crate::demo_seed::DEV_SEED_USER_ID,
+        crate::seed_user::DEV_SEED_USER_ID,
         revision.workflow().repository_id(),
         &run_id,
         clock,

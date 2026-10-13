@@ -39,10 +39,7 @@ async fn locked_merge_derives_maintainer_authorization_before_content_persistenc
 
     let error = store
         .requests()
-        .merge_request_content(
-            merge_command(&store, "user_public", prepared).await,
-            &super::super::generated_ids::test_generated_id,
-        )
+        .merge_request_content(merge_command(&store, "user_public", prepared).await)
         .await
         .unwrap_err();
 
@@ -78,10 +75,7 @@ async fn locked_merge_allows_owner_and_persists_content_and_request_once() {
 
     let mutation = store
         .requests()
-        .merge_request_content(
-            merge_command(&store, "user_owner", prepared).await,
-            &super::super::generated_ids::test_generated_id,
-        )
+        .merge_request_content(merge_command(&store, "user_owner", prepared).await)
         .await
         .unwrap();
 
@@ -116,14 +110,11 @@ async fn cancellation_after_preparation_fences_the_final_content_commit() {
         .unwrap();
     let claim = store
         .requests()
-        .claim_due_request_auto_merges(
-            ClaimDueRequestAutoMergesCommand {
-                now_unix: 7,
-                lease_expires_at_unix: 100,
-                limit: 1,
-            },
-            &super::super::generated_ids::test_generated_id,
-        )
+        .claim_due_request_auto_merges(ClaimDueRequestAutoMergesCommand {
+            now_unix: 7,
+            lease_expires_at_unix: 100,
+            limit: 1,
+        })
         .await
         .unwrap()
         .pop()
@@ -152,7 +143,7 @@ async fn cancellation_after_preparation_fences_the_final_content_commit() {
     });
     let error = store
         .requests()
-        .merge_request_content(command, &super::super::generated_ids::test_generated_id)
+        .merge_request_content(command)
         .await
         .unwrap_err();
     assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
@@ -200,10 +191,7 @@ async fn stale_manual_preparation_does_not_stop_a_current_auto_merge_intent() {
 
     let error = store
         .requests()
-        .merge_request_content(
-            stale_manual,
-            &super::super::generated_ids::test_generated_id,
-        )
+        .merge_request_content(stale_manual)
         .await
         .unwrap_err();
     assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
@@ -277,29 +265,26 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
         .unwrap();
     store
         .requests()
-        .record_request_revision(
-            RecordRequestRevisionInput {
-                new_base: None,
-                request_id: "req_1".into(),
-                actor_user_id: "user_public".into(),
-                actor_can_edit: true,
-                expected_old_head_oid: Some("head".into()),
-                new_head_oid: REQUEST_HEAD.into(),
-                git_snapshot: SourceBlob {
-                    git_oid: REQUEST_HEAD.into(),
-                    ..source_blob(REQUEST_HEAD)
-                },
-                git_facts: RequestRevisionGitFacts {
-                    contains_old_head: true,
-                    contained_main_oid: None,
-                    contained_main_descends_from_base: false,
-                },
-                event_id: "event_merge_revision".into(),
-                body: None,
-                now_unix: 5,
+        .record_request_revision(RecordRequestRevisionInput {
+            new_base: None,
+            request_id: "req_1".into(),
+            actor_user_id: "user_public".into(),
+            actor_can_edit: true,
+            expected_old_head_oid: Some("head".into()),
+            new_head_oid: REQUEST_HEAD.into(),
+            git_snapshot: SourceBlob {
+                git_oid: REQUEST_HEAD.into(),
+                ..source_blob(REQUEST_HEAD)
             },
-            &super::super::generated_ids::test_generated_id,
-        )
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
+            },
+            event_id: "event_merge_revision".into(),
+            body: None,
+            now_unix: 5,
+        })
         .await
         .unwrap();
     let request = store
@@ -580,7 +565,7 @@ async fn manual_merge_rejects_check_reads_that_changed_after_preparation() {
         }
         let error = store
             .requests()
-            .merge_request_content(command, &super::super::generated_ids::test_generated_id)
+            .merge_request_content(command)
             .await
             .unwrap_err();
         assert_eq!(
@@ -634,12 +619,10 @@ async fn final_merge_fences_check_reads_and_rejects_expiry_while_publication_wai
         .await
         .unwrap();
         let merge_store = store.clone();
-        let merge = tokio::spawn(async move {
-            merge_store
-                .requests()
-                .merge_request_content(command, &super::super::generated_ids::test_generated_id)
-                .await
-        });
+        let merge =
+            tokio::spawn(
+                async move { merge_store.requests().merge_request_content(command).await },
+            );
         let merge_pid = super::super::locks::wait_for_transaction_waiter(&store, holder_pid).await;
         let read_store = store.clone();
         let read = tokio::spawn(async move {

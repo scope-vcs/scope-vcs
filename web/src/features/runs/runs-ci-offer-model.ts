@@ -1,6 +1,6 @@
 import type { GitHubConnectionResponse } from '@/api/types.generated'
 
-export type RunsCiOffer =
+type RunsCiOffer =
   | { kind: 'none' }
   | { kind: 'connect'; canConnect: boolean }
 

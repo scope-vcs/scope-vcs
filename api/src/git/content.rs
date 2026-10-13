@@ -1,4 +1,4 @@
-use crate::{error::ApiError, git::GitContext, git::command::run_git_output_bounded};
+use crate::{error::ApiError, git::command::run_git_output_bounded, state::AppState};
 use scope_domain::{
     content::SourceBlob,
     content_ref::ContentRef,
@@ -8,39 +8,39 @@ use scope_domain::{
 use scope_storage::source_blob_bytes;
 use std::{path::Path, time::Instant};
 
-pub(crate) async fn source_content_bytes<C: GitContext>(
-    context: &C,
+pub(crate) async fn source_content_bytes(
+    state: &AppState,
     blob: &SourceBlob,
     git_source: Option<(RepositoryIncarnation, &GitHead, &[GitPackSpan])>,
 ) -> Result<Vec<u8>, ApiError> {
     if !matches!(blob.content_ref, ContentRef::GitBlob { .. }) {
-        return Ok(stored_content_bytes(context, blob).await?);
+        return Ok(stored_content_bytes(state, blob).await?);
     }
     let (repository_id, head, pack_spans) = git_source.ok_or_else(|| {
         ApiError::internal_message("Git blob content requires a current pack layout")
     })?;
-    let repo = context
-        .repository_engine()
-        .materialize_repository(context, &repository_id, head, pack_spans)
+    let repo = state
+        .repository_engine
+        .materialize_repository(state, &repository_id, head, pack_spans)
         .await?;
-    let context = context.clone();
+    let state = state.clone();
     let blob = blob.clone();
     tokio::task::spawn_blocking(move || {
-        source_content_bytes_from_repo(&context, &blob, Some(repo.as_ref()))
+        source_content_bytes_from_repo(&state, &blob, Some(repo.as_ref()))
     })
     .await
     .map_err(|error| ApiError::internal_message(format!("Git blob read task failed: {error}")))?
 }
 
-async fn stored_content_bytes<C: GitContext>(
-    context: &C,
+async fn stored_content_bytes(
+    state: &AppState,
     blob: &SourceBlob,
 ) -> Result<Vec<u8>, scope_storage::ObjectStoreError> {
-    source_blob_bytes(context.object_store().as_ref(), blob, usize::MAX).await
+    source_blob_bytes(state.object_store.as_ref(), blob, usize::MAX).await
 }
 
-pub(crate) fn source_content_bytes_from_repo<C: GitContext>(
-    context: &C,
+pub(crate) fn source_content_bytes_from_repo(
+    state: &AppState,
     blob: &SourceBlob,
     git_repo: Option<&Path>,
 ) -> Result<Vec<u8>, ApiError> {
@@ -49,7 +49,7 @@ pub(crate) fn source_content_bytes_from_repo<C: GitContext>(
     } = &blob.content_ref
     else {
         return Ok(crate::git::blocking::block_on(stored_content_bytes(
-            context, blob,
+            state, blob,
         ))?);
     };
     if content_oid != &blob.git_oid {

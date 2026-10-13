@@ -126,6 +126,7 @@ pub(crate) async fn publish(
                 .requests()
                 .record_request_revision_context(
                     RecordRequestRevisionInput {
+                        new_base: None,
                         request_id: request.id.clone(),
                         actor_user_id: actor.id.clone(),
                         actor_can_edit: false,
@@ -145,7 +146,6 @@ pub(crate) async fn publish(
                     context,
                     parent,
                     children,
-                    &crate::persistence_ids::generate_persistence_id,
                 )
                 .await
                 .map_err(ApiError::from)

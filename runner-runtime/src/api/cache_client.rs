@@ -1,12 +1,9 @@
 use super::{RuntimeClient, ensure_success, json};
 use anyhow::{Context as _, bail};
 use scope_api_contract::{
-    ReportAttemptCacheFinalizationsRequest, ReportAttemptCachePreparationsRequest,
-};
-use scope_cache_contract::{
-    COMMIT_CACHE_UPLOAD_PATH, CommitCacheUploadRequest, CommitCacheUploadResponse,
-    PREPARE_CACHE_UPLOAD_PATH, PrepareCacheUploadRequest, PrepareCacheUploadResponse,
-    RESTORE_CACHE_PATH, RestoreCacheRequest, RestoreCacheResponse,
+    CommitAttemptCacheUploadRequest, PrepareAttemptCacheUploadRequest,
+    PrepareAttemptCacheUploadResponse, ReportAttemptCacheFinalizationsRequest,
+    ReportAttemptCachePreparationsRequest, RestoreAttemptCacheRequest, RestoreAttemptCacheResponse,
 };
 use scope_cache_domain::validate_object_size;
 use sha2::{Digest as _, Sha256};
@@ -32,23 +29,32 @@ pub(crate) struct CacheDownloadAttempt {
 impl RuntimeClient {
     pub fn restore_cache(
         &self,
-        request: &RestoreCacheRequest,
-    ) -> anyhow::Result<RestoreCacheResponse> {
-        self.cache_post(RESTORE_CACHE_PATH, request, "restore cache")
+        request: &RestoreAttemptCacheRequest,
+    ) -> anyhow::Result<RestoreAttemptCacheResponse> {
+        json(
+            self.cache_post("caches/restore", request, "restore cache")?,
+            "restore cache",
+        )
     }
 
     pub fn prepare_cache_upload(
         &self,
-        request: &PrepareCacheUploadRequest,
-    ) -> anyhow::Result<PrepareCacheUploadResponse> {
-        self.cache_post(PREPARE_CACHE_UPLOAD_PATH, request, "prepare cache upload")
+        request: &PrepareAttemptCacheUploadRequest,
+    ) -> anyhow::Result<PrepareAttemptCacheUploadResponse> {
+        json(
+            self.cache_post("caches/uploads/prepare", request, "prepare cache upload")?,
+            "prepare cache upload",
+        )
     }
 
     pub fn commit_cache_upload(
         &self,
-        request: &CommitCacheUploadRequest,
-    ) -> anyhow::Result<CommitCacheUploadResponse> {
-        self.cache_post(COMMIT_CACHE_UPLOAD_PATH, request, "commit cache upload")
+        request: &CommitAttemptCacheUploadRequest,
+    ) -> anyhow::Result<()> {
+        ensure_success(
+            &self.cache_post("caches/uploads/commit", request, "commit cache upload")?,
+            "commit cache upload",
+        )
     }
 
     pub fn report_cache_preparations(
@@ -148,26 +154,16 @@ impl RuntimeClient {
         ensure_success(&response, "upload cache object")
     }
 
-    fn cache_post<T: serde::Serialize, R: serde::de::DeserializeOwned>(
+    fn cache_post(
         &self,
-        path: &str,
-        request: &T,
+        action: &str,
+        request: &impl serde::Serialize,
         context: &'static str,
-    ) -> anyhow::Result<R> {
-        let access = self
-            .cache_access
-            .lock()
-            .expect("cache access mutex poisoned")
-            .clone()
-            .context("cache access is unavailable before attempt claim")?;
-        let response = self
-            .client
-            .post(format!("{}{}", access.endpoint, path))
-            .bearer_auth(access.grant)
+    ) -> anyhow::Result<reqwest::blocking::Response> {
+        self.auth(self.client.post(self.url(action)))
             .json(request)
             .send()
-            .with_context(|| context.to_string())?;
-        json(response, context)
+            .context(context)
     }
 }
 

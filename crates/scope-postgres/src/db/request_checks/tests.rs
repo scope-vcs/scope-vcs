@@ -99,30 +99,27 @@ async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) 
         .unwrap();
     store
         .requests()
-        .record_request_revision(
-            RecordRequestRevisionInput {
-                new_base: None,
-                request_id: request_id.into(),
-                actor_user_id: "user_public".into(),
-                actor_can_edit: true,
-                expected_old_head_oid: Some(request.head_oid.clone()),
-                new_head_oid: request.head_oid.clone(),
-                git_snapshot: crate::db::test_support::fixtures::source_blob(
-                    &request.head_oid,
-                    &"b".repeat(64),
-                    1,
-                ),
-                git_facts: RequestRevisionGitFacts {
-                    contains_old_head: true,
-                    contained_main_oid: None,
-                    contained_main_descends_from_base: false,
-                },
-                event_id: format!("{request_id}-initial-revision"),
-                body: None,
-                now_unix: 3,
+        .record_request_revision(RecordRequestRevisionInput {
+            new_base: None,
+            request_id: request_id.into(),
+            actor_user_id: "user_public".into(),
+            actor_can_edit: true,
+            expected_old_head_oid: Some(request.head_oid.clone()),
+            new_head_oid: request.head_oid.clone(),
+            git_snapshot: crate::db::test_support::fixtures::source_blob(
+                &request.head_oid,
+                &"b".repeat(64),
+                1,
+            ),
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
             },
-            &crate::db::generated_ids::test_generated_id,
-        )
+            event_id: format!("{request_id}-initial-revision"),
+            body: None,
+            now_unix: 3,
+        })
         .await
         .unwrap();
 }
@@ -136,30 +133,27 @@ async fn record_no_checks(store: &MetadataStore, request_id: &str, head_oid: &st
         .unwrap();
     store
         .requests()
-        .record_request_revision(
-            RecordRequestRevisionInput {
-                new_base: None,
-                request_id: request_id.into(),
-                actor_user_id: "user_public".into(),
-                actor_can_edit: true,
-                expected_old_head_oid: Some(request.head_oid),
-                new_head_oid: head_oid.into(),
-                git_snapshot: crate::db::test_support::fixtures::source_blob(
-                    head_oid,
-                    &"b".repeat(64),
-                    1,
-                ),
-                git_facts: RequestRevisionGitFacts {
-                    contains_old_head: true,
-                    contained_main_oid: None,
-                    contained_main_descends_from_base: false,
-                },
-                event_id: format!("{request_id}-revision-{now_unix}"),
-                body: None,
-                now_unix,
+        .record_request_revision(RecordRequestRevisionInput {
+            new_base: None,
+            request_id: request_id.into(),
+            actor_user_id: "user_public".into(),
+            actor_can_edit: true,
+            expected_old_head_oid: Some(request.head_oid),
+            new_head_oid: head_oid.into(),
+            git_snapshot: crate::db::test_support::fixtures::source_blob(
+                head_oid,
+                &"b".repeat(64),
+                1,
+            ),
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
             },
-            &crate::db::generated_ids::test_generated_id,
-        )
+            event_id: format!("{request_id}-revision-{now_unix}"),
+            body: None,
+            now_unix,
+        })
         .await
         .unwrap();
     store
@@ -411,7 +405,7 @@ async fn evaluation_completion_rejects_changed_head_incarnation_and_base() {
 
 #[tokio::test]
 async fn recovery_pages_advance_past_unrepaired_requests_and_restart_from_the_beginning() {
-    use crate::db::{generated_ids::test_generated_id, test_support::fixtures::source_blob};
+    use crate::db::test_support::fixtures::source_blob;
     use scope_domain::requests::{RecordRequestRevisionInput, RequestRevisionGitFacts};
 
     let store = postgres_store();
@@ -425,26 +419,23 @@ async fn recovery_pages_advance_past_unrepaired_requests_and_restart_from_the_be
             .unwrap();
         store
             .requests()
-            .record_request_revision(
-                RecordRequestRevisionInput {
-                    new_base: None,
-                    request_id: request_id.into(),
-                    actor_user_id: "user_public".into(),
-                    actor_can_edit: true,
-                    expected_old_head_oid: Some(request.head_oid),
-                    new_head_oid: HEAD_A_CURRENT.into(),
-                    git_snapshot: source_blob(HEAD_A_CURRENT, &"b".repeat(64), 1),
-                    git_facts: RequestRevisionGitFacts {
-                        contains_old_head: true,
-                        contained_main_oid: None,
-                        contained_main_descends_from_base: false,
-                    },
-                    event_id: format!("{request_id}-revision"),
-                    body: None,
-                    now_unix: 3,
+            .record_request_revision(RecordRequestRevisionInput {
+                new_base: None,
+                request_id: request_id.into(),
+                actor_user_id: "user_public".into(),
+                actor_can_edit: true,
+                expected_old_head_oid: Some(request.head_oid),
+                new_head_oid: HEAD_A_CURRENT.into(),
+                git_snapshot: source_blob(HEAD_A_CURRENT, &"b".repeat(64), 1),
+                git_facts: RequestRevisionGitFacts {
+                    contains_old_head: true,
+                    contained_main_oid: None,
+                    contained_main_descends_from_base: false,
                 },
-                &test_generated_id,
-            )
+                event_id: format!("{request_id}-revision"),
+                body: None,
+                now_unix: 3,
+            })
             .await
             .unwrap();
     }

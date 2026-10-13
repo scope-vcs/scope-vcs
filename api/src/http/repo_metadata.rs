@@ -23,21 +23,14 @@ pub(crate) async fn update_repo_metadata(
     let (changed, incarnation, version) = state
         .metadata
         .repositories()
-        .mutate_repository(
-            &owner,
-            &repo_name,
-            unix_now()?,
-            &crate::persistence_ids::generate_persistence_id,
-            move |repo| {
-                let changed =
-                    update_metadata(repo, &user_id, input.description, input.website_url)?;
-                Ok(RepositoryMutation::new((
-                    changed,
-                    repo.incarnation(),
-                    repo.record.change_version,
-                )))
-            },
-        )
+        .mutate_repository(&owner, &repo_name, unix_now()?, move |repo| {
+            let changed = update_metadata(repo, &user_id, input.description, input.website_url)?;
+            Ok(RepositoryMutation::new((
+                changed,
+                repo.incarnation(),
+                repo.record.change_version,
+            )))
+        })
         .await?
         .result;
     if changed {

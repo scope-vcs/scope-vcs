@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     db::{
         MetadataStore,
-        locks::wait_for_transaction_waiter,
+        locks::{backend_pid, wait_for_transaction_waiter},
         test_support::fixtures::{
             repository, source_blob, store_with_native_run_repositories, user,
         },
@@ -27,14 +27,7 @@ fn fixture() -> (
         updated_at_unix: 1,
     });
     let store = store_with_native_run_repositories([repository]);
-    let request = ManualRunRequest::new(
-        "owner/repo".into(),
-        "member".into(),
-        "1".repeat(32),
-        "a".repeat(40),
-        "checks".into(),
-    )
-    .unwrap();
+    let request = manual_request("member", "checks");
     let revision = scope_run_config::parse_workflow(
         "/.scope/runs/checks.yml",
         format!("name: Checks\non:\n  manual: true\ncontainer: {{ image: rust@sha256:{} }}\ntimeout: 10m\njobs:\n  checks:\n    steps:\n      - {{ name: Test, run: cargo test }}\n", "b".repeat(64)).as_bytes(),
@@ -43,35 +36,29 @@ fn fixture() -> (
     (store, request, revision, object)
 }
 
+fn manual_request(user_id: &str, workflow: &str) -> ManualRunRequest {
+    let run_id = "1".repeat(32);
+    ManualRunRequest::new(
+        "owner/repo".into(),
+        user_id.into(),
+        run_id,
+        "a".repeat(40),
+        workflow.into(),
+    )
+    .unwrap()
+}
+
 async fn assert_no_enqueue_rows(store: &MetadataStore) {
+    let db = store.db.as_ref();
+    assert_eq!(entities::run::Entity::find().count(db).await.unwrap(), 0);
     assert_eq!(
-        entities::run::Entity::find()
-            .count(store.db.as_ref())
-            .await
-            .unwrap(),
+        entities::run_job::Entity::find().count(db).await.unwrap(),
         0
     );
-    assert_eq!(
-        entities::run_job::Entity::find()
-            .count(store.db.as_ref())
-            .await
-            .unwrap(),
-        0
-    );
-    assert_eq!(
-        entities::workflow_revision::Entity::find()
-            .count(store.db.as_ref())
-            .await
-            .unwrap(),
-        0
-    );
-    assert_eq!(
-        entities::object_reference::Entity::find()
-            .count(store.db.as_ref())
-            .await
-            .unwrap(),
-        0
-    );
+    let revisions = entities::workflow_revision::Entity::find().count(db);
+    assert_eq!(revisions.await.unwrap(), 0);
+    let references = entities::object_reference::Entity::find().count(db);
+    assert_eq!(references.await.unwrap(), 0);
 }
 
 #[tokio::test]
@@ -81,16 +68,7 @@ async fn uploaded_enqueue_rechecks_membership_after_waiting_for_repository_lock(
     acquire_aggregate_lock(&held, "repository", request.repository_id())
         .await
         .unwrap();
-    let pid = held
-        .query_one_raw(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SELECT pg_backend_pid() AS pid",
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get::<i32>("", "pid")
-        .unwrap();
+    let pid = backend_pid(&held).await;
     entities::repository_member::Entity::delete_by_id((
         "owner/repo".to_owned(),
         "member".to_owned(),
@@ -124,16 +102,7 @@ async fn uploaded_enqueue_that_wins_repository_lock_completes_before_real_revoca
     ))
     .await
     .unwrap();
-    let pid = held
-        .query_one_raw(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SELECT pg_backend_pid() AS pid",
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get::<i32>("", "pid")
-        .unwrap();
+    let pid = backend_pid(&held).await;
     let writing_store = store.clone();
     let writing = tokio::spawn(async move {
         writing_store
@@ -185,14 +154,7 @@ async fn uploaded_enqueue_replay_requires_current_membership_and_matching_reques
         .unwrap();
     assert!(!replay.inserted);
     assert_eq!(first.run, replay.run);
-    let other_actor = ManualRunRequest::new(
-        "owner/repo".into(),
-        "owner".into(),
-        "1".repeat(32),
-        "a".repeat(40),
-        "checks".into(),
-    )
-    .unwrap();
+    let other_actor = manual_request("owner", "checks");
     assert_eq!(
         store
             .runs()
@@ -251,14 +213,7 @@ async fn uploaded_enqueue_rejects_mismatched_source_without_persisting() {
 #[tokio::test]
 async fn uploaded_enqueue_rejects_mismatched_workflow_without_persisting() {
     let (store, _, revision, object) = fixture();
-    let request = ManualRunRequest::new(
-        "owner/repo".into(),
-        "member".into(),
-        "1".repeat(32),
-        "a".repeat(40),
-        "other".into(),
-    )
-    .unwrap();
+    let request = manual_request("member", "other");
     assert_eq!(
         store
             .runs()

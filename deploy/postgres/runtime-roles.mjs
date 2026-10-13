@@ -41,7 +41,7 @@ function policy(write, read = [], lock = []) {
 }
 export const grants = {
   scope_api: policy([...repositoryTables, ...runTables, ...nativeRunsTables, ...collaborationTables,
-    ...authTables, ...mediaTables]),
+    ...authTables, ...mediaTables, ...cacheTables]),
   scope_run_worker: { ...policy([...names(`git_compaction_jobs git_segment_references git_segment_uploads
     git_segments metadata_locks object_references orphan_object_jobs outbox_jobs projection_files
     projection_read_models push_trigger_evaluations repo_storage_cleanup_jobs workflow_revisions
@@ -56,7 +56,6 @@ export const grants = {
     scope_request_auto_merge_intents: ['SELECT', 'UPDATE'],
     scope_request_events: ['SELECT', 'INSERT'],
     scope_native_runs_accounts: ['SELECT', 'UPDATE'] },
-  scope_cache: policy(cacheTables, names('runs run_jobs run_attempts')),
   scope_media_api: { ...policy(names('request_media_upload_parts request_media_abandoned_objects'),
     [...names('request_media_bindings request_media_cleanup_jobs request_media_derivatives request_media_manifest_chunks request_media_manifests'),
       ...names('repositories repository_members requests request_invitees request_discussions')],

@@ -1,5 +1,8 @@
 use scope_git::{DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES, GitStorageLimits};
-use scope_storage::GitSegmentStoreConfig;
+use scope_storage::{
+    GitSegmentStoreConfig,
+    config::{nonempty_env, required_env},
+};
 use std::{path::PathBuf, time::Duration};
 
 const DATABASE_URL_ENV: &str = "DATABASE_URL";
@@ -39,7 +42,7 @@ pub(crate) struct CloudExecutionSettings {
 impl WorkerSettings {
     pub(crate) fn from_env() -> anyhow::Result<Self> {
         let database_url = required_env(DATABASE_URL_ENV)?;
-        let health_port = match non_empty_env("PORT") {
+        let health_port = match nonempty_env("PORT") {
             Some(value) => value
                 .parse::<u16>()
                 .map_err(|error| anyhow::anyhow!("PORT must be a TCP port: {error}"))?,
@@ -50,7 +53,7 @@ impl WorkerSettings {
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(default_worker_id);
         let git_storage_limits = git_storage_limits_from_env()?;
-        let data_dir = non_empty_env(SCOPE_DATA_DIR_ENV)
+        let data_dir = nonempty_env(SCOPE_DATA_DIR_ENV)
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(".scope"));
         let mut git_segment_store = GitSegmentStoreConfig::new(data_dir.join("git-segments"));
@@ -79,7 +82,7 @@ impl WorkerSettings {
 }
 
 fn cloud_execution_from_env() -> anyhow::Result<Option<CloudExecutionSettings>> {
-    let Some(dispatch_broker_function_arn) = non_empty_env(DISPATCH_BROKER_FUNCTION_ARN_ENV) else {
+    let Some(dispatch_broker_function_arn) = nonempty_env(DISPATCH_BROKER_FUNCTION_ARN_ENV) else {
         return Ok(None);
     };
     let aws_region = required_env("AWS_REGION")?;
@@ -115,14 +118,6 @@ fn parse_broker_function_arn(value: &str, aws_region: &str) -> anyhow::Result<St
         );
     }
     Ok(value.to_owned())
-}
-
-pub(crate) fn required_env(name: &str) -> anyhow::Result<String> {
-    non_empty_env(name).ok_or_else(|| anyhow::anyhow!("{name} is required"))
-}
-
-pub(crate) fn non_empty_env(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|value| !value.is_empty())
 }
 
 fn git_storage_limits_from_env() -> anyhow::Result<GitStorageLimits> {

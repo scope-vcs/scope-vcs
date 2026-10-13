@@ -1,7 +1,7 @@
 import { PanelState } from '@/components/empty-state'
 import { FileSystemTreeSkeleton } from '@/components/file-system-tree'
 import { FileWorkbench } from '@/components/file-workbench'
-import { TextSkeleton } from '@/components/ui/skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { useState } from 'react'
 
 export function UpdateDetailSkeleton() {

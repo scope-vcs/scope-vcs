@@ -1,6 +1,6 @@
 export const repository = 'scope-vcs/scope-vcs';
 export const sourceSha = 'a'.repeat(40);
-export const backendComponents = ['api', 'run-worker', 'cache', 'git-router', 'media-api', 'media-worker'];
+export const backendComponents = ['api', 'run-worker', 'git-router', 'media-api', 'media-worker'];
 
 export function preparedRelease({ components = backendComponents, services = {}, sourceRunId = '123' } = {}) {
   return {

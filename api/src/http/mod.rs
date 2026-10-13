@@ -1,5 +1,4 @@
 pub(crate) mod account;
-pub(crate) mod admin;
 pub(crate) mod cli_auth;
 pub(crate) mod cli_compatibility;
 pub(crate) mod dependencies;
@@ -25,7 +24,6 @@ pub(crate) mod request_revision_context;
 pub(crate) mod request_state;
 pub(crate) mod requests;
 pub(crate) mod responses;
-pub(crate) mod routes;
 mod run_detail_response;
 pub(crate) mod run_events;
 pub(crate) mod run_resources;

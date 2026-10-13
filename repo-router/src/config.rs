@@ -3,14 +3,15 @@ use std::time::Duration;
 
 const BACKEND_ENV: &str = "SCOPE_REPO_ROUTER_BACKEND";
 const READ_REPLICAS_ENV: &str = "SCOPE_REPO_ROUTER_READ_REPLICAS";
-const UPLOAD_PACK_REPLAY_MAX_BYTES_ENV: &str = "SCOPE_REPO_ROUTER_UPLOAD_PACK_REPLAY_MAX_BYTES";
 
 const DEFAULT_DNS_REFRESH_MILLIS: u64 = 1_000;
 const DEFAULT_DNS_MAX_STALE_MILLIS: u64 = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MILLIS: u64 = 2_000;
 const DEFAULT_READ_TIMEOUT_MILLIS: u64 = 60_000;
 const DEFAULT_READ_REPLICAS: usize = 1;
-const DEFAULT_UPLOAD_PACK_REPLAY_MAX_BYTES: usize = 64 * 1024 * 1024;
+const UPLOAD_PACK_REPLAY_MAX_BYTES: usize = 64 * 1024 * 1024;
+const UPLOAD_PACK_REPLAY_SLOTS: usize = 4;
+const INCOMING_BODY_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug)]
 pub struct RouterConfig {
@@ -39,18 +40,9 @@ impl RouterConfig {
             connect_timeout: Duration::from_millis(DEFAULT_CONNECT_TIMEOUT_MILLIS),
             read_timeout: Duration::from_millis(DEFAULT_READ_TIMEOUT_MILLIS),
             read_replicas: positive_usize_from_env(READ_REPLICAS_ENV, DEFAULT_READ_REPLICAS)?,
-            upload_pack_replay_slots: positive_usize_from_env(
-                "SCOPE_REPO_ROUTER_UPLOAD_PACK_REPLAY_SLOTS",
-                4,
-            )?,
-            incoming_body_timeout: duration_from_env(
-                "SCOPE_REPO_ROUTER_INCOMING_BODY_TIMEOUT_MILLIS",
-                15_000,
-            )?,
-            upload_pack_replay_max_bytes: positive_usize_from_env(
-                UPLOAD_PACK_REPLAY_MAX_BYTES_ENV,
-                DEFAULT_UPLOAD_PACK_REPLAY_MAX_BYTES,
-            )?,
+            upload_pack_replay_slots: UPLOAD_PACK_REPLAY_SLOTS,
+            incoming_body_timeout: INCOMING_BODY_TIMEOUT,
+            upload_pack_replay_max_bytes: UPLOAD_PACK_REPLAY_MAX_BYTES,
         })
     }
 }
@@ -79,19 +71,6 @@ fn validate_authority(authority: &str) -> anyhow::Result<()> {
         anyhow::bail!("{BACKEND_ENV} must be a host and port");
     }
     Ok(())
-}
-
-fn duration_from_env(name: &str, default_millis: u64) -> anyhow::Result<Duration> {
-    let millis = match std::env::var(name) {
-        Ok(value) if !value.trim().is_empty() => value
-            .parse::<u64>()
-            .with_context(|| format!("{name} must be an integer"))?,
-        _ => default_millis,
-    };
-    if millis == 0 {
-        anyhow::bail!("{name} must be greater than zero");
-    }
-    Ok(Duration::from_millis(millis))
 }
 
 #[cfg(test)]

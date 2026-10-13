@@ -7,3 +7,6 @@ cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml check 
 cargo test --manifest-path cli/Cargo.toml --locked
 node --test .github/scripts/select-cli-distribution-targets.test.mjs
 cargo clippy --manifest-path cli/Cargo.toml --all-targets --locked -- -D warnings
+cargo fmt -p scope-cli-downloads --check
+cargo test -p scope-cli-downloads --locked
+cargo clippy -p scope-cli-downloads --all-targets --locked -- -D warnings

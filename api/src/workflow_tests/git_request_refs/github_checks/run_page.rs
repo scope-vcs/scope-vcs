@@ -1,4 +1,6 @@
-use super::super::super::fake_github::{suite_check_run, workflow_job, workflow_run};
+use super::super::super::fake_github::{
+    deliver_event, suite_check_run, workflow_job, workflow_run,
+};
 use super::public::private_file_repository;
 use super::public_repositories::make_github_repository_public;
 use super::*;
@@ -27,6 +29,14 @@ async fn open_run(state: &AppState, run_id: u64, bearer: Option<&str>) -> Respon
     .await
 }
 
+async fn opened_run(state: &AppState) -> serde_json::Value {
+    expect_json(
+        open_run(state, RUN_ID, Some(&bearer_header())).await,
+        StatusCode::OK,
+    )
+    .await
+}
+
 async fn job_log(state: &AppState, job_id: u64) -> Response {
     api_request(
         router(state.clone()),
@@ -38,21 +48,6 @@ async fn job_log(state: &AppState, job_id: u64) -> Response {
     .await
 }
 
-async fn deliver(state: &AppState, event: &str, subject: serde_json::Value) {
-    let delivery = webhook(
-        state,
-        event,
-        serde_json::json!({
-            "action": "in_progress",
-            "repository": { "id": GITHUB_REPOSITORY_ID, "full_name": GITHUB_FULL_NAME },
-            (event): subject,
-        }),
-        WEBHOOK_SECRET,
-    )
-    .await;
-    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
     let request = owner_request("github-run-page", &[REQUIRED_CHECK]).await;
@@ -61,9 +56,11 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
     let mut workflow = workflow_run(RUN_ID, &request.branch(), &head, None);
     workflow["name"] = serde_json::json!("Build and test");
     fake.report_workflow_runs(vec![workflow]);
-    deliver(
+    deliver_event(
         state,
         "workflow_run",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
         serde_json::json!({ "id": RUN_ID, "head_sha": head }),
     )
     .await;
@@ -93,11 +90,7 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
     );
 
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
-    let opened = expect_json(
-        open_run(state, RUN_ID, Some(&bearer_header())).await,
-        StatusCode::OK,
-    )
-    .await;
+    let opened = opened_run(state).await;
     assert_eq!(opened["run"]["request_id"], request.request_id);
     assert_eq!(opened["jobs_not_read_yet"], true);
     assert_eq!(opened["jobs"], serde_json::json!([]));
@@ -114,11 +107,7 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
                 github_run_id: RUN_ID
             })
     );
-    let opened = expect_json(
-        open_run(state, RUN_ID, Some(&bearer_header())).await,
-        StatusCode::OK,
-    )
-    .await;
+    let opened = opened_run(state).await;
     assert_eq!(opened["jobs_not_read_yet"], false);
     let jobs = opened["jobs"].as_array().unwrap();
     assert_eq!(
@@ -130,11 +119,7 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
     assert_eq!(jobs[0]["status"], "in_progress");
     assert_eq!(jobs[0]["steps"][1]["name"], "Run tests");
     assert_eq!(jobs[0]["steps"][1]["status"], "in_progress");
-    expect_json(
-        open_run(state, RUN_ID, Some(&bearer_header())).await,
-        StatusCode::OK,
-    )
-    .await;
+    opened_run(state).await;
     assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 1);
 
     assert_eq!(job_log(state, 901).await.status(), StatusCode::CONFLICT);
@@ -147,18 +132,16 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
         &["Set up job", "Run tests"],
     )]);
     fake.report_job_log(901, Some("2026-10-05T12:00:59.0000000Z 1 test failed\n"));
-    deliver(
+    deliver_event(
         state,
         "workflow_job",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
         serde_json::json!({ "id": 901, "run_id": RUN_ID }),
     )
     .await;
     assert_eq!(read_logs(state, 0).await, 1);
-    let finished = expect_json(
-        open_run(state, RUN_ID, Some(&bearer_header())).await,
-        StatusCode::OK,
-    )
-    .await;
+    let finished = opened_run(state).await;
     assert_eq!(finished["jobs"][0]["conclusion"], "failure");
     assert_eq!(finished["jobs"][0]["steps"][1]["status"], "completed");
     assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 1);
@@ -184,11 +167,7 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
             .await
             .unwrap()
     );
-    let stored = expect_json(
-        open_run(state, RUN_ID, Some(&bearer_header())).await,
-        StatusCode::OK,
-    )
-    .await;
+    let stored = opened_run(state).await;
     assert_eq!(stored["jobs"][0]["conclusion"], "failure");
     assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 1);
     assert_eq!(
@@ -237,9 +216,11 @@ async fn a_finished_runs_jobs_are_read_again_after_github_could_not_answer() {
         &head,
         Some("success"),
     )]);
-    deliver(
+    deliver_event(
         state,
         "workflow_run",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
         serde_json::json!({ "id": RUN_ID, "head_sha": head }),
     )
     .await;
@@ -252,11 +233,7 @@ async fn a_finished_runs_jobs_are_read_again_after_github_could_not_answer() {
     )]);
 
     fake.job_list_unavailable.store(true, Ordering::SeqCst);
-    let unanswered = expect_json(
-        open_run(state, RUN_ID, Some(&bearer_header())).await,
-        StatusCode::OK,
-    )
-    .await;
+    let unanswered = opened_run(state).await;
     assert_eq!(unanswered["jobs"], serde_json::json!([]));
     assert_eq!(unanswered["jobs_not_read_yet"], true);
     assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 0);
@@ -274,11 +251,7 @@ async fn a_finished_runs_jobs_are_read_again_after_github_could_not_answer() {
             .unwrap(),
         1
     );
-    let answered = expect_json(
-        open_run(state, RUN_ID, Some(&bearer_header())).await,
-        StatusCode::OK,
-    )
-    .await;
+    let answered = opened_run(state).await;
     assert_eq!(answered["jobs"][0]["id"], 901);
     assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 2);
 }
@@ -293,9 +266,11 @@ async fn a_job_without_a_log_is_answered_once_and_never_asked_about_again() {
         &head,
         Some("success"),
     )]);
-    deliver(
+    deliver_event(
         state,
         "workflow_run",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
         serde_json::json!({ "id": RUN_ID, "head_sha": head }),
     )
     .await;
@@ -311,11 +286,7 @@ async fn a_job_without_a_log_is_answered_once_and_never_asked_about_again() {
         workflow_job(905, RUN_ID, "test", Some("success"), &["Run tests"]),
         just_finished,
     ]);
-    expect_json(
-        open_run(state, RUN_ID, Some(&bearer_header())).await,
-        StatusCode::OK,
-    )
-    .await;
+    opened_run(state).await;
     assert_eq!(
         retry_github_workflow_job_reads_once(state, unix_now())
             .await
@@ -369,9 +340,11 @@ async fn a_failed_jobs_long_log_is_read_when_it_finishes_and_only_its_end_is_dow
         &head,
         Some("failure"),
     )]);
-    deliver(
+    deliver_event(
         state,
         "workflow_run",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
         serde_json::json!({ "id": RUN_ID, "head_sha": head }),
     )
     .await;
@@ -385,9 +358,11 @@ async fn a_failed_jobs_long_log_is_read_when_it_finishes_and_only_its_end_is_dow
         Some("failure"),
         &["Run tests"],
     )]);
-    deliver(
+    deliver_event(
         state,
         "workflow_job",
+        "in_progress",
+        GITHUB_REPOSITORY_ID,
         serde_json::json!({ "id": 907, "run_id": RUN_ID }),
     )
     .await;

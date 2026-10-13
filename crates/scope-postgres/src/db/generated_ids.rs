@@ -1,7 +1,7 @@
 use crate::error::PostgresError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GeneratedIdKind {
+pub(crate) enum GeneratedIdKind {
     CleanupGeneration,
     DependencyAnalysisLease,
     OutboxJob,
@@ -10,42 +10,23 @@ pub enum GeneratedIdKind {
     RequestMergedEvent,
 }
 
-pub trait GeneratedIdSource: Send + Sync {
-    fn generate(&self, kind: GeneratedIdKind) -> Result<String, String>;
-}
-
-impl<F> GeneratedIdSource for F
-where
-    F: Fn(GeneratedIdKind) -> Result<String, String> + Send + Sync,
-{
-    fn generate(&self, kind: GeneratedIdKind) -> Result<String, String> {
-        self(kind)
+impl GeneratedIdKind {
+    fn prefix(self) -> &'static str {
+        match self {
+            Self::CleanupGeneration => "",
+            Self::DependencyAnalysisLease => "dependency_",
+            Self::OutboxJob => "outbox_",
+            Self::RepositoryIncarnation => "repoi_",
+            Self::RequestAutoMergeClaim => "auto_merge_claim_",
+            Self::RequestMergedEvent => "event_request_merged_",
+        }
     }
 }
 
-pub(super) fn generate_id(
-    source: &dyn GeneratedIdSource,
-    kind: GeneratedIdKind,
-) -> Result<String, PostgresError> {
-    source.generate(kind).map_err(|error| {
+pub(crate) fn generate_id(kind: GeneratedIdKind) -> Result<String, PostgresError> {
+    let mut random = [0_u8; 16];
+    getrandom::fill(&mut random).map_err(|error| {
         PostgresError::internal_message(format!("failed to generate {kind:?}: {error}"))
-    })
-}
-
-#[cfg(any(test, feature = "seeding"))]
-pub(crate) fn test_generated_id(kind: GeneratedIdKind) -> Result<String, String> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-    let sequence = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    Ok(match kind {
-        GeneratedIdKind::CleanupGeneration => format!("test_cleanup_{sequence:016x}"),
-        GeneratedIdKind::DependencyAnalysisLease => {
-            format!("test_dependency_analysis_{sequence:016x}")
-        }
-        GeneratedIdKind::OutboxJob => format!("outbox_test_{sequence:016x}"),
-        GeneratedIdKind::RepositoryIncarnation => format!("repoi_test_{sequence:016x}"),
-        GeneratedIdKind::RequestAutoMergeClaim => format!("auto_merge_claim_{sequence:016x}"),
-        GeneratedIdKind::RequestMergedEvent => format!("event_request_merged_{sequence:016x}"),
-    })
+    })?;
+    Ok(format!("{}{}", kind.prefix(), hex::encode(random)))
 }

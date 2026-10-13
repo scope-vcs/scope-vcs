@@ -1,44 +1,10 @@
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { chromium } from 'playwright'
-import { createServer } from 'vite'
-
-const require = createRequire(import.meta.url)
+import { fixtureClerk, openFixture } from './support/fixture-server.mjs'
 
 test('a reply resent with a different quote is a new attempt', async (t) => {
-  const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-request-reply-'))
-  t.after(() => rm(cacheDir, { recursive: true, force: true }))
-  const server = await createServer({
-    cacheDir,
-    configFile: false,
-    root: fileURLToPath(new URL('./fixtures/request-reply', import.meta.url)),
-    server: {
-      host: '127.0.0.1',
-      port: 0,
-      fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] },
-    },
-    resolve: { alias: [
-      { find: '@clerk/tanstack-react-start', replacement: fileURLToPath(new URL('./fixtures/request-reply/clerk.ts', import.meta.url)) },
-      { find: '@', replacement: fileURLToPath(new URL('../src', import.meta.url)) },
-      ...['react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom/client', 'react']
-        .map((name) => ({ find: name, replacement: require.resolve(name) })),
-    ] },
-    oxc: { jsx: { runtime: 'automatic' } },
-  })
-  await server.listen()
-  t.after(() => server.close())
-  const browser = await chromium.launch({ headless: true })
-  t.after(() => browser.close())
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-  page.setDefaultTimeout(30_000)
-  const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  await page.goto(server.resolvedUrls.local[0], { waitUntil: 'domcontentloaded' })
+  const { base, errors, page } = await openFixture(t, 'request-reply', { aliases: [fixtureClerk], timeout: 30_000 })
+  await page.goto(base, { waitUntil: 'domcontentloaded' })
 
   const composer = page.locator('form')
   const send = composer.getByRole('button', { name: 'Reply', exact: true })

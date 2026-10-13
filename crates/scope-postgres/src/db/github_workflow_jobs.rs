@@ -1,19 +1,14 @@
 use super::{
     RepositoryStore,
     entities::{decode_enum, encode_enum},
+    github_read_queue::GitHubReadQueue,
     integer_columns::{
         i32_to_u32, i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u32_to_i32, u64_to_i64,
     },
 };
 use crate::error::PostgresError;
-use scope_domain::{
-    github_workflow_jobs::{
-        GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob, GitHubWorkflowStep,
-    },
-    requests::{GitHubCheckConclusion, GitHubCheckStatus},
-};
-use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Value};
-use serde::{Deserialize, Serialize};
+use scope_domain::github_workflow_jobs::{GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob};
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
 #[derive(FromQueryResult)]
 struct JobRow {
@@ -27,16 +22,6 @@ struct JobRow {
     completed_at_unix: Option<i64>,
     html_url: String,
     steps: serde_json::Value,
-}
-
-#[derive(Deserialize, Serialize)]
-struct StoredStep {
-    number: u32,
-    name: String,
-    status: GitHubCheckStatus,
-    conclusion: Option<GitHubCheckConclusion>,
-    started_at_unix: Option<u64>,
-    completed_at_unix: Option<u64>,
 }
 
 #[derive(FromQueryResult)]
@@ -68,6 +53,16 @@ struct JobReadRow {
     generation: i64,
 }
 
+const JOB_READS: GitHubReadQueue = GitHubReadQueue {
+    table: "scope_github_workflow_job_reads",
+    key: &["repo_id", "github_repository_id", "github_run_id"],
+    joined: "",
+    joined_on: "",
+    returning: "read.read_id, read.repo_id, read.github_repository_id, read.github_run_id, \
+        read.attempts, read.generation",
+    label: "GitHub jobs read",
+};
+
 impl RepositoryStore {
     pub async fn queue_github_workflow_job_read(
         &self,
@@ -85,7 +80,7 @@ impl RepositoryStore {
             [repo_id.into(), u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
              u64_to_i64(github_run_id, "GitHub workflow run id")?.into(),
              u64_to_i64(now_unix, "GitHub jobs read time")?.into()],
-        )).await.map_err(PostgresError::internal)?;
+        )).await?;
         Ok(())
     }
 
@@ -95,40 +90,24 @@ impl RepositoryStore {
         lease_until_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubWorkflowJobReadJob>, PostgresError> {
-        JobReadRow::find_by_statement(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "UPDATE scope_github_workflow_job_reads read
-                SET attempts = read.attempts + 1, next_attempt_at_unix = $2
-               FROM (SELECT repo_id, github_repository_id, github_run_id
-                       FROM scope_github_workflow_job_reads
-                      WHERE next_attempt_at_unix <= $1
-                      ORDER BY next_attempt_at_unix
-                      LIMIT $3 FOR UPDATE SKIP LOCKED) due
-              WHERE read.repo_id = due.repo_id
-                AND read.github_repository_id = due.github_repository_id
-                AND read.github_run_id = due.github_run_id
-          RETURNING read.read_id, read.repo_id, read.github_repository_id, read.github_run_id, read.attempts, read.generation",
-            [
-                u64_to_i64(now_unix, "GitHub jobs read time")?.into(),
-                u64_to_i64(lease_until_unix, "GitHub jobs read lease")?.into(),
-                u64_to_i64(limit, "GitHub jobs read batch size")?.into(),
-            ],
-        ))
-        .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(|row| {
-            Ok(GitHubWorkflowJobReadJob {
-                read_id: i64_to_u64(row.read_id, "GitHub jobs read id")?,
-                repo_id: row.repo_id,
-                github_repository_id: i64_to_u64(row.github_repository_id, "GitHub repository id")?,
-                github_run_id: i64_to_u64(row.github_run_id, "GitHub workflow run id")?,
-                attempts: i32_to_u32(row.attempts, "GitHub jobs read attempts")?,
-                generation: i64_to_u64(row.generation, "GitHub jobs read generation")?,
+        JOB_READS
+            .claim_due::<JobReadRow>(self.db.as_ref(), now_unix, lease_until_unix, limit)
+            .await?
+            .into_iter()
+            .map(|row| {
+                Ok(GitHubWorkflowJobReadJob {
+                    read_id: i64_to_u64(row.read_id, "GitHub jobs read id")?,
+                    repo_id: row.repo_id,
+                    github_repository_id: i64_to_u64(
+                        row.github_repository_id,
+                        "GitHub repository id",
+                    )?,
+                    github_run_id: i64_to_u64(row.github_run_id, "GitHub workflow run id")?,
+                    attempts: i32_to_u32(row.attempts, "GitHub jobs read attempts")?,
+                    generation: i64_to_u64(row.generation, "GitHub jobs read generation")?,
+                })
             })
-        })
-        .collect()
+            .collect()
     }
 
     pub async fn finish_github_workflow_job_read(
@@ -137,43 +116,33 @@ impl RepositoryStore {
         retry_at_unix: Option<u64>,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let claim = || -> Result<Vec<Value>, PostgresError> {
-            Ok(vec![
-                job.repo_id.clone().into(),
-                u64_to_i64(job.github_repository_id, "GitHub repository id")?.into(),
-                u64_to_i64(job.github_run_id, "GitHub workflow run id")?.into(),
-                u32_to_i32(job.attempts, "GitHub jobs read attempts")?.into(),
-                u64_to_i64(job.read_id, "GitHub jobs read id")?.into(),
-            ])
-        };
+        let claim = vec![
+            job.repo_id.clone().into(),
+            u64_to_i64(job.github_repository_id, "GitHub repository id")?.into(),
+            u64_to_i64(job.github_run_id, "GitHub workflow run id")?.into(),
+            u32_to_i32(job.attempts, "GitHub jobs read attempts")?.into(),
+            u64_to_i64(job.read_id, "GitHub jobs read id")?.into(),
+        ];
         if retry_at_unix.is_none() {
-            let mut values = claim()?;
+            let mut values = claim.clone();
             values.push(u64_to_i64(job.generation, "GitHub jobs read generation")?.into());
-            self.db
-                .execute_raw(Statement::from_sql_and_values(
-                    DatabaseBackend::Postgres,
-                    "DELETE FROM scope_github_workflow_job_reads
-                      WHERE repo_id = $1 AND github_repository_id = $2 AND github_run_id = $3
-                        AND attempts = $4 AND read_id = $5 AND generation = $6",
+            JOB_READS
+                .finish(
+                    self.db.as_ref(),
+                    &["attempts", "read_id", "generation"],
                     values,
-                ))
-                .await
-                .map_err(PostgresError::internal)?;
+                    None,
+                )
+                .await?;
         }
-        let mut values = claim()?;
-        values
-            .push(u64_to_i64(retry_at_unix.unwrap_or(now_unix), "GitHub jobs retry time")?.into());
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "UPDATE scope_github_workflow_job_reads SET next_attempt_at_unix = $6
-                  WHERE repo_id = $1 AND github_repository_id = $2 AND github_run_id = $3
-                    AND attempts = $4 AND read_id = $5",
-                values,
-            ))
+        JOB_READS
+            .finish(
+                self.db.as_ref(),
+                &["attempts", "read_id"],
+                claim,
+                Some(retry_at_unix.unwrap_or(now_unix)),
+            )
             .await
-            .map_err(PostgresError::internal)?;
-        Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "save_github_workflow_jobs"))]
@@ -213,8 +182,7 @@ impl RepositoryStore {
             ],
         ))
         .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(JobRow::into_domain)
         .collect()
@@ -243,8 +211,7 @@ impl RepositoryStore {
             ],
         ))
         .one(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(JobRow::into_domain)
         .transpose()
     }
@@ -261,8 +228,7 @@ impl RepositoryStore {
             [u64_to_i64(github_job_id, "GitHub job id")?.into()],
         ))
         .one(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(|row| match row.log_text {
             Some(text) => GitHubJobLogState::Kept(GitHubJobLog {
                 text,
@@ -297,8 +263,7 @@ impl RepositoryStore {
                     u64_to_i64(now_unix, "GitHub job log time")?.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 }
@@ -310,18 +275,6 @@ async fn save_job<C: ConnectionTrait>(
     job: &GitHubWorkflowJob,
 ) -> Result<(), PostgresError> {
     let progress = job.progress();
-    let steps = job
-        .steps
-        .iter()
-        .map(|step| StoredStep {
-            number: step.number,
-            name: step.name.clone(),
-            status: step.status,
-            conclusion: step.conclusion,
-            started_at_unix: step.started_at_unix,
-            completed_at_unix: step.completed_at_unix,
-        })
-        .collect::<Vec<_>>();
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_github_workflow_jobs (github_job_id, repo_id, github_repository_id,
@@ -360,7 +313,7 @@ async fn save_job<C: ConnectionTrait>(
             optional_u64_to_i64(job.started_at_unix, "GitHub job start")?.into(),
             optional_u64_to_i64(job.completed_at_unix, "GitHub job completion")?.into(),
             job.html_url.clone().into(),
-            serde_json::to_value(steps)
+            serde_json::to_value(&job.steps)
                 .map_err(PostgresError::internal)?
                 .into(),
             i16::from(progress.stage).into(),
@@ -368,15 +321,12 @@ async fn save_job<C: ConnectionTrait>(
             u32_to_i32(progress.steps_started, "GitHub job steps")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
 impl JobRow {
     fn into_domain(self) -> Result<GitHubWorkflowJob, PostgresError> {
-        let steps: Vec<StoredStep> =
-            serde_json::from_value(self.steps).map_err(PostgresError::internal)?;
         Ok(GitHubWorkflowJob {
             github_job_id: i64_to_u64(self.github_job_id, "GitHub job id")?,
             github_run_id: i64_to_u64(self.github_run_id, "GitHub workflow run id")?,
@@ -390,17 +340,7 @@ impl JobRow {
                 "GitHub job completion",
             )?,
             html_url: self.html_url,
-            steps: steps
-                .into_iter()
-                .map(|step| GitHubWorkflowStep {
-                    number: step.number,
-                    name: step.name,
-                    status: step.status,
-                    conclusion: step.conclusion,
-                    started_at_unix: step.started_at_unix,
-                    completed_at_unix: step.completed_at_unix,
-                })
-                .collect(),
+            steps: serde_json::from_value(self.steps).map_err(PostgresError::internal)?,
         })
     }
 }

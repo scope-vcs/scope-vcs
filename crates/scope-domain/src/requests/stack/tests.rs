@@ -446,6 +446,7 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
         marked.request,
         false,
         RecordRequestRevisionInput {
+            new_base: None,
             new_head_oid: new_head.into(),
             git_snapshot: source_blob(new_head),
             ..input

@@ -10,25 +10,12 @@ import { candidateMigrationVersion, renderRuntimeRoleAudit } from './audit-runti
 import { localClusterSkip, pgBin } from './test-cluster.mjs';
 
 const migrationsDir = new URL('../../crates/scope-postgres/src/migrations/', import.meta.url);
-const appliedMigrations = ['m0043_retire_git_manifests.rs', 'm0044_request_attention.rs', 'm0045_dependency_analysis.rs',
-  'm0053_request_ref_cleanup.rs', 'm0055_request_checks.rs', 'm0056_request_auto_merge.rs',
-  'm0057_repository_invite_links.rs', 'm0058_repository_invite_emails.rs', 'm0063_account_deletion.rs',
-  'm0064_repository_content_version.rs', 'm0065_request_revision_rewrites.rs',
-  'm0066_native_runs_accounts.rs',
-  'm0067_provider_neutral_request_checks.rs', 'm0068_github_connections.rs',
-  'm0069_github_request_checks.rs', 'm0070_github_setup_checks_and_workflow_runs.rs',
-  'm0071_public_check_commits.rs', 'm0072_github_run_imports.rs', 'm0073_github_workflow_jobs.rs',
-  'm0075_incremental_projection_read_models.rs', 'm0076_view_ids.rs',
-  'm0077_custom_views.rs', 'm0078_repo_config_version.rs',
-  'm0079_request_views.rs',
-  'm0080_github_workflow_job_reads.rs',
-  'm0081_github_job_log_reads.rs',
-  'm0084_request_review_bases.rs', 'm0085_request_check_identity.rs',
-  'm0086_private_request_stacks.rs'];
+const baselineMigration = 'm0084_current_schema_baseline.sql';
+const appliedMigrations = ['m0084_request_review_bases.rs', 'm0085_request_check_identity.rs', 'm0086_private_request_stacks.rs'];
 
 test('every table-creating migration after the baseline is applied to the role inventory', () => {
   const creators = readdirSync(migrationsDir)
-    .filter((name) => /^m\d+_.+\.rs$/.test(name) && name > appliedMigrations[0]
+    .filter((name) => /^m\d+_.+\.rs$/.test(name) && name > baselineMigration
       && /CREATE TABLE/.test(readFileSync(new URL(name, migrationsDir), 'utf8')));
   assert.deepEqual(creators.filter((name) => !appliedMigrations.includes(name)), []);
 });
@@ -51,7 +38,7 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     execFileSync(join(pgBin, 'initdb'), ['-D', data, '-U', 'postgres', '--auth=trust', '--no-locale'], { stdio: 'pipe' });
     execFileSync(join(pgBin, 'pg_ctl'), ['-D', data, '-l', join(dir, 'log'), '-o', `-k ${dir} -c listen_addresses=''`, '-w', 'start'], { stdio: 'pipe' });
     started = true;
-    const baseline = readFileSync(new URL('../../crates/scope-postgres/src/migrations/current_schema.sql', import.meta.url), 'utf8');
+    const baseline = readFileSync(new URL(baselineMigration, migrationsDir), 'utf8');
     query(baseline);
     for (const filename of appliedMigrations) {
       const source = readFileSync(new URL(filename, migrationsDir), 'utf8');
@@ -61,12 +48,12 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     const actual = query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename").stdout.trim().split('\n');
     assert.deepEqual(actual, tables);
     query(renderPolicy());
-    query('GRANT SELECT (id) ON scope_cli_sessions TO scope_cache;');
+    query('GRANT SELECT (id) ON scope_cli_sessions TO scope_media_worker;');
     query(renderPolicy());
-    query('SELECT id FROM scope_cli_sessions;', 'scope_cache', false);
+    query('SELECT id FROM scope_cli_sessions;', 'scope_media_worker', false);
     query(renderPolicy({ mode: 'grants' }), 'scope_migrator');
     query(renderRuntimeRoleAudit(), 'scope_migrator');
-    query('GRANT SELECT (id) ON scope_cli_sessions TO scope_cache;');
+    query('GRANT SELECT (id) ON scope_cli_sessions TO scope_media_worker;');
     query(renderRuntimeRoleAudit(), 'scope_migrator');
     query('CREATE TABLE old_pending_relation(id int);', 'scope_migrator');
     query(renderRuntimeRoleAudit(), 'scope_migrator');
@@ -85,17 +72,17 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query('ALTER TABLE scope_cli_sessions OWNER TO postgres;');
     auditFails(/not owned by scope_migrator/);
     query('ALTER TABLE scope_cli_sessions OWNER TO scope_migrator;');
-    query('GRANT scope_cache TO postgres;');
+    query('GRANT scope_media_worker TO postgres;');
     auditFails(/held by another account/);
-    query('REVOKE scope_cache FROM postgres;');
-    query('GRANT INSERT ON seaql_migrations TO scope_cache;');
+    query('REVOKE scope_media_worker FROM postgres;');
+    query('GRANT INSERT ON seaql_migrations TO scope_media_worker;');
     auditFails(/migration-ledger privileges/, renderRuntimeRoleAudit({ exactPolicy: false }));
-    query('REVOKE INSERT ON seaql_migrations FROM scope_cache;');
+    query('REVOKE INSERT ON seaql_migrations FROM scope_media_worker;');
     query('ALTER TABLE scope_cli_sessions RENAME TO scope_cli_sessions_retired;', 'scope_migrator');
     auditFails(/relation is missing/);
     query('ALTER TABLE scope_cli_sessions_retired RENAME TO scope_cli_sessions;', 'scope_migrator');
     query(renderRuntimeRoleAudit(), 'scope_migrator');
-    const sleeper = spawn(join(pgBin, 'psql'), ['-X', '-qAt', '-h', dir, '-U', 'scope_cache', '-d', 'postgres'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const sleeper = spawn(join(pgBin, 'psql'), ['-X', '-qAt', '-h', dir, '-U', 'scope_media_worker', '-d', 'postgres'], { stdio: ['pipe', 'pipe', 'pipe'] });
     sleeper.stderr.resume();
     sleeper.stdin.end('SELECT pg_backend_pid(); SELECT pg_sleep(30);');
     const pid = await new Promise((resolve, reject) => {
@@ -126,17 +113,14 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
       query('CREATE ROLE forbidden;', role, false);
     }
     query(`SELECT * FROM scope_request_revision_context_receipts;
-      INSERT INTO scope_request_revision_context_receipts
-        SELECT * FROM scope_request_revision_context_receipts WHERE false;
+      INSERT INTO scope_request_revision_context_receipts SELECT * FROM scope_request_revision_context_receipts WHERE false;
       UPDATE scope_request_revision_context_receipts SET payload_digest = payload_digest;
       DELETE FROM scope_request_revision_context_receipts WHERE false;`, 'scope_api');
     for (const role of Object.keys(grants).filter((role) => role !== 'scope_api')) {
       query('SELECT * FROM scope_request_revision_context_receipts;', role, false);
-      query(`INSERT INTO scope_request_revision_context_receipts
-        SELECT * FROM scope_request_revision_context_receipts WHERE false;`, role, false);
+      query('INSERT INTO scope_request_revision_context_receipts SELECT * FROM scope_request_revision_context_receipts WHERE false;', role, false);
     }
-    query('SELECT * FROM scope_runs; SELECT * FROM scope_run_jobs; SELECT * FROM scope_run_attempts;', 'scope_cache');
-    query('UPDATE scope_runs SET id = id;', 'scope_cache', false);
+    query('SELECT * FROM scope_cache_objects FOR UPDATE; DELETE FROM scope_cache_uploads;', 'scope_api');
     query('SELECT * FROM scope_cli_sessions;', 'scope_run_worker', false);
     query('UPDATE scope_repository_members SET repo_id = repo_id;', 'scope_run_worker', false);
     query('UPDATE scope_repositories SET owner_user_id = owner_user_id;', 'scope_run_worker', false);
@@ -162,16 +146,16 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     assert.equal(workerRoleTest.status, 0, `${workerRoleTest.stdout}\n${workerRoleTest.stderr}`);
     query('DELETE FROM scope_repository_history_entries;', 'scope_run_worker', false);
     query("SELECT 1 AS present FROM scope_request_discussions WHERE id = 'missing' AND request_id = 'missing';", 'scope_media_api');
-    query('SELECT * FROM scope_cache_objects;', 'scope_api', false);
+    query('SELECT * FROM scope_cache_objects;', 'scope_run_worker', false);
     query('SELECT * FROM scope_runs;', 'scope_media_worker', false);
     query('SELECT * FROM scope_auth_identities;', 'scope_media_api', false);
     query("INSERT INTO scope_metadata_locks(key) VALUES ('role-canary') ON CONFLICT DO NOTHING; SELECT * FROM scope_metadata_locks FOR SHARE;", 'scope_media_worker');
     const restoredSchema = execFileSync(join(pgBin, 'pg_dump'), ['-h', dir, '-U', 'postgres', '-d', 'postgres', '--schema-only', '--no-owner', '--no-acl'], { encoding: 'utf8' });
     query(`DROP SCHEMA public CASCADE; CREATE SCHEMA public; ${restoredSchema}`, 'scope_migrator');
-    query('SELECT * FROM public.scope_runs;', 'scope_cache', false);
+    query('SELECT * FROM public.scope_request_media_attachments;', 'scope_media_worker', false);
     query(renderPolicy({ mode: 'grants' }), 'scope_migrator');
-    query('SELECT * FROM scope_runs;', 'scope_cache');
-    query('SELECT * FROM scope_cli_sessions;', 'scope_cache', false);
+    query('SELECT * FROM scope_request_media_attachments;', 'scope_media_worker');
+    query('SELECT * FROM scope_cli_sessions;', 'scope_media_worker', false);
     query('CREATE TABLE future_table(id int); CREATE FUNCTION future_function() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;', 'scope_migrator');
     for (const role of Object.keys(grants)) {
       query('SELECT * FROM future_table;', role, false);
@@ -181,7 +165,7 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     assert.notEqual(rejected.status, 0);
     assert.match(rejected.stderr, /Unreviewed public relation/);
     query('DROP TABLE future_table; DROP FUNCTION future_function();', 'scope_migrator');
-    query('CREATE ROLE unsafe_parent; GRANT unsafe_parent TO scope_cache;');
+    query('CREATE ROLE unsafe_parent; GRANT unsafe_parent TO scope_media_worker;');
     const membership = spawnSync(join(pgBin, 'psql'), ['-X', '-qAt', '-h', dir, '-U', 'postgres', '-d', 'postgres'], { input: renderPolicy(), encoding: 'utf8' });
     assert.notEqual(membership.status, 0);
     assert.match(membership.stderr, /must have no memberships/);
@@ -210,16 +194,16 @@ test('roles-only bootstrap lets the migration login build and grant an empty dat
     query(renderPolicy({ mode: 'roles' }));
     query(renderPolicy({ mode: 'roles' }));
     query('CREATE TABLE early(id int);', 'scope_api', false);
-    query(readFileSync(new URL('../../crates/scope-postgres/src/migrations/current_schema.sql', import.meta.url), 'utf8'), 'scope_migrator');
+    query(readFileSync(new URL(baselineMigration, migrationsDir), 'utf8'), 'scope_migrator');
     for (const filename of appliedMigrations) {
       const source = readFileSync(new URL(filename, migrationsDir), 'utf8');
       query(`BEGIN; ${source.match(/r#"([\s\S]*?)"#/)[1]} COMMIT;`, 'scope_migrator');
     }
     query('CREATE TABLE seaql_migrations (version text PRIMARY KEY);', 'scope_migrator');
-    query('SELECT * FROM scope_runs;', 'scope_cache', false);
+    query('SELECT * FROM scope_request_media_attachments;', 'scope_media_worker', false);
     query(renderPolicy({ mode: 'grants' }), 'scope_migrator');
-    query('SELECT * FROM scope_runs;', 'scope_cache');
-    query('SELECT * FROM scope_cli_sessions;', 'scope_cache', false);
+    query('SELECT * FROM scope_request_media_attachments;', 'scope_media_worker');
+    query('SELECT * FROM scope_cli_sessions;', 'scope_media_worker', false);
     query(renderRuntimeRoleAudit(), 'scope_migrator');
   } finally {
     if (started) execFileSync(join(pgBin, 'pg_ctl'), ['-D', data, '-m', 'immediate', '-w', 'stop'], { stdio: 'pipe' });
